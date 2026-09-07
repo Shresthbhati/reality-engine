@@ -55,18 +55,15 @@ on `isinstance(world.entities, dict)`, used at both call sites in
 `engine/world/runtime.py`. Regression tests added in
 `tests/test_world_runtime.py`. See [DECISIONS.md](DECISIONS.md) #14.
 
-**Remaining, narrower gap**: V1-schema `Entity.transform` is a plain
-externalized `dict` with no fixed shape (not a real `Transform`
-object), so `WorldRuntime` still can't register it into
-`CoordinateRegistry` — it now checks `isinstance(entity.transform, Transform)`
-and skips registration rather than crashing, so `resolve_point`/
-`resolve_transform` simply don't resolve V1-schema entity frames yet.
-Unifying the two WorldIR transform representations is a larger,
-still-deferred change (touches REQ-002, REQ-005, REQ-024). Inspector
-(REQ-030) still reads `world_v1.WorldIR` directly rather than through
-`WorldRuntime`, since `WorldRuntime`'s ECS side has no materials/
-geometries/measurements API regardless of this fix — see
-[DECISIONS.md](DECISIONS.md) #12.
+**Update (2026-09-07, P0 audit-repair)**: the transform-resolution gap
+this section used to describe is now fixed — see
+[DECISIONS.md](DECISIONS.md) #15. V1-schema `Entity.transform` dicts
+resolve through `CoordinateRegistry` exactly like legacy `Transform`
+objects, including multi-hop chains and inverse-direction resolution.
+Inspector (REQ-030) still reads `world_v1.WorldIR` directly rather than
+through `WorldRuntime` — that part of the original decision stands
+independent of this fix, since `WorldRuntime`'s ECS side still has no
+materials/geometries/measurements API — see [DECISIONS.md](DECISIONS.md) #12.
 
 ## Open spec ambiguity
 

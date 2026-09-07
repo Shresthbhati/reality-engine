@@ -69,15 +69,72 @@ def test_runtime_accepts_v1_schema_world_with_entities():
     assert fetched.name == "v1-entity"
 
 
-def test_runtime_v1_schema_dict_transform_does_not_register_as_coordinate_frame():
-    """A V1-schema Entity.transform is an externalized dict, not a real
-    Transform object -- WorldRuntime must skip coordinate registration
-    for it rather than crash, since CoordinateRegistry only understands
-    real Transform instances."""
+def test_runtime_v1_schema_transform_resolves_through_coordinate_registry():
+    """A V1-schema Entity.transform is an "externalized transform" --
+    per its own docstring in world_ir/schema_v1.py, this means
+    Transform.to_dict() output, not an arbitrary shape. WorldRuntime
+    must round-trip it through Transform.from_dict() and register it
+    with CoordinateRegistry so resolve_point/resolve_transform work for
+    V1-schema entities exactly as they do for legacy ones. Previously
+    this was a no-op (coordinate registration silently skipped for any
+    dict transform) -- fixed as part of the P0 audit-repair pass."""
+    world = WorldIRV1(id="w1")
+    transform = Transform(Frame.BUILDING_LOCAL, Frame.WORLD, matrix=translation(5, 0, 0))
+    entity = EntityV1(id="e1", transform=transform.to_dict())
+    world.entities[entity.id] = entity
+
+    runtime = WorldRuntime(world)
+
+    point = runtime.resolve_point((0.0, 0.0, 0.0), Frame.BUILDING_LOCAL, Frame.WORLD)
+    assert point == (5.0, 0.0, 0.0)
+
+
+def test_runtime_v1_schema_nested_frame_chain_resolves():
+    """Two V1-schema entities register two edges of a chain
+    (session-local -> building-local -> world); resolve_point must
+    compose them via CoordinateRegistry's BFS path search, exercising
+    genuine nested/local/world transform resolution rather than a
+    single direct edge."""
+    world = WorldIRV1(id="w1")
+
+    session_to_building = Transform(Frame.SESSION_LOCAL, Frame.BUILDING_LOCAL, matrix=translation(2, 0, 0))
+    building_to_world = Transform(Frame.BUILDING_LOCAL, Frame.WORLD, matrix=translation(10, 0, 0))
+
+    world.entities["sensor_01"] = EntityV1(id="sensor_01", transform=session_to_building.to_dict())
+    world.entities["building_01"] = EntityV1(id="building_01", transform=building_to_world.to_dict())
+
+    runtime = WorldRuntime(world)
+
+    # session-local (0,0,0) -> +2 in building-local -> +10 in world -> (12, 0, 0)
+    point = runtime.resolve_point((0.0, 0.0, 0.0), Frame.SESSION_LOCAL, Frame.WORLD)
+    assert point == (12.0, 0.0, 0.0)
+
+    # and the inverse direction, exercising Transform.inverse() composition
+    reverse = runtime.resolve_point((12.0, 0.0, 0.0), Frame.WORLD, Frame.SESSION_LOCAL)
+    assert reverse == (0.0, 0.0, 0.0)
+
+
+def test_runtime_v1_schema_malformed_transform_dict_raises():
+    """A V1-schema Entity.transform that is a dict but NOT valid
+    Transform.to_dict() output (missing required keys) is a real data
+    problem and must fail loudly at WorldRuntime construction time,
+    not silently resolve to "no transform" -- that silent-skip was the
+    previous (incorrect) no-op behavior."""
     world = WorldIRV1(id="w1")
     entity = EntityV1(id="e1", transform={"position": {"x": 1.0, "y": 2.0, "z": 3.0}})
     world.entities[entity.id] = entity
 
-    runtime = WorldRuntime(world)  # must not raise
+    with pytest.raises(ValueError, match="malformed transform"):
+        WorldRuntime(world)
 
-    assert runtime.entity_exists("e1")
+
+def test_runtime_v1_schema_unsupported_transform_type_raises():
+    """A transform field that is neither None, a real Transform, nor a
+    dict (e.g. a bare string) is unambiguously a bug in whatever
+    produced the WorldIR and must raise, not silently no-op."""
+    world = WorldIRV1(id="w1")
+    entity = EntityV1(id="e1", transform="not-a-transform")
+    world.entities[entity.id] = entity
+
+    with pytest.raises(ValueError, match="unsupported transform type"):
+        WorldRuntime(world)

@@ -447,6 +447,64 @@ def test_world_deterministic_serialization():
     assert list(data1["entities"].keys()) == ["ent_1", "ent_2", "ent_3"]  # Sorted
 
 
+def test_world_created_at_modified_at_default_deterministically():
+    """Regression test (P0 audit-repair): created_at/modified_at used to
+    default to datetime.now(timezone.utc).timestamp() -- a real
+    wall-clock read. Two separately-constructed WorldIR objects with
+    otherwise-identical explicit fields would then serialize to
+    different JSON purely because they were built microseconds apart,
+    silently breaking any determinism check that constructs a fresh
+    WorldIR() without stamping created_at explicitly (as most simulation
+    code does, since these are bookkeeping fields, not something a
+    solver would think to set on every world it builds).
+
+    The fix: default to 0.0 ("unset"), not wall-clock time. This test
+    constructs two independent WorldIR objects (not the same object
+    called twice, which would trivially match) with identical explicit
+    fields and asserts their serialization is byte-identical -- this is
+    exactly the case the wall-clock default could fail nondeterministically
+    (it wouldn't fail in single-process, single-call tests like
+    test_world_deterministic_serialization above, which only ever calls
+    to_json() twice on the SAME object -- that always matches regardless
+    of the default).
+    """
+    # main_branch_id also defaults via uuid4() -- pin it explicitly since
+    # this test isolates the timestamp default specifically, not the
+    # (expected, legitimate) per-world uniqueness of auto-generated ids.
+    world_a = WorldIR(id="w1", name="same", main_branch_id="branch-fixed")
+    world_b = WorldIR(id="w1", name="same", main_branch_id="branch-fixed")
+
+    assert world_a.created_at == 0.0
+    assert world_a.modified_at == 0.0
+    assert world_a.to_json() == world_b.to_json()
+
+
+def test_world_created_at_explicit_value_preserved_through_roundtrip():
+    """Timestamp semantics are explicit: a caller that DOES want a real
+    wall-clock (or any other) timestamp stamps it directly, and that
+    value round-trips losslessly through serialization -- this is not
+    a "no timestamps allowed" fix, just "no implicit nondeterministic
+    default".
+    """
+    stamped = 1_700_000_000.0  # an arbitrary explicit, non-zero timestamp
+    world = WorldIR(id="w1", created_at=stamped, modified_at=stamped)
+
+    restored = WorldIR.from_dict(json.loads(world.to_json()))
+    assert restored.created_at == stamped
+    assert restored.modified_at == stamped
+
+
+def test_world_from_dict_missing_timestamps_defaults_deterministically():
+    """Loading a serialized world that omits created_at/modified_at
+    (e.g. hand-authored or from an older partial format) must not read
+    the wall clock either -- from_dict's fallback matches the
+    constructor's deterministic default."""
+    data = {"schema_version": 1, "id": "w1"}  # no created_at/modified_at keys
+    world = WorldIR.from_dict(data)
+    assert world.created_at == 0.0
+    assert world.modified_at == 0.0
+
+
 def test_world_validation_dangling_entity_ref():
     """Test validation catches dangling entity references."""
     world = WorldIR()

@@ -48,6 +48,36 @@ def _iter_world_entities(world: WorldIR):
     return entities
 
 
+def _resolve_entity_transform(entity_id: str, transform: Any) -> Optional[Transform]:
+    """Resolve an entity's transform field to a real `Transform`, regardless
+    of WorldIR variant.
+
+    Legacy `world_ir.world.WorldIR` entities carry a real `Transform`
+    object already. V1-schema (`world_ir.world_v1.WorldIR`) entities carry
+    an "externalized transform" dict -- per that field's own docstring,
+    this is `Transform.to_dict()` output, not an arbitrary shape, so it
+    round-trips through `Transform.from_dict()` like any other serialized
+    Transform. A dict present but malformed (missing required keys, bad
+    Frame value) is a real data problem and must fail loudly rather than
+    silently resolve to "no transform" -- that was the previous no-op
+    behavior this replaces.
+    """
+    if transform is None:
+        return None
+    if isinstance(transform, Transform):
+        return transform
+    if isinstance(transform, dict):
+        try:
+            return Transform.from_dict(transform)
+        except (KeyError, ValueError) as exc:
+            raise ValueError(
+                f"entity '{entity_id}' has a malformed transform dict: {exc}"
+            ) from exc
+    raise ValueError(
+        f"entity '{entity_id}' has an unsupported transform type: {type(transform).__name__}"
+    )
+
+
 class WorldRuntime:
     """In-memory runtime over a WorldIR: entity queries, component storage,
     resources, events, and coordinate frame resolution.
@@ -76,8 +106,9 @@ class WorldRuntime:
         # Populate entity registry from WorldIR
         for entity in _iter_world_entities(world):
             self._entity_registry.create_entity(entity.id, tick=0)
-            if isinstance(entity.transform, Transform):
-                self._coordinates.register(entity.transform)
+            resolved_transform = _resolve_entity_transform(entity.id, entity.transform)
+            if resolved_transform is not None:
+                self._coordinates.register(resolved_transform)
 
     # ========== Entity Management ==========
 

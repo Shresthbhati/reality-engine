@@ -18,7 +18,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional, Any
 from uuid import uuid4
-from datetime import datetime, timezone
 
 from provenance import Provenance, Uncertainty
 from .schema_v1 import (
@@ -169,8 +168,18 @@ class WorldIR:
     id: str = field(default_factory=lambda: f"world-{uuid4()}")
     name: str = ""
     version: int = 1  # Schema version
-    created_at: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
-    modified_at: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
+    # created_at/modified_at are wall-clock bookkeeping metadata, not
+    # simulation state -- but the same object flows through deterministic
+    # paths (hashing, golden-file comparison, replay) where an unrequested
+    # datetime.now() default would silently make two otherwise-identical
+    # worlds compare unequal depending on when they were constructed.
+    # Default to 0.0 ("unset"), matching Branch.created_at's convention
+    # (see Branch dataclass above) -- callers that want a real wall-clock
+    # timestamp (e.g. actually persisting a newly-authored world) must
+    # stamp it explicitly via `WorldIR(..., created_at=time.time())` or
+    # equivalent, rather than relying on an implicit default.
+    created_at: float = 0.0
+    modified_at: float = 0.0
 
     # Core Data
     entities: dict[str, Entity] = field(default_factory=dict)
@@ -263,8 +272,8 @@ class WorldIR:
             id=data.get("id", f"world-{uuid4()}"),
             name=data.get("name", ""),
             version=data.get("version", 1),
-            created_at=data.get("created_at", datetime.now(timezone.utc).timestamp()),
-            modified_at=data.get("modified_at", datetime.now(timezone.utc).timestamp()),
+            created_at=data.get("created_at", 0.0),
+            modified_at=data.get("modified_at", 0.0),
             entities={
                 k: Entity.from_dict(v) for k, v in data.get("entities", {}).items()
             },

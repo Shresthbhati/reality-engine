@@ -42,10 +42,11 @@ Each requirement entry contains:
 - **Dependency**: REQ-001
 - **Status**: VERIFIED
 - **Files**: `world_ir/schema_v1.py`, `world_ir/world_v1.py`
-- **Tests**: `tests/test_world_ir_v1.py` (29 tests)
+- **Tests**: `tests/test_world_ir_v1.py` (32 tests)
 - **Benchmark**: N/A (data model)
-- **Verification**: Round-trip serialization tests, JSON determinism tests
+- **Verification**: Round-trip serialization tests, JSON determinism tests, timestamp-determinism tests (below)
 - **Limitations**: None
+- **Fixed 2026-09-07 (P0 audit-repair)**: `WorldIR.created_at`/`modified_at` previously defaulted to `datetime.now(timezone.utc).timestamp()` — a genuine wall-clock read on a field that flows through deterministic paths (hashing, golden-file comparison). Two independently-constructed `WorldIR()` objects with otherwise-identical fields could silently serialize differently depending on when each was built. Now defaults to `0.0` ("unset"), matching `Branch.created_at`'s existing convention in the same file. Callers that want a real wall-clock timestamp stamp it explicitly. 3 new regression tests in `tests/test_world_ir_v1.py`.
 - **Blockers**: None
 
 ### REQ-003: Entity Registry & Lifecycle
@@ -316,9 +317,10 @@ Each requirement entry contains:
 - **Files**: `engine/world/runtime.py`
 - **Tests**: `tests/test_runtime_foundation.py::TestWorldRuntime` (8 tests), `tests/test_world_runtime.py` (5 tests, includes 2 regression tests for the V1-schema fix below)
 - **Benchmark**: None
-- **Verification**: Entity/component/resource/event integration; serialization; accepts both the legacy `world_ir.world.WorldIR` (EntityRegistry-backed, real `Transform` objects) and the V1 schema `world_ir.world_v1.WorldIR` (dict-backed entities, externalized dict transforms)
-- **Limitations**: No streaming; single-world only. V1-schema entity transforms (plain dicts) are not registered into `CoordinateRegistry` — only real `Transform` objects are, so `resolve_point`/`resolve_transform` don't work for V1-schema entities yet; this needs the two WorldIR transform representations unified, which is a bigger change than this fix's scope.
-- **Fixed 2026-09-07**: `__init__`/`get_entity_from_world` previously crashed with `AttributeError` the instant a V1-schema world had any entities (iterating `dict.entities` yielded string keys, not `Entity` objects) — see `docs/DECISIONS.md` #12 and `docs/KNOWN_LIMITATIONS.md`, both updated to reflect the fix.
+- **Verification**: Entity/component/resource/event integration; serialization; accepts both the legacy `world_ir.world.WorldIR` (EntityRegistry-backed, real `Transform` objects) and the V1 schema `world_ir.world_v1.WorldIR` (dict-backed entities, externalized dict transforms); V1-schema entity transforms now resolve through `CoordinateRegistry` including multi-hop chains (session-local → building-local → world) and inverse-direction resolution
+- **Limitations**: No streaming; single-world only.
+- **Fixed 2026-09-07**: `__init__`/`get_entity_from_world` previously crashed with `AttributeError` the instant a V1-schema world had any entities (iterating `dict.entities` yielded string keys, not `Entity` objects) — see `docs/DECISIONS.md` #12.
+- **Fixed 2026-09-07 (P0 audit-repair)**: V1-schema entity transforms were previously a no-op — `isinstance(entity.transform, Transform)` skipped registration for any dict, so `resolve_point`/`resolve_transform` silently never worked for V1-schema entities. Fixed via `_resolve_entity_transform()`: a V1-schema transform dict is exactly `Transform.to_dict()` output (per that field's own docstring in `schema_v1.py`), so it round-trips through the already-existing `Transform.from_dict()` and registers like any other transform. A malformed dict (missing required keys) now raises `ValueError` at construction time instead of silently resolving to "no transform". 4 new regression tests in `tests/test_world_runtime.py`, including a 2-hop chain and its inverse direction. See `docs/DECISIONS.md` #15.
 - **Blockers**: None
 
 ---
@@ -466,8 +468,8 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 
 ### Test Coverage
 
-- **Total Tests**: 430 (all passing)
-- **New Tests This Session**: 212 tests
+- **Total Tests**: 438 (all passing) — note: this line previously said 430 without being updated after the 2026-09-07 WorldRuntime-crash fix (which added 2 tests, 430→432) landed; corrected here along with this session's 6 new tests (432→438) rather than compounding the drift.
+- **New Tests This Session**: 218 tests
   - Runtime foundation: 44 tests
   - Dependency graph & caching: 30 tests
   - Fracture system: 18 tests
@@ -477,6 +479,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
   - Viewport: 12 tests (Step 16)
   - Inspector: 28 tests (Step 17)
   - Physics Debugger: 10 tests (Step 18)
+  - P0 audit-repair (transform resolution + timestamp determinism): 6 tests
 - **Coverage**: 100% of tested requirements
 
 ### Critical Blockers
@@ -501,5 +504,5 @@ This ledger is updated whenever:
 4. Test coverage changes
 5. Known limitations are discovered
 
-**Last verified**: 2026-09-07 by implementation audit (Step 18 Physics Debugger completion)
-**Next audit**: After Step 19 completion
+**Last verified**: 2026-09-07 by implementation audit (P0 audit-repair pass: V1-schema transform resolution + timestamp determinism)
+**Next audit**: After the Evidence→Reconstruction→Perception→WorldIR vertical slice (P1)

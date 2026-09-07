@@ -290,3 +290,303 @@ class TestWaterState:
 
         # New body should be there
         assert state.get_body("pond1").surface_area_m2 == 5.0
+
+    # Task 2: Flow between adjacent bodies and drainage tests
+
+    def test_body_with_drainage(self):
+        """Test creating a water body with drainage rate."""
+        body = WaterBody(
+            body_id="draining_lake",
+            surface_area_m2=10.0,
+            depth_m=2.0,
+            drainage_rate_m3_s=0.5,
+        )
+        assert body.body_id == "draining_lake"
+        assert body.drainage_rate_m3_s == 0.5
+        assert body.depth_m == 2.0
+
+    def test_body_rejects_negative_drainage(self):
+        """Test that negative drainage rate raises ValueError."""
+        with pytest.raises(ValueError, match="drainage_rate_m3_s must be >= 0"):
+            WaterBody(
+                body_id="invalid",
+                surface_area_m2=10.0,
+                drainage_rate_m3_s=-1.0,
+            )
+
+    def test_connect_bodies_bidirectional(self):
+        """Test that connect_bodies creates bidirectional adjacency."""
+        config = WaterConfig()
+        state = WaterState(config)
+
+        body_a = WaterBody(body_id="lake_a", surface_area_m2=10.0, depth_m=2.0)
+        body_b = WaterBody(body_id="lake_b", surface_area_m2=5.0, depth_m=1.0)
+
+        state.register_body(body_a)
+        state.register_body(body_b)
+
+        state.connect_bodies("lake_a", "lake_b")
+
+        # Verify bidirectional adjacency
+        assert "lake_b" in state._adjacency["lake_a"]
+        assert "lake_a" in state._adjacency["lake_b"]
+
+    def test_connect_unknown_body_a_raises(self):
+        """Test that connecting unknown body_a raises ValueError."""
+        config = WaterConfig()
+        state = WaterState(config)
+
+        body_b = WaterBody(body_id="lake_b", surface_area_m2=5.0)
+        state.register_body(body_b)
+
+        with pytest.raises(ValueError, match="Unknown water body: 'unknown_a'"):
+            state.connect_bodies("unknown_a", "lake_b")
+
+    def test_connect_unknown_body_b_raises(self):
+        """Test that connecting unknown body_b raises ValueError."""
+        config = WaterConfig()
+        state = WaterState(config)
+
+        body_a = WaterBody(body_id="lake_a", surface_area_m2=10.0)
+        state.register_body(body_a)
+
+        with pytest.raises(ValueError, match="Unknown water body: 'unknown_b'"):
+            state.connect_bodies("lake_a", "unknown_b")
+
+    def test_connect_duplicate_raises(self):
+        """Test that connecting same pair twice raises ValueError."""
+        config = WaterConfig()
+        state = WaterState(config)
+
+        body_a = WaterBody(body_id="lake_a", surface_area_m2=10.0)
+        body_b = WaterBody(body_id="lake_b", surface_area_m2=5.0)
+
+        state.register_body(body_a)
+        state.register_body(body_b)
+
+        state.connect_bodies("lake_a", "lake_b")
+
+        # Try to connect again
+        with pytest.raises(
+            ValueError,
+            match="Water bodies 'lake_a' and 'lake_b' are already connected",
+        ):
+            state.connect_bodies("lake_a", "lake_b")
+
+    def test_flow_between_two_bodies_worked_example(self):
+        """Test flow with hand-computed expected depths.
+
+        Worked example:
+        - area_a = 10 m², depth_a = 3.0 m => V_a = 30 m³
+        - area_b = 5 m², depth_b = 1.0 m => V_b = 5 m³
+        - flow_rate_coefficient = 0.5, dt = 1.0 s
+        - Rate-limited flow = 0.5 * (3.0 - 1.0) * 1.0 = 1.0 m³
+        - F_equalizing = 10 * 5 * (3.0 - 1.0) / (10 + 5) = 100 * 2 / 15 = 13.33... m³
+        - Actual transfer = min(1.0, 13.33...) = 1.0 m³
+        - New V_a = 30 - 1 = 29 m³ => depth_a' = 29 / 10 = 2.9 m
+        - New V_b = 5 + 1 = 6 m³ => depth_b' = 6 / 5 = 1.2 m
+        """
+        config = WaterConfig(flow_rate_coefficient=0.5)
+        state = WaterState(config)
+
+        body_a = WaterBody(
+            body_id="lake_a", surface_area_m2=10.0, depth_m=3.0
+        )
+        body_b = WaterBody(body_id="lake_b", surface_area_m2=5.0, depth_m=1.0)
+
+        state.register_body(body_a)
+        state.register_body(body_b)
+        state.connect_bodies("lake_a", "lake_b")
+
+        # Execute one step
+        state.step(dt=1.0, tick=1)
+
+        # Verify depths
+        assert abs(state.get_body("lake_a").depth_m - 2.9) < 1e-9
+        assert abs(state.get_body("lake_b").depth_m - 1.2) < 1e-9
+
+    def test_flow_overshoot_clamped_at_equalization(self):
+        """Test that flow never overshoots equalization in one step.
+
+        Set up a case where rate-limited flow would exceed equalizing flow:
+        - area_a = 10 m², depth_a = 2.0 m => V_a = 20 m³
+        - area_b = 1 m², depth_b = 0.0 m => V_b = 0 m³
+        - flow_rate_coefficient = 10.0 (very high), dt = 1.0 s
+        - Rate-limited flow = 10.0 * (2.0 - 0.0) * 1.0 = 20.0 m³
+        - F_equalizing = 10 * 1 * (2.0 - 0.0) / (10 + 1) = 20 / 11 ≈ 1.818... m³
+        - Actual transfer = min(20.0, 1.818...) = 1.818... m³
+        - New depth_a' = (20 - 1.818...) / 10 ≈ 1.818... m
+        - New depth_b' = (0 + 1.818...) / 1 ≈ 1.818... m
+        - Both should be equal (or very close)
+        """
+        config = WaterConfig(flow_rate_coefficient=10.0)
+        state = WaterState(config)
+
+        body_a = WaterBody(body_id="lake_a", surface_area_m2=10.0, depth_m=2.0)
+        body_b = WaterBody(body_id="lake_b", surface_area_m2=1.0, depth_m=0.0)
+
+        state.register_body(body_a)
+        state.register_body(body_b)
+        state.connect_bodies("lake_a", "lake_b")
+
+        # Execute one step
+        state.step(dt=1.0, tick=1)
+
+        # Both depths should be equal (within floating point precision)
+        depth_a = state.get_body("lake_a").depth_m
+        depth_b = state.get_body("lake_b").depth_m
+
+        assert abs(depth_a - depth_b) < 1e-9
+
+    def test_drainage_reduces_volume(self):
+        """Test that drainage reduces water depth correctly."""
+        config = WaterConfig()
+        state = WaterState(config)
+
+        # Create body with drainage: 0.5 m³/s
+        # After dt=2.0 s, should drain 1.0 m³
+        # depth_m = (10.0 * 2.0 - 1.0) / 10.0 = 19.0 / 10.0 = 1.9 m
+        body = WaterBody(
+            body_id="draining_lake",
+            surface_area_m2=10.0,
+            depth_m=2.0,
+            drainage_rate_m3_s=0.5,
+        )
+        state.register_body(body)
+
+        state.step(dt=2.0, tick=1)
+
+        expected_depth = 1.9
+        assert abs(state.get_body("draining_lake").depth_m - expected_depth) < 1e-9
+
+    def test_drainage_floors_at_zero(self):
+        """Test that drainage never goes below zero depth."""
+        config = WaterConfig()
+        state = WaterState(config)
+
+        # Create body that would drain completely if not floored
+        # volume = 2.0 m³, drainage = 2.0 m³/s, dt = 2.0 s => would drain 4.0 m³
+        body = WaterBody(
+            body_id="small_pond",
+            surface_area_m2=1.0,
+            depth_m=2.0,
+            drainage_rate_m3_s=2.0,
+        )
+        state.register_body(body)
+
+        state.step(dt=2.0, tick=1)
+
+        assert state.get_body("small_pond").depth_m == 0.0
+
+    def test_serialize_with_drainage_and_adjacency(self):
+        """Test serialization includes drainage rates and adjacency."""
+        config = WaterConfig(flow_rate_coefficient=0.5)
+        state = WaterState(config)
+
+        body_a = WaterBody(
+            body_id="lake_a",
+            surface_area_m2=10.0,
+            depth_m=2.0,
+            drainage_rate_m3_s=0.1,
+        )
+        body_b = WaterBody(
+            body_id="lake_b",
+            surface_area_m2=5.0,
+            depth_m=1.0,
+            drainage_rate_m3_s=0.05,
+        )
+
+        state.register_body(body_a)
+        state.register_body(body_b)
+        state.connect_bodies("lake_a", "lake_b")
+
+        data = state.serialize()
+
+        # Verify drainage rates are serialized
+        assert data["bodies"]["lake_a"]["drainage_rate_m3_s"] == 0.1
+        assert data["bodies"]["lake_b"]["drainage_rate_m3_s"] == 0.05
+
+        # Verify adjacency is serialized (as a pair)
+        assert ["lake_a", "lake_b"] in data["adjacency"] or ["lake_b", "lake_a"] in data["adjacency"]
+
+    def test_deserialize_with_drainage_and_adjacency(self):
+        """Test deserialization restores drainage rates and adjacency."""
+        config = WaterConfig()
+        state = WaterState(config)
+
+        data = {
+            "format_version": 1,
+            "bodies": {
+                "lake_a": {
+                    "surface_area_m2": 10.0,
+                    "depth_m": 2.0,
+                    "drainage_rate_m3_s": 0.1,
+                },
+                "lake_b": {
+                    "surface_area_m2": 5.0,
+                    "depth_m": 1.0,
+                    "drainage_rate_m3_s": 0.05,
+                },
+            },
+            "adjacency": [["lake_a", "lake_b"]],
+        }
+
+        state.deserialize(data)
+
+        # Verify drainage rates are restored
+        assert state.get_body("lake_a").drainage_rate_m3_s == 0.1
+        assert state.get_body("lake_b").drainage_rate_m3_s == 0.05
+
+        # Verify adjacency is restored
+        assert "lake_b" in state._adjacency["lake_a"]
+        assert "lake_a" in state._adjacency["lake_b"]
+
+    def test_serialize_deserialize_roundtrip_with_flow(self):
+        """Test complete roundtrip with adjacency and drainage."""
+        config = WaterConfig(flow_rate_coefficient=0.75)
+        state = WaterState(config)
+
+        # Create bodies with drainage and connect them
+        body_a = WaterBody(
+            body_id="lake_a",
+            surface_area_m2=10.0,
+            depth_m=3.0,
+            drainage_rate_m3_s=0.2,
+        )
+        body_b = WaterBody(
+            body_id="lake_b",
+            surface_area_m2=5.0,
+            depth_m=1.5,
+            drainage_rate_m3_s=0.1,
+        )
+
+        state.register_body(body_a)
+        state.register_body(body_b)
+        state.connect_bodies("lake_a", "lake_b")
+
+        # Run one step of simulation
+        state.step(dt=1.0, tick=1)
+
+        # Serialize
+        data = state.serialize()
+
+        # Deserialize into new state
+        state2 = WaterState(config)
+        state2.deserialize(data)
+
+        # Verify all properties are preserved
+        lake_a = state2.get_body("lake_a")
+        lake_b = state2.get_body("lake_b")
+
+        assert lake_a.surface_area_m2 == 10.0
+        assert lake_a.drainage_rate_m3_s == 0.2
+        assert lake_b.surface_area_m2 == 5.0
+        assert lake_b.drainage_rate_m3_s == 0.1
+
+        # Depths should be preserved as well
+        assert abs(lake_a.depth_m - state.get_body("lake_a").depth_m) < 1e-9
+        assert abs(lake_b.depth_m - state.get_body("lake_b").depth_m) < 1e-9
+
+        # Adjacency should be preserved
+        assert "lake_b" in state2._adjacency["lake_a"]
+        assert "lake_a" in state2._adjacency["lake_b"]

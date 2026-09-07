@@ -1,0 +1,20 @@
+# Reality Engine V11 Simulation Configuration
+
+[simulation]
+# Fixed simulation timestep (seconds)
+fixed_timestep_s = 0.01
+
+# Maximum number of physics substeps per frame
+max_substeps = 10
+
+# Deterministic seed for reproducible randomness
+deterministic_seed = 42
+
+# Enable event logging and provenance tracking
+enable_event_logging = true
+
+# World coordinate frame convention
+world_frame = "X_FORWARD_Y_UP"
+
+# Handedness of coordinate system
+handedness = "RIGHT"

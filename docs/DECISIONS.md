@@ -1,0 +1,22 @@
+# Architecture Decision Records
+
+Distinguishes SPEC REQUIREMENT (mandated by the V11 spec) from ENGINEERING
+DECISION (a choice made where the spec is silent or permits latitude) from
+TEMPORARY APPROXIMATION (a stand-in that must be replaced, tracked in
+[KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md)). Only real decisions already
+made in the codebase are listed — this is not a wishlist.
+
+| # | Decision | Type | Rationale | Files |
+|---|----------|------|-----------|-------|
+| 1 | Frozen (`@dataclass(frozen=True)`) for all WorldIR, config, and math value types | ENGINEERING DECISION | Immutability makes append-only observation history (§9) and deterministic replay (§12) structurally enforced rather than convention-based | `world_ir/*`, `engine/core/config.py`, `engine/physics/math3.py` |
+| 2 | Custom minimal `Vec3`/`Mat3`/`Quat` instead of numpy | ENGINEERING DECISION | No solver yet needs real linear algebra beyond 3/4-element algebra; numpy is a heavy dependency to carry for that. Revisit when fluids/structural FEM lands | `engine/physics/math3.py` |
+| 3 | No `Mat4`/projection matrix for the viewport; frustum test done via dot-product angle cone | TEMPORARY APPROXIMATION | Headless engine, no renderer consumes projected coordinates yet. Upgrade to a real Mat4 projection when a renderer (§34) is built | `engine/render/viewport.py` |
+| 4 | Event bus is in-memory only, no persistence | TEMPORARY APPROXIMATION | REQ-014 delivered the deterministic priority-ordered bus; durable event log deferred until the replay/export layers need it | `engine/world/events.py` |
+| 5 | Config format is TOML-only | ENGINEERING DECISION | Matches `pyproject.toml`-based tooling already in the repo; YAML adds a dependency for no current requirement | `engine/core/config.py` |
+| 6 | `DeterministicRNG` wraps `random.Random`, not a cryptographic or custom PRNG | ENGINEERING DECISION | Determinism (§12) requires reproducibility, not unpredictability — stdlib PRNG is seed-reproducible and sufficient | `engine/core/rng.py` |
+| 7 | Broadphase is O(n²), no BVH/spatial hash | TEMPORARY APPROXIMATION | Correct at current entity counts; replace when a benchmark in [BENCHMARKS.md](BENCHMARKS.md) shows it's the bottleneck | `engine/physics/collision/broadphase.py` |
+| 8 | Contact solver is single-pass (no Sequential-Impulse iteration loop) | TEMPORARY APPROXIMATION | Stable for the golden tests currently in place; multi-iteration convergence needed before stacking many contacts reliably | `engine/physics/constraints/contact_solver.py` |
+| 9 | Dependency graph uses Kahn's algorithm with alphabetical tie-break, no priority-within-tier | ENGINEERING DECISION | Deterministic execution order (§12) satisfied without needing a priority queue; add priorities only if a system actually needs it | `engine/world/dependency_graph.py` |
+| 10 | Provenance enum is `OBSERVED/RECONSTRUCTED/ESTIMATED/INFERRED/GENERATED/UNKNOWN/CONFLICT` (no separate `MEASURED`) | SPEC_AMBIGUITY | Directive §7 lists `MEASURED` as distinct from `ESTIMATED`; existing `provenance/provenance.py` (pre-dates this directive) folds measurement into `OBSERVED`/`ESTIMATED`. Not reconciled yet — flagging rather than silently picking one | `provenance/provenance.py` |
+| 11 | Runtime, entity/component/resource registries are single-threaded | ENGINEERING DECISION | No concurrent-access requirement yet exercised; simplest correct implementation, revisit if a job system (REQ-007, still a stub) starts running systems in parallel | `engine/world/*` |
+| 12 | Inspector (REQ-030) built against `world_ir.world_v1.WorldIR` directly, not `WorldRuntime` | ENGINEERING DECISION | `WorldRuntime.__init__` type-hints `world_v1.WorldIR` but its body (`for entity in world.entities: ... entity.transform` used as an object with a real `Transform`/matrix) only actually works against the legacy `world_ir.world.WorldIR`/`EntityRegistry` — the v1 schema's `entities` is a `dict[str, Entity]` (iterating it yields string keys, not `Entity` objects) and its `Entity.transform` is an externalized `dict`, not a `Transform`. Constructing `WorldRuntime(world_v1.WorldIR())` crashes in `__init__`. Materials/measurements/geometries/causal_relations only exist on the v1 schema, so Inspector reads it directly rather than going through the currently-broken bridge. Not fixed this pass — reconciling the two WorldIR variants is a bigger change than one subsystem's scope. See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | `engine/world/runtime.py`, `engine/inspector/inspector.py` |

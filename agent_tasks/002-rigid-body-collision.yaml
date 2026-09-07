@@ -1,0 +1,57 @@
+# Agent task record (spec sec 79 AGENT CONTRACT)
+
+task:
+  id: 002-rigid-body-collision
+  objective: >
+    Stand up steps 8-9 of the FIRST IMPLEMENTATION ORDER (spec sec 108):
+    rigid body backend and collision, at P1 fidelity (sec 1.4: gameplay
+    physics). Combined into one task because a testable rigid body demo
+    needs something to collide with -- the spec's own golden scenes
+    (RB_001 falling cube, RB_002 stacked boxes, sec 91) require both.
+  context: >
+    Second build pass. Foundation layer (steps 1-7) already exists. This
+    task deliberately stops short of event bus (11), fracture (12), and
+    glass (13) -- those are the next task, not this one.
+  inputs:
+    - REALITY_ENGINE_MASTER_SPECIFICATION_V10_WORLD_PHYSICS_AND_AGENT_BUILD_BIBLE.md (sec 7, 8, 9, 44, 86, 90, 91-93, 108)
+  outputs:
+    - engine/physics/rigid/{math3,body,integrator}.py
+    - engine/physics/collision/{shapes,narrowphase,broadphase,raycast}.py
+    - engine/physics/materials/material.py
+    - engine/physics/constraints/contact_solver.py
+    - engine/physics/diagnostics/numerics.py
+    - engine/physics/backend/{interface,simple_backend}.py
+    - tests/test_physics_*.py
+  allowed_files:
+    - engine/physics/**
+    - tests/**
+    - docs/**
+  forbidden_files:
+    - engine/physics/fracture/**   # step 12, not this task
+    - engine/physics/fire/**       # step 21, not this task
+    - engine/physics/disasters/**  # steps 25+, not this task
+  dependencies:
+    - 001-foundation-skeleton
+  interfaces:
+    - IPhysicsBackend (engine/physics/backend/interface.py)
+    - RigidBody / integrate() (engine/physics/rigid/)
+  invariants:
+    - "contacts never resolve with both sides infinite-mass (sec: no motion from two static bodies)"
+    - "unhandled shape-pair collisions raise NotImplementedError, never silently skip (evidence-first / no silent wrongness)"
+    - "NaN/Inf anywhere in body state is a hard failure (sec 86)"
+    - "broadphase/contact ordering is id-sorted, never dict-iteration order (sec 90 stable ordering)"
+    - "world save format is versioned; unknown format_version fails loudly"
+  tests: tests/test_physics_*.py
+  performance_target: not measured yet -- no RealityPhysicsBench baseline exists (only one backend)
+  memory_target: not measured yet
+  failure_modes:
+    - explosive energy growth -> SimulationDivergedError (with an absolute floor to avoid false positives at near-zero startup energy)
+    - NaN/Inf body state -> SimulationDivergedError
+    - format_version mismatch on physics world deserialize -> raises
+  acceptance_criteria:
+    - pytest tests/ passes (112/112 at time of writing)
+    - RB_001 falling cube settles near its resting height within tolerance
+    - RB_002 stacked boxes remain standing (no collapse) within tolerance
+    - determinism test: identical seed/scenario -> byte-identical serialized world
+  known_gaps: see docs/BUILD_ORDER.md "Known gaps in the step 8/9 physics backend"
+  rollback_plan: this task only adds new files under engine/physics/ and tests/; revert by deleting the paths under outputs.

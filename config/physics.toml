@@ -1,0 +1,49 @@
+# Reality Engine V11 Physics Configuration
+# All values use SI units unless otherwise noted
+
+[physics]
+# Gravity acceleration (negative = downward)
+gravity_m_s2 = -9.81
+
+# Fixed timestep for simulation (seconds)
+timestep_s = 0.01
+
+# Maximum number of contacts per rigid body
+max_contacts_per_body = 8
+
+# Linear velocity damping (1/s)
+linear_damping = 0.01
+
+# Angular velocity damping (1/s)
+angular_damping = 0.05
+
+# Velocity threshold for sleep mode (m/s)
+sleep_velocity_threshold_m_s = 0.05
+
+# Angular velocity threshold for sleep mode (rad/s)
+sleep_angular_threshold_rad_s = 0.05
+
+# Time body must remain below thresholds before sleep (s)
+sleep_time_s = 0.5
+
+# Margin for axis-aligned bounding box (broadphase) (m)
+aabb_margin_m = 0.1
+
+# Maximum contact solver iterations per step
+max_solver_iterations = 5
+
+# Baumgarte penetration correction factor (0.1-0.3 typical)
+baumgarte_factor = 0.2
+
+# Velocity threshold below which restitution = 0 (m/s)
+rest_velocity_threshold_m_s = 0.5
+
+# Numerics safety
+# Hard failure if NaN/Inf detected
+nan_inf_hard_failure = true
+
+# Absolute floor for energy (J)
+energy_absolute_floor_j = 1.0
+
+# Energy explosion detection threshold (relative growth ratio)
+energy_explosion_threshold = 1000.0

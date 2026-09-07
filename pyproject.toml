@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reality-engine"
+version = "0.1.0"
+description = "World Compiler + Universal Physics + Destruction + Disaster + Studio UI (foundation layer)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["engine*", "world_ir*", "provenance*", "events*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

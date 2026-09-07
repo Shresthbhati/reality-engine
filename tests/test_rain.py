@@ -738,6 +738,9 @@ class TestRainSurface:
         restored = RainState(config)
         restored.deserialize(data)
 
+        # Verify intensity is restored
+        assert restored.intensity_mm_h == 10.0
+
 
 class TestRainEvents:
     """Rain band-change event publishing tests."""

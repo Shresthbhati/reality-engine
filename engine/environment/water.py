@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Dict
 
+from engine.core.logging import get_logger
+
 
 @dataclass(frozen=True)
 class WaterConfig:
@@ -58,6 +60,7 @@ class WaterState:
         self.config = config
         self._bodies: Dict[str, WaterBody] = {}
         self.format_version = 1
+        self._logger = get_logger("engine.environment.water")
 
     def register_body(self, body: WaterBody) -> None:
         """Register a water body.
@@ -73,6 +76,14 @@ class WaterState:
                 f"Water body '{body.body_id}' is already registered"
             )
         self._bodies[body.body_id] = body
+        self._logger.info(
+            "Water body registered",
+            context={
+                "body_id": body.body_id,
+                "surface_area_m2": body.surface_area_m2,
+                "depth_m": body.depth_m,
+            },
+        )
 
     def get_body(self, body_id: str) -> WaterBody:
         """Retrieve a registered water body by ID.

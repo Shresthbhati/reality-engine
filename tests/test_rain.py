@@ -304,21 +304,6 @@ class TestRainState:
         data2 = rain.serialize()
         assert data1 == data2
 
-    def test_deserialize_from_dict(self):
-        """Test deserialization from dictionary."""
-        config = RainConfig()
-        original = RainState(config)
-
-        original.set_intensity(25.0, tick=10, timestamp=1.0)
-        data = original.to_dict()
-
-        # Create new state from serialized data
-        restored = RainState.from_dict(config, data)
-        assert restored.intensity_mm_h == 25.0
-        assert restored.intensity_band() == RainIntensity.HEAVY
-        assert restored._last_tick == 10
-        assert restored._last_timestamp == 1.0
-
     def test_deserialize_instance_method(self):
         """Test that deserialize() instance method restores state in place."""
         config = RainConfig()

@@ -367,25 +367,3 @@ class RainState:
             )
             surface.accumulated_depth_m = surface_data.get("accumulated_depth_m", 0.0)
             self._surfaces[surface_id] = surface
-
-    @classmethod
-    def from_dict(cls, config: RainConfig, data: Dict[str, Any]) -> RainState:
-        """Deserialize rain state from dictionary (classmethod variant).
-
-        Creates a new RainState and restores it from serialized data.
-        Provided for backward compatibility. For new code, use the instance
-        method deserialize(data) instead.
-
-        Args:
-            config: RainConfig to use for the new state
-            data: Serialized state dict (must have format_version: 1)
-
-        Returns:
-            Restored RainState
-
-        Raises:
-            ValueError: If format_version is not 1
-        """
-        state = cls(config)
-        state.deserialize(data)
-        return state

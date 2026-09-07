@@ -41,34 +41,32 @@ requirement's limitations change, not just when new ones appear.
 | REQ-023 Caching | No adaptive sizing; substring pattern invalidation | Sufficient for current cache usage |
 | REQ-024 WorldRuntime | No streaming, single-world only | Multi-world/streaming not yet a requirement |
 
-## Confirmed bug (found during Step 17, not yet fixed)
+## Fixed bug (found Step 17, fixed during the 2026-09-07 quick audit)
 
-**`WorldRuntime` cannot actually construct against the WorldIR it's
-type-hinted for.** `engine/world/runtime.py` imports `WorldIR` from the
-`world_ir` package, which resolves to `world_v1.WorldIR` (the rich
-schema — the one with materials/geometries/measurements). But
-`WorldRuntime.__init__` does `for entity in world.entities: ... entity.transform`
-treating `entities` as an iterable of `Entity` objects with a real
-`Transform` (matrix) attribute — that contract belongs to the *legacy*
-`world_ir.world.WorldIR` / `EntityRegistry` (§ REQ-002's other half).
-`world_v1.WorldIR.entities` is a plain `dict[str, Entity]` (iterating it
-yields string keys — `entity.id` raises `AttributeError` immediately),
-and `world_v1.Entity.transform` is an externalized `dict`, not a
-`Transform` object. Net effect: `WorldRuntime(world_v1.WorldIR())`
-crashes in the constructor the moment the world has any entities;
-`WorldRuntime` currently only works with the legacy schema, silently.
-`tests/test_world_runtime.py` passes only because it imports
-`world_ir.world.WorldIR` directly (the legacy path) rather than the
-package-level `WorldIR` re-export.
+**`WorldRuntime` could not actually construct against the WorldIR it's
+type-hinted for.** `WorldRuntime.__init__`/`get_entity_from_world`
+iterated `world.entities` directly; that only yields `Entity` objects
+for the legacy `world_ir.world.WorldIR`'s `EntityRegistry.__iter__` —
+for the V1 schema (`world_v1.WorldIR.entities`, a plain
+`dict[str, Entity]`), iterating the dict yields its string keys, and
+`entity.id` raised `AttributeError` the instant a V1-schema world had
+any entities. Fixed by a `_iter_world_entities()` helper that branches
+on `isinstance(world.entities, dict)`, used at both call sites in
+`engine/world/runtime.py`. Regression tests added in
+`tests/test_world_runtime.py`. See [DECISIONS.md](DECISIONS.md) #14.
 
-**Why this wasn't fixed in Step 17**: reconciling it means either (a)
-rewriting `WorldRuntime` to walk the v1 schema's dict-based
-entities/materials, or (b) migrating the legacy `world_ir.world.WorldIR`
-callers onto v1. Either is a cross-cutting change touching REQ-002,
-REQ-003, REQ-018, REQ-021, REQ-024 simultaneously — bigger than one
-subsystem's scope. Inspector (REQ-030) sidesteps it by reading
-`world_v1.WorldIR` directly rather than going through `WorldRuntime`.
-See [DECISIONS.md](DECISIONS.md) #12.
+**Remaining, narrower gap**: V1-schema `Entity.transform` is a plain
+externalized `dict` with no fixed shape (not a real `Transform`
+object), so `WorldRuntime` still can't register it into
+`CoordinateRegistry` — it now checks `isinstance(entity.transform, Transform)`
+and skips registration rather than crashing, so `resolve_point`/
+`resolve_transform` simply don't resolve V1-schema entity frames yet.
+Unifying the two WorldIR transform representations is a larger,
+still-deferred change (touches REQ-002, REQ-005, REQ-024). Inspector
+(REQ-030) still reads `world_v1.WorldIR` directly rather than through
+`WorldRuntime`, since `WorldRuntime`'s ECS side has no materials/
+geometries/measurements API regardless of this fix — see
+[DECISIONS.md](DECISIONS.md) #12.
 
 ## Open spec ambiguity
 

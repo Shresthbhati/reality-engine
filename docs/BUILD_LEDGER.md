@@ -314,10 +314,11 @@ Each requirement entry contains:
 - **Dependency**: REQ-018 through REQ-023
 - **Status**: TESTED
 - **Files**: `engine/world/runtime.py`
-- **Tests**: `tests/test_runtime_foundation.py::TestWorldRuntime` (8 tests)
+- **Tests**: `tests/test_runtime_foundation.py::TestWorldRuntime` (8 tests), `tests/test_world_runtime.py` (5 tests, includes 2 regression tests for the V1-schema fix below)
 - **Benchmark**: None
-- **Verification**: Entity/component/resource/event integration; serialization
-- **Limitations**: No streaming; single-world only
+- **Verification**: Entity/component/resource/event integration; serialization; accepts both the legacy `world_ir.world.WorldIR` (EntityRegistry-backed, real `Transform` objects) and the V1 schema `world_ir.world_v1.WorldIR` (dict-backed entities, externalized dict transforms)
+- **Limitations**: No streaming; single-world only. V1-schema entity transforms (plain dicts) are not registered into `CoordinateRegistry` — only real `Transform` objects are, so `resolve_point`/`resolve_transform` don't work for V1-schema entities yet; this needs the two WorldIR transform representations unified, which is a bigger change than this fix's scope.
+- **Fixed 2026-09-07**: `__init__`/`get_entity_from_world` previously crashed with `AttributeError` the instant a V1-schema world had any entities (iterating `dict.entities` yielded string keys, not `Entity` objects) — see `docs/DECISIONS.md` #12 and `docs/KNOWN_LIMITATIONS.md`, both updated to reflect the fix.
 - **Blockers**: None
 
 ---

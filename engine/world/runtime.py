@@ -31,6 +31,23 @@ from .events import EventBus, Event
 from .lifecycle import WorldLifecycle, WorldState
 
 
+def _iter_world_entities(world: WorldIR):
+    """Yield Entity objects from either WorldIR shape this runtime supports.
+
+    `world_ir.world_v1.WorldIR.entities` is a `dict[str, Entity]` (V1
+    schema, entity.transform is an externalized dict). The legacy
+    `world_ir.world.WorldIR.entities` is an `EntityRegistry` whose
+    `__iter__` already yields Entity objects (real `Transform` objects).
+    Iterating a dict directly yields its string keys, not Entity
+    objects -- this is what previously crashed WorldRuntime.__init__ the
+    moment a V1-schema world had any entities (KNOWN_LIMITATIONS.md).
+    """
+    entities = world.entities
+    if isinstance(entities, dict):
+        return entities.values()
+    return entities
+
+
 class WorldRuntime:
     """In-memory runtime over a WorldIR: entity queries, component storage,
     resources, events, and coordinate frame resolution.
@@ -57,9 +74,9 @@ class WorldRuntime:
         self._logger = get_logger("engine.world.runtime")
 
         # Populate entity registry from WorldIR
-        for entity in world.entities:
+        for entity in _iter_world_entities(world):
             self._entity_registry.create_entity(entity.id, tick=0)
-            if entity.transform is not None:
+            if isinstance(entity.transform, Transform):
                 self._coordinates.register(entity.transform)
 
     # ========== Entity Management ==========
@@ -96,7 +113,7 @@ class WorldRuntime:
 
     def get_entity_from_world(self, entity_id: str):
         """Get entity from WorldIR (for compatibility with loaded worlds)."""
-        for entity in self.world.entities:
+        for entity in _iter_world_entities(self.world):
             if entity.id == entity_id:
                 return entity
         return None

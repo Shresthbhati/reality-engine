@@ -47,9 +47,9 @@ issues. This is a real gap, not an oversight to gloss over; see
 | `test_viewport.py` | REQ-029 | UNIT | 12 |
 | `test_world_ir.py` | REQ-002 | UNIT | — |
 | `test_world_ir_v1.py` | REQ-002, REQ-004 | UNIT (round-trip/serialization) | 29 |
-| `test_world_runtime.py` | REQ-005, REQ-024 | UNIT | — |
+| `test_world_runtime.py` | REQ-005, REQ-024 | UNIT + REGRESSION (2 of 5 tests guard the 2026-09-07 V1-schema fix, DECISIONS.md #14) | 5 |
 
-**Totals** (per `python -m pytest tests/ -q`): 430 tests, 100% passing,
+**Totals** (per `python -m pytest tests/ -q`): 432 tests, 100% passing,
 34 test files. Counts left as "—" above were not individually re-verified
 in this pass; re-run `pytest --collect-only -q` per file to refresh.
 

@@ -407,6 +407,18 @@ constructor body only actually works against the legacy
 See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 [DECISIONS.md](DECISIONS.md) #12 for full detail and fix options.
 
+### REQ-031: Physics Debugger
+- **Section**: §18/§36 (Physics Debugger, debug visualization)
+- **Description**: Read-only debug-draw records for rigid bodies, contacts, forces/torques, and numerics health, read directly off the real `PhysicsWorld`/`ContactRecord` backend
+- **Dependency**: REQ-010, REQ-011, REQ-012, REQ-013
+- **Status**: TESTED
+- **Files**: `engine/physics/debug/debugger.py`, `engine/physics/debug/__init__.py`
+- **Tests**: `tests/test_physics_debugger.py` (10 tests)
+- **Benchmark**: None
+- **Verification**: body records (shape/transform/velocity/sleep-state/energy) sorted deterministically by id; force/torque records only for non-zero accumulators; contact records against the real plane/body contacts a golden scene produces; numerics passthrough; aggregate summary
+- **Limitations**: No bounding-box/AABB record (shapes carry their own dims via `to_dict()`, not yet re-expressed as world-space AABB); no stress/damage visualization (no structural solver exists yet to source it from); no fluid/wind field visualization (no fluid/weather solver exists yet)
+- **Blockers**: None
+
 ---
 
 ## SUMMARY
@@ -432,11 +444,11 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
   - TESTED: 4
   - BLOCKED: 0
 
-- PHASE 3 (Environment): 2 requirements
-  - TESTED: 2
+- PHASE 3 (Environment): 3 requirements
+  - TESTED: 3
   - BLOCKED: 0
 
-**Total: 30 requirements tracked**
+**Total: 31 requirements tracked**
 
 ### Status Distribution
 
@@ -446,15 +458,15 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 | PLANNED | 0 |
 | IN_PROGRESS | 0 |
 | IMPLEMENTED | 1 (Job System) |
-| TESTED | 13 |
+| TESTED | 14 |
 | VERIFIED | 16 |
 | BLOCKED | 0 |
 | DEFERRED | 0 |
 
 ### Test Coverage
 
-- **Total Tests**: 420 (all passing)
-- **New Tests This Session**: 202 tests
+- **Total Tests**: 430 (all passing)
+- **New Tests This Session**: 212 tests
   - Runtime foundation: 44 tests
   - Dependency graph & caching: 30 tests
   - Fracture system: 18 tests
@@ -463,6 +475,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
   - Replay system: 29 tests (Step 15)
   - Viewport: 12 tests (Step 16)
   - Inspector: 28 tests (Step 17)
+  - Physics Debugger: 10 tests (Step 18)
 - **Coverage**: 100% of tested requirements
 
 ### Critical Blockers
@@ -474,8 +487,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 ### Next Steps (PHASE 3: ENVIRONMENT)
 
 **Planned Requirements (Not yet implemented):**
-- REQ-031: Physics Debugger (Step 18)
-- ...and Steps 19-33
+- Steps 19-33 (fluids, fire, weather, structural, disasters, causal graph, branching/counterfactuals, AI copilot, natural-language query, rendering, Studio, export, datasets, benchmarks)
 
 ---
 
@@ -488,5 +500,5 @@ This ledger is updated whenever:
 4. Test coverage changes
 5. Known limitations are discovered
 
-**Last verified**: 2026-09-07 by implementation audit (Step 17 Inspector completion)
-**Next audit**: After Step 18 completion (Physics Debugger)
+**Last verified**: 2026-09-07 by implementation audit (Step 18 Physics Debugger completion)
+**Next audit**: After Step 19 completion

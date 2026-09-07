@@ -214,7 +214,21 @@ class WaterState:
             dt: Time step in seconds.
             tick: Simulation tick (for logging/debugging).
         """
-        # First pass: process all flows between adjacent bodies
+        # Snapshot every body's depth at the START of the step. All pair
+        # calculations below read only this snapshot (never live/mutated
+        # state), so a body with multiple neighbors gets consistent,
+        # order-independent flow amounts for this tick.
+        depth_snapshot = {
+            body_id: body.depth_m for body_id, body in self._bodies.items()
+        }
+        # Net volume delta (m3) accumulated per body across all pairs this
+        # step, applied to live state only after every pair is computed.
+        net_delta_m3: Dict[str, float] = {
+            body_id: 0.0 for body_id in self._bodies
+        }
+
+        # First pass: compute all flows between adjacent bodies using the
+        # snapshot only.
         processed_pairs = set()
         for body_id_a, neighbors in list(self._adjacency.items()):
             for body_id_b in neighbors:
@@ -226,24 +240,24 @@ class WaterState:
 
                 body_a = self._bodies[body_id_a]
                 body_b = self._bodies[body_id_b]
+                depth_a = depth_snapshot[body_id_a]
+                depth_b = depth_snapshot[body_id_b]
 
                 # Determine which body is deeper; only flow from deeper to shallower
-                if body_a.depth_m > body_b.depth_m:
-                    deeper_body = body_a
-                    shallower_body = body_b
-                    source_id = body_id_a
-                    dest_id = body_id_b
-                elif body_b.depth_m > body_a.depth_m:
-                    deeper_body = body_b
-                    shallower_body = body_a
-                    source_id = body_id_b
-                    dest_id = body_id_a
+                if depth_a > depth_b:
+                    deeper_body, shallower_body = body_a, body_b
+                    deeper_depth, shallower_depth = depth_a, depth_b
+                    source_id, dest_id = body_id_a, body_id_b
+                elif depth_b > depth_a:
+                    deeper_body, shallower_body = body_b, body_a
+                    deeper_depth, shallower_depth = depth_b, depth_a
+                    source_id, dest_id = body_id_b, body_id_a
                 else:
                     # Depths equal, no flow
                     continue
 
                 # Compute the two candidate flows
-                depth_diff = deeper_body.depth_m - shallower_body.depth_m
+                depth_diff = deeper_depth - shallower_depth
                 rate_limited_flow = (
                     self.config.flow_rate_coefficient * depth_diff * dt
                 )
@@ -264,13 +278,9 @@ class WaterState:
                 # Apply the smaller flow to guarantee no overshoot
                 transfer_volume = min(rate_limited_flow, equalizing_flow)
 
-                # Update volumes
-                source_body = self._bodies[source_id]
-                dest_body = self._bodies[dest_id]
-                source_body.depth_m = max(
-                    0.0, source_body.depth_m - transfer_volume / source_body.surface_area_m2
-                )
-                dest_body.depth_m = dest_body.depth_m + transfer_volume / dest_body.surface_area_m2
+                # Accumulate net delta; do not mutate body state yet.
+                net_delta_m3[source_id] -= transfer_volume
+                net_delta_m3[dest_id] += transfer_volume
 
                 self._logger.info(
                     "Water flow between bodies",
@@ -284,7 +294,16 @@ class WaterState:
                     },
                 )
 
-        # Second pass: apply drainage to all bodies
+        # Second pass: apply the accumulated net delta from the snapshot to
+        # each body's actual depth, floored at zero.
+        for body_id, delta in net_delta_m3.items():
+            body = self._bodies[body_id]
+            body.depth_m = max(
+                0.0,
+                depth_snapshot[body_id] + delta / body.surface_area_m2,
+            )
+
+        # Third pass: apply drainage to all bodies
         for body in self._bodies.values():
             drainage_volume = body.drainage_rate_m3_s * dt
             if drainage_volume > 0:

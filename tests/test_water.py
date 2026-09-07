@@ -438,6 +438,56 @@ class TestWaterState:
 
         assert abs(depth_a - depth_b) < 1e-9
 
+    def test_flow_multi_neighbor_uses_start_of_step_snapshot(self):
+        """A body with two neighbors must compute both transfers from its
+        depth at the START of the step, not from a value already mutated by
+        processing the first pair.
+
+        Star topology: A connected to both B and C.
+        - A: area=10, depth=3.0
+        - B: area=5,  depth=1.0
+        - C: area=2,  depth=0.5
+        - flow_rate_coefficient = 0.1, dt = 1.0 s (rate-limited flow binds
+          for both pairs, since equalizing flow is much larger)
+
+        Pair A-B (using A's snapshot depth 3.0, not any mutated value):
+        - depth_diff = 2.0
+        - rate_limited = 0.1 * 2.0 * 1.0 = 0.2
+        - equalizing = 10*5*2.0/15 = 6.666... => transfer = 0.2 (A -> B)
+
+        Pair A-C (using A's snapshot depth 3.0):
+        - depth_diff = 2.5
+        - rate_limited = 0.1 * 2.5 * 1.0 = 0.25
+        - equalizing = 10*2*2.5/12 = 4.1666... => transfer = 0.25 (A -> C)
+
+        Net delta for A = -0.2 - 0.25 = -0.45 m³
+        - depth_A' = 3.0 + (-0.45 / 10) = 2.955 m
+        - depth_B' = 1.0 + (0.2 / 5) = 1.04 m
+        - depth_C' = 0.5 + (0.25 / 2) = 0.625 m
+
+        A buggy implementation that mutates A's depth after the A-B pair
+        (e.g. to 2.96) would use that mutated depth for the A-C pair instead
+        of the snapshot value, producing different (wrong) numbers.
+        """
+        config = WaterConfig(flow_rate_coefficient=0.1)
+        state = WaterState(config)
+
+        body_a = WaterBody(body_id="a", surface_area_m2=10.0, depth_m=3.0)
+        body_b = WaterBody(body_id="b", surface_area_m2=5.0, depth_m=1.0)
+        body_c = WaterBody(body_id="c", surface_area_m2=2.0, depth_m=0.5)
+
+        state.register_body(body_a)
+        state.register_body(body_b)
+        state.register_body(body_c)
+        state.connect_bodies("a", "b")
+        state.connect_bodies("a", "c")
+
+        state.step(dt=1.0, tick=1)
+
+        assert abs(state.get_body("a").depth_m - 2.955) < 1e-9
+        assert abs(state.get_body("b").depth_m - 1.04) < 1e-9
+        assert abs(state.get_body("c").depth_m - 0.625) < 1e-9
+
     def test_drainage_reduces_volume(self):
         """Test that drainage reduces water depth correctly."""
         config = WaterConfig()

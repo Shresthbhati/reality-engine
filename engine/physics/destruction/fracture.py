@@ -17,7 +17,7 @@ from typing import Optional, List, Dict, Any
 from engine.core.rng import DeterministicRNG
 from engine.core.logging import get_logger
 from engine.physics.math3 import Vec3
-from .interface import IDestructionBackend, FractureEvent
+from .interface import FractureEvent
 
 
 # Material fracture parameters (spec §12 Table 2.1)
@@ -60,7 +60,7 @@ FRACTURE_PARAMS = {
 MIN_FRAGMENT_SIZE_M = 0.05
 
 
-class BasicFractureSolver(IDestructionBackend):
+class BasicFractureSolver:
     """P1 fracture solver using impact-based breaking with deterministic shard generation.
 
     Invariants:

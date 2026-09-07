@@ -17,7 +17,6 @@ from .events import EventBus, Event, EventHandler, EventPriority
 from .lifecycle import WorldLifecycle, WorldState, LifecycleMetrics
 from .dependency_graph import DependencyGraph, System
 from .caching import (
-    Cache,
     LRUCache,
     QueryCache,
     TransformCache,
@@ -43,7 +42,6 @@ __all__ = [
     "LifecycleMetrics",
     "DependencyGraph",
     "System",
-    "Cache",
     "LRUCache",
     "QueryCache",
     "TransformCache",

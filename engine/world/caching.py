@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import Any, Callable, Generic, Optional, TypeVar, Dict, List
 from dataclasses import dataclass
-from abc import ABC, abstractmethod
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -26,31 +25,7 @@ class CacheEntry(Generic[T]):
     tick_accessed: int
 
 
-class Cache(ABC, Generic[K, T]):
-    """Abstract cache interface."""
-
-    @abstractmethod
-    def get(self, key: K) -> Optional[T]:
-        """Get value from cache."""
-        pass
-
-    @abstractmethod
-    def put(self, key: K, value: T) -> None:
-        """Store value in cache."""
-        pass
-
-    @abstractmethod
-    def invalidate(self, key: K) -> None:
-        """Invalidate a cache entry."""
-        pass
-
-    @abstractmethod
-    def clear(self) -> None:
-        """Clear all cache entries."""
-        pass
-
-
-class LRUCache(Cache[K, T]):
+class LRUCache(Generic[K, T]):
     """Least-Recently-Used cache with bounded size.
 
     When capacity is reached, least recently accessed entry is evicted.

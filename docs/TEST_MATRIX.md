@@ -39,6 +39,7 @@ issues. This is a real gap, not an oversight to gloss over; see
 | `test_physics_numerics.py` | REQ-013 | UNIT | — |
 | `test_physics_rigid_body.py` | REQ-010 | UNIT | — |
 | `test_provenance.py` | (provenance model, no REQ) | UNIT | — |
+| `test_rain.py` | REQ-032, REQ-014 (event bus) | UNIT | 58 |
 | `test_replay_system.py` | REQ-028 | UNIT | 29 |
 | `test_rng.py` | REQ-009 | UNIT | — |
 | `test_runtime_foundation.py` | REQ-003, REQ-018–021, REQ-024 | UNIT | — |
@@ -49,8 +50,8 @@ issues. This is a real gap, not an oversight to gloss over; see
 | `test_world_ir_v1.py` | REQ-002, REQ-004 | UNIT (round-trip/serialization) | 29 |
 | `test_world_runtime.py` | REQ-005, REQ-024 | UNIT | — |
 
-**Totals** (per `python -m pytest tests/ -q`): 430 tests, 100% passing,
-34 test files. Counts left as "—" above were not individually re-verified
+**Totals** (per `python -m pytest tests/ -q`): 488 tests, 100% passing,
+35 test files. Counts left as "—" above were not individually re-verified
 in this pass; re-run `pytest --collect-only -q` per file to refresh.
 
 ## Coverage gaps against §40

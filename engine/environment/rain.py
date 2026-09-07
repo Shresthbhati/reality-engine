@@ -17,6 +17,7 @@ from typing import Dict, Any, Optional
 
 from engine.core.rng import DeterministicRNG
 from engine.core.logging import get_logger
+from engine.world.events import EventBus
 
 
 class RainIntensity(str, Enum):
@@ -91,15 +92,19 @@ class RainState:
     band-change events (Task 2).
     """
 
-    def __init__(self, config: RainConfig):
+    def __init__(self, config: RainConfig, event_bus: Optional[EventBus] = None):
         """Initialize rain state.
 
         Args:
             config: RainConfig with max intensity, visibility params, seed
+            event_bus: Optional EventBus to publish "rain.intensity_changed"
+                events to on band changes. Default None preserves prior
+                (Task 1/2) behavior of no event publishing.
         """
         self._config = config
         self._rng = DeterministicRNG(config.seed)
         self._logger = get_logger("engine.environment.rain")
+        self._event_bus = event_bus
 
         # Current state
         self._intensity_mm_h = 0.0
@@ -218,8 +223,17 @@ class RainState:
                     "timestamp": timestamp,
                 },
             )
-            # EXTENSION POINT: Task 2 will hook band-change event publishing here
-            # self._publish_band_change_event()
+            if self._event_bus is not None:
+                self._event_bus.publish(
+                    event_type="rain.intensity_changed",
+                    tick=tick,
+                    timestamp=timestamp,
+                    data={
+                        "from_band": self._previous_band.value,
+                        "to_band": self._current_band.value,
+                        "intensity_mm_h": self._intensity_mm_h,
+                    },
+                )
 
     def intensity_band(self) -> RainIntensity:
         """Classify current intensity into a meteorological band.
@@ -266,6 +280,26 @@ class RainState:
         Conversion: 1 mm/h = 1/3600000 m/s
         """
         return self._intensity_mm_h / 3600000.0
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get current rain diagnostics for debugging/inspection.
+
+        Returns:
+            Dict with current intensity (mm/h), band, visibility factor,
+            registered surface count, and total accumulated volume (m3)
+            across all surfaces (sum of depth * area per surface).
+        """
+        total_volume_m3 = sum(
+            surface.accumulated_depth_m * surface.area_m2
+            for surface in self._surfaces.values()
+        )
+        return {
+            "intensity_mm_h": self._intensity_mm_h,
+            "band": self._current_band.value,
+            "visibility_factor": self.visibility_factor(),
+            "surface_count": len(self._surfaces),
+            "total_accumulated_volume_m3": total_volume_m3,
+        }
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize rain state to dictionary.

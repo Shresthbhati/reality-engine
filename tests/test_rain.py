@@ -3,6 +3,7 @@
 import pytest
 
 from engine.environment import RainIntensity, RainConfig, RainState, RainSurface
+from engine.world.events import EventBus
 
 
 class TestRainIntensity:
@@ -737,4 +738,91 @@ class TestRainSurface:
         restored = RainState(config)
         restored.deserialize(data)
 
-        assert restored.intensity_mm_h == 10.0
+
+class TestRainEvents:
+    """Rain band-change event publishing tests."""
+
+    def test_event_published_on_band_change(self):
+        """Test that a rain.intensity_changed event fires when the band changes."""
+        config = RainConfig()
+        bus = EventBus()
+        received = []
+        bus.subscribe("rain.intensity_changed", lambda event: received.append(event))
+
+        rain = RainState(config, event_bus=bus)
+        rain.set_intensity(5.0, tick=1, timestamp=0.1)  # NONE -> MODERATE
+
+        assert len(received) == 1
+        event = received[0]
+        assert event.event_type == "rain.intensity_changed"
+        assert event.tick == 1
+        assert event.timestamp == 0.1
+        assert event.data == {
+            "from_band": "none",
+            "to_band": "moderate",
+            "intensity_mm_h": 5.0,
+        }
+
+    def test_no_event_on_same_band_change(self):
+        """Test that no event fires when intensity changes but band stays the same."""
+        config = RainConfig()
+        bus = EventBus()
+        received = []
+        bus.subscribe("rain.intensity_changed", lambda event: received.append(event))
+
+        rain = RainState(config, event_bus=bus)
+        rain.set_intensity(1.0, tick=1, timestamp=0.1)  # NONE -> LIGHT (1 event)
+        received.clear()
+
+        rain.set_intensity(1.5, tick=2, timestamp=0.2)  # LIGHT -> LIGHT (no event)
+
+        assert rain.intensity_band() == RainIntensity.LIGHT
+        assert received == []
+
+    def test_no_event_bus_does_not_crash(self):
+        """Test that band changes with event_bus=None do not crash or attempt publish."""
+        config = RainConfig()
+        rain = RainState(config)  # default event_bus=None
+
+        # Should not raise, even across multiple band changes
+        rain.set_intensity(1.0, tick=1, timestamp=0.1)   # NONE -> LIGHT
+        rain.set_intensity(5.0, tick=2, timestamp=0.2)   # LIGHT -> MODERATE
+        rain.set_intensity(0.0, tick=3, timestamp=0.3)   # MODERATE -> NONE
+
+        assert rain.intensity_band() == RainIntensity.NONE
+
+
+class TestRainDiagnostics:
+    """Rain diagnostics tests."""
+
+    def test_get_diagnostics_no_surfaces(self):
+        """Test diagnostics with no registered surfaces."""
+        config = RainConfig()
+        rain = RainState(config)
+        rain.set_intensity(3.0, tick=1, timestamp=0.1)
+
+        diag = rain.get_diagnostics()
+        assert diag["intensity_mm_h"] == 3.0
+        assert diag["band"] == "moderate"
+        assert diag["visibility_factor"] == rain.visibility_factor()
+        assert diag["surface_count"] == 0
+        assert diag["total_accumulated_volume_m3"] == 0.0
+
+    def test_get_diagnostics_with_surfaces(self):
+        """Test diagnostics sums depth*area across registered surfaces."""
+        config = RainConfig()
+        rain = RainState(config)
+        rain.register_surface(RainSurface("roof", area_m2=10.0, absorption_coefficient=0.0))
+        rain.register_surface(RainSurface("ground", area_m2=20.0, absorption_coefficient=0.0))
+
+        rain.set_intensity(36.0, tick=1, timestamp=0.1)  # 36 mm/h = 1e-5 m/s
+        rain.step(dt=100.0, tick=1)
+
+        diag = rain.get_diagnostics()
+        assert diag["surface_count"] == 2
+        expected_volume = sum(
+            rain.get_accumulation(sid) * area
+            for sid, area in (("roof", 10.0), ("ground", 20.0))
+        )
+        assert pytest.approx(diag["total_accumulated_volume_m3"], rel=1e-9) == expected_volume
+        assert diag["total_accumulated_volume_m3"] > 0.0

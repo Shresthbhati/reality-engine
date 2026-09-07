@@ -185,16 +185,14 @@ class RainState:
         """
         return self.to_dict()
 
-    @classmethod
-    def from_dict(cls, config: RainConfig, data: Dict[str, Any]) -> RainState:
-        """Deserialize rain state from dictionary.
+    def deserialize(self, data: dict) -> None:
+        """Restore rain state from dictionary into this instance.
+
+        Modifies the current RainState object in place, restoring all fields
+        from the serialized data. Raises ValueError on unsupported format_version.
 
         Args:
-            config: RainConfig to use for restored state
             data: Serialized state dict (must have format_version: 1)
-
-        Returns:
-            Restored RainState
 
         Raises:
             ValueError: If format_version is not 1
@@ -204,23 +202,29 @@ class RainState:
                 f"Unsupported rain state format_version: {data.get('format_version')}"
             )
 
-        state = cls(config)
-        state._intensity_mm_h = data.get("intensity_mm_h", 0.0)
-        state._last_tick = data.get("last_tick", 0)
-        state._last_timestamp = data.get("last_timestamp", 0.0)
-        state._current_band = RainIntensity(data.get("intensity_band", "none"))
-
-        return state
+        self._intensity_mm_h = data.get("intensity_mm_h", 0.0)
+        self._last_tick = data.get("last_tick", 0)
+        self._last_timestamp = data.get("last_timestamp", 0.0)
+        self._current_band = RainIntensity(data.get("intensity_band", "none"))
 
     @classmethod
-    def deserialize(cls, config: RainConfig, data: Dict[str, Any]) -> RainState:
-        """Alias for from_dict() following established pattern.
+    def from_dict(cls, config: RainConfig, data: Dict[str, Any]) -> RainState:
+        """Deserialize rain state from dictionary (classmethod variant).
+
+        Creates a new RainState and restores it from serialized data.
+        Provided for backward compatibility. For new code, use the instance
+        method deserialize(data) instead.
 
         Args:
-            config: RainConfig to use for restored state
-            data: Serialized state dict
+            config: RainConfig to use for the new state
+            data: Serialized state dict (must have format_version: 1)
 
         Returns:
             Restored RainState
+
+        Raises:
+            ValueError: If format_version is not 1
         """
-        return cls.from_dict(config, data)
+        state = cls(config)
+        state.deserialize(data)
+        return state

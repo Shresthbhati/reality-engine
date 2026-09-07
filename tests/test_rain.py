@@ -246,17 +246,21 @@ class TestRainState:
                 f"Visibility not monotonic: {factors[i]} should be >= {factors[i + 1]}"
 
     def test_visibility_factor_floored_at_0_1(self):
-        """Test that visibility factor never goes below 0.1."""
-        config = RainConfig(visibility_reduction_per_mm_h=0.015)
+        """Test that visibility factor is floored at 0.1 when reduction clamps to 0.9."""
+        # Use high reduction coefficient so max intensity hits the 0.9 clamp
+        # max_intensity_mm_h=50.0, visibility_reduction_per_mm_h=0.02
+        # => reduction = 50.0 * 0.02 = 1.0, clamped to 0.9
+        # => visibility_factor = 1.0 - 0.9 = 0.1
+        config = RainConfig(max_intensity_mm_h=50.0, visibility_reduction_per_mm_h=0.02)
         rain = RainState(config)
 
-        # Test at max intensity
+        # Set to max intensity; reduction should clamp to 0.9, floor to 0.1
         rain.set_intensity(50.0, tick=1, timestamp=0.1)
-        assert rain.visibility_factor() >= 0.1
+        assert pytest.approx(rain.visibility_factor(), rel=1e-9) == 0.1
 
-        # Test at extreme levels (clamped to max)
+        # Even higher intensity (clamped to max): still 0.1
         rain.set_intensity(1000.0, tick=2, timestamp=0.2)
-        assert rain.visibility_factor() >= 0.1
+        assert pytest.approx(rain.visibility_factor(), rel=1e-9) == 0.1
 
     def test_intensity_m_s_conversion(self):
         """Test conversion from mm/h to m/s."""
@@ -314,24 +318,27 @@ class TestRainState:
         assert restored._last_tick == 10
         assert restored._last_timestamp == 1.0
 
-    def test_deserialize_alias(self):
-        """Test that deserialize() is an alias for from_dict()."""
+    def test_deserialize_instance_method(self):
+        """Test that deserialize() instance method restores state in place."""
         config = RainConfig()
         original = RainState(config)
 
         original.set_intensity(25.0, tick=10, timestamp=1.0)
         data = original.serialize()
 
-        # Test both methods
-        restored1 = RainState.from_dict(config, data)
-        restored2 = RainState.deserialize(config, data)
+        # Use instance method deserialize
+        restored = RainState(config)
+        restored.deserialize(data)
 
-        assert restored1.intensity_mm_h == restored2.intensity_mm_h
-        assert restored1.intensity_band() == restored2.intensity_band()
+        assert restored.intensity_mm_h == 25.0
+        assert restored.intensity_band() == RainIntensity.HEAVY
+        assert restored._last_tick == 10
+        assert restored._last_timestamp == 1.0
 
     def test_deserialize_unsupported_version(self):
         """Test that deserialize raises ValueError on unsupported format_version."""
         config = RainConfig()
+        rain = RainState(config)
 
         bad_data = {
             "format_version": 2,  # Unsupported version
@@ -339,7 +346,7 @@ class TestRainState:
         }
 
         with pytest.raises(ValueError, match="Unsupported rain state format_version"):
-            RainState.deserialize(config, bad_data)
+            rain.deserialize(bad_data)
 
     def test_round_trip_serialization(self):
         """Test full serialize/deserialize round-trip."""
@@ -362,8 +369,9 @@ class TestRainState:
             # Serialize
             data = original.serialize()
 
-            # Deserialize
-            restored = RainState.deserialize(config, data)
+            # Deserialize using instance method
+            restored = RainState(config)
+            restored.deserialize(data)
 
             # Verify all state
             assert restored.intensity_mm_h == intensity

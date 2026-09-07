@@ -45,12 +45,12 @@ issues. This is a real gap, not an oversight to gloss over; see
 | `test_serialization.py` | REQ-004 | UNIT | — |
 | `test_units.py` | REQ-008 | UNIT | — |
 | `test_viewport.py` | REQ-029 | UNIT | 12 |
-| `test_water.py` | REQ-032, REQ-014 (event publishing) | UNIT | 42 |
+| `test_water.py` | REQ-032, REQ-014 (event publishing) | UNIT | 47 |
 | `test_world_ir.py` | REQ-002 | UNIT | — |
 | `test_world_ir_v1.py` | REQ-002, REQ-004 | UNIT (round-trip/serialization) | 29 |
 | `test_world_runtime.py` | REQ-005, REQ-024 | UNIT + REGRESSION (2 of 5 tests guard the 2026-09-07 V1-schema fix, DECISIONS.md #14) | 5 |
 
-**Totals** (per `python -m pytest tests/ -q`): 474 tests, 100% passing,
+**Totals** (per `python -m pytest tests/ -q`): 479 tests, 100% passing,
 35 test files. Counts left as "—" above were not individually re-verified
 in this pass; re-run `pytest --collect-only -q` per file to refresh.
 

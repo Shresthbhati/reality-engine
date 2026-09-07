@@ -426,7 +426,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 - **Dependency**: REQ-014 (event bus). Does NOT depend on the Step 19 rain REQ — water and rain are independent environment subsystems; nothing in water reads rain state or vice versa
 - **Status**: TESTED
 - **Files**: `engine/environment/water.py`, `engine/environment/__init__.py`
-- **Tests**: `tests/test_water.py` (41 tests)
+- **Tests**: `tests/test_water.py` (47 tests)
 - **Benchmark**: None
 - **Verification**: volume computation; buoyancy worked example; snapshot-based flow equalization between adjacent bodies (rate-limited vs. equalizing flow, no overshoot); multi-neighbor start-of-step snapshot consistency; drainage floored at zero; serialize/deserialize round-trip including adjacency and drainage; overflow event fires exactly once on the step a body's depth crosses above `max_depth_m`, does not refire on subsequent steps spent above threshold, does not fire when `max_depth_m` is `None`, and does not crash when `event_bus` is `None` (default)
 - **Limitations**: P1 simplification — `flow_rate_coefficient` is a tunable constant, not a real hydraulic property; no pressure field; no obstruction/object interaction beyond the buoyancy force calculation; no wave propagation
@@ -478,7 +478,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 
 ### Test Coverage
 
-- **Total Tests**: 474 (all passing)
+- **Total Tests**: 479 (all passing)
 - **New Tests This Session**: 255 tests
   - Runtime foundation: 44 tests
   - Dependency graph & caching: 30 tests
@@ -489,7 +489,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
   - Viewport: 12 tests (Step 16)
   - Inspector: 28 tests (Step 17)
   - Physics Debugger: 10 tests (Step 18)
-  - Water: 42 tests (Step 20)
+  - Water: 47 tests (Step 20)
 - **Coverage**: 100% of tested requirements
 
 ### Critical Blockers

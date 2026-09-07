@@ -519,6 +519,103 @@ class TestWaterState:
         assert abs(state.get_body("b").depth_m - 1.04) < 1e-9
         assert abs(state.get_body("c").depth_m - 0.625) < 1e-9
 
+    def test_star_topology_conserves_total_volume(self):
+        """Regression: a source with 3 neighbours must never give away more
+        than it holds.
+
+        Each pair's equalizing flow is computed in isolation, so with a high
+        flow_rate_coefficient the equalizing branch binds for all three pairs
+        and their sum (1.5 m3) exceeds the source's entire volume (1.0 m3).
+        The old code floored the source at depth 0 while every neighbour kept
+        its full gain, fabricating 50% more water than existed.
+        """
+        config = WaterConfig(flow_rate_coefficient=100.0)
+        state = WaterState(config)
+
+        state.register_body(
+            WaterBody(body_id="src", surface_area_m2=1.0, depth_m=1.0)
+        )
+        for name in ("n1", "n2", "n3"):
+            state.register_body(
+                WaterBody(body_id=name, surface_area_m2=1.0, depth_m=0.0)
+            )
+            state.connect_bodies("src", name)
+
+        before = state.get_diagnostics()["total_volume_m3"]
+        assert abs(before - 1.0) < 1e-12
+
+        state.step(dt=1.0, tick=1)
+
+        after = state.get_diagnostics()["total_volume_m3"]
+        assert abs(after - before) < 1e-9
+        # And no body ends up negative / the source is emptied at most fully.
+        assert state.get_body("src").depth_m >= 0.0
+
+    def test_serialize_is_deterministic_across_identical_states(self):
+        """serialize() must not depend on set iteration order."""
+        import json
+
+        def build():
+            state = WaterState(WaterConfig())
+            for name in ("zeta", "alpha", "mid", "beta"):
+                state.register_body(
+                    WaterBody(body_id=name, surface_area_m2=1.0, depth_m=1.0)
+                )
+            state.connect_bodies("zeta", "alpha")
+            state.connect_bodies("mid", "beta")
+            state.connect_bodies("alpha", "mid")
+            return state
+
+        a = json.dumps(build().serialize())
+        b = json.dumps(build().serialize())
+        assert a == b
+        # Adjacency is emitted in sorted order, not hash order.
+        assert build().serialize()["adjacency"] == [
+            ["alpha", "mid"],
+            ["alpha", "zeta"],
+            ["beta", "mid"],
+        ]
+
+    def test_get_diagnostics_hand_computed(self):
+        """total_volume_m3, body_count and connection_count for a known topology."""
+        state = WaterState(WaterConfig())
+        state.register_body(
+            WaterBody(body_id="a", surface_area_m2=10.0, depth_m=2.0)
+        )  # 20 m3
+        state.register_body(
+            WaterBody(body_id="b", surface_area_m2=5.0, depth_m=1.0)
+        )  # 5 m3
+        state.register_body(
+            WaterBody(body_id="c", surface_area_m2=2.0, depth_m=0.5)
+        )  # 1 m3
+        state.connect_bodies("a", "b")
+        state.connect_bodies("a", "c")
+
+        diagnostics = state.get_diagnostics()
+        assert diagnostics["total_volume_m3"] == 26.0
+        assert diagnostics["body_count"] == 3
+        # 4 directed entries in the adjacency dict => 2 undirected edges.
+        assert diagnostics["connection_count"] == 2
+
+    def test_deserialize_rejects_adjacency_to_unknown_body(self):
+        """An adjacency pair naming an unregistered body is a clean ValueError."""
+        state = WaterState(WaterConfig())
+        data = {
+            "format_version": 1,
+            "bodies": {"lake_a": {"surface_area_m2": 10.0, "depth_m": 2.0}},
+            "adjacency": [["lake_a", "ghost"]],
+        }
+        with pytest.raises(
+            ValueError, match="Adjacency pair references unknown water body: 'ghost'"
+        ):
+            state.deserialize(data)
+
+    def test_buoyancy_unknown_body_reported_before_volume_validation(self):
+        """Unknown body id wins over a bad volume argument."""
+        state = WaterState(WaterConfig())
+        with pytest.raises(ValueError, match="Unknown water body: 'nope'"):
+            state.buoyancy_force_n("nope", submerged_volume_m3=-1.0)
+
     def test_drainage_reduces_volume(self):
         """Test that drainage reduces water depth correctly."""
         config = WaterConfig()

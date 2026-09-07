@@ -152,12 +152,12 @@ class WaterState:
         Raises:
             ValueError: If submerged_volume_m3 < 0 or exceeds the body's volume.
         """
+        body = self.get_body(body_id)
         if submerged_volume_m3 < 0:
             raise ValueError(
                 f"submerged_volume_m3 must be >= 0, got {submerged_volume_m3}"
             )
 
-        body = self.get_body(body_id)
         if submerged_volume_m3 > body.volume_m3:
             raise ValueError(
                 f"submerged_volume_m3 ({submerged_volume_m3}) exceeds "
@@ -241,17 +241,20 @@ class WaterState:
             )
             for body_id, body in self._bodies.items()
         }
-        # Net volume delta (m3) accumulated per body across all pairs this
-        # step, applied to live state only after every pair is computed.
-        net_delta_m3: Dict[str, float] = {
-            body_id: 0.0 for body_id in self._bodies
-        }
+        # Per-pair transfers computed this step, as (source_id, dest_id,
+        # volume_m3). Kept per-pair (not just netted) so a source with
+        # several neighbours can have its outflows scaled down below.
+        transfers: list = []
+        # Total volume each body is scheduled to give away this step.
+        outflow_m3: Dict[str, float] = {body_id: 0.0 for body_id in self._bodies}
 
         # First pass: compute all flows between adjacent bodies using the
-        # snapshot only.
+        # snapshot only. Neighbour ids are sorted so iteration order (and
+        # therefore logging/float accumulation order) is deterministic
+        # across processes, which set iteration is not.
         processed_pairs = set()
-        for body_id_a, neighbors in list(self._adjacency.items()):
-            for body_id_b in neighbors:
+        for body_id_a in sorted(self._adjacency):
+            for body_id_b in sorted(self._adjacency[body_id_a]):
                 # Avoid processing the same pair twice
                 pair_key = tuple(sorted([body_id_a, body_id_b]))
                 if pair_key in processed_pairs:
@@ -298,9 +301,9 @@ class WaterState:
                 # Apply the smaller flow to guarantee no overshoot
                 transfer_volume = min(rate_limited_flow, equalizing_flow)
 
-                # Accumulate net delta; do not mutate body state yet.
-                net_delta_m3[source_id] -= transfer_volume
-                net_delta_m3[dest_id] += transfer_volume
+                # Record the pair transfer; do not mutate body state yet.
+                transfers.append((source_id, dest_id, transfer_volume))
+                outflow_m3[source_id] += transfer_volume
 
                 self._logger.info(
                     "Water flow between bodies",
@@ -314,7 +317,25 @@ class WaterState:
                     },
                 )
 
-        # Second pass: apply the accumulated net delta from the snapshot to
+        # Second pass: each pair's equalizing clamp is computed in isolation,
+        # so a body with several neighbours can be scheduled to give away
+        # more than it holds. Scale that body's outgoing transfers down so
+        # its total outflow never exceeds its snapshot volume — otherwise the
+        # depth floor below would truncate the source's loss while every
+        # destination kept its full gain, creating water from nothing.
+        scale: Dict[str, float] = {}
+        for body_id, total_out in outflow_m3.items():
+            available = self._bodies[body_id].surface_area_m2 * depth_snapshot[body_id]
+            if total_out > available:
+                scale[body_id] = available / total_out if total_out > 0 else 0.0
+
+        net_delta_m3: Dict[str, float] = {body_id: 0.0 for body_id in self._bodies}
+        for source_id, dest_id, volume in transfers:
+            volume *= scale.get(source_id, 1.0)
+            net_delta_m3[source_id] -= volume
+            net_delta_m3[dest_id] += volume
+
+        # Third pass: apply the accumulated net delta from the snapshot to
         # each body's actual depth, floored at zero.
         for body_id, delta in net_delta_m3.items():
             body = self._bodies[body_id]
@@ -409,14 +430,14 @@ class WaterState:
             }
 
         # Serialize adjacency as list of sorted pairs (to avoid duplicates)
-        adjacency_pairs = []
+        # Sorted throughout: set iteration order is not stable across
+        # processes (PYTHONHASHSEED), and serialize() output must be
+        # bit-identical for the same state.
         processed = set()
-        for body_id_a, neighbors in self._adjacency.items():
-            for body_id_b in neighbors:
-                pair_key = tuple(sorted([body_id_a, body_id_b]))
-                if pair_key not in processed:
-                    adjacency_pairs.append(list(pair_key))
-                    processed.add(pair_key)
+        for body_id_a in sorted(self._adjacency):
+            for body_id_b in sorted(self._adjacency[body_id_a]):
+                processed.add(tuple(sorted([body_id_a, body_id_b])))
+        adjacency_pairs = [list(pair) for pair in sorted(processed)]
 
         return {
             "format_version": self.format_version,
@@ -458,6 +479,12 @@ class WaterState:
         for pair in data.get("adjacency", []):
             if len(pair) == 2:
                 body_id_a, body_id_b = pair
+                for body_id in (body_id_a, body_id_b):
+                    if body_id not in self._bodies:
+                        raise ValueError(
+                            f"Adjacency pair references unknown water body: "
+                            f"'{body_id}'"
+                        )
                 # Use internal adjacency dict directly to avoid duplicate validation
                 if body_id_a not in self._adjacency:
                     self._adjacency[body_id_a] = set()

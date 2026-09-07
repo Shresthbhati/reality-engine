@@ -1,9 +1,10 @@
 """Water body simulation: depth, volume, buoyancy."""
 
 from dataclasses import dataclass
-from typing import Dict, Set
+from typing import Any, Dict, Optional, Set
 
 from engine.core.logging import get_logger
+from engine.world.events import EventBus
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class WaterBody:
         surface_area_m2: float,
         depth_m: float = 0.0,
         drainage_rate_m3_s: float = 0.0,
+        max_depth_m: Optional[float] = None,
     ):
         """Initialize a water body.
 
@@ -44,6 +46,8 @@ class WaterBody:
             surface_area_m2: Surface area in square meters.
             depth_m: Current depth in meters (default 0.0).
             drainage_rate_m3_s: Volume drained per second (default 0.0).
+            max_depth_m: Optional overflow threshold in meters (default None
+                = no limit). Used by WaterState.step() to detect overflow.
 
         Raises:
             ValueError: If surface_area_m2 <= 0 or drainage_rate_m3_s < 0.
@@ -60,6 +64,7 @@ class WaterBody:
         self.surface_area_m2 = surface_area_m2
         self.depth_m = depth_m
         self.drainage_rate_m3_s = drainage_rate_m3_s
+        self.max_depth_m = max_depth_m
 
     @property
     def volume_m3(self) -> float:
@@ -70,17 +75,21 @@ class WaterBody:
 class WaterState:
     """Manages multiple water bodies and computes water physics."""
 
-    def __init__(self, config: WaterConfig):
+    def __init__(self, config: WaterConfig, event_bus: Optional[EventBus] = None):
         """Initialize water state with a config.
 
         Args:
             config: WaterConfig instance.
+            event_bus: Optional EventBus to publish "water.body_overflowed"
+                events to on overflow crossings. Default None preserves
+                prior (Task 1/2) behavior of no event publishing.
         """
         self.config = config
         self._bodies: Dict[str, WaterBody] = {}
         self._adjacency: Dict[str, Set[str]] = {}
         self.format_version = 1
         self._logger = get_logger("engine.environment.water")
+        self._event_bus = event_bus
 
     def register_body(self, body: WaterBody) -> None:
         """Register a water body.
@@ -221,6 +230,17 @@ class WaterState:
         depth_snapshot = {
             body_id: body.depth_m for body_id, body in self._bodies.items()
         }
+        # Snapshot overflow status BEFORE this step's flow/drainage, so we
+        # can detect a body newly crossing above max_depth_m this step
+        # (fires once on the crossing, not on every subsequent step spent
+        # above the threshold).
+        was_overflowing = {
+            body_id: (
+                body.max_depth_m is not None
+                and depth_snapshot[body_id] > body.max_depth_m
+            )
+            for body_id, body in self._bodies.items()
+        }
         # Net volume delta (m3) accumulated per body across all pairs this
         # step, applied to live state only after every pair is computed.
         net_delta_m3: Dict[str, float] = {
@@ -318,6 +338,60 @@ class WaterState:
                         "drainage_m3": drainage_volume,
                     },
                 )
+
+        # Fourth pass: detect newly-crossed overflow (depth now above
+        # max_depth_m, wasn't before this step) and publish an event.
+        for body_id, body in self._bodies.items():
+            if body.max_depth_m is None:
+                continue
+            is_overflowing = body.depth_m > body.max_depth_m
+            if is_overflowing and not was_overflowing[body_id]:
+                self._logger.info(
+                    "Water body overflowed",
+                    context={
+                        "tick": tick,
+                        "body_id": body_id,
+                        "depth_m": body.depth_m,
+                        "max_depth_m": body.max_depth_m,
+                    },
+                )
+                if self._event_bus is not None:
+                    self._event_bus.publish(
+                        event_type="water.body_overflowed",
+                        tick=tick,
+                        timestamp=float(tick),
+                        data={
+                            "body_id": body_id,
+                            "depth_m": body.depth_m,
+                            "max_depth_m": body.max_depth_m,
+                        },
+                    )
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get current water diagnostics for debugging/inspection.
+
+        Returns:
+            Dict with total volume across all bodies (m3), body count,
+            connection count, and overflowing body count (bodies currently
+            above their max_depth_m).
+        """
+        total_volume_m3 = sum(
+            body.volume_m3 for body in self._bodies.values()
+        )
+        connection_count = sum(
+            len(neighbors) for neighbors in self._adjacency.values()
+        ) // 2
+        overflowing_count = sum(
+            1
+            for body in self._bodies.values()
+            if body.max_depth_m is not None and body.depth_m > body.max_depth_m
+        )
+        return {
+            "total_volume_m3": total_volume_m3,
+            "body_count": len(self._bodies),
+            "connection_count": connection_count,
+            "overflowing_body_count": overflowing_count,
+        }
 
     def serialize(self) -> dict:
         """Serialize all registered water bodies, adjacency, and drainage rates.

@@ -3,6 +3,7 @@
 import pytest
 
 from engine.environment.water import WaterConfig, WaterBody, WaterState
+from engine.world.events import EventBus
 
 
 class TestWaterBody:
@@ -640,3 +641,69 @@ class TestWaterState:
         # Adjacency should be preserved
         assert "lake_b" in state2._adjacency["lake_a"]
         assert "lake_a" in state2._adjacency["lake_b"]
+
+
+class TestWaterEvents:
+    """Tests for overflow event publishing via WaterState.step()."""
+
+    def _make_overflow_scenario(self, event_bus=None, max_depth_m=0.05):
+        """Two connected bodies: a deep source and a shallow, max-depth-limited sink."""
+        config = WaterConfig(flow_rate_coefficient=0.5)
+        state = WaterState(config, event_bus=event_bus)
+        deep = WaterBody(body_id="deep", surface_area_m2=100.0, depth_m=10.0)
+        shallow = WaterBody(
+            body_id="shallow",
+            surface_area_m2=1.0,
+            depth_m=0.0,
+            max_depth_m=max_depth_m,
+        )
+        state.register_body(deep)
+        state.register_body(shallow)
+        state.connect_bodies("deep", "shallow")
+        return state
+
+    def test_event_published_once_on_crossing(self):
+        """Event fires exactly once on the step where depth crosses above max_depth_m."""
+        events = []
+        bus = EventBus()
+        bus.subscribe("water.body_overflowed", lambda e: events.append(e))
+        state = self._make_overflow_scenario(event_bus=bus)
+
+        state.step(dt=0.1, tick=1)
+        assert state.get_body("shallow").depth_m > 0.05
+        assert len(events) == 1
+        assert events[0].data["body_id"] == "shallow"
+        assert events[0].data["max_depth_m"] == 0.05
+        assert events[0].data["depth_m"] > 0.05
+
+    def test_no_repeated_event_while_still_over_threshold(self):
+        """Staying above max_depth_m on subsequent steps does not refire the event."""
+        events = []
+        bus = EventBus()
+        bus.subscribe("water.body_overflowed", lambda e: events.append(e))
+        state = self._make_overflow_scenario(event_bus=bus)
+
+        state.step(dt=0.1, tick=1)
+        assert len(events) == 1
+
+        state.step(dt=0.1, tick=2)
+        state.step(dt=0.1, tick=3)
+        assert state.get_body("shallow").depth_m > 0.05
+        assert len(events) == 1
+
+    def test_no_event_when_max_depth_is_none(self):
+        """No max_depth_m set means no overflow detection, even if depth grows large."""
+        events = []
+        bus = EventBus()
+        bus.subscribe("water.body_overflowed", lambda e: events.append(e))
+        state = self._make_overflow_scenario(event_bus=bus, max_depth_m=None)
+
+        state.step(dt=0.1, tick=1)
+        assert len(events) == 0
+
+    def test_no_crash_when_event_bus_is_none(self):
+        """event_bus=None (the default) must not crash on an overflow crossing."""
+        state = self._make_overflow_scenario(event_bus=None)
+
+        state.step(dt=0.1, tick=1)  # must not raise
+        assert state.get_body("shallow").depth_m > 0.05

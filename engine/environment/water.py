@@ -405,6 +405,7 @@ class WaterState:
                 "surface_area_m2": body.surface_area_m2,
                 "depth_m": body.depth_m,
                 "drainage_rate_m3_s": body.drainage_rate_m3_s,
+                "max_depth_m": body.max_depth_m,
             }
 
         # Serialize adjacency as list of sorted pairs (to avoid duplicates)
@@ -449,6 +450,7 @@ class WaterState:
                 surface_area_m2=body_data["surface_area_m2"],
                 depth_m=body_data["depth_m"],
                 drainage_rate_m3_s=body_data.get("drainage_rate_m3_s", 0.0),
+                max_depth_m=body_data.get("max_depth_m"),
             )
             self.register_body(body)
 

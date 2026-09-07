@@ -255,6 +255,36 @@ class TestWaterState:
         force2 = state2.buoyancy_force_n("lake1", submerged_volume_m3=10.0)
         assert force1 == force2
 
+    def test_serialize_deserialize_roundtrip_preserves_max_depth_m(self):
+        """max_depth_m must survive a serialize->deserialize roundtrip
+        (regression: it was previously dropped, silently losing the
+        overflow threshold and breaking get_diagnostics() post-restore)."""
+        config = WaterConfig()
+        state = WaterState(config)
+
+        body = WaterBody(
+            body_id="pond1",
+            surface_area_m2=10.0,
+            depth_m=0.3,
+            max_depth_m=0.2,
+        )
+        state.register_body(body)
+
+        data = state.serialize()
+
+        state2 = WaterState(config)
+        state2.deserialize(data)
+
+        restored = state2.get_body("pond1")
+        assert restored.max_depth_m == 0.2
+
+        # Overflow status is re-derivable from depth_m + max_depth_m alone;
+        # no separate "was_overflowing" state is persisted (that flag is
+        # in-memory only, scoped to a single step() call), so diagnostics
+        # correctly report the restored body as overflowing.
+        diagnostics = state2.get_diagnostics()
+        assert diagnostics["overflowing_body_count"] == 1
+
     def test_deserialize_format_version_mismatch(self):
         """Test that format_version mismatch raises ValueError."""
         config = WaterConfig()

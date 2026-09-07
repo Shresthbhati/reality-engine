@@ -478,8 +478,8 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 
 ### Test Coverage
 
-- **Total Tests**: 473 (all passing)
-- **New Tests This Session**: 212 tests
+- **Total Tests**: 474 (all passing)
+- **New Tests This Session**: 255 tests
   - Runtime foundation: 44 tests
   - Dependency graph & caching: 30 tests
   - Fracture system: 18 tests
@@ -489,7 +489,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
   - Viewport: 12 tests (Step 16)
   - Inspector: 28 tests (Step 17)
   - Physics Debugger: 10 tests (Step 18)
-  - Water: 41 tests (Step 20)
+  - Water: 42 tests (Step 20)
 - **Coverage**: 100% of tested requirements
 
 ### Critical Blockers

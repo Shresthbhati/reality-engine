@@ -1,8 +1,8 @@
-"""Tests for rain intensity model."""
+"""Tests for rain intensity model and surface accumulation."""
 
 import pytest
 
-from engine.environment import RainIntensity, RainConfig, RainState
+from engine.environment import RainIntensity, RainConfig, RainState, RainSurface
 
 
 class TestRainIntensity:
@@ -435,3 +435,306 @@ class TestRainState:
 
         assert rain1.intensity_mm_h == rain2.intensity_mm_h == 20.0
         assert rain1.visibility_factor() == rain2.visibility_factor()
+
+
+class TestRainSurface:
+    """Rain surface accumulation tests."""
+
+    def test_rain_surface_initialization(self):
+        """Test RainSurface initialization with defaults."""
+        surface = RainSurface("test_surface", area_m2=100.0)
+
+        assert surface.surface_id == "test_surface"
+        assert surface.area_m2 == 100.0
+        assert surface.absorption_coefficient == 0.3
+        assert surface.accumulated_depth_m == 0.0
+
+    def test_rain_surface_custom_absorption(self):
+        """Test RainSurface with custom absorption coefficient."""
+        surface = RainSurface(
+            "roof",
+            area_m2=50.0,
+            absorption_coefficient=0.1,
+        )
+
+        assert surface.absorption_coefficient == 0.1
+        assert surface.accumulated_depth_m == 0.0
+
+    def test_rain_surface_absorption_zero(self):
+        """Test RainSurface with zero absorption (all rain accumulates)."""
+        surface = RainSurface("impermeable", area_m2=25.0, absorption_coefficient=0.0)
+        assert surface.absorption_coefficient == 0.0
+
+    def test_rain_surface_absorption_one(self):
+        """Test RainSurface with full absorption (no accumulation)."""
+        surface = RainSurface("soil", area_m2=75.0, absorption_coefficient=1.0)
+        assert surface.absorption_coefficient == 1.0
+
+    def test_rain_surface_absorption_out_of_range_high(self):
+        """Test that absorption > 1.0 raises ValueError."""
+        with pytest.raises(ValueError, match="absorption_coefficient must be in"):
+            RainSurface("bad", area_m2=10.0, absorption_coefficient=1.1)
+
+    def test_rain_surface_absorption_out_of_range_low(self):
+        """Test that absorption < 0.0 raises ValueError."""
+        with pytest.raises(ValueError, match="absorption_coefficient must be in"):
+            RainSurface("bad", area_m2=10.0, absorption_coefficient=-0.1)
+
+    def test_register_surface_basic(self):
+        """Test registering a surface."""
+        config = RainConfig()
+        rain = RainState(config)
+        surface = RainSurface("roof", area_m2=100.0, absorption_coefficient=0.2)
+
+        rain.register_surface(surface)
+
+        # Should not raise
+        assert rain.get_accumulation("roof") == 0.0
+
+    def test_register_surface_duplicate_raises(self):
+        """Test that registering duplicate surface_id raises ValueError."""
+        config = RainConfig()
+        rain = RainState(config)
+        surface1 = RainSurface("roof", area_m2=100.0)
+        surface2 = RainSurface("roof", area_m2=200.0)
+
+        rain.register_surface(surface1)
+
+        with pytest.raises(ValueError, match="Surface already registered"):
+            rain.register_surface(surface2)
+
+    def test_get_accumulation_unknown_surface(self):
+        """Test that get_accumulation raises ValueError for unknown surface."""
+        config = RainConfig()
+        rain = RainState(config)
+
+        with pytest.raises(ValueError, match="Unknown surface"):
+            rain.get_accumulation("nonexistent")
+
+    def test_step_no_surfaces_no_error(self):
+        """Test that step() with no registered surfaces doesn't error."""
+        config = RainConfig()
+        rain = RainState(config)
+        rain.set_intensity(10.0, tick=1, timestamp=0.1)
+
+        # Should not raise
+        rain.step(dt=1.0, tick=1)
+
+    def test_step_zero_intensity_no_accumulation(self):
+        """Test that step() with zero intensity doesn't accumulate."""
+        config = RainConfig()
+        rain = RainState(config)
+        surface = RainSurface("test", area_m2=100.0, absorption_coefficient=0.3)
+        rain.register_surface(surface)
+
+        rain.set_intensity(0.0, tick=1, timestamp=0.1)
+        rain.step(dt=1.0, tick=1)
+
+        assert rain.get_accumulation("test") == 0.0
+
+    def test_step_single_surface_accumulation_exact(self):
+        """Test accumulation with exact hand-computed values.
+
+        Worked example from brief:
+        - intensity_mm_h = 10.0 => intensity_m_s = 10.0 / 3600000 = 2.7777...e-6
+        - absorption_coefficient = 0.3
+        - dt = 1.0 second
+        - accumulated_depth_m += 2.7777...e-6 * 1.0 * 0.7 = 1.9444...e-6
+        """
+        config = RainConfig()
+        rain = RainState(config)
+        surface = RainSurface("test", area_m2=1.0, absorption_coefficient=0.3)
+        rain.register_surface(surface)
+
+        rain.set_intensity(10.0, tick=1, timestamp=0.1)
+        rain.step(dt=1.0, tick=1)
+
+        # Expected: intensity_m_s * dt * (1 - absorption)
+        intensity_m_s = 10.0 / 3600000.0
+        expected_depth = intensity_m_s * 1.0 * 0.7
+        assert pytest.approx(rain.get_accumulation("test"), rel=1e-9) == expected_depth
+
+    def test_step_accumulation_over_hour(self):
+        """Test accumulation over one hour (3600 seconds).
+
+        Worked example:
+        - 10 mm/h rain, 30% absorbed => 70% of 10mm = 7mm per hour
+        - intensity_m_s = 10.0 / 3600000
+        - accumulated over 3600s = 2.7777...e-6 * 3600 * 0.7 = 0.007 meters (7mm)
+        """
+        config = RainConfig()
+        rain = RainState(config)
+        surface = RainSurface("test", area_m2=1.0, absorption_coefficient=0.3)
+        rain.register_surface(surface)
+
+        rain.set_intensity(10.0, tick=1, timestamp=0.1)
+        rain.step(dt=3600.0, tick=1)
+
+        # Expected: 10 mm/h * (1 - 0.3) = 7 mm = 0.007 meters
+        expected_depth = 0.007  # 7mm in meters
+        assert pytest.approx(rain.get_accumulation("test"), rel=1e-3) == expected_depth
+
+    def test_step_multiple_steps_cumulative(self):
+        """Test that accumulation is cumulative across multiple steps."""
+        config = RainConfig()
+        rain = RainState(config)
+        surface = RainSurface("test", area_m2=1.0, absorption_coefficient=0.3)
+        rain.register_surface(surface)
+
+        rain.set_intensity(10.0, tick=1, timestamp=0.1)
+
+        # Two 1800-second steps (total 1 hour)
+        rain.step(dt=1800.0, tick=1)
+        depth_after_half_hour = rain.get_accumulation("test")
+
+        rain.step(dt=1800.0, tick=2)
+        depth_after_hour = rain.get_accumulation("test")
+
+        # After 1 hour total: 10 mm/h * 0.7 = 7 mm
+        expected_hour = 0.007
+        assert pytest.approx(depth_after_hour, rel=1e-3) == expected_hour
+        # After half hour: ~3.5 mm
+        assert pytest.approx(depth_after_half_hour, rel=1e-3) == expected_hour / 2
+
+    def test_step_multiple_surfaces_independent(self):
+        """Test that multiple surfaces accumulate independently."""
+        config = RainConfig()
+        rain = RainState(config)
+
+        # Surface 1: low absorption
+        surface1 = RainSurface("roof", area_m2=100.0, absorption_coefficient=0.1)
+        # Surface 2: high absorption
+        surface2 = RainSurface("soil", area_m2=100.0, absorption_coefficient=0.8)
+
+        rain.register_surface(surface1)
+        rain.register_surface(surface2)
+
+        rain.set_intensity(10.0, tick=1, timestamp=0.1)
+        rain.step(dt=3600.0, tick=1)
+
+        # Surface 1 (0.1 absorption): 10 * (1 - 0.1) = 9 mm = 0.009 m
+        depth1 = rain.get_accumulation("roof")
+        assert pytest.approx(depth1, rel=1e-3) == 0.009
+
+        # Surface 2 (0.8 absorption): 10 * (1 - 0.8) = 2 mm = 0.002 m
+        depth2 = rain.get_accumulation("soil")
+        assert pytest.approx(depth2, rel=1e-3) == 0.002
+
+        # Verify independence
+        assert depth1 > depth2
+
+    def test_step_with_changing_intensity(self):
+        """Test that intensity changes are reflected in accumulation."""
+        config = RainConfig()
+        rain = RainState(config)
+        surface = RainSurface("test", area_m2=1.0, absorption_coefficient=0.3)
+        rain.register_surface(surface)
+
+        # Step 1: 10 mm/h for 1800 seconds
+        rain.set_intensity(10.0, tick=1, timestamp=0.1)
+        rain.step(dt=1800.0, tick=1)
+        depth1 = rain.get_accumulation("test")
+
+        # Step 2: 20 mm/h for 1800 seconds (double intensity)
+        rain.set_intensity(20.0, tick=2, timestamp=0.2)
+        rain.step(dt=1800.0, tick=2)
+        depth2 = rain.get_accumulation("test")
+
+        # depth2 should be about 1.5x depth1 (half hour at 10 mm/h, half hour at 20 mm/h)
+        # 10 * 0.7 * 0.5 + 20 * 0.7 * 0.5 = 3.5 + 7 = 10.5 mm = 0.0105 m
+        expected = (10.0 * 0.7 * 1800.0 + 20.0 * 0.7 * 1800.0) / 3600000.0
+        assert pytest.approx(depth2, rel=1e-3) == expected
+
+    def test_serialize_with_surfaces(self):
+        """Test serialization includes registered surfaces."""
+        config = RainConfig()
+        rain = RainState(config)
+        surface = RainSurface("roof", area_m2=100.0, absorption_coefficient=0.2)
+        rain.register_surface(surface)
+
+        rain.set_intensity(10.0, tick=5, timestamp=0.5)
+        rain.step(dt=100.0, tick=5)
+
+        data = rain.serialize()
+
+        assert "surfaces" in data
+        assert "roof" in data["surfaces"]
+        assert data["surfaces"]["roof"]["area_m2"] == 100.0
+        assert data["surfaces"]["roof"]["absorption_coefficient"] == 0.2
+        assert data["surfaces"]["roof"]["accumulated_depth_m"] > 0
+
+    def test_deserialize_restores_surfaces(self):
+        """Test deserialization restores surface state."""
+        config = RainConfig()
+        original = RainState(config)
+        surface = RainSurface("roof", area_m2=100.0, absorption_coefficient=0.2)
+        original.register_surface(surface)
+
+        original.set_intensity(10.0, tick=1, timestamp=0.1)
+        original.step(dt=3600.0, tick=1)
+
+        data = original.serialize()
+
+        # Restore to new state
+        restored = RainState(config)
+        restored.deserialize(data)
+
+        # Verify surface was restored
+        assert restored.get_accumulation("roof") > 0
+        assert pytest.approx(
+            restored.get_accumulation("roof"),
+            rel=1e-6,
+        ) == original.get_accumulation("roof")
+
+    def test_serialize_deserialize_round_trip_surfaces(self):
+        """Test full round-trip serialization with multiple surfaces."""
+        config = RainConfig()
+        original = RainState(config)
+
+        # Register multiple surfaces
+        surface1 = RainSurface("roof", area_m2=100.0, absorption_coefficient=0.1)
+        surface2 = RainSurface("soil", area_m2=200.0, absorption_coefficient=0.9)
+        original.register_surface(surface1)
+        original.register_surface(surface2)
+
+        original.set_intensity(15.0, tick=10, timestamp=1.0)
+        original.step(dt=7200.0, tick=10)  # 2 hours
+
+        # Serialize
+        data = original.serialize()
+
+        # Deserialize
+        restored = RainState(config)
+        restored.deserialize(data)
+
+        # Verify all state
+        assert restored.intensity_mm_h == 15.0
+        assert restored.intensity_band() == RainIntensity.HEAVY
+        assert restored._last_tick == 10
+        assert restored._last_timestamp == 1.0
+
+        # Verify surfaces
+        depth1_original = original.get_accumulation("roof")
+        depth1_restored = restored.get_accumulation("roof")
+        assert pytest.approx(depth1_restored, rel=1e-6) == depth1_original
+
+        depth2_original = original.get_accumulation("soil")
+        depth2_restored = restored.get_accumulation("soil")
+        assert pytest.approx(depth2_restored, rel=1e-6) == depth2_original
+
+    def test_deserialize_empty_surfaces_dict(self):
+        """Test deserialization with empty surfaces dict."""
+        config = RainConfig()
+        rain = RainState(config)
+
+        rain.set_intensity(10.0, tick=1, timestamp=0.1)
+        data = rain.serialize()
+
+        # Ensure surfaces dict is empty
+        assert data["surfaces"] == {}
+
+        # Deserialize should not raise
+        restored = RainState(config)
+        restored.deserialize(data)
+
+        assert restored.intensity_mm_h == 10.0

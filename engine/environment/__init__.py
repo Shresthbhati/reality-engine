@@ -4,6 +4,6 @@ Step 19: Rain intensity model with meteorological band classification
 and visibility reduction effects.
 """
 
-from .rain import RainIntensity, RainConfig, RainState
+from .rain import RainIntensity, RainConfig, RainState, RainSurface
 
-__all__ = ["RainIntensity", "RainConfig", "RainState"]
+__all__ = ["RainIntensity", "RainConfig", "RainState", "RainSurface"]

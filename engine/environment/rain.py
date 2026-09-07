@@ -46,12 +46,49 @@ class RainConfig:
     seed: int = 42
 
 
+class RainSurface:
+    """Surface that accumulates rainfall over time.
+
+    Tracks rainfall accumulation on a specific surface with absorption modeling.
+    Accumulation is deterministic and depends on rainfall intensity, time step,
+    and absorption coefficient.
+    """
+
+    def __init__(
+        self,
+        surface_id: str,
+        area_m2: float,
+        absorption_coefficient: float = 0.3,
+    ):
+        """Initialize a rain surface.
+
+        Args:
+            surface_id: Unique identifier for this surface
+            area_m2: Surface area in square meters
+            absorption_coefficient: Fraction of rain that infiltrates (0-1).
+                Default 0.3 means 30% is absorbed, 70% accumulates.
+
+        Raises:
+            ValueError: If absorption_coefficient is outside [0, 1]
+        """
+        if not (0 <= absorption_coefficient <= 1):
+            raise ValueError(
+                f"absorption_coefficient must be in [0, 1], got {absorption_coefficient}"
+            )
+
+        self.surface_id = surface_id
+        self.area_m2 = area_m2
+        self.absorption_coefficient = absorption_coefficient
+        self.accumulated_depth_m = 0.0
+
+
 class RainState:
     """Rain state manager with intensity tracking and visibility effects.
 
     Maintains current rainfall intensity, band classification, and visibility
-    reduction factor. Provides serialization with format versioning and an
-    extension point for band-change events (Task 2).
+    reduction factor. Manages registered surfaces and their accumulated rainfall.
+    Provides serialization with format versioning and an extension point for
+    band-change events (Task 2).
     """
 
     def __init__(self, config: RainConfig):
@@ -72,6 +109,73 @@ class RainState:
         # Last update tracking
         self._last_tick = 0
         self._last_timestamp = 0.0
+
+        # Surface accumulation (Task 2)
+        self._surfaces: Dict[str, RainSurface] = {}
+
+    def register_surface(self, surface: RainSurface) -> None:
+        """Register a surface for rainfall accumulation.
+
+        Args:
+            surface: RainSurface object to register
+
+        Raises:
+            ValueError: If a surface with this ID is already registered
+        """
+        if surface.surface_id in self._surfaces:
+            raise ValueError(
+                f"Surface already registered: {surface.surface_id}"
+            )
+
+        self._surfaces[surface.surface_id] = surface
+        self._logger.info(
+            "Rain surface registered",
+            context={
+                "surface_id": surface.surface_id,
+                "area_m2": surface.area_m2,
+                "absorption_coefficient": surface.absorption_coefficient,
+            },
+        )
+
+    def step(self, dt: float, tick: int) -> None:
+        """Advance surface accumulation for one time step.
+
+        For each registered surface, accumulates rainfall depth based on:
+        - Current rainfall intensity
+        - Time step duration
+        - Surface absorption coefficient
+
+        Formula: accumulated_depth_m += intensity_m_s * dt * (1 - absorption_coefficient)
+
+        Args:
+            dt: Time step duration in seconds
+            tick: Simulation tick (for logging)
+        """
+        if not self._surfaces or self._intensity_mm_h == 0:
+            return
+
+        intensity_m_s = self.intensity_m_s
+        for surface in self._surfaces.values():
+            # Accumulate depth: rain that reaches surface and doesn't infiltrate
+            depth_increment = intensity_m_s * dt * (1 - surface.absorption_coefficient)
+            surface.accumulated_depth_m += depth_increment
+
+    def get_accumulation(self, surface_id: str) -> float:
+        """Get accumulated rainfall depth on a surface.
+
+        Args:
+            surface_id: ID of registered surface
+
+        Returns:
+            Accumulated depth in meters
+
+        Raises:
+            ValueError: If surface is not registered
+        """
+        if surface_id not in self._surfaces:
+            raise ValueError(f"Unknown surface: {surface_id}")
+
+        return self._surfaces[surface_id].accumulated_depth_m
 
     def set_intensity(self, mm_per_hour: float, tick: int, timestamp: float) -> None:
         """Set rainfall intensity with band-change detection.
@@ -167,14 +271,25 @@ class RainState:
         """Serialize rain state to dictionary.
 
         Returns:
-            Dict with format_version, current intensity, and last update info
+            Dict with format_version, current intensity, last update info,
+            and registered surfaces with their accumulated depths
         """
+        # Serialize surface states
+        surface_states = {}
+        for surface_id, surface in self._surfaces.items():
+            surface_states[surface_id] = {
+                "area_m2": surface.area_m2,
+                "absorption_coefficient": surface.absorption_coefficient,
+                "accumulated_depth_m": surface.accumulated_depth_m,
+            }
+
         return {
             "format_version": 1,
             "intensity_mm_h": self._intensity_mm_h,
             "intensity_band": self._current_band.value,
             "last_tick": self._last_tick,
             "last_timestamp": self._last_timestamp,
+            "surfaces": surface_states,
         }
 
     def serialize(self) -> Dict[str, Any]:
@@ -189,7 +304,8 @@ class RainState:
         """Restore rain state from dictionary into this instance.
 
         Modifies the current RainState object in place, restoring all fields
-        from the serialized data. Raises ValueError on unsupported format_version.
+        from the serialized data, including registered surfaces and their
+        accumulated depths. Raises ValueError on unsupported format_version.
 
         Args:
             data: Serialized state dict (must have format_version: 1)
@@ -206,6 +322,17 @@ class RainState:
         self._last_tick = data.get("last_tick", 0)
         self._last_timestamp = data.get("last_timestamp", 0.0)
         self._current_band = RainIntensity(data.get("intensity_band", "none"))
+
+        # Restore surface states
+        self._surfaces.clear()
+        for surface_id, surface_data in data.get("surfaces", {}).items():
+            surface = RainSurface(
+                surface_id=surface_id,
+                area_m2=surface_data.get("area_m2", 0.0),
+                absorption_coefficient=surface_data.get("absorption_coefficient", 0.3),
+            )
+            surface.accumulated_depth_m = surface_data.get("accumulated_depth_m", 0.0)
+            self._surfaces[surface_id] = surface
 
     @classmethod
     def from_dict(cls, config: RainConfig, data: Dict[str, Any]) -> RainState:

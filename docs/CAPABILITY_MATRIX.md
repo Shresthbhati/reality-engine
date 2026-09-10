@@ -9,7 +9,7 @@ INTEGRATED / VALIDATED.
 |---|---|---|---|
 | A — Evidence system | Dataset, Session, evidence persists/reopens | **FUNCTIONAL** | `evidence/session.py`, `evidence/dataset.py`. Create/reopen round-trip tested (`test_serialize_deserialize_roundtrip_preserves_evidence_and_history`, `test_dataset_roundtrip_preserves_sessions_and_evidence`). Not yet wired to a real file importer (no photo/video ingestion path) — evidence items reference a `source_uri`, nothing reads the actual bytes yet. |
 | B — Session merging | Select, merge, preserve provenance, detect conflicts | **PARTIAL** | `Dataset.merge()` produces a real `MergedContext`; source sessions verified untouched (`test_merge_preserves_source_session_provenance`); coordinate-frame conflict detection is real (`test_merge_flags_coordinate_frame_conflict`). Geometric registration/feature-matching/scale reconciliation is explicitly **not implemented** — `registration_status: "not_performed"`, honestly reported rather than faked. |
-| C — Real reconstruction | End-to-end evidence → geometry | PARTIAL | Backend decided (COLMAP, `docs/RECONSTRUCTION_BACKEND_DECISION.md`). `reconstruction/backend/interface.py` defines `IReconstructionBackend`; `reconstruction/backend/fake.py` is a real, deterministic (canned-data) implementation that lets the full pipeline be exercised (6 tests, `test_reconstruction_pipeline.py`) without a CV dependency. No COLMAP call exists anywhere — the fake backend invents nothing itself, it returns exactly what tests supply. |
+| C — Real reconstruction | End-to-end evidence → geometry | PARTIAL | `reconstruction/backend/fake.py` exercises the pipeline shape (6 tests). `reconstruction/backend/colmap_backend.py` is now a real implementation — shells out to `feature_extractor`/`exhaustive_matcher`/`mapper`/`model_converter`, parses COLMAP's documented text output (`images.txt`, `points3D.txt`) into typed poses/points. Parsing logic is unit-tested against COLMAP's real text format (6 tests, `test_colmap_backend.py`) without needing the binary. **The COLMAP binary itself is not installed in this environment** (`shutil.which` check verified it's genuinely absent) — `reconstruct()` raises `ReconstructionBackendUnavailableError` rather than faking success, and the actual subprocess pipeline (feature extraction → matching → mapping → parsing) has never been run end-to-end against real imagery. That run is still owed before this goes past PARTIAL. |
 | D — WorldIR from reconstruction | Reconstructed result becomes typed entities+relationships+provenance+confidence | PARTIAL | Two real write paths now: `evidence/promote.py` (`MANUAL_MEASUREMENT` → `Entity`+`Material`+`Measurement`) and `evidence/promote_reconstruction.py` (`ReconstructionResult` → `Entity`+point-cloud `Geometry`, provenance forced to `RECONSTRUCTED`, refuses to promote a failed/empty result via `EmptyReconstructionError`). Both round-trip through `WorldIR.to_dict()`. Photo/video evidence still can't be promoted directly — it must go through a real `IReconstructionBackend` first, and only the fake one exists. |
 | E — Incremental world growth | New Session added without destroying prior evidence | **FUNCTIONAL** | `Dataset.add_session()` only appends; `Session.add_evidence()` only appends; nothing in this layer supports deletion. Not yet exercised with a real multi-round "add evidence, re-derive" cycle since there's no derivation step (C) yet. |
 | F — Validation loop | Reconstruction checked against source evidence, disagreement surfaced | NOT_STARTED | Depends on C existing first. |
@@ -41,15 +41,20 @@ subprocess-boundary integration, sparse output maps directly onto existing
 rationale, alternatives considered (ODM, Meshroom/AliceVision, OpenSfM), and
 why each was rejected: `docs/RECONSTRUCTION_BACKEND_DECISION.md`.
 
-The full chain evidence → reconstruction → WorldIR now runs end-to-end
-against a deterministic fake backend (475/475 tests passing, 6 new). Real
-COLMAP is still not wired in anywhere -- this only proves the *pipeline
-shape* is right, not that reconstruction works on real imagery.
+Real COLMAP integration code now exists (`ColmapReconstructionBackend`):
+real subprocess pipeline, real parsing of COLMAP's documented text format,
+verified against literal COLMAP-format fixtures (481/481 tests, 6 new).
 
-Next highest-leverage blocker: a real `IReconstructionBackend` implementation
-that shells out to COLMAP (subprocess invocation + parsing its sparse
-output into `ReconstructionResult`). That's the first point in this whole
-loop where an actual external dependency and actual CV computation enters
-the codebase -- worth its own careful pass (subprocess error handling,
-COLMAP binary availability, output-format parsing) rather than folding into
-a larger step.
+**Honest gap, stated plainly:** COLMAP is not installed in this environment.
+The subprocess pipeline (`feature_extractor` → `exhaustive_matcher` →
+`mapper` → `model_converter`) has never actually run — only its call
+sequence and its output parser are verified. `reconstruct()` correctly
+raises `ReconstructionBackendUnavailableError` rather than pretending it
+worked.
+
+Next highest-leverage blocker: get COLMAP installed somewhere it can
+actually run (a CI job, a container, or the user's own machine) and run
+`ColmapReconstructionBackend` against a real small photo set once, to find
+out whether the subprocess flags/paths above are actually correct — they
+are typed from COLMAP's documented CLI, not verified against a real run.
+That is real risk this matrix should keep naming until it's closed.

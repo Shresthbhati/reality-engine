@@ -12,7 +12,7 @@ INTEGRATED / VALIDATED.
 | C — Real reconstruction | End-to-end evidence → geometry | PARTIAL | `reconstruction/backend/fake.py` exercises the pipeline shape (6 tests). `reconstruction/backend/colmap_backend.py` is now a real implementation — shells out to `feature_extractor`/`exhaustive_matcher`/`mapper`/`model_converter`, parses COLMAP's documented text output (`images.txt`, `points3D.txt`) into typed poses/points. Parsing logic is unit-tested against COLMAP's real text format (6 tests, `test_colmap_backend.py`) without needing the binary. **The COLMAP binary itself is not installed in this environment** (`shutil.which` check verified it's genuinely absent) — `reconstruct()` raises `ReconstructionBackendUnavailableError` rather than faking success, and the actual subprocess pipeline (feature extraction → matching → mapping → parsing) has never been run end-to-end against real imagery. That run is still owed before this goes past PARTIAL. |
 | D — WorldIR from reconstruction | Reconstructed result becomes typed entities+relationships+provenance+confidence | PARTIAL | Two real write paths now: `evidence/promote.py` (`MANUAL_MEASUREMENT` → `Entity`+`Material`+`Measurement`) and `evidence/promote_reconstruction.py` (`ReconstructionResult` → `Entity`+point-cloud `Geometry`, provenance forced to `RECONSTRUCTED`, refuses to promote a failed/empty result via `EmptyReconstructionError`). Both round-trip through `WorldIR.to_dict()`. Photo/video evidence still can't be promoted directly — it must go through a real `IReconstructionBackend` first, and only the fake one exists. |
 | E — Incremental world growth | New Session added without destroying prior evidence | **FUNCTIONAL** | `Dataset.add_session()` only appends; `Session.add_evidence()` only appends; nothing in this layer supports deletion. Not yet exercised with a real multi-round "add evidence, re-derive" cycle since there's no derivation step (C) yet. |
-| F — Validation loop | Reconstruction checked against source evidence, disagreement surfaced | NOT_STARTED | Depends on C existing first. |
+| F — Validation loop | Reconstruction checked against source evidence, disagreement surfaced | PARTIAL | `reconstruction/validation.py`'s `validate_reconstructions()` nearest-point-matches two independent `ReconstructionResult`s within a distance threshold and reports agreements/disagreements/unmatched honestly -- no averaging, no silently picking a winner. Refuses to validate a `failed` reconstruction. 5 tests. Not yet wired to a real workflow (nothing calls it automatically when a Session gets new evidence) and only compares two reconstructions to each other, not a reconstruction to independent ground truth (e.g. a manual measurement) — that's a natural follow-on, not done here. |
 | G — Studio foundation | Viewport, outliner, inspector, selection | SKELETON | `engine/render/viewport.py` (camera+frustum culling, REQ-029), `engine/inspector/` (REQ-030) exist. No transform tools, no evidence/provenance visualization panel, no editing. The Three.js artifact built earlier this session is a one-off visualization, not part of the repo. |
 | H — World compilation foundation | WorldIR → render / physics / navigation representations, separately | PARTIAL | Physics representation exists and is mature (`engine/physics/*`, REQ-010-013). Render representation is viewport-only (no mesh/material compile step). Navigation representation: **not started** (no navmesh anywhere in the repo). |
 | I — Large-world foundation | Spatial partitioning, local/world coordinate hierarchy, streamable cells | NOT_STARTED | `world_ir/coordinates.py` has multi-frame transforms (WGS84/UTM/ENU/local, REQ-005) but no cell/tile/streaming concept at all. |
@@ -52,9 +52,17 @@ sequence and its output parser are verified. `reconstruct()` correctly
 raises `ReconstructionBackendUnavailableError` rather than pretending it
 worked.
 
-Next highest-leverage blocker: get COLMAP installed somewhere it can
-actually run (a CI job, a container, or the user's own machine) and run
-`ColmapReconstructionBackend` against a real small photo set once, to find
-out whether the subprocess flags/paths above are actually correct — they
-are typed from COLMAP's documented CLI, not verified against a real run.
-That is real risk this matrix should keep naming until it's closed.
+Goal F (validation) no longer requires C to be fully done -- it only needs
+two `ReconstructionResult`s to compare, and the fake backend already
+produces those. `validate_reconstructions()` now exists (486/486 tests,
+5 new) and surfaces point-level disagreement without fabricating agreement.
+
+Two blockers remain open, independent of each other:
+1. Get COLMAP installed somewhere runnable and do one real pass against a
+   real photo set -- the subprocess flags/paths in
+   `colmap_backend.py` are typed from documentation, never executed.
+2. Wire validation into an actual workflow: today `validate_reconstructions`
+   is a standalone function nothing calls automatically. The natural next
+   step is comparing a reconstruction against an independent manual
+   measurement (extending `evidence/promote.py`'s pattern) rather than only
+   reconstruction-vs-reconstruction.

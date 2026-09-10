@@ -9,7 +9,7 @@ INTEGRATED / VALIDATED.
 |---|---|---|---|
 | A — Evidence system | Dataset, Session, evidence persists/reopens | **FUNCTIONAL** | `evidence/session.py`, `evidence/dataset.py`. Create/reopen round-trip tested (`test_serialize_deserialize_roundtrip_preserves_evidence_and_history`, `test_dataset_roundtrip_preserves_sessions_and_evidence`). Not yet wired to a real file importer (no photo/video ingestion path) — evidence items reference a `source_uri`, nothing reads the actual bytes yet. |
 | B — Session merging | Select, merge, preserve provenance, detect conflicts | **PARTIAL** | `Dataset.merge()` produces a real `MergedContext`; source sessions verified untouched (`test_merge_preserves_source_session_provenance`); coordinate-frame conflict detection is real (`test_merge_flags_coordinate_frame_conflict`). Geometric registration/feature-matching/scale reconciliation is explicitly **not implemented** — `registration_status: "not_performed"`, honestly reported rather than faked. |
-| C — Real reconstruction | End-to-end evidence → geometry | NOT_STARTED | `reconstruction/` is an empty directory. No CV backend (COLMAP/Open3D/etc.) is wired. This is the next real blocker once B's registration gap is worth closing. |
+| C — Real reconstruction | End-to-end evidence → geometry | SKELETON | Backend decided (COLMAP, `docs/RECONSTRUCTION_BACKEND_DECISION.md`) and `reconstruction/backend/interface.py` defines `IReconstructionBackend` + typed result contract (`ReconstructedPoint`/`ReconstructedCameraPose`/`ReconstructionResult`), following the `IPhysicsBackend` precedent. Zero implementations of the interface exist -- no COLMAP call anywhere. Real reconstruction still doesn't happen. |
 | D — WorldIR from reconstruction | Reconstructed result becomes typed entities+relationships+provenance+confidence | PARTIAL | `evidence/promote.py` is a real, tested (6 tests) write path: a `MANUAL_MEASUREMENT` evidence item → real `Entity`+`Material`+`Measurement` in WorldIR, provenance/confidence carried through (not invented), round-trips through `WorldIR.to_dict()`. Deliberately narrow — refuses to promote photo/video evidence (`UnsupportedEvidenceKindError`) since that needs Goal C's CV backend, which doesn't exist. |
 | E — Incremental world growth | New Session added without destroying prior evidence | **FUNCTIONAL** | `Dataset.add_session()` only appends; `Session.add_evidence()` only appends; nothing in this layer supports deletion. Not yet exercised with a real multi-round "add evidence, re-derive" cycle since there's no derivation step (C) yet. |
 | F — Validation loop | Reconstruction checked against source evidence, disagreement surfaced | NOT_STARTED | Depends on C existing first. |
@@ -41,8 +41,12 @@ subprocess-boundary integration, sparse output maps directly onto existing
 rationale, alternatives considered (ODM, Meshroom/AliceVision, OpenSfM), and
 why each was rejected: `docs/RECONSTRUCTION_BACKEND_DECISION.md`.
 
-No dependency added and no code written yet — that decision doc is research,
-not implementation. Next step: design the `IReconstructionBackend` adapter
-*interface* (method signatures only, no COLMAP call inside), following the
-existing `IPhysicsBackend` precedent, so a real COLMAP integration (and
-later OpenSfM as an alternate backend) can be swapped in behind it.
+`IReconstructionBackend` adapter interface now exists (method signature
+only, no COLMAP call inside) -- `reconstruction/backend/interface.py`.
+
+Next highest-leverage blocker: an actual COLMAP-backed implementation of
+this interface (subprocess invocation, parsing COLMAP's sparse output into
+`ReconstructionResult`), or -- cheaper and worth doing first -- a fake/test
+backend implementing the interface so `evidence -> reconstruction ->
+promote -> WorldIR` can be exercised end-to-end before a real CV dependency
+is added at all.

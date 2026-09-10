@@ -35,13 +35,14 @@ next foundational blocker; everything from D onward is downstream of it.
 
 ## Next highest-leverage blocker
 
-The manual-measurement → WorldIR path above is done (`evidence/promote.py`,
-31 tests across both evidence-layer files, 469/469 full suite passing).
+Reconstruction backend evaluated and decided: **COLMAP** (BSD license,
+subprocess-boundary integration, sparse output maps directly onto existing
+`Provenance.RECONSTRUCTED` + `Observation`/`Measurement` records). Full
+rationale, alternatives considered (ODM, Meshroom/AliceVision, OpenSfM), and
+why each was rejected: `docs/RECONSTRUCTION_BACKEND_DECISION.md`.
 
-Not "start reconstruction" outright — that needs a real CV dependency
-decision (COLMAP vs. a lighter approach) made deliberately, not
-speculatively, per §30/§37's own research-loop rule (identify the
-problem, evaluate representation compatibility, license, isolate behind
-an adapter — before writing any of that code). That evaluation is the
-actual next step, not a code change: pick and justify one reconstruction
-backend before Goal C gets an adapter interface built for it.
+No dependency added and no code written yet — that decision doc is research,
+not implementation. Next step: design the `IReconstructionBackend` adapter
+*interface* (method signatures only, no COLMAP call inside), following the
+existing `IPhysicsBackend` precedent, so a real COLMAP integration (and
+later OpenSfM as an alternate backend) can be swapped in behind it.

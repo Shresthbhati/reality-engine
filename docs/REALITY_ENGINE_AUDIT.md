@@ -103,6 +103,50 @@ test logic was touched. All previously-separate `reality-engine-*`
 worktree directories have been removed -- one directory now contains
 everything.
 
+## Geometric reasoning slice (2026-09-12, follow-on session)
+
+Implemented the audit's "highest-leverage gap actually reachable with
+zero new dependencies" (gap 2 in the list above): the first code that
+assigns WALL/FLOOR/CEILING automatically and derives measurements from
+reconstructed geometry.
+
+- `perception/geometry/planes.py` -- deterministic dependency-free RANSAC
+  over a `ReconstructionResult`'s points (seeded via engine/core/rng).
+  During development the tests caught two real algorithm bugs: a strict-
+  majority noise rule made extracting any second plane impossible (each
+  structure is a minority of the cloud -- replaced by an absolute
+  min-inlier floor + refit re-check), and a single post-consensus refit
+  could lock in a tilted compromise plane under slight contamination
+  (replaced by iterative refit-and-recollect plus a final least-squares
+  refit of the reported inliers, the standard RANSAC contract). Observed
+  on a synthetic room (518 points, 30 noise): all four planes found with
+  exact constants (d in {-4, -2.5, 0, 0}), identical structure under
+  seeds 7/42/123/9999, honest unassigned-point reporting.
+- `perception/geometry/orientation.py` -- camera-side floor/ceiling
+  disambiguation, near-vertical wall classification, honest UNKNOWN for
+  sloped planes and for `up=None` (refuses to guess). Raises when given
+  no camera positions instead of inventing a camera side.
+- `evidence/promote_planes.py` -- promotion into WorldIR as typed
+  entities (INFERRED) + `GeometryType.PLANE` geometry (RECONSTRUCTED,
+  real inlier bounds) + ESTIMATED extent measurement from real inlier
+  span (precision from fit RMS) + wall thickness ONLY between paired
+  opposite faces within 0.5 m with span overlap (tests caught a
+  same-facing-normal pairing bug and a plane-gap sign bug here). The
+  synthetic-room smoke run produced exactly floor+ceiling+2 walls with
+  byte-identical round-trip serialization.
+- `GeometryType.PLANE` added to the schema (additive, documented).
+- 32 new tests (`tests/test_geometric_reasoning.py`), hand-computed
+  expectations, determinism + noise-fraction + refusal + round-trip
+  coverage. Full suite: 725 passing (excluding one other agent's
+  in-flight test file, which had a collection error unrelated to this
+  work at last observation).
+
+Still undone in geometric reasoning (unchanged): ROOM inference from
+connected plane structure, supports/support reasoning, evidence fusion
+across competing plane fits, curvature/mesh reasoning, and validation
+against real photos at scale (the synthetic room is a fixture, not a
+benchmark).
+
 ## What this audit does NOT claim
 
 This audit does not claim the full vision in the originating prompt (a

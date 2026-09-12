@@ -23,11 +23,16 @@ from dataclasses import dataclass
 from typing import Optional
 
 from events.bus import EventBus
-from events.types import ENTITY_CREATED_EVENT, ENTITY_DELETED_EVENT, ENTITY_TRANSFORM_SET_EVENT
+from events.types import (
+    ENTITY_CREATED_EVENT,
+    ENTITY_DELETED_EVENT,
+    ENTITY_TRANSFORM_SET_EVENT,
+    RELATIONSHIP_ADDED_EVENT,
+)
 from provenance import Provenance
-from world_ir import Entity, EntityType, WorldIR
+from world_ir import Entity, EntityType, Relationship, WorldIR
 
-from .commands import Command, CreateEntityCommand, DeleteEntityCommand, SetEntityTransformCommand
+from .commands import AddRelationshipCommand, Command, CreateEntityCommand, DeleteEntityCommand, SetEntityTransformCommand
 from .permissions import AllowAllPolicy, PermissionPolicy
 
 
@@ -74,6 +79,8 @@ class WorldCommandProcessor:
             event_type, source_refs = self._apply_set_transform(command)
         elif isinstance(command, DeleteEntityCommand):
             event_type, source_refs = self._apply_delete(command)
+        elif isinstance(command, AddRelationshipCommand):
+            event_type, source_refs = self._apply_add_relationship(command)
         else:
             raise CommandValidationError(f"unknown command type: {type(command).__name__}")
 
@@ -104,6 +111,17 @@ class WorldCommandProcessor:
         elif isinstance(command, DeleteEntityCommand):
             if command.entity_id not in self.world.entities:
                 raise CommandNotFoundError(f"no such entity: {command.entity_id!r}")
+        elif isinstance(command, AddRelationshipCommand):
+            missing = [
+                eid for eid in (command.source_entity_id, command.target_entity_id)
+                if eid not in self.world.entities
+            ]
+            if missing:
+                raise CommandNotFoundError(f"no such entity/entities: {missing!r}")
+            if command.source_entity_id == command.target_entity_id:
+                raise CommandValidationError(
+                    "an entity cannot have a relationship to itself"
+                )
         else:
             raise CommandValidationError(f"unknown command type: {type(command).__name__}")
 
@@ -133,3 +151,13 @@ class WorldCommandProcessor:
     def _apply_delete(self, command: DeleteEntityCommand):
         del self.world.entities[command.entity_id]
         return ENTITY_DELETED_EVENT, [command.entity_id]
+
+    def _apply_add_relationship(self, command: AddRelationshipCommand):
+        relationship = Relationship(
+            kind=command.kind,
+            target_id=command.target_entity_id,
+            confidence=command.confidence,
+            provenance=command.provenance or Provenance.INFERRED,
+        )
+        self.world.entities[command.source_entity_id].relationships.append(relationship)
+        return RELATIONSHIP_ADDED_EVENT, [command.source_entity_id, command.target_entity_id]

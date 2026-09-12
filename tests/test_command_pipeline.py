@@ -5,6 +5,7 @@
 import pytest
 
 from engine.commands import (
+    AddRelationshipCommand,
     AllowAllPolicy,
     CommandNotFoundError,
     CommandValidationError,
@@ -15,9 +16,14 @@ from engine.commands import (
     WorldCommandProcessor,
 )
 from events.bus import EventBus
-from events.types import ENTITY_CREATED_EVENT, ENTITY_DELETED_EVENT, ENTITY_TRANSFORM_SET_EVENT
+from events.types import (
+    ENTITY_CREATED_EVENT,
+    ENTITY_DELETED_EVENT,
+    ENTITY_TRANSFORM_SET_EVENT,
+    RELATIONSHIP_ADDED_EVENT,
+)
 from provenance import Provenance
-from world_ir import Entity, WorldIR
+from world_ir import Entity, RelationshipKind, WorldIR
 
 
 def _processor():
@@ -104,6 +110,69 @@ def test_delete_entity_rejects_unknown_entity():
     processor, world, _ = _processor()
     with pytest.raises(CommandNotFoundError):
         processor.execute(DeleteEntityCommand(entity_id="nope"))
+
+
+# ---- add relationship ----
+
+def test_add_relationship_appends_to_source_entity():
+    processor, world, bus = _processor()
+    world.entities["a"] = Entity(id="a")
+    world.entities["b"] = Entity(id="b")
+
+    result = processor.execute(
+        AddRelationshipCommand(source_entity_id="a", target_entity_id="b", kind=RelationshipKind.ADJACENT_TO, confidence=0.75)
+    )
+
+    rels = world.entities["a"].relationships
+    assert len(rels) == 1
+    assert rels[0].kind == RelationshipKind.ADJACENT_TO
+    assert rels[0].target_id == "b"
+    assert rels[0].confidence == 0.75
+    assert rels[0].provenance == Provenance.INFERRED
+    assert world.version == 2
+    assert result.world_version == 2
+    events = bus.events_of_type(RELATIONSHIP_ADDED_EVENT)
+    assert len(events) == 1
+    assert events[0].source_refs == ("a", "b")
+
+
+def test_add_relationship_rejects_missing_source_entity():
+    processor, world, _ = _processor()
+    world.entities["b"] = Entity(id="b")
+    with pytest.raises(CommandNotFoundError):
+        processor.execute(AddRelationshipCommand(source_entity_id="nope", target_entity_id="b", kind=RelationshipKind.ADJACENT_TO))
+
+
+def test_add_relationship_rejects_missing_target_entity():
+    processor, world, _ = _processor()
+    world.entities["a"] = Entity(id="a")
+    with pytest.raises(CommandNotFoundError):
+        processor.execute(AddRelationshipCommand(source_entity_id="a", target_entity_id="nope", kind=RelationshipKind.ADJACENT_TO))
+
+
+def test_add_relationship_rejects_self_relationship():
+    processor, world, _ = _processor()
+    world.entities["a"] = Entity(id="a")
+    with pytest.raises(CommandValidationError):
+        processor.execute(AddRelationshipCommand(source_entity_id="a", target_entity_id="a", kind=RelationshipKind.ADJACENT_TO))
+
+
+def test_add_relationship_defaults_provenance_to_inferred():
+    processor, world, _ = _processor()
+    world.entities["a"] = Entity(id="a")
+    world.entities["b"] = Entity(id="b")
+    processor.execute(AddRelationshipCommand(source_entity_id="a", target_entity_id="b", kind=RelationshipKind.OVERLAPS))
+    assert world.entities["a"].relationships[0].provenance == Provenance.INFERRED
+
+
+def test_add_relationship_respects_explicit_observed_provenance():
+    processor, world, _ = _processor()
+    world.entities["a"] = Entity(id="a")
+    world.entities["b"] = Entity(id="b")
+    processor.execute(
+        AddRelationshipCommand(source_entity_id="a", target_entity_id="b", kind=RelationshipKind.OVERLAPS, provenance=Provenance.OBSERVED)
+    )
+    assert world.entities["a"].relationships[0].provenance == Provenance.OBSERVED
 
 
 # ---- permission stage ----

@@ -76,11 +76,24 @@ corrupted state. 26 tests; suite 824 passed / 2 skipped. Real gap
 closed: per-instance uuid4 main_branch_id broke byte-identical replay
 -- compiler supplies stable identity now.
 
+## Completed 2026-09-12 (latest): compiler -> pipeline -> Studio
+
+`CompileWorldCommand` wires the world compiler through the command
+pipeline (typed command -> validation -> permission -> STAGED compile ->
+gate -> merge-on-success -> WorldCompiledEvent -> version bump).
+Transaction semantics: gate failure leaves the session world untouched;
+recompile is idempotent and overwrites corrupted state with honest
+state. `StudioSession.compile_reconstruction()` is the user-visible
+action; `processor.last_compile_diagnostics` exposes coverage. 8 tests;
+suite 832 passed / 2 skipped.
+
 ## Next tasks (dependency-safe, in order)
 
-- Studio `compile_reconstruction` action: user-visible pipeline from
-  imported reconstruction to compiled world (the compiler is ready;
-  the Studio wiring is the remaining step).
+- Blender export path (WorldIR -> .py/.json add-on input; Reality Engine
+  -> WorldIR -> Blender adapter, Blender as consumer) -- now the
+  highest-value missing export target.
+- Compiler consumption of depth/segmentation/material evidence (currently
+  planes+rooms only).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room
   shared-wall ownership (room topology is now the foundation).
 - Wire plane+room promotion into a Studio action so a user-visible flow exists.

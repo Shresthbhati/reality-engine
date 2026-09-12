@@ -68,12 +68,24 @@ completion" rule 41 forbids.
 3. **Technology registry** (`docs/TECHNOLOGY_REGISTRY.md`) — a real research/licensing pass on 2-3 candidate depth/segmentation models before installing anything, per item 10.
 4. Only after 2-3: install and adapt one real depth or segmentation backend, benchmarked, license-checked, isolated behind its interface.
 
-Item 1 is implemented in this same commit: `engine/scene_graph/` — `SceneGraph`
-answers `contents_of`/`container_of`/`supporters_of`/`path_exists`/
-`query_by_kind` purely by walking existing `Entity.relationships` data, no
-LLM, no new dependency. 12 new tests, 534/534 passing overall. Items 2-4 are
-real, substantial, undone work — each is its own multi-session effort, not
-a checkbox.
+Item 1 is implemented: `engine/scene_graph/` — `SceneGraph` answers
+`contents_of`/`container_of`/`supporters_of`/`path_exists`/`query_by_kind`
+purely by walking existing `Entity.relationships` data, no LLM, no new
+dependency. 12 new tests.
+
+Item 2 is implemented: `perception/depth/interface.py` (`IDepthBackend`,
+`DepthMap`) and `perception/segmentation/interface.py`
+(`ISegmentationBackend`, `SegmentedRegion`, `SegmentationResult`), both
+mirroring `IReconstructionBackend`'s exact pattern. **Zero concrete
+backends implement either interface** — no depth model, no SAM2, nothing
+installed. This is SCAFFOLDED, explicitly distinguished from PARTIAL in
+`CAPABILITY_MATRIX.md`. 10 new tests exercise the interface contract via
+minimal fakes.
+
+544/544 tests passing overall after both increments. Items 3-4 (technology
+registry, then one real depth/segmentation backend installed and adapted)
+remain real, substantial, undone work — each is its own multi-session
+effort, not a checkbox.
 
 ## What this audit does NOT claim
 

@@ -66,8 +66,21 @@ ring ordering (parallel walls adjacent), wall-top height undercount
 (ceiling-plane preference now). Room queries flow through
 `SceneGraph.contents_of()` end-to-end.
 
+## Completed 2026-09-12 (latest): world compiler + validation gate
+
+`engine/compiler/world_compiler.py` + `world_ir/validation.py`: one
+deterministic call turns a ReconstructionResult into a validated
+WorldIR (planes -> classification -> promotion -> rooms -> gate), with
+CompileDiagnostics accounting for every input and a gate that refuses
+corrupted state. 26 tests; suite 824 passed / 2 skipped. Real gap
+closed: per-instance uuid4 main_branch_id broke byte-identical replay
+-- compiler supplies stable identity now.
+
 ## Next tasks (dependency-safe, in order)
 
+- Studio `compile_reconstruction` action: user-visible pipeline from
+  imported reconstruction to compiled world (the compiler is ready;
+  the Studio wiring is the remaining step).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room
   shared-wall ownership (room topology is now the foundation).
 - Wire plane+room promotion into a Studio action so a user-visible flow exists.

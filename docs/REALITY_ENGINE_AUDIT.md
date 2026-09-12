@@ -87,6 +87,22 @@ registry, then one real depth/segmentation backend installed and adapted)
 remain real, substantial, undone work — each is its own multi-session
 effort, not a checkbox.
 
+## Repository consolidation (2026-09-12)
+
+The rain (Step 19) and water (Step 20) simulation systems existed only on
+two separate, unmerged git branches/worktrees (`step19-rain`,
+`step20-water`), siblings that forked from the same point right after
+Step 18 and never rejoined the main line where all the evidence/
+reconstruction/studio/command-pipeline/perception work in this audit
+happened. Both are now merged into this branch: 105 real tests (58 rain +
+47 water) that existed but weren't visible from `main`/this branch until
+now. Resolved two stale hand-maintained test-count doc conflicts (already
+out of sync before the merge) and one real code conflict
+(`engine/environment/__init__.py`, combined both modules' exports). No
+test logic was touched. All previously-separate `reality-engine-*`
+worktree directories have been removed -- one directory now contains
+everything.
+
 ## What this audit does NOT claim
 
 This audit does not claim the full vision in the originating prompt (a

@@ -11,6 +11,8 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24"]
+colmap = ["colmap-cli>=4.2"]
 
 [tool.setuptools.packages.find]
 include = ["engine*", "world_ir*", "provenance*", "events*"]

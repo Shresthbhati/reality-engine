@@ -229,6 +229,55 @@ labelled a lower bound without one. 18 tests, full suite 798 passed /
 closed, not silently), DOOR/WINDOW/ROOF assignment, shared-wall
 multi-room ownership.
 
+## Dated update — 2026-09-13: evidence packages (ingestion abstraction, this pass)
+
+`evidence/packages.py` implements the structured evidence-system layer
+the deep-implementation phase's sec-2 FIRST priority named — the layer
+above the append-only Session that answers "what does the engine hold,
+where did it come from, what happened to it, and can I trust it":
+
+- `EvidenceSource` (device/platform/operator identity), `EvidenceAsset`
+  (frozen, hash-addressed — sha256 is both the id component and the
+  dedup key; `acquired_at` is caller-supplied, no wall clocks anywhere,
+  the same determinism discipline as WorldIR's `created_at=0.0`),
+  `EvidenceReference` (asset → WorldIR-observation binding with role),
+  `ObservationSet` (named reference group feeding ONE downstream
+  quantity), `EvidencePackage` (append-only store + observation sets),
+  and `DeterministicPackageBuilder` (the single hashing/validation/
+  dedup path — policy in the builder, passive storage below it).
+- Deterministic identity, tested to the byte: asset ids are
+  `ev-{seed}-{index}-{sha256[:16]}`, the package id is content-derived
+  from the sorted asset hashes, and rebuilding from the same payloads
+  reproduces the package identically (`to_dict()` equality).
+- Corruption handling is real, not a boolean: minimum payload size plus
+  magic-byte container signatures (JPEG/PNG/TIFF/EXIV/MPEG-TS/LAS/
+  laz/E57/PLY/PCD). A GIF named `.jpg` raises `CorruptEvidenceError` at
+  build time; extensionless sensor logs (GPS/IMU CSV, depth dumps) pass
+  the size gate only.
+- Duplicate detection by content hash: same bytes under a different
+  filename is the same evidence; `DuplicateEvidenceError` (the existing
+  session-layer vocabulary) names the existing asset id for
+  de-dup-by-reference. On the package itself a duplicate hash returns
+  the existing id; policy raises, storage de-duplicates.
+- Processing history (`ProcessingRecord`, reused from `session.py` — one
+  vocabulary, not two) is the ONLY mutation an asset supports, via
+  frozen-replacement: history grows, evidence never changes.
+- Two structured callers make this an ingestion entry point, not a
+  standalone abstraction: `ObservationSet` feeds `fuse_quantity()`
+  (tested with the canonical LiDAR 3.17 m / photogrammetry 3.22 m
+  CONFLICT scenario, every claim's evidence chain resolvable to a real
+  asset), and `to_evidence_items()` bridges assets into the
+  reconstruction backends' `List[EvidenceItem]` contract, from which
+  points carry `source_evidence_ids` into the world compiler end-to-end
+  (tested).
+
+27 tests; full suite **859 passed, 2 skipped** (baseline 832 + 27, no
+regressions). Still undone, labelled: no disk/camera file importer
+(payloads are caller-supplied bytes — the `source_uri` gap noted in row
+A stands), no EXIF/GPS metadata decoding (fields exist, no decoder),
+quality metrics are caller-measured, no payload blob storage (hashes +
+`source_uri` only).
+
 ## What this audit does NOT claim
 
 This audit does not claim the full vision in the originating prompt (a

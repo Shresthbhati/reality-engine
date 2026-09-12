@@ -1,7 +1,7 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-12 (geometric-reasoning session complete)
-**Branch:** `studio-command-pipeline`
+**Updated:** 2026-09-13 (evidence-packages session complete)
+**Branch:** `evidence-fusion`
 **Verified baseline:** 725/725 tests passing (`python -m pytest -q --ignore=tests/test_midas_backend.py`, observed 13.8s). The excluded file is another agent's in-flight work (MiDaS depth backend), not part of this session's changes.
 
 ## Milestone reached before this session
@@ -87,11 +87,35 @@ state. `StudioSession.compile_reconstruction()` is the user-visible
 action; `processor.last_compile_diagnostics` exposes coverage. 8 tests;
 suite 832 passed / 2 skipped.
 
+## Completed 2026-09-13: evidence packages (deep-implementation sec-2 FIRST priority)
+
+`evidence/packages.py` — the structured ingestion layer above the
+append-only Session: `EvidenceSource`/`EvidenceAsset`/`EvidencePackage`/
+`EvidenceReference`/`ObservationSet`/`DeterministicPackageBuilder`.
+Content-derived deterministic ids (`ev-{seed}-{index}-{sha256[:16]}`;
+content-derived package id; rebuild reproduces the package byte-for-byte
+— tested), real corruption gate (min size + magic-byte signatures for
+JPEG/PNG/TIFF/EXIV/TS/LAS/E57/PLY/PCD; a GIF named .jpg refuses at build
+time), content-hash duplicate detection (`DuplicateEvidenceError` names
+the existing asset id), frozen-asset processing history (reuse of
+`session.ProcessingRecord` — one vocabulary). Two structured callers:
+`ObservationSet` -> `fuse_quantity()` (LiDAR 3.17/photogrammetry 3.22
+CONFLICT scenario tested with the evidence chain resolvable to real
+assets) and `to_evidence_items()` -> reconstruction backends ->
+compiler points' `source_evidence_ids` (end-to-end tested). 27 tests;
+full suite **859 passed / 2 skipped** (832 baseline + 27, no
+regressions). Row T6 added to docs/CAPABILITY_MATRIX.md; audit dated
+update added. Labelled NOT built: disk/camera file importer, EXIF/GPS
+decoding, payload blob storage.
+
 ## Next tasks (dependency-safe, in order)
 
 - Blender export path (WorldIR -> .py/.json add-on input; Reality Engine
   -> WorldIR -> Blender adapter, Blender as consumer) -- now the
   highest-value missing export target.
+- Real file importer on top of the package layer (`DeterministicPackage
+  Builder.add_payload` is caller-supplied bytes; a disk/photo-folder
+  importer with EXIF/GPS decode is the natural next increment).
 - Compiler consumption of depth/segmentation/material evidence (currently
   planes+rooms only).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room

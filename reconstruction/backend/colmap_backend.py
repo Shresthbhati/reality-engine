@@ -91,20 +91,46 @@ def _parse_points3d_txt(text: str, image_id_to_evidence_id: Dict[str, str]) -> L
     return points
 
 
+def _subprocess_env(colmap_path: str) -> Dict[str, str]:
+    """COLMAP's Windows CLI builds still construct a QApplication (for GUI
+    code paths compiled into the same binary) and abort with a Qt platform
+    plugin dialog unless QT_QPA_PLATFORM is forced headless -- verified by
+    running the real binary, not a hypothetical. Points QT_PLUGIN_PATH at
+    the plugins/ directory the official Windows release ships as a sibling
+    of bin/; a no-op on platforms where COLMAP doesn't need it (Qt ignores
+    an unused plugin path).
+    """
+    import os
+    env = dict(os.environ)
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    plugins_dir = Path(colmap_path).resolve().parent.parent / "plugins"
+    if plugins_dir.is_dir():
+        env["QT_PLUGIN_PATH"] = str(plugins_dir)
+    return env
+
+
 class ColmapReconstructionBackend(IReconstructionBackend):
-    def __init__(self, colmap_binary: str = "colmap"):
+    def __init__(self, colmap_binary: str = "colmap", use_gpu: bool = False):
         self._colmap_binary = colmap_binary
+        # Default False: the official Windows release used here is a
+        # no-GPU build ("without GPU support" per its own version banner);
+        # passing use_gpu=1 against it fails every step. A CUDA build
+        # should pass use_gpu=True explicitly.
+        self._use_gpu = use_gpu
 
     def reconstruct(self, evidence: List[EvidenceItem]) -> ReconstructionResult:
         image_evidence = [e for e in evidence if e.kind in (EvidenceKind.PHOTO, EvidenceKind.VIDEO)]
         if len(image_evidence) < 2:
             return ReconstructionResult(points=[], camera_poses=[], registration_status="failed")
 
-        if shutil.which(self._colmap_binary) is None:
+        colmap_path = shutil.which(self._colmap_binary)
+        if colmap_path is None:
             raise ReconstructionBackendUnavailableError(
                 f"'{self._colmap_binary}' not found on PATH -- COLMAP must be installed "
                 "to run real reconstruction (see docs/RECONSTRUCTION_BACKEND_DECISION.md)"
             )
+        env = _subprocess_env(colmap_path)
+        gpu_flag = "1" if self._use_gpu else "0"
 
         with tempfile.TemporaryDirectory(prefix="colmap_") as workspace:
             workspace = Path(workspace)
@@ -120,12 +146,14 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             db_path = workspace / "database.db"
             subprocess.run(
                 [self._colmap_binary, "feature_extractor",
-                 "--database_path", str(db_path), "--image_path", str(image_dir)],
-                check=True, capture_output=True,
+                 "--database_path", str(db_path), "--image_path", str(image_dir),
+                 "--FeatureExtraction.use_gpu", gpu_flag],
+                check=True, capture_output=True, env=env,
             )
             subprocess.run(
-                [self._colmap_binary, "exhaustive_matcher", "--database_path", str(db_path)],
-                check=True, capture_output=True,
+                [self._colmap_binary, "exhaustive_matcher", "--database_path", str(db_path),
+                 "--FeatureMatching.use_gpu", gpu_flag],
+                check=True, capture_output=True, env=env,
             )
             sparse_dir = workspace / "sparse"
             sparse_dir.mkdir()
@@ -133,7 +161,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 [self._colmap_binary, "mapper",
                  "--database_path", str(db_path), "--image_path", str(image_dir),
                  "--output_path", str(sparse_dir)],
-                check=True, capture_output=True,
+                check=True, capture_output=True, env=env,
             )
 
             model_dir = sparse_dir / "0"
@@ -141,7 +169,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 [self._colmap_binary, "model_converter",
                  "--input_path", str(model_dir), "--output_path", str(model_dir),
                  "--output_type", "TXT"],
-                check=True, capture_output=True,
+                check=True, capture_output=True, env=env,
             )
 
             images_txt = (model_dir / "images.txt").read_text()

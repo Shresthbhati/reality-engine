@@ -9,7 +9,7 @@ INTEGRATED / VALIDATED.
 |---|---|---|---|
 | A — Evidence system | Dataset, Session, evidence persists/reopens | **FUNCTIONAL** | `evidence/session.py`, `evidence/dataset.py`. Create/reopen round-trip tested (`test_serialize_deserialize_roundtrip_preserves_evidence_and_history`, `test_dataset_roundtrip_preserves_sessions_and_evidence`). Not yet wired to a real file importer (no photo/video ingestion path) — evidence items reference a `source_uri`, nothing reads the actual bytes yet. |
 | B — Session merging | Select, merge, preserve provenance, detect conflicts | **PARTIAL** | `Dataset.merge()` produces a real `MergedContext`; source sessions verified untouched (`test_merge_preserves_source_session_provenance`); coordinate-frame conflict detection is real (`test_merge_flags_coordinate_frame_conflict`). Geometric registration/feature-matching/scale reconciliation is explicitly **not implemented** — `registration_status: "not_performed"`, honestly reported rather than faked. |
-| C — Real reconstruction | End-to-end evidence → geometry | PARTIAL | `reconstruction/backend/fake.py` exercises the pipeline shape (6 tests). `reconstruction/backend/colmap_backend.py` is now a real implementation — shells out to `feature_extractor`/`exhaustive_matcher`/`mapper`/`model_converter`, parses COLMAP's documented text output (`images.txt`, `points3D.txt`) into typed poses/points. Parsing logic is unit-tested against COLMAP's real text format (6 tests, `test_colmap_backend.py`) without needing the binary. **The COLMAP binary itself is not installed in this environment** (`shutil.which` check verified it's genuinely absent) — `reconstruct()` raises `ReconstructionBackendUnavailableError` rather than faking success, and the actual subprocess pipeline (feature extraction → matching → mapping → parsing) has never been run end-to-end against real imagery. That run is still owed before this goes past PARTIAL. |
+| C — Real reconstruction | End-to-end evidence → geometry | PARTIAL | `reconstruction/backend/fake.py` exercises the pipeline shape (6 tests). `reconstruction/backend/colmap_backend.py` is a real implementation — shells out to `feature_extractor`/`exhaustive_matcher`/`mapper`/`model_converter`, parses COLMAP's documented text output (`images.txt`, `points3D.txt`) into typed poses/points. **COLMAP 4.2.0 (no-CUDA Windows build) is now installed and the real subprocess pipeline has been run end-to-end** against 4 real photos of a public test scene: 3/4 images registered, 228 real 3D points produced, ~23s wall time. Two real bugs found and fixed by that run: (1) COLMAP's Windows CLI constructs a QApplication and blocks on a GUI dialog unless `QT_QPA_PLATFORM=offscreen`/`QT_PLUGIN_PATH` are set; (2) this build has no GPU support, so `--FeatureExtraction.use_gpu 0`/`--FeatureMatching.use_gpu 0` must be passed or every step fails. Both fixed unconditionally in `colmap_backend.py` (`_subprocess_env()`, `use_gpu` constructor flag, default `False`). Still PARTIAL, honestly: only one 4-image scene has been exercised (not a stress test, not a large building), and no automated test in `tests/` invokes the real binary — committed tests still only cover the pure parsing functions against fixture text. |
 | D — WorldIR from reconstruction | Reconstructed result becomes typed entities+relationships+provenance+confidence | PARTIAL | Two real write paths now: `evidence/promote.py` (`MANUAL_MEASUREMENT` → `Entity`+`Material`+`Measurement`) and `evidence/promote_reconstruction.py` (`ReconstructionResult` → `Entity`+point-cloud `Geometry`, provenance forced to `RECONSTRUCTED`, refuses to promote a failed/empty result via `EmptyReconstructionError`). Both round-trip through `WorldIR.to_dict()`. Photo/video evidence still can't be promoted directly — it must go through a real `IReconstructionBackend` first, and only the fake one exists. |
 | E — Incremental world growth | New Session added without destroying prior evidence | **FUNCTIONAL** | `Dataset.add_session()` only appends; `Session.add_evidence()` only appends; nothing in this layer supports deletion. Not yet exercised with a real multi-round "add evidence, re-derive" cycle since there's no derivation step (C) yet. |
 | F — Validation loop | Reconstruction checked against source evidence, disagreement surfaced | PARTIAL | `reconstruction/validation.py`'s `validate_reconstructions()` nearest-point-matches two independent `ReconstructionResult`s within a distance threshold and reports agreements/disagreements/unmatched honestly -- no averaging, no silently picking a winner. Refuses to validate a `failed` reconstruction. 5 tests. Not yet wired to a real workflow (nothing calls it automatically when a Session gets new evidence) and only compares two reconstructions to each other, not a reconstruction to independent ground truth (e.g. a manual measurement) — that's a natural follow-on, not done here. |
@@ -45,24 +45,31 @@ Real COLMAP integration code now exists (`ColmapReconstructionBackend`):
 real subprocess pipeline, real parsing of COLMAP's documented text format,
 verified against literal COLMAP-format fixtures (481/481 tests, 6 new).
 
-**Honest gap, stated plainly:** COLMAP is not installed in this environment.
-The subprocess pipeline (`feature_extractor` → `exhaustive_matcher` →
-`mapper` → `model_converter`) has never actually run — only its call
-sequence and its output parser are verified. `reconstruct()` correctly
-raises `ReconstructionBackendUnavailableError` rather than pretending it
-worked.
+**Update (2026-09-12):** COLMAP 4.2.0 (no-CUDA Windows build) was installed
+and `ColmapReconstructionBackend.reconstruct()` was run for real against
+4 photos of a public test scene (`kicker` from the
+`alexmkwizu/colmap-testing-dataset` HF dataset). Result: 3/4 images
+registered, 228 real 3D points, ~23s. This was not a no-op -- the run
+surfaced two real bugs in `colmap_backend.py`, now fixed: (1) COLMAP's
+Windows CLI needs `QT_QPA_PLATFORM=offscreen` or it blocks on a GUI
+dialog; (2) this build has no GPU, so the feature extractor/matcher need
+`use_gpu=0` explicitly or they hard-fail. Both fixes are unconditional
+(`_subprocess_env()`, `use_gpu` constructor flag), not environment-specific
+hacks.
 
 Goal F (validation) no longer requires C to be fully done -- it only needs
 two `ReconstructionResult`s to compare, and the fake backend already
 produces those. `validate_reconstructions()` now exists (486/486 tests,
 5 new) and surfaces point-level disagreement without fabricating agreement.
 
-Two blockers remain open, independent of each other:
-1. Get COLMAP installed somewhere runnable and do one real pass against a
-   real photo set -- the subprocess flags/paths in
-   `colmap_backend.py` are typed from documentation, never executed.
-2. Wire validation into an actual workflow: today `validate_reconstructions`
+One blocker remains open:
+1. Wire validation into an actual workflow: today `validate_reconstructions`
    is a standalone function nothing calls automatically. The natural next
    step is comparing a reconstruction against an independent manual
    measurement (extending `evidence/promote.py`'s pattern) rather than only
    reconstruction-vs-reconstruction.
+
+Remaining honest gaps on reconstruction itself (not blockers, but real
+limits): only one small 4-image scene has been exercised -- no large
+building, no stress test, no automated CI coverage of the real binary
+(only the pure parsing functions are unit-tested against fixture text).

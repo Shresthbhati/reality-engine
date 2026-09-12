@@ -32,6 +32,7 @@ class GeometryType(str, Enum):
     """Supported geometry representations."""
     MESH = "mesh"  # Triangle mesh (vertices, faces, optional UVs, normals)
     POINTCLOUD = "pointcloud"  # Unorganized 3D points
+    PLANE = "plane"  # Infinite/semi-bounded plane (normal+d), bounds in bounds_min/max (added 2026-09-12 for geometric-reasoning output; additive, like the EntityType extension)
     BOX = "box"  # Axis-aligned bounding box
     SPHERE = "sphere"  # Sphere (center, radius)
     CYLINDER = "cylinder"  # Cylinder (center, radius, height)

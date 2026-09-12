@@ -37,7 +37,7 @@ each** — no code, no tests, nothing importable. Calling any of them
 
 - **Perception engine**: no camera calibration, feature extraction (beyond COLMAP's internal SIFT), depth estimation, segmentation, tracking, or 2D->3D instance lifting exists as Reality Engine code. `perception/{depth,detection,segmentation,tracking,materials,change_detection}/` are README-only.
 - **Scene graph as a first-class module**: `Relationship`/`RelationshipKind` exist on `Entity` (spec-compliant edge data), and `Inspector` exposes a few entity-scoped queries (`get_relationships`, `find_supporting`), but there is no graph-level query engine (path queries, "what's inside room X", reverse-lookup by relationship kind across the whole world). This is the highest-leverage gap that's actually reachable with zero new dependencies — see "Next increment" below.
-- **Automatic room/wall/floor reasoning, material inference from imagery, measurement-from-geometry, evidence fusion across competing observations**: none implemented. `evidence/promote.py` only turns a human-entered `MANUAL_MEASUREMENT` into a WorldIR Measurement; nothing infers geometry-derived measurements.
+- **Material inference from imagery**: none implemented. **Wall/floor/ceiling reasoning, measurement-from-geometry, and evidence fusion**: no longer in this list — see the dated updates below (`perception/geometry/`, `evidence/promote_planes.py` merged via PR #3; `reconstruction/fusion/fusion.py` in this pass). Room inference and material inference remain undone.
 - **Ontology**: `EntityType` enum exists but is a flat 10-value list (`BUILDING, STRUCTURE, VEHICLE, TERRAIN, VEGETATION, WATER, NATURAL_HAZARD, DEBRIS, SENSOR, UNKNOWN`) — far short of the room/wall/floor/door/window/stairs/road granularity the vision calls for.
 - **Exporters** (Blender/glTF/USD/Unreal): directory exists, README only, zero code.
 - **Reality Studio as an application**: `engine/studio/` is a headless Python data-model layer (viewport math, selection state, command wiring) with no UI, no windowing, no rendering. There is no `apps/studio` code, only its README.
@@ -146,6 +146,63 @@ connected plane structure, supports/support reasoning, evidence fusion
 across competing plane fits, curvature/mesh reasoning, and validation
 against real photos at scale (the synthetic room is a fixture, not a
 benchmark).
+
+## Dated update — 2026-09-12: evidence fusion core (this pass)
+
+`reconstruction/fusion/fusion.py` implements the fusion core the audit
+previously listed under "none implemented": `fuse_quantity()` combines
+independent observations of one real quantity (e.g. LiDAR vs
+photogrammetry distance, competing reconstructions' estimates) by
+inverse-variance confidence weighting; detects conflicts at 5 combined
+sigma (difference > 5·sqrt(σₐ²+σᵦ²), i.e. statistically real
+disagreement under honest claimed uncertainties — a 5 cm delta with
+centimeter-scale uncertainties is a conflict, the same delta with
+decimeter-scale uncertainties is consistent); resolves conflicts
+HONESTLY — the fused value stays the weighted mean of ALL sources
+(never a winner-pick or silent discard), provenance becomes
+`Provenance.CONFLICT`, confidence drops to the weakest contributor, and
+every conflicting pair is preserved verbatim in the result alongside
+the raw contributing observations and the observed pairwise spread
+(`agreement_rms`). Passthrough keeps a single source's own provenance
+and precision exactly. Unit discipline enforced: mixing units raises
+`FusionError` rather than fusing. Bridges to WorldIR via
+`fused_to_measurement()` (CONFLICT provenance survives the bridge).
+20 tests including the spec's canonical LiDAR-3.17/photogrammetry-3.22
+scenario with hand-computed sigma multiples, input-order determinism,
+and error paths. Full suite: 761 passed, 1 skipped.
+
+Still undone in fusion, labelled not hidden: outlier rejection / robust
+estimation, temporal consistency across epochs, pose-level (non-scalar)
+fusion, and wiring `fuse_quantity` into an automatic promotion path
+(it is a deterministic core waiting for callers that hold two
+independent observations — e.g. competing plane fits, which row T2
+defers explicitly).
+
+## Dated corrections — 2026-09-12: stale claims in earlier audit sections
+
+Several claims in the older sections above predate merged work and are
+no longer true (kept here because this file is read as ground truth):
+
+- "EntityType is a flat 10-value list" — stale. Now 24 values
+  (ROOM/WALL/FLOOR/CEILING/ROOF/DOOR/WINDOW/STAIRS/ROAD/... added in
+  the ontology extension; wall/floor/ceiling get ASSIGNED automatically
+  by the merged geometric-reasoning slice, row T2).
+- "Exporters: directory exists, README only, zero code" — stale.
+  `exporters/gltf/exporter.py` and `exporters/usd/exporter.py` are real
+  (glTF 2.0 JSON and USD ASCII with structural tests), BOX-geometry
+  scope only; no Blender/Unreal target.
+- "No scene-graph query engine" — stale. `engine/scene_graph/graph.py`
+  (row N) answers contents_of/supporters_of/path_exists queries over
+  real Relationship edges; what's still missing is automatic geometric
+  derivation of most relationships and room-level containment.
+- "No docs/TECHNOLOGY_REGISTRY.md" — stale. It exists (row Q) with
+  depth/segmentation candidates; no registered technology beyond COLMAP
+  is installed. (MiDaS depth backend landed 2026-09-12 via another
+  agent's commit — `perception/depth/` is no longer README-only.)
+- "Measurement-from-geometry: nothing infers geometry-derived
+  measurements" — stale for planes: extent + conditional wall thickness
+  come from `evidence/promote_planes.py` (row T2). Room dimensions,
+  area/volume, and object dimensions remain undone.
 
 ## What this audit does NOT claim
 

@@ -36,12 +36,30 @@ during this slice: majority-rule plane extraction deadlock, tilted
 single-refit planes, same-facing-normal wall-pairing, plane-gap sign,
 unnormalized-normal handling. All fixed and regression-tested.
 
+## Completed 2026-09-12 (later session): evidence fusion core
+
+Branch `evidence-fusion` off `main` (PR #3 with the geometric-reasoning
+slice was MERGED; MiDaS depth backend also landed). New:
+`reconstruction/fusion/fusion.py` — deterministic inverse-variance
+fusion of scalar quantities with 5-sigma conflict detection, honest
+conflict resolution (weighted mean of ALL sources + CONFLICT provenance
++ preserved conflicting pairs, never a winner-pick), passthrough
+provenance, unit-mismatch refusal, `fused_to_measurement()` WorldIR
+bridge. 20 tests (`tests/test_evidence_fusion.py`) incl. the spec's
+LiDAR-3.17/photogrammetry-3.22 canonical scenario. Full suite: 761
+passed, 1 skipped. Row T3 added to docs/CAPABILITY_MATRIX.md; audit got
+a dated fusion update. NOTE: fusion is a deterministic core awaiting
+callers — nothing in the repo yet holds two independent observations
+and fuses them automatically.
+
 ## Next tasks (dependency-safe, in order)
 
 - Room inference from connected floor/wall/ceiling plane structure (the
   planes now exist as typed entities; ROOM entities and CONTAINS/PART_OF
   edges from plane topology are the next geometric-reasoning step).
-- Evidence fusion across competing plane fits (multiple reconstructions).
+- Evidence fusion across competing plane fits (multiple reconstructions) —
+  the fusion core now exists (`reconstruction/fusion/fusion.py`); what
+  remains is a caller that detects competing plane fits and feeds them in.
 - Wire plane promotion into a Studio action so a user-visible flow exists
   (detection currently runs as library calls).
 - One real depth/segmentation backend per docs/TECHNOLOGY_REGISTRY.md

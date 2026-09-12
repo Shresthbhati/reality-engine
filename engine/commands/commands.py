@@ -64,4 +64,29 @@ class AddRelationshipCommand:
     provenance: Optional[Provenance] = None
 
 
-Command = CreateEntityCommand | SetEntityTransformCommand | DeleteEntityCommand | AddRelationshipCommand
+@dataclass(frozen=True)
+class CompileWorldCommand:
+    """Compiles a ReconstructionResult into the session world through
+    the command pipeline: a typed, validated, permission-checked,
+    event-logged compile (the WorldIR-mutation counterpart to running
+    engine.compiler directly).
+
+    Transactional by construction: the compile runs into a STAGING world
+    (same deterministic options as the standalone compiler) and is
+    merged into the session world ONLY if its validation gate passes --
+    a gate failure raises and leaves the session world untouched
+    (spec sec 25: no half-compiled state, no silent insert).
+    """
+
+    result: object  # reconstruction.backend.interface.ReconstructionResult
+    compile_options: Optional[object] = None  # engine.compiler.CompileOptions
+    actor_id: Optional[str] = None
+
+
+Command = (
+    CreateEntityCommand
+    | SetEntityTransformCommand
+    | DeleteEntityCommand
+    | AddRelationshipCommand
+    | CompileWorldCommand
+)

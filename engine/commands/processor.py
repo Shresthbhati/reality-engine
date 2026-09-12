@@ -28,11 +28,19 @@ from events.types import (
     ENTITY_DELETED_EVENT,
     ENTITY_TRANSFORM_SET_EVENT,
     RELATIONSHIP_ADDED_EVENT,
+    WORLD_COMPILED_EVENT,
 )
 from provenance import Provenance
 from world_ir import Entity, EntityType, Relationship, WorldIR
 
-from .commands import AddRelationshipCommand, Command, CreateEntityCommand, DeleteEntityCommand, SetEntityTransformCommand
+from .commands import (
+    AddRelationshipCommand,
+    Command,
+    CompileWorldCommand,
+    CreateEntityCommand,
+    DeleteEntityCommand,
+    SetEntityTransformCommand,
+)
 from .permissions import AllowAllPolicy, PermissionPolicy
 
 
@@ -81,6 +89,8 @@ class WorldCommandProcessor:
             event_type, source_refs = self._apply_delete(command)
         elif isinstance(command, AddRelationshipCommand):
             event_type, source_refs = self._apply_add_relationship(command)
+        elif isinstance(command, CompileWorldCommand):
+            event_type, source_refs = self._apply_compile_world(command)
         else:
             raise CommandValidationError(f"unknown command type: {type(command).__name__}")
 
@@ -122,6 +132,9 @@ class WorldCommandProcessor:
                 raise CommandValidationError(
                     "an entity cannot have a relationship to itself"
                 )
+        elif isinstance(command, CompileWorldCommand):
+            if command.result is None:
+                raise CommandValidationError("compile command carries no reconstruction result")
         else:
             raise CommandValidationError(f"unknown command type: {type(command).__name__}")
 
@@ -161,3 +174,51 @@ class WorldCommandProcessor:
         )
         self.world.entities[command.source_entity_id].relationships.append(relationship)
         return RELATIONSHIP_ADDED_EVENT, [command.source_entity_id, command.target_entity_id]
+
+    def _apply_compile_world(self, command: CompileWorldCommand):
+        """Transactional compile: run the deterministic compiler into a
+        STAGING world, gate it, then merge into the session world. A gate
+        failure (or any compile refusal) leaves the session world
+        untouched -- half-compiled state never reaches the canonical
+        world (spec sec 25). The staged compile is deterministic, so a
+        retried command with the same inputs produces the same world.
+        """
+        from engine.compiler import CompileOptions, compile_reconstruction_to_world
+        from world_ir.validation import ValidationSeverity, validate_world_ir
+
+        options = command.compile_options or CompileOptions()
+        if not isinstance(options, CompileOptions):
+            raise CommandValidationError(
+                f"compile_options must be CompileOptions, got {type(options).__name__}"
+            )
+        staged, diagnostics = compile_reconstruction_to_world(
+            command.result, options, world=None
+        )
+        report = validate_world_ir(staged)
+        errors = [i for i in report.issues if i.severity is ValidationSeverity.ERROR]
+        if errors:
+            raise CommandValidationError(
+                "compiled world failed validation: " + "; ".join(str(i) for i in errors)
+            )
+
+        # Merge-on-success: structure entities, geometries, metadata, and
+        # the room(s) move over. Entity ids are prefix-scoped per compile
+        # options, so a recompile with the same options is idempotent
+        # (same ids overwritten, not duplicated).
+        for entity_id, entity in staged.entities.items():
+            self.world.entities[entity_id] = entity
+        for geometry_id, geometry in staged.geometries.items():
+            self.world.geometries[geometry_id] = geometry
+        self.world.metadata.setdefault("compiles", []).append(dict(staged.metadata.get("compiled_from", {})))
+        if self.world.global_provenance == Provenance.UNKNOWN:
+            self.world.global_provenance = staged.global_provenance
+
+        self._last_compile_diagnostics = diagnostics
+        return WORLD_COMPILED_EVENT, [e for e in staged.entities]
+
+    @property
+    def last_compile_diagnostics(self):
+        """Diagnostics of the most recent successful CompileWorldCommand
+        (None before any compile) -- coverage/quality inspection without
+        re-running anything."""
+        return getattr(self, "_last_compile_diagnostics", None)

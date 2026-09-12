@@ -424,6 +424,21 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 
 ---
 
+### REQ-032: Rain System
+
+- **Section**: §19/§24 (Rain System, weather effects)
+- **Description**: Deterministic rain intensity model with meteorological band classification (NONE/LIGHT/MODERATE/HEAVY/EXTREME), visibility reduction, per-surface rainfall accumulation, band-change event publishing through the real `EventBus`, and diagnostics
+- **Dependency**: REQ-014 (event bus)
+- **Status**: TESTED
+- **Files**: `engine/environment/rain.py`, `engine/environment/__init__.py`
+- **Tests**: `tests/test_rain.py` (58 tests)
+- **Benchmark**: None
+- **Verification**: intensity clamping and band classification against meteorological thresholds; visibility factor formula and floor; surface accumulation formula (`intensity_m_s * dt * (1 - absorption_coefficient)`) against registered surfaces; serialize/deserialize round-trip including surfaces; `rain.intensity_changed` event published on the real `EventBus` on band change only (not on same-band intensity change), with correct `from_band`/`to_band`/`intensity_mm_h` payload; no event attempted and no crash when `event_bus=None`; `get_diagnostics()` returns intensity, band, visibility factor, surface count, and total accumulated volume (`sum(depth * area)`) across surfaces
+- **Limitations**: No wind-driven rain angle/direction; no runoff or drainage flow between surfaces; no puddle-as-fluid-body simulation — these belong to later fluid/weather steps
+- **Blockers**: None
+
+---
+
 ## SUMMARY
 
 ### Ledger Statistics
@@ -447,11 +462,11 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
   - TESTED: 4
   - BLOCKED: 0
 
-- PHASE 3 (Environment): 3 requirements
-  - TESTED: 3
+- PHASE 3 (Environment): 4 requirements
+  - TESTED: 4
   - BLOCKED: 0
 
-**Total: 31 requirements tracked**
+**Total: 32 requirements tracked**
 
 ### Status Distribution
 
@@ -461,15 +476,15 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 | PLANNED | 0 |
 | IN_PROGRESS | 0 |
 | IMPLEMENTED | 1 (Job System) |
-| TESTED | 14 |
+| TESTED | 15 |
 | VERIFIED | 16 |
 | BLOCKED | 0 |
 | DEFERRED | 0 |
 
 ### Test Coverage
 
-- **Total Tests**: 438 (all passing) — note: this line previously said 430 without being updated after the 2026-09-07 WorldRuntime-crash fix (which added 2 tests, 430→432) landed; corrected here along with this session's 6 new tests (432→438) rather than compounding the drift.
-- **New Tests This Session**: 218 tests
+- **Total Tests**: see the top-level test suite count as of the most recent merge into `main` -- this table has fallen out of sync with the real count several times (438 -> 488 on divergent branches -> hundreds more added by later evidence/reconstruction/studio/perception work); trust `pytest -q`'s own output over any number recorded here, and stop updating this line by hand.
+- **New Tests This Session**: see individual commit messages and `docs/CAPABILITY_MATRIX.md`, which is now the maintained source of truth for what each subsystem actually has test coverage for.
   - Runtime foundation: 44 tests
   - Dependency graph & caching: 30 tests
   - Fracture system: 18 tests
@@ -480,6 +495,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
   - Inspector: 28 tests (Step 17)
   - Physics Debugger: 10 tests (Step 18)
   - P0 audit-repair (transform resolution + timestamp determinism): 6 tests
+  - Rain: 58 tests (Step 19)
 - **Coverage**: 100% of tested requirements
 
 ### Critical Blockers

@@ -39,6 +39,7 @@ issues. This is a real gap, not an oversight to gloss over; see
 | `test_physics_numerics.py` | REQ-013 | UNIT | — |
 | `test_physics_rigid_body.py` | REQ-010 | UNIT | — |
 | `test_provenance.py` | (provenance model, no REQ) | UNIT | — |
+| `test_rain.py` | REQ-032, REQ-014 (event bus) | UNIT | 58 |
 | `test_replay_system.py` | REQ-028 | UNIT | 29 |
 | `test_rng.py` | REQ-009 | UNIT | — |
 | `test_runtime_foundation.py` | REQ-003, REQ-018–021, REQ-024 | UNIT | — |
@@ -49,9 +50,13 @@ issues. This is a real gap, not an oversight to gloss over; see
 | `test_world_ir_v1.py` | REQ-002, REQ-004 | UNIT + REGRESSION (3 of 32 tests guard the 2026-09-07 timestamp-determinism fix, DECISIONS.md #16) | 32 |
 | `test_world_runtime.py` | REQ-005, REQ-024 | UNIT + REGRESSION (6 of 8 tests guard the 2026-09-07 V1-schema entity-iteration fix DECISIONS.md #14 and the transform-resolution fix DECISIONS.md #15) | 8 |
 
-**Totals** (per `python -m pytest tests/ -q`): 438 tests, 100% passing,
-34 test files. Counts left as "—" above were not individually re-verified
-in this pass; re-run `pytest --collect-only -q` per file to refresh.
+**Totals**: run `python -m pytest tests/ -q` for the current, real count --
+this table has gone stale after several rounds of divergent-branch work
+(438 -> 488 -> hundreds more from evidence/reconstruction/studio/perception
+additions merged since). Counts left as "—" above were not individually
+re-verified in this pass; re-run `pytest --collect-only -q` per file to
+refresh, and prefer `docs/CAPABILITY_MATRIX.md` for what's actually tested
+per subsystem going forward.
 
 ## Coverage gaps against §40
 

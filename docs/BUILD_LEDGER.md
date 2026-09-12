@@ -422,6 +422,18 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 - **Limitations**: No bounding-box/AABB record (shapes carry their own dims via `to_dict()`, not yet re-expressed as world-space AABB); no stress/damage visualization (no structural solver exists yet to source it from); no fluid/wind field visualization (no fluid/weather solver exists yet)
 - **Blockers**: None
 
+### REQ-032: Water
+- **Section**: §20/§22 (Water system, fluid environment simulation)
+- **Description**: Multi-body water simulation — depth/volume tracking, buoyancy force (Archimedes), inter-body flow equalization with drainage, and overflow-crossing event publishing with diagnostics
+- **Dependency**: REQ-014 (event bus). Does NOT depend on the Step 19 rain REQ — water and rain are independent environment subsystems; nothing in water reads rain state or vice versa
+- **Status**: TESTED
+- **Files**: `engine/environment/water.py`, `engine/environment/__init__.py`
+- **Tests**: `tests/test_water.py` (47 tests)
+- **Benchmark**: None
+- **Verification**: volume computation; buoyancy worked example; snapshot-based flow equalization between adjacent bodies (rate-limited vs. equalizing flow, no overshoot); multi-neighbor start-of-step snapshot consistency; drainage floored at zero; serialize/deserialize round-trip including adjacency and drainage; overflow event fires exactly once on the step a body's depth crosses above `max_depth_m`, does not refire on subsequent steps spent above threshold, does not fire when `max_depth_m` is `None`, and does not crash when `event_bus` is `None` (default)
+- **Limitations**: P1 simplification — `flow_rate_coefficient` is a tunable constant, not a real hydraulic property; no pressure field; no obstruction/object interaction beyond the buoyancy force calculation; no wave propagation. A body's per-tick outflow is capped by its start-of-tick volume (deliberate, prevents fabricating water when a body has 3+ neighbors — see the final-review conservation fix), which means a chain A→B→C moves water one hop per tick rather than cascading through the whole chain in a single step; a multi-tick simulation still reaches the correct equilibrium, just gradually.
+- **Blockers**: None
+
 ---
 
 ### REQ-032: Rain System
@@ -483,7 +495,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
 
 ### Test Coverage
 
-- **Total Tests**: see the top-level test suite count as of the most recent merge into `main` -- this table has fallen out of sync with the real count several times (438 -> 488 on divergent branches -> hundreds more added by later evidence/reconstruction/studio/perception work); trust `pytest -q`'s own output over any number recorded here, and stop updating this line by hand.
+- **Total Tests**: see the top-level test suite count as of the most recent merge into `main` -- this table has fallen out of sync with the real count several times (438 -> 488 -> 479 on divergent branches -> hundreds more added by later evidence/reconstruction/studio/perception work); trust `pytest -q`'s own output over any number recorded here, and stop updating this line by hand.
 - **New Tests This Session**: see individual commit messages and `docs/CAPABILITY_MATRIX.md`, which is now the maintained source of truth for what each subsystem actually has test coverage for.
   - Runtime foundation: 44 tests
   - Dependency graph & caching: 30 tests
@@ -496,6 +508,7 @@ See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) and
   - Physics Debugger: 10 tests (Step 18)
   - P0 audit-repair (transform resolution + timestamp determinism): 6 tests
   - Rain: 58 tests (Step 19)
+  - Water: 47 tests (Step 20)
 - **Coverage**: 100% of tested requirements
 
 ### Critical Blockers

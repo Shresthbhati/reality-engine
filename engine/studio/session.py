@@ -18,8 +18,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from world_ir import WorldIR
 
-from engine.commands import CommandResult, CreateEntityCommand, DeleteEntityCommand, SetEntityTransformCommand, WorldCommandProcessor
+from engine.commands import (
+    AddRelationshipCommand,
+    CommandResult,
+    CreateEntityCommand,
+    DeleteEntityCommand,
+    SetEntityTransformCommand,
+    WorldCommandProcessor,
+)
 from engine.commands.permissions import PermissionPolicy
+from engine.geometry.adjacency import infer_geometric_relationships
 from engine.inspector.inspector import Inspector
 from engine.physics.math3 import Vec3
 from engine.render.viewport import Camera, Viewport
@@ -80,6 +88,20 @@ class StudioSession:
         result = self.commands.execute(DeleteEntityCommand(entity_id=active, actor_id=self.actor_id))
         self.selection.deselect(active)
         return result
+
+    def infer_and_add_adjacency(self, adjacency_margin: float = 0.0) -> List[CommandResult]:
+        """Close the loop between the pure geometric-adjacency query and the
+        validated mutation pipeline: run infer_geometric_relationships()
+        against the current world, then execute an AddRelationshipCommand
+        for each candidate pair so it actually becomes a real, event-logged
+        Relationship on the source entity (provenance defaults to
+        INFERRED -- see AddRelationshipCommand)."""
+        results = []
+        for source_id, target_id, kind in infer_geometric_relationships(self.world, adjacency_margin):
+            results.append(self.commands.execute(
+                AddRelationshipCommand(source_entity_id=source_id, target_entity_id=target_id, kind=kind, actor_id=self.actor_id)
+            ))
+        return results
 
     def active_entity_summary(self):
         """Full resolved Inspector view of whatever's currently active, or None."""

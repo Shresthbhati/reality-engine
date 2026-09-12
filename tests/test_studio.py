@@ -6,7 +6,7 @@ from engine.commands import CommandNotFoundError, PermissionDeniedError, SetEnti
 from engine.studio import Outliner, Selection, StudioSession
 from events.types import ENTITY_CREATED_EVENT, ENTITY_DELETED_EVENT, ENTITY_TRANSFORM_SET_EVENT
 from provenance import Provenance
-from world_ir import Entity, EntityType, WorldIR
+from world_ir import Entity, EntityType, RelationshipKind, WorldIR
 
 
 def _world_with_entities():
@@ -234,3 +234,21 @@ def test_studio_editing_surfaces_validation_errors():
     session = StudioSession(world)
     with pytest.raises(CommandNotFoundError):
         session.commands.execute(SetEntityTransformCommand(entity_id="does-not-exist", position=(0, 0, 0)))
+
+
+# ---- StudioSession.infer_and_add_adjacency: geometric inference wired to commands ----
+
+def test_infer_and_add_adjacency_adds_real_relationship_to_source_entity():
+    world = WorldIR(id="w1")
+    a = Entity(id="a", name="A", type=EntityType.STRUCTURE)
+    b = Entity(id="b", name="B", type=EntityType.STRUCTURE)
+    a.transform = {"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "radius": 1.0}
+    b.transform = {"position": {"x": 3.0, "y": 0.0, "z": 0.0}, "radius": 1.0}
+    world.entities = {"a": a, "b": b}
+    session = StudioSession(world)
+
+    results = session.infer_and_add_adjacency(adjacency_margin=1.0)
+
+    assert len(results) > 0
+    assert any(r.kind == RelationshipKind.ADJACENT_TO for r in world.entities["a"].relationships) or \
+        any(r.kind == RelationshipKind.ADJACENT_TO for r in world.entities["b"].relationships)

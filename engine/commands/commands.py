@@ -22,6 +22,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+from provenance import Provenance
+from world_ir import RelationshipKind
+
 
 @dataclass(frozen=True)
 class CreateEntityCommand:
@@ -44,4 +47,21 @@ class DeleteEntityCommand:
     actor_id: Optional[str] = None
 
 
-Command = CreateEntityCommand | SetEntityTransformCommand | DeleteEntityCommand
+@dataclass(frozen=True)
+class AddRelationshipCommand:
+    """Adds a Relationship onto a source Entity -- the WorldIR-mutation
+    counterpart to a pure query like engine/geometry/adjacency.py's
+    infer_geometric_relationships(). Defaults to Provenance.INFERRED
+    because the intended caller is an inference process, not a human
+    observation; pass provenance=Provenance.OBSERVED explicitly for a
+    human-confirmed relationship.
+    """
+    source_entity_id: str
+    target_entity_id: str
+    kind: RelationshipKind
+    actor_id: Optional[str] = None
+    confidence: float = 1.0
+    provenance: Optional[Provenance] = None
+
+
+Command = CreateEntityCommand | SetEntityTransformCommand | DeleteEntityCommand | AddRelationshipCommand

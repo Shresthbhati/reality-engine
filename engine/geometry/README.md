@@ -1,7 +1,8 @@
 # geometry
 
-Not yet implemented.
-
-This directory is part of the repository skeleton (spec §81/§82). It is
-scaffolded ahead of the subsystem that will live here per the build
-order in `docs/BUILD_ORDER.md` (spec §108 FIRST IMPLEMENTATION ORDER).
+`adjacency.py` -- AABB-based `ADJACENT_TO`/`OVERLAPS` relationship
+inference (spec §23 GEOMETRIC REASONING). See `docs/CAPABILITY_MATRIX.md`
+row T for exact scope and honest limitations. Everything else this
+directory could eventually hold (plane detection, room-boundary
+inference, SUPPORTS/RESTS_ON from real contact geometry) is not
+implemented.

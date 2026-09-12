@@ -62,6 +62,20 @@ class EntityType(str, Enum):
     NATURAL_HAZARD = "natural_hazard"
     DEBRIS = "debris"
     SENSOR = "sensor"
+    ROOM = "room"  # Enclosed interior space
+    WALL = "wall"  # Vertical partition/boundary element
+    FLOOR = "floor"  # Horizontal walking surface within a level
+    CEILING = "ceiling"  # Upper interior boundary of a room
+    ROOF = "roof"  # Exterior top covering of a building
+    COLUMN = "column"  # Vertical load-bearing member
+    BEAM = "beam"  # Horizontal load-bearing member
+    DOOR = "door"  # Openable wall opening for passage
+    WINDOW = "window"  # Wall opening for light/view
+    STAIRS = "stairs"  # Vertical circulation element
+    ROAD = "road"  # Vehicular travel surface
+    CURB = "curb"  # Raised edge between road and sidewalk
+    SIDEWALK = "sidewalk"  # Pedestrian walking surface adjacent to a road
+    INFRASTRUCTURE = "infrastructure"  # General built infrastructure not otherwise classified
     UNKNOWN = "unknown"
 
 

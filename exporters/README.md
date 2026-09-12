@@ -1,7 +1,7 @@
 # exporters
 
-Not yet implemented.
-
-This directory is part of the repository skeleton (spec §81/§82). It is
-scaffolded ahead of the subsystem that will live here per the build
-order in `docs/BUILD_ORDER.md` (spec §108 FIRST IMPLEMENTATION ORDER).
+`gltf/` -- real glTF 2.0 export (box-geometry entities only).
+`usd/` -- real USD ASCII (`.usda`) export (box-geometry entities only).
+See `docs/CAPABILITY_MATRIX.md` row R for exact scope and honest limits.
+Blender/Unreal targets and materials/textures/hierarchy are not
+implemented.

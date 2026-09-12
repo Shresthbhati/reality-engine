@@ -52,11 +52,25 @@ a dated fusion update. NOTE: fusion is a deterministic core awaiting
 callers — nothing in the repo yet holds two independent observations
 and fuses them automatically.
 
+## Completed 2026-09-12 (latest): room inference
+
+`evidence/promote_rooms.py` — ROOM entities from closed wall∩floor
+boundary rings (walls resting on the floor via signed lowest-point
+test, shared top height, corner-support-validated ring of wall-plane
+intersection lines oriented by the floor's inlier centroid and walked
+by DIRECTED angle), CONTAINS/PART_OF edges, ESTIMATED area/extents/
+height measurements (height = exact floor-to-ceiling plane distance
+when the ceiling is observed). 18 tests; suite 798 passed / 2 skipped.
+Bugs caught by tests: piercing-wall contact (min-|dist|), folded-angle
+ring ordering (parallel walls adjacent), wall-top height undercount
+(ceiling-plane preference now). Room queries flow through
+`SceneGraph.contents_of()` end-to-end.
+
 ## Next tasks (dependency-safe, in order)
 
-- Room inference from connected floor/wall/ceiling plane structure (the
-  planes now exist as typed entities; ROOM entities and CONTAINS/PART_OF
-  edges from plane topology are the next geometric-reasoning step).
+- Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room
+  shared-wall ownership (room topology is now the foundation).
+- Wire plane+room promotion into a Studio action so a user-visible flow exists.
 - Evidence fusion across competing plane fits (multiple reconstructions) —
   the fusion core now exists (`reconstruction/fusion/fusion.py`); what
   remains is a caller that detects competing plane fits and feeds them in.

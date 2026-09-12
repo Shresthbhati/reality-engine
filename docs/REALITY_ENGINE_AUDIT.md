@@ -37,7 +37,7 @@ each** — no code, no tests, nothing importable. Calling any of them
 
 - **Perception engine**: no camera calibration, feature extraction (beyond COLMAP's internal SIFT), depth estimation, segmentation, tracking, or 2D->3D instance lifting exists as Reality Engine code. `perception/{depth,detection,segmentation,tracking,materials,change_detection}/` are README-only.
 - **Scene graph as a first-class module**: `Relationship`/`RelationshipKind` exist on `Entity` (spec-compliant edge data), and `Inspector` exposes a few entity-scoped queries (`get_relationships`, `find_supporting`), but there is no graph-level query engine (path queries, "what's inside room X", reverse-lookup by relationship kind across the whole world). This is the highest-leverage gap that's actually reachable with zero new dependencies — see "Next increment" below.
-- **Material inference from imagery**: none implemented. **Wall/floor/ceiling reasoning, measurement-from-geometry, and evidence fusion**: no longer in this list — see the dated updates below (`perception/geometry/`, `evidence/promote_planes.py` merged via PR #3; `reconstruction/fusion/fusion.py` in this pass). Room inference and material inference remain undone.
+- **Material inference from imagery**: none implemented. **Wall/floor/ceiling reasoning, measurement-from-geometry, evidence fusion, and room inference**: no longer in this list — see the dated updates below (`perception/geometry/`, `evidence/promote_planes.py` merged via PR #3; `reconstruction/fusion/fusion.py` and `evidence/promote_rooms.py` in this pass). Material inference remains undone.
 - **Ontology**: `EntityType` enum exists but is a flat 10-value list (`BUILDING, STRUCTURE, VEHICLE, TERRAIN, VEGETATION, WATER, NATURAL_HAZARD, DEBRIS, SENSOR, UNKNOWN`) — far short of the room/wall/floor/door/window/stairs/road granularity the vision calls for.
 - **Exporters** (Blender/glTF/USD/Unreal): directory exists, README only, zero code.
 - **Reality Studio as an application**: `engine/studio/` is a headless Python data-model layer (viewport math, selection state, command wiring) with no UI, no windowing, no rendering. There is no `apps/studio` code, only its README.
@@ -203,6 +203,31 @@ no longer true (kept here because this file is read as ground truth):
   measurements" — stale for planes: extent + conditional wall thickness
   come from `evidence/promote_planes.py` (row T2). Room dimensions,
   area/volume, and object dimensions remain undone.
+
+## Dated update — 2026-09-12: room inference (this pass)
+
+`evidence/promote_rooms.py` closes the next geometric-reasoning loop:
+ROOM entities are inferred from plane structure when walls rest on a
+floor, share a top height, and their wall-intersection-floor LINES close
+a boundary ring of corners the walls' inlier support reaches. Promotion
+writes a ROOM Entity (INFERRED) with CONTAINS room→part and PART_OF
+part→room edges (INFERRED, derivation metadata) and ESTIMATED floor-
+area/extents/height measurements; `SceneGraph.contents_of()` then
+answers "what does this room contain?" from WorldIR alone. Honesty
+designs worth recording (all test-observed): a wall that PIERCES a
+floor plane reads as non-contact (min-of-|distance| wrongly accepted
+piercing slabs — real bug, fixed with a signed lowest-point test); the
+ring walks DIRECTED angles with the floor's inlier centroid on each
+line's left (folded-angle ordering falsely placed parallel walls
+adjacent — real bug, fixed); a horizontal slab classifies as a second
+floor and is rejected by the interior-support (walkable-floor) test
+rather than spawning a duplicate room; height prefers the observed
+ceiling plane (wall top rows are legitimately lost to the ceiling
+plane — wall-top-only height measured 1.8 vs the true 2.0) and is
+labelled a lower bound without one. 18 tests, full suite 798 passed /
+2 skipped. Not built, labelled: non-convex (L-shaped) rooms (fail
+closed, not silently), DOOR/WINDOW/ROOF assignment, shared-wall
+multi-room ownership.
 
 ## What this audit does NOT claim
 

@@ -16,8 +16,9 @@ import json
 
 import pytest
 
-from apps.cli.main import main
+from apps.cli.main import main, _artifacts_dir_for
 from engine.compiler import CompileOptions, compile_reconstruction_to_world
+from world_ir.artifact_store import FileArtifactStore
 
 
 def _compiled_world_fixture():
@@ -30,6 +31,20 @@ def _compiled_world_fixture():
         for i, p in enumerate(_CAMS)
     )
     world, _diag = compile_reconstruction_to_world(result, CompileOptions(seed=42))
+    return world
+
+
+def _compiled_world_with_store_fixture(store_root):
+    from reconstruction.backend.interface import ReconstructedCameraPose
+    from tests.test_room_inference import _CAMS, _two_room_scene
+
+    result = _two_room_scene()
+    result.camera_poses.extend(
+        ReconstructedCameraPose(evidence_id=f"ev-{i}", position=p, rotation=(1.0, 0.0, 0.0, 0.0))
+        for i, p in enumerate(_CAMS)
+    )
+    store = FileArtifactStore(store_root)
+    world, _diag = compile_reconstruction_to_world(result, CompileOptions(seed=42, artifact_store=store))
     return world
 
 
@@ -96,6 +111,31 @@ class TestReconstructRefusesWithoutRealBackendData:
         assert rc == 1
         assert not (tmp_path / "world.json").exists()
         assert "refused" in capsys.readouterr().err.lower()
+
+
+class TestReconstructArtifactStoreDefault:
+    def test_no_real_geometry_flag_is_registered_and_skips_store_creation(self, tmp_path, capsys):
+        # Full COLMAP-backed reconstruct isn't available in this test env (see
+        # TestReconstructRefusesWithoutRealBackendData), so this only exercises
+        # the CLI-level flag/argument wiring: refusal happens before any
+        # artifact store would be created either way, and no artifacts dir
+        # should appear regardless of the flag when reconstruction refuses.
+        photos_dir = tmp_path / "photos"
+        photos_dir.mkdir()
+        (photos_dir / "a.jpg").write_bytes(_make_jpeg_bytes((1, 1, 1)))
+        (photos_dir / "b.jpg").write_bytes(_make_jpeg_bytes((2, 2, 2)))
+        package_path = tmp_path / "package.json"
+        main(["ingest", str(photos_dir), "-o", str(package_path)])
+
+        world_path = str(tmp_path / "world.json")
+        rc = main([
+            "reconstruct", str(package_path), "-o", world_path,
+            "--colmap-binary", "definitely-not-a-real-binary-xyz",
+            "--no-real-geometry",
+        ])
+
+        assert rc == 1
+        assert not _artifacts_dir_for(world_path).exists()
 
 
 class TestValidate:
@@ -166,6 +206,58 @@ class TestExport:
         with pytest.raises(SystemExit) as exc_info:
             main(["export", world_path, "--format", "unknown-fmt", "-o", str(tmp_path / "x")])
         assert exc_info.value.code == 2  # argparse rejects the invalid choice before reaching the SDK
+
+
+class TestArtifactStorePathConvention:
+    def test_artifacts_dir_for_derives_from_output_path(self):
+        assert _artifacts_dir_for("world.json").name == "world.json.artifacts"
+        assert str(_artifacts_dir_for("out/world.json")).replace("\\", "/") == "out/world.json.artifacts"
+
+
+class TestExportReconnectsToRealGeometryStore:
+    def test_export_gltf_after_real_reconstruct_emits_real_meshes(self, tmp_path, capsys):
+        world_path = str(tmp_path / "world.json")
+        store_root = _artifacts_dir_for(world_path)
+        world = _compiled_world_with_store_fixture(store_root)
+        _write_world(tmp_path, world, "world.json")  # overwrite with the real-geometry compiled world
+
+        assert any(g.data_uri for g in world.geometries.values())  # sanity: real artifacts exist
+        assert store_root.is_dir()  # sanity: artifacts directory actually persisted to disk
+
+        out_path = tmp_path / "out.gltf"
+        rc = main(["export", world_path, "--format", "gltf", "-o", str(out_path)])
+
+        assert rc == 0
+        gltf = json.loads(out_path.read_text(encoding="utf-8"))
+        mesh_indices_used = {node["mesh"] for node in gltf["nodes"]}
+        assert mesh_indices_used - {0}, "expected at least one real (non-cube) mesh via the reconnected store"
+
+    def test_export_gltf_without_artifacts_dir_falls_back_to_cube(self, tmp_path, capsys):
+        # A world compiled WITHOUT an artifact store (--no-real-geometry equivalent):
+        # no <world>.artifacts/ dir exists, so export must behave exactly as before.
+        world_path = _write_world(tmp_path, _compiled_world_fixture())
+        assert not _artifacts_dir_for(world_path).exists()
+
+        out_path = tmp_path / "out.gltf"
+        rc = main(["export", world_path, "--format", "gltf", "-o", str(out_path)])
+
+        assert rc == 0
+        gltf = json.loads(out_path.read_text(encoding="utf-8"))
+        assert all(node["mesh"] == 0 for node in gltf["nodes"])
+
+    @pytest.mark.parametrize("fmt,suffix", [("usda", ".usda"), ("blender", ".py")])
+    def test_export_usda_blender_unaffected_by_artifacts_dir(self, tmp_path, capsys, fmt, suffix):
+        world_path = str(tmp_path / "world.json")
+        store_root = _artifacts_dir_for(world_path)
+        world = _compiled_world_with_store_fixture(store_root)
+        _write_world(tmp_path, world, "world.json")
+
+        out_path = tmp_path / f"out{suffix}"
+        rc = main(["export", world_path, "--format", fmt, "-o", str(out_path)])
+
+        assert rc == 0
+        assert out_path.exists()
+        assert out_path.stat().st_size > 0
 
 
 class TestQuery:

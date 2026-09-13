@@ -38,6 +38,7 @@ from reconstruction.orchestrator import (
     ReconstructionOrchestrator,
 )
 from sdk import reality
+from world_ir.artifact_store import FileArtifactStore
 from world_ir.world_v1 import WorldIR
 
 
@@ -52,6 +53,11 @@ def _load_world(path: str) -> WorldIR:
 
 def _save_world(world: WorldIR, path: str) -> None:
     Path(path).write_text(json.dumps(world.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _artifacts_dir_for(world_path: str) -> Path:
+    """Convention: `world.json` -> `world.json.artifacts/`, alongside it."""
+    return Path(f"{world_path}.artifacts")
 
 
 def _default_backends(colmap_binary: str, use_gpu: bool) -> List:
@@ -95,8 +101,13 @@ def cmd_reconstruct(args: argparse.Namespace) -> int:
                 _eprint(f"  {attempt.backend_name}: {attempt.outcome} - {attempt.detail or attempt.error}")
         return 1
 
+    compile_options = None
+    if not args.no_real_geometry:
+        store_root = _artifacts_dir_for(args.output)
+        compile_options = reality.CompileOptions(artifact_store=FileArtifactStore(store_root))
+
     try:
-        world, diagnostics = reality.compile_world_from_reconstruction(run.result)
+        world, diagnostics = reality.compile_world_from_reconstruction(run.result, compile_options)
     except (reality.CompileInputError, reality.WorldValidationGateError) as exc:
         _eprint(f"compile refused: {exc}")
         return 1
@@ -126,8 +137,13 @@ def cmd_diff(args: argparse.Namespace) -> int:
 
 def cmd_export(args: argparse.Namespace) -> int:
     world = _load_world(args.world)
+    artifact_store = None
+    if args.format == "gltf":
+        store_root = _artifacts_dir_for(args.world)
+        if store_root.is_dir():
+            artifact_store = FileArtifactStore(store_root)
     try:
-        content, report = reality.export(world, args.format)
+        content, report = reality.export(world, args.format, artifact_store=artifact_store)
     except reality.UnsupportedExportFormatError as exc:
         _eprint(str(exc))
         return 1
@@ -196,6 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_recon.add_argument("-o", "--output", required=True, help="world JSON output path")
     p_recon.add_argument("--colmap-binary", default="colmap")
     p_recon.add_argument("--gpu", action="store_true")
+    p_recon.add_argument(
+        "--no-real-geometry", action="store_true",
+        help="skip storing real plane point-cloud geometry (no <output>.artifacts/ dir written); "
+             "produces a smaller world.json with no Geometry.data_uri set, matching pre-artifact-store behavior",
+    )
     p_recon.set_defaults(func=cmd_reconstruct)
 
     p_validate = sub.add_parser("validate", help="validate a compiled WorldIR")
@@ -207,7 +228,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("after")
     p_diff.set_defaults(func=cmd_diff)
 
-    p_export = sub.add_parser("export", help="export a WorldIR to gltf/usda/blender")
+    p_export = sub.add_parser(
+        "export",
+        help="export a WorldIR to gltf/usda/blender (gltf reconnects to <world>.artifacts/ "
+             "for real geometry, if it exists)",
+    )
     p_export.add_argument("world")
     p_export.add_argument("--format", required=True, choices=["gltf", "usda", "blender"])
     p_export.add_argument("-o", "--output", required=True)

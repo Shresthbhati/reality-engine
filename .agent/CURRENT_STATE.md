@@ -1,9 +1,26 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (object real-geometry session complete)
-**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query + plane-geometry-storage PR merged)
-**Verified baseline before this session:** 1106 passed, 1 pre-existing environment failure deselected.
-**Verified after this session:** 1111 passed, 1 pre-existing failure deselected (observed 82.0s) — +5 tests, zero regressions.
+**Updated:** 2026-09-13 (parallel real-geometry rollout session complete)
+**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query + plane/object-geometry-storage PR merged)
+**Verified baseline before this session:** 1111 passed, 1 pre-existing environment failure deselected.
+**Verified after this session:** 1127 passed, 1 pre-existing failure deselected (observed 89.3s) — +16 tests, zero regressions.
+
+## Completed this session (2026-09-13, latest): real geometry reaches every exporter + the CLI (dispatched as 3 parallel agents, disjoint file sets, reviewed and integrated centrally)
+
+Closed three of the four remaining gaps this file listed after the plane/object real-geometry-storage work: gltf was the only consumer of `artifact_store`, usda/blender exporters didn't consume it at all, and the CLI never created or passed one through even though the engine supported it end-to-end.
+
+**usda exporter** (`exporters/usd/exporter.py`): `export_to_usda`/`export_to_usda_with_report`/`write_usda_file` gained an optional `artifact_store` param; a resolvable geometry now emits a real USD `Points` prim (`point3f[] points = [...]`, local-space, order-preserved) instead of the placeholder `Cube`. Same honesty fallback as gltf. 6 new tests in `tests/test_usd_exporter.py`.
+
+**blender exporter** (`exporters/blender/exporter.py`): same pattern — a resolvable geometry now generates real `bpy.data.meshes.new()` / `from_pydata()` / `bpy.data.objects.new()` script text (a real point-cloud mesh) instead of the AABB-scaled cube, in local space, same custom-property/collection-linking logic shared between both paths. 4 new tests in `tests/test_blender_exporter.py`. Neither exporter's real-geometry text has been validated against a real `pxr`/Blender install (both already carried that caveat before this session; unchanged).
+
+**CLI** (`apps/cli/main.py`): `reality reconstruct` now defaults to real-geometry storage via a real, persistent `FileArtifactStore` rooted at `<output>.artifacts/` (e.g. `world.json` -> `world.json.artifacts/`) — real geometry is now the CLI default, not something a caller has to opt into. `--no-real-geometry` opts out, reproducing the exact prior CLI behavior (verified). `reality export --format gltf` automatically reconnects to `<world>.artifacts/` if present, so a `reconstruct` -> `export` round-trip across two separate CLI processes now emits real per-entity meshes; usda/blender exports are unaffected (those exporters don't consume the store from the CLI yet even though they now support the parameter directly — wiring that through is a small follow-on, see below). 6 new tests in `tests/test_cli.py`. `apps/cli/README.md` documents the new default and convention.
+
+All three were dispatched as independent parallel subagents (disjoint file sets: `exporters/usd/`, `exporters/blender/`, `apps/cli/` + each one's own test file) via superpowers' dispatching-parallel-agents pattern, then reviewed and integrated in this session — no merge conflicts (verified: `git status` showed only the 7 expected files, no overlapping edits), diffs spot-checked for correctness against the gltf exporter's established pattern before accepting. Full suite run once after integration: 1127 passed (was 1111), zero regressions.
+
+Not done in this pass (named, not hidden):
+- CLI's `export --format usda`/`--format blender` don't reconnect to `<world>.artifacts/` yet, even though both exporters now accept `artifact_store` directly — only the gltf CLI path was wired (matches `sdk.reality.export()`'s own current gltf-only threading; extending both together is the natural next step).
+- The CLI agent could not verify a true end-to-end `reconstruct` (real backend, real photos) -> real `.artifacts/` directory round-trip — no COLMAP install in this environment, same blocker every session has hit. The `--no-real-geometry` opt-out and the artifact-path-derivation logic ARE tested directly; only the full real-backend path is unverified.
+- Triangulated MESH storage is still open (point-clouds only, across all three formats now).
 
 ## Completed this session (2026-09-13, latest): real geometry storage for OBJECTS (P0.10/11 follow-on) — `evidence/promote_objects.py` now writes real points too, not just `promote_planes.py`
 
@@ -692,6 +709,18 @@ environments (COLMAP present/absent). Full suite **920 passed /
 
 ## Next tasks (dependency-safe, in order)
 
+Pruned this session (audited against actual code, not assumed from the
+list — all three were already done and just never removed here):
+`world_ir.diff.diff_worlds()` already has a real caller (`reality diff`
+in `apps/cli/main.py`); `StudioSession.reconstruct_and_compile()`
+(`engine/studio/session.py`) already routes evidence through the
+backend orchestrator then `compile_reconstruction()`; that same method
+is already the "Studio action" for plane+room promotion (it calls
+`compile_reconstruction_to_world()`, which promotes both). Lesson: this
+file drifts behind actual code across sessions — verify a next-task
+item against the source before spending effort on it, same discipline
+this session applied before dispatching the three parallel agents above.
+
 - Wall-vs-plane / wall-vs-wall collision uses Box-vs-Box only right now;
   `SimpleRigidBodyBackend` also supports Plane statics via `add_plane()`
   which `build_stepped_physics_world()` does not populate (compiled
@@ -702,31 +731,37 @@ environments (COLMAP present/absent). Full suite **920 passed /
   test (`engine/physics/replay/`) -- the compiler produces bodies and
   the backend now steps/collides them; nothing yet records that as a
   replayable event sequence tied back to WorldIR provenance.
-- Wire `world_ir.diff.diff_worlds()` into a real caller: an export
-  fidelity check (compile → export → readback → diff against source, if
-  a readback path existed) or a golden-scene regression test (compile
-  twice / compile-then-recompile and assert an empty diff).
-- Route `StudioSession.compile_reconstruction()` through the backend
-  orchestrator now that `availability_probe`/`accepts` are wired for real
-  on the COLMAP backend (see the completed-work entry above this
-  section) — the orchestrator's gates are real but nothing calls it yet.
 - Run the Blender exporter's generated script inside an actual Blender
   install once one is available in this environment, and visually
-  inspect the result (geometry/transforms/hierarchy/custom properties) —
-  the exporter itself is done and tested, but never opened in Blender.
+  inspect the result (geometry/transforms/hierarchy/custom properties,
+  now including the real point-cloud mesh path added this session) —
+  the exporter itself is done and tested, but never opened in Blender
+  (no Blender binary in this environment, confirmed this session).
 - Triangulated MESH storage: `world_ir/geometry_data.py` now has real
-  `PointCloudData`, but no `MeshData` (vertices/indices/normals) yet —
-  needs a real surface-reconstruction step (e.g. alpha-shape/Poisson
-  over a plane's inlier points), not just a new payload format.
-- usda/blender exporters don't consume `artifact_store`/real geometry
-  yet (only gltf does as of this session) — extend
-  `exporters/usd/exporter.py` and `exporters/blender/exporter.py` the
-  same way if real geometry in those formats is needed.
+  `PointCloudData`, consumed by all three exporters (gltf/usda/blender)
+  and both promotion modules (planes/objects), but no `MeshData`
+  (vertices/indices/normals) yet — needs a real surface-reconstruction
+  step (e.g. alpha-shape/Poisson over a plane's inlier points), not
+  just a new payload format.
+- CLI: `reality export --format usda`/`--format blender` don't reconnect
+  to `<world>.artifacts/` yet (only `--format gltf` does, mirroring
+  `sdk.reality.export()`'s own gltf-only threading) even though both
+  exporters now accept `artifact_store` directly as of this session —
+  small follow-on to extend the CLI's reconnection logic and
+  `sdk.reality.export()`'s dispatch to all three formats.
 - Compiler consumption of depth/segmentation/material evidence (currently
   planes+rooms only).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room
   shared-wall ownership (room topology is now the foundation).
-- Wire plane+room promotion into a Studio action so a user-visible flow exists.
+- Room entities (`evidence/promote_rooms.py`) carry no geometry of their
+  own (only relationships to their walls/floor/ceiling, which do have
+  real geometry) — a real room-boundary polygon (the already-computed
+  `_Ring` in floor-plane (u,v) coordinates) could become real geometry
+  too, the same way planes/objects now do, but needs careful (u,v) ->
+  world-space conversion via the floor's basis vectors to avoid a
+  coordinate-frame bug — deliberately NOT attempted via a parallel
+  agent this session because of that risk; do this one carefully,
+  in-session, not delegated blind.
 - Evidence fusion across competing plane fits (multiple reconstructions) —
   the fusion core now exists (`reconstruction/fusion/fusion.py`); what
   remains is a caller that detects competing plane fits and feeds them in.

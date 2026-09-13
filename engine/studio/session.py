@@ -101,6 +101,30 @@ class StudioSession:
             CompileWorldCommand(result=result, compile_options=compile_options, actor_id=self.actor_id)
         )
 
+    def reconstruct_and_compile(self, evidence, orchestrator, compile_options=None):
+        """Evidence -> real reconstruction backend -> compiled world, in one
+        call. Before this method, `reconstruction/orchestrator.py`'s real
+        backend selection/execution (COLMAP availability probing, fallback,
+        per-attempt diagnostics -- see that module's docstring) had no path
+        into a Studio session; a caller had to run the orchestrator itself,
+        then separately remember to call compile_reconstruction() with its
+        result. This is that missing glue.
+
+        `orchestrator` is a `reconstruction.orchestrator.ReconstructionOrchestrator`
+        (an explicit parameter, not a session-owned singleton -- which
+        backend chain to use is a caller decision, not something Studio
+        should default silently). Raises
+        `reconstruction.orchestrator.ReconstructionOrchestrationError` if
+        every candidate backend declines/fails (never a silently empty
+        world); returns `(ReconstructionRun, CommandResult)` so a caller can
+        inspect both the raw reconstruction diagnostics (which backend ran,
+        reprojection stats, attempt log) and the compile outcome (gate
+        pass/fail, diagnostics) from one call.
+        """
+        run = orchestrator.run(evidence)
+        command_result = self.compile_reconstruction(run.result, compile_options=compile_options)
+        return run, command_result
+
     def infer_and_add_adjacency(self, adjacency_margin: float = 0.0) -> List[CommandResult]:
         """Close the loop between the pure geometric-adjacency query and the
         validated mutation pipeline: run infer_geometric_relationships()

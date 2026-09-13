@@ -3,7 +3,171 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 941 passed, 1 skipped (observed 54.3s) — +3 SDK external-consumer tests on top of the prior 938, zero regressions.
+**Verified after this session:** 1041 passed, 1 skipped (observed 52.2s) — +8 measurement tests on top of 1033, zero regressions.
+
+## Completed this session (2026-09-13, latest): object measurement (master directive priority #11)
+
+`perception/instances/measurement.py` — `measure_dimensions(candidate)`
+(width/height/depth/volume from a `MergedObjectCandidate`'s union AABB)
+and `measure_distance(a, b)` (centroid-to-centroid). Reuses the existing
+`world_ir.schema_v1.Measurement` type rather than inventing a parallel
+one -- the same currency `evidence/promote_planes.py`'s extent/thickness
+measurements already use. Precision uses an explicitly-named
+approximation (`value * (1 - confidence)`, floored at 1cm) since nothing
+upstream yet propagates real per-axis geometric uncertainty -- honest
+about being a heuristic, not a calibrated statistical model, per this
+campaign's own "documented approximation" allowance. All measurements
+are `Provenance.ESTIMATED`. 8 tests
+(`tests/test_object_measurement.py`): extent/volume correctness,
+provenance/confidence propagation, precision-vs-confidence monotonicity,
+precision floor, Euclidean distance correctness and symmetry, weaker-
+endpoint confidence rule.
+
+Pipeline chain now real end-to-end at the code level (still untested
+against real photos, per prior sessions' named blocker): `DepthMap` +
+`SegmentedRegion` -> `lift_region_to_3d()` -> `ObjectHypothesis3D` ->
+`merge_hypotheses()` -> `MergedObjectCandidate` -> `measure_dimensions()`
+/ `measure_distance()` -> `Measurement`.
+
+## Completed this session (2026-09-13, latest): multi-view object entity resolution (semantic perception campaign, Phase 5)
+
+`perception/instances/object_resolution.py` — `merge_hypotheses(hypotheses,
+distance_threshold_m)`: clusters `ObjectHypothesis3D` observations (from
+`perception/instances/lifting.py`) of the same physical object across
+frames into one `MergedObjectCandidate`, using union-find over same-
+label + within-distance pairs so transitive chains of overlapping views
+merge correctly regardless of input order. Never discards a source
+hypothesis; merged bounds are the union AABB (never smaller than any
+single view); confidence rises with independent agreement
+(`1 - (1-best)^n`, capped at 1.0) rather than being averaged down.
+Deliberately NOT appearance/embedding-based (explicit "similarity is
+not identity" rule, same as `world_ir/entity_reid.py`) and NOT
+multi-view-geometrically-verified (no epipolar check) — both named as
+real, separate, larger follow-ons. 12 tests
+(`tests/test_object_resolution.py`): merge/no-merge by distance and
+label, transitive chain merging, bounds union, confidence-boost math,
+single-hypothesis passthrough, determinism regardless of input order,
+empty-input and invalid-threshold edge cases.
+
+Per the user's stated priority (campaigns 11-32 come after 1-10 finish),
+this closes another concrete stage of campaign 3 (semantic perception)
+rather than starting the newly-listed campaigns 11+.
+
+## Completed this session (2026-09-13, latest): depth -> point cloud (Phase 8, both convergence and hardening audits' named next step)
+
+`reconstruction/depth_to_points.py` — `depth_map_to_points(depth, camera,
+stride=1)`: unprojects every valid pixel of a `DepthMap` through the
+real `PinholeCamera` into `ReconstructedPoint`s -- the SAME output type
+`ReconstructionResult.points` already uses, so depth-derived points
+compose directly with everything downstream (RANSAC plane detection,
+world compiler) without a new point-cloud type. Refuses relative/non-
+metric depth (DepthToPointsError); skips (never fabricates) non-finite/
+non-positive-depth pixels; `stride` is honest pixel-decimation, named
+explicitly as NOT voxel-grid downsampling. 9 tests
+(`tests/test_depth_to_points.py`), including
+`test_output_composes_with_real_ransac_plane_detection` -- runs the
+*actual* `perception/geometry/planes.detect_planes()` over depth-derived
+points and confirms a real plane is detected with the correct normal,
+proving the integration point works end-to-end, not just in isolation.
+
+This closes the "depth -> point cloud" gap flagged as the concrete next
+step in both `docs/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md` and
+`docs/RECONSTRUCTION_HARDENING_AUDIT.md`.
+
+## Completed this session (2026-09-13, latest): 2D->3D lifting (semantic perception campaign, Prompt 3)
+
+`perception/instances/lifting.py` — Phase 4. `lift_region_to_3d(region,
+depth, camera)`: `SegmentedRegion` (2D mask) + `DepthMap` + the real
+`PinholeCamera` (from the reconstruction-hardening session) ->
+`ObjectHypothesis3D` (centroid + AABB of unprojected valid-depth mask
+pixels). Real deterministic geometry, no ML model needed to run or test
+it -- operates on backend output *types*, same pattern as
+`evidence/promote_planes.py` not needing COLMAP installed to be tested.
+Refuses (LiftingError) a relative/non-metric depth map rather than
+silently treating it as meters; returns None (not a fabricated
+hypothesis) when too few mask pixels have valid depth. 10 tests
+(`tests/test_2d_3d_lifting.py`).
+
+`docs/SEMANTIC_PERCEPTION_AUDIT.md` (new): confirmed by direct import
+attempt that SAM cannot actually run in this environment right now
+(torch 2.14.0 CPU is installed; `segment_anything` package and any
+checkpoint are not) — that is the real, named blocker for Phases 1-2 of
+the semantic-perception campaign, not a code gap. Detection
+(`perception/detection/`) remains a bare README placeholder.
+
+## Completed this session (2026-09-13, latest): real pinhole camera model (reconstruction hardening campaign, Prompt 2)
+
+`reconstruction/calibration/camera.py` — Prompt 2 Phase 2 exactly.
+`reconstruction/calibration/` was a README placeholder; nothing in the
+repo could project a 3D point to a pixel or unproject a pixel+depth back
+to 3D. `CameraIntrinsics` (fx/fy/cx/cy + Brown-Conrady k1/k2/p1/p2/k3,
+validated), `CameraExtrinsics` (camera-to-world position+rotation,
+matching `ReconstructedCameraPose`'s existing convention so a COLMAP
+pose plugs in directly), `PinholeCamera.project/.unproject/.ray`.
+Undistortion uses fixed-point iteration (no closed-form inverse for
+Brown-Conrady). Added `Quat.conjugate()` to
+`engine/physics/math3.py` (unit-quaternion inverse rotation) rather than
+reimplementing it locally. 21 tests
+(`tests/test_camera_calibration.py`): intrinsics validation, projection
+geometry (behind-camera/at-plane rejection), round-trips with AND
+without real distortion coefficients (sub-mm precision), ray casting,
+translated/rotated camera sanity checks, dict round-trips.
+
+This is the prerequisite Phase 8 (depth -> point cloud) needs:
+`PinholeCamera.unproject(u, v, depth)` is exactly the per-pixel
+operation a `DepthMap -> point cloud` converter would call in a loop —
+not yet wired into one. `docs/RECONSTRUCTION_HARDENING_AUDIT.md` records
+this as the concrete next step.
+
+## Completed this session (2026-09-13, latest): Studio -> orchestrator -> compiler wiring (convergence campaign, Prompt 1 slice)
+
+`StudioSession.reconstruct_and_compile(evidence, orchestrator, compile_options=None)`
+(`engine/studio/session.py`) — closes the exact gap this file's own
+prior entry flagged: `reconstruction/orchestrator.py`'s real backend
+selection (COLMAP availability probing, fallback, attempt-log
+diagnostics — landed on `main`, merged into this branch) had no path
+into a Studio session. One call now: evidence -> orchestrator picks and
+runs a real backend -> `compile_reconstruction()` -> validated WorldIR,
+returning both the `ReconstructionRun` (backend used, attempt log) and
+the compile's `CommandResult`. Raises `ReconstructionOrchestrationError`
+on total backend failure -- verified the world stays empty (0 entities)
+afterward, never a partial/corrupted result.
+
+`docs/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md` (new) — honest phase-by-
+phase status against the "convergence campaign" brief (build one real,
+working, end-to-end capture pipeline). Headline honest gap: no real
+photo fixture is committed to this repo, so the COLMAP path (previously
+run once, documented, not reproducible from a committed asset) could
+not be re-exercised this session; the 3 new tests use the real
+`ReconstructionOrchestrator` class with `FakeReconstructionBackend`
+(same orchestrator code path a COLMAP backend would flow through).
+Depth/mesh/2D-3D-lifting remain entirely unintegrated into the compiler
+-- still the biggest structural gap toward Prompt 1's full Definition
+of Done.
+
+## Completed this session (2026-09-13, latest): cross-session entity re-identification
+
+`world_ir/entity_reid.py` — world-memory campaign Phases 3/4. Given two
+WorldIR snapshots (`before`/`after`), classifies each `before` entity's
+correspondence in `after` as MATCH / POSSIBLE_MATCH / NO_MATCH /
+UNRESOLVED using real evidence already in WorldIR: EntityType +
+geometric position (reusing `engine/scene_graph/spatial_index.py`'s
+position resolution, renamed `_entity_position` -> public
+`entity_position` to avoid duplicating it). Deliberately NOT
+embedding-based -- no real embedding/vision model exists anywhere in
+this repo, and the world-memory campaign explicitly forbids fake
+embeddings, so that entire area (Phases 5-15, 20-30, 39, 48-51) stays
+documented as blocked rather than faked. 11 tests
+(`tests/test_entity_reid.py`): match/possible-match/no-match/unresolved
+classification, type exclusivity (same position, different type never
+matches), deterministic tie-breaking, determinism, threshold
+validation, empty-world and no-mutation edge cases.
+
+`docs/WORLD_MEMORY_LEARNING_AUDIT.md` (new) — honest phase-by-phase
+snapshot against the 91-phase world-memory campaign; headline finding
+is that the campaign's central ask (semantic embeddings/retrieval)
+cannot be honestly built without first doing real model
+selection/licensing work this session did not attempt.
 
 ## Completed this session (2026-09-13, latest): public SDK (sdk/reality.py)
 

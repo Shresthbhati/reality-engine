@@ -143,6 +143,12 @@ class Quat:
     def identity() -> "Quat":
         return Quat(1.0, 0.0, 0.0, 0.0)
 
+    def conjugate(self) -> "Quat":
+        """Inverse rotation for a unit quaternion (w, -x, -y, -z).
+        Required by the pinhole camera model's world_to_camera; standard
+        definition, same convention as `rotate`."""
+        return Quat(self.w, -self.x, -self.y, -self.z)
+
     def normalized(self) -> "Quat":
         n = math.sqrt(self.w**2 + self.x**2 + self.y**2 + self.z**2)
         if n < 1e-12:

@@ -16,6 +16,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from provenance import Uncertainty
 
@@ -26,6 +28,37 @@ from .interface import IDepthBackend, DepthMap
 class DepthBackendUnavailableError(RuntimeError):
     """Raised when torch/torchvision/numpy or a MiDaS checkpoint isn't available."""
     pass
+
+
+#: torch.hub repositories this backend's model graph may fetch. MiDaS's
+#: own code (midas/blocks.py) loads its efficientnet-lite backbone from
+#: rwightman/gen-efficientnet-pytorch via a nested torch.hub.load that
+#: we cannot pass trust_repo through -- so the trust decision is made
+#: HERE, explicitly, once, instead of an interactive prompt that hangs
+#: headless runs. Both repos are the canonical upstream sources
+#: (intel-isl/MiDaS MIT; rwightman/gen-efficientnet-pytorch Apache-2.0;
+#: see docs/TECHNOLOGY_REGISTRY.md).
+TRUSTED_TORCH_HUB_REPOS = (
+    # torch.hub's trusted_list file format is owner_repo with underscores
+    # (see torch/hub.py _check_repo_is_trusted), not owner/repo.
+    "intel-isl_MiDaS",
+    "rwightman_gen-efficientnet-pytorch",
+)
+
+
+def _ensure_trusted_hub_repos() -> None:
+    """Record our trust decisions in torch.hub's trusted_list file."""
+    import torch
+    trusted_file = Path(torch.hub.get_dir()) / "trusted_list"
+    existing = set()
+    if trusted_file.exists():
+        existing = {line.strip() for line in trusted_file.read_text().splitlines() if line.strip()}
+    missing = [r for r in TRUSTED_TORCH_HUB_REPOS if r not in existing]
+    if missing:
+        trusted_file.parent.mkdir(parents=True, exist_ok=True)
+        with trusted_file.open("a", encoding="utf-8") as f:
+            for repo in missing:
+                f.write(repo + "\n")
 
 
 def _ensure_perception_deps() -> None:
@@ -94,6 +127,7 @@ class MiDaSDepthBackend(IDepthBackend):
     def _load_model(self) -> None:
         """Load the MiDaS model and transform. Called lazily on first use."""
         _ensure_perception_deps()
+        _ensure_trusted_hub_repos()
         import torch
         import torchvision.transforms as T
 
@@ -112,8 +146,16 @@ class MiDaSDepthBackend(IDepthBackend):
             state_dict = torch.load(self._checkpoint_path, map_location=self._device)
             self._model.load_state_dict(state_dict)
         else:
-            # Download via torch.hub (requires internet on first run)
-            self._model = torch.hub.load("intel-isl/MiDaS", self._model_type, pretrained=True)
+            # Download via torch.hub (requires internet on first run).
+            # trust_repo must be explicit: torch.hub otherwise prompts
+            # interactively, which hangs headless runs. intel-isl/MiDaS is
+            # the official Intel ISL repository (MIT license; see
+            # docs/TECHNOLOGY_REGISTRY.md) -- the trust decision is made
+            # here, once, in code, not silently at runtime.
+            self._model = torch.hub.load(
+                "intel-isl/MiDaS", self._model_type,
+                pretrained=True, trust_repo=True,
+            )
 
         self._model.to(self._device)
         self._model.eval()
@@ -150,8 +192,21 @@ class MiDaSDepthBackend(IDepthBackend):
         results = []
         for item in image_evidence:
             try:
-                # Load image from source_uri
-                src_path = Path(item.source_uri.replace("file://", "", 1))
+                # Load image from source_uri. file:// URIs must go through
+                # urlparse: naive string stripping yields "/C:/..." on
+                # Windows (invalid), silently skipping every image.
+                parsed = urlparse(item.source_uri)
+                if parsed.scheme == "file":
+                    # Recover malformed f"file://{windows_path}" forms (no
+                    # third slash): the drive prefix (or the whole
+                    # backslash path) lands in netloc instead of path.
+                    raw_path = parsed.path
+                    nl = parsed.netloc
+                    if nl and len(nl) >= 2 and nl[1] == ":" and (len(nl) == 2 or nl[2] in "/\\"):
+                        raw_path = nl + raw_path
+                    src_path = Path(url2pathname(raw_path))
+                else:
+                    src_path = Path(item.source_uri)
                 if not src_path.exists():
                     # Skip evidence items we can't read -- honest failure mode
                     continue

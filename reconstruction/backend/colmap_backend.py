@@ -20,6 +20,8 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import numpy as np
+
 from provenance import Uncertainty
 
 from evidence.session import EvidenceItem, EvidenceKind
@@ -34,6 +36,91 @@ from .interface import (
 class ReconstructionBackendUnavailableError(RuntimeError):
     """Raised when the `colmap` binary isn't on PATH -- never silently skipped."""
     pass
+
+
+class ReconstructionStepError(RuntimeError):
+    """A COLMAP pipeline step failed; carries the step's real stderr/stdout.
+
+    `check=True` with discarded output turned every mapper/extractor failure
+    into an opaque `Returned non-zero exit status 1`. Callers (and humans)
+    need the actual diagnostic -- e.g. the OpenGL-context crash of a GPU
+    build or the `output_path is not a directory` contract of the mapper.
+    """
+
+    def __init__(self, step: str, proc: "subprocess.CompletedProcess[str]",
+                 command: List[str]):
+        tail = (proc.stderr or "").strip().splitlines()[-15:]
+        detail = "\n".join(tail) if tail else (proc.stdout or "").strip()[-800:]
+        super().__init__(
+            f"colmap {step} failed (exit {proc.returncode})\n"
+            f"command: {' '.join(command)}\n"
+            f"stderr tail:\n{detail}"
+        )
+        self.step = step
+        self.stderr = proc.stderr or ""
+        self.stdout = proc.stdout or ""
+
+
+def _uri_to_path(uri: str) -> Path:
+    """file:// URI -> local Path, correct on every platform.
+
+    naive `uri.replace("file://", "")` yields '/C:/...' on Windows (an
+    invalid rootless path); urllib.parse.urlparse + unquote does it right
+    and also decodes percent-escaped characters (spaces etc.).
+    """
+    from urllib.parse import unquote, urlparse
+    parsed = urlparse(uri)
+    if parsed.scheme in ("file", ""):
+        path = unquote(parsed.path)
+        # Recover malformed f"file://{windows_path}" forms (no third
+        # slash): the drive prefix (or the whole backslash path) lands in
+        # netloc instead of path.
+        nl = parsed.netloc
+        if (parsed.scheme == "file" and nl and len(nl) >= 2
+                and nl[1] == ":" and (len(nl) == 2 or nl[2] in "/\\")):
+            path = nl + path
+        # Windows: 'file:///C:/x' parses to path '/C:/x'; Path('/C:/x') is a
+        # rootless '\C:\x' that open() rejects -- strip the leading slash.
+        if len(path) >= 3 and path[0] == "/" and path[1].isalpha() and path[2] == ":":
+            path = path[1:]
+        return Path(path)
+    return Path(uri)
+
+
+def _trusted_intrinsics(evidence: List[EvidenceItem]):
+    """Per-image trusted intrinsics from evidence metadata, or None.
+
+    Recognizes metadata["intrinsics"] = {fx, fy, cx, cy} (pixels). Returns
+    the shared (fx, fy, cx, cy) only when EVERY image carries the values
+    and they agree to 1e-6; any missing entry or disagreement -> None, so
+    partial trust never silently mixes calibrated and uncalibrated images.
+    """
+    values = []
+    for item in evidence:
+        intr = (item.metadata or {}).get("intrinsics")
+        if not isinstance(intr, dict):
+            return None
+        try:
+            values.append((float(intr["fx"]), float(intr["fy"]),
+                           float(intr["cx"]), float(intr["cy"])))
+        except (KeyError, TypeError, ValueError):
+            return None
+    if not values:
+        return None
+    first = values[0]
+    if any(any(abs(a - b) > 1e-6 for a, b in zip(first, v)) for v in values[1:]):
+        return None
+    return first
+
+
+def _qvec_to_rotmat(q: Tuple[float, float, float, float]) -> np.ndarray:
+    """COLMAP quaternion (w, x, y, z) -> 3x3 rotation matrix."""
+    w, x, y, z = q
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+    ])
 
 
 def _confidence_from_reprojection_error(error_px: float) -> float:
@@ -60,10 +147,29 @@ def _parse_images_txt(text: str, evidence_id_by_name: Dict[str, str]) -> List[Re
         tx, ty, tz = (float(x) for x in parts[5:8])
         name = parts[9]
         evidence_id = evidence_id_by_name.get(name, name)
+        # COLMAP stores R, t as world->camera: x_cam = R @ x_world + t. The
+        # camera CENTER in world frame is C = -R^T @ t -- NOT t itself. The
+        # original code stored t, i.e. the world origin expressed in camera
+        # coordinates; every downstream consumer (world compiler, Studio
+        # viewport, scale anchoring) received wrong positions. Verified
+        # against ground truth on the synthetic room fixture: with C, camera
+        # centers match GT to <1 mm; with t they are off by ~8 m in model
+        # units (~1.7 m metric).
+        R = _qvec_to_rotmat((qw, qx, qy, qz))
+        cx, cy, cz = -(R.T @ np.array([tx, ty, tz]))
+        # Convention contract (documented on ReconstructedCameraPose and
+        # enforced by consumers): position is the camera center in WORLD
+        # frame and rotation is CAMERA-TO-WORLD. COLMAP's q is world->
+        # camera, so the stored quaternion is its conjugate. Storing the
+        # raw qvec alongside a world-frame center (the previous state)
+        # mixed conventions: any consumer rotating camera-frame data with
+        # it got geometry tilted by the camera's own pitch (~40 deg here),
+        # which measured as ~20 deg plane tilts and zero room walls.
+        inv_q = (qw, -qx, -qy, -qz)
         poses.append(ReconstructedCameraPose(
             evidence_id=evidence_id,
-            position=(tx, ty, tz),
-            rotation=(qw, qx, qy, qz),
+            position=(cx, cy, cz),
+            rotation=inv_q,
         ))
     return poses
 
@@ -171,40 +277,57 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             image_dir = workspace / "images"
             image_dir.mkdir()
             evidence_id_by_name = {}
+            trusted_intrinsics = _trusted_intrinsics(image_evidence)
+            extractor_args: List[str] = []
+            if trusted_intrinsics is not None:
+                fx, fy, cx, cy = trusted_intrinsics
+                extractor_args = [
+                    "--ImageReader.camera_model", "PINHOLE",
+                    "--ImageReader.camera_params", f"{fx},{fy},{cx},{cy}",
+                ]
             for item in image_evidence:
-                src = Path(item.source_uri.replace("file://", "", 1))
+                src = _uri_to_path(item.source_uri)
                 dest_name = f"{item.id}{src.suffix or '.jpg'}"
                 shutil.copy(src, image_dir / dest_name)
                 evidence_id_by_name[dest_name] = item.id
 
+            def _run(step: str, args: List[str]) -> None:
+                proc = subprocess.run(
+                    [self._colmap_binary, step, *args],
+                    capture_output=True, env=env, text=True,
+                )
+                if proc.returncode != 0:
+                    raise ReconstructionStepError(step, proc,
+                                                  [self._colmap_binary, step, *args])
+
             db_path = workspace / "database.db"
-            subprocess.run(
-                [self._colmap_binary, "feature_extractor",
-                 "--database_path", str(db_path), "--image_path", str(image_dir),
-                 "--FeatureExtraction.use_gpu", gpu_flag],
-                check=True, capture_output=True, env=env,
-            )
-            subprocess.run(
-                [self._colmap_binary, "exhaustive_matcher", "--database_path", str(db_path),
-                 "--FeatureMatching.use_gpu", gpu_flag],
-                check=True, capture_output=True, env=env,
-            )
+            _run("feature_extractor",
+                 ["--database_path", str(db_path), "--image_path", str(image_dir),
+                  *extractor_args, "--FeatureExtraction.use_gpu", gpu_flag])
+            _run("exhaustive_matcher",
+                 ["--database_path", str(db_path),
+                  "--FeatureMatching.use_gpu", gpu_flag])
             sparse_dir = workspace / "sparse"
             sparse_dir.mkdir()
-            subprocess.run(
-                [self._colmap_binary, "mapper",
-                 "--database_path", str(db_path), "--image_path", str(image_dir),
-                 "--output_path", str(sparse_dir)],
-                check=True, capture_output=True, env=env,
-            )
+            mapper_args = ["--database_path", str(db_path),
+                           "--image_path", str(image_dir),
+                           "--output_path", str(sparse_dir)]
+            if trusted_intrinsics is not None:
+                # Pinned calibration: BA must NOT refine intrinsics. Measured
+                # on this repo's synthetic room fixture: with free focal
+                # refinement on a planar-dominated scene, BA drifted fx to
+                # ~1447 and fy to ~2039 (true: 1160) and produced a
+                # self-consistent model whose camera rotations were ~16 deg
+                # WRONG -- silent pose corruption that reprojection error
+                # never revealed. Pinning keeps poses truthful.
+                mapper_args += ["--Mapper.ba_refine_focal_length", "0",
+                                "--Mapper.ba_refine_extra_params", "0"]
+            _run("mapper", mapper_args)
 
             model_dir = sparse_dir / "0"
-            subprocess.run(
-                [self._colmap_binary, "model_converter",
-                 "--input_path", str(model_dir), "--output_path", str(model_dir),
-                 "--output_type", "TXT"],
-                check=True, capture_output=True, env=env,
-            )
+            _run("model_converter",
+                 ["--input_path", str(model_dir), "--output_path", str(model_dir),
+                  "--output_type", "TXT"])
 
             images_txt = (model_dir / "images.txt").read_text()
             points3d_txt = (model_dir / "points3D.txt").read_text()

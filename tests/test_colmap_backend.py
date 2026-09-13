@@ -7,6 +7,7 @@ colmap binary installed. reconstruct() itself is only tested for the
 so that's the real, exercisable path here.
 """
 
+import numpy as np
 import pytest
 
 from evidence.session import EvidenceItem, EvidenceKind
@@ -16,6 +17,8 @@ from reconstruction.backend.colmap_backend import (
     _confidence_from_reprojection_error,
     _parse_images_txt,
     _parse_points3d_txt,
+    _qvec_to_rotmat,
+    _trusted_intrinsics,
 )
 
 IMAGES_TXT = """\
@@ -41,8 +44,21 @@ def test_parse_images_txt_extracts_pose_lines_only():
     poses = _parse_images_txt(IMAGES_TXT, evidence_id_by_name={})
     assert len(poses) == 2
     assert poses[0].evidence_id == "ev-p1.jpg"
-    assert poses[0].position == (-0.737434, 1.02973, 3.74354)
-    assert poses[0].rotation == (0.851773, 0.0165051, 0.503764, -0.142941)
+    # position is the camera CENTER in world frame (C = -R^T t), not the
+    # raw COLMAP translation (which is the world origin in camera frame).
+    # Hand-computed for the fixture's first pose.
+    R = _qvec_to_rotmat((0.851773, 0.0165051, 0.503764, -0.142941))
+    t = np.array([-0.737434, 1.02973, 3.74354])
+    expected_center = -R.T @ t
+    got = np.array(poses[0].position)
+    assert np.allclose(got, expected_center, atol=1e-12)
+    assert not np.allclose(got, t)  # must NOT be the raw translation
+    # rotation is stored CAMERA-TO-WORLD (COLMAP's qvec is world->camera,
+    # so the stored quaternion is its conjugate). Consumers (pinhole
+    # camera model, depth unprojection) rely on this convention; storing
+    # the raw qvec mixed frames and tilted reconstructed geometry by the
+    # camera's own pitch.
+    assert poses[0].rotation == (0.851773, -0.0165051, -0.503764, 0.142941)
 
 
 def test_parse_images_txt_maps_filename_back_to_evidence_id():

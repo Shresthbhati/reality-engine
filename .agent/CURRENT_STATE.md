@@ -154,6 +154,14 @@ end-to-end: orchestrated run -> world compiler -> validated WorldIR
 -> detect_rooms (5.625 m^2 exact, slab honestly NO_CLOSED_RING). Full
 suite **917 passed / 2 skipped** (894 baseline + 23, no regressions).
 Row T8 added to docs/CAPABILITY_MATRIX.md; audit dated update added.
+Follow-on in the same session: COLMAP backend now wires its real gates
+for the orchestrator (`availability_probe` = shutil.which on the binary,
+shared truth with reconstruct()'s own check; `accepts` = >=2 image floor,
+recorded as DECLINE not a failed run). Probe verified live on this
+machine: COLMAP IS installed (C:\Users\shres\tools\colmap-extracted).
+Machine-independent chain tests pin the gate wiring for both
+environments (COLMAP present/absent). Full suite **920 passed /
+2 skipped** (+3 gate tests).
 
 ## Next tasks (dependency-safe, in order)
 

@@ -313,6 +313,67 @@ class TestProvenanceAndDiagnostics:
 
 
 # ---------------------------------------------------------------------------
+# COLMAP backend orchestrator integration (probe + acceptance gates)
+# ---------------------------------------------------------------------------
+
+
+class TestColmapBackendIntegration:
+    """The one production backend now exposes availability_probe and
+    accepts for the orchestrator. Shape assertions are machine-independent;
+    whether COLMAP itself is installed only changes the probe's boolean,
+    never the contract.
+
+    """
+
+    def _backend(self):
+        from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
+        return ColmapReconstructionBackend()
+
+    def test_availability_probe_returns_bool_with_detail(self):
+        backend = self._backend()
+        ok, detail = backend.availability_probe()
+        assert isinstance(ok, bool)
+        assert isinstance(detail, str) and detail
+        # Detail names the binary either way (found path or not-found reason).
+        assert "colmap" in detail.lower()
+
+    def test_accepts_declines_below_two_view_floor(self):
+        backend = self._backend()
+        one = [EvidenceItem(id="p1", kind=EvidenceKind.PHOTO, source_uri="file://x.jpg")]
+        ok, why = backend.accepts(one)
+        assert ok is False
+        assert ">= 2" in why
+
+    def test_orchestrator_uses_colmap_gates_in_a_chain(self):
+        """Machine-independent chain: the COLMAP backend first in line
+        declines a 2-photo batch only when its PROBE fails (COLMAP not
+        installed); when COLMAP is present the batch passes validation and
+        the real binary would run -- so this test pins the gate wiring, not
+        the environment: for a 2-photo batch the COLMAP attempt must be
+        declined-by-availability on a COLMAP-less machine and never a
+        decline on grounds of count (its accepts gate passes 2 images).
+        The stub fallback must still be reached when COLMAP cannot run."""
+        from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
+
+        colmap = ColmapReconstructionBackend()
+        ok, _ = colmap.availability_probe()
+        fake = _StubBackend(result=_ok_result())
+        orch = ReconstructionOrchestrator([colmap, fake])
+        run = orch.run(_items(2))
+        colmap_attempt = run.diagnostics.attempts[0]
+        if ok:
+            # COLMAP present: it accepts 2 images, so the real binary runs
+            # (or its execution fails) -- the fallback is NOT reached first.
+            assert colmap_attempt.outcome in ("succeeded", "partial", "failed")
+        else:
+            # COLMAP absent: honest availability decline, fallback runs.
+            assert colmap_attempt.outcome == "declined"
+            assert colmap_attempt.available is False
+            assert run.diagnostics.backend_name == "stub"
+            assert fake.calls == 1
+
+
+# ---------------------------------------------------------------------------
 # End-to-end: orchestrator -> world compiler -> validated WorldIR
 # ---------------------------------------------------------------------------
 

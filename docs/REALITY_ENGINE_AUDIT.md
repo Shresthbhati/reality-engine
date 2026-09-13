@@ -278,6 +278,57 @@ A stands), no EXIF/GPS metadata decoding (fields exist, no decoder),
 quality metrics are caller-measured, no payload blob storage (hashes +
 `source_uri` only).
 
+## Dated update — 2026-09-13: media preprocessing / disk importers (this pass)
+
+`evidence/importers.py` + `evidence/frames.py` close the ingestion gap
+the evidence-package pass explicitly flagged ("no disk/camera file
+importer — payloads are caller-supplied bytes"):
+
+- **Folder -> package, deterministically.** `import_folder` walks a
+  capture folder in sorted path order and feeds
+  `DeterministicPackageBuilder`; `acquired_at` comes only from EXIF
+  DateTimeOriginal/DateTime (never file mtimes, never a wall clock), so
+  re-importing an unchanged folder reproduces the package byte-for-byte
+  (tested).
+- **EXIF/GPS decode is real.** Camera make/model, exposure, F-number,
+  ISO, DateTimeOriginal->epoch, and GPS lat/lon DMS->signed decimal
+  degrees (N/S/E/W hemisphere flips, altitude with below-sea-level
+  reference, WGS84-assumption note). Corrupt-EXIF payloads that pass
+  container validation degrade to metadata-poor assets — unreadable
+  metadata is not unreadable evidence.
+- **Quality metrics measured, or honestly unmeasured.** Laplacian-
+  variance blur, luma mean, clipped fraction over real decoded pixels;
+  a failed decode yields `measured: 0.0` plus a note, never a fabricated
+  score. Resolution always comes from container headers.
+- **Two-layer duplicate handling.** Exact: content hash, skip-and-record
+  (new builder `asset_id_for_payload()` pre-check). Near: 64-bit dhash
+  over decoded luma at hamming <= 10, marked with a first-seen
+  reference. Pixel decode required for near-dup; honestly skipped where
+  unavailable.
+- **Video never blindly processed.** The container imports unmodified
+  as VIDEO evidence; grab-only enumeration feeds an extensible
+  `IFrameSelectionStrategy` (`evidence/frames.py`); the deterministic
+  default (`UniformTimeSamplingStrategy`, integer index math, first+last
+  always included) picks the subset, and only selected frames are fully
+  decoded and re-encoded as DERIVED frame assets linked back to the
+  container via `source_video_asset_id`. Frame timestamps stay
+  container-relative metadata — never claimed as acquisition times.
+- **Zero-install honesty.** PIL/cv2/numpy (already present: Pillow
+  12.3.0, OpenCV 5.0.0, numpy 2.5.2 — registry rows added) are probed
+  at import, never hard-required; absence raises
+  `ImporterCapabilityError` naming what to install. `pyproject.toml`
+  still declares no core dependencies.
+- **End-to-end chains tested.** Mixed folder -> validated package ->
+  `to_evidence_items()` -> reconstruction -> compiled WorldIR with every
+  3D point's `source_evidence_ids` resolvable to real ingested assets;
+  folder -> `ObservationSet` -> `fuse_quantity()`.
+
+35 tests; full suite **894 passed, 2 skipped** (859 baseline + 35, no
+regressions). Still undone, labelled: no RAW/HEIC decode, no
+package->Session registration bridge (Sessions and Packages remain two
+stores), blur/exposure are quality signals not yet a quality gate,
+no camera-facing capture UI.
+
 ## What this audit does NOT claim
 
 This audit does not claim the full vision in the originating prompt (a

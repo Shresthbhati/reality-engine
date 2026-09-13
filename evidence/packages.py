@@ -439,6 +439,13 @@ class DeterministicPackageBuilder:
         self._sources[source.source_id] = source
         return self
 
+    def asset_id_for_payload(self, payload: bytes) -> Optional[str]:
+        """Public pre-build duplicate check: the id of the already-staged
+        asset with exactly these bytes, or None. Lets policy layers
+        (importers) skip-and-record exact duplicates without parsing
+        exception messages."""
+        return self._seen_content.get(_to_hex_digest(payload))
+
     def add_payload(
         self,
         payload: bytes,
@@ -467,7 +474,12 @@ class DeterministicPackageBuilder:
                 f"duplicate payload (sha256 {digest[:16]}...) already staged as "
                 f"{self._seen_content[digest]} -- de-duplicate by reference"
             )
-        _validate_payload(payload, _extension_of(source_uri))
+        try:
+            _validate_payload(payload, _extension_of(source_uri))
+        except CorruptEvidenceError as exc:
+            # Name the offending file: "which capture file is broken" is
+            # the first question any importer operator asks.
+            raise CorruptEvidenceError(f"{source_uri}: {exc}") from exc
         index = len(self._assets)
         asset_id = _evidence_id(self.seed, index, digest)
         asset = EvidenceAsset(

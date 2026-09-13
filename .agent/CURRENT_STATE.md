@@ -1,6 +1,6 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (evidence-packages session complete)
+**Updated:** 2026-09-13 (media-preprocessing session complete)
 **Branch:** `evidence-fusion`
 **Verified baseline:** 725/725 tests passing (`python -m pytest -q --ignore=tests/test_midas_backend.py`, observed 13.8s). The excluded file is another agent's in-flight work (MiDaS depth backend), not part of this session's changes.
 
@@ -108,14 +108,37 @@ regressions). Row T6 added to docs/CAPABILITY_MATRIX.md; audit dated
 update added. Labelled NOT built: disk/camera file importer, EXIF/GPS
 decoding, payload blob storage.
 
+## Completed 2026-09-13 (latest): media preprocessing (deep-implementation sec-3)
+
+`evidence/importers.py` + `evidence/frames.py` — the real capture-to-
+package path (package payloads are no longer caller-supplied bytes only):
+disk import of photo/LAS/video folders feeding `DeterministicPackage
+Builder`, EXIF/GPS/timestamp decode (DateTimeOriginal->acquired_at, GPS
+DMS->signed decimal, exposure/ISO metadata), resolution from container
+headers, measured quality (Laplacian-variance blur, luma mean, clipped
+fraction — honestly unmeasured when decode fails), two-layer duplicate
+detection (content-hash exact: skip-and-record; 64-bit dhash near-dup:
+marked in report), and extensible deterministic video frame selection
+(`IFrameSelectionStrategy` + `UniformTimeSamplingStrategy`, first+last
+always included, hand-computed indices tested; selected frames become
+DERIVED assets linked via `source_video_asset_id`). Zero-install honesty:
+PIL/cv2/numpy probed at import (`ImporterCapabilityError` names what to
+install; pyproject stays dependency-free). Deterministic ids/timestamps:
+sorted path order, EXIF-only acquisition times, never wall clock;
+byte-identical rebuild tested. End-to-end tested: folder -> package ->
+`to_evidence_items()` -> reconstruction -> compiled WorldIR with point
+`source_evidence_ids` resolvable to ingested assets; folder ->
+`ObservationSet` -> `fuse_quantity()`. 35 tests; full suite **894 passed
+/ 2 skipped** (859 baseline + 35, no regressions). Rows A/T7 in
+docs/CAPABILITY_MATRIX.md; registry rows for Pillow/OpenCV/numpy added.
+Labelled NOT built: RAW/HEIC decode, package->Session bridge, quality
+GATE (signals only), camera-facing capture UI.
+
 ## Next tasks (dependency-safe, in order)
 
 - Blender export path (WorldIR -> .py/.json add-on input; Reality Engine
   -> WorldIR -> Blender adapter, Blender as consumer) -- now the
   highest-value missing export target.
-- Real file importer on top of the package layer (`DeterministicPackage
-  Builder.add_payload` is caller-supplied bytes; a disk/photo-folder
-  importer with EXIF/GPS decode is the natural next increment).
 - Compiler consumption of depth/segmentation/material evidence (currently
   planes+rooms only).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room

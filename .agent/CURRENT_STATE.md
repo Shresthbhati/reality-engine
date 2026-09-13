@@ -1,11 +1,44 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (WorldDiff + production audit session complete)
-**Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
-**Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 1051 passed, 1 skipped (observed 52.4s) — +8 promote_objects tests + 2 e2e tests on top of 1041, zero regressions.
+**Updated:** 2026-09-13 (CLI session complete)
+**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the object-pipeline-promotion PR merged)
+**Verified baseline before this session:** 1067 passed, 2 skipped.
+**Verified after this session:** 1079 passed, 2 skipped (observed 79.7s) — +12 CLI tests, zero regressions.
 
-## Completed this session (2026-09-13, latest): object promotion into WorldIR — closes the pipeline
+## Completed this session (2026-09-13, latest): headless CLI (`apps/cli/`) — closes the biggest named studio-campaign gap
+
+`apps/cli/main.py` — a `reality` command-line client of `sdk.reality`
+(`ingest`, `reconstruct`, `validate`, `diff`, `export`, `physics`). Every
+subcommand is a thin pass-through: `ingest` calls
+`evidence.importers.import_folder` + `DeterministicPackageBuilder`;
+`reconstruct` runs the real `ReconstructionOrchestrator` (COLMAP backend
+first, fake-with-no-canned-data second) then `sdk.reality.compile_world_from_reconstruction`
+in one step (`ReconstructionResult` has no stable serialization of its
+own by design, so ingest/reconstruct are necessarily separate CLI verbs
+sharing one process for the reconstruct step); `validate`/`diff`/`export`/
+`physics` load/save WorldIR as plain `to_dict()`/`from_dict()` JSON and
+call the matching `sdk.reality` function directly. Honesty preserved:
+`reconstruct` exits non-zero with the orchestrator's full backend attempt
+log on stderr (never fabricates a world) when no backend can honestly
+produce geometry — verified live with two real flat-color JPEGs and no
+COLMAP binary, which correctly refuses rather than inventing points.
+`tests/test_cli.py` (12 tests) exercises every subcommand against real
+files on disk: ingest determinism, validate against both a real compiled
+room-scene world and a hand-built broken one, diff (identical + a real
+removed-entity case), export to all three real formats (byte content
+verified, not just exit code), physics compilation, and the honest-
+refusal path for reconstruct. `python -m apps.cli.main --help` verified
+live. `apps/cli/README.md` updated from "Not yet implemented" to the
+real usage doc.
+
+Not built in this pass (named, not hidden): no `console_scripts` entry
+point in `pyproject.toml` (repo has no packaging setup for `apps.*` yet
+— `[tool.setuptools.packages.find]` only includes `engine*`/`world_ir*`/
+`provenance*`/`events*`); no `--seed`-stable ingest source id override
+beyond folder name; no batch/watch mode. All were out of scope for "the
+biggest named gap" and none block current use via `python -m apps.cli.main`.
+
+## Completed 2026-09-13: object promotion into WorldIR — closes the pipeline
 
 `evidence/promote_objects.py` — `promote_object_to_entity()`: writes a
 `MergedObjectCandidate` (from `perception/instances/object_resolution.py`)
@@ -535,10 +568,6 @@ environments (COLMAP present/absent). Full suite **920 passed /
 
 ## Next tasks (dependency-safe, in order)
 
-- Add a minimal CLI (`apps/cli/`) that is itself a client of `sdk.reality`
-  — natural next step now that a real public surface exists to build a
-  command line around, and still the biggest named gap from the studio
-  campaign (Phase 17: headless workflow).
 - Add `sdk.reality.spatial_index(world)` wrapping
   `engine.scene_graph.spatial_index.SpatialIndex` and `scene_graph(world)`
   wrapping `engine.scene_graph.graph.SceneGraph`, so query capability is

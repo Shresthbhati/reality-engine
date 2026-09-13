@@ -3,7 +3,28 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 1012 passed, 1 skipped (observed 61.6s) — +10 2D-3D lifting tests on top of 1002, zero regressions.
+**Verified after this session:** 1021 passed, 1 skipped (observed 42.3s) — +9 depth-to-points tests on top of 1012, zero regressions.
+
+## Completed this session (2026-09-13, latest): depth -> point cloud (Phase 8, both convergence and hardening audits' named next step)
+
+`reconstruction/depth_to_points.py` — `depth_map_to_points(depth, camera,
+stride=1)`: unprojects every valid pixel of a `DepthMap` through the
+real `PinholeCamera` into `ReconstructedPoint`s -- the SAME output type
+`ReconstructionResult.points` already uses, so depth-derived points
+compose directly with everything downstream (RANSAC plane detection,
+world compiler) without a new point-cloud type. Refuses relative/non-
+metric depth (DepthToPointsError); skips (never fabricates) non-finite/
+non-positive-depth pixels; `stride` is honest pixel-decimation, named
+explicitly as NOT voxel-grid downsampling. 9 tests
+(`tests/test_depth_to_points.py`), including
+`test_output_composes_with_real_ransac_plane_detection` -- runs the
+*actual* `perception/geometry/planes.detect_planes()` over depth-derived
+points and confirms a real plane is detected with the correct normal,
+proving the integration point works end-to-end, not just in isolation.
+
+This closes the "depth -> point cloud" gap flagged as the concrete next
+step in both `docs/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md` and
+`docs/RECONSTRUCTION_HARDENING_AUDIT.md`.
 
 ## Completed this session (2026-09-13, latest): 2D->3D lifting (semantic perception campaign, Prompt 3)
 

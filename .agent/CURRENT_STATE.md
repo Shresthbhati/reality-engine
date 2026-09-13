@@ -3,7 +3,28 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 1002 passed, 1 skipped (observed 44.9s) — +21 camera calibration tests on top of 981, zero regressions.
+**Verified after this session:** 1012 passed, 1 skipped (observed 61.6s) — +10 2D-3D lifting tests on top of 1002, zero regressions.
+
+## Completed this session (2026-09-13, latest): 2D->3D lifting (semantic perception campaign, Prompt 3)
+
+`perception/instances/lifting.py` — Phase 4. `lift_region_to_3d(region,
+depth, camera)`: `SegmentedRegion` (2D mask) + `DepthMap` + the real
+`PinholeCamera` (from the reconstruction-hardening session) ->
+`ObjectHypothesis3D` (centroid + AABB of unprojected valid-depth mask
+pixels). Real deterministic geometry, no ML model needed to run or test
+it -- operates on backend output *types*, same pattern as
+`evidence/promote_planes.py` not needing COLMAP installed to be tested.
+Refuses (LiftingError) a relative/non-metric depth map rather than
+silently treating it as meters; returns None (not a fabricated
+hypothesis) when too few mask pixels have valid depth. 10 tests
+(`tests/test_2d_3d_lifting.py`).
+
+`docs/SEMANTIC_PERCEPTION_AUDIT.md` (new): confirmed by direct import
+attempt that SAM cannot actually run in this environment right now
+(torch 2.14.0 CPU is installed; `segment_anything` package and any
+checkpoint are not) — that is the real, named blocker for Phases 1-2 of
+the semantic-perception campaign, not a code gap. Detection
+(`perception/detection/`) remains a bare README placeholder.
 
 ## Completed this session (2026-09-13, latest): real pinhole camera model (reconstruction hardening campaign, Prompt 2)
 

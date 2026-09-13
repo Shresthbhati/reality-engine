@@ -309,6 +309,35 @@ docs/CAPABILITY_MATRIX.md; registry rows for Pillow/OpenCV/numpy added.
 Labelled NOT built: RAW/HEIC decode, package->Session bridge, quality
 GATE (signals only), camera-facing capture UI.
 
+## Completed 2026-09-13 (latest): reconstruction orchestrator (integration campaign sec 2)
+
+PR #4 (evidence-fusion) was MERGED; this session works on `evidence-fusion`
+ahead of main again. New: `reconstruction/orchestrator.py` — the single
+layer that selects and executes reconstruction backends:
+`validate_evidence` (empty/<2 images/duplicate ids refused before any
+backend runs), availability probes vs acceptance gates as DISTINCT checks,
+preference-ordered selection with fallback on decline/exception/None
+(contract violation, captured)/registration-failed, exhaustion raising
+`ReconstructionOrchestrationError` with the full attempt log, frozen
+`BackendAttempt`/`ReconstructionRunDiagnostics` (to_dict, deterministic
+order; durations are wall-clock telemetry), provenance stamping
+(confidence preserved verbatim, note merged with backend=NAME), and
+distinct display names for same-class fallback chains (stub / stub#2).
+Runtime stays LLM-free — selection is explicit policy. 23 tests incl.
+end-to-end: orchestrated run -> world compiler -> validated WorldIR
+(gate clean, WALL/FLOOR, 1 room) and orchestrated run -> plane summaries
+-> detect_rooms (5.625 m^2 exact, slab honestly NO_CLOSED_RING). Full
+suite **917 passed / 2 skipped** (894 baseline + 23, no regressions).
+Row T8 added to docs/CAPABILITY_MATRIX.md; audit dated update added.
+Follow-on in the same session: COLMAP backend now wires its real gates
+for the orchestrator (`availability_probe` = shutil.which on the binary,
+shared truth with reconstruct()'s own check; `accepts` = >=2 image floor,
+recorded as DECLINE not a failed run). Probe verified live on this
+machine: COLMAP IS installed (C:\Users\shres\tools\colmap-extracted).
+Machine-independent chain tests pin the gate wiring for both
+environments (COLMAP present/absent). Full suite **920 passed /
+2 skipped** (+3 gate tests).
+
 ## Next tasks (dependency-safe, in order)
 
 - Add a minimal CLI (`apps/cli/`) that is itself a client of `sdk.reality`
@@ -337,11 +366,10 @@ GATE (signals only), camera-facing capture UI.
   fidelity check (compile → export → readback → diff against source, if
   a readback path existed) or a golden-scene regression test (compile
   twice / compile-then-recompile and assert an empty diff).
-- Start a minimal CLI (`apps/cli/`) exposing at least `compile`,
-  `validate`, and `export` as real subcommands over the existing library
-  functions — the single highest-leverage step toward making Reality
-  Engine usable without writing a Python script per session, and a
-  prerequisite for any headless benchmark/CI workflow.
+- Route `StudioSession.compile_reconstruction()` through the backend
+  orchestrator now that `availability_probe`/`accepts` are wired for real
+  on the COLMAP backend (see the completed-work entry above this
+  section) — the orchestrator's gates are real but nothing calls it yet.
 - Run the Blender exporter's generated script inside an actual Blender
   install once one is available in this environment, and visually
   inspect the result (geometry/transforms/hierarchy/custom properties) —
@@ -358,22 +386,10 @@ GATE (signals only), camera-facing capture UI.
 - Evidence fusion across competing plane fits (multiple reconstructions) —
   the fusion core now exists (`reconstruction/fusion/fusion.py`); what
   remains is a caller that detects competing plane fits and feeds them in.
-- Compiler consumption of depth/segmentation/material evidence (currently
-  planes+rooms only).
-- Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room
-  shared-wall ownership (room topology is now the foundation).
-- Wire plane+room promotion into a Studio action so a user-visible flow exists.
-- Evidence fusion across competing plane fits (multiple reconstructions) —
-  the fusion core now exists (`reconstruction/fusion/fusion.py`); what
-  remains is a caller that detects competing plane fits and feeds them in.
-- Wire plane promotion into a Studio action so a user-visible flow exists
-  (detection currently runs as library calls).
 - One real depth/segmentation backend per docs/TECHNOLOGY_REGISTRY.md
   (license check first) — NOTE: another agent's MiDaS backend work was
   observed in-flight in perception/depth/ during this session; coordinate
   before starting another depth backend.
-- Real mesh/point-cloud geometry storage in WorldIR so exporters can emit
-  something beyond BOX.
 
 ## Decisions affecting this work
 

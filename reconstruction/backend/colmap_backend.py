@@ -118,6 +118,40 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         # should pass use_gpu=True explicitly.
         self._use_gpu = use_gpu
 
+    # ---- orchestrator integration (reconstruction/orchestrator.py) ----
+    # availability_probe: can COLMAP run in this environment at all?
+    # Zero-arg -> (ok, detail); lets the orchestrator decline this backend
+    # BEFORE execution when the binary is missing, instead of discovering
+    # it via a caught ReconstructionBackendUnavailableError. Same check the
+    # reconstruct() path performs, factored so both use one truth.
+    def _colmap_available(self):
+        colmap_path = shutil.which(self._colmap_binary)
+        if colmap_path is None:
+            return False, (
+                f"'{self._colmap_binary}' not found on PATH -- COLMAP must be "
+                "installed to run real reconstruction "
+                "(see docs/RECONSTRUCTION_BACKEND_DECISION.md)"
+            )
+        return True, f"colmap binary found: {colmap_path}"
+
+    availability_probe = _colmap_available
+
+    # accepts: COLMAP's mapper is iterative SfM over imagery; refuse below
+    # the two-view floor so the orchestrator records a DECLINE (try the
+    # next backend) rather than a failed registration run.
+    def _accepts_evidence(self, evidence: List[EvidenceItem]):
+        image_evidence = [
+            e for e in evidence
+            if e.kind in (EvidenceKind.PHOTO, EvidenceKind.VIDEO)
+        ]
+        if len(image_evidence) < 2:
+            return False, (
+                f"COLMAP needs >= 2 PHOTO/VIDEO items, got {len(image_evidence)}"
+            )
+        return True, f"{len(image_evidence)} image item(s) accepted"
+
+    accepts = _accepts_evidence
+
     def reconstruct(self, evidence: List[EvidenceItem]) -> ReconstructionResult:
         image_evidence = [e for e in evidence if e.kind in (EvidenceKind.PHOTO, EvidenceKind.VIDEO)]
         if len(image_evidence) < 2:

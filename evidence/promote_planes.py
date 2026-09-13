@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from provenance import Provenance
 from world_ir import (
@@ -54,6 +54,8 @@ from world_ir import (
     Vector3,
     WorldIR,
 )
+from world_ir.artifact_store import ArtifactStore
+from world_ir.geometry_data import PointCloudData
 
 from perception.geometry.orientation import OrientedPlane
 from reconstruction.backend.interface import ReconstructionResult
@@ -216,6 +218,7 @@ def promote_plane_to_entity(
     entity_name: str = "",
     other_planes: List[OrientedPlane] | None = None,
     plane_positions: Dict[str, List[Tuple[float, float, float]]] | None = None,
+    artifact_store: Optional[ArtifactStore] = None,
 ) -> PlanePromotionResult:
     """Promote one classified plane into WorldIR.
 
@@ -224,6 +227,14 @@ def promote_plane_to_entity(
     enables the wall-thickness pairing search and requires `plane_positions`
     (use positions_by_plane()); when omitted, no thickness is measured --
     never fabricated.
+
+    `artifact_store`, when given, stores the plane's real inlier
+    positions (already computed below for the AABB) as a real
+    PointCloudData artifact and sets `Geometry.data_uri`/`data_hash` to
+    reference it -- the first real (non-metadata-only) geometry payload
+    in the pipeline (world_ir/geometry_data.py). When omitted (default),
+    behavior is unchanged from before this parameter existed: the
+    Geometry carries only vertex_count + bounds, no data_uri.
 
     Mutates `world` (adds Entity + Geometry) exactly like
     evidence/promote_reconstruction.py does: promotion is the write path;
@@ -262,10 +273,17 @@ def promote_plane_to_entity(
         confidence=oriented.uncertainty.confidence,
     )
 
+    data_uri, data_hash = "", ""
+    if artifact_store is not None and positions:
+        payload = PointCloudData.from_positions(positions).to_bytes()
+        data_uri, data_hash = artifact_store.put(payload)
+
     geometry = Geometry(
         id=f"geom-{entity_id}",
         type=GeometryType.PLANE,
         vertex_count=len(oriented.plane.inlier_ids),
+        data_uri=data_uri,
+        data_hash=data_hash,
         bounds_min=bounds_min,
         bounds_max=bounds_max,
         provenance=Provenance.RECONSTRUCTED,

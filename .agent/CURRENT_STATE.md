@@ -1,11 +1,135 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (CLI session complete)
-**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the object-pipeline-promotion PR merged)
-**Verified baseline before this session:** 1067 passed, 2 skipped.
-**Verified after this session:** 1079 passed, 2 skipped (observed 79.7s) — +12 CLI tests, zero regressions.
+**Updated:** 2026-09-13 (object real-geometry session complete)
+**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query + plane-geometry-storage PR merged)
+**Verified baseline before this session:** 1106 passed, 1 pre-existing environment failure deselected.
+**Verified after this session:** 1111 passed, 1 pre-existing failure deselected (observed 82.0s) — +5 tests, zero regressions.
 
-## Completed this session (2026-09-13, latest): headless CLI (`apps/cli/`) — closes the biggest named studio-campaign gap
+## Completed this session (2026-09-13, latest): real geometry storage for OBJECTS (P0.10/11 follow-on) — `evidence/promote_objects.py` now writes real points too, not just `promote_planes.py`
+
+Closed the first item named in the prior session's "Not done" list:
+`ObjectHypothesis3D` (`perception/instances/lifting.py`) already
+computed real unprojected 3D points per mask pixel inside
+`lift_region_to_3d()` and threw them away after their centroid/bounds/
+count -- the exact same gap `promote_planes.py`'s inlier positions had
+before the plane-geometry-storage work. Fixed at the source: added a
+`points: Tuple[Vec3, ...] = ()` field (default-valued, so every
+hand-built hypothesis in existing tests keeps working unchanged) and
+populated it for real in `lift_region_to_3d()`.
+
+`evidence/promote_objects.py::promote_object_to_entity()` gained the
+same `artifact_store` parameter `promote_plane_to_entity()` has: when
+given, it unions every contributing hypothesis's real points
+(`candidate.source_hypotheses[*].points` -- nothing was discarded by
+`merge_hypotheses()`, so this was reachable with zero changes to
+`object_resolution.py`) into one `PointCloudData` artifact and sets
+`data_uri`/`data_hash`. No exporter change was needed either:
+`exporters/gltf/exporter.py`'s real-mesh path already covers `BOX`
+geometry (`_EXPORTABLE_GEOMETRY_TYPES`) and doesn't filter by type when
+resolving `data_uri` -- the machinery built for planes just worked for
+objects too, confirmed by a full lift -> merge -> promote -> validate ->
+export test.
+
+5 new tests in `tests/test_geometry_artifacts.py` (points survive
+lift->merge, backward-compat default, real data_uri written, the
+additive-omit regression test, and the end-to-end export proof). Full
+suite: 1111 passed (was 1106), zero regressions.
+
+Not done in this pass (named, not hidden): `perception/instances/object_resolution.py`
+still doesn't store a *merged* point cloud on `MergedObjectCandidate`
+itself -- promotion unions the per-hypothesis points at promotion time
+instead, which is correct but means any other future consumer of
+`MergedObjectCandidate` before promotion still can't see the union
+directly. Triangulated MESH storage and usda/blender real-geometry
+export are still open, same as before this session.
+
+**Known pre-existing environment failure (not caused by this session, not fixed):**
+`tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`
+fails with `FileNotFoundError` for `hubconf.py` under `~/.cache/torch/hub/facebookresearch_segment-anything_main/`
+— a corrupted/partial local torch.hub cache on this machine, not a code defect. Deselect it or clear that
+cache directory to get a clean run; do not "fix" it in source.
+
+## Completed this session (2026-09-13, latest): real geometry storage in WorldIR (P0.10/P0.11) — closes the last "no fake completion" gap in the export path
+
+Closed the item this file has flagged since it was first written:
+"`Geometry` currently stores only `vertex_count`, no actual vertex
+buffer... a bounding box standing in for the shape."
+
+New: `world_ir/geometry_data.py` (`PointCloudData` — a deterministic
+binary payload format, magic + count + float64 xyz triples, order-
+preserving) and `world_ir/artifact_store.py` (`ArtifactStore` ABC +
+`MemoryArtifactStore` + `FileArtifactStore` — content-addressed,
+sha256-keyed, dedupes identical bytes, `FileArtifactStore` sharded like
+Git's object store and verified to survive a new store instance over
+the same root). `Geometry.data_uri`/`data_hash` (schema_v1.py) already
+existed for exactly this and were never written to until now.
+
+Wired end-to-end, not left as an unused interface:
+`evidence/promote_planes.py::promote_plane_to_entity` gained an optional
+`artifact_store` param — when given, it stores the plane's REAL inlier
+point positions (already computed for the AABB, previously discarded
+after that) as a `PointCloudData` artifact and sets `data_uri`/`data_hash`
+for real. `engine/compiler/world_compiler.py::CompileOptions` gained a
+matching `artifact_store` field, threaded through. `exporters/gltf/exporter.py`
+gained the consumer side: given the same store, `export_to_gltf()` now
+builds a REAL per-entity POINTS-mode mesh from the stored positions
+instead of the placeholder unit cube, for any entity whose geometry
+resolves through the store — entities with no resolvable real data
+still get the cube, honestly, never fabricated. `sdk.reality.export()`
+threads `artifact_store` through for the gltf format specifically (usda/
+blender don't consume real geometry yet — named, not hidden).
+
+Fully additive: every new parameter defaults to `None`/omitted and
+reproduces the exact prior behavior (`vertex_count`+bounds only, cube
+mesh) — verified by an explicit regression test
+(`test_omitting_artifact_store_reproduces_old_behavior`). Determinism
+preserved through the new layer too (`test_two_compiles_of_the_same_evidence_produce_identical_artifacts`
+— same seed -> byte-identical artifact hashes).
+
+22 new tests in `tests/test_geometry_artifacts.py`: PointCloudData
+round-trip (incl. empty, duplicate points, bad-magic rejection), both
+ArtifactStore backends (put/get, content-addressed dedup, persistence
+across a fresh FileArtifactStore instance, unknown-uri error), the full
+promote_planes -> WorldIR wiring (real data matches vertex_count,
+determinism), and the gltf export path (real mesh vs. cube fallback,
+SDK-level threading). Full suite: 1106 passed (was 1084), zero
+regressions.
+
+Not done in this pass (named, not hidden): triangulated MESH storage
+(only POINTCLOUD payloads exist — a real surface-reconstruction step is
+a separate, larger follow-on); usda/blender exporters do not yet
+consume real geometry (gltf only); `evidence/promote_objects.py` (object
+entities) does not yet write real geometry artifacts, only
+`promote_planes.py` does.
+
+## Completed 2026-09-13: `sdk.reality.spatial_index()` / `scene_graph()` + `reality query` CLI
+
+Added the two SDK query wrappers named as the next task after the CLI
+landed: `sdk/reality.py` now exposes `spatial_index(world)` (wraps
+`engine.scene_graph.spatial_index.SpatialIndex` — nearest/within_radius/
+within_region) and `scene_graph(world)` (wraps
+`engine.scene_graph.graph.SceneGraph` — edges_from/to, contents_of,
+container_of), both direct pass-throughs, no new logic. Wired into a
+real caller: `apps/cli/main.py` gained `reality query nearest <world>
+<x> <y> <z> [--k N]` and `reality query contents <world> <entity-id>`,
+both exercised by 3 new CLI tests. `tests/test_sdk_external_consumer.py`
+(the file that proves the SDK boundary is real, importing nothing but
+`sdk.reality`) gained a dedicated test using the two-room compiled-world
+fixture, proving `nearest()` returns correctly ordered results and
+`scene_graph().contents_of()`/`container_of()` resolve a real
+CONTAINS/PART_OF edge produced by room promotion — not a stub. The
+existing full-flow SDK test was also extended to touch both new
+functions. Full suite: 1084 passed (was 1080), zero regressions.
+
+Considered and explicitly NOT done: wiring `SpatialIndex` into
+`evidence/promote_rooms.py`'s ad-hoc neighbor logic (the other option
+named in the prior next-tasks list) — that logic runs on planes
+*before* they exist as WorldIR entities, so `SpatialIndex` (which
+requires a `WorldIR`) does not apply at that layer without a larger,
+riskier restructuring. The CLI is a real, lower-risk caller that
+exercises the same code paths honestly.
+
+## Completed 2026-09-13: headless CLI (`apps/cli/`) — closes the biggest named studio-campaign gap
 
 `apps/cli/main.py` — a `reality` command-line client of `sdk.reality`
 (`ingest`, `reconstruct`, `validate`, `diff`, `export`, `physics`). Every
@@ -568,14 +692,6 @@ environments (COLMAP present/absent). Full suite **920 passed /
 
 ## Next tasks (dependency-safe, in order)
 
-- Add `sdk.reality.spatial_index(world)` wrapping
-  `engine.scene_graph.spatial_index.SpatialIndex` and `scene_graph(world)`
-  wrapping `engine.scene_graph.graph.SceneGraph`, so query capability is
-  reachable from the SDK too, not just compile/validate/diff/export.
-- Wire `SpatialIndex` into a real caller — e.g. `evidence/promote_rooms.py`'s
-  room-detection already does its own ad-hoc geometric neighbor logic;
-  a coverage-analysis or nearest-wall-to-point Studio tool would be the
-  first real consumer of this index rather than it sitting unused.
 - Wall-vs-plane / wall-vs-wall collision uses Box-vs-Box only right now;
   `SimpleRigidBodyBackend` also supports Plane statics via `add_plane()`
   which `build_stepped_physics_world()` does not populate (compiled
@@ -598,10 +714,14 @@ environments (COLMAP present/absent). Full suite **920 passed /
   install once one is available in this environment, and visually
   inspect the result (geometry/transforms/hierarchy/custom properties) —
   the exporter itself is done and tested, but never opened in Blender.
-- Real mesh/point-cloud geometry storage in WorldIR (`Geometry` currently
-  stores only `vertex_count`, no actual vertex buffer) so exporters can
-  emit real wall/floor rectangles or point clouds instead of a bounding
-  box standing in for the shape.
+- Triangulated MESH storage: `world_ir/geometry_data.py` now has real
+  `PointCloudData`, but no `MeshData` (vertices/indices/normals) yet —
+  needs a real surface-reconstruction step (e.g. alpha-shape/Poisson
+  over a plane's inlier points), not just a new payload format.
+- usda/blender exporters don't consume `artifact_store`/real geometry
+  yet (only gltf does as of this session) — extend
+  `exporters/usd/exporter.py` and `exporters/blender/exporter.py` the
+  same way if real geometry in those formats is needed.
 - Compiler consumption of depth/segmentation/material evidence (currently
   planes+rooms only).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room

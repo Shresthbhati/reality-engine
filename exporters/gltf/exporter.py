@@ -8,27 +8,33 @@ Scope (deliberately narrow — see docs/REALITY_ENGINE_AUDIT.md item 34):
   data a BOX geometry would carry). The entity's transform position
   becomes the node's `translation`.
 
+Real geometry (2026-09-13, P0.10/P0.11): pass an `artifact_store`
+(world_ir/artifact_store.py) and any entity whose geometry has a
+`data_uri` this store can resolve (a `PointCloudData` payload, written
+by evidence/promote_planes.py when it was given the same store) gets
+its own real mesh, built from actual reconstructed point positions, as
+a POINTS-mode primitive — not the placeholder cube. Nothing is
+fabricated: an entity with no resolvable real data (no store passed,
+no data_uri set, or the store doesn't have that artifact) falls back to
+the cube exactly as before.
+
 What is intentionally NOT exported, and why:
   - Entities with no transform: glTF nodes need a placement; there is
     nothing to place them at, so they are skipped rather than guessed.
   - Entities whose geometry is MESH, POINTCLOUD, or anything other than
-    BOX/PLANE: WorldIR's `Geometry` dataclass (world_ir/schema_v1.py)
-    stores only a `vertex_count` metadata int for those types — it does
-    not store actual vertex positions, faces, or point data anywhere.
-    There is genuinely nothing real to export for those types yet, so
-    they are skipped rather than fabricating a mesh. Exporting real
-    mesh/point-cloud geometry requires WorldIR to gain actual
-    vertex-buffer storage first (separate, larger work item). The unit
-    cube is still a placeholder for BOX/PLANE too — their real AABB size
-    (`bounds_min`/`bounds_max`) is not yet used to scale the mesh here
-    (see exporters/blender/exporter.py, which does use it).
+    BOX/PLANE: still skipped in this pass — real-data support above is
+    scoped to BOX/PLANE for now (`_EXPORTABLE_GEOMETRY_TYPES`).
+  - Without an artifact_store (or for a geometry with no real payload),
+    BOX/PLANE entities still get the placeholder unit cube; their real
+    AABB size (`bounds_min`/`bounds_max`) is not yet used to scale it
+    here (see exporters/blender/exporter.py, which does use it).
   - Materials, textures, skinning, animation, and node hierarchy/parenting:
     out of scope for this pass; WorldIR's Entity/Geometry model does not
     yet carry the data these would need either.
 
-Output is a single-file .gltf: the unit-cube vertex/index buffer is
-embedded as a base64 data URI in the one `buffers[0].uri`, so no separate
-.bin file is produced.
+Output is a single-file .gltf: all buffer data (the shared unit cube,
+plus any real per-entity point-cloud data) is embedded as one base64
+data URI in `buffers[0].uri`, so no separate .bin file is produced.
 """
 
 from __future__ import annotations
@@ -36,8 +42,10 @@ from __future__ import annotations
 import base64
 import json
 import struct
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+from world_ir.artifact_store import ArtifactNotFoundError, ArtifactStore
+from world_ir.geometry_data import PointCloudData
 from world_ir.schema_v1 import GeometryType
 
 from exporters.report import ExportReport, content_hash
@@ -81,18 +89,52 @@ _EXPORTABLE_GEOMETRY_TYPES = frozenset({GeometryType.BOX, GeometryType.PLANE})
 
 def _entity_box_geometry(world: "WorldIR", entity) -> bool:
     """True iff `entity` has at least one BOX/PLANE geometry attached."""
+    return _entity_exportable_geometry(world, entity) is not None
+
+
+def _entity_exportable_geometry(world: "WorldIR", entity):
     for gid in entity.geometry_ids:
         geom = world.geometries.get(gid)
         if geom is not None and geom.type in _EXPORTABLE_GEOMETRY_TYPES:
-            return True
-    return False
+            return geom
+    return None
 
 
-def export_to_gltf(world: "WorldIR") -> dict:
+def _real_points_mesh(
+    points: "list[tuple[float, float, float]]", origin: "tuple[float, float, float]",
+) -> dict:
+    """A real glTF mesh primitive (POINTS mode, no indices) from actual
+    geometry-artifact positions, translated into the entity's local
+    space (the node's own `translation` already places the origin)."""
+    local = [(x - origin[0], y - origin[1], z - origin[2]) for x, y, z in points]
+    position_bytes = b"".join(struct.pack("<fff", *v) for v in local)
+    xs, ys, zs = [v[0] for v in local], [v[1] for v in local], [v[2] for v in local]
+    return {
+        "buffer_bytes": position_bytes,
+        "accessor": {
+            "componentType": _COMPONENT_TYPE_FLOAT,
+            "count": len(local),
+            "type": "VEC3",
+            "min": [min(xs), min(ys), min(zs)],
+            "max": [max(xs), max(ys), max(zs)],
+        },
+        "mode": 0,  # POINTS
+    }
+
+
+def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> dict:
     """Build a glTF 2.0 JSON structure (as a plain dict) from `world`.
 
-    Only entities with a transform position AND a BOX geometry produce a
-    node — see module docstring for exactly what is skipped and why.
+    Only entities with a transform position AND a BOX/PLANE geometry
+    produce a node — see module docstring for exactly what is skipped
+    and why. When `artifact_store` is given and an entity's geometry
+    carries a `data_uri` this store can resolve (world_ir/geometry_data.py's
+    PointCloudData, written by evidence/promote_planes.py when it was
+    given a store), that entity gets its OWN mesh built from real,
+    reconstructed point positions (a POINTS-mode primitive) instead of
+    the shared placeholder unit cube. Entities with no resolvable real
+    data keep using the cube exactly as before — this is additive, never
+    a behavior change for existing callers that omit `artifact_store`.
     """
     # Shared unit-cube buffer data: positions (float32 xyz) then indices
     # (uint16), both already 4-byte aligned (24 floats = 96 bytes,
@@ -143,30 +185,76 @@ def export_to_gltf(world: "WorldIR") -> dict:
         "buffers": [{"byteLength": len(buffer_bytes), "uri": buffer_uri}],
     }
 
+    tail_buffer = bytearray()  # additional real-mesh bytes, appended after the cube buffer
+
     for entity in world.entities.values():
         if not entity.transform or "position" not in entity.transform:
             continue  # no placement to export the node with
-        if not _entity_box_geometry(world, entity):
+        geometry = _entity_exportable_geometry(world, entity)
+        if geometry is None:
             continue  # nothing real to export (see module docstring)
 
         pos = entity.transform["position"]
+        mesh_index = 0  # default: shared placeholder cube
+
+        real_points = _resolve_real_points(artifact_store, geometry)
+        if real_points is not None and len(real_points) >= 1:
+            real = _real_points_mesh(real_points, (pos["x"], pos["y"], pos["z"]))
+            buffer_view_index = len(gltf["bufferViews"])
+            byte_offset = len(buffer_bytes) + len(tail_buffer)
+            tail_buffer.extend(real["buffer_bytes"])
+            gltf["bufferViews"].append({
+                "buffer": 0, "byteOffset": byte_offset,
+                "byteLength": len(real["buffer_bytes"]), "target": 34962,
+            })
+            accessor_index = len(gltf["accessors"])
+            gltf["accessors"].append({"bufferView": buffer_view_index, "byteOffset": 0, **real["accessor"]})
+            mesh_index = len(gltf["meshes"])
+            gltf["meshes"].append({
+                "primitives": [{"attributes": {"POSITION": accessor_index}, "mode": real["mode"]}]
+            })
+
         node_index = len(gltf["nodes"])
         gltf["nodes"].append(
             {
                 "name": entity.name or entity.id,
-                "mesh": 0,
+                "mesh": mesh_index,
                 "translation": [pos["x"], pos["y"], pos["z"]],
             }
         )
         gltf["scenes"][0]["nodes"].append(node_index)
 
+    if tail_buffer:
+        full_bytes = buffer_bytes + bytes(tail_buffer)
+        gltf["buffers"][0] = {
+            "byteLength": len(full_bytes),
+            "uri": "data:application/octet-stream;base64," + base64.b64encode(full_bytes).decode("ascii"),
+        }
+
     return gltf
 
 
-def write_gltf_file(world: "WorldIR", path: str) -> None:
+def _resolve_real_points(artifact_store: Optional[ArtifactStore], geometry) -> Optional[list]:
+    """Real point positions for `geometry`, or None if there is no
+    resolvable real data (no store, no data_uri, or the store doesn't
+    have this artifact) -- never fabricated, the caller falls back to
+    the placeholder cube."""
+    if artifact_store is None or not geometry.data_uri:
+        return None
+    try:
+        payload = artifact_store.get(geometry.data_uri)
+    except ArtifactNotFoundError:
+        return None
+    try:
+        return list(PointCloudData.from_bytes(payload).points)
+    except (ValueError, struct.error):
+        return None  # not a PointCloudData payload this exporter understands
+
+
+def write_gltf_file(world: "WorldIR", path: str, artifact_store: Optional[ArtifactStore] = None) -> None:
     """Export `world` to glTF 2.0 JSON and write it to `path`."""
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(export_to_gltf(world), f)
+        json.dump(export_to_gltf(world, artifact_store), f)
 
 
 def _classify_entities(world: "WorldIR"):
@@ -186,11 +274,13 @@ def _classify_entities(world: "WorldIR"):
     return tuple(exported), tuple(skipped), tuple(reasons)
 
 
-def export_to_gltf_with_report(world: "WorldIR") -> tuple[dict, ExportReport]:
+def export_to_gltf_with_report(
+    world: "WorldIR", artifact_store: Optional[ArtifactStore] = None,
+) -> tuple[dict, ExportReport]:
     """Same as export_to_gltf(), plus a structured ExportReport naming
     exactly which entities were exported/skipped and why, and a
     deterministic content hash of the resulting JSON."""
-    gltf = export_to_gltf(world)
+    gltf = export_to_gltf(world, artifact_store)
     exported, skipped, reasons = _classify_entities(world)
     report = ExportReport(
         format="gltf",

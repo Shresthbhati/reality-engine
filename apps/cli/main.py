@@ -153,6 +153,33 @@ def cmd_physics(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_query_nearest(args: argparse.Namespace) -> int:
+    world = _load_world(args.world)
+    index = reality.spatial_index(world)
+    hits = index.nearest((args.x, args.y, args.z), k=args.k)
+    if not hits:
+        print("no localized entities found")
+        return 1
+    for entity, distance in hits:
+        print(f"{entity.id}\t{distance:.4f}m\t{entity.name or entity.type.value}")
+    return 0
+
+
+def cmd_query_contents(args: argparse.Namespace) -> int:
+    world = _load_world(args.world)
+    graph = reality.scene_graph(world)
+    if args.world_entity_id not in world.entities:
+        _eprint(f"unknown entity id: {args.world_entity_id!r}")
+        return 1
+    contents = graph.contents_of(args.world_entity_id)
+    if not contents:
+        print(f"{args.world_entity_id} has no known contents")
+        return 0
+    for entity in sorted(contents, key=lambda e: e.id):
+        print(f"{entity.id}\t{entity.name or entity.type.value}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reality", description="Reality Engine command-line interface")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -189,6 +216,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_physics = sub.add_parser("physics", help="compile a WorldIR into physics bodies + diagnostics")
     p_physics.add_argument("world")
     p_physics.set_defaults(func=cmd_physics)
+
+    p_query = sub.add_parser("query", help="spatial/relationship queries over a WorldIR")
+    query_sub = p_query.add_subparsers(dest="query_command", required=True)
+
+    p_nearest = query_sub.add_parser("nearest", help="k nearest localized entities to a point")
+    p_nearest.add_argument("world")
+    p_nearest.add_argument("x", type=float)
+    p_nearest.add_argument("y", type=float)
+    p_nearest.add_argument("z", type=float)
+    p_nearest.add_argument("--k", type=int, default=1)
+    p_nearest.set_defaults(func=cmd_query_nearest)
+
+    p_contents = query_sub.add_parser("contents", help="entities contained in/part of a container entity")
+    p_contents.add_argument("world")
+    p_contents.add_argument("world_entity_id", metavar="entity-id")
+    p_contents.set_defaults(func=cmd_query_contents)
 
     return parser
 

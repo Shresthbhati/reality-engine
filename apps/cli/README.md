@@ -11,7 +11,13 @@ python -m apps.cli.main validate world.json
 python -m apps.cli.main diff before.json after.json
 python -m apps.cli.main export world.json --format gltf|usda|blender -o out.file
 python -m apps.cli.main physics world.json
+python -m apps.cli.main query nearest world.json <x> <y> <z> [--k N]
+python -m apps.cli.main query contents world.json <entity-id>
 ```
+
+`query nearest`/`query contents` are thin CLI callers of
+`sdk.reality.spatial_index()`/`sdk.reality.scene_graph()` -- real
+spatial/relationship query engines over a compiled WorldIR, not stubs.
 
 `ingest` and `reconstruct` are split because `reconstruction.ReconstructionResult`
 has no stable serialization format of its own (by design -- see

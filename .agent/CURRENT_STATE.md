@@ -1,11 +1,44 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (CLI session complete)
-**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the object-pipeline-promotion PR merged)
-**Verified baseline before this session:** 1067 passed, 2 skipped.
-**Verified after this session:** 1079 passed, 2 skipped (observed 79.7s) — +12 CLI tests, zero regressions.
+**Updated:** 2026-09-13 (SDK query surface session complete)
+**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI PR merged)
+**Verified baseline before this session:** 1080 passed (1 pre-existing environment failure deselected — see below).
+**Verified after this session:** 1084 passed, 1 pre-existing failure deselected (observed 95.9s) — +4 tests, zero regressions.
 
-## Completed this session (2026-09-13, latest): headless CLI (`apps/cli/`) — closes the biggest named studio-campaign gap
+**Known pre-existing environment failure (not caused by this session, not fixed):**
+`tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`
+fails with `FileNotFoundError` for `hubconf.py` under `~/.cache/torch/hub/facebookresearch_segment-anything_main/`
+— a corrupted/partial local torch.hub cache on this machine, not a code defect. Deselect it or clear that
+cache directory to get a clean run; do not "fix" it in source.
+
+## Completed this session (2026-09-13, latest): `sdk.reality.spatial_index()` / `scene_graph()` + `reality query` CLI
+
+Added the two SDK query wrappers named as the next task after the CLI
+landed: `sdk/reality.py` now exposes `spatial_index(world)` (wraps
+`engine.scene_graph.spatial_index.SpatialIndex` — nearest/within_radius/
+within_region) and `scene_graph(world)` (wraps
+`engine.scene_graph.graph.SceneGraph` — edges_from/to, contents_of,
+container_of), both direct pass-throughs, no new logic. Wired into a
+real caller: `apps/cli/main.py` gained `reality query nearest <world>
+<x> <y> <z> [--k N]` and `reality query contents <world> <entity-id>`,
+both exercised by 3 new CLI tests. `tests/test_sdk_external_consumer.py`
+(the file that proves the SDK boundary is real, importing nothing but
+`sdk.reality`) gained a dedicated test using the two-room compiled-world
+fixture, proving `nearest()` returns correctly ordered results and
+`scene_graph().contents_of()`/`container_of()` resolve a real
+CONTAINS/PART_OF edge produced by room promotion — not a stub. The
+existing full-flow SDK test was also extended to touch both new
+functions. Full suite: 1084 passed (was 1080), zero regressions.
+
+Considered and explicitly NOT done: wiring `SpatialIndex` into
+`evidence/promote_rooms.py`'s ad-hoc neighbor logic (the other option
+named in the prior next-tasks list) — that logic runs on planes
+*before* they exist as WorldIR entities, so `SpatialIndex` (which
+requires a `WorldIR`) does not apply at that layer without a larger,
+riskier restructuring. The CLI is a real, lower-risk caller that
+exercises the same code paths honestly.
+
+## Completed 2026-09-13: headless CLI (`apps/cli/`) — closes the biggest named studio-campaign gap
 
 `apps/cli/main.py` — a `reality` command-line client of `sdk.reality`
 (`ingest`, `reconstruct`, `validate`, `diff`, `export`, `physics`). Every
@@ -568,14 +601,6 @@ environments (COLMAP present/absent). Full suite **920 passed /
 
 ## Next tasks (dependency-safe, in order)
 
-- Add `sdk.reality.spatial_index(world)` wrapping
-  `engine.scene_graph.spatial_index.SpatialIndex` and `scene_graph(world)`
-  wrapping `engine.scene_graph.graph.SceneGraph`, so query capability is
-  reachable from the SDK too, not just compile/validate/diff/export.
-- Wire `SpatialIndex` into a real caller — e.g. `evidence/promote_rooms.py`'s
-  room-detection already does its own ad-hoc geometric neighbor logic;
-  a coverage-analysis or nearest-wall-to-point Studio tool would be the
-  first real consumer of this index rather than it sitting unused.
 - Wall-vs-plane / wall-vs-wall collision uses Box-vs-Box only right now;
   `SimpleRigidBodyBackend` also supports Plane statics via `add_plane()`
   which `build_stepped_physics_world()` does not populate (compiled

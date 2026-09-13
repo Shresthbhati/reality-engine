@@ -39,6 +39,8 @@ from engine.compiler.world_compiler import (
     WorldValidationGateError,
     compile_reconstruction_to_world,
 )
+from engine.scene_graph.graph import SceneGraph
+from engine.scene_graph.spatial_index import SpatialIndex
 from exporters.blender.exporter import export_to_blender_script_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
 from exporters.usd.exporter import export_to_usda_with_report
@@ -55,6 +57,8 @@ __all__ = [
     "compile_world_from_reconstruction",
     "diff",
     "export",
+    "scene_graph",
+    "spatial_index",
     "validate",
 ]
 
@@ -101,6 +105,20 @@ def compile_physics(world: WorldIR) -> PhysicsCompileDiagnostics:
     """WorldIR -> physics bodies + diagnostics. Direct pass-through to
     engine.compiler.physics_compiler.compile_physics_world()."""
     return compile_physics_world(world)
+
+
+def spatial_index(world: WorldIR) -> SpatialIndex:
+    """WorldIR -> SpatialIndex (nearest/within_radius/within_region queries).
+    Direct pass-through to engine.scene_graph.spatial_index.SpatialIndex.
+    A snapshot of `world` at call time; rebuild after edits."""
+    return SpatialIndex(world)
+
+
+def scene_graph(world: WorldIR) -> SceneGraph:
+    """WorldIR -> SceneGraph (relationship queries: contents_of,
+    container_of, edges_from/to). Direct pass-through to
+    engine.scene_graph.graph.SceneGraph."""
+    return SceneGraph(world)
 
 
 def export(world: WorldIR, format: str):

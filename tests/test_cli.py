@@ -168,6 +168,40 @@ class TestExport:
         assert exc_info.value.code == 2  # argparse rejects the invalid choice before reaching the SDK
 
 
+class TestQuery:
+    def test_query_nearest_finds_localized_entities(self, tmp_path, capsys):
+        world_path = _write_world(tmp_path, _compiled_world_fixture())
+        rc = main(["query", "nearest", world_path, "0", "0", "0", "--k", "3"])
+        assert rc == 0
+        lines = capsys.readouterr().out.strip().splitlines()
+        assert 1 <= len(lines) <= 3
+        for line in lines:
+            entity_id, distance, _label = line.split("\t")
+            assert float(distance.rstrip("m")) >= 0.0
+
+    def test_query_contents_lists_room_members(self, tmp_path, capsys):
+        world = _compiled_world_fixture()
+        from world_ir import RelationshipKind
+
+        room_id = next(
+            eid for eid, e in world.entities.items()
+            if any(r.kind == RelationshipKind.CONTAINS for r in e.relationships)
+        )
+        world_path = _write_world(tmp_path, world)
+
+        rc = main(["query", "contents", world_path, room_id])
+
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert out.strip() != ""
+
+    def test_query_contents_rejects_unknown_entity(self, tmp_path, capsys):
+        world_path = _write_world(tmp_path, _compiled_world_fixture())
+        rc = main(["query", "contents", world_path, "no-such-entity"])
+        assert rc == 1
+        assert "unknown entity" in capsys.readouterr().err.lower()
+
+
 class TestPhysics:
     def test_physics_compiles_bodies_for_the_room_scene(self, tmp_path, capsys):
         world_path = _write_world(tmp_path, _compiled_world_fixture())

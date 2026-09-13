@@ -169,6 +169,7 @@ def main() -> int:
             "note": result.scale_note,
         },
         "depth": result.stage_facts.get("depth"),
+        "perception": result.stage_facts.get("perception"),
         "compile": {
             "entities": len(result.world.entities),
             "measurements": result.compile.measurements_count,

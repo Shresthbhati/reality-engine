@@ -30,8 +30,12 @@ module wires them and carries the honest artifacts forward:
     dependencies are unavailable -- never silently degraded
   - the world's validation gate runs inside the compiler
 
-Not in this module (honest gaps, next steps): semantic
-detection/segmentation, 2D->3D object lifting, multi-sensor fusion.
+Semantic perception (optional stage 3.5): a real detector/segmenter
+(Mask R-CNN) produces per-view instance masks; masks + metricized depth
++ cameras lift into 3D object hypotheses; hypotheses merge across views
+and promote into the compiled world as traceable entities (P0.6-P0.8,
+P0.14 convergence). Skipped honestly when the model or depth maps are
+unavailable -- never fabricated.
 """
 
 from __future__ import annotations
@@ -86,6 +90,13 @@ class VerticalSliceOptions:
     #: the stage entirely.
     depth_model: Optional[str] = "DPT_Hybrid"
     depth_stride: int = 16
+    #: Perception stage: detector name (currently only "maskrcnn"). None
+    #: disables object perception entirely.
+    perception_model: Optional[str] = "maskrcnn"
+    #: Minimum detector score for a mask to attempt lifting.
+    detection_score_threshold: float = 0.5
+    #: Cross-view merge distance for object hypotheses (meters).
+    object_merge_distance_m: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -210,7 +221,7 @@ def vertical_slice(
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
 
     # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
-    depth_facts = _depth_stage(result, evidence_items, options)
+    depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options)
 
     # ---- stage 3: compile to validated WorldIR ----
     compile_options = CompileOptions(seed=options.seed, up=options.up)
@@ -218,6 +229,11 @@ def vertical_slice(
         world, diagnostics = compile_reconstruction_to_world(result, compile_options)
     except Exception as exc:  # noqa: BLE001
         raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
+
+    # ---- stage 3.5: semantic perception -> object entities (optional) ----
+    perception_facts = _perception_stage(
+        result, world, evidence_items, metric_depth_maps, options
+    )
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
@@ -235,6 +251,7 @@ def vertical_slice(
     world.metadata["frame"] = frame_record.to_dict()
     if depth_facts is not None:
         world.metadata["depth"] = depth_facts
+    world.metadata["perception"] = perception_facts
 
     return VerticalSliceResult(
         world=world,
@@ -264,6 +281,7 @@ def vertical_slice(
             "duration_s": run.diagnostics.duration_s,
             "scale_error_note": scale_error,
             "depth": depth_facts,
+            "perception": perception_facts,
         },
     )
 
@@ -271,14 +289,15 @@ def vertical_slice(
 def _depth_stage(result, evidence_items, options):
     """Optional MiDaS depth -> metric dense points appended to the result.
 
-    Returns a facts dict for metadata, or None with a note recorded in
-    it when the stage is disabled or its optional deps are missing --
-    a skip is visible, never silent. The stage itself never raises:
-    depth is an enhancement, and its failure must not lose the sparse
-    reconstruction world.
+    Returns (facts_dict, metric_depth_maps). The maps are also returned so
+    the perception stage can lift object masks against the SAME metricized
+    maps -- one owner of depth state, never re-inferred. Empty list when
+    the stage is disabled/unavailable (a skip is visible, never silent).
+    The stage itself never raises: depth is an enhancement, and its
+    failure must not lose the sparse reconstruction world.
     """
     if options.depth_model is None:
-        return {"status": "skipped", "note": "disabled (depth_model=None)"}
+        return {"status": "skipped", "note": "disabled (depth_model=None)"}, []
 
     try:
         from perception.depth.midAS_backend import MiDaSDepthBackend
@@ -288,13 +307,13 @@ def _depth_stage(result, evidence_items, options):
         return {
             "status": "skipped",
             "note": f"optional perception dependencies unavailable: {exc}",
-        }
+        }, []
     if options.intrinsics is None:
         return {
             "status": "skipped",
             "note": "no trusted intrinsics (options.intrinsics) -- unprojection "
             "needs a camera model; refusing to guess one",
-        }
+        }, []
 
     fx, fy, cx, cy = options.intrinsics
     width, height = options.image_size
@@ -310,7 +329,7 @@ def _depth_stage(result, evidence_items, options):
             "status": "skipped",
             "note": f"depth backend failed: {exc}",
             "model": options.depth_model,
-        }
+        }, []
 
     metric_maps, alignments, failed = metricize_all(depth_maps, result, intrinsics)
 
@@ -328,7 +347,7 @@ def _depth_stage(result, evidence_items, options):
     result.points.extend(dense)
     residuals = sorted(a.residual_median_m for a in alignments)
     median_residual = residuals[len(residuals) // 2] if residuals else None
-    return {
+    facts = {
         "status": "ran",
         "model": options.depth_model,
         "maps": len(depth_maps),
@@ -342,5 +361,109 @@ def _depth_stage(result, evidence_items, options):
             "relative monocular depth metricized per-view against the SfM "
             "sparse cloud (documented approximation, see "
             "reconstruction.depth_to_points)"
+        ),
+    }
+    return facts, metric_maps
+
+
+def _perception_stage(result, world, evidence_items, metric_depth_maps, options):
+    """Optional semantic perception -> object entities in the world.
+
+    Real detector (Mask R-CNN) -> per-view instance masks -> lifted via the
+    metricized depth maps + registered cameras into 3D hypotheses -> merged
+    across views -> promoted into `world` as traceable entities. Skipped
+    honestly (status recorded, world untouched) when disabled, when the
+    model is unavailable, or when no metric depth survived -- object
+    entities require metric lifting, and fabricating them would violate
+    the pipeline's contract. Never raises: perception is an enhancement;
+    its failure must not lose the structural world.
+    """
+    skip = {"status": "skipped", "objects": 0}
+    if options.perception_model is None:
+        return {**skip, "note": "disabled (perception_model=None)"}
+    if options.intrinsics is None:
+        return {**skip, "note": "no trusted intrinsics -- lifting needs a camera model"}
+    if not metric_depth_maps:
+        return {
+            **skip,
+            "note": "no metricized depth maps survived -- object lifting needs "
+            "metric depth; refusing to lift masks against relative depth",
+        }
+
+    try:
+        from perception.detection.maskrcnn_backend import MaskRCNNDetector
+        from perception.instances.lifting import lift_region_to_3d
+        from perception.instances.object_resolution import merge_hypotheses
+        from evidence.promote_objects import promote_object_to_entity
+        from reconstruction.calibration.camera import CameraIntrinsics, camera_from_pose
+    except ImportError as exc:
+        return {**skip, "note": f"optional perception dependencies unavailable: {exc}"}
+
+    try:
+        detector = MaskRCNNDetector(score_threshold=options.detection_score_threshold)
+    except Exception as exc:  # noqa: BLE001 -- model unavailability is a skip
+        return {**skip, "note": f"detector unavailable: {exc}", "model": options.perception_model}
+
+    # Registered-camera lookup: only poses COLMAP actually registered can
+    # lift anything (unregistered views have no pose -- lifting there would
+    # invent geometry).
+    fx, fy, cx, cy = options.intrinsics
+    width, height = options.image_size
+    intrinsics = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height)
+    depth_by_id = {dm.evidence_id: dm for dm in metric_depth_maps}
+
+    try:
+        seg_results = detector.segment(list(evidence_items))
+    except Exception as exc:  # noqa: BLE001
+        return {**skip, "note": f"segmentation failed: {exc}"}
+
+    hypotheses = []
+    masks_total = 0
+    for seg in seg_results:
+        depth = depth_by_id.get(seg.evidence_id)
+        if depth is None:
+            continue  # view's depth never metricized -> cannot lift honestly
+        camera = None
+        for pose in result.camera_poses:
+            if pose.evidence_id == seg.evidence_id:
+                camera = camera_from_pose(intrinsics, pose)
+                break
+        if camera is None:
+            continue  # unregistered view
+        for region in seg.regions:
+            masks_total += 1
+            hyp = lift_region_to_3d(region, depth, camera)
+            if hyp is not None:
+                hypotheses.append(hyp)
+
+    candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
+
+    promoted = 0
+    for i, cand in enumerate(candidates):
+        promote_object_to_entity(
+            cand, world, entity_id=f"entity-object-{i:03d}"
+        )
+        promoted += 1
+
+    # Final gate: the world must still be valid after mutation.
+    from world_ir.validation import validate_world_ir
+    report = validate_world_ir(world)
+    if report.errors:
+        raise VerticalSliceError(
+            f"perception stage produced an invalid world: {report.errors[:3]}"
+        )
+
+    return {
+        "status": "ran",
+        "model": options.perception_model,
+        "views_segmented": len(seg_results),
+        "masks_considered": masks_total,
+        "hypotheses_lifted": len(hypotheses),
+        "candidates_merged": len(candidates),
+        "entities_promoted": promoted,
+        "note": (
+            "COCO Mask R-CNN masks lifted via SfM-aligned depth (metric-by-"
+            "alignment, approximate); merged by label+proximity; provenance "
+            "INFERRED with per-entity evidence ids"
         ),
     }

@@ -690,6 +690,53 @@ Machine-independent chain tests pin the gate wiring for both
 environments (COLMAP present/absent). Full suite **920 passed /
 2 skipped** (+3 gate tests).
 
+## Completed 2026-09-13 (latest): simulation campaign — three milestones
+
+Started from verified state: physics core/destruction/glass/debris/water/
+rain REAL; 15 physics dirs (fire, fluids, smoke, structural, fracture...)
+EMPTY scaffolds; no WorldIR->physics bridge.
+
+1. **WorldIR->physics compiler** (`engine/physics/world_compiler.py`,
+commit cd77720): compile_world_to_physics() turns reconstructed WorldIR
+entities into SimpleRigidBodyBackend bodies — PLANE geometry -> static
+infinite planes (bounds-thinnest-axis normal), BOX -> dynamic/static
+bodies (structure types static). Honesty: density labelled
+observed/estimated/fallback with derivation notes; unsupported geometry
+skipped per entity with reason codes (NO_GEOMETRY/
+UNSUPPORTED_GEOMETRY/BAD_BOUNDS); mass derived deterministically; the
+infinite-plane OVER-restraint (doorway gaps do not pass bodies) is a
+documented approximation with a pin test. End-to-end: reconstructed room
+-> WorldIR -> compiled physics -> crate falls and rests on the compiled
+floor plane (y≈0.19 vs 0.2 hand-computed). Engine characteristic
+observed: resting bodies stay AWAKE (gravity applied before the sleep
+timer check) — flagged, not silently patched. 13 tests.
+
+2. **Temporal state layer** (`engine/simulation/temporal.py`, commit
+2ce36f3): complements the existing Timeline/ReplayController (segments
++ playback — pre-existing, 520 lines, tested; NOT rebuilt). EventGraph
+(ancestors/descendants/root_causes/entity/after queries over the real
+EventBus causal field list, unknown ids raise); SnapshotStore (full
+WorldIR to_dict captures, deep-copied + mutation-isolated, deterministic
+ids snap-{branch}-{tick}-{ordinal}, in-place restore preserving world
+identity); BranchManager (deep-copy inheritance — child mutation never
+reaches parent (tested), registry semantics, baseline protected,
+structural compare added/removed/changed with old->new values);
+replay() on a deep copy against a fresh bus — non-destructive by
+construction. 18 tests.
+
+3. **Wind field** (`engine/environment/wind.py`, commit bcdab40):
+frozen config + DeterministicRNG + Beaufort bands + optional
+engine.world.events publishing (wind.band_changed), matching the
+rain.py pattern. Boundary-layer power law (alpha in documented terrain
+range), deterministic two-component sine gusts, quadratic drag
+F=0.5*rho*Cd*A*v_rel^2 with relative-velocity form; apply_wind_loads()
+impulses real dynamic bodies in the SimpleRigidBodyBackend (static
+untouched) — wind speed -> force -> motion -> contacts, no scripted
+timers. Hand-computed drag values tested. 20 tests.
+
+Full suite after all three: **971 passed / 2 skipped** (933 baseline +
+38 new). All committed on `evidence-fusion` (unpushed).
+
 ## Next tasks (dependency-safe, in order)
 
 - Wall-vs-plane / wall-vs-wall collision uses Box-vs-Box only right now;

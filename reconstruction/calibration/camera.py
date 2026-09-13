@@ -195,3 +195,33 @@ class PinholeCamera:
             intrinsics=CameraIntrinsics.from_dict(data["intrinsics"]),
             extrinsics=CameraExtrinsics.from_dict(data["extrinsics"]),
         )
+
+
+def camera_from_pose(intrinsics: CameraIntrinsics, pose) -> PinholeCamera:
+    """Build a PinholeCamera from a backend pose
+    (`reconstruction.backend.interface.ReconstructedCameraPose`: tuple
+    position + (w, x, y, z) quaternion, camera-to-world -- the same
+    convention CameraExtrinsics documents). This is the seam where
+    camera-reconstruction output becomes a usable camera model."""
+    w, x, y, z = (float(c) for c in pose.rotation)
+    quat = Quat(w=w, x=x, y=y, z=z).normalized()
+    px, py, pz = (float(c) for c in pose.position)
+    return PinholeCamera(
+        intrinsics=intrinsics,
+        extrinsics=CameraExtrinsics(position=Vec3(px, py, pz), rotation=quat),
+    )
+
+
+def quat_to_matrix(q: Quat) -> Tuple[
+    Tuple[float, float, float],
+    Tuple[float, float, float],
+    Tuple[float, float, float],
+]:
+    """Unit quaternion -> 3x3 row-major rotation matrix (camera-to-world,
+    matching q.rotate for standard (w, x, y, z) ordering)."""
+    w, x, y, z = q.w, q.x, q.y, q.z
+    return (
+        (1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)),
+        (2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)),
+        (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)),
+    )

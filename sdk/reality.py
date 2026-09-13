@@ -129,18 +129,15 @@ def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] 
     "blender"}. Raises UnsupportedExportFormatError for anything else --
     the SDK never silently no-ops on an unknown format.
 
-    `artifact_store`, when given, lets the gltf exporter emit real
-    per-entity geometry (world_ir/geometry_data.py's PointCloudData)
-    instead of the placeholder cube for any entity whose Geometry
-    resolves through it -- see exporters/gltf/exporter.py. usda/blender
-    do not consume it yet (real-geometry export is scoped to gltf in
-    this pass); the parameter is accepted but silently unused for them,
-    same as any exporter kwarg those formats don't need."""
+    `artifact_store`, when given, lets every exporter (gltf/usda/blender)
+    emit real per-entity geometry (world_ir/geometry_data.py's
+    PointCloudData) instead of the placeholder cube for any entity
+    whose Geometry resolves through it -- see exporters/gltf/exporter.py,
+    exporters/usd/exporter.py, exporters/blender/exporter.py. All three
+    accept the same parameter shape, so it is threaded through uniformly."""
     exporter_fn = _EXPORTERS.get(format)
     if exporter_fn is None:
         raise UnsupportedExportFormatError(
             f"unsupported export format {format!r}; supported: {sorted(_EXPORTERS)}"
         )
-    if format == "gltf":
-        return exporter_fn(world, artifact_store)
-    return exporter_fn(world)
+    return exporter_fn(world, artifact_store)

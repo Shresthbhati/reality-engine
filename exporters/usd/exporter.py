@@ -24,13 +24,31 @@ What is intentionally NOT exported, and why:
     exporter produces hand-written .usda text conforming to the documented
     ASCII grammar — it has not been validated against the real `pxr`
     Python library or any real USD viewer.
+
+Real geometry (2026-09-13, matches exporters/gltf/exporter.py's own
+real-geometry pass): pass an `artifact_store` (world_ir/artifact_store.py)
+and any entity whose geometry has a `data_uri` this store can resolve (a
+`PointCloudData` payload, written by evidence/promote_planes.py or
+evidence/promote_objects.py when given the same store) gets a real USD
+`Points` prim instead of `Cube` — its `point3f[] points` attribute holds
+the actual reconstructed point positions, translated into the entity's
+local space (the prim's own `xformOp:translate` already places the
+origin). Nothing is fabricated: an entity with no resolvable real data
+(no store passed, no data_uri set, or the store doesn't have that
+artifact) still gets the placeholder cube exactly as before. As with the
+rest of this module, the `Points` ASCII syntax below is hand-written
+against the documented USD schema, not validated against the real `pxr`
+library.
 """
 
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+import struct
+from typing import TYPE_CHECKING, Optional
 
+from world_ir.artifact_store import ArtifactNotFoundError, ArtifactStore
+from world_ir.geometry_data import PointCloudData
 from world_ir.schema_v1 import GeometryType
 
 from exporters.report import ExportReport, content_hash
@@ -68,22 +86,79 @@ def _sanitize_prim_name(entity_id: str) -> str:
     return name
 
 
-def export_to_usda(world: "WorldIR") -> str:
+def _entity_exportable_geometry(world: "WorldIR", entity):
+    for gid in entity.geometry_ids:
+        geom = world.geometries.get(gid)
+        if geom is not None and geom.type in _EXPORTABLE_GEOMETRY_TYPES:
+            return geom
+    return None
+
+
+def _resolve_real_points(artifact_store: Optional[ArtifactStore], geometry) -> Optional[list]:
+    """Real point positions for `geometry`, or None if there is no
+    resolvable real data (no store, no data_uri, or the store doesn't
+    have this artifact) -- never fabricated, the caller falls back to
+    the placeholder cube. Mirrors exporters/gltf/exporter.py exactly."""
+    if artifact_store is None or not geometry.data_uri:
+        return None
+    try:
+        payload = artifact_store.get(geometry.data_uri)
+    except ArtifactNotFoundError:
+        return None
+    try:
+        return list(PointCloudData.from_bytes(payload).points)
+    except (ValueError, struct.error):
+        return None  # not a PointCloudData payload this exporter understands
+
+
+def _points_prim_lines(prim_name: str, points: "list[tuple[float, float, float]]", origin: "tuple[float, float, float]") -> list:
+    """USD ASCII lines for a real `Points` prim, positions translated
+    into the entity's local space (the prim's own xformOp:translate
+    already places the origin), point order preserved as stored."""
+    local = [(x - origin[0], y - origin[1], z - origin[2]) for x, y, z in points]
+    points_str = ", ".join(f"({x}, {y}, {z})" for x, y, z in local)
+    lines = [
+        f'    def Points "{prim_name}"',
+        "    {",
+        f"        point3f[] points = [{points_str}]",
+        f'        double3 xformOp:translate = ({origin[0]}, {origin[1]}, {origin[2]})',
+        '        uniform token[] xformOpOrder = ["xformOp:translate"]',
+        "    }",
+    ]
+    return lines
+
+
+def export_to_usda(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> str:
     """Build a USD ASCII (.usda) text stage from `world`.
 
-    Only entities with a transform position AND a BOX geometry produce a
-    Cube prim — see module docstring for exactly what is skipped and why.
+    Only entities with a transform position AND a BOX/PLANE geometry
+    produce a prim — see module docstring for exactly what is skipped
+    and why. When `artifact_store` is given and an entity's geometry
+    carries a `data_uri` this store can resolve, that entity gets a
+    real `Points` prim built from actual reconstructed point positions
+    instead of the shared placeholder `Cube`. Entities with no
+    resolvable real data keep using the cube exactly as before — this
+    is additive, never a behavior change for callers that omit
+    `artifact_store`.
     """
     lines = ["#usda 1.0", "", 'def Xform "World"', "{"]
 
     for entity in world.entities.values():
         if not entity.transform or "position" not in entity.transform:
             continue  # no placement to export the prim with
-        if not _entity_box_geometry(world, entity):
+        geometry = _entity_exportable_geometry(world, entity)
+        if geometry is None:
             continue  # nothing real to export (see module docstring)
 
         pos = entity.transform["position"]
         prim_name = _sanitize_prim_name(entity.id)
+        origin = (pos["x"], pos["y"], pos["z"])
+
+        real_points = _resolve_real_points(artifact_store, geometry)
+        if real_points is not None and len(real_points) >= 1:
+            lines.extend(_points_prim_lines(prim_name, real_points, origin))
+            continue
+
         lines.append(f'    def Cube "{prim_name}"')
         lines.append("    {")
         lines.append("        double size = 2")
@@ -96,10 +171,10 @@ def export_to_usda(world: "WorldIR") -> str:
     return "\n".join(lines)
 
 
-def write_usda_file(world: "WorldIR", path: str) -> None:
+def write_usda_file(world: "WorldIR", path: str, artifact_store: Optional[ArtifactStore] = None) -> None:
     """Export `world` to USD ASCII text and write it to `path`."""
     with open(path, "w", encoding="utf-8") as f:
-        f.write(export_to_usda(world))
+        f.write(export_to_usda(world, artifact_store))
 
 
 def _classify_entities(world: "WorldIR"):
@@ -119,11 +194,13 @@ def _classify_entities(world: "WorldIR"):
     return tuple(exported), tuple(skipped), tuple(reasons)
 
 
-def export_to_usda_with_report(world: "WorldIR") -> tuple[str, ExportReport]:
+def export_to_usda_with_report(
+    world: "WorldIR", artifact_store: Optional[ArtifactStore] = None,
+) -> tuple[str, ExportReport]:
     """Same as export_to_usda(), plus a structured ExportReport naming
     exactly which entities were exported/skipped and why, and a
     deterministic content hash of the resulting text."""
-    usda = export_to_usda(world)
+    usda = export_to_usda(world, artifact_store)
     exported, skipped, reasons = _classify_entities(world)
     report = ExportReport(
         format="usda",

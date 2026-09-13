@@ -17,6 +17,7 @@ supplied by the caller, never fetched.
 from __future__ import annotations
 
 import hashlib
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict
@@ -24,6 +25,17 @@ from typing import Dict
 
 class ArtifactNotFoundError(KeyError):
     pass
+
+
+#: sha256 hex digest: exactly 64 lowercase hex characters. `digest_of()`
+#: enforces this on every incoming data_uri -- a `data_uri` is untrusted
+#: input (it round-trips through WorldIR JSON, which can come from
+#: anywhere), and `FileArtifactStore._path_for()` joins the digest
+#: directly onto its root path. Without this check, an artifact://../../
+#: (or an absolute-path-like) digest would let get() read arbitrary
+#: files outside the store root -- a real path-traversal vulnerability,
+#: not a hypothetical one.
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _digest(data: bytes) -> str:
@@ -53,7 +65,17 @@ class ArtifactStore(ABC):
     def digest_of(data_uri: str) -> str:
         if not data_uri.startswith("artifact://"):
             raise ValueError(f"not an artifact:// uri: {data_uri!r}")
-        return data_uri[len("artifact://"):]
+        digest = data_uri[len("artifact://"):]
+        if not _DIGEST_RE.match(digest):
+            # Never a valid sha256 hex digest -- most importantly, never
+            # something a path traversal (../, an absolute path, a
+            # symlink-style segment) could resolve outside the store
+            # root. Refuse before either backend touches the filesystem
+            # or its internal dict with this value.
+            raise ValueError(
+                f"not a valid sha256 hex digest: {digest!r} (from data_uri {data_uri!r})"
+            )
+        return digest
 
 
 class MemoryArtifactStore(ArtifactStore):

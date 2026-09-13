@@ -85,6 +85,41 @@ class TestArtifactStore:
         with pytest.raises(ValueError):
             ArtifactStore.digest_of("https://example.com/not-an-artifact")
 
+    @pytest.mark.parametrize("malicious_digest", [
+        "../../../../etc/passwd",
+        "..%2f..%2fescape",
+        "/etc/passwd",
+        "0" * 63,  # one short of a real sha256 hex digest
+        "0" * 65,  # one long
+        "g" * 64,  # not hex
+        "",
+    ])
+    def test_get_rejects_path_traversal_and_malformed_digests(self, store, malicious_digest):
+        """Strix-flagged finding: FileArtifactStore.get() resolved
+        artifact:// URIs without validating the digest is a real sha256
+        hex string, so artifact://../../victim could read files outside
+        the store root. digest_of() now refuses anything that isn't
+        exactly 64 lowercase hex characters, for every ArtifactStore
+        backend (this fixture parametrizes both memory and file)."""
+        with pytest.raises(ValueError):
+            store.get(f"artifact://{malicious_digest}")
+
+    def test_file_store_traversal_digest_never_touches_the_filesystem(self, tmp_path):
+        """Extra assurance for the file backend specifically: a
+        malicious digest must be rejected before any path is built or
+        touched, and must not create a file outside root."""
+        root = tmp_path / "artifacts"
+        store = FileArtifactStore(root)
+        outside_target = tmp_path / "outside.txt"
+        outside_target.write_text("should never be reachable via the store")
+
+        with pytest.raises(ValueError):
+            store.get("artifact://../outside")
+
+        # Nothing was created outside the intended root.
+        assert set(tmp_path.iterdir()) == {outside_target, root}
+        assert outside_target.read_text() == "should never be reachable via the store"
+
 
 class TestFileArtifactStorePersistence:
     def test_survives_a_new_store_instance_over_the_same_root(self, tmp_path):

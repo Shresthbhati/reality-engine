@@ -3,7 +3,31 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 1033 passed, 1 skipped (observed 72.9s) — +12 object-resolution tests on top of 1021, zero regressions.
+**Verified after this session:** 1041 passed, 1 skipped (observed 52.2s) — +8 measurement tests on top of 1033, zero regressions.
+
+## Completed this session (2026-09-13, latest): object measurement (master directive priority #11)
+
+`perception/instances/measurement.py` — `measure_dimensions(candidate)`
+(width/height/depth/volume from a `MergedObjectCandidate`'s union AABB)
+and `measure_distance(a, b)` (centroid-to-centroid). Reuses the existing
+`world_ir.schema_v1.Measurement` type rather than inventing a parallel
+one -- the same currency `evidence/promote_planes.py`'s extent/thickness
+measurements already use. Precision uses an explicitly-named
+approximation (`value * (1 - confidence)`, floored at 1cm) since nothing
+upstream yet propagates real per-axis geometric uncertainty -- honest
+about being a heuristic, not a calibrated statistical model, per this
+campaign's own "documented approximation" allowance. All measurements
+are `Provenance.ESTIMATED`. 8 tests
+(`tests/test_object_measurement.py`): extent/volume correctness,
+provenance/confidence propagation, precision-vs-confidence monotonicity,
+precision floor, Euclidean distance correctness and symmetry, weaker-
+endpoint confidence rule.
+
+Pipeline chain now real end-to-end at the code level (still untested
+against real photos, per prior sessions' named blocker): `DepthMap` +
+`SegmentedRegion` -> `lift_region_to_3d()` -> `ObjectHypothesis3D` ->
+`merge_hypotheses()` -> `MergedObjectCandidate` -> `measure_dimensions()`
+/ `measure_distance()` -> `Measurement`.
 
 ## Completed this session (2026-09-13, latest): multi-view object entity resolution (semantic perception campaign, Phase 5)
 

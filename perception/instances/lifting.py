@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from provenance import Provenance, Uncertainty
 from engine.physics.math3 import Vec3
@@ -75,6 +75,14 @@ class ObjectHypothesis3D:
     confidence: float
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
     provenance: Provenance = Provenance.INFERRED
+    #: The real unprojected points themselves (P0.10/11: these were
+    #: computed in lift_region_to_3d() and discarded after their
+    #: centroid/bounds/count for every session before this one -- same
+    #: gap evidence/promote_planes.py had for plane inliers until real
+    #: geometry storage landed there). Defaults to () so every existing
+    #: caller/test that builds a hypothesis by hand keeps working
+    #: unchanged; only lift_region_to_3d() populates it for real.
+    points: "Tuple[Vec3, ...]" = field(default_factory=tuple)
 
     def to_dict(self) -> dict:
         return {
@@ -89,6 +97,7 @@ class ObjectHypothesis3D:
             "confidence": self.confidence,
             "uncertainty": self.uncertainty.to_dict(),
             "provenance": self.provenance.value,
+            "points": [[p.x, p.y, p.z] for p in self.points],
         }
 
 
@@ -167,4 +176,5 @@ def lift_region_to_3d(
             confidence=confidence,
             note=f"{n}/{mask_pixel_count} mask pixels had valid depth (segmentation confidence {region.confidence:.2f})",
         ),
+        points=tuple(points),
     )

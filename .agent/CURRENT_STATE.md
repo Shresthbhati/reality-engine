@@ -1,9 +1,47 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (real geometry storage session complete)
-**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query PR merged)
-**Verified baseline before this session:** 1084 passed, 1 pre-existing environment failure deselected.
-**Verified after this session:** 1106 passed, 1 pre-existing failure deselected (observed 79.8s) — +22 tests, zero regressions.
+**Updated:** 2026-09-13 (object real-geometry session complete)
+**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query + plane-geometry-storage PR merged)
+**Verified baseline before this session:** 1106 passed, 1 pre-existing environment failure deselected.
+**Verified after this session:** 1111 passed, 1 pre-existing failure deselected (observed 82.0s) — +5 tests, zero regressions.
+
+## Completed this session (2026-09-13, latest): real geometry storage for OBJECTS (P0.10/11 follow-on) — `evidence/promote_objects.py` now writes real points too, not just `promote_planes.py`
+
+Closed the first item named in the prior session's "Not done" list:
+`ObjectHypothesis3D` (`perception/instances/lifting.py`) already
+computed real unprojected 3D points per mask pixel inside
+`lift_region_to_3d()` and threw them away after their centroid/bounds/
+count -- the exact same gap `promote_planes.py`'s inlier positions had
+before the plane-geometry-storage work. Fixed at the source: added a
+`points: Tuple[Vec3, ...] = ()` field (default-valued, so every
+hand-built hypothesis in existing tests keeps working unchanged) and
+populated it for real in `lift_region_to_3d()`.
+
+`evidence/promote_objects.py::promote_object_to_entity()` gained the
+same `artifact_store` parameter `promote_plane_to_entity()` has: when
+given, it unions every contributing hypothesis's real points
+(`candidate.source_hypotheses[*].points` -- nothing was discarded by
+`merge_hypotheses()`, so this was reachable with zero changes to
+`object_resolution.py`) into one `PointCloudData` artifact and sets
+`data_uri`/`data_hash`. No exporter change was needed either:
+`exporters/gltf/exporter.py`'s real-mesh path already covers `BOX`
+geometry (`_EXPORTABLE_GEOMETRY_TYPES`) and doesn't filter by type when
+resolving `data_uri` -- the machinery built for planes just worked for
+objects too, confirmed by a full lift -> merge -> promote -> validate ->
+export test.
+
+5 new tests in `tests/test_geometry_artifacts.py` (points survive
+lift->merge, backward-compat default, real data_uri written, the
+additive-omit regression test, and the end-to-end export proof). Full
+suite: 1111 passed (was 1106), zero regressions.
+
+Not done in this pass (named, not hidden): `perception/instances/object_resolution.py`
+still doesn't store a *merged* point cloud on `MergedObjectCandidate`
+itself -- promotion unions the per-hypothesis points at promotion time
+instead, which is correct but means any other future consumer of
+`MergedObjectCandidate` before promotion still can't see the union
+directly. Triangulated MESH storage and usda/blender real-geometry
+export are still open, same as before this session.
 
 **Known pre-existing environment failure (not caused by this session, not fixed):**
 `tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`
@@ -680,9 +718,6 @@ environments (COLMAP present/absent). Full suite **920 passed /
   `PointCloudData`, but no `MeshData` (vertices/indices/normals) yet —
   needs a real surface-reconstruction step (e.g. alpha-shape/Poisson
   over a plane's inlier points), not just a new payload format.
-- Wire `evidence/promote_objects.py` (object entities) through
-  `artifact_store` the same way `promote_planes.py` now is, so real
-  object point clouds are storable too, not just structure planes.
 - usda/blender exporters don't consume `artifact_store`/real geometry
   yet (only gltf does as of this session) — extend
   `exporters/usd/exporter.py` and `exporters/blender/exporter.py` the

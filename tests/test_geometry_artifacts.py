@@ -162,6 +162,119 @@ class TestPromotePlanesWritesRealGeometry:
         assert hashes_a  # sanity: not vacuously true
 
 
+# ---------------------------------------------------------------- object promotion wiring
+
+
+def _two_view_chair_candidate():
+    """Same two-view chair fixture as tests/test_object_pipeline_e2e.py,
+    reused here to prove hypothesis.points survives lift -> merge and
+    reaches promote_object_to_entity()."""
+    from engine.physics.math3 import Quat, Vec3
+    from perception.depth.interface import DepthMap
+    from perception.instances.lifting import lift_region_to_3d
+    from perception.instances.object_resolution import merge_hypotheses
+    from perception.segmentation.interface import SegmentedRegion
+    from reconstruction.calibration.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera
+
+    width, height = 12, 10
+
+    def camera(position):
+        intrinsics = CameraIntrinsics(fx=200.0, fy=200.0, cx=width / 2, cy=height / 2, width=width, height=height)
+        return PinholeCamera(intrinsics=intrinsics, extrinsics=CameraExtrinsics(position=position, rotation=Quat.identity()))
+
+    def rect_mask(row_lo, row_hi, col_lo, col_hi):
+        return [[row_lo <= r < row_hi and col_lo <= c < col_hi for c in range(width)] for r in range(height)]
+
+    camera_1 = camera(Vec3.zero())
+    depth_1 = DepthMap(evidence_id="photo-1", width=width, height=height,
+                        values=[[4.0] * width for _ in range(height)], unit="meters")
+    region_1 = SegmentedRegion(region_id="r1", evidence_id="photo-1", label="chair",
+                                mask=rect_mask(3, 7, 4, 8), confidence=0.85)
+
+    camera_2 = camera(Vec3(0.1, 0.0, 0.0))
+    depth_2 = DepthMap(evidence_id="photo-2", width=width, height=height,
+                        values=[[4.0] * width for _ in range(height)], unit="meters")
+    region_2 = SegmentedRegion(region_id="r2", evidence_id="photo-2", label="chair",
+                                mask=rect_mask(3, 7, 4, 8), confidence=0.80)
+
+    hyp_1 = lift_region_to_3d(region_1, depth_1, camera_1)
+    hyp_2 = lift_region_to_3d(region_2, depth_2, camera_2)
+    return merge_hypotheses([hyp_1, hyp_2], distance_threshold_m=0.5)[0]
+
+
+class TestObjectHypothesisRetainsRealPoints:
+    def test_lift_region_to_3d_populates_points_matching_point_count(self):
+        candidate = _two_view_chair_candidate()
+        for hypothesis in candidate.source_hypotheses:
+            assert len(hypothesis.points) == hypothesis.point_count
+            assert hypothesis.point_count > 0
+
+    def test_hand_built_hypothesis_defaults_points_to_empty_tuple(self):
+        """Backward compatibility: existing callers/tests that build
+        ObjectHypothesis3D by hand (never touching the new field) must
+        keep working unchanged."""
+        from engine.physics.math3 import Vec3
+        from perception.instances.lifting import ObjectHypothesis3D
+
+        hyp = ObjectHypothesis3D(
+            region_id="r", evidence_id="e", label="chair",
+            position=Vec3(0, 0, 0), bounds_min=Vec3(-1, -1, -1), bounds_max=Vec3(1, 1, 1),
+            point_count=0, mask_pixel_count=0, confidence=0.5,
+        )
+        assert hyp.points == ()
+
+
+class TestPromoteObjectsWritesRealGeometry:
+    def test_promoted_object_geometry_carries_a_resolvable_data_uri(self):
+        from evidence.promote_objects import promote_object_to_entity
+        from world_ir.world_v1 import WorldIR
+
+        candidate = _two_view_chair_candidate()
+        store = MemoryArtifactStore()
+        world = WorldIR()
+
+        result = promote_object_to_entity(candidate, world, "ent-chair", artifact_store=store)
+
+        assert result.geometry.data_uri
+        payload = store.get(result.geometry.data_uri)
+        cloud = PointCloudData.from_bytes(payload)
+        expected_total = sum(len(h.points) for h in candidate.source_hypotheses)
+        assert len(cloud.points) == expected_total
+        assert result.geometry.data_hash == store.digest_of(result.geometry.data_uri)
+
+    def test_omitting_artifact_store_reproduces_old_behavior(self):
+        from evidence.promote_objects import promote_object_to_entity
+        from world_ir.world_v1 import WorldIR
+
+        candidate = _two_view_chair_candidate()
+        world = WorldIR()
+
+        result = promote_object_to_entity(candidate, world, "ent-chair")
+
+        assert result.geometry.data_uri == ""
+        assert result.geometry.data_hash == ""
+
+    def test_promoted_object_exports_a_real_points_mesh(self):
+        """Full chain: lift -> merge -> promote (with a store) ->
+        validate -> gltf export, same standard test_object_pipeline_e2e.py
+        already holds this pipeline to, extended through export."""
+        from evidence.promote_objects import promote_object_to_entity
+        from exporters.gltf.exporter import export_to_gltf
+        from world_ir.validation import validate_world_ir
+        from world_ir.world_v1 import WorldIR
+
+        candidate = _two_view_chair_candidate()
+        store = MemoryArtifactStore()
+        world = WorldIR()
+        promote_object_to_entity(candidate, world, "ent-chair", artifact_store=store)
+
+        assert validate_world_ir(world).is_valid()
+
+        gltf = export_to_gltf(world, artifact_store=store)
+        mesh_indices_used = {node["mesh"] for node in gltf["nodes"]}
+        assert mesh_indices_used - {0}, "the promoted chair must export real geometry, not the cube"
+
+
 # ---------------------------------------------------------------- gltf export wiring
 
 

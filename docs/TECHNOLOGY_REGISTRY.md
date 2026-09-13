@@ -160,3 +160,26 @@ measurement; and (3) a look at how the chosen model's output type (relative
 vs. metric depth; class-agnostic mask) actually reconciles with WorldIR's
 existing `Provenance`/`Geometry`/`Entity` schema before any adapter code is
 written against `IDepthBackend` or `ISegmentationBackend`.
+
+---
+
+## Installed infrastructure libraries (in use as of 2026-09-13)
+
+The media-preprocessing importers (`evidence/importers.py`) consume the
+decompression/metadata libraries already present in this environment
+(none installed by this project; probed at import, never hard-required
+-- `pyproject.toml` still declares no core dependencies):
+
+| Field | Pillow (PIL) | OpenCV (cv2) | numpy |
+|---|---|---|---|
+| Observed version | 12.3.0 | 5.0.0 | 2.5.2 |
+| License | MIT-CMU (HPND) | Apache 2.0 | BSD 3-Clause |
+| Purpose here | EXIF/GPS IFD decode, pixel decode for quality metrics + dhash, container-header resolution | video frame enumeration (grab-only) + selected-frame extraction/re-encode | Laplacian/luma/clipping statistics, dhash gradient bits |
+| Adapter | `evidence/importers.py` (`_decode_photo_exif`, `_measure_photo_quality`, `_dhash64`, `_container_resolution`) | `evidence/importers.py` (`_enumerate_video_candidates`, `_extract_selected_frames`) | inline metric helpers |
+| Status | CORE (optional at runtime, probed) | CORE (optional at runtime, probed) | CORE (optional at runtime, probed) |
+| Restrictions | none known for this use | none known for this use | none known for this use |
+
+Usage discipline: original camera/video bytes are never re-encoded
+(only hash/validate/derive-metadata); JPEG re-encode is used exclusively
+for DERIVED frame previews extracted from videos, which are labelled
+derived in `sensor_metadata` via their `source_video_asset_id` linkage.

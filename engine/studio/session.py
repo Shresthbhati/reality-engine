@@ -21,6 +21,7 @@ from world_ir import WorldIR
 from engine.commands import (
     AddRelationshipCommand,
     CommandResult,
+    CompileWorldCommand,
     CreateEntityCommand,
     DeleteEntityCommand,
     SetEntityTransformCommand,
@@ -88,6 +89,17 @@ class StudioSession:
         result = self.commands.execute(DeleteEntityCommand(entity_id=active, actor_id=self.actor_id))
         self.selection.deselect(active)
         return result
+
+    def compile_reconstruction(self, result, compile_options=None) -> CommandResult:
+        """Compile a ReconstructionResult into this session's world through
+        the command pipeline: validated, permission-checked, event-logged,
+        transactional (a gate failure leaves the world untouched -- see
+        CompileWorldCommand). Diagnostics of the last successful compile
+        are available via self.commands.last_compile_diagnostics.
+        """
+        return self.commands.execute(
+            CompileWorldCommand(result=result, compile_options=compile_options, actor_id=self.actor_id)
+        )
 
     def infer_and_add_adjacency(self, adjacency_margin: float = 0.0) -> List[CommandResult]:
         """Close the loop between the pure geometric-adjacency query and the

@@ -89,6 +89,25 @@ def load_evidence(dataset: Path):
     return items, refs, intrinsics, (int(size[0]), int(size[1]))
 
 
+def _write_ply(path: Path, points) -> None:
+    """Minimal binary PLY writer (float32 xyz): no dependencies, every
+    real point preserved."""
+    import struct
+
+    n = len(points)
+    header = (
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        f"element vertex {n}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "end_header\n"
+    ).encode("ascii")
+    buf = bytearray(header)
+    for p in points:
+        buf += struct.pack("<3f", p[0], p[1], p[2])
+    path.write_bytes(bytes(buf))
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
@@ -117,6 +136,7 @@ def main() -> int:
         colmap_binary=os.environ.get("REALITY_COLMAP", "colmap"),
         # env knob: REALITY_DEPTH_MODEL="" disables the depth stage
         depth_model=os.environ.get("REALITY_DEPTH_MODEL", "DPT_Hybrid") or None,
+        depth_stride=int(os.environ.get("REALITY_DEPTH_STRIDE", "16")),
     )
 
     started = time.perf_counter()
@@ -160,6 +180,20 @@ def main() -> int:
     world_dict = result.world.to_dict()
     (out / "worldir.json").write_text(json.dumps(world_dict, indent=2))
     (out / "report.json").write_text(json.dumps(report, indent=2))
+
+    # Inspectable geometry artifacts: the real reconstructed points and
+    # camera positions (Phase-20 outputs), consumed by the Studio viewer.
+    _write_ply(out / "points.ply", result.points)
+    (out / "cameras.json").write_text(json.dumps({
+        "frame": "world (meters, +Y up after frame canonicalization)",
+        "scale_state": result.scale_state,
+        "rotation_convention": "camera-to-world quaternion (w, x, y, z)",
+        "image_size": list(options.image_size),
+        "cameras": [
+            {"evidence_id": eid, "position_m": list(pos), "rotation_wxyz": list(rot)}
+            for eid, pos, rot in result.camera_poses
+        ],
+    }, indent=2))
 
     print(result.summary_text())
     print(f"artifacts -> {out}")

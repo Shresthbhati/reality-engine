@@ -3,7 +3,38 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 1041 passed, 1 skipped (observed 52.2s) — +8 measurement tests on top of 1033, zero regressions.
+**Verified after this session:** 1051 passed, 1 skipped (observed 52.4s) — +8 promote_objects tests + 2 e2e tests on top of 1041, zero regressions.
+
+## Completed this session (2026-09-13, latest): object promotion into WorldIR — closes the pipeline
+
+`evidence/promote_objects.py` — `promote_object_to_entity()`: writes a
+`MergedObjectCandidate` (from `perception/instances/object_resolution.py`)
+into a real WorldIR `Entity` + `Geometry`, mirroring
+`evidence/promote_planes.py`'s established pattern. This was the
+explicitly-named "next highest-value task" from the prior session: the
+object-perception pipeline (lift -> merge -> measure) produced real,
+tested, composable data but never reached WorldIR. Entities get
+`EntityType.UNKNOWN` (the ontology has no furniture/object categories --
+honest rather than guessed) with the real label preserved in
+`semantic_labels`/`name`; measurements land on `custom_properties`; a
+full provenance trail (evidence ids, region ids, observation count)
+lives in `Observation` metadata. Refuses a zero-hypothesis candidate.
+
+`tests/test_object_pipeline_e2e.py` (2 tests) proves the FULL chain
+works together: two `PinholeCamera`s at different positions, two real
+`DepthMap`+`SegmentedRegion` pairs of the same chair -> real
+`lift_region_to_3d()` -> real `merge_hypotheses()` -> real
+`promote_object_to_entity()` -> exactly one validated WorldIR entity
+(`validate_world_ir().is_valid()` checked, not assumed). A second test
+confirms two distinct objects correctly produce two separate entities.
+Plus 8 unit tests (`tests/test_promote_objects.py`).
+
+`docs/IMPLEMENTATION_DELTA.md` (new) records this delta against the
+prior verified baseline. The object-understanding vertical slice is now
+code-complete and self-consistent end-to-end; the only remaining gap is
+running it against a real detector/segmenter and real photos (both
+still blocked on missing model/checkpoint installs and a committed
+dataset, unchanged from prior sessions).
 
 ## Completed this session (2026-09-13, latest): object measurement (master directive priority #11)
 

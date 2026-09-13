@@ -3,7 +3,31 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 1021 passed, 1 skipped (observed 42.3s) — +9 depth-to-points tests on top of 1012, zero regressions.
+**Verified after this session:** 1033 passed, 1 skipped (observed 72.9s) — +12 object-resolution tests on top of 1021, zero regressions.
+
+## Completed this session (2026-09-13, latest): multi-view object entity resolution (semantic perception campaign, Phase 5)
+
+`perception/instances/object_resolution.py` — `merge_hypotheses(hypotheses,
+distance_threshold_m)`: clusters `ObjectHypothesis3D` observations (from
+`perception/instances/lifting.py`) of the same physical object across
+frames into one `MergedObjectCandidate`, using union-find over same-
+label + within-distance pairs so transitive chains of overlapping views
+merge correctly regardless of input order. Never discards a source
+hypothesis; merged bounds are the union AABB (never smaller than any
+single view); confidence rises with independent agreement
+(`1 - (1-best)^n`, capped at 1.0) rather than being averaged down.
+Deliberately NOT appearance/embedding-based (explicit "similarity is
+not identity" rule, same as `world_ir/entity_reid.py`) and NOT
+multi-view-geometrically-verified (no epipolar check) — both named as
+real, separate, larger follow-ons. 12 tests
+(`tests/test_object_resolution.py`): merge/no-merge by distance and
+label, transitive chain merging, bounds union, confidence-boost math,
+single-hypothesis passthrough, determinism regardless of input order,
+empty-input and invalid-threshold edge cases.
+
+Per the user's stated priority (campaigns 11-32 come after 1-10 finish),
+this closes another concrete stage of campaign 3 (semantic perception)
+rather than starting the newly-listed campaigns 11+.
 
 ## Completed this session (2026-09-13, latest): depth -> point cloud (Phase 8, both convergence and hardening audits' named next step)
 

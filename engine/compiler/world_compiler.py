@@ -50,6 +50,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from world_ir.artifact_store import ArtifactStore
+
 from evidence.promote_planes import (
     PlanePromotionError,
     positions_by_plane,
@@ -115,6 +117,12 @@ class CompileOptions:
     #: validation gate before being returned. A gate failure raises
     #: WorldValidationGateError with the issues attached.
     require_validation: bool = True
+    #: When given, promoted planes store their real inlier point
+    #: positions as a real geometry artifact (world_ir/geometry_data.py)
+    #: referenced by Geometry.data_uri/data_hash, instead of carrying
+    #: only vertex_count + bounds. Optional and additive: omitting it
+    #: (default) reproduces the exact pre-existing behavior.
+    artifact_store: Optional[ArtifactStore] = None
 
 
 @dataclass(frozen=True)
@@ -249,6 +257,7 @@ def compile_reconstruction_to_world(
                 entity_id,
                 other_planes=oriented,
                 plane_positions=positions,
+                artifact_store=options.artifact_store,
             )
         except PlanePromotionError as exc:
             planes_unpromoted.append({

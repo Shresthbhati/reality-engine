@@ -44,13 +44,16 @@ from engine.scene_graph.spatial_index import SpatialIndex
 from exporters.blender.exporter import export_to_blender_script_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
 from exporters.usd.exporter import export_to_usda_with_report
+from world_ir.artifact_store import ArtifactStore, MemoryArtifactStore
 from world_ir.diff import WorldDiff, diff_worlds
 from world_ir.validation import WorldValidationReport, validate_world_ir
 from world_ir.world_v1 import WorldIR
 
 __all__ = [
+    "ArtifactStore",
     "CompileInputError",
     "CompileOptions",
+    "MemoryArtifactStore",
     "UnsupportedExportFormatError",
     "WorldValidationGateError",
     "compile_physics",
@@ -121,13 +124,23 @@ def scene_graph(world: WorldIR) -> SceneGraph:
     return SceneGraph(world)
 
 
-def export(world: WorldIR, format: str):
+def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] = None):
     """WorldIR -> (content, ExportReport) for `format` in {"gltf", "usda",
     "blender"}. Raises UnsupportedExportFormatError for anything else --
-    the SDK never silently no-ops on an unknown format."""
+    the SDK never silently no-ops on an unknown format.
+
+    `artifact_store`, when given, lets the gltf exporter emit real
+    per-entity geometry (world_ir/geometry_data.py's PointCloudData)
+    instead of the placeholder cube for any entity whose Geometry
+    resolves through it -- see exporters/gltf/exporter.py. usda/blender
+    do not consume it yet (real-geometry export is scoped to gltf in
+    this pass); the parameter is accepted but silently unused for them,
+    same as any exporter kwarg those formats don't need."""
     exporter_fn = _EXPORTERS.get(format)
     if exporter_fn is None:
         raise UnsupportedExportFormatError(
             f"unsupported export format {format!r}; supported: {sorted(_EXPORTERS)}"
         )
+    if format == "gltf":
+        return exporter_fn(world, artifact_store)
     return exporter_fn(world)

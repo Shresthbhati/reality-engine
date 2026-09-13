@@ -1,9 +1,9 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (SDK query surface session complete)
-**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI PR merged)
-**Verified baseline before this session:** 1080 passed (1 pre-existing environment failure deselected — see below).
-**Verified after this session:** 1084 passed, 1 pre-existing failure deselected (observed 95.9s) — +4 tests, zero regressions.
+**Updated:** 2026-09-13 (real geometry storage session complete)
+**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query PR merged)
+**Verified baseline before this session:** 1084 passed, 1 pre-existing environment failure deselected.
+**Verified after this session:** 1106 passed, 1 pre-existing failure deselected (observed 79.8s) — +22 tests, zero regressions.
 
 **Known pre-existing environment failure (not caused by this session, not fixed):**
 `tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`
@@ -11,7 +11,60 @@ fails with `FileNotFoundError` for `hubconf.py` under `~/.cache/torch/hub/facebo
 — a corrupted/partial local torch.hub cache on this machine, not a code defect. Deselect it or clear that
 cache directory to get a clean run; do not "fix" it in source.
 
-## Completed this session (2026-09-13, latest): `sdk.reality.spatial_index()` / `scene_graph()` + `reality query` CLI
+## Completed this session (2026-09-13, latest): real geometry storage in WorldIR (P0.10/P0.11) — closes the last "no fake completion" gap in the export path
+
+Closed the item this file has flagged since it was first written:
+"`Geometry` currently stores only `vertex_count`, no actual vertex
+buffer... a bounding box standing in for the shape."
+
+New: `world_ir/geometry_data.py` (`PointCloudData` — a deterministic
+binary payload format, magic + count + float64 xyz triples, order-
+preserving) and `world_ir/artifact_store.py` (`ArtifactStore` ABC +
+`MemoryArtifactStore` + `FileArtifactStore` — content-addressed,
+sha256-keyed, dedupes identical bytes, `FileArtifactStore` sharded like
+Git's object store and verified to survive a new store instance over
+the same root). `Geometry.data_uri`/`data_hash` (schema_v1.py) already
+existed for exactly this and were never written to until now.
+
+Wired end-to-end, not left as an unused interface:
+`evidence/promote_planes.py::promote_plane_to_entity` gained an optional
+`artifact_store` param — when given, it stores the plane's REAL inlier
+point positions (already computed for the AABB, previously discarded
+after that) as a `PointCloudData` artifact and sets `data_uri`/`data_hash`
+for real. `engine/compiler/world_compiler.py::CompileOptions` gained a
+matching `artifact_store` field, threaded through. `exporters/gltf/exporter.py`
+gained the consumer side: given the same store, `export_to_gltf()` now
+builds a REAL per-entity POINTS-mode mesh from the stored positions
+instead of the placeholder unit cube, for any entity whose geometry
+resolves through the store — entities with no resolvable real data
+still get the cube, honestly, never fabricated. `sdk.reality.export()`
+threads `artifact_store` through for the gltf format specifically (usda/
+blender don't consume real geometry yet — named, not hidden).
+
+Fully additive: every new parameter defaults to `None`/omitted and
+reproduces the exact prior behavior (`vertex_count`+bounds only, cube
+mesh) — verified by an explicit regression test
+(`test_omitting_artifact_store_reproduces_old_behavior`). Determinism
+preserved through the new layer too (`test_two_compiles_of_the_same_evidence_produce_identical_artifacts`
+— same seed -> byte-identical artifact hashes).
+
+22 new tests in `tests/test_geometry_artifacts.py`: PointCloudData
+round-trip (incl. empty, duplicate points, bad-magic rejection), both
+ArtifactStore backends (put/get, content-addressed dedup, persistence
+across a fresh FileArtifactStore instance, unknown-uri error), the full
+promote_planes -> WorldIR wiring (real data matches vertex_count,
+determinism), and the gltf export path (real mesh vs. cube fallback,
+SDK-level threading). Full suite: 1106 passed (was 1084), zero
+regressions.
+
+Not done in this pass (named, not hidden): triangulated MESH storage
+(only POINTCLOUD payloads exist — a real surface-reconstruction step is
+a separate, larger follow-on); usda/blender exporters do not yet
+consume real geometry (gltf only); `evidence/promote_objects.py` (object
+entities) does not yet write real geometry artifacts, only
+`promote_planes.py` does.
+
+## Completed 2026-09-13: `sdk.reality.spatial_index()` / `scene_graph()` + `reality query` CLI
 
 Added the two SDK query wrappers named as the next task after the CLI
 landed: `sdk/reality.py` now exposes `spatial_index(world)` (wraps
@@ -623,10 +676,17 @@ environments (COLMAP present/absent). Full suite **920 passed /
   install once one is available in this environment, and visually
   inspect the result (geometry/transforms/hierarchy/custom properties) —
   the exporter itself is done and tested, but never opened in Blender.
-- Real mesh/point-cloud geometry storage in WorldIR (`Geometry` currently
-  stores only `vertex_count`, no actual vertex buffer) so exporters can
-  emit real wall/floor rectangles or point clouds instead of a bounding
-  box standing in for the shape.
+- Triangulated MESH storage: `world_ir/geometry_data.py` now has real
+  `PointCloudData`, but no `MeshData` (vertices/indices/normals) yet —
+  needs a real surface-reconstruction step (e.g. alpha-shape/Poisson
+  over a plane's inlier points), not just a new payload format.
+- Wire `evidence/promote_objects.py` (object entities) through
+  `artifact_store` the same way `promote_planes.py` now is, so real
+  object point clouds are storable too, not just structure planes.
+- usda/blender exporters don't consume `artifact_store`/real geometry
+  yet (only gltf does as of this session) — extend
+  `exporters/usd/exporter.py` and `exporters/blender/exporter.py` the
+  same way if real geometry in those formats is needed.
 - Compiler consumption of depth/segmentation/material evidence (currently
   planes+rooms only).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room

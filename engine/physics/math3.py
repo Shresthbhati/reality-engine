@@ -143,12 +143,6 @@ class Quat:
     def identity() -> "Quat":
         return Quat(1.0, 0.0, 0.0, 0.0)
 
-    def conjugate(self) -> "Quat":
-        """Inverse rotation for a unit quaternion (w, -x, -y, -z).
-        Required by the pinhole camera model's world_to_camera; standard
-        definition, same convention as `rotate`."""
-        return Quat(self.w, -self.x, -self.y, -self.z)
-
     def normalized(self) -> "Quat":
         n = math.sqrt(self.w**2 + self.x**2 + self.y**2 + self.z**2)
         if n < 1e-12:
@@ -193,6 +187,15 @@ class Quat:
 
     def is_finite(self) -> bool:
         return all(math.isfinite(v) for v in (self.w, self.x, self.y, self.z))
+
+    def conjugate(self) -> "Quat":
+        """For a unit quaternion this IS the inverse rotation: rotating by
+        `q.conjugate()` undoes rotating by `q`. Used by camera extrinsics
+        (reconstruction/calibration/camera.py) to go world->camera when
+        the stored orientation is camera->world, without introducing a
+        second "inverse" concept for a case the conjugate already covers
+        exactly for rotations (no scale/shear here, unlike Mat4)."""
+        return Quat(self.w, -self.x, -self.y, -self.z)
 
     def to_dict(self) -> dict:
         return {"w": self.w, "x": self.x, "y": self.y, "z": self.z}

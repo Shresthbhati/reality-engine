@@ -285,10 +285,22 @@ def promote_plane_to_entity(
     )
     world.geometries[geometry.id] = geometry
 
+    # Transform: the AABB centroid (midpoint of bounds_min/bounds_max) --
+    # real data already computed above from the plane's own inliers, not
+    # a fabricated placement. Without this, exporters (exporters/gltf,
+    # exporters/usd, exporters/blender) have no `transform.position` to
+    # place an object at and silently skip every promoted plane entity.
+    centroid = Vector3(
+        (bounds_min.x + bounds_max.x) / 2.0,
+        (bounds_min.y + bounds_max.y) / 2.0,
+        (bounds_min.z + bounds_max.z) / 2.0,
+    )
+
     entity = Entity(
         id=entity_id,
         name=entity_name or entity_id,
         type=entity_type,
+        transform={"position": {"x": centroid.x, "y": centroid.y, "z": centroid.z}},
         geometry_ids=[geometry.id],
         provenance=Provenance.INFERRED,
         confidence=oriented.uncertainty.confidence,

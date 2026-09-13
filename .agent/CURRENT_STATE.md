@@ -3,7 +3,33 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 978 passed, 1 skipped (observed 63.2s) — +11 entity-reid tests on top of 967 (941 + main's merged reconstruction-orchestrator work), zero regressions.
+**Verified after this session:** 981 passed, 1 skipped (observed 62.6s) — +3 Studio/orchestrator wiring tests on top of 978, zero regressions.
+
+## Completed this session (2026-09-13, latest): Studio -> orchestrator -> compiler wiring (convergence campaign, Prompt 1 slice)
+
+`StudioSession.reconstruct_and_compile(evidence, orchestrator, compile_options=None)`
+(`engine/studio/session.py`) — closes the exact gap this file's own
+prior entry flagged: `reconstruction/orchestrator.py`'s real backend
+selection (COLMAP availability probing, fallback, attempt-log
+diagnostics — landed on `main`, merged into this branch) had no path
+into a Studio session. One call now: evidence -> orchestrator picks and
+runs a real backend -> `compile_reconstruction()` -> validated WorldIR,
+returning both the `ReconstructionRun` (backend used, attempt log) and
+the compile's `CommandResult`. Raises `ReconstructionOrchestrationError`
+on total backend failure -- verified the world stays empty (0 entities)
+afterward, never a partial/corrupted result.
+
+`docs/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md` (new) — honest phase-by-
+phase status against the "convergence campaign" brief (build one real,
+working, end-to-end capture pipeline). Headline honest gap: no real
+photo fixture is committed to this repo, so the COLMAP path (previously
+run once, documented, not reproducible from a committed asset) could
+not be re-exercised this session; the 3 new tests use the real
+`ReconstructionOrchestrator` class with `FakeReconstructionBackend`
+(same orchestrator code path a COLMAP backend would flow through).
+Depth/mesh/2D-3D-lifting remain entirely unintegrated into the compiler
+-- still the biggest structural gap toward Prompt 1's full Definition
+of Done.
 
 ## Completed this session (2026-09-13, latest): cross-session entity re-identification
 

@@ -42,14 +42,13 @@ Pass `--no-real-geometry` to skip this (no `.artifacts/` directory is
 created) and reproduce the previous behavior exactly: a smaller/faster
 world.json with no `Geometry.data_uri` set on any geometry.
 
-`export --format gltf` automatically reconnects to `<world>.artifacts/`
-if that directory exists next to the world file being exported, so a
-`reconstruct` -> `export --format gltf` round-trip (even across two
-separate CLI invocations) emits real per-entity meshes instead of the
-placeholder cube. `usda`/`blender` exports don't consume the artifact
-store yet, so this has no effect on them. If `<world>.artifacts/`
-doesn't exist (e.g. the world was reconstructed with
-`--no-real-geometry`, or predates this feature), gltf export falls back
-to the placeholder-cube behavior exactly as before.
+`export --format gltf|usda|blender` automatically reconnects to
+`<world>.artifacts/` if that directory exists next to the world file
+being exported, so a `reconstruct` -> `export` round-trip (even across
+two separate CLI invocations, any of the three formats) emits real
+per-entity geometry instead of the placeholder cube. If
+`<world>.artifacts/` doesn't exist (e.g. the world was reconstructed
+with `--no-real-geometry`, or predates this feature), every format
+falls back to its placeholder-shape behavior exactly as before.
 
 Tests: `tests/test_cli.py`.

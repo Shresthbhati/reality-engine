@@ -1,9 +1,15 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (parallel real-geometry rollout session complete)
-**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query + plane/object-geometry-storage PR merged)
-**Verified baseline before this session:** 1111 passed, 1 pre-existing environment failure deselected.
-**Verified after this session:** 1127 passed, 1 pre-existing failure deselected (observed 89.3s) — +16 tests, zero regressions.
+**Updated:** 2026-09-13 (security fix + uniform real-geometry export session complete)
+**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query + plane/object-geometry-storage + 3-exporter PR merged)
+**Verified baseline before this session:** 1127 passed, 1 pre-existing environment failure deselected.
+**Verified after this session:** 1143 passed, 1 pre-existing failure deselected (observed 89.1s) — +16 tests (9 security regression + net 7 export), zero regressions.
+
+## Completed this session (2026-09-13, latest): security fix + real geometry uniform across gltf/usda/blender in the SDK and CLI
+
+**Security fix (Strix-flagged, MEDIUM, CWE-22):** `ArtifactStore.digest_of()` (`world_ir/artifact_store.py`) accepted any string after `artifact://` and handed it straight to `FileArtifactStore._path_for()`, which joins it onto the store root — a `data_uri` of `artifact://../../victim` could read files outside the store. `data_uri` is untrusted input (round-trips through WorldIR JSON, which can come from anywhere). Fixed: `digest_of()` now requires exactly 64 lowercase hex characters (`^[0-9a-f]{64}$`), enforced once on the shared `ArtifactStore` base so both backends are covered. 9 regression tests (traversal sequences, absolute paths, wrong-length/non-hex digests, explicit filesystem-untouched assertion for the file backend).
+
+**Uniform real-geometry export:** `sdk.reality.export()` previously special-cased `artifact_store` threading to `format == "gltf"` only, from when gltf was the only exporter that supported it. Now that usda/blender accept the same `artifact_store` parameter (see prior session), the special-case was removed — `export()` threads it through uniformly for all three formats. `apps/cli/main.py::cmd_export` was updated the same way: it now reconnects to `<world>.artifacts/` for `--format usda`/`--format blender` too, not just gltf. Updated `tests/test_cli.py`'s `test_export_usda_blender_unaffected_by_artifacts_dir` (now misleadingly named) into two accurate tests: one proving usda/blender DO emit real geometry (`def Points "` / `from_pydata(` present) when a store is reconnected, one proving both still fall back to their placeholder shape without one. `apps/cli/README.md` updated.
 
 ## Completed this session (2026-09-13, latest): real geometry reaches every exporter + the CLI (dispatched as 3 parallel agents, disjoint file sets, reviewed and integrated centrally)
 
@@ -18,8 +24,7 @@ Closed three of the four remaining gaps this file listed after the plane/object 
 All three were dispatched as independent parallel subagents (disjoint file sets: `exporters/usd/`, `exporters/blender/`, `apps/cli/` + each one's own test file) via superpowers' dispatching-parallel-agents pattern, then reviewed and integrated in this session — no merge conflicts (verified: `git status` showed only the 7 expected files, no overlapping edits), diffs spot-checked for correctness against the gltf exporter's established pattern before accepting. Full suite run once after integration: 1127 passed (was 1111), zero regressions.
 
 Not done in this pass (named, not hidden):
-- CLI's `export --format usda`/`--format blender` don't reconnect to `<world>.artifacts/` yet, even though both exporters now accept `artifact_store` directly — only the gltf CLI path was wired (matches `sdk.reality.export()`'s own current gltf-only threading; extending both together is the natural next step).
-- The CLI agent could not verify a true end-to-end `reconstruct` (real backend, real photos) -> real `.artifacts/` directory round-trip — no COLMAP install in this environment, same blocker every session has hit. The `--no-real-geometry` opt-out and the artifact-path-derivation logic ARE tested directly; only the full real-backend path is unverified.
+- A true end-to-end `reconstruct` (real backend, real photos) -> real `.artifacts/` directory round-trip is still unverified — no COLMAP install in this environment, same blocker every session has hit. The `--no-real-geometry` opt-out and the artifact-path-derivation/reconnection logic ARE tested directly for all three formats now; only the full real-backend path is unverified.
 - Triangulated MESH storage is still open (point-clouds only, across all three formats now).
 
 ## Completed this session (2026-09-13, latest): real geometry storage for OBJECTS (P0.10/11 follow-on) — `evidence/promote_objects.py` now writes real points too, not just `promote_planes.py`
@@ -743,12 +748,6 @@ this session applied before dispatching the three parallel agents above.
   (vertices/indices/normals) yet — needs a real surface-reconstruction
   step (e.g. alpha-shape/Poisson over a plane's inlier points), not
   just a new payload format.
-- CLI: `reality export --format usda`/`--format blender` don't reconnect
-  to `<world>.artifacts/` yet (only `--format gltf` does, mirroring
-  `sdk.reality.export()`'s own gltf-only threading) even though both
-  exporters now accept `artifact_store` directly as of this session —
-  small follow-on to extend the CLI's reconnection logic and
-  `sdk.reality.export()`'s dispatch to all three formats.
 - Compiler consumption of depth/segmentation/material evidence (currently
   planes+rooms only).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room

@@ -77,7 +77,7 @@ class UnlocalizedEntity:
     reason: str
 
 
-def _entity_position(world: WorldIR, entity: Entity) -> Optional[Point]:
+def entity_position(world: WorldIR, entity: Entity) -> Optional[Point]:
     if entity.transform and "position" in entity.transform:
         p = entity.transform["position"]
         return (float(p["x"]), float(p["y"]), float(p["z"]))
@@ -114,7 +114,7 @@ class SpatialIndex:
         unlocalized: List[UnlocalizedEntity] = []
         for entity_id in sorted(world.entities):
             entity = world.entities[entity_id]
-            position = _entity_position(world, entity)
+            position = entity_position(world, entity)
             if position is None:
                 unlocalized.append(UnlocalizedEntity(
                     entity_id=entity_id,

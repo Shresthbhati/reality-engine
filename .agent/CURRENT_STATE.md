@@ -3,7 +3,31 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 941 passed, 1 skipped (observed 54.3s) — +3 SDK external-consumer tests on top of the prior 938, zero regressions.
+**Verified after this session:** 978 passed, 1 skipped (observed 63.2s) — +11 entity-reid tests on top of 967 (941 + main's merged reconstruction-orchestrator work), zero regressions.
+
+## Completed this session (2026-09-13, latest): cross-session entity re-identification
+
+`world_ir/entity_reid.py` — world-memory campaign Phases 3/4. Given two
+WorldIR snapshots (`before`/`after`), classifies each `before` entity's
+correspondence in `after` as MATCH / POSSIBLE_MATCH / NO_MATCH /
+UNRESOLVED using real evidence already in WorldIR: EntityType +
+geometric position (reusing `engine/scene_graph/spatial_index.py`'s
+position resolution, renamed `_entity_position` -> public
+`entity_position` to avoid duplicating it). Deliberately NOT
+embedding-based -- no real embedding/vision model exists anywhere in
+this repo, and the world-memory campaign explicitly forbids fake
+embeddings, so that entire area (Phases 5-15, 20-30, 39, 48-51) stays
+documented as blocked rather than faked. 11 tests
+(`tests/test_entity_reid.py`): match/possible-match/no-match/unresolved
+classification, type exclusivity (same position, different type never
+matches), deterministic tie-breaking, determinism, threshold
+validation, empty-world and no-mutation edge cases.
+
+`docs/WORLD_MEMORY_LEARNING_AUDIT.md` (new) — honest phase-by-phase
+snapshot against the 91-phase world-memory campaign; headline finding
+is that the campaign's central ask (semantic embeddings/retrieval)
+cannot be honestly built without first doing real model
+selection/licensing work this session did not attempt.
 
 ## Completed this session (2026-09-13, latest): public SDK (sdk/reality.py)
 

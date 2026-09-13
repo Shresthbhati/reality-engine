@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reality Engine — WorldIR Viewer</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #141a22; --line: #232d3a; --fg: #dbe4ee; --dim: #7b8a9c;
+    --accent: #4da3ff; --good: #35d07f; --warn: #ffb84d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 ui-sans-serif, system-ui, "Segoe UI", sans-serif; overflow: hidden; }
+  #app { display: grid; grid-template-columns: minmax(230px, 300px) 1fr minmax(240px, 340px); height: 100vh; }
+  @media (max-width: 980px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: 58vh 1fr 1fr;
+      grid-template-areas: "vp" "left" "right"; }
+    #viewport { grid-area: vp; }
+    .panel.left { grid-area: left; border-right: 0; border-top: 1px solid var(--line); }
+    .panel.right { grid-area: right; border-left: 0; }
+  }
+  .panel { background: var(--panel); border-right: 1px solid var(--line); display: flex;
+    flex-direction: column; min-height: 0; }
+  .panel.right { border-right: 0; border-left: 1px solid var(--line); }
+  .panel-head { padding: 10px 12px; font-weight: 600; border-bottom: 1px solid var(--line);
+    letter-spacing: .02em; font-size: 12px; text-transform: uppercase; color: var(--dim); }
+  .panel-body { overflow: auto; padding: 10px 12px; flex: 1; min-height: 0; }
+  #viewport { position: relative; min-width: 0; }
+  #viewport canvas { display: block; }
+  .toolbar { position: absolute; top: 10px; left: 10px; display: flex; gap: 10px;
+    background: rgba(13,17,23,.85); border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; z-index: 5; align-items: center; }
+  .toolbar label { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--fg); }
+  .toolbar button { background: var(--line); color: var(--fg); border: 0; border-radius: 4px;
+    padding: 3px 8px; cursor: pointer; }
+  .toolbar button:hover { background: #31405223; filter: brightness(1.3); }
+  #loading { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
+    align-items: center; justify-content: center; background: var(--bg); z-index: 10; }
+  #loading.hidden { display: none; }
+  #loading-bar-track { width: 260px; height: 4px; background: var(--line); border-radius: 2px; }
+  #loading-bar { height: 100%; width: 0; background: var(--accent); border-radius: 2px;
+    transition: width .3s ease; }
+  .grid { display: grid; grid-template-columns: 92px 1fr; gap: 4px 8px; margin: 6px 0; }
+  .grid .k { color: var(--dim); }
+  .grid .v { word-break: break-word; }
+  .v.mono, .mono { font-family: ui-monospace, Consolas, monospace; }
+  .v.small, .small { font-size: 11px; }
+  .dim { color: var(--dim); font-size: 11px; }
+  #world-summary { display: grid; grid-template-columns: 64px 1fr; gap: 3px 8px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .prov-row { display: flex; gap: 6px; align-items: baseline; padding: 3px 0;
+    font-size: 11px; color: var(--dim); line-height: 1.4; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px;
+    font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: #0d1117; }
+  .tag-scale { background: var(--accent); }
+  .tag-recon { background: var(--good); }
+  .tag-depth { background: var(--warn); }
+  .tag-inferred { background: var(--warn); }
+  .tag-reconstructed { background: var(--accent); }
+  .tag-observed { background: var(--good); }
+  .tag-unknown { background: var(--dim); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+  #entity-filter { width: 100%; background: #0d1117; color: var(--fg);
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; margin-bottom: 8px; }
+  .entity-row { display: flex; gap: 7px; align-items: center; padding: 4px 6px;
+    border-radius: 4px; cursor: pointer; }
+  .entity-row:hover { background: #1b2430; }
+  .entity-row.selected { background: #223047; outline: 1px solid var(--accent); }
+  .entity-row .eid { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .entity-row .etype { color: var(--dim); font-size: 11px; }
+  .entity-row .conf { font-size: 11px; color: var(--good); min-width: 34px; text-align: right; }
+  .insp-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .confbar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 8px 0; }
+  .confbar > div { height: 100%; background: linear-gradient(90deg, var(--warn), var(--good)); }
+  .sect { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--line);
+    color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  .obs { background: #10161e; border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 10px; margin: 6px 0; }
+  .obs-head { color: var(--accent); font-size: 12px; margin-bottom: 4px; }
+  .empty { color: var(--dim); padding: 12px 4px; }
+  .drop { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(13,17,23,.92); z-index: 9; color: var(--dim); font-size: 15px; }
+  .drop.active { display: flex; }
+</style>
+<script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three.module.min.js",
+      "three/addons/": "./vendor/addons/"
+    }
+  }
+</script>
+</head>
+<body>
+<div id="app">
+  <aside class="panel left">
+    <div class="panel-head">World</div>
+    <div class="panel-body">
+      <div id="world-summary" class="grid"></div>
+      <div id="world-provenance"></div>
+    </div>
+    <div class="panel-head">Entities</div>
+    <div class="panel-body" style="flex:1">
+      <input id="entity-filter" placeholder="filter by id or type…" />
+      <div id="entity-list"></div>
+    </div>
+  </aside>
+
+  <main id="viewport">
+    <div class="toolbar">
+      <label><input type="checkbox" id="toggle-points" checked /> points</label>
+      <label><input type="checkbox" id="toggle-entities" checked /> entities</label>
+      <label><input type="checkbox" id="toggle-cameras" checked /> cameras</label>
+      <label><input type="checkbox" id="toggle-oversized" /> oversized</label>
+      <button id="btn-frame-points">frame points</button>
+    </div>
+    <div id="loading">
+      <div id="loading-msg">loading…</div>
+      <div id="loading-bar-track"><div id="loading-bar"></div></div>
+    </div>
+  </main>
+
+  <aside class="panel right">
+    <div class="panel-head">Inspector</div>
+    <div class="panel-body" id="inspector"></div>
+  </aside>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

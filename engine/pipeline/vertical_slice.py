@@ -102,6 +102,13 @@ class VerticalSliceResult:
     scale_state: str
     meters_per_unit: Optional[float]
     scale_note: str
+    #: Real reconstructed geometry in meters (sparse + dense points), for
+    #: artifact persistence (PLY export) and viewers. Tuple of (x, y, z).
+    points: Tuple[Tuple[float, float, float], ...] = ()
+    #: Registered camera poses in meters as (evidence_id, position, rotation)
+    #: with camera-to-world (w, x, y, z) quaternion, for artifact persistence
+    #: and camera-frustum visualization.
+    camera_poses: Tuple[Tuple[str, Tuple[float, float, float], Tuple[float, float, float, float]], ...] = ()
     #: Per-stage facts for reports and tests.
     stage_facts: Dict[str, object] = field(default_factory=dict)
 
@@ -240,6 +247,18 @@ def vertical_slice(
         scale_state=scale_state,
         meters_per_unit=meters_per_unit,
         scale_note=scale_note,
+        points=tuple(
+            (float(p.position[0]), float(p.position[1]), float(p.position[2]))
+            for p in result.points
+        ),
+        camera_poses=tuple(
+            (
+                p.evidence_id,
+                (float(p.position[0]), float(p.position[1]), float(p.position[2])),
+                (float(p.rotation[0]), float(p.rotation[1]), float(p.rotation[2]), float(p.rotation[3])),
+            )
+            for p in result.camera_poses
+        ),
         stage_facts={
             "backend": run.diagnostics.backend_name,
             "duration_s": run.diagnostics.duration_s,

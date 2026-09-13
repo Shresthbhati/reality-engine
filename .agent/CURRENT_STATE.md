@@ -134,7 +134,44 @@ docs/CAPABILITY_MATRIX.md; registry rows for Pillow/OpenCV/numpy added.
 Labelled NOT built: RAW/HEIC decode, package->Session bridge, quality
 GATE (signals only), camera-facing capture UI.
 
+## Completed 2026-09-13 (latest): reconstruction orchestrator (integration campaign sec 2)
+
+PR #4 (evidence-fusion) was MERGED; this session works on `evidence-fusion`
+ahead of main again. New: `reconstruction/orchestrator.py` — the single
+layer that selects and executes reconstruction backends:
+`validate_evidence` (empty/<2 images/duplicate ids refused before any
+backend runs), availability probes vs acceptance gates as DISTINCT checks,
+preference-ordered selection with fallback on decline/exception/None
+(contract violation, captured)/registration-failed, exhaustion raising
+`ReconstructionOrchestrationError` with the full attempt log, frozen
+`BackendAttempt`/`ReconstructionRunDiagnostics` (to_dict, deterministic
+order; durations are wall-clock telemetry), provenance stamping
+(confidence preserved verbatim, note merged with backend=NAME), and
+distinct display names for same-class fallback chains (stub / stub#2).
+Runtime stays LLM-free — selection is explicit policy. 23 tests incl.
+end-to-end: orchestrated run -> world compiler -> validated WorldIR
+(gate clean, WALL/FLOOR, 1 room) and orchestrated run -> plane summaries
+-> detect_rooms (5.625 m^2 exact, slab honestly NO_CLOSED_RING). Full
+suite **917 passed / 2 skipped** (894 baseline + 23, no regressions).
+Row T8 added to docs/CAPABILITY_MATRIX.md; audit dated update added.
+Follow-on in the same session: COLMAP backend now wires its real gates
+for the orchestrator (`availability_probe` = shutil.which on the binary,
+shared truth with reconstruct()'s own check; `accepts` = >=2 image floor,
+recorded as DECLINE not a failed run). Probe verified live on this
+machine: COLMAP IS installed (C:\Users\shres\tools\colmap-extracted).
+Machine-independent chain tests pin the gate wiring for both
+environments (COLMAP present/absent). Full suite **920 passed /
+2 skipped** (+3 gate tests).
+
 ## Next tasks (dependency-safe, in order)
+
+- Wire `availability_probe` into the COLMAP backend (shutil.which probe +
+  qt-offscreen env note) so the orchestrator's detection is real for the
+  one production backend; then route StudioSession.compile_reconstruction
+  through the orchestrator when a backend chain is configured.
+- Blender export path (WorldIR -> .py/.json add-on input; Reality Engine
+  -> WorldIR -> Blender adapter, Blender as consumer) -- now the
+  highest-value missing export target.
 
 - Blender export path (WorldIR -> .py/.json add-on input; Reality Engine
   -> WorldIR -> Blender adapter, Blender as consumer) -- now the

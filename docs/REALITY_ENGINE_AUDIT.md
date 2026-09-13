@@ -329,6 +329,25 @@ package->Session registration bridge (Sessions and Packages remain two
 stores), blur/exposure are quality signals not yet a quality gate,
 no camera-facing capture UI.
 
+## Update 2026-09-13 (integration campaign): reconstruction orchestrator
+
+The integration campaign's first target — one orchestration layer that
+selects and executes reconstruction backends — is now real:
+`reconstruction/orchestrator.py`. Backends are no longer hard-wired at
+call sites: the orchestrator validates evidence (its own input gate
+before any backend runs), probes availability (opt-in per backend), asks
+the backend's acceptance gate, executes with timing, falls through on
+decline/exception/None/registration-failure with every reason recorded,
+and stamps RECONSTRUCTED provenance + backend identity onto the frozen
+result. Exhaustion raises with the full attempt log — no silent
+swallowing. Same-class fallback chains (e.g. two COLMAP presets) get
+distinct display names. Diagnostics are frozen records with to_dict(),
+deterministic in attempt order. End-to-end tests drive the compiler and
+the room pipeline from an orchestrated run. This does NOT yet claim:
+COLMAP's availability_probe is wired (probes are opt-in), depth/
+segmentation orchestrators exist, or the Studio path uses the
+orchestrator — those are the follow-on integration steps.
+
 ## What this audit does NOT claim
 
 This audit does not claim the full vision in the originating prompt (a

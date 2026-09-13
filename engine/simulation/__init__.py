@@ -11,6 +11,15 @@ from .replay import (
     Timeline,
     ReplayController,
 )
+from .temporal import (
+    EventGraph,
+    Snapshot,
+    SnapshotStore,
+    BranchRecord,
+    BranchManager,
+    replay,
+    restore_world,
+)
 
 __all__ = [
     "EventType",
@@ -19,4 +28,11 @@ __all__ = [
     "TimelineSegment",
     "Timeline",
     "ReplayController",
+    "EventGraph",
+    "Snapshot",
+    "SnapshotStore",
+    "BranchRecord",
+    "BranchManager",
+    "replay",
+    "restore_world",
 ]

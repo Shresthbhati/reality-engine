@@ -3,7 +3,31 @@
 **Updated:** 2026-09-13 (WorldDiff + production audit session complete)
 **Branch:** `claude/reality-engine-next-8ffa19` (worktree off `main`, which already has PR #4 evidence-fusion merged)
 **Verified baseline before this session:** 890 passed, 1 skipped.
-**Verified after this session:** 981 passed, 1 skipped (observed 62.6s) — +3 Studio/orchestrator wiring tests on top of 978, zero regressions.
+**Verified after this session:** 1002 passed, 1 skipped (observed 44.9s) — +21 camera calibration tests on top of 981, zero regressions.
+
+## Completed this session (2026-09-13, latest): real pinhole camera model (reconstruction hardening campaign, Prompt 2)
+
+`reconstruction/calibration/camera.py` — Prompt 2 Phase 2 exactly.
+`reconstruction/calibration/` was a README placeholder; nothing in the
+repo could project a 3D point to a pixel or unproject a pixel+depth back
+to 3D. `CameraIntrinsics` (fx/fy/cx/cy + Brown-Conrady k1/k2/p1/p2/k3,
+validated), `CameraExtrinsics` (camera-to-world position+rotation,
+matching `ReconstructedCameraPose`'s existing convention so a COLMAP
+pose plugs in directly), `PinholeCamera.project/.unproject/.ray`.
+Undistortion uses fixed-point iteration (no closed-form inverse for
+Brown-Conrady). Added `Quat.conjugate()` to
+`engine/physics/math3.py` (unit-quaternion inverse rotation) rather than
+reimplementing it locally. 21 tests
+(`tests/test_camera_calibration.py`): intrinsics validation, projection
+geometry (behind-camera/at-plane rejection), round-trips with AND
+without real distortion coefficients (sub-mm precision), ray casting,
+translated/rotated camera sanity checks, dict round-trips.
+
+This is the prerequisite Phase 8 (depth -> point cloud) needs:
+`PinholeCamera.unproject(u, v, depth)` is exactly the per-pixel
+operation a `DepthMap -> point cloud` converter would call in a loop —
+not yet wired into one. `docs/RECONSTRUCTION_HARDENING_AUDIT.md` records
+this as the concrete next step.
 
 ## Completed this session (2026-09-13, latest): Studio -> orchestrator -> compiler wiring (convergence campaign, Prompt 1 slice)
 

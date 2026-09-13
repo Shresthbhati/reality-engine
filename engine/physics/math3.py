@@ -188,6 +188,15 @@ class Quat:
     def is_finite(self) -> bool:
         return all(math.isfinite(v) for v in (self.w, self.x, self.y, self.z))
 
+    def conjugate(self) -> "Quat":
+        """For a unit quaternion this IS the inverse rotation: rotating by
+        `q.conjugate()` undoes rotating by `q`. Used by camera extrinsics
+        (reconstruction/calibration/camera.py) to go world->camera when
+        the stored orientation is camera->world, without introducing a
+        second "inverse" concept for a case the conjugate already covers
+        exactly for rotations (no scale/shear here, unlike Mat4)."""
+        return Quat(self.w, -self.x, -self.y, -self.z)
+
     def to_dict(self) -> dict:
         return {"w": self.w, "x": self.x, "y": self.y, "z": self.z}
 

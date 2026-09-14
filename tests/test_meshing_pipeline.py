@@ -200,8 +200,13 @@ class TestSurfaceUnavailability:
 # ----------------------------------------------------------- pipeline stage
 
 def _fake_result(points: List[VERT], centers: List[VERT]):
+    # track_id mirrors the real ReconstructedPoint contract; the mesh
+    # stage splits sparse vs depth-derived points by its 'depth-' prefix.
     return types.SimpleNamespace(
-        points=[types.SimpleNamespace(position=p) for p in points],
+        points=[
+            types.SimpleNamespace(position=p, track_id=f"track-{i}")
+            for i, p in enumerate(points)
+        ],
         camera_poses=[types.SimpleNamespace(position=c) for c in centers],
     )
 

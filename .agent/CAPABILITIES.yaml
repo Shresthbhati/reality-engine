@@ -149,16 +149,18 @@ capabilities:
 
   - name: time_synchronization
     category: temporal
-    backend: none yet
-    inputs: []
-    outputs: []
-    license: n/a
+    backend: evidence/clocks.py (in-house linear clock model; metadata_alignment backend)
+    inputs: [SensorStream, clock_id, capture metadata (shared_clock / clock_offset_s / clock_drift)]
+    outputs: [TimeAlignment (per-sample original_t + global_t), SynchronizationDiagnostics, ClockModel]
+    license: project-internal
     hardware_requirements: none
-    accuracy: n/a
-    runtime: n/a
-    maturity: MISSING (P2-01, the critical chain's first link)
-    limitations: SensorStream timestamps are per-file sensor-clock only
-    fallback: none — cross-sensor correlation is refused, not guessed
+    accuracy: exact for the declared model; uncertainty recorded when declared (unknown stays unknown)
+    runtime: negligible
+    maturity: PARTIAL (model + backend seam + metadata backend landed P2-01, 33 tests; methods 3-6 -- GNSS/PPS, trigger, signal correlation, optimization -- open registry slots)
+    limitations:
+      - metadata-declared offsets only today; no estimated sync yet
+      - clock identity is caller-supplied until P1-02 canonical sensor model
+    fallback: honest UNSYNCHRONIZED samples with reasons (never a guessed offset)
 
   - name: vio_localization
     category: localization

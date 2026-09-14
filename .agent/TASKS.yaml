@@ -49,11 +49,22 @@ tasks:
 
   - id: P0-02
     name: platform/application separation scoping
-    status: NEXT
+    status: DONE
     problem: >
       Disaster-specific logic is application code living in core.
       Disaster management is a consumer of the world platform, not its
       definition (constitution Article XI).
+    evidence: "PR (P0-02 pass): docs/implementation/PLATFORM_APPLICATION_SEPARATION.md
+      (verified inventory: the disaster-application layer does not exist
+      in code -- engine/disasters is a README-only scaffold; no
+      evacuation/hazard-scenario/emergency-response logic anywhere;
+      fire/destruction/environment classified STAY as generic physics
+      primitives per the mission's core list). Preventive rules R1-R3
+      adopted; R1 enforced by tests/test_platform_boundary.py (8 tests,
+      incl. the sanctioned sdk-facade attachment of the physics
+      compiler bridge and a minimal allowlist of 4 basic-utility
+      couplings with follow-ups F1-F3 registered). Suite 1400 passed,
+      zero regressions."
     scope: >
       Inventory core for application-specific logic (disaster workflows,
       dashboards, evacuation orchestration, hazard scenarios, emergency
@@ -63,8 +74,10 @@ tasks:
       time/trajectory/registration chain lands unless a blocking
       conflict appears.
     verification:
-      - inventory lists each candidate with file paths and dependency facts
-      - plan separates generic primitives (stay) from application logic (move)
+      - "DONE: inventory lists each candidate with file paths and dependency facts"
+      - "DONE: plan separates generic primitives (stay) from application logic (move)"
+      - "DONE: boundary rule enforced by test (R1)"
+    follow_ups: [F1-math3-extraction, F2-evidence-logging, F3-reid-spatial-index]
 
   - id: P0-03
     name: backend capability registry

@@ -1,15 +1,15 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-15 (RE-006 / P2-01 time synchronization)
+**Session end:** 2026-09-15 (P0-02 platform/application separation scoping)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
 ## Verified baseline
 
-- Suite: **1,392 passed, 1 skipped** on the time-sync branch (main
-  `54b7574` at 1,359; +33 clock/sync tests). Main includes PR #22
-  (depth sidecar ingestion + RGB-D unprojection + metric-scale fix)
-  and PR #23 (P0-01 canonical state).
+- Suite: **1,400 passed, 1 skipped** on the trajectory branch (main
+  `5235960` at 1,392; +8 platform-boundary tests). Main includes PR #22
+  (depth sidecars + RGB-D unprojection), PR #23 (P0-01 canonical
+  state), PR #24 (P2-01 clock model + first sync backend).
 - Known environment failures (deselected, never counted): 20 SAM tests
   (`tests/test_perception_sam.py`, `tests/test_sam_backend.py`) —
   torch-hub cache failure on this machine, pre-existing, unrelated to
@@ -17,6 +17,18 @@ where execution actually stands, nothing else defines that.
 
 ## Completed (most recent first, with evidence)
 
+- **2026-09-15 — P0-02 (DONE)** platform/application separation
+  scoping: verified inventory (the disaster-application layer does NOT
+  exist in code — `engine/disasters/` is a README-only scaffold; no
+  evacuation/hazard-scenario/emergency-response logic anywhere;
+  fire/destruction/environment are generic physics primitives, STAY).
+  Preventive rules R1–R3 adopted; **R1 enforced structurally** by
+  `tests/test_platform_boundary.py` (platform chain must not import
+  simulation domains; physics-compiler bridge attaches only via the
+  SDK facade; 4 basic-utility couplings allowlisted with follow-ups
+  F1–F3 registered). Plan:
+  `docs/implementation/PLATFORM_APPLICATION_SEPARATION.md`. Suite
+  1,400. No runtime code changed beyond the new guard tests.
 - **2026-09-15 — P2-01 (PARTIAL)** time synchronization:
   `evidence/clocks.py` — ClockModel/Timestamp/TimeAlignment/
   SynchronizedSample/SynchronizationDiagnostics with
@@ -66,14 +78,13 @@ where execution actually stands, nothing else defines that.
 
 ## Next (exact next step, per queue)
 
-1. **P0-02** platform/application separation scoping: inventory core
-   for disaster/application-specific logic; produce the extraction
-   plan (files, dependency cuts, what stays generic).
-2. **P0-03** verify CAPABILITIES.yaml against code; add the
-   time_synchronization entry update (now PARTIAL) when landed.
-3. **P3-01** canonical trajectory model (the critical chain's next
+1. **P0-03** capability-registry hardening: fold the P2-01
+   time_synchronization entry to PARTIAL with the landed facts
+   (clocks.py, backend seam, metadata_alignment backend); probe what
+   else is cheaply verifiable.
+2. **P3-01** canonical trajectory model (the critical chain's next
    link; consumes P2-01's ClockModel for monotonic global-time
-   trajectories).
+   trajectories; backend-neutral per the no-custom-VIO rule).
 
 ## Rules reminder
 

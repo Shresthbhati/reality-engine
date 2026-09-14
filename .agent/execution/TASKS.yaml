@@ -39,17 +39,22 @@ tasks:
     status: done
     priority: P1
     evidence: landed on main by parallel session (see CURRENT_STATE.md;
-      suite 1,339 passed)
+      suite 1,339 passed); suite now 1,359 on depth-ingest branch
 
   - id: RE-005
-    title: Depth sidecar ingestion (16-bit PNG first per DESIGN_DECISIONS D001)
-    status: pending
+    title: Depth sidecar ingestion (16-bit PNG first per DESIGN_DECISIONS Decision 020)
+    status: in_progress
     priority: P1
     dependencies: [RE-001]
     spec: docs/future/sensor-ingestion/DEPTH_INGESTION.md
+    progress: PR #22 open -- DepthFrame + PNG parser + manifest scale
+      resolution + session wiring; 35 tests, suite 1359 passed. Remaining
+      for done: pipeline unprojection consuming sidecar depth instead of
+      mono-depth (the spec's end-to-end RGB-D evidence requirement).
     verification:
-      - deterministic fixture (synthetic depth PNG -> DepthFrame -> fusion)
-      - corrupt/malformed sidecar tests
+      - deterministic fixture (synthetic depth PNG -> DepthFrame) DONE
+      - corrupt/malformed sidecar tests DONE
+      - RGB-D capture ingested end-to-end into unprojection PENDING
 
   - id: RE-006
     title: Time synchronization

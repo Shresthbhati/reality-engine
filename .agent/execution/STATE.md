@@ -46,6 +46,10 @@ reality-to-digital-world compiler and persistent world platform.
   failure excluded, pre-existing).
 - Parallel sessions (merged main): sensor sidecar parsing
   (IMU/GNSS/telemetry/calibration), mesh-gate fix, suite at 1,339.
+- 2026-09-14, PR #22: 16-bit PNG depth sidecar ingestion (P1.4,
+  Decision 020) -- DepthFrame + explicit-scale manifest resolution +
+  MultiSourceSession.depth_frames(); 35 tests; suite 1,359 passed.
+  PARTIAL: pipeline unprojection wiring still open.
 
 ## In progress
 
@@ -55,9 +59,10 @@ reality-to-digital-world compiler and persistent world platform.
 
 ## Next (in priority order)
 
-1. Land docs-canon PR; reconcile stale root-level docs pointers.
-2. P1 depth sidecar ingestion (16-bit PNG first, per D001; feed the
-   existing DEPTH_FUSION contract).
+1. Land docs-canon PR (#21); reconcile stale root-level docs pointers.
+2. RE-005 finish: pipeline unprojection consuming sidecar DepthFrames
+   instead of mono-depth (parser + wiring landed via PR #22; suite
+   1,359 passed).
 3. P1 time synchronization (spec written).
 4. P1 VIO backend slot (spec written; ORB-SLAM3/VINS subprocess).
 5. P1 cross-source registration (spec written; ICP + GNSS anchors).

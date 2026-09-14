@@ -11,6 +11,16 @@ What the user supplied. Managed by `evidence/multi_source.py`.
 - `MultiSourceSession` — the acquisition container
 - `SourceRecord` — one file/stream/dataset: identity, content hash,
   format, acquisition metadata, classification (photo/video/lidar/rgbd/…)
+- Unified source identity (P1-01): every record carries
+  `acquisition_id` (content-derived `acq-<hash16>` by default, so the
+  same bytes ingested anywhere share one acquisition identity — the
+  dedupe rule made explicit; a real device-side acquisition uuid
+  overrides it once the sensor model carries one), `device_id`
+  (only what the caller declared via an explicit `EvidenceSource` —
+  the default filesystem source records `None`, never a fabricated
+  device name), and `capabilities` (the evidence kinds the source
+  actually ingested, derived from the package — a measured fact, not
+  a declared promise).
 - Identity rule (Decision 005): a session `SourceRecord` id and the
   `EvidenceSource` it feeds must be coherently linked — no silent
   identity split between `src-XXXX` and `disk:filename`.

@@ -1,6 +1,6 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-15 (P0-02 platform/application separation scoping)
+**Session end:** 2026-09-15 (P1-01 unified source model; PR #25 ledger race repaired)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
@@ -17,6 +17,41 @@ where execution actually stands, nothing else defines that.
 
 ## Completed (most recent first, with evidence)
 
+- **2026-09-15 — P1-01 (DONE)** canonical evidence/source model:
+  SourceRecord now carries the unified identity — acquisition_id
+  (content-derived `acq-<hash16>` by default so the same bytes
+  anywhere share one acquisition identity, i.e. the dedupe rule made
+  explicit; a real device-side uuid overrides it once the P1-02
+  sensor model carries one), device_id (only caller-declared via an
+  explicit EvidenceSource; default filesystem source records None,
+  never a fabricated device), capabilities (evidence kinds actually
+  ingested, derived from the package — measured, not promised).
+  Roundtrip and old-format sessions handled: from_dict derives the
+  acquisition_id deterministically for legacy records (invents
+  nothing). Continuation, not a rewrite: dedupe/roundtrip/component
+  discipline untouched. 7 new tests (TestUnifiedSourceIdentity);
+  suite 1,407. NOT claimed: device-side acquisition uuids (no carrier
+  on EvidenceSource yet — P1-02 seam), real multi-device capture.
+- **2026-09-15 — LEDGER RACE REPAIR**: the P0-03/P18-01 closure
+  commit (dba9652) was pushed after the PR #25 merge (bff0f83) had
+  already snapshotted the branch, so main lost the two status flips.
+  Re-applied verbatim here (evidence unchanged).
+- **2026-09-15 — P0-03 (DONE)** backend capability registry verified:
+  mechanical cross-check of .agent/CAPABILITIES.yaml — 19/19 entries,
+  every backend/fallback .py path resolves to real code, all required
+  fields present, honest maturity labels (13 IMPLEMENTED / 2 PARTIAL /
+  3 MISSING / 1 BROKEN; BROKEN image_segmentation = pre-existing SAM
+  torch-hub env failure, recorded not hidden). Satisfies P0-03's two
+  verification clauses; P5-02 (backend selection) dependency now met.
+- **2026-09-15 — P18-01 (DONE)** application extraction closed as
+  premise-falsified: P0-02's verified inventory found NO application
+  workflows in core to extract ('engine/disasters/' is a README-only
+  scaffold; fire/destruction/environment are generic primitives).
+  Preventive boundary adopted instead — R1 enforced by
+  tests/test_platform_boundary.py (its 'core imports no application
+  modules' verification item; merged in PR #25). Remaining item
+  ('application package installs/tests independently') recorded as
+  CONDITIONAL until an application package exists.
 - **2026-09-15 — P0-02 (DONE)** platform/application separation
   scoping: verified inventory (the disaster-application layer does NOT
   exist in code — `engine/disasters/` is a README-only scaffold; no

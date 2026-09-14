@@ -38,6 +38,7 @@ from engine.pipeline.vertical_slice import (  # noqa: E402
 from evidence.session import EvidenceKind, EvidenceItem  # noqa: E402
 from provenance import Provenance  # noqa: E402
 from reconstruction.scale import ScaleReference  # noqa: E402
+from world_ir.artifact_store import FileArtifactStore  # noqa: E402
 
 
 def _uri(path: Path) -> str:
@@ -137,6 +138,12 @@ def main() -> int:
         # env knob: REALITY_DEPTH_MODEL="" disables the depth stage
         depth_model=os.environ.get("REALITY_DEPTH_MODEL", "DPT_Hybrid") or None,
         depth_stride=int(os.environ.get("REALITY_DEPTH_STRIDE", "16")),
+        # env knobs: REALITY_MESH="" disables surface reconstruction;
+        # REALITY_MESH_VOXEL_M / REALITY_MESH_DEPTH tune it
+        mesh_enabled=bool(os.environ.get("REALITY_MESH", "1")),
+        mesh_voxel_size_m=float(os.environ.get("REALITY_MESH_VOXEL_M", "0.02")),
+        mesh_poisson_depth=int(os.environ.get("REALITY_MESH_DEPTH", "10")),
+        artifact_store=FileArtifactStore(out / "artifacts"),
     )
 
     started = time.perf_counter()
@@ -170,6 +177,7 @@ def main() -> int:
         },
         "depth": result.stage_facts.get("depth"),
         "perception": result.stage_facts.get("perception"),
+        "mesh": result.stage_facts.get("mesh"),
         "compile": {
             "entities": len(result.world.entities),
             "measurements": result.compile.measurements_count,
@@ -185,6 +193,15 @@ def main() -> int:
     # Inspectable geometry artifacts: the real reconstructed points and
     # camera positions (Phase-20 outputs), consumed by the Studio viewer.
     _write_ply(out / "points.ply", result.points)
+    mesh_facts = result.stage_facts.get("mesh") or {}
+    if mesh_facts.get("status") == "ran" and result.world is not None:
+        from reconstruction.meshing.mesh import MeshData
+        geom = result.world.geometries.get("geom-mesh-room")
+        if geom is not None and geom.data_uri:
+            mesh_bytes = options.artifact_store.get(geom.data_uri)
+            (out / "mesh.ply").write_bytes(
+                MeshData.from_bytes(mesh_bytes).to_ply_bytes()
+            )
     (out / "cameras.json").write_text(json.dumps({
         "frame": "world (meters, +Y up after frame canonicalization)",
         "scale_state": result.scale_state,

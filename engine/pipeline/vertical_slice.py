@@ -520,6 +520,7 @@ def _mesh_stage(result, world, options, scale_state: str):
     try:
         import numpy as _np  # noqa: F401 -- preprocess imports it; fail fast
         from reconstruction.meshing.preprocess import (
+            camera_envelope_filter,
             estimate_oriented_normals,
             statistical_outlier_filter,
             voxel_downsample,
@@ -558,6 +559,19 @@ def _mesh_stage(result, world, options, scale_state: str):
     try:
         downsampled, _ = voxel_downsample(points, options.mesh_voxel_size_m)
         kept, outlier_facts = statistical_outlier_filter(downsampled)
+        # The triangulated sparse points define the plausible scene
+        # envelope; depth-derived points beyond it are unprojection
+        # artifacts (observed: extents of kilometers from depth noise).
+        sparse_points = [
+            tuple(float(c) for c in p.position)
+            for p in result.points
+            if p.track_id and not p.track_id.startswith("depth-")
+        ]
+        if sparse_points:
+            kept, envelope_facts = camera_envelope_filter(
+                kept, sparse_points, centers
+            )
+            outlier_facts["camera_envelope"] = envelope_facts
         if len(kept) < 100:
             return {
                 "status": "skipped",

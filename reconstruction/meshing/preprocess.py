@@ -97,6 +97,54 @@ def statistical_outlier_filter(
     }
 
 
+def camera_envelope_filter(
+    points: Sequence[Vert],
+    reference_points: Sequence[Vert],
+    camera_centers: Sequence[Vert],
+    percentile: float = 95.0,
+) -> Tuple[List[Vert], Dict[str, float]]:
+    """Keep points within the plausible scene envelope defined by
+    `reference_points` (triangulated sparse-SfM observations: reliable
+    geometry).
+
+    Monocular-depth unprojection can fling points to huge distances
+    when the aligned depth is wrong; the global mean-distance outlier
+    statistic cannot see them once the outlier population is large.
+    The sparse cloud's distance-to-nearest-camera distribution IS the
+    scene envelope -- keep points within its `percentile` and report
+    what was cut. Deterministic: a percentile of a fixed vector, strict
+    keep at the boundary."""
+    if not reference_points:
+        raise PreprocessError(
+            "reference_points (sparse cloud) is empty -- the envelope has "
+            "no reliable basis"
+        )
+    if not 0 < percentile <= 100:
+        raise PreprocessError(f"percentile must be in (0, 100], got {percentile}")
+    ref = _points_array(reference_points)
+    cams = np.asarray(camera_centers, dtype=np.float64)
+    if cams.ndim != 2 or cams.shape[1] != 3 or not np.isfinite(cams).all():
+        raise PreprocessError("camera_centers must be finite (M, 3)")
+
+    cam_tree = cKDTree(cams)
+    ref_dists, _ = cam_tree.query(ref, k=1, workers=1)
+    envelope_m = float(np.percentile(ref_dists, percentile))
+    if envelope_m <= 0:
+        raise PreprocessError("degenerate envelope (all reference points at cameras)")
+
+    arr = _points_array(points)
+    dists, _ = cam_tree.query(arr, k=1, workers=1)
+    mask = dists <= envelope_m
+    kept = [tuple(p) for p, m in zip(arr, mask) if m]
+    return kept, {
+        "envelope_m": round(envelope_m, 4),
+        "percentile": percentile,
+        "kept": int(mask.sum()),
+        "removed": int((~mask).sum()),
+        "reference_points": len(reference_points),
+    }
+
+
 def _deterministic_pca_normal(patch: np.ndarray) -> Vert:
     """Smallest-eigenvector of the patch covariance. scipy/numpy eigh
     returns eigenvalues ascending, so the LAST column of eigenvectors is

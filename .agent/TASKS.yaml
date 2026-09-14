@@ -191,7 +191,10 @@ tasks:
       and device-raw adapters open per the format ladder.
     verification:
       - DONE: deterministic RGB-D E2E (synthetic wall -> z=2.0 m)
-      - PENDING: real device capture E2E into WorldIR geometry
+      - "BLOCKED (hardware): real device capture E2E into WorldIR geometry
+        -- requires an actual RGB-D device; cannot be resolved
+        autonomously. Recorded 2026-09-15; EXR and device-raw adapters
+        (format ladder) remain open with it."
 
   # ================= PHASE 2 — TIME + CALIBRATION =================
 
@@ -235,15 +238,48 @@ tasks:
 
   - id: P2-02
     name: calibration/frame system unification
-    status: PARTIAL
+    status: DONE
     basis: >
       CameraIntrinsics/CameraExtrinsics + calibration sidecar parsing
-      exist; camera-to-IMU/camera-to-LiDAR transform chains, GNSS
-      frames (ENU/ECEF), and reprojection-residual quality metrics open.
+      existed; the named gaps are now implemented in
+      reconstruction/calibration/transforms.py (rotation/translation
+      math reuses engine.physics.math3 -- the repo's one rotation
+      implementation -- and camera geometry reuses
+      CameraIntrinsics/PinholeCamera verbatim; no second representation
+      introduced).
     dependencies: [P2-01]
+    evidence: >
+      RigidTransform with NAMED from/to frames (named-frame composition
+      and its mismatch guard), direction-vs-point application,
+      exact inverse, frame-validated CalibrationChain with
+      gap-at-construction guard; WGS84 geodetic<->ECEF (Newton
+      iteration, sub-mm roundtrip; height is ellipsoidal -- geoid is a
+      caller concern, recorded not modeled), ECEF->ENU with the
+      reference origin CARRIED IN THE FRAME NAME, orthonormal
+      right-handed triad proven structurally at 4 lat/lon sets;
+      SensorRig/CalibrationEntry with labeled provenance
+      (declared/estimated/assumed) and absent-calibration-never-guessed
+      semantics; reprojection residual statistics in pixels with
+      unprojectable points COUNTED (never dropped, never fabricated)
+      and nearest-rank percentiles. Test-caught bug: the ENU rotation
+      matrix Up row used sin_lon where sin_lat belongs -- the written
+      'rotation' was not orthogonal and would have skewed every ENU
+      placement; caught by a known-answer height test
+      (h(ref + 10*up) must be exactly ref+10 m), fixed, and the triad
+      is now proven orthonormal/right-handed. NOT claimed: estimated
+      (fit) calibration procedures, real-device calibration evidence,
+      geoid models.
     verification:
-      - transform-chain composition tests with known answers
-      - reprojection residual stats (mean/median/p95/per-camera)
+      - "DONE: transform-chain composition tests with known answers
+        (45 tests in tests/test_calibration_transforms.py -- identity,
+        known rotations, inverse roundtrips, composed-vs-stepwise
+        equality, WGS84 equator/pole known answers, geodetic<->ECEF
+        roundtrips incl. near-pole, ENU zero-origin/roundtrip/up-is-
+        ellipsoidal-height, rig chains, honest uncalibrated)"
+      - "DONE: reprojection residual stats (mean/median/p95/per-camera;
+        zero-residual known answer, 1-px bias known answer,
+        nearest-rank p95, unprojectable counting, empty/all-
+        unprojectable raise)"
 
   # ================= PHASE 3 — LOCALIZATION / TRAJECTORY =================
 

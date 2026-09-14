@@ -147,6 +147,22 @@ capabilities:
     limitations: environment must be fixed before any SAM-dependent verification counts
     fallback: Mask R-CNN detection path
 
+  - name: calibration_frames
+    category: calibration
+    backend: reconstruction/calibration/transforms.py (RigidTransform + CalibrationChain + SensorRig + WGS84/ENU conversions + reprojection_residual_stats; rotation math = engine.physics.math3, camera types reused verbatim)
+    inputs: [declared rig transforms (sensor frame -> rig frame), GNSS anchor (geodetic reference), camera + (world point, observed pixel) observations]
+    outputs: [frame-validated transform chains, geodetic<->ECEF<->ENU points, per-camera pixel residual stats]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: exact known-answer math (sub-mm geodetic roundtrip; pixel stats are measured facts of the given observations; ENU triad proven orthonormal)
+    runtime: negligible
+    maturity: IMPLEMENTED (P2-02; 45 tests in tests/test_calibration_transforms.py; ENU matrix bug caught by known-answer test and fixed, triad structurally proven)
+    limitations:
+      - declared/assumed calibration only -- no estimation (fit) procedures yet
+      - height is ellipsoidal; geoid separation models are a caller concern (recorded, not modeled)
+      - no real-device calibration evidence yet (synthetic known answers only)
+    fallback: absent calibration is recorded as absent (rig members without a pose raise on chain requests, never guess); unprojectable points counted, never given fabricated residuals
+
   - name: time_synchronization
     category: temporal
     backend: evidence/clocks.py (in-house linear clock model; metadata_alignment backend)

@@ -1,6 +1,6 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-15 (P1-02 canonical sensor model, PR: sensor-model)
+**Session end:** 2026-09-15 (P2-02 calibration/frame unification, PR: calibration)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
@@ -17,6 +17,24 @@ where execution actually stands, nothing else defines that.
 
 ## Completed (most recent first, with evidence)
 
+- **2026-09-15 — P2-02 (DONE)** calibration/frame system unification:
+  reconstruction/calibration/transforms.py — RigidTransform with named
+  frames (compose validates connectivity; direction-vs-point; exact
+  inverse), CalibrationChain with gap-at-construction guard, WGS84
+  geodetic<->ECEF (Newton, sub-mm roundtrip, ellipsoidal height — geoid
+  is a caller concern), ECEF->ENU with the reference origin carried in
+  the frame name (enu@lat,lon), SensorRig/CalibrationEntry with
+  labeled provenance (declared/estimated/assumed) and
+  absent-calibration-never-guessed, reprojection residual statistics
+  (mean/median/p95/per-camera, pixels; unprojectable points counted,
+  never fabricated). Reuses engine.physics.math3 + camera types — no
+  second rotation representation. TEST-CAUGHT BUG: the ENU Up row used
+  sin_lon for sin_lat — non-orthogonal 'rotation' that would have
+  skewed every ENU placement; caught by h(ref+10·up)==ref+10 m, fixed,
+  triad proven orthonormal/right-handed at 4 lat/lon sets. 45 new
+  tests; suite 1,474. P1-03's real-device remainder recorded BLOCKED
+  (hardware). NOT claimed: estimation procedures, real-device
+  calibration evidence, geoid models.
 - **2026-09-15 — P1-02 (DONE)** canonical sensor model (DECLARED
   identity half; continuation of existing sensor modules + PR #24
   clocks): SensorDescriptor in evidence/sensors.py loaded from

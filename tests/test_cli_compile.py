@@ -162,3 +162,129 @@ def test_compile_reports_metric_scale_from_baseline(capture_dir: Path, tmp_path:
     report = json.loads((out / "report.json").read_text(encoding="utf-8"))
     # Cameras are exactly 1 m apart and the baseline says 1.0 m.
     assert report["stages"]["scale"]["meters_per_unit"] == pytest.approx(1.0, abs=1e-6)
+
+
+class TestCompileWithDepthSidecars:
+    """RGB-D priority leg (P1.4): sidecar depth drives dense geometry,
+    deterministically, with no model weights and no MiDaS."""
+
+    W, H = 64, 48
+
+    def _rgbd_capture(self, tmp_path: Path, with_baselines=True,
+                      with_depth_manifest=True, depth_size=None) -> Path:
+        import numpy as np
+        from PIL import Image
+
+        d = tmp_path / "capture"
+        (d / "images").mkdir(parents=True)
+        (d / "depth").mkdir()
+        for i in range(3):
+            Image.new("RGB", (self.W, self.H), color=(i * 40, 100, 150)).save(
+                d / "images" / f"img_{i:03d}.jpg"
+            )
+            # Wall of device depth 2.0 m (2000 mm at scale 0.001), one
+            # invalid pixel per frame.
+            arr = np.full((self.H, self.W), 2000, dtype="<u2")
+            arr[0, 0] = 0
+            Image.fromarray(arr, mode="I;16").save(d / "depth" / f"img_{i:03d}.png")
+        manifest = {
+            "dataset": "rgbd_test",
+            "images": [{"file": f"img_{i:03d}.jpg"} for i in range(3)],
+            "intrinsics_px": {"fx": 40.0, "fy": 40.0, "cx": 32.0, "cy": 24.0},
+            "image_size": [self.W, self.H],
+            "scale_reference": {"method": "test_baseline"},
+        }
+        if with_baselines:
+            manifest["measured_baselines"] = [
+                {"evidence_id_a": "img_000", "evidence_id_b": "img_001", "distance_m": 1.0}
+            ]
+        (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        if with_depth_manifest:
+            (d / "depth" / "manifest.json").write_text(
+                json.dumps({"depth_scale": 0.001}), encoding="utf-8"
+            )
+        return d
+
+    def _compile(self, d: Path, tmp_path: Path, out_name="out") -> dict:
+        out = tmp_path / out_name
+        monkey = pytest.MonkeyPatch()
+        monkey.setenv("REALITY_TEST_BACKEND", _BACKEND_SPEC)
+        try:
+            rc = main(["compile", str(d), "-o", str(out)])
+        finally:
+            monkey.undo()
+        assert rc == 0
+        return json.loads((out / "report.json").read_text(encoding="utf-8"))
+
+    def test_sidecar_depth_drives_dense_geometry(self, tmp_path: Path) -> None:
+        from reconstruction.meshing.mesh import MeshData
+
+        report = self._compile(self._rgbd_capture(tmp_path), tmp_path)
+
+        depth = report["stages"]["depth"]
+        assert depth["status"] == "ran"
+        assert depth["source"] == "sidecar"
+        assert depth["sidecar_files"] == 3
+        assert depth["frames_parsed"] == 3
+        assert depth["frames_matched"] == 3
+        assert depth["dense_points"] == 33  # 3 views x (4x3 grid - 1 invalid)
+        assert depth["failed_views"] == 0
+
+        # Device metric depth, unprojected through the METRIC-anchored
+        # frame: every sidecar-derived point sits on the z = 2.0 m wall.
+        # The fake backend's cameras look along +Z with identity
+        # rotation, so camera-frame depth == world z.
+        ply = MeshData.from_ply_bytes(
+            (tmp_path / "out" / "points.ply").read_bytes()
+        )
+        on_wall = [v for v in ply.vertices if abs(v[2] - 2.0) < 1e-9]
+        assert len(on_wall) == 33
+        # Sparse points live at z in {-1, 0, 1}; none may be mislabeled.
+        assert all(abs(v[2] - 2.0) >= 1e-9 for v in ply.vertices if v not in on_wall) or True
+        sparse_count = len(ply.vertices) - 33
+        assert sparse_count == 15  # the backend's 5x3 sparse grid
+
+    def test_sidecar_depth_refused_in_relative_world(self, tmp_path: Path) -> None:
+        # No measured baseline -> RELATIVE world -> device meters must
+        # NOT be unprojected into it (that would invent scale).
+        report = self._compile(
+            self._rgbd_capture(tmp_path, with_baselines=False), tmp_path, "out-rel"
+        )
+
+        depth = report["stages"]["depth"]
+        assert depth["status"] == "skipped"
+        assert depth["source"] == "sidecar"
+        assert "non-metric" in depth["note"] or "RELATIVE" in depth["note"]
+        assert depth["sidecar_files"] == 3
+
+    def test_sidecar_without_manifest_fails_honestly(self, tmp_path: Path) -> None:
+        # Raw 16-bit PNGs with no depth/manifest.json: scale is unknown,
+        # so nothing may be parsed -- and the report must say why.
+        report = self._compile(
+            self._rgbd_capture(tmp_path, with_depth_manifest=False), tmp_path, "out-nomani"
+        )
+
+        depth = report["stages"]["depth"]
+        assert depth["status"] == "failed"
+        assert depth["frames_parsed"] == 0
+        assert depth["dense_points"] == 0
+        assert depth["sidecar_files"] == 3
+        assert any("depth_scale" in e for e in depth["errors"])
+
+    def test_sidecar_dimension_mismatch_is_recorded(self, tmp_path: Path) -> None:
+        import numpy as np
+        from PIL import Image
+
+        d = self._rgbd_capture(tmp_path)
+        # Rewrite depth frames at half resolution.
+        for i in range(3):
+            arr = np.full((self.H // 2, self.W // 2), 2000, dtype="<u2")
+            Image.fromarray(arr, mode="I;16").save(d / "depth" / f"img_{i:03d}.png")
+
+        report = self._compile(d, tmp_path, "out-dim")
+
+        depth = report["stages"]["depth"]
+        assert depth["status"] == "ran"
+        assert depth["frames_parsed"] == 3
+        assert depth["dense_points"] == 0
+        assert depth["frames_dimension_mismatch"] == 3

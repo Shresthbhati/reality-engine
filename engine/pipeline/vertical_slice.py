@@ -43,6 +43,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from engine.compiler.world_compiler import (
@@ -214,6 +215,15 @@ def vertical_slice(
         except ScaleAnchoringError:
             continue
     if scaled is not None:
+        # Adopt the scaled reconstruction itself -- poses, points, and
+        # every downstream stage (depth unprojection, perception
+        # lifting, meshing, exports) must consume METERS, not the
+        # model-unit geometry this branch started with. (Bug fixed
+        # 2026-09-14: `result` was never reassigned here, so the world
+        # claimed meters while downstream geometry stayed in model
+        # units -- masked while tests' model units happened to equal
+        # meters.)
+        result = scaled.result
         meters_per_unit = scaled.meters_per_unit
         scale_state = scaled.state
         scale_note = scaled.diagnostics.note
@@ -239,7 +249,7 @@ def vertical_slice(
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
 
     # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
-    depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options)
+    depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options, scale_state)
 
     # ---- stage 3: compile to validated WorldIR ----
     compile_options = CompileOptions(
@@ -311,7 +321,7 @@ def vertical_slice(
     )
 
 
-def _depth_stage(result, evidence_items, options):
+def _depth_stage(result, evidence_items, options, scale_state: str):
     """Optional MiDaS depth -> metric dense points appended to the result.
 
     Returns (facts_dict, metric_depth_maps). The maps are also returned so
@@ -320,7 +330,21 @@ def _depth_stage(result, evidence_items, options):
     the stage is disabled/unavailable (a skip is visible, never silent).
     The stage itself never raises: depth is an enhancement, and its
     failure must not lose the sparse reconstruction world.
+
+    RGB-D priority (P1.4): when the capture carries real device depth
+    sidecars (16-bit PNG per Decision 020), THOSE are unprojected
+    directly -- device-metric, no per-view alignment approximation --
+    and the MiDaS relative-depth path is not run for matched frames.
+    Sidecar depth is coherent with the reconstruction only when the
+    world is METRIC-anchored (device meters must not be mixed into a
+    unit-less model frame); otherwise the sidecar path reports an
+    honest skip and MiDaS handling applies as before.
     """
+    # ---- RGB-D sidecar path first (real sensor depth beats estimation) ----
+    sidecar_facts = _sidecar_depth_stage(result, evidence_items, options, scale_state)
+    if sidecar_facts is not None:
+        return sidecar_facts
+
     if options.depth_model is None:
         return {"status": "skipped", "note": "disabled (depth_model=None)"}, []
 
@@ -692,3 +716,210 @@ def _mesh_stage(result, world, options, scale_state: str):
         "artifact_sha256": data_hash,
         "outlier_filter": outlier_facts,
     }
+
+def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
+    """RGB-D priority leg of the depth stage (P1.4).
+
+    Parse the capture's 16-bit PNG depth sidecars (Decision 020) and
+    unproject them directly as device-metric depth. Returns None when
+    the run carries no sidecar depth at all (the caller then falls
+    through to the MiDaS path unchanged); returns a facts dict (with
+    no dense points added) when sidecars exist but cannot honestly be
+    used, so the skip is visible in the report.
+
+    Rules:
+      - Device meters never mix into a RELATIVE/UNKNOWN world: the
+        scale gate refuses with the reason rather than inventing a
+        conversion.
+      - Frames match evidence items by stem (frame_0001.png <->
+        img_0001); unmatched frames and frames without a registered
+        camera are counted, not silently dropped.
+      - Unprojection runs through the same PinholeCamera path as the
+        MiDaS leg, producing 'depth-'-prefixed track ids so the mesh
+        stage's envelope filter treats sidecar and estimated depth
+        identically.
+      - Never raises: a DepthFrameError/SensorParseError from one bad
+        sidecar is recorded as a failed frame; the stage stays an
+        enhancement that cannot lose the sparse world.
+    """
+    # Locate the capture's depth sidecars through the evidence items'
+    # source URIs (the dataset loader records file:///.../images/x.jpg,
+    # so the dataset root is two levels up from each image).
+    dataset_dirs = set()
+    for item in evidence_items:
+        uri = item.source_uri or ""
+        if not uri.startswith("file:"):
+            continue
+        from urllib.parse import urlparse
+        from urllib.request import url2pathname
+
+        # url2pathname (not bare urlparse.path) is what makes Windows
+        # file URIs work: file:///C:/... -> C:\...
+        images_dir = Path(url2pathname(urlparse(uri).path)).parent
+        if images_dir.name.lower() in {"images", "photos", "rgb"}:
+            dataset_dirs.add(images_dir.parent)
+    dataset_dirs = sorted(dataset_dirs)
+    if not dataset_dirs:
+        return None
+
+    from evidence.depth_frames import (
+        DepthFrameError,
+        DepthScaleUnavailable,
+        DepthSidecarManifest,
+        parse_depth_frames,
+    )
+
+    frames_by_evidence = {}
+    sidecar_count = 0
+    parse_errors = []
+    for ds_dir in dataset_dirs:
+        depth_dir = ds_dir / "depth"
+        if not depth_dir.is_dir():
+            continue
+        depth_files = sorted(
+            str(p) for p in depth_dir.glob("*.png") if not p.name.startswith(".")
+        )
+        if not depth_files:
+            continue
+        sidecar_count += len(depth_files)
+        manifest = None
+        manifest_path = depth_dir / "manifest.json"
+        if manifest_path.is_file():
+            try:
+                manifest = DepthSidecarManifest.load(str(manifest_path))
+            except DepthFrameError as exc:
+                parse_errors.append(f"manifest: {exc}")
+                continue
+        if manifest is None:
+            parse_errors.append(
+                f"{manifest_path}: no depth/manifest.json -- depth_scale is "
+                "required (raw 16-bit values are never assumed to be meters)"
+            )
+            continue
+        try:
+            frames = parse_depth_frames(depth_files, manifest=manifest)
+        except (DepthFrameError, DepthScaleUnavailable, OSError) as exc:
+            parse_errors.append(str(exc))
+            continue
+        for frame in frames:
+            frames_by_evidence[frame.frame_id] = frame
+
+    if sidecar_count == 0:
+        return None
+
+    if not frames_by_evidence:
+        return {
+            "status": "failed",
+            "source": "sidecar",
+            "sidecar_files": sidecar_count,
+            "frames_parsed": 0,
+            "dense_points": 0,
+            "errors": parse_errors,
+            "note": "depth sidecars exist but none parsed -- see errors",
+        }, []
+
+    if options.intrinsics is None:
+        return {
+            "status": "skipped",
+            "source": "sidecar",
+            "sidecar_files": sidecar_count,
+            "note": "no trusted intrinsics (options.intrinsics) -- sidecar "
+            "unprojection needs a camera model; refusing to guess one",
+        }, []
+
+    fx, fy, cx, cy = options.intrinsics
+    width, height = options.image_size
+    from perception.depth.interface import DepthMap
+    from reconstruction.calibration.camera import CameraIntrinsics, camera_from_pose
+    from reconstruction.depth_to_points import depth_map_to_points
+
+    intrinsics = CameraIntrinsics(
+        fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height
+    )
+
+    # Scale coherence gate: sidecar depth is in meters. Unprojecting it
+    # into a unit-less model frame would invent scale (exactly what the
+    # depth_to_points contract forbids), so it only runs when the run
+    # is METRIC-anchored. The reconstruction result has been rescaled
+    # in place since the metric-branch fix (result = scaled.result).
+    if scale_state != ScaleState.METRIC:
+        return {
+            "status": "skipped",
+            "source": "sidecar",
+            "sidecar_files": sidecar_count,
+            "frames_parsed": len(frames_by_evidence),
+            "note": (
+                f"world scale is {scale_state!r} -- device-metric sidecar "
+                "depth cannot be unprojected into a non-metric frame "
+                "without inventing scale; anchor metric scale first"
+            ),
+        }, []
+
+    poses_by_id = {pose.evidence_id: pose for pose in result.camera_poses}
+    unmatched_frames = sorted(
+        fid for fid in frames_by_evidence if fid not in poses_by_id
+    )
+    matched = [
+        (fid, frames_by_evidence[fid])
+        for fid in sorted(frames_by_evidence)
+        if fid in poses_by_id
+    ]
+
+    # Convert DepthFrame (raw ints + scale) to DepthMap (metric floats).
+    # DepthMap's values are list-of-rows of floats; invalid pixels are
+    # 0.0 and skipped downstream by the existing non-positive guard.
+    metric_maps = []
+    for fid, frame in matched:
+        if (frame.width, frame.height) != (width, height):
+            parse_errors.append(
+                f"{frame.source_path}: dimensions {frame.width}x{frame.height} "
+                f"do not match image_size {width}x{height} -- skipped"
+            )
+            continue
+        values = [
+            [
+                (float(v) * frame.depth_scale) if v != frame.invalid_value else 0.0
+                for v in row
+            ]
+            for row in frame.raw
+        ]
+        metric_maps.append(
+            DepthMap(
+                evidence_id=fid,
+                width=frame.width,
+                height=frame.height,
+                values=values,
+                unit="meters",
+                uncertainty=frame.uncertainty,
+            )
+        )
+
+    dense: List = []
+    failed_views = 0
+    for dm in metric_maps:
+        camera = camera_from_pose(intrinsics, poses_by_id[dm.evidence_id])
+        try:
+            dense.extend(depth_map_to_points(dm, camera, stride=options.depth_stride))
+        except Exception as exc:  # noqa: BLE001 -- per-view isolation
+            failed_views += 1
+            parse_errors.append(f"{dm.evidence_id}: unprojection failed: {exc}")
+
+    result.points.extend(dense)
+    return {
+        "status": "ran",
+        "source": "sidecar",
+        "sidecar_files": sidecar_count,
+        "frames_parsed": len(frames_by_evidence),
+        "frames_matched": len(metric_maps),
+        "frames_unmatched": len(unmatched_frames),
+        "unmatched_frame_ids": unmatched_frames,
+        "frames_dimension_mismatch": sum(1 for e in parse_errors if "do not match image_size" in e),
+        "failed_views": failed_views,
+        "dense_points": len(dense),
+        "stride": options.depth_stride,
+        "errors": parse_errors,
+        "note": (
+            "device-metric depth from 16-bit PNG sidecars unprojected "
+            "directly (Decision 020); no per-view scale alignment needed"
+        ),
+    }, metric_maps

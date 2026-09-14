@@ -79,6 +79,7 @@ _CUBE_INDICES: list[int] = [
 
 _COMPONENT_TYPE_FLOAT = 5126
 _COMPONENT_TYPE_USHORT = 5123
+_COMPONENT_TYPE_UINT = 5125
 
 
 #: PLANE carries a real inlier AABB (evidence/promote_planes.py always
@@ -315,12 +316,16 @@ def _real_triangles_mesh(
     origin: "tuple[float, float, float]",
 ) -> dict:
     """A real glTF TRIANGLES primitive from a reconstructed mesh,
-    translated into the entity's local space."""
+    translated into the entity's local space. Index width follows the
+    vertex count: uint16 up to 65535 vertices, uint32 beyond (a real
+    indoor Poisson mesh reached 240k vertices -- uint16 overflowed)."""
     local = [(x - origin[0], y - origin[1], z - origin[2]) for x, y, z in vertices]
     position_bytes = b"".join(struct.pack("<fff", *v) for v in local)
+    use_uint32 = len(local) > 0xFFFF
+    index_fmt = "<I" if use_uint32 else "<H"
     index_bytes = b"".join(
-        struct.pack("<H", i) for f in faces for i in f
-    )  # uint16: fine for the ~50-100k vertices an indoor Poisson mesh has
+        struct.pack(index_fmt, i) for f in faces for i in f
+    )
     xs, ys, zs = [v[0] for v in local], [v[1] for v in local], [v[2] for v in local]
     return {
         "position_bytes": position_bytes,
@@ -333,7 +338,9 @@ def _real_triangles_mesh(
             "max": [max(xs), max(ys), max(zs)],
         },
         "index_accessor": {
-            "componentType": _COMPONENT_TYPE_USHORT,
+            "componentType": (
+                _COMPONENT_TYPE_UINT if use_uint32 else _COMPONENT_TYPE_USHORT
+            ),
             "count": len(faces) * 3,
             "type": "SCALAR",
         },

@@ -290,6 +290,55 @@ class MultiSourceSession:
         """Sources in the order they were added -- deterministic."""
         return [self._sources[sid] for sid in self._source_order]
 
+    def sensor_streams(self, source_id: str, component: str):
+        """Parse a source's recorded sidecar files for one component
+        ("imu"/"gps"/"telemetry") into real evidence.sensors.SensorStream
+        objects -- NOT just the file-manifest ``SourceRecord.components``
+        already gives you. Parses on demand (not cached, not stored on
+        the record/serialized) rather than eagerly during add_source(),
+        so a directory holding non-JSONL sidecar files (a vendor's raw
+        binary log, say) never fails an otherwise-successful import;
+        the caller who actually wants the parsed samples asks for them
+        and gets an honest SensorParseError only then.
+
+        Returns [] if the source has no recorded files for that
+        component (nothing to parse, not an error). Raises KeyError if
+        source_id is unknown, ValueError if `component` has no
+        registered parser (see evidence.sensors.PARSERS_BY_COMPONENT --
+        "calibration" is not registered here; use calibrations()).
+        """
+        from evidence.sensors import parse_component_streams
+
+        record = self._sources[source_id]
+        relative_paths = record.components.get(component, [])
+        if not relative_paths:
+            return []
+        absolute_paths = self._absolute_component_paths(record, relative_paths)
+        return parse_component_streams(absolute_paths, component)
+
+    def calibrations(self, source_id: str):
+        """Parse a source's recorded "calibration" sidecar files into
+        real evidence.sensors.CalibrationRecord objects. Separate from
+        sensor_streams() because a calibration file parses to ONE
+        record per file, not a SensorStream of time-ordered samples.
+        Returns [] if the source has no recorded calibration files.
+        """
+        from evidence.sensors import parse_component_calibrations
+
+        record = self._sources[source_id]
+        relative_paths = record.components.get(CaptureComponent.CALIBRATION.value, [])
+        if not relative_paths:
+            return []
+        absolute_paths = self._absolute_component_paths(record, relative_paths)
+        return parse_component_calibrations(absolute_paths)
+
+    @staticmethod
+    def _absolute_component_paths(record: "SourceRecord", relative_paths: List[str]) -> List[str]:
+        return [
+            os.path.join(record.original_path, rel.replace("/", os.sep))
+            for rel in relative_paths
+        ]
+
     def evidence_summary(self) -> dict:
         """Real, computed session-level readiness -- reuses the
         reconstruction orchestrator's own gate (MIN_IMAGE_EVIDENCE, etc.)
@@ -363,8 +412,33 @@ class MultiSourceSession:
 
         source_id = f"src-{len(self._source_order):04d}-{content_hash[:12]}"
         source_type = _source_type_of(path)
+        # Detected once here and threaded into every SourceRecord branch
+        # below -- previously _source_type_of() computed this same dict
+        # internally (to decide DATASET vs *_CAPTURE) and discarded it,
+        # so SourceRecord.components stayed {} forever despite the field
+        # existing on the dataclass: sidecar files (imu/gps/depth/...)
+        # were detected for classification purposes but never actually
+        # recorded anywhere a caller could resolve them from, i.e.
+        # exactly "recognizing imu/ is not the same as ingesting it".
+        detected_components = (
+            {c.value: list(p) for c, p in _detect_composite_components(path).items()}
+            if os.path.isdir(path) else {}
+        )
+        # Identity: the default EvidenceSource uses the SAME source_id as
+        # the SourceRecord it belongs to, not a separate basename-derived
+        # id -- every EvidenceAsset produced from this add_source() call
+        # embeds this EvidenceSource, so its source.source_id must be
+        # joinable back to SourceRecord.source_id without a second lookup
+        # table. A basename-derived id ("disk:<basename>") was both
+        # disconnected from the record's own id AND collision-prone
+        # (two different folders both named "photos" would produce the
+        # same id); source_id is unique per add_source call by
+        # construction (index + content hash) and IS the record's own
+        # identity. Callers who pass an explicit `source` keep full
+        # control of its id -- this default only applies when none was
+        # given.
         use_source = source or EvidenceSource(
-            source_id=f"disk:{os.path.basename(os.path.normpath(path))}",
+            source_id=source_id,
             platform="filesystem",
             device="local disk",
         )
@@ -384,11 +458,13 @@ class MultiSourceSession:
             record = SourceRecord(
                 source_id=source_id, original_path=path, source_type=source_type,
                 content_hash=content_hash, status=SourceStatus.UNSUPPORTED, error=str(exc),
+                components=detected_components,
             )
         except (CorruptEvidenceError, ImporterCapabilityError) as exc:
             record = SourceRecord(
                 source_id=source_id, original_path=path, source_type=source_type,
                 content_hash=content_hash, status=SourceStatus.FAILED, error=str(exc),
+                components=detected_components,
             )
         else:
             self._package = builder.build(package_id="")
@@ -397,6 +473,7 @@ class MultiSourceSession:
                 content_hash=content_hash, status=SourceStatus.INGESTED,
                 asset_ids=[a.asset_id for a in report.imported],
                 unhandled_paths=list(report.unhandled_paths),
+                components=detected_components,
             )
 
         self._sources[source_id] = record

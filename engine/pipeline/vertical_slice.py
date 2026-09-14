@@ -499,8 +499,20 @@ def _mesh_stage(result, world, options, scale_state: str):
     metricized depth points): one owner of geometry state. Skips
     honestly -- with an explicit status and reason -- when disabled,
     when the world ended up RELATIVE (meshing unit-less points would
-    silently claim meters), or when COLMAP/its poisson_mesher is
-    unavailable. Never fabricates a fallback mesh.
+    silently claim meters), when there are too few fused points, or
+    when COLMAP/its poisson_mesher is unavailable. Never fabricates a
+    fallback mesh.
+
+    Gate order (deliberate, environment-independence matters):
+    disabled? -> artifact_store? -> metric? -> POINT COUNT -> meshing
+    deps importable? -> COLMAP/poisson_mesher capable? -> execution.
+    The point-count gate runs BEFORE the COLMAP capability probe: a
+    too-small cloud is a fact about the evidence alone, and checking it
+    first means the skip reason is the same on every machine regardless
+    of whether COLMAP happens to be installed. (Previously the COLMAP
+    probe ran first, so a machine WITH COLMAP installed silently masked
+    this ordering -- it fell through to the same "too few" skip either
+    way -- while a machine WITHOUT COLMAP would report the wrong reason.)
     """
     if not options.mesh_enabled:
         return {"status": "skipped", "note": "disabled (mesh_enabled=False)"}
@@ -515,6 +527,24 @@ def _mesh_stage(result, world, options, scale_state: str):
             "status": "skipped",
             "note": "world is not METRIC-scale -- meshing unit-less points "
             "would silently claim meters",
+        }
+
+    # Input quantity/quality gate BEFORE preprocess viability and backend
+    # capability: a too-small cloud is a fact about the evidence, knowable
+    # immediately, and independent of whether meshing deps or COLMAP happen
+    # to be installed on this machine. Checking backend capability first
+    # made the diagnostic (and observed test behavior) depend on which
+    # machine ran it -- an environment WITH COLMAP silently masked this
+    # ordering bug because it fell through to the same "too few" skip
+    # either way; an environment WITHOUT COLMAP would report the wrong
+    # reason ("COLMAP unavailable") even when the real, environment-
+    # independent reason is "not enough points."
+    points = [tuple(float(c) for c in p.position) for p in result.points]
+    if len(points) < 100:
+        return {
+            "status": "skipped",
+            "note": f"only {len(points)} fused points -- too few for "
+            "surface reconstruction",
         }
 
     try:
@@ -545,13 +575,6 @@ def _mesh_stage(result, world, options, scale_state: str):
             "poisson_mesher (capability probe failed)",
         }
 
-    points = [tuple(float(c) for c in p.position) for p in result.points]
-    if len(points) < 100:
-        return {
-            "status": "skipped",
-            "note": f"only {len(points)} fused points -- too few for "
-            "surface reconstruction",
-        }
     centers = [
         tuple(float(c) for c in pose.position) for pose in result.camera_poses
     ]

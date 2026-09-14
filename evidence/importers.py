@@ -50,6 +50,7 @@ LLM-free; no clocks; no RNG (dhash thresholds are pure integer math).
 
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import struct
@@ -653,6 +654,47 @@ def _import_video(
         )
 
 
+def _default_source_id_for_file(path: str) -> str:
+    """Content-hash identity for a single file, used ONLY as the
+    fallback EvidenceSource.source_id when the caller supplies none --
+    never filename-derived (a basename tells you nothing about whether
+    two differently-named files are the same physical capture, and two
+    same-named files from different folders would otherwise collide).
+    """
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            hasher.update(chunk)
+    return f"file:{hasher.hexdigest()[:16]}"
+
+
+def _default_source_id_for_folder(folder: str, paths: Sequence[str]) -> str:
+    """Fallback EvidenceSource.source_id for a whole-folder import with
+    no caller-supplied source: a deterministic content fingerprint over
+    every file's (relative path, sha256) pair -- the same guarantee
+    evidence/multi_source.py's `_content_hash_of_path` gives a
+    SourceRecord, so two folders sharing a name (or even identical file
+    NAMES) but different bytes never collide, and copying the exact
+    same tree to a new location still produces the same id. Costs one
+    extra read pass over the folder's bytes (this fallback only runs
+    when the caller supplied no `source`, i.e. the plain `reality
+    ingest <folder>` CLI path with no override) -- accepted here
+    because correct identity matters more than saving one read on a
+    path that already isn't the hot loop.
+    """
+    entries: List[str] = []
+    for path in paths:
+        rel = os.path.relpath(path, folder).replace(os.sep, "/")
+        hasher = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                hasher.update(chunk)
+        entries.append(f"{rel}:{hasher.hexdigest()}")
+    entries.sort()
+    digest = hashlib.sha256("|".join(entries).encode("utf-8")).hexdigest()
+    return f"folder:{digest[:16]}"
+
+
 def import_file(
     builder: DeterministicPackageBuilder,
     path: str,
@@ -675,7 +717,7 @@ def import_file(
         from evidence.packages import EvidenceSource
 
         source = EvidenceSource(
-            source_id=f"disk:{os.path.basename(path)}",
+            source_id=_default_source_id_for_file(path),
             platform="filesystem",
             device="local disk",
         )
@@ -729,22 +771,26 @@ def import_folder(
             paths.append(os.path.join(root, name))
     paths.sort()
 
+    default_source = None
+    if source is None:
+        from evidence.packages import EvidenceSource
+
+        # Computed ONCE from the full (sorted) file listing -- one
+        # source identity per import_folder() call, not recomputed (and
+        # not re-collided-with a same-named folder elsewhere) per file.
+        default_source = EvidenceSource(
+            source_id=_default_source_id_for_folder(folder, paths),
+            platform="filesystem",
+            device="local disk",
+        )
+
     pixel_hashes: Dict[str, int] = {}
     for path in paths:
         extension = _extension_of(path)
         if extension not in _KNOWN_EXTS:
             report.unhandled_paths.append(path)
             continue
-        if source is not None:
-            use_source = source
-        else:
-            from evidence.packages import EvidenceSource
-
-            use_source = EvidenceSource(
-                source_id=f"disk:{os.path.basename(folder.rstrip('/\\')) or 'capture'}",
-                platform="filesystem",
-                device="local disk",
-            )
+        use_source = source if source is not None else default_source
         if extension in _PHOTO_EXTS:
             _import_photo(builder, use_source, path, report, pixel_hashes)
         elif extension in _LAS_EXTS:

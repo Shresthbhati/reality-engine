@@ -367,6 +367,30 @@ class TestFolderImport:
         for asset in package.all_assets():
             assert asset.source.source_id == "drone-01"
 
+    def test_default_source_id_is_not_filename_derived(self, tmp_path):
+        """Identity: two files with the SAME basename but DIFFERENT
+        content must get different default source ids (content-hash
+        identity), and two folders with the SAME name but different
+        parents/content must not silently collide on a bare basename
+        like "disk:capture" -- the exact failure mode a plain
+        `os.path.basename()`-derived id had before this fix."""
+        parent_a = tmp_path / "site_a"
+        parent_b = tmp_path / "site_b"
+        (parent_a / "capture").mkdir(parents=True)
+        (parent_b / "capture").mkdir(parents=True)
+        _save_photo(str(parent_a / "capture" / "img.jpg"), _exif(), color=(10, 20, 30))
+        _save_photo(str(parent_b / "capture" / "img.jpg"), _exif(), color=(200, 210, 220))
+
+        builder_a = DeterministicPackageBuilder(seed="a")
+        import_folder(builder_a, str(parent_a / "capture"))
+        builder_b = DeterministicPackageBuilder(seed="b")
+        import_folder(builder_b, str(parent_b / "capture"))
+
+        source_id_a = builder_a.build().all_assets()[0].source.source_id
+        source_id_b = builder_b.build().all_assets()[0].source.source_id
+        assert source_id_a != source_id_b
+        assert not source_id_a.startswith("disk:")
+
     def test_import_file_returns_the_video_asset_for_video(self, capture_folder):
         builder = DeterministicPackageBuilder(seed="v")
         video_path = str(capture_folder / "clip.avi")

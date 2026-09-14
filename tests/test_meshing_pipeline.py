@@ -366,6 +366,35 @@ class TestMeshStage:
         assert facts["status"] == "skipped"
         assert "too few" in facts["note"]
 
+    def test_too_few_points_skips_before_the_colmap_probe(self, monkeypatch):
+        """Regression for the mesh-stage ordering bug: the point-count
+        gate must run BEFORE poisson_mesher_available() is even called,
+        so the skip reason is "too few points" on every machine -- not
+        "COLMAP unavailable" on a machine without COLMAP, and not a
+        pass that only worked by accident on a machine WITH COLMAP
+        (the prior ordering made this test's outcome depend on whether
+        COLMAP happened to be installed where it ran)."""
+        import engine.pipeline.vertical_slice as vs
+        from engine.pipeline.vertical_slice import VerticalSliceOptions
+        from world_ir.artifact_store import MemoryArtifactStore
+
+        probe_called = []
+        monkeypatch.setattr(
+            "reconstruction.meshing.surface.poisson_mesher_available",
+            lambda binary: (probe_called.append(binary) or False),
+        )
+        world = _metric_world()
+        options = VerticalSliceOptions(artifact_store=MemoryArtifactStore())
+        facts = vs._mesh_stage(
+            _fake_result(_plane_cloud(50), [(0, 0, 2)]), world, options, "metric"
+        )
+        assert facts["status"] == "skipped"
+        assert "too few" in facts["note"]
+        assert probe_called == [], (
+            "poisson_mesher_available was called despite too few points -- "
+            "the capability probe must not run before the point-count gate"
+        )
+
 
 # ---------------------------------------------------------------- exporter
 

@@ -37,6 +37,25 @@ class TestSingleSource:
         assert len(record.asset_ids) == 1
         assert len(session.package.all_assets()) == 1
 
+    def test_default_evidence_source_id_matches_the_source_record_id(self, tmp_path):
+        """Identity: an EvidenceAsset produced by add_source() must embed
+        an EvidenceSource whose source_id equals the owning
+        SourceRecord.source_id -- one canonical id, joinable in both
+        directions, not a separate basename-derived id ("disk:<name>")
+        that silently diverges from the record's own src-NNNN-<hash>
+        identity for the same physical source."""
+        photo = tmp_path / "a.jpg"
+        photo.write_bytes(_jpeg())
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(photo))
+
+        assert record.asset_ids
+        assets_by_id = {a.id: a for a in session.package.all_assets()}
+        for asset_id in record.asset_ids:
+            asset = assets_by_id[asset_id]
+            assert asset.source.source_id == record.source_id
+
     def test_add_unknown_extension_is_unsupported_not_raised(self, tmp_path):
         junk = tmp_path / "notes.txt"
         junk.write_text("hello")

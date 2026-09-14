@@ -249,7 +249,7 @@ def vertical_slice(
     )
 
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
-    mesh_facts = _mesh_stage(result, world, options)
+    mesh_facts = _mesh_stage(result, world, options, scale_state)
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
@@ -487,9 +487,13 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     }
 
 
-def _mesh_stage(result, world, options):
+def _mesh_stage(result, world, options, scale_state: str):
     """Stage 3.6: fused metric points -> oriented -> Poisson mesh ->
     real MESH artifact -> WorldIR geometry + entity (P0.11-P0.13).
+
+    `scale_state` is passed in from the scale-anchoring stage (the single
+    owner of that fact) -- reading it from world.metadata here would be a
+    temporal lie: stage 4 writes that block after this stage runs.
 
     The cloud is the SAME fused cloud the compiler consumed (sparse +
     metricized depth points): one owner of geometry state. Skips
@@ -506,7 +510,7 @@ def _mesh_stage(result, world, options):
             "note": "no artifact_store configured -- a mesh without a "
             "persistent artifact would be untraceable",
         }
-    if world.metadata.get("scale", {}).get("state") != "metric":  # ScaleState.METRIC.value
+    if scale_state != "metric":  # ScaleState.METRIC.value
         return {
             "status": "skipped",
             "note": "world is not METRIC-scale -- meshing unit-less points "

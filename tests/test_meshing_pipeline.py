@@ -238,7 +238,7 @@ class TestMeshStage:
         defaults.update(overrides)
         return VerticalSliceOptions(**defaults)
 
-    def _stage(self, world, result, options, monkeypatch, mesh=None):
+    def _stage(self, world, result, options, monkeypatch, mesh=None, scale_state="metric"):
         import engine.pipeline.vertical_slice as vs
         from reconstruction.meshing import MeshData as MD
 
@@ -252,7 +252,7 @@ class TestMeshStage:
             "reconstruction.meshing.surface.poisson_mesher_available",
             lambda binary: True,
         )
-        return vs._mesh_stage(result, world, options)
+        return vs._mesh_stage(result, world, options, scale_state)
 
     def test_disabled_skips(self):
         import engine.pipeline.vertical_slice as vs
@@ -261,7 +261,7 @@ class TestMeshStage:
         world = _metric_world()
         options = VerticalSliceOptions(mesh_enabled=False)
         facts = vs._mesh_stage(
-            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options
+            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options, "metric"
         )
         assert facts["status"] == "skipped"
         assert "disabled" in facts["note"]
@@ -273,7 +273,7 @@ class TestMeshStage:
         world = _metric_world()
         options = VerticalSliceOptions(artifact_store=None)
         facts = vs._mesh_stage(
-            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options
+            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options, "metric"
         )
         assert facts["status"] == "skipped"
         assert "artifact_store" in facts["note"]
@@ -284,13 +284,30 @@ class TestMeshStage:
         from world_ir.artifact_store import MemoryArtifactStore
 
         world = _metric_world()
-        world.metadata["scale"]["state"] = "relative"
         options = VerticalSliceOptions(artifact_store=MemoryArtifactStore())
         facts = vs._mesh_stage(
-            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options
+            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options, "relative"
         )
         assert facts["status"] == "skipped"
-        assert "METRIC" in facts["note"].upper() or "metric" in facts["note"]
+        assert "metric" in facts["note"].lower()
+
+    def test_unknown_scale_skips(self):
+        """The stage-4-metadata ordering bug: _mesh_stage runs BEFORE
+        world.metadata['scale'] is written, so a metadata-based gate
+        would always skip. The gate must use the passed-in scale_state
+        (the anchoring stage's fact), not the world's metadata dict."""
+        import engine.pipeline.vertical_slice as vs
+        from engine.pipeline.vertical_slice import VerticalSliceOptions
+        from world_ir.artifact_store import MemoryArtifactStore
+
+        world = _metric_world()
+        world.metadata.pop("scale", None)  # exactly the pre-stage-4 state
+        options = VerticalSliceOptions(artifact_store=MemoryArtifactStore())
+        facts = vs._mesh_stage(
+            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options, "metric"
+        )
+        # metric scale passed explicitly: the stage must NOT skip on scale
+        assert facts["status"] != "skipped" or "metric" not in facts.get("note", "")
 
     def test_unavailable_colmap_skips_honestly(self, monkeypatch):
         import engine.pipeline.vertical_slice as vs
@@ -303,7 +320,7 @@ class TestMeshStage:
             lambda binary: False,
         )
         facts = vs._mesh_stage(
-            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options
+            _fake_result(_plane_cloud(200), [(0, 0, 2)]), world, options, "metric"
         )
         assert facts["status"] == "skipped"
         assert "poisson_mesher" in facts["note"]
@@ -316,7 +333,7 @@ class TestMeshStage:
         world = _metric_world()
         options = self._options()
         result = _fake_result(_plane_cloud(3000), [(0, 0, 2)])
-        facts = self._stage(world, result, options, monkeypatch)
+        facts = self._stage(world, result, options, monkeypatch, scale_state="metric")
 
         assert facts["status"] == "ran"
         assert facts["vertices"] == len(PYRAMID_V)
@@ -339,7 +356,7 @@ class TestMeshStage:
         world = _metric_world()
         options = VerticalSliceOptions(artifact_store=MemoryArtifactStore())
         facts = vs._mesh_stage(
-            _fake_result(_plane_cloud(50), [(0, 0, 2)]), world, options
+            _fake_result(_plane_cloud(50), [(0, 0, 2)]), world, options, "metric"
         )
         assert facts["status"] == "skipped"
         assert "too few" in facts["note"]

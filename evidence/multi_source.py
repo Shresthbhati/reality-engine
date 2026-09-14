@@ -67,6 +67,7 @@ from evidence.packages import (
     EvidencePackage,
     EvidenceSource,
 )
+from evidence.session import ProcessingRecord
 
 __all__ = [
     "SourceStatus",
@@ -338,12 +339,57 @@ class MultiSourceSession:
             builder._seen_content[asset.sha256] = asset.id
         return builder
 
+    def _ingest_composite(
+        self,
+        builder: DeterministicPackageBuilder,
+        path: str,
+        use_source: EvidenceSource,
+        frame_strategy: Optional[IFrameSelectionStrategy],
+    ):
+        """Ingest a detected composite capture folder.
+
+        Visual components (rgb/video subfolders) go through the SAME
+        import_folder() every other folder source uses. Sidecar
+        components (depth/imu/gps/calibration/telemetry) have no real
+        parser in this repo, so their files are recorded as a manifest
+        (relative path only, real files on disk) -- never turned into
+        fabricated evidence assets.
+
+        Returns (merged_report, components, asset_ids_by_component) --
+        the third value lets the caller tag each visual asset with its
+        component AFTER the package is built (record_processing needs a
+        built EvidencePackage, which does not exist yet at this point).
+        """
+        detected = _detect_composite_components(path)
+        merged_report = FolderImportReport()
+        components: Dict[str, List[str]] = {}
+        asset_ids_by_component: Dict[str, List[str]] = {}
+
+        for component, relative_paths in sorted(detected.items(), key=lambda kv: kv[0].value):
+            components[component.value] = list(relative_paths)
+            if component not in _VISUAL_COMPONENTS:
+                continue
+            component_dir = os.path.join(path, relative_paths[0].split("/")[0])
+            before_ids = {a.asset_id for a in merged_report.imported}
+            sub_report = import_folder(
+                builder, component_dir, source=use_source, frame_strategy=frame_strategy,
+            )
+            new_assets = [a for a in sub_report.imported if a.asset_id not in before_ids]
+            merged_report.imported.extend(new_assets)
+            merged_report.duplicates_skipped.extend(sub_report.duplicates_skipped)
+            merged_report.near_duplicates_marked.extend(sub_report.near_duplicates_marked)
+            merged_report.unhandled_paths.extend(sub_report.unhandled_paths)
+            asset_ids_by_component[component.value] = [a.asset_id for a in new_assets]
+
+        return merged_report, components, asset_ids_by_component
+
     def add_source(
         self,
         path: str,
         *,
         source: Optional[EvidenceSource] = None,
         frame_strategy: Optional[IFrameSelectionStrategy] = None,
+        capture_type: Optional[str] = None,
     ) -> SourceRecord:
         """Ingest one file or directory into the session.
 
@@ -352,6 +398,12 @@ class MultiSourceSession:
         in this session is a no-op (ALREADY_INGESTED, existing record
         returned unchanged); the package is only touched on genuinely
         new content.
+
+        `capture_type` ("phone" | "drone" | None) only affects a
+        directory that `_detect_composite_components` recognizes as a
+        composite acquisition (>=1 visual + >=1 sidecar component
+        subfolder); it is ignored for plain files and non-composite
+        folders, which ingest exactly as before this parameter existed.
         """
         if not os.path.exists(path):
             raise FileNotFoundError(path)
@@ -362,18 +414,28 @@ class MultiSourceSession:
             return existing
 
         source_id = f"src-{len(self._source_order):04d}-{content_hash[:12]}"
-        source_type = _source_type_of(path)
+        source_type = _source_type_of(path, capture_type=capture_type)
         use_source = source or EvidenceSource(
             source_id=f"disk:{os.path.basename(os.path.normpath(path))}",
             platform="filesystem",
             device="local disk",
         )
 
+        is_composite = source_type in (
+            SourceType.PHONE_CAPTURE, SourceType.DRONE_CAPTURE, SourceType.COMPOSITE_CAPTURE,
+        )
+        components: Dict[str, List[str]] = {}
+
         record: SourceRecord
         builder = self._builder_seeded_from_package()
         builder.register_source(use_source)
+        asset_ids_by_component: Dict[str, List[str]] = {}
         try:
-            if os.path.isdir(path):
+            if is_composite:
+                report, components, asset_ids_by_component = self._ingest_composite(
+                    builder, path, use_source, frame_strategy,
+                )
+            elif os.path.isdir(path):
                 report = import_folder(builder, path, source=use_source, frame_strategy=frame_strategy)
             else:
                 report = FolderImportReport()
@@ -392,11 +454,21 @@ class MultiSourceSession:
             )
         else:
             self._package = builder.build(package_id="")
+            for component_value, asset_ids in asset_ids_by_component.items():
+                for asset_id in asset_ids:
+                    self._package.record_processing(
+                        asset_id,
+                        ProcessingRecord(
+                            operation="composite_component_tag",
+                            detail={"component": component_value, "composite_source_id": source_id},
+                        ),
+                    )
             record = SourceRecord(
                 source_id=source_id, original_path=path, source_type=source_type,
                 content_hash=content_hash, status=SourceStatus.INGESTED,
                 asset_ids=[a.asset_id for a in report.imported],
                 unhandled_paths=list(report.unhandled_paths),
+                components=components,
             )
 
         self._sources[source_id] = record

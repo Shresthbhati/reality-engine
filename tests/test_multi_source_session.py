@@ -269,6 +269,107 @@ class TestSourceRecordSerializationDefaults:
         assert restored.registration == {"status": "unknown", "transform": None}
 
 
+class TestCompositeIngestion:
+    def _phone_capture_folder(self, tmp_path):
+        folder = tmp_path / "phone_capture_001"
+        (folder / "rgb").mkdir(parents=True)
+        (folder / "rgb" / "0001.jpg").write_bytes(_jpeg(0x01))
+        (folder / "rgb" / "0002.jpg").write_bytes(_jpeg(0x02))
+        (folder / "gps").mkdir()
+        (folder / "gps" / "track.csv").write_text("lat,lon\n1.0,2.0\n")
+        (folder / "imu").mkdir()
+        (folder / "imu" / "log.csv").write_text("t,ax,ay,az\n0,0,0,9.8\n")
+        return folder
+
+    def test_composite_source_type_and_status(self, tmp_path):
+        from evidence.multi_source import SourceStatus, SourceType
+
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder), capture_type="phone")
+
+        assert record.source_type is SourceType.PHONE_CAPTURE
+        assert record.status is SourceStatus.INGESTED
+
+    def test_visual_component_files_become_real_evidence(self, tmp_path):
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder), capture_type="phone")
+
+        # 2 real JPEGs in rgb/ -> 2 real PHOTO evidence assets, same as
+        # any other folder ingest -- composite detection does not change
+        # HOW visual files are ingested, only how they're tagged after.
+        assert len(record.asset_ids) == 2
+        assert len(session.package.all_assets()) == 2
+
+    def test_visual_assets_are_tagged_with_their_component(self, tmp_path):
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+        record = session.add_source(str(folder), capture_type="phone")
+
+        for asset_id in record.asset_ids:
+            asset = session.package.assets[asset_id]
+            component_tags = [
+                p for p in asset.processing_history
+                if p.operation == "composite_component_tag"
+            ]
+            assert len(component_tags) == 1
+            assert component_tags[0].detail["component"] == "rgb"
+            assert component_tags[0].detail["composite_source_id"] == record.source_id
+
+    def test_sidecar_components_are_recorded_not_fabricated_as_evidence(self, tmp_path):
+        from evidence.multi_source import CaptureComponent
+
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder), capture_type="phone")
+
+        # gps/ and imu/ are real files on disk but NOT parseable by any
+        # importer in this repo -- they must be recorded as a manifest
+        # (path present), never turned into fake GPS/IMU evidence assets.
+        assert record.components[CaptureComponent.GPS.value] == ["gps/track.csv"]
+        assert record.components[CaptureComponent.IMU.value] == ["imu/log.csv"]
+        assert len(session.package.all_assets()) == 2  # only the 2 rgb photos
+
+    def test_registration_defaults_to_unknown_on_ingest(self, tmp_path):
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder), capture_type="phone")
+
+        assert record.registration == {"status": "unknown", "transform": None}
+
+    def test_plain_photo_folder_still_ingests_exactly_as_before(self, tmp_path):
+        # Regression guard: a non-composite folder (existing behavior)
+        # must be completely unaffected by this task's changes.
+        from evidence.multi_source import SourceType
+
+        folder = tmp_path / "photos"
+        folder.mkdir()
+        (folder / "a.jpg").write_bytes(_jpeg())
+        (folder / "b.jpg").write_bytes(_jpeg(0x02))
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder))
+
+        assert record.source_type is SourceType.DATASET
+        assert len(record.asset_ids) == 2
+        assert record.components == {}
+
+    def test_composite_folder_dedupes_on_second_add(self, tmp_path):
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        first = session.add_source(str(folder), capture_type="phone")
+        second = session.add_source(str(folder), capture_type="phone")
+
+        assert second is first
+        assert len(session.sources()) == 1
+
+
 class TestEvidenceSummary:
     def test_not_ready_below_minimum_image_evidence(self, tmp_path):
         photo = tmp_path / "a.jpg"

@@ -398,6 +398,21 @@ class SensorStream:
             "samples": [s.to_dict() for s in self.samples],
         }
 
+    def synchronized(self, clock_id: str, metadata: Optional[dict] = None):
+        """Map this stream onto the global timeline via evidence.clocks
+        (P2.1). Returns a TimeAlignment; the stream itself is NEVER
+        modified -- original sensor timestamps are retained on every
+        aligned sample (t_global = a * t_sensor + b). Metadata (shared
+        clock, declared offset/drift) comes from capture metadata; a
+        stream no backend can synchronize degrades honestly to
+        UNSYNCHRONIZED samples with reasons in the diagnostics --
+        never a silent re-stamp. Clock identity is caller-supplied
+        (the manifest/source layer will pass device identity once the
+        canonical sensor model, P1-02, carries it)."""
+        from evidence.clocks import synchronize_stream
+
+        return synchronize_stream(self, clock_id, metadata)
+
 
 def parse_imu_jsonl(path: str) -> SensorStream:
     """Parse one IMU sidecar file (JSONL, schema documented at module

@@ -20,7 +20,7 @@ Claims without execution are never acceptable.
    import succeeds" are not verification.
 2. **Tier discipline.** Unit-verified ≠ integration-verified ≠
    real-data-verified. Never collapse them into one claim.
-3. **Record actual commands and results.** `.agent/execution/STATE.md`
+3. **Record actual commands and results.** `.agent/EXECUTION_STATE.md`
    holds the last verification (command + observed result).
 4. **Environment ≠ implementation.** Misclassifying a broken torch-hub
    cache as an implementation bug (or vice versa) corrupts the backlog.
@@ -34,7 +34,7 @@ Claims without execution are never acceptable.
 ## Session discipline
 
 End every execution session by updating:
-- `.agent/execution/STATE.md` (completed, in-progress, blockers, last verification)
-- `.agent/execution/TASKS.yaml` (task statuses)
+- `.agent/EXECUTION_STATE.md` (completed, in-progress, blockers, last verification)
+- `.agent/TASKS.yaml` (task statuses)
 - [`../implementation/PENDING_IMPLEMENTATION.md`](../implementation/PENDING_IMPLEMENTATION.md)
   (status transitions with this session's evidence)

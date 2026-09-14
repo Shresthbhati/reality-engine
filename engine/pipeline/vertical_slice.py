@@ -50,6 +50,7 @@ from engine.compiler.world_compiler import (
     CompileOptions,
     compile_reconstruction_to_world,
 )
+from world_ir.artifact_store import ArtifactStore
 from evidence.session import EvidenceItem, EvidenceKind
 from reconstruction.scale import (
     ScaleAnchoringError,
@@ -97,6 +98,16 @@ class VerticalSliceOptions:
     detection_score_threshold: float = 0.5
     #: Cross-view merge distance for object hypotheses (meters).
     object_merge_distance_m: float = 0.5
+    #: Content-addressed store for real geometry artifacts: the surface
+    #: mesh (stage 3.6) and, when given, the promoted planes' inlier
+    #: point payloads. None keeps legacy behavior (no real payloads).
+    artifact_store: Optional[ArtifactStore] = None
+    #: Surface reconstruction stage: fused metric points -> triangle
+    #: mesh artifact -> WorldIR geometry (P0.11-P0.13). Disabled with
+    #: False; skipped honestly when its dependencies are unavailable.
+    mesh_enabled: bool = True
+    mesh_voxel_size_m: float = 0.02
+    mesh_poisson_depth: int = 10
 
 
 @dataclass(frozen=True)
@@ -224,7 +235,9 @@ def vertical_slice(
     depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options)
 
     # ---- stage 3: compile to validated WorldIR ----
-    compile_options = CompileOptions(seed=options.seed, up=options.up)
+    compile_options = CompileOptions(
+        seed=options.seed, up=options.up, artifact_store=options.artifact_store
+    )
     try:
         world, diagnostics = compile_reconstruction_to_world(result, compile_options)
     except Exception as exc:  # noqa: BLE001
@@ -234,6 +247,9 @@ def vertical_slice(
     perception_facts = _perception_stage(
         result, world, evidence_items, metric_depth_maps, options
     )
+
+    # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
+    mesh_facts = _mesh_stage(result, world, options)
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
@@ -252,6 +268,7 @@ def vertical_slice(
     if depth_facts is not None:
         world.metadata["depth"] = depth_facts
     world.metadata["perception"] = perception_facts
+    world.metadata["mesh"] = mesh_facts
 
     return VerticalSliceResult(
         world=world,
@@ -282,6 +299,7 @@ def vertical_slice(
             "scale_error_note": scale_error,
             "depth": depth_facts,
             "perception": perception_facts,
+            "mesh": mesh_facts,
         },
     )
 
@@ -466,4 +484,163 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             "alignment, approximate); merged by label+proximity; provenance "
             "INFERRED with per-entity evidence ids"
         ),
+    }
+
+
+def _mesh_stage(result, world, options):
+    """Stage 3.6: fused metric points -> oriented -> Poisson mesh ->
+    real MESH artifact -> WorldIR geometry + entity (P0.11-P0.13).
+
+    The cloud is the SAME fused cloud the compiler consumed (sparse +
+    metricized depth points): one owner of geometry state. Skips
+    honestly -- with an explicit status and reason -- when disabled,
+    when the world ended up RELATIVE (meshing unit-less points would
+    silently claim meters), or when COLMAP/its poisson_mesher is
+    unavailable. Never fabricates a fallback mesh.
+    """
+    if not options.mesh_enabled:
+        return {"status": "skipped", "note": "disabled (mesh_enabled=False)"}
+    if options.artifact_store is None:
+        return {
+            "status": "skipped",
+            "note": "no artifact_store configured -- a mesh without a "
+            "persistent artifact would be untraceable",
+        }
+    if world.metadata.get("scale", {}).get("state") != "metric":  # ScaleState.METRIC.value
+        return {
+            "status": "skipped",
+            "note": "world is not METRIC-scale -- meshing unit-less points "
+            "would silently claim meters",
+        }
+
+    try:
+        import numpy as _np  # noqa: F401 -- preprocess imports it; fail fast
+        from reconstruction.meshing.preprocess import (
+            estimate_oriented_normals,
+            statistical_outlier_filter,
+            voxel_downsample,
+        )
+        from reconstruction.meshing.surface import (
+            MeshingError,
+            MeshingUnavailableError,
+            poisson_mesher_available,
+            reconstruct_surface,
+        )
+    except ImportError as exc:
+        return {
+            "status": "skipped",
+            "note": f"meshing dependencies unavailable: {exc}",
+        }
+
+    colmap_binary = options.colmap_binary
+    if not poisson_mesher_available(colmap_binary):
+        return {
+            "status": "skipped",
+            "note": f"COLMAP binary {colmap_binary!r} unavailable or lacks "
+            "poisson_mesher (capability probe failed)",
+        }
+
+    points = [tuple(float(c) for c in p.position) for p in result.points]
+    if len(points) < 100:
+        return {
+            "status": "skipped",
+            "note": f"only {len(points)} fused points -- too few for "
+            "surface reconstruction",
+        }
+    centers = [
+        tuple(float(c) for c in pose.position) for pose in result.camera_poses
+    ]
+
+    try:
+        downsampled, _ = voxel_downsample(points, options.mesh_voxel_size_m)
+        kept, outlier_facts = statistical_outlier_filter(downsampled)
+        if len(kept) < 100:
+            return {
+                "status": "skipped",
+                "note": f"only {len(kept)} points after filtering -- too few",
+            }
+        normals = estimate_oriented_normals(kept, centers)
+        mesh = reconstruct_surface(
+            kept,
+            normals,
+            colmap_binary=colmap_binary,
+            depth=options.mesh_poisson_depth,
+        )
+    except (MeshingUnavailableError, MeshingError, ValueError) as exc:
+        return {"status": "failed", "note": f"{type(exc).__name__}: {exc}"}
+
+    from provenance import Provenance as _Provenance
+    from world_ir import Entity as _Entity, EntityType as _EntityType
+    from world_ir import Geometry as _Geometry, GeometryType as _GeometryType
+    from world_ir import Observation as _Observation, Vector3 as _Vector3
+    from reconstruction.meshing.mesh import mesh_summary
+
+    (mnx, mny, mnz), (mxx, mxy, mxz) = mesh.bounds()
+    data_uri, data_hash = options.artifact_store.put(mesh.to_bytes())
+    geometry = _Geometry(
+        id="geom-mesh-room",
+        type=_GeometryType.MESH,
+        lod_level=0,
+        vertex_count=len(mesh.vertices),
+        triangle_count=len(mesh.faces),
+        data_uri=data_uri,
+        data_hash=data_hash,
+        bounds_min=_Vector3(x=mnx, y=mny, z=mnz),
+        bounds_max=_Vector3(x=mxx, y=mxy, z=mxz),
+        provenance=_Provenance.RECONSTRUCTED,
+        confidence=0.6,
+        observations=[_Observation(
+            id="obs-mesh-room",
+            sensor_type="surface_reconstruction",
+            confidence=0.6,
+            metadata={
+                **mesh_summary(mesh),
+                "outlier_filter": outlier_facts,
+                "input_points_fused": len(points),
+                "input_points_meshed": len(kept),
+                "voxel_size_m": options.mesh_voxel_size_m,
+                "poisson_depth": options.mesh_poisson_depth,
+                "colmap_binary": colmap_binary,
+                "note": "screened Poisson over camera-oriented depth-fused "
+                "cloud (metric-by-alignment); trimmed surface, typically "
+                "not watertight",
+            },
+        )],
+    )
+    world.geometries[geometry.id] = geometry
+
+    cx, cy, cz = (
+        (mnx + mxx) / 2.0,
+        (mny + mxy) / 2.0,
+        (mnz + mxz) / 2.0,
+    )
+    entity = _Entity(
+        id="entity-mesh-room",
+        type=_EntityType.STRUCTURE,
+        name="Reconstructed surface mesh",
+        transform={"position": {"x": cx, "y": cy, "z": cz}},
+        geometry_ids=[geometry.id],
+        semantic_labels=["mesh"],
+        provenance=_Provenance.RECONSTRUCTED,
+        confidence=0.6,
+    )
+    world.entities[entity.id] = entity
+
+    from world_ir.validation import validate_world_ir
+    report = validate_world_ir(world)
+    if report.errors:
+        # Roll the mesh back out rather than emit an invalid world.
+        del world.entities[entity.id]
+        del world.geometries[geometry.id]
+        return {
+            "status": "failed",
+            "note": f"mesh produced an invalid world: {report.errors[:3]}",
+        }
+
+    return {
+        "status": "ran",
+        **mesh_summary(mesh),
+        "artifact_uri": data_uri,
+        "artifact_sha256": data_hash,
+        "outlier_filter": outlier_facts,
     }

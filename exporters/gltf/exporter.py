@@ -21,9 +21,10 @@ the cube exactly as before.
 What is intentionally NOT exported, and why:
   - Entities with no transform: glTF nodes need a placement; there is
     nothing to place them at, so they are skipped rather than guessed.
-  - Entities whose geometry is MESH, POINTCLOUD, or anything other than
-    BOX/PLANE: still skipped in this pass — real-data support above is
-    scoped to BOX/PLANE for now (`_EXPORTABLE_GEOMETRY_TYPES`).
+  - Entities whose geometry is POINTCLOUD (or anything else without a
+    resolvable real payload): still skipped in this pass — real-data
+    support covers BOX/PLANE (points artifact) and now MESH (real
+    triangle mesh artifact, `_EXPORTABLE_GEOMETRY_TYPES`).
   - Without an artifact_store (or for a geometry with no real payload),
     BOX/PLANE entities still get the placeholder unit cube; their real
     AABB size (`bounds_min`/`bounds_max`) is not yet used to scale it
@@ -84,7 +85,9 @@ _COMPONENT_TYPE_USHORT = 5123
 #: sets bounds_min/bounds_max), same as BOX -- both get the placeholder
 #: unit cube since neither stores real vertex data, but skipping PLANE
 #: would silently drop every promoted wall/floor/ceiling entity.
-_EXPORTABLE_GEOMETRY_TYPES = frozenset({GeometryType.BOX, GeometryType.PLANE})
+_EXPORTABLE_GEOMETRY_TYPES = frozenset(
+    {GeometryType.BOX, GeometryType.PLANE, GeometryType.MESH}
+)
 
 
 def _entity_box_geometry(world: "WorldIR", entity) -> bool:
@@ -197,22 +200,56 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
         pos = entity.transform["position"]
         mesh_index = 0  # default: shared placeholder cube
 
-        real_points = _resolve_real_points(artifact_store, geometry)
-        if real_points is not None and len(real_points) >= 1:
-            real = _real_points_mesh(real_points, (pos["x"], pos["y"], pos["z"]))
-            buffer_view_index = len(gltf["bufferViews"])
-            byte_offset = len(buffer_bytes) + len(tail_buffer)
-            tail_buffer.extend(real["buffer_bytes"])
+        real_mesh = _resolve_real_mesh(artifact_store, geometry)
+        if real_mesh is not None and real_mesh[0] and real_mesh[1]:
+            vertices, faces = real_mesh
+            tri = _real_triangles_mesh(vertices, faces, (pos["x"], pos["y"], pos["z"]))
+            base_offset = len(buffer_bytes) + len(tail_buffer)
+            pv_index = len(gltf["bufferViews"])
+            tail_buffer.extend(tri["position_bytes"])
             gltf["bufferViews"].append({
-                "buffer": 0, "byteOffset": byte_offset,
-                "byteLength": len(real["buffer_bytes"]), "target": 34962,
+                "buffer": 0, "byteOffset": base_offset,
+                "byteLength": len(tri["position_bytes"]), "target": 34962,
             })
-            accessor_index = len(gltf["accessors"])
-            gltf["accessors"].append({"bufferView": buffer_view_index, "byteOffset": 0, **real["accessor"]})
+            pos_acc = len(gltf["accessors"])
+            gltf["accessors"].append({"bufferView": pv_index, "byteOffset": 0, **tri["accessor"]})
+            base_offset = len(buffer_bytes) + len(tail_buffer)
+            iv_index = len(gltf["bufferViews"])
+            tail_buffer.extend(tri["index_bytes"])
+            gltf["bufferViews"].append({
+                "buffer": 0, "byteOffset": base_offset,
+                "byteLength": len(tri["index_bytes"]), "target": 34963,
+            })
+            idx_acc = len(gltf["accessors"])
+            gltf["accessors"].append({"bufferView": iv_index, "byteOffset": 0, **tri["index_accessor"]})
             mesh_index = len(gltf["meshes"])
             gltf["meshes"].append({
-                "primitives": [{"attributes": {"POSITION": accessor_index}, "mode": real["mode"]}]
+                "primitives": [{
+                    "attributes": {"POSITION": pos_acc},
+                    "indices": idx_acc, "mode": 4,
+                }]
             })
+            # keep the next accessor 4-byte aligned
+            tail_buffer.extend(b"\x00" * ((-len(tail_buffer)) % 4))
+        else:
+            real_points = _resolve_real_points(artifact_store, geometry)
+            if real_points is not None and len(real_points) >= 1:
+                real = _real_points_mesh(real_points, (pos["x"], pos["y"], pos["z"]))
+                buffer_view_index = len(gltf["bufferViews"])
+                byte_offset = len(buffer_bytes) + len(tail_buffer)
+                tail_buffer.extend(real["buffer_bytes"])
+                gltf["bufferViews"].append({
+                    "buffer": 0, "byteOffset": byte_offset,
+                    "byteLength": len(real["buffer_bytes"]), "target": 34962,
+                })
+                accessor_index = len(gltf["accessors"])
+                gltf["accessors"].append({"bufferView": buffer_view_index, "byteOffset": 0, **real["accessor"]})
+                mesh_index = len(gltf["meshes"])
+                gltf["meshes"].append({
+                    "primitives": [{"attributes": {"POSITION": accessor_index}, "mode": real["mode"]}]
+                })
+                # keep the next accessor 4-byte aligned
+                tail_buffer.extend(b"\x00" * ((-len(tail_buffer)) % 4))
 
         node_index = len(gltf["nodes"])
         gltf["nodes"].append(
@@ -249,6 +286,58 @@ def _resolve_real_points(artifact_store: Optional[ArtifactStore], geometry) -> O
         return list(PointCloudData.from_bytes(payload).points)
     except (ValueError, struct.error):
         return None  # not a PointCloudData payload this exporter understands
+
+
+def _resolve_real_mesh(artifact_store: Optional[ArtifactStore], geometry) -> "tuple | None":
+    """Real (vertices, faces) for a MESH-type geometry whose data_uri
+    resolves to a reconstruction/meshing MeshData payload, or None --
+    never fabricated, the caller falls back to the placeholder cube."""
+    if artifact_store is None or not geometry.data_uri:
+        return None
+    if geometry.type is not GeometryType.MESH:
+        return None
+    try:
+        payload = artifact_store.get(geometry.data_uri)
+    except ArtifactNotFoundError:
+        return None
+    from reconstruction.meshing.mesh import MeshData as _MeshData
+
+    try:
+        mesh = _MeshData.from_bytes(payload)
+    except (ValueError, struct.error):
+        return None  # not a MeshData payload this exporter understands
+    return mesh.vertices, mesh.faces
+
+
+def _real_triangles_mesh(
+    vertices: "list[tuple[float, float, float]]",
+    faces: "list[tuple[int, int, int]]",
+    origin: "tuple[float, float, float]",
+) -> dict:
+    """A real glTF TRIANGLES primitive from a reconstructed mesh,
+    translated into the entity's local space."""
+    local = [(x - origin[0], y - origin[1], z - origin[2]) for x, y, z in vertices]
+    position_bytes = b"".join(struct.pack("<fff", *v) for v in local)
+    index_bytes = b"".join(
+        struct.pack("<H", i) for f in faces for i in f
+    )  # uint16: fine for the ~50-100k vertices an indoor Poisson mesh has
+    xs, ys, zs = [v[0] for v in local], [v[1] for v in local], [v[2] for v in local]
+    return {
+        "position_bytes": position_bytes,
+        "index_bytes": index_bytes,
+        "accessor": {
+            "componentType": _COMPONENT_TYPE_FLOAT,
+            "count": len(local),
+            "type": "VEC3",
+            "min": [min(xs), min(ys), min(zs)],
+            "max": [max(xs), max(ys), max(zs)],
+        },
+        "index_accessor": {
+            "componentType": _COMPONENT_TYPE_USHORT,
+            "count": len(faces) * 3,
+            "type": "SCALAR",
+        },
+    }
 
 
 def write_gltf_file(world: "WorldIR", path: str, artifact_store: Optional[ArtifactStore] = None) -> None:

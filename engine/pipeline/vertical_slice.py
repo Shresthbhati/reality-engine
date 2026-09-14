@@ -108,6 +108,9 @@ class VerticalSliceOptions:
     mesh_enabled: bool = True
     mesh_voxel_size_m: float = 0.02
     mesh_poisson_depth: int = 10
+    #: Reconstruction backend override (tests inject a deterministic
+    #: backend; production leaves None for the real COLMAP backend).
+    reconstruction_backend: Optional[object] = None
 
 
 @dataclass(frozen=True)
@@ -180,9 +183,13 @@ def vertical_slice(
 
     # ---- stage 1: reconstruction (real COLMAP through the orchestrator) ----
     from reconstruction.orchestrator import ReconstructionOrchestrator
-    from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
 
-    backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary)
+    if options.reconstruction_backend is not None:
+        backend = options.reconstruction_backend
+    else:
+        from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
+
+        backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary)
     orchestrator = ReconstructionOrchestrator(backends=[backend])
     try:
         run = orchestrator.run(list(evidence_items))

@@ -55,6 +55,7 @@ def main() -> int:
     ap.add_argument("--worldir", type=Path, default=None)
     ap.add_argument("--points", type=Path, default=None)
     ap.add_argument("--cameras", type=Path, default=None)
+    ap.add_argument("--mesh", type=Path, default=None, help="binary PLY triangle mesh (MeshData.to_ply_bytes output)")
     ap.add_argument("--out", type=Path, default=VIEWER_DIR / "viewer.html")
     args = ap.parse_args()
 
@@ -69,6 +70,8 @@ def main() -> int:
         embed["points_ply"] = b64(args.points)
     if args.cameras:
         embed["cameras"] = b64(args.cameras)
+    if args.mesh:
+        embed["mesh_ply"] = b64(args.mesh)
 
     bootstrap = f"""
 const __srcThree = {js_literal(js_safe(three_src))};

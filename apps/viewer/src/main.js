@@ -58,6 +58,68 @@ function parsePly(bytes) {
   return data;
 }
 
+// Triangle-mesh PLY (MeshData.to_ply_bytes output): binary float xyz
+// vertices + `element face` triangle indices. Returns {positions, indices}
+// or null when the payload has no faces.
+function parseMeshPly(bytes) {
+  const head = new TextDecoder().decode(bytes.subarray(0, 4096));
+  const marker = 'end_header\n';
+  const idx = head.indexOf(marker);
+  if (idx < 0) throw new Error('PLY: end_header not found');
+  const header = head.slice(0, idx);
+  if (!/format binary_little_endian 1\.0/.test(header)) {
+    throw new Error('PLY: only binary_little_endian supported');
+  }
+  const vm = header.match(/element vertex (\d+)/);
+  const fm = header.match(/element face (\d+)/);
+  if (!vm) throw new Error('PLY: vertex count not found');
+  const nv = parseInt(vm[1], 10);
+  const nf = fm ? parseInt(fm[1], 10) : 0;
+  // stride from declared vertex property sizes (nx/ny/nz, rgb possible)
+  const sizes = { float: 4, double: 8, uchar: 1, char: 1, ushort: 2, short: 2, uint: 4, int: 4 };
+  let stride = 0;
+  let inVertex = false;
+  let countFmt = 'uchar';
+  let indexType = 'uint';
+  for (const line of header.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts[0] === 'element') { inVertex = parts[1] === 'vertex'; continue; }
+    if (!inVertex && parts[0] === 'property' && parts[1] === 'list') { countFmt = parts[2]; indexType = parts[3]; continue; }
+    if (inVertex && parts[0] === 'property' && sizes[parts[1]]) stride += sizes[parts[1]];
+  }
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let off = idx + marker.length;
+  const positions = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) {
+    const base = off + i * stride;
+    positions[i * 3] = dv.getFloat32(base, true);
+    positions[i * 3 + 1] = dv.getFloat32(base + 4, true);
+    positions[i * 3 + 2] = dv.getFloat32(base + 8, true);
+  }
+  off += nv * stride;
+  const countSize = sizes[countFmt] || 1;
+  const indexSize = sizes[indexType] || 4;
+  const indices = new Uint32Array(nf * 3);
+  let fi = 0;
+  for (let f = 0; f < nf && off + countSize <= bytes.byteLength; f++) {
+    let count;
+    if (countFmt === 'uchar') count = dv.getUint8(off);
+    else if (countFmt === 'ushort') count = dv.getUint16(off, true);
+    else count = dv.getInt32(off, true);
+    off += countSize;
+    if (count === 3 && off + indexSize * 3 <= bytes.byteLength) {
+      for (let k = 0; k < 3; k++) {
+        indices[fi++] = indexSize === 2 ? dv.getUint16(off, true) : dv.getUint32(off, true);
+        off += indexSize;
+      }
+    } else {
+      off += indexSize * count; // skip non-triangle faces honestly
+    }
+  }
+  if (fi === 0) return null;
+  return { positions, indices: indices.subarray(0, fi) };
+}
+
 async function loadArtifacts() {
   setProgress('decoding world…', 15);
   if (EMBED) {
@@ -65,6 +127,7 @@ async function loadArtifacts() {
     setProgress('decoding point cloud…', 45);
     state.points = EMBED.points_ply ? parsePly(b64ToBytes(EMBED.points_ply)) : null;
     state.cameras = EMBED.cameras ? JSON.parse(new TextDecoder().decode(b64ToBytes(EMBED.cameras))) : null;
+    state.mesh = EMBED.mesh_ply ? parseMeshPly(b64ToBytes(EMBED.mesh_ply)) : null;
   } else {
     state.world = await (await fetch('./worldir.json')).json();
     setProgress('fetching point cloud…', 45);
@@ -76,13 +139,17 @@ async function loadArtifacts() {
       const r = await fetch('./cameras.json');
       state.cameras = r.ok ? await r.json() : null;
     } catch { state.cameras = null; }
+    try {
+      const r = await fetch('./mesh.ply');
+      state.mesh = r.ok ? parseMeshPly(new Uint8Array(await r.arrayBuffer())) : null;
+    } catch { state.mesh = null; }
   }
   setProgress('building scene…', 75);
 }
 
 // --------------------------------------------------------------- scene
 let renderer, scene, cameraCtl, persp;
-const layers = { points: null, entities: null, cameras: null };
+const layers = { points: null, entities: null, cameras: null, mesh: null };
 const entityMeshes = new Map(); // entity id -> mesh
 
 const TYPE_COLORS = { floor: 0x4da3ff, wall: 0xffb84d, ceiling: 0xb28dff };
@@ -161,6 +228,17 @@ function buildScene() {
     cameraCtl.target.set(c[0], c[1], c[2]);
   } else {
     persp.position.set(4, 3, 6);
+  }
+
+  // real reconstructed surface mesh (when the run produced one)
+  if (state.mesh && state.mesh.positions.length) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(state.mesh.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(state.mesh.indices, 1));
+    layers.mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+      color: 0x8fb8d8, side: THREE.DoubleSide, transparent: true, opacity: 0.55,
+    }));
+    scene.add(layers.mesh);
   }
 
   buildEntityLayer();
@@ -387,6 +465,8 @@ function renderInspector() {
 
 function wireToolbar() {
   const toggles = [['toggle-points', 'points'], ['toggle-entities', 'entities'], ['toggle-cameras', 'cameras']];
+  // the surface mesh follows the points toggle when no dedicated toggle exists
+  if (layers.mesh) { layers.mesh.visible = state.show.points !== false; }
   for (const [btn, key] of toggles) {
     $(btn).addEventListener('change', () => {
       state.show[key] = $(btn).checked;

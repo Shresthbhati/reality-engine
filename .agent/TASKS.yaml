@@ -32,7 +32,9 @@ tasks:
 
   - id: P0-01
     name: canonical agent/project state
-    status: NOW
+    status: DONE
+    evidence: "PR #23 merged to main (54b7574); canonical files in .agent/;
+      legacy state archived with banners; suite green at merge time"
     deliverables:
       - .agent/ENGINEERING_CONSTITUTION.md
       - .agent/REALITY_ENGINE_MISSION.md
@@ -118,7 +120,7 @@ tasks:
 
   - id: P2-01
     name: clock model + time synchronization
-    status: MISSING
+    status: PARTIAL
     problem: >
       SensorStream timestamps are per-file sensor-clock values; streams
       from different devices cannot be correlated (sensors.py names
@@ -130,12 +132,29 @@ tasks:
       never overwrite). Progressive backends: shared clock, hardware
       trigger, GNSS/PPS, metadata alignment, cross-correlation,
       trajectory correlation, optimization-based alignment.
+    progress: >
+      Landed (evidence/clocks.py + SensorStream.synchronized()):
+      ClockModel/Timestamp/TimeAlignment/SynchronizedSample/
+      SynchronizationDiagnostics; t_global = a*t_sensor + b; backend
+      seam (ISynchronizationBackend + preference-ordered registry);
+      first backend (metadata_alignment: shared_clock + known offset,
+      spec preferences 1-2); original timestamps provably preserved
+      and stream untouched; honest UNSYNCHRONIZED degradation with
+      recorded backend attempts; uncertainty honesty (unknown != zero;
+      zero only by construction). Spec's evidence-to-advance list
+      SATISFIED: offset synthetic, drift synthetic, cross-stream
+      integration, rejected-sample, roundtrip tests (33 tests; suite
+      1392). Remaining for FULL: spec methods 3-6 (GNSS/PPS anchoring,
+      trigger, signal correlation, optimization) and downstream
+      consumers wiring (VIO P3, registration P4) — those land with
+      their own tasks.
     dependencies: [P1-02]
     spec: docs/future/synchronization/TIME_SYNCHRONIZATION.md
     verification:
-      - deterministic fixture: known offset/drift -> recovered within tolerance
-      - original timestamps provably preserved
-      - uncertainty propagated, not fabricated
+      - "DONE: deterministic fixture: known offset/drift -> recovered within tolerance"
+      - "DONE: original timestamps provably preserved"
+      - "DONE: uncertainty propagated, not fabricated (unknown stays unknown)"
+      - "PENDING: methods 3-6 backends (each with its own fixture)"
 
   - id: P2-02
     name: calibration/frame system unification

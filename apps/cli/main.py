@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -218,6 +220,145 @@ def cmd_reconstruct(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_test_backend():
+    """REALITY_TEST_BACKEND="module.path:ClassName" -> backend instance.
+
+    Deterministic-backend seam for offline tests of `compile`; unset in
+    production, where the real COLMAP backend is always used. Raises a
+    clear error if set but unresolvable -- never silently ignored.
+    """
+    spec = os.environ.get("REALITY_TEST_BACKEND", "").strip()
+    if not spec:
+        return None
+    module_name, _, class_name = spec.partition(":")
+    if not module_name or not class_name:
+        raise ValueError(
+            f"REALITY_TEST_BACKEND must be 'module:Class', got {spec!r}"
+        )
+    import importlib
+
+    module = importlib.import_module(module_name)
+    return getattr(module, class_name)()
+
+
+def cmd_compile(args: argparse.Namespace) -> int:
+    """One-command mapping path: capture dataset -> full vertical slice.
+
+    Runs the same pipeline as the flagship runner (SfM -> metric scale
+    -> frame canonicalization -> depth -> perception -> mesh -> WorldIR
+    -> validation gate), writes the machine-readable output set
+    (worldir.json / report.json / points.ply / mesh.ply / cameras.json
+    / artifacts/ / exports/scene.gltf), and prints the per-stage report.
+    Exit 0 on honest success OR partial-with-world; 1 when a stage
+    refuses -- the report still says why.
+    """
+    from engine.pipeline.artifacts import (
+        write_cameras_json,
+        write_exports,
+        write_mesh_ply_from_artifact,
+        write_points_ply,
+    )
+    from engine.pipeline.dataset import DatasetError, load_capture_dataset
+    from engine.pipeline.vertical_slice import (
+        VerticalSliceError,
+        VerticalSliceOptions,
+        vertical_slice,
+    )
+
+    dataset = Path(args.dataset).resolve()
+    out = Path(args.output).resolve() if args.output else dataset / "pipeline_out"
+    out.mkdir(parents=True, exist_ok=True)
+
+    try:
+        items, refs, intrinsics, image_size = load_capture_dataset(dataset)
+    except DatasetError as exc:
+        _eprint(f"dataset rejected: {exc}")
+        return 1
+
+    store = FileArtifactStore(out / "artifacts")
+    backend = _resolve_test_backend()
+    options = VerticalSliceOptions(
+        measured_baselines=refs,
+        intrinsics=intrinsics,
+        image_size=image_size,
+        colmap_binary=args.colmap_binary,
+        depth_model=None if args.no_depth else "DPT_Hybrid",
+        mesh_enabled=not args.no_mesh,
+        artifact_store=store,
+        reconstruction_backend=backend,
+    )
+
+    report: dict = {
+        "dataset": str(dataset),
+        "images_ingested": len(items),
+        "scale_references": len(refs),
+        "stages": {},
+    }
+    started = time.perf_counter()
+    try:
+        result = vertical_slice(items, options)
+    except VerticalSliceError as exc:
+        report["status"] = "FAILED"
+        report["error"] = str(exc)
+        report["runtime_s"] = round(time.perf_counter() - started, 2)
+        (out / "report.json").write_text(json.dumps(report, indent=2))
+        _eprint(f"compile failed: {exc}")
+        return 1
+
+    runtime = round(time.perf_counter() - started, 2)
+    report["status"] = (
+        "SUCCESS" if result.registration_status == "success" else "PARTIAL_SUCCESS"
+    )
+    report["runtime_s"] = runtime
+    report["stages"] = {
+        "reconstruction": {
+            "backend": result.stage_facts.get("backend"),
+            "cameras_registered": result.cameras_registered,
+            "cameras_input": result.cameras_input,
+            "registration_status": result.registration_status,
+            "points": result.points_total,
+        },
+        "scale": {
+            "state": result.scale_state,
+            "meters_per_unit": result.meters_per_unit,
+        },
+        "depth": result.stage_facts.get("depth"),
+        "perception": result.stage_facts.get("perception"),
+        "mesh": result.stage_facts.get("mesh"),
+        "compile": {
+            "entities": len(result.world.entities),
+            "measurements": result.compile.measurements_count,
+            "relationships": result.compile.relationships_count,
+        },
+    }
+    report["world_id"] = result.world_id
+    report["outputs"] = {
+        "world": str(out / "worldir.json"),
+        "report": str(out / "report.json"),
+        "points_ply": str(out / "points.ply"),
+        "cameras": str(out / "cameras.json"),
+        "artifacts": str(out / "artifacts"),
+        "exports": str(out / "exports" / "scene.gltf"),
+    }
+
+    world_dict = result.world.to_dict()
+    (out / "worldir.json").write_text(json.dumps(world_dict, indent=2))
+    (out / "report.json").write_text(json.dumps(report, indent=2))
+    write_points_ply(out / "points.ply", result.points)
+    write_mesh_ply_from_artifact(out, store, result.stage_facts.get("mesh"))
+    write_cameras_json(
+        out / "cameras.json", result.camera_poses, result.scale_state,
+        options.image_size,
+    )
+    exports_path = write_exports(world_dict, store, out)
+
+    print(result.summary_text())
+    print(f"world -> {out / 'worldir.json'}")
+    print(f"exports -> {exports_path}")
+    print(f"report -> {out / 'report.json'}")
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     world = _load_world(args.world)
     report = reality.validate(world)
@@ -346,6 +487,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_session_export.add_argument("session_dir")
     p_session_export.add_argument("-o", "--output", required=True)
     p_session_export.set_defaults(func=cmd_session_export_package)
+
+    p_compile = sub.add_parser(
+        "compile",
+        help="capture dataset -> full mapping pipeline -> WorldIR + artifacts + exports",
+    )
+    p_compile.add_argument("dataset", help="dataset folder with manifest.json + images/")
+    p_compile.add_argument(
+        "-o", "--output", default=None,
+        help="output directory (default: <dataset>/pipeline_out)",
+    )
+    p_compile.add_argument("--colmap-binary", default="colmap")
+    p_compile.add_argument("--no-depth", action="store_true", help="skip the depth stage")
+    p_compile.add_argument("--no-mesh", action="store_true", help="skip surface reconstruction")
+    p_compile.set_defaults(func=cmd_compile)
 
     p_recon = sub.add_parser("reconstruct", help="evidence package -> reconstruction -> compiled WorldIR")
     p_recon.add_argument("package", help="package JSON produced by `ingest`")

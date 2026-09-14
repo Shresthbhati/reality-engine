@@ -71,6 +71,7 @@ from evidence.packages import (
 __all__ = [
     "SourceStatus",
     "SourceType",
+    "CaptureComponent",
     "SourceRecord",
     "MultiSourceSession",
 ]
@@ -87,12 +88,101 @@ class SourceType(str, Enum):
     IMAGE = "image"
     VIDEO = "video"
     POINT_CLOUD = "point_cloud"
-    DATASET = "dataset"    # a directory of mixed evidence
+    DATASET = "dataset"                        # a directory of mixed, non-composite evidence
+    PHONE_CAPTURE = "phone_capture"             # composite: caller declared capture_type="phone"
+    DRONE_CAPTURE = "drone_capture"             # composite: caller declared capture_type="drone"
+    COMPOSITE_CAPTURE = "composite_capture"     # composite: capture_type not declared
     UNKNOWN = "unknown"    # unrecognized single-file extension
 
 
-def _source_type_of(path: str) -> SourceType:
+class CaptureComponent(str, Enum):
+    """One synchronized component of a composite acquisition (spec §10:
+    a phone/drone capture may bundle RGB, video, depth, IMU, GPS,
+    calibration, and telemetry as related, not merged, evidence)."""
+
+    RGB = "rgb"
+    VIDEO = "video"
+    DEPTH = "depth"
+    IMU = "imu"
+    GPS = "gps"
+    CALIBRATION = "calibration"
+    TELEMETRY = "telemetry"
+
+
+#: Direct-child subdirectory names (case-insensitive) recognized as
+#: composite-capture components. "images"/"photos" are accepted aliases
+#: for RGB so a capture package can use whichever the source device
+#: convention prefers.
+_COMPONENT_DIR_NAMES: Dict[str, CaptureComponent] = {
+    "rgb": CaptureComponent.RGB,
+    "images": CaptureComponent.RGB,
+    "photos": CaptureComponent.RGB,
+    "video": CaptureComponent.VIDEO,
+    "depth": CaptureComponent.DEPTH,
+    "imu": CaptureComponent.IMU,
+    "gps": CaptureComponent.GPS,
+    "calibration": CaptureComponent.CALIBRATION,
+    "telemetry": CaptureComponent.TELEMETRY,
+}
+
+#: Components this repo can decode into real evidence today (via the
+#: existing photo/video importers). Everything else (DEPTH/IMU/GPS/
+#: CALIBRATION/TELEMETRY) has no parser here yet, so it is recorded as a
+#: file manifest only -- never fabricated as parsed sensor values.
+_VISUAL_COMPONENTS = frozenset({CaptureComponent.RGB, CaptureComponent.VIDEO})
+_SIDECAR_COMPONENTS = frozenset(
+    {CaptureComponent.DEPTH, CaptureComponent.IMU, CaptureComponent.GPS,
+     CaptureComponent.CALIBRATION, CaptureComponent.TELEMETRY}
+)
+
+
+def _detect_composite_components(path: str) -> Dict[CaptureComponent, List[str]]:
+    """Scan `path`'s DIRECT child subdirectories for known composite-
+    capture component names. Returns {component: [sorted relative
+    paths]} for every matching, non-empty subdirectory; a subdirectory
+    that exists but holds zero files is not reported (nothing to
+    preserve). Paths are relative to `path`, POSIX-separated."""
+    found: Dict[CaptureComponent, List[str]] = {}
+    if not os.path.isdir(path):
+        return found
+    for entry in sorted(os.listdir(path)):
+        component = _COMPONENT_DIR_NAMES.get(entry.lower())
+        if component is None:
+            continue
+        subdir = os.path.join(path, entry)
+        if not os.path.isdir(subdir):
+            continue
+        files: List[str] = []
+        for root, _dirs, names in os.walk(subdir):
+            for name in names:
+                full = os.path.join(root, name)
+                files.append(os.path.relpath(full, path).replace(os.sep, "/"))
+        if files:
+            files.sort()
+            found[component] = files
+    return found
+
+
+def _is_composite_capture(components: Dict[CaptureComponent, List[str]]) -> bool:
+    """A composite capture needs at least one visual component (rgb/
+    video) PLUS at least one sidecar component (depth/imu/gps/
+    calibration/telemetry). A folder with only rgb/video is an ordinary
+    photo/video collection and must keep classifying as DATASET --
+    composite detection must never change existing behavior for it."""
+    has_visual = any(c in components for c in _VISUAL_COMPONENTS)
+    has_sidecar = any(c in components for c in _SIDECAR_COMPONENTS)
+    return has_visual and has_sidecar
+
+
+def _source_type_of(path: str, capture_type: Optional[str] = None) -> SourceType:
     if os.path.isdir(path):
+        components = _detect_composite_components(path)
+        if _is_composite_capture(components):
+            if capture_type == "phone":
+                return SourceType.PHONE_CAPTURE
+            if capture_type == "drone":
+                return SourceType.DRONE_CAPTURE
+            return SourceType.COMPOSITE_CAPTURE
         return SourceType.DATASET
     extension = os.path.splitext(path)[1].lower()
     if extension in _VIDEO_EXTS:
@@ -144,6 +234,8 @@ class SourceRecord:
     asset_ids: List[str] = field(default_factory=list)
     unhandled_paths: List[str] = field(default_factory=list)
     error: Optional[str] = None
+    components: Dict[str, List[str]] = field(default_factory=dict)
+    registration: dict = field(default_factory=lambda: {"status": "unknown", "transform": None})
 
     def to_dict(self) -> dict:
         return {
@@ -155,6 +247,8 @@ class SourceRecord:
             "asset_ids": list(self.asset_ids),
             "unhandled_paths": list(self.unhandled_paths),
             "error": self.error,
+            "components": {k: list(v) for k, v in self.components.items()},
+            "registration": dict(self.registration),
         }
 
     @staticmethod
@@ -168,6 +262,8 @@ class SourceRecord:
             asset_ids=list(data.get("asset_ids", [])),
             unhandled_paths=list(data.get("unhandled_paths", [])),
             error=data.get("error"),
+            components={k: list(v) for k, v in data.get("components", {}).items()},
+            registration=dict(data.get("registration", {"status": "unknown", "transform": None})),
         )
 
 

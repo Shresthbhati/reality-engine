@@ -131,6 +131,144 @@ class TestIncrementalMultiSource:
         assert len(record.asset_ids) == 2
 
 
+class TestCompositeDetection:
+    def test_plain_photo_folder_has_no_composite_components(self, tmp_path):
+        from evidence.multi_source import _detect_composite_components, _is_composite_capture
+
+        folder = tmp_path / "photos"
+        folder.mkdir()
+        (folder / "a.jpg").write_bytes(_jpeg())
+
+        components = _detect_composite_components(str(folder))
+
+        assert components == {}
+        assert _is_composite_capture(components) is False
+
+    def test_rgb_plus_gps_subfolders_detected_as_composite(self, tmp_path):
+        from evidence.multi_source import CaptureComponent, _detect_composite_components, _is_composite_capture
+
+        folder = tmp_path / "phone_capture_001"
+        (folder / "rgb").mkdir(parents=True)
+        (folder / "rgb" / "0001.jpg").write_bytes(_jpeg(0x01))
+        (folder / "gps").mkdir()
+        (folder / "gps" / "track.csv").write_text("lat,lon\n1.0,2.0\n")
+
+        components = _detect_composite_components(str(folder))
+
+        assert components[CaptureComponent.RGB] == ["rgb/0001.jpg"]
+        assert components[CaptureComponent.GPS] == ["gps/track.csv"]
+        assert _is_composite_capture(components) is True
+
+    def test_rgb_only_subfolder_is_not_composite(self, tmp_path):
+        # A folder with only a visual component (no sidecar) is not a
+        # synchronized composite acquisition -- just an organized photo
+        # folder. Must stay DATASET, not falsely promoted.
+        from evidence.multi_source import _detect_composite_components, _is_composite_capture
+
+        folder = tmp_path / "rgb_only"
+        (folder / "rgb").mkdir(parents=True)
+        (folder / "rgb" / "a.jpg").write_bytes(_jpeg())
+
+        components = _detect_composite_components(str(folder))
+
+        assert _is_composite_capture(components) is False
+
+    def test_empty_component_subfolder_is_ignored(self, tmp_path):
+        from evidence.multi_source import CaptureComponent, _detect_composite_components
+
+        folder = tmp_path / "capture"
+        (folder / "rgb").mkdir(parents=True)
+        (folder / "rgb" / "a.jpg").write_bytes(_jpeg())
+        (folder / "imu").mkdir()  # empty -- no files
+
+        components = _detect_composite_components(str(folder))
+
+        assert CaptureComponent.IMU not in components
+        assert CaptureComponent.RGB in components
+
+    def test_source_type_of_plain_folder_is_dataset(self, tmp_path):
+        from evidence.multi_source import _source_type_of, SourceType
+
+        folder = tmp_path / "photos"
+        folder.mkdir()
+        (folder / "a.jpg").write_bytes(_jpeg())
+
+        assert _source_type_of(str(folder)) is SourceType.DATASET
+
+    def test_source_type_of_composite_without_capture_type_is_generic(self, tmp_path):
+        from evidence.multi_source import _source_type_of, SourceType
+
+        folder = tmp_path / "capture"
+        (folder / "rgb").mkdir(parents=True)
+        (folder / "rgb" / "a.jpg").write_bytes(_jpeg())
+        (folder / "imu").mkdir()
+        (folder / "imu" / "log.csv").write_text("t,ax,ay,az\n")
+
+        assert _source_type_of(str(folder)) is SourceType.COMPOSITE_CAPTURE
+
+    def test_source_type_of_composite_with_explicit_phone_capture_type(self, tmp_path):
+        from evidence.multi_source import _source_type_of, SourceType
+
+        folder = tmp_path / "capture"
+        (folder / "rgb").mkdir(parents=True)
+        (folder / "rgb" / "a.jpg").write_bytes(_jpeg())
+        (folder / "gps").mkdir()
+        (folder / "gps" / "track.csv").write_text("lat,lon\n")
+
+        assert _source_type_of(str(folder), capture_type="phone") is SourceType.PHONE_CAPTURE
+
+    def test_source_type_of_composite_with_explicit_drone_capture_type(self, tmp_path):
+        from evidence.multi_source import _source_type_of, SourceType
+
+        folder = tmp_path / "capture"
+        (folder / "video").mkdir(parents=True)
+        (folder / "video" / "flight.mp4").write_bytes(b"not-a-real-video")
+        (folder / "telemetry").mkdir()
+        (folder / "telemetry" / "log.json").write_text("{}")
+
+        assert _source_type_of(str(folder), capture_type="drone") is SourceType.DRONE_CAPTURE
+
+
+class TestSourceRecordSerializationDefaults:
+    def test_round_trips_components_and_registration(self):
+        from evidence.multi_source import CaptureComponent, SourceRecord, SourceStatus, SourceType
+
+        record = SourceRecord(
+            source_id="src-0000-abc",
+            original_path="/tmp/capture",
+            source_type=SourceType.COMPOSITE_CAPTURE,
+            content_hash="abc123",
+            status=SourceStatus.INGESTED,
+            components={CaptureComponent.GPS.value: ["gps/track.csv"]},
+        )
+
+        restored = SourceRecord.from_dict(record.to_dict())
+
+        assert restored.components == {"gps": ["gps/track.csv"]}
+        assert restored.registration == {"status": "unknown", "transform": None}
+
+    def test_from_dict_defaults_missing_new_fields_for_old_format(self):
+        # Simulates a session.json written before this plan existed --
+        # no "components"/"registration" keys at all.
+        from evidence.multi_source import SourceRecord
+
+        old_format = {
+            "source_id": "src-0000-abc",
+            "original_path": "/tmp/a.jpg",
+            "source_type": "image",
+            "content_hash": "abc123",
+            "status": "ingested",
+            "asset_ids": ["ev-x-0000-abc"],
+            "unhandled_paths": [],
+            "error": None,
+        }
+
+        restored = SourceRecord.from_dict(old_format)
+
+        assert restored.components == {}
+        assert restored.registration == {"status": "unknown", "transform": None}
+
+
 class TestEvidenceSummary:
     def test_not_ready_below_minimum_image_evidence(self, tmp_path):
         photo = tmp_path / "a.jpg"

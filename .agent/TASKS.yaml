@@ -141,12 +141,43 @@ tasks:
 
   - id: P1-02
     name: canonical sensor model
-    status: MISSING
+    status: DONE
     scope: >
       sensor_id/source_id/capture_id/clock_id/timestamp/frame/
       intrinsics/extrinsics/units/coordinate_system/quality/provenance
       on every sensor stream; no hidden assumptions.
     dependencies: [P1-01]
+    evidence: >
+      Continuation of the existing sensor/session/stream modules and
+      PR #24's clock model (original-timestamp preservation untouched).
+      DECLARED identity half: SensorDescriptor (evidence/sensors.py)
+      loaded from <component>/sensor_identity.json -- sensor_id
+      (required), source_id/capture_id/clock_id/frame/
+      coordinate_system/units/quality (validated JSON scalars)/
+      intrinsics/extrinsics (camera types reused verbatim)/provenance;
+      absent = undeclared = recorded as None, never defaulted. Named
+      sensor_identity.json because depth/ owns manifest.json for scale
+      (Decision 020). Attached via attach_sensor_identities and the
+      session's sensor_streams/calibrations/depth_frames; sensor_id
+      kind-mismatch fails loudly; calibration parsing excludes the
+      identity sidecar as metadata (integration bug the tests caught).
+      Timestamp half: samples carry t; synchronized() resolves clock_id
+      explicit > declared > '<undeclared>' sentinel, degrading honestly
+      to UNSYNCHRONIZED -- never a guessed clock. Integration finding:
+      identity declared with units but no depth manifest still refuses
+      to parse depth (scale stays Decision 020's, no hidden assumption).
+      NOT claimed: no real-device capture with sensor_identity.json
+      exercised yet (synthetic fixtures only; recorded in
+      CAPABILITIES.yaml limitations).
+    verification:
+      - "DONE: 22 tests in tests/test_sensor_identity.py -- descriptor
+        contract (required id, undeclared-stays-None, roundtrip,
+        typed camera geometry, units/quality validation, provenance),
+        loader (absent-None, lineage path, kind mismatch, bad JSON),
+        attachment (immutability, samples carry identity), session
+        wiring (every component, undeclared stays None), clock
+        interplay (declared clock used, sentinel degradation, explicit
+        wins), depth interplay (scale independence, roundtrip)"
 
   - id: P1-03
     name: depth integration completion

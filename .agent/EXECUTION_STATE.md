@@ -1,6 +1,6 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-15 (P1-01 unified source model; PR #25 ledger race repaired)
+**Session end:** 2026-09-15 (P1-02 canonical sensor model, PR: sensor-model)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
@@ -17,6 +17,22 @@ where execution actually stands, nothing else defines that.
 
 ## Completed (most recent first, with evidence)
 
+- **2026-09-15 — P1-02 (DONE)** canonical sensor model (DECLARED
+  identity half; continuation of existing sensor modules + PR #24
+  clocks): SensorDescriptor in evidence/sensors.py loaded from
+  <component>/sensor_identity.json — sensor_id (required),
+  source_id/capture_id/clock_id/frame/coordinate_system/units/
+  quality/typed intrinsics+extrinsics/provenance; absent = undeclared
+  = None, never defaulted; kind-mismatch fails loudly. Attached to
+  SensorStream + every sample, CalibrationRecord, DepthFrame via
+  attach_sensor_identities and the session accessors. synchronized()
+  clock resolution: explicit > declared > '<undeclared>' sentinel
+  with honest UNSYNCHRONIZED degradation. Integration bugs the tests
+  caught: calibration parsing swept the identity sidecar as evidence
+  (now excluded as metadata); identity-with-units does NOT substitute
+  for a depth scale manifest (Decision 020 preserved). 22 new tests;
+  suite 1,429. NOT claimed: real-device capture declaring identity
+  (synthetic fixtures only — recorded in CAPABILITIES.yaml).
 - **2026-09-15 — P1-01 (DONE)** canonical evidence/source model:
   SourceRecord now carries the unified identity — acquisition_id
   (content-derived `acq-<hash16>` by default so the same bytes

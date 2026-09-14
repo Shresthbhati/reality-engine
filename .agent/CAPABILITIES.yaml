@@ -159,8 +159,23 @@ capabilities:
     maturity: PARTIAL (model + backend seam + metadata backend landed P2-01, 33 tests; methods 3-6 -- GNSS/PPS, trigger, signal correlation, optimization -- open registry slots)
     limitations:
       - metadata-declared offsets only today; no estimated sync yet
-      - clock identity is caller-supplied until P1-02 canonical sensor model
+      - clock identity resolves from declared sensor identity when present (P1-02), else caller-supplied
     fallback: honest UNSYNCHRONIZED samples with reasons (never a guessed offset)
+
+  - name: sensor_identity
+    category: evidence
+    backend: evidence/sensors.py (SensorDescriptor + load_sensor_identity + attach_sensor_identities; <component>/sensor_identity.json sidecar)
+    inputs: [capture component directory, optional sensor_identity.json]
+    outputs: [SensorDescriptor attached to SensorStream/samples/CalibrationRecord/DepthFrame (sensor_id, source_id, capture_id, clock_id, frame, coordinate_system, units, quality, intrinsics, extrinsics, provenance)]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: exact for what is declared; absent fields recorded as None (never defaulted, never inferred from contents)
+    runtime: negligible (one JSON file per component)
+    maturity: IMPLEMENTED (P1-02; 22 tests in tests/test_sensor_identity.py; attachment wired through MultiSourceSession sensor_streams/calibrations/depth_frames; clock_id feeds evidence.clocks)
+    limitations:
+      - declared metadata only -- quality is what the capture declared, not measured diagnostics
+      - no real-device capture with a sensor_identity.json exercised yet (synthetic fixtures only)
+    fallback: identity None (undeclared) -- evidence stays parseable; no identity is ever guessed
 
   - name: vio_localization
     category: localization

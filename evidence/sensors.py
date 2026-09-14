@@ -11,6 +11,34 @@ typed, unit-explicit sample streams a downstream consumer (time sync,
 VIO, registration -- none of which exist yet) can use without having
 to write its own file-format parsing first.
 
+DECLARED SENSOR IDENTITY (P1-02 canonical sensor model): every sensor
+exposes sensor_id, source_id, capture_id, clock_id, timestamp, frame,
+intrinsics, extrinsics, units, coordinate_system, quality, and
+provenance -- with no hidden assumptions. Timestamps and provenance
+live on the samples and streams; the DECLARED identity half lives in
+an optional per-component sidecar, ``<component>/sensor_identity.json``
+(named distinctly because depth/ already owns manifest.json for its
+scale declaration, Decision 020), loaded via ``load_sensor_identity``
+and attached to parsed evidence via ``attach_sensor_identities`` or
+the session's sensor_streams/calibrations/depth_frames accessors.
+Schema (all keys optional except sensor_id; absent = undeclared =
+recorded as None, never defaulted):
+
+    {
+        "sensor_id": "imu-main",        // required, non-empty
+        "source_id": "src-phone-01",     // owning source (joins P1-01 identity)
+        "capture_id": "cap-001",         // acquisition session on the device
+        "clock_id": "clk-phone",         // joins evidence.clocks (P2-01)
+        "frame": "body",                 // sensor's measurement frame label
+        "coordinate_system": "ENU",      // e.g. ENU | ECEF | WGS84
+        "units": {"accel": "m/s^2"},    // quantity -> declared unit string
+        "quality": {"range_g": 8},      // JSON scalars only, validated
+        "intrinsics": {...},             // optional CameraIntrinsics dict
+        "extrinsics": {...},             // optional CameraExtrinsics dict
+        "provenance": "OBSERVED",        // Provenance enum value
+        "kind": "imu"                    // optional; must match its directory
+    }
+
 FILE FORMAT (the one this repo parses; documented here because there
 was no existing convention anywhere in the codebase to match against):
 
@@ -169,7 +197,8 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import List, Optional, Sequence, Tuple
 
@@ -179,6 +208,7 @@ Vec3 = Tuple[float, float, float]
 
 
 class SensorParseError(ValueError):
+    """A sensor sidecar file violated the documented format."""
     """A sidecar file's content violated the documented JSONL schema.
 
     Distinct from OSError (file missing/unreadable) and from
@@ -251,19 +281,247 @@ def _iter_jsonl_records(path: str):
             yield line_no, record
 
 
+class SensorIdentityError(SensorParseError):
+    """A sensor identity manifest (<component>/manifest.json) violated
+    the documented identity schema. Subclasses SensorParseError so
+    callers catching parse errors catch identity errors too."""
+
+
+#: Identity keys a manifest may declare. `sensor_id` is required (an
+#: identity that names no sensor is not an identity); everything else
+#: is optional and stays None/{} when absent -- undeclared is a
+#: recorded fact, never defaulted.
+_IDENTITY_REQUIRED_KEY = "sensor_id"
+_IDENTITY_STR_KEYS = (
+    "sensor_id", "source_id", "capture_id", "clock_id",
+    "frame", "coordinate_system", "kind",
+)
+
+
+def _identity_scalar(value: object, key: str, path: str) -> object:
+    """Quality-map values must be JSON scalars (bool/int/float/str).
+    Nested structures and non-finite floats are rejected: quality is
+    DECLARED metadata that must roundtrip losslessly, not a place to
+    stash uninterpretable blobs."""
+    if isinstance(value, bool) or isinstance(value, (int, str)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise SensorIdentityError(f"{path}: quality[{key!r}] must be finite, got {value!r}")
+        return value
+    raise SensorIdentityError(
+        f"{path}: quality[{key!r}] must be a JSON scalar (bool/int/float/str), "
+        f"got {type(value).__name__}"
+    )
+
+
+@dataclass(frozen=True)
+class SensorDescriptor:
+    """DECLARED sensor identity (P1-02 canonical sensor model).
+
+    Every sensor exposes sensor_id, source_id, capture_id, clock_id,
+    timestamp, frame, intrinsics, extrinsics, units,
+    coordinate_system, quality, and provenance -- with no hidden
+    assumptions. This type is the declared half of that contract: what
+    the capture DECLARED about a sensor, loaded from a per-component
+    ``<component>/manifest.json`` sidecar. Timestamps are the other
+    half and live on the samples themselves (and, synchronized, in
+    evidence.clocks.TimeAlignment -- original sensor timestamps are
+    never overwritten).
+
+    Honesty rules:
+    - ``sensor_id`` is required; everything else is optional. An
+      absent field stays None/{} -- "undeclared" is recorded as such,
+      never filled with a guess.
+    - ``units`` maps a quantity name to its declared unit string
+      (e.g. {"accel": "m/s^2"}); the sample field names already carry
+      unit-suffixed conventions, this records what the device itself
+      declared.
+    - ``quality`` values must be JSON scalars (validated): declared
+      quality metrics travel losslessly.
+    - ``kind`` (when declared) must match the component it is loaded
+      for -- an imu/manifest.json declaring kind "gnss" is a real
+      capture error and fails loudly.
+    - ``intrinsics``/``extrinsics`` reuse the existing, tested
+      reconstruction.calibration.camera types verbatim (same rule as
+      CalibrationRecord).
+
+    Immutable like every evidence-layer type; attached to parsed
+    evidence by the session, never derived from file contents.
+    """
+
+    sensor_id: str
+    source_id: Optional[str] = None
+    capture_id: Optional[str] = None
+    clock_id: Optional[str] = None
+    frame: Optional[str] = None
+    coordinate_system: Optional[str] = None
+    units: Dict[str, str] = field(default_factory=dict)
+    quality: Dict[str, object] = field(default_factory=dict)
+    intrinsics: Optional[object] = None  # reconstruction.calibration.camera.CameraIntrinsics
+    extrinsics: Optional[object] = None  # ...CameraExtrinsics, if declared
+    provenance: Provenance = Provenance.OBSERVED
+    kind: Optional[str] = None  # component this identity declares itself for
+    declared_path: str = ""  # where this identity was declared (lineage)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.sensor_id, str) or not self.sensor_id:
+            raise SensorIdentityError("sensor_id must be a non-empty string")
+        for value in (self.source_id, self.capture_id, self.clock_id, self.frame, self.coordinate_system, self.kind):
+            if value is not None and (not isinstance(value, str) or not value):
+                raise SensorIdentityError("identity string fields must be non-empty strings or None")
+        for key, unit in self.units.items():
+            if not isinstance(key, str) or not isinstance(unit, str) or not unit:
+                raise SensorIdentityError(f"units[{key!r}] must map to a non-empty unit string")
+        for key, value in self.quality.items():
+            _identity_scalar(value, key, "SensorDescriptor")
+
+    def units_dict(self) -> Dict[str, str]:
+        return dict(self.units)
+
+    def quality_dict(self) -> Dict[str, object]:
+        return dict(self.quality)
+
+    def to_dict(self) -> dict:
+        d: dict = {"sensor_id": self.sensor_id}
+        for name in ("source_id", "capture_id", "clock_id", "frame", "coordinate_system", "kind"):
+            value = getattr(self, name)
+            if value is not None:
+                d[name] = value
+        if self.units:
+            d["units"] = self.units_dict()
+        if self.quality:
+            d["quality"] = self.quality_dict()
+        if self.intrinsics is not None:
+            d["intrinsics"] = self.intrinsics.to_dict()
+        if self.extrinsics is not None:
+            d["extrinsics"] = self.extrinsics.to_dict()
+        d["provenance"] = self.provenance.value
+        if self.declared_path:
+            d["declared_path"] = self.declared_path
+        return d
+
+    @staticmethod
+    def from_dict(data: dict, declared_path: str = "") -> "SensorDescriptor":
+        if not isinstance(data, dict):
+            raise SensorIdentityError(f"{declared_path}: expected a JSON object, got {type(data).__name__}")
+        if _IDENTITY_REQUIRED_KEY not in data:
+            raise SensorIdentityError(f"{declared_path}: missing required key '{_IDENTITY_REQUIRED_KEY}'")
+        kwargs: dict = {}
+        for name in _IDENTITY_STR_KEYS:
+            if name == _IDENTITY_REQUIRED_KEY:
+                continue
+            value = data.get(name)
+            if value is not None:
+                if not isinstance(value, str) or not value:
+                    raise SensorIdentityError(f"{declared_path}: {name} must be a non-empty string, got {value!r}")
+                kwargs[name] = value
+        units = data.get("units", {})
+        if not isinstance(units, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) and v for k, v in units.items()
+        ):
+            raise SensorIdentityError(f"{declared_path}: 'units' must map string quantity names to non-empty unit strings")
+        quality = data.get("quality", {})
+        if not isinstance(quality, dict):
+            raise SensorIdentityError(f"{declared_path}: 'quality' must be an object")
+        quality = {k: _identity_scalar(v, k, declared_path) for k, v in quality.items()}
+        try:
+            provenance = Provenance(data.get("provenance", Provenance.OBSERVED.value))
+        except ValueError as exc:
+            raise SensorIdentityError(
+                f"{declared_path}: provenance {data.get('provenance')!r} is not a recognized value"
+            ) from exc
+        # Intrinsics/extrinsics reuse the tested camera types verbatim
+        # (same rule as CalibrationRecord) so to_dict/from_dict are
+        # losslessly symmetric -- a descriptor with declared camera
+        # geometry roundtrips with its geometry intact.
+        intrinsics = None
+        if data.get("intrinsics") is not None:
+            from reconstruction.calibration.camera import CameraIntrinsics, CameraIntrinsicsError
+
+            try:
+                intrinsics = CameraIntrinsics.from_dict(data["intrinsics"])
+            except (KeyError, TypeError, CameraIntrinsicsError) as exc:
+                raise SensorIdentityError(f"{declared_path}: invalid 'intrinsics': {exc}") from exc
+        extrinsics = None
+        if data.get("extrinsics") is not None:
+            from reconstruction.calibration.camera import CameraExtrinsics
+
+            try:
+                extrinsics = CameraExtrinsics.from_dict(data["extrinsics"])
+            except (KeyError, TypeError) as exc:
+                raise SensorIdentityError(f"{declared_path}: invalid 'extrinsics': {exc}") from exc
+        return SensorDescriptor(
+            sensor_id=data[_IDENTITY_REQUIRED_KEY],
+            units=dict(units),
+            quality=quality,
+            provenance=provenance,
+            declared_path=declared_path or str(data.get("declared_path", "")),
+            intrinsics=intrinsics,
+            extrinsics=extrinsics,
+            **kwargs,
+        )
+
+
+SENSOR_MANIFEST_NAME = "sensor_identity.json"
+
+
+def load_sensor_identity(directory: str, component: str) -> Optional[SensorDescriptor]:
+    """Load the DECLARED sensor identity for one component from
+    ``<directory>/<component>/sensor_identity.json``. Returns None when
+    no identity file exists -- undeclared identity is a normal,
+    recordable state (the evidence stays parseable, identity stays
+    None), not an error. Raises SensorIdentityError when the file
+    exists but violates the schema, including a declared `kind` that
+    mismatches the component directory it lives in.
+
+    Named sensor_identity.json (not manifest.json) because the depth
+    component directory already owns manifest.json for its SCALE
+    manifest (Decision 020) -- one name, one meaning.
+
+    This is the P1-02 seam: identity is DECLARED by the capture, never
+    inferred from file contents and never defaulted -- the same
+    no-hidden-assumptions rule as depth scale (Decision 020) and
+    synchronization (P2-01).
+    """
+    manifest_path = os.path.join(directory, component, SENSOR_MANIFEST_NAME)
+    if not os.path.isfile(manifest_path):
+        return None
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        try:
+            data = json.load(handle)
+        except json.JSONDecodeError as exc:
+            raise SensorIdentityError(f"{manifest_path}: invalid JSON ({exc})") from exc
+    descriptor = SensorDescriptor.from_dict(data, declared_path=manifest_path)
+    if descriptor.kind is not None and descriptor.kind != component:
+        raise SensorIdentityError(
+            f"{manifest_path}: declared kind {descriptor.kind!r} does not match "
+            f"the component directory it was declared in ({component!r})"
+        )
+    return descriptor
+
+
 @dataclass(frozen=True)
 class IMUSample:
-    """One IMU reading. Units and frame documented at module level."""
+    """One IMU reading. Units and frame documented at module level.
+
+    ``identity`` is the DECLARED SensorDescriptor attached by the
+    session from the capture's identity sidecar (None when the capture
+    declared none -- undeclared is recorded, never defaulted).
+    """
 
     t: float
     accel_mps2: Vec3
     gyro_rps: Vec3
     mag_ut: Optional[Vec3] = None
+    identity: Optional["SensorDescriptor"] = None
 
     def to_dict(self) -> dict:
         d = {"t": self.t, "accel_mps2": list(self.accel_mps2), "gyro_rps": list(self.gyro_rps)}
         if self.mag_ut is not None:
             d["mag_ut"] = list(self.mag_ut)
+        if self.identity is not None:
+            d["identity"] = self.identity.to_dict()
         return d
 
 
@@ -279,6 +537,7 @@ class GNSSSample:
     fix_type: GNSSFixType = GNSSFixType.UNKNOWN
     satellites: Optional[int] = None
     velocity_mps: Optional[Vec3] = None
+    identity: Optional["SensorDescriptor"] = None  # declared identity; None = undeclared
 
     def to_dict(self) -> dict:
         d = {
@@ -291,6 +550,8 @@ class GNSSSample:
             d["satellites"] = self.satellites
         if self.velocity_mps is not None:
             d["velocity_mps"] = list(self.velocity_mps)
+        if self.identity is not None:
+            d["identity"] = self.identity.to_dict()
         return d
 
 
@@ -308,6 +569,7 @@ class TelemetrySample:
     gimbal_attitude_deg: Optional[Vec3] = None
     battery_pct: Optional[float] = None
     flight_mode: Optional[str] = None
+    identity: Optional["SensorDescriptor"] = None  # declared identity; None = undeclared
 
     def to_dict(self) -> dict:
         d = {"t": self.t}
@@ -321,6 +583,8 @@ class TelemetrySample:
             d["battery_pct"] = self.battery_pct
         if self.flight_mode is not None:
             d["flight_mode"] = self.flight_mode
+        if self.identity is not None:
+            d["identity"] = self.identity.to_dict()
         return d
 
 
@@ -351,6 +615,7 @@ class CalibrationRecord:
     intrinsics: object  # reconstruction.calibration.camera.CameraIntrinsics
     extrinsics: Optional[object] = None  # ...CameraExtrinsics, if present
     provenance: Provenance = Provenance.OBSERVED
+    identity: Optional["SensorDescriptor"] = None  # declared identity; None = undeclared
 
     def to_dict(self) -> dict:
         d = {
@@ -360,6 +625,8 @@ class CalibrationRecord:
         }
         if self.extrinsics is not None:
             d["extrinsics"] = self.extrinsics.to_dict()
+        if self.identity is not None:
+            d["identity"] = self.identity.to_dict()
         return d
 
 
@@ -379,6 +646,7 @@ class SensorStream:
     source_path: str
     samples: Tuple[object, ...] = field(default_factory=tuple)
     provenance: Provenance = Provenance.OBSERVED
+    identity: Optional["SensorDescriptor"] = None  # declared identity; None = undeclared
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -396,22 +664,28 @@ class SensorStream:
             "source_path": self.source_path,
             "provenance": self.provenance.value,
             "samples": [s.to_dict() for s in self.samples],
+            "identity": self.identity.to_dict() if self.identity is not None else None,
         }
 
-    def synchronized(self, clock_id: str, metadata: Optional[dict] = None):
+    def synchronized(self, clock_id: Optional[str] = None, metadata: Optional[dict] = None):
         """Map this stream onto the global timeline via evidence.clocks
         (P2.1). Returns a TimeAlignment; the stream itself is NEVER
         modified -- original sensor timestamps are retained on every
-        aligned sample (t_global = a * t_sensor + b). Metadata (shared
-        clock, declared offset/drift) comes from capture metadata; a
-        stream no backend can synchronize degrades honestly to
-        UNSYNCHRONIZED samples with reasons in the diagnostics --
-        never a silent re-stamp. Clock identity is caller-supplied
-        (the manifest/source layer will pass device identity once the
-        canonical sensor model, P1-02, carries it)."""
+        aligned sample (t_global = a * t_sensor + b).
+
+        Clock identity resolution order (P1-02): the explicit
+        `clock_id` argument wins; otherwise the stream's DECLARED
+        identity clock_id (from the capture's identity sidecar); when
+        neither declares a clock, the sentinel "<undeclared>" is used
+        and synchronization degrades honestly to UNSYNCHRONIZED
+        samples (reasons recorded in diagnostics) -- unless the
+        metadata itself declares a shared clock, which needs no clock
+        identity. A stream is never silently re-stamped.
+        """
         from evidence.clocks import synchronize_stream
 
-        return synchronize_stream(self, clock_id, metadata)
+        resolved = clock_id or (self.identity.clock_id if self.identity is not None else None) or "<undeclared>"
+        return synchronize_stream(self, resolved, metadata)
 
 
 def parse_imu_jsonl(path: str) -> SensorStream:
@@ -574,8 +848,39 @@ def parse_component_streams(paths: Sequence[str], component: str) -> List[Sensor
     return [parser(p) for p in paths if p.endswith(".jsonl")]
 
 
+def attach_sensor_identities(
+    streams: List[SensorStream],
+    source_root: str,
+    component: str,
+) -> List[SensorStream]:
+    """Attach DECLARED sensor identity (P1-02) to parsed streams and
+    their samples: load `<source_root>/<component>/sensor_identity.json`
+    once and attach it to each stream and every sample. When the
+    capture declared no identity, streams return unchanged (identity
+    stays None -- undeclared is a recorded fact, not a gap to fill).
+    New stream objects only; the input list is never mutated."""
+    identity = load_sensor_identity(source_root, component)
+    if identity is None:
+        return streams
+    return [
+        replace(
+            stream,
+            identity=identity,
+            samples=tuple(replace(sample, identity=identity) for sample in stream.samples),
+        )
+        for stream in streams
+    ]
+
+
 def parse_component_calibrations(paths: Sequence[str]) -> List[CalibrationRecord]:
     """Parse every `.json` file in `paths` (calibration component) into
     a real CalibrationRecord. Non-`.json` files are skipped, same
-    honest-subset behavior as parse_component_streams."""
-    return [parse_calibration_json(p) for p in paths if p.endswith(".json")]
+    honest-subset behavior as parse_component_streams. The component's
+    identity sidecar (sensor_identity.json, P1-02) is metadata, not
+    calibration evidence, and is skipped for the same reason -- it is
+    loaded separately via load_sensor_identity."""
+    return [
+        parse_calibration_json(p)
+        for p in paths
+        if p.endswith(".json") and os.path.basename(p) != SENSOR_MANIFEST_NAME
+    ]

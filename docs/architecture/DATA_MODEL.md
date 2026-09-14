@@ -31,6 +31,16 @@ What the engine extracted. `evidence/` package.
 
 - `EvidenceItem` (`evidence/schema.py`) — id, kind, source_uri,
   sha256, metadata, provenance. Immutable.
+- Sensor identity (P1-02): parsed sensor evidence
+  (`SensorStream`/samples, `CalibrationRecord`, `DepthFrame`) carries
+  an optional DECLARED `SensorDescriptor` (`evidence/sensors.py`),
+  loaded from `<component>/sensor_identity.json`: sensor_id,
+  source_id, capture_id, clock_id, frame, coordinate_system, units,
+  quality (validated scalars), intrinsics/extrinsics (camera types
+  reused verbatim), provenance. Absent = undeclared = recorded as
+  None — identity is declared by the capture, never inferred from
+  contents and never defaulted. `clock_id` joins the P2-01 clock
+  model; `source_id` joins the P1-01 source identity.
 - `EvidencePackage` (`evidence/packages.py`) — deduplicated,
   content-addressed bundle with deterministic ids.
 - `ArtifactStore` (`world_ir/artifact_store.py`) — binary payloads

@@ -74,8 +74,13 @@ __all__ = [
     "SourceType",
     "CaptureComponent",
     "SourceRecord",
+    "UnknownSourceError",
     "MultiSourceSession",
 ]
+
+
+class UnknownSourceError(ValueError):
+    """Raised when an operation names a source_id that isn't in this session."""
 
 
 class SourceStatus(str, Enum):
@@ -326,6 +331,24 @@ class MultiSourceSession:
             if record.content_hash == content_hash:
                 return record
         return None
+
+    def register_source_frame(self, source_id: str, transform) -> SourceRecord:
+        """Explicitly record how one source's own coordinate frame
+        relates to the session frame. NEVER called automatically by
+        add_source -- alignment across independent sources must not be
+        assumed (spec §35/§65: a phone source and a drone source start
+        with independent coordinate frames; only an explicit caller
+        establishes a real transform between them).
+
+        `transform` is a world_ir.coordinates.Transform; its
+        source_frame/target_frame/matrix/uncertainty are stored verbatim
+        via its existing to_dict().
+        """
+        if source_id not in self._sources:
+            raise UnknownSourceError(f"no source {source_id!r} in session {self.session_id!r}")
+        record = self._sources[source_id]
+        record.registration = {"status": "registered", "transform": transform.to_dict()}
+        return record
 
     def _builder_seeded_from_package(self) -> DeterministicPackageBuilder:
         """A builder pre-loaded with everything already in the session's

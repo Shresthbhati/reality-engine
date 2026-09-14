@@ -370,6 +370,56 @@ class TestCompositeIngestion:
         assert len(session.sources()) == 1
 
 
+class TestSourceFrameRegistration:
+    def test_register_source_frame_sets_registered_status(self, tmp_path):
+        from world_ir.coordinates import Frame, IDENTITY_MATRIX, Transform
+
+        photo = tmp_path / "a.jpg"
+        photo.write_bytes(_jpeg())
+        session = MultiSourceSession(session_id="sess1")
+        record = session.add_source(str(photo))
+        assert record.registration == {"status": "unknown", "transform": None}
+
+        transform = Transform(
+            source_frame=Frame.SENSOR, target_frame=Frame.SESSION_LOCAL, matrix=IDENTITY_MATRIX,
+        )
+        updated = session.register_source_frame(record.source_id, transform)
+
+        assert updated.registration["status"] == "registered"
+        assert updated.registration["transform"]["source_frame"] == "sensor"
+        assert updated.registration["transform"]["target_frame"] == "session-local"
+        # The same object living in session.sources() reflects the change
+        # (SourceRecord is a plain mutable dataclass; registration is the
+        # one field that legitimately changes after creation).
+        assert session.sources()[0].registration["status"] == "registered"
+
+    def test_register_source_frame_unknown_source_raises(self):
+        from evidence.multi_source import UnknownSourceError
+        from world_ir.coordinates import Frame, Transform
+
+        session = MultiSourceSession(session_id="sess1")
+        transform = Transform(source_frame=Frame.SENSOR, target_frame=Frame.SESSION_LOCAL)
+
+        import pytest
+        with pytest.raises(UnknownSourceError):
+            session.register_source_frame("does-not-exist", transform)
+
+    def test_registration_round_trips_through_serialization(self, tmp_path):
+        from world_ir.coordinates import Frame, IDENTITY_MATRIX, Transform
+
+        photo = tmp_path / "a.jpg"
+        photo.write_bytes(_jpeg())
+        session = MultiSourceSession(session_id="sess1")
+        record = session.add_source(str(photo))
+        transform = Transform(source_frame=Frame.SENSOR, target_frame=Frame.SESSION_LOCAL, matrix=IDENTITY_MATRIX)
+        session.register_source_frame(record.source_id, transform)
+
+        restored = MultiSourceSession.from_dict(session.to_dict())
+
+        assert restored.sources()[0].registration["status"] == "registered"
+        assert restored.sources()[0].registration["transform"]["source_frame"] == "sensor"
+
+
 class TestEvidenceSummary:
     def test_not_ready_below_minimum_image_evidence(self, tmp_path):
         photo = tmp_path / "a.jpg"

@@ -372,3 +372,127 @@ class TestSerialization:
     def test_unsupported_format_version_raises(self):
         with pytest.raises(ValueError):
             MultiSourceSession.from_dict({"format_version": 99})
+
+
+class TestUnifiedSourceIdentity:
+    """P1-01 canonical evidence/source model: acquisition_id /
+    device_id / capabilities on SourceRecord. Identity rules: the
+    acquisition id is content-derived by default so the same bytes
+    anywhere share one acquisition identity (the dedupe rule made
+    explicit); device_id is only what the caller DECLARED (the default
+    filesystem source is not a device identity); capabilities are
+    derived from what actually ingested, not what was promised."""
+
+    def test_same_bytes_same_acquisition_id_across_paths(self, tmp_path):
+        folder_a = tmp_path / "a"
+        folder_a.mkdir()
+        (folder_a / "p.jpg").write_bytes(_jpeg())
+        folder_b = tmp_path / "b"
+        folder_b.mkdir()
+        (folder_b / "p.jpg").write_bytes(_jpeg())
+
+        session = MultiSourceSession(session_id="sess1")
+        first = session.add_source(str(folder_a))
+        second = session.add_source(str(folder_b))  # dedupes to first
+
+        assert second is first
+        assert first.acquisition_id == f"acq-{first.content_hash[:16]}"
+        assert first.device_id is None  # nothing declared -> nothing recorded
+        assert "photo" in first.capabilities
+
+    def test_acquisition_id_is_derived_when_not_declared(self, tmp_path):
+        photo = tmp_path / "a.jpg"
+        photo.write_bytes(_jpeg())
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(photo))
+
+        assert record.acquisition_id == f"acq-{record.content_hash[:16]}"
+        assert record.device_id is None
+        assert record.capabilities == ["photo"]
+
+    def test_declared_source_supplies_device_id(self, tmp_path):
+        from evidence.packages import EvidenceSource
+
+        photo = tmp_path / "a.jpg"
+        photo.write_bytes(_jpeg())
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(
+            str(photo),
+            source=EvidenceSource(
+                source_id="src-0000-ab",
+                platform="phone",
+                device="Pixel 8",
+            ),
+        )
+
+        assert record.device_id == "Pixel 8"
+        assert record.capabilities == ["photo"]
+
+    def test_failed_source_still_has_acquisition_id_but_no_capabilities(self, tmp_path):
+        junk = tmp_path / "notes.txt"
+        junk.write_text("hello")
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(junk))
+
+        assert record.status is SourceStatus.UNSUPPORTED
+        assert record.acquisition_id == f"acq-{record.content_hash[:16]}"
+        assert record.capabilities == []  # delivered nothing -> no capability claims
+        assert record.device_id is None
+
+    def test_capabilities_derived_not_declared(self, tmp_path):
+        folder = tmp_path / "capture"
+        folder.mkdir()
+        (folder / "p.jpg").write_bytes(_jpeg())
+        (folder / "p.las").write_bytes(_las())
+
+        session = MultiSourceSession(session_id="sess1")
+        record = session.add_source(str(folder))
+
+        assert record.capabilities == sorted(set(record.capabilities))
+        assert "photo" in record.capabilities
+        assert "lidar" in record.capabilities
+
+    def test_roundtrip_preserves_unified_identity(self, tmp_path):
+        from evidence.packages import EvidenceSource
+
+        photo = tmp_path / "a.jpg"
+        photo.write_bytes(_jpeg())
+        session = MultiSourceSession(session_id="sess1")
+        session.add_source(
+            str(photo),
+            source=EvidenceSource(
+                source_id="src-0000-ab", platform="phone", device="Pixel 8"
+            ),
+        )
+
+        restored = MultiSourceSession.from_dict(session.to_dict())
+
+        original = restored.sources()[0]
+        assert original.acquisition_id == session.sources()[0].acquisition_id
+        assert original.device_id == "Pixel 8"
+        assert original.capabilities == session.sources()[0].capabilities
+
+    def test_old_format_session_gains_derived_acquisition_id(self):
+        # Simulates a session.json written before the unified source
+        # model -- no acquisition_id/device_id/capabilities keys.
+        from evidence.multi_source import SourceRecord
+
+        old_format = {
+            "source_id": "src-0000-abc",
+            "original_path": "/tmp/a.jpg",
+            "source_type": "image",
+            "content_hash": "abc123",
+            "status": "ingested",
+            "asset_ids": ["ev-x-0000-abc"],
+            "unhandled_paths": [],
+            "error": None,
+        }
+
+        restored = SourceRecord.from_dict(old_format)
+
+        assert restored.acquisition_id == "acq-abc123"
+        assert restored.device_id is None
+        assert restored.capabilities == []

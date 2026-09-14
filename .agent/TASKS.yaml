@@ -81,7 +81,7 @@ tasks:
 
   - id: P0-03
     name: backend capability registry
-    status: NEXT
+    status: DONE
     deliverables:
       - .agent/CAPABILITIES.yaml (name/category/inputs/outputs/backend/
         license/hardware/accuracy/runtime/maturity/limitations/fallback)
@@ -89,22 +89,55 @@ tasks:
       Populated from verified repo facts (what backends exist and what
       was actually run), not wishes. Becomes the basis for backend
       selection (P5-02).
+    evidence: >
+      Registry landed in PR #23; mechanical cross-check run 2026-09-15:
+      19/19 entries, every backend/fallback .py path resolves to real
+      code on disk, all required fields present, maturity labels are
+      honest (13 IMPLEMENTED / 2 PARTIAL / 3 MISSING / 1 BROKEN -- the
+      BROKEN image_segmentation is the pre-existing SAM torch-hub
+      environment failure, recorded not hidden). NOTE: the P0-03/P18-01
+      closure commit (dba9652) raced the PR #25 merge and was not
+      carried into main; re-applied here with identical evidence.
     verification:
-      - every entry cross-checked against code/audit docs
-      - honest maturity labels per constitution Article V
+      - "DONE: every entry cross-checked against code (automated path
+        resolution + field completeness check, 2026-09-15)"
+      - "DONE: honest maturity labels per constitution Article V"
 
   # ================= PHASE 1 — EVIDENCE FOUNDATION =================
 
   - id: P1-01
     name: canonical evidence/source model
-    status: PARTIAL
+    status: DONE
     basis: >
       MultiSourceSession/SourceRecord (content-hash identity, component
-      manifests) + EvidenceItem exist; canonical unified Source model
-      with acquisition_id/device_id/capabilities still open.
+      manifests) + EvidenceItem exist; unified Source model landed:
+      SourceRecord now carries acquisition_id (content-derived
+      'acq-<hash16>' by default, so the same bytes anywhere share one
+      acquisition identity -- the dedupe rule made explicit; a real
+      device-side uuid overrides it once the sensor model carries one),
+      device_id (only what the caller declared via an explicit
+      EvidenceSource; the default filesystem source records None, never
+      a fabricated device name), and capabilities (evidence kinds the
+      source actually ingested, derived from the package -- a measured
+      fact, not a declared promise). Roundtrip + old-format sessions
+      gain the derived acquisition_id deterministically (invents
+      nothing). MultiSourceSession dedupe/roundtrip discipline
+      untouched.
+    evidence: >
+      7 new tests in tests/test_multi_source_session.py
+      (TestUnifiedSourceIdentity): same-bytes-same-acquisition-id
+      across paths (dedupe consistency), derived-when-undeclared,
+      declared-device flows to device_id, failed source keeps
+      acquisition_id but claims no capabilities, capabilities derived
+      not declared, roundtrip preserves identity, old-format gains
+      derived id. P1-01's own verification items were already covered
+      (dedupe: existing tests; manifest roundtrip: existing tests) and
+      remain green.
     verification:
-      - source identity tests (dedupe by content hash across paths)
-      - manifest roundtrip
+      - "DONE: source identity tests (dedupe by content hash across
+        paths) -- existing suite + new acquisition-id consistency test"
+      - "DONE: manifest roundtrip -- existing roundtrip tests + new
+        unified-identity roundtrip test"
 
   - id: P1-02
     name: canonical sensor model
@@ -519,14 +552,28 @@ tasks:
 
   - id: P18-01
     name: application extraction
-    status: NOW
+    status: DONE
     problem: >
       Application-specific logic (disaster) lives in core, violating
       constitution Article XI. Disaster management is a consumer.
     dependencies: [P0-02]
+    evidence: >
+      Premise falsified by the P0-02 inventory (2026-09-15,
+      PLATFORM_APPLICATION_SEPARATION.md): no application workflows
+      exist in core to extract -- 'engine/disasters/' is a README-only
+      scaffold; fire/destruction/environment are generic primitives.
+      Nothing to extract. Preventive boundary adopted instead (R1-R3);
+      R1 is structurally enforced by tests/test_platform_boundary.py
+      (merged in PR #25). Remaining item ('application package
+      installs/tests independently') is CONDITIONAL until an
+      application package exists. Closure commit dba9652 raced the
+      PR #25 merge; re-applied here.
     verification:
-      - core imports no application modules (enforced by test)
-      - application package installs/tests independently
+      - "DONE: core imports no application modules (enforced by test --
+        tests/test_platform_boundary.py, 8 tests green)"
+      - "CONDITIONAL: 'application package installs/tests independently'
+        is vacuous until an application package exists; re-check when
+        the first application (e.g. reality-disaster) is created"
 
   # ================= PHASE 19 — BENCHMARKING =========================
 

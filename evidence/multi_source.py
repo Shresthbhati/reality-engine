@@ -236,6 +236,20 @@ class SourceRecord:
     error: Optional[str] = None
     components: Dict[str, List[str]] = field(default_factory=dict)
     registration: dict = field(default_factory=lambda: {"status": "unknown", "transform": None})
+    # -- unified source model (P1-01): acquisition identity and what the
+    # source actually delivered. acquisition_id is content-derived by
+    # default ("acq-<content_hash[:16]>") so the same bytes ingested
+    # anywhere share one acquisition identity, exactly matching the
+    # dedupe rule; a caller with a REAL device-side acquisition uuid
+    # passes it to add_source() and it wins. device_id is ONLY what the
+    # caller declared via an explicit EvidenceSource -- the default
+    # filesystem path records None, never a fabricated device name.
+    # capabilities lists the evidence kinds this source actually
+    # ingested (sorted, derived from the package, empty for
+    # unsupported/failed) -- it is a measured fact, not a promise.
+    acquisition_id: Optional[str] = None
+    device_id: Optional[str] = None
+    capabilities: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -249,6 +263,9 @@ class SourceRecord:
             "error": self.error,
             "components": {k: list(v) for k, v in self.components.items()},
             "registration": dict(self.registration),
+            "acquisition_id": self.acquisition_id,
+            "device_id": self.device_id,
+            "capabilities": list(self.capabilities),
         }
 
     @staticmethod
@@ -264,6 +281,13 @@ class SourceRecord:
             error=data.get("error"),
             components={k: list(v) for k, v in data.get("components", {}).items()},
             registration=dict(data.get("registration", {"status": "unknown", "transform": None})),
+            # Old-format sessions never recorded acquisition_id; the
+            # content-derived rule is deterministic, so applying it
+            # retroactively invents nothing (same bytes -> same id).
+            acquisition_id=data.get("acquisition_id")
+            or f"acq-{data['content_hash'][:16]}",
+            device_id=data.get("device_id"),
+            capabilities=list(data.get("capabilities", [])),
         )
 
 
@@ -466,6 +490,18 @@ class MultiSourceSession:
             platform="filesystem",
             device="local disk",
         )
+        # P1-01 unified source identity: acquisition_id is content-derived
+        # ("acq-<hash16>") so the same bytes ingested anywhere share one
+        # acquisition identity -- exactly the session's dedupe rule made
+        # explicit. A device-side acquisition uuid has no carrier on
+        # EvidenceSource yet; when P1-02's canonical sensor model adds
+        # one, it overrides this derivation. device_id records ONLY what
+        # the caller declared via an explicit EvidenceSource -- the
+        # default filesystem source proves nothing about hardware, so it
+        # stays None rather than inheriting the "local disk" label
+        # (a UI label is not a device identity).
+        acquisition_id = f"acq-{content_hash[:16]}"
+        device_id = source.device if source is not None else None
 
         record: SourceRecord
         builder = self._builder_seeded_from_package()
@@ -483,12 +519,14 @@ class MultiSourceSession:
                 source_id=source_id, original_path=path, source_type=source_type,
                 content_hash=content_hash, status=SourceStatus.UNSUPPORTED, error=str(exc),
                 components=detected_components,
+                acquisition_id=acquisition_id, device_id=device_id,
             )
         except (CorruptEvidenceError, ImporterCapabilityError) as exc:
             record = SourceRecord(
                 source_id=source_id, original_path=path, source_type=source_type,
                 content_hash=content_hash, status=SourceStatus.FAILED, error=str(exc),
                 components=detected_components,
+                acquisition_id=acquisition_id, device_id=device_id,
             )
         else:
             self._package = builder.build(package_id="")
@@ -498,6 +536,11 @@ class MultiSourceSession:
                 asset_ids=[a.asset_id for a in report.imported],
                 unhandled_paths=list(report.unhandled_paths),
                 components=detected_components,
+                acquisition_id=acquisition_id, device_id=device_id,
+                # capabilities = what this source actually delivered,
+                # derived from the ingested assets' kinds -- a measured
+                # fact, not a declared promise. Sorted for determinism.
+                capabilities=sorted({a.kind.value for a in report.imported}),
             )
 
         self._sources[source_id] = record

@@ -1,3 +1,12 @@
+<!--
+ARCHIVED 2026-09-15 (P0-01 canonical-state consolidation).
+SUPERSEDED: this file is point-in-time history and is NOT current truth.
+Canonical files now: .agent/ENGINEERING_CONSTITUTION.md,
+.agent/REALITY_ENGINE_MISSION.md, .agent/TASKS.yaml,
+.agent/EXECUTION_STATE.md, .agent/CAPABILITIES.yaml, .agent/LICENSES.yaml.
+Do not extend or edit this file; read it only for history.
+-->
+
 # Reality Engine — Agent Prompt Loop
 
 > **This file IS the loop.** Every session (human or agent) starts here, not

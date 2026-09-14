@@ -1418,7 +1418,7 @@ engineering decisions are made autonomously.
 ============================================================
 
 The project's priority roadmap (`docs/implementation/ROADMAP.md` and
-the task ledger in `.agent/execution/TASKS.yaml`) is authoritative.
+the task ledger in `.agent/TASKS.yaml`) is authoritative.
 The user/project has already established an ordered sequence of
 implementation priorities.
 
@@ -1462,7 +1462,7 @@ During an execution session:
 
 - minimize unnecessary explanation and questions
 - minimize repeated repository inspection; keep notes in
-  `.agent/execution/STATE.md`
+  `.agent/EXECUTION_STATE.md`
 - use relevant skills/agents/plugins automatically when they apply
 - batch independent inspections and file writes where possible
 - run focused tests before broad tests
@@ -1492,7 +1492,7 @@ genuinely verified implementations is worth more than a larger number
 of superficial changes.
 
 At the end of an execution window, update
-`.agent/execution/STATE.md` and `.agent/execution/TASKS.yaml` with:
+`.agent/EXECUTION_STATE.md` and `.agent/TASKS.yaml` with:
 
 - completed priorities and the exact verification performed
 - partial work and where it stopped

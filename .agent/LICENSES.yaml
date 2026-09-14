@@ -1,0 +1,141 @@
+# Reality Engine — Third-Party License Registry
+# Constitution Article VII: no source reuse without a recorded license
+# decision. This file records (a) the DECLARED runtime dependencies,
+# and (b) the federation candidates with their binding-time
+# obligations. "verify" methods are mandatory: license fields from
+# package metadata are not authoritative on all installs.
+
+declared_runtime:
+
+  - package: numpy
+    declared_license: BSD-3-Clause
+    version_observed: "2.5.2"
+    usage: runtime dependency (pyproject.toml)
+    verify: pip show numpy / PKG-INFO classifier at release time
+    redistribution_obligations: keep BSD-3-Clause notice in distributions
+
+  - package: scipy
+    declared_license: BSD-3-Clause
+    version_observed: "1.18.1"
+    usage: runtime dependency (meshing preprocessing, outlier filters)
+    verify: pip show scipy at release time
+    redistribution_obligations: keep BSD-3-Clause notice
+
+  - package: torch (optional extra "perception")
+    declared_license: BSD-style (torch license)
+    version_observed: "2.14.0"
+    usage: monocular depth (MiDaS), detection (Mask R-CNN)
+    verify: pip show torch / LICENSE file at release time
+    redistribution_obligations: notice retention; weights carry their own terms (see models)
+
+  - package: torchvision (optional extra "perception")
+    declared_license: BSD-style
+    version_observed: "0.29.0"
+    usage: Mask R-CNN detection backend
+    verify: pip show torchvision at release time
+    redistribution_obligations: notice retention
+
+  - package: pillow (optional, image/depth decoding)
+    declared_license: HPND-style (Pillow license)
+    version_observed: "12.3.0"
+    usage: image importers, 16-bit PNG depth decoding
+    verify: pillow LICENSE file at release time
+    redistribution_obligations: notice retention
+
+  - package: pytest (dev only)
+    declared_license: MIT
+    version_observed: "9.1.1"
+    usage: test framework (not shipped)
+    verify: pip show pytest at release time
+    redistribution_obligations: none (dev-only)
+
+external_binaries:
+
+  - binary: COLMAP 4.2.0
+    declared_license: BSD-3-Clause
+    integration: subprocess (reconstruction/backend/colmap_backend.py, reconstruction/meshing/surface.py)
+    hardware_note: CPU-only build in use (no CUDA dense matching)
+    verify: "`colmap -h` banner + upstream license file at packaging time"
+    redistribution_obligations:
+      - BSD-3-Clause notice retention if bundled
+      - subprocess integration avoids linking obligations
+    decision: subprocess federation (recorded 2026-09-14, Decision 021)
+
+federation_candidates:  # NOT bound yet — obligations apply when bound
+
+  - candidate: OpenMVS
+    declared_license: AGPL-3.0
+    binding_obligations: >
+      AGPL is viral for distributed derivatives; subprocess boundary
+      with the user installing OpenMVS separately is the default safe
+      pattern. Record the integration decision in DESIGN_DECISIONS.md
+      before any binding.
+    target_capability: dense_mvs
+
+  - candidate: ORB-SLAM3
+    declared_license: GPL-3.0
+    binding_obligations: >
+      GPL-3.0 — subprocess-only integration; never link/vendor source
+      into the runtime. Binary availability checked at runtime with
+      honest BACKEND_UNAVAILABLE.
+    target_capability: vio_localization
+
+  - candidate: OpenVINS
+    declared_license: GPL-3.0 (with linking exceptions per upstream — verify)
+    binding_obligations: verify upstream exception text before choosing
+      library vs subprocess integration.
+    target_capability: vio_localization
+
+  - candidate: Basalt
+    declared_license: BSD-3-Clause
+    binding_obligations: notice retention; friendliest VIO candidate.
+    target_capability: vio_localization
+
+  - candidate: OpenSfM
+    declared_license: BSD-2-Clause
+    binding_obligations: notice retention.
+    target_capability: geospatial reconstruction (P14-01 era)
+
+  - candidate: OpenDroneMap / ODM
+    declared_license: AGPL-3.0 (per upstream — verify)
+    binding_obligations: same pattern as OpenMVS (subprocess, user-installed).
+    target_capability: aerial reconstruction (P14-01 era)
+
+  - candidate: AliceVision / Meshroom
+    declared_license: MPL-2.0 (AliceVision) / MPL-2.0 core (Meshroom; pipeline CC-BY-SA for some nodes — verify per node)
+    binding_obligations: file-level MPL is library-friendly; verify node
+      licenses before shipping outputs derived from them.
+    target_capability: reconstruction registry (P5-01)
+
+  - candidate: IfcOpenShell
+    declared_license: LGPL-3.0
+    binding_obligations: dynamic-link friendly; notice retention.
+    target_capability: BIM bridge (P8-03)
+
+  - candidate: 3DCityDB
+    declared_license: Apache-2.0 (per upstream — verify)
+    binding_obligations: notice retention.
+    target_capability: city interoperability (P14-01)
+
+  - candidate: SAM (segment-anything)
+    declared_license: Apache-2.0
+    binding_obligations: notice retention; model checkpoint terms per
+      Meta's SAM license page (verify at acquisition time).
+    target_capability: image_segmentation (currently environment-broken)
+
+  - candidate: MiDaS (model weights)
+    declared_license: Apache-2.0
+    binding_obligations: notice retention; weights downloaded at runtime
+      (never vendored silently — model registry P0-40-era rule).
+    target_capability: monocular_depth (in use)
+
+models:
+
+  - model: MiDaS DPT_Hybrid
+    license: Apache-2.0 (code+weights per upstream)
+    acquisition: torch.hub download at first use (network — never in CI)
+    checksum: not pinned yet (model registry strengthening is P0-40/§40)
+    verify: record sha256 in the model registry when acquisition lands
+
+# Rule: before ANY new source/model is vendored or bundled, add its row
+# here with the verified license text path. An empty row is a bug.

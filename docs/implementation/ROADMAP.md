@@ -36,6 +36,6 @@ Why each architectural choice was made lives in
 3. **Never delete future items** because a partial interface exists.
 4. **Deferred ≠ deleted.** P8 simulation systems stay unwired until the
    mapping spine and P4 persistence are real.
-5. **Every session ends by updating** `.agent/execution/STATE.md` and
-   `.agent/execution/TASKS.yaml` so the next session resumes without
+5. **Every session ends by updating** `.agent/EXECUTION_STATE.md` and
+   `.agent/TASKS.yaml` so the next session resumes without
    rediscovery.

@@ -1,0 +1,265 @@
+# Reality Engine — Capability Registry
+# Verified against the repository 2026-09-15. Maturity uses the
+# constitution's scale. "accuracy: not measured" is an honest value,
+# not a placeholder — benchmarks are P19-01. This registry is the
+# basis for backend selection (P5-02); entries are cross-checked
+# against code, not documentation claims.
+
+capabilities:
+
+  - name: sparse_reconstruction
+    category: reconstruction
+    backend: "COLMAP 4.2.0 (subprocess: feature_extractor/exhaustive_matcher/mapper/model_converter)"
+    inputs: [image set, optional intrinsics]
+    outputs: [camera poses (camera-to-world, wxyz quat), sparse 3D points, registration_status]
+    license: BSD-3-Clause (COLMAP) — verify at binding time
+    hardware_requirements: CPU-only build in use; GPU optional
+    accuracy: not measured formally; observed 25/28 cameras on room capture
+    runtime: observed ~23 s on 4 images (CPU)
+    maturity: IMPLEMENTED
+    limitations:
+      - CPU build has no dense matching (patch_match_stereo requires CUDA)
+      - one 4-image scene + one room capture exercised, not a stress test
+    fallback: deterministic fake backend (REALITY_TEST_BACKEND, tests only — never production)
+
+  - name: metric_scale_anchoring
+    category: reconstruction
+    backend: reconstruction/scale.py (in-house, measured-baseline math)
+    inputs: [reconstruction, ScaleReference (measured camera baseline)]
+    outputs: [scaled result in meters, scale_state, meters_per_unit, diagnostics]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: exact for the anchor pair (ratio); rigidity gate guards degenerate pairs
+    runtime: negligible
+    maturity: IMPLEMENTED
+    limitations: single-baseline scale; no multi-baseline least squares yet
+    fallback: honest RELATIVE state (never invented scale)
+
+  - name: monocular_depth
+    category: depth
+    backend: MiDaS DPT_Hybrid via torch.hub (perception/depth/midAS_backend.py)
+    inputs: [evidence items (photos/frames)]
+    outputs: [relative DepthMap per view]
+    license: MiDaS Apache-2.0; torch BSD-style — verify at binding time
+    hardware_requirements: CPU works (slow); CUDA better; weights download on first use
+    accuracy: relative only — metricized per-view against sparse cloud (documented approximation, residual reported)
+    runtime: model-load dominated; seconds per view CPU
+    maturity: IMPLEMENTED
+    limitations:
+      - torch-hub network/cache fragility (env)
+      - relative depth, never metric until alignment
+    fallback: RGB-D sidecar path when the capture carries device depth; honest skip otherwise
+
+  - name: depth_sidecar_ingestion
+    category: evidence
+    backend: evidence/depth_frames.py (Pillow-based 16-bit PNG decoder)
+    inputs: [depth/*.png, depth/manifest.json (depth_scale, invalid_value, units)]
+    outputs: [DepthFrame (raw + explicit scale), meters via iter_meters/meters_at]
+    license: project-internal (Pillow HPND-style license — verify at binding time)
+    hardware_requirements: none
+    accuracy: exact to device depth; scale inherited from manifest
+    runtime: negligible
+    maturity: IMPLEMENTED
+    limitations:
+      - 16-bit PNG only (Decision 020 ladder); EXR and device-raw are open adapters
+      - requires explicit depth_scale — refuses otherwise (by design)
+    fallback: none by design (DepthScaleUnavailable is the honest refusal)
+
+  - name: rgbd_dense_unprojection
+    category: dense_geometry
+    backend: engine/pipeline/vertical_slice.py::_sidecar_depth_stage + reconstruction/depth_to_points.py
+    inputs: [DepthFrames, registered cameras, trusted intrinsics, METRIC scale state]
+    outputs: [device-metric dense points ('depth-' track ids), per-view facts]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: exact camera math (PinholeCamera unproject); verified on synthetic wall at z=2.0 m
+    runtime: negligible at test scale
+    maturity: IMPLEMENTED (synthetic-verified; real-device capture is the VERIFIED gate)
+    limitations:
+      - requires METRIC-anchored world (scale coherence gate)
+      - frame matching by filename stem
+    fallback: MiDaS relative-depth path; honest skip in RELATIVE worlds
+
+  - name: depth_fusion_monocular
+    category: dense_geometry
+    backend: reconstruction/depth_to_points.py metricize_all + reconstruction/fusion/
+    inputs: [relative depth maps, sparse cloud, intrinsics, poses]
+    outputs: [fused metric point cloud (metric-by-alignment)]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: residual_median_m + inlier_fraction reported per view; not benchmarked
+    runtime: observed 121k-point fused cloud from room capture
+    maturity: IMPLEMENTED
+    limitations: per-view scale fit (not global optimization); camera-envelope filter required for depth outliers
+    fallback: sparse-only world (mesh stage skips honestly)
+
+  - name: surface_reconstruction
+    category: meshing
+    backend: COLMAP poisson_mesher (subprocess) via reconstruction/meshing/surface.py
+    inputs: [oriented point cloud (scipy PCA normals, camera-oriented)]
+    outputs: [MeshData (vertices/faces), artifact via ArtifactStore]
+    license: BSD-3-Clause (COLMAP) — verify at binding time
+    hardware_requirements: CPU
+    accuracy: not measured formally; observed 240,735 verts / 482,142 faces on room capture
+    runtime: observed 1.6 s for 40k points (depth-adaptive, trim retry)
+    maturity: IMPLEMENTED
+    limitations:
+      - Poisson depth bounded by point density (auto-retry logic)
+      - trim defaults to 0 (dense-cloud trim=10 empties sparse clouds)
+    fallback: honest skip with reason (never a placeholder mesh; AABB fallback only in viewer, labeled)
+
+  - name: dense_mvs
+    category: dense_geometry
+    backend: NOT FEDERATED YET (COLMAP patch_match_stereo requires CUDA; OpenMVS slot open)
+    inputs: [calibrated images, poses, intrinsics]
+    outputs: [dense depth maps per view]
+    license: n/a until a backend binds
+    hardware_requirements: CUDA GPU (patch_match_stereo) — unavailable on reference machine
+    accuracy: n/a
+    runtime: n/a
+    maturity: MISSING (backend slot specified; docs/future/dense-reconstruction/DENSE_MVS.md)
+    limitations: reference machine is CPU-only COLMAP 4.2.0
+    fallback: monocular depth + RGB-D sidecars (labeled as such, never passed off as MVS)
+
+  - name: object_detection
+    category: perception
+    backend: torchvision Mask R-CNN (perception/detection/maskrcnn_backend.py)
+    inputs: [evidence items]
+    outputs: [per-view instance masks + scores]
+    license: torchvision BSD-style; weights per torchvision docs — verify at binding time
+    hardware_requirements: CPU works; weights download on first use
+    accuracy: not measured (score threshold 0.5 default)
+    runtime: seconds per view CPU
+    maturity: IMPLEMENTED
+    limitations: weights acquisition needed; 2D only — 3D lift needs metric depth
+    fallback: honest skip (perception stage refuses without metric depth)
+
+  - name: image_segmentation
+    category: perception
+    backend: SAM via torch.hub (perception backend, gated tests)
+    inputs: [images, prompt boxes/masks]
+    outputs: [masks]
+    license: SAM Apache-2.0 — verify at binding time
+    hardware_requirements: CPU/GPU; checkpoint download
+    accuracy: not measured in-repo
+    runtime: n/a on this machine (broken environment)
+    maturity: BROKEN (environment) — torch-hub cache failure, 20 tests deselected
+    limitations: environment must be fixed before any SAM-dependent verification counts
+    fallback: Mask R-CNN detection path
+
+  - name: time_synchronization
+    category: temporal
+    backend: none yet
+    inputs: []
+    outputs: []
+    license: n/a
+    hardware_requirements: none
+    accuracy: n/a
+    runtime: n/a
+    maturity: MISSING (P2-01, the critical chain's first link)
+    limitations: SensorStream timestamps are per-file sensor-clock only
+    fallback: none — cross-sensor correlation is refused, not guessed
+
+  - name: vio_localization
+    category: localization
+    backend: none yet (ORB-SLAM3/OpenVINS/Basalt adapters specified, not bound)
+    inputs: []
+    outputs: []
+    license: n/a until a backend binds (ORB-SLAM3 GPL-3.0 — subprocess boundary required; record in LICENSES.yaml before binding)
+    hardware_requirements: backend-dependent
+    accuracy: n/a
+    runtime: n/a
+    maturity: MISSING (P3-01/P3-02)
+    limitations: per-session SfM poses only; no continuous trajectory
+    fallback: SfM camera poses (labeled per-session, not a trajectory)
+
+  - name: cross_source_registration
+    category: registration
+    backend: none yet (RegistrationEngine specified, P4-01)
+    inputs: []
+    outputs: []
+    license: n/a
+    hardware_requirements: none
+    accuracy: n/a
+    runtime: n/a
+    maturity: MISSING — the most important missing core subsystem
+    limitations: sessions compile to separate world frames today
+    fallback: none — separate worlds stay separate and labeled
+
+  - name: world_compilation
+    category: worldir
+    backend: engine/compiler/world_compiler.py + engine/pipeline/vertical_slice.py
+    inputs: [ReconstructionResult, options, ArtifactStore]
+    outputs: [WorldIR v1 (entities/measurements/metadata), compile diagnostics]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: validation gate enforced (validate_world_ir)
+    runtime: negligible at test scale
+    maturity: IMPLEMENTED
+    limitations: v1 schema (topology/temporal history/representations open — P9-01)
+    fallback: none (compile failure fails loudly)
+
+  - name: artifact_storage
+    category: persistence
+    backend: world_ir/artifact_store.py (content-addressed sha256)
+    inputs: [bytes]
+    outputs: [data_uri, data_hash]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: hash-exact
+    runtime: negligible
+    maturity: IMPLEMENTED
+    limitations: local filesystem; no remote object storage yet (WorldStore P11-01)
+    fallback: none
+
+  - name: export_gltf
+    category: compilers
+    backend: exporters/gltf/exporter.py
+    inputs: [WorldIR + resolvable artifacts]
+    outputs: [glTF 2.0 (TRIANGLES mesh, POINTS entities)]
+    license: project-internal (glTF spec, royalty-free)
+    hardware_requirements: none
+    accuracy: verified on real 240k-vertex mesh (uint32 indices)
+    runtime: negligible at test scale
+    maturity: IMPLEMENTED
+    limitations: material/texture export minimal
+    fallback: unresolvable artifacts export as labeled placeholders (honest fallback rule)
+
+  - name: export_blender_usd
+    category: compilers
+    backend: exporters/blender/, exporters/usd/
+    inputs: [WorldIR]
+    outputs: [Blender scene / USD stage]
+    license: project-internal
+    hardware_requirements: Blender for .blend verification (external, gated)
+    accuracy: golden-file tested where CI-able
+    runtime: negligible
+    maturity: IMPLEMENTED (basic)
+    limitations: fidelity below glTF path
+    fallback: none
+
+  - name: physics_rigid_body
+    category: simulation
+    backend: engine/physics/backend/simple_backend.py
+    inputs: [world entities + materials]
+    outputs: [simulated state, contact/friction behavior]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: golden tests (RB_001/RB_002)
+    runtime: real-time at test scale
+    maturity: "PARTIAL (foundation: rigid bodies/collision/friction/contacts; constraints/CCD/fluids open — P17-01)"
+    limitations: no constraints/joints yet; determinism tested fixed-step
+    fallback: none
+
+  - name: one_command_compile
+    category: product
+    backend: apps/cli/main.py `reality compile` (also scripts/run_vertical_slice.py)
+    inputs: [capture dataset directory]
+    outputs: [worldir.json, points.ply, cameras.json, exports/, report.json]
+    license: project-internal
+    hardware_requirements: backend-dependent (COLMAP for real runs)
+    accuracy: inherits stages; report.json records every stage's honest status
+    runtime: COLMAP-dominated on real captures
+    maturity: IMPLEMENTED
+    limitations: orchestrator->compile only; session/source management CLI open
+    fallback: deterministic backend injection (REALITY_TEST_BACKEND) for offline tests

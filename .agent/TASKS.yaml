@@ -1,0 +1,516 @@
+# Reality Engine — Canonical Task Queue
+
+ROADMAP_VERSION: "RE-2026-CORE-V1"
+RATIFIED: 2026-09-15
+
+# THE work queue (constitution Article II/VI). Order is priority:
+# consume top-down; do not reorder; finish one, start the next.
+# Statuses: NOW | NEXT | PARTIAL | MISSING | BLOCKED | DONE (with evidence).
+# Every DONE needs the named verification to have actually run
+# (constitution Article IV).
+
+north_star:
+  name: "Reality Compiler + WorldOS"
+  objective: >
+    Convert heterogeneous real-world evidence into a persistent,
+    evidence-backed, semantically rich, uncertain, provenance-aware
+    world representation that can be incrementally updated and
+    compiled into BIM, GIS, robotics, simulation, procedural worlds,
+    and real-time engines.
+
+rules:
+  strategic_priority_is_authoritative: true
+  continue_after_task: true
+  verify_before_complete: true
+  use_specialist_backends: true
+  do_not_reimplement_without_reason: true
+  disaster_is_not_core: true
+
+tasks:
+
+  # ================= PHASE 0 — ARCHITECTURAL RESET =================
+
+  - id: P0-01
+    name: canonical agent/project state
+    status: NOW
+    deliverables:
+      - .agent/ENGINEERING_CONSTITUTION.md
+      - .agent/REALITY_ENGINE_MISSION.md
+      - .agent/TASKS.yaml
+      - .agent/EXECUTION_STATE.md
+      - .agent/CAPABILITIES.yaml
+      - .agent/LICENSES.yaml
+      - legacy .agent state + root IMPLEMENTATION_STATUS.md archived
+    verification:
+      - full test suite green (docs/state-only change)
+      - legacy files carry archive banners pointing at canonical files
+
+  - id: P0-02
+    name: platform/application separation scoping
+    status: NEXT
+    problem: >
+      Disaster-specific logic is application code living in core.
+      Disaster management is a consumer of the world platform, not its
+      definition (constitution Article XI).
+    scope: >
+      Inventory core for application-specific logic (disaster workflows,
+      dashboards, evacuation orchestration, hazard scenarios, emergency
+      response logic, domain scoring); produce the concrete extraction
+      plan (what moves to reality-apps/, what stays as generic
+      primitives, dependency cuts). Extraction executes after the
+      time/trajectory/registration chain lands unless a blocking
+      conflict appears.
+    verification:
+      - inventory lists each candidate with file paths and dependency facts
+      - plan separates generic primitives (stay) from application logic (move)
+
+  - id: P0-03
+    name: backend capability registry
+    status: NEXT
+    deliverables:
+      - .agent/CAPABILITIES.yaml (name/category/inputs/outputs/backend/
+        license/hardware/accuracy/runtime/maturity/limitations/fallback)
+    basis: >
+      Populated from verified repo facts (what backends exist and what
+      was actually run), not wishes. Becomes the basis for backend
+      selection (P5-02).
+    verification:
+      - every entry cross-checked against code/audit docs
+      - honest maturity labels per constitution Article V
+
+  # ================= PHASE 1 — EVIDENCE FOUNDATION =================
+
+  - id: P1-01
+    name: canonical evidence/source model
+    status: PARTIAL
+    basis: >
+      MultiSourceSession/SourceRecord (content-hash identity, component
+      manifests) + EvidenceItem exist; canonical unified Source model
+      with acquisition_id/device_id/capabilities still open.
+    verification:
+      - source identity tests (dedupe by content hash across paths)
+      - manifest roundtrip
+
+  - id: P1-02
+    name: canonical sensor model
+    status: MISSING
+    scope: >
+      sensor_id/source_id/capture_id/clock_id/timestamp/frame/
+      intrinsics/extrinsics/units/coordinate_system/quality/provenance
+      on every sensor stream; no hidden assumptions.
+    dependencies: [P1-01]
+
+  - id: P1-03
+    name: depth integration completion
+    status: PARTIAL
+    basis: >
+      DepthFrame + 16-bit PNG parser + manifest scale resolution +
+      MultiSourceSession.depth_frames() + pipeline sidecar unprojection
+      with scale-coherence gate are IMPLEMENTED and tested (PR #22,
+      suite 1363). Named remainder to VERIFIED: a real RGB-D capture
+      run end-to-end (device data, not only synthetic fixtures); EXR
+      and device-raw adapters open per the format ladder.
+    verification:
+      - DONE: deterministic RGB-D E2E (synthetic wall -> z=2.0 m)
+      - PENDING: real device capture E2E into WorldIR geometry
+
+  # ================= PHASE 2 — TIME + CALIBRATION =================
+
+  - id: P2-01
+    name: clock model + time synchronization
+    status: MISSING
+    problem: >
+      SensorStream timestamps are per-file sensor-clock values; streams
+      from different devices cannot be correlated (sensors.py names
+      this deliberately undone).
+    scope: >
+      ClockModel/Timestamp/TimeAlignment/SynchronizationResult with
+      t_global = a * t_sensor + b, offset+drift+uncertainty, clock
+      identity, sync method; preserve original sensor timestamps (map,
+      never overwrite). Progressive backends: shared clock, hardware
+      trigger, GNSS/PPS, metadata alignment, cross-correlation,
+      trajectory correlation, optimization-based alignment.
+    dependencies: [P1-02]
+    spec: docs/future/synchronization/TIME_SYNCHRONIZATION.md
+    verification:
+      - deterministic fixture: known offset/drift -> recovered within tolerance
+      - original timestamps provably preserved
+      - uncertainty propagated, not fabricated
+
+  - id: P2-02
+    name: calibration/frame system unification
+    status: PARTIAL
+    basis: >
+      CameraIntrinsics/CameraExtrinsics + calibration sidecar parsing
+      exist; camera-to-IMU/camera-to-LiDAR transform chains, GNSS
+      frames (ENU/ECEF), and reprojection-residual quality metrics open.
+    dependencies: [P2-01]
+    verification:
+      - transform-chain composition tests with known answers
+      - reprojection residual stats (mean/median/p95/per-camera)
+
+  # ================= PHASE 3 — LOCALIZATION / TRAJECTORY =================
+
+  - id: P3-01
+    name: canonical trajectory model
+    status: MISSING
+    scope: >
+      Trajectory/Pose/Velocity/Bias/Covariance/Frame, backend-neutral,
+      monotonic timestamps, provenance-carrying.
+    dependencies: [P2-01]
+    spec: docs/future/vio/VIO_TRAJECTORY.md (representation section)
+    verification:
+      - construction validation (monotonicity, frame identity)
+      - serialization roundtrip
+
+  - id: P3-02
+    name: VIO/localization backend federation
+    status: MISSING
+    problem: >
+      Per-session SfM poses exist; no continuous trajectory, no VIO
+      adapter. Do NOT build a mediocre custom VIO first — federate.
+    scope: >
+      Adapters for ORB-SLAM3 / OpenVINS / Basalt behind the backend
+      interface; honest BACKEND_UNAVAILABLE when binaries absent.
+    dependencies: [P3-01]
+    verification:
+      - adapter contract tests with fake trajectories
+      - real backend run when binary present (gated, never CI-flaky)
+
+  - id: P3-03
+    name: trajectory quality diagnostics
+    status: MISSING
+    scope: ATE, RPE, drift, loop-closure diagnostics, covariance,
+      timestamp alignment quality, tracking state
+      (TRACKING/LOST/RELOCALIZING/LOCALIZED).
+    dependencies: [P3-01]
+    verification:
+      - deterministic fixture with known trajectory -> metrics match
+        reference implementation or analytic values
+
+  # ================= PHASE 4 — CROSS-SOURCE REGISTRATION =================
+
+  - id: P4-01
+    name: cross-source registration engine
+    status: MISSING
+    problem: >
+      Phone/drone/LiDAR/RGB-D results are separate worlds; nothing
+      proves they belong in one frame. The most important missing core
+      subsystem.
+    scope: >
+      RegistrationEngine: known extrinsics -> GNSS/trajectory prior ->
+      coarse alignment -> feature/correspondence validation ->
+      point-to-plane ICP -> robust optimization -> uncertainty ->
+      acceptance. Returns SourceTransform/RegistrationResult/
+      ResidualStats/Covariance/QualityScore. Rejections are recorded
+      (BLOCKED-quality), never a silent best-effort transform.
+    dependencies: [P3-01, P2-01]
+    spec: docs/future/registration/CROSS_SOURCE_REGISTRATION.md
+    verification:
+      - deterministic synthetic two-cloud known-offset test
+      - rejection tests: no-overlap and degenerate geometry
+
+  # ================= PHASE 5 — RECONSTRUCTION FEDERATION =================
+
+  - id: P5-01
+    name: reconstruction backend registry
+    status: PARTIAL
+    basis: >
+      IReconstructionBackend + COLMAP backend + deterministic test seam
+      (REALITY_TEST_BACKEND) exist; registry/selection does not.
+    scope: >
+      capability()/diagnostics()/artifacts() contract across backends:
+      COLMAP, OpenMVS, AliceVision/Meshroom, OpenSfM, OpenDroneMap.
+    verification:
+      - registry discovery tests; unavailable-backend honesty tests
+
+  - id: P5-02
+    name: automatic backend selection
+    status: MISSING
+    scope: >
+      Input characteristics (image count, overlap, camera model, GNSS,
+      IMU, depth, LiDAR, scene type, GPU, accuracy/runtime budget) ->
+      backend ranking -> run -> assess -> retry/fuse/alternate.
+    dependencies: [P5-01, P0-03]
+    verification:
+      - selection decision tests on synthetic input profiles
+
+  # ================= PHASE 6 — DENSE GEOMETRY + FUSION =================
+
+  - id: P6-01
+    name: true dense MVS
+    status: PARTIAL
+    basis: >
+      Monocular (MiDaS) fusion + RGB-D sidecar unprojection (PR #22)
+      produce dense points; patch_match_stereo is CUDA-blocked on the
+      reference machine (CPU-only COLMAP 4.2.0). MiDaS is a prior/
+      fallback, not MVS — keep it labeled as such.
+    scope: >
+      Backend slots for COLMAP patch_match_stereo / OpenMVS; dense
+      depth per view -> cross-view consistency -> fusion.
+    spec: docs/future/dense-reconstruction/DENSE_MVS.md
+    verification:
+      - backend-slot contract tests (honest unavailability)
+      - real MVS run when GPU/CUDA available (gated)
+
+  - id: P6-02
+    name: evidence fusion (plural dense sources)
+    status: PARTIAL
+    basis: >
+      Depth-fusion from mono depth + sidecar depth exists; fusion is
+      single-source-at-a-time, no weighted multi-source merge.
+    scope: >
+      MVS + RGB-D + LiDAR + stereo + monocular + neural depth as
+      plural evidence -> weighted/robust fusion with uncertainty ->
+      WorldIR geometry.
+    dependencies: [P6-01, P4-01]
+    spec: docs/future/dense-reconstruction/DEPTH_FUSION.md
+    verification:
+      - deterministic fusion tests with known ground truth per source
+      - uncertainty weights demonstrably influence the estimate
+
+  - id: P6-03
+    name: canonical MeshData completion
+    status: PARTIAL
+    basis: >
+      MeshData + deterministic PLY I/O + ArtifactStore + WorldIR MESH
+      geometry + glTF export landed (PR #16/#22 era); mesh VALIDATION
+      (degenerate triangles, non-manifold edges, bad normals,
+      self-intersections, holes, components, bad scale) is open —
+      "mesh quality != mesh existence".
+    verification:
+      - validation test matrix on known-bad meshes
+      - quality metrics recorded in artifact metadata
+
+  # ================= PHASE 7 — PERCEPTION =================
+
+  - id: P7-01
+    name: multi-view object identity
+    status: PARTIAL
+    basis: >
+      merge_hypotheses union-find + lift_region_to_3d exist (2+ views
+      -> one entity, tested); appearance features and epipolar/temporal
+      consistency do not.
+    scope: >
+      detection -> appearance features -> geometry -> epipolar/temporal
+      consistency -> 3D association -> track -> entity.
+    spec: docs/future/perception/MULTI_VIEW_IDENTITY.md
+    verification:
+      - deterministic rendered-view fixtures; wrong-merge rejection
+
+  - id: P7-02
+    name: temporal tracking
+    status: MISSING
+    scope: object/camera/scene tracks with track_id/state/velocity/
+      history/confidence/uncertainty.
+    dependencies: [P7-01]
+    spec: docs/future/perception/TRACKING.md
+
+  - id: P7-03
+    name: architectural perception
+    status: MISSING
+    scope: >
+      Walls/floors/ceilings/doors/windows/stairs/columns/beams/roofs/
+      facades/roads/curbs/infrastructure/terrain/vegetation from
+      geometry+visual+context, not label-only.
+    verification:
+      - synthetic room fixture -> correct architectural labels
+
+  # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
+
+  - id: P8-01
+    name: room graph
+    status: PARTIAL
+    basis: Plane/room promotion exists (promote_planes/promote_rooms);
+      openings/relationships topology open.
+    scope: Room -> boundary/floor/ceiling/openings/objects/relationships.
+    dependencies: [P7-03]
+
+  - id: P8-02
+    name: building graph
+    status: MISSING
+    scope: Building -> site/floors/rooms/corridors/stairs/vertical
+      connections/envelope/structure.
+    dependencies: [P8-01]
+
+  - id: P8-03
+    name: BIM bridge (IFC)
+    status: MISSING
+    scope: >
+      WorldIR -> IFC via IfcOpenShell (adapter, license recorded in
+      LICENSES.yaml); IFC -> WorldIR reverse path later. Do not rebuild
+      BIM from scratch.
+    dependencies: [P8-02]
+    verification:
+      - roundtrip on a synthetic two-room world
+
+  # ================= PHASE 9 — WORLDIR 2.0 =================
+
+  - id: P9-01
+    name: WorldIR 2.0
+    status: PARTIAL
+    basis: >
+      WorldIR v1 (entities/geometry/measurements/observations/
+      provenance) is canonical and validated; topology, temporal
+      history, representations, DERIVED/PREDICTED/SIMULATED statement
+      states, external references open.
+    verification:
+      - additive schema migration tests (v1 worlds still load)
+      - statement-state classification tests
+
+  # ================= PHASE 10 — EVIDENCE GRAPH + UNCERTAINTY =========
+
+  - id: P10-01
+    name: provenance graph
+    status: PARTIAL
+    basis: >
+      Per-artifact provenance + hashes exist; queryable linked graph
+      (image -> feature -> match -> pose -> depth -> point -> mesh ->
+      observation -> entity -> world version) and `reality provenance`
+      query do not.
+    spec: docs/future/provenance/PROVENANCE_GRAPH.md
+    verification:
+      - full ancestor-chain walk on a compiled fixture
+      - tamper detection test
+
+  - id: P10-02
+    name: uncertainty propagation
+    status: MISSING
+    scope: >
+      Formal propagation calibration -> pose -> registration -> depth
+      -> geometry -> measurement; uncertainty != confidence; UNKNOWN
+      propagates as UNKNOWN.
+    dependencies: [P10-01]
+    spec: docs/future/uncertainty/UNCERTAINTY_PROPAGATION.md
+    verification:
+      - analytic covariance propagation fixtures
+
+  # ================= PHASE 11 — WORLDSTORE =================
+
+  - id: P11-01
+    name: WorldStore
+    status: MISSING
+    scope: >
+      Persistent versioned storage: SourceStore/EvidenceStore/
+      ObservationStore/ArtifactStore/EntityStore/RelationshipStore/
+      TemporalStore/ProvenanceStore/WorldVersionStore. Initial:
+      SQLite + local blobs; upgrade path to PostgreSQL/PostGIS +
+      object storage. New evidence -> new version, never destroy.
+    dependencies: [P10-01]
+    spec: docs/future/worldstore/WORLDSTORE.md
+    verification:
+      - two-commit revision chain with checkout equality
+      - crash-during-commit recovery test
+
+  # ================= PHASE 12 — INCREMENTAL COMPILATION ==============
+
+  - id: P12-01
+    name: incremental compilation
+    status: MISSING
+    scope: >
+      New evidence -> dependency graph -> affected region/artifacts/
+      entities -> incremental compile -> World Vn+1; everything else
+      cached. Correctness invariant: incremental == full recompile.
+    dependencies: [P11-01]
+    spec: docs/future/worldstore/INCREMENTAL_COMPILATION.md
+    verification:
+      - equivalence test (incremental vs full, identical artifact hashes)
+
+  # ================= PHASE 13 — LARGE WORLD ==========================
+
+  - id: P13-01
+    name: spatial tiling + indexes
+    status: MISSING
+    scope: spatial cells, R-tree/octree/BVH where appropriate.
+    dependencies: [P11-01]
+    spec: docs/future/large-world/LARGE_WORLD.md
+
+  - id: P13-02
+    name: LOD + streaming + artifact paging
+    status: MISSING
+    dependencies: [P13-01]
+    verification:
+      - memory bounded by chunk size, not world size (measured)
+
+  # ================= PHASE 14 — CITY WORLD ===========================
+
+  - id: P14-01
+    name: city world compiler
+    status: MISSING
+    scope: >
+      Terrain/roads/buildings/vegetation/infrastructure/water from
+      Reality Engine evidence + GIS + OSM + satellite + aerial +
+      LiDAR; outputs WorldIR/CityGML/CityJSON/3DCityDB/glTF/USD.
+      Only after the core compiler is stable.
+    dependencies: [P13-01]
+
+  # ================= PHASE 15 — PROCEDURAL GENERATION ================
+
+  - id: P15-01
+    name: procedural world generation
+    status: MISSING
+    scope: WorldIR -> urban/room grammar -> constraints -> generated
+      worlds (rooms, buildings, neighborhoods, cities).
+    dependencies: [P9-01]
+
+  # ================= PHASE 16 — WORLD COMPILERS ======================
+
+  - id: P16-01
+    name: downstream world compilers
+    status: PARTIAL
+    basis: glTF/Blender/USD exporters exist and are tested; IFC
+      (P8-03), CityGML (P14-01), ROS/Habitat/SUMO/Unreal/Godot open.
+    scope: >
+      WorldIR -> {Blender, USD, glTF, IFC, CityGML, GIS, ROS, Habitat,
+      SUMO, Unreal, Godot} as adapters.
+    verification:
+      - per-compiler roundtrip or golden-file test
+
+  # ================= PHASE 17 — WORLD SIMULATION =====================
+
+  - id: P17-01
+    name: generic world simulation
+    status: PARTIAL
+    basis: >
+      Rigid-body/collision/friction/contact foundation + physics config
+      exist; constraints/CCD/fluids/thermal coupling open; physics ->
+      WorldIR artifact path open.
+    scope: >
+      PhysicsCompiler: WorldIR -> SimulationState -> simulation ->
+      WorldStateDelta -> WorldIR branch/version. Generic primitives in
+      core; application scenarios in application packages.
+    spec: docs/future/physics/ADVANCED_PHYSICS.md
+    verification:
+      - determinism (fixed-step, seeded) tests per workstream
+
+  # ================= PHASE 18 — APPLICATIONS =========================
+
+  - id: P18-01
+    name: application extraction
+    status: NOW
+    problem: >
+      Application-specific logic (disaster) lives in core, violating
+      constitution Article XI. Disaster management is a consumer.
+    dependencies: [P0-02]
+    verification:
+      - core imports no application modules (enforced by test)
+      - application package installs/tests independently
+
+  # ================= PHASE 19 — BENCHMARKING =========================
+
+  - id: P19-01
+    name: competitive benchmark suite
+    status: MISSING
+    problem: >
+      The platform claims federation wins; those claims must be
+      measured, not asserted.
+    scope: >
+      Formal benchmark subsystem vs COLMAP/OpenSfM/ODM/Open3D/OpenMVS/
+      AliceVision/ORB-SLAM3/RoomFormer/Nerfstudio/OSM2World/3DCityDB/
+      IfcOpenShell/SUMO/Habitat on accuracy/completeness/registration
+      RMSE/ATE/RPE/mesh quality/semantic accuracy/topology/runtime/
+      memory/incremental time/storage/latency. Goal: measured evidence
+      of where Reality Engine beats, matches, or delegates.
+    dependencies: [P5-02, P11-01]
+    verification:
+      - benchmark runs recorded in docs/BENCHMARKS.md with raw numbers

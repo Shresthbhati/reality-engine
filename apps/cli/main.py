@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from evidence.importers import import_folder
+from evidence.multi_source import MultiSourceSession
 from evidence.packages import DeterministicPackageBuilder, EvidencePackage
 from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
 from reconstruction.backend.fake import FakeReconstructionBackend
@@ -84,6 +85,105 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         for path in report.unhandled_paths:
             _eprint(f"  unhandled: {path}")
     print(f"wrote package '{package.package_id}' -> {args.output}")
+    return 0
+
+
+def _session_path(session_dir: str) -> Path:
+    return Path(session_dir) / "session.json"
+
+
+def _load_session(session_dir: str) -> MultiSourceSession:
+    path = _session_path(session_dir)
+    if not path.is_file():
+        raise FileNotFoundError(f"no session.json under {session_dir!r} -- run `reality session create` first")
+    return MultiSourceSession.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _save_session(session: MultiSourceSession, session_dir: str) -> None:
+    Path(session_dir).mkdir(parents=True, exist_ok=True)
+    _session_path(session_dir).write_text(
+        json.dumps(session.to_dict(), indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+
+def cmd_session_create(args: argparse.Namespace) -> int:
+    path = _session_path(args.session_dir)
+    if path.is_file():
+        _eprint(f"session already exists at {path} -- use `session add-source` to add evidence to it")
+        return 1
+    session = MultiSourceSession(session_id=args.session_id, name=args.name or args.session_id)
+    _save_session(session, args.session_dir)
+    print(f"created session '{session.session_id}' -> {path}")
+    return 0
+
+
+def cmd_source_add(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    record = session.add_source(args.path)
+    _save_session(session, args.session_dir)
+    print(f"{record.status.value}\t{record.source_id}\t{record.source_type.value}\t{args.path}")
+    if record.error:
+        _eprint(f"  {record.error}")
+    if record.unhandled_paths:
+        for unhandled in record.unhandled_paths:
+            _eprint(f"  unhandled: {unhandled}")
+    return 0 if record.status.value in ("ingested", "already_ingested") else 1
+
+
+def cmd_source_list(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    for record in session.sources():
+        print(f"{record.source_id}\t{record.status.value}\t{record.source_type.value}\t"
+              f"{len(record.asset_ids)} asset(s)\t{record.original_path}")
+    print(f"{len(session.sources())} source(s), {len(session.package.all_assets())} asset(s) total")
+    return 0
+
+
+def cmd_session_inspect(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    summary = session.evidence_summary()
+    print(f"session '{session.session_id}' ({session.name})")
+    print(f"  sources: {summary['source_count']}")
+    for kind, count in sorted(summary["asset_counts"].items()):
+        print(f"    {kind}: {count}")
+    print(f"  assets with GPS: {summary['gps_asset_count']}")
+    print(f"  ready for reconstruction: {'YES' if summary['ready_for_reconstruction'] else 'NO'}")
+    for issue in summary["readiness_issues"]:
+        _eprint(f"    - {issue}")
+    return 0
+
+
+def cmd_source_inspect(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    matches = [s for s in session.sources() if s.source_id == args.source_id]
+    if not matches:
+        _eprint(f"unknown source id: {args.source_id!r}")
+        return 1
+    record = matches[0]
+    print(f"source '{record.source_id}'")
+    print(f"  path: {record.original_path}")
+    print(f"  type: {record.source_type.value}")
+    print(f"  status: {record.status.value}")
+    print(f"  content hash: {record.content_hash}")
+    print(f"  asset(s): {len(record.asset_ids)}")
+    for asset_id in record.asset_ids:
+        print(f"    {asset_id}")
+    if record.unhandled_paths:
+        print(f"  unhandled path(s): {len(record.unhandled_paths)}")
+        for path in record.unhandled_paths:
+            print(f"    {path}")
+    if record.error:
+        print(f"  error: {record.error}")
+    return 0
+
+
+def cmd_session_export_package(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    Path(args.output).write_text(
+        json.dumps(session.package.to_dict(), indent=2, sort_keys=True), encoding="utf-8"
+    )
+    print(f"exported package '{session.package.package_id}' "
+          f"({len(session.package.all_assets())} asset(s)) -> {args.output}")
     return 0
 
 
@@ -208,6 +308,44 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--seed", default="pkg", help="deterministic id seed (default: pkg)")
     p_ingest.add_argument("--package-id", default="", help="explicit package id (default: pkg-<seed>)")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_session = sub.add_parser("session", help="multi-source ingestion session: create/add-source/list/export")
+    session_sub = p_session.add_subparsers(dest="session_command", required=True)
+
+    p_session_create = session_sub.add_parser("create", help="create a new multi-source session")
+    p_session_create.add_argument("session_id")
+    p_session_create.add_argument("-o", "--session-dir", required=True, help="directory to hold session.json")
+    p_session_create.add_argument("--name", default="", help="human-readable session name")
+    p_session_create.set_defaults(func=cmd_session_create)
+
+    p_source_add = session_sub.add_parser(
+        "add-source", help="ingest one file/folder into an existing session (incremental; dedups by content)"
+    )
+    p_source_add.add_argument("session_dir")
+    p_source_add.add_argument("path", help="file or folder to ingest")
+    p_source_add.set_defaults(func=cmd_source_add)
+
+    p_source_list = session_sub.add_parser("list", help="list sources and asset counts in a session")
+    p_source_list.add_argument("session_dir")
+    p_source_list.set_defaults(func=cmd_source_list)
+
+    p_session_inspect = session_sub.add_parser(
+        "inspect", help="session-level evidence summary + reconstruction readiness"
+    )
+    p_session_inspect.add_argument("session_dir")
+    p_session_inspect.set_defaults(func=cmd_session_inspect)
+
+    p_source_inspect = session_sub.add_parser("inspect-source", help="full detail for one source in a session")
+    p_source_inspect.add_argument("session_dir")
+    p_source_inspect.add_argument("source_id")
+    p_source_inspect.set_defaults(func=cmd_source_inspect)
+
+    p_session_export = session_sub.add_parser(
+        "export-package", help="write the session's accumulated EvidencePackage as package JSON (for `reconstruct`)"
+    )
+    p_session_export.add_argument("session_dir")
+    p_session_export.add_argument("-o", "--output", required=True)
+    p_session_export.set_defaults(func=cmd_session_export_package)
 
     p_recon = sub.add_parser("reconstruct", help="evidence package -> reconstruction -> compiled WorldIR")
     p_recon.add_argument("package", help="package JSON produced by `ingest`")

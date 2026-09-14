@@ -1,9 +1,131 @@
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (security fix + uniform real-geometry export session complete)
-**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the CLI + SDK-query + plane/object-geometry-storage + 3-exporter PR merged)
-**Verified baseline before this session:** 1127 passed, 1 pre-existing environment failure deselected.
-**Verified after this session:** 1143 passed, 1 pre-existing failure deselected (observed 89.1s) — +16 tests (9 security regression + net 7 export), zero regressions.
+**Updated:** 2026-09-14 (packaging fix session complete)
+**Branch:** `claude/reality-engine-build-e6ac6e` (worktree off `main`, main already has dense-mesh/Poisson-mesh + glTF uint32-index fix + viewer real-mesh rendering + camera-envelope filter merged, PR #16)
+**Verified baseline before this session:** 1298 passed, 1 pre-existing environment failure deselected.
+**Verified after this session:** 1298 passed (unchanged — packaging session, no test additions), zero regressions. Additionally verified `pip install .` + `reality --help` + full-runtime-import from a clean venv outside the repo (previously broken, see below).
+
+## Roadmap dump received 2026-09-14 (see .agent/ROADMAP_2026-09-14.md for the full 47-item text)
+
+The user pasted a comprehensive P0-P8 roadmap (packaging → docs → source
+identity → sensor ingestion → sync → VIO/SLAM → registration → dense
+MVS/mesh → perception/identity → evidence fusion/uncertainty/provenance
+→ WorldStore → Studio → scale/GIS/robotics → CI/release). Saved
+verbatim to `.agent/ROADMAP_2026-09-14.md` (a new file -- `.agent/PROMPT_LOOP.md`
+is a separate, pre-existing loop file and was not touched) so it
+survives context compaction. Working it top-down per priority number;
+each item gets its own dated section here as it lands.
+
+## Completed 2026-09-14: P0 item #1 -- fixed packaging (`pip install .` was broken)
+
+Verified broken exactly as reported: `pyproject.toml`'s
+`[tool.setuptools.packages.find].include` only listed `engine*`,
+`world_ir*`, `provenance*`, `events*` -- `evidence`, `reconstruction`,
+`perception`, `exporters`, `sdk`, `apps` were silently excluded from
+the wheel, and there was no `[project.scripts]` entry, so no `reality`
+executable existed after install (only `python -m apps.cli.main` worked,
+and only from inside a checkout with the repo root on `PYTHONPATH`).
+
+Fixed:
+- `pyproject.toml`: broadened the include glob to cover all six missing
+  top-level packages; added `[project.scripts]` `reality =
+  "apps.cli.main:main"`.
+- Added `__init__.py` to `reconstruction/`, `exporters/`, `apps/` --
+  these worked as implicit PEP 420 namespace packages for every
+  existing import site (`reconstruction.backend.interface`, etc., used
+  throughout `evidence/`, `perception/`, `sdk/`, tests), so this changes
+  no import path, but `setuptools.find_packages()` (invoked by
+  `[tool.setuptools.packages.find]`) requires `__init__.py` to discover
+  a directory as a package for wheel inclusion, and namespace-package
+  discovery was not turned on. (`reconstruction/{features,matching,mvs,
+  registration,sfm}` and `apps/{capture,studio,viewer}` remain README-only
+  empty scaffolds with no Python code -- correctly still absent from the
+  wheel; nothing to package there yet.)
+- `dependencies = []` was also wrong: a clean-venv install surfaced
+  `ModuleNotFoundError: numpy` the moment the CLI imported
+  `reconstruction.backend.colmap_backend` (core reconstruct path, not
+  the optional `perception` ML extra). Added `numpy>=1.24` and
+  `scipy>=1.10` (used unconditionally by `reconstruction/meshing/preprocess.py`,
+  the dense-mesh Poisson-reconstruction step) to `dependencies`.
+  `cv2`/`PIL`/`torch`/`torchvision`/`segment_anything` were confirmed to
+  live only under `perception/` and stay correctly gated behind the
+  `perception` extra (not touched).
+- `apps/cli/README.md` updated to document the installed `reality`
+  entry point (the `python -m apps.cli.main` form still documented and
+  still works, unchanged).
+
+**Verified for real, not assumed:** built a throwaway venv
+(`python -m venv`), ran `pip install .` against this worktree from a
+clean environment, then from `/tmp` (outside the repo entirely, so
+nothing could be resolving against a checkout on `PYTHONPATH`):
+`reality --help` printed the full subcommand list (exit 0), and a
+Python one-liner imported `sdk.reality`, `evidence.promote_rooms`,
+`evidence.promote_planes`, `evidence.promote_objects`,
+`reconstruction.backend.colmap_backend`, and all three exporters
+(`exporters.gltf/usd/blender.exporter`) cleanly. Full in-repo test
+suite re-run after the fix: 1298 passed, 1 pre-existing environment
+failure deselected, zero regressions (105.9s) -- the `__init__.py`
+additions and pyproject changes touch only packaging metadata, not
+runtime behavior, and the suite confirms that.
+
+Not done in this pass (named, not hidden): no CI wiring yet to catch a
+future regression of this same bug automatically (P8 item #41/#42 in
+the roadmap) -- this was a manual clean-venv verification, not an
+automated one. `reality-engine` is still `version = "0.1.0"`,
+unreleased; no PyPI/wheel distribution step exists yet.
+
+## Completed 2026-09-14 (latest): wired room artifact_store through the compiler (CLI comes free)
+
+Follow-on named at the end of the room-geometry feature session (same
+day): `engine/compiler/world_compiler.py::compile_reconstruction_to_world`
+now passes `options.artifact_store` into `promote_room_to_entity` (one
+line, same pattern already used for `promote_plane_to_entity` two
+blocks above) — a compiled room's boundary polygon now gets a real
+`data_uri`/`data_hash`, not just promoted planes/objects.
+
+CLI needed **no separate change**: `apps/cli/main.py::cmd_reconstruct`
+already builds `CompileOptions(artifact_store=FileArtifactStore(...))`
+for every `reality reconstruct` call (real-geometry-by-default since the
+prior session's CLI work) and passes it straight through to
+`compile_reconstruction_to_world` — once the compiler threads the store
+into room promotion, the CLI path is fixed automatically. Verified by
+running the full CLI test suite (`tests/test_cli.py`, 30 tests, all
+pass unchanged) rather than assuming from reading the code.
+
+2 new tests in `tests/test_geometry_artifacts.py`
+(`TestPromoteRoomsWritesRealGeometry`): one proves a room compiled with
+an `artifact_store` gets a resolvable `data_uri` whose decoded point
+count matches `geometry.vertex_count`; one proves omitting the store
+leaves `room.geometry_ids == []` (the additive/backward-compat
+contract). Full suite: 1298 passed (was 1296), zero regressions.
+
+## Completed 2026-09-14: room boundary polygon geometry (the one item the 2026-09-13 session flagged "do this one carefully, in-session, not delegated blind")
+
+`evidence/promote_rooms.py::promote_room_to_entity()` gained an optional
+`artifact_store` param, same pattern as `promote_planes.py`/
+`promote_objects.py`: when given, the room's boundary ring — already
+computed in floor-plane (u, v) coordinates by `_trace_ring_from_lines`
+— is converted to world-space xyz via a new `_ring_world_positions()`
+helper (origin = `-d*normal`, basis = the same `_floor_basis(normal)`
+used to build the ring, so the conversion is the exact inverse of the
+projection — no re-derivation, no coordinate-frame drift) and stored as
+a real `PointCloudData` artifact. A `Geometry` (type `PLANE`, matching
+the existing exportable-type set so gltf/usda/blender export it with no
+exporter change, same as objects reusing `BOX` did) is attached to the
+ROOM entity's `geometry_ids` — previously always `[]` ("the room's
+extent lives in its parts, not new geometry"). Omitting the param
+reproduces prior behavior exactly (regression test). New test also
+proves every decoded vertex satisfies `n.p + d == 0` on the room's own
+floor plane — the coordinate-frame-bug risk the prior session explicitly
+named. 2 new tests in `tests/test_room_inference.py`. Full suite: 1296
+passed (was 1294), zero regressions.
+
+Not wired in this pass (named, not hidden): no caller (CLI/SDK/studio
+session) passes `artifact_store` into `promote_room_to_entity` yet —
+same follow-on gap `promote_planes`/`promote_objects` had before their
+own callers were updated; wiring it through `engine/compiler/world_compiler.py`
+and `apps/cli/main.py` is the natural next step for this specific line
+of work.
 
 ## Completed this session (2026-09-13, latest): security fix + real geometry uniform across gltf/usda/blender in the SDK and CLI
 

@@ -197,6 +197,48 @@ class TestPromotePlanesWritesRealGeometry:
         assert hashes_a  # sanity: not vacuously true
 
 
+class TestPromoteRoomsWritesRealGeometry:
+    """Proves engine/compiler/world_compiler.py threads
+    CompileOptions.artifact_store into promote_room_to_entity (not just
+    promote_plane_to_entity) -- the follow-on wiring named in
+    .agent/CURRENT_STATE.md after the room-geometry feature itself
+    landed."""
+
+    def test_compiled_room_geometry_carries_a_resolvable_data_uri(self):
+        from world_ir import EntityType
+
+        world, diagnostics, store = _compiled_world_with_store()
+        rooms = [e for e in world.entities.values() if e.type is EntityType.ROOM]
+        assert rooms, "sanity: the two-room fixture must actually produce a ROOM entity"
+
+        room = rooms[0]
+        assert room.geometry_ids, "compiled room must have real boundary geometry, not []"
+        geom = world.geometries[room.geometry_ids[0]]
+        assert geom.data_uri and geom.data_hash
+
+        payload = store.get(geom.data_uri)
+        cloud = PointCloudData.from_bytes(payload)
+        assert len(cloud.points) == geom.vertex_count
+
+    def test_omitting_artifact_store_leaves_room_geometry_ids_empty(self):
+        from engine.compiler import CompileOptions, compile_reconstruction_to_world
+        from reconstruction.backend.interface import ReconstructedCameraPose
+        from tests.test_room_inference import _CAMS, _two_room_scene
+        from world_ir import EntityType
+
+        result = _two_room_scene()
+        result.camera_poses.extend(
+            ReconstructedCameraPose(evidence_id=f"ev-{i}", position=p, rotation=(1.0, 0.0, 0.0, 0.0))
+            for i, p in enumerate(_CAMS)
+        )
+        world, _diag = compile_reconstruction_to_world(result, CompileOptions(seed=42))
+
+        rooms = [e for e in world.entities.values() if e.type is EntityType.ROOM]
+        assert rooms
+        for room in rooms:
+            assert room.geometry_ids == []
+
+
 # ---------------------------------------------------------------- object promotion wiring
 
 

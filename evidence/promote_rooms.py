@@ -72,12 +72,17 @@ from provenance import Provenance
 from world_ir import (
     Entity,
     EntityType,
+    Geometry,
+    GeometryType,
     Measurement,
     Observation,
     Relationship,
     RelationshipKind,
+    Vector3,
     WorldIR,
 )
+from world_ir.artifact_store import ArtifactStore
+from world_ir.geometry_data import PointCloudData
 
 #: Minimum number of contacting walls for a closed interior boundary.
 MIN_WALLS = 3
@@ -700,6 +705,30 @@ def detect_rooms(
 # Promotion (the write path -- mutates WorldIR like promote_planes does)
 # ----------------------------------------------------------------------
 
+def _ring_world_positions(room: DetectedRoom) -> List[Tuple[float, float, float]]:
+    """The room's boundary ring, converted from floor-plane (u, v)
+    coordinates to world-space xyz.
+
+    Uses the same basis `_trace_ring_from_lines` used to build the ring
+    in the first place (`_floor_basis(floor.normal)`, origin = the point
+    on the floor plane closest to the world origin: -d*normal) so the
+    conversion is exactly the inverse of how the ring was projected --
+    no re-derivation, no drift. Closed loop, winding order preserved
+    (vertex order already encodes CCW walk direction from
+    `_trace_ring_from_lines`).
+    """
+    origin = tuple(-room.floor.d * room.floor.normal[i] for i in range(3))
+    u_axis, v_axis = _floor_basis(room.floor.normal)
+    return [
+        (
+            origin[0] + u * u_axis[0] + v * v_axis[0],
+            origin[1] + u * u_axis[1] + v * v_axis[1],
+            origin[2] + u * u_axis[2] + v * v_axis[2],
+        )
+        for u, v in room.ring.vertices
+    ]
+
+
 @dataclass(frozen=True)
 class RoomPromotionResult:
     entity: Entity
@@ -712,6 +741,7 @@ def promote_room_to_entity(
     world: WorldIR,
     entity_id: str,
     entity_name: str = "",
+    artifact_store: Optional[ArtifactStore] = None,
 ) -> RoomPromotionResult:
     """Promote one detected room into WorldIR.
 
@@ -724,6 +754,13 @@ def promote_room_to_entity(
     for every wall/floor/ceiling in the boundary, and ESTIMATED
     floor-area / floor-dimension / height Measurements derived from the
     ring and the wall tops. Deterministic; no clocks, no RNG.
+
+    `artifact_store`, when given, converts the ring's floor-plane (u, v)
+    vertices to world-space xyz (`_ring_world_positions`) and stores
+    them as a real PointCloudData artifact -- the room's own boundary
+    geometry, not just relationships to parts that have geometry. When
+    omitted (default), `entity.geometry_ids` stays empty, reproducing
+    the exact prior behavior.
     """
     if room.status != "detected" or room.ring is None:
         raise RoomInferenceError(
@@ -788,11 +825,43 @@ def promote_room_to_entity(
         )),
     )
 
+    geometry_ids: List[str] = []
+    if artifact_store is not None:
+        world_positions = _ring_world_positions(room)
+        xs = [p[0] for p in world_positions]
+        ys = [p[1] for p in world_positions]
+        zs = [p[2] for p in world_positions]
+        payload = PointCloudData.from_positions(world_positions).to_bytes()
+        data_uri, data_hash = artifact_store.put(payload)
+        geometry = Geometry(
+            id=f"geom-{entity_id}",
+            type=GeometryType.PLANE,
+            vertex_count=len(world_positions),
+            data_uri=data_uri,
+            data_hash=data_hash,
+            bounds_min=Vector3(min(xs), min(ys), min(zs)),
+            bounds_max=Vector3(max(xs), max(ys), max(zs)),
+            provenance=Provenance.INFERRED,
+            confidence=confidence,
+            observations=[Observation(
+                id=f"obs-room-geom-{entity_id}",
+                sensor_type="geometric_reasoning",
+                confidence=confidence,
+                metadata={
+                    "derived_from": "wall_floor_ring_closure",
+                    "floor_plane_id": room.floor.plane_id,
+                    "vertex_order": "closed_loop_ccw_in_floor_plane",
+                },
+            )],
+        )
+        world.geometries[geometry.id] = geometry
+        geometry_ids = [geometry.id]
+
     entity = Entity(
         id=entity_id,
         name=entity_name or entity_id,
         type=EntityType.ROOM,
-        geometry_ids=[],  # the room's extent lives in its parts, not new geometry
+        geometry_ids=geometry_ids,
         relationships=relationships,
         provenance=Provenance.INFERRED,
         confidence=confidence,

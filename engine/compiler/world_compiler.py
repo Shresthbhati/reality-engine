@@ -287,7 +287,10 @@ def compile_reconstruction_to_world(
         if room.status == "detected":
             room_entity_id = f"{options.room_prefix}-{room.floor.plane_id}"
             try:
-                room_promotion = promote_room_to_entity(room, world, room_entity_id)
+                room_promotion = promote_room_to_entity(
+                    room, world, room_entity_id,
+                    artifact_store=options.artifact_store,
+                )
                 entities_created.append(room_promotion.entity.id)
                 rooms_detected += 1
                 room_candidate_reports.append({

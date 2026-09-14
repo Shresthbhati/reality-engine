@@ -4,16 +4,24 @@
 subcommand is a direct call into the SDK; the CLI adds no logic of its
 own beyond argument parsing and file I/O.
 
+`pip install .` (or `pip install -e .`) installs `reality` as a real
+console-script entry point (`[project.scripts]` in `pyproject.toml`,
+pointing at `apps.cli.main:main`) -- run it directly, no `python -m`
+needed, and no repo checkout on `PYTHONPATH` required once installed:
+
 ```
-python -m apps.cli.main ingest <photos-folder> -o package.json
-python -m apps.cli.main reconstruct package.json -o world.json [--colmap-binary PATH] [--gpu] [--no-real-geometry]
-python -m apps.cli.main validate world.json
-python -m apps.cli.main diff before.json after.json
-python -m apps.cli.main export world.json --format gltf|usda|blender -o out.file
-python -m apps.cli.main physics world.json
-python -m apps.cli.main query nearest world.json <x> <y> <z> [--k N]
-python -m apps.cli.main query contents world.json <entity-id>
+reality ingest <photos-folder> -o package.json
+reality reconstruct package.json -o world.json [--colmap-binary PATH] [--gpu] [--no-real-geometry]
+reality validate world.json
+reality diff before.json after.json
+reality export world.json --format gltf|usda|blender -o out.file
+reality physics world.json
+reality query nearest world.json <x> <y> <z> [--k N]
+reality query contents world.json <entity-id>
 ```
+
+The `python -m apps.cli.main ...` form (equivalent, useful when running
+from a checkout without installing) still works identically.
 
 `query nearest`/`query contents` are thin CLI callers of
 `sdk.reality.spatial_index()`/`sdk.reality.scene_graph()` -- real

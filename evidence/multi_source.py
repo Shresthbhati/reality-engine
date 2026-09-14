@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -338,7 +338,10 @@ class MultiSourceSession:
         if not relative_paths:
             return []
         absolute_paths = self._absolute_component_paths(record, relative_paths)
-        return parse_component_streams(absolute_paths, component)
+        streams = parse_component_streams(absolute_paths, component)
+        from evidence.sensors import attach_sensor_identities
+
+        return attach_sensor_identities(streams, record.original_path, component)
 
     def calibrations(self, source_id: str):
         """Parse a source's recorded "calibration" sidecar files into
@@ -354,7 +357,13 @@ class MultiSourceSession:
         if not relative_paths:
             return []
         absolute_paths = self._absolute_component_paths(record, relative_paths)
-        return parse_component_calibrations(absolute_paths)
+        records = parse_component_calibrations(absolute_paths)
+        from evidence.sensors import load_sensor_identity
+
+        identity = load_sensor_identity(record.original_path, CaptureComponent.CALIBRATION.value)
+        if identity is None:
+            return records
+        return [replace(record, identity=identity) for record in records]
 
     def depth_frames(self, source_id: str):
         """Parse a source's recorded "depth" sidecar files into real
@@ -378,7 +387,10 @@ class MultiSourceSession:
         manifest_path = os.path.join(record.original_path, "depth", "manifest.json")
         if os.path.isfile(manifest_path):
             manifest = DepthSidecarManifest.load(manifest_path)
-        return parse_depth_frames(absolute_paths, manifest=manifest)
+        from evidence.sensors import load_sensor_identity
+
+        identity = load_sensor_identity(record.original_path, CaptureComponent.DEPTH.value)
+        return parse_depth_frames(absolute_paths, manifest=manifest, identity=identity)
 
     @staticmethod
     def _absolute_component_paths(record: "SourceRecord", relative_paths: List[str]) -> List[str]:

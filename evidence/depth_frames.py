@@ -67,7 +67,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from provenance import Provenance, Uncertainty
-from evidence.sensors import SensorParseError  # base class for DepthFrameError
+from evidence.sensors import SensorDescriptor, SensorParseError  # base class for DepthFrameError
 
 #: PNG modes this module accepts. "I;16" (native-endian 16-bit), its
 #: explicit-endian variants, and PIL's "I" (32-bit signed int, which
@@ -127,6 +127,10 @@ class DepthFrame:
     units: str
     provenance: Provenance = Provenance.OBSERVED
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
+    # DECLARED sensor identity (P1-02) attached by the session from the
+    # capture's depth/sensor_identity.json -- None when the capture
+    # declared none (recorded, never defaulted).
+    identity: Optional["SensorDescriptor"] = None
 
     def __post_init__(self):
         if self.width <= 0 or self.height <= 0:
@@ -183,6 +187,7 @@ class DepthFrame:
             "units": self.units,
             "provenance": self.provenance.value,
             "uncertainty": {"confidence": self.uncertainty.confidence, "note": self.uncertainty.note},
+            "identity": self.identity.to_dict() if self.identity is not None else None,
         }
 
     @classmethod
@@ -201,6 +206,11 @@ class DepthFrame:
             uncertainty=Uncertainty(
                 confidence=float(data.get("uncertainty", {}).get("confidence", 1.0)),
                 note=data.get("uncertainty", {}).get("note"),
+            ),
+            identity=(
+                SensorDescriptor.from_dict(data["identity"])
+                if data.get("identity") is not None
+                else None
             ),
         )
 
@@ -277,6 +287,7 @@ def parse_depth_png(
     units: str = "meter",
     manifest: Optional[DepthSidecarManifest] = None,
     frame_id: Optional[str] = None,
+    identity: Optional[SensorDescriptor] = None,
 ) -> DepthFrame:
     """Parse one 16-bit depth PNG into a DepthFrame.
 
@@ -361,6 +372,7 @@ def parse_depth_png(
             confidence=1.0,
             note=f"scale from {'manifest' if manifest is not None else 'explicit argument'}",
         ),
+        identity=identity,
     )
 
 
@@ -371,13 +383,15 @@ def parse_depth_frames(
     invalid_value: int = 0,
     units: str = "meter",
     manifest: Optional[DepthSidecarManifest] = None,
+    identity: Optional[SensorDescriptor] = None,
 ) -> List[DepthFrame]:
     """Parse every ``.png`` in `paths` (a source's recorded DEPTH
     component files). Non-``.png`` files are skipped, matching the
     honest-subset behavior of parse_component_streams. Scale rules are
     parse_depth_png's; with a manifest, per-file overrides apply and
     files the manifest cannot resolve raise DepthScaleUnavailable
-    naming that file."""
+    naming that file. ``identity`` is the declared sensor identity
+    (P1-02) attached to every parsed frame."""
     return [
         parse_depth_png(
             p,
@@ -385,6 +399,7 @@ def parse_depth_frames(
             invalid_value=invalid_value,
             units=units,
             manifest=manifest,
+            identity=identity,
         )
         for p in paths
         if p.lower().endswith(".png")

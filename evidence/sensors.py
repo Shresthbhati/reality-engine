@@ -145,17 +145,17 @@ WHAT THIS MODULE DELIBERATELY DOES NOT DO (named, not hidden):
   proprietary phone logs) -- only the JSONL/JSON conventions
   documented above. A real vendor adapter is future work behind the
   same ``SensorStream``/``CalibrationRecord`` output types.
-- No DEPTH sidecar parsing. Unlike IMU/GNSS/telemetry (small numeric
-  records that map cleanly onto one JSON schema), a depth SIDECAR is
-  an image-shaped artifact whose format varies by device in ways this
-  module cannot honestly paper over: 16-bit PNG vs. raw binary vs.
-  EXR, and -- critically -- the depth-value-to-meters scale factor and
-  invalid-pixel convention are device-specific (ARKit/ARCore/
-  RealSense/Kinect all differ). ``perception/depth/interface.py``
-  already has a real ``DepthMap`` type and MiDaS-produced depth
-  reaches WorldIR through the existing pipeline; a sidecar DEPTH-image
-  decoder needs its own device-format decision and is deliberately not
-  attempted blind in this pass.
+- No DEPTH sidecar parsing HERE. Unlike IMU/GNSS/telemetry (small
+  numeric records that map cleanly onto one JSON schema), a depth
+  SIDECAR is an image-shaped artifact whose format varies by device
+  (16-bit PNG vs. raw binary vs. EXR) and whose depth-value-to-meters
+  scale factor and invalid-pixel convention are device-specific. It
+  now has its own module with that decision made explicitly:
+  ``evidence/depth_frames.py`` (16-bit PNG first, per Decision 020 in
+  docs/engineering/DESIGN_DECISIONS.md, explicit depth_scale required
+  from a depth/manifest.json or the caller -- never guessed), with
+  ``MultiSourceSession.depth_frames()`` as its on-demand entry point,
+  mirroring sensor_streams()/calibrations() here.
 
 Honest failure: a malformed record (missing required field, wrong
 type, non-finite number) raises ``SensorParseError`` naming the file,

@@ -332,6 +332,30 @@ class MultiSourceSession:
         absolute_paths = self._absolute_component_paths(record, relative_paths)
         return parse_component_calibrations(absolute_paths)
 
+    def depth_frames(self, source_id: str):
+        """Parse a source's recorded "depth" sidecar files into real
+        evidence.depth_frames.DepthFrame objects (16-bit PNG per
+        Decision 020). Separate from sensor_streams() because a depth
+        file parses to ONE DepthFrame per file, not a SensorStream of
+        time-ordered samples. Returns [] if the source has no recorded
+        depth files. The meters-per-raw-unit scale comes only from an
+        explicit depth/manifest.json in the source (or the caller can
+        parse files themselves with an explicit depth_scale=); with
+        neither, parsing raises DepthScaleUnavailable naming the file
+        -- raw 16-bit values are never assumed to be meters."""
+        from evidence.depth_frames import DepthSidecarManifest, parse_depth_frames
+
+        record = self._sources[source_id]
+        relative_paths = record.components.get(CaptureComponent.DEPTH.value, [])
+        if not relative_paths:
+            return []
+        absolute_paths = self._absolute_component_paths(record, relative_paths)
+        manifest = None
+        manifest_path = os.path.join(record.original_path, "depth", "manifest.json")
+        if os.path.isfile(manifest_path):
+            manifest = DepthSidecarManifest.load(manifest_path)
+        return parse_depth_frames(absolute_paths, manifest=manifest)
+
     @staticmethod
     def _absolute_component_paths(record: "SourceRecord", relative_paths: List[str]) -> List[str]:
         return [

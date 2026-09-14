@@ -504,3 +504,75 @@ class TestSerialization:
     def test_unsupported_format_version_raises(self):
         with pytest.raises(ValueError):
             MultiSourceSession.from_dict({"format_version": 99})
+
+
+class TestCompositeEndToEnd:
+    def test_full_composite_workflow(self, tmp_path):
+        """create session -> add a plain photo source -> add a composite
+        phone capture (rgb + gps + imu) -> verify both sources coexist,
+        visual evidence is real and tagged, sidecar files are preserved
+        as a manifest (not fabricated evidence), registration starts
+        unknown and can be explicitly set -- then the whole session
+        round-trips through serialization with everything intact."""
+        from evidence.multi_source import CaptureComponent, SourceType
+        from world_ir.coordinates import Frame, IDENTITY_MATRIX, Transform
+
+        session = MultiSourceSession(session_id="Building_A", name="Building A")
+
+        plain_photo = tmp_path / "survey.jpg"
+        plain_photo.write_bytes(_jpeg(0x09))
+        plain_record = session.add_source(str(plain_photo))
+        assert plain_record.source_type is SourceType.IMAGE
+
+        phone_folder = tmp_path / "phone_capture_001"
+        (phone_folder / "rgb").mkdir(parents=True)
+        (phone_folder / "rgb" / "0001.jpg").write_bytes(_jpeg(0x01))
+        (phone_folder / "rgb" / "0002.jpg").write_bytes(_jpeg(0x02))
+        (phone_folder / "gps").mkdir()
+        (phone_folder / "gps" / "track.csv").write_text("lat,lon\n1.0,2.0\n")
+        (phone_folder / "imu").mkdir()
+        (phone_folder / "imu" / "log.csv").write_text("t,ax,ay,az\n0,0,0,9.8\n")
+
+        phone_record = session.add_source(str(phone_folder), capture_type="phone")
+
+        # Both sources coexist; neither was destroyed or merged.
+        assert len(session.sources()) == 2
+        assert phone_record.source_type is SourceType.PHONE_CAPTURE
+
+        # Visual evidence is real (3 total photos: 1 survey + 2 rgb).
+        assert len(session.package.all_assets()) == 3
+
+        # Sidecar files preserved as a manifest, not fabricated evidence.
+        assert phone_record.components[CaptureComponent.GPS.value] == ["gps/track.csv"]
+        assert phone_record.components[CaptureComponent.IMU.value] == ["imu/log.csv"]
+
+        # Visual assets traceable back to their component + composite source.
+        for asset_id in phone_record.asset_ids:
+            asset = session.package.assets[asset_id]
+            tags = [p for p in asset.processing_history if p.operation == "composite_component_tag"]
+            assert tags[0].detail["composite_source_id"] == phone_record.source_id
+
+        # Registration starts unknown -- no fabricated alignment.
+        assert phone_record.registration == {"status": "unknown", "transform": None}
+        assert plain_record.registration == {"status": "unknown", "transform": None}
+
+        # Explicit registration is possible and persists.
+        transform = Transform(source_frame=Frame.SENSOR, target_frame=Frame.SESSION_LOCAL, matrix=IDENTITY_MATRIX)
+        session.register_source_frame(phone_record.source_id, transform)
+
+        # Full round trip preserves everything: both sources, components,
+        # provenance tags, and the one registered transform.
+        restored = MultiSourceSession.from_dict(session.to_dict())
+        restored_phone = [s for s in restored.sources() if s.source_id == phone_record.source_id][0]
+        restored_plain = [s for s in restored.sources() if s.source_id == plain_record.source_id][0]
+
+        assert len(restored.sources()) == 2
+        assert len(restored.package.all_assets()) == 3
+        assert restored_phone.components[CaptureComponent.GPS.value] == ["gps/track.csv"]
+        assert restored_phone.registration["status"] == "registered"
+        assert restored_plain.registration == {"status": "unknown", "transform": None}
+
+        # Downstream evidence summary still works unchanged (reuses the
+        # real orchestrator gate -- 3 photos clears MIN_IMAGE_EVIDENCE=2).
+        summary = restored.evidence_summary()
+        assert summary["ready_for_reconstruction"] is True

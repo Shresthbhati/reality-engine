@@ -119,7 +119,7 @@ def cmd_session_create(args: argparse.Namespace) -> int:
 
 def cmd_source_add(args: argparse.Namespace) -> int:
     session = _load_session(args.session_dir)
-    record = session.add_source(args.path)
+    record = session.add_source(args.path, capture_type=args.capture_type)
     _save_session(session, args.session_dir)
     print(f"{record.status.value}\t{record.source_id}\t{record.source_type.value}\t{args.path}")
     if record.error:
@@ -165,9 +165,14 @@ def cmd_source_inspect(args: argparse.Namespace) -> int:
     print(f"  type: {record.source_type.value}")
     print(f"  status: {record.status.value}")
     print(f"  content hash: {record.content_hash}")
+    print(f"  registration: {record.registration['status']}")
     print(f"  asset(s): {len(record.asset_ids)}")
     for asset_id in record.asset_ids:
         print(f"    {asset_id}")
+    if record.components:
+        print(f"  component(s): {len(record.components)}")
+        for component, paths in sorted(record.components.items()):
+            print(f"    {component}: {len(paths)} file(s)")
     if record.unhandled_paths:
         print(f"  unhandled path(s): {len(record.unhandled_paths)}")
         for path in record.unhandled_paths:
@@ -323,6 +328,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_source_add.add_argument("session_dir")
     p_source_add.add_argument("path", help="file or folder to ingest")
+    p_source_add.add_argument(
+        "--capture-type", choices=["phone", "drone"], default=None,
+        help="declare a composite folder (rgb/video + gps/imu/depth/calibration/telemetry subfolders) "
+             "as a phone or drone capture; ignored for plain files/folders",
+    )
     p_source_add.set_defaults(func=cmd_source_add)
 
     p_source_list = session_sub.add_parser("list", help="list sources and asset counts in a session")

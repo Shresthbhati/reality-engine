@@ -6,6 +6,38 @@ uncommitted campaign batch)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
+
+## 2026-09-15 -- five-execution spine batch (claude/spine-executions-5)
+
+- **E1 P4-01 DONE**: point-to-plane ICP (spec's named algorithm),
+  ResidualStats (measured, on accepted AND blocked results),
+  RegistrationEngine (confidence-ordered, attempts recorded), contact
+  pre-flight + prior seeding. 18 tests.
+- **E2 P5-02 DONE**: reconstruction/backend/selection.py --
+  InputProfile -> deterministic policy decision (declines for
+  depth/LiDAR-only/<3-image profiles, preference-ordered selection
+  otherwise) + assess/advance loop (failed candidates never retried).
+  9 tests.
+- **E3 P6-01 advanced**: reconstruction/backend/dense_output.py --
+  parse_fused_ply closes the named "fused.ply unreadable in Python"
+  gap (honest errors, present-but-unused facts recorded). 6 tests.
+  Task stays PARTIAL: real dense-run integration remains gated on a
+  GPU MVS capture.
+- **E4 P6-02 DONE**: reconstruction/fusion/consumer.py + pipeline
+  stage 3.7 -- plural-source association + per-point fusion
+  (conflicts recorded, never winner-picked) + WorldIR POINTCLOUD
+  write-back (hashed artifact, per-stage counts in observation
+  metadata). 9 tests.
+- **E5 P10-01 DONE**: provenance/graph.py -- ProvenanceGraph over the
+  ArtifactStore (digest-keyed immutable nodes, added-only edges with
+  cycle rejection, ancestor/descendant walks, why_exists stage chain,
+  verify_all tamper detection, tombstones). 11 tests.
+- Ledger: 16 DONE / 9 PARTIAL / 11 MISSING. CAPABILITIES:
+  cross_source_registration -> IMPLEMENTED, provenance_graph added
+  (23 entries).
+- Full-suite gate on the final head: 1,692 passed / 1 skipped /
+  0 failed (~226 s) -- fully accounted (1,648 + 44 new).
+
 ## Verified baseline
 
 - Suite: **1,613 passed, 1 failed, 1 skipped** (~98 s) at finalization

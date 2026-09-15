@@ -104,9 +104,12 @@ the spine head is TIME SYNCHRONIZATION:
    optimization) with deterministic known-answer fixtures; 56 clocks
    tests; full suite 1,648 green. Downstream consumers wire the seam
    in their own tasks.
-2. **P4-01 remainder (spine head now)**: point-to-plane + symmetric
-   ICP and RegistrationEngine orchestration (extrinsics -> trajectory
-   prior -> ICP -> uncertainty).
+2. ~~P4-01 remainder~~ **DONE** (2026-09-15 five-execution batch:
+   point-to-plane ICP, RegistrationEngine, ResidualStats; covariance
+   propagation and the landmark method remain PENDING in the ledger).
+   Spine head now: P3-02 real VIO backend runs (binary availability)
+   and P6-01's gated real-MVS integration; next implementable:
+   P7-02 temporal tracking or P8-01 room graph.
 3. **P6-01/P6-02 remainders**: parse verified dense output (fused.ply)
    into canonical types; pipeline consumer calling
    fuse_depth_observations -> WorldIR geometry write-back.

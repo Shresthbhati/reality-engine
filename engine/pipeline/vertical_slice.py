@@ -268,6 +268,9 @@ def vertical_slice(
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
     mesh_facts = _mesh_stage(result, world, options, scale_state)
 
+    # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
+    fusion_facts = _fusion_stage(result, world, options, scale_state)
+
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,
@@ -286,6 +289,9 @@ def vertical_slice(
         world.metadata["depth"] = depth_facts
     world.metadata["perception"] = perception_facts
     world.metadata["mesh"] = mesh_facts
+    world.metadata["fusion"] = {
+        k: v for k, v in fusion_facts.items() if k != "fused"
+    }
 
     return VerticalSliceResult(
         world=world,
@@ -516,6 +522,124 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             "INFERRED with per-entity evidence ids"
         ),
     }
+
+
+def _fusion_stage(result, world, options, scale_state: str):
+    """Stage 3.7 (P6-02 tail): plural-source fusion -> WorldIR
+    POINTCLOUD geometry.
+
+    The pipeline's fused cloud already IS plural evidence (sparse
+    triangulation + depth unprojection, distinguishable by track_id),
+    so the consumer associates and fuses them here, then writes the
+    result back as a pointcloud geometry artifact attached to the
+    world -- the '-> WorldIR geometry' tail the ledger named as the
+    missing integration.
+
+    Gates (honest skips, same discipline as _mesh_stage): RELATIVE
+    scale would make ranges unit-less lies; too-few points make
+    fusion statistical noise; no artifact_store makes the geometry
+    untraceable.
+    """
+    if options.artifact_store is None:
+        return {"status": "skipped", "note": "no artifact_store configured"}
+    if scale_state != "metric":
+        return {
+            "status": "skipped",
+            "note": "world is not METRIC-scale -- fusing unit-less "
+            "ranges would silently claim meters",
+        }
+    sparse_points = [
+        p for p in result.points
+        if p.track_id and not p.track_id.startswith("depth-")
+    ]
+    depth_points = [
+        p for p in result.points
+        if p.track_id and p.track_id.startswith("depth-")
+    ]
+    if len(sparse_points) < 10 or len(depth_points) < 10:
+        return {
+            "status": "skipped",
+            "note": f"plural fusion needs >=10 points per source "
+            f"(sparse={len(sparse_points)}, depth={len(depth_points)}) -- "
+            "fewer would make association statistical noise",
+        }
+
+    try:
+        from reconstruction.fusion.consumer import fuse_pipeline_points
+    except ImportError as exc:
+        return {"status": "skipped", "note": f"fusion deps unavailable: {exc}"}
+
+    # Association tolerance: the depth points' own uncertainty scale,
+    # declared once here (0.05 m default matches the consumer's
+    # precision default) -- not inferred from the data per-point.
+    facts = fuse_pipeline_points(
+        sparse_points=sparse_points,
+        depth_points=depth_points,
+        association_tolerance_m=0.05,
+    )
+
+    from provenance import Provenance as _Provenance
+    from world_ir import Geometry as _Geometry, GeometryType as _GeometryType
+    from world_ir import Observation as _Observation, Vector3 as _Vector3
+
+    fused_estimates = facts["fused"]
+    n_pts = len(result.points)
+    (mnx, mny, mnz), (mxx, mxy, mxz) = _cloud_bounds(result.points)
+    payload = repr({
+        "n_points": n_pts,
+        "fused_estimates": [
+            {"quantity": e.quantity, "value": e.value, "unit": e.unit.value,
+             "provenance": e.provenance.value, "precision": e.precision}
+            for e in fused_estimates
+        ],
+    }).encode("utf-8")
+    data_uri, data_hash = options.artifact_store.put(payload)
+    geometry = _Geometry(
+        id="geom-fused-pointcloud",
+        type=_GeometryType.POINTCLOUD,
+        lod_level=0,
+        vertex_count=n_pts,
+        data_uri=data_uri,
+        data_hash=data_hash,
+        bounds_min=_Vector3(x=mnx, y=mny, z=mnz),
+        bounds_max=_Vector3(x=mxx, y=mxy, z=mxz),
+        provenance=_Provenance.ESTIMATED,
+        confidence=0.6,
+        observations=[_Observation(
+            id="obs-fused-pointcloud",
+            sensor_type="multi_source_fusion",
+            confidence=0.6,
+            metadata={
+                "n_sparse": facts["n_sparse"],
+                "n_depth": facts["n_depth"],
+                "n_associated": facts["n_associated"],
+                "n_conflicts": facts["n_conflicts"],
+                "n_passthrough_sparse": facts["n_passthrough_sparse"],
+                "n_passthrough_depth": facts["n_passthrough_depth"],
+                "association_tolerance_m": facts["association_tolerance_m"],
+                "note": "per-point range fusion of sparse+depth claims; "
+                "conflicts recorded, never winner-picked",
+            },
+        )],
+    )
+    world.geometries[geometry.id] = geometry
+    return {
+        "status": "ran",
+        "n_sparse": facts["n_sparse"],
+        "n_depth": facts["n_depth"],
+        "n_associated": facts["n_associated"],
+        "n_conflicts": facts["n_conflicts"],
+        "artifact_uri": data_uri,
+        "artifact_sha256": data_hash,
+        "geometry_id": geometry.id,
+    }
+
+
+def _cloud_bounds(points):
+    xs = [float(p.position[0]) for p in points]
+    ys = [float(p.position[1]) for p in points]
+    zs = [float(p.position[2]) for p in points]
+    return (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
 
 
 def _mesh_stage(result, world, options, scale_state: str):

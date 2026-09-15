@@ -336,3 +336,38 @@ capabilities:
     maturity: IMPLEMENTED
     limitations: orchestrator->compile only; session/source management CLI open
     fallback: deterministic backend injection (REALITY_TEST_BACKEND) for offline tests
+  - name: world_store
+    category: persistence
+    backend: "worldstore.store: filesystem-backed versioned store (WorldStore)"
+    maturity: IMPLEMENTED
+    notes: >-
+      Content-addressed ArtifactStore underneath; save_world persists an
+      immutable snapshot + metadata (parents, message); load_world restores
+      any version; versions()/parents()/ancestors() expose the DAG; list()
+      preserves save order. Observed reality is recoverable across process
+      restarts.
+    tests: tests/test_world_store.py
+
+  - name: incremental_compilation
+    category: engine
+    backend: "engine.incremental: dependency-graph invalidation compiler"
+    maturity: IMPLEMENTED
+    notes: >-
+      Stages declare dependencies; compiler re-runs ONLY stages whose
+      transitive inputs changed (content hashes), preserves unaffected
+      artifacts across versions, detects cycles at registration, and
+      resumes from a prior CompilationState.
+    tests: tests/test_incremental.py
+
+  - name: uncertainty_propagation
+    category: uncertainty
+    backend: "perception.instances.measurement: measured-spread precision; registration.registration: 6-DOF covariance"
+    maturity: IMPLEMENTED
+    notes: >-
+      Measurements carry precision from MEASURED inter-view disagreement
+      (RMS spread, leave-one-out 5-sigma conflict detection, n=2 honestly
+      undecidable, single-view falls back to the documented heuristic --
+      every measurement names its precision source via precision_note).
+      ICP results carry 6x6 covariance from correspondences. Fusion
+      precision is inverse-variance (existing).
+    tests: tests/test_object_measurement.py, tests/test_registration.py

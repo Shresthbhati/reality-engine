@@ -1,22 +1,181 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-15 (P2-02 calibration/frame unification, PR: calibration)
+**Session end:** 2026-09-15 (finalization batch: P6-02/P6-03/P7-01/
+P7-03/P9-01 implemented + ledger reconciled; PR cut for the whole
+uncommitted campaign batch)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
 ## Verified baseline
 
-- Suite: **1,400 passed, 1 skipped** on the trajectory branch (main
-  `5235960` at 1,392; +8 platform-boundary tests). Main includes PR #22
-  (depth sidecars + RGB-D unprojection), PR #23 (P0-01 canonical
-  state), PR #24 (P2-01 clock model + first sync backend).
-- Known environment failures (deselected, never counted): 20 SAM tests
-  (`tests/test_perception_sam.py`, `tests/test_sam_backend.py`) —
-  torch-hub cache failure on this machine, pre-existing, unrelated to
+- Suite: **1,613 passed, 1 failed, 1 skipped** (~98 s) at finalization
+  (2026-09-15). The ONE failure is
+  `tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`
+  — the pre-existing SAM real-model environment failure (torch-hub
+  cache), NOT caused by this batch and not fixed by it; it is
+  documented, not hidden. This run had no deselect filter, so the SAM
+  test shows as FAILED rather than deselected.
+  Landmarks en route: 1,569 passed, 1 skipped at P5-01/P5-02; P3-01 at
+  1,520, P3-02 at 1,541, P3-03 at 1,550, P4-01 at 1,559.
+  Prior landmark: 1,400 passed on the P0-02 branch (main `5235960` at
+  1,392; +8 platform-boundary tests). Main includes PR #22 (depth
+  sidecars + RGB-D unprojection), PR #23 (P0-01 canonical state),
+  PR #24 (P2-01 clock model + first sync backend).
+- Known environment failures: the SAM real-model integration test
+  (above; plus `tests/test_perception_sam.py` torch-hub cache
+  failures when run without deselect) — pre-existing, unrelated to
   code changes. Never reclassify; fix the environment or record it.
 
 ## Completed (most recent first, with evidence)
 
+- **2026-09-15 — finalization batch (P6-02/P6-03/P7-01/P7-03/P9-01)**:
+  the campaign batch's remaining five ledger IDs implemented and
+  reconciled. P6-02: weighted multi-source depth fusion adapter
+  (reconstruction/fusion/multi_source.py over the inverse-variance
+  engine; conflict never blended; tests incl. uncertainty steering).
+  P6-03: mesh quality validation (reconstruction/meshing/validation.py;
+  known-bad-mesh test matrix; 'bad scale' check + artifact-metadata
+  recording stay open — PARTIAL). P7-01: appearance color-histogram
+  + epipolar consistency wired additively into merge_hypotheses;
+  both wrong-merge rejection tests green (temporal consistency stays
+  open — PARTIAL). P7-03: geometry-only wall/floor/ceiling/doorway
+  classifier, synthetic-room verification incl. no-false-doorway
+  (MISSING -> PARTIAL; broader element classes deliberately skipped,
+  no detectors exist). P9-01: StatementState additive layer on
+  Entity with v1-only-dict load tests (other WorldIR 2.0 areas stay
+  open — PARTIAL). Full-suite gate 1,613/1/1 (SAM env failure).
+  Ledger statuses rewritten with evidence; statuses were stale
+  (P7-03 still said MISSING with the code landed).
+- **2026-09-15 — real GPU dense-MVS pass (manual CLI, P6-01)**: with
+  the CUDA COLMAP build in place, ran the actual dense-reconstruction
+  pipeline end-to-end on a freshly rendered 20-image synthetic room
+  (scripts/render_room_dataset.py -> datasets/room_capture_mvs,
+  gitignored, not committed). feature_extractor (GPU) -> matcher
+  (GPU) -> mapper: 17/20 registered, 680 sparse pts, 0.67px reproj
+  error -> undistorter -> patch_match_stereo --geom_consistency true
+  (GPU, ~6.9 min, real per-view CUDA sweep timings) -> stereo_fusion:
+  294,345 dense points, sanity-checked (tight/plausible mean+std,
+  real sampled texture colors, not degenerate). TEST-CAUGHT BUG (real,
+  found mid-run): the first attempt let COLMAP guess camera intrinsics
+  from image size, producing a wrong focal length; every two-view
+  geometry was then misclassified as planar/degenerate (config=6) and
+  mapper couldn't find an initial pair at all. Fixed by passing the
+  renderer's actual known intrinsics explicitly
+  (--ImageReader.camera_params); config histogram went from
+  {0:98,3:30,6:62} (no calibrated pairs) to including 15 genuinely
+  CALIBRATED (config=2) pairs, and mapper succeeded. This is CLI-level
+  evidence only, not yet Python-integrated: fused.ply is not parsed
+  into this repo's DepthFrame/point types
+  (reconstruction/depth_to_points.py still only handles monocular/
+  RGB-D sidecar paths) -- that wiring is the remaining P6-01 work.
+- **2026-09-15 — P5-01 (DONE) / P5-02 (PARTIAL)** reconstruction
+  backend registry + selection foundation:
+  `reconstruction/backend/registry.py` — BackendDescriptor/
+  BackendAvailability, discover_backends (PATH presence via
+  shutil.which for all 5 spec-named tools: COLMAP, OpenMVS,
+  AliceVision/Meshroom, OpenSfM, OpenDroneMap), select_backends
+  (deterministic preference-order ranking, explicit policy per the
+  constitution's no-LLM-selection rule). Only COLMAP has a real
+  adapter in this repo (ColmapReconstructionBackend); the other four
+  are honestly reported as no-adapter even when/if installed --
+  discovery never implies runnability. P5-01 DONE against its written
+  verification (registry discovery tests; unavailable-backend honesty
+  tests) -- NOT claimed: the scope text's capability()/diagnostics()/
+  artifacts() per-INSTANCE contract methods on IReconstructionBackend
+  itself; this session built registry-level discovery instead, which
+  is what the verification actually tests. P5-02 marked PARTIAL, not
+  DONE: select_backends ranks by availability only, not by the
+  spec's input-characteristics profile (image count, overlap, camera
+  model, GNSS/IMU/depth/LiDAR, scene type, GPU, budget) -- building
+  that now would be selecting among N=1 runnable backend (only COLMAP
+  has an adapter), so there is nothing yet to differentiate;
+  deliberately deferred until a second real adapter exists, per
+  YAGNI, rather than building a speculative ranking function with one
+  candidate. 10 new tests, including COLMAP's real on-PATH detection
+  (genuinely installed on this machine, verified before writing the
+  assertion) and the other four's real absence. Suite 1,569.
+- **2026-09-15 — P4-01 (PARTIAL)** cross-source registration engine:
+  `registration/registration.py` — register_icp (point-to-point ICP:
+  Kabsch/SVD per iteration, median-multiplier outlier rejection,
+  matrix-to-quaternion via Shepperd's method) and register_gnss_anchor
+  (translation-only, paired anchors). 2 of the spec's 4 confidence-
+  ordered methods implemented; landmark-correspondence alignment
+  (needs multi-view object identity, P2, not built) and manual-anchor
+  CLI (no engine logic to write) deliberately skipped, not stubbed.
+  Deliberate deviation from spec's "point-to-plane" ICP: point-to-
+  point, since nothing upstream produces surface normals for a bare
+  point list (documented in-module). TEST-CAUGHT BUGS (2, both real,
+  found by the deterministic-fixture tests the spec requires): (1)
+  ICP with an offset larger than the cloud's own extent converges to
+  a wrong-but-self-consistent local optimum -- inherent to nearest-
+  neighbor ICP, not fixable without a coarse-alignment prior; fixed
+  the TESTS to use realistic small offsets and added
+  TestICPLocalMinimum to document (not hide) the limitation. (2) the
+  no-overlap rejection gate (median-multiplier inlier fraction) is
+  blind to a uniformly-offset cloud of IDENTICAL shape -- that case
+  is legitimately recoverable (relative structure preserved) so the
+  gate correctly accepted it; the real gap was no ABSOLUTE-scale
+  check, so a genuinely unrelated point cloud could in principle look
+  internally self-consistent. Added an absolute rmse-vs-point-spacing
+  gate (spec's own failure mode: "rmse >> voxel size") and rewrote
+  the no-overlap test with a genuinely unrelated random-scattered
+  source cloud. 9 new tests (known-offset recovery incl. rotation,
+  local-minimum documentation, degenerate/no-overlap rejection, GNSS
+  anchor recovery + input-contract errors). Suite 1,559. NOT claimed:
+  the full RegistrationEngine orchestration (extrinsics->trajectory-
+  prior->coarse-alignment->ICP->uncertainty pipeline as one object),
+  landmark-based alignment, covariance/uncertainty propagation on the
+  result, CLI `reality register` wiring, real multi-source capture
+  evidence.
+- **2026-09-15 — P3-03 (DONE)** trajectory quality diagnostics:
+  `trajectories/diagnostics.py` — absolute_trajectory_error (ATE),
+  relative_pose_error (RPE), endpoint_drift (loop-closure proxy),
+  TrackingState enum, standard TUM RGB-D benchmark metrics (Sturm et
+  al. 2012), no SE(3) alignment step (documented scope cut -- run
+  P4-01 registration first if trajectories aren't already
+  co-registered). Pure functions over exact-matching timestamps only
+  (Trajectory.at's no-interpolation rule carried through). 9 new
+  tests against analytic values (constant offset -> ATE==offset,
+  RPE==0 since a constant offset cancels in relative motion;
+  accelerating drift -> RPE>0; loop path -> endpoint_drift==0).
+  Suite 1,550. NOT claimed: SE(3)/Umeyama alignment, real
+  loop-closure detection (place recognition) -- endpoint_drift is a
+  named proxy, not a substitute.
+- **2026-09-15 — P3-02 (PARTIAL)** VIO/localization backend
+  federation: `trajectories/backend/` — ITrajectoryBackend interface,
+  TUM-trajectory-format parser (real format shared by ORB-SLAM3/
+  OpenVINS/Basalt's evaluation exports), SubprocessTrajectoryBackend
+  base (binary presence via shutil.which, caller-supplied argv since
+  none of the three tools has one stable CLI across builds -- never
+  guessed), three thin adapters (orb_slam3/openvins/basalt, license
+  notes per LICENSES.yaml federation_candidates), and
+  selection.estimate_trajectory (try-in-order, BackendAttempt log,
+  honest TrajectoryBackendUnavailableError vs TrajectoryBackendRunError
+  distinction). Federates per the standing rule -- no custom VIO
+  written. 21 new tests: TUM parser edge cases (malformed/non-unit-
+  quaternion/non-monotonic), all three real adapters verified
+  genuinely BACKEND_UNAVAILABLE on this machine (shutil.which
+  confirmed absent before writing the assertions, not mocked), and an
+  adapter CONTRACT test that runs a REAL subprocess (python itself as
+  the "binary") writing a real TUM file, exercised through the same
+  SubprocessTrajectoryBackend code path a real VIO adapter uses. Suite
+  1,541. NOT claimed: a real ORB-SLAM3/OpenVINS/Basalt run (hardware/
+  install gate, named in CAPABILITIES.yaml as the VERIFIED gate);
+  correctness of any specific tool's exact CLI flags (left to the
+  caller by design).
+- **2026-09-15 — P3-01 (DONE)** canonical trajectory model:
+  `trajectories/trajectory.py` — Trajectory/TrajectoryFrame/
+  FrameSource/DriftEstimate. Reuses RigidTransform (P2-02) for poses
+  and the ClockModel global timeline (P2-01) for timestamps rather
+  than a second representation. Construction validates strictly
+  increasing timestamps and consistent from_frame/to_frame identity
+  across every frame (a trajectory that changes frame mid-sequence is
+  rejected, per spec acceptance criteria); `at()` is exact-timestamp
+  only, no interpolation (explicit scope cut for P3-02/P3-03 to own).
+  DriftEstimate is UNKNOWN-by-default (never implicitly zero drift).
+  23 new tests (monotonicity, frame-identity, covariance-shape,
+  roundtrip). Suite 1,520. NOT claimed: VIO/SfM backend adapters
+  (P3-02), quality diagnostics/ATE/RPE (P3-03), real trajectory data.
 - **2026-09-15 — P2-02 (DONE)** calibration/frame system unification:
   reconstruction/calibration/transforms.py — RigidTransform with named
   frames (compose validates connectivity; direction-vs-point; exact
@@ -134,26 +293,54 @@ where execution actually stands, nothing else defines that.
 
 ## In progress
 
-- None open. P0-01 landed this session; next queue item not started.
+- None open. P5-01/P5-02 landed this session; next queue item not
+  started. Remaining P4-01 scope (RegistrationEngine orchestration,
+  landmark alignment, uncertainty propagation) and P5-02's input-
+  profile ranking both stay open under their existing ids.
 
 ## Blockers
 
-- **P6-01 dense MVS**: CUDA unavailable (COLMAP 4.2.0 CPU-only) —
-  backend slot is the deliverable; real-MVS verification gated on
-  hardware. Decision required: none (recorded, not blocking the chain).
+- ~~P6-01 dense MVS: CUDA unavailable~~ RESOLVED 2026-09-15: the
+  machine has an RTX 4050 (nvidia-smi verified); the installed COLMAP
+  build was CPU-only, not the GPU. Swapped in the official prebuilt
+  CUDA build (colmap/colmap release 4.2.0,
+  colmap-x64-windows-cuda.zip) at the same PATH location; old CPU
+  build kept as colmap-extracted-nocuda-backup. No CUDA Toolkit
+  install needed. GPU execution verified genuinely working (SIFT GPU
+  feature extraction ran on synthetic images, not just `-h`).
+  patch_match_stereo itself (the real MVS deliverable) has not been
+  run end-to-end yet -- that's P6-01's actual remaining scope, now
+  unblocked.
+- **P3-02 real backend run**: none of ORB-SLAM3/OpenVINS/Basalt
+  installed on this machine — the adapter/selection code is real and
+  tested (fake-binary contract test), but no real VIO trajectory has
+  been produced. Decision required: none (install gate, not blocking).
 - **SAM perception tests**: torch-hub cache failure (environment).
 - **open3d/trimesh/skimage absent**: meshing deliberately
   scipy/subprocess-based; revisit only if a capability demands it.
 
-## Next (exact next step, per queue)
+## Next (exact next step, per queue / canonical spine)
 
-1. **P0-03** capability-registry hardening: fold the P2-01
-   time_synchronization entry to PARTIAL with the landed facts
-   (clocks.py, backend seam, metadata_alignment backend); probe what
-   else is cheaply verifiable.
-2. **P3-01** canonical trajectory model (the critical chain's next
-   link; consumes P2-01's ClockModel for monotonic global-time
-   trajectories; backend-neutral per the no-custom-VIO rule).
+Canonical spine position: time sync (P2-01 DONE) -> trajectory/VIO
+(P3-01 DONE, P3-02/P3-03 PARTIAL) -> cross-source registration
+(P4-01 PARTIAL) -> dense MVS/fusion (P6-01 CLI-verified, P6-02 engine
+landed) -> multi-view identity (P7-01 PARTIAL) -> uncertainty/
+provenance (P10-01) -> WorldStore -> incremental compilation.
+
+1. **P6-01 remainder**: parse the verified dense output (fused.ply)
+   into canonical types (DepthFrame/points) and wire into the
+   orchestrator — the CLI pass is real; the Python-level integration
+   is the named remaining scope.
+2. **P6-02 remainder**: a pipeline consumer that ingests plural
+   sources and calls fuse_depth_observations, writing fused geometry
+   into WorldIR (the '-> WorldIR geometry' tail).
+3. **P4-01 remainder** (same id): RegistrationEngine orchestration
+   (extrinsics -> trajectory-prior -> ICP -> uncertainty).
+4. **P10-01** provenance graph — next untouched spine item after
+   the Phase-6 remainders.
+
+WorldStore / incremental compilation follow; do NOT jump to
+disaster-management or unrelated Studio polish.
 
 ## Rules reminder
 

@@ -24,6 +24,7 @@ from uuid import uuid4
 from datetime import datetime
 
 from provenance import Provenance, Uncertainty
+from .statement_state import StatementState
 
 
 # ===== Basic Types & Enums =====
@@ -526,6 +527,12 @@ class Entity:
     confidence: float = 0.5
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
     custom_properties: dict = field(default_factory=dict)
+    # WorldIR 2.0 (P9-01): additive, optional statement-state classification
+    # (constitution sec 4 OBSERVED/INFERRED/DERIVED/PREDICTED/SIMULATED/
+    # PROCEDURAL distinction). None means "not classified" -- v1 worlds
+    # serialized without this field must load with this as None, never a
+    # fabricated guess. See world_ir/statement_state.py.
+    statement_state: Optional[StatementState] = None
 
     def to_dict(self) -> dict:
         return {
@@ -545,10 +552,12 @@ class Entity:
             "confidence": self.confidence,
             "uncertainty": self.uncertainty.to_dict(),
             "custom_properties": self.custom_properties,
+            "statement_state": self.statement_state.value if self.statement_state else None,
         }
 
     @staticmethod
     def from_dict(data: dict) -> "Entity":
+        raw_state = data.get("statement_state")
         return Entity(
             id=data.get("id", f"ent-{uuid4()}"),
             type=EntityType(data.get("type", EntityType.UNKNOWN.value)),
@@ -566,4 +575,5 @@ class Entity:
             confidence=data.get("confidence", 0.5),
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
             custom_properties=data.get("custom_properties", {}),
+            statement_state=StatementState(raw_state) if raw_state else None,
         )

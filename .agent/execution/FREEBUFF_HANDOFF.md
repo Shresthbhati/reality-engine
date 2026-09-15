@@ -26,14 +26,25 @@ this file.
   It already contains merged PRs through #29 (calibration, sensor
   model, clocks, canonical state, RGB-D pipeline).
 - On top of that base, the finalization batch was committed on this
-  branch (see "Last PR" below once pushed): trajectories/
+  branch (see "Last Claude PR" below): trajectories/
   (P3-01/02/03), registration/ (P4-01 partial), backend registry
   (P5-01/02), real GPU dense-MVS CLI pass (P6-01, evidence in
   EXECUTION_STATE), multi-source fusion (P6-02), mesh validation
   (P6-03), appearance+epipolar identity (P7-01), architectural
-  perception (P7-03), WorldIR statement states (P9-01).
-- `datasets/*` are gitignored (rendered fixtures, machine-specific);
+  perception (P7-03), WorldIR  statement states (P9-01).
+- `datasets/*` are gitignored (rendered fixtures, machine-specific); (rendered fixtures, machine-specific);
   never commit them.
+
+## Test status (exact, observed)
+
+## Last Claude PR (finalization batch)
+
+- PR: https://github.com/Shresthbhati/reality-engine/pull/30
+- Branch: `claude/reality-engine-architecture-ed811e`
+- Head commit: `4e188b5` — 38 files, +4,259/−77; base = merged PR #29
+  (main `f86cb2d`). This commit is the intended final state of the
+  batch; nothing is left uncommitted on the branch (only gitignored
+  junk dirs: `MagicMock/`, `.serena/`, `.claude/`).
 
 ## Test status (exact, observed)
 
@@ -58,28 +69,47 @@ this file.
 
 ## Completed priorities (exact IDs — do NOT redo)
 
-DONE: P0-01, P0-02, P0-03, P2-01, P2-02, P3-01, P3-03, P5-01,
-P18-01.
-PARTIAL (implemented, named remainder in ledger `open:` fields):
-P3-02, P4-01, P5-02, P6-01, P6-02, P6-03, P7-01, P7-03, P9-01.
-Blocked-on-hardware: P1-03 (real-device RGB-D capture — recorded in
-TASKS.yaml, not resolvable autonomously).
+Derived mechanically from `.agent/TASKS.yaml` (36 tasks: 10 DONE /
+15 PARTIAL / 11 MISSING), not from prose:
 
-## Next priority (strict order — Priority Authority)
+DONE: P0-01, P0-02, P0-03, P1-01, P1-02, P2-02, P3-01, P3-03,
+P5-01, P18-01.
+PARTIAL (implemented, named remainder in ledger `open:`/`verification:`
+fields): P1-03, P2-01, P3-02, P4-01, P5-02, P6-01, P6-02, P6-03,
+P7-01, P7-03, P8-01, P9-01, P10-01, P16-01, P17-01.
+MISSING (not started): P7-02, P8-02, P8-03, P10-02, P11-01, P12-01,
+P13-01, P13-02, P14-01, P15-01, P19-01.
+Hardware/availability blockers inside PARTIAL: P1-03 (real-device
+RGB-D capture — hardware), P3-02 real backend runs (ORB-SLAM3/
+OpenVINS/Basalt binaries not installed; TUM-format subprocess
+adapters are landed and honest about absence).
 
-1. **P6-01 remainder**: parse verified dense output (fused.ply) into
-   canonical types; wire into the orchestrator.
-2. **P6-02 remainder**: pipeline consumer calling
-   fuse_depth_observations -> WorldIR geometry write-back.
-3. **P4-01 remainder**: RegistrationEngine orchestration
-   (extrinsics -> trajectory prior -> ICP -> uncertainty).
-4. **P10-01** provenance graph (next untouched spine item).
+## Next priority (strict order — Priority Authority, spine order)
 
-Canonical spine: TIME SYNC -> TRAJECTORY/VIO -> REGISTRATION ->
+The canonical spine is TIME SYNC -> TRAJECTORY/VIO -> REGISTRATION ->
 DENSE MVS/FUSION -> MULTI-VIEW IDENTITY -> UNCERTAINTY/PROVENANCE ->
-WORLDSTORE -> INCREMENTAL COMPILATION. Do NOT jump to disaster-
-management work or random Studio polish. Read each task's `spec:`
-pointer and `open:` field in TASKS.yaml before starting.
+WORLDSTORE -> INCREMENTAL COMPILATION. TRAJECTORY/VIO is landed
+(model/diagnostics DONE, adapters PARTIAL on binary availability), so
+the spine head is TIME SYNCHRONIZATION:
+
+1. **P2-01 remainder (spine head)**: synchronization backends 3-6
+   per `docs/future/synchronization/TIME_SYNCHRONIZATION.md` — GNSS/
+   PPS, cross-correlation, trajectory correlation, optimization-based
+   alignment; each with its own deterministic fixture (the ledger's
+   `PENDING` verification items).
+2. **P4-01 remainder**: point-to-plane + symmetric ICP and
+   RegistrationEngine orchestration (extrinsics -> trajectory prior
+   -> ICP -> uncertainty).
+3. **P6-01/P6-02 remainders**: parse verified dense output (fused.ply)
+   into canonical types; pipeline consumer calling
+   fuse_depth_observations -> WorldIR geometry write-back.
+4. **P10-01 remainder**: queryable provenance graph +
+   `reality provenance` query (next untouched spine item after the
+   above).
+
+Do NOT jump to disaster-management work or random Studio polish. Read
+each task's `spec:` pointer and `open:` field in TASKS.yaml before
+starting.
 
 ## Strategic objective
 

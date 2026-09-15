@@ -19,22 +19,27 @@ The Claude execution-campaign batch is finalized:
 
 - **PR #30 head:** 1,613 passed, 1 failed, 1 skipped (~98 s). Focused
   suites for every changed area pass (116 new tests).
-- **Superseded on `fix/sam-load-path` (2026-09-15): 1,614 passed,
+- **Superseded on `fix/sam-load-path` (PR #31, merged): 1,614 passed,
   1 skipped, 0 failed — the first fully green gate.** The SAM failure
   was two real code bugs (torch.hub.load against an upstream repo with
   no hubconf.py; predicted_iou > 1.0 silently discarding regions), not
   the environment — both fixed; vit_b checkpoint pre-cached.
+- **This pass (P2-01 completion on `claude/p2-01-sync-backends`):
+  1,648 passed, 1 skipped, 0 failed (~122 s).** 23 new backend tests
+  (56 total in test_clocks.py); the suite also caught and I fixed two
+  honesty bugs (2-point/identity fits reported a fabricated 0.0
+  residual; correlation decline gate too loose).
 
 ## Completed work (do NOT redo)
 
-Canonical queue: `.agent/TASKS.yaml` (36 tasks: 10 DONE / 15 PARTIAL /
-11 MISSING). Evidence-backed statuses as of this commit:
+Canonical queue: `.agent/TASKS.yaml` (36 tasks: 12 DONE / 13 PARTIAL /
+11 MISSING after this pass). Evidence-backed statuses as of this commit:
 
-- **DONE:** P0-01, P0-02, P0-03, P1-01, P1-02, P2-02, P3-01, P3-03,
-  P5-01, P18-01.
+- **DONE:** P0-01, P0-02, P0-03, P1-01, P1-02, P2-01, P2-02, P3-01,
+  P3-03, P5-01, P6-03, P18-01.
 - **PARTIAL (code + tests landed, named remainder in the ledger):**
-  P1-03, P2-01, P3-02, P4-01, P5-02, P6-01, P6-02, P6-03, P7-01,
-  P7-03, P8-01, P9-01, P10-01, P16-01, P17-01.
+  P1-03, P3-02, P4-01, P5-02, P6-01, P6-02, P7-01, P7-03, P8-01,
+  P9-01, P10-01, P16-01, P17-01.
 - **MISSING (not started):** P7-02, P8-02, P8-03, P10-02, P11-01,
   P12-01, P13-01, P13-02, P14-01, P15-01, P19-01.
 
@@ -55,10 +60,9 @@ Canonical spine: TIME SYNC → TRAJECTORY/VIO → REGISTRATION → DENSE
 MVS/FUSION → MULTI-VIEW IDENTITY → UNCERTAINTY/PROVENANCE → WORLDSTORE
 → INCREMENTAL COMPILATION.
 
-1. **P2-01 remainder** — synchronization backends 3–6 (GNSS/PPS,
-   cross-correlation, trajectory correlation, optimization-based
-   alignment), each with a deterministic fixture
-   (`docs/future/synchronization/TIME_SYNCHRONIZATION.md`).
+1. ~~P2-01 remainder — sync backends 3–6~~ **DONE this pass**
+   (all six spec methods + fixtures; 56 clocks tests; suite 1,648
+   green).
 2. **P4-01 remainder** — point-to-plane + symmetric ICP and
    RegistrationEngine orchestration.
 3. **P6-01/P6-02 remainders** — fused.ply → canonical types; pipeline

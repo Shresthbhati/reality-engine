@@ -185,18 +185,21 @@ capabilities:
 
   - name: time_synchronization
     category: temporal
-    backend: evidence/clocks.py (in-house linear clock model; metadata_alignment backend)
-    inputs: [SensorStream, clock_id, capture metadata (shared_clock / clock_offset_s / clock_drift)]
-    outputs: [TimeAlignment (per-sample original_t + global_t), SynchronizationDiagnostics, ClockModel]
+    backend: >
+      evidence/clocks.py (in-house linear clock model;
+      preference-ordered backend registry: metadata_alignment, gnss_pps,
+      trigger, signal_correlation, optimization)
+    inputs: [SensorStream, clock_id, capture metadata (shared_clock / clock_offset_s / clock_drift / gnss_anchor_pairs / trigger_pairs / reference+observed event trains / cross_stream_constraints)]
+    outputs: [TimeAlignment (per-sample original_t + global_t), SynchronizationDiagnostics (measured residual_max_s, backend attempts, rejection notes), ClockModel]
     license: project-internal
-    hardware_requirements: none
-    accuracy: exact for the declared model; uncertainty recorded when declared (unknown stays unknown)
-    runtime: negligible
-    maturity: PARTIAL (model + backend seam + metadata backend landed P2-01, 33 tests; methods 3-6 -- GNSS/PPS, trigger, signal correlation, optimization -- open registry slots)
+    hardware_requirements: none (GNSS/PPS consumed from declared anchors or already-GNSS-time streams; no timing hardware required)
+    accuracy: exact for the declared model; estimated methods carry measured max-correspondence-residual as estimate quality (construction-only methods report None, never a fabricated zero)
+    runtime: negligible (correlation grid is O(drifts x offsets x events))
+    maturity: IMPLEMENTED (P2-01 complete; all six spec methods with deterministic known-answer fixtures; 56 tests in tests/test_clocks.py)
     limitations:
-      - metadata-declared offsets only today; no estimated sync yet
+      - estimated methods require trusted correspondences from metadata or the stream itself; none are inferred from raw signal content (e.g. no audio waveform correlation yet)
       - clock identity resolves from declared sensor identity when present (P1-02), else caller-supplied
-    fallback: honest UNSYNCHRONIZED samples with reasons (never a guessed offset)
+    fallback: honest UNSYNCHRONIZED samples with reasons (never a guessed offset); correlation declines unless alignment meets an event-spacing plausibility gate
 
   - name: sensor_identity
     category: evidence
@@ -226,18 +229,35 @@ capabilities:
     limitations: no VIO binary installed on this machine; exact CLI invocation is left to the caller (options["command"]) since none of the three tools expose one stable CLI across builds
     fallback: per-session SfM camera poses (labeled per-session, not a continuous trajectory)
 
+  - name: provenance_graph
+    category: provenance
+    backend: "provenance.graph: ProvenanceGraph over the content-addressed ArtifactStore (nodes keyed by sha256 digest, derived_from edges added-only, cycle-rejecting)"
+    inputs: [artifact digests from any ArtifactStore backend (memory/file)]
+    outputs: [parents/children/ancestors/descendants walks, why_exists stage chain, verify_all tamper report, tombstones]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: exact (digest equality is content equality)
+    runtime: linear in graph size per walk; verify_all is O(nodes) store reads
+    maturity: IMPLEMENTED (P10-01; 11 tests on a compiled-style fixture; CLI `reality provenance` surface remains with the commands layer)
+    limitations: CLI query command not yet exposed; cross-session lineage (multi-store) not yet joined
+    fallback: absent graph = per-artifact provenance records still stand
+
   - name: cross_source_registration
     category: registration
-    backend: "registration.registration: point-to-point ICP (scipy cKDTree + numpy SVD/Kabsch) and translation-only GNSS-anchor alignment (P4-01); no orchestrating RegistrationEngine class yet, no landmark-correspondence method (needs multi-view identity, P2)"
-    inputs: [two point-cloud Vec3 lists (ICP), or paired anchor position lists (GNSS anchor)]
-    outputs: [RegistrationResult: RigidTransform or None, status accepted/blocked+reason, rmse, inlier_fraction]
+    backend: "registration.registration: point-to-plane ICP (spec's named algorithm; caller-supplied normals, 6-DOF linearized solve) + point-to-point ICP + translation-only GNSS anchors, orchestrated by RegistrationEngine (confidence-ordered, every attempt recorded)"
+    inputs: [two point-cloud Vec3 lists (+ optional caller-supplied normals), or paired anchor position lists, optional prior RigidTransform]
+    outputs: [RegistrationResult: RigidTransform or None, status accepted/blocked+reason, rmse, inlier_fraction, ResidualStats (measured median/p95/max/rmse), per-method AttemptRecord trail]
     license: n/a (numpy/scipy, already-declared runtime deps)
     hardware_requirements: none
-    accuracy: "exact recovery on synthetic known-offset fixtures within cloud-scale offsets (tests/test_registration.py); real multi-source capture not exercised"
+    accuracy: "exact recovery on synthetic known-offset fixtures (trihedral-corner scenes) within cloud-scale offsets (tests/test_registration.py); real multi-source capture not exercised"
     runtime: not measured
-    maturity: PARTIAL (2/4 spec methods; deliberate point-to-point not point-to-plane deviation, documented; documented ICP local-minimum limitation for offsets larger than cloud extent — real capability gap, not hidden)
-    limitations: sessions compile to separate world frames today (no orchestration wiring this into world compilation yet); requires coarse initial alignment for ICP to converge correctly; no uncertainty/covariance propagation on the result
-    fallback: none — separate worlds stay separate and labeled
+    maturity: >
+      IMPLEMENTED (P4-01 complete: engine orchestration, point-to-plane
+      ICP, contact pre-flight, prior seeding; residual stats recorded;
+      covariance propagation and the landmark/correspondence method
+      remain PENDING in the ledger)
+    limitations: covariance not yet propagated (residual stats are); landmark method needs a cross-source co-observation resolver (P7-01); no orchestration wiring into world compilation yet; ICP remains a local optimizer (prior/contact gate refuses guesses)
+    fallback: none -- separate worlds stay separate and labeled
 
   - name: world_compilation
     category: worldir

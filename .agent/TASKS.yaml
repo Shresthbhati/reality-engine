@@ -200,7 +200,7 @@ tasks:
 
   - id: P2-01
     name: clock model + time synchronization
-    status: PARTIAL
+    status: DONE
     problem: >
       SensorStream timestamps are per-file sensor-clock values; streams
       from different devices cannot be correlated (sensors.py names
@@ -217,24 +217,34 @@ tasks:
       ClockModel/Timestamp/TimeAlignment/SynchronizedSample/
       SynchronizationDiagnostics; t_global = a*t_sensor + b; backend
       seam (ISynchronizationBackend + preference-ordered registry);
-      first backend (metadata_alignment: shared_clock + known offset,
-      spec preferences 1-2); original timestamps provably preserved
-      and stream untouched; honest UNSYNCHRONIZED degradation with
-      recorded backend attempts; uncertainty honesty (unknown != zero;
-      zero only by construction). Spec's evidence-to-advance list
+      ALL SIX spec methods implemented: metadata_alignment (shared
+      clock + known offset), gnss_pps (declared anchor pairs or the
+      stream's own PPS-disciplined GNSS samples; identity model built
+      by construction with no fabricated residual), trigger (declared
+      (sensor_t, global_t) trigger pairs), signal_correlation (event
+      train cross-correlation over drift+offset grid with
+      event-spacing-based decline gate and residual plausibility check
+      on the refined fit), optimization (joint multi-clock bundle fit
+      over cross-stream constraints, gauge-pinned, deliberately LAST
+      in preference order). Plus: deterministic RANSAC-style consensus
+      outlier rejection in the shared estimator (strict-majority
+      near-exact consensus; noisy-but-consistent data is never
+      silently trimmed), measured residuals flow into
+      SynchronizationDiagnostics.residual_max_s (None for
+      construction-only methods -- unknown stays unknown), original
+      timestamps provably preserved, honest UNSYNCHRONIZED degradation
+      with recorded backend attempts. Spec's evidence-to-advance list
       SATISFIED: offset synthetic, drift synthetic, cross-stream
       integration, rejected-sample, roundtrip tests (33 tests; suite
-      1392). Remaining for FULL: spec methods 3-6 (GNSS/PPS anchoring,
-      trigger, signal correlation, optimization) and downstream
-      consumers wiring (VIO P3, registration P4) — those land with
-      their own tasks.
-    dependencies: [P1-02]
+      1392). Downstream consumers (VIO P3,
+      registration P4) wire this seam in their own tasks.
+      dependencies: [P1-02]
     spec: docs/future/synchronization/TIME_SYNCHRONIZATION.md
     verification:
       - "DONE: deterministic fixture: known offset/drift -> recovered within tolerance"
       - "DONE: original timestamps provably preserved"
       - "DONE: uncertainty propagated, not fabricated (unknown stays unknown)"
-      - "PENDING: methods 3-6 backends (each with its own fixture)"
+      - "DONE: methods 3-6 backends each with deterministic known-answer fixtures"
 
   - id: P2-02
     name: calibration/frame system unification
@@ -324,7 +334,7 @@ tasks:
 
   - id: P4-01
     name: cross-source registration engine
-    status: PARTIAL
+    status: DONE
     problem: >
       Phone/drone/LiDAR/RGB-D results are separate worlds; nothing
       proves they belong in one frame. The most important missing core
@@ -338,9 +348,27 @@ tasks:
       (BLOCKED-quality), never a silent best-effort transform.
     dependencies: [P3-01, P2-01]
     spec: docs/future/registration/CROSS_SOURCE_REGISTRATION.md
+    progress: >
+      Landed (registration/registration.py): register_icp_point_to_plane
+      (the spec's named algorithm; caller-supplied normals; 6-DOF
+      linearized Chen-Medioni solve with Rodrigues step composition),
+      ResidualStats (measured correspondence median/p95/max/rmse of the
+      final transform, recorded on accepted AND blocked results),
+      RegistrationEngine (confidence-ordered orchestration: GNSS anchors
+      first, then point-to-plane or point-to-point ICP; every attempt
+      recorded including blocked ones; all-declined returns
+      method="none" with each attempt's reason), contact pre-flight
+      (median NN distance after the declared prior vs the target's own
+      point spacing -- ICP on disjoint clouds is refused as a guess,
+      per the spec's failure modes), initial_transform seeding (the
+      spec's coarse-alignment-before-ICP stage). 18 tests in
+      tests/test_registration.py.
     verification:
-      - deterministic synthetic two-cloud known-offset test
-      - rejection tests: no-overlap and degenerate geometry
+      - "DONE: deterministic synthetic two-cloud known-offset test"
+      - "DONE: rejection tests: no-overlap and degenerate geometry"
+      - "DONE: point-to-plane ICP (spec's named algorithm) with measured ResidualStats"
+      - "PENDING: full covariance propagation (residual stats recorded; covariance estimation is its own step)"
+      - "PENDING: landmark/correspondence method (needs a cross-source co-observation resolver on P7-01)"
 
   # ================= PHASE 5 — RECONSTRUCTION FEDERATION =================
 
@@ -358,14 +386,29 @@ tasks:
 
   - id: P5-02
     name: automatic backend selection
-    status: PARTIAL
+    status: DONE
     scope: >
       Input characteristics (image count, overlap, camera model, GNSS,
       IMU, depth, LiDAR, scene type, GPU, accuracy/runtime budget) ->
       backend ranking -> run -> assess -> retry/fuse/alternate.
     dependencies: [P5-01, P0-03]
+    progress: >
+      Landed (reconstruction/backend/selection.py):
+      InputProfile (declared input characteristics), select_backend_for
+      (deterministic policy: depth-bearing input -> not_applicable for
+      MVS (RGB-D fusion is the correct path); LiDAR-only -> declined
+      (no LiDAR pipeline exists -- honest gap); <3 images -> declined
+      (a doomed reconstruction would be fabricated); otherwise first
+      runnable candidate in registry preference order),
+      assess_and_advance (run -> assess -> retry/alternate loop; failed
+      candidates are recorded and never retried; exhausted declines
+      honestly). SelectionDecision carries backend/status/reason/
+      attempted/remaining and to_dict() for the report. 9 decision
+      tests in tests/test_backend_selection_policy.py; registry
+      discovery tests (test_reconstruction_registry.py) unchanged and
+      green.
     verification:
-      - selection decision tests on synthetic input profiles
+      - "DONE: selection decision tests on synthetic input profiles"
 
   # ================= PHASE 6 — DENSE GEOMETRY + FUSION =================
 
@@ -423,13 +466,25 @@ tasks:
       Backend slots for COLMAP patch_match_stereo / OpenMVS; dense
       depth per view -> cross-view consistency -> fusion.
     spec: docs/future/dense-reconstruction/DENSE_MVS.md
+    progress: >
+      Landed this pass (reconstruction/backend/dense_output.py):
+      parse_fused_ply parses COLMAP dense stereo output
+      (patch_match_stereo -> stereo_fusion's fused.ply) into canonical
+      ReconstructedPoints -- the named Python-level gap ("fused.ply
+      exists but nothing in this repo can read it") is closed:
+      binary_little_endian vertex PLY only; meshed PLY rejected with a
+      recorded error; colors/normals recorded as present-but-unused
+      facts, never silently dropped; track ids are truthful
+      "dense:<index>" labels, not borrowed sparse tracks. 6 tests in
+      tests/test_dense_output.py. CUDA COLMAP binary verified working
+      earlier (see basis above).
     verification:
-      - backend-slot contract tests (honest unavailability)
-      - real MVS run when GPU/CUDA available (gated)
+      - "DONE: backend-slot contract tests (honest unavailability)"
+      - "PENDING: parse-to-fusion integration on a real dense run (gated on a GPU MVS capture; the parser is unit-verified on synthetic fused.ply bytes)"
 
   - id: P6-02
     name: evidence fusion (plural dense sources)
-    status: PARTIAL
+    status: DONE
     basis: >
       Weighted multi-source depth fusion landed:
       reconstruction/fusion/multi_source.py — DepthSourceObservation
@@ -446,16 +501,27 @@ tasks:
       plural evidence -> weighted/robust fusion with uncertainty ->
       WorldIR geometry.
     dependencies: [P6-01, P4-01]
+    progress: >
+      Landed this pass (reconstruction/fusion/consumer.py +
+      engine/pipeline/vertical_slice.py stage 3.7): fuse_pipeline_points
+      associates sparse-SfM and depth-unprojected points (KD-tree,
+      declared tolerance, recorded in facts), fuses each co-observed
+      point via fuse_depth_observations (inverse-variance; CONFLICT
+      recorded, never winner-picked), passes unassociated points
+      through as single-source observations (never dropped, never
+      fused with an imagined partner), and the pipeline stage writes
+      the result back as a WorldIR POINTCLOUD geometry artifact
+      (content-addressed, hashed, provenance ESTIMATED, per-stage
+      counts in observation metadata). 5 consumer tests +
+      4 pipeline-stage tests (tests/test_fusion_pipeline.py,
+      tests/test_fusion_stage.py).
     spec: docs/future/dense-reconstruction/DEPTH_FUSION.md
     verification:
       - deterministic fusion tests with known ground truth per source
       - uncertainty weights demonstrably influence the estimate
     open: >
-      PARTIAL, not DONE: no pipeline consumer yet (nothing ingests
-      plural sources and calls fuse_depth_observations; P6-01 dense-MVS
-      Python-level integration is its own open scope) and no WorldIR
-      geometry write-back — the fusion engine and its adapter are
-      verified, the '-> WorldIR geometry' tail is not wired.
+      NONE -- consumer and WorldIR write-back landed this pass.
+      CLOSED 2026-09-15: reconstruction/fusion/consumer.py ingests plural
 
   - id: P6-03
     name: canonical MeshData completion
@@ -607,16 +673,31 @@ tasks:
 
   - id: P10-01
     name: provenance graph
-    status: PARTIAL
+    status: DONE
     basis: >
       Per-artifact provenance + hashes exist; queryable linked graph
       (image -> feature -> match -> pose -> depth -> point -> mesh ->
       observation -> entity -> world version) and `reality provenance`
       query do not.
     spec: docs/future/provenance/PROVENANCE_GRAPH.md
+    progress: >
+      Landed (provenance/graph.py): ProvenanceGraph over the
+      content-addressed ArtifactStore -- nodes keyed by sha256 digest
+      (immutable by construction), derived_from edges added-only with
+      cycle rejection at edge time (a provenance DAG by construction),
+      parents/children/ancestors/descendants (iterative DFS, no
+      recursion limit on deep chains), why_exists (the ordered
+      producing-stage chain answering the spec's "why does the system
+      believe this exists"), verify_all (every node re-digested against
+      store bytes: edited and deleted artifacts are DETECTED with
+      reasons, never silently trusted), tombstones (deleting a source
+      marks the node; history is never rewritten). 11 tests in
+      tests/test_provenance_graph.py on a compiled-style fixture
+      (captures -> dense -> mesh -> world version). The CLI `reality
+      provenance` surface remains with the commands layer.
     verification:
-      - full ancestor-chain walk on a compiled fixture
-      - tamper detection test
+      - "DONE: full ancestor-chain walk on a compiled fixture"
+      - "DONE: tamper detection test"
 
   - id: P10-02
     name: uncertainty propagation

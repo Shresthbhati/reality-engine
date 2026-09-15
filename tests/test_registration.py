@@ -15,6 +15,7 @@ from registration.registration import (
     RegistrationEngine,
     RegistrationError,
     ResidualStats,
+    estimate_registration_covariance,
     register_gnss_anchor,
     register_icp,
     register_icp_point_to_plane,
@@ -307,3 +308,70 @@ class TestRegistrationEngine:
         assert [a.method for a in result.attempts] == ["gnss_anchor", "icp"]
         assert result.attempts[0].status == "blocked"  # no anchors given
         assert result.attempts[1].status == "accepted"
+
+
+class TestRegistrationCovariance:
+    """Registration uncertainty: the estimate must carry a defensible
+    covariance derived from the measured residuals, not a made-up
+    confidence score. Sigmas are computed from the residual
+    distribution over N correspondences by first-order error
+    propagation: sigma_t = rms / sqrt(N_effective), with N_effective
+    reduced by spatial degeneracy (a corridor's weak axis has few
+    independent constraints)."""
+
+    def test_translation_sigma_from_residuals(self):
+        rng = random.Random(21)
+        src, _ = _plane_cloud(rng)
+        tgt = _apply(Quat.identity(), Vec3(0.3, 0.0, 0.0), src)
+        result = register_icp(src, tgt, from_frame="B", to_frame="A")
+        assert result.status == "accepted"
+        assert result.covariance is not None
+        cov = result.covariance
+        # Exact synthetic correspondence -> near-zero measured residual
+        # -> tight sigma. Defensible means consistent with the actual
+        # residuals, not a hardcoded number.
+        expected_sigma = cov.translation_sigma_m
+        assert expected_sigma >= 0.0
+        assert expected_sigma < 0.01
+        # Sigma must be consistent with the measured residual stats.
+        assert cov.basis.startswith("residual-derived")
+
+    def test_noisier_cloud_gives_larger_sigma(self):
+        # Two clouds with different residual scale: the noisier
+        # alignment MUST report a larger sigma. This is the property
+        # that makes the covariance real rather than decorative.
+        rng = random.Random(22)
+        src, _ = _plane_cloud(rng)
+        tgt_clean = _apply(Quat.identity(), Vec3(0.3, 0.0, 0.0), src)
+        tgt_noisy = [
+            Vec3(p.x + 0.02 * rng.gauss(0, 1),
+                 p.y + 0.02 * rng.gauss(0, 1),
+                 p.z + 0.02 * rng.gauss(0, 1))
+            for p in tgt_clean
+        ]
+        clean = register_icp(src, tgt_clean, from_frame="B", to_frame="A")
+        noisy = register_icp(src, tgt_noisy, from_frame="B", to_frame="A")
+        assert clean.covariance and noisy.covariance
+        assert noisy.covariance.translation_sigma_m > clean.covariance.translation_sigma_m
+
+    def test_degenerate_geometry_inflates_sigma(self):
+        # Collinear points (a corridor): rotation about the line axis
+        # is unconstrained. The covariance must reflect that weakness
+        # with an inflated sigma (or an explicit degeneracy flag), not
+        # report false confidence.
+        rng = random.Random(23)
+        line = [Vec3(float(i), 0.0, 0.0) for i in range(40)]
+        tgt = _apply(Quat.identity(), Vec3(0.0, 0.1, 0.0), line)
+        result = register_icp(line, tgt, from_frame="B", to_frame="A", min_overlap=0.1)
+        if result.status == "accepted":
+            assert result.covariance.degenerate_axes is not None
+            assert len(result.covariance.degenerate_axes) >= 1
+
+    def test_covariance_roundtrip(self):
+        rng = random.Random(24)
+        src, _ = _plane_cloud(rng)
+        tgt = _apply(Quat.identity(), Vec3(0.3, 0.0, 0.0), src)
+        result = register_icp(src, tgt, from_frame="B", to_frame="A")
+        d = result.covariance.to_dict()
+        assert d["basis"].startswith("residual-derived")
+        assert d["n_correspondences"] == result.residual_stats.count

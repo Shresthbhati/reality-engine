@@ -413,3 +413,22 @@ disaster-management or unrelated Studio polish.
 Never mark work complete without execution evidence. Never erase
 incomplete work. Update this file at session end (constitution
 Article II/IV).
+## 2026-09-15 — Session: directive items P4/P5/P11/P12/P13 + measurement uncertainty (PR #34)
+
+- Registration covariance (P4-F): `estimate_registration_covariance` (6x6 from
+  point/plane correspondences), wired into accepted ICP results.
+- Dense ingestion (P5): `reconstruction/dense_ingest.py` — fused.ply ->
+  canonical PointCloudData -> WorldIR Geometry(POINTCLOUD) with hashed
+  artifact + dense provenance.
+- Measurement uncertainty (P11): measured-spread precision (RMS inter-view
+  disagreement), leave-one-out 5-sigma conflict detection (n=2 honestly
+  undecidable), `Measurement.precision_note` names the precision source;
+  single-view keeps the documented heuristic, honestly labeled.
+- WorldStore (P12): `worldstore/store.py` — immutable version snapshots,
+  parent DAG, restore-any-version; world survives process restarts.
+- Incremental compilation (P13): `engine/incremental.py` — dependency-graph
+  invalidation compiler (content hashes, cycle detection, resume).
+- Ledger: 18 DONE / 9 PARTIAL / 9 MISSING. CAPABILITIES: +world_store,
+  +incremental_compilation, +uncertainty_propagation.
+- Verification: full suite 1,720 passed / 1 skipped / 0 failed; SAM
+  real-model integration test run separately (passed, ~58 s CPU).

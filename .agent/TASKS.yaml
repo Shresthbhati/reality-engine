@@ -371,7 +371,10 @@ tasks:
       - "PENDING: landmark/correspondence method (needs a cross-source co-observation resolver on P7-01)"
 
   # ================= PHASE 5 — RECONSTRUCTION FEDERATION =================
-
+    note: >-
+      Covariance completion landed 2026-09-15: estimate_registration_covariance
+      (6x6 from point/plane correspondences) wired into accepted ICP results;
+      residual stats and acceptance gates were already DONE.
   - id: P5-01
     name: reconstruction backend registry
     status: DONE
@@ -481,7 +484,10 @@ tasks:
     verification:
       - "DONE: backend-slot contract tests (honest unavailability)"
       - "PENDING: parse-to-fusion integration on a real dense run (gated on a GPU MVS capture; the parser is unit-verified on synthetic fused.ply bytes)"
-
+    note: >-
+      Dense ingest landed 2026-09-15: fused.ply -> canonical PointCloudData ->
+      WorldIR Geometry(POINTCLOUD) with provenance (reconstruction/dense_ingest.py).
+      Real dense-run GPU capture integration remains open (hardware capture, not software).
   - id: P6-02
     name: evidence fusion (plural dense sources)
     status: DONE
@@ -715,7 +721,7 @@ tasks:
 
   - id: P11-01
     name: WorldStore
-    status: MISSING
+    status: DONE
     scope: >
       Persistent versioned storage: SourceStore/EvidenceStore/
       ObservationStore/ArtifactStore/EntityStore/RelationshipStore/
@@ -732,7 +738,7 @@ tasks:
 
   - id: P12-01
     name: incremental compilation
-    status: MISSING
+    status: DONE
     scope: >
       New evidence -> dependency graph -> affected region/artifacts/
       entities -> incremental compile -> World Vn+1; everything else

@@ -140,16 +140,25 @@ class Quaternion:
 
 @dataclass
 class Measurement:
-    """A measured value with unit and precision."""
+    """A measured value with unit and precision.
+
+    `precision_note` is an optional, non-semantic annotation naming HOW
+    the precision was obtained (e.g. "measured spread of 3 views",
+    "documented confidence heuristic"). It never changes equality or
+    serialization of the measured quantity itself -- it exists so a
+    downstream consumer can distinguish measured from heuristic
+    uncertainty instead of trusting a number blindly.
+    """
     value: float
     unit: str  # SI units only (meter, kg, second, etc.)
     precision: float = 0.01  # Standard deviation or margin of error
     timestamp: Optional[float] = None
     provenance: Provenance = Provenance.UNKNOWN
     confidence: float = 0.5
+    precision_note: Optional[str] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "value": self.value,
             "unit": self.unit,
             "precision": self.precision,
@@ -157,6 +166,9 @@ class Measurement:
             "provenance": self.provenance.value,
             "confidence": self.confidence,
         }
+        if self.precision_note is not None:
+            d["precision_note"] = self.precision_note
+        return d
 
     @staticmethod
     def from_dict(data: dict) -> "Measurement":
@@ -167,6 +179,7 @@ class Measurement:
             timestamp=data.get("timestamp"),
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             confidence=data.get("confidence", 0.5),
+            precision_note=data.get("precision_note"),
         )
 
 

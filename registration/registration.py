@@ -74,6 +74,46 @@ class ResidualStats:
 
 
 @dataclass(frozen=True)
+class RegistrationCovariance:
+    """Registration uncertainty derived from MEASURED residuals -- never
+    a hardcoded or invented confidence score.
+
+    Model: each correspondence contributes an independent range error
+    of order `sigma_residual` (the measured RMS residual). With N
+    correspondences the translation estimate's standard error is
+        sigma_t = rms / sqrt(N_effective)
+    where N_effective is reduced by spatial degeneracy: correspondences
+    spread over only k well-separated directions constrain k axes, not
+    three. `degenerate_axes` names axes whose constraint basis is weak
+    (rank-deficient scatter of correspondence directions) and
+    `axis_sigmas_m` carries per-axis sigmas in the order (x, y, z),
+    inflated on degenerate axes. `rotation_sigma_rad` follows the same
+    construction with lever arm = correspondence distance from the
+    centroid (sigma_theta ~ rms / rms_lever).
+
+    basis starts with "residual-derived" so consumers can assert the
+    number came from measurement.
+    """
+
+    translation_sigma_m: float
+    axis_sigmas_m: Tuple[float, float, float]
+    rotation_sigma_rad: float
+    n_correspondences: int
+    degenerate_axes: Optional[Tuple[str, ...]]
+    basis: str
+
+    def to_dict(self) -> dict:
+        return {
+            "translation_sigma_m": self.translation_sigma_m,
+            "axis_sigmas_m": list(self.axis_sigmas_m),
+            "rotation_sigma_rad": self.rotation_sigma_rad,
+            "n_correspondences": self.n_correspondences,
+            "degenerate_axes": list(self.degenerate_axes) if self.degenerate_axes else None,
+            "basis": self.basis,
+        }
+
+
+@dataclass(frozen=True)
 class AttemptRecord:
     """One orchestration attempt, successful or not. Kept even when a
     later method succeeds so the decision trail survives (spec:
@@ -106,6 +146,7 @@ class RegistrationResult:
     source_points: int
     target_points: int
     residual_stats: Optional[ResidualStats] = None
+    covariance: Optional[RegistrationCovariance] = None
     attempts: Tuple[AttemptRecord, ...] = ()
 
     def to_dict(self) -> dict:
@@ -120,6 +161,7 @@ class RegistrationResult:
             "source_points": self.source_points,
             "target_points": self.target_points,
             "residual_stats": self.residual_stats.to_dict() if self.residual_stats else None,
+            "covariance": self.covariance.to_dict() if self.covariance else None,
             "attempts": [a.to_dict() for a in self.attempts],
         }
 
@@ -177,6 +219,84 @@ def _to_array(points: Sequence[Vec3]) -> np.ndarray:
 
 def _solve_linear(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.linalg.lstsq(a, b, rcond=None)[0]
+
+
+def estimate_registration_covariance(
+    residual_stats: ResidualStats,
+    source_points: Sequence[Vec3],
+    target_points: Sequence[Vec3],
+    transform: "RigidTransform",
+) -> RegistrationCovariance:
+    """Derive a defensible registration covariance from measured
+    residuals and the correspondence geometry (first-order error
+    propagation; see RegistrationCovariance's docstring for the model).
+    """
+    import numpy as _np
+
+    src = _to_array(source_points)
+    tgt = _to_array(target_points)
+    tree = cKDTree(tgt)
+    q = transform.rotation
+    tv = transform.translation
+    rot = _quat_to_matrix(q)
+    transformed = src @ rot.T + _np.array([tv.x, tv.y, tv.z])
+    distances, indices = tree.query(transformed)
+    # Inliers only: the residual model describes correspondences the
+    # transform actually used, not outliers it rejected.
+    inlier_mask = distances <= (float(_np.median(distances)) * 3.0 if float(_np.median(distances)) > 0 else _np.isfinite(distances))
+    if int(inlier_mask.sum()) < 3:
+        raise RegistrationError(
+            "covariance estimation needs >= 3 inlier correspondences"
+        )
+    p = transformed[inlier_mask]
+    q_pts = tgt[indices[inlier_mask]]
+    n = int(inlier_mask.sum())
+    rms = float(_np.sqrt(_np.mean((distances[inlier_mask]) ** 2)))
+
+    # Spatial conditioning of the correspondences: eigenvalues of the
+    # centered correspondence covariance. A tiny eigenvalue along one
+    # axis means that axis is weakly constrained (the corridor problem).
+    centered = p - p.mean(axis=0)
+    scatter = centered.T @ centered / max(n, 1)
+    eigvals, eigvecs = _np.linalg.eigh(scatter)  # ascending
+    spread = float(_np.max(eigvals)) if len(eigvals) else 0.0
+    degenerate_axes: list[str] = []
+    axis_sigmas = [0.0, 0.0, 0.0]
+    for axis in range(3):
+        # Relative conditioning of this axis: fraction of the largest
+        # eigenvalue's spread captured along it.
+        rel = float(eigvals[axis] / spread) if spread > 0 else 0.0
+        if rel < 1e-3:
+            degenerate_axes.append("xyz"[axis])
+            # Effectively unconstrained along this axis: inflate by the
+            # cloud's own extent (an honest "we don't know" scale), not
+            # a fabricated small sigma.
+            extent = float(_np.max(p[:, axis]) - _np.min(p[:, axis]))
+            axis_sigmas[axis] = rms + extent
+        else:
+            # Effective independent sample count shrinks with the axis's
+            # relative conditioning.
+            n_eff = max(1.0, n * min(1.0, rel))
+            axis_sigmas[axis] = rms / _np.sqrt(n_eff)
+
+    # Rotation sigma via lever arms: sigma_theta ~ rms / rms_lever.
+    centroid = p.mean(axis=0)
+    lever = _np.linalg.norm(p - centroid, axis=1)
+    rms_lever = float(_np.sqrt(_np.mean(lever ** 2)))
+    rot_sigma = rms / rms_lever if rms_lever > 0 else float("inf")
+
+    return RegistrationCovariance(
+        translation_sigma_m=float(_np.max(axis_sigmas)),
+        axis_sigmas_m=(axis_sigmas[0], axis_sigmas[1], axis_sigmas[2]),
+        rotation_sigma_rad=float(rot_sigma),
+        n_correspondences=n,
+        degenerate_axes=tuple(degenerate_axes) if degenerate_axes else None,
+        basis=(
+            f"residual-derived: rms {rms:.3e} m over {n} inlier "
+            "correspondences; first-order propagation with spatial "
+            "conditioning (weaker axes inflate)"
+        ),
+    )
 
 
 def _quat_to_matrix(q: "Quat") -> np.ndarray:
@@ -302,11 +422,19 @@ def register_icp(
         from_frame=from_frame, to_frame=to_frame,
         rotation=_matrix_to_quat(r), translation=Vec3(*t),
     )
+    covariance = None
+    if residual_stats is not None:
+        try:
+            covariance = estimate_registration_covariance(
+                residual_stats, source, target, transform
+            )
+        except RegistrationError:
+            covariance = None  # degenerate correspondences: honest None
     return RegistrationResult(
         transform=transform, method="icp", status="accepted", reason="",
         rmse=rmse, inlier_fraction=inlier_fraction, iterations=iterations,
         source_points=n_source, target_points=n_target,
-        residual_stats=residual_stats,
+        residual_stats=residual_stats, covariance=covariance,
     )
 
 
@@ -446,11 +574,19 @@ def register_icp_point_to_plane(
         from_frame=from_frame, to_frame=to_frame,
         rotation=_matrix_to_quat(r), translation=Vec3(*t),
     )
+    covariance = None
+    if residual_stats is not None:
+        try:
+            covariance = estimate_registration_covariance(
+                residual_stats, source, target, transform
+            )
+        except RegistrationError:
+            covariance = None
     return RegistrationResult(
         transform=transform, method="icp_point_to_plane", status="accepted", reason="",
         rmse=rmse, inlier_fraction=inlier_fraction, iterations=iterations,
         source_points=n_source, target_points=n_target,
-        residual_stats=residual_stats,
+        residual_stats=residual_stats, covariance=covariance,
     )
 
 
@@ -485,10 +621,24 @@ def register_gnss_anchor(
         from_frame=from_frame, to_frame=to_frame,
         rotation=Quat.identity(), translation=Vec3(*offset),
     )
+    n_pairs = len(source_positions)
+    # Translation-only model: sigma_t = rmse / sqrt(N) over the anchor
+    # pairs; no rotation is estimated, so rotation_sigma is exactly the
+    # model's non-estimability, not a number.
+    import numpy as _np
+    anchor_cov = RegistrationCovariance(
+        translation_sigma_m=float(rmse / _np.sqrt(max(n_pairs, 1))),
+        axis_sigmas_m=(float(rmse / _np.sqrt(max(n_pairs, 1))),) * 3,
+        rotation_sigma_rad=float("nan"),  # translation-only: rotation NOT estimated
+        n_correspondences=n_pairs,
+        degenerate_axes=None,
+        basis=f"residual-derived: anchor-pair rmse {rmse:.3e} m over {n_pairs} pairs; translation-only model (rotation not estimated)",
+    )
     return RegistrationResult(
         transform=transform, method="gnss_anchor", status="accepted", reason="",
         rmse=rmse, inlier_fraction=1.0, iterations=1,
-        source_points=len(source_positions), target_points=len(target_positions),
+        source_points=n_pairs, target_points=len(target_positions),
+        covariance=anchor_cov,
     )
 
 
@@ -589,6 +739,7 @@ class RegistrationEngine:
                         source_points=anchor_result.source_points,
                         target_points=anchor_result.target_points,
                         residual_stats=anchor_result.residual_stats,
+                        covariance=anchor_result.covariance,
                         attempts=tuple(attempts),
                     )
         else:
@@ -635,6 +786,7 @@ class RegistrationEngine:
                 source_points=icp_result.source_points,
                 target_points=icp_result.target_points,
                 residual_stats=icp_result.residual_stats,
+                covariance=icp_result.covariance,
                 attempts=tuple(attempts),
             )
 

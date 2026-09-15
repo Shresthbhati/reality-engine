@@ -222,11 +222,16 @@ class TestHonestDegradation:
 
         alignment = stream.synchronized("cam2", {"irrelevant": True})
 
-        assert alignment.diagnostics.backend_attempts == (
-            {"backend": "metadata_alignment", "ok": False,
-             "reason": alignment.diagnostics.backend_attempts[0]["reason"]},
-        )
-        assert "no synchronization metadata" in alignment.diagnostics.backend_attempts[0]["reason"]
+        # Every backend in the registry gets an honest attempt record:
+        # metadata first (spec preference order), all declining when no
+        # synchronization facts exist, with the reason for each.
+        from evidence.clocks import DEFAULT_BACKENDS
+        attempts = alignment.diagnostics.backend_attempts
+        assert len(attempts) == len(DEFAULT_BACKENDS)
+        assert [a["backend"] for a in attempts] == [b.name for b in DEFAULT_BACKENDS]
+        assert all(a["ok"] is False for a in attempts)
+        assert all(a["reason"] for a in attempts)
+        assert "no synchronization metadata" in attempts[0]["reason"]
 
 
 class TestBackendSelectionSeam:
@@ -428,3 +433,327 @@ class TestCrossStreamAlignment:
 
         # Drift compounds: local 200 s lands at 221 s global.
         assert al_b.global_times() == pytest.approx((1.0, 111.0, 221.0))
+
+# ==== Spec preference backends 3-6 (GNSS/PPS, trigger, correlation, optimization) ====
+
+from evidence.clocks import (
+    DEFAULT_BACKENDS,
+    GnssPpsBackend,
+    OptimizationBackend,
+    SignalCorrelationBackend,
+    TriggerBackend,
+    synchronize_stream as _sync,
+)
+
+
+class _FakeSample:
+    def __init__(self, t):
+        self.t = t
+
+
+class _FakeStream:
+    def __init__(self, kind, ts):
+        self.kind = kind
+        self.samples = [_FakeSample(t) for t in ts]
+        self.provenance = None
+        self.identity = None
+
+    def is_monotonic(self):
+        ts = [s.t for s in self.samples]
+        return all(b >= a for a, b in zip(ts, ts[1:]))
+
+
+class _Ctx:
+    def __init__(self, clock_id, metadata=None):
+        self.clock_id = clock_id
+        self.metadata = dict(metadata or {})
+
+
+class TestGnssPpsBackend:
+    def test_own_gnss_samples_identity_fit(self):
+        # A PPS-disciplined GNSS stream is already in GNSS time: the
+        # identity model with zero residual BY CONSTRUCTION.
+        backend = GnssPpsBackend()
+        model = backend.build_model(_FakeStream("gnss", [10.0, 11.0, 12.0, 13.0]), _Ctx("gnss0"))
+        assert model.method is SyncMethod.GNSS_PPS
+        assert abs(model.a - 1.0) < 1e-12 and abs(model.b) < 1e-12
+        assert "by construction" in model.uncertainty.basis
+        # Identity from the stream's own PPS-disciplined samples has no
+        # measured fit residual: the honest report is None, not a
+        # fabricated 0.0.
+        assert model.uncertainty.offset_s is None
+
+    def test_imu_stream_declines_without_anchors(self):
+        backend = GnssPpsBackend()
+        with pytest.raises(SynchronizationUnavailable):
+            backend.build_model(_FakeStream("imu", [0.0, 1.0]), _Ctx("cam0"))
+
+    def test_declared_anchors_recover_offset_and_drift(self):
+        # Ground truth: t_global = 1.001 * t_sensor + 100.
+        def truth(t):
+            return 1.001 * t + 100.0
+
+        anchors = [(t, truth(t)) for t in (0.0, 10.0, 20.0, 30.0)]
+        backend = GnssPpsBackend()
+        model = backend.build_model(
+            _FakeStream("imu", [t for t, _ in anchors]),
+            _Ctx("cam0", {"gnss_anchor_pairs": anchors}),
+        )
+        assert abs(model.a - 1.001) < 1e-9
+        assert abs(model.b - 100.0) < 1e-6
+        assert model.method is SyncMethod.GNSS_PPS
+
+    def test_bad_anchor_shape_declines(self):
+        backend = GnssPpsBackend()
+        with pytest.raises(SynchronizationUnavailable):
+            backend.build_model(
+                _FakeStream("imu", [0.0, 1.0]),
+                _Ctx("cam0", {"gnss_anchor_pairs": [(0.0, 1.0, 2.0)]}),
+            )
+
+
+class TestTriggerBackend:
+    def test_trigger_pairs_known_answer(self):
+        backend = TriggerBackend()
+        model = backend.build_model(
+            _FakeStream("imu", [1.0, 2.0, 3.0]),
+            _Ctx("cam0", {"trigger_pairs": [(1.0, 50.0), (2.0, 51.0), (3.0, 52.0)]}),
+        )
+        assert model.method is SyncMethod.TRIGGER
+        assert abs(model.a - 1.0) < 1e-12 and abs(model.b - 49.0) < 1e-9
+
+    def test_two_triggers_exact_two_point_fit(self):
+        backend = TriggerBackend()
+        # Trigger pair = (sensor_t, global_t) at the same physical
+        # trigger event: sensor 0.0 == global 7.5; sensor 5.0 == global
+        # 7.505 (the sensor clock ran fast: 5 s of sensor time over 5 ms
+        # of global time is absurd, so read it as the sensor clock being
+        # ~1000x slow -- use a physically sensible drift instead).
+        model = backend.build_model(
+            _FakeStream("imu", [0.0, 5.0]),
+            _Ctx("cam0", {"trigger_pairs": [(0.0, 7.5), (5.0, 7.505)]}),
+        )
+        # t_global = a*t_sensor + b with a = 0.001: 5 s of sensor time
+        # spans 5 ms of global time. Known answer from the two pairs.
+        assert abs(model.a - 0.001) < 1e-12
+        assert abs(model.b - 7.5) < 1e-12
+        # No redundancy -> no measured residual; uncertainty reports
+        # the by-construction basis WITHOUT a fabricated 0.0 offset.
+        assert "zero by construction" in model.uncertainty.basis
+        assert model.uncertainty.offset_s is None
+
+    def test_no_trigger_pairs_declines(self):
+        backend = TriggerBackend()
+        with pytest.raises(SynchronizationUnavailable):
+            backend.build_model(_FakeStream("imu", [0.0, 1.0]), _Ctx("cam0"))
+
+
+class TestSignalCorrelationBackend:
+    def _ref(self):
+        # Sparse, distinct flash times.
+        return [(0.0, 1.0), (1.0, 1.0), (2.0, 1.0), (5.0, 1.0), (7.0, 1.0), (9.0, 1.0)]
+
+    def test_offset_recovered_from_event_train(self):
+        ref = self._ref()
+        obs = [(t + 3.7, 1.0) for t, _ in ref]
+        backend = SignalCorrelationBackend()
+        model = backend.build_model(
+            _FakeStream("imu", [t for t, _ in obs]),
+            _Ctx("cam0", {"reference_events": ref, "observed_events": obs}),
+        )
+        assert model.method is SyncMethod.SIGNAL_CORRELATION
+        # Observed events at t_sensor = t_global + 3.7 map back with
+        # t_global = 1.0 * t_sensor - 3.7 (model convention t_global =
+        # a*t_sensor + b).
+        assert abs(model.b + 3.7) < 0.05
+        assert abs(model.a - 1.0) < 0.02
+
+    def test_drift_recovered_from_event_train(self):
+        ref = self._ref()
+        # The sensor clock runs SLOW: its seconds are 1.01 global
+        # seconds, so t_global = 1.01 * t_sensor recovers the reference
+        # train from obs = t_ref / 1.01.
+        a_true = 1.01
+        b_true = 0.0
+        obs = [(t / 1.01, 1.0) for t, _ in ref]
+        backend = SignalCorrelationBackend()
+        model = backend.build_model(
+            _FakeStream("imu", [t for t, _ in obs]),
+            _Ctx("cam0", {"reference_events": ref, "observed_events": obs}),
+        )
+        assert abs(model.a - a_true) < 0.005
+        assert abs(model.b - b_true) < 0.05
+        # The recovered model must actually re-align the trains: applying
+        # it to the observed times reproduces the reference times.
+        for (t_ref, _), s in zip(ref, [model.apply(t) for t, _ in obs]):
+            assert abs(s - t_ref) < 0.02
+
+    def test_missing_trains_decline(self):
+        backend = SignalCorrelationBackend()
+        with pytest.raises(SynchronizationUnavailable):
+            backend.build_model(_FakeStream("imu", [0.0, 1.0]), _Ctx("cam0"))
+
+    def test_single_event_trains_decline(self):
+        backend = SignalCorrelationBackend()
+        with pytest.raises(SynchronizationUnavailable):
+            backend.build_model(
+                _FakeStream("imu", [0.0, 1.0]),
+                _Ctx("cam0", {
+                    "reference_events": [(0.0, 1.0)],
+                    "observed_events": [(1.0, 1.0)],
+                }),
+            )
+
+    def test_unalignable_trains_decline(self):
+        # Observed train with drift far outside the search space (0.5x
+        # rate): no hypothesis in the grid aligns the trains; the
+        # backend must decline, not best-effort. (A pure constant shift
+        # IS alignable -- start-alignment recovers it exactly -- so drift
+        # outside the searched band is the genuine decline case.)
+        backend = SignalCorrelationBackend()
+        with pytest.raises(SynchronizationUnavailable):
+            backend.build_model(
+                _FakeStream("imu", [0.5 * t + 500.0 for t, _ in self._ref()]),
+                _Ctx("cam0", {
+                    "reference_events": self._ref(),
+                    "observed_events": [(0.5 * t + 500.0, 1.0) for t, _ in self._ref()],
+                }),
+            )
+
+
+class TestOptimizationBackend:
+    def test_two_clocks_offset_known_answer(self):
+        # cam1 records the same events 5 s LATER on its own clock:
+        # constraint (cam0, t, cam1, t+5) -> b_1 = -5 with the gauge on cam0.
+        backend = OptimizationBackend()
+        model = backend.build_model(
+            _FakeStream("imu", [0.0, 10.0, 20.0]),
+            _Ctx("cam1", {"cross_stream_constraints": [
+                ("cam0", 0.0, "cam1", 5.0),
+                ("cam0", 10.0, "cam1", 15.0),
+                ("cam0", 20.0, "cam1", 25.0),
+            ]}),
+        )
+        assert model.method is SyncMethod.OPTIMIZATION
+        assert abs(model.a - 1.0) < 1e-12
+        assert abs(model.b + 5.0) < 1e-9
+
+    def test_two_clocks_drift_known_answer(self):
+        expected_a = 100.0 / 100.2  # cam1's span is 0.2% longer
+        backend = OptimizationBackend()
+        model = backend.build_model(
+            _FakeStream("imu", [0.0, 100.0, 200.0]),
+            _Ctx("cam1", {"cross_stream_constraints": [
+                ("cam0", 0.0, "cam1", 2.0),
+                ("cam0", 100.0, "cam1", 102.2),
+                ("cam0", 200.0, "cam1", 202.4),
+            ]}),
+        )
+        assert abs(model.a - expected_a) < 1e-12
+        assert abs(model.b + 2.0 * expected_a) < 1e-9
+
+    def test_three_clocks_joint_fit(self):
+        backend = OptimizationBackend()
+        model = backend.build_model(
+            _FakeStream("imu", []),
+            _Ctx("cam2", {"cross_stream_constraints": [
+                ("cam0", 0.0, "cam1", 5.0),
+                ("cam0", 0.0, "cam2", 9.0),
+                ("cam0", 10.0, "cam1", 15.0),
+                ("cam0", 10.0, "cam2", 19.0),
+                ("cam1", 0.0, "cam2", 4.0),
+            ]}),
+        )
+        assert abs(model.a - 1.0) < 1e-12 and abs(model.b + 9.0) < 1e-9
+
+    def test_residual_is_real(self):
+        # One inconsistent constraint among consistent ones -> the max
+        # residual reflects it (estimates and residuals are measured).
+        backend = OptimizationBackend()
+        model = backend.build_model(
+            _FakeStream("imu", [0.0, 10.0, 20.0]),
+            _Ctx("cam1", {"cross_stream_constraints": [
+                ("cam0", 0.0, "cam1", 5.0),
+                ("cam0", 10.0, "cam1", 15.0),
+                ("cam0", 20.0, "cam1", 25.0),
+                ("cam0", 30.0, "cam1", 36.0),  # 1 s off the true +5 offset
+            ]}),
+        )
+        assert model.uncertainty.offset_s is not None
+        assert model.uncertainty.offset_s > 0.1  # the inconsistent pair shows
+
+    def test_underdetermined_declines(self):
+        backend = OptimizationBackend()
+        with pytest.raises(SynchronizationUnavailable):
+            backend.build_model(
+                _FakeStream("imu", [0.0]),
+                _Ctx("cam1", {"cross_stream_constraints": [("cam0", 0.0, "cam1", 5.0)]}),
+            )
+
+    def test_uninvolved_clock_declines(self):
+        backend = OptimizationBackend()
+        with pytest.raises(SynchronizationUnavailable):
+            backend.build_model(
+                _FakeStream("imu", [0.0, 1.0]),
+                _Ctx("cam9", {"cross_stream_constraints": [
+                    ("cam0", 0.0, "cam1", 5.0), ("cam0", 1.0, "cam1", 6.0),
+                ]}),
+            )
+
+
+class TestBackendPreferenceOrder:
+    def test_registry_is_spec_ordered(self):
+        names = [type(b).__name__ for b in DEFAULT_BACKENDS]
+        assert names == [
+            "MetadataAlignmentBackend",
+            "GnssPpsBackend",
+            "TriggerBackend",
+            "SignalCorrelationBackend",
+            "OptimizationBackend",
+        ]
+
+    def test_metadata_outranks_estimation(self):
+        # A declared shared-clock fact must beat an estimated anchor fit:
+        # with both available, the model is SHARED_CLOCK (preference 1).
+        stream = _FakeStream("gnss", [10.0, 11.0, 12.0])
+        alignment = _sync(
+            stream, "gnss0",
+            metadata={"shared_clock": True, "gnss_anchor_pairs": [(10.0, 20.0), (11.0, 21.0), (12.0, 22.0)]},
+            backends=DEFAULT_BACKENDS,
+        )
+        assert alignment.model.method is SyncMethod.SHARED_CLOCK
+
+    def test_gnss_backend_answers_before_trigger(self):
+        stream = _FakeStream("gnss", [10.0, 11.0, 12.0])
+        alignment = _sync(stream, "gnss0", backends=DEFAULT_BACKENDS)
+        assert alignment.model.method is SyncMethod.GNSS_PPS
+        # Identity-by-construction has no measured residual: None, not
+        # a fabricated 0.0.
+        assert alignment.diagnostics.residual_max_s is None
+
+    def test_full_fallback_chain_to_unsynchronized(self):
+        # No facts at all: every backend declines; samples are honestly
+        # UNSYNCHRONIZED with one attempt record per registry backend.
+        stream = _FakeStream("imu", [0.0, 1.0, 2.0])
+        alignment = _sync(stream, "cam0", backends=DEFAULT_BACKENDS)
+        assert alignment.diagnostics.method == "none"
+        assert len(alignment.diagnostics.backend_attempts) == len(DEFAULT_BACKENDS)
+        assert all(s.sync_state is SyncState.UNSYNCHRONIZED for s in alignment.samples)
+
+
+class TestEstimatorOutlierRejection:
+    def test_outlier_pair_rejected_and_refit(self):
+        # Trigger pairs with one wildly wrong pair -> robust refit lands
+        # on the truth and the rejected pair is recorded.
+        backend = TriggerBackend()
+        ctx = _Ctx("cam0", {"trigger_pairs": [
+            (0.0, 100.0),
+            (1.0, 101.0),
+            (2.0, 102.0),
+            (3.0, 103.0),
+            (4.0, 999.0),  # outlier
+        ]})
+        model = backend.build_model(_FakeStream("imu", [0.0, 1.0, 2.0, 3.0, 4.0]), ctx)
+        assert abs(model.a - 1.0) < 1e-9
+        assert abs(model.b - 100.0) < 1e-9
+        assert ctx.metadata.get("rejected_pairs"), "outlier pair must be recorded"

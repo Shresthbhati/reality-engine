@@ -48,24 +48,28 @@ this file.
 
 ## Test status (exact, observed)
 
-- **1,613 passed, 1 failed, 1 skipped, 70 warnings, ~97.8 s.**
-- The ONE failure:
-  `tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`
-- 116 of those passes are the new focused suites (trajectory 72;
-  fusion/mesh/identity/architecture/statement-state 44).
+- **1,613 passed, 1 failed, 1 skipped** at the finalization PR (PR #30,
+  head 63b9b7b). The ONE failure was
+  `tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`.
+- **Superseded on `fix/sam-load-path` (2026-09-15): 1,614 passed,
+  1 skipped, 0 failed (~206 s) — fully green.** The SAM failure was
+  diagnosed as two real code bugs, not the environment: (1) the backend
+  used torch.hub.load on a repo that has NO hubconf.py (verified
+  upstream, 0 commits touching it) — replaced with the segment-anything
+  pip package + checkpoint-file resolution; (2) SAM's predicted_iou can
+  exceed 1.0 (observed 1.0005), which Uncertainty rejected and the
+  per-item except silently swallowed, discarding valid regions — clamped
+  at the conversion boundary. vit_b checkpoint is pre-cached in
+  ~/.cache/torch/hub/checkpoints/.
 
 ## Known failures
 
-- **SAM real-model integration test** — torch-hub cache failure in
-  this environment (SAM weights download blocked). Pre-existing,
-  unrelated to campaign code. Do NOT delete/weaken the test to get
-  green; fix the environment (pre-cache the model) or leave it
-  failing and documented. `tests/test_perception_sam.py` hits the
-  same environment issue when run without a deselect filter.
-- Earlier full-suite runs on machines with the deselect filter
-  showed `1,478 passed / 1 skipped / 20 deselected`; the 20
-  "deselected" are the same SAM environment failures. Same root
-  cause, two presentations.
+- **None in the suite.** The SAM real-model failure is FIXED on
+  `fix/sam-load-path` (root causes were code, not environment — see
+  Test status). Do not reintroduce torch.hub.load for SAM.
+- Historical note for audits: earlier runs showed either
+  `1 failed` (no filter) or `20 deselected` (with deselect filter) —
+  both were the same SAM load-path bug, now fixed.
 
 ## Completed priorities (exact IDs — do NOT redo)
 
@@ -73,9 +77,10 @@ Derived mechanically from `.agent/TASKS.yaml` (36 tasks: 10 DONE /
 15 PARTIAL / 11 MISSING), not from prose:
 
 DONE: P0-01, P0-02, P0-03, P1-01, P1-02, P2-02, P3-01, P3-03,
-P5-01, P18-01.
+P5-01, P6-03 (bad-scale check + export-time quality metadata landed
+2026-09-15), P18-01.
 PARTIAL (implemented, named remainder in ledger `open:`/`verification:`
-fields): P1-03, P2-01, P3-02, P4-01, P5-02, P6-01, P6-02, P6-03,
+fields): P1-03, P2-01, P3-02, P4-01, P5-02, P6-01, P6-02,
 P7-01, P7-03, P8-01, P9-01, P10-01, P16-01, P17-01.
 MISSING (not started): P7-02, P8-02, P8-03, P10-02, P11-01, P12-01,
 P13-01, P13-02, P14-01, P15-01, P19-01.

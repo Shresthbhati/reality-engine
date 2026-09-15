@@ -26,6 +26,40 @@ where execution actually stands, nothing else defines that.
   failures when run without deselect) — pre-existing, unrelated to
   code changes. Never reclassify; fix the environment or record it.
 
+## Post-finalization fixes (2026-09-15, branch fix/sam-load-path)
+
+- **SAM "environment failure" was two REAL CODE BUGS — fixed, suite now
+  fully green (1,614 passed, 1 skipped, 0 failed, ~206 s):**
+  1. `perception/segmentation/sam_backend.py` loaded via
+     `torch.hub.load("facebookresearch/segment-anything", ...)` — but the
+     upstream repo has NO hubconf.py (verified via GitHub API: 0 commits
+     touching it; the zipball contains no hubconf). Every source="github"
+     load was structurally broken for every consumer. The load path now
+     uses the `segment-anything` pip package's `sam_model_registry` +
+     checkpoint-file resolution (explicit path -> torch-hub checkpoint
+     cache -> direct download -> honest UnavailableError);
+     `segment-anything>=1.0` added to the perception extra.
+  2. SAM's `predicted_iou` can exceed 1.0 by float round-off (observed
+     1.0005); `Uncertainty` correctly rejected it and the per-item
+     `except: continue` silently DISCARDED valid regions. Fixed by
+     clamping at the conversion boundary (with comment); regions are no
+     longer silently dropped.
+  - vit_b checkpoint pre-cached into the torch-hub checkpoint cache;
+    real-model integration test passes (~90 s CPU).
+  - CAPABILITIES.yaml: image_segmentation BROKEN -> IMPLEMENTED with
+    the real limitation set (22 entries).
+- **P6-03 bad-scale check + export-time quality metadata — DONE:**
+  `validate_mesh(expected_extent_m=..., scale_tolerance=...)` measures
+  per-axis ratios (declared expectation only; never inferred), records
+  the tolerance used; 8 new known-answer tests (half-scale 0.5,
+  mm-vs-m 1000, per-axis failure, custom tolerance, roundtrip, loud
+  rejection). Mesh stage records the report into the WorldIR Geometry's
+  new additive `quality_metrics` field (v1-dict compatible, mirrors
+  Entity.statement_state). CAPABILITIES gains mesh_quality_validation
+  (22 entries). Ledger: P6-03 DONE (11 DONE / 14 PARTIAL / 11 MISSING).
+- Note: `tests/test_perception_sam.py` named in an older note does not
+  exist on this branch (stale reference; no action).
+
 ## Completed (most recent first, with evidence)
 
 - **2026-09-15 — finalization batch (P6-02/P6-03/P7-01/P7-03/P9-01)**:

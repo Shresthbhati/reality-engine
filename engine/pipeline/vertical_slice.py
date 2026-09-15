@@ -646,6 +646,13 @@ def _mesh_stage(result, world, options, scale_state: str):
     from world_ir import Geometry as _Geometry, GeometryType as _GeometryType
     from world_ir import Observation as _Observation, Vector3 as _Vector3
     from reconstruction.meshing.mesh import mesh_summary
+    from reconstruction.meshing.validation import validate_mesh as _validate_mesh
+
+    # Measure, don't assume: the quality report is computed at production
+    # time and recorded on the geometry as metadata. No expected extent is
+    # declared at this seam (the operator hasn't stated one), so the
+    # bad-scale check is honestly absent from the report -- not guessed.
+    _mesh_quality = _validate_mesh(mesh)
 
     (mnx, mny, mnz), (mxx, mxy, mxz) = mesh.bounds()
     data_uri, data_hash = options.artifact_store.put(mesh.to_bytes())
@@ -661,6 +668,7 @@ def _mesh_stage(result, world, options, scale_state: str):
         bounds_max=_Vector3(x=mxx, y=mxy, z=mxz),
         provenance=_Provenance.RECONSTRUCTED,
         confidence=0.6,
+        quality_metrics=_mesh_quality.to_dict(),
         observations=[_Observation(
             id="obs-mesh-room",
             sensor_type="surface_reconstruction",

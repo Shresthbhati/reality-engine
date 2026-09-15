@@ -459,24 +459,40 @@ tasks:
 
   - id: P6-03
     name: canonical MeshData completion
-    status: PARTIAL
+    status: DONE
     basis: >
       MeshData + deterministic PLY I/O + ArtifactStore + WorldIR MESH
       geometry + glTF export landed (PR #16/#22 era). Mesh VALIDATION
-      landed: reconstruction/meshing/validation.py — MeshQualityReport
+      landed: reconstruction/meshing/validation.py -> MeshQualityReport
       with real measured counts for degenerate triangles, non-manifold
       edges, bad normals, holes, disconnected components, and a
       documented bounding-box-overlap PROXY for self-intersection
-      (necessary-not-sufficient; no exact intersection test).
-      Test matrix on known-bad meshes green (tests/test_mesh_validation.py).
-    verification:
-      - validation test matrix on known-bad meshes
-      - quality metrics recorded in artifact metadata
+      (necessary-not-sufficient; no exact intersection test). Test
+      matrix on known-bad meshes green (tests/test_mesh_validation.py).
+      COMPLETED 2026-09-15 (fix/sam-load-path branch): the 'bad scale'
+      check is implemented as a DECLARED-expectation measurement --
+      validate_mesh(expected_extent_m=..., scale_tolerance=...) computes
+      per-axis measured/expected ratios plus scale_within_tolerance and
+      records the tolerance actually used (same reproducibility
+      discipline as degenerate_area_eps); it never infers scale when no
+      expectation is declared and never converts units silently.
+      Known-answer tests cover half-scale (0.5), mm-vs-m mixup (1000),
+      per-axis failure, custom tolerance, dict roundtrip, and loud
+      rejection of invalid expectations. Quality metrics are recorded at
+      export time: the mesh stage (engine/pipeline/vertical_slice.py)
+      computes the report at production time and stores it on the WorldIR
+      Geometry's new additive quality_metrics field (world_ir/schema_v1.py,
+      v1-dict compatible like Entity.statement_state) -- metadata for the
+      content-addressed artifact, queryable without decoding the PLY.
+    verification: ['DONE: validation test matrix on known-bad meshes (16 tests incl. 8 bad-scale)', 'DONE: quality metrics recorded at export into Geometry.quality_metrics (vertical_slice seam; meshing-pipeline tests green)', 'DONE: additive-field compat: default None, roundtrip, v1 dict without the key loads unchanged']
     open: >
-      PARTIAL, not DONE: 'bad scale' check from this task's own list is
-      not implemented; mesh REPAIR is out of scope by design; quality
-      metrics are not yet recorded into artifact metadata at export
-      time; self-intersection remains a proxy.
+      DONE with two DOCUMENTED design decisions (not missing work):
+      self-intersection remains the documented bbox-overlap proxy
+      (exact intersection testing explicitly scoped down in the module
+      docstring); mesh REPAIR is out of scope by design (validation
+      measures, never mutates). The vertical_slice seam records metrics
+      without a declared expected extent (scale check honestly absent
+      there); callers with a surveyed expectation pass expected_extent_m.
 
   # ================= PHASE 7 — PERCEPTION =================
 

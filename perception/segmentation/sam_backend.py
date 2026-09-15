@@ -1,7 +1,8 @@
 """Real SAM-backed ISegmentationBackend (per docs/TECHNOLOGY_REGISTRY.md recommendation).
 
-Loads a Segment Anything Model (SAM, Meta AI) via torch.hub or local checkpoint
-and produces per-instance segmentation masks for PHOTO/VIDEO evidence items.
+Loads a Segment Anything Model (SAM, Meta AI) from the `segment-anything`
+pip package plus a checkpoint file, and produces per-instance segmentation
+masks for PHOTO/VIDEO evidence items.
 
 This backend requires the optional 'perception' dependency group:
     pip install -e .[perception]
@@ -46,11 +47,20 @@ def _ensure_perception_deps() -> None:
         import numpy
     except ImportError:
         missing.append("numpy")
+    try:
+        import segment_anything
+    except ImportError:
+        missing.append("segment-anything")
 
     if missing:
         raise SegmentationBackendUnavailableError(
             f"Missing perception dependencies: {', '.join(missing)}. "
             "Install with: pip install -e .[perception]"
+            + (
+                " (and: pip install segment-anything)"
+                if "segment-anything" in missing
+                else ""
+            )
         )
 
 
@@ -61,10 +71,14 @@ class SAMSegmentationBackend(ISegmentationBackend):
     Also supports automatic mask generation (no prompts) via SAM's
     `SamAutomaticMaskGenerator`.
 
-    Model checkpoints are downloaded via torch.hub on first use (cached in
-    ~/.cache/torch/hub/facebookresearch_segment-anything_main). For offline/
-    air-gapped environments, pre-download the checkpoint and pass
-    `checkpoint_path`.
+    Model code comes from the `segment-anything` pip package (the repo has no
+    torch.hub hubconf.py, so `torch.hub.load("facebookresearch/segment-anything", ...)`
+    cannot work -- verified upstream, 0 commits touching hubconf.py). The
+    checkpoint is resolved in order: explicit `checkpoint_path` -> the shared
+    torch-hub cache (`~/.cache/torch/hub/checkpoints/sam_<type>_<hash>.pth`, so
+    pre-cached weights are picked up automatically) -> a direct download of the
+    official URL. For offline/air-gapped environments, pre-download the
+    checkpoint into that cache location or pass `checkpoint_path`.
 
     Note: SAM produces class-agnostic masks (no semantic labels). The `label`
     field in SegmentedRegion will be set to the backend's internal mask index
@@ -114,33 +128,65 @@ class SAMSegmentationBackend(ISegmentationBackend):
         except Exception:
             return False
 
+    #: Official SAM checkpoint URLs (keyed by model type), as published by
+    #: the segment-anything project. Hash suffixes are the upstream names.
+    _CHECKPOINT_URLS = {
+        "vit_b": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+        "vit_l": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
+        "vit_h": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+    }
+
+    def _resolve_checkpoint(self) -> str:
+        """Resolve the checkpoint file for the configured model type.
+
+        Order: explicit ``checkpoint_path`` -> the shared torch-hub
+        checkpoint cache (so pre-cached weights are picked up without any
+        code change) -> direct download of the official URL. Raises
+        SegmentationBackendUnavailableError when nothing resolves; it never
+        fabricates or substitutes a different checkpoint.
+        """
+        import torch
+
+        if self._checkpoint_path:
+            path = Path(self._checkpoint_path)
+            if not path.exists():
+                raise SegmentationBackendUnavailableError(
+                    f"SAM checkpoint not found at checkpoint_path: {path}"
+                )
+            return str(path)
+
+        cache = Path(torch.hub.get_dir()) / "checkpoints"
+        url = self._CHECKPOINT_URLS[self._model_type]
+        cached = cache / url.rsplit("/", 1)[-1]
+        if cached.exists():
+            return str(cached)
+
+        try:
+            return str(torch.hub.load_state_dict_from_url(url, progress=False))
+        except Exception as exc:  # noqa: BLE001 - honest unavailability, any cause
+            raise SegmentationBackendUnavailableError(
+                f"SAM checkpoint for {self._model_type} could not be resolved "
+                f"(no checkpoint_path given, not cached under {cache}, and "
+                f"download failed: {exc}). Pre-download it, e.g.: "
+                f"python -c \"import torch; torch.hub.load_state_dict_from_url('{url}')\""
+            ) from exc
+
     def _load_model(self) -> None:
         """Load the SAM model and automatic mask generator. Called lazily on first use."""
         _ensure_perception_deps()
         import torch
+        from segment_anything import sam_model_registry
 
         if self._model is not None:
             return
 
-        # Load model via torch.hub (downloads on first use) or from local checkpoint
-        if self._checkpoint_path and Path(self._checkpoint_path).exists():
-            # Local checkpoint loading
-            self._model = torch.hub.load(
-                "facebookresearch/segment-anything",
-                self._model_type,
-                source="local" if Path(self._checkpoint_path).parent.name == "segment-anything" else "github",
-                pretrained=False,
-            )
-            state_dict = torch.load(self._checkpoint_path, map_location=self._device)
-            self._model.load_state_dict(state_dict)
-        else:
-            # Download via torch.hub (requires internet on first run)
-            self._model = torch.hub.load(
-                "facebookresearch/segment-anything",
-                self._model_type,
-                pretrained=True,
-            )
-
+        # Canonical load path: the segment-anything package's model registry
+        # plus a checkpoint file. torch.hub.load("facebookresearch/segment-anything")
+        # is not a valid alternative -- that repo has no hubconf.py (verified
+        # upstream, 0 commits touching it), so source="github" loads are
+        # structurally broken for every consumer.
+        ckpt = self._resolve_checkpoint()
+        self._model = sam_model_registry[self._model_type](checkpoint=ckpt)
         self._model.to(self._device)
         self._model.eval()
 
@@ -199,8 +245,12 @@ class SAMSegmentationBackend(ISegmentationBackend):
                     mask_list = mask_bool.tolist()
 
                     # SAM provides 'predicted_iou' and 'stability_score' as quality metrics
-                    # Use predicted_iou as confidence (already in [0, 1])
-                    confidence = float(mask_data.get("predicted_iou", 0.5))
+                    # Use predicted_iou as confidence. It is nominally in [0, 1] but float
+                    # round-off can push saturated values slightly above 1.0 (observed:
+                    # 1.0005), which Uncertainty correctly rejects. Clamp at the conversion
+                    # boundary -- skipping the region instead would silently discard valid
+                    # detections (the per-item except below would swallow the error).
+                    confidence = min(1.0, max(0.0, float(mask_data.get("predicted_iou", 0.5))))
 
                     # Create region with internal label (mask index)
                     # Downstream can map these to ontology labels

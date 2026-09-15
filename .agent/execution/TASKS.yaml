@@ -21,16 +21,17 @@ snapshot:
     passed: 1613
     failed: 1
     skipped: 1
-    failing_test: tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference
     note: >-
-      The single failure is the pre-existing SAM real-model torch-hub
-      environment failure. Do not claim "all tests pass" while it persists.
+      PR #30 baseline. Superseded on fix/sam-load-path (2026-09-15):
+      1,614 passed, 1 skipped, 0 failed — the SAM failure was two real
+      code bugs (torch.hub.load against a repo with no hubconf.py;
+      predicted_iou > 1.0 silently discarding regions), both fixed.
   ledger_status_counts:
-    DONE: 10
-    PARTIAL: 15
+    DONE: 11
+    PARTIAL: 14
     MISSING: 11
     total: 36
-  done_ids: [P0-01, P0-02, P0-03, P1-01, P1-02, P2-02, P3-01, P3-03, P5-01, P18-01]
+  done_ids: [P0-01, P0-02, P0-03, P1-01, P1-02, P2-02, P3-01, P3-03, P5-01, P6-03, P18-01]
   blocked:
     - id: P1-03
       reason: real-device RGB-D capture (hardware)

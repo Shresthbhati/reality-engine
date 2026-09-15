@@ -108,6 +108,24 @@ capabilities:
       - trim defaults to 0 (dense-cloud trim=10 empties sparse clouds)
     fallback: honest skip with reason (never a placeholder mesh; AABB fallback only in viewer, labeled)
 
+  - name: mesh_quality_validation
+    category: meshing
+    backend: reconstruction/meshing/validation.py (pure-python measured counts)
+    inputs: [MeshData, optional declared expected_extent_m + scale_tolerance]
+    outputs: [MeshQualityReport (degenerate/non-manifold/bad-normal/hole/component counts,
+      self-intersection proxy candidates, extent, per-axis scale ratios + verdict)]
+    license: project-internal
+    hardware_requirements: CPU (O(n^2) bbox-overlap proxy; BVH noted if meshes grow)
+    accuracy: measured counts, deterministic; scale check is declared-expectation only
+    runtime: sub-second on validation-sized meshes
+    maturity: IMPLEMENTED — bad-scale check landed 2026-09-15; report recorded into
+      Geometry.quality_metrics at mesh-stage export time (vertical_slice seam)
+    limitations:
+      - self-intersection is a documented bbox-overlap PROXY (necessary-not-sufficient)
+      - scale verdict requires a caller-declared expected extent; never inferred
+      - validation measures only; mesh REPAIR out of scope by design
+    fallback: report is always computable; absent expectation -> scale fields None (honest absence)
+
   - name: dense_mvs
     category: dense_geometry
     backend: "CUDA COLMAP (colmap/colmap release 4.2.0, colmap-x64-windows-cuda.zip). Real end-to-end GPU run completed 2026-09-15 (CLI-level, not yet Python-integrated): feature_extractor -> exhaustive_matcher -> mapper (17/20 registered) -> image_undistorter -> patch_match_stereo --geom_consistency true (GPU, ~6.9 min) -> stereo_fusion, 294,345 fused points written to a real PLY. Not yet wired: reconstruction/depth_to_points.py does not parse COLMAP dense output (fused.ply) into this repo's DepthFrame/point types -- only monocular/RGB-D sidecar paths are integrated. OpenMVS slot still open."
@@ -136,15 +154,17 @@ capabilities:
 
   - name: image_segmentation
     category: perception
-    backend: SAM via torch.hub (perception backend, gated tests)
+    backend: SAM via segment-anything pip package (sam_model_registry) + checkpoint file
     inputs: [images, prompt boxes/masks]
     outputs: [masks]
     license: SAM Apache-2.0 — verify at binding time
-    hardware_requirements: CPU/GPU; checkpoint download
+    hardware_requirements: CPU/GPU; checkpoint download (~375 MB for vit_b)
     accuracy: not measured in-repo
-    runtime: n/a on this machine (broken environment)
-    maturity: BROKEN (environment) — torch-hub cache failure, 20 tests deselected
-    limitations: environment must be fixed before any SAM-dependent verification counts
+    runtime: real-model load + inference verified on CPU (vit_b, 320x240, ~90 s with points_per_side=32)
+    maturity: IMPLEMENTED — real-model integration test passes; torch.hub.load("facebookresearch/segment-anything")
+      removed (upstream repo has no hubconf.py — 0 commits touching it — so source="github" loads were structurally broken)
+    limitations: checkpoint resolved in order explicit path -> torch-hub cache -> direct download; offline environments must
+      pre-cache weights; confidence clamped at conversion boundary because SAM's predicted_iou can exceed 1.0 by float round-off
     fallback: Mask R-CNN detection path
 
   - name: calibration_frames

@@ -19,13 +19,24 @@ Explicitly OUT OF SCOPE (see task ledger P6-03):
     positives, will miss thin/edge-case exact intersections). Good
     enough to catch gross overlap (e.g. two blobs pushed into each
     other); not a substitute for a real intersection test.
+  - Scale INFERENCE. The bad-scale check only runs when the caller
+    DECLARES an expected extent (e.g. the surveyed room size); the module
+    never guesses what the mesh "should" measure. The check compares the
+    measured per-axis extent against the expectation and reports the
+    per-axis ratios measured/expected plus whether they fit inside the
+    declared multiplicative tolerance (recorded in the report so any
+    verdict is reproducible, same discipline as `degenerate_area_eps`).
+    A ratio far from 1.0 is the signature of a real failure mode: a
+    mm-vs-m unit mixup (ratio ~1000) or a half-scale reconstruction
+    (ratio ~0.5). It never silently converts units -- the expectation is
+    interpreted in the mesh's declared `units`.
 """
 
 from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .mesh import MeshData, Vert
 
@@ -68,6 +79,12 @@ class MeshQualityReport:
     n_connected_components: int
     candidate_self_intersection_pairs: Tuple[Tuple[int, int], ...]
     extent_m: Tuple[float, float, float]
+    # -- bad-scale check (only populated when the caller declares an
+    #    expected extent; None = no expectation given, never guessed):
+    expected_extent_m: Optional[Tuple[float, float, float]] = None
+    scale_ratio_per_axis: Optional[Tuple[float, float, float]] = None
+    scale_tolerance: Optional[float] = None  # multiplicative factor actually used
+    scale_within_tolerance: Optional[bool] = None
 
     @property
     def n_degenerate_triangles(self) -> int:
@@ -109,6 +126,14 @@ class MeshQualityReport:
                 list(p) for p in self.candidate_self_intersection_pairs
             ],
             "extent_m": list(self.extent_m),
+            "expected_extent_m": (
+                list(self.expected_extent_m) if self.expected_extent_m else None
+            ),
+            "scale_ratio_per_axis": (
+                list(self.scale_ratio_per_axis) if self.scale_ratio_per_axis else None
+            ),
+            "scale_tolerance": self.scale_tolerance,
+            "scale_within_tolerance": self.scale_within_tolerance,
         }
 
 
@@ -128,11 +153,26 @@ class _UnionFind:
             self.parent[ra] = rb
 
 
-def validate_mesh(mesh: MeshData, degenerate_area_eps: float = 1e-12) -> MeshQualityReport:
-    """Compute a `MeshQualityReport` for `mesh`. `degenerate_area_eps` is
-    the minimum triangle area (in mesh units^2) below which a triangle is
-    counted degenerate; the default is a near-zero floor (catches
-    coincident/collinear vertices, not "small but real" triangles)."""
+def validate_mesh(
+    mesh: MeshData,
+    degenerate_area_eps: float = 1e-12,
+    expected_extent_m: Optional[Tuple[float, float, float]] = None,
+    scale_tolerance: float = 1.10,
+) -> MeshQualityReport:
+    """Compute a `MeshQualityReport` for `mesh`.
+
+    `degenerate_area_eps` is the minimum triangle area (in mesh units^2)
+    below which a triangle is counted degenerate; the default is a
+    near-zero floor (catches coincident/collinear vertices, not "small
+    but real" triangles).
+
+    When `expected_extent_m` is declared (per-axis, in the mesh's units),
+    the bad-scale check measures the per-axis ratio measured/expected and
+    reports whether every axis fits within the multiplicative
+    `scale_tolerance` (default 1.10, i.e. ±10%). Without a declared
+    expectation the check is honestly absent (all scale fields None) --
+    scale is never inferred or invented here.
+    """
     verts = mesh.vertices
     faces = mesh.faces
     n_tri = len(faces)
@@ -201,6 +241,28 @@ def validate_mesh(mesh: MeshData, degenerate_area_eps: float = 1e-12) -> MeshQua
     (mnx, mny, mnz), (mxx, mxy, mxz) = mesh.bounds() if verts else ((0.0,) * 3, (0.0,) * 3)
     extent = (mxx - mnx, mxy - mny, mxz - mnz)
 
+    # -- bad-scale check (declared expectation only; never inferred) --------
+    expected_extent: Optional[Tuple[float, float, float]] = None
+    ratios: Optional[Tuple[float, float, float]] = None
+    tol_used: Optional[float] = None
+    within: Optional[bool] = None
+    if expected_extent_m is not None:
+        if len(expected_extent_m) != 3:
+            raise ValueError(
+                f"expected_extent_m must be a 3-tuple, got {expected_extent_m!r}"
+            )
+        if scale_tolerance <= 0:
+            raise ValueError(f"scale_tolerance must be > 0, got {scale_tolerance}")
+        expected_extent = tuple(float(v) for v in expected_extent_m)
+        for axis, (meas, exp) in enumerate(zip(extent, expected_extent)):
+            if exp <= 0:
+                raise ValueError(
+                    f"expected_extent_m[{axis}] must be > 0, got {exp}"
+                )
+        ratios = tuple(m / e for m, e in zip(extent, expected_extent))
+        tol_used = float(scale_tolerance)
+        within = all(1.0 / tol_used <= r <= tol_used for r in ratios)
+
     return MeshQualityReport(
         n_triangles=n_tri,
         n_vertices=n_vert,
@@ -212,4 +274,8 @@ def validate_mesh(mesh: MeshData, degenerate_area_eps: float = 1e-12) -> MeshQua
         n_connected_components=n_components,
         candidate_self_intersection_pairs=tuple(candidates),
         extent_m=extent,
+        expected_extent_m=expected_extent,
+        scale_ratio_per_axis=ratios,
+        scale_tolerance=tol_used,
+        scale_within_tolerance=within,
     )

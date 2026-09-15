@@ -317,6 +317,12 @@ class Geometry:
     provenance: Provenance = Provenance.UNKNOWN
     confidence: float = 0.5
     observations: list[Observation] = field(default_factory=list)
+    # Quality measurements recorded at production time (e.g. a mesh
+    # quality report's to_dict()), or None when none were measured.
+    # Additive like Entity.statement_state: old v1 dicts load fine
+    # without the key, and measurements are recorded facts, never
+    # fabricated to make a geometry look validated.
+    quality_metrics: Optional[dict] = None
 
     def to_dict(self) -> dict:
         return {
@@ -332,6 +338,7 @@ class Geometry:
             "provenance": self.provenance.value,
             "confidence": self.confidence,
             "observations": [o.to_dict() for o in self.observations],
+            "quality_metrics": self.quality_metrics,
         }
 
     @staticmethod
@@ -349,6 +356,7 @@ class Geometry:
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             confidence=data.get("confidence", 0.5),
             observations=[Observation.from_dict(o) for o in data.get("observations", [])],
+            quality_metrics=data.get("quality_metrics"),
         )
 
 

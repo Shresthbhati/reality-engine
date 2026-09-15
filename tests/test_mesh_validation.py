@@ -119,3 +119,90 @@ def test_report_to_dict_has_expected_keys():
         "n_bad_normals", "n_connected_components", "extent_m",
     ):
         assert key in d
+
+
+# -- bad-scale check (declared expectation; never inferred) ----------------
+
+def test_no_expected_extent_means_scale_fields_absent_not_guessed():
+    mesh = MeshData(vertices=TETRA_VERTS, faces=TETRA_FACES)
+    report = validate_mesh(mesh)
+    assert report.expected_extent_m is None
+    assert report.scale_ratio_per_axis is None
+    assert report.scale_tolerance is None
+    assert report.scale_within_tolerance is None
+
+
+def test_matching_expected_extent_is_within_tolerance():
+    # Tetra extent is exactly (1, 1, 1); declare the same -> ratios 1.0.
+    mesh = MeshData(vertices=TETRA_VERTS, faces=TETRA_FACES)
+    report = validate_mesh(mesh, expected_extent_m=(1.0, 1.0, 1.0))
+    assert report.scale_ratio_per_axis == (1.0, 1.0, 1.0)
+    assert report.scale_within_tolerance is True
+    assert report.scale_tolerance == 1.10  # default recorded
+
+
+def test_half_scale_reconstruction_is_caught():
+    # A mesh built at half the declared size: every axis ratio is 0.5.
+    scaled = tuple(tuple(c * 0.5 for c in v) for v in TETRA_VERTS)
+    mesh = MeshData(vertices=scaled, faces=TETRA_FACES)
+    report = validate_mesh(mesh, expected_extent_m=(1.0, 1.0, 1.0))
+    assert report.scale_ratio_per_axis == (0.5, 0.5, 0.5)
+    assert report.scale_within_tolerance is False
+
+
+def test_mm_vs_m_unit_mixup_signature_is_caught():
+    # A mesh measured in mm but interpreted as m: ratio ~1000 per axis.
+    scaled = tuple(tuple(c * 1000.0 for c in v) for v in TETRA_VERTS)
+    mesh = MeshData(vertices=scaled, faces=TETRA_FACES)
+    report = validate_mesh(mesh, expected_extent_m=(1.0, 1.0, 1.0))
+    assert report.scale_ratio_per_axis == (1000.0, 1000.0, 1000.0)
+    assert report.scale_within_tolerance is False
+
+
+def test_per_axis_tolerance_one_bad_axis_fails_the_check():
+    # Two axes fine, one axis off by 1.5x -> overall check fails.
+    verts = (
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 1.5, 0.0),
+        (0.0, 0.0, 1.0),
+    )
+    mesh = MeshData(vertices=verts, faces=TETRA_FACES)
+    report = validate_mesh(mesh, expected_extent_m=(1.0, 1.0, 1.0))
+    rx, ry, rz = report.scale_ratio_per_axis
+    assert (rx, ry, rz) == (1.0, 1.5, 1.0)
+    assert report.scale_within_tolerance is False
+
+
+def test_custom_tolerance_is_recorded_and_respected():
+    mesh = MeshData(vertices=TETRA_VERTS, faces=TETRA_FACES)
+    report = validate_mesh(
+        mesh, expected_extent_m=(1.0, 1.0, 1.0), scale_tolerance=2.0
+    )
+    assert report.scale_tolerance == 2.0
+    # Half-scale fits inside a 2.0x tolerance.
+    assert report.scale_within_tolerance is True
+
+
+def test_bad_scale_fields_roundtrip_through_to_dict():
+    mesh = MeshData(vertices=TETRA_VERTS, faces=TETRA_FACES)
+    d = validate_mesh(mesh, expected_extent_m=(1.0, 1.0, 1.0)).to_dict()
+    assert d["expected_extent_m"] == [1.0, 1.0, 1.0]
+    assert d["scale_ratio_per_axis"] == [1.0, 1.0, 1.0]
+    assert d["scale_tolerance"] == 1.10
+    assert d["scale_within_tolerance"] is True
+    d_none = validate_mesh(mesh).to_dict()
+    assert d_none["expected_extent_m"] is None
+    assert d_none["scale_within_tolerance"] is None
+
+
+def test_invalid_expectations_rejected_loudly():
+    mesh = MeshData(vertices=TETRA_VERTS, faces=TETRA_FACES)
+    import pytest
+
+    with pytest.raises(ValueError):
+        validate_mesh(mesh, expected_extent_m=(1.0, 1.0))  # not a 3-tuple
+    with pytest.raises(ValueError):
+        validate_mesh(mesh, expected_extent_m=(1.0, 0.0, 1.0))  # non-positive
+    with pytest.raises(ValueError):
+        validate_mesh(mesh, expected_extent_m=(1.0, 1.0, 1.0), scale_tolerance=0.0)

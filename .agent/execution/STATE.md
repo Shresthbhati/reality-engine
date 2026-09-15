@@ -17,15 +17,13 @@ The Claude execution-campaign batch is finalized:
 
 ## Verification (exact, observed)
 
-- **1,613 passed, 1 failed, 1 skipped, 70 warnings, ~97.8 s** on the
-  final head.
-- Focused suites for every changed area pass (116 new tests: 72
-  trajectory, 44 fusion/mesh/identity/architecture/statement-state).
-- The ONE failure is the pre-existing SAM real-model integration test:
-  `tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`
-  (torch-hub download blocked in this environment). Pre-existing,
-  unrelated to this batch, NOT weakened or deleted. Do not claim
-  "all tests pass" while it persists.
+- **PR #30 head:** 1,613 passed, 1 failed, 1 skipped (~98 s). Focused
+  suites for every changed area pass (116 new tests).
+- **Superseded on `fix/sam-load-path` (2026-09-15): 1,614 passed,
+  1 skipped, 0 failed — the first fully green gate.** The SAM failure
+  was two real code bugs (torch.hub.load against an upstream repo with
+  no hubconf.py; predicted_iou > 1.0 silently discarding regions), not
+  the environment — both fixed; vit_b checkpoint pre-cached.
 
 ## Completed work (do NOT redo)
 
@@ -47,8 +45,8 @@ Canonical queue: `.agent/TASKS.yaml` (36 tasks: 10 DONE / 15 PARTIAL /
 - **P3-02** real VIO backend runs — ORB-SLAM3/OpenVINS/Basalt binaries
   not installed; TUM-format subprocess adapters landed and honest about
   absence (BACKEND_UNAVAILABLE, never fabricated runs).
-- **SAM environment failure** — blocks 1 gate test (20 when run without
-  the deselect filter). Fix = pre-cache SAM weights, not test edits.
+- SAM test failure: FIXED on `fix/sam-load-path` (was two code bugs;
+  see Verification). vit_b checkpoint pre-cached for offline runs.
 - No CI workflows exist in the repo; the full-suite gate is local.
 
 ## Next priority (Priority Authority — spine order)

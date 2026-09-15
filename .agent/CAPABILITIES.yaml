@@ -13,13 +13,13 @@ capabilities:
     inputs: [image set, optional intrinsics]
     outputs: [camera poses (camera-to-world, wxyz quat), sparse 3D points, registration_status]
     license: BSD-3-Clause (COLMAP) — verify at binding time
-    hardware_requirements: CPU-only build in use; GPU optional
-    accuracy: not measured formally; observed 25/28 cameras on room capture
-    runtime: observed ~23 s on 4 images (CPU)
+    hardware_requirements: "CUDA build now installed (2026-09-15, colmap/colmap release 4.2.0 colmap-x64-windows-cuda.zip; RTX 4050, driver 616.56 verified via nvidia-smi); GPU feature extraction confirmed genuinely working (SIFT GPU extractor ran on synthetic images). Old CPU-only build kept at colmap-extracted-nocuda-backup."
+    accuracy: not measured formally; observed 25/28 cameras on room capture (measured on the prior CPU build; not re-run on CUDA build yet)
+    runtime: observed ~23 s on 4 images (CPU build; CUDA build not yet timed)
     maturity: IMPLEMENTED
     limitations:
-      - CPU build has no dense matching (patch_match_stereo requires CUDA)
       - one 4-image scene + one room capture exercised, not a stress test
+      - CUDA build's sparse pipeline not yet re-run end-to-end (only GPU feature extraction smoke-tested)
     fallback: deterministic fake backend (REALITY_TEST_BACKEND, tests only — never production)
 
   - name: metric_scale_anchoring
@@ -110,15 +110,15 @@ capabilities:
 
   - name: dense_mvs
     category: dense_geometry
-    backend: NOT FEDERATED YET (COLMAP patch_match_stereo requires CUDA; OpenMVS slot open)
+    backend: "CUDA COLMAP (colmap/colmap release 4.2.0, colmap-x64-windows-cuda.zip). Real end-to-end GPU run completed 2026-09-15 (CLI-level, not yet Python-integrated): feature_extractor -> exhaustive_matcher -> mapper (17/20 registered) -> image_undistorter -> patch_match_stereo --geom_consistency true (GPU, ~6.9 min) -> stereo_fusion, 294,345 fused points written to a real PLY. Not yet wired: reconstruction/depth_to_points.py does not parse COLMAP dense output (fused.ply) into this repo's DepthFrame/point types -- only monocular/RGB-D sidecar paths are integrated. OpenMVS slot still open."
     inputs: [calibrated images, poses, intrinsics]
-    outputs: [dense depth maps per view]
+    outputs: [dense depth maps per view, fused point cloud (PLY) -- not yet parsed into this repo's canonical types]
     license: n/a until a backend binds
-    hardware_requirements: CUDA GPU (patch_match_stereo) — unavailable on reference machine
-    accuracy: n/a
-    runtime: n/a
-    maturity: MISSING (backend slot specified; docs/future/dense-reconstruction/DENSE_MVS.md)
-    limitations: reference machine is CPU-only COLMAP 4.2.0
+    hardware_requirements: "RTX 4050 present and CUDA-capable (compute 8.9, driver 616.56) — previously believed unavailable; that was a software-build gap (CPU-only COLMAP), not a hardware gap. Resolved and exercised."
+    accuracy: "not measured against ground truth; output geometry is coherent (tight point-cloud mean/std, real sampled texture colors) but in COLMAP's own uncalibrated SfM scale, not yet metric-anchored"
+    runtime: "~6.9 min patch_match_stereo (GPU, geom_consistency on) + ~6s stereo_fusion, 17 views, RTX 4050 laptop GPU"
+    maturity: PARTIAL (real GPU dense reconstruction verified working end-to-end via CLI 2026-09-15; the reconstruction/ Python-level integration — parsing dense output into canonical types, wiring into the orchestrator — is the remaining scope; see docs/future/dense-reconstruction/DENSE_MVS.md)
+    limitations: CLI-proven only, not yet callable from reconstruction/ Python code; scale not metric-anchored in this run; single synthetic scene exercised, not a stress test
     fallback: monocular depth + RGB-D sidecars (labeled as such, never passed off as MVS)
 
   - name: object_detection
@@ -195,28 +195,28 @@ capabilities:
 
   - name: vio_localization
     category: localization
-    backend: none yet (ORB-SLAM3/OpenVINS/Basalt adapters specified, not bound)
-    inputs: []
-    outputs: []
-    license: n/a until a backend binds (ORB-SLAM3 GPL-3.0 — subprocess boundary required; record in LICENSES.yaml before binding)
-    hardware_requirements: backend-dependent
-    accuracy: n/a
+    backend: "ORB-SLAM3 / OpenVINS / Basalt subprocess adapters bound behind trajectories.backend.ITrajectoryBackend (P3-02); none of the three binaries are installed on this machine (verified via shutil.which), so estimate() honestly raises TrajectoryBackendUnavailableError -- no real VIO run has been exercised yet"
+    inputs: [image directory or video, optional IMU log, caller-supplied argv (tool CLIs are build-specific, not guessed)]
+    outputs: [Trajectory (P3-01): TrajectoryFrame sequence, monotonic global-ns timestamps, frame_source, drift_estimate]
+    license: GPL-3.0 (ORB-SLAM3), GPL-3.0-with-exceptions (OpenVINS, verify), AGPL-3.0 (Basalt, verify) — all subprocess-only, recorded in LICENSES.yaml federation_candidates; nothing vendored/linked
+    hardware_requirements: backend-dependent (none installed here)
+    accuracy: not measured — no real backend run yet
     runtime: n/a
-    maturity: MISSING (P3-01/P3-02)
-    limitations: per-session SfM poses only; no continuous trajectory
-    fallback: SfM camera poses (labeled per-session, not a trajectory)
+    maturity: PARTIAL (P3-02; adapter interface + TUM-format parser + try-in-order selection landed, 21 tests in tests/test_trajectory_backend.py, including a real subprocess adapter-contract test against a fake binary; real backend run when a binary is present is the named VERIFIED gate, per spec)
+    limitations: no VIO binary installed on this machine; exact CLI invocation is left to the caller (options["command"]) since none of the three tools expose one stable CLI across builds
+    fallback: per-session SfM camera poses (labeled per-session, not a continuous trajectory)
 
   - name: cross_source_registration
     category: registration
-    backend: none yet (RegistrationEngine specified, P4-01)
-    inputs: []
-    outputs: []
-    license: n/a
+    backend: "registration.registration: point-to-point ICP (scipy cKDTree + numpy SVD/Kabsch) and translation-only GNSS-anchor alignment (P4-01); no orchestrating RegistrationEngine class yet, no landmark-correspondence method (needs multi-view identity, P2)"
+    inputs: [two point-cloud Vec3 lists (ICP), or paired anchor position lists (GNSS anchor)]
+    outputs: [RegistrationResult: RigidTransform or None, status accepted/blocked+reason, rmse, inlier_fraction]
+    license: n/a (numpy/scipy, already-declared runtime deps)
     hardware_requirements: none
-    accuracy: n/a
-    runtime: n/a
-    maturity: MISSING — the most important missing core subsystem
-    limitations: sessions compile to separate world frames today
+    accuracy: "exact recovery on synthetic known-offset fixtures within cloud-scale offsets (tests/test_registration.py); real multi-source capture not exercised"
+    runtime: not measured
+    maturity: PARTIAL (2/4 spec methods; deliberate point-to-point not point-to-plane deviation, documented; documented ICP local-minimum limitation for offsets larger than cloud extent — real capability gap, not hidden)
+    limitations: sessions compile to separate world frames today (no orchestration wiring this into world compilation yet); requires coarse initial alignment for ICP to converge correctly; no uncertainty/covariance propagation on the result
     fallback: none — separate worlds stay separate and labeled
 
   - name: world_compilation

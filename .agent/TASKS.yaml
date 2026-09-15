@@ -285,7 +285,7 @@ tasks:
 
   - id: P3-01
     name: canonical trajectory model
-    status: MISSING
+    status: DONE
     scope: >
       Trajectory/Pose/Velocity/Bias/Covariance/Frame, backend-neutral,
       monotonic timestamps, provenance-carrying.
@@ -297,7 +297,7 @@ tasks:
 
   - id: P3-02
     name: VIO/localization backend federation
-    status: MISSING
+    status: PARTIAL
     problem: >
       Per-session SfM poses exist; no continuous trajectory, no VIO
       adapter. Do NOT build a mediocre custom VIO first — federate.
@@ -311,7 +311,7 @@ tasks:
 
   - id: P3-03
     name: trajectory quality diagnostics
-    status: MISSING
+    status: DONE
     scope: ATE, RPE, drift, loop-closure diagnostics, covariance,
       timestamp alignment quality, tracking state
       (TRACKING/LOST/RELOCALIZING/LOCALIZED).
@@ -324,7 +324,7 @@ tasks:
 
   - id: P4-01
     name: cross-source registration engine
-    status: MISSING
+    status: PARTIAL
     problem: >
       Phone/drone/LiDAR/RGB-D results are separate worlds; nothing
       proves they belong in one frame. The most important missing core
@@ -346,7 +346,7 @@ tasks:
 
   - id: P5-01
     name: reconstruction backend registry
-    status: PARTIAL
+    status: DONE
     basis: >
       IReconstructionBackend + COLMAP backend + deterministic test seam
       (REALITY_TEST_BACKEND) exist; registry/selection does not.
@@ -358,7 +358,7 @@ tasks:
 
   - id: P5-02
     name: automatic backend selection
-    status: MISSING
+    status: PARTIAL
     scope: >
       Input characteristics (image count, overlap, camera model, GNSS,
       IMU, depth, LiDAR, scene type, GPU, accuracy/runtime budget) ->
@@ -374,9 +374,51 @@ tasks:
     status: PARTIAL
     basis: >
       Monocular (MiDaS) fusion + RGB-D sidecar unprojection (PR #22)
-      produce dense points; patch_match_stereo is CUDA-blocked on the
-      reference machine (CPU-only COLMAP 4.2.0). MiDaS is a prior/
-      fallback, not MVS — keep it labeled as such.
+      produce dense points; MiDaS is a prior/fallback, not MVS — keep
+      it labeled as such. CUDA BLOCKER RESOLVED 2026-09-15: reference
+      machine has an RTX 4050 (nvidia-smi confirmed, driver 616.56,
+      compute cap 8.9); COLMAP's own build was CPU-only, not the
+      hardware. Swapped in the official prebuilt
+      colmap-x64-windows-cuda.zip (GitHub colmap/colmap release
+      4.2.0, matching the previously-installed version) at
+      C:\Users\shres\tools\colmap-extracted (old CPU build kept at
+      colmap-extracted-nocuda-backup, reversible). No separate CUDA
+      Toolkit install was needed -- the prebuilt binary only requires
+      the driver. Verified genuinely working, not just installed: ran
+      `colmap feature_extractor --FeatureExtraction.use_gpu 1` against
+      2 synthetic images and it logged "Creating SIFT GPU feature
+      extractor" and returned real SIFT features.
+
+      REAL DENSE-MVS PASS RUN 2026-09-15 (manual CLI, not yet wired
+      into reconstruction/ Python code): rendered a fresh 20-image
+      synthetic room capture (scripts/render_room_dataset.py, real
+      perspective-correct geometry) at datasets/room_capture_mvs
+      (gitignored, not committed -- 664MB, matches the "no committed
+      real-photo fixture" pattern). Ran the full real GPU COLMAP
+      pipeline: feature_extractor (GPU SIFT, explicit known
+      intrinsics SIMPLE_RADIAL f=1160 -- the first attempt without
+      explicit intrinsics let COLMAP guess a wrong focal length and
+      every two-view geometry was misclassified as planar/degenerate,
+      so mapper init failed; a real bug, fixed by passing
+      --ImageReader.camera_params) -> exhaustive_matcher (GPU) ->
+      mapper: 17/20 images registered, 680 sparse points, 0.67px mean
+      reprojection error -> image_undistorter -> patch_match_stereo
+      --PatchMatchStereo.geom_consistency true (GPU, ~6.9 min,
+      per-view CUDA sweep/iteration timing logged for all 17 views)
+      -> stereo_fusion: 294,345 fused dense points written to
+      dense/fused.ply. Sanity-checked (not just "it ran"): point
+      cloud mean/std tight and centered plausibly, vertex colors
+      sampled real texture (mean RGB ~139/125/112, not
+      degenerate/uniform). Scale is COLMAP's own uncalibrated SfM
+      scale (not yet metric-anchored via reconstruction/scale.py) --
+      extent ~9x8x7 vs the room's true 2.5x2x2.25m, expected and not
+      a bug (scale anchoring is a separate, already-existing
+      capability, not re-run here). NOT YET DONE: parsing fused.ply
+      into this repo's canonical DepthFrame/point types
+      (reconstruction/depth_to_points.py doesn't consume COLMAP dense
+      output yet -- only monocular/RGB-D sidecar paths do); that
+      Python-level integration is the remaining real work, tracked
+      under this same id.
     scope: >
       Backend slots for COLMAP patch_match_stereo / OpenMVS; dense
       depth per view -> cross-view consistency -> fusion.
@@ -389,8 +431,16 @@ tasks:
     name: evidence fusion (plural dense sources)
     status: PARTIAL
     basis: >
-      Depth-fusion from mono depth + sidecar depth exists; fusion is
-      single-source-at-a-time, no weighted multi-source merge.
+      Weighted multi-source depth fusion landed:
+      reconstruction/fusion/multi_source.py — DepthSourceObservation
+      (source/depth_m/precision_m/provenance/confidence/evidence_ids)
+      delegating to the generic inverse-variance engine fuse_quantity
+      (agree -> ESTIMATED weighted mean; disagree beyond CONFLICT_SIGMA
+      -> CONFLICT, fused value still computed; single source passes
+      through). Deterministic tests with known ground truth per source
+      (tests/test_dense_fusion_multisource.py: fused beats either alone,
+      uncertainty weights demonstrably steer the estimate, conflict not
+      blended, empty honestly rejected).
     scope: >
       MVS + RGB-D + LiDAR + stereo + monocular + neural depth as
       plural evidence -> weighted/robust fusion with uncertainty ->
@@ -400,19 +450,33 @@ tasks:
     verification:
       - deterministic fusion tests with known ground truth per source
       - uncertainty weights demonstrably influence the estimate
+    open: >
+      PARTIAL, not DONE: no pipeline consumer yet (nothing ingests
+      plural sources and calls fuse_depth_observations; P6-01 dense-MVS
+      Python-level integration is its own open scope) and no WorldIR
+      geometry write-back — the fusion engine and its adapter are
+      verified, the '-> WorldIR geometry' tail is not wired.
 
   - id: P6-03
     name: canonical MeshData completion
     status: PARTIAL
     basis: >
       MeshData + deterministic PLY I/O + ArtifactStore + WorldIR MESH
-      geometry + glTF export landed (PR #16/#22 era); mesh VALIDATION
-      (degenerate triangles, non-manifold edges, bad normals,
-      self-intersections, holes, components, bad scale) is open —
-      "mesh quality != mesh existence".
+      geometry + glTF export landed (PR #16/#22 era). Mesh VALIDATION
+      landed: reconstruction/meshing/validation.py — MeshQualityReport
+      with real measured counts for degenerate triangles, non-manifold
+      edges, bad normals, holes, disconnected components, and a
+      documented bounding-box-overlap PROXY for self-intersection
+      (necessary-not-sufficient; no exact intersection test).
+      Test matrix on known-bad meshes green (tests/test_mesh_validation.py).
     verification:
       - validation test matrix on known-bad meshes
       - quality metrics recorded in artifact metadata
+    open: >
+      PARTIAL, not DONE: 'bad scale' check from this task's own list is
+      not implemented; mesh REPAIR is out of scope by design; quality
+      metrics are not yet recorded into artifact metadata at export
+      time; self-intersection remains a proxy.
 
   # ================= PHASE 7 — PERCEPTION =================
 
@@ -421,14 +485,26 @@ tasks:
     status: PARTIAL
     basis: >
       merge_hypotheses union-find + lift_region_to_3d exist (2+ views
-      -> one entity, tested); appearance features and epipolar/temporal
-      consistency do not.
+      -> one entity, tested). Appearance features and epipolar
+      consistency landed and wired additively into merge_hypotheses
+      (optional cameras/appearance args; base gate preserved when
+      signals absent): deterministic RGB color-histogram descriptors
+      (perception/instances/appearance.py — NOT a learned embedding,
+      documented discrimination limits) + epipolar consistency from
+      the essential matrix (perception/instances/epipolar.py).
+      Wrong-merge rejection tests green for BOTH signals
+      (tests/test_multiview_identity_appearance.py).
     scope: >
       detection -> appearance features -> geometry -> epipolar/temporal
       consistency -> 3D association -> track -> entity.
     spec: docs/future/perception/MULTI_VIEW_IDENTITY.md
     verification:
       - deterministic rendered-view fixtures; wrong-merge rejection
+    open: >
+      PARTIAL, not DONE: TEMPORAL consistency is not implemented
+      (P7-02's subject); thresholds untuned against real data; color
+      histograms cannot separate same-color same-shape objects
+      (documented limitation).
 
   - id: P7-02
     name: temporal tracking
@@ -440,13 +516,25 @@ tasks:
 
   - id: P7-03
     name: architectural perception
-    status: MISSING
-    scope: >
-      Walls/floors/ceilings/doors/windows/stairs/columns/beams/roofs/
-      facades/roads/curbs/infrastructure/terrain/vegetation from
-      geometry+visual+context, not label-only.
+    status: PARTIAL
+    basis: >
+      Geometry-only classifier landed:
+      perception/architecture/classify.py — wall/floor/ceiling from
+      plane orientation + relative position (independent geometry-only
+      classifier over plane hypotheses, not label-only), doorway as a
+      measured gap in a wall plane's floor-height inlier coverage.
+      Synthetic-room-fixture verification green incl. ambiguous-plane
+      UNKNOWN (never guessed) and solid-wall no-false-doorway
+      (tests/test_architectural_perception.py).
     verification:
       - synthetic room fixture -> correct architectural labels
+    open: >
+      PARTIAL, not DONE: deliberately cut to walls/floors/ceilings/
+      doorways — stairs/columns/beams/windows/roofs have NO detector
+      producing evidence in this repo, and facades/roads/curbs/
+      infrastructure/terrain/vegetation are outdoor concepts with no
+      fixture; classifying them would be guessing (skipped, not
+      faked), see module docstring for the full scope rationale.
 
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 
@@ -483,12 +571,21 @@ tasks:
     status: PARTIAL
     basis: >
       WorldIR v1 (entities/geometry/measurements/observations/
-      provenance) is canonical and validated; topology, temporal
-      history, representations, DERIVED/PREDICTED/SIMULATED statement
-      states, external references open.
+      provenance) is canonical and validated. Statement states landed
+      additively: world_ir/statement_state.py — StatementState
+      (OBSERVED/INFERRED/DERIVED/PREDICTED/SIMULATED/PROCEDURAL/
+      UNCLASSIFIED) classified from existing Provenance + explicit
+      pipeline hints; GENERATED without a hint is honestly
+      UNCLASSIFIED, never guessed; Entity.statement_state is optional
+      (None = unclassified) with v1-only dict loads verified
+      (tests/test_world_ir_v2_statement_state.py).
     verification:
       - additive schema migration tests (v1 worlds still load)
       - statement-state classification tests
+    open: >
+      PARTIAL, not DONE: topology, temporal history, representations,
+      external references remain open; statement_state exists on
+      Entity only (not on every statement-bearing type yet).
 
   # ================= PHASE 10 — EVIDENCE GRAPH + UNCERTAINTY =========
 

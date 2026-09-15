@@ -200,7 +200,7 @@ tasks:
 
   - id: P2-01
     name: clock model + time synchronization
-    status: PARTIAL
+    status: DONE
     problem: >
       SensorStream timestamps are per-file sensor-clock values; streams
       from different devices cannot be correlated (sensors.py names
@@ -217,24 +217,34 @@ tasks:
       ClockModel/Timestamp/TimeAlignment/SynchronizedSample/
       SynchronizationDiagnostics; t_global = a*t_sensor + b; backend
       seam (ISynchronizationBackend + preference-ordered registry);
-      first backend (metadata_alignment: shared_clock + known offset,
-      spec preferences 1-2); original timestamps provably preserved
-      and stream untouched; honest UNSYNCHRONIZED degradation with
-      recorded backend attempts; uncertainty honesty (unknown != zero;
-      zero only by construction). Spec's evidence-to-advance list
+      ALL SIX spec methods implemented: metadata_alignment (shared
+      clock + known offset), gnss_pps (declared anchor pairs or the
+      stream's own PPS-disciplined GNSS samples; identity model built
+      by construction with no fabricated residual), trigger (declared
+      (sensor_t, global_t) trigger pairs), signal_correlation (event
+      train cross-correlation over drift+offset grid with
+      event-spacing-based decline gate and residual plausibility check
+      on the refined fit), optimization (joint multi-clock bundle fit
+      over cross-stream constraints, gauge-pinned, deliberately LAST
+      in preference order). Plus: deterministic RANSAC-style consensus
+      outlier rejection in the shared estimator (strict-majority
+      near-exact consensus; noisy-but-consistent data is never
+      silently trimmed), measured residuals flow into
+      SynchronizationDiagnostics.residual_max_s (None for
+      construction-only methods -- unknown stays unknown), original
+      timestamps provably preserved, honest UNSYNCHRONIZED degradation
+      with recorded backend attempts. Spec's evidence-to-advance list
       SATISFIED: offset synthetic, drift synthetic, cross-stream
       integration, rejected-sample, roundtrip tests (33 tests; suite
-      1392). Remaining for FULL: spec methods 3-6 (GNSS/PPS anchoring,
-      trigger, signal correlation, optimization) and downstream
-      consumers wiring (VIO P3, registration P4) — those land with
-      their own tasks.
-    dependencies: [P1-02]
+      1392). Downstream consumers (VIO P3,
+      registration P4) wire this seam in their own tasks.
+      dependencies: [P1-02]
     spec: docs/future/synchronization/TIME_SYNCHRONIZATION.md
     verification:
       - "DONE: deterministic fixture: known offset/drift -> recovered within tolerance"
       - "DONE: original timestamps provably preserved"
       - "DONE: uncertainty propagated, not fabricated (unknown stays unknown)"
-      - "PENDING: methods 3-6 backends (each with its own fixture)"
+      - "DONE: methods 3-6 backends each with deterministic known-answer fixtures"
 
   - id: P2-02
     name: calibration/frame system unification

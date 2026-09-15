@@ -48,11 +48,13 @@ this file.
 
 ## Test status (exact, observed)
 
-- **1,613 passed, 1 failed, 1 skipped** at the finalization PR (PR #30,
-  head 63b9b7b). The ONE failure was
+- **Latest (2026-09-15, P2-01 pass on `claude/p2-01-sync-backends`):
+  1,648 passed, 1 skipped, 0 failed (~122 s).**
+- Historical: 1,613 passed, 1 failed, 1 skipped at the finalization PR
+  (PR #30, head 63b9b7b); the ONE failure was
   `tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`.
-- **Superseded on `fix/sam-load-path` (2026-09-15): 1,614 passed,
-  1 skipped, 0 failed (~206 s) — fully green.** The SAM failure was
+- **Fixed on `fix/sam-load-path` (merged as PR #31): 1,614 passed,
+  1 skipped, 0 failed (~206 s) — first fully green gate.** The SAM failure was
   diagnosed as two real code bugs, not the environment: (1) the backend
   used torch.hub.load on a repo that has NO hubconf.py (verified
   upstream, 0 commits touching it) — replaced with the segment-anything
@@ -73,14 +75,14 @@ this file.
 
 ## Completed priorities (exact IDs — do NOT redo)
 
-Derived mechanically from `.agent/TASKS.yaml` (36 tasks: 10 DONE /
-15 PARTIAL / 11 MISSING), not from prose:
+Derived mechanically from `.agent/TASKS.yaml` (36 tasks: 12 DONE /
+13 PARTIAL / 11 MISSING after the P2-01 pass), not from prose:
 
-DONE: P0-01, P0-02, P0-03, P1-01, P1-02, P2-02, P3-01, P3-03,
-P5-01, P6-03 (bad-scale check + export-time quality metadata landed
-2026-09-15), P18-01.
+DONE: P0-01, P0-02, P0-03, P1-01, P1-02, P2-01 (all six sync methods
+landed 2026-09-15), P2-02, P3-01, P3-03, P5-01, P6-03 (bad-scale
+check + export-time quality metadata), P18-01.
 PARTIAL (implemented, named remainder in ledger `open:`/`verification:`
-fields): P1-03, P2-01, P3-02, P4-01, P5-02, P6-01, P6-02,
+fields): P1-03, P3-02, P4-01, P5-02, P6-01, P6-02,
 P7-01, P7-03, P8-01, P9-01, P10-01, P16-01, P17-01.
 MISSING (not started): P7-02, P8-02, P8-03, P10-02, P11-01, P12-01,
 P13-01, P13-02, P14-01, P15-01, P19-01.
@@ -97,14 +99,14 @@ WORLDSTORE -> INCREMENTAL COMPILATION. TRAJECTORY/VIO is landed
 (model/diagnostics DONE, adapters PARTIAL on binary availability), so
 the spine head is TIME SYNCHRONIZATION:
 
-1. **P2-01 remainder (spine head)**: synchronization backends 3-6
-   per `docs/future/synchronization/TIME_SYNCHRONIZATION.md` — GNSS/
-   PPS, cross-correlation, trajectory correlation, optimization-based
-   alignment; each with its own deterministic fixture (the ledger's
-   `PENDING` verification items).
-2. **P4-01 remainder**: point-to-plane + symmetric ICP and
-   RegistrationEngine orchestration (extrinsics -> trajectory prior
-   -> ICP -> uncertainty).
+1. ~~P2-01 remainder (spine head)~~ **DONE** (2026-09-15): all six
+   spec methods (metadata, GNSS/PPS, trigger, signal correlation,
+   optimization) with deterministic known-answer fixtures; 56 clocks
+   tests; full suite 1,648 green. Downstream consumers wire the seam
+   in their own tasks.
+2. **P4-01 remainder (spine head now)**: point-to-plane + symmetric
+   ICP and RegistrationEngine orchestration (extrinsics -> trajectory
+   prior -> ICP -> uncertainty).
 3. **P6-01/P6-02 remainders**: parse verified dense output (fused.ply)
    into canonical types; pipeline consumer calling
    fuse_depth_observations -> WorldIR geometry write-back.

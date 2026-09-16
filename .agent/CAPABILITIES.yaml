@@ -408,3 +408,28 @@ capabilities:
         per-point detectors
       - real-capture benchmarks (Victoria Memorial) are CAPTURE_PENDING
         -- capture is an external dependency, never simulated
+
+  - name: temporal_tracking
+    category: perception
+    backend: perception/tracking/temporal.py (in-house, deterministic)
+    inputs: >-
+      TimedObservation list (observation_id, label, position, evidence_id,
+      captured_at, measured confidence) + speed/gap budgets
+    outputs: >-
+      TrackRecord list (track_id, label, observation history,
+      path_length_m, duration_s, implied_speed_m_s, min-of-measured
+      confidence) + separate untimed-observation list;
+      instance_tracks_from adapter onto InstanceTrack
+    license: project-internal
+    hardware_requirements: none (pure Python, deterministic)
+    accuracy: >-
+      continuation requires BOTH speed budget (distance <= max(merge
+      _distance, max_speed * gap)) and gap budget; observations never
+      forced into tracks; unknown confidence/untimed time stays unknown
+    runtime: O(observations x open-tracks-per-label)
+    maturity: PARTIAL (3D observation-level layer; 14 tests in
+      tests/test_temporal_tracking.py)
+    limitations:
+      - 2D box association (ByteTrack/OC-SORT), motion compensation,
+        ID-switch diagnostics not implemented
+      - thresholds untuned against real data

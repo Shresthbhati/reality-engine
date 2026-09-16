@@ -7,6 +7,31 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-16 (3) -- P7-02 temporal tracking (3D observation layer)
+
+Landed, TDD red-first (`perception/tracking/temporal.py`, 14 tests in
+`tests/test_temporal_tracking.py`):
+
+- `TimedObservation` -> per-label `TrackRecord` chains: track_id,
+  observation history, measured path_length_m / duration_s /
+  implied_speed_m_s. Continuation requires BOTH the speed budget
+  (distance <= max(merge_distance, max_speed*gap)) and the gap budget;
+  else a new track starts -- no forced associations (the honesty rule
+  from instances/interface.py).
+- Untimed observations are returned separately (`(tracks, untimed)`),
+  never mixed into timed chains. Duplicate observation_id raises.
+- Confidence honesty (a fabricated 1.0 was caught during review):
+  track confidence = min of MEASURED member confidences, None when
+  unmeasured; `instance_tracks_from` refuses tracks without measured
+  confidence instead of inventing one, and refuses missing regions
+  instead of placeholders.
+- perception/tracking/README.md replaced (was "Not yet implemented");
+  package `__init__` docstring added.
+- Ledger: P7-02 MISSING -> PARTIAL (2D ByteTrack-style box
+  association, motion compensation, ID-switch diagnostics still open);
+  CAPABILITIES.yaml gained `temporal_tracking`.
+
+
 ## 2026-09-16 (2) -- P7-03 architectural-perception expansion
 
 Directive: architectural perception for complex structures (proof

@@ -6,6 +6,21 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
+## UPDATE 2026-09-16c — P7-02 temporal tracking (newest)
+
+- `perception/tracking/temporal.py`: 3D observation-level identity
+  across time (TrackRecords with measured path/duration/implied speed;
+  speed+gap gated continuation; untimed observations returned
+  separately; confidence = min of measured member confidences, refusal
+  to fabricate). 14 tests; no regressions in the identity/lifting
+  neighbors (48 passed).
+- PR #36 (P7-03) was merged; this branch `claude/p7-02-temporal-tracking`
+  carries the P7-02 work on top of updated main.
+- Next natural priorities: 2D ByteTrack-style detection association
+  (spec TRACKING.md), detector-backed semantic fusion into the
+  architecture registry (P7-03 open half), E-C alternative via WSL
+  (ROS1 Noetic) for the real VIO run, P8-01/P8-02 room/building graphs.
+
 ## UPDATE 2026-09-16b — architectural perception expansion (newest)
 
 - P7-03 expansion landed: parametric perception (cylinder/sphere/

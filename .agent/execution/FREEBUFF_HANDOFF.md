@@ -6,6 +6,32 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
+## UPDATE 2026-09-16 (read this first — newer than everything below)
+
+- PRs #30–#34 are MERGED; main carries all campaign work through the
+  P4/P5/P11/P12/P13 batch (registration engine + covariance, backend
+  selection policy, fused.ply parser, fusion consumer + WorldIR
+  write-back, provenance graph, dense ingest, WorldStore,
+  incremental compilation, measurement uncertainty).
+- New this session: **time-sync consumers wired**
+  (`trajectories/backend/sync.py` + `estimate_trajectory(clock_model=...)`);
+  canonical Trajectory now carries clock_id/sync_state/sync_method and
+  preserves original sensor stamps. Units are EXPLICIT: stream-fitted
+  ClockModels are in seconds (`model_unit="s"`), trajectories in ns —
+  the e2e test caught the 10^9 corruption bug before it could ship.
+  16 tests in `tests/test_sync_consumers.py`.
+- Gate on the final head: 1,737 passed / 1 skipped / 0 failed
+  (SAM real-model included, passing).
+- **Next priority: E-C — real VIO backend run** (P3-02 remainder):
+  Docker Desktop daemon was DOWN all session (cold boot after restart;
+  launch attempted, npipe never came up). Planned route: ROS1 Noetic
+  container, OpenVINS `run_subscribe_msckf` (upstream's real-image
+  path — `run_simulation` is synthetic-only, verified from source),
+  EuRoC MH_01 bag → TUM → existing parser → canonical Trajectory →
+  ATE. The C++ toolchain (cmake 4.2.1, VS) is present as a fallback.
+- Canonical queue/status: `.agent/TASKS.yaml` +
+  `.agent/EXECUTION_STATE.md` (dated entries at top).
+
 ## Canonical state (single source of truth — do not duplicate)
 
 - Queue: `.agent/TASKS.yaml` (36 tasks; statuses evidence-backed).

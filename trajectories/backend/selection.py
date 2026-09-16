@@ -6,6 +6,14 @@ failure shape: skip backends whose binary isn't installed (cheap,
 every backend is unavailable or fails, raise
 `TrajectoryBackendUnavailableError` naming every attempt -- never
 return a fabricated or partially-estimated trajectory.
+
+Synchronized-time consumer (P2-01 made load-bearing): when a
+`clock_model` is supplied, the winning backend's sensor-stamped output
+is mapped onto the global timeline via
+evidence.clocks.ClockModel.apply (see trajectories/backend/sync.py)
+BEFORE selection returns it. Originals ride along; a declined sync
+degrades the result to UNSYNCHRONIZED instead of raising or
+fabricating a timeline. No model = pass-through, nothing claimed.
 """
 
 from __future__ import annotations
@@ -22,6 +30,7 @@ from trajectories.backend.interface import (
 )
 from trajectories.backend.openvins_backend import OpenVINSBackend
 from trajectories.backend.orb_slam3_backend import ORBSLAM3Backend
+from trajectories.backend.sync import apply_clock_model
 from trajectories.trajectory import Trajectory
 
 #: Federation order: ORB-SLAM3 (most mature/widely deployed for
@@ -49,11 +58,21 @@ class BackendAttempt:
 def estimate_trajectory(
     request: TrajectoryEstimationRequest,
     backends: Sequence[ITrajectoryBackend] = DEFAULT_BACKENDS,
+    clock_model=None,
+    model_unit: str = "ns",
 ) -> Tuple[Trajectory, Tuple[BackendAttempt, ...]]:
     """Try `backends` in order; the first that produces a Trajectory
     wins. Returns the trajectory plus the full attempt log (including
     the backends that were skipped or failed) so callers can record
     provenance honestly rather than silently picking a backend.
+
+    `clock_model` (evidence.clocks.ClockModel, optional): when given,
+    the returned trajectory is synchronized onto the global timeline
+    via the model (t_global = a*t_sensor + b) and carries
+    clock_id/sync_state/sync_method; originals are preserved in
+    ``sensor_timestamp_ns``. None = pass-through. `model_unit` is the
+    unit the model was fit in ("ns" default; "s" for models fit from
+    second-denominated sensor streams) -- see sync.py's units rule.
 
     Raises `TrajectoryBackendUnavailableError` if every backend is
     unavailable, and `TrajectoryBackendRunError` if at least one was
@@ -75,6 +94,7 @@ def estimate_trajectory(
         any_available = True
         try:
             trajectory = backend.estimate(request)
+            trajectory = apply_clock_model(trajectory, clock_model, model_unit)
             attempts.append(BackendAttempt(backend.name, available=True))
             return trajectory, tuple(attempts)
         except TrajectoryBackendUnavailableError as exc:

@@ -238,6 +238,19 @@ tasks:
       integration, rejected-sample, roundtrip tests (33 tests; suite
       1392). Downstream consumers (VIO P3,
       registration P4) wire this seam in their own tasks.
+      UPDATE 2026-09-16: consumers are now WIRED --
+      trajectories/backend/sync.py apply_clock_model applies the
+      declared ClockModel to backend output (t_global = a*t_sensor + b
+      with ns rounding; originals preserved in sensor_timestamp_ns;
+      time-collapse raises rather than silently merging samples; the
+      UNSYNCHRONIZED sentinel degrades honestly), estimate_trajectory
+      integrates it (clock_id/sync_state/sync_method carried on the
+      canonical Trajectory), and an end-to-end test runs
+      SensorStream -> synchronize_stream -> estimate_trajectory with
+      known answers (16 tests, tests/test_sync_consumers.py). Units
+      are explicit: model_unit='s' for stream-fitted models, 'ns'
+      canonical -- a seconds-space b applied to ns stamps would
+      corrupt time by 10^9 (caught by the e2e test, fixed).
       dependencies: [P1-02]
     spec: docs/future/synchronization/TIME_SYNCHRONIZATION.md
     verification:
@@ -245,6 +258,7 @@ tasks:
       - "DONE: original timestamps provably preserved"
       - "DONE: uncertainty propagated, not fabricated (unknown stays unknown)"
       - "DONE: methods 3-6 backends each with deterministic known-answer fixtures"
+      - "DONE: consumers wired (estimate_trajectory applies the clock model; e2e stream->trajectory known-answer test)"
 
   - id: P2-02
     name: calibration/frame system unification
@@ -314,6 +328,13 @@ tasks:
     scope: >
       Adapters for ORB-SLAM3 / OpenVINS / Basalt behind the backend
       interface; honest BACKEND_UNAVAILABLE when binaries absent.
+    progress: >
+      Adapters, selection, TUM parsing and quality diagnostics landed
+      earlier. 2026-09-16: the synchronization seam of this task's
+      contract is wired (estimate_trajectory consumes a ClockModel);
+      the remaining item is the real backend run on a public dataset
+      (EuRoC MH_01 via ORB-SLAM3/OpenVINS; Docker daemon was down at
+      session start -- environment, not code).
     dependencies: [P3-01]
     verification:
       - adapter contract tests with fake trajectories

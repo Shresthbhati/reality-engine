@@ -1,10 +1,45 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-15 (finalization batch: P6-02/P6-03/P7-01/
-P7-03/P9-01 implemented + ledger reconciled; PR cut for the whole
-uncommitted campaign batch)
+**Session end:** 2026-09-16 (completion campaign, worktree
+`claude/completion-master` off origin/main @ PR #39 merge eb062b6)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
+
+## 2026-09-16 (8) — clean-env baseline recovery + P10-02 propagation engine
+
+Clean environment established (worktree + fresh venv, `pip install
+-e ".[dev]"`). Two real findings from the clean baseline, both fixed:
+
+- **Packaging bug (suite could not even collect)**:
+  `tests/test_depth_frames.py` imports PIL at module level, but Pillow
+  was declared in NO dependency group — a clean `pip install .` produced
+  a suite that dies at collection. Root cause, not symptom: real image
+  decoding IS a core evidence-ingestion capability
+  (evidence/importers.py, evidence/depth_frames.py). `pillow>=10.0`
+  added to core dependencies (cv2 stays optional, as its importers
+  already guard). `slow` marker registered in pyproject (was producing
+  PytestUnknownMarkWarning).
+- **P10-02 uncertainty propagation (queue: MISSING -> PARTIAL)**:
+  `uncertainty/` package — `Uncertain` (value/sigma/basis;
+  sigma=None honest unknown never zero; basis taxonomy from CLAUDE.md
+  §44) and first-order operators: sum/difference (variance algebra,
+  explicit covariance input), scale (relative uncertainty invariant),
+  linear_propagate (J Sigma J^T), rotate_covariance /
+  transform_point_covariance (R Sigma R^T over RigidTransform),
+  compose_pose_covariances (6x6, central-difference Jacobians of the
+  EXACT RigidTransform.compose — repo convention t_c = R2 t1 + t2
+  verified against hand-derived analytic cases and a seeded
+  Monte-Carlo run). UNKNOWN propagates as UNKNOWN through every
+  operator (asserted per operator). 29 tests,
+  tests/test_uncertainty_propagation.py. Ledgers updated (TASKS,
+  CAPABILITIES, spec doc status line). Remaining: producer wiring.
+
+Verification: full suite in the clean environment COMPLETES:
+**1830 passed / 11 skipped / 0 failed in 153.35 s** (baseline_full.log;
+root causes of the historical "does not complete" were the undeclared
+Pillow dependency killing collection + stale venvs). Targeted
+uncertainty tests 29/29 green.
+
 
 
 ## 2026-09-16 (7) -- P6-01: real dense-MVS capture integration (next TASKS.yaml item)

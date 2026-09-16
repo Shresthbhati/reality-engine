@@ -843,15 +843,37 @@ tasks:
 
   - id: P10-02
     name: uncertainty propagation
-    status: MISSING
+    status: PARTIAL
     scope: >
       Formal propagation calibration -> pose -> registration -> depth
       -> geometry -> measurement; uncertainty != confidence; UNKNOWN
       propagates as UNKNOWN.
     dependencies: [P10-01]
     spec: docs/future/uncertainty/UNCERTAINTY_PROPAGATION.md
-    verification:
-      - analytic covariance propagation fixtures
+    progress: >
+      Propagation ENGINE landed 2026-09-16 (uncertainty/ package):
+      Uncertain scalar (value + optional sigma + mandatory basis
+      measured/derived/estimated/prior/unknown; sigma=None is honest
+      unknown, never zero), and the operators the spec names —
+      sum/difference (variance algebra with explicit covariance input),
+      scale (relative uncertainty invariant; k=0 annihilates),
+      linear_propagate (J Sigma J^T), rotate_covariance /
+      transform_point_covariance (R Sigma R^T over RigidTransform), and
+      compose_pose_covariances (6x6, central-difference Jacobians of the
+      EXACT RigidTransform.compose, first-order, inputs-independent v1
+      approximation documented). UNKNOWN propagates as UNKNOWN through
+      every operator — asserted per operator by tests. 29 tests in
+      tests/test_uncertainty_propagation.py including a seeded
+      Monte-Carlo agreement check (analytic vs empirical covariance of
+      the same composition, 15% variance tolerance) and analytic
+      known-answer fixtures (spec acceptance criteria met at the
+      operator level).
+    open: >
+      PARTIAL, not DONE: producers do not EMIT Uncertain yet — camera
+      calibration, depth, COLMAP reprojection, and WorldIR measurements
+      still carry ad-hoc precision fields; wiring each producer into the
+      Uncertain representation (and the additive WorldIR schema field)
+      is the remaining scope.
 
   # ================= PHASE 11 — WORLDSTORE =================
 

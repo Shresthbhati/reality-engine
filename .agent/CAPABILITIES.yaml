@@ -375,7 +375,14 @@ capabilities:
       every measurement names its precision source via precision_note).
       ICP results carry 6x6 covariance from correspondences. Fusion
       precision is inverse-variance (existing).
-    tests: tests/test_object_measurement.py, tests/test_registration.py
+      EXPANSION 2026-09-16 (P10-02): uncertainty/ package — Uncertain
+      scalar (value/sigma/basis; sigma=None honest unknown, never zero)
+      and first-order propagation operators (sum/difference/scale,
+      J Sigma J^T linear, R Sigma R^T point transform, 6x6 pose
+      composition via central-difference Jacobians of the exact
+      RigidTransform.compose). UNKNOWN propagates as UNKNOWN through
+      every operator. Producers do not emit Uncertain yet (honest gap).
+    tests: tests/test_object_measurement.py, tests/test_registration.py, tests/test_uncertainty_propagation.py
   - name: architectural_parametric_perception
     category: perception
     backend: >-

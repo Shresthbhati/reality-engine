@@ -74,6 +74,11 @@ class EntityType(str, Enum):
     DOOR = "door"  # Openable wall opening for passage
     WINDOW = "window"  # Wall opening for light/view
     STAIRS = "stairs"  # Vertical circulation element
+    # Architectural perception expansion (P7-03; additive -- v1 worlds
+    # without these values are unaffected, and enum serialization is
+    # by value so old data loads unchanged):
+    DOME = "dome"  # Hemispherical/ellipsoidal roof structure
+    ARCH = "arch"  # Curved spanning structure over an opening
     ROAD = "road"  # Vehicular travel surface
     CURB = "curb"  # Raised edge between road and sidewalk
     SIDEWALK = "sidewalk"  # Pedestrian walking surface adjacent to a road

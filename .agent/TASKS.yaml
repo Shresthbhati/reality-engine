@@ -637,6 +637,8 @@ tasks:
       (tests/test_architectural_perception.py).
     verification:
       - synthetic room fixture -> correct architectural labels
+      - parametric fits: known-answer cylinder/sphere/circle + honest refusals (23 tests)
+      - registry/components/promotion/benchmark: 35 further tests incl. end-to-end segmentation -> fits -> components -> WorldIR
     open: >
       PARTIAL, not DONE: deliberately cut to walls/floors/ceilings/
       doorways — stairs/columns/beams/windows/roofs have NO detector
@@ -644,6 +646,35 @@ tasks:
       infrastructure/terrain/vegetation are outdoor concepts with no
       fixture; classifying them would be guessing (skipped, not
       faked), see module docstring for the full scope rationale.
+      EXPANSION 2026-09-16 (P7-03 architectural-perception expansion,
+      Victoria Memorial directive): parametric perception landed --
+      perception/architecture/parametric.py (deterministic
+      cylinder/sphere/circle fits with measured residuals, shell
+      and elongation gates, FitRefused over best-effort, robust
+      Jacobi eigen solver after the analytic cubic produced
+      negative eigenvalues on near-degenerate column shells --
+      a real bug the benchmark fixture caught),
+      perception/architecture/segments.py (deterministic voxel
+      segmentation, undersized clusters reported not dropped),
+      perception/architecture/registry.py (extensible class
+      registry: Phase 1-3 classes, per-class acceptance gates,
+      no silent overrides), perception/architecture/components.py
+      (component observations with recorded acceptance/rejection,
+      confidence tiers OBSERVED/STRONG/WEAK/UNOBSERVED,
+      union-find multi-view entity resolution, repetition and
+      bilateral-symmetry priors that support confidence but
+      never move geometry), perception/architecture/promotion.py
+      (candidate -> canonical WorldIR Entity with measured fit
+      properties, evidence traceability, adjacency graph from
+      real positions; no invented hierarchy), WorldIR gains
+      DOME/ARCH additively, benchmarks/architectural.py +
+      benchmarks/structures (benchmark harness with honest
+      capture gate: Victoria Memorial record is CAPTURE_PENDING
+      -- real capture is an external dependency, never
+      simulated; 58 tests, full suite 1795). Segmentation
+      precedes plane subtraction: a cylinder's front strip is
+      locally planar and plane-first subtraction shredded
+      columns (measured, then fixed by classify-after-segment).
 
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 

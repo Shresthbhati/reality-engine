@@ -6,6 +6,27 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
+## UPDATE 2026-09-16b — architectural perception expansion (newest)
+
+- P7-03 expansion landed: parametric perception (cylinder/sphere/
+  circle fits, measured residuals, honest FitRefused), deterministic
+  voxel segmentation, extensible class registry, component
+  observations + confidence tiers + multi-view entity resolution,
+  repetition/symmetry priors (support-only), WorldIR +DOME/+ARCH
+  (additive), promotion + adjacency graph, benchmark harness with an
+  honest capture gate. 58 new tests; full gate 1,795/1/0.
+- **Victoria Memorial benchmark record exists and is CAPTURE_PENDING**:
+  the real photo capture is a human/external dependency. The harness
+  refuses to run it until then — do not simulate a capture.
+- Two real bugs the fixtures caught, both fixed: analytic cubic
+  eigen solver -> Jacobi (negative eigenvalues on near-degenerate
+  shells); plane-subtraction-before-segmentation shredded curved
+  structures (segment first, classify after).
+- Next natural priorities: detector-backed semantic fusion into
+  component hypotheses (P7-03 remainder), stairs (Phase 1), P8-01
+  openings/relationships topology, P9-01 remainder, real capture
+  planning for Victoria Memorial.
+
 ## UPDATE 2026-09-16 (read this first — newer than everything below)
 
 - PRs #30–#34 are MERGED; main carries all campaign work through the

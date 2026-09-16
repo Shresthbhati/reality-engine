@@ -7,6 +7,43 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-16 (2) -- P7-03 architectural-perception expansion
+
+Directive: architectural perception for complex structures (proof
+target: Victoria Memorial). Landed, all TDD red-first:
+
+- **parametric.py**: deterministic cylinder/sphere/circle fits with
+  MEASURED residuals, shell + elongation refusal gates (FitRefused,
+  never best-effort), documented confidence mapping. **Real bug found
+  and fixed**: the analytic cubic eigen solver returned negative
+  eigenvalues on near-degenerate column shells (Var(x)~=Var(y)) ->
+  replaced with Jacobi rotation solver.
+- **segments.py**: deterministic voxel segmentation (26-connected,
+  sorted-key); undersized clusters reported, never dropped.
+- **registry.py**: extensible class registry (Phase 1-3 built-ins,
+  per-class acceptance thresholds, no silent overrides).
+- **components.py**: component observations (acceptance recorded with
+  reasons; unaccepted never silently dropped), confidence tiers
+  (OBSERVED/STRONG/WEAK/UNOBSERVED), union-find multi-view entity
+  resolution, repetition + bilateral-symmetry priors that raise
+  confidence but NEVER move geometry.
+- **promotion.py**: candidate -> canonical WorldIR Entity (measured
+  fit facts in custom_properties, evidence ids for traceability,
+  INFERRED provenance, ESTIMATED adjacency edges from real positions;
+  no invented hierarchy). WorldIR +DOME/+ARCH additively.
+- **benchmarks/architectural.py + benchmarks/structures/**: benchmark
+  harness with honest capture gate -- Victoria Memorial record is
+  CAPTURE_PENDING (real capture = external dependency; run refused,
+  never simulated); structure-agnostic records; measured report with
+  failure regions. **Design lesson fixed**: segmentation precedes
+  plane subtraction -- a cylinder's front strip is locally planar, so
+  plane-first subtraction shredded columns (measured, then fixed).
+- Full-suite gate: **1,795 passed / 1 skipped / 0 failed**
+  (1,737 + 58 new). P7-03 remains PARTIAL honestly: detector-backed
+  semantic fusion, stairs, remaining Phase-2/3 classes open; Victoria
+  Memorial real capture outstanding (human dependency).
+
+
 ## 2026-09-16 -- sync consumers wired (E-B of the directive list)
 
 - **E-B DONE (P2-01 consumers)**: trajectories/backend/sync.py --

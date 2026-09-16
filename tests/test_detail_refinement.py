@@ -249,7 +249,9 @@ class TestVerticalSliceStage:
         from engine.pipeline.vertical_slice import _detail_stage
 
         result, cams, pts = self._result_and_cameras()
-        world = _FakeWorld()
+        from world_ir import WorldIR as _WorldIR
+
+        world = _WorldIR()
         facts = _detail_stage(result, world, self._options())
         assert facts["status"] == "ran"
         assert facts["summary"]["n_refined"] >= 1
@@ -303,8 +305,13 @@ class TestVerticalSliceStage:
 
 
 class _FakeWorld:
+    """Minimal WorldIR-shaped sink for the detail stage: entities +
+    geometries dicts (integration targets) + metadata."""
+
     def __init__(self):
         self.metadata = {}
+        self.entities = {}
+        self.geometries = {}
 
 
 class TestLifecycleWiring:

@@ -33,6 +33,7 @@ from perception.detail.refinement import (
     apply_outcomes,
     refine_rois,
 )
+from perception.detail.worldir import integrate_detail_outcomes
 from perception.detail.roi import RegionOfInterest, generate_rois
 from perception.quality.assessment import (
     EvidenceQualityReport,
@@ -52,6 +53,15 @@ class DetailPipelineReport:
     rois: List[RegionOfInterest]
     outcomes: List[RefinementOutcome]
     summary: Dict[str, int]
+    #: WorldIR integration output (set when build_world_ir=True): the
+    #: report records which entities/geometries were added and which
+    #: ROIs were refused as facts. None when integration is off.
+    integration: Optional[object] = None
+    #: The world the refined outcomes were integrated into (the same
+    #: object passed in, mutated in place by the integration's
+    #: conventions). None when build_world_ir is False or no world was
+    #: supplied.
+    world_ir: Optional[object] = None
 
     def to_dict(self) -> dict:
         return {
@@ -60,7 +70,17 @@ class DetailPipelineReport:
             "rois": [r.to_dict() for r in self.rois],
             "outcomes": [o.to_dict() for o in self.outcomes],
             "summary": dict(self.summary),
+            "integration": (
+                self.integration.to_dict()
+                if self.integration is not None
+                else None
+            ),
         }
+
+    @property
+    def refusal_count(self) -> int:
+        """ROIs refused as recorded facts (zero when integration is off)."""
+        return self.integration.refusal_count if self.integration is not None else 0
 
 
 def _default_lookup(
@@ -77,8 +97,18 @@ def run_detail_pipeline(
     point_lookup: Optional[Callable[[str], Optional[Tuple[float, float, float]]]] = None,
     voxel_size: float = 1.0,
     up: Tuple[float, float, float] = (0.0, 0.0, 1.0),
+    build_world_ir: bool = False,
+    world=None,
 ) -> DetailPipelineReport:
-    """Execute the detail chain over one reconstruction result."""
+    """Execute the detail chain over one reconstruction result.
+
+    With `build_world_ir=True`, refined outcomes are integrated into
+    `world` (a WorldIR instance; a fresh one is created when omitted)
+    using the repo's provenance conventions -- refused ROIs record a
+    fact, never geometry. The integration report rides on the
+    returned pipeline report; entity/geometry counts are appended to
+    the summary.
+    """
     quality = assess_evidence_quality(result, cameras)
 
     # Detail discovery needs the reconstruction's points; the assessor
@@ -97,11 +127,30 @@ def run_detail_pipeline(
         "n_rois": len(rois),
         "n_refined": sum(1 for r in rois if r.status == "refined"),
         "n_refused": sum(1 for r in rois if r.status == "refused"),
+        "n_entities": 0,
     }
+
+    integration = None
+    world_ir = None
+    if build_world_ir:
+        world_ir = world if world is not None else _new_world_ir()
+        integration = integrate_detail_outcomes(rois, outcomes, world_ir)
+        summary["n_entities"] = len(integration.entity_ids)
+        summary["n_geometries"] = len(integration.geometry_ids)
+        summary["n_refusals"] = integration.refusal_count
+
     return DetailPipelineReport(
         quality=quality,
         candidates=candidates,
         rois=rois,
         outcomes=outcomes,
         summary=summary,
+        integration=integration,
+        world_ir=world_ir,
     )
+
+
+def _new_world_ir():
+    from world_ir import WorldIR
+
+    return WorldIR()

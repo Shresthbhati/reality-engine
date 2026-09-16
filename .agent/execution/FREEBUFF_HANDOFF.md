@@ -6,7 +6,39 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
-## UPDATE 2026-09-16c — P7-02 temporal tracking (newest)
+## UPDATE 2026-09-16d — P7-04 universal evidence-quality assessment (newest)
+
+Directive: universal perception + maximum-fidelity reconstruction —
+the engine must work on ANY scene (objects/vehicles/machines/forts/
+streets), not be defined by Victoria Memorial. Foundation increment
+landed, TDD red-first: `perception/quality/assessment.py` (18 tests
+in `tests/test_evidence_quality.py`, full suite 1826 passed /
+1 skipped / 0 failed):
+
+- `assess_evidence_quality(ReconstructionResult, cameras) ->
+  EvidenceQualityReport`: measured per-point GSD (euclidean
+  camera-to-surface distance x 1000 / max(fx,fy), median across
+  observations), observation by projection inside image bounds (NOT
+  trusting `source_evidence_ids`; overclaims counted + reported),
+  documented detail-tier thresholds, per-point view counts,
+  unprojectable points reported not dropped.
+- `recommend_capture(report)`: measured-fact-derived capture
+  recommendations (close-range / overlapping views / coverage gaps)
+  — the closed loop for the Capture app.
+- Honesty: no observations -> GSD None + "unsupported"; nonempty
+  points + no cameras refuses (ValueError) rather than guessing
+  intrinsics. Domain-agnostic by construction.
+- Ledger P7-04 added (PARTIAL: remaining section-11 inputs — view
+  angle, focus/blur, texture richness, depth confidence, occlusion
+  beyond projection bounds — no detail-budget/adaptive-compute
+  consumer yet, thresholds untuned); CAPABILITIES.yaml gained
+  `evidence_quality_assessment`.
+- Next universal-perception increments on the spine: the section-11
+  detail-budget consumer (adaptive compute), generic repeated-
+  pattern / thin-structure / small-object perception (directive
+  sections 19–23), and the ROI system (section 9).
+
+## UPDATE 2026-09-16c — P7-02 temporal tracking
 
 - `perception/tracking/temporal.py`: 3D observation-level identity
   across time (TrackRecords with measured path/duration/implied speed;

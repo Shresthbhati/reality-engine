@@ -7,6 +7,30 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-16 (7) -- P6-01: real dense-MVS capture integration (next TASKS.yaml item)
+
+Next non-blocked queue item executed (P6-01's PENDING verification:
+parse-to-fusion integration on a real dense run). The REAL GPU COLMAP
+output exists locally (datasets/room_capture_mvs/dense/fused.ply,
+294,345 points, gitignored). TDD:
+
+- 4 integration tests (tests/test_dense_real_capture_integration.py):
+  real bytes -> parse_fused_ply -> ingest_fused_ply ->
+  PointCloudData + content-addressed artifact -> canonical
+  Geometry(POINTCLOUD) with dense_mvs_fused provenance; module
+  auto-skips naming the exact missing-dataset path when the artifact
+  is absent (real-data-gated, never simulated).
+- REAL DATA CAUGHT A REAL BUG: COLMAP writes CRLF PLY headers; the
+  parser partitioned on 'end_header\n' only and rejected every real
+  fused.ply while passing all synthetic fixtures. Fixed in
+  _parse_header; CRLF regression test added at unit level
+  (TestCrlfHeaders) so the fix does not depend on the gitignored
+  dataset. Dense suite 15/15 green.
+- Ledger: P6-01 verification PENDING -> DONE with evidence; status
+  stays PARTIAL (cross-source fusion consumption = P6-02's subject;
+  metric-scale anchoring of the run remains).
+
+
 ## 2026-09-16 (6) -- P7-05 detail budget (adaptive-compute consumer)
 
 Continuing the universal-perception spine (directive sections 10-11):

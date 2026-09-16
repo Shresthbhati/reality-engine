@@ -6,7 +6,21 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
-## UPDATE 2026-09-16f — P7-05 detail budget consumer (newest)
+## UPDATE 2026-09-16g — P6-01 real dense-capture integration (newest)
+
+- Next TASKS.yaml item executed: P6-01's PENDING verification closed —
+  the REAL GPU COLMAP fused.ply (294,345 points, gitignored local
+  artifact) now drives the canonical chain in
+  tests/test_dense_real_capture_integration.py (4 tests; auto-skip
+  names the missing-dataset path when absent).
+- Real data caught a real bug: COLMAP's CRLF PLY headers were
+  rejected by the LF-only header partition (all synthetic fixtures
+  hid it). Fixed in `reconstruction/backend/dense_output.py
+  _parse_header`; CRLF regression test added at unit level.
+- P6-01 stays PARTIAL (cross-source fusion consumption is P6-02;
+  metric-scale anchoring of the run remains).
+
+## UPDATE 2026-09-16f — P7-05 detail budget consumer
 
 - `perception/quality/detail_budget.py`: first consumer of the P7-04
   measured evidence-quality report — documented GSD→level mapping

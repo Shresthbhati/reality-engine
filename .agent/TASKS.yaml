@@ -504,11 +504,13 @@ tasks:
       earlier (see basis above).
     verification:
       - "DONE: backend-slot contract tests (honest unavailability)"
-      - "PENDING: parse-to-fusion integration on a real dense run (gated on a GPU MVS capture; the parser is unit-verified on synthetic fused.ply bytes)"
+      - "DONE 2026-09-16: parse-to-canonical integration on the REAL dense run (datasets/room_capture_mvs/dense/fused.ply, 294,345 points): parse_fused_ply -> ingest_fused_ply -> PointCloudData + content-addressed artifact -> canonical Geometry(POINTCLOUD) with dense_mvs_fused provenance (tests/test_dense_real_capture_integration.py, 4 tests; auto-skip names the missing-dataset path when the gitignored artifact is absent). REAL DATA CAUGHT A REAL BUG: COLMAP's CRLF PLY headers were rejected by the LF-only 'end_header\n' partition -- every synthetic fixture had hidden it; fixed in _parse_header with a CRLF regression test at unit level (tests/test_dense_output.py::TestCrlfHeaders)."
     note: >-
       Dense ingest landed 2026-09-15: fused.ply -> canonical PointCloudData ->
       WorldIR Geometry(POINTCLOUD) with provenance (reconstruction/dense_ingest.py).
-      Real dense-run GPU capture integration remains open (hardware capture, not software).
+      Python-level integration on the real GPU dense run closed 2026-09-16.
+      Remaining for full DONE: cross-source fusion with this cloud consumed
+      downstream (P6-02's subject) and metric-scale anchoring of the run.
   - id: P6-02
     name: evidence fusion (plural dense sources)
     status: DONE

@@ -24,6 +24,29 @@ from reconstruction.backend.dense_output import (
 from reconstruction.backend.interface import ReconstructedPoint
 
 
+class TestCrlfHeaders:
+    def test_crlf_header_parses(self):
+        # COLMAP (Windows) writes CRLF line endings; the original
+        # parser partitioned on 'end_header\n' only and rejected every
+        # real fused.ply (caught by the real-capture integration test
+        # 2026-09-16; synthetic LF fixtures had hidden it).
+        n = 3
+        header = (
+            "ply\r\n"
+            "format binary_little_endian 1.0\r\n"
+            f"element vertex {n}\r\n"
+            "property float x\r\n"
+            "property float y\r\n"
+            "property float z\r\n"
+            "end_header\r\n"
+        ).encode("ascii")
+        body = b"".join(
+            struct.pack("<3f", float(i), 0.0, 0.0) for i in range(n)
+        )
+        pts = parse_fused_ply(header + body)
+        assert len(pts) == n
+
+
 def _binary_point_ply(points, *, with_colors=False, fmt="binary_little_endian"):
     """Build a minimal fused.ply-style binary PLY (vertex-only --
     COLMAP's fused output is a vertex cloud, no faces)."""

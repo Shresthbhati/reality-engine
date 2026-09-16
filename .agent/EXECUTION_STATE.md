@@ -7,6 +7,61 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-16 (6) -- P7-05 detail budget (adaptive-compute consumer)
+
+Continuing the universal-perception spine (directive sections 10-11):
+`perception/quality/detail_budget.py` -- the first consumer of the
+P7-04 evidence-quality report, TDD red-first (10 tests in
+tests/test_detail_budget.py):
+
+- Documented GSD-to-level mapping on the multi-scale scale (L4 <= 5
+  mm/px, L2 <= 25, L1 <= 100, else L0); multi-view coverage cap (min
+  2 views to hold the level, else capped at L2); compute tiers
+  none/survey/light/standard/high/full for ROI/adaptive allocation.
+- Honesty: observed-points-without-GSD reports REFUSE (assessor-
+  bypass detection); empty and coverage-failed scenes -> honest
+  zero-allocation unsupported budgets, never invented numbers.
+- WIRED (connective-tissue rule): recommend_capture now returns a
+  dict with the machine-readable scene_budget (DetailBudget) plus
+  prose recommendation keys -- one artifact for the Capture app
+  (tests/test_capture_feedback_wiring.py, 3 tests).
+- Ledger: P7-04/P7-05 updated (P7-05 PARTIAL: scene-level only,
+  per-region spatial budgets + ROI consumption of compute_tier open);
+  CAPABILITIES.yaml gained detail_budget (30 entries).
+
+
+## 2026-09-16 (5) -- suite-stall fix: parametric fitting performance + SAM gate verified
+
+Directive (current-state recovery): the full suite "does not complete
+within a reasonable window"; bottleneck around
+`tests/test_arch_benchmark.py::test_deterministic_report` (19.2s),
+whole file 36.8s. PROFILED (cProfile), root-caused, fixed at the
+implementation level -- no timeout increase, no test weakened:
+
+- Root cause: `fit_cylinder`'s axis optimization re-ran PURE-PYTHON
+  per-point circle math inside ~8k golden-section evaluations per
+  segment (33k `_projected_circle_rms` calls x N interpreted point
+  ops x 3 test runs; 36M+ generator steps for ~500 points).
+- Fix 1 -- vectorize the Kasa circle fit in float64 numpy
+  (`_projected_circle_rms`); factors-of-2 bug in my first normal-
+  equations draft was CAUGHT by the known-answer tests and fixed
+  (center doubled); 9.6s -> 2.4s per run.
+- Fix 2 -- hoist axis-INVARIANT work out of the search: `_circle_eval`
+  takes precomputed (rel, centroid); frame built with manual 3-vector
+  cross products (np.cross is ~40us on 3-vectors and dominated the
+  loop); 2.4s -> 0.90s per run. Same semantics, byte-identical
+  deterministic report (asserted), all 53 parametric/arch tests green.
+- Guard: `test_report_runtime_is_bounded` (5s budget = ~5x headroom;
+  a regression to per-point math fails loudly with a pointer).
+- SAM real-model integration test (previously deselected as
+  environment-gated): now RUNS and PASSES in 95.6s (95.59s measured
+  in --durations). Full suite UNBOUNDED: 1828 passed / 1 skipped /
+  0 failed in 177s (2:57). No deselection needed anymore.
+- Docs: PENDING_IMPLEMENTATION.md P2.15 (tracking/temporal identity)
+  reconciled MISSING -> PARTIAL with implementation evidence (it
+  still described temporal tracking as MISSING after P7-02 landed).
+
+
 ## 2026-09-16 (4) -- P7-04 universal evidence-quality assessment
 
 Directive: universal perception + maximum-fidelity reconstruction

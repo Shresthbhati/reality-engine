@@ -617,11 +617,28 @@ tasks:
 
   - id: P7-02
     name: temporal tracking
-    status: MISSING
+    status: PARTIAL
+    basis: >
+      perception/tracking/temporal.py: 3D observation-level identity
+      across time -- TimedObservation chains per label into TrackRecords
+      (track_id/label/observation history/path_length_m/duration_s/
+      implied_speed_m_s/confidence) with speed+gap gated continuation,
+      no forced associations, untimed observations returned separately,
+      confidence = min of measured member confidences (None stays None;
+      the InstanceTrack adapter refuses to fabricate one). 14 tests,
+      tests/test_temporal_tracking.py.
     scope: object/camera/scene tracks with track_id/state/velocity/
       history/confidence/uncertainty.
     dependencies: [P7-01]
     spec: docs/future/perception/TRACKING.md
+    verification:
+      - "deterministic synthetic fixtures: linear motion -> one track; implausible jump or long gap -> two tracks; known speed recovered; input-order independence; adapter requires REAL regions and measured confidence"
+    open: >
+      PARTIAL, not DONE: 2D detection-box association
+      (ByteTrack/OC-SORT style, spec's foundation approach),
+      motion-compensated association for moving cameras, ID-switch
+      diagnostics, provenance-persisted tracks not implemented;
+      thresholds untuned against real data.
 
   - id: P7-03
     name: architectural perception

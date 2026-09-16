@@ -39,9 +39,21 @@ _PLY_SIZES = {"float": 4, "double": 8, "uchar": 1, "char": 1,
 
 
 def _parse_header(data: bytes) -> Tuple[List[str], int, bytes]:
-    text, sep, body = data.partition(b"end_header\n")
-    if not sep:
+    # COLMAP (Windows) writes CRLF line endings: partition on
+    # 'end_header' alone and strip the following \r\n or \n manually.
+    # The LF-only partition silently broke on real fused.ply output --
+    # caught by the real-capture integration test, not by the
+    # synthetic fixtures (real bug, fixed 2026-09-16).
+    marker = b"end_header"
+    idx = data.find(marker)
+    if idx < 0:
         raise DenseOutputError("PLY header has no 'end_header' terminator")
+    after = idx + len(marker)
+    if data[after:after + 2] == b"\r\n":
+        after += 2
+    elif data[after:after + 1] == b"\n":
+        after += 1
+    text, body = data[:idx], data[after:]
     header = text.decode("ascii", errors="replace").splitlines()
     fmt = next((line for line in header if line.startswith("format")), "")
     if "binary_little_endian" not in fmt:

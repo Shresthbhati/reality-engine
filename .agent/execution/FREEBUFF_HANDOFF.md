@@ -6,7 +6,52 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
-## UPDATE 2026-09-16d — P7-04 universal evidence-quality assessment (newest)
+## UPDATE 2026-09-16g — P6-01 real dense-capture integration (newest)
+
+- Next TASKS.yaml item executed: P6-01's PENDING verification closed —
+  the REAL GPU COLMAP fused.ply (294,345 points, gitignored local
+  artifact) now drives the canonical chain in
+  tests/test_dense_real_capture_integration.py (4 tests; auto-skip
+  names the missing-dataset path when absent).
+- Real data caught a real bug: COLMAP's CRLF PLY headers were
+  rejected by the LF-only header partition (all synthetic fixtures
+  hid it). Fixed in `reconstruction/backend/dense_output.py
+  _parse_header`; CRLF regression test added at unit level.
+- P6-01 stays PARTIAL (cross-source fusion consumption is P6-02;
+  metric-scale anchoring of the run remains).
+
+## UPDATE 2026-09-16f — P7-05 detail budget consumer
+
+- `perception/quality/detail_budget.py`: first consumer of the P7-04
+  measured evidence-quality report — documented GSD→level mapping
+  (L0–L4 multi-scale), multi-view coverage cap, compute tiers
+  none→full for adaptive allocation. Refuses assessor-bypass reports;
+  empty/coverage-failed scenes → honest zero-allocation unsupported
+  budget. 10 tests red-first (tests/test_detail_budget.py).
+- WIRED: `recommend_capture` returns a dict with machine-readable
+  `scene_budget` (DetailBudget) + prose keys (wiring tests in
+  tests/test_capture_feedback_wiring.py).
+- Ledger P7-05 added (PARTIAL: scene-level only; per-region spatial
+  budgets + ROI consumption of compute_tier open).
+
+## UPDATE 2026-09-16e — suite-stall fixed + SAM gate verified
+
+- The full suite now COMPLETES unbounded: **1828 passed / 1 skipped /
+  0 failed in ~177s** — including the SAM real-model integration test
+  (95.6s), which previous passes deselected as environment-gated; it
+  now runs and passes. No test was weakened or removed.
+- Root cause of the old stall (profiled): `fit_cylinder` re-ran
+  pure-Python per-point circle math inside ~8k golden-section
+  evaluations per segment. Fixed in `perception/architecture/
+  parametric.py` (float64-numpy Kasa fit + hoisted axis-invariant
+  work + manual cross products): 9.6s → 0.90s per benchmark run,
+  byte-identical deterministic report. Regression guard:
+  `test_report_runtime_is_bounded` (5s budget).
+- PENDING_IMPLEMENTATION.md P2.15 reconciled (temporal tracking was
+  still "MISSING" there after P7-02 landed) → PARTIAL with evidence.
+- Deselection convention is now obsolete: run the plain suite.
+
+## UPDATE 2026-09-16d — P7-04 universal evidence-quality assessment
 
 Directive: universal perception + maximum-fidelity reconstruction —
 the engine must work on ANY scene (objects/vehicles/machines/forts/

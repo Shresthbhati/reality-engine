@@ -207,14 +207,17 @@ class TestCaptureRecommendations:
                for i in range(10)]
         report = assess_evidence_quality(_result(pts, cams), cams)
         recs = recommend_capture(report)
-        assert recs == []
+        # Prose view only; the machine-readable scene_budget is always
+        # present but is not a prose recommendation.
+        assert [v for k, v in recs.items() if k != "scene_budget"] == []
 
     def test_coarse_gsd_recommends_close_range(self):
         cams = [_camera("c0", (0.0, 0.0, 0.0))]
         pts = [_point("p0", (0.0, 0.0, 20.0), ["c0"])]
         report = assess_evidence_quality(_result(pts, cams), cams)
         recs = recommend_capture(report)
-        assert any("close-range" in r for r in recs)
+        prose = [v for k, v in recs.items() if k != "scene_budget"]
+        assert any("close-range" in r for r in prose)
 
     def test_unprojectable_points_recommends_coverage(self):
         cams = [_camera("c0", (0.0, 0.0, 0.0))]
@@ -222,7 +225,8 @@ class TestCaptureRecommendations:
                _point("p1", (0.0, 0.0, -2.5), ["c0"])]
         report = assess_evidence_quality(_result(pts, cams), cams)
         recs = recommend_capture(report)
-        assert any("coverage" in r.lower() for r in recs)
+        prose = [v for k, v in recs.items() if k != "scene_budget"]
+        assert any("coverage" in r.lower() for r in prose)
 
     def test_low_view_counts_recommends_more_views(self):
         # Frustum fact: |x| <= z/2 (see _intrinsics). At z=2, c0 (x=0)
@@ -234,7 +238,8 @@ class TestCaptureRecommendations:
                for i in range(10)]
         report = assess_evidence_quality(_result(pts, cams), cams)
         recs = recommend_capture(report)
-        assert any("view" in r.lower() for r in recs)
+        prose = [v for k, v in recs.items() if k != "scene_budget"]
+        assert any("view" in r.lower() for r in prose)
 
 
 class TestDomainAgnosticismAndDeterminism:

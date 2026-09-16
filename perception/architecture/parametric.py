@@ -34,6 +34,8 @@ import math
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
+import numpy as np
+
 Point3 = Tuple[float, float, float]
 Vec3 = Tuple[float, float, float]
 
@@ -350,19 +352,55 @@ def _projected_circle_rms(
     through the centroid, fit a circle there (closed form), and return
     (rms of in-plane radial residuals, circle center in 3D, radius).
     The projected circle IS the optimal fixed-axis cylinder (its
-    radius/center minimize exactly the radial residuals)."""
-    helper = (1.0, 0.0, 0.0) if abs(axis[0]) < 0.9 else (0.0, 1.0, 0.0)
-    u1 = _norm(_cross(axis, helper))
-    u2 = _cross(axis, u1)
-    centroid = _centroid(pts)
-    rel = [(p[0] - centroid[0], p[1] - centroid[1], p[2] - centroid[2]) for p in pts]
-    flat = [(_dot(d, u1), _dot(d, u2)) for d in rel]
+    radius/center minimize exactly the radial residuals).
 
-    # Kasa 2D circle fit.
-    rows = [[2.0 * a, 2.0 * b, 1.0] for a, b in flat]
-    rhs = [a * a + b * b for a, b in flat]
-    A = [[sum(r[i] * r[j] for r in rows) for j in range(3)] for i in range(3)]
-    bv = [sum(r[i] * v for r, v in zip(rows, rhs)) for i in range(3)]
+    Vectorized numpy (float64): the golden-section axis search
+    evaluates this thousands of times per segment; a pure-Python
+    per-point loop made fit_cylinder O(minutes) on ~100-point
+    segments (measured: 33k evaluations x N interpreted point ops per
+    segment, 25s for a 4-column benchmark). Identical float64 math,
+    identical determinism. Hot-path callers use _circle_eval with a
+    precomputed rel so axis-invariant work is not repeated."""
+    P = np.asarray(pts, dtype=np.float64)
+    centroid = tuple(P.mean(axis=0))
+    rel = P - np.asarray(centroid)
+    return _circle_eval(rel, axis, centroid)
+
+
+def _circle_eval(
+    rel: "np.ndarray", axis: Vec3, centroid: Point3
+) -> Tuple[float, Point3, float]:
+    """Per-axis part of _projected_circle_rms over pre-centered points.
+
+    `rel` is the (N, 3) float64 array of points minus `centroid`
+    (axis-INVARIANT, so callers hoist both out of optimization loops;
+    the centroid is the absolute mean of the ORIGINAL points, needed
+    so the returned 3D circle center is in world coordinates).
+    Returns (rms, center3, radius) exactly as _projected_circle_rms.
+    The orthonormal frame is built with manual 3-vector cross products:
+    np.cross costs ~40us on 3-vectors, which dominated 33k-call loops."""
+    ax, ay, az = axis
+    hx, hy, hz = (1.0, 0.0, 0.0) if abs(ax) < 0.9 else (0.0, 1.0, 0.0)
+    cx, cy, cz = ay * hz - az * hy, az * hx - ax * hz, ax * hy - ay * hx
+    inv = 1.0 / math.sqrt(cx * cx + cy * cy + cz * cz)
+    u1 = (cx * inv, cy * inv, cz * inv)
+    u2 = _cross(axis, u1)
+    u1v, u2v = np.asarray(u1), np.asarray(u2)
+    flat = np.column_stack((rel @ u1v, rel @ u2v))
+    xy = flat[:, 0]
+    yy = flat[:, 1]
+    r2sum = (flat ** 2).sum(axis=1)
+
+    # Kasa 2D circle fit (normal equations, closed form). Rows of the
+    # design matrix are [2a, 2b, 1] with rhs a^2+b^2, so A accumulates
+    # Σ(2a)(2a)=4Σa² etc. -- the factors of 2 matter; getting them
+    # wrong halves A and doubles the solved center (test-caught).
+    A = [
+        [4.0 * float(xy @ xy), 4.0 * float(xy @ yy), 2.0 * float(xy.sum())],
+        [4.0 * float(xy @ yy), 4.0 * float(yy @ yy), 2.0 * float(yy.sum())],
+        [2.0 * float(xy.sum()), 2.0 * float(yy.sum()), float(len(flat))],
+    ]
+    bv = [2.0 * float(xy @ r2sum), 2.0 * float(yy @ r2sum), float(r2sum.sum())]
     D, E, F = _solve_linear(A, bv)
     r2 = F + D * D + E * E
     if r2 <= 0:
@@ -374,8 +412,8 @@ def _projected_circle_rms(
         centroid[1] + c2d[0] * u1[1] + c2d[1] * u2[1],
         centroid[2] + c2d[0] * u1[2] + c2d[1] * u2[2],
     )
-    rad = [math.sqrt((a - c2d[0]) ** 2 + (b - c2d[1]) ** 2) - radius for a, b in flat]
-    rms = math.sqrt(sum(r * r for r in rad) / len(rad))
+    rad = np.sqrt(((flat - np.asarray(c2d)) ** 2).sum(axis=1)) - radius
+    rms = math.sqrt(float(rad @ rad) / len(rad))
     return rms, center3, radius
 
 
@@ -418,7 +456,16 @@ def _optimize_axis(
                 fd = f(d)
         return (a + b) / 2.0
 
-    cur_rms, cur_center, cur_radius = _projected_circle_rms(pts, axis)
+    # Axis-invariant work happens ONCE: the golden-section search only
+    # changes the axis, so rel (points minus centroid) is precomputed
+    # here and every evaluation goes through the per-axis _circle_eval
+    # (measured: the per-call P/mean/asarray/cross overhead dominated
+    # the vectorized version; hoisting cut the benchmark run ~6x). The
+    # first evaluation of each seed equals _projected_circle_rms exactly.
+    P = np.asarray(pts, dtype=np.float64)
+    centroid = tuple(P.mean(axis=0))
+    rel = P - np.asarray(centroid)
+    cur_rms, cur_center, cur_radius = _circle_eval(rel, axis, centroid)
 
     # Escalating search spans: pi/8, pi/32, pi/128 radians.
     for span in (math.pi / 8, math.pi / 32, math.pi / 128):
@@ -428,7 +475,7 @@ def _optimize_axis(
                 def f(t, d=direction):
                     tilted = _tilt(axis, d, u2 if d is u1 else u1, t, 0.0)
                     try:
-                        r, _, _ = _projected_circle_rms(pts, tilted)
+                        r, _, _ = _circle_eval(rel, tilted, centroid)
                     except FitRefused:
                         return float("inf")
                     return r
@@ -437,7 +484,7 @@ def _optimize_axis(
                 # (kept simple: evaluate candidate directly)
                 cand = _tilt(axis, direction, u2 if direction is u1 else u1, t_opt, 0.0)
                 try:
-                    r, c3, rad = _projected_circle_rms(pts, cand)
+                    r, c3, rad = _circle_eval(rel, cand, centroid)
                 except FitRefused:
                     continue
                 if r < cur_rms - 1e-15:

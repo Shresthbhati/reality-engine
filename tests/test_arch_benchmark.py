@@ -181,3 +181,27 @@ class TestBenchmarkRun:
         r1 = run_architectural_benchmark(b, reconstruction=_make_reconstruction(), seed=7)
         r2 = run_architectural_benchmark(b, reconstruction=_make_reconstruction(), seed=7)
         assert r1.to_dict() == r2.to_dict()
+
+    def test_report_runtime_is_bounded(self):
+        # Performance-regression guard (cProfile-guided fix, 2026-09-16):
+        # fit_cylinder's axis search used to re-run pure-Python per-point
+        # circle math inside ~8k golden-section evaluations per segment
+        # (9.6s per ~500-point benchmark run; the full suite stalled on
+        # this). Vectorized float64 numpy + hoisted axis-invariant work
+        # now: ~0.9s for the same runs, byte-identical reports.
+        # 5s is ~5x headroom over the observed runtime on the dev
+        # machine -- a re-gressor that reintroduces the per-point loop
+        # (order-of-magnitude slower) fails loudly.
+        import time
+        b = StructureBenchmark(
+            structure_name="Synthetic fixture", location="test",
+            capture_status=CaptureStatus.CAPTURED,
+        )
+        t0 = time.perf_counter()
+        report = run_architectural_benchmark(b, reconstruction=_make_reconstruction(), seed=7)
+        elapsed = time.perf_counter() - t0
+        assert report.components_by_class.get("column", 0) == 4
+        assert elapsed < 5.0, (
+            f"benchmark run took {elapsed:.2f}s (budget 5.0s) -- "
+            "the fitting path likely regressed to per-point Python math"
+        )

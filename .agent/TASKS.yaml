@@ -504,11 +504,13 @@ tasks:
       earlier (see basis above).
     verification:
       - "DONE: backend-slot contract tests (honest unavailability)"
-      - "PENDING: parse-to-fusion integration on a real dense run (gated on a GPU MVS capture; the parser is unit-verified on synthetic fused.ply bytes)"
+      - "DONE 2026-09-16: parse-to-canonical integration on the REAL dense run (datasets/room_capture_mvs/dense/fused.ply, 294,345 points): parse_fused_ply -> ingest_fused_ply -> PointCloudData + content-addressed artifact -> canonical Geometry(POINTCLOUD) with dense_mvs_fused provenance (tests/test_dense_real_capture_integration.py, 4 tests; auto-skip names the missing-dataset path when the gitignored artifact is absent). REAL DATA CAUGHT A REAL BUG: COLMAP's CRLF PLY headers were rejected by the LF-only 'end_header\n' partition -- every synthetic fixture had hidden it; fixed in _parse_header with a CRLF regression test at unit level (tests/test_dense_output.py::TestCrlfHeaders)."
     note: >-
       Dense ingest landed 2026-09-15: fused.ply -> canonical PointCloudData ->
       WorldIR Geometry(POINTCLOUD) with provenance (reconstruction/dense_ingest.py).
-      Real dense-run GPU capture integration remains open (hardware capture, not software).
+      Python-level integration on the real GPU dense run closed 2026-09-16.
+      Remaining for full DONE: cross-source fusion with this cloud consumed
+      downstream (P6-02's subject) and metric-scale anchoring of the run.
   - id: P6-02
     name: evidence fusion (plural dense sources)
     status: DONE
@@ -725,9 +727,38 @@ tasks:
       PARTIAL, not DONE: remaining directive-section-11 inputs not
       yet measured (view angle, focus/motion blur, texture
       richness, depth confidence, occlusion reasoning beyond
-      projection bounds); not yet consumed by detail budgeting /
-      adaptive compute (no such consumer exists yet); thresholds
+      projection bounds); scene_budget consumer landed (P7-05)
+      but per-region spatial budgets still open; thresholds
       untuned against real datasets.
+
+  - id: P7-05
+    name: detail budget (adaptive-compute consumer)
+    status: PARTIAL
+    basis: >-
+      perception/quality/detail_budget.py — the first consumer of the
+      measured evidence-quality report (universal-perception directive
+      sections 10-11): documented GSD-to-level mapping on the
+      multi-scale scale (L4 <= 5 mm/px, L2 <= 25, L1 <= 100, else L0),
+      multi-view coverage cap (min 2 views to hold the level, else
+      capped at L2), compute tiers none/survey/light/standard/high/full
+      for ROI/adaptive-compute allocation. Observed-points-without-GSD
+      reports refuse (assessor-bypass detection); empty and
+      coverage-failed scenes map to honest zero-allocation unsupported
+      budgets, never errors or invented numbers. Wired into
+      recommend_capture as the machine-readable scene_budget key
+      alongside the prose recommendations (one artifact for the
+      Capture app).
+    scope: >-
+      Justified detail level + compute tier from measured evidence;
+      input to ROI generation and adaptive local reconstruction.
+    verification:
+      - tests/test_detail_budget.py: 10 tests (level bands, coverage cap, refusals, unsupported mapping, determinism, serialization)
+      - tests/test_capture_feedback_wiring.py: 3 wiring tests
+    open: >-
+      PARTIAL, not DONE: scene-level derivation only -- per-region
+      budgets need spatial partitioning (tiling/segmentation) of the
+      scene; ROI generation does not yet consume compute_tier;
+      thresholds untuned against real datasets.
 
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 

@@ -63,6 +63,12 @@ class RegionOfInterest:
     max_curvature: float
     status: str = PROCESSING_PENDING
     provenance: Dict[str, object] = field(default_factory=dict)
+    #: Set by the refinement lifecycle (apply_outcomes): the evidence
+    #: for a "refined" status. None until refinement ran.
+    refinement_outcome: Optional[object] = None
+    #: Set by the refinement lifecycle: the diagnostic reason for a
+    #: refusal (or None while pending/refined).
+    status_reason: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -77,6 +83,13 @@ class RegionOfInterest:
             "max_curvature": self.max_curvature,
             "status": self.status,
             "provenance": dict(self.provenance),
+            "refinement_outcome": (
+                self.refinement_outcome.to_dict()
+                if self.refinement_outcome is not None
+                and hasattr(self.refinement_outcome, "to_dict")
+                else None
+            ),
+            "status_reason": self.status_reason,
         }
 
 

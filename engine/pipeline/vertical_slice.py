@@ -109,6 +109,13 @@ class VerticalSliceOptions:
     mesh_enabled: bool = True
     mesh_voxel_size_m: float = 0.02
     mesh_poisson_depth: int = 10
+    #: Detail stage (P7-06): measured quality -> detail discovery ->
+    #: ROI work orders -> local refinement, recorded in world metadata
+    #: under "detail". Disabled with False; skipped honestly when its
+    #: inputs cannot be measured (no cameras) or dependencies are
+    #: unavailable.
+    detail_enabled: bool = True
+    detail_voxel_size_m: float = 1.0
     #: Reconstruction backend override (tests inject a deterministic
     #: backend; production leaves None for the real COLMAP backend).
     reconstruction_backend: Optional[object] = None
@@ -271,6 +278,9 @@ def vertical_slice(
     # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
+    # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
+    detail_facts = _detail_stage(result, world, options)
+
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,
@@ -323,8 +333,93 @@ def vertical_slice(
             "depth": depth_facts,
             "perception": perception_facts,
             "mesh": mesh_facts,
+            "detail": detail_facts,
         },
     )
+
+
+def _detail_stage(result, world, options):
+    """Optional P7-06 detail chain: measured evidence quality -> detail
+    discovery -> ROI work orders -> local refinement (tier-driven,
+    honest refusals). Records its facts in world metadata under
+    "detail" and returns the facts dict (None = fully skipped).
+
+    Follows the slice's stage pattern: a skip is visible (status
+    "skipped" + reason), never silent; the stage never raises -- the
+    detail layer is an enhancement and must not lose the sparse world.
+    The canonical PinholeCameras built for scale/perception stages are
+    reused for the quality measurement (GSD needs real focal lengths;
+    the assessor refuses to guess intrinsics). Success records the
+    facts into world.metadata["detail"] here (the stage owns its
+    metadata key, like the perception stage owns its entities).
+    """
+    if not options.detail_enabled:
+        return {
+            "status": "skipped",
+            "note": "disabled (detail_enabled=False)",
+        }
+    if options.intrinsics is None or not result.camera_poses:
+        # GSD is unmeasurable without calibrated cameras; the assessor
+        # refuses to guess intrinsics (the same gate the sidecar depth
+        # stage applies). Visible skip, never fabricated budgets.
+        return {
+            "status": "skipped",
+            "note": "no trusted intrinsics (options.intrinsics) -- evidence "
+                    "quality (GSD) is unmeasurable; detail chain skipped",
+        }
+
+    from reconstruction.calibration.camera import (
+        CameraIntrinsics,
+        camera_from_pose,
+    )
+
+    fx, fy, cx, cy = options.intrinsics
+    width, height = options.image_size
+    intrinsics = CameraIntrinsics(
+        fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height
+    )
+    cameras = [
+        camera_from_pose(intrinsics, pose)
+        for pose in result.camera_poses
+    ]
+
+    try:
+        from perception.detail.pipeline import run_detail_pipeline
+    except ImportError as exc:
+        return {
+            "status": "skipped",
+            "note": f"optional detail dependencies unavailable: {exc}",
+        }
+
+    try:
+        report = run_detail_pipeline(
+            result,
+            cameras,
+            voxel_size=options.detail_voxel_size_m,
+            up=options.up,
+        )
+    except ValueError as exc:
+        # Assessor/budget contract refusals are honest, visible skips.
+        return {
+            "status": "skipped",
+            "note": f"detail chain refused: {exc}",
+        }
+
+    facts = {
+        "status": "ran",
+        "quality": report.quality.to_dict(),
+        "summary": dict(report.summary),
+        "n_candidates": len(report.candidates),
+        "rois": [r.to_dict() for r in report.rois],
+        "outcomes": [o.to_dict() for o in report.outcomes],
+        "note": (
+            "discovery budgets derive from the measured evidence-quality "
+            "report; refinement consumes resolvable evidence only -- "
+            "refusals are recorded, never retried with invented geometry"
+        ),
+    }
+    world.metadata["detail"] = facts
+    return facts
 
 
 def _depth_stage(result, evidence_items, options, scale_state: str):

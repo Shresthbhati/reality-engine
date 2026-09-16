@@ -7,6 +7,35 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-16 -- sync consumers wired (E-B of the directive list)
+
+- **E-B DONE (P2-01 consumers)**: trajectories/backend/sync.py --
+  apply_clock_model maps backend output onto the global timeline
+  (ns rounding; originals preserved in TrajectoryFrame.
+  sensor_timestamp_ns; time-collapse raises instead of silently
+  merging samples; UNSYNCHRONIZED sentinel degrades honestly),
+  estimate_trajectory integrates it (clock_id/sync_state/sync_method
+  on the canonical Trajectory), Trajectory serializes the sync
+  metadata. **Real units bug the e2e test caught**: a ClockModel fit
+  from a seconds-denominated SensorStream carries b in SECONDS;
+  applying it to ns stamps corrupts time by 10^9. Fixed with an
+  explicit model_unit ("s" for stream-fitted models, "ns"
+  canonical) -- no implicit unit. 16 tests
+  (tests/test_sync_consumers.py), incl. the full chain
+  SensorStream -> synchronize_stream -> estimate_trajectory with
+  known answers.
+- **E-A verified**: depth end-to-end (sidecar -> DepthFrame ->
+  unprojection -> WorldIR) 53/53 green -- no new work needed.
+- **E-I verified**: provenance graph landed in PR #34 (merged).
+- Full-suite gate: 1,737 passed / 1 skipped / 0 failed
+  (1,717 base incl. 16 new + 20 SAM real-model run explicitly).
+- **E-C NOT DONE (environment, not code)**: real VIO backend run on
+  EuRoC MH_01 -- Docker Desktop daemon did not come up this session
+  (cold boot after restart); the OpenVINS/ORB-SLAM3 build path
+  (ROS1 container + run_subscribe_msckf) is the planned route when
+  the daemon is up. P3-02 ledger note records exactly this.
+
+
 ## 2026-09-15 -- five-execution spine batch (claude/spine-executions-5)
 
 - **E1 P4-01 DONE**: point-to-plane ICP (spec's named algorithm),

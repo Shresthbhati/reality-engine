@@ -103,13 +103,19 @@ class DriftEstimate:
 @dataclass(frozen=True)
 class TrajectoryFrame:
     """One pose sample: a global timestamp (nanoseconds, post
-    `ClockModel.apply`) and the rigid pose at that instant. Pose
-    covariance is optional -- absent means the backend did not report
-    one, never zero uncertainty."""
+    `ClockModel.apply` via trajectories/backend/sync.py) and the rigid
+    pose at that instant. Pose covariance is optional -- absent means
+    the backend did not report one, never zero uncertainty.
+
+    `sensor_timestamp_ns` is the ORIGINAL backend/clock stamp, present
+    iff the frame has been synchronized (originals are preserved
+    alongside, never overwritten -- spec rule). None here means "not
+    synchronized", not "zero"."""
 
     timestamp_ns: int
     pose: RigidTransform
     pose_covariance_6x6: Optional[Tuple[float, ...]] = None
+    sensor_timestamp_ns: Optional[int] = None
 
     def __post_init__(self) -> None:
         if self.pose_covariance_6x6 is not None and len(self.pose_covariance_6x6) != 36:
@@ -124,15 +130,18 @@ class TrajectoryFrame:
             "pose_covariance_6x6": (
                 list(self.pose_covariance_6x6) if self.pose_covariance_6x6 else None
             ),
+            "sensor_timestamp_ns": self.sensor_timestamp_ns,
         }
 
     @staticmethod
     def from_dict(data: dict) -> "TrajectoryFrame":
         cov = data.get("pose_covariance_6x6")
+        sensor_t = data.get("sensor_timestamp_ns")
         return TrajectoryFrame(
             timestamp_ns=int(data["timestamp_ns"]),
             pose=RigidTransform.from_dict(data["pose"]),
             pose_covariance_6x6=tuple(cov) if cov else None,
+            sensor_timestamp_ns=int(sensor_t) if sensor_t is not None else None,
         )
 
 
@@ -140,8 +149,18 @@ class TrajectoryFrame:
 class Trajectory:
     """A continuous, ordered pose sequence in one consistent frame pair.
 
-    Construction validates (spec acceptance criteria):
-      - strictly increasing timestamps
+    Synchronization metadata (set by trajectories/backend/sync.py):
+      - SYNCHRONIZED: every stamp is on the declared clock's global
+        timeline (t_global = a*t_sensor + b); originals ride along in
+        ``sensor_timestamp_ns``.
+      - UNSYNCHRONIZED: no backend could synchronize -- stamps are the
+        raw sensor stamps, unchanged; nothing is fabricated.
+      - "<undeclared>": no synchronization was attempted; stamps pass
+        through untouched.
+
+    Construction validates in every state (spec acceptance criteria):
+      - strictly increasing timestamps (a>0 clock models preserve
+        order; duplicates are caught here, not hidden)
       - frame identity: every frame's pose has the same `from_frame`
         (body) and `to_frame` (world) as the first frame
 
@@ -154,6 +173,15 @@ class Trajectory:
     frame_source: FrameSource = FrameSource.UNKNOWN
     provenance: str = ""
     drift_estimate: DriftEstimate = field(default_factory=DriftEstimate.unknown)
+    #: Clock the timestamps are declared to live on. "<undeclared>"
+    #: means no synchronization was performed/attempted.
+    clock_id: str = "<undeclared>"
+    #: "SYNCHRONIZED" | "UNSYNCHRONIZED" | "<undeclared>" -- mirrors
+    #: evidence.clocks.SyncState plus the undeclared marker.
+    sync_state: str = "<undeclared>"
+    #: Value of SyncMethod for the model that produced these stamps;
+    #: None unless sync_state == "SYNCHRONIZED".
+    sync_method: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.frames:
@@ -171,6 +199,14 @@ class Trajectory:
                     f"{frame.pose.from_frame!r}->{frame.pose.to_frame!r} "
                     f"at timestamp_ns={frame.timestamp_ns}"
                 )
+            # Strict monotonicity is an invariant of the canonical
+            # series in every sync state: backends construct their
+            # output under "<undeclared>" (raw data with duplicates is
+            # caught here, not hidden), a>0 in the clock model
+            # preserves order, and a synchronized trajectory with a
+            # non-increasing stamp is a real bug. Raw-sample duplicate
+            # visibility is SensorStream/clocks.py's job, not this
+            # representation's.
             if prev_ts is not None and frame.timestamp_ns <= prev_ts:
                 raise TrajectoryError(
                     f"timestamps must be strictly increasing: {frame.timestamp_ns} "
@@ -219,6 +255,9 @@ class Trajectory:
             "frame_source": self.frame_source.value,
             "provenance": self.provenance,
             "drift_estimate": self.drift_estimate.to_dict(),
+            "clock_id": self.clock_id,
+            "sync_state": self.sync_state,
+            "sync_method": self.sync_method,
         }
 
     @staticmethod
@@ -228,4 +267,7 @@ class Trajectory:
             frame_source=FrameSource(data.get("frame_source", "unknown")),
             provenance=data.get("provenance", ""),
             drift_estimate=DriftEstimate.from_dict(data.get("drift_estimate", {"known": False})),
+            clock_id=data.get("clock_id", "<undeclared>"),
+            sync_state=data.get("sync_state", "<undeclared>"),
+            sync_method=data.get("sync_method"),
         )

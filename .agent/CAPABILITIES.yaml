@@ -191,11 +191,16 @@ capabilities:
       trigger, signal_correlation, optimization)
     inputs: [SensorStream, clock_id, capture metadata (shared_clock / clock_offset_s / clock_drift / gnss_anchor_pairs / trigger_pairs / reference+observed event trains / cross_stream_constraints)]
     outputs: [TimeAlignment (per-sample original_t + global_t), SynchronizationDiagnostics (measured residual_max_s, backend attempts, rejection notes), ClockModel]
+    consumers: >-
+      trajectories/backend/sync.py (apply_clock_model +
+      estimate_trajectory: canonical Trajectory stamps carry
+      clock_id/sync_state/sync_method; model_unit is explicit --
+      's' for stream-fitted models, 'ns' canonical)
     license: project-internal
     hardware_requirements: none (GNSS/PPS consumed from declared anchors or already-GNSS-time streams; no timing hardware required)
     accuracy: exact for the declared model; estimated methods carry measured max-correspondence-residual as estimate quality (construction-only methods report None, never a fabricated zero)
     runtime: negligible (correlation grid is O(drifts x offsets x events))
-    maturity: IMPLEMENTED (P2-01 complete; all six spec methods with deterministic known-answer fixtures; 56 tests in tests/test_clocks.py)
+    maturity: IMPLEMENTED (P2-01 complete; all six spec methods with deterministic known-answer fixtures; 56 tests in tests/test_clocks.py); consumers wired via trajectories/backend/sync.py, 16 tests in tests/test_sync_consumers.py
     limitations:
       - estimated methods require trusted correspondences from metadata or the stream itself; none are inferred from raw signal content (e.g. no audio waveform correlation yet)
       - clock identity resolves from declared sensor identity when present (P1-02), else caller-supplied

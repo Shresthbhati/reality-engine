@@ -7,6 +7,34 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-17 (3) -- P7-06 WorldIR integration: refined outcomes become world statements
+
+The dead-end closed: the detail chain's output now lands in the
+world model. perception/detail/worldir.py, red-first (9 tests in
+tests/test_detail_worldir.py):
+
+- REUSE over invention: promote_planes' Geometry+Observation
+  pattern, RECONSTRUCTED provenance, the statement_state classifier
+  (RECONSTRUCTED -> DERIVED), measured quality as confidence, the
+  mesh stage's validate_world_ir rollback gate. No parallel schema.
+- Refined outcome -> one Geometry (typed by the winning backend,
+  lod_level = budget level, quality_metrics = the measured
+  refinement record) + one linked Entity; the Observation answers
+  "which observations, algorithms, artifacts produced this"
+  (backend, measured rms/max/quality, fit parameters, ROI id,
+  detail cells, point_ids, tier, budget level).
+- Refused ROI -> recorded fact on the report (roi_id + diagnostic),
+  NOTHING added to world.entities/geometries. A refusal is not a
+  shape.
+- Wiring: run_detail_pipeline(build_world_ir=True, world=...)
+  integrates and reports entity/geometry counts; stage 3.8 passes
+  the vertical slice's world through, so the capture-to-world
+  driver's WorldIR now carries the detail statements.
+- CAPABILITIES.yaml gained detail_worldir_integration (35 entries);
+  P7-06 open items updated (WorldStore persistence of detail
+  statements is P11 scope; adaptive subdivision planner still open).
+
+
 ## 2026-09-17 (2) -- P7-06 refinement executor + vertical-slice wiring (stage 3.8)
 
 The open item closed: pending ROI work orders now become locally

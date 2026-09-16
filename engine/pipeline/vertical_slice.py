@@ -397,6 +397,8 @@ def _detail_stage(result, world, options):
             cameras,
             voxel_size=options.detail_voxel_size_m,
             up=options.up,
+            build_world_ir=True,
+            world=world,
         )
     except ValueError as exc:
         # Assessor/budget contract refusals are honest, visible skips.

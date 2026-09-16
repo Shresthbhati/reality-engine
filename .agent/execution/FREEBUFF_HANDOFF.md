@@ -6,7 +6,27 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
-## UPDATE 2026-09-17b — P7-06 refinement executor + slice wiring (newest)
+## UPDATE 2026-09-17c — P7-06 WorldIR integration (newest)
+
+- The refinement output's dead-end closed:
+  `perception/detail/worldir.py` integrates refined ROI outcomes
+  into a WorldIR instance reusing the established conventions
+  (promote_planes' Geometry+Observation pattern, RECONSTRUCTED
+  provenance, statement_state RECONSTRUCTED->DERIVED, measured
+  quality as confidence, validate_world_ir rollback gate). Refined
+  outcome -> typed Geometry + linked Entity whose Observation
+  answers "which observations, algorithms, artifacts produced
+  this". Refused ROI -> recorded fact, never geometry.
+- Wiring: `run_detail_pipeline(build_world_ir=True, world=...)` and
+  vertical-slice stage 3.8 pass the real world through — the
+  capture-to-world driver's WorldIR now carries the detail
+  statements.
+- 9 red-first tests in tests/test_detail_worldir.py; P7-06 open
+  items: per-cell GSD re-measurement, adaptive subdivision planner,
+  threshold tuning; WorldStore persistence of detail statements is
+  P11 scope.
+
+## UPDATE 2026-09-17b — P7-06 refinement executor + slice wiring
 
 - The refinement executor landed: `perception/detail/refinement.py`
   + `backends.py` — pending ROI work orders become refined geometry

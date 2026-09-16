@@ -768,7 +768,7 @@ tasks:
       datasets.
 
   - id: P7-06
-    name: detail discovery + ROI generation
+    name: detail discovery + ROI generation + refinement executor
     status: PARTIAL
     basis: >-
       perception/detail/discovery.py (universal-perception directive
@@ -785,18 +785,39 @@ tasks:
       max_cells_per_roi), unioned point provenance, tight voxel
       bounds, aggregate MIN budget, status "pending" (generation
       creates work orders; it does not fake refinement).
+      perception/detail/refinement.py + backends.py (directive
+      sections 11/13, the P7-06 refinement executor): pending work
+      orders become refined geometry or honest refusals -- evidence
+      resolved through a point lookup (never fabricated from ROI
+      metadata), compute_tier-driven backend escalation (none refuses;
+      survey/light/standard run plane; high/full add cylinder+sphere),
+      measured rms/max residual winner with documented-map quality,
+      apply_outcomes transitions pending -> refined/refused carrying
+      the evidence on the record. fit_plane is the new level-1 backend
+      (Jacobi normal, degenerate-collinear refusal); sphere/cylinder
+      reuse parametric.py unchanged. perception/detail/pipeline.py is
+      the one-call driver (assess -> discover -> ROI -> refine ->
+      apply, default lookup from the result's own points).
+      Wired into engine/pipeline/vertical_slice.py as stage 3.8
+      (_detail_stage): trusted-intrinsics cameras, visible skips
+      (disabled / no intrinsics / chain refusal), facts recorded under
+      world.metadata["detail"], never raises.
     scope: >-
-      Where detail is recoverable (discovery) and the unit of local
-      reconstruction work (ROI); input to adaptive local refinement.
+      Where detail is recoverable (discovery), the unit of local
+      reconstruction work (ROI), and its honest execution (refinement
+      executor); input to adaptive refinement and WorldIR integration.
     verification:
       - tests/test_detail_discovery.py: 7 tests (determinism/stable order, plane~0 vs curved>0.1 measured curvature, min_points skip-not-guess, budget attachment, flat-cannot-claim-L4 gate, domain agnosticism -- same code path on mechanical + organic curves)
       - tests/test_detail_roi.py: 4 tests (flat-only scene -> no ROIs, pending status + tight bounds + provenance, adjacent merge with weakest-budget cap under mixed evidence, determinism under input permutation)
+      - tests/test_detail_refinement.py: 19 tests (measured plane/sphere residuals + degenerate refusals, refine-on-resolvable-evidence, refusal naming missing ids, tier=none never fits, high-tier escalation counters, determinism + non-mutation, all-refused honesty, apply_outcomes transitions + unknown-id tolerance, end-to-end pipeline driver incl. empty scene, vertical-slice stage 3.8 ran/skipped/intrinsics-gate)
       - eigensolver validated against numpy.linalg.eigvalsh (200-trial, 1e-9)
     open: >-
-      PARTIAL, not DONE: no ROI refinement backend consumes the work
-      orders yet (compute_tier has no executor); per-cell budgets
-      reuse the scene-level GSD measurement rather than per-cell
-      re-measurement (documented in _cell_budget); thresholds untuned.
+      PARTIAL, not DONE: refined ROI geometry does not yet flow into
+      WorldIR entities/geometry (integration is the next spine
+      increment); per-cell budgets reuse the scene-level GSD
+      measurement rather than per-cell re-measurement (documented in
+      _cell_budget); thresholds untuned against real datasets; no
+      adaptive subdivision planner yet (directive section 13 scoring).
 
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 

@@ -498,6 +498,33 @@ capabilities:
       point provenance, aggregate MIN DetailBudget, pending status,
       provenance) — bounded local-reconstruction work orders
     license: project-internal
+  - name: roi_refinement
+    category: perception
+    backend: >-
+      perception/detail/refinement.py + perception/detail/backends.py
+      (in-house, deterministic; sphere/cylinder reuse
+      perception/architecture/parametric.py unchanged)
+    inputs: >-
+      Pending RegionOfInterest work orders + a point-id lookup (e.g.
+      the reconstruction's own track_id -> position table)
+    outputs: >-
+      RefinementOutcome per ROI (refined with measured rms/max
+      residual, documented-map quality, winning backend, measured fit
+      counters; or refused with a diagnostic reason naming the
+      evidence gap) + apply_outcomes state transitions carried on the
+      work-order records
+    license: project-internal
+  - name: detail_pipeline
+    category: perception
+    backend: perception/detail/pipeline.py (in-house, deterministic)
+    inputs: >-
+      ReconstructionResult + calibrated PinholeCameras (+ optional
+      point lookup, voxel size, up)
+    outputs: >-
+      DetailPipelineReport (measured EvidenceQualityReport, detail
+      candidates, transitioned ROIs, outcomes, summary counts) — the
+      one-call assess -> discover -> ROI -> refine -> apply driver
+    license: project-internal
     hardware_requirements: none (pure Python, deterministic)
     accuracy: >-
       Derived from measured facts by documented mapping (gsd<=5 -> L4,

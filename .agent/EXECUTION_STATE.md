@@ -7,6 +7,42 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-17 (2) -- P7-06 refinement executor + vertical-slice wiring (stage 3.8)
+
+The open item closed: pending ROI work orders now become locally
+refined geometry or honest refusals -- never invented geometry.
+Red-first, 19 new tests in tests/test_detail_refinement.py:
+
+- perception/detail/backends.py: fit_plane (new level-1 backend --
+  Jacobi smallest-eigenvalue normal via parametric.py, measured
+  rms/max residuals, degenerate-collinear refusal) plus thin
+  sphere/cylinder adapters reusing parametric.py's fits UNCHANGED
+  (no duplicated geometry math).
+- perception/detail/refinement.py: refine_rois resolves evidence
+  through a point lookup (unresolvable ids -> refusal naming the
+  first missing id; never fabricated from ROI metadata), spends
+  compute_tier (none refuses; survey/light/standard plane;
+  high/full add cylinder+sphere), winner = measured-rms minimum,
+  quality = documented map 1/(1+(rms/tol)^2); apply_outcomes
+  transitions pending -> refined/refused carrying the evidence on
+  the new records (inputs never mutated); unknown outcome ids
+  tolerated.
+- perception/detail/pipeline.py: one-call driver (assess -> discover
+  -> ROI -> refine -> apply) with a default lookup built from the
+  result's own points; empty scene -> honest empty report.
+- WIRING: engine/pipeline/vertical_slice.py stage 3.8 (_detail_stage)
+  runs the chain with trusted-intrinsics cameras (same gate the
+  sidecar depth stage applies -- no intrinsics, no GSD, visible
+  skip), records facts under world.metadata["detail"], never raises.
+- RegionOfInterest gained two optional lifecycle fields
+  (refinement_outcome, status_reason) -- additive, existing
+  constructors unaffected.
+- Ledger: P7-06 open items updated (refinement DONE; WorldIR
+  integration of refined geometry is the next spine increment);
+  CAPABILITIES.yaml gained roi_refinement + detail_pipeline (34
+  entries).
+
+
 ## 2026-09-17 (1) -- P7-06: universal detail discovery + ROI generation (PHASE 2-3 chain)
 
 Continuing the universal-perception spine (directive sections 8/11/12/14):

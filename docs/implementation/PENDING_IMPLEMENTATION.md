@@ -231,8 +231,19 @@ backend behind an interface, epipolar verification, identity benchmark.
 
 ## P2.15 — Tracking / temporal identity
 
-**Status: MISSING.** Evidence: track entities across ordered frames with
-temporal association diagnostics.
+**Status: PARTIAL.** The 3D observation-level identity-lifecycle layer
+is implemented and tested: `perception/tracking/temporal.py` —
+time-ordered `TimedObservation` chains per label into `TrackRecord`s
+(track_id, observation history, measured path/duration/implied speed),
+continuation gated by BOTH a speed budget and a gap budget, untimed
+observations returned separately, confidence = min of measured member
+confidences (a fabricated 1.0 was caught in review and removed).
+Adapter: `instance_tracks_from` -> `InstanceTrack` (refuses tracks
+without measured confidence or with missing regions). Tests:
+`tests/test_temporal_tracking.py` (14, red-first). Still missing:
+2D detection-box association (ByteTrack/OC-SORT-role), camera-motion
+compensation, ID-switch/fragmentation diagnostics. Canonical ledger:
+`.agent/TASKS.yaml` P7-02.
 
 ## P2.16 — Structural perception (doors/windows/stairs)
 

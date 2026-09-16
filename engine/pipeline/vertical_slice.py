@@ -109,6 +109,17 @@ class VerticalSliceOptions:
     mesh_enabled: bool = True
     mesh_voxel_size_m: float = 0.02
     mesh_poisson_depth: int = 10
+    #: Dense-MVS stage (P6-01): run COLMAP patch_match_stereo +
+    #: stereo_fusion over the sparse model and ingest fused.ply as a
+    #: canonical WorldIR POINTCLOUD. OFF by default -- a heavyweight
+    #: GPU stage; enabling it is an explicit operator decision. The
+    #: three paths below must name the real capture layout (the sparse
+    #: model directory COLMAP's mapper wrote).
+    dense_mvs_enabled: bool = False
+    dense_mvs_image_dir: Optional[Path] = None
+    dense_mvs_sparse_model_dir: Optional[Path] = None
+    dense_mvs_workspace: Optional[Path] = None
+    dense_mvs_use_gpu: Optional[bool] = None
     #: Reconstruction backend override (tests inject a deterministic
     #: backend; production leaves None for the real COLMAP backend).
     reconstruction_backend: Optional[object] = None
@@ -271,6 +282,11 @@ def vertical_slice(
     # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
+    # ---- stage 3.75: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
+    dense_mvs_facts = _dense_mvs_stage(
+        result, world, options, scale_state, meters_per_unit
+    )
+
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,
@@ -292,6 +308,7 @@ def vertical_slice(
     world.metadata["fusion"] = {
         k: v for k, v in fusion_facts.items() if k != "fused"
     }
+    world.metadata["dense_mvs"] = dense_mvs_facts
 
     return VerticalSliceResult(
         world=world,
@@ -323,6 +340,8 @@ def vertical_slice(
             "depth": depth_facts,
             "perception": perception_facts,
             "mesh": mesh_facts,
+            "fusion": {k: v for k, v in fusion_facts.items() if k != "fused"},
+            "dense_mvs": dense_mvs_facts,
         },
     )
 
@@ -631,6 +650,151 @@ def _fusion_stage(result, world, options, scale_state: str):
         "n_conflicts": facts["n_conflicts"],
         "artifact_uri": data_uri,
         "artifact_sha256": data_hash,
+        "geometry_id": geometry.id,
+    }
+
+
+def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
+    """Stage 3.75 (P6-01): COLMAP dense MVS as a first-class stage.
+
+    The sparse model that stage 1 just produced is fed to COLMAP's dense
+    stereo chain (image_undistorter -> patch_match_stereo ->
+    stereo_fusion) and the resulting fused.ply is ingested through the
+    canonical chain (dense_ingest -> PointCloudData -> content-addressed
+    artifact -> WorldIR POINTCLOUD geometry). This is what turns the
+    externally verified GPU dense run (2026-09-15) into an engine
+    capability instead of a manual CLI ritual.
+
+    Gates (honest skips, same discipline as _fusion_stage/_mesh_stage):
+    - OFF by default: a dense run is heavyweight and GPU-bound, so
+      enabling it is an explicit operator decision and "disabled" is
+      recorded rather than silently absent;
+    - the capture paths (images, sparse model, workspace) must be named:
+      a dense run cannot be guessed into existence from a result object;
+    - the binary must PROBE as dense-capable (patch_match_stereo listed
+      in its own help); a COLMAP on PATH is not evidence of that;
+    - scale: fused.ply is in COLMAP's own SfM scale. It is rescaled by
+      meters_per_unit ONLY when the pipeline established a MEASURED
+      metric anchor; otherwise scale_factor=1.0 is used and recorded,
+      which the ingest observation names as "not meters" -- never a
+      scale lie.
+    """
+    if not options.dense_mvs_enabled:
+        return {
+            "status": "disabled",
+            "note": "dense MVS is off by default (heavyweight GPU stage); "
+            "set dense_mvs_enabled=True and name the capture paths to run it",
+        }
+    if options.artifact_store is None:
+        return {"status": "skipped", "note": "no artifact_store configured"}
+
+    unset = [
+        name
+        for name, value in (
+            ("dense_mvs_image_dir", options.dense_mvs_image_dir),
+            ("dense_mvs_sparse_model_dir", options.dense_mvs_sparse_model_dir),
+            ("dense_mvs_workspace", options.dense_mvs_workspace),
+        )
+        if value is None
+    ]
+    if unset:
+        return {
+            "status": "skipped",
+            "note": "dense MVS enabled but capture paths unset: "
+            + ", ".join(unset),
+        }
+
+    try:
+        from reconstruction.dense_pipeline import (
+            DenseMVSUnavailableError,
+            DenseMVSRunError,
+            dense_mvs_available,
+            run_dense_mvs,
+        )
+        from reconstruction.dense_ingest import ingest_fused_ply
+    except ImportError as exc:  # pragma: no cover - packaging failure
+        return {"status": "skipped", "note": f"dense MVS deps unavailable: {exc}"}
+
+    if not dense_mvs_available(options.colmap_binary):
+        return {
+            "status": "skipped",
+            "note": f"COLMAP binary {options.colmap_binary!r} unavailable or "
+            "lacks patch_match_stereo (capability probe failed) -- a "
+            "synthetic stand-in would be a fake reconstruction",
+        }
+
+    source_evidence_ids = [
+        eid
+        for eid in (getattr(p, "evidence_id", None) for p in result.camera_poses)
+        if eid
+    ]
+    if len(source_evidence_ids) < 2:
+        return {
+            "status": "skipped",
+            "note": "dense MVS needs >=2 registered cameras to rectify and "
+            f"stereo-match against (have {len(source_evidence_ids)})",
+        }
+    try:
+        run = run_dense_mvs(
+            image_dir=options.dense_mvs_image_dir,
+            sparse_model_dir=options.dense_mvs_sparse_model_dir,
+            workspace=options.dense_mvs_workspace,
+            binary=options.colmap_binary,
+            use_gpu=options.dense_mvs_use_gpu,
+        )
+    except (DenseMVSUnavailableError, DenseMVSRunError) as exc:
+        return {"status": "failed", "note": f"{type(exc).__name__}: {exc}"}
+
+    # Metric anchor: only a MEASURED metric world may rescale into meters
+    # (this is the ingest's own scale-honesty contract).
+    if scale_state == "metric" and meters_per_unit:
+        scale_factor = float(meters_per_unit)
+        scale_note = "rescaled by the pipeline's measured metric anchor"
+    else:
+        scale_factor = 1.0
+        scale_note = (
+            f"world scale is {scale_state}: COLMAP's own SfM scale is "
+            "preserved and recorded, never claimed as meters"
+        )
+
+    try:
+        with open(run.fused_ply_path, "rb") as fh:
+            fused_bytes = fh.read()
+        geometry = ingest_fused_ply(
+            fused_bytes,
+            artifact_store=options.artifact_store,
+            source_evidence_ids=source_evidence_ids,
+            scale_factor=scale_factor,
+        )
+    except (OSError, ValueError) as exc:
+        return {
+            "status": "failed",
+            "note": f"ingesting {run.fused_ply_path} failed: "
+            f"{type(exc).__name__}: {exc}",
+        }
+
+    # The run's own facts (timings, filters, device) are recorded on the
+    # geometry's observation so the dense claim stays auditable next to
+    # the artifact it produced.
+    stage_durations = {k: round(v, 3) for k, v in run.stage_durations_s.items()}
+    if geometry.observations:
+        geometry.observations[0].metadata["geom_consistency"] = run.geom_consistency
+        geometry.observations[0].metadata["use_gpu"] = run.use_gpu
+        geometry.observations[0].metadata["stage_durations_s"] = stage_durations
+        geometry.observations[0].metadata["scale_state"] = scale_state
+    world.geometries[geometry.id] = geometry
+
+    return {
+        "status": "ran",
+        "n_fused_points": run.n_fused_points,
+        "geom_consistency": run.geom_consistency,
+        "use_gpu": run.use_gpu,
+        "stage_durations_s": stage_durations,
+        "scale_factor": scale_factor,
+        "scale_note": scale_note,
+        "fused_ply_path": run.fused_ply_path,
+        "artifact_uri": geometry.data_uri,
+        "artifact_sha256": geometry.data_hash,
         "geometry_id": geometry.id,
     }
 

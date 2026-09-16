@@ -194,43 +194,57 @@ def assess_evidence_quality(
     )
 
 
-def recommend_capture(report: EvidenceQualityReport) -> List[str]:
+def recommend_capture(report: EvidenceQualityReport) -> Dict[str, object]:
     """Derive capture recommendations from a measured quality report
     (closed loop: capture -> reconstruct -> measure -> request more
-    capture). Each recommendation is a measured conclusion from the
-    report's facts -- no fixed vocabulary of scene types."""
-    recs: List[str] = []
+    capture).
+
+    Returns a dict: "scene_budget" maps to the derived DetailBudget
+    (perception/quality/detail_budget.py -- the machine-readable
+    justified-detail level and compute tier for the Capture app), and
+    every other key is a measured prose recommendation. Each
+    recommendation is a measured conclusion from the report's facts --
+    no fixed vocabulary of scene types."""
+    from perception.quality.detail_budget import detail_budget_for
+
+    recs: Dict[str, object] = {
+        "scene_budget": detail_budget_for(report),
+    }
+    prose: List[str] = []
     if report.detail_tier == "unsupported" and not report.view_counts:
         # Distinguish genuinely empty scenes (nothing was ever
         # reconstructed) from coverage failures (points exist but no
         # camera observed any of them -- the coverage rule below says
         # that); only the former gets this blanket statement.
         if not report.unprojectable_point_ids:
-            recs.append(
+            prose.append(
                 "No reconstruction points exist; nothing about capture "
                 "quality can be assessed yet."
             )
+            recs["no_points"] = prose[0]
             return recs
         # Points exist but none observed: fall through -- the coverage
         # rule below reports it as the coverage failure it is.
     if (report.gsd_mm_per_px is not None
             and report.gsd_mm_per_px > DETAIL_TIER_THRESHOLDS["medium_gsd_mm"]):
-        recs.append(
+        prose.append(
             f"GSD {report.gsd_mm_per_px:.1f} mm/px is coarse; "
             "additional close-range evidence recommended for detail."
         )
     multi = sum(1 for v in report.view_counts.values() if v >= 2)
     total = len(report.view_counts)
     if total and multi / total < _MIN_MULTI_VIEW_FRACTION:
-        recs.append(
+        prose.append(
             f"Only {multi}/{total} points have >= 2 views; additional "
             "overlapping views recommended for reliable matching."
         )
     if (report.unprojectable_point_ids
             and report.observed_fraction < 1.0 - _MAX_UNPROJECTABLE_FRACTION):
-        recs.append(
+        prose.append(
             f"{len(report.unprojectable_point_ids)} points were observed "
             "by zero cameras; coverage gaps detected -- additional "
             "capture positions recommended."
         )
+    for i, text in enumerate(prose):
+        recs[f"recommendation_{i}"] = text
     return recs

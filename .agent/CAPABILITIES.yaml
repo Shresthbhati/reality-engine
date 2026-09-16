@@ -461,5 +461,32 @@ capabilities:
       - directive-section-11 inputs not yet measured (view angle,
         focus/motion blur, texture richness, depth confidence,
         occlusion beyond projection bounds)
-      - no consumer yet (detail budgeting / adaptive compute open)
       - thresholds untuned against real datasets
+
+  - name: detail_budget
+    category: perception
+    backend: perception/quality/detail_budget.py (in-house, deterministic)
+    inputs: >-
+      EvidenceQualityReport from evidence_quality_assessment (measured
+      GSD, per-point view counts, coverage)
+    outputs: >-
+      DetailBudget (justified_level L0-L4 on the multi-scale scale,
+      compute_tier none/survey/light/standard/high/full,
+      max_gsd_mm_per_px, coverage_capped, basis) — the maximum
+      defensible detail level + compute allocation for a region
+    license: project-internal
+    hardware_requirements: none (pure Python, deterministic)
+    accuracy: >-
+      Derived from measured facts by documented mapping (gsd<=5 -> L4,
+      <=25 -> L2, <=100 -> L1, else L0; min 2 views to hold the level,
+      else capped at L2); observed-points-without-GSD reports refuse
+      (bypass detection); empty/coverage-failed scenes -> honest
+      zero-allocation unsupported budget
+    runtime: O(1)
+    maturity: PARTIAL (10 tests in tests/test_detail_budget.py; wired
+      into recommend_capture as scene_budget --
+      tests/test_capture_feedback_wiring.py)
+    limitations:
+      - per-region budgets require spatial partitioning of the scene
+        (currently scene-level derivation only)
+      - GSD-level thresholds untuned against real datasets

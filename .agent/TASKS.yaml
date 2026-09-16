@@ -693,6 +693,42 @@ tasks:
       locally planar and plane-first subtraction shredded
       columns (measured, then fixed by classify-after-segment).
 
+  - id: P7-04
+    name: universal evidence-quality assessment
+    status: PARTIAL
+    basis: >
+      Measured, domain-agnostic detail-capability model landed
+      (universal-perception directive items 2/11/32):
+      perception/quality/assessment.py — per-point GSD measured from
+      real camera geometry (euclidean camera-to-surface distance x
+      1000 / max(fx,fy), median across observations), observation
+      decided by PROJECTION inside image bounds (not by trusting
+      source_evidence_ids metadata; overclaims are counted and
+      reported, never silently reconciled), detail tier derived by
+      documented thresholds (fine/medium/coarse/unsupported),
+      multi-view + coverage capture recommendations derived from the
+      same measured facts (closed loop for the Capture app). Unknown
+      stays unknown: no observations -> GSD None + tier
+      "unsupported"; points no camera sees are reported
+      (unprojectable_point_ids) not dropped; empty cameras with
+      nonempty points refuse (ValueError) rather than guess
+      intrinsics. Domain-agnostic by construction: columns, pipes,
+      fenders, and rocks are all just points.
+    scope: >
+      GSD / view count / detail tier / coverage from real camera
+      evidence; capture recommendations; detail budget inputs for
+      adaptive compute.
+    verification:
+      - tests/test_evidence_quality.py: 18 tests (measured GSD known answers, tier bands, overclaim + unprojectable reporting, recommendation rules, refusal on missing intrinsics)
+      - full suite at branch head: 1826 passed / 1 skipped / 0 failed
+    open: >
+      PARTIAL, not DONE: remaining directive-section-11 inputs not
+      yet measured (view angle, focus/motion blur, texture
+      richness, depth confidence, occlusion reasoning beyond
+      projection bounds); not yet consumed by detail budgeting /
+      adaptive compute (no such consumer exists yet); thresholds
+      untuned against real datasets.
+
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 
   - id: P8-01

@@ -433,3 +433,33 @@ capabilities:
       - 2D box association (ByteTrack/OC-SORT), motion compensation,
         ID-switch diagnostics not implemented
       - thresholds untuned against real data
+
+  - name: evidence_quality_assessment
+    category: perception
+    backend: perception/quality/assessment.py (in-house, deterministic)
+    inputs: >-
+      ReconstructionResult (points with source_evidence_ids, camera
+      poses) + calibrated PinholeCamera list (camera_from_pose)
+    outputs: >-
+      EvidenceQualityReport (measured median GSD mm/px, detail tier
+      fine/medium/coarse/unsupported, observed_fraction, per-point
+      view counts, unprojectable point ids, overclaim count) +
+      capture recommendations (close-range / overlapping views /
+      coverage gaps)
+    license: project-internal
+    hardware_requirements: none (pure Python, deterministic)
+    accuracy: >-
+      GSD measured from real geometry (euclidean distance x 1000 /
+      max(fx,fy)); observation decided by projection inside image
+      bounds, NOT by trusting source_evidence_ids (overclaims
+      reported); tiers by documented thresholds; unknown stays
+      unknown (no observations -> GSD None + "unsupported"; refuses
+      to guess intrinsics)
+    runtime: O(points x cameras)
+    maturity: PARTIAL (18 tests in tests/test_evidence_quality.py)
+    limitations:
+      - directive-section-11 inputs not yet measured (view angle,
+        focus/motion blur, texture richness, depth confidence,
+        occlusion beyond projection bounds)
+      - no consumer yet (detail budgeting / adaptive compute open)
+      - thresholds untuned against real datasets

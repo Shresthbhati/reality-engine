@@ -7,6 +7,34 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-16 (4) -- P7-04 universal evidence-quality assessment
+
+Directive: universal perception + maximum-fidelity reconstruction
+(domain-agnostic; Victoria Memorial must not define the engine).
+Foundation increment: the measured evidence-quality model (directive
+items 2/11/32). Landed, TDD red-first (`perception/quality/assessment.py`,
+18 tests in `tests/test_evidence_quality.py`):
+
+- GSD MEASURED from real geometry: per-point euclidean
+  camera-to-surface distance x 1000 / max(fx,fy) (finest-sampled
+  axis, documented choice), median across observations.
+- Observation decided by PROJECTION inside image bounds -- not by
+  trusting `source_evidence_ids` metadata; metadata-vs-projection
+  overclaims are counted and reported, never silently reconciled.
+- Detail tier derived by documented thresholds (fine needs >= 2
+  views); capture recommendations derived from the same measured
+  facts (closed loop for the Capture app).
+- Honesty: no observations -> GSD None + tier "unsupported"; points
+  no camera sees reported (`unprojectable_point_ids`) not dropped;
+  nonempty points + no cameras refuses (ValueError) rather than
+  guessing intrinsics. Domain-agnostic by construction: columns,
+  pipes, fenders, rocks are all just points.
+- Ledger: P7-04 added (PARTIAL; remaining section-11 inputs, no
+  consumer yet, thresholds untuned); CAPABILITIES.yaml gained
+  `evidence_quality_assessment`.
+- Full-suite gate on branch head: 1826 passed / 1 skipped / 0 failed.
+
+
 ## 2026-09-16 (3) -- P7-02 temporal tracking (3D observation layer)
 
 Landed, TDD red-first (`perception/tracking/temporal.py`, 14 tests in

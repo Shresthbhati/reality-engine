@@ -376,3 +376,35 @@ capabilities:
       ICP results carry 6x6 covariance from correspondences. Fusion
       precision is inverse-variance (existing).
     tests: tests/test_object_measurement.py, tests/test_registration.py
+  - name: architectural_parametric_perception
+    category: perception
+    backend: >-
+      perception/architecture/{parametric,segments,registry,components,promotion}.py
+      (in-house deterministic geometry; no external dependency)
+    inputs: [ReconstructionResult (real points), world up, class registry]
+    outputs: >-
+      parametric fits (CylinderFit/SphereFit/CircleFit with measured
+      rms/max residuals), Segment list, ComponentObservation records
+      (accepted + unaccepted with reasons), CandidateComponents
+      (multi-view resolved), RepetitionPrior/SymmetryPrior,
+      canonical WorldIR Entities + adjacency edges
+    license: project-internal
+    hardware_requirements: none (pure Python float math, deterministic)
+    accuracy: >-
+      known-answer fits recover exact parameters on clean shells;
+      measured residuals are the quality claim -- no fabricated
+      confidence; degenerate/under-constrained inputs raise FitRefused
+    runtime: O(points) segmentation; fits are closed-form + local search
+    maturity: IMPLEMENTED (Phase 1 parametric perception; 58 tests in
+      tests/test_parametric_fits.py, test_arch_registry.py,
+      test_arch_components.py, test_arch_worldir.py,
+      test_arch_benchmark.py)
+    limitations:
+      - cylinder axis search is local (seeded); exotic point sets may
+        need more seeds
+      - dome fit is spherical (ellipsoidal/compound later phases)
+      - arch fit is circular (pointed/elliptical hypotheses later)
+      - repetition/symmetry are priors over resolved components, not
+        per-point detectors
+      - real-capture benchmarks (Victoria Memorial) are CAPTURE_PENDING
+        -- capture is an external dependency, never simulated

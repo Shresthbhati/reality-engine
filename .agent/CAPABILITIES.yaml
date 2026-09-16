@@ -475,6 +475,29 @@ capabilities:
       max_gsd_mm_per_px, coverage_capped, basis) — the maximum
       defensible detail level + compute allocation for a region
     license: project-internal
+  - name: detail_discovery
+    category: perception
+    backend: perception/detail/discovery.py (in-house, deterministic)
+    inputs: >-
+      ReconstructionResult points + EvidenceQualityReport from
+      evidence_quality_assessment (scene GSD + per-track view counts)
+    outputs: >-
+      DetailCandidate list in stable spatial order (cell_id, centroid,
+      n_points, measured PCA curvature ratio, density_per_m2,
+      is_detail, per-cell DetailBudget, point_ids) — WHERE detail is
+      recoverable, domain-agnostic; voxelized, min_points-skipping,
+      budget-attached (hallucination gate)
+    license: project-internal
+  - name: roi_generation
+    category: perception
+    backend: perception/detail/roi.py (in-house, deterministic)
+    inputs: >-
+      DetailCandidate list from detail_discovery + voxel_size
+    outputs: >-
+      RegionOfInterest list (roi_id, bounds, member cells, unioned
+      point provenance, aggregate MIN DetailBudget, pending status,
+      provenance) — bounded local-reconstruction work orders
+    license: project-internal
     hardware_requirements: none (pure Python, deterministic)
     accuracy: >-
       Derived from measured facts by documented mapping (gsd<=5 -> L4,

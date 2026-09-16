@@ -7,6 +7,38 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-17 (1) -- P7-06: universal detail discovery + ROI generation (PHASE 2-3 chain)
+
+Continuing the universal-perception spine (directive sections 8/11/12/14):
+`perception/detail/discovery.py` + `perception/detail/roi.py`, TDD
+red-first (7 + 4 tests):
+
+- Discovery: domain-agnostic -- reconstruction points + the measured
+  P7-04 report in, detail candidates out. Deterministic voxel binning
+  (1 m default, floor-division keys, stable sort); per-cell MEASURED
+  curvature (PCA smallest-eigenvalue ratio via closed-form cubic
+  eigensolver -- validated against numpy.linalg.eigvalsh to 1e-9 over
+  200 random trials; the first draft's Cardano branch silently dropped
+  roots for symmetric matrices and was caught by the known-answer
+  tests); per-cell budgets derived by the DOCUMENTED P7-05 mapping
+  from the cell's own view counts (hallucination gate: single-view /
+  weak-evidence cells cannot claim fine levels). Cells below
+  min_points are skipped, never guessed.
+- ROI: candidates become bounded work orders -- 26-adjacent region
+  growth (<= 27 cells), unioned point provenance, tight voxel bounds,
+  aggregate MIN budget (weakest evidence bounds the group; exercised
+  with mixed multi/single-view cells in tests), status "pending"
+  (generation creates work orders, it does not fake refinement).
+- Fixtures had real geometry bugs caught during TDD: a helical ring is
+  nearly PLANAR (ratio 0.055 -- a flat ring cannot drive a curvature
+  metric); replaced with stacked-ring shell samples as a real scanner
+  would produce (~0.19).
+- Ledger: P7-06 added (PARTIAL -- no refinement executor consumes
+  compute_tier yet); P7-05's open item (per-region spatial budgets)
+  closed with evidence; CAPABILITIES.yaml gained detail_discovery +
+  roi_generation (32 entries).
+
+
 ## 2026-09-16 (7) -- P6-01: real dense-MVS capture integration (next TASKS.yaml item)
 
 Next non-blocked queue item executed (P6-01's PENDING verification:

@@ -754,11 +754,49 @@ tasks:
     verification:
       - tests/test_detail_budget.py: 10 tests (level bands, coverage cap, refusals, unsupported mapping, determinism, serialization)
       - tests/test_capture_feedback_wiring.py: 3 wiring tests
+      - per-region budgets NOW EXIST via spatial partitioning --
+        perception/detail/discovery.py bins points into a deterministic
+        voxel grid and derives each cell's budget from the scene
+        report's measured GSD + the cell's own view counts (7 tests in
+        tests/test_detail_discovery.py); ROI generation groups cells
+        and takes the MIN budget over member cells (weakest evidence
+        bounds the group; tests/test_detail_roi.py, 4 tests).
     open: >-
-      PARTIAL, not DONE: scene-level derivation only -- per-region
-      budgets need spatial partitioning (tiling/segmentation) of the
-      scene; ROI generation does not yet consume compute_tier;
-      thresholds untuned against real datasets.
+      PARTIAL, not DONE: local refinement does not yet consume
+      compute_tier (no ROI refinement backend exists); thresholds
+      (voxel size, curvature, GSD bands) untuned against real
+      datasets.
+
+  - id: P7-06
+    name: detail discovery + ROI generation
+    status: PARTIAL
+    basis: >-
+      perception/detail/discovery.py (universal-perception directive
+      sections 8/11): domain-agnostic detail discovery from a
+      reconstruction's points + the measured evidence-quality report.
+      Deterministic voxel binning; per-cell measured curvature (PCA
+      smallest-eigenvalue ratio, closed-form cubic eigensolver
+      cross-checked against numpy eigvalsh to 1e-9 over 200 random
+      trials), point density; every candidate carries a budget derived
+      by the documented P7-05 mapping from its own view support (the
+      hallucination gate: weak evidence cannot claim a fine level).
+      perception/detail/roi.py (directive sections 12/14): candidates
+      become bounded work orders -- 26-adjacent region growth (<=
+      max_cells_per_roi), unioned point provenance, tight voxel
+      bounds, aggregate MIN budget, status "pending" (generation
+      creates work orders; it does not fake refinement).
+    scope: >-
+      Where detail is recoverable (discovery) and the unit of local
+      reconstruction work (ROI); input to adaptive local refinement.
+    verification:
+      - tests/test_detail_discovery.py: 7 tests (determinism/stable order, plane~0 vs curved>0.1 measured curvature, min_points skip-not-guess, budget attachment, flat-cannot-claim-L4 gate, domain agnosticism -- same code path on mechanical + organic curves)
+      - tests/test_detail_roi.py: 4 tests (flat-only scene -> no ROIs, pending status + tight bounds + provenance, adjacent merge with weakest-budget cap under mixed evidence, determinism under input permutation)
+      - eigensolver validated against numpy.linalg.eigvalsh (200-trial, 1e-9)
+    open: >-
+      PARTIAL, not DONE: no ROI refinement backend consumes the work
+      orders yet (compute_tier has no executor); per-cell budgets
+      reuse the scene-level GSD measurement rather than per-cell
+      re-measurement (documented in _cell_budget); thresholds untuned.
 
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 

@@ -6,7 +6,23 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
-## UPDATE 2026-09-16g — P6-01 real dense-capture integration (newest)
+## UPDATE 2026-09-17a — P7-06 detail discovery + ROI generation (newest)
+
+- `perception/detail/discovery.py`: domain-agnostic detail discovery
+  (directive sections 8/11) — points + measured P7-04 report in,
+  budget-attached DetailCandidates out. Deterministic voxel binning,
+  per-cell measured PCA curvature (closed-form eigensolver,
+  numpy-cross-checked 1e-9/200 trials), min_points skip-not-guess,
+  per-cell budgets via the documented P7-05 mapping (hallucination
+  gate). `perception/detail/roi.py` (sections 12/14): candidates →
+  bounded work orders (26-adjacent growth, MIN aggregate budget,
+  unioned point provenance, pending status).
+- 11 tests (7 discovery + 4 ROI) red-first; chain quality → budget →
+  discovery → ROI is now connected end-to-end.
+- P7-06 added to ledger (PARTIAL: no refinement executor consumes
+  compute_tier yet — that is the next detail-spine increment).
+
+## UPDATE 2026-09-16g — P6-01 real dense-capture integration
 
 - Next TASKS.yaml item executed: P6-01's PENDING verification closed —
   the REAL GPU COLMAP fused.ply (294,345 points, gitignored local

@@ -60,9 +60,6 @@ from reconstruction.scale import (
     anchor_metric_scale,
     unscaled,
 )
-from reconstruction.backend.dense_output import parse_fused_ply
-from reconstruction.backend.interface import ReconstructedPoint
-from provenance.graph import ProvenanceGraph
 
 __all__ = [
     "VerticalSliceError",
@@ -112,6 +109,7 @@ class VerticalSliceOptions:
     mesh_enabled: bool = True
     mesh_voxel_size_m: float = 0.02
     mesh_poisson_depth: int = 10
+
     #: Dense-MVS stage (P6-01): run COLMAP patch_match_stereo +
     #: stereo_fusion over the sparse model and ingest fused.ply as a
     #: canonical WorldIR POINTCLOUD. OFF by default -- a heavyweight
@@ -123,6 +121,14 @@ class VerticalSliceOptions:
     dense_mvs_sparse_model_dir: Optional[Path] = None
     dense_mvs_workspace: Optional[Path] = None
     dense_mvs_use_gpu: Optional[bool] = None
+
+    #: Detail stage (P7-06): measured quality -> detail discovery ->
+    #: ROI work orders -> local refinement, recorded in world metadata
+    #: under "detail". Disabled with False; skipped honestly when its
+    #: inputs cannot be measured (no cameras) or dependencies are
+    #: unavailable.
+    detail_enabled: bool = True
+    detail_voxel_size_m: float = 1.0
     #: Reconstruction backend override (tests inject a deterministic
     #: backend; production leaves None for the real COLMAP backend).
     reconstruction_backend: Optional[object] = None
@@ -196,28 +202,6 @@ def vertical_slice(
             for item in evidence_items
         ]
 
-    # ---- provenance graph (P10-01): create graph over artifact_store ----
-    prov_graph = None
-    if options.artifact_store is not None:
-        prov_graph = ProvenanceGraph(options.artifact_store)
-        # Add evidence items as source nodes
-        for item in evidence_items:
-            # Each evidence item is a source artifact (capture)
-            # Use content hash as digest
-            from world_ir.artifact_store import _digest
-            import json
-            item_bytes = json.dumps({
-                "id": item.id,
-                "kind": item.kind.value,
-                "source_uri": item.source_uri,
-                "metadata": item.metadata,
-            }, sort_keys=True).encode()
-            digest = _digest(item_bytes)
-            prov_graph.add_node(digest, kind="evidence", producer="ingestion", stage="source")
-            # Store mapping for downstream stages
-            item.metadata = item.metadata or {}
-            item.metadata["provenance_digest"] = digest
-
     # ---- stage 1: reconstruction (real COLMAP through the orchestrator) ----
     from reconstruction.orchestrator import ReconstructionOrchestrator
 
@@ -240,34 +224,6 @@ def vertical_slice(
             f"(status={result.registration_status!r}, "
             f"{len(result.points)} points) -- not compiling"
         )
-
-    # ---- provenance: reconstruction result nodes ----
-    if prov_graph is not None:
-        from world_ir.artifact_store import _digest
-        import json
-        # Sparse points
-        points_bytes = json.dumps({
-            "type": "sparse_points",
-            "points": [{"track_id": p.track_id, "position": p.position, "source_evidence_ids": list(p.source_evidence_ids)} for p in result.points],
-        }, sort_keys=True).encode()
-        points_digest = _digest(points_bytes)
-        prov_graph.add_node(points_digest, kind="sparse_points", producer=run.diagnostics.backend_name, stage="reconstruction")
-        # Link to evidence items
-        for item in evidence_items:
-            parent_digest = item.metadata.get("provenance_digest")
-            if parent_digest:
-                prov_graph.add_edge(points_digest, parent_digest)
-        # Camera poses
-        poses_bytes = json.dumps({
-            "type": "camera_poses",
-            "poses": [{"evidence_id": p.evidence_id, "position": p.position, "rotation": p.rotation} for p in result.camera_poses],
-        }, sort_keys=True).encode()
-        poses_digest = _digest(poses_bytes)
-        prov_graph.add_node(poses_digest, kind="camera_poses", producer=run.diagnostics.backend_name, stage="reconstruction")
-        for item in evidence_items:
-            parent_digest = item.metadata.get("provenance_digest")
-            if parent_digest:
-                prov_graph.add_edge(poses_digest, parent_digest)
 
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None
@@ -304,37 +260,6 @@ def vertical_slice(
             )
             scale_note = scale_note + " | " + scale_error
 
-    # ---- provenance: scale anchoring nodes ----
-    if prov_graph is not None:
-        from world_ir.artifact_store import _digest
-        import json
-        if scaled is not None:
-            scale_bytes = json.dumps({
-                "type": "scale_anchoring",
-                "meters_per_unit": scaled.meters_per_unit,
-                "state": scaled.state,
-                "diagnostics": scaled.diagnostics.to_dict(),
-            }, sort_keys=True).encode()
-            scale_digest = _digest(scale_bytes)
-            prov_graph.add_node(scale_digest, kind="scale_anchoring", producer="anchor_metric_scale", stage="scale")
-            # Link to sparse points and poses
-            if 'points_digest' in locals():
-                prov_graph.add_edge(scale_digest, points_digest)
-            if 'poses_digest' in locals():
-                prov_graph.add_edge(scale_digest, poses_digest)
-        else:
-            unscaled_bytes = json.dumps({
-                "type": "scale_anchoring",
-                "state": rel.state,
-                "diagnostics": rel.diagnostics.to_dict(),
-            }, sort_keys=True).encode()
-            unscaled_digest = _digest(unscaled_bytes)
-            prov_graph.add_node(unscaled_digest, kind="scale_anchoring", producer="unscaled", stage="scale")
-            if 'points_digest' in locals():
-                prov_graph.add_edge(unscaled_digest, points_digest)
-            if 'poses_digest' in locals():
-                prov_graph.add_edge(unscaled_digest, poses_digest)
-
     # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) ----
     from reconstruction.frame import FrameCanonicalizationError, canonicalize_frame
 
@@ -343,44 +268,8 @@ def vertical_slice(
     except FrameCanonicalizationError as exc:
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
 
-    # ---- provenance: frame canonicalization nodes ----
-    if prov_graph is not None:
-        from world_ir.artifact_store import _digest
-        import json
-        frame_bytes = json.dumps({
-            "type": "frame_canonicalization",
-            "transform": frame_record.transform.tolist() if hasattr(frame_record.transform, 'tolist') else frame_record.transform,
-            "dominant_plane": frame_record.dominant_plane,
-        }, sort_keys=True).encode()
-        frame_digest = _digest(frame_bytes)
-        prov_graph.add_node(frame_digest, kind="frame", producer="canonicalize_frame", stage="frame")
-        # Link to scale result
-        if 'scale_digest' in locals():
-            prov_graph.add_edge(frame_digest, scale_digest)
-        elif 'unscaled_digest' in locals():
-            prov_graph.add_edge(frame_digest, unscaled_digest)
-
     # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
     depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options, scale_state)
-
-    # ---- provenance: depth stage nodes ----
-    if prov_graph is not None and depth_facts is not None and depth_facts.get("status") == "ran":
-        from world_ir.artifact_store import _digest
-        import json
-        depth_bytes = json.dumps({
-            "type": "metric_depth_maps",
-            "model": depth_facts.get("model"),
-            "n_maps": depth_facts.get("n_maps"),
-        }, sort_keys=True).encode()
-        depth_digest = _digest(depth_bytes)
-        prov_graph.add_node(depth_digest, kind="metric_depth_maps", producer="MiDaSDepthBackend", stage="depth")
-        # Link to frame and evidence
-        if 'frame_digest' in locals():
-            prov_graph.add_edge(depth_digest, frame_digest)
-        for item in evidence_items:
-            parent_digest = item.metadata.get("provenance_digest")
-            if parent_digest:
-                prov_graph.add_edge(depth_digest, parent_digest)
 
     # ---- stage 3: compile to validated WorldIR ----
     compile_options = CompileOptions(
@@ -391,70 +280,13 @@ def vertical_slice(
     except Exception as exc:  # noqa: BLE001
         raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
 
-    # ---- provenance: world compilation nodes ----
-    if prov_graph is not None:
-        from world_ir.artifact_store import _digest
-        import json
-        world_bytes = json.dumps({
-            "type": "world_compilation",
-            "world_id": world.id,
-            "entities": len(world.entities),
-            "geometries": len(world.geometries),
-            "measurements": getattr(diagnostics, 'measurements_count', 0),
-            "relationships": getattr(diagnostics, 'relationships_count', 0),
-        }, sort_keys=True).encode()
-        world_digest = _digest(world_bytes)
-        prov_graph.add_node(world_digest, kind="world", producer="compile_reconstruction_to_world", stage="compile")
-        # Link to frame, depth, and scale
-        if 'frame_digest' in locals():
-            prov_graph.add_edge(world_digest, frame_digest)
-        if 'depth_digest' in locals():
-            prov_graph.add_edge(world_digest, depth_digest)
-        if 'scale_digest' in locals():
-            prov_graph.add_edge(world_digest, scale_digest)
-        elif 'unscaled_digest' in locals():
-            prov_graph.add_edge(world_digest, unscaled_digest)
-
     # ---- stage 3.5: semantic perception -> object entities (optional) ----
     perception_facts = _perception_stage(
         result, world, evidence_items, metric_depth_maps, options
     )
 
-    # ---- provenance: perception stage nodes ----
-    if prov_graph is not None and perception_facts is not None and perception_facts.get("status") == "ran":
-        from world_ir.artifact_store import _digest
-        import json
-        perc_bytes = json.dumps({
-            "type": "perception",
-            "entities_promoted": perception_facts.get("entities_promoted", 0),
-            "measurements": perception_facts.get("measurements_count", 0),
-        }, sort_keys=True).encode()
-        perc_digest = _digest(perc_bytes)
-        prov_graph.add_node(perc_digest, kind="perception", producer="object_promotion", stage="perception")
-        # Link to world
-        if 'world_digest' in locals():
-            prov_graph.add_edge(perc_digest, world_digest)
-        # Link to depth maps
-        if 'depth_digest' in locals():
-            prov_graph.add_edge(perc_digest, depth_digest)
-
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
     mesh_facts = _mesh_stage(result, world, options, scale_state)
-
-    # ---- provenance: mesh stage nodes ----
-    if prov_graph is not None and mesh_facts is not None and mesh_facts.get("status") == "ran":
-        from world_ir.artifact_store import _digest
-        import json
-        mesh_bytes = json.dumps({
-            "type": "surface_mesh",
-            "vertex_count": mesh_facts.get("vertex_count"),
-            "triangle_count": mesh_facts.get("triangle_count"),
-        }, sort_keys=True).encode()
-        mesh_digest = _digest(mesh_bytes)
-        prov_graph.add_node(mesh_digest, kind="surface_mesh", producer="PoissonSurfaceReconstruction", stage="mesh")
-        # Link to world
-        if 'world_digest' in locals():
-            prov_graph.add_edge(mesh_digest, world_digest)
 
     # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
     # Runs BEFORE fusion so dense points can participate in cross-source fusion
@@ -462,48 +294,11 @@ def vertical_slice(
         result, world, options, scale_state, meters_per_unit
     )
 
-    # ---- provenance: dense MVS stage nodes ----
-    if prov_graph is not None and dense_mvs_facts is not None and dense_mvs_facts.get("status") == "ran":
-        from world_ir.artifact_store import _digest
-        import json
-        dmvs_bytes = json.dumps({
-            "type": "dense_mvs",
-            "n_fused_points": dense_mvs_facts.get("n_fused_points"),
-            "artifact_uri": dense_mvs_facts.get("artifact_uri"),
-        }, sort_keys=True).encode()
-        dmvs_digest = _digest(dmvs_bytes)
-        prov_graph.add_node(dmvs_digest, kind="dense_mvs", producer="COLMAP_dense_MVS", stage="dense_mvs")
-        # Link to world and sparse reconstruction
-        if 'world_digest' in locals():
-            prov_graph.add_edge(dmvs_digest, world_digest)
-        if 'points_digest' in locals():
-            prov_graph.add_edge(dmvs_digest, points_digest)
-
     # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
-    # ---- provenance: fusion stage nodes ----
-    if prov_graph is not None and fusion_facts is not None and fusion_facts.get("status") == "ran":
-        from world_ir.artifact_store import _digest
-        import json
-        fusion_bytes = json.dumps({
-            "type": "multi_source_fusion",
-            "n_sparse": fusion_facts.get("n_sparse"),
-            "n_depth": fusion_facts.get("n_depth"),
-            "n_dense_mvs": fusion_facts.get("n_dense_mvs"),
-            "n_associated": fusion_facts.get("n_associated"),
-        }, sort_keys=True).encode()
-        fusion_digest = _digest(fusion_bytes)
-        prov_graph.add_node(fusion_digest, kind="multi_source_fusion", producer="fusion_consumer", stage="fusion")
-        # Link to all sources
-        if 'points_digest' in locals():
-            prov_graph.add_edge(fusion_digest, points_digest)
-        if 'depth_digest' in locals():
-            prov_graph.add_edge(fusion_digest, depth_digest)
-        if 'dmvs_digest' in locals():
-            prov_graph.add_edge(fusion_digest, dmvs_digest)
-        if 'world_digest' in locals():
-            prov_graph.add_edge(fusion_digest, world_digest)
+    # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
+    detail_facts = _detail_stage(result, world, options)
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
@@ -526,7 +321,6 @@ def vertical_slice(
     world.metadata["fusion"] = {
         k: v for k, v in fusion_facts.items() if k != "fused"
     }
-    world.metadata["dense_mvs"] = dense_mvs_facts
 
     return VerticalSliceResult(
         world=world,
@@ -558,10 +352,95 @@ def vertical_slice(
             "depth": depth_facts,
             "perception": perception_facts,
             "mesh": mesh_facts,
-            "fusion": {k: v for k, v in fusion_facts.items() if k != "fused"},
-            "dense_mvs": dense_mvs_facts,
+            "detail": detail_facts,
         },
     )
+
+
+def _detail_stage(result, world, options):
+    """Optional P7-06 detail chain: measured evidence quality -> detail
+    discovery -> ROI work orders -> local refinement (tier-driven,
+    honest refusals). Records its facts in world metadata under
+    "detail" and returns the facts dict (None = fully skipped).
+
+    Follows the slice's stage pattern: a skip is visible (status
+    "skipped" + reason), never silent; the stage never raises -- the
+    detail layer is an enhancement and must not lose the sparse world.
+    The canonical PinholeCameras built for scale/perception stages are
+    reused for the quality measurement (GSD needs real focal lengths;
+    the assessor refuses to guess intrinsics). Success records the
+    facts into world.metadata["detail"] here (the stage owns its
+    metadata key, like the perception stage owns its entities).
+    """
+    if not options.detail_enabled:
+        return {
+            "status": "skipped",
+            "note": "disabled (detail_enabled=False)",
+        }
+    if options.intrinsics is None or not result.camera_poses:
+        # GSD is unmeasurable without calibrated cameras; the assessor
+        # refuses to guess intrinsics (the same gate the sidecar depth
+        # stage applies). Visible skip, never fabricated budgets.
+        return {
+            "status": "skipped",
+            "note": "no trusted intrinsics (options.intrinsics) -- evidence "
+                    "quality (GSD) is unmeasurable; detail chain skipped",
+        }
+
+    from reconstruction.calibration.camera import (
+        CameraIntrinsics,
+        camera_from_pose,
+    )
+
+    fx, fy, cx, cy = options.intrinsics
+    width, height = options.image_size
+    intrinsics = CameraIntrinsics(
+        fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height
+    )
+    cameras = [
+        camera_from_pose(intrinsics, pose)
+        for pose in result.camera_poses
+    ]
+
+    try:
+        from perception.detail.pipeline import run_detail_pipeline
+    except ImportError as exc:
+        return {
+            "status": "skipped",
+            "note": f"optional detail dependencies unavailable: {exc}",
+        }
+
+    try:
+        report = run_detail_pipeline(
+            result,
+            cameras,
+            voxel_size=options.detail_voxel_size_m,
+            up=options.up,
+            build_world_ir=True,
+            world=world,
+        )
+    except ValueError as exc:
+        # Assessor/budget contract refusals are honest, visible skips.
+        return {
+            "status": "skipped",
+            "note": f"detail chain refused: {exc}",
+        }
+
+    facts = {
+        "status": "ran",
+        "quality": report.quality.to_dict(),
+        "summary": dict(report.summary),
+        "n_candidates": len(report.candidates),
+        "rois": [r.to_dict() for r in report.rois],
+        "outcomes": [o.to_dict() for o in report.outcomes],
+        "note": (
+            "discovery budgets derive from the measured evidence-quality "
+            "report; refinement consumes resolvable evidence only -- "
+            "refusals are recorded, never retried with invented geometry"
+        ),
+    }
+    world.metadata["detail"] = facts
+    return facts
 
 
 def _depth_stage(result, evidence_items, options, scale_state: str):
@@ -686,9 +565,6 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         from perception.detection.maskrcnn_backend import MaskRCNNDetector
         from perception.instances.lifting import lift_region_to_3d
         from perception.instances.object_resolution import merge_hypotheses
-        from perception.instances.epipolar import epipolar_consistent
-        from perception.instances.appearance import compute_color_histogram
-        from perception.instances import MultiViewIdentityTrackBackend, build_images_dict
         from evidence.promote_objects import promote_object_to_entity
         from reconstruction.calibration.camera import CameraIntrinsics, camera_from_pose
     except ImportError as exc:
@@ -707,29 +583,6 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     intrinsics = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height)
     depth_by_id = {dm.evidence_id: dm for dm in metric_depth_maps}
 
-    # Build camera lookup for epipolar consistency check (P7-01 multi-view identity)
-    cameras_by_id = {}
-    for pose in result.camera_poses:
-        cameras_by_id[pose.evidence_id] = camera_from_pose(intrinsics, pose)
-
-    # Build appearance descriptors for regions (P7-01 multi-view identity)
-    appearance_by_region = {}
-    try:
-        # Load images for appearance descriptor computation
-        import imageio.v3 as iio
-        for item in evidence_items:
-            if item.kind.value != "image":
-                continue
-            try:
-                img = iio.imread(item.source_uri)
-                # Convert to list of lists of (r,g,b) for compute_color_histogram
-                img_list = [[tuple(pixel[:3]) for pixel in row] for row in img]
-                # We'll compute descriptors per region after segmentation
-            except Exception:
-                pass  # Image loading failure degrades gracefully
-    except ImportError:
-        pass  # imageio not available
-
     try:
         seg_results = detector.segment(list(evidence_items))
     except Exception as exc:  # noqa: BLE001
@@ -741,46 +594,20 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         depth = depth_by_id.get(seg.evidence_id)
         if depth is None:
             continue  # view's depth never metricized -> cannot lift honestly
-        camera = cameras_by_id.get(seg.evidence_id)
+        camera = None
+        for pose in result.camera_poses:
+            if pose.evidence_id == seg.evidence_id:
+                camera = camera_from_pose(intrinsics, pose)
+                break
         if camera is None:
             continue  # unregistered view
-        
-        # Load image for appearance if available
-        img_list = None
-        try:
-            import imageio.v3 as iio
-            img = iio.imread(seg.evidence_id)  # This won't work - need actual path
-            # The evidence item's source_uri has the path
-            for item in evidence_items:
-                if item.id == seg.evidence_id:
-                    img = iio.imread(item.source_uri)
-                    img_list = [[tuple(pixel[:3]) for pixel in row] for row in img]
-                    break
-        except Exception:
-            pass
-        
         for region in seg.regions:
             masks_total += 1
-            
-            # Compute appearance descriptor if image available
-            if img_list is not None:
-                try:
-                    desc = compute_color_histogram(img_list, region.mask)
-                    if desc is not None:
-                        appearance_by_region[region.region_id] = desc
-                except Exception:
-                    pass  # Descriptor computation failure degrades gracefully
-            
             hyp = lift_region_to_3d(region, depth, camera)
             if hyp is not None:
                 hypotheses.append(hyp)
 
-    candidates = merge_hypotheses(
-        hypotheses,
-        options.object_merge_distance_m,
-        cameras=cameras_by_id,
-        appearance=appearance_by_region,
-    )
+    candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
 
     promoted = 0
     for i, cand in enumerate(candidates):
@@ -788,25 +615,6 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             cand, world, entity_id=f"entity-object-{i:03d}"
         )
         promoted += 1
-
-    # ---- P7-01: Multi-view identity tracking ----
-    tracks = []
-    try:
-        images_by_id = build_images_dict(evidence_items)
-        if images_by_id:
-            track_backend = MultiViewIdentityTrackBackend(
-                distance_threshold_m=options.object_merge_distance_m,
-                appearance_similarity_min=0.3,
-                epipolar_tolerance_px=5.0,
-            )
-            tracks = track_backend.link_instances(
-                results=seg_results,
-                metric_depth_maps=depth_by_id,
-                cameras=cameras_by_id,
-                images=images_by_id,
-            )
-    except Exception:
-        pass  # Track backend failure degrades gracefully
 
     # Final gate: the world must still be valid after mutation.
     from world_ir.validation import validate_world_ir
@@ -824,12 +632,10 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         "hypotheses_lifted": len(hypotheses),
         "candidates_merged": len(candidates),
         "entities_promoted": promoted,
-        "tracks_created": len(tracks),
         "note": (
             "COCO Mask R-CNN masks lifted via SfM-aligned depth (metric-by-"
-            "alignment, approximate); merged by label+proximity+epipolar+"
-            "appearance (P7-01); provenance INFERRED with per-entity "
-            "evidence ids; multi-view tracks created from same identity"
+            "alignment, approximate); merged by label+proximity; provenance "
+            "INFERRED with per-entity evidence ids"
         ),
     }
 
@@ -846,7 +652,7 @@ def _fusion_stage(result, world, options, scale_state: str):
     missing integration.
 
     Gates (honest skips, same discipline as _mesh_stage): RELATIVE
-    scale would make ranges unit-less lies; too-few points make
+    scale would make unit-less lies; too-few points make
     fusion statistical noise; no artifact_store makes the geometry
     untraceable.
     """
@@ -944,7 +750,7 @@ def _fusion_stage(result, world, options, scale_state: str):
                 "note": "per-point range fusion of sparse+depth+dense_mvs claims; "
                 "conflicts recorded, never winner-picked",
             },
-)],
+        )],
     )
     world.geometries[geometry.id] = geometry
     return {
@@ -1089,6 +895,7 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
     # Parse fused.ply into ReconstructedPoint objects for cross-source fusion
     # Track IDs are prefixed with "dense_mvs:" to distinguish from sparse/depth points
     try:
+        from reconstruction.backend.dense_output import parse_fused_ply
         dense_points = parse_fused_ply(
             fused_bytes,
             source_evidence_ids=source_evidence_ids,
@@ -1097,7 +904,7 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
         for i, p in enumerate(dense_points):
             p.track_id = f"dense_mvs:{i}"
         result.points.extend(dense_points)
-    except Exception as exc:
+    except Exception:
         # Parsing failure is logged but doesn't fail the stage - geometry is still ingested
         pass
 

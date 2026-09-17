@@ -6,7 +6,95 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
-## UPDATE 2026-09-16g — P6-01 real dense-capture integration (newest)
+## UPDATE 2026-09-17d — P7-06 REAL-DATA VERIFICATION + structure-aware discovery (newest)
+
+- The full detail chain (quality -> discovery -> ROI -> refinement ->
+  WorldIR) is REAL-DATA VERIFIED on datasets/room_capture_mvs
+  fused.ply (294,345 points, real CUDA COLMAP MVS output):
+  metricized via anchor_metric_scale (scale 0.245879 m/unit,
+  verified rigid across all 136 station pairs) + trusted manifest
+  intrinsics -> GSD 1.169 mm/px "fine", observed 100%, views/point
+  median 13; 103 discovery cells (96 structure at planarity median
+  0.9997); 12 ROIs -> 12 refined / 0 refused (planes rms 0.3-1.1 mm
+  q=1.000; cylinders honest on clutter, rms up to 47.9 mm q=0.814);
+  WorldIR +12 entities +12 geometries; 182.7 s wall time;
+  determinism byte-identical across reruns.
+- REAL-DATA DEFECT FIXED red-first (tests/test_detail_structure.py):
+  oriented planar structure was invisible to discovery BY
+  CONSTRUCTION (a plane's curvature ratio is ~0). Discovery now
+  measures planarity from the same covariance solve and emits
+  is_structure; generate_rois(include_structure=True) seeds ROIs
+  from structure cells (provenance seed="structure"); the flag is
+  wired through run_detail_pipeline. Without the fix the room's
+  walls/floor/ceiling yielded 1 detail ROI; with it 96 structure
+  cells seed and 12 ROIs reach refinement.
+- Caller-side lesson recorded (NOT an engine defect): a scratch
+  probe that mixed raw-unit points with metric cameras reported GSD
+  2.787 "medium"; correct units give 1.169 "fine" (the 4.07x gap is
+  exactly the model scale ratio). The assessor is unit-faithful.
+- Remaining P7-06 opens: per-cell GSD re-measurement, adaptive
+  subdivision planner (directive section 13), threshold tuning,
+  WorldStore persistence (P11 scope).
+
+## UPDATE 2026-09-17c — P7-06 WorldIR integration
+
+- The refinement output's dead-end closed:
+  `perception/detail/worldir.py` integrates refined ROI outcomes
+  into a WorldIR instance reusing the established conventions
+  (promote_planes' Geometry+Observation pattern, RECONSTRUCTED
+  provenance, statement_state RECONSTRUCTED->DERIVED, measured
+  quality as confidence, validate_world_ir rollback gate). Refined
+  outcome -> typed Geometry + linked Entity whose Observation
+  answers "which observations, algorithms, artifacts produced
+  this". Refused ROI -> recorded fact, never geometry.
+- Wiring: `run_detail_pipeline(build_world_ir=True, world=...)` and
+  vertical-slice stage 3.8 pass the real world through — the
+  capture-to-world driver's WorldIR now carries the detail
+  statements.
+- 9 red-first tests in tests/test_detail_worldir.py; P7-06 open
+  items: per-cell GSD re-measurement, adaptive subdivision planner,
+  threshold tuning; WorldStore persistence of detail statements is
+  P11 scope.
+
+## UPDATE 2026-09-17b — P7-06 refinement executor + slice wiring
+
+- The refinement executor landed: `perception/detail/refinement.py`
+  + `backends.py` — pending ROI work orders become refined geometry
+  or honest refusals. Evidence resolved via point lookup (never
+  fabricated from ROI metadata); compute_tier drives backend
+  escalation (none refuses; survey/light/standard plane;
+  high/full add cylinder+sphere reused from parametric.py
+  unchanged); winner = measured-rms minimum with documented-map
+  quality; apply_outcomes transitions pending -> refined/refused
+  with the evidence on the record.
+- `perception/detail/pipeline.py`: one-call driver (assess ->
+  discover -> ROI -> refine -> apply), default lookup from the
+  result's own points.
+- Vertical-slice wiring: stage 3.8 `_detail_stage` in
+  engine/pipeline/vertical_slice.py runs the chain with
+  trusted-intrinsics cameras (same gate as the sidecar depth stage),
+  visible skips, facts under world.metadata["detail"], never raises.
+- 19 red-first tests in tests/test_detail_refinement.py; P7-06 open
+  items updated (WorldIR integration of refined geometry is the next
+  spine increment).
+
+## UPDATE 2026-09-17a — P7-06 detail discovery + ROI generation
+
+- `perception/detail/discovery.py`: domain-agnostic detail discovery
+  (directive sections 8/11) — points + measured P7-04 report in,
+  budget-attached DetailCandidates out. Deterministic voxel binning,
+  per-cell measured PCA curvature (closed-form eigensolver,
+  numpy-cross-checked 1e-9/200 trials), min_points skip-not-guess,
+  per-cell budgets via the documented P7-05 mapping (hallucination
+  gate). `perception/detail/roi.py` (sections 12/14): candidates →
+  bounded work orders (26-adjacent growth, MIN aggregate budget,
+  unioned point provenance, pending status).
+- 11 tests (7 discovery + 4 ROI) red-first; chain quality → budget →
+  discovery → ROI is now connected end-to-end.
+- P7-06 added to ledger (PARTIAL: no refinement executor consumes
+  compute_tier yet — that is the next detail-spine increment).
+
+## UPDATE 2026-09-16g — P6-01 real dense-capture integration
 
 - Next TASKS.yaml item executed: P6-01's PENDING verification closed —
   the REAL GPU COLMAP fused.ply (294,345 points, gitignored local

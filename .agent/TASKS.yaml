@@ -747,11 +747,107 @@ tasks:
     verification:
       - tests/test_detail_budget.py: 10 tests (level bands, coverage cap, refusals, unsupported mapping, determinism, serialization)
       - tests/test_capture_feedback_wiring.py: 3 wiring tests
+      - per-region budgets NOW EXIST via spatial partitioning --
+        perception/detail/discovery.py bins points into a deterministic
+        voxel grid and derives each cell's budget from the scene
+        report's measured GSD + the cell's own view counts (7 tests in
+        tests/test_detail_discovery.py); ROI generation groups cells
+        and takes the MIN budget over member cells (weakest evidence
+        bounds the group; tests/test_detail_roi.py, 4 tests).
     open: >-
-      PARTIAL, not DONE: scene-level derivation only -- per-region
-      budgets need spatial partitioning (tiling/segmentation) of the
-      scene; ROI generation does not yet consume compute_tier;
-      thresholds untuned against real datasets.
+      PARTIAL, not DONE: local refinement does not yet consume
+      compute_tier (no ROI refinement backend exists); thresholds
+      (voxel size, curvature, GSD bands) untuned against real
+      datasets.
+
+  - id: P7-06
+    name: detail discovery + ROI generation + refinement executor
+    status: PARTIAL
+    basis: >-
+      perception/detail/discovery.py (universal-perception directive
+      sections 8/11): domain-agnostic detail discovery from a
+      reconstruction's points + the measured evidence-quality report.
+      Deterministic voxel binning; per-cell measured curvature (PCA
+      smallest-eigenvalue ratio, closed-form cubic eigensolver
+      cross-checked against numpy eigvalsh to 1e-9 over 200 random
+      trials), point density; every candidate carries a budget derived
+      by the documented P7-05 mapping from its own view support (the
+      hallucination gate: weak evidence cannot claim a fine level).
+      perception/detail/roi.py (directive sections 12/14): candidates
+      become bounded work orders -- 26-adjacent region growth (<=
+      max_cells_per_roi), unioned point provenance, tight voxel
+      bounds, aggregate MIN budget, status "pending" (generation
+      creates work orders; it does not fake refinement).
+      perception/detail/refinement.py + backends.py (directive
+      sections 11/13, the P7-06 refinement executor): pending work
+      orders become refined geometry or honest refusals -- evidence
+      resolved through a point lookup (never fabricated from ROI
+      metadata), compute_tier-driven backend escalation (none refuses;
+      survey/light/standard run plane; high/full add cylinder+sphere),
+      measured rms/max residual winner with documented-map quality,
+      apply_outcomes transitions pending -> refined/refused carrying
+      the evidence on the record. fit_plane is the new level-1 backend
+      (Jacobi normal, degenerate-collinear refusal); sphere/cylinder
+      reuse parametric.py unchanged.      perception/detail/pipeline.py is
+      the one-call driver (assess -> discover -> ROI -> refine ->
+      apply, default lookup from the result's own points).
+      perception/detail/worldir.py (directive sections 8/11, the
+      integration consumer): refined outcomes become WorldIR
+      Geometry+Entity statements reusing the established conventions
+      unchanged (promote_planes' Geometry+Observation pattern,
+      RECONSTRUCTED provenance, statement_state classifier
+      RECONSTRUCTED->DERIVED, measured quality as confidence, fit
+      parameters + algorithm identity + ROI provenance on the
+      observation, validate_world_ir rollback gate); refusals are
+      recorded facts, never geometry. Wired into stage 3.8
+      (build_world_ir=True): the vertical slice's world now carries
+      the detail statements.
+      engine/pipeline/vertical_slice.py stage 3.8 (_detail_stage):
+      trusted-intrinsics cameras, visible skips (disabled / no
+      intrinsics / chain refusal), facts under
+      world.metadata["detail"], never raises.
+    scope: >-
+      Where detail is recoverable (discovery), the unit of local
+      reconstruction work (ROI), and its honest execution (refinement
+      executor); input to adaptive refinement and WorldIR integration.
+    verification:
+      - tests/test_detail_discovery.py: 7 tests (determinism/stable order, plane~0 vs curved>0.1 measured curvature, min_points skip-not-guess, budget attachment, flat-cannot-claim-L4 gate, domain agnosticism -- same code path on mechanical + organic curves)
+      - tests/test_detail_roi.py: 4 tests (flat-only scene -> no ROIs, pending status + tight bounds + provenance, adjacent merge with weakest-budget cap under mixed evidence, determinism under input permutation)
+      - tests/test_detail_refinement.py: 19 tests (measured plane/sphere residuals + degenerate refusals, refine-on-resolvable-evidence, refusal naming missing ids, tier=none never fits, high-tier escalation counters, determinism + non-mutation, all-refused honesty, apply_outcomes transitions + unknown-id tolerance, end-to-end pipeline driver incl. empty scene, vertical-slice stage 3.8 ran/skipped/intrinsics-gate)
+      - tests/test_detail_worldir.py: 9 tests (refined outcome -> entity+geometry with linkage and measured confidence, geometry typed by winning backend + lod_level from budget, provenance observation answers what produced this incl. DERIVED statement state, refused ROI records fact not geometry, determinism + validate-clean, mixed refined/refused, pipeline build_world_ir flag incl. off-path, vertical-slice stage integrates into the real world)
+      - eigensolver validated against numpy.linalg.eigvalsh (200-trial, 1e-9)
+    open: >-
+      PARTIAL, not DONE: per-cell budgets reuse the scene-level GSD
+      measurement rather than per-cell re-measurement (documented in
+      _cell_budget); thresholds untuned (deferral documented at each
+      threshold); no adaptive subdivision planner yet (directive
+      section 13 scoring); detail statements are not yet persisted by
+      a WorldStore consumer (P11 scope).
+    real_data_verification: >-
+      2026-09-17, room_capture_mvs fused.ply (294,345 points, real CUDA
+      COLMAP MVS output), metricized via anchor_metric_scale against the
+      manifest's measured baseline (scale 0.245879 m/unit; verified
+      rigid: all 136 station-pair raw/GT distance ratios 4.039-4.079,
+      std 0.006) and trusted manifest intrinsics (f=1160.07). Full
+      chain (run_detail_pipeline, voxel 0.25 m, include_structure=True,
+      build_world_ir=True): GSD 1.169 mm/px -> tier "fine", observed
+      100%, overclaim 0, views/point median 13 (min 3); discovery 103
+      cells -- 96 structure (planarity median 0.9997: walls/floor/
+      ceiling), 1 detail, 6 other; 12 ROIs -> 12 refined / 0 refused
+      (planes rms 0.3-1.1 mm q=1.000; cylinders honest where geometry
+      is clutter: rms up to 47.9 mm, q=0.814); WorldIR +12 entities
+      +12 geometries, validation gate passed. Full chain wall time
+      182.7 s. Determinism verified: repeated discover_detail /
+      generate_rois produce byte-identical candidates and ROIs.
+      include_structure is load-bearing: without it the room's planar
+      structure is invisible to the curvature gate (1 detail ROI),
+      with it 96 structure cells seed ROIs -- the defect this branch
+      fixes red-first (tests/test_detail_structure.py, 6 tests).
+      Probe caveat (recorded honestly): an earlier scratch run mixed
+      raw-unit fused points with metric cameras and reported GSD 2.787
+      "medium" -- a 4.07x unit error in the caller, not the engine;
+      the canonical assessor is unit-faithful (GSD scales exactly with
+      the input scale, all other stage results unchanged).
 
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 

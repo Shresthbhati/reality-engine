@@ -482,6 +482,86 @@ capabilities:
       max_gsd_mm_per_px, coverage_capped, basis) — the maximum
       defensible detail level + compute allocation for a region
     license: project-internal
+  - name: detail_discovery
+    category: perception
+    backend: perception/detail/discovery.py (in-house, deterministic)
+    inputs: >-
+      ReconstructionResult points + EvidenceQualityReport from
+      evidence_quality_assessment (scene GSD + per-track view counts)
+    outputs: >-
+      DetailCandidate list in stable spatial order (cell_id, centroid,
+      n_points, measured PCA curvature ratio, measured planarity
+      1 - lambda_min/lambda_max from the same covariance solve,
+      density_per_m2, is_detail, is_structure, per-cell DetailBudget,
+      point_ids) — WHERE detail is recoverable AND which cells are
+      oriented planar structure (invisible to the curvature gate by
+      construction), domain-agnostic; voxelized, min_points-skipping,
+      budget-attached (hallucination gate). REAL-DATA VERIFIED on
+      room_capture_mvs (294,345 pts): 103 cells, 96 structure at
+      planarity median 0.9997, determinism byte-identical across
+      reruns
+    license: project-internal
+  - name: roi_generation
+    category: perception
+    backend: perception/detail/roi.py (in-house, deterministic)
+    inputs: >-
+      DetailCandidate list from detail_discovery + voxel_size
+      (+ optional include_structure / planarity_seed_threshold:
+      structure cells also seed ROIs, provenance seed="structure")
+    outputs: >-
+      RegionOfInterest list (roi_id, bounds, member cells, unioned
+      point provenance, aggregate MIN DetailBudget, pending status,
+      provenance) — bounded local-reconstruction work orders
+    license: project-internal
+  - name: roi_refinement
+    category: perception
+    backend: >-
+      perception/detail/refinement.py + perception/detail/backends.py
+      (in-house, deterministic; sphere/cylinder reuse
+      perception/architecture/parametric.py unchanged)
+    inputs: >-
+      Pending RegionOfInterest work orders + a point-id lookup (e.g.
+      the reconstruction's own track_id -> position table)
+    outputs: >-
+      RefinementOutcome per ROI (refined with measured rms/max
+      residual, documented-map quality, winning backend, measured fit
+      counters; or refused with a diagnostic reason naming the
+      evidence gap) + apply_outcomes state transitions carried on the
+      work-order records
+    license: project-internal
+  - name: detail_pipeline
+    category: perception
+    backend: perception/detail/pipeline.py (in-house, deterministic)
+    inputs: >-
+      ReconstructionResult + calibrated PinholeCameras (+ optional
+      point lookup, voxel size, up)
+    outputs: >-
+      DetailPipelineReport (measured EvidenceQualityReport, detail
+      candidates, transitioned ROIs, outcomes, summary counts) — the
+      one-call assess -> discover -> ROI -> refine -> apply driver;
+      optional build_world_ir integrates refined outcomes into a
+      WorldIR instance and reports entity/geometry ids + refusals;
+      include_structure pass-through seeds ROIs from measured planar
+      structure cells (the real room capture's walls/floor/ceiling
+      were invisible without it). REAL-DATA VERIFIED end-to-end:
+      room_capture_mvs fused.ply (294,345 pts) -> GSD 1.169 mm/px
+      "fine", 12 ROIs -> 12 refined / 0 refused, +12 WorldIR
+      entities/geometries, 182.7 s wall time
+    license: project-internal
+  - name: detail_worldir_integration
+    category: perception
+    backend: perception/detail/worldir.py (in-house, deterministic)
+    inputs: >-
+      RegionOfInterest list + aligned RefinementOutcome list + a
+      WorldIR instance
+    outputs: >-
+      WorldIR Geometry (typed by winning backend, lod_level from the
+      budget, measured quality as confidence, provenance Observation
+      with fit parameters + algorithm identity + point provenance) +
+      linked Entity (RECONSTRUCTED, DERIVED statement state); refusals
+      recorded as facts on the report, never geometry; validate-
+      rollback on any validation error
+    license: project-internal
     hardware_requirements: none (pure Python, deterministic)
     accuracy: >-
       Derived from measured facts by documented mapping (gsd<=5 -> L4,

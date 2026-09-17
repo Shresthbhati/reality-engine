@@ -12,7 +12,7 @@ from perception.segmentation.interface import SegmentationResult, SegmentedRegio
 from perception.instances.lifting import ObjectHypothesis3D
 from perception.depth.interface import DepthMap
 from reconstruction.calibration.camera import PinholeCamera, CameraIntrinsics, CameraExtrinsics
-from engine.physics.math3 import Vec3, Quat
+from engine.math import Vec3, Quat
 from evidence.session import EvidenceItem, EvidenceKind
 from provenance import Provenance, Uncertainty
 

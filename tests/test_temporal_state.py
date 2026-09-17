@@ -1,4 +1,4 @@
-"""Tests for the temporal state layer (engine/simulation/temporal.py):
+"""Tests for the temporal state layer (engine/temporal/temporal.py):
 causal event graph over the real EventBus, WorldIR deep-state snapshots,
 branch inheritance with structural comparison, and deterministic
 non-destructive replay.
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from engine.simulation.temporal import (
+from engine.temporal import (
     BranchManager,
     EventGraph,
     SnapshotStore,

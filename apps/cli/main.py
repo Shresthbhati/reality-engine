@@ -44,7 +44,7 @@ from registration import (
     RegistrationEngine,
     RegistrationResult,
 )
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from reconstruction.calibration.transforms import RigidTransform
 from sdk import reality
 from world_ir.artifact_store import FileArtifactStore
@@ -411,13 +411,6 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_physics(args: argparse.Namespace) -> int:
-    world = _load_world(args.world)
-    diagnostics = reality.compile_physics(world)
-    print(json.dumps(diagnostics.to_dict(), indent=2, sort_keys=True))
-    return 0
-
-
 def _load_point_cloud(path: str) -> list[Vec3]:
     """Load point cloud from PLY or JSON."""
     import numpy as np
@@ -615,10 +608,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--format", required=True, choices=["gltf", "usda", "blender"])
     p_export.add_argument("-o", "--output", required=True)
     p_export.set_defaults(func=cmd_export)
-
-    p_physics = sub.add_parser("physics", help="compile a WorldIR into physics bodies + diagnostics")
-    p_physics.add_argument("world")
-    p_physics.set_defaults(func=cmd_physics)
 
     p_register = sub.add_parser(
         "register",

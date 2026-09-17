@@ -5,7 +5,7 @@ from typing import Optional
 
 import numpy as np
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 from reconstruction.calibration.transforms import RigidTransform
 from uncertainty.quantity import UNKNOWN, Uncertain
 

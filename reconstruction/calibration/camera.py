@@ -36,7 +36,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 
 #: Fixed-point undistortion iterations. 10 converges to well under a
 #: pixel of error for the mild-to-moderate distortion real camera

@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+:root {
+  /* ── Core Dark Theme Surfaces ────────────────────────────────────────── */
+  --background:             #09090b;
+  --foreground:             #ededf2;
+
+  --re-bg-base:             #08090b;
+  --re-bg-surface:          #0f1014;
+  --re-bg-elevated:         #15171d;
+  --re-bg-selected:         rgba(61, 142, 247, 0.12);
+  --re-bg-active:           rgba(61, 142, 247, 0.18);
+  --re-bg-hover:            rgba(255, 255, 255, 0.04);
+
+  /* ── Borders ─────────────────────────────────────────────────────────── */
+  --re-border-default:      #1f222b;
+  --re-border-subtle:       #171920;
+  --re-border-focused:      #3d8ef7;
+  --re-border-hover:        #2d323f;
+
+  /* ── Text Hierarchy ──────────────────────────────────────────────────── */
+  --re-text-primary:        #f0f1f6;
+  --re-text-secondary:      #9296a6;
+  --re-text-tertiary:       #54596b;
+  --re-text-inverse:        #08090b;
+
+  /* ── Accent & Brand ──────────────────────────────────────────────────── */
+  --re-accent:              #3d8ef7;
+  --re-accent-hover:        #5ca2f9;
+  --re-accent-subtle:       rgba(61, 142, 247, 0.15);
+  --re-accent-border:       rgba(61, 142, 247, 0.35);
+
+  /* ── Status & Feedback ───────────────────────────────────────────────── */
+  --re-success:             #2ecc71;
+  --re-success-subtle:      rgba(46, 204, 113, 0.12);
+  --re-warning:             #f39c12;
+  --re-warning-subtle:      rgba(243, 156, 18, 0.12);
+  --re-error:               #e74c3c;
+  --re-error-subtle:        rgba(231, 76, 60, 0.12);
+  --re-info:                #3498db;
+  --re-info-subtle:         rgba(52, 152, 219, 0.12);
+
+  /* ── Confidence & Uncertainty ────────────────────────────────────────── */
+  --re-confidence-high:     #2ecc71;
+  --re-confidence-mid:      #f39c12;
+  --re-confidence-low:      #e74c3c;
+  --re-uncertainty:         #a855f7;
+  --re-uncertainty-subtle:  rgba(168, 85, 247, 0.15);
+
+  /* ── Density Scales (Default: Compact) ───────────────────────────────── */
+  --re-density-row-h:       28px;
+  --re-density-pad-x:       8px;
+  --re-density-pad-y:       4px;
+  --re-density-gap:         6px;
+  --re-density-font:        12px;
+}
+
+[data-density="comfortable"] {
+  --re-density-row-h:       34px;
+  --re-density-pad-x:       12px;
+  --re-density-pad-y:       6px;
+  --re-density-gap:         8px;
+  --re-density-font:        13px;
+}
+
+[data-density="compact"] {
+  --re-density-row-h:       28px;
+  --re-density-pad-x:       8px;
+  --re-density-pad-y:       4px;
+  --re-density-gap:         6px;
+  --re-density-font:        12px;
+}
+
+[data-density="dense"] {
+  --re-density-row-h:       24px;
+  --re-density-pad-x:       6px;
+  --re-density-pad-y:       2px;
+  --re-density-gap:         4px;
+  --re-density-font:        11px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--re-bg-base);
+  color: var(--re-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Tabular numbers for engineering measurements ────────────────────────── */
+.font-num, .num-tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Thin engineering scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--re-border-default) transparent;
+}
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--re-border-default);
+  border-radius: 2px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--re-text-tertiary);
+}
+
+/* Base resets */
+input::placeholder {
+  color: var(--re-text-tertiary);
+}
+button {
+  font-family: inherit;
+}

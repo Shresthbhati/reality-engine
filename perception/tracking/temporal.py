@@ -36,7 +36,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 
 #: Defaults; a caller overrides per scene (not tuned against any real
 #: dataset -- the same honesty as object_resolution's thresholds).

@@ -14,7 +14,7 @@ stage in this repo (planes, rooms, physics) has already been held to.
 
 from __future__ import annotations
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 from evidence.promote_objects import promote_object_to_entity
 from perception.depth.interface import DepthMap
 from perception.instances.lifting import lift_region_to_3d

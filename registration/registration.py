@@ -29,7 +29,7 @@ from typing import Optional, Sequence, Tuple
 import numpy as np
 from scipy.spatial import cKDTree
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 from reconstruction.calibration.transforms import RigidTransform
 
 

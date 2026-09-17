@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 from perception.depth.interface import DepthMap
 from reconstruction.calibration.camera import CameraExtrinsics, CameraIntrinsics, PinholeCamera
 from reconstruction.depth_to_points import DepthToPointsError, depth_map_to_points

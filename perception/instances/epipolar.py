@@ -27,7 +27,7 @@ from __future__ import annotations
 import math
 from typing import Tuple
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from reconstruction.calibration.camera import PinholeCamera
 
 #: Point-to-epipolar-line distance (approx. pixels, scaled by camera

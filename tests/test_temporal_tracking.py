@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from perception.instances.interface import InstanceTrack
 from perception.instances.lifting import ObjectHypothesis3D
 from perception.tracking.temporal import (

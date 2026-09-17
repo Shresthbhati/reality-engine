@@ -1,0 +1,15 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "e2b": {
+      "type": "local",
+      "command": [
+        "node",
+        "{{E2B_PATH}}/packages/js/dist/index.js"
+      ],
+      "environment": {
+        "E2B_API_KEY": "{{E2B_API_KEY}}"
+      }
+    }
+  }
+}

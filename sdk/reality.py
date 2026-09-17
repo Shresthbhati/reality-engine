@@ -18,20 +18,21 @@ external need justifies it, not speculatively):
   - compile_world_from_reconstruction: evidence -> WorldIR
   - validate: WorldIR -> structured validation report
   - diff: WorldIR x WorldIR -> structured WorldDiff
-  - compile_physics: WorldIR -> physics bodies + diagnostics
   - export: WorldIR -> (content, ExportReport) for gltf/usd/blender
 
 What this SDK explicitly does NOT do (named so it isn't mistaken for an
 oversight): it does not add authentication, job queuing, a service
 layer, or a plugin system -- those are separate, much larger platform
 campaign phases (24, 11-13) this module makes no attempt to cover.
+
+Physics compilation is provided by the child project
+(reality-engine-child.physics), not the core SDK.
 """
 
 from __future__ import annotations
 
 from typing import Optional, Tuple
 
-from engine.compiler.physics_compiler import PhysicsCompileDiagnostics, compile_physics_world
 from engine.compiler.world_compiler import (
     CompileDiagnostics,
     CompileInputError,
@@ -56,7 +57,6 @@ __all__ = [
     "MemoryArtifactStore",
     "UnsupportedExportFormatError",
     "WorldValidationGateError",
-    "compile_physics",
     "compile_world_from_reconstruction",
     "diff",
     "export",
@@ -102,12 +102,6 @@ def diff(before: WorldIR, after: WorldIR) -> WorldDiff:
     """Deterministic structural diff between two WorldIR snapshots.
     Direct pass-through to world_ir.diff.diff_worlds()."""
     return diff_worlds(before, after)
-
-
-def compile_physics(world: WorldIR) -> PhysicsCompileDiagnostics:
-    """WorldIR -> physics bodies + diagnostics. Direct pass-through to
-    engine.compiler.physics_compiler.compile_physics_world()."""
-    return compile_physics_world(world)
 
 
 def spatial_index(world: WorldIR) -> SpatialIndex:

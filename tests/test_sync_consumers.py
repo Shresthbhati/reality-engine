@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 from evidence.clocks import ClockModel, SynchronizationError, SyncMethod, SyncUncertainty
 from reconstruction.calibration.transforms import RigidTransform
 from trajectories.backend import selection as traj_selection

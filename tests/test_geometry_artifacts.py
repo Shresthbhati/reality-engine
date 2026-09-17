@@ -246,7 +246,7 @@ def _two_view_chair_candidate():
     """Same two-view chair fixture as tests/test_object_pipeline_e2e.py,
     reused here to prove hypothesis.points survives lift -> merge and
     reaches promote_object_to_entity()."""
-    from engine.physics.math3 import Quat, Vec3
+    from engine.math import Quat, Vec3
     from perception.depth.interface import DepthMap
     from perception.instances.lifting import lift_region_to_3d
     from perception.instances.object_resolution import merge_hypotheses
@@ -290,7 +290,7 @@ class TestObjectHypothesisRetainsRealPoints:
         """Backward compatibility: existing callers/tests that build
         ObjectHypothesis3D by hand (never touching the new field) must
         keep working unchanged."""
-        from engine.physics.math3 import Vec3
+        from engine.math import Vec3
         from perception.instances.lifting import ObjectHypothesis3D
 
         hyp = ObjectHypothesis3D(

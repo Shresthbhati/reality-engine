@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from engine.pipeline.vertical_slice import VerticalSliceOptions
 from perception.detection.interface import Detection, DetectionResult
 from perception.instances.object_resolution import merge_hypotheses

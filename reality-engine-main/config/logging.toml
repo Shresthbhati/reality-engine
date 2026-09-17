@@ -1,0 +1,29 @@
+# Reality Engine V11 Logging Configuration
+
+[logging]
+# Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+level = "INFO"
+
+# Output format: JSON (structured) or TEXT (debug only)
+format = "JSON"
+
+# Output destination: stdout, stderr, or file path
+output = "stdout"
+
+# Include timestamp in log entries
+include_timestamp = true
+
+# Include module name in log entries
+include_module = true
+
+# Include thread ID in log entries (for multi-threaded scenarios)
+include_thread_id = false
+
+# Enable performance tracking in diagnostics
+enable_performance_tracking = true
+
+# Enable numerics checks (NaN/Inf detection)
+enable_numerics_checks = true
+
+# Diagnostic report interval (seconds)
+report_interval_seconds = 10.0

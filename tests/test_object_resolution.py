@@ -7,7 +7,7 @@ import math
 
 import pytest
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from perception.instances.lifting import ObjectHypothesis3D
 from perception.instances.object_resolution import merge_hypotheses
 from provenance import Uncertainty

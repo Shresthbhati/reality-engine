@@ -25,6 +25,7 @@ from datetime import datetime
 
 from provenance import Provenance, Uncertainty
 from .statement_state import StatementState
+from uncertainty import Uncertain as UncertainScalar
 
 
 # ===== Basic Types & Enums =====
@@ -153,14 +154,22 @@ class Measurement:
     serialization of the measured quantity itself -- it exists so a
     downstream consumer can distinguish measured from heuristic
     uncertainty instead of trusting a number blindly.
+
+    `uncertain` is an optional Uncertain scalar (value + sigma + basis)
+    from the uncertainty propagation engine (P10-02). When present, it
+    supersedes the legacy `precision`/`confidence` fields for formal
+    uncertainty propagation. Additive: old v1 worlds without this field
+    load unchanged.
     """
     value: float
     unit: str  # SI units only (meter, kg, second, etc.)
-    precision: float = 0.01  # Standard deviation or margin of error
+    precision: float = 0.01  # Standard deviation or margin of error (legacy)
     timestamp: Optional[float] = None
     provenance: Provenance = Provenance.UNKNOWN
     confidence: float = 0.5
     precision_note: Optional[str] = None
+    # P10-02: formal uncertainty propagation (value + sigma + basis)
+    uncertain: Optional[UncertainScalar] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -173,10 +182,13 @@ class Measurement:
         }
         if self.precision_note is not None:
             d["precision_note"] = self.precision_note
+        if self.uncertain is not None:
+            d["uncertain"] = self.uncertain.to_dict()
         return d
 
     @staticmethod
     def from_dict(data: dict) -> "Measurement":
+        uncertain_data = data.get("uncertain")
         return Measurement(
             value=data["value"],
             unit=data["unit"],
@@ -185,6 +197,7 @@ class Measurement:
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             confidence=data.get("confidence", 0.5),
             precision_note=data.get("precision_note"),
+            uncertain=UncertainScalar.from_dict(uncertain_data) if uncertain_data else None,
         )
 
 

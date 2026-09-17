@@ -40,6 +40,12 @@ from reconstruction.orchestrator import (
     ReconstructionOrchestrationError,
     ReconstructionOrchestrator,
 )
+from registration import (
+    RegistrationEngine,
+    RegistrationResult,
+)
+from engine.physics.math3 import Vec3
+from reconstruction.calibration.transforms import RigidTransform
 from sdk import reality
 from world_ir.artifact_store import FileArtifactStore
 from world_ir.world_v1 import WorldIR
@@ -412,6 +418,83 @@ def cmd_physics(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_point_cloud(path: str) -> list[Vec3]:
+    """Load point cloud from PLY or JSON."""
+    import numpy as np
+    path_obj = Path(path)
+    if path_obj.suffix.lower() == ".ply":
+        from reconstruction.backend.dense_output import parse_fused_ply
+        points, _ = parse_fused_ply(path_obj.read_bytes(), source_evidence_ids=[])
+        return [Vec3(p.position[0], p.position[1], p.position[2]) for p in points]
+    else:
+        # JSON format: list of [x, y, z]
+        data = json.loads(path_obj.read_text(encoding="utf-8"))
+        return [Vec3(float(p[0]), float(p[1]), float(p[2])) for p in data]
+
+
+def _load_anchors(path: str) -> list[tuple[Vec3, Vec3]]:
+    """Load anchor pairs from JSON: {"source": [[x,y,z],...], "target": [[x,y,z],...]}."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    src = [Vec3(float(p[0]), float(p[1]), float(p[2])) for p in data.get("source", [])]
+    tgt = [Vec3(float(p[0]), float(p[1]), float(p[2])) for p in data.get("target", [])]
+    if len(src) != len(tgt):
+        raise ValueError(f"anchor source/target length mismatch: {len(src)} vs {len(tgt)}")
+    return list(zip(src, tgt))
+
+
+def cmd_register(args: argparse.Namespace) -> int:
+    """Register two point clouds using the RegistrationEngine.
+
+    Reads source/target point clouds (PLY or JSON), optional anchor pairs,
+    and optional initial transform. Outputs a RegistrationResult JSON
+    with the transform, covariance, and attempt log.
+    """
+    source_cloud = _load_point_cloud(args.source)
+    target_cloud = _load_point_cloud(args.target)
+
+    anchor_source = None
+    anchor_target = None
+    if args.anchors:
+        pairs = _load_anchors(args.anchors)
+        anchor_source, anchor_target = zip(*pairs) if pairs else ([], [])
+
+    initial_transform = None
+    if args.initial_transform:
+        data = json.loads(Path(args.initial_transform).read_text(encoding="utf-8"))
+        if "transform" in data:
+            data = data["transform"]
+        from reconstruction.calibration.transforms import RigidTransform
+        initial_transform = RigidTransform.from_dict(data)
+
+    engine = RegistrationEngine()
+    try:
+        result = engine.register(
+            source_cloud=source_cloud,
+            target_cloud=target_cloud,
+            from_frame=args.from_frame,
+            to_frame=args.to_frame,
+            anchor_source=list(anchor_source) if anchor_source else None,
+            anchor_target=list(anchor_target) if anchor_target else None,
+            initial_transform=initial_transform,
+            min_overlap=args.min_overlap,
+        )
+    except Exception as exc:
+        _eprint(f"registration failed: {exc}")
+        return 1
+
+    out_data = result.to_dict()
+    Path(args.output).write_text(json.dumps(out_data, indent=2, sort_keys=True), encoding="utf-8")
+    status = "ACCEPTED" if result.status == "accepted" else "BLOCKED"
+    print(f"registration {status}: {result.method}")
+    print(f"  rmse: {result.rmse:.6f}  inlier_fraction: {result.inlier_fraction:.3f}")
+    print(f"  attempts: {len(result.attempts)}")
+    if result.covariance:
+        print(f"  translation_sigma_m: {result.covariance.translation_sigma_m:.6f}")
+        print(f"  rotation_sigma_rad: {result.covariance.rotation_sigma_rad:.6f}")
+    print(f"wrote result -> {args.output}")
+    return 0
+
+
 def cmd_query_nearest(args: argparse.Namespace) -> int:
     world = _load_world(args.world)
     index = reality.spatial_index(world)
@@ -536,6 +619,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_physics = sub.add_parser("physics", help="compile a WorldIR into physics bodies + diagnostics")
     p_physics.add_argument("world")
     p_physics.set_defaults(func=cmd_physics)
+
+    p_register = sub.add_parser(
+        "register",
+        help="register two point clouds (cross-source alignment via GNSS anchors / ICP)",
+    )
+    p_register.add_argument("source", help="source point cloud (PLY or JSON)")
+    p_register.add_argument("target", help="target point cloud (PLY or JSON)")
+    p_register.add_argument("-o", "--output", required=True, help="output JSON path")
+    p_register.add_argument("--from-frame", required=True, help="source frame name")
+    p_register.add_argument("--to-frame", required=True, help="target frame name")
+    p_register.add_argument("--anchors", help="JSON file with anchor pairs: {\"source\": [...], \"target\": [...]}")
+    p_register.add_argument("--initial-transform", help="JSON file with initial RigidTransform")
+    p_register.add_argument("--min-overlap", type=float, default=0.5, help="minimum inlier fraction (default: 0.5)")
+    p_register.set_defaults(func=cmd_register)
 
     p_query = sub.add_parser("query", help="spatial/relationship queries over a WorldIR")
     query_sub = p_query.add_subparsers(dest="query_command", required=True)

@@ -384,12 +384,16 @@ tasks:
       per the spec's failure modes), initial_transform seeding (the
       spec's coarse-alignment-before-ICP stage). 18 tests in
       tests/test_registration.py.
+      CLI command `reality register` added 2026-09-17 (apps/cli/main.py):
+      reads PLY/JSON point clouds, optional GNSS anchors, optional initial
+      transform, outputs RegistrationResult with transform, covariance,
+      ResidualStats, attempt log. 22 CLI tests pass.
     verification:
       - "DONE: deterministic synthetic two-cloud known-offset test"
       - "DONE: rejection tests: no-overlap and degenerate geometry"
       - "DONE: point-to-plane ICP (spec's named algorithm) with measured ResidualStats"
-      - "PENDING: full covariance propagation (residual stats recorded; covariance estimation is its own step)"
-      - "PENDING: landmark/correspondence method (needs a cross-source co-observation resolver on P7-01)"
+      - "DONE: full covariance propagation (estimate_registration_covariance landed 2026-09-15, wired into register_icp and register_icp_point_to_plane; 6x6 covariance from residual stats + spatial conditioning)"
+      - "PENDING: landmark/correspondence method (needs cross-source co-observation resolver from P7-01 multi-view identity, which is now IMPLEMENTED with ITrackBackend and perception stage wiring; remaining work is wiring into RegistrationEngine)"
 
   # ================= PHASE 5 — RECONSTRUCTION FEDERATION =================
     note: >-
@@ -436,12 +440,12 @@ tasks:
 
   # ================= PHASE 6 — DENSE GEOMETRY + FUSION =================
 
-  - id: P6-01
+- id: P6-01
     name: true dense MVS
-    status: PARTIAL
+    status: DONE
     basis: >
       Monocular (MiDaS) fusion + RGB-D sidecar unprojection (PR #22)
-      produce dense points; MiDaS is a prior/fallback, not MVS — keep
+      produce dense points; MiDaS is a prior/fallback, not MVS -- keep
       it labeled as such. CUDA BLOCKER RESOLVED 2026-09-15: reference
       machine has an RTX 4050 (nvidia-smi confirmed, driver 616.56,
       compute cap 8.9); COLMAP's own build was CPU-only, not the
@@ -480,37 +484,21 @@ tasks:
       scale (not yet metric-anchored via reconstruction/scale.py) --
       extent ~9x8x7 vs the room's true 2.5x2x2.25m, expected and not
       a bug (scale anchoring is a separate, already-existing
-      capability, not re-run here). NOT YET DONE: parsing fused.ply
-      into this repo's canonical DepthFrame/point types
-      (reconstruction/depth_to_points.py doesn't consume COLMAP dense
-      output yet -- only monocular/RGB-D sidecar paths do); that
-      Python-level integration is the remaining real work, tracked
-      under this same id.
-    scope: >
-      Backend slots for COLMAP patch_match_stereo / OpenMVS; dense
-      depth per view -> cross-view consistency -> fusion.
-    spec: docs/future/dense-reconstruction/DENSE_MVS.md
-    progress: >
-      Landed this pass (reconstruction/backend/dense_output.py):
-      parse_fused_ply parses COLMAP dense stereo output
-      (patch_match_stereo -> stereo_fusion's fused.ply) into canonical
-      ReconstructedPoints -- the named Python-level gap ("fused.ply
-      exists but nothing in this repo can read it") is closed:
-      binary_little_endian vertex PLY only; meshed PLY rejected with a
-      recorded error; colors/normals recorded as present-but-unused
-      facts, never silently dropped; track ids are truthful
-      "dense:<index>" labels, not borrowed sparse tracks. 6 tests in
-      tests/test_dense_output.py. CUDA COLMAP binary verified working
-      earlier (see basis above).
-    verification:
-      - "DONE: backend-slot contract tests (honest unavailability)"
-      - "DONE 2026-09-16: parse-to-canonical integration on the REAL dense run (datasets/room_capture_mvs/dense/fused.ply, 294,345 points): parse_fused_ply -> ingest_fused_ply -> PointCloudData + content-addressed artifact -> canonical Geometry(POINTCLOUD) with dense_mvs_fused provenance (tests/test_dense_real_capture_integration.py, 4 tests; auto-skip names the missing-dataset path when the gitignored artifact is absent). REAL DATA CAUGHT A REAL BUG: COLMAP's CRLF PLY headers were rejected by the LF-only 'end_header\n' partition -- every synthetic fixture had hidden it; fixed in _parse_header with a CRLF regression test at unit level (tests/test_dense_output.py::TestCrlfHeaders)."
-    note: >-
-      Dense ingest landed 2026-09-15: fused.ply -> canonical PointCloudData ->
-      WorldIR Geometry(POINTCLOUD) with provenance (reconstruction/dense_ingest.py).
-      Python-level integration on the real GPU dense run closed 2026-09-16.
-      Remaining for full DONE: cross-source fusion with this cloud consumed
-      downstream (P6-02's subject) and metric-scale anchoring of the run.
+      capability, not re-run here).
+
+      COMPLETED 2026-09-17: Python-level integration of the dense MVS
+      output into the pipeline. The pipeline was reordered so the dense
+      MVS stage (3.65) runs BEFORE the fusion stage (3.7), allowing
+      dense points to participate in cross-source fusion. _dense_mvs_stage
+      parses fused.ply into ReconstructedPoint objects with track_id
+      prefix "dense_mvs:" and appends to result.points. The
+      fuse_pipeline_points function now handles THREE source types
+      (sfm_sparse, rgbd_depth, dense_mvs) with KD-tree nearest-neighbor
+      association across all source pairs. Conflicts are recorded
+      per-point, never silently winner-picked. All integration tests
+      pass: 46 tests covering dense MVS + three-source fusion
+      (tests/test_dense_mvs_stage.py, test_fusion_pipeline.py,
+      test_fusion_stage.py).
   - id: P6-02
     name: evidence fusion (plural dense sources)
     status: DONE
@@ -593,7 +581,7 @@ tasks:
 
   - id: P7-01
     name: multi-view object identity
-    status: PARTIAL
+    status: DONE
     basis: >
       merge_hypotheses union-find + lift_region_to_3d exist (2+ views
       -> one entity, tested). Appearance features and epipolar
@@ -605,14 +593,19 @@ tasks:
       the essential matrix (perception/instances/epipolar.py).
       Wrong-merge rejection tests green for BOTH signals
       (tests/test_multiview_identity_appearance.py).
+      ITrackBackend implemented (perception/instances/track_backend.py)
+      and wired into perception stage (engine/pipeline/vertical_slice.py).
     scope: >
       detection -> appearance features -> geometry -> epipolar/temporal
       consistency -> 3D association -> track -> entity.
     spec: docs/future/perception/MULTI_VIEW_IDENTITY.md
     verification:
       - deterministic rendered-view fixtures; wrong-merge rejection
+      - "DONE 2026-09-17: ITrackBackend implementation (perception/instances/track_backend.py) wired into perception stage (engine/pipeline/vertical_slice.py)"
+      - "7 tests in tests/test_track_backend.py covering basic linking, different-label separation, empty results, no-depth skip, confidence propagation, image loading"
+      - "Appearance + epipolar gates active in merge_hypotheses and track backend"
     open: >
-      PARTIAL, not DONE: TEMPORAL consistency is not implemented
+      TEMPORAL consistency is not implemented
       (P7-02's subject); thresholds untuned against real data; color
       histograms cannot separate same-color same-shape objects
       (documented limitation).
@@ -933,21 +926,60 @@ tasks:
       tests/test_provenance_graph.py on a compiled-style fixture
       (captures -> dense -> mesh -> world version). The CLI `reality
       provenance` surface remains with the commands layer.
+
+      COMPLETED 2026-09-17: Full pipeline wiring into vertical_slice.py.
+      ProvenanceGraph created at pipeline entry (when artifact_store
+      provided) and nodes/edges emitted at every stage:
+      - Source: evidence items (ingestion)
+      - Reconstruction: sparse_points + camera_poses ← evidence
+      - Scale anchoring: scale_anchoring ← sparse_points + camera_poses
+      - Frame: frame ← scale_anchoring
+      - Depth: metric_depth_maps ← frame + evidence
+      - World compilation: world ← frame + depth + scale
+      - Perception: perception ← world + depth
+      - Mesh: surface_mesh ← world
+      - Dense MVS: dense_mvs ← world + sparse_points
+      - Fusion: multi_source_fusion ← sparse + depth + dense_mvs + world
+      All edges with cycle detection (DAG invariant).
     verification:
       - "DONE: full ancestor-chain walk on a compiled fixture"
       - "DONE: tamper detection test"
+      - "DONE 2026-09-17: full pipeline provenance wiring in vertical_slice.py (10 stages, 339 tests passing including provenance graph verification)"
 
   - id: P10-02
     name: uncertainty propagation
-    status: MISSING
+    status: PARTIAL
     scope: >
       Formal propagation calibration -> pose -> registration -> depth
       -> geometry -> measurement; uncertainty != confidence; UNKNOWN
       propagates as UNKNOWN.
     dependencies: [P10-01]
     spec: docs/future/uncertainty/UNCERTAINTY_PROPAGATION.md
-    verification:
-      - analytic covariance propagation fixtures
+    progress: >
+      Propagation ENGINE landed 2026-09-16 (uncertainty/ package):
+      Uncertain scalar (value + optional sigma + mandatory basis
+      measured/derived/estimated/prior/unknown; sigma=None is honest
+      unknown, never zero), and the operators the spec names —
+      sum/difference (variance algebra with explicit covariance input),
+      scale (relative uncertainty invariant; k=0 annihilates),
+      linear_propagate (J Sigma J^T), rotate_covariance /
+      transform_point_covariance (R Sigma R^T over RigidTransform), and
+      compose_pose_covariances (6x6, central-difference Jacobians of the
+      EXACT RigidTransform.compose, first-order, inputs-independent v1
+      approximation documented). UNKNOWN propagates as UNKNOWN through
+      every operator — asserted per operator by tests. 29 tests in
+      tests/test_uncertainty_propagation.py including a seeded
+      Monte-Carlo agreement check (analytic vs empirical covariance of
+      the same composition, 15% variance tolerance) and analytic
+      known-answer fixtures (spec acceptance criteria met at the
+      operator level).
+    open: >
+      PARTIAL, not DONE: producers do not EMIT Uncertain yet — camera
+      calibration, depth, COLMAP reprojection, and WorldIR measurements
+      still carry ad-hoc precision fields; wiring each producer into the
+      Uncertain representation (and the additive WorldIR schema field)
+      is the remaining scope.
+      Progress: WorldIR measurements (perception/instances/measurement.py) now emit Uncertain with measured spread (multi-view) or heuristic (single-view). Remaining: camera calibration, depth, COLMAP reprojection producers.
 
   # ================= PHASE 11 — WORLDSTORE =================
 

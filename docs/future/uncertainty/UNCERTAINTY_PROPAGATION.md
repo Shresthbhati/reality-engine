@@ -1,6 +1,9 @@
 # Uncertainty Propagation
 
-Status: MISSING (2026-09-14)
+Status: PARTIAL (2026-09-16) — the propagation engine is real
+(`uncertainty/`: `Uncertain` scalar + first-order operators with
+analytic/Monte-Carlo verified tests); producer wiring (camera, depth,
+reprojection, WorldIR measurement fields emitting `Uncertain`) is open.
 
 ## Purpose
 

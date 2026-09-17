@@ -1,10 +1,141 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-15 (finalization batch: P6-02/P6-03/P7-01/
-P7-03/P9-01 implemented + ledger reconciled; PR cut for the whole
-uncommitted campaign batch)
+**Session end:** 2026-09-17 (completion campaign, worktree
+`claude/completion-master` off origin/main @ PR #39 merge eb062b6)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
+
+## 2026-09-17 (5) — P7-01: Multi-view object identity (ITrackBackend + perception stage wiring)
+
+Implemented concrete multi-view identity tracking:
+
+- **MultiViewIdentityTrackBackend** (`perception/instances/track_backend.py`):
+  - Implements `ITrackBackend.link_instances()` 
+  - Reuses existing `merge_hypotheses` with epipolar + appearance gates
+  - Lifts regions to 3D using metric depth + registered cameras
+  - Computes color histogram descriptors for regions
+  - Filters merges via epipolar consistency (geometric) + histogram intersection (photometric)
+  - Returns `InstanceTrack` objects with regions, label, confidence, uncertainty
+
+- **Perception stage integration** (`engine/pipeline/vertical_slice.py`):
+  - Builds `images_by_id` dict via `build_images_dict()`
+  - Creates `MultiViewIdentityTrackBackend` with configurable thresholds
+  - Runs track linking after object promotion
+  - Adds `tracks_created` count to stage facts
+  - Graceful degradation: track failures don't break pipeline
+
+- **Tests** (`tests/test_track_backend.py`): 7 tests covering:
+  - Basic linking, different-label separation, empty results, no-depth skip
+  - Confidence propagation, image loading, non-image kind filtering
+
+Full test verification: 326 tests passing (319 core + 7 track backend)
+
+## 2026-09-17 (6) — P7-01: Multi-view object identity (ITrackBackend + perception stage wiring) — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- MultiViewIdentityTrackBackend implemented and wired into perception stage
+- 7 tests in test_track_backend.py all passing
+- Epipolar + appearance gates active in merge_hypotheses and track backend
+
+## 2026-09-17 (5) — P10-01: Provenance graph wired into vertical slice pipeline (10 stages) — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- ProvenanceGraph created at pipeline entry (when artifact_store provided)
+- Nodes/edges emitted at each of 10 stages
+- All edges with cycle detection (DAG invariant)
+- 11 provenance graph tests + 392 core tests passing
+
+## 2026-09-17 (4) — P10-02: Uncertain scalar wired into perception measurement producer — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- Added `uncertain` field to `Measurement` (additive, backward compatible)
+- Updated `perception/instances/measurement.py` to emit Uncertain
+- Maps provenance to basis, uses measured spread or documented heuristic as sigma
+- Fixed pre-existing bug in `measure_dimensions` single-view return path
+
+## 2026-09-17 (3) — P4-01: RegistrationEngine CLI + wiring — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- Added `reality register` CLI command
+- RegistrationEngine already implemented with confidence-ordered orchestration
+- Covariance propagation: estimate_registration_covariance wired into register_icp and register_icp_point_to_plane
+- 22 registration tests + 22 CLI tests + 230 core tests all pass
+
+## 2026-09-17 (2) — P6-01/P6-02: Dense MVS integration + Three-source fusion — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- Pipeline reorder: dense MVS stage (3.65) runs BEFORE fusion (3.7)
+- _dense_mvs_stage parses fused.ply into ReconstructedPoint with track_id prefix "dense_mvs:"
+- fuse_pipeline_points handles THREE source types (sfm_sparse, rgbd_depth, dense_mvs)
+- KD-tree nearest-neighbor association across all source pairs
+- 46 tests covering dense MVS + three-source fusion
+
+## 2026-09-17 (1) — Session start: Merged claude/completion-master into studio-viewer branch
+
+Clean environment established. Merged completion-master into studio-viewer branch and resolved all conflicts.
+
+---
+
+## 2026-09-17 (5) — P7-01: Multi-view object identity (ITrackBackend + perception stage wiring)
+
+Added `reality register` CLI command and verified RegistrationEngine:
+
+- **CLI command**: `reality register <source> <target> -o <output> --from-frame <f> --to-frame <t> [--anchors <json>] [--initial-transform <json>] [--min-overlap <float>]`
+  - Reads source/target point clouds from PLY or JSON
+  - Optional GNSS anchor pairs from JSON
+  - Optional initial RigidTransform from JSON
+  - Outputs RegistrationResult JSON with transform, covariance, attempt log
+  - Tested: GNSS anchor (accepted), ICP (accepted), both with known synthetic data
+
+- **RegistrationEngine** (registration/registration.py) already implemented:
+  - Confidence-ordered orchestration: GNSS anchors first, then ICP
+  - `register_icp` (point-to-point), `register_icp_point_to_plane` (spec's named algorithm)
+  - `register_gnss_anchor` (translation-only, paired positions)
+  - `estimate_registration_covariance` (residual-derived, first-order propagation)
+  - All methods return `RegistrationResult` with transform, covariance, ResidualStats, attempt log
+  - Honest blocking: no silent best-effort transforms
+
+- **Full test verification**:
+  - Registration tests: 22 passed
+  - CLI tests: 22 passed
+  - Core pipeline tests: 230 passed
+  - All tests: 252+ passed
+
+## 2026-09-17 (1) — P6-01/P6-02: Dense MVS integration + Three-source fusion COMPLETED
+
+Clean environment established (worktree + fresh venv, `pip install
+-e ".[dev]"`). Two real findings from the clean baseline, both fixed:
+
+- **Packaging bug (suite could not even collect)**:
+  `tests/test_depth_frames.py` imports PIL at module level, but Pillow
+  was declared in NO dependency group — a clean `pip install .` produced
+  a suite that dies at collection. Root cause, not symptom: real image
+  decoding IS a core evidence-ingestion capability
+  (evidence/importers.py, evidence/depth_frames.py). `pillow>=10.0`
+  added to core dependencies (cv2 stays optional, as its importers
+  already guard). `slow` marker registered in pyproject (was producing
+  PytestUnknownMarkWarning).
+- **P10-02 uncertainty propagation (queue: MISSING -> PARTIAL)**:
+  `uncertainty/` package — `Uncertain` (value/sigma/basis;
+  sigma=None honest unknown never zero; basis taxonomy from CLAUDE.md
+  §44) and first-order operators: sum/difference (variance algebra,
+  explicit covariance input), scale (relative uncertainty invariant),
+  linear_propagate (J Sigma J^T), rotate_covariance /
+  transform_point_covariance (R Sigma R^T over RigidTransform),
+  compose_pose_covariances (6x6, central-difference Jacobians of the
+  EXACT RigidTransform.compose — repo convention t_c = R2 t1 + t2
+  verified against hand-derived analytic cases and a seeded
+  Monte-Carlo run). UNKNOWN propagates as UNKNOWN through every
+  operator (asserted per operator). 29 tests,
+  tests/test_uncertainty_propagation.py. Ledgers updated (TASKS,
+  CAPABILITIES, spec doc status line). Remaining: producer wiring.
+
+Verification: full suite in the clean environment COMPLETES:
+**1830 passed / 11 skipped / 0 failed in 153.35 s** (baseline_full.log;
+root causes of the historical "does not complete" were the undeclared
+Pillow dependency killing collection + stale venvs). Targeted
+uncertainty tests 29/29 green.
+
 
 
 ## 2026-09-17 (4) -- P7-06 REAL-DATA VERIFICATION: full detail chain on room_capture_mvs

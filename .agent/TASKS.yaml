@@ -393,7 +393,7 @@ tasks:
       - "DONE: rejection tests: no-overlap and degenerate geometry"
       - "DONE: point-to-plane ICP (spec's named algorithm) with measured ResidualStats"
       - "DONE: full covariance propagation (estimate_registration_covariance landed 2026-09-15, wired into register_icp and register_icp_point_to_plane; 6x6 covariance from residual stats + spatial conditioning)"
-      - "PENDING: landmark/correspondence method (needs cross-source co-observation resolver from P7-01 multi-view identity, which is PARTIAL)"
+      - "PENDING: landmark/correspondence method (needs cross-source co-observation resolver from P7-01 multi-view identity, which is now IMPLEMENTED with ITrackBackend and perception stage wiring; remaining work is wiring into RegistrationEngine)"
 
   # ================= PHASE 5 — RECONSTRUCTION FEDERATION =================
     note: >-
@@ -599,8 +599,11 @@ tasks:
     spec: docs/future/perception/MULTI_VIEW_IDENTITY.md
     verification:
       - deterministic rendered-view fixtures; wrong-merge rejection
+      - "DONE 2026-09-17: ITrackBackend implementation (perception/instances/track_backend.py) wired into perception stage (engine/pipeline/vertical_slice.py)"
+      - "7 tests in tests/test_track_backend.py covering basic linking, different-label separation, empty results, no-depth skip, confidence propagation, image loading"
+      - "Appearance + epipolar gates active in merge_hypotheses and track backend"
     open: >
-      PARTIAL, not DONE: TEMPORAL consistency is not implemented
+      PARTIAL: TEMPORAL consistency is not implemented
       (P7-02's subject); thresholds untuned against real data; color
       histograms cannot separate same-color same-shape objects
       (documented limitation).

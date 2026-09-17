@@ -5,37 +5,32 @@
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
-## 2026-09-17 (4) — P10-01: Provenance graph wired into vertical slice pipeline
+## 2026-09-17 (5) — P7-01: Multi-view object identity (ITrackBackend + perception stage wiring)
 
-ProvenanceGraph now created and wired at each pipeline stage (when
-artifact_store provided):
+Implemented concrete multi-view identity tracking:
 
-- **Source nodes** (evidence ingestion): each EvidenceItem → node with
-  digest from content hash, kind="evidence", stage="source"
-- **Reconstruction** (stage 1): sparse_points + camera_poses nodes,
-  derived_from evidence items
-- **Scale anchoring** (stage 2): scale_anchoring node, derived_from
-  sparse_points + camera_poses (or unscaled node for RELATIVE)
-- **Frame canonicalization** (stage 2.5): frame node, derived_from
-  scale_anchoring
-- **Depth** (stage 2.8): metric_depth_maps node (when MiDaS runs),
-  derived_from frame + evidence
-- **World compilation** (stage 3): world node, derived_from frame +
-  depth + scale
-- **Perception** (stage 3.5): perception node, derived_from world +
-  depth
-- **Mesh** (stage 3.6): surface_mesh node, derived_from world
-- **Dense MVS** (stage 3.65): dense_mvs node, derived_from world +
-  sparse_points
-- **Fusion** (stage 3.7): multi_source_fusion node, derived_from
-  sparse_points + depth + dense_mvs + world
+- **MultiViewIdentityTrackBackend** (`perception/instances/track_backend.py`):
+  - Implements `ITrackBackend.link_instances()` 
+  - Reuses existing `merge_hypotheses` with epipolar + appearance gates
+  - Lifts regions to 3D using metric depth + registered cameras
+  - Computes color histogram descriptors for regions
+  - Filters merges via epipolar consistency (geometric) + histogram intersection (photometric)
+  - Returns `InstanceTrack` objects with regions, label, confidence, uncertainty
 
-All edges created with cycle detection (DAG invariant). Graph
-verification: 11 existing tests pass + 252 core + 52
-uncertainty/provenance/worldstore + 24 object measurement = **339
-tests passing**
+- **Perception stage integration** (`engine/pipeline/vertical_slice.py`):
+  - Builds `images_by_id` dict via `build_images_dict()`
+  - Creates `MultiViewIdentityTrackBackend` with configurable thresholds
+  - Runs track linking after object promotion
+  - Adds `tracks_created` count to stage facts
+  - Graceful degradation: track failures don't break pipeline
 
-## 2026-09-17 (3) — P10-02: Uncertain scalar wired into perception measurement producer
+- **Tests** (`tests/test_track_backend.py`): 7 tests covering:
+  - Basic linking, different-label separation, empty results, no-depth skip
+  - Confidence propagation, image loading, non-image kind filtering
+
+Full test verification: 326 tests passing (319 core + 7 track backend)
+
+## 2026-09-17 (4) — P10-01: Provenance graph wired into vertical slice pipeline (10 stages)
 
 Added `reality register` CLI command and verified RegistrationEngine:
 

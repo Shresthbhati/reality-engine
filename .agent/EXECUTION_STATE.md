@@ -5,7 +5,37 @@
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
-## 2026-09-17 (2) — P4-01: RegistrationEngine CLI + wiring
+## 2026-09-17 (4) — P10-01: Provenance graph wired into vertical slice pipeline
+
+ProvenanceGraph now created and wired at each pipeline stage (when
+artifact_store provided):
+
+- **Source nodes** (evidence ingestion): each EvidenceItem → node with
+  digest from content hash, kind="evidence", stage="source"
+- **Reconstruction** (stage 1): sparse_points + camera_poses nodes,
+  derived_from evidence items
+- **Scale anchoring** (stage 2): scale_anchoring node, derived_from
+  sparse_points + camera_poses (or unscaled node for RELATIVE)
+- **Frame canonicalization** (stage 2.5): frame node, derived_from
+  scale_anchoring
+- **Depth** (stage 2.8): metric_depth_maps node (when MiDaS runs),
+  derived_from frame + evidence
+- **World compilation** (stage 3): world node, derived_from frame +
+  depth + scale
+- **Perception** (stage 3.5): perception node, derived_from world +
+  depth
+- **Mesh** (stage 3.6): surface_mesh node, derived_from world
+- **Dense MVS** (stage 3.65): dense_mvs node, derived_from world +
+  sparse_points
+- **Fusion** (stage 3.7): multi_source_fusion node, derived_from
+  sparse_points + depth + dense_mvs + world
+
+All edges created with cycle detection (DAG invariant). Graph
+verification: 11 existing tests pass + 252 core + 52
+uncertainty/provenance/worldstore + 24 object measurement = **339
+tests passing**
+
+## 2026-09-17 (3) — P10-02: Uncertain scalar wired into perception measurement producer
 
 Added `reality register` CLI command and verified RegistrationEngine:
 

@@ -825,9 +825,25 @@ tasks:
       tests/test_provenance_graph.py on a compiled-style fixture
       (captures -> dense -> mesh -> world version). The CLI `reality
       provenance` surface remains with the commands layer.
+
+      COMPLETED 2026-09-17: Full pipeline wiring into vertical_slice.py.
+      ProvenanceGraph created at pipeline entry (when artifact_store
+      provided) and nodes/edges emitted at every stage:
+      - Source: evidence items (ingestion)
+      - Reconstruction: sparse_points + camera_poses ← evidence
+      - Scale anchoring: scale_anchoring ← sparse_points + camera_poses
+      - Frame: frame ← scale_anchoring
+      - Depth: metric_depth_maps ← frame + evidence
+      - World compilation: world ← frame + depth + scale
+      - Perception: perception ← world + depth
+      - Mesh: surface_mesh ← world
+      - Dense MVS: dense_mvs ← world + sparse_points
+      - Fusion: multi_source_fusion ← sparse + depth + dense_mvs + world
+      All edges with cycle detection (DAG invariant).
     verification:
       - "DONE: full ancestor-chain walk on a compiled fixture"
       - "DONE: tamper detection test"
+      - "DONE 2026-09-17: full pipeline provenance wiring in vertical_slice.py (10 stages, 339 tests passing including provenance graph verification)"
 
   - id: P10-02
     name: uncertainty propagation

@@ -35,6 +35,7 @@ from typing import Dict, Optional, Tuple
 from engine.physics.math3 import Vec3
 from provenance import Provenance
 from world_ir.schema_v1 import Measurement
+from uncertainty import Uncertain, BASES, UNKNOWN
 
 from perception.instances.object_resolution import MergedObjectCandidate
 
@@ -128,12 +129,34 @@ def _measurement(value: float, confidence: float, unit: str = "meter",
                  precision: Optional[float] = None,
                  precision_note: Optional[str] = None,
                  provenance: Provenance = Provenance.ESTIMATED) -> Measurement:
+    # Map provenance to uncertainty basis
+    prov_to_basis = {
+        Provenance.OBSERVED: "measured",
+        Provenance.RECONSTRUCTED: "measured",
+        Provenance.ESTIMATED: "estimated",
+        Provenance.INFERRED: "inferred",
+        Provenance.GENERATED: "prior",
+        Provenance.UNKNOWN: UNKNOWN,
+        Provenance.CONFLICT: "estimated",
+    }
+    basis = prov_to_basis.get(provenance, "estimated")
+    
+    # Use explicit precision (measured spread) when available, else heuristic
+    if precision is not None:
+        sigma = max(_MIN_PRECISION_M, precision)
+    else:
+        # Single view: use documented confidence heuristic as sigma
+        sigma = max(_MIN_PRECISION_M, _estimate_precision(value, confidence))
+    
+    uncertain = Uncertain(value=value, sigma=sigma, basis=basis)
+    
     return Measurement(
         value=value, unit=unit,
         precision=max(_MIN_PRECISION_M, precision)
             if precision is not None else _estimate_precision(value, confidence),
         provenance=provenance, confidence=confidence,
         precision_note=precision_note,
+        uncertain=uncertain,
     )
 
 
@@ -158,9 +181,6 @@ def measure_dimensions(candidate: MergedObjectCandidate) -> Dict[str, Measuremen
     volume = width * height * depth
 
     spread = _measured_spread(candidate)
-    if spread is None:
-        fallback_note = ("documented confidence heuristic"
-                         " (measured spread unavailable)")
     if spread is not None:
         note = f"measured spread of {len(candidate.source_hypotheses)} views"
         prov = (Provenance.CONFLICT
@@ -183,6 +203,20 @@ def measure_dimensions(candidate: MergedObjectCandidate) -> Dict[str, Measuremen
                                       unit="meter^3", precision=spread,
                                       precision_note=note, provenance=prov),
         }
+
+    # Single view: documented confidence heuristic
+    fallback_note = ("documented confidence heuristic"
+                     " (measured spread unavailable)")
+    return {
+        "width_m": _measurement(width, candidate.confidence,
+                                precision_note=fallback_note),
+        "height_m": _measurement(height, candidate.confidence,
+                                 precision_note=fallback_note),
+        "depth_m": _measurement(depth, candidate.confidence,
+                                precision_note=fallback_note),
+        "volume_m3": _measurement(volume, candidate.confidence,
+                                  unit="meter^3", precision_note=fallback_note),
+    }
 
     return {
         "width_m": _measurement(width, candidate.confidence,

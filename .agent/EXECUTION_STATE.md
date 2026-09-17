@@ -7,6 +7,41 @@ uncommitted campaign batch)
 where execution actually stands, nothing else defines that.
 
 
+## 2026-09-17 (4) -- P7-06 REAL-DATA VERIFICATION: full detail chain on room_capture_mvs
+
+The detail spine ran end-to-end on the real 294,345-point CUDA
+COLMAP MVS fused.ply (metricized via anchor_metric_scale against the
+manifest's measured baseline; scale 0.245879 m/unit verified rigid
+across all 136 station pairs, ratio 4.039-4.079 std 0.006; trusted
+manifest intrinsics f=1160.07; 17 registered cameras):
+
+- MEASURED: GSD 1.169 mm/px -> tier "fine", observed 100%, overclaim
+  0, views/point median 13 (min 3). Discovery 103 cells -- 96
+  structure (planarity median 0.9997: walls/floor/ceiling), 1 detail,
+  6 other. 12 ROIs -> 12 refined / 0 refused: planes rms 0.3-1.1 mm
+  (q=1.000), cylinders honestly mediocre on clutter (rms up to
+  47.9 mm, q=0.814). WorldIR +12 entities +12 geometries, validation
+  gate passed. Full chain 182.7 s wall time.
+- DEFECT FOUND AND FIXED RED-FIRST (tests/test_detail_structure.py,
+  6 tests): oriented planar structure was invisible to discovery
+  because a plane's curvature ratio is ~0 BY CONSTRUCTION -- the
+  room's walls/floor/ceiling produced 1 detail ROI without the fix.
+  Discovery now measures planarity (1 - lambda_min/lambda_max, same
+  covariance solve) and records is_structure; ROI generation seeds
+  from structure cells via include_structure (provenance
+  seed="structure"), with the pass-through wired through
+  run_detail_pipeline. With the fix: 96 structure cells seed, 12
+  ROIs.
+- HONEST CAVEAT RECORDED: an earlier scratch probe mixed raw-unit
+  fused points with metric cameras and reported GSD 2.787 "medium"
+  -- a caller unit error (4.07x = the model scale ratio), NOT an
+  engine defect; the canonical assessor is unit-faithful. The
+  corrected run's 1.169 "fine" is the record.
+- Determinism verified on real data: repeated discover_detail /
+  generate_rois are byte-identical.
+- Suite at branch head: 1,892 passed / 1 skipped / 0 failed,
+  unbounded (incl. SAM real-model), 139 s.
+
 ## 2026-09-17 (3) -- P7-06 WorldIR integration: refined outcomes become world statements
 
 The dead-end closed: the detail chain's output now lands in the

@@ -6,7 +6,37 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
-## UPDATE 2026-09-17c — P7-06 WorldIR integration (newest)
+## UPDATE 2026-09-17d — P7-06 REAL-DATA VERIFICATION + structure-aware discovery (newest)
+
+- The full detail chain (quality -> discovery -> ROI -> refinement ->
+  WorldIR) is REAL-DATA VERIFIED on datasets/room_capture_mvs
+  fused.ply (294,345 points, real CUDA COLMAP MVS output):
+  metricized via anchor_metric_scale (scale 0.245879 m/unit,
+  verified rigid across all 136 station pairs) + trusted manifest
+  intrinsics -> GSD 1.169 mm/px "fine", observed 100%, views/point
+  median 13; 103 discovery cells (96 structure at planarity median
+  0.9997); 12 ROIs -> 12 refined / 0 refused (planes rms 0.3-1.1 mm
+  q=1.000; cylinders honest on clutter, rms up to 47.9 mm q=0.814);
+  WorldIR +12 entities +12 geometries; 182.7 s wall time;
+  determinism byte-identical across reruns.
+- REAL-DATA DEFECT FIXED red-first (tests/test_detail_structure.py):
+  oriented planar structure was invisible to discovery BY
+  CONSTRUCTION (a plane's curvature ratio is ~0). Discovery now
+  measures planarity from the same covariance solve and emits
+  is_structure; generate_rois(include_structure=True) seeds ROIs
+  from structure cells (provenance seed="structure"); the flag is
+  wired through run_detail_pipeline. Without the fix the room's
+  walls/floor/ceiling yielded 1 detail ROI; with it 96 structure
+  cells seed and 12 ROIs reach refinement.
+- Caller-side lesson recorded (NOT an engine defect): a scratch
+  probe that mixed raw-unit points with metric cameras reported GSD
+  2.787 "medium"; correct units give 1.169 "fine" (the 4.07x gap is
+  exactly the model scale ratio). The assessor is unit-faithful.
+- Remaining P7-06 opens: per-cell GSD re-measurement, adaptive
+  subdivision planner (directive section 13), threshold tuning,
+  WorldStore persistence (P11 scope).
+
+## UPDATE 2026-09-17c — P7-06 WorldIR integration
 
 - The refinement output's dead-end closed:
   `perception/detail/worldir.py` integrates refined ROI outcomes

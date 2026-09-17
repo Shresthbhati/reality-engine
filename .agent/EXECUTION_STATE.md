@@ -1,11 +1,33 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-16 (completion campaign, worktree
+**Session end:** 2026-09-17 (completion campaign, worktree
 `claude/completion-master` off origin/main @ PR #39 merge eb062b6)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
-## 2026-09-16 (8) — clean-env baseline recovery + P10-02 propagation engine
+## 2026-09-17 — P6-01/P6-02: Dense MVS integration + Three-source fusion COMPLETED
+
+Merged `claude/completion-master` into main and completed the dense MVS
+integration and three-source fusion:
+
+- **Pipeline reorder**: dense MVS stage (3.65) now runs BEFORE fusion
+  (3.7) so dense points can participate in cross-source fusion
+- **_dense_mvs_stage**: parses fused.ply into ReconstructedPoint objects
+  with track_id prefix "dense_mvs:" and appends to result.points
+- **fuse_pipeline_points**: now handles THREE source types:
+  - sfm_sparse (sparse triangulation)
+  - rgbd_depth (depth-unprojected RGB-D)
+  - dense_mvs (COLMAP dense stereo fusion)
+- **Association**: KD-tree nearest-neighbor across all source pairs
+- **Conflicts**: recorded per-point, never silently winner-picked
+- **All new tests pass**: 46 tests covering dense MVS + three-source fusion
+  (tests/test_dense_mvs_stage.py, test_fusion_pipeline.py, test_fusion_stage.py)
+
+Full suite verification on key paths:
+- Core pipeline (registration, clocks, sensors, depth_to_points): 154 passed
+- Evidence/provenance/worldstore: 72 passed
+- Perception/session: 81 passed
+- Fusion/dense MVS: 46 passed
 
 Clean environment established (worktree + fresh venv, `pip install
 -e ".[dev]"`). Two real findings from the clean baseline, both fixed:

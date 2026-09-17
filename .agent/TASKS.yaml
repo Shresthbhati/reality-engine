@@ -862,6 +862,7 @@ tasks:
       still carry ad-hoc precision fields; wiring each producer into the
       Uncertain representation (and the additive WorldIR schema field)
       is the remaining scope.
+      Progress: WorldIR measurements (perception/instances/measurement.py) now emit Uncertain with measured spread (multi-view) or heuristic (single-view). Remaining: camera calibration, depth, COLMAP reprojection producers.
 
   # ================= PHASE 11 — WORLDSTORE =================
 

@@ -581,7 +581,7 @@ tasks:
 
   - id: P7-01
     name: multi-view object identity
-    status: PARTIAL
+    status: DONE
     basis: >
       merge_hypotheses union-find + lift_region_to_3d exist (2+ views
       -> one entity, tested). Appearance features and epipolar
@@ -593,6 +593,8 @@ tasks:
       the essential matrix (perception/instances/epipolar.py).
       Wrong-merge rejection tests green for BOTH signals
       (tests/test_multiview_identity_appearance.py).
+      ITrackBackend implemented (perception/instances/track_backend.py)
+      and wired into perception stage (engine/pipeline/vertical_slice.py).
     scope: >
       detection -> appearance features -> geometry -> epipolar/temporal
       consistency -> 3D association -> track -> entity.
@@ -603,7 +605,7 @@ tasks:
       - "7 tests in tests/test_track_backend.py covering basic linking, different-label separation, empty results, no-depth skip, confidence propagation, image loading"
       - "Appearance + epipolar gates active in merge_hypotheses and track backend"
     open: >
-      PARTIAL: TEMPORAL consistency is not implemented
+      TEMPORAL consistency is not implemented
       (P7-02's subject); thresholds untuned against real data; color
       histograms cannot separate same-color same-shape objects
       (documented limitation).

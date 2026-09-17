@@ -30,7 +30,53 @@ Implemented concrete multi-view identity tracking:
 
 Full test verification: 326 tests passing (319 core + 7 track backend)
 
-## 2026-09-17 (4) — P10-01: Provenance graph wired into vertical slice pipeline (10 stages)
+## 2026-09-17 (6) — P7-01: Multi-view object identity (ITrackBackend + perception stage wiring) — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- MultiViewIdentityTrackBackend implemented and wired into perception stage
+- 7 tests in test_track_backend.py all passing
+- Epipolar + appearance gates active in merge_hypotheses and track backend
+
+## 2026-09-17 (5) — P10-01: Provenance graph wired into vertical slice pipeline (10 stages) — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- ProvenanceGraph created at pipeline entry (when artifact_store provided)
+- Nodes/edges emitted at each of 10 stages
+- All edges with cycle detection (DAG invariant)
+- 11 provenance graph tests + 392 core tests passing
+
+## 2026-09-17 (4) — P10-02: Uncertain scalar wired into perception measurement producer — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- Added `uncertain` field to `Measurement` (additive, backward compatible)
+- Updated `perception/instances/measurement.py` to emit Uncertain
+- Maps provenance to basis, uses measured spread or documented heuristic as sigma
+- Fixed pre-existing bug in `measure_dimensions` single-view return path
+
+## 2026-09-17 (3) — P4-01: RegistrationEngine CLI + wiring — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- Added `reality register` CLI command
+- RegistrationEngine already implemented with confidence-ordered orchestration
+- Covariance propagation: estimate_registration_covariance wired into register_icp and register_icp_point_to_plane
+- 22 registration tests + 22 CLI tests + 230 core tests all pass
+
+## 2026-09-17 (2) — P6-01/P6-02: Dense MVS integration + Three-source fusion — COMPLETED
+
+**Re-verified and confirmed complete** with the full test suite (399 tests passing):
+- Pipeline reorder: dense MVS stage (3.65) runs BEFORE fusion (3.7)
+- _dense_mvs_stage parses fused.ply into ReconstructedPoint with track_id prefix "dense_mvs:"
+- fuse_pipeline_points handles THREE source types (sfm_sparse, rgbd_depth, dense_mvs)
+- KD-tree nearest-neighbor association across all source pairs
+- 46 tests covering dense MVS + three-source fusion
+
+## 2026-09-17 (1) — Session start: Merged claude/completion-master into studio-viewer branch
+
+Clean environment established. Merged completion-master into studio-viewer branch and resolved all conflicts.
+
+---
+
+## 2026-09-17 (5) — P7-01: Multi-view object identity (ITrackBackend + perception stage wiring)
 
 Added `reality register` CLI command and verified RegistrationEngine:
 

@@ -483,16 +483,24 @@ capabilities:
       evidence_quality_assessment (scene GSD + per-track view counts)
     outputs: >-
       DetailCandidate list in stable spatial order (cell_id, centroid,
-      n_points, measured PCA curvature ratio, density_per_m2,
-      is_detail, per-cell DetailBudget, point_ids) — WHERE detail is
-      recoverable, domain-agnostic; voxelized, min_points-skipping,
-      budget-attached (hallucination gate)
+      n_points, measured PCA curvature ratio, measured planarity
+      1 - lambda_min/lambda_max from the same covariance solve,
+      density_per_m2, is_detail, is_structure, per-cell DetailBudget,
+      point_ids) — WHERE detail is recoverable AND which cells are
+      oriented planar structure (invisible to the curvature gate by
+      construction), domain-agnostic; voxelized, min_points-skipping,
+      budget-attached (hallucination gate). REAL-DATA VERIFIED on
+      room_capture_mvs (294,345 pts): 103 cells, 96 structure at
+      planarity median 0.9997, determinism byte-identical across
+      reruns
     license: project-internal
   - name: roi_generation
     category: perception
     backend: perception/detail/roi.py (in-house, deterministic)
     inputs: >-
       DetailCandidate list from detail_discovery + voxel_size
+      (+ optional include_structure / planarity_seed_threshold:
+      structure cells also seed ROIs, provenance seed="structure")
     outputs: >-
       RegionOfInterest list (roi_id, bounds, member cells, unioned
       point provenance, aggregate MIN DetailBudget, pending status,
@@ -525,7 +533,13 @@ capabilities:
       candidates, transitioned ROIs, outcomes, summary counts) — the
       one-call assess -> discover -> ROI -> refine -> apply driver;
       optional build_world_ir integrates refined outcomes into a
-      WorldIR instance and reports entity/geometry ids + refusals
+      WorldIR instance and reports entity/geometry ids + refusals;
+      include_structure pass-through seeds ROIs from measured planar
+      structure cells (the real room capture's walls/floor/ceiling
+      were invisible without it). REAL-DATA VERIFIED end-to-end:
+      room_capture_mvs fused.ply (294,345 pts) -> GSD 1.169 mm/px
+      "fine", 12 ROIs -> 12 refined / 0 refused, +12 WorldIR
+      entities/geometries, 182.7 s wall time
     license: project-internal
   - name: detail_worldir_integration
     category: perception

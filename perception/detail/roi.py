@@ -39,8 +39,19 @@ from perception.quality.detail_budget import DetailBudget
 __all__ = [
     "RegionOfInterest",
     "PROCESSING_PENDING",
+    "DEFAULT_PLANARITY_SEED_THRESHOLD",
     "generate_rois",
 ]
+
+#: Structure-seed gate for include_structure=True: a cell whose
+#: measured planarity (1 - lambda_min/lambda_max) reaches this seeds
+#: an ROI even when its curvature is below the detail gate. Oriented
+#: planar structure (walls, floors) is invisible to the curvature
+#: signal BY CONSTRUCTION (a plane scores ~0 curvature); the real
+#: room capture proved the discovery layer needs the complementary
+#: signal. Same deferral as every threshold here: documented, not
+#: tuned against real datasets.
+DEFAULT_PLANARITY_SEED_THRESHOLD = 0.95
 
 #: Initial status of every generated ROI. Local refinement owns the
 #: transitions (pending -> queued -> refined / refused); this module
@@ -141,6 +152,8 @@ def generate_rois(
     candidates: List[DetailCandidate],
     voxel_size: float,
     max_cells_per_roi: int = 27,
+    include_structure: bool = False,
+    planarity_seed_threshold: float = DEFAULT_PLANARITY_SEED_THRESHOLD,
 ) -> List[RegionOfInterest]:
     """Group detail-bearing candidate cells into bounded ROIs.
 
@@ -150,6 +163,13 @@ def generate_rois(
     ROI; everything else is its own ROI. ROIs are returned sorted by
     their first member cell key, so output order is stable under any
     input permutation of `candidates`.
+
+    With `include_structure=True`, cells whose measured planarity
+    reaches `planarity_seed_threshold` also seed ROIs (marked
+    provenance seed="structure"), letting oriented planar structure
+    -- invisible to the curvature signal by construction -- enter the
+    refinement pipeline. The default preserves the detail-only
+    contract.
     """
     if voxel_size <= 0.0:
         raise ValueError("voxel_size must be positive")
@@ -157,6 +177,12 @@ def generate_rois(
         raise ValueError("max_cells_per_roi must be >= 1")
 
     detail_cells = [c for c in candidates if c.is_detail]
+    structure_cells: List[DetailCandidate] = []
+    if include_structure:
+        structure_cells = [
+            c for c in candidates if c.is_structure
+        ]
+        detail_cells = detail_cells + structure_cells
     if not detail_cells:
         return []
 
@@ -197,6 +223,22 @@ def generate_rois(
                 if pid not in point_ids:
                     point_ids.append(pid)
         budgets = [c.budget for c in region]
+        is_structure_seed = any(
+            (not c.is_detail) for c in region
+        )
+        provenance: Dict[str, object] = {
+            "voxel_size": voxel_size,
+            "discovery": "perception.detail.discovery.discover_detail",
+            "grouping": "26-adjacent region growth, <= max_cells_per_roi",
+        }
+        if is_structure_seed:
+            # Record WHY the ROI exists: structure, not detail
+            # curvature, with the measured planarity that seeded it.
+            structure_planarities = [
+                c.planarity for c in region if c.is_structure
+            ]
+            provenance["seed"] = "structure"
+            provenance["planarity"] = max(structure_planarities)
         rois.append(RegionOfInterest(
             roi_id=f"roi-{region[0].cell_id.replace(',', '-')}",
             parent_entity_id=None,
@@ -208,11 +250,7 @@ def generate_rois(
             budget=_weakest(budgets),
             max_curvature=max(c.curvature for c in region),
             status=PROCESSING_PENDING,
-            provenance={
-                "voxel_size": voxel_size,
-                "discovery": "perception.detail.discovery.discover_detail",
-                "grouping": "26-adjacent region growth, <= max_cells_per_roi",
-            },
+            provenance=provenance,
         ))
 
     rois.sort(key=lambda r: r.detail_cells[0])

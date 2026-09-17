@@ -99,6 +99,7 @@ def run_detail_pipeline(
     up: Tuple[float, float, float] = (0.0, 0.0, 1.0),
     build_world_ir: bool = False,
     world=None,
+    include_structure: bool = False,
 ) -> DetailPipelineReport:
     """Execute the detail chain over one reconstruction result.
 
@@ -108,6 +109,12 @@ def run_detail_pipeline(
     fact, never geometry. The integration report rides on the
     returned pipeline report; entity/geometry counts are appended to
     the summary.
+
+    `include_structure=True` seeds ROIs from measured planar
+    STRUCTURE cells as well as detail cells (see generate_rois): the
+    real room capture proved oriented planar structure is invisible
+    to the curvature gate by construction, so a driver without this
+    pass-through dead-ends a room's walls.
     """
     quality = assess_evidence_quality(result, cameras)
 
@@ -115,7 +122,10 @@ def run_detail_pipeline(
     # produced an honest empty report for an empty scene -- discovery
     # itself returns [] for empty input.
     candidates = discover_detail(result, quality, voxel_size=voxel_size)
-    rois = generate_rois(candidates, voxel_size=voxel_size)
+    rois = generate_rois(
+        candidates, voxel_size=voxel_size,
+        include_structure=include_structure,
+    )
 
     lookup = point_lookup or _default_lookup(result)
     outcomes = refine_rois(rois, point_lookup=lookup, up=up)

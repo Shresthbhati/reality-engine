@@ -826,10 +826,35 @@ tasks:
     open: >-
       PARTIAL, not DONE: per-cell budgets reuse the scene-level GSD
       measurement rather than per-cell re-measurement (documented in
-      _cell_budget); thresholds untuned against real datasets; no
-      adaptive subdivision planner yet (directive section 13
-      scoring); detail statements are not yet persisted by a
-      WorldStore consumer (P11 scope).
+      _cell_budget); thresholds untuned (deferral documented at each
+      threshold); no adaptive subdivision planner yet (directive
+      section 13 scoring); detail statements are not yet persisted by
+      a WorldStore consumer (P11 scope).
+    real_data_verification: >-
+      2026-09-17, room_capture_mvs fused.ply (294,345 points, real CUDA
+      COLMAP MVS output), metricized via anchor_metric_scale against the
+      manifest's measured baseline (scale 0.245879 m/unit; verified
+      rigid: all 136 station-pair raw/GT distance ratios 4.039-4.079,
+      std 0.006) and trusted manifest intrinsics (f=1160.07). Full
+      chain (run_detail_pipeline, voxel 0.25 m, include_structure=True,
+      build_world_ir=True): GSD 1.169 mm/px -> tier "fine", observed
+      100%, overclaim 0, views/point median 13 (min 3); discovery 103
+      cells -- 96 structure (planarity median 0.9997: walls/floor/
+      ceiling), 1 detail, 6 other; 12 ROIs -> 12 refined / 0 refused
+      (planes rms 0.3-1.1 mm q=1.000; cylinders honest where geometry
+      is clutter: rms up to 47.9 mm, q=0.814); WorldIR +12 entities
+      +12 geometries, validation gate passed. Full chain wall time
+      182.7 s. Determinism verified: repeated discover_detail /
+      generate_rois produce byte-identical candidates and ROIs.
+      include_structure is load-bearing: without it the room's planar
+      structure is invisible to the curvature gate (1 detail ROI),
+      with it 96 structure cells seed ROIs -- the defect this branch
+      fixes red-first (tests/test_detail_structure.py, 6 tests).
+      Probe caveat (recorded honestly): an earlier scratch run mixed
+      raw-unit fused points with metric cameras and reported GSD 2.787
+      "medium" -- a 4.07x unit error in the caller, not the engine;
+      the canonical assessor is unit-faithful (GSD scales exactly with
+      the input scale, all other stage results unchanged).
 
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 

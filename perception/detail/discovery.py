@@ -56,6 +56,7 @@ __all__ = [
     "DetailCandidate",
     "DEFAULT_VOXEL_SIZE_M",
     "DEFAULT_CURVATURE_THRESHOLD",
+    "DEFAULT_PLANARITY_THRESHOLD",
     "DEFAULT_MIN_POINTS",
     "discover_detail",
 ]
@@ -74,6 +75,14 @@ DEFAULT_VOXEL_SIZE_M = 1.0
 #: < 0.05, cylinder fixtures > 0.1).
 DEFAULT_CURVATURE_THRESHOLD = 0.1
 
+#: Planarity above which a cell may seed a STRUCTURE ROI (when the
+#: caller opts in via include_structure): 1 - lambda_min/lambda_max,
+#: so an exactly-planar cell scores ~1 while noise, blobs, and curved
+#: shells score lower. A plane's curvature ratio is ~0 BY CONSTRUCTION
+#: -- orientation is not curvature -- so oriented planar structure
+#: (walls, floors) needs this complementary signal to be visible.
+DEFAULT_PLANARITY_THRESHOLD = 0.95
+
 #: Cells with fewer points than this are skipped (curvature from
 #: fewer points is numerically meaningless, not merely noisy).
 DEFAULT_MIN_POINTS = 8
@@ -83,17 +92,21 @@ DEFAULT_MIN_POINTS = 8
 class DetailCandidate:
     """One evidence-backed candidate region for detail work.
 
-    `curvature` and `density_per_m2` are measured from the cell's
-    points. `budget` is derived by the documented detail_budget
-    mapping from the cell's own evidence-quality measurement.
+    `curvature`, `planarity`, and `density_per_m2` are measured from
+    the cell's points (planarity and curvature share one covariance
+    eigen-decomposition). `budget` is derived by the documented
+    detail_budget mapping from the cell's own evidence-quality
+    measurement.
     """
 
     cell_id: str          # "i,j,k" integer voxel key (stable, sortable)
     centroid: Tuple[float, float, float]
     n_points: int
     curvature: float      # PCA smallest-eigenvalue ratio, 0..1
+    planarity: float      # 1 - lambda_min/lambda_max, 0..1
     density_per_m2: float
     is_detail: bool       # curvature >= threshold
+    is_structure: bool    # planarity >= threshold and not detail
     budget: DetailBudget
     point_ids: Tuple[str, ...] = field(default_factory=tuple)
 
@@ -103,8 +116,10 @@ class DetailCandidate:
             "centroid": list(self.centroid),
             "n_points": self.n_points,
             "curvature": self.curvature,
+            "planarity": self.planarity,
             "density_per_m2": self.density_per_m2,
             "is_detail": self.is_detail,
+            "is_structure": self.is_structure,
             "budget": self.budget.to_dict(),
             "point_ids": list(self.point_ids),
         }
@@ -121,14 +136,13 @@ def _bin_key(
     )
 
 
-def _pca_curvature(points: Sequence[Tuple[float, float, float]]) -> float:
-    """PCA smallest-eigenvalue ratio of a point set (surface
-    curvature proxy). Closed-form via the characteristic polynomial
-    (the repo's established eigen approach): exactly deterministic,
-    no iterations, no numpy dispatch overhead.
+def _pca_eigen_ratios(points: Sequence[Tuple[float, float, float]]):
+    """Eigenvalues (ascending) and trace of a point set's covariance
+    -- ONE closed-form solve shared by every PCA signal (curvature,
+    planarity). Same math as _pca_curvature (which delegates here).
 
-    lambda_min / (l0 + l1 + l2): plane ~0, curved shell high.
-    """
+    Returns (roots, trace): roots is the 3 ascending eigenvalues,
+    trace their sum (the covariance's diagonal total)."""
     n = len(points)
     cx = sum(p[0] for p in points) / n
     cy = sum(p[1] for p in points) / n
@@ -182,12 +196,19 @@ def _pca_curvature(points: Sequence[Tuple[float, float, float]]) -> float:
         ]
 
     total = c2
+    return roots, total
+
+
+def _pca_curvature(points: Sequence[Tuple[float, float, float]]) -> float:
+    """PCA smallest-eigenvalue ratio of a point set (surface
+    curvature proxy): lambda_min / trace. Plane ~0, curved shell
+    high. Delegates to _pca_eigen_ratios (one solve, shared)."""
+    roots, total = _pca_eigen_ratios(points)
     if total <= 0.0:
         # All points identical (degenerate cell): no measurable
         # curvature; honest zero, not a guess.
         return 0.0
-    lam_min = min(roots)
-    return max(0.0, lam_min / total)
+    return max(0.0, min(roots) / total)
 
 
 def _cell_budget(
@@ -218,6 +239,7 @@ def discover_detail(
     voxel_size: float = DEFAULT_VOXEL_SIZE_M,
     curvature_threshold: float = DEFAULT_CURVATURE_THRESHOLD,
     min_points: int = DEFAULT_MIN_POINTS,
+    planarity_threshold: float = DEFAULT_PLANARITY_THRESHOLD,
 ) -> List[DetailCandidate]:
     """Discover detail-bearing regions from a reconstruction's points
     and its measured evidence-quality report (P7-04).
@@ -252,8 +274,22 @@ def discover_detail(
             sum(p[1] for p in positions) / n,
             sum(p[2] for p in positions) / n,
         )
-        curvature = _pca_curvature(positions)
+        # ONE eigen solve feeds both structural signals.
+        roots, trace = _pca_eigen_ratios(positions)
+        if trace <= 0.0:
+            curvature, planarity = 0.0, 0.0
+        else:
+            lam_min, lam_max = min(roots), max(roots)
+            curvature = max(0.0, lam_min / trace)
+            planarity = (
+                max(0.0, 1.0 - lam_min / lam_max)
+                if lam_max > 0.0 else 0.0
+            )
         budget = _cell_budget(report, (p.track_id for p in cell_points))
+        is_detail = curvature >= curvature_threshold
+        is_structure = (
+            (not is_detail) and planarity >= planarity_threshold
+        )
 
         # Density: points per m2 of the cell's footprint. For cells
         # this small the voxel-area proxy (voxel^2) is the documented
@@ -265,8 +301,10 @@ def discover_detail(
             centroid=centroid,
             n_points=n,
             curvature=curvature,
+            planarity=planarity,
             density_per_m2=density,
-            is_detail=curvature >= curvature_threshold,
+            is_detail=is_detail,
+            is_structure=is_structure,
             budget=budget,
             point_ids=tuple(p.track_id for p in cell_points),
         ))

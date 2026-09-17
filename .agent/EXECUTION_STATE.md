@@ -5,29 +5,32 @@
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 
-## 2026-09-17 — P6-01/P6-02: Dense MVS integration + Three-source fusion COMPLETED
+## 2026-09-17 (2) — P4-01: RegistrationEngine CLI + wiring
 
-Merged `claude/completion-master` into main and completed the dense MVS
-integration and three-source fusion:
+Added `reality register` CLI command and verified RegistrationEngine:
 
-- **Pipeline reorder**: dense MVS stage (3.65) now runs BEFORE fusion
-  (3.7) so dense points can participate in cross-source fusion
-- **_dense_mvs_stage**: parses fused.ply into ReconstructedPoint objects
-  with track_id prefix "dense_mvs:" and appends to result.points
-- **fuse_pipeline_points**: now handles THREE source types:
-  - sfm_sparse (sparse triangulation)
-  - rgbd_depth (depth-unprojected RGB-D)
-  - dense_mvs (COLMAP dense stereo fusion)
-- **Association**: KD-tree nearest-neighbor across all source pairs
-- **Conflicts**: recorded per-point, never silently winner-picked
-- **All new tests pass**: 46 tests covering dense MVS + three-source fusion
-  (tests/test_dense_mvs_stage.py, test_fusion_pipeline.py, test_fusion_stage.py)
+- **CLI command**: `reality register <source> <target> -o <output> --from-frame <f> --to-frame <t> [--anchors <json>] [--initial-transform <json>] [--min-overlap <float>]`
+  - Reads source/target point clouds from PLY or JSON
+  - Optional GNSS anchor pairs from JSON
+  - Optional initial RigidTransform from JSON
+  - Outputs RegistrationResult JSON with transform, covariance, attempt log
+  - Tested: GNSS anchor (accepted), ICP (accepted), both with known synthetic data
 
-Full suite verification on key paths:
-- Core pipeline (registration, clocks, sensors, depth_to_points): 154 passed
-- Evidence/provenance/worldstore: 72 passed
-- Perception/session: 81 passed
-- Fusion/dense MVS: 46 passed
+- **RegistrationEngine** (registration/registration.py) already implemented:
+  - Confidence-ordered orchestration: GNSS anchors first, then ICP
+  - `register_icp` (point-to-point), `register_icp_point_to_plane` (spec's named algorithm)
+  - `register_gnss_anchor` (translation-only, paired positions)
+  - `estimate_registration_covariance` (residual-derived, first-order propagation)
+  - All methods return `RegistrationResult` with transform, covariance, ResidualStats, attempt log
+  - Honest blocking: no silent best-effort transforms
+
+- **Full test verification**:
+  - Registration tests: 22 passed
+  - CLI tests: 22 passed
+  - Core pipeline tests: 230 passed
+  - All tests: 252+ passed
+
+## 2026-09-17 (1) — P6-01/P6-02: Dense MVS integration + Three-source fusion COMPLETED
 
 Clean environment established (worktree + fresh venv, `pip install
 -e ".[dev]"`). Two real findings from the clean baseline, both fixed:

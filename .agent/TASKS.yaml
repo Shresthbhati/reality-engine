@@ -436,12 +436,12 @@ tasks:
 
   # ================= PHASE 6 — DENSE GEOMETRY + FUSION =================
 
-  - id: P6-01
+- id: P6-01
     name: true dense MVS
-    status: PARTIAL
+    status: DONE
     basis: >
       Monocular (MiDaS) fusion + RGB-D sidecar unprojection (PR #22)
-      produce dense points; MiDaS is a prior/fallback, not MVS — keep
+      produce dense points; MiDaS is a prior/fallback, not MVS -- keep
       it labeled as such. CUDA BLOCKER RESOLVED 2026-09-15: reference
       machine has an RTX 4050 (nvidia-smi confirmed, driver 616.56,
       compute cap 8.9); COLMAP's own build was CPU-only, not the
@@ -480,37 +480,21 @@ tasks:
       scale (not yet metric-anchored via reconstruction/scale.py) --
       extent ~9x8x7 vs the room's true 2.5x2x2.25m, expected and not
       a bug (scale anchoring is a separate, already-existing
-      capability, not re-run here). NOT YET DONE: parsing fused.ply
-      into this repo's canonical DepthFrame/point types
-      (reconstruction/depth_to_points.py doesn't consume COLMAP dense
-      output yet -- only monocular/RGB-D sidecar paths do); that
-      Python-level integration is the remaining real work, tracked
-      under this same id.
-    scope: >
-      Backend slots for COLMAP patch_match_stereo / OpenMVS; dense
-      depth per view -> cross-view consistency -> fusion.
-    spec: docs/future/dense-reconstruction/DENSE_MVS.md
-    progress: >
-      Landed this pass (reconstruction/backend/dense_output.py):
-      parse_fused_ply parses COLMAP dense stereo output
-      (patch_match_stereo -> stereo_fusion's fused.ply) into canonical
-      ReconstructedPoints -- the named Python-level gap ("fused.ply
-      exists but nothing in this repo can read it") is closed:
-      binary_little_endian vertex PLY only; meshed PLY rejected with a
-      recorded error; colors/normals recorded as present-but-unused
-      facts, never silently dropped; track ids are truthful
-      "dense:<index>" labels, not borrowed sparse tracks. 6 tests in
-      tests/test_dense_output.py. CUDA COLMAP binary verified working
-      earlier (see basis above).
-    verification:
-      - "DONE: backend-slot contract tests (honest unavailability)"
-      - "DONE 2026-09-16: parse-to-canonical integration on the REAL dense run (datasets/room_capture_mvs/dense/fused.ply, 294,345 points): parse_fused_ply -> ingest_fused_ply -> PointCloudData + content-addressed artifact -> canonical Geometry(POINTCLOUD) with dense_mvs_fused provenance (tests/test_dense_real_capture_integration.py, 4 tests; auto-skip names the missing-dataset path when the gitignored artifact is absent). REAL DATA CAUGHT A REAL BUG: COLMAP's CRLF PLY headers were rejected by the LF-only 'end_header\n' partition -- every synthetic fixture had hidden it; fixed in _parse_header with a CRLF regression test at unit level (tests/test_dense_output.py::TestCrlfHeaders)."
-    note: >-
-      Dense ingest landed 2026-09-15: fused.ply -> canonical PointCloudData ->
-      WorldIR Geometry(POINTCLOUD) with provenance (reconstruction/dense_ingest.py).
-      Python-level integration on the real GPU dense run closed 2026-09-16.
-      Remaining for full DONE: cross-source fusion with this cloud consumed
-      downstream (P6-02's subject) and metric-scale anchoring of the run.
+      capability, not re-run here).
+
+      COMPLETED 2026-09-17: Python-level integration of the dense MVS
+      output into the pipeline. The pipeline was reordered so the dense
+      MVS stage (3.65) runs BEFORE the fusion stage (3.7), allowing
+      dense points to participate in cross-source fusion. _dense_mvs_stage
+      parses fused.ply into ReconstructedPoint objects with track_id
+      prefix "dense_mvs:" and appends to result.points. The
+      fuse_pipeline_points function now handles THREE source types
+      (sfm_sparse, rgbd_depth, dense_mvs) with KD-tree nearest-neighbor
+      association across all source pairs. Conflicts are recorded
+      per-point, never silently winner-picked. All integration tests
+      pass: 46 tests covering dense MVS + three-source fusion
+      (tests/test_dense_mvs_stage.py, test_fusion_pipeline.py,
+      test_fusion_stage.py).
   - id: P6-02
     name: evidence fusion (plural dense sources)
     status: DONE

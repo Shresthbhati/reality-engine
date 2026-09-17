@@ -59,16 +59,28 @@ def _source_observation(point: ReconstructedPoint, source: str) -> DepthSourceOb
     )
 
 
+def _classify_point_source(point: ReconstructedPoint) -> str:
+    """Classify a point by its track_id prefix for fusion purposes."""
+    track_id = getattr(point, 'track_id', '')
+    if track_id.startswith('depth-'):
+        return 'rgbd_depth'
+    elif track_id.startswith('dense_mvs:'):
+        return 'dense_mvs'
+    else:
+        return 'sfm_sparse'
+
+
 def fuse_pipeline_points(
     *,
     sparse_points: Sequence[ReconstructedPoint],
     depth_points: Sequence[ReconstructedPoint],
+    dense_mvs_points: Sequence[ReconstructedPoint] = (),
     association_tolerance_m: float,
 ) -> Dict:
-    """Associate co-observed sparse/depth points and fuse them.
+    """Associate co-observed sparse/depth/dense_mvs points and fuse them.
 
     Fusion runs on the points' range (distance from the world origin
-    along the viewing axis) -- the quantity both sources actually
+    along the viewing axis) -- the quantity all sources actually
     estimate about the same world point. The fused result keeps the
     association; callers that need 3D positions combine the fused
     range with the associated points' direction. Unassociated points
@@ -77,6 +89,7 @@ def fuse_pipeline_points(
     facts: Dict[str, object] = {
         "n_sparse": len(sparse_points),
         "n_depth": len(depth_points),
+        "n_dense_mvs": len(dense_mvs_points),
         "association_tolerance_m": association_tolerance_m,
         "status": "ran",
     }
@@ -85,64 +98,89 @@ def fuse_pipeline_points(
     n_conflicts = 0
     n_passthrough_sparse = 0
     n_passthrough_depth = 0
+    n_passthrough_dense_mvs = 0
 
-    if depth_points and sparse_points:
-        sparse_arr = np.array([p.position for p in sparse_points], dtype=float)
-        depth_arr = np.array([p.position for p in depth_points], dtype=float)
-        tree = cKDTree(sparse_arr)
-        distances, indices = tree.query(depth_arr, k=1)
-        paired_depth: set = set()
-        paired_sparse: set = set()
-        for di, (dist, si) in enumerate(zip(distances, indices)):
-            if dist <= association_tolerance_m:
-                paired_depth.add(di)
-                paired_sparse.add(int(si))
-                si = int(si)
-                obs = [
-                    _source_observation(sparse_points[si], "sfm_sparse"),
-                    _source_observation(depth_points[di], "rgbd_depth"),
-                ]
-                est = fuse_depth_observations(obs, point_id=f"assoc-{si}-{di}")
-                fused.append(est)
-                if est.provenance is Provenance.CONFLICT:
-                    n_conflicts += 1
-                n_associated += 1
-        n_passthrough_sparse = len(sparse_points) - len(paired_sparse)
-        n_passthrough_depth = len(depth_points) - len(paired_depth)
-        for si, point in enumerate(sparse_points):
-            if si not in paired_sparse:
-                fused.append(fuse_depth_observations(
-                    [_source_observation(point, "sfm_sparse")],
-                    point_id=f"sparse-passthrough-{si}",
-                ))
-        for di, point in enumerate(depth_points):
-            if di not in paired_depth:
-                fused.append(fuse_depth_observations(
-                    [_source_observation(point, "rgbd_depth")],
-                    point_id=f"depth-passthrough-{di}",
-                ))
+    # Group points by source type
+    all_points_by_source = {
+        'sfm_sparse': list(sparse_points),
+        'rgbd_depth': list(depth_points),
+        'dense_mvs': list(dense_mvs_points),
+    }
+
+    # If we have at least two source types with points, do cross-source fusion
+    sources_with_points = {k: v for k, v in all_points_by_source.items() if v}
+    
+    if len(sources_with_points) >= 2:
+        # Use the first source as the base for KD-tree association
+        source_names = list(sources_with_points.keys())
+        base_source = source_names[0]
+        base_points = sources_with_points[base_source]
+        
+        base_arr = np.array([p.position for p in base_points], dtype=float)
+        tree = cKDTree(base_arr)
+        
+        # Track which points are paired
+        paired = {src: set() for src in sources_with_points}
+        
+        # Compare each other source against the base
+        for other_source in source_names[1:]:
+            other_points = sources_with_points[other_source]
+            other_arr = np.array([p.position for p in other_points], dtype=float)
+            distances, indices = tree.query(other_arr, k=1)
+            
+            for di, (dist, si) in enumerate(zip(distances, indices)):
+                if dist <= association_tolerance_m:
+                    paired[base_source].add(int(si))
+                    paired[other_source].add(di)
+                    si = int(si)
+                    obs = [
+                        _source_observation(base_points[si], base_source),
+                        _source_observation(other_points[di], other_source),
+                    ]
+                    est = fuse_depth_observations(obs, point_id=f"assoc-{base_source}-{other_source}-{si}-{di}")
+                    fused.append(est)
+                    if est.provenance is Provenance.CONFLICT:
+                        n_conflicts += 1
+                    n_associated += 1
+        
+        # Add passthrough points
+        for src_name, points in all_points_by_source.items():
+            src_paired = paired.get(src_name, set())
+            count = 0
+            for i, point in enumerate(points):
+                if i not in src_paired:
+                    fused.append(fuse_depth_observations(
+                        [_source_observation(point, src_name)],
+                        point_id=f"{src_name}-passthrough-{i}",
+                    ))
+                    count += 1
+            if src_name == 'sfm_sparse':
+                n_passthrough_sparse = count
+            elif src_name == 'rgbd_depth':
+                n_passthrough_depth = count
+            elif src_name == 'dense_mvs':
+                n_passthrough_dense_mvs = count
     else:
-        # Single-source input: everything passes through -- there is
-        # nothing to associate, and saying "fused" would be a lie.
-        source = "sfm_sparse" if sparse_points else "rgbd_depth"
-        for si, point in enumerate(sparse_points):
-            fused.append(fuse_depth_observations(
-                [_source_observation(point, source)],
-                point_id=f"sparse-passthrough-{si}",
-            ))
-        for di, point in enumerate(depth_points):
-            fused.append(fuse_depth_observations(
-                [_source_observation(point, source)],
-                point_id=f"depth-passthrough-{di}",
-            ))
-        n_passthrough_sparse = len(sparse_points)
-        n_passthrough_depth = len(depth_points)
+        # Single-source input: everything passes through
+        for src_name, points in sources_with_points.items():
+            for i, point in enumerate(points):
+                fused.append(fuse_depth_observations(
+                    [_source_observation(point, src_name)],
+                    point_id=f"{src_name}-passthrough-{i}",
+                ))
+            if src_name == 'sfm_sparse':
+                n_passthrough_sparse = len(points)
+            elif src_name == 'rgbd_depth':
+                n_passthrough_depth = len(points)
+            elif src_name == 'dense_mvs':
+                n_passthrough_dense_mvs = len(points)
 
     facts.update({
         "n_associated": n_associated,
         "n_conflicts": n_conflicts,
         "n_passthrough_sparse": n_passthrough_sparse,
         "n_passthrough_depth": n_passthrough_depth,
+        "n_passthrough_dense_mvs": n_passthrough_dense_mvs,
         "fused": fused,
     })
     return facts

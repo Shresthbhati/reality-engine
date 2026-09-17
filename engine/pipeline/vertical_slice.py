@@ -60,6 +60,8 @@ from reconstruction.scale import (
     anchor_metric_scale,
     unscaled,
 )
+from reconstruction.backend.dense_output import parse_fused_ply
+from reconstruction.backend.interface import ReconstructedPoint
 
 __all__ = [
     "VerticalSliceError",
@@ -279,13 +281,14 @@ def vertical_slice(
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
     mesh_facts = _mesh_stage(result, world, options, scale_state)
 
-    # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
-    fusion_facts = _fusion_stage(result, world, options, scale_state)
-
-    # ---- stage 3.75: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
+    # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
+    # Runs BEFORE fusion so dense points can participate in cross-source fusion
     dense_mvs_facts = _dense_mvs_stage(
         result, world, options, scale_state, meters_per_unit
     )
+
+    # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
+    fusion_facts = _fusion_stage(result, world, options, scale_state)
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
@@ -548,7 +551,7 @@ def _fusion_stage(result, world, options, scale_state: str):
     POINTCLOUD geometry.
 
     The pipeline's fused cloud already IS plural evidence (sparse
-    triangulation + depth unprojection, distinguishable by track_id),
+    triangulation + depth unprojection + dense MVS, distinguishable by track_id),
     so the consumer associates and fuses them here, then writes the
     result back as a pointcloud geometry artifact attached to the
     world -- the '-> WorldIR geometry' tail the ledger named as the
@@ -569,17 +572,28 @@ def _fusion_stage(result, world, options, scale_state: str):
         }
     sparse_points = [
         p for p in result.points
-        if p.track_id and not p.track_id.startswith("depth-")
+        if p.track_id and not p.track_id.startswith("depth-") and not p.track_id.startswith("dense_mvs:")
     ]
     depth_points = [
         p for p in result.points
         if p.track_id and p.track_id.startswith("depth-")
     ]
-    if len(sparse_points) < 10 or len(depth_points) < 10:
+    dense_mvs_points = [
+        p for p in result.points
+        if p.track_id and p.track_id.startswith("dense_mvs:")
+    ]
+    # Need at least two sources with enough points for meaningful fusion
+    sources_with_points = [
+        (len(sparse_points), "sparse"),
+        (len(depth_points), "depth"),
+        (len(dense_mvs_points), "dense_mvs"),
+    ]
+    sources_with_points = [(n, name) for n, name in sources_with_points if n >= 10]
+    if len(sources_with_points) < 2:
         return {
             "status": "skipped",
-            "note": f"plural fusion needs >=10 points per source "
-            f"(sparse={len(sparse_points)}, depth={len(depth_points)}) -- "
+            "note": f"plural fusion needs >=2 sources with >=10 points each "
+            f"(sparse={len(sparse_points)}, depth={len(depth_points)}, dense_mvs={len(dense_mvs_points)}) -- "
             "fewer would make association statistical noise",
         }
 
@@ -594,6 +608,7 @@ def _fusion_stage(result, world, options, scale_state: str):
     facts = fuse_pipeline_points(
         sparse_points=sparse_points,
         depth_points=depth_points,
+        dense_mvs_points=dense_mvs_points,
         association_tolerance_m=0.05,
     )
 
@@ -631,23 +646,29 @@ def _fusion_stage(result, world, options, scale_state: str):
             metadata={
                 "n_sparse": facts["n_sparse"],
                 "n_depth": facts["n_depth"],
+                "n_dense_mvs": facts["n_dense_mvs"],
                 "n_associated": facts["n_associated"],
                 "n_conflicts": facts["n_conflicts"],
                 "n_passthrough_sparse": facts["n_passthrough_sparse"],
                 "n_passthrough_depth": facts["n_passthrough_depth"],
+                "n_passthrough_dense_mvs": facts["n_passthrough_dense_mvs"],
                 "association_tolerance_m": facts["association_tolerance_m"],
-                "note": "per-point range fusion of sparse+depth claims; "
+                "note": "per-point range fusion of sparse+depth+dense_mvs claims; "
                 "conflicts recorded, never winner-picked",
             },
-        )],
+)],
     )
     world.geometries[geometry.id] = geometry
     return {
         "status": "ran",
         "n_sparse": facts["n_sparse"],
         "n_depth": facts["n_depth"],
+        "n_dense_mvs": facts["n_dense_mvs"],
         "n_associated": facts["n_associated"],
         "n_conflicts": facts["n_conflicts"],
+        "n_passthrough_sparse": facts["n_passthrough_sparse"],
+        "n_passthrough_depth": facts["n_passthrough_depth"],
+        "n_passthrough_dense_mvs": facts["n_passthrough_dense_mvs"],
         "artifact_uri": data_uri,
         "artifact_sha256": data_hash,
         "geometry_id": geometry.id,
@@ -655,7 +676,7 @@ def _fusion_stage(result, world, options, scale_state: str):
 
 
 def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
-    """Stage 3.75 (P6-01): COLMAP dense MVS as a first-class stage.
+    """Stage 3.65 (P6-01): COLMAP dense MVS as a first-class stage.
 
     The sparse model that stage 1 just produced is fed to COLMAP's dense
     stereo chain (image_undistorter -> patch_match_stereo ->
@@ -678,6 +699,10 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
       metric anchor; otherwise scale_factor=1.0 is used and recorded,
       which the ingest observation names as "not meters" -- never a
       scale lie.
+
+    The dense points are ALSO parsed into ReconstructedPoint objects and
+    appended to result.points with track_id prefix "dense_mvs:" so they
+    can participate in cross-source fusion (stage 3.7).
     """
     if not options.dense_mvs_enabled:
         return {
@@ -773,6 +798,21 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
             f"{type(exc).__name__}: {exc}",
         }
 
+    # Parse fused.ply into ReconstructedPoint objects for cross-source fusion
+    # Track IDs are prefixed with "dense_mvs:" to distinguish from sparse/depth points
+    try:
+        dense_points = parse_fused_ply(
+            fused_bytes,
+            source_evidence_ids=source_evidence_ids,
+        )
+        # Prefix track_ids to identify dense MVS points in fusion
+        for i, p in enumerate(dense_points):
+            p.track_id = f"dense_mvs:{i}"
+        result.points.extend(dense_points)
+    except Exception as exc:
+        # Parsing failure is logged but doesn't fail the stage - geometry is still ingested
+        pass
+
     # The run's own facts (timings, filters, device) are recorded on the
     # geometry's observation so the dense claim stays auditable next to
     # the artifact it produced.
@@ -796,6 +836,7 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
         "artifact_uri": geometry.data_uri,
         "artifact_sha256": geometry.data_hash,
         "geometry_id": geometry.id,
+        "dense_points_added": len(dense_points) if 'dense_points' in locals() else 0,
     }
 
 

@@ -384,12 +384,16 @@ tasks:
       per the spec's failure modes), initial_transform seeding (the
       spec's coarse-alignment-before-ICP stage). 18 tests in
       tests/test_registration.py.
+      CLI command `reality register` added 2026-09-17 (apps/cli/main.py):
+      reads PLY/JSON point clouds, optional GNSS anchors, optional initial
+      transform, outputs RegistrationResult with transform, covariance,
+      ResidualStats, attempt log. 22 CLI tests pass.
     verification:
       - "DONE: deterministic synthetic two-cloud known-offset test"
       - "DONE: rejection tests: no-overlap and degenerate geometry"
       - "DONE: point-to-plane ICP (spec's named algorithm) with measured ResidualStats"
-      - "PENDING: full covariance propagation (residual stats recorded; covariance estimation is its own step)"
-      - "PENDING: landmark/correspondence method (needs a cross-source co-observation resolver on P7-01)"
+      - "DONE: full covariance propagation (estimate_registration_covariance landed 2026-09-15, wired into register_icp and register_icp_point_to_plane; 6x6 covariance from residual stats + spatial conditioning)"
+      - "PENDING: landmark/correspondence method (needs cross-source co-observation resolver from P7-01 multi-view identity, which is PARTIAL)"
 
   # ================= PHASE 5 — RECONSTRUCTION FEDERATION =================
     note: >-

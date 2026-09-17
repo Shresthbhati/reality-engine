@@ -30,82 +30,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from engine.pipeline.artifacts import (  # noqa: E402
+    write_cameras_json,
+    write_mesh_ply_from_artifact,
+    write_points_ply,
+)
+from engine.pipeline.dataset import load_capture_dataset  # noqa: E402
 from engine.pipeline.vertical_slice import (  # noqa: E402
     VerticalSliceError,
     VerticalSliceOptions,
     vertical_slice,
 )
-from evidence.session import EvidenceKind, EvidenceItem  # noqa: E402
-from provenance import Provenance  # noqa: E402
-from reconstruction.scale import ScaleReference  # noqa: E402
-
-
-def _uri(path: Path) -> str:
-    return path.resolve().as_uri()
-
-
-def load_evidence(dataset: Path):
-    """Dataset folder -> EvidenceItems + scale references + intrinsics."""
-    manifest = json.loads((dataset / "manifest.json").read_text())
-    images_dir = dataset / "images"
-
-    items = []
-    for entry in manifest["images"]:
-        img_path = images_dir / entry["file"]
-        data = img_path.read_bytes()
-        items.append(
-            EvidenceItem(
-                id=entry["file"].rsplit(".", 1)[0],
-                kind=EvidenceKind.PHOTO,
-                source_uri=_uri(img_path),
-                sha256=hashlib.sha256(data).hexdigest(),
-                metadata={
-                    "file": entry["file"],
-                    "dataset": manifest.get("dataset", "unknown"),
-                },
-                provenance=Provenance.OBSERVED,
-            )
-        )
-
-    refs = [
-        ScaleReference(
-            evidence_id_a=b["evidence_id_a"],
-            evidence_id_b=b["evidence_id_b"],
-            distance_m=float(b["distance_m"]),
-            method=manifest.get("scale_reference", {}).get(
-                "method", "manual_measurement"
-            ),
-        )
-        for b in manifest.get("measured_baselines", [])
-    ]
-
-    intr = manifest.get("intrinsics_px")
-    intrinsics = (
-        tuple(float(intr[k]) for k in ("fx", "fy", "cx", "cy"))
-        if intr
-        else None
-    )
-    size = manifest.get("image_size", [1280, 960])
-    return items, refs, intrinsics, (int(size[0]), int(size[1]))
-
-
-def _write_ply(path: Path, points) -> None:
-    """Minimal binary PLY writer (float32 xyz): no dependencies, every
-    real point preserved."""
-    import struct
-
-    n = len(points)
-    header = (
-        "ply\n"
-        "format binary_little_endian 1.0\n"
-        f"element vertex {n}\n"
-        "property float x\nproperty float y\nproperty float z\n"
-        "end_header\n"
-    ).encode("ascii")
-    buf = bytearray(header)
-    for p in points:
-        buf += struct.pack("<3f", p[0], p[1], p[2])
-    path.write_bytes(bytes(buf))
+from world_ir.artifact_store import FileArtifactStore  # noqa: E402
 
 
 def main() -> int:
@@ -120,7 +56,7 @@ def main() -> int:
     )
     out.mkdir(parents=True, exist_ok=True)
 
-    items, refs, intrinsics, image_size = load_evidence(dataset)
+    items, refs, intrinsics, image_size = load_capture_dataset(dataset)
     report: dict = {
         "dataset": str(dataset),
         "images_ingested": len(items),
@@ -137,6 +73,12 @@ def main() -> int:
         # env knob: REALITY_DEPTH_MODEL="" disables the depth stage
         depth_model=os.environ.get("REALITY_DEPTH_MODEL", "DPT_Hybrid") or None,
         depth_stride=int(os.environ.get("REALITY_DEPTH_STRIDE", "16")),
+        # env knobs: REALITY_MESH="" disables surface reconstruction;
+        # REALITY_MESH_VOXEL_M / REALITY_MESH_DEPTH tune it
+        mesh_enabled=bool(os.environ.get("REALITY_MESH", "1")),
+        mesh_voxel_size_m=float(os.environ.get("REALITY_MESH_VOXEL_M", "0.02")),
+        mesh_poisson_depth=int(os.environ.get("REALITY_MESH_DEPTH", "10")),
+        artifact_store=FileArtifactStore(out / "artifacts"),
     )
 
     started = time.perf_counter()
@@ -169,6 +111,8 @@ def main() -> int:
             "note": result.scale_note,
         },
         "depth": result.stage_facts.get("depth"),
+        "perception": result.stage_facts.get("perception"),
+        "mesh": result.stage_facts.get("mesh"),
         "compile": {
             "entities": len(result.world.entities),
             "measurements": result.compile.measurements_count,
@@ -183,17 +127,23 @@ def main() -> int:
 
     # Inspectable geometry artifacts: the real reconstructed points and
     # camera positions (Phase-20 outputs), consumed by the Studio viewer.
-    _write_ply(out / "points.ply", result.points)
-    (out / "cameras.json").write_text(json.dumps({
-        "frame": "world (meters, +Y up after frame canonicalization)",
-        "scale_state": result.scale_state,
-        "rotation_convention": "camera-to-world quaternion (w, x, y, z)",
-        "image_size": list(options.image_size),
-        "cameras": [
-            {"evidence_id": eid, "position_m": list(pos), "rotation_wxyz": list(rot)}
-            for eid, pos, rot in result.camera_poses
-        ],
-    }, indent=2))
+    write_points_ply(out / "points.ply", result.points)
+    mesh_facts = result.stage_facts.get("mesh") or {}
+    if mesh_facts.get("status") == "ran" and result.world is not None:
+        from reconstruction.meshing.mesh import MeshData
+        geom = result.world.geometries.get("geom-mesh-room")
+        if geom is not None and geom.data_uri:
+            mesh_bytes = options.artifact_store.get(geom.data_uri)
+            (out / "mesh.ply").write_bytes(
+                MeshData.from_bytes(mesh_bytes).to_ply_bytes()
+            )
+    write_cameras_json(
+        out / "cameras.json", result.camera_poses, result.scale_state,
+        options.image_size,
+    )
+    from engine.pipeline.artifacts import write_exports
+
+    write_exports(world_dict, options.artifact_store, out)
 
     print(result.summary_text())
     print(f"artifacts -> {out}")

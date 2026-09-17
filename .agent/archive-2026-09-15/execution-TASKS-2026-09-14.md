@@ -1,0 +1,140 @@
+<!--
+ARCHIVED 2026-09-15 (P0-01 canonical-state consolidation).
+SUPERSEDED: this file is point-in-time history and is NOT current truth.
+Canonical files now: .agent/ENGINEERING_CONSTITUTION.md,
+.agent/REALITY_ENGINE_MISSION.md, .agent/TASKS.yaml,
+.agent/EXECUTION_STATE.md, .agent/CAPABILITIES.yaml, .agent/LICENSES.yaml.
+Do not extend or edit this file; read it only for history.
+-->
+
+# Reality Engine — Task Ledger
+
+Authoritative work queue. Order = priority (do not reorder; see
+CLAUDE.md §52). Statuses: pending | in_progress | done | blocked.
+Every transition to `done` requires the named verification to have
+actually run. Keep in sync with `docs/implementation/PENDING_IMPLEMENTATION.md`
+and `.agent/execution/STATE.md`.
+
+Last reconciled: 2026-09-14.
+
+tasks:
+
+  - id: RE-001
+    title: Canonical documentation architecture
+    status: in_progress
+    priority: P0
+    notes: docs/{architecture,implementation,engineering,future}/ written;
+      CLAUDE.md sections 51-54; state + ledger created
+    verification:
+      - full test suite green on docs-canon branch
+      - docs cross-reference check (no dangling PENDING_IMPLEMENTATION refs)
+
+  - id: RE-002
+    title: Mapping spine P0 (SfM -> scale -> depth -> fusion -> mesh -> WorldIR)
+    status: done
+    priority: P0
+    evidence: PRs #14, #16 merged; real-capture E2E 240k-vert mesh,
+      honest 15.8 m extent; suite 1,294 passed
+
+  - id: RE-003
+    title: One-command product path (reality compile)
+    status: done
+    priority: P0
+    evidence: PR #19 merged; deterministic fake-backend E2E test;
+      suite 1,279 passed
+
+  - id: RE-004
+    title: Sensor sidecar parsing (IMU/GNSS/telemetry/calibration)
+    status: done
+    priority: P1
+    evidence: landed on main by parallel session (see CURRENT_STATE.md;
+      suite 1,339 passed)
+
+  - id: RE-005
+    title: Depth sidecar ingestion (16-bit PNG first per DESIGN_DECISIONS D001)
+    status: pending
+    priority: P1
+    dependencies: [RE-001]
+    spec: docs/future/sensor-ingestion/DEPTH_INGESTION.md
+    verification:
+      - deterministic fixture (synthetic depth PNG -> DepthFrame -> fusion)
+      - corrupt/malformed sidecar tests
+
+  - id: RE-006
+    title: Time synchronization
+    status: pending
+    priority: P1
+    dependencies: [RE-005]
+    spec: docs/future/synchronization/TIME_SYNCHRONIZATION.md
+
+  - id: RE-007
+    title: VIO trajectory backend slot
+    status: pending
+    priority: P1
+    dependencies: [RE-006]
+    spec: docs/future/vio/VIO_TRAJECTORY.md
+
+  - id: RE-008
+    title: Cross-source registration
+    status: pending
+    priority: P1
+    dependencies: [RE-007]
+    spec: docs/future/registration/CROSS_SOURCE_REGISTRATION.md
+
+  - id: RE-009
+    title: Minimal CI (unit + integration + deterministic CLI test, no model downloads)
+    status: pending
+    priority: P8
+    dependencies: []
+    notes: independent of sensor chain; pull forward if toolchain allows
+
+  - id: RE-010
+    title: Multi-view identity + tracking
+    status: pending
+    priority: P2
+    dependencies: [RE-008]
+    spec: docs/future/perception/MULTI_VIEW_IDENTITY.md, TRACKING.md
+
+  - id: RE-011
+    title: Uncertainty propagation + provenance graph
+    status: pending
+    priority: P3
+    dependencies: [RE-010]
+    spec: docs/future/uncertainty/, docs/future/provenance/
+
+  - id: RE-012
+    title: WorldStore + incremental compilation
+    status: pending
+    priority: P4
+    dependencies: [RE-011]
+    spec: docs/future/worldstore/
+
+  - id: RE-013
+    title: Reality Studio beyond viewer (review queue, corrections, revisions)
+    status: pending
+    priority: P6
+    dependencies: [RE-012]
+    spec: docs/future/studio/REALITY_STUDIO.md
+
+  - id: RE-014
+    title: GIS / robotics / large-world partitioning
+    status: pending
+    priority: P5
+    dependencies: [RE-012]
+    spec: docs/future/gis/, docs/future/robotics/, docs/future/large-world/
+
+  - id: RE-015
+    title: Advanced physics (CCD, constraints, fluids, thermal)
+    status: pending
+    priority: P7
+    dependencies: [RE-010, RE-011]
+    spec: docs/future/physics/ADVANCED_PHYSICS.md
+
+  - id: RE-016
+    title: Dense MVS backend slot (patch_match_stereo/OpenMVS)
+    status: blocked
+    priority: P1
+    blockers: CUDA unavailable on reference machine (COLMAP 4.2.0 CPU-only)
+    decision_required: none (backend slot is the deliverable; quality
+      depends on hardware availability)
+    spec: docs/future/dense-reconstruction/DENSE_MVS.md

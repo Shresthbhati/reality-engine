@@ -1,0 +1,48 @@
+# Freebuff execution queue — POINTER, not a roadmap.
+#
+# The canonical work queue is `.agent/TASKS.yaml` at the repository root
+# (36 tasks, evidence-backed statuses, spec pointers, open remainders).
+# This file exists only so the next agent finds the queue from the
+# `.agent/execution/` handoff directory. Do NOT fork or duplicate the
+# queue here; update `.agent/TASKS.yaml` when work lands.
+
+canonical_queue: ../TASKS.yaml
+canonical_execution_log: ../EXECUTION_STATE.md
+capability_registry: ../CAPABILITIES.yaml
+handoff_document: FREEBUFF_HANDOFF.md
+
+snapshot:
+  date: 2026-09-15
+  batch_status: COMPLETE
+  pr: https://github.com/Shresthbhati/reality-engine/pull/30
+  branch: claude/reality-engine-architecture-ed811e
+  head_commit: 4e188b5
+  tests:
+    passed: 1613
+    failed: 1
+    skipped: 1
+    note: >-
+      PR #30 baseline. Superseded on fix/sam-load-path (2026-09-15):
+      1,614 passed, 1 skipped, 0 failed — the SAM failure was two real
+      code bugs (torch.hub.load against a repo with no hubconf.py;
+      predicted_iou > 1.0 silently discarding regions), both fixed.
+  ledger_status_counts:
+    DONE: 11
+    PARTIAL: 14
+    MISSING: 11
+    total: 36
+  done_ids: [P0-01, P0-02, P0-03, P1-01, P1-02, P2-02, P3-01, P3-03, P5-01, P6-03, P18-01]
+  blocked:
+    - id: P1-03
+      reason: real-device RGB-D capture (hardware)
+    - id: P3-02
+      reason: real VIO backend runs (ORB-SLAM3/OpenVINS/Basalt binaries absent; adapters honest)
+  next_priority:
+    - P2-01 remainder (sync backends 3-6 with deterministic fixtures)
+    - P4-01 remainder (point-to-plane/symmetric ICP + RegistrationEngine orchestration)
+    - P6-01/P6-02 remainders (fused.ply -> canonical types; consumer -> WorldIR write-back)
+    - P10-01 remainder (queryable provenance graph + reality provenance query)
+  spine: >-
+    TIME SYNC -> TRAJECTORY/VIO -> REGISTRATION -> DENSE MVS/FUSION ->
+    MULTI-VIEW IDENTITY -> UNCERTAINTY/PROVENANCE -> WORLDSTORE ->
+    INCREMENTAL COMPILATION

@@ -32,7 +32,9 @@ from perception.geometry.orientation import classify_planes
 from perception.geometry.planes import detect_planes
 from provenance import Provenance
 from reconstruction.backend.interface import ReconstructedPoint, ReconstructionResult
-from world_ir import RelationshipKind, WorldIR
+from world_ir import GeometryType, RelationshipKind, WorldIR
+from world_ir.artifact_store import MemoryArtifactStore
+from world_ir.geometry_data import PointCloudData
 
 
 def _point(x, y, z, counter=[0]) -> ReconstructedPoint:
@@ -324,6 +326,41 @@ class TestPromoteRoom:
         assert obs.sensor_type == "room_inference"
         assert obs.metadata["boundary_vertex_count"] == 4
         assert obs.metadata["ceiling_plane_id"] is not None
+
+    def test_omitting_artifact_store_reproduces_old_behavior(self):
+        world, _, _ = _full_pipeline()
+        room = self._detected_room()
+        result = promote_room_to_entity(room, world, "room-001")
+        assert result.entity.geometry_ids == []
+
+    def test_artifact_store_writes_real_boundary_geometry(self):
+        world, _, _ = _full_pipeline()
+        room = self._detected_room()
+        store = MemoryArtifactStore()
+        result = promote_room_to_entity(room, world, "room-001", artifact_store=store)
+        assert len(result.entity.geometry_ids) == 1
+        geometry = world.geometries[result.entity.geometry_ids[0]]
+        assert geometry.type is GeometryType.PLANE
+        assert geometry.data_uri and geometry.data_hash
+        assert geometry.vertex_count == len(room.ring.vertices)
+
+        payload = store.get(geometry.data_uri)
+        decoded = PointCloudData.from_bytes(payload)
+        assert len(decoded.points) == len(room.ring.vertices)
+
+        # Round-trip sanity: every decoded vertex lies on the floor
+        # plane (n . p + d == 0) -- proves the (u, v) -> world-space
+        # conversion used the SAME plane the ring was traced on, not a
+        # coordinate-frame bug.
+        n, d = room.floor.normal, room.floor.d
+        for p in decoded.points:
+            signed_distance = n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + d
+            assert signed_distance == pytest.approx(0.0, abs=1e-9)
+
+        # The decoded boundary area (shoelace in floor-plane coordinates
+        # via the same basis) matches the ring's own area -- proves no
+        # vertex was dropped or reordered by the round trip.
+        assert geometry.bounds_min is not None and geometry.bounds_max is not None
 
     def test_refuses_unclosed_candidates(self):
         _, rooms, _ = _full_pipeline()

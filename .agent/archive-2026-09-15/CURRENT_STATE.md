@@ -1,11 +1,545 @@
+<!--
+ARCHIVED 2026-09-15 (P0-01 canonical-state consolidation).
+SUPERSEDED: this file is point-in-time history and is NOT current truth.
+Canonical files now: .agent/ENGINEERING_CONSTITUTION.md,
+.agent/REALITY_ENGINE_MISSION.md, .agent/TASKS.yaml,
+.agent/EXECUTION_STATE.md, .agent/CAPABILITIES.yaml, .agent/LICENSES.yaml.
+Do not extend or edit this file; read it only for history.
+-->
+
 # Reality Engine — Current State
 
-**Updated:** 2026-09-13 (CLI session complete)
-**Branch:** `claude/reality-engine-audit-impl-25e738` (worktree off `main`, which already has the object-pipeline-promotion PR merged)
-**Verified baseline before this session:** 1067 passed, 2 skipped.
-**Verified after this session:** 1079 passed, 2 skipped (observed 79.7s) — +12 CLI tests, zero regressions.
+**Updated:** 2026-09-14 (mesh-stage fix + identity fixes + Priority 2: IMU/GNSS/telemetry/calibration sensor-stream normalization)
+**Branch:** `claude/reality-engine-build-e6ac6e` (worktree off `main`, main already has dense-mesh/Poisson-mesh + glTF uint32-index fix + viewer real-mesh rendering + camera-envelope filter merged, PR #16)
+**Verified baseline before this session:** 1298 passed, 1 pre-existing environment failure deselected.
+**Verified after this session:** 1339 passed, 1 pre-existing failure deselected (63.4s) — +41 tests, zero regressions.
 
-## Completed this session (2026-09-13, latest): headless CLI (`apps/cli/`) — closes the biggest named studio-campaign gap
+## Completed 2026-09-14 (continued Priority 2): added CALIBRATION and TELEMETRY sidecar parsing
+
+Extended `evidence/sensors.py` with the two remaining well-defined
+sidecar types named in Priority 2 (DEPTH was explicitly scoped out
+last session and remains out -- see the module docstring's "what this
+deliberately does not do" section for why: device-specific
+image-format/scale-factor decisions, not a parsing-only problem like
+the other three).
+
+**Calibration**: `parse_calibration_json()` parses a single JSON
+object (not JSONL -- a calibration is one artifact, not a time series)
+into a `CalibrationRecord`. Deliberately reuses
+`reconstruction.calibration.camera.CameraIntrinsics`/`CameraExtrinsics`
+verbatim (their own `from_dict`/`to_dict`/`__post_init__` validation --
+positive focal lengths, finite values, positive dimensions) instead of
+reinventing a calibration schema, per the "don't rewrite working code"
+principle -- a calibration sidecar file IS those types' own JSON shape
+on disk. `extrinsics` is optional (a lab-calibrated lens may have no
+known mount pose).
+
+**Telemetry**: `parse_telemetry_jsonl()` -- a real, explicitly-scoped
+drone-flight-controller-log schema (t, optional GPS position reusing
+GNSS's own lat/lon/alt fields, optional attitude_deg/gimbal_attitude_deg
+Euler angles in one named convention, optional battery_pct/flight_mode).
+Documented as ONE specific convention, not a universal solution --
+flight controllers disagree on Euler sign/axis conventions, named
+explicitly rather than silently assumed compatible.
+
+**Wiring**: `MultiSourceSession.sensor_streams()` now also dispatches
+"telemetry" (added to `PARSERS_BY_COMPONENT`); new
+`MultiSourceSession.calibrations(source_id)` method (separate from
+`sensor_streams` because calibration parses to one record per file,
+not a time-ordered sample stream).
+
+13 new tests in `tests/test_sensor_streams.py` (telemetry parsing incl.
+every honest-failure path and the "all fields but t are optional" case;
+calibration parsing incl. reusing CameraIntrinsics' own validation
+error, not a weaker reimplementation; both components' wiring through
+`MultiSourceSession`). Verified additionally with a REAL end-to-end run
+outside pytest: built an on-disk `rgb/`+`telemetry/`+`calibration/`
+drone-capture-shaped folder, ran `add_source()` +
+`sensor_streams("telemetry")` + `calibrations()`, confirmed correct
+classification and correctly parsed values (position, attitude,
+gimbal, battery, flight_mode; fx/width intrinsics). Full suite: 1339
+passed (was 1326), zero regressions.
+
+Priority 2 status now: IMU/GNSS/telemetry/calibration all have real
+parsers wired end-to-end through `MultiSourceSession`. DEPTH remains
+explicitly open (real format-decision blocker, not an oversight). No
+time sync, no CRS conversion, no VIO -- those are Priorities 3/6/7.
+
+## Completed 2026-09-14: Priority 2 -- real IMU/GNSS sensor-stream ingestion (evidence/sensors.py, new module)
+
+Closed the gap the spec's Priority 2 named exactly: "recognizing imu/
+is not the same thing as ingesting and using IMU measurements." Before
+this, `evidence/multi_source.py`'s composite-capture detection found
+`imu/`, `gps/`, `depth/`, `calibration/`, `telemetry/` sidecar
+subdirectories and used their PRESENCE to classify a folder as
+`COMPOSITE_CAPTURE`/`PHONE_CAPTURE`/`DRONE_CAPTURE` -- but the file
+paths themselves were never surfaced anywhere a caller could reach,
+and there was no parser for their contents at all.
+
+**New module `evidence/sensors.py`**: real, typed, unit-explicit
+parsers for IMU and GNSS sidecar files. Chose JSON Lines as the file
+format (documented in full in the module docstring, including the
+exact schema for both record types) since no convention existed
+anywhere in this codebase to match against -- self-describing (a
+missing/renamed field fails loudly, not a silently-shifted CSV
+column), trivially streamable. `IMUSample` (t, accel_mps2 [specific
+force, body frame, m/s^2, includes gravity], gyro_rps [rad/s],
+optional mag_ut), `GNSSSample` (t, lat_deg/lon_deg [WGS84], alt_m
+[ellipsoidal], optional accuracy_m/fix_type/satellites/velocity_mps),
+both wrapped in a `SensorStream` (kind, source_path, samples,
+provenance=OBSERVED, `.is_monotonic()` diagnostic). Honest failure:
+`SensorParseError` names the file+line+reason for every malformed
+record (missing field, wrong type, non-finite number, lat/lon out of
+range, unrecognized fix_type) -- never silently dropped or coerced;
+`OSError` (missing file) stays distinct from a parse error.
+
+**Explicitly NOT done in this module (named, not hidden, matches the
+spec's own "what this doesn't do" discipline)**: no WGS84->ECEF->ENU
+coordinate conversion (spec Priority 6/sec 8, a separate CRS layer),
+no cross-stream time synchronization (Priority 5/sec 10 -- `t` stays
+per-file, per-sensor-clock), no IMU integration/trajectory estimation
+(Priority 6/sec 7, VIO), no binary/vendor format support (only the
+documented JSONL convention).
+
+**Found and fixed a second, deeper bug while wiring this in**:
+`evidence/multi_source.py::MultiSourceSession.add_source()` -- the
+`SourceRecord.components` field existed on the dataclass (and
+round-tripped through `to_dict()`/`from_dict()`) but was NEVER
+actually populated during ingestion. `_source_type_of()` computed the
+composite-component file manifest internally (to decide DATASET vs
+`*_CAPTURE`) and threw it away. Fixed: `add_source()` now computes the
+component dict once and threads it into every `SourceRecord`
+construction path (INGESTED/FAILED/UNSUPPORTED). New method
+`MultiSourceSession.sensor_streams(source_id, component)` resolves a
+record's recorded relative sidecar paths against `original_path` and
+parses them via the new module (on-demand, not eagerly during
+`add_source`, so a non-JSONL sidecar file never fails an otherwise-good
+import -- it just isn't parseable when asked for).
+
+25 new tests in `tests/test_sensor_streams.py` (IMU/GNSS parsing incl.
+every honest-failure path, comment/blank-line handling, round-trip,
+component dispatch, and the full `MultiSourceSession` wiring incl. the
+`components`-was-always-empty regression and a session
+to_dict/from_dict round-trip proving parsing still works after
+reload). Additionally verified with a REAL end-to-end run outside
+pytest (per CLAUDE.md's "run the actual thing" rule): built an
+on-disk `rgb/`+`imu/`+`gps/` phone-capture-shaped folder, ran
+`add_source()` + `sensor_streams()` on it, confirmed correct
+classification, correct component paths, and correctly parsed
+IMU/GNSS values. `tests/test_multi_source_session.py` +
+`tests/test_media_preprocessing.py` + `tests/test_sensor_streams.py`:
+87 passed. Full suite: 1326 passed (was 1298 baseline), zero
+regressions.
+
+Not done (still open, named not hidden): DEPTH/CALIBRATION/TELEMETRY
+sidecar parsing (spec Priority 2 names these too; only IMU/GNSS have
+real parsers now -- depth needs an image-format decision, calibration
+needs an intrinsics/extrinsics schema, telemetry has no universal
+format at all, each a real separate design decision, not attempted
+blind here). No time synchronization, no CRS conversion, no VIO. This
+is normalization/ingestion only, exactly the scope the user asked for
+this turn.
+
+## Completed 2026-09-14 (continued Priority 1): closed the OTHER two `disk:`-basename identity sites in evidence/importers.py
+
+Follow-on to the `MultiSourceSession.add_source()` identity fix above.
+`evidence/importers.py::import_file()`/`import_folder()` also built a
+default `EvidenceSource` with a filename-derived id (`disk:<basename>`)
+when no caller-supplied `source` was given -- this is the LIVE path
+`apps/cli/main.py`'s plain `reality ingest <folder>` command uses (no
+`MultiSourceSession` involved, so no `SourceRecord` to reconcile
+against, but still a real violation of "no filenames as identity" and
+still collision-prone: two folders named `capture/` anywhere on disk
+got the identical default source id).
+
+Fixed with two new private helpers: `_default_source_id_for_file()`
+(sha256 of the file's own bytes, `file:<hash16>`) and
+`_default_source_id_for_folder()` (sha256 over every contained file's
+`(relative_path, sha256)` pair, `folder:<hash16>` -- same guarantee
+`evidence/multi_source.py::_content_hash_of_path` already gives
+`SourceRecord`, computed once per `import_folder()` call over the
+already-built sorted `paths` list, not recomputed per file). Both are
+fallback-only: a caller-supplied `source=` is always used unchanged.
+
+2 new tests: `tests/test_media_preprocessing.py::test_default_source_id_is_not_filename_derived`
+(two differently-located same-named folders with different photo
+bytes get different ids, and the id is no longer `disk:`-prefixed) and
+the `MultiSourceSession` identity test from the prior fix. Verified
+additionally with a REAL CLI-equivalent call (not just unit tests, per
+CLAUDE.md's "run the actual command" rule): built two on-disk folders
+named identically but with different photo bytes, called
+`MultiSourceSession.add_source()` on both, and confirmed every
+resulting `EvidenceAsset.source.source_id` matches its owning
+`SourceRecord.source_id` exactly and the two records get distinct ids.
+`tests/test_media_preprocessing.py`: all passing (+1). Full suite:
+1301 passed (was 1300), zero regressions.
+
+Not done (still open, named not hidden): `EvidencePackage`'s own
+`sources` dict is already keyed by `source.source_id`, so it inherits
+both fixes above automatically -- no separate change was needed there,
+verified by inspection (`evidence/packages.py:319-320`,
+`:438`). The full canonical `Source`/`Evidence`/`Observation`/
+`Artifact` model the spec describes (explicit `content_identity`,
+`acquisition_id`, `device_id`, `capabilities`, calibration references,
+a dedicated `Observation` layer between Evidence and WorldIR) remains
+unbuilt -- this and the prior session's fix closed the concrete
+mismatch bugs the spec's own examples pointed at; they did not build
+the larger identity architecture. That remains the next real slice of
+Priority 1 if the user wants it continued further, OR the next phase
+(Priority 2, sensor stream normalization) per the user's own
+dependency order.
+
+## Completed 2026-09-14: SourceRecord <-> EvidenceSource canonical identity (a real, narrow slice of the pasted spec's Priority 1)
+
+The user's spec described a full Source/Evidence/Observation/Artifact
+identity redesign. That is a multi-session architectural project, not
+attempted here. What WAS confirmed as a real, concrete bug in this
+codebase (not the hypothetical example the spec used, but the actual
+equivalent): `evidence/multi_source.py::MultiSourceSession.add_source()`
+gave the `SourceRecord` a collision-resistant, index+content-hash id
+(`src-0000-<hash>`) but, when the caller didn't pass an explicit
+`EvidenceSource`, built the DEFAULT `EvidenceSource` with a totally
+different, basename-derived id (`disk:<basename>`) -- and that
+`EvidenceSource` object is embedded directly in every `EvidenceAsset`
+produced from the call (`EvidenceAsset.source`). Result: there was no
+way to go from an asset's embedded source id back to the owning
+`SourceRecord.source_id` without a caller already holding the
+`SourceRecord` in hand, and two different source folders sharing a
+basename (e.g. two "photos/" folders added from different parents)
+would silently get the SAME default `EvidenceSource.source_id` despite
+being different `SourceRecord`s.
+
+Fixed: the default `EvidenceSource.source_id` is now the SAME
+`source_id` as the `SourceRecord` it belongs to (unique per
+`add_source()` call by construction: index + content hash). Callers
+who pass an explicit `source=` keep full control -- this only changes
+the fallback used when none is given. New regression test
+`test_default_evidence_source_id_matches_the_source_record_id` proves
+every `EvidenceAsset.source.source_id` produced by a call equals
+`SourceRecord.source_id`. `tests/test_multi_source_session.py`: 26
+passed (was 25). Full suite: 1300 passed (was 1299), zero regressions.
+
+Not done (this is a slice, not the full spec item): `EvidencePackage`'s
+own separate `sources` registry (`evidence/packages.py`), the
+`evidence/importers.py` two other `disk:`-id call sites (used by the
+single-package `evidence/session.py` / direct `import_folder`/
+`import_file` path, not `MultiSourceSession`), and the full
+canonical `Source`/`Evidence`/`Observation`/`Artifact` identity model
+the spec describes (content_identity, acquisition_id, device_id,
+capabilities, calibration refs, etc.) are all still open. This fix
+closes the specific mismatch the spec's own example illustrated,
+nothing broader.
+
+## 2026-09-14: response to a 23-phase mega-roadmap request — scope note
+
+The user pasted a ~40-section "principal engineer, do everything" directive
+covering documentation reconciliation across 58+ READMEs, source/evidence
+identity redesign, real multi-sensor ingestion, time sync, VIO/SLAM,
+cross-source registration, dense MVS, uncertainty propagation, a full
+WorldStore, Reality Studio, GIS/robotics, and CI/release engineering — in
+one session. This is realistically weeks of work, not a single-session
+task. Rather than fabricate progress across all 23 phases, this session
+did ONE concretely-specified, independently verifiable item from the
+directive (the mesh-stage gate-ordering bug, section 15) and is reporting
+honestly rather than claiming broader completion. See "Fixed" section
+below and `.agent/ROADMAP_2026-09-14.md` for the full remaining scope.
+
+## Completed 2026-09-14: fixed the mesh-stage gate-ordering bug (real bug, not cosmetic)
+
+`engine/pipeline/vertical_slice.py::_mesh_stage()` ran the COLMAP
+`poisson_mesher_available()` capability probe BEFORE the
+`len(points) < 100` point-count gate. Confirmed as a real, observable
+bug, not merely a style nit: `tests/test_meshing_pipeline.py::test_too_few_points_skips`
+was passing on this machine ONLY because real COLMAP happens to be
+installed here (`C:\Users\shres\tools\colmap-extracted`, noted in an
+earlier session) — the capability probe returned True and execution
+fell through to the point-count check anyway, masking the ordering
+bug. On a machine WITHOUT COLMAP, the exact same too-small point cloud
+would have reported "COLMAP binary unavailable" instead of the real,
+environment-independent reason ("too few fused points").
+
+Fixed by reordering: point-count gate now runs immediately after the
+disabled/artifact_store/metric-scale gates and BEFORE the meshing-deps
+import and the COLMAP capability probe — matching `disabled? ->
+artifact_store? -> metric? -> input quantity gate -> preprocess
+viability -> backend capability -> execution`. Docstring updated to
+document the gate order and why it's deliberate. New regression test
+`test_too_few_points_skips_before_the_colmap_probe` monkeypatches
+`poisson_mesher_available` to a spy that would fail the test if called
+at all — proves the probe is never even reached when the cloud is too
+small, so this can't silently regress back to being environment-
+dependent. `tests/test_meshing_pipeline.py`: 28 passed (was 27). Full
+suite: 1299 passed (was 1298), zero regressions.
+
+## Roadmap dump received 2026-09-14 (see .agent/ROADMAP_2026-09-14.md for the full 47-item text)
+
+The user pasted a comprehensive P0-P8 roadmap (packaging → docs → source
+identity → sensor ingestion → sync → VIO/SLAM → registration → dense
+MVS/mesh → perception/identity → evidence fusion/uncertainty/provenance
+→ WorldStore → Studio → scale/GIS/robotics → CI/release). Saved
+verbatim to `.agent/ROADMAP_2026-09-14.md` (a new file -- `.agent/PROMPT_LOOP.md`
+is a separate, pre-existing loop file and was not touched) so it
+survives context compaction. Working it top-down per priority number;
+each item gets its own dated section here as it lands.
+
+## Completed 2026-09-14: P0 item #1 -- fixed packaging (`pip install .` was broken)
+
+Verified broken exactly as reported: `pyproject.toml`'s
+`[tool.setuptools.packages.find].include` only listed `engine*`,
+`world_ir*`, `provenance*`, `events*` -- `evidence`, `reconstruction`,
+`perception`, `exporters`, `sdk`, `apps` were silently excluded from
+the wheel, and there was no `[project.scripts]` entry, so no `reality`
+executable existed after install (only `python -m apps.cli.main` worked,
+and only from inside a checkout with the repo root on `PYTHONPATH`).
+
+Fixed:
+- `pyproject.toml`: broadened the include glob to cover all six missing
+  top-level packages; added `[project.scripts]` `reality =
+  "apps.cli.main:main"`.
+- Added `__init__.py` to `reconstruction/`, `exporters/`, `apps/` --
+  these worked as implicit PEP 420 namespace packages for every
+  existing import site (`reconstruction.backend.interface`, etc., used
+  throughout `evidence/`, `perception/`, `sdk/`, tests), so this changes
+  no import path, but `setuptools.find_packages()` (invoked by
+  `[tool.setuptools.packages.find]`) requires `__init__.py` to discover
+  a directory as a package for wheel inclusion, and namespace-package
+  discovery was not turned on. (`reconstruction/{features,matching,mvs,
+  registration,sfm}` and `apps/{capture,studio,viewer}` remain README-only
+  empty scaffolds with no Python code -- correctly still absent from the
+  wheel; nothing to package there yet.)
+- `dependencies = []` was also wrong: a clean-venv install surfaced
+  `ModuleNotFoundError: numpy` the moment the CLI imported
+  `reconstruction.backend.colmap_backend` (core reconstruct path, not
+  the optional `perception` ML extra). Added `numpy>=1.24` and
+  `scipy>=1.10` (used unconditionally by `reconstruction/meshing/preprocess.py`,
+  the dense-mesh Poisson-reconstruction step) to `dependencies`.
+  `cv2`/`PIL`/`torch`/`torchvision`/`segment_anything` were confirmed to
+  live only under `perception/` and stay correctly gated behind the
+  `perception` extra (not touched).
+- `apps/cli/README.md` updated to document the installed `reality`
+  entry point (the `python -m apps.cli.main` form still documented and
+  still works, unchanged).
+
+**Verified for real, not assumed:** built a throwaway venv
+(`python -m venv`), ran `pip install .` against this worktree from a
+clean environment, then from `/tmp` (outside the repo entirely, so
+nothing could be resolving against a checkout on `PYTHONPATH`):
+`reality --help` printed the full subcommand list (exit 0), and a
+Python one-liner imported `sdk.reality`, `evidence.promote_rooms`,
+`evidence.promote_planes`, `evidence.promote_objects`,
+`reconstruction.backend.colmap_backend`, and all three exporters
+(`exporters.gltf/usd/blender.exporter`) cleanly. Full in-repo test
+suite re-run after the fix: 1298 passed, 1 pre-existing environment
+failure deselected, zero regressions (105.9s) -- the `__init__.py`
+additions and pyproject changes touch only packaging metadata, not
+runtime behavior, and the suite confirms that.
+
+Not done in this pass (named, not hidden): no CI wiring yet to catch a
+future regression of this same bug automatically (P8 item #41/#42 in
+the roadmap) -- this was a manual clean-venv verification, not an
+automated one. `reality-engine` is still `version = "0.1.0"`,
+unreleased; no PyPI/wheel distribution step exists yet.
+
+## Completed 2026-09-14 (latest): wired room artifact_store through the compiler (CLI comes free)
+
+Follow-on named at the end of the room-geometry feature session (same
+day): `engine/compiler/world_compiler.py::compile_reconstruction_to_world`
+now passes `options.artifact_store` into `promote_room_to_entity` (one
+line, same pattern already used for `promote_plane_to_entity` two
+blocks above) — a compiled room's boundary polygon now gets a real
+`data_uri`/`data_hash`, not just promoted planes/objects.
+
+CLI needed **no separate change**: `apps/cli/main.py::cmd_reconstruct`
+already builds `CompileOptions(artifact_store=FileArtifactStore(...))`
+for every `reality reconstruct` call (real-geometry-by-default since the
+prior session's CLI work) and passes it straight through to
+`compile_reconstruction_to_world` — once the compiler threads the store
+into room promotion, the CLI path is fixed automatically. Verified by
+running the full CLI test suite (`tests/test_cli.py`, 30 tests, all
+pass unchanged) rather than assuming from reading the code.
+
+2 new tests in `tests/test_geometry_artifacts.py`
+(`TestPromoteRoomsWritesRealGeometry`): one proves a room compiled with
+an `artifact_store` gets a resolvable `data_uri` whose decoded point
+count matches `geometry.vertex_count`; one proves omitting the store
+leaves `room.geometry_ids == []` (the additive/backward-compat
+contract). Full suite: 1298 passed (was 1296), zero regressions.
+
+## Completed 2026-09-14: room boundary polygon geometry (the one item the 2026-09-13 session flagged "do this one carefully, in-session, not delegated blind")
+
+`evidence/promote_rooms.py::promote_room_to_entity()` gained an optional
+`artifact_store` param, same pattern as `promote_planes.py`/
+`promote_objects.py`: when given, the room's boundary ring — already
+computed in floor-plane (u, v) coordinates by `_trace_ring_from_lines`
+— is converted to world-space xyz via a new `_ring_world_positions()`
+helper (origin = `-d*normal`, basis = the same `_floor_basis(normal)`
+used to build the ring, so the conversion is the exact inverse of the
+projection — no re-derivation, no coordinate-frame drift) and stored as
+a real `PointCloudData` artifact. A `Geometry` (type `PLANE`, matching
+the existing exportable-type set so gltf/usda/blender export it with no
+exporter change, same as objects reusing `BOX` did) is attached to the
+ROOM entity's `geometry_ids` — previously always `[]` ("the room's
+extent lives in its parts, not new geometry"). Omitting the param
+reproduces prior behavior exactly (regression test). New test also
+proves every decoded vertex satisfies `n.p + d == 0` on the room's own
+floor plane — the coordinate-frame-bug risk the prior session explicitly
+named. 2 new tests in `tests/test_room_inference.py`. Full suite: 1296
+passed (was 1294), zero regressions.
+
+Not wired in this pass (named, not hidden): no caller (CLI/SDK/studio
+session) passes `artifact_store` into `promote_room_to_entity` yet —
+same follow-on gap `promote_planes`/`promote_objects` had before their
+own callers were updated; wiring it through `engine/compiler/world_compiler.py`
+and `apps/cli/main.py` is the natural next step for this specific line
+of work.
+
+## Completed this session (2026-09-13, latest): security fix + real geometry uniform across gltf/usda/blender in the SDK and CLI
+
+**Security fix (Strix-flagged, MEDIUM, CWE-22):** `ArtifactStore.digest_of()` (`world_ir/artifact_store.py`) accepted any string after `artifact://` and handed it straight to `FileArtifactStore._path_for()`, which joins it onto the store root — a `data_uri` of `artifact://../../victim` could read files outside the store. `data_uri` is untrusted input (round-trips through WorldIR JSON, which can come from anywhere). Fixed: `digest_of()` now requires exactly 64 lowercase hex characters (`^[0-9a-f]{64}$`), enforced once on the shared `ArtifactStore` base so both backends are covered. 9 regression tests (traversal sequences, absolute paths, wrong-length/non-hex digests, explicit filesystem-untouched assertion for the file backend).
+
+**Uniform real-geometry export:** `sdk.reality.export()` previously special-cased `artifact_store` threading to `format == "gltf"` only, from when gltf was the only exporter that supported it. Now that usda/blender accept the same `artifact_store` parameter (see prior session), the special-case was removed — `export()` threads it through uniformly for all three formats. `apps/cli/main.py::cmd_export` was updated the same way: it now reconnects to `<world>.artifacts/` for `--format usda`/`--format blender` too, not just gltf. Updated `tests/test_cli.py`'s `test_export_usda_blender_unaffected_by_artifacts_dir` (now misleadingly named) into two accurate tests: one proving usda/blender DO emit real geometry (`def Points "` / `from_pydata(` present) when a store is reconnected, one proving both still fall back to their placeholder shape without one. `apps/cli/README.md` updated.
+
+## Completed this session (2026-09-13, latest): real geometry reaches every exporter + the CLI (dispatched as 3 parallel agents, disjoint file sets, reviewed and integrated centrally)
+
+Closed three of the four remaining gaps this file listed after the plane/object real-geometry-storage work: gltf was the only consumer of `artifact_store`, usda/blender exporters didn't consume it at all, and the CLI never created or passed one through even though the engine supported it end-to-end.
+
+**usda exporter** (`exporters/usd/exporter.py`): `export_to_usda`/`export_to_usda_with_report`/`write_usda_file` gained an optional `artifact_store` param; a resolvable geometry now emits a real USD `Points` prim (`point3f[] points = [...]`, local-space, order-preserved) instead of the placeholder `Cube`. Same honesty fallback as gltf. 6 new tests in `tests/test_usd_exporter.py`.
+
+**blender exporter** (`exporters/blender/exporter.py`): same pattern — a resolvable geometry now generates real `bpy.data.meshes.new()` / `from_pydata()` / `bpy.data.objects.new()` script text (a real point-cloud mesh) instead of the AABB-scaled cube, in local space, same custom-property/collection-linking logic shared between both paths. 4 new tests in `tests/test_blender_exporter.py`. Neither exporter's real-geometry text has been validated against a real `pxr`/Blender install (both already carried that caveat before this session; unchanged).
+
+**CLI** (`apps/cli/main.py`): `reality reconstruct` now defaults to real-geometry storage via a real, persistent `FileArtifactStore` rooted at `<output>.artifacts/` (e.g. `world.json` -> `world.json.artifacts/`) — real geometry is now the CLI default, not something a caller has to opt into. `--no-real-geometry` opts out, reproducing the exact prior CLI behavior (verified). `reality export --format gltf` automatically reconnects to `<world>.artifacts/` if present, so a `reconstruct` -> `export` round-trip across two separate CLI processes now emits real per-entity meshes; usda/blender exports are unaffected (those exporters don't consume the store from the CLI yet even though they now support the parameter directly — wiring that through is a small follow-on, see below). 6 new tests in `tests/test_cli.py`. `apps/cli/README.md` documents the new default and convention.
+
+All three were dispatched as independent parallel subagents (disjoint file sets: `exporters/usd/`, `exporters/blender/`, `apps/cli/` + each one's own test file) via superpowers' dispatching-parallel-agents pattern, then reviewed and integrated in this session — no merge conflicts (verified: `git status` showed only the 7 expected files, no overlapping edits), diffs spot-checked for correctness against the gltf exporter's established pattern before accepting. Full suite run once after integration: 1127 passed (was 1111), zero regressions.
+
+Not done in this pass (named, not hidden):
+- A true end-to-end `reconstruct` (real backend, real photos) -> real `.artifacts/` directory round-trip is still unverified — no COLMAP install in this environment, same blocker every session has hit. The `--no-real-geometry` opt-out and the artifact-path-derivation/reconnection logic ARE tested directly for all three formats now; only the full real-backend path is unverified.
+- Triangulated MESH storage is still open (point-clouds only, across all three formats now).
+
+## Completed this session (2026-09-13, latest): real geometry storage for OBJECTS (P0.10/11 follow-on) — `evidence/promote_objects.py` now writes real points too, not just `promote_planes.py`
+
+Closed the first item named in the prior session's "Not done" list:
+`ObjectHypothesis3D` (`perception/instances/lifting.py`) already
+computed real unprojected 3D points per mask pixel inside
+`lift_region_to_3d()` and threw them away after their centroid/bounds/
+count -- the exact same gap `promote_planes.py`'s inlier positions had
+before the plane-geometry-storage work. Fixed at the source: added a
+`points: Tuple[Vec3, ...] = ()` field (default-valued, so every
+hand-built hypothesis in existing tests keeps working unchanged) and
+populated it for real in `lift_region_to_3d()`.
+
+`evidence/promote_objects.py::promote_object_to_entity()` gained the
+same `artifact_store` parameter `promote_plane_to_entity()` has: when
+given, it unions every contributing hypothesis's real points
+(`candidate.source_hypotheses[*].points` -- nothing was discarded by
+`merge_hypotheses()`, so this was reachable with zero changes to
+`object_resolution.py`) into one `PointCloudData` artifact and sets
+`data_uri`/`data_hash`. No exporter change was needed either:
+`exporters/gltf/exporter.py`'s real-mesh path already covers `BOX`
+geometry (`_EXPORTABLE_GEOMETRY_TYPES`) and doesn't filter by type when
+resolving `data_uri` -- the machinery built for planes just worked for
+objects too, confirmed by a full lift -> merge -> promote -> validate ->
+export test.
+
+5 new tests in `tests/test_geometry_artifacts.py` (points survive
+lift->merge, backward-compat default, real data_uri written, the
+additive-omit regression test, and the end-to-end export proof). Full
+suite: 1111 passed (was 1106), zero regressions.
+
+Not done in this pass (named, not hidden): `perception/instances/object_resolution.py`
+still doesn't store a *merged* point cloud on `MergedObjectCandidate`
+itself -- promotion unions the per-hypothesis points at promotion time
+instead, which is correct but means any other future consumer of
+`MergedObjectCandidate` before promotion still can't see the union
+directly. Triangulated MESH storage and usda/blender real-geometry
+export are still open, same as before this session.
+
+**Known pre-existing environment failure (not caused by this session, not fixed):**
+`tests/test_sam_backend.py::TestSAMSegmentationBackendIntegration::test_real_model_load_and_inference`
+fails with `FileNotFoundError` for `hubconf.py` under `~/.cache/torch/hub/facebookresearch_segment-anything_main/`
+— a corrupted/partial local torch.hub cache on this machine, not a code defect. Deselect it or clear that
+cache directory to get a clean run; do not "fix" it in source.
+
+## Completed this session (2026-09-13, latest): real geometry storage in WorldIR (P0.10/P0.11) — closes the last "no fake completion" gap in the export path
+
+Closed the item this file has flagged since it was first written:
+"`Geometry` currently stores only `vertex_count`, no actual vertex
+buffer... a bounding box standing in for the shape."
+
+New: `world_ir/geometry_data.py` (`PointCloudData` — a deterministic
+binary payload format, magic + count + float64 xyz triples, order-
+preserving) and `world_ir/artifact_store.py` (`ArtifactStore` ABC +
+`MemoryArtifactStore` + `FileArtifactStore` — content-addressed,
+sha256-keyed, dedupes identical bytes, `FileArtifactStore` sharded like
+Git's object store and verified to survive a new store instance over
+the same root). `Geometry.data_uri`/`data_hash` (schema_v1.py) already
+existed for exactly this and were never written to until now.
+
+Wired end-to-end, not left as an unused interface:
+`evidence/promote_planes.py::promote_plane_to_entity` gained an optional
+`artifact_store` param — when given, it stores the plane's REAL inlier
+point positions (already computed for the AABB, previously discarded
+after that) as a `PointCloudData` artifact and sets `data_uri`/`data_hash`
+for real. `engine/compiler/world_compiler.py::CompileOptions` gained a
+matching `artifact_store` field, threaded through. `exporters/gltf/exporter.py`
+gained the consumer side: given the same store, `export_to_gltf()` now
+builds a REAL per-entity POINTS-mode mesh from the stored positions
+instead of the placeholder unit cube, for any entity whose geometry
+resolves through the store — entities with no resolvable real data
+still get the cube, honestly, never fabricated. `sdk.reality.export()`
+threads `artifact_store` through for the gltf format specifically (usda/
+blender don't consume real geometry yet — named, not hidden).
+
+Fully additive: every new parameter defaults to `None`/omitted and
+reproduces the exact prior behavior (`vertex_count`+bounds only, cube
+mesh) — verified by an explicit regression test
+(`test_omitting_artifact_store_reproduces_old_behavior`). Determinism
+preserved through the new layer too (`test_two_compiles_of_the_same_evidence_produce_identical_artifacts`
+— same seed -> byte-identical artifact hashes).
+
+22 new tests in `tests/test_geometry_artifacts.py`: PointCloudData
+round-trip (incl. empty, duplicate points, bad-magic rejection), both
+ArtifactStore backends (put/get, content-addressed dedup, persistence
+across a fresh FileArtifactStore instance, unknown-uri error), the full
+promote_planes -> WorldIR wiring (real data matches vertex_count,
+determinism), and the gltf export path (real mesh vs. cube fallback,
+SDK-level threading). Full suite: 1106 passed (was 1084), zero
+regressions.
+
+Not done in this pass (named, not hidden): triangulated MESH storage
+(only POINTCLOUD payloads exist — a real surface-reconstruction step is
+a separate, larger follow-on); usda/blender exporters do not yet
+consume real geometry (gltf only); `evidence/promote_objects.py` (object
+entities) does not yet write real geometry artifacts, only
+`promote_planes.py` does.
+
+## Completed 2026-09-13: `sdk.reality.spatial_index()` / `scene_graph()` + `reality query` CLI
+
+Added the two SDK query wrappers named as the next task after the CLI
+landed: `sdk/reality.py` now exposes `spatial_index(world)` (wraps
+`engine.scene_graph.spatial_index.SpatialIndex` — nearest/within_radius/
+within_region) and `scene_graph(world)` (wraps
+`engine.scene_graph.graph.SceneGraph` — edges_from/to, contents_of,
+container_of), both direct pass-throughs, no new logic. Wired into a
+real caller: `apps/cli/main.py` gained `reality query nearest <world>
+<x> <y> <z> [--k N]` and `reality query contents <world> <entity-id>`,
+both exercised by 3 new CLI tests. `tests/test_sdk_external_consumer.py`
+(the file that proves the SDK boundary is real, importing nothing but
+`sdk.reality`) gained a dedicated test using the two-room compiled-world
+fixture, proving `nearest()` returns correctly ordered results and
+`scene_graph().contents_of()`/`container_of()` resolve a real
+CONTAINS/PART_OF edge produced by room promotion — not a stub. The
+existing full-flow SDK test was also extended to touch both new
+functions. Full suite: 1084 passed (was 1080), zero regressions.
+
+Considered and explicitly NOT done: wiring `SpatialIndex` into
+`evidence/promote_rooms.py`'s ad-hoc neighbor logic (the other option
+named in the prior next-tasks list) — that logic runs on planes
+*before* they exist as WorldIR entities, so `SpatialIndex` (which
+requires a `WorldIR`) does not apply at that layer without a larger,
+riskier restructuring. The CLI is a real, lower-risk caller that
+exercises the same code paths honestly.
+
+## Completed 2026-09-13: headless CLI (`apps/cli/`) — closes the biggest named studio-campaign gap
 
 `apps/cli/main.py` — a `reality` command-line client of `sdk.reality`
 (`ingest`, `reconstruct`, `validate`, `diff`, `export`, `physics`). Every
@@ -615,14 +1149,18 @@ Full suite after all three: **971 passed / 2 skipped** (933 baseline +
 
 ## Next tasks (dependency-safe, in order)
 
-- Add `sdk.reality.spatial_index(world)` wrapping
-  `engine.scene_graph.spatial_index.SpatialIndex` and `scene_graph(world)`
-  wrapping `engine.scene_graph.graph.SceneGraph`, so query capability is
-  reachable from the SDK too, not just compile/validate/diff/export.
-- Wire `SpatialIndex` into a real caller — e.g. `evidence/promote_rooms.py`'s
-  room-detection already does its own ad-hoc geometric neighbor logic;
-  a coverage-analysis or nearest-wall-to-point Studio tool would be the
-  first real consumer of this index rather than it sitting unused.
+Pruned this session (audited against actual code, not assumed from the
+list — all three were already done and just never removed here):
+`world_ir.diff.diff_worlds()` already has a real caller (`reality diff`
+in `apps/cli/main.py`); `StudioSession.reconstruct_and_compile()`
+(`engine/studio/session.py`) already routes evidence through the
+backend orchestrator then `compile_reconstruction()`; that same method
+is already the "Studio action" for plane+room promotion (it calls
+`compile_reconstruction_to_world()`, which promotes both). Lesson: this
+file drifts behind actual code across sessions — verify a next-task
+item against the source before spending effort on it, same discipline
+this session applied before dispatching the three parallel agents above.
+
 - Wall-vs-plane / wall-vs-wall collision uses Box-vs-Box only right now;
   `SimpleRigidBodyBackend` also supports Plane statics via `add_plane()`
   which `build_stepped_physics_world()` does not populate (compiled
@@ -633,27 +1171,31 @@ Full suite after all three: **971 passed / 2 skipped** (933 baseline +
   test (`engine/physics/replay/`) -- the compiler produces bodies and
   the backend now steps/collides them; nothing yet records that as a
   replayable event sequence tied back to WorldIR provenance.
-- Wire `world_ir.diff.diff_worlds()` into a real caller: an export
-  fidelity check (compile → export → readback → diff against source, if
-  a readback path existed) or a golden-scene regression test (compile
-  twice / compile-then-recompile and assert an empty diff).
-- Route `StudioSession.compile_reconstruction()` through the backend
-  orchestrator now that `availability_probe`/`accepts` are wired for real
-  on the COLMAP backend (see the completed-work entry above this
-  section) — the orchestrator's gates are real but nothing calls it yet.
 - Run the Blender exporter's generated script inside an actual Blender
   install once one is available in this environment, and visually
-  inspect the result (geometry/transforms/hierarchy/custom properties) —
-  the exporter itself is done and tested, but never opened in Blender.
-- Real mesh/point-cloud geometry storage in WorldIR (`Geometry` currently
-  stores only `vertex_count`, no actual vertex buffer) so exporters can
-  emit real wall/floor rectangles or point clouds instead of a bounding
-  box standing in for the shape.
+  inspect the result (geometry/transforms/hierarchy/custom properties,
+  now including the real point-cloud mesh path added this session) —
+  the exporter itself is done and tested, but never opened in Blender
+  (no Blender binary in this environment, confirmed this session).
+- Triangulated MESH storage: `world_ir/geometry_data.py` now has real
+  `PointCloudData`, consumed by all three exporters (gltf/usda/blender)
+  and both promotion modules (planes/objects), but no `MeshData`
+  (vertices/indices/normals) yet — needs a real surface-reconstruction
+  step (e.g. alpha-shape/Poisson over a plane's inlier points), not
+  just a new payload format.
 - Compiler consumption of depth/segmentation/material evidence (currently
   planes+rooms only).
 - Non-convex (L-shaped) room rings; DOOR/WINDOW/ROOF assignment; multi-room
   shared-wall ownership (room topology is now the foundation).
-- Wire plane+room promotion into a Studio action so a user-visible flow exists.
+- Room entities (`evidence/promote_rooms.py`) carry no geometry of their
+  own (only relationships to their walls/floor/ceiling, which do have
+  real geometry) — a real room-boundary polygon (the already-computed
+  `_Ring` in floor-plane (u,v) coordinates) could become real geometry
+  too, the same way planes/objects now do, but needs careful (u,v) ->
+  world-space conversion via the floor's basis vectors to avoid a
+  coordinate-frame bug — deliberately NOT attempted via a parallel
+  agent this session because of that risk; do this one carefully,
+  in-session, not delegated blind.
 - Evidence fusion across competing plane fits (multiple reconstructions) —
   the fusion core now exists (`reconstruction/fusion/fusion.py`); what
   remains is a caller that detects competing plane fits and feeds them in.

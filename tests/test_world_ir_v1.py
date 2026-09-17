@@ -615,3 +615,39 @@ def test_uncertainty_representation():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ===== Geometry quality_metrics (additive, P6-03) =====
+
+def test_geometry_quality_metrics_default_to_none():
+    geom = Geometry(type=GeometryType.MESH)
+    assert geom.quality_metrics is None
+    assert geom.to_dict()["quality_metrics"] is None
+
+
+def test_geometry_quality_metrics_round_trip():
+    metrics = {
+        "n_triangles": 4,
+        "n_degenerate_triangles": 0,
+        "scale_within_tolerance": True,
+        "scale_tolerance": 1.10,
+    }
+    geom = Geometry(type=GeometryType.MESH, quality_metrics=metrics)
+    geom2 = Geometry.from_dict(geom.to_dict())
+    assert geom2.quality_metrics == metrics
+
+
+def test_v1_geometry_dict_without_quality_metrics_loads_unchanged():
+    # An old serialized world must load identically to before the field
+    # existed -- the additive field must not invent measurements.
+    d = {
+        "id": "geom-old",
+        "type": "mesh",
+        "data_uri": "artifact://abc",
+        "provenance": "RECONSTRUCTED",
+        "confidence": 0.6,
+        "observations": [],
+    }
+    geom = Geometry.from_dict(d)
+    assert geom.id == "geom-old"
+    assert geom.quality_metrics is None

@@ -1371,3 +1371,133 @@ VERIFY THE WORK.
 REVIEW THE WORK.
 
 THEN SAY IT IS DONE.
+
+============================================================
+# 51. FUTURE WORK REGISTRY
+============================================================
+
+The repository contains:
+
+- `docs/implementation/PENDING_IMPLEMENTATION.md` (master backlog)
+- `docs/future/` (per-subsystem engineering specifications)
+- `docs/engineering/DESIGN_DECISIONS.md` (accepted architecture decisions)
+- `docs/implementation/IMPLEMENTATION_STATUS.md` and `CAPABILITIES.md`
+  (what exists and was verified)
+
+These files are the canonical registry of intentionally unfinished
+engineering work. They are not TODO notes; they carry model, failure
+modes, and acceptance criteria per item.
+
+Before implementing a new subsystem:
+
+1. Check `PENDING_IMPLEMENTATION.md` for the item and its priority.
+2. Check its detailed specification under `docs/future/`.
+3. Check `DESIGN_DECISIONS.md` so a settled architecture is not relitigated.
+4. Inspect actual code.
+5. Determine whether the documented status is still correct.
+
+When implementing a pending item, advance it only with evidence:
+
+MISSING → FOUNDATION → PARTIAL → EXPERIMENTAL → IMPLEMENTED → VERIFIED
+
+Every status transition requires: implementation + integration + tests
++ diagnostics + documentation, and the registry/doc status updated in
+the same change.
+
+Never delete a future item simply because a partial interface was
+created. Never mark an item IMPLEMENTED without the evidence above.
+
+If a pending item is blocked by a product/architecture decision:
+mark it BLOCKED in the registry with DECISION REQUIRED, OPTIONS,
+TRADEOFFS, RECOMMENDATION, DEPENDENCIES. Do not silently choose a major
+architecture when the decision materially changes the product. Routine
+engineering decisions are made autonomously.
+
+============================================================
+# 52. PRIORITY AUTHORITY
+============================================================
+
+The project's priority roadmap (`docs/implementation/ROADMAP.md` and
+the task ledger in `.agent/TASKS.yaml`) is authoritative.
+The user/project has already established an ordered sequence of
+implementation priorities.
+
+- DO NOT invent a new roadmap.
+- DO NOT reorder priorities based on personal preference.
+- DO NOT skip difficult tasks because easier tasks are available.
+- DO NOT replace implementation with planning.
+
+For each priority, in order:
+
+1. inspect its current implementation state
+2. identify prerequisites
+3. execute the prerequisite if it is required and missing
+4. implement the priority
+5. integrate it
+6. test it
+7. debug failures
+8. verify it
+9. update its status (registry, STATE, ledger)
+10. move to the next priority without waiting for a new user message
+
+If a priority is already implemented: verify it rather than rewriting it.
+If it is partially implemented: continue the existing implementation.
+If it is broken: fix it.
+If it is blocked: resolve the blocker autonomously when possible; if it
+requires a genuine product/architecture decision, record BLOCKED per
+section 51 and continue with the next independent priority only when
+doing so does not violate dependency order. Once the blocker is
+resolved, return to the original priority.
+
+The priority list is the WHAT. You determine the HOW.
+
+============================================================
+# 53. HIGH-VELOCITY EXECUTION
+============================================================
+
+The objective is maximum VERIFIED ENGINEERING OUTPUT per unit of
+execution time, not conversational quality.
+
+During an execution session:
+
+- minimize unnecessary explanation and questions
+- minimize repeated repository inspection; keep notes in
+  `.agent/EXECUTION_STATE.md`
+- use relevant skills/agents/plugins automatically when they apply
+- batch independent inspections and file writes where possible
+- run focused tests before broad tests
+- fix failures immediately, then continue
+- when a task is verified complete, begin the next priority
+  automatically
+
+The user's priority roadmap is the work queue. Your job is to consume
+that queue through verified implementation.
+
+============================================================
+# 54. EXECUTION BUDGET
+============================================================
+
+Treat an extended autonomous session as a finite engineering window.
+
+Prefer work that:
+- advances the current priority
+- unblocks downstream priorities
+- has a clear verification path
+- fits the remaining execution window
+
+Do not spend disproportionate time polishing low-impact code while
+higher-priority work remains. However, never mark incomplete work as
+complete to inflate the count of finished tasks: a smaller number of
+genuinely verified implementations is worth more than a larger number
+of superficial changes.
+
+At the end of an execution window, update
+`.agent/EXECUTION_STATE.md` and `.agent/TASKS.yaml` with:
+
+- completed priorities and the exact verification performed
+- partial work and where it stopped
+- blockers and their classification
+- the exact next priority/subtask
+
+The next session must be able to resume without rediscovering the
+project.

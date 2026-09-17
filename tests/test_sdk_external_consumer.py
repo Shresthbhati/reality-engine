@@ -75,6 +75,57 @@ def test_external_app_full_flow_through_sdk_only():
     world_diff = reality.diff(world, world_again)
     assert world_diff.is_empty()
 
+    index = reality.spatial_index(world)
+    nearest = index.nearest((2.0, 1.25, 1.5), k=1)
+    assert len(nearest) == 1
+    entity, distance = nearest[0]
+    assert entity.id in world.entities
+    assert distance >= 0.0
+
+    graph = reality.scene_graph(world)
+    room_entities = [e for e in world.entities.values() if e.relationships]
+    if room_entities:
+        edges = graph.edges_from(room_entities[0].id)
+        assert isinstance(edges, list)
+
+
+def test_sdk_spatial_index_and_scene_graph_are_real_query_engines():
+    """spatial_index()/scene_graph() are not stubs -- prove nearest()
+    respects k and predicate, and scene_graph() resolves a real
+    CONTAINS/PART_OF edge produced by room promotion. Needs the
+    two-room fixture (tests/test_room_inference.py) since the simple
+    single-box `_room_evidence()` above never closes a detectable room."""
+    from world_ir import RelationshipKind
+    from tests.test_room_inference import _CAMS, _two_room_scene
+
+    result = _two_room_scene()
+    result.camera_poses.extend(
+        ReconstructedCameraPose(evidence_id=f"ev-{i}", position=p, rotation=(1.0, 0.0, 0.0, 0.0))
+        for i, p in enumerate(_CAMS)
+    )
+    world, diagnostics = reality.compile_world_from_reconstruction(result)
+    assert diagnostics.rooms_detected > 0
+
+    index = reality.spatial_index(world)
+    assert len(index) > 0
+    k3 = index.nearest((0.0, 0.0, 0.0), k=3)
+    assert len(k3) == min(3, len(index))
+    # nearest-first ordering
+    distances = [d for _e, d in k3]
+    assert distances == sorted(distances)
+
+    graph = reality.scene_graph(world)
+    room = next(
+        (e for e in world.entities.values()
+         if any(r.kind == RelationshipKind.CONTAINS for r in e.relationships)),
+        None,
+    )
+    assert room is not None, "the room-scene fixture must promote at least one CONTAINS relationship"
+    contents = graph.contents_of(room.id)
+    assert len(contents) > 0
+    for member in contents:
+        assert graph.container_of(member.id).id == room.id
+
 
 def test_sdk_export_rejects_unknown_format_explicitly():
     evidence = _room_evidence()

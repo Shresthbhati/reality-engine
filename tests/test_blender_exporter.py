@@ -4,6 +4,8 @@ import ast
 import os
 import tempfile
 
+from world_ir.artifact_store import MemoryArtifactStore
+from world_ir.geometry_data import PointCloudData
 from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Vector3
 from world_ir.world_v1 import WorldIR
 from provenance import Provenance
@@ -161,3 +163,59 @@ def test_empty_world_produces_valid_script_with_zero_entities():
     ast.parse(script)
     assert "primitive_cube_add" not in script
     assert "# 0 entity object(s) exported." in script
+
+
+# ---------------------------------------------------------------- real geometry
+
+
+def test_omitting_artifact_store_reproduces_old_behavior():
+    """Backward-compatibility regression: no artifact_store must produce
+    byte-identical output to before real-geometry support existed."""
+    world = _build_world()
+    assert export_to_blender_script(world) == export_to_blender_script(world, artifact_store=None)
+
+
+def test_entity_with_real_geometry_gets_a_from_pydata_mesh_not_the_cube():
+    world = _build_world()
+    store = MemoryArtifactStore()
+    points = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
+    uri, digest = store.put(PointCloudData(points=points).to_bytes())
+    world.geometries["geom-wall"].data_uri = uri
+    world.geometries["geom-wall"].data_hash = digest
+
+    script = export_to_blender_script(world, artifact_store=store)
+    ast.parse(script)
+
+    assert "from_pydata" in script
+    idx = script.index("obj.name = 'Crate'")  # box still gets the cube
+    # only 2 cubes now (box, floor) -- the wall became a real mesh.
+    assert script.count("primitive_cube_add") == 2
+
+    idx = script.index("mesh = bpy.data.meshes.new('Wall North')")
+    segment = script[idx:idx + 500]
+    assert "mesh.from_pydata([(-2.0, -1.25, -0.1), (-1.0, -1.25, -0.1), (-2.0, -0.25, -0.1)], [], [])" in segment
+    assert "obj = bpy.data.objects.new('Wall North', mesh)" in segment
+    assert "obj.location = (2.0, 1.25, 0.1)" in segment
+    assert "obj['entity_id'] = 'ent-wall'" in segment
+
+
+def test_unresolvable_artifact_falls_back_to_the_cube():
+    world = _build_world()
+    store = MemoryArtifactStore()  # never populated -- data_uri won't resolve
+    world.geometries["geom-wall"].data_uri = "artifact://" + "0" * 64
+    world.geometries["geom-wall"].data_hash = "0" * 64
+
+    script = export_to_blender_script(world, artifact_store=store)
+
+    assert "from_pydata" not in script
+    assert script.count("primitive_cube_add") == 3
+
+
+def test_no_data_uri_falls_back_to_the_cube_even_with_a_store():
+    world = _build_world()
+    store = MemoryArtifactStore()
+
+    script = export_to_blender_script(world, artifact_store=store)
+
+    assert "from_pydata" not in script
+    assert script.count("primitive_cube_add") == 3

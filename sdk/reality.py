@@ -39,22 +39,29 @@ from engine.compiler.world_compiler import (
     WorldValidationGateError,
     compile_reconstruction_to_world,
 )
+from engine.scene_graph.graph import SceneGraph
+from engine.scene_graph.spatial_index import SpatialIndex
 from exporters.blender.exporter import export_to_blender_script_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
 from exporters.usd.exporter import export_to_usda_with_report
+from world_ir.artifact_store import ArtifactStore, MemoryArtifactStore
 from world_ir.diff import WorldDiff, diff_worlds
 from world_ir.validation import WorldValidationReport, validate_world_ir
 from world_ir.world_v1 import WorldIR
 
 __all__ = [
+    "ArtifactStore",
     "CompileInputError",
     "CompileOptions",
+    "MemoryArtifactStore",
     "UnsupportedExportFormatError",
     "WorldValidationGateError",
     "compile_physics",
     "compile_world_from_reconstruction",
     "diff",
     "export",
+    "scene_graph",
+    "spatial_index",
     "validate",
 ]
 
@@ -103,13 +110,34 @@ def compile_physics(world: WorldIR) -> PhysicsCompileDiagnostics:
     return compile_physics_world(world)
 
 
-def export(world: WorldIR, format: str):
+def spatial_index(world: WorldIR) -> SpatialIndex:
+    """WorldIR -> SpatialIndex (nearest/within_radius/within_region queries).
+    Direct pass-through to engine.scene_graph.spatial_index.SpatialIndex.
+    A snapshot of `world` at call time; rebuild after edits."""
+    return SpatialIndex(world)
+
+
+def scene_graph(world: WorldIR) -> SceneGraph:
+    """WorldIR -> SceneGraph (relationship queries: contents_of,
+    container_of, edges_from/to). Direct pass-through to
+    engine.scene_graph.graph.SceneGraph."""
+    return SceneGraph(world)
+
+
+def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] = None):
     """WorldIR -> (content, ExportReport) for `format` in {"gltf", "usda",
     "blender"}. Raises UnsupportedExportFormatError for anything else --
-    the SDK never silently no-ops on an unknown format."""
+    the SDK never silently no-ops on an unknown format.
+
+    `artifact_store`, when given, lets every exporter (gltf/usda/blender)
+    emit real per-entity geometry (world_ir/geometry_data.py's
+    PointCloudData) instead of the placeholder cube for any entity
+    whose Geometry resolves through it -- see exporters/gltf/exporter.py,
+    exporters/usd/exporter.py, exporters/blender/exporter.py. All three
+    accept the same parameter shape, so it is threaded through uniformly."""
     exporter_fn = _EXPORTERS.get(format)
     if exporter_fn is None:
         raise UnsupportedExportFormatError(
             f"unsupported export format {format!r}; supported: {sorted(_EXPORTERS)}"
         )
-    return exporter_fn(world)
+    return exporter_fn(world, artifact_store)

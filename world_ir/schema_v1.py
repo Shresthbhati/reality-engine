@@ -24,6 +24,7 @@ from uuid import uuid4
 from datetime import datetime
 
 from provenance import Provenance, Uncertainty
+from .statement_state import StatementState
 
 
 # ===== Basic Types & Enums =====
@@ -73,6 +74,11 @@ class EntityType(str, Enum):
     DOOR = "door"  # Openable wall opening for passage
     WINDOW = "window"  # Wall opening for light/view
     STAIRS = "stairs"  # Vertical circulation element
+    # Architectural perception expansion (P7-03; additive -- v1 worlds
+    # without these values are unaffected, and enum serialization is
+    # by value so old data loads unchanged):
+    DOME = "dome"  # Hemispherical/ellipsoidal roof structure
+    ARCH = "arch"  # Curved spanning structure over an opening
     ROAD = "road"  # Vehicular travel surface
     CURB = "curb"  # Raised edge between road and sidewalk
     SIDEWALK = "sidewalk"  # Pedestrian walking surface adjacent to a road
@@ -139,16 +145,25 @@ class Quaternion:
 
 @dataclass
 class Measurement:
-    """A measured value with unit and precision."""
+    """A measured value with unit and precision.
+
+    `precision_note` is an optional, non-semantic annotation naming HOW
+    the precision was obtained (e.g. "measured spread of 3 views",
+    "documented confidence heuristic"). It never changes equality or
+    serialization of the measured quantity itself -- it exists so a
+    downstream consumer can distinguish measured from heuristic
+    uncertainty instead of trusting a number blindly.
+    """
     value: float
     unit: str  # SI units only (meter, kg, second, etc.)
     precision: float = 0.01  # Standard deviation or margin of error
     timestamp: Optional[float] = None
     provenance: Provenance = Provenance.UNKNOWN
     confidence: float = 0.5
+    precision_note: Optional[str] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "value": self.value,
             "unit": self.unit,
             "precision": self.precision,
@@ -156,6 +171,9 @@ class Measurement:
             "provenance": self.provenance.value,
             "confidence": self.confidence,
         }
+        if self.precision_note is not None:
+            d["precision_note"] = self.precision_note
+        return d
 
     @staticmethod
     def from_dict(data: dict) -> "Measurement":
@@ -166,6 +184,7 @@ class Measurement:
             timestamp=data.get("timestamp"),
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             confidence=data.get("confidence", 0.5),
+            precision_note=data.get("precision_note"),
         )
 
 
@@ -316,6 +335,12 @@ class Geometry:
     provenance: Provenance = Provenance.UNKNOWN
     confidence: float = 0.5
     observations: list[Observation] = field(default_factory=list)
+    # Quality measurements recorded at production time (e.g. a mesh
+    # quality report's to_dict()), or None when none were measured.
+    # Additive like Entity.statement_state: old v1 dicts load fine
+    # without the key, and measurements are recorded facts, never
+    # fabricated to make a geometry look validated.
+    quality_metrics: Optional[dict] = None
 
     def to_dict(self) -> dict:
         return {
@@ -331,6 +356,7 @@ class Geometry:
             "provenance": self.provenance.value,
             "confidence": self.confidence,
             "observations": [o.to_dict() for o in self.observations],
+            "quality_metrics": self.quality_metrics,
         }
 
     @staticmethod
@@ -348,6 +374,7 @@ class Geometry:
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             confidence=data.get("confidence", 0.5),
             observations=[Observation.from_dict(o) for o in data.get("observations", [])],
+            quality_metrics=data.get("quality_metrics"),
         )
 
 
@@ -526,6 +553,12 @@ class Entity:
     confidence: float = 0.5
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
     custom_properties: dict = field(default_factory=dict)
+    # WorldIR 2.0 (P9-01): additive, optional statement-state classification
+    # (constitution sec 4 OBSERVED/INFERRED/DERIVED/PREDICTED/SIMULATED/
+    # PROCEDURAL distinction). None means "not classified" -- v1 worlds
+    # serialized without this field must load with this as None, never a
+    # fabricated guess. See world_ir/statement_state.py.
+    statement_state: Optional[StatementState] = None
 
     def to_dict(self) -> dict:
         return {
@@ -545,10 +578,12 @@ class Entity:
             "confidence": self.confidence,
             "uncertainty": self.uncertainty.to_dict(),
             "custom_properties": self.custom_properties,
+            "statement_state": self.statement_state.value if self.statement_state else None,
         }
 
     @staticmethod
     def from_dict(data: dict) -> "Entity":
+        raw_state = data.get("statement_state")
         return Entity(
             id=data.get("id", f"ent-{uuid4()}"),
             type=EntityType(data.get("type", EntityType.UNKNOWN.value)),
@@ -566,4 +601,5 @@ class Entity:
             confidence=data.get("confidence", 0.5),
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
             custom_properties=data.get("custom_properties", {}),
+            statement_state=StatementState(raw_state) if raw_state else None,
         )

@@ -24,11 +24,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
 from evidence.importers import import_folder
+from evidence.multi_source import MultiSourceSession
 from evidence.packages import DeterministicPackageBuilder, EvidencePackage
 from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
 from reconstruction.backend.fake import FakeReconstructionBackend
@@ -38,6 +41,7 @@ from reconstruction.orchestrator import (
     ReconstructionOrchestrator,
 )
 from sdk import reality
+from world_ir.artifact_store import FileArtifactStore
 from world_ir.world_v1 import WorldIR
 
 
@@ -52,6 +56,11 @@ def _load_world(path: str) -> WorldIR:
 
 def _save_world(world: WorldIR, path: str) -> None:
     Path(path).write_text(json.dumps(world.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _artifacts_dir_for(world_path: str) -> Path:
+    """Convention: `world.json` -> `world.json.artifacts/`, alongside it."""
+    return Path(f"{world_path}.artifacts")
 
 
 def _default_backends(colmap_binary: str, use_gpu: bool) -> List:
@@ -81,6 +90,105 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _session_path(session_dir: str) -> Path:
+    return Path(session_dir) / "session.json"
+
+
+def _load_session(session_dir: str) -> MultiSourceSession:
+    path = _session_path(session_dir)
+    if not path.is_file():
+        raise FileNotFoundError(f"no session.json under {session_dir!r} -- run `reality session create` first")
+    return MultiSourceSession.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _save_session(session: MultiSourceSession, session_dir: str) -> None:
+    Path(session_dir).mkdir(parents=True, exist_ok=True)
+    _session_path(session_dir).write_text(
+        json.dumps(session.to_dict(), indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+
+def cmd_session_create(args: argparse.Namespace) -> int:
+    path = _session_path(args.session_dir)
+    if path.is_file():
+        _eprint(f"session already exists at {path} -- use `session add-source` to add evidence to it")
+        return 1
+    session = MultiSourceSession(session_id=args.session_id, name=args.name or args.session_id)
+    _save_session(session, args.session_dir)
+    print(f"created session '{session.session_id}' -> {path}")
+    return 0
+
+
+def cmd_source_add(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    record = session.add_source(args.path)
+    _save_session(session, args.session_dir)
+    print(f"{record.status.value}\t{record.source_id}\t{record.source_type.value}\t{args.path}")
+    if record.error:
+        _eprint(f"  {record.error}")
+    if record.unhandled_paths:
+        for unhandled in record.unhandled_paths:
+            _eprint(f"  unhandled: {unhandled}")
+    return 0 if record.status.value in ("ingested", "already_ingested") else 1
+
+
+def cmd_source_list(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    for record in session.sources():
+        print(f"{record.source_id}\t{record.status.value}\t{record.source_type.value}\t"
+              f"{len(record.asset_ids)} asset(s)\t{record.original_path}")
+    print(f"{len(session.sources())} source(s), {len(session.package.all_assets())} asset(s) total")
+    return 0
+
+
+def cmd_session_inspect(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    summary = session.evidence_summary()
+    print(f"session '{session.session_id}' ({session.name})")
+    print(f"  sources: {summary['source_count']}")
+    for kind, count in sorted(summary["asset_counts"].items()):
+        print(f"    {kind}: {count}")
+    print(f"  assets with GPS: {summary['gps_asset_count']}")
+    print(f"  ready for reconstruction: {'YES' if summary['ready_for_reconstruction'] else 'NO'}")
+    for issue in summary["readiness_issues"]:
+        _eprint(f"    - {issue}")
+    return 0
+
+
+def cmd_source_inspect(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    matches = [s for s in session.sources() if s.source_id == args.source_id]
+    if not matches:
+        _eprint(f"unknown source id: {args.source_id!r}")
+        return 1
+    record = matches[0]
+    print(f"source '{record.source_id}'")
+    print(f"  path: {record.original_path}")
+    print(f"  type: {record.source_type.value}")
+    print(f"  status: {record.status.value}")
+    print(f"  content hash: {record.content_hash}")
+    print(f"  asset(s): {len(record.asset_ids)}")
+    for asset_id in record.asset_ids:
+        print(f"    {asset_id}")
+    if record.unhandled_paths:
+        print(f"  unhandled path(s): {len(record.unhandled_paths)}")
+        for path in record.unhandled_paths:
+            print(f"    {path}")
+    if record.error:
+        print(f"  error: {record.error}")
+    return 0
+
+
+def cmd_session_export_package(args: argparse.Namespace) -> int:
+    session = _load_session(args.session_dir)
+    Path(args.output).write_text(
+        json.dumps(session.package.to_dict(), indent=2, sort_keys=True), encoding="utf-8"
+    )
+    print(f"exported package '{session.package.package_id}' "
+          f"({len(session.package.all_assets())} asset(s)) -> {args.output}")
+    return 0
+
+
 def cmd_reconstruct(args: argparse.Namespace) -> int:
     package = EvidencePackage.from_dict(json.loads(Path(args.package).read_text(encoding="utf-8")))
     evidence = package.to_evidence_items()
@@ -95,8 +203,13 @@ def cmd_reconstruct(args: argparse.Namespace) -> int:
                 _eprint(f"  {attempt.backend_name}: {attempt.outcome} - {attempt.detail or attempt.error}")
         return 1
 
+    compile_options = None
+    if not args.no_real_geometry:
+        store_root = _artifacts_dir_for(args.output)
+        compile_options = reality.CompileOptions(artifact_store=FileArtifactStore(store_root))
+
     try:
-        world, diagnostics = reality.compile_world_from_reconstruction(run.result)
+        world, diagnostics = reality.compile_world_from_reconstruction(run.result, compile_options)
     except (reality.CompileInputError, reality.WorldValidationGateError) as exc:
         _eprint(f"compile refused: {exc}")
         return 1
@@ -104,6 +217,145 @@ def cmd_reconstruct(args: argparse.Namespace) -> int:
     _save_world(world, args.output)
     print(diagnostics.summary_text())
     print(f"wrote world '{world.id}' -> {args.output}")
+    return 0
+
+
+def _resolve_test_backend():
+    """REALITY_TEST_BACKEND="module.path:ClassName" -> backend instance.
+
+    Deterministic-backend seam for offline tests of `compile`; unset in
+    production, where the real COLMAP backend is always used. Raises a
+    clear error if set but unresolvable -- never silently ignored.
+    """
+    spec = os.environ.get("REALITY_TEST_BACKEND", "").strip()
+    if not spec:
+        return None
+    module_name, _, class_name = spec.partition(":")
+    if not module_name or not class_name:
+        raise ValueError(
+            f"REALITY_TEST_BACKEND must be 'module:Class', got {spec!r}"
+        )
+    import importlib
+
+    module = importlib.import_module(module_name)
+    return getattr(module, class_name)()
+
+
+def cmd_compile(args: argparse.Namespace) -> int:
+    """One-command mapping path: capture dataset -> full vertical slice.
+
+    Runs the same pipeline as the flagship runner (SfM -> metric scale
+    -> frame canonicalization -> depth -> perception -> mesh -> WorldIR
+    -> validation gate), writes the machine-readable output set
+    (worldir.json / report.json / points.ply / mesh.ply / cameras.json
+    / artifacts/ / exports/scene.gltf), and prints the per-stage report.
+    Exit 0 on honest success OR partial-with-world; 1 when a stage
+    refuses -- the report still says why.
+    """
+    from engine.pipeline.artifacts import (
+        write_cameras_json,
+        write_exports,
+        write_mesh_ply_from_artifact,
+        write_points_ply,
+    )
+    from engine.pipeline.dataset import DatasetError, load_capture_dataset
+    from engine.pipeline.vertical_slice import (
+        VerticalSliceError,
+        VerticalSliceOptions,
+        vertical_slice,
+    )
+
+    dataset = Path(args.dataset).resolve()
+    out = Path(args.output).resolve() if args.output else dataset / "pipeline_out"
+    out.mkdir(parents=True, exist_ok=True)
+
+    try:
+        items, refs, intrinsics, image_size = load_capture_dataset(dataset)
+    except DatasetError as exc:
+        _eprint(f"dataset rejected: {exc}")
+        return 1
+
+    store = FileArtifactStore(out / "artifacts")
+    backend = _resolve_test_backend()
+    options = VerticalSliceOptions(
+        measured_baselines=refs,
+        intrinsics=intrinsics,
+        image_size=image_size,
+        colmap_binary=args.colmap_binary,
+        depth_model=None if args.no_depth else "DPT_Hybrid",
+        mesh_enabled=not args.no_mesh,
+        artifact_store=store,
+        reconstruction_backend=backend,
+    )
+
+    report: dict = {
+        "dataset": str(dataset),
+        "images_ingested": len(items),
+        "scale_references": len(refs),
+        "stages": {},
+    }
+    started = time.perf_counter()
+    try:
+        result = vertical_slice(items, options)
+    except VerticalSliceError as exc:
+        report["status"] = "FAILED"
+        report["error"] = str(exc)
+        report["runtime_s"] = round(time.perf_counter() - started, 2)
+        (out / "report.json").write_text(json.dumps(report, indent=2))
+        _eprint(f"compile failed: {exc}")
+        return 1
+
+    runtime = round(time.perf_counter() - started, 2)
+    report["status"] = (
+        "SUCCESS" if result.registration_status == "success" else "PARTIAL_SUCCESS"
+    )
+    report["runtime_s"] = runtime
+    report["stages"] = {
+        "reconstruction": {
+            "backend": result.stage_facts.get("backend"),
+            "cameras_registered": result.cameras_registered,
+            "cameras_input": result.cameras_input,
+            "registration_status": result.registration_status,
+            "points": result.points_total,
+        },
+        "scale": {
+            "state": result.scale_state,
+            "meters_per_unit": result.meters_per_unit,
+        },
+        "depth": result.stage_facts.get("depth"),
+        "perception": result.stage_facts.get("perception"),
+        "mesh": result.stage_facts.get("mesh"),
+        "compile": {
+            "entities": len(result.world.entities),
+            "measurements": result.compile.measurements_count,
+            "relationships": result.compile.relationships_count,
+        },
+    }
+    report["world_id"] = result.world_id
+    report["outputs"] = {
+        "world": str(out / "worldir.json"),
+        "report": str(out / "report.json"),
+        "points_ply": str(out / "points.ply"),
+        "cameras": str(out / "cameras.json"),
+        "artifacts": str(out / "artifacts"),
+        "exports": str(out / "exports" / "scene.gltf"),
+    }
+
+    world_dict = result.world.to_dict()
+    (out / "worldir.json").write_text(json.dumps(world_dict, indent=2))
+    (out / "report.json").write_text(json.dumps(report, indent=2))
+    write_points_ply(out / "points.ply", result.points)
+    write_mesh_ply_from_artifact(out, store, result.stage_facts.get("mesh"))
+    write_cameras_json(
+        out / "cameras.json", result.camera_poses, result.scale_state,
+        options.image_size,
+    )
+    exports_path = write_exports(world_dict, store, out)
+
+    print(result.summary_text())
+    print(f"world -> {out / 'worldir.json'}")
+    print(f"exports -> {exports_path}")
+    print(f"report -> {out / 'report.json'}")
     return 0
 
 
@@ -126,8 +378,15 @@ def cmd_diff(args: argparse.Namespace) -> int:
 
 def cmd_export(args: argparse.Namespace) -> int:
     world = _load_world(args.world)
+    # All three exporters (gltf/usda/blender) now accept artifact_store
+    # uniformly, so reconnection to a real geometry store is no longer
+    # format-specific.
+    artifact_store = None
+    store_root = _artifacts_dir_for(args.world)
+    if store_root.is_dir():
+        artifact_store = FileArtifactStore(store_root)
     try:
-        content, report = reality.export(world, args.format)
+        content, report = reality.export(world, args.format, artifact_store=artifact_store)
     except reality.UnsupportedExportFormatError as exc:
         _eprint(str(exc))
         return 1
@@ -153,6 +412,33 @@ def cmd_physics(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_query_nearest(args: argparse.Namespace) -> int:
+    world = _load_world(args.world)
+    index = reality.spatial_index(world)
+    hits = index.nearest((args.x, args.y, args.z), k=args.k)
+    if not hits:
+        print("no localized entities found")
+        return 1
+    for entity, distance in hits:
+        print(f"{entity.id}\t{distance:.4f}m\t{entity.name or entity.type.value}")
+    return 0
+
+
+def cmd_query_contents(args: argparse.Namespace) -> int:
+    world = _load_world(args.world)
+    graph = reality.scene_graph(world)
+    if args.world_entity_id not in world.entities:
+        _eprint(f"unknown entity id: {args.world_entity_id!r}")
+        return 1
+    contents = graph.contents_of(args.world_entity_id)
+    if not contents:
+        print(f"{args.world_entity_id} has no known contents")
+        return 0
+    for entity in sorted(contents, key=lambda e: e.id):
+        print(f"{entity.id}\t{entity.name or entity.type.value}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reality", description="Reality Engine command-line interface")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -164,11 +450,68 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--package-id", default="", help="explicit package id (default: pkg-<seed>)")
     p_ingest.set_defaults(func=cmd_ingest)
 
+    p_session = sub.add_parser("session", help="multi-source ingestion session: create/add-source/list/export")
+    session_sub = p_session.add_subparsers(dest="session_command", required=True)
+
+    p_session_create = session_sub.add_parser("create", help="create a new multi-source session")
+    p_session_create.add_argument("session_id")
+    p_session_create.add_argument("-o", "--session-dir", required=True, help="directory to hold session.json")
+    p_session_create.add_argument("--name", default="", help="human-readable session name")
+    p_session_create.set_defaults(func=cmd_session_create)
+
+    p_source_add = session_sub.add_parser(
+        "add-source", help="ingest one file/folder into an existing session (incremental; dedups by content)"
+    )
+    p_source_add.add_argument("session_dir")
+    p_source_add.add_argument("path", help="file or folder to ingest")
+    p_source_add.set_defaults(func=cmd_source_add)
+
+    p_source_list = session_sub.add_parser("list", help="list sources and asset counts in a session")
+    p_source_list.add_argument("session_dir")
+    p_source_list.set_defaults(func=cmd_source_list)
+
+    p_session_inspect = session_sub.add_parser(
+        "inspect", help="session-level evidence summary + reconstruction readiness"
+    )
+    p_session_inspect.add_argument("session_dir")
+    p_session_inspect.set_defaults(func=cmd_session_inspect)
+
+    p_source_inspect = session_sub.add_parser("inspect-source", help="full detail for one source in a session")
+    p_source_inspect.add_argument("session_dir")
+    p_source_inspect.add_argument("source_id")
+    p_source_inspect.set_defaults(func=cmd_source_inspect)
+
+    p_session_export = session_sub.add_parser(
+        "export-package", help="write the session's accumulated EvidencePackage as package JSON (for `reconstruct`)"
+    )
+    p_session_export.add_argument("session_dir")
+    p_session_export.add_argument("-o", "--output", required=True)
+    p_session_export.set_defaults(func=cmd_session_export_package)
+
+    p_compile = sub.add_parser(
+        "compile",
+        help="capture dataset -> full mapping pipeline -> WorldIR + artifacts + exports",
+    )
+    p_compile.add_argument("dataset", help="dataset folder with manifest.json + images/")
+    p_compile.add_argument(
+        "-o", "--output", default=None,
+        help="output directory (default: <dataset>/pipeline_out)",
+    )
+    p_compile.add_argument("--colmap-binary", default="colmap")
+    p_compile.add_argument("--no-depth", action="store_true", help="skip the depth stage")
+    p_compile.add_argument("--no-mesh", action="store_true", help="skip surface reconstruction")
+    p_compile.set_defaults(func=cmd_compile)
+
     p_recon = sub.add_parser("reconstruct", help="evidence package -> reconstruction -> compiled WorldIR")
     p_recon.add_argument("package", help="package JSON produced by `ingest`")
     p_recon.add_argument("-o", "--output", required=True, help="world JSON output path")
     p_recon.add_argument("--colmap-binary", default="colmap")
     p_recon.add_argument("--gpu", action="store_true")
+    p_recon.add_argument(
+        "--no-real-geometry", action="store_true",
+        help="skip storing real plane point-cloud geometry (no <output>.artifacts/ dir written); "
+             "produces a smaller world.json with no Geometry.data_uri set, matching pre-artifact-store behavior",
+    )
     p_recon.set_defaults(func=cmd_reconstruct)
 
     p_validate = sub.add_parser("validate", help="validate a compiled WorldIR")
@@ -180,7 +523,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("after")
     p_diff.set_defaults(func=cmd_diff)
 
-    p_export = sub.add_parser("export", help="export a WorldIR to gltf/usda/blender")
+    p_export = sub.add_parser(
+        "export",
+        help="export a WorldIR to gltf/usda/blender (reconnects to <world>.artifacts/ "
+             "for real geometry, if it exists)",
+    )
     p_export.add_argument("world")
     p_export.add_argument("--format", required=True, choices=["gltf", "usda", "blender"])
     p_export.add_argument("-o", "--output", required=True)
@@ -189,6 +536,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_physics = sub.add_parser("physics", help="compile a WorldIR into physics bodies + diagnostics")
     p_physics.add_argument("world")
     p_physics.set_defaults(func=cmd_physics)
+
+    p_query = sub.add_parser("query", help="spatial/relationship queries over a WorldIR")
+    query_sub = p_query.add_subparsers(dest="query_command", required=True)
+
+    p_nearest = query_sub.add_parser("nearest", help="k nearest localized entities to a point")
+    p_nearest.add_argument("world")
+    p_nearest.add_argument("x", type=float)
+    p_nearest.add_argument("y", type=float)
+    p_nearest.add_argument("z", type=float)
+    p_nearest.add_argument("--k", type=int, default=1)
+    p_nearest.set_defaults(func=cmd_query_nearest)
+
+    p_contents = query_sub.add_parser("contents", help="entities contained in/part of a container entity")
+    p_contents.add_argument("world")
+    p_contents.add_argument("world_entity_id", metavar="entity-id")
+    p_contents.set_defaults(func=cmd_query_contents)
 
     return parser
 

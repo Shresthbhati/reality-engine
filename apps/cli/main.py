@@ -515,6 +515,128 @@ def cmd_query_contents(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_store_save(args: argparse.Namespace) -> int:
+    """Persist a compiled WorldIR into a versioned WorldStore."""
+    from worldstore.store import WorldStore
+
+    world = _load_world(args.world)
+    store = WorldStore(args.store)
+    try:
+        stored = store.save_version(world, parent=args.parent, version_id=args.version_id or None)
+    except Exception as exc:
+        _eprint(f"store save failed: {exc}")
+        return 1
+    print(f"saved version {stored.version_id} (world={stored.world_id} parent={stored.parent})")
+    return 0
+
+
+def cmd_store_load(args: argparse.Namespace) -> int:
+    """Load one WorldStore version back to a WorldIR JSON file."""
+    from worldstore.store import WorldStore
+
+    store = WorldStore(args.store)
+    try:
+        world = store.load_version(args.version)
+    except Exception as exc:
+        _eprint(f"store load failed: {exc}")
+        return 1
+    _save_world(world, args.output)
+    print(f"loaded version {args.version} -> {args.output}")
+    return 0
+
+
+def cmd_store_list(args: argparse.Namespace) -> int:
+    """List WorldStore versions in save order with lineage."""
+    from worldstore.store import WorldStore
+
+    store = WorldStore(args.store)
+    for record in store.list_versions():
+        print(f"{record.version_id}\tworld={record.world_id}\tparent={record.parent or '-'}")
+    return 0
+
+
+def cmd_store_verify(args: argparse.Namespace) -> int:
+    """Verify one WorldStore version's artifact integrity."""
+    from worldstore.store import WorldStore
+
+    store = WorldStore(args.store)
+    try:
+        failures = store.verify_version(args.version)
+    except Exception as exc:
+        _eprint(f"store verify failed: {exc}")
+        return 1
+    if failures:
+        for failure in failures:
+            _eprint(f"FAILED {failure.get('version')}: {failure.get('reason')}")
+        return 1
+    print(f"version {args.version} verifies OK")
+    return 0
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    """Inspect one world: entity summary, one entity, or provenance detail."""
+    world = _load_world(args.world)
+    if args.entity:
+        entity = world.entities.get(args.entity)
+        if entity is None:
+            _eprint(f"unknown entity id: {args.entity!r}")
+            return 1
+        payload = {
+            "id": entity.id,
+            "type": entity.type.value,
+            "name": entity.name,
+            "provenance": entity.provenance.value,
+            "confidence": entity.confidence,
+            "geometry_ids": list(entity.geometry_ids),
+            "relationships": [
+                {
+                    "kind": rel.kind.value,
+                    "target": rel.target_id,
+                    "confidence": rel.confidence,
+                    "provenance": rel.provenance.value,
+                }
+                for rel in entity.relationships
+            ],
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    by_type: dict = {}
+    for entity in world.entities.values():
+        by_type[entity.type.value] = by_type.get(entity.type.value, 0) + 1
+    payload = {
+        "world_id": world.id,
+        "entities": len(world.entities),
+        "geometries": len(world.geometries),
+        "by_type": by_type,
+        "global_provenance": world.global_provenance.value,
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_viewer(args: argparse.Namespace) -> int:
+    """Build the self-contained offline viewer HTML for pipeline artifacts."""
+    from apps.viewer.build_viewer import main as build_viewer_main
+
+    argv: List[str] = ["--out", args.output]
+    if args.worldir:
+        argv += ["--worldir", args.worldir]
+    if args.points:
+        argv += ["--points", args.points]
+    if args.cameras:
+        argv += ["--cameras", args.cameras]
+    if args.mesh:
+        argv += ["--mesh", args.mesh]
+    try:
+        return int(build_viewer_main(argv))
+    except SystemExit as exc:
+        # build_viewer uses argparse: surface its exit code, never crash.
+        return int(exc.code or 0)
+    except Exception as exc:
+        _eprint(f"viewer build failed: {exc}")
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reality", description="Reality Engine command-line interface")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -638,6 +760,44 @@ def build_parser() -> argparse.ArgumentParser:
     p_contents.add_argument("world")
     p_contents.add_argument("world_entity_id", metavar="entity-id")
     p_contents.set_defaults(func=cmd_query_contents)
+
+    p_store = sub.add_parser("store", help="versioned WorldStore persistence: save/load/list/verify")
+    store_sub = p_store.add_subparsers(dest="store_command", required=True)
+
+    p_store_save = store_sub.add_parser("save", help="persist a world JSON as a new immutable version")
+    p_store_save.add_argument("world", help="world JSON path")
+    p_store_save.add_argument("--store", required=True, help="WorldStore root directory")
+    p_store_save.add_argument("--parent", default=None, help="parent version id (lineage)")
+    p_store_save.add_argument("--version-id", default=None, help="explicit version id")
+    p_store_save.set_defaults(func=cmd_store_save)
+
+    p_store_load = store_sub.add_parser("load", help="load one version back to a world JSON file")
+    p_store_load.add_argument("--store", required=True, help="WorldStore root directory")
+    p_store_load.add_argument("--version", required=True, help="version id to load")
+    p_store_load.add_argument("-o", "--output", required=True, help="world JSON output path")
+    p_store_load.set_defaults(func=cmd_store_load)
+
+    p_store_list = store_sub.add_parser("list", help="list versions in save order")
+    p_store_list.add_argument("--store", required=True, help="WorldStore root directory")
+    p_store_list.set_defaults(func=cmd_store_list)
+
+    p_store_verify = store_sub.add_parser("verify", help="verify one version's artifact integrity")
+    p_store_verify.add_argument("--store", required=True, help="WorldStore root directory")
+    p_store_verify.add_argument("--version", required=True, help="version id to verify")
+    p_store_verify.set_defaults(func=cmd_store_verify)
+
+    p_inspect = sub.add_parser("inspect", help="inspect a world summary or one entity's provenance")
+    p_inspect.add_argument("world", help="world JSON path")
+    p_inspect.add_argument("--entity", default=None, help="entity id for full detail")
+    p_inspect.set_defaults(func=cmd_inspect)
+
+    p_viewer = sub.add_parser("viewer", help="build the self-contained offline viewer HTML")
+    p_viewer.add_argument("--worldir", default=None, help="worldir.json artifact path")
+    p_viewer.add_argument("--points", default=None, help="points.ply artifact path")
+    p_viewer.add_argument("--cameras", default=None, help="cameras.json artifact path")
+    p_viewer.add_argument("--mesh", default=None, help="mesh.ply artifact path")
+    p_viewer.add_argument("-o", "--output", required=True, help="viewer HTML output path")
+    p_viewer.set_defaults(func=cmd_viewer)
 
     return parser
 

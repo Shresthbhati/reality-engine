@@ -332,6 +332,24 @@ class MultiSourceSession:
         absolute_paths = self._absolute_component_paths(record, relative_paths)
         return parse_component_calibrations(absolute_paths)
 
+    def depth_maps(self, source_id: str):
+        """Parse a source's recorded "depth" sidecar files into real
+        perception.depth.interface.DepthMap objects (JSON descriptor +
+        16-bit grayscale PNG -- see evidence.sensors' module-level
+        docs for the exact format and what it does NOT support).
+        Separate from sensor_streams()/calibrations() for the same
+        reason calibration is: one DepthMap per file, not a sample
+        stream. Returns [] if the source has no recorded depth files.
+        """
+        from evidence.sensors import parse_component_depth_maps
+
+        record = self._sources[source_id]
+        relative_paths = record.components.get(CaptureComponent.DEPTH.value, [])
+        if not relative_paths:
+            return []
+        absolute_paths = self._absolute_component_paths(record, relative_paths)
+        return parse_component_depth_maps(absolute_paths)
+
     @staticmethod
     def _absolute_component_paths(record: "SourceRecord", relative_paths: List[str]) -> List[str]:
         return [

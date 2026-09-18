@@ -169,6 +169,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Sequence, Tuple
@@ -564,3 +565,211 @@ def parse_component_calibrations(paths: Sequence[str]) -> List[CalibrationRecord
     a real CalibrationRecord. Non-`.json` files are skipped, same
     honest-subset behavior as parse_component_streams."""
     return [parse_calibration_json(p) for p in paths if p.endswith(".json")]
+
+
+# ------------------------------------------------------------------
+# DEPTH: 16-bit grayscale PNG, decoded via stdlib zlib/struct only
+# (no PIL/OpenCV dependency -- matches perception/depth/interface.py's
+# stated "zero dependencies beyond the stdlib" discipline).
+#
+# FORMAT: one JSON descriptor per depth frame (not JSONL -- decoding
+# an image per line would be absurd, and a depth frame, like a
+# calibration, is one artifact):
+#
+#     {
+#         "image": "0001_depth.png",  // required, relative to this
+#                                      // JSON file's own directory:
+#                                      // MUST be an 8-bit-per-channel-
+#                                      // sample grayscale (PNG color
+#                                      // type 0), bit depth 16,
+#                                      // non-interlaced PNG -- the one
+#                                      // concrete convention this
+#                                      // module supports (chosen
+#                                      // because it needs no
+#                                      // third-party decoder: PNG's
+#                                      // DEFLATE compression is
+#                                      // decodable with stdlib zlib)
+#         "evidence_id": "photo-0001",  // required: which RGB evidence
+#                                      // this depth corresponds to
+#         "scale_to_meters": 0.001,   // OPTIONAL: raw 16-bit sample *
+#                                      // this = meters. Omitted/0.0 ->
+#                                      // unit stays "relative" (the
+#                                      // raw integer values, unscaled)
+#         "invalid_value": 0          // OPTIONAL: raw samples equal to
+#                                      // this become float('nan') in
+#                                      // the output (no-return /
+#                                      // invalid pixel convention)
+#     }
+#
+# WHAT THIS DOES NOT SUPPORT (named, not hidden): 8-bit depth PNGs,
+# color/RGB-encoded depth, EXR, raw binary dumps, or any vendor-
+# specific packed format (e.g. ARKit's disparity encoding). A real
+# multi-vendor depth ingestion layer needs per-device adapters behind
+# this same DepthMap output type -- not attempted here.
+# ------------------------------------------------------------------
+
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+class DepthDecodeError(SensorParseError):
+    """The referenced image was not a 16-bit grayscale, non-interlaced
+    PNG this module can decode."""
+
+
+def _paeth_predictor(a: int, b: int, c: int) -> int:
+    p = a + b - c
+    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    if pb <= pc:
+        return b
+    return c
+
+
+def _unfilter_png_scanlines(raw: bytes, width: int, height: int, bytes_per_pixel: int) -> bytes:
+    """Reverse PNG's per-scanline filtering (spec sec 9), yielding the
+    unfiltered pixel bytes (no filter-type bytes)."""
+    stride = width * bytes_per_pixel
+    out = bytearray(height * stride)
+    prev = bytearray(stride)
+    offset = 0
+    for row in range(height):
+        filter_type = raw[offset]
+        offset += 1
+        cur = bytearray(raw[offset:offset + stride])
+        offset += stride
+        if len(cur) != stride:
+            raise DepthDecodeError(f"truncated scanline {row}: got {len(cur)} bytes, expected {stride}")
+        for x in range(stride):
+            a = cur[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
+            b = prev[x]
+            c = prev[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
+            if filter_type == 0:
+                pass
+            elif filter_type == 1:
+                cur[x] = (cur[x] + a) & 0xFF
+            elif filter_type == 2:
+                cur[x] = (cur[x] + b) & 0xFF
+            elif filter_type == 3:
+                cur[x] = (cur[x] + (a + b) // 2) & 0xFF
+            elif filter_type == 4:
+                cur[x] = (cur[x] + _paeth_predictor(a, b, c)) & 0xFF
+            else:
+                raise DepthDecodeError(f"unsupported PNG filter type {filter_type} on scanline {row}")
+        out[row * stride:(row + 1) * stride] = cur
+        prev = cur
+    return bytes(out)
+
+
+def _decode_16bit_grayscale_png(path: str) -> Tuple[int, int, List[List[int]]]:
+    """Decode a 16-bit grayscale, non-interlaced PNG into
+    (width, height, values[row][col]) of raw 0-65535 integers. Raises
+    DepthDecodeError for any PNG feature this decoder doesn't support
+    (wrong color type/bit depth, interlacing, missing IHDR, corrupt
+    IDAT stream) -- never guesses or produces a partially-wrong image.
+    """
+    import struct
+    import zlib
+
+    with open(path, "rb") as handle:
+        data = handle.read()
+    if data[:8] != _PNG_SIGNATURE:
+        raise DepthDecodeError(f"{path}: not a PNG file (bad signature)")
+
+    width = height = bit_depth = color_type = interlace = None
+    idat_chunks: List[bytes] = []
+    offset = 8
+    while offset < len(data):
+        if offset + 8 > len(data):
+            raise DepthDecodeError(f"{path}: truncated chunk header at offset {offset}")
+        length, = struct.unpack(">I", data[offset:offset + 4])
+        chunk_type = data[offset + 4:offset + 8]
+        chunk_data = data[offset + 8:offset + 8 + length]
+        offset += 8 + length + 4  # + 4 for the CRC we don't verify
+        if chunk_type == b"IHDR":
+            width, height, bit_depth, color_type, _compression, _filter, interlace = struct.unpack(
+                ">IIBBBBB", chunk_data
+            )
+        elif chunk_type == b"IDAT":
+            idat_chunks.append(chunk_data)
+        elif chunk_type == b"IEND":
+            break
+
+    if width is None:
+        raise DepthDecodeError(f"{path}: missing IHDR chunk")
+    if color_type != 0:
+        raise DepthDecodeError(f"{path}: unsupported PNG color type {color_type} (only grayscale/0 supported)")
+    if bit_depth != 16:
+        raise DepthDecodeError(f"{path}: unsupported PNG bit depth {bit_depth} (only 16-bit supported)")
+    if interlace != 0:
+        raise DepthDecodeError(f"{path}: interlaced PNGs are not supported")
+    if not idat_chunks:
+        raise DepthDecodeError(f"{path}: no IDAT chunks (empty image data)")
+
+    try:
+        decompressed = zlib.decompress(b"".join(idat_chunks))
+    except zlib.error as exc:
+        raise DepthDecodeError(f"{path}: corrupt PNG image data ({exc})") from exc
+
+    unfiltered = _unfilter_png_scanlines(decompressed, width, height, bytes_per_pixel=2)
+
+    values: List[List[int]] = []
+    for row in range(height):
+        row_bytes = unfiltered[row * width * 2:(row + 1) * width * 2]
+        values.append(list(struct.unpack(f">{width}H", row_bytes)))
+    return width, height, values
+
+
+def parse_depth_json(path: str) -> "DepthMap":
+    """Parse one depth sidecar descriptor (single JSON object, schema
+    documented above this function) into a real
+    perception.depth.interface.DepthMap. Raises SensorParseError for a
+    malformed descriptor, DepthDecodeError for a referenced PNG this
+    module cannot decode, OSError if either file cannot be opened.
+    """
+    from perception.depth.interface import DepthMap
+    from provenance import Uncertainty
+
+    with open(path, "r", encoding="utf-8") as handle:
+        try:
+            data = json.load(handle)
+        except json.JSONDecodeError as exc:
+            raise SensorParseError(f"{path}: invalid JSON ({exc})") from exc
+    if not isinstance(data, dict):
+        raise SensorParseError(f"{path}: expected a JSON object, got {type(data).__name__}")
+    image_name = data.get("image")
+    if not isinstance(image_name, str) or not image_name:
+        raise SensorParseError(f"{path}: missing or invalid required key 'image'")
+    evidence_id = data.get("evidence_id")
+    if not isinstance(evidence_id, str) or not evidence_id:
+        raise SensorParseError(f"{path}: missing or invalid required key 'evidence_id'")
+    scale_to_meters = data.get("scale_to_meters", 0.0)
+    if not isinstance(scale_to_meters, (int, float)) or isinstance(scale_to_meters, bool):
+        raise SensorParseError(f"{path}: 'scale_to_meters' must be a number")
+    invalid_value = data.get("invalid_value")
+    if invalid_value is not None and (not isinstance(invalid_value, int) or isinstance(invalid_value, bool)):
+        raise SensorParseError(f"{path}: 'invalid_value' must be an integer")
+
+    image_path = os.path.join(os.path.dirname(path), image_name)
+    width, height, raw_values = _decode_16bit_grayscale_png(image_path)
+
+    scale = float(scale_to_meters)
+    unit = "meters" if scale > 0.0 else "relative"
+    rows: List[List[float]] = []
+    for row in raw_values:
+        rows.append([
+            float("nan") if invalid_value is not None and v == invalid_value
+            else (v * scale if scale > 0.0 else float(v))
+            for v in row
+        ])
+    return DepthMap(
+        evidence_id=evidence_id, width=width, height=height, values=rows, unit=unit,
+        uncertainty=Uncertainty(confidence=1.0, note=f"decoded from {image_path}"),
+    )
+
+
+def parse_component_depth_maps(paths: Sequence[str]) -> List["DepthMap"]:
+    """Parse every `.json` file in `paths` (depth component) into a
+    real DepthMap. Non-`.json` files (the referenced `.png` images
+    themselves, if listed alongside their descriptor) are skipped."""
+    return [parse_depth_json(p) for p in paths if p.endswith(".json")]

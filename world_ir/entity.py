@@ -53,9 +53,14 @@ class Entity:
     provenance: Provenance = Provenance.UNKNOWN
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
     extra_fields: dict = field(default_factory=dict)
+    # WorldIR 2.0 (P9-01, additive): typed links to resources the world
+    # does not own (images, COLMAP models, reports). Empty tuple = v1
+    # behavior; serialization writes the field only when non-empty so
+    # v1 dicts stay byte-identical.
+    external_references: tuple = ()
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "id": self.id,
             "type": self.type,
             "transform": self.transform.to_dict() if self.transform else None,
@@ -65,9 +70,15 @@ class Entity:
             "uncertainty": self.uncertainty.to_dict(),
             "extra_fields": self.extra_fields,
         }
+        if self.external_references:
+            d["external_references"] = [
+                ref.to_dict() for ref in self.external_references
+            ]
+        return d
 
     @staticmethod
     def from_dict(data: dict) -> "Entity":
+        from .v2_extensions import ExternalReference
         return Entity(
             id=data["id"],
             type=data["type"],
@@ -77,6 +88,10 @@ class Entity:
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
             extra_fields=data.get("extra_fields", {}),
+            external_references=tuple(
+                ExternalReference.from_dict(r)
+                for r in data.get("external_references", [])
+            ),
         )
 
 

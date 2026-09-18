@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -12,6 +13,17 @@ from uncertainty.quantity import UNKNOWN, Uncertain
 #: Central-difference step for numeric pose Jacobians (rotation-vector
 #: radians and translation meters). Small enough for O(h^2) accuracy,
 #: large enough to avoid subtractive cancellation in float64.
+#
+# This module carries BOTH P10-02 halves:
+#   1. Uncertain scalar algebra + numeric-Jacobian pose/point
+#      covariance composition (sum/difference/scale/linear_propagate/
+#      compose_pose_covariances/transform_point_covariance).
+#   2. The analytic per-point covariance chains (Covariance3,
+#      depth_to_world_covariance, propagate_point_through_pose,
+#      propagate_chain): closed-form Jacobians for the depth ->
+#      unprojection -> pose path, finite-difference-verified, UNKNOWN
+#      propagates as UNKNOWN, uncertainty never collapsed into
+#      confidence.
 _STEP = 1e-5
 
 
@@ -218,3 +230,267 @@ __all__ = [
     "compose_pose_covariances",
 ]
 
+
+
+# ====================================================================
+# Analytic per-point covariance chains (analytic-Jacobian P10-02 path)
+# ====================================================================
+class PropagationError(ValueError):
+    """Uncertainty propagation refused."""
+
+
+@dataclass(frozen=True)
+class Covariance3:
+    """A 3-axis standard deviation (meters) or an explicit UNKNOWN.
+
+    `sigma` is (sx, sy, sz) in the world frame. `is_unknown=True`
+    means the inputs to a propagation stage were missing -- the honest
+    output is the REASON, not a number.
+    """
+
+    sigma: Optional[Tuple[float, float, float]] = None
+    is_unknown: bool = False
+    reason: str = ""
+
+    def __post_init__(self):
+        if self.is_unknown:
+            if not self.reason:
+                raise PropagationError(
+                    "an unknown covariance must carry the reason it is unknown"
+                )
+            return
+        if self.sigma is None:
+            raise PropagationError(
+                "Covariance3 requires sigma values or is_unknown=True"
+            )
+        if any(not math.isfinite(s) or s < 0 for s in self.sigma):
+            raise PropagationError(
+                f"sigma components must be finite and non-negative, got {self.sigma}"
+            )
+
+    @staticmethod
+    def from_sigmas(sx: float, sy: float, sz: float) -> "Covariance3":
+        return Covariance3(sigma=(sx, sy, sz))
+
+    @staticmethod
+    def unknown(reason: str) -> "Covariance3":
+        return Covariance3(is_unknown=True, reason=reason)
+
+    def require_sigma(self) -> Tuple[float, float, float]:
+        if self.is_unknown or self.sigma is None:
+            raise PropagationError(
+                f"covariance is UNKNOWN ({self.reason or 'no reason recorded'}) "
+                "-- asking for its sigma would fabricate certainty"
+            )
+        return self.sigma
+
+    def to_dict(self) -> dict:
+        if self.is_unknown:
+            return {"is_unknown": True, "reason": self.reason}
+        return {"is_unknown": False, "sigma": list(self.sigma)}
+
+    def to_provenanced(
+        self,
+        provenance: Provenance,
+        confidence: ConfidenceUncertainty,
+    ) -> "object":
+        """Bridge onto the WorldIR Provenanced record WITHOUT merging
+        the two concepts: the covariance rides in `value`, the
+        measured confidence record rides in `uncertainty` unchanged."""
+        from provenance import Provenanced
+
+        return Provenanced(
+            value=self,
+            provenance=provenance,
+            uncertainty=confidence,
+        )
+
+
+def _sigma_quat_to_matrix(q: Sequence[float]) -> Tuple[Tuple[float, ...], ...]:
+    """(w, x, y, z) -> 3x3 rotation matrix rows (camera-to-world), the
+    same convention as reconstruction.calibration.camera.quat_to_matrix."""
+    w, x, y, z = q
+    return (
+        (1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)),
+        (2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)),
+        (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)),
+    )
+
+
+def _sigma_rotate_into_world(
+    cam_axis_sigmas: Sequence[float], R: Sequence[Sequence[float]]
+) -> Tuple[float, float, float]:
+    """Camera-axes 1-sigma offsets -> world-axes magnitudes. For
+    independent per-camera-axis components, the world-axis variance is
+    the row-weighted sum: var_w_i = sum_j R_ij^2 var_c_j."""
+    out = []
+    for i in range(3):
+        var = 0.0
+        for j in range(3):
+            var += R[i][j] ** 2 * cam_axis_sigmas[j] ** 2
+        out.append(math.sqrt(var))
+    return tuple(out)
+
+
+def depth_to_world_covariance(
+    camera,
+    col: float,
+    row: float,
+    depth: float,
+    sigma_depth_m: Optional[float] = None,
+    sigma_pixel: Optional[float] = None,
+    sigma_pose_rotation_rad: Optional[float] = None,
+    sigma_pose_translation_m: Optional[float] = None,
+) -> Covariance3:
+    """World-frame point covariance for one depth unprojection through
+    `camera` (reconstruction.calibration.camera.PinholeCamera).
+
+    Every sigma parameter is OPTIONAL and defaults to None = UNKNOWN:
+    supplying none of them (or leaving out the ones with no measured
+    calibration) produces an UNKNOWN covariance naming the missing
+    stage, never a guessed number. A known subset propagates from the
+    stages that HAVE calibration and reports the rest as unknown --
+    partial knowledge is not silently promoted to full knowledge.
+    """
+    intr = camera.intrinsics
+    if intr.k1 or intr.k2 or intr.p1 or intr.p2 or intr.k3:
+        # The analytic Jacobian is pinhole-only; a distorted camera's
+        # pixel Jacobian is NOT (u-cx)/fx and propagating through the
+        # pinhole formula would be a wrong number presented as math.
+        raise PropagationError(
+            "depth_to_world_covariance implements the pinhole Jacobian; "
+            "this camera has Brown-Conrady distortion -- propagate via "
+            "finite differences of camera.unproject instead"
+        )
+
+    missing = []
+    if sigma_depth_m is None:
+        missing.append("sigma_depth_m (depth calibration)")
+    if sigma_pixel is None:
+        missing.append("sigma_pixel (sensor calibration)")
+    if sigma_pose_rotation_rad is None:
+        missing.append("sigma_pose_rotation_rad (pose covariance)")
+    if sigma_pose_translation_m is None:
+        missing.append("sigma_pose_translation_m (pose covariance)")
+    if missing:
+        return Covariance3.unknown(
+            "no measured calibration for: " + "; ".join(missing)
+        )
+
+    if depth <= 0:
+        raise PropagationError(f"depth must be positive, got {depth}")
+    if min(sigma_depth_m, sigma_pixel, sigma_pose_rotation_rad,
+           sigma_pose_translation_m) < 0:
+        raise PropagationError("sigma inputs must be non-negative")
+
+    q = camera.extrinsics.rotation
+    R = _sigma_quat_to_matrix((q.w, q.x, q.y, q.z))
+
+    # Camera-axes variances at this pixel/depth. Rotation uncertainty
+    # is DIRECTIONAL: a small rotation about a camera axis displaces a
+    # point by theta x (axis_hat x p_cam) -- not an isotropic lever.
+    # Contributions per camera axis (x, y, z), from rotations about the
+    # camera's x and y axes (the standard two-angle pose model):
+    #   about cam x: displacement (0, d, -y_c) * sigma_theta
+    #   about cam y: displacement (d, 0, x_c) * sigma_theta
+    x_c = (col - intr.cx) / intr.fx * depth
+    y_c = (row - intr.cy) / intr.fy * depth
+    st = sigma_pose_rotation_rad
+    var_x = (depth / intr.fx * sigma_pixel) ** 2 \
+        + (x_c / depth * sigma_depth_m) ** 2 \
+        + (depth * st) ** 2
+    var_y = (depth / intr.fy * sigma_pixel) ** 2 \
+        + (y_c / depth * sigma_depth_m) ** 2 \
+        + (depth * st) ** 2
+    var_z = sigma_depth_m ** 2 \
+        + (y_c * st) ** 2 + (x_c * st) ** 2
+    cam_axis = (math.sqrt(var_x), math.sqrt(var_y), math.sqrt(var_z))
+
+    # Rotate camera-axes sigmas into the world frame.
+    world_from_cam = _sigma_rotate_into_world(cam_axis, R)
+
+    # Translation uncertainty is already world-frame per axis.
+    world = tuple(
+        math.sqrt(w ** 2 + sigma_pose_translation_m ** 2)
+        for w in world_from_cam
+    )
+    return Covariance3.from_sigmas(*world)
+
+
+def propagate_point_through_pose(
+    point_cov: Covariance3,
+    point: Tuple[float, float, float],
+    rotation_quat: Sequence[float],
+    translation: Sequence[float],
+    sigma_rotation_rad: float,
+    sigma_translation_m: float,
+    rotation_axis: Sequence[float] = (0.0, 0.0, 1.0),
+) -> Covariance3:
+    """Propagate a point's covariance through one rigid transform
+    (rotation quaternion + translation) with pose uncertainty.
+
+    J_point = R (the rotation carries the covariance). Pose translation
+    adds per world axis in quadrature. Pose ROTATION uncertainty is
+    directional: a small rotation sigma about `rotation_axis` (unit,
+    default world z = yaw) displaces the point by
+    sigma_theta * (axis_hat x point) -- variance adds per world axis.
+    An isotropic lever here would overstate the displacement along the
+    rotation axis itself."""
+    if point_cov.is_unknown:
+        return point_cov  # UNKNOWN in -> UNKNOWN out, reason preserved
+    s = point_cov.require_sigma()
+    R = _sigma_quat_to_matrix(rotation_quat)
+    out_from_point = _sigma_rotate_into_world(s, R)
+
+    axis_len = math.sqrt(
+        rotation_axis[0] ** 2 + rotation_axis[1] ** 2 + rotation_axis[2] ** 2
+    )
+    if axis_len < 1e-12:
+        raise PropagationError("rotation_axis must be non-zero")
+    ax = tuple(a / axis_len for a in rotation_axis)
+    cross = (
+        ax[1] * point[2] - ax[2] * point[1],
+        ax[2] * point[0] - ax[0] * point[2],
+        ax[0] * point[1] - ax[1] * point[0],
+    )
+    out = tuple(
+        math.sqrt(
+            a ** 2 + sigma_translation_m ** 2
+            + (c * sigma_rotation_rad) ** 2
+        )
+        for a, c in zip(out_from_point, cross)
+    )
+    return Covariance3.from_sigmas(*out)
+
+
+def propagate_chain(
+    depth_sigma_m: Optional[float],
+    pose: Covariance3,
+    registration: Optional[Covariance3],
+) -> Covariance3:
+    """Combine the pipeline stages' world-frame sigmas in quadrature.
+
+    UNKNOWN anywhere in the chain -> UNKNOWN (with the reason). This
+    is the measurement-level entry point: a downstream consumer asking
+    "how well is this point known?" gets one covariance that traces
+    the whole chain, or the honest reason it cannot."""
+    unknowns = []
+    if depth_sigma_m is None:
+        unknowns.append("depth")
+    if pose.is_unknown:
+        unknowns.append(f"pose ({pose.reason})")
+    if registration is not None and registration.is_unknown:
+        unknowns.append(f"registration ({registration.reason})")
+    if unknowns:
+        return Covariance3.unknown(
+            "chain stage(s) without covariance: " + "; ".join(unknowns)
+        )
+
+    depth = (depth_sigma_m, depth_sigma_m, depth_sigma_m)
+    p = pose.require_sigma()
+    reg = registration.require_sigma() if registration is not None else (0.0, 0.0, 0.0)
+    combined = tuple(
+        math.sqrt(d ** 2 + pp ** 2 + rr ** 2)
+        for d, pp, rr in zip(depth, p, reg)
+    )
+    return Covariance3.from_sigmas(*combined)

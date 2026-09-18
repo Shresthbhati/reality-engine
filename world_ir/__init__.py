@@ -26,6 +26,8 @@ from .schema_v1 import (
     TemporalEventType
 )
 from .world_v1 import WorldIR, Branch, Scenario, SimulationState, TemporalState
+from .diff import diff_worlds, WorldDiff, EntityDiff, GeometryDiff, ChangeKind
+from .incremental import affected_closure, DEFAULT_PROPAGATING_KINDS
 
 __all__ = [
     # Coordinates
@@ -64,4 +66,13 @@ __all__ = [
     "Scenario",
     "SimulationState",
     "TemporalState",
+    # Diff
+    "diff_worlds",
+    "WorldDiff",
+    "EntityDiff",
+    "GeometryDiff",
+    "ChangeKind",
+    # Incremental
+    "affected_closure",
+    "DEFAULT_PROPAGATING_KINDS",
 ]

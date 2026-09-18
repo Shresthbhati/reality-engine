@@ -46,6 +46,18 @@ shape+mass, constraints/joints, support-relationship inference from the
 scene graph, structural connectivity -- those are later, larger
 simulation-campaign items (collision expansion, structural graph) that
 consume this bridge's output rather than belong in it.
+
+Additive, opt-in enhancement: true infinite-plane statics. Box bodies
+(above) are the default and already collide correctly -- this is a real
+enhancement, not a bug fix. `engine/physics/backend/simple_backend.py`'s
+`PhysicsWorld` also supports true infinite `Plane` statics via
+`add_plane()`, which nothing populated until now. `derive_plane_for_entity`
+derives a `Plane` from a static entity's real AABB (thinnest-axis normal,
+center-based distance -- see its docstring for the exact convention), and
+`build_stepped_physics_world(..., use_planes_for_statics=True)` uses it to
+add certain static entities as real Planes instead of thick Box slabs. The
+default (`use_planes_for_statics=False`) reproduces prior behavior exactly:
+no plane derivation happens unless a caller opts in.
 """
 
 from __future__ import annotations
@@ -59,8 +71,8 @@ from world_ir.schema_v1 import Entity, EntityType
 from world_ir.world_v1 import WorldIR
 
 from engine.physics.backend.interface import PhysicsWorldConfig
-from engine.physics.backend.simple_backend import PhysicsWorld, SimpleRigidBodyBackend
-from engine.physics.collision.shapes import Box
+from engine.physics.backend.simple_backend import PhysicsWorld, SimpleRigidBodyBackend, StaticPlane
+from engine.physics.collision.shapes import Box, Plane
 from engine.physics.materials.material import CANONICAL_MATERIALS, PhysicsMaterial
 from engine.physics.math3 import Vec3
 from engine.physics.rigid.body import RigidBody
@@ -228,6 +240,44 @@ def compile_entity_physics(entity: Entity, world: WorldIR) -> EntityPhysicsResul
     )
 
 
+def derive_plane_for_entity(entity: Entity, world: WorldIR) -> Optional[Plane]:
+    """Derive a true infinite `Plane` for `entity`, or `None` when there is
+    nothing real to derive one from.
+
+    Convention (thinnest-AABB-axis heuristic, center-based distance):
+      - Only entities of a `_STATIC_ENTITY_TYPES` type with real
+        BOX/PLANE geometry bounds (same gating as `compile_entity_physics`,
+        via `_entity_geometry_with_bounds`) produce a plane. Everything
+        else returns None -- never fabricated.
+      - The normal is a unit vector along whichever axis (X, Y, or Z) has
+        the smallest extent in `bounds_max - bounds_min`. A real wall/
+        floor/ceiling AABB from evidence/promote_planes.py is always thin
+        along its true normal axis by construction of how planes are
+        fit, so this is a deterministic, real-data-derived choice, not a
+        guess. Ties (a genuine cube) are broken by X, then Y, then Z.
+      - `distance` is computed as `normal.dot(center)` where `center` is
+        the AABB's own center, so the derived plane passes exactly
+        through the AABB's center along the thin axis. No sign
+        convention beyond "positive along the chosen axis" is asserted.
+
+    Example: floor AABB (0,0,0)-(4,0.1,4) -> extents (4, 0.1, 4) -> Y is
+    thinnest -> normal (0,1,0), distance = 1*0.05 = 0.05.
+    """
+    if entity.type not in _STATIC_ENTITY_TYPES:
+        return None
+    geometry = _entity_geometry_with_bounds(world, entity)
+    if geometry is None:
+        return None
+
+    bmin, bmax = geometry.bounds_min, geometry.bounds_max
+    extents = (bmax.x - bmin.x, bmax.y - bmin.y, bmax.z - bmin.z)
+    thin_axis = min(range(3), key=lambda i: extents[i])  # ties -> first in X/Y/Z order
+    center = Vec3((bmin.x + bmax.x) / 2.0, (bmin.y + bmax.y) / 2.0, (bmin.z + bmax.z) / 2.0)
+    normal = [Vec3(1.0, 0.0, 0.0), Vec3(0.0, 1.0, 0.0), Vec3(0.0, 0.0, 1.0)][thin_axis]
+    distance = normal.dot(center)
+    return Plane(normal=normal, distance=distance)
+
+
 def compile_physics_world(world: WorldIR) -> PhysicsCompileDiagnostics:
     """Compile every entity in `world` into physics, in deterministic
     (sorted entity id) order. Never mutates `world`."""
@@ -236,7 +286,11 @@ def compile_physics_world(world: WorldIR) -> PhysicsCompileDiagnostics:
 
 
 def build_stepped_physics_world(
-    diagnostics: PhysicsCompileDiagnostics, config: Optional[PhysicsWorldConfig] = None,
+    diagnostics: PhysicsCompileDiagnostics,
+    config: Optional[PhysicsWorldConfig] = None,
+    *,
+    world: Optional[WorldIR] = None,
+    use_planes_for_statics: bool = False,
 ) -> PhysicsWorld:
     """Load every compiled body into a real, steppable `PhysicsWorld`
     (engine/physics/backend/simple_backend.py) -- the actual gap this
@@ -245,8 +299,29 @@ def build_stepped_physics_world(
     the engine's real broadphase/narrowphase/contact-solver stack, not
     just integrate independently. Bodies are added in the diagnostics'
     already-deterministic (sorted entity id) order.
+
+    `use_planes_for_statics=False` (the default) reproduces prior
+    behavior exactly: every compiled body, static or dynamic, is added
+    via `world.add_body()`, and `world.planes` stays empty.
+
+    `use_planes_for_statics=True` opts into the additive enhancement: for
+    each static compiled entity (`result.body.mass == 0`) for which
+    `derive_plane_for_entity(world.entities[result.entity_id], world)`
+    returns a real `Plane`, that entity is added as a `StaticPlane` via
+    `world.add_plane()` instead of a Box body. Every other entity
+    (dynamic, or static with no derivable plane) is still added as a
+    body exactly as before. Requires `world` (the same WorldIR the
+    diagnostics were compiled from) when enabled.
     """
-    world = SimpleRigidBodyBackend().create_world(config or PhysicsWorldConfig())
+    physics_world = SimpleRigidBodyBackend().create_world(config or PhysicsWorldConfig())
     for result in diagnostics.compiled:
-        world.add_body(result.body)
-    return world
+        plane = None
+        if use_planes_for_statics and result.body.mass == 0:
+            if world is None:
+                raise ValueError("use_planes_for_statics=True requires the source WorldIR ('world')")
+            plane = derive_plane_for_entity(world.entities[result.entity_id], world)
+        if plane is not None:
+            physics_world.add_plane(StaticPlane(id=result.entity_id, plane=plane, material=result.body.material))
+        else:
+            physics_world.add_body(result.body)
+    return physics_world

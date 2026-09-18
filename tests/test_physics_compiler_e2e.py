@@ -144,3 +144,83 @@ def test_debris_collides_with_reconstructed_floor_via_real_backend():
     # tunneled through it or still falling.
     assert debris_bottom_y >= floor_top_y - 0.05
     assert abs(debris_body.linear_velocity.y) < 0.5
+
+
+def test_default_build_stepped_physics_world_is_unchanged():
+    """Regression: use_planes_for_statics defaults to False, so behavior
+    must be byte-for-byte identical to before the plane opt-in existed --
+    same body count/ids, no world.planes populated."""
+    world = _promoted_world()
+    diagnostics = compile_physics_world(world)
+
+    physics_world = build_stepped_physics_world(diagnostics, PhysicsWorldConfig())
+
+    assert set(physics_world.bodies.keys()) == {f"phys-{r.entity_id}" for r in diagnostics.compiled}
+    assert physics_world.planes == {}
+
+
+def test_use_planes_for_statics_derives_planes_for_static_entities():
+    """Opt-in path: static entities with a derivable plane become
+    world.planes entries instead of world.bodies entries; dynamic (and any
+    static-without-a-derivable-plane) entities are unaffected."""
+    world = _promoted_world()
+    from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Vector3
+
+    debris_geom = Geometry(
+        id="geom-debris", type=GeometryType.BOX,
+        bounds_min=Vector3(1.5, 2.0, 1.0), bounds_max=Vector3(2.0, 2.5, 1.5),
+    )
+    debris_entity = Entity(id="ent-debris", type=EntityType.DEBRIS, geometry_ids=[debris_geom.id], confidence=0.7)
+    world.geometries[debris_geom.id] = debris_geom
+    world.entities[debris_entity.id] = debris_entity
+
+    diagnostics = compile_physics_world(world)
+    static_ids = {r.entity_id for r in diagnostics.compiled if r.body.mass == 0}
+    dynamic_ids = {r.entity_id for r in diagnostics.compiled if r.body.mass != 0}
+    assert static_ids  # sanity: the room fixture does produce static walls/floor/ceiling
+    assert "ent-debris" in dynamic_ids
+
+    physics_world = build_stepped_physics_world(
+        diagnostics, PhysicsWorldConfig(), world=world, use_planes_for_statics=True,
+    )
+
+    assert set(physics_world.planes.keys()) == static_ids
+    assert set(physics_world.bodies.keys()) == {f"phys-{eid}" for eid in dynamic_ids}
+
+
+def test_dynamic_body_contacts_a_derived_plane_in_real_stepped_world():
+    """Prove the derived Plane is physically real, not just a data
+    structure: a debris box dropped above a promoted floor's derived
+    plane must come to rest on it under the real backend, same as it does
+    against the floor's Box body in the sibling test above."""
+    world = _promoted_world()
+    from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Vector3
+
+    debris_geom = Geometry(
+        id="geom-debris", type=GeometryType.BOX,
+        bounds_min=Vector3(1.5, 0.5, 1.0), bounds_max=Vector3(2.0, 1.0, 1.5),
+    )
+    debris_entity = Entity(id="ent-debris", type=EntityType.DEBRIS, geometry_ids=[debris_geom.id], confidence=0.7)
+    world.geometries[debris_geom.id] = debris_geom
+    world.entities[debris_entity.id] = debris_entity
+
+    diagnostics = compile_physics_world(world)
+    physics_world = build_stepped_physics_world(
+        diagnostics, PhysicsWorldConfig(gravity=Vec3(0.0, -9.81, 0.0)),
+        world=world, use_planes_for_statics=True,
+    )
+    floor_entity_id = next(
+        r.entity_id for r in diagnostics.compiled
+        if world.entities[r.entity_id].type == EntityType.FLOOR
+    )
+    assert floor_entity_id in physics_world.planes  # opted-in path actually produced a plane
+
+    backend = SimpleRigidBodyBackend()
+    debris_body = physics_world.get_body("phys-ent-debris")
+
+    for _ in range(300):  # 5 seconds at 60Hz
+        backend.step(physics_world, dt=1.0 / 60.0)
+
+    # Settled (not still falling / tunneled through the plane).
+    assert abs(debris_body.linear_velocity.y) < 0.5
+    assert debris_body.position.y > 0.0

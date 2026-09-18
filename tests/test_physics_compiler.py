@@ -10,6 +10,7 @@ from engine.compiler.physics_compiler import (
     PhysicsCompileStatus,
     compile_entity_physics,
     compile_physics_world,
+    derive_plane_for_entity,
 )
 from engine.physics.materials.material import CANONICAL_MATERIALS
 
@@ -135,6 +136,44 @@ def test_compile_physics_world_never_mutates_input_world():
     compile_physics_world(world)
 
     assert world.entities["ent-1"].to_dict() == before
+
+
+def test_derive_plane_for_entity_uses_thinnest_axis_as_normal():
+    # Floor: thin along Y.
+    floor, floor_geom = _entity_with_bounds("ent-floor", EntityType.FLOOR, (0, 0, 0), (4, 0.1, 4))
+    # Wall: thin along X.
+    wall, wall_geom = _entity_with_bounds("ent-wall", EntityType.WALL, (0, 0, 0), (0.2, 2.5, 4))
+    world = WorldIR()
+    for e, g in ((floor, floor_geom), (wall, wall_geom)):
+        world.entities[e.id] = e
+        world.geometries[g.id] = g
+
+    floor_plane = derive_plane_for_entity(floor, world)
+    assert floor_plane is not None
+    assert (floor_plane.normal.x, floor_plane.normal.y, floor_plane.normal.z) == (0.0, 1.0, 0.0)
+    assert floor_plane.distance == 0.05  # center.y = (0 + 0.1) / 2
+
+    wall_plane = derive_plane_for_entity(wall, world)
+    assert wall_plane is not None
+    assert (wall_plane.normal.x, wall_plane.normal.y, wall_plane.normal.z) == (1.0, 0.0, 0.0)
+    assert wall_plane.distance == 0.1  # center.x = (0 + 0.2) / 2
+
+
+def test_derive_plane_for_entity_none_for_non_static_type():
+    entity, geom = _entity_with_bounds("ent-crate", EntityType.DEBRIS, (0, 0, 0), (1, 1, 1))
+    world = WorldIR()
+    world.entities[entity.id] = entity
+    world.geometries[geom.id] = geom
+
+    assert derive_plane_for_entity(entity, world) is None
+
+
+def test_derive_plane_for_entity_none_without_real_bounds():
+    entity = Entity(id="ent-bare-wall", type=EntityType.WALL)
+    world = WorldIR()
+    world.entities[entity.id] = entity
+
+    assert derive_plane_for_entity(entity, world) is None
 
 
 def test_diagnostics_to_dict_is_plain_data():

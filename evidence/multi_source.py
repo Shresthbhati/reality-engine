@@ -67,14 +67,20 @@ from evidence.packages import (
     EvidencePackage,
     EvidenceSource,
 )
+from evidence.session import ProcessingRecord
 
 __all__ = [
     "SourceStatus",
     "SourceType",
     "CaptureComponent",
     "SourceRecord",
+    "UnknownSourceError",
     "MultiSourceSession",
 ]
+
+
+class UnknownSourceError(ValueError):
+    """Raised when an operation names a source_id that isn't in this session."""
 
 
 class SourceStatus(str, Enum):
@@ -435,6 +441,24 @@ class MultiSourceSession:
                 return record
         return None
 
+    def register_source_frame(self, source_id: str, transform) -> SourceRecord:
+        """Explicitly record how one source's own coordinate frame
+        relates to the session frame. NEVER called automatically by
+        add_source -- alignment across independent sources must not be
+        assumed (spec §35/§65: a phone source and a drone source start
+        with independent coordinate frames; only an explicit caller
+        establishes a real transform between them).
+
+        `transform` is a world_ir.coordinates.Transform; its
+        source_frame/target_frame/matrix/uncertainty are stored verbatim
+        via its existing to_dict().
+        """
+        if source_id not in self._sources:
+            raise UnknownSourceError(f"no source {source_id!r} in session {self.session_id!r}")
+        record = self._sources[source_id]
+        record.registration = {"status": "registered", "transform": transform.to_dict()}
+        return record
+
     def _builder_seeded_from_package(self) -> DeterministicPackageBuilder:
         """A builder pre-loaded with everything already in the session's
         package, so a new add_source call continues asset numbering
@@ -447,12 +471,57 @@ class MultiSourceSession:
             builder._seen_content[asset.sha256] = asset.id
         return builder
 
+    def _ingest_composite(
+        self,
+        builder: DeterministicPackageBuilder,
+        path: str,
+        use_source: EvidenceSource,
+        frame_strategy: Optional[IFrameSelectionStrategy],
+    ):
+        """Ingest a detected composite capture folder.
+
+        Visual components (rgb/video subfolders) go through the SAME
+        import_folder() every other folder source uses. Sidecar
+        components (depth/imu/gps/calibration/telemetry) have no real
+        parser in this repo, so their files are recorded as a manifest
+        (relative path only, real files on disk) -- never turned into
+        fabricated evidence assets.
+
+        Returns (merged_report, components, asset_ids_by_component) --
+        the third value lets the caller tag each visual asset with its
+        component AFTER the package is built (record_processing needs a
+        built EvidencePackage, which does not exist yet at this point).
+        """
+        detected = _detect_composite_components(path)
+        merged_report = FolderImportReport()
+        components: Dict[str, List[str]] = {}
+        asset_ids_by_component: Dict[str, List[str]] = {}
+
+        for component, relative_paths in sorted(detected.items(), key=lambda kv: kv[0].value):
+            components[component.value] = list(relative_paths)
+            if component not in _VISUAL_COMPONENTS:
+                continue
+            component_dir = os.path.join(path, relative_paths[0].split("/")[0])
+            before_ids = {a.asset_id for a in merged_report.imported}
+            sub_report = import_folder(
+                builder, component_dir, source=use_source, frame_strategy=frame_strategy,
+            )
+            new_assets = [a for a in sub_report.imported if a.asset_id not in before_ids]
+            merged_report.imported.extend(new_assets)
+            merged_report.duplicates_skipped.extend(sub_report.duplicates_skipped)
+            merged_report.near_duplicates_marked.extend(sub_report.near_duplicates_marked)
+            merged_report.unhandled_paths.extend(sub_report.unhandled_paths)
+            asset_ids_by_component[component.value] = [a.asset_id for a in new_assets]
+
+        return merged_report, components, asset_ids_by_component
+
     def add_source(
         self,
         path: str,
         *,
         source: Optional[EvidenceSource] = None,
         frame_strategy: Optional[IFrameSelectionStrategy] = None,
+        capture_type: Optional[str] = None,
     ) -> SourceRecord:
         """Ingest one file or directory into the session.
 
@@ -461,6 +530,12 @@ class MultiSourceSession:
         in this session is a no-op (ALREADY_INGESTED, existing record
         returned unchanged); the package is only touched on genuinely
         new content.
+
+        `capture_type` ("phone" | "drone" | None) only affects a
+        directory that `_detect_composite_components` recognizes as a
+        composite acquisition (>=1 visual + >=1 sidecar component
+        subfolder); it is ignored for plain files and non-composite
+        folders, which ingest exactly as before this parameter existed.
         """
         if not os.path.exists(path):
             raise FileNotFoundError(path)
@@ -471,7 +546,7 @@ class MultiSourceSession:
             return existing
 
         source_id = f"src-{len(self._source_order):04d}-{content_hash[:12]}"
-        source_type = _source_type_of(path)
+        source_type = _source_type_of(path, capture_type=capture_type)
         # Detected once here and threaded into every SourceRecord branch
         # below -- previously _source_type_of() computed this same dict
         # internally (to decide DATASET vs *_CAPTURE) and discarded it,
@@ -480,6 +555,9 @@ class MultiSourceSession:
         # were detected for classification purposes but never actually
         # recorded anywhere a caller could resolve them from, i.e.
         # exactly "recognizing imu/ is not the same as ingesting it".
+        # Used as a fallback for the UNSUPPORTED/FAILED branches below,
+        # where _ingest_composite() (which computes the authoritative
+        # `components` from actual ingestion) never ran.
         detected_components = (
             {c.value: list(p) for c, p in _detect_composite_components(path).items()}
             if os.path.isdir(path) else {}
@@ -515,11 +593,21 @@ class MultiSourceSession:
         acquisition_id = f"acq-{content_hash[:16]}"
         device_id = source.device if source is not None else None
 
+        is_composite = source_type in (
+            SourceType.PHONE_CAPTURE, SourceType.DRONE_CAPTURE, SourceType.COMPOSITE_CAPTURE,
+        )
+        components: Dict[str, List[str]] = {}
+
         record: SourceRecord
         builder = self._builder_seeded_from_package()
         builder.register_source(use_source)
+        asset_ids_by_component: Dict[str, List[str]] = {}
         try:
-            if os.path.isdir(path):
+            if is_composite:
+                report, components, asset_ids_by_component = self._ingest_composite(
+                    builder, path, use_source, frame_strategy,
+                )
+            elif os.path.isdir(path):
                 report = import_folder(builder, path, source=use_source, frame_strategy=frame_strategy)
             else:
                 report = FolderImportReport()
@@ -542,12 +630,21 @@ class MultiSourceSession:
             )
         else:
             self._package = builder.build(package_id="")
+            for component_value, asset_ids in asset_ids_by_component.items():
+                for asset_id in asset_ids:
+                    self._package.record_processing(
+                        asset_id,
+                        ProcessingRecord(
+                            operation="composite_component_tag",
+                            detail={"component": component_value, "composite_source_id": source_id},
+                        ),
+                    )
             record = SourceRecord(
                 source_id=source_id, original_path=path, source_type=source_type,
                 content_hash=content_hash, status=SourceStatus.INGESTED,
                 asset_ids=[a.asset_id for a in report.imported],
                 unhandled_paths=list(report.unhandled_paths),
-                components=detected_components,
+                components=components,
                 acquisition_id=acquisition_id, device_id=device_id,
                 # capabilities = what this source actually delivered,
                 # derived from the ingested assets' kinds -- a measured

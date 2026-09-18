@@ -7,11 +7,12 @@ from typing import List
 from benchmarks.harness import BenchmarkResult
 from benchmarks.physics_bench import BENCHMARKS as PHYSICS_BENCHMARKS
 from benchmarks.quality_bench import BENCHMARKS as QUALITY_BENCHMARKS
+from benchmarks.spatial_index_bench import BENCHMARKS as SPATIAL_INDEX_BENCHMARKS
 
 
 def run_all() -> List[BenchmarkResult]:
     results = []
-    for bench_fn in PHYSICS_BENCHMARKS + QUALITY_BENCHMARKS:
+    for bench_fn in PHYSICS_BENCHMARKS + QUALITY_BENCHMARKS + SPATIAL_INDEX_BENCHMARKS:
         results.append(bench_fn())
     return results
 

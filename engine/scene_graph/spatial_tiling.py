@@ -5,10 +5,10 @@ World support -- docs/future/large-world/LARGE_WORLD.md item 1,
 Scope, deliberately narrow: this module buckets WorldIR entities into a
 uniform grid of chunks in world-frame coordinates and answers region
 queries by only scanning the chunks a region actually overlaps, instead of
-every entity in the world (`SpatialIndex.within_region`'s documented O(n)
-flat scan -- see spatial_index.py's module docstring, which names exactly
-this "grid-hash" as the upgrade path once a real caller needs sub-linear
-query time).
+every entity in the world. `SpatialIndex.within_region` now delegates to
+this module internally (see spatial_index.py) rather than duplicating the
+chunking logic -- this is the sub-linear implementation, not a parallel
+one.
 
 Explicitly OUT of scope here (per LARGE_WORLD.md, correctly still MISSING):
 chunk-based mesh compilation/stitching, LOD chains, and streaming -- those
@@ -27,34 +27,15 @@ streaming viewer) -- premature to add an unused schema field now.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from world_ir.schema_v1 import Entity
 from world_ir.world_v1 import WorldIR
 
-from .spatial_index import Bounds, Point, _aabb_overlaps, _entity_bounds, _point_in_aabb, entity_position
-
-ChunkKey = Tuple[int, int, int]
-
-
-def _chunk_key(point: Point, chunk_size: float) -> ChunkKey:
-    return (
-        int(point[0] // chunk_size),
-        int(point[1] // chunk_size),
-        int(point[2] // chunk_size),
-    )
-
-
-def _chunk_range(bounds_min: Point, bounds_max: Point, chunk_size: float) -> List[ChunkKey]:
-    """Every chunk key whose cell overlaps [bounds_min, bounds_max]."""
-    lo = _chunk_key(bounds_min, chunk_size)
-    hi = _chunk_key(bounds_max, chunk_size)
-    keys = []
-    for ix in range(lo[0], hi[0] + 1):
-        for iy in range(lo[1], hi[1] + 1):
-            for iz in range(lo[2], hi[2] + 1):
-                keys.append((ix, iy, iz))
-    return keys
+from .spatial_common import (
+    Bounds, ChunkKey, Point, _aabb_overlaps, _chunk_key, _chunk_range,
+    _chunks_in_box, _entity_bounds, _point_in_aabb, entity_position,
+)
 
 
 @dataclass(frozen=True)
@@ -124,12 +105,11 @@ class SpatialTiling:
         """Same semantics as SpatialIndex.within_region (position-in-AABB,
         or geometry-AABB-overlap for entities with real bounds), but only
         scans entities in chunks overlapping the region instead of every
-        indexed entity -- the sub-linear behavior SpatialIndex's flat scan
-        deliberately defers."""
+        indexed entity. `SpatialIndex.within_region` delegates here."""
         region: Bounds = (bounds_min, bounds_max)
         results = []
         seen = set()
-        for chunk in _chunk_range(bounds_min, bounds_max, self.chunk_size):
+        for chunk in _chunks_in_box(self._chunks.keys(), bounds_min, bounds_max, self.chunk_size):
             for tiled in self._chunks.get(chunk, ()):
                 if tiled.entity_id in seen:
                     continue

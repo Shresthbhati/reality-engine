@@ -1101,15 +1101,35 @@ tasks:
       (AABB and radius), neighbor-tile enumeration for chunked
       processing. Deliberately a uniform grid, not a tree: WorldIR
       entity counts (not points) are indexed; engine/scene_graph/
-      spatial_index.py keeps its documented flat-scan contract for
-      scene-graph queries until a measured workload justifies a tree.
-      Additionally, engine/scene_graph/spatial_tiling.py provides a
-      parallel scene-graph-level uniform-grid tiling (SpatialTiling):
-      entities with real geometry bounds are membership-indexed into
-      every chunk their AABB touches (not just their centroid's chunk),
-      verified against SpatialIndex's flat-scan reference
-      (tests/test_spatial_tiling.py, 5 tests, bbox-union-correctness
-      check per LARGE_WORLD.md acceptance criterion).
+      spatial_tiling.py provides a parallel scene-graph-level
+      uniform-grid tiling (SpatialTiling): entities with real geometry
+      bounds are membership-indexed into every chunk their AABB
+      touches (not just their centroid's chunk).
+
+      UPDATE (2026-09-19, city-scale campaign): SpatialIndex's O(n)
+      flat scan was replaced -- it now buckets entities into the same
+      chunk grid and reuses SpatialTiling directly for within_region();
+      nearest()/within_radius() use their own position-only grid with
+      exact (not approximate) grid-based kNN ring expansion. API is
+      unchanged (chunk_size is an optional, auto-derived constructor
+      arg). Measured (benchmarks/spatial_index_bench.py, real
+      time.perf_counter, not fabricated): at n=50,000 entities, grid
+      nearest() is ~0.0102s/query vs brute force's ~0.257s/query
+      (~25x). Correctness locked in against a brute-force reference
+      across randomized worlds and multiple chunk_size choices
+      (tests/test_spatial_index_grid_correctness.py) -- this caught
+      two real bugs during development: (1) grid-cell enumeration for
+      a query box was combinatorial in box_size/chunk_size, not
+      bounded by populated cells, causing catastrophic blowup when
+      chunk_size is small relative to the query radius (fixed by
+      _chunks_in_box() filtering only populated chunks -- also applied
+      to SpatialTiling.query_region, which had the same latent bug);
+      (2) nearest()'s "fewer than k candidates" early-return fired on
+      exactly k candidates before their completeness was proven,
+      returning a wrong k-th neighbor. engine/scene_graph/
+      spatial_common.py holds the shared grid/geometry primitives both
+      modules now depend on (avoids the circular import SpatialIndex
+      calling into SpatialTiling would otherwise create).
     scope: spatial cells, R-tree/octree/BVH where appropriate.
     dependencies: [P11-01]
     spec: docs/future/large-world/LARGE_WORLD.md
@@ -1119,6 +1139,11 @@ tasks:
         extents"
       - "tests/test_spatial_tiling.py: scene-graph-level chunk
         membership vs flat-scan reference"
+      - "tests/test_spatial_index_grid_correctness.py: grid-accelerated
+        nearest()/within_radius() vs brute-force reference across
+        randomized worlds and chunk_size choices"
+      - "benchmarks/spatial_index_bench.py: real measured grid-vs-brute
+        timing at n up to 50,000"
     open: >
       R-tree-class indexing for large chunk counts, chunk-based mesh
       compilation + boundary welding, and WorldIR partitioning metadata

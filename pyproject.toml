@@ -26,7 +26,7 @@ include = [
     "engine*", "world_ir*", "provenance*", "events*",
     "evidence*", "reconstruction*", "perception*", "exporters*",
     "sdk*", "apps*", "uncertainty*",
-    "registration*", "trajectories*", "worldstore*",
+    "registration*", "trajectories*", "worldstore*", "procedural*",
 ]
 
 [tool.pytest.ini_options]

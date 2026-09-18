@@ -288,6 +288,157 @@ class TestSourceRecordSerializationDefaults:
         assert restored.registration == {"status": "unknown", "transform": None}
 
 
+class TestCompositeIngestion:
+    def _phone_capture_folder(self, tmp_path):
+        folder = tmp_path / "phone_capture_001"
+        (folder / "rgb").mkdir(parents=True)
+        (folder / "rgb" / "0001.jpg").write_bytes(_jpeg(0x01))
+        (folder / "rgb" / "0002.jpg").write_bytes(_jpeg(0x02))
+        (folder / "gps").mkdir()
+        (folder / "gps" / "track.csv").write_text("lat,lon\n1.0,2.0\n")
+        (folder / "imu").mkdir()
+        (folder / "imu" / "log.csv").write_text("t,ax,ay,az\n0,0,0,9.8\n")
+        return folder
+
+    def test_composite_source_type_and_status(self, tmp_path):
+        from evidence.multi_source import SourceStatus, SourceType
+
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder), capture_type="phone")
+
+        assert record.source_type is SourceType.PHONE_CAPTURE
+        assert record.status is SourceStatus.INGESTED
+
+    def test_visual_component_files_become_real_evidence(self, tmp_path):
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder), capture_type="phone")
+
+        # 2 real JPEGs in rgb/ -> 2 real PHOTO evidence assets, same as
+        # any other folder ingest -- composite detection does not change
+        # HOW visual files are ingested, only how they're tagged after.
+        assert len(record.asset_ids) == 2
+        assert len(session.package.all_assets()) == 2
+
+    def test_visual_assets_are_tagged_with_their_component(self, tmp_path):
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+        record = session.add_source(str(folder), capture_type="phone")
+
+        for asset_id in record.asset_ids:
+            asset = session.package.assets[asset_id]
+            component_tags = [
+                p for p in asset.processing_history
+                if p.operation == "composite_component_tag"
+            ]
+            assert len(component_tags) == 1
+            assert component_tags[0].detail["component"] == "rgb"
+            assert component_tags[0].detail["composite_source_id"] == record.source_id
+
+    def test_sidecar_components_are_recorded_not_fabricated_as_evidence(self, tmp_path):
+        from evidence.multi_source import CaptureComponent
+
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder), capture_type="phone")
+
+        # gps/ and imu/ are real files on disk but NOT parseable by any
+        # importer in this repo -- they must be recorded as a manifest
+        # (path present), never turned into fake GPS/IMU evidence assets.
+        assert record.components[CaptureComponent.GPS.value] == ["gps/track.csv"]
+        assert record.components[CaptureComponent.IMU.value] == ["imu/log.csv"]
+        assert len(session.package.all_assets()) == 2  # only the 2 rgb photos
+
+    def test_registration_defaults_to_unknown_on_ingest(self, tmp_path):
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder), capture_type="phone")
+
+        assert record.registration == {"status": "unknown", "transform": None}
+
+    def test_plain_photo_folder_still_ingests_exactly_as_before(self, tmp_path):
+        # Regression guard: a non-composite folder (existing behavior)
+        # must be completely unaffected by this task's changes.
+        from evidence.multi_source import SourceType
+
+        folder = tmp_path / "photos"
+        folder.mkdir()
+        (folder / "a.jpg").write_bytes(_jpeg())
+        (folder / "b.jpg").write_bytes(_jpeg(0x02))
+        session = MultiSourceSession(session_id="sess1")
+
+        record = session.add_source(str(folder))
+
+        assert record.source_type is SourceType.DATASET
+        assert len(record.asset_ids) == 2
+        assert record.components == {}
+
+    def test_composite_folder_dedupes_on_second_add(self, tmp_path):
+        folder = self._phone_capture_folder(tmp_path)
+        session = MultiSourceSession(session_id="sess1")
+
+        first = session.add_source(str(folder), capture_type="phone")
+        second = session.add_source(str(folder), capture_type="phone")
+
+        assert second is first
+        assert len(session.sources()) == 1
+
+
+class TestSourceFrameRegistration:
+    def test_register_source_frame_sets_registered_status(self, tmp_path):
+        from world_ir.coordinates import Frame, IDENTITY_MATRIX, Transform
+
+        photo = tmp_path / "a.jpg"
+        photo.write_bytes(_jpeg())
+        session = MultiSourceSession(session_id="sess1")
+        record = session.add_source(str(photo))
+        assert record.registration == {"status": "unknown", "transform": None}
+
+        transform = Transform(
+            source_frame=Frame.SENSOR, target_frame=Frame.SESSION_LOCAL, matrix=IDENTITY_MATRIX,
+        )
+        updated = session.register_source_frame(record.source_id, transform)
+
+        assert updated.registration["status"] == "registered"
+        assert updated.registration["transform"]["source_frame"] == "sensor"
+        assert updated.registration["transform"]["target_frame"] == "session-local"
+        # The same object living in session.sources() reflects the change
+        # (SourceRecord is a plain mutable dataclass; registration is the
+        # one field that legitimately changes after creation).
+        assert session.sources()[0].registration["status"] == "registered"
+
+    def test_register_source_frame_unknown_source_raises(self):
+        from evidence.multi_source import UnknownSourceError
+        from world_ir.coordinates import Frame, Transform
+
+        session = MultiSourceSession(session_id="sess1")
+        transform = Transform(source_frame=Frame.SENSOR, target_frame=Frame.SESSION_LOCAL)
+
+        import pytest
+        with pytest.raises(UnknownSourceError):
+            session.register_source_frame("does-not-exist", transform)
+
+    def test_registration_round_trips_through_serialization(self, tmp_path):
+        from world_ir.coordinates import Frame, IDENTITY_MATRIX, Transform
+
+        photo = tmp_path / "a.jpg"
+        photo.write_bytes(_jpeg())
+        session = MultiSourceSession(session_id="sess1")
+        record = session.add_source(str(photo))
+        transform = Transform(source_frame=Frame.SENSOR, target_frame=Frame.SESSION_LOCAL, matrix=IDENTITY_MATRIX)
+        session.register_source_frame(record.source_id, transform)
+
+        restored = MultiSourceSession.from_dict(session.to_dict())
+
+        assert restored.sources()[0].registration["status"] == "registered"
+        assert restored.sources()[0].registration["transform"]["source_frame"] == "sensor"
+
+
 class TestEvidenceSummary:
     def test_not_ready_below_minimum_image_evidence(self, tmp_path):
         photo = tmp_path / "a.jpg"
@@ -496,3 +647,75 @@ class TestUnifiedSourceIdentity:
         assert restored.acquisition_id == "acq-abc123"
         assert restored.device_id is None
         assert restored.capabilities == []
+
+
+class TestCompositeEndToEnd:
+    def test_full_composite_workflow(self, tmp_path):
+        """create session -> add a plain photo source -> add a composite
+        phone capture (rgb + gps + imu) -> verify both sources coexist,
+        visual evidence is real and tagged, sidecar files are preserved
+        as a manifest (not fabricated evidence), registration starts
+        unknown and can be explicitly set -- then the whole session
+        round-trips through serialization with everything intact."""
+        from evidence.multi_source import CaptureComponent, SourceType
+        from world_ir.coordinates import Frame, IDENTITY_MATRIX, Transform
+
+        session = MultiSourceSession(session_id="Building_A", name="Building A")
+
+        plain_photo = tmp_path / "survey.jpg"
+        plain_photo.write_bytes(_jpeg(0x09))
+        plain_record = session.add_source(str(plain_photo))
+        assert plain_record.source_type is SourceType.IMAGE
+
+        phone_folder = tmp_path / "phone_capture_001"
+        (phone_folder / "rgb").mkdir(parents=True)
+        (phone_folder / "rgb" / "0001.jpg").write_bytes(_jpeg(0x01))
+        (phone_folder / "rgb" / "0002.jpg").write_bytes(_jpeg(0x02))
+        (phone_folder / "gps").mkdir()
+        (phone_folder / "gps" / "track.csv").write_text("lat,lon\n1.0,2.0\n")
+        (phone_folder / "imu").mkdir()
+        (phone_folder / "imu" / "log.csv").write_text("t,ax,ay,az\n0,0,0,9.8\n")
+
+        phone_record = session.add_source(str(phone_folder), capture_type="phone")
+
+        # Both sources coexist; neither was destroyed or merged.
+        assert len(session.sources()) == 2
+        assert phone_record.source_type is SourceType.PHONE_CAPTURE
+
+        # Visual evidence is real (3 total photos: 1 survey + 2 rgb).
+        assert len(session.package.all_assets()) == 3
+
+        # Sidecar files preserved as a manifest, not fabricated evidence.
+        assert phone_record.components[CaptureComponent.GPS.value] == ["gps/track.csv"]
+        assert phone_record.components[CaptureComponent.IMU.value] == ["imu/log.csv"]
+
+        # Visual assets traceable back to their component + composite source.
+        for asset_id in phone_record.asset_ids:
+            asset = session.package.assets[asset_id]
+            tags = [p for p in asset.processing_history if p.operation == "composite_component_tag"]
+            assert tags[0].detail["composite_source_id"] == phone_record.source_id
+
+        # Registration starts unknown -- no fabricated alignment.
+        assert phone_record.registration == {"status": "unknown", "transform": None}
+        assert plain_record.registration == {"status": "unknown", "transform": None}
+
+        # Explicit registration is possible and persists.
+        transform = Transform(source_frame=Frame.SENSOR, target_frame=Frame.SESSION_LOCAL, matrix=IDENTITY_MATRIX)
+        session.register_source_frame(phone_record.source_id, transform)
+
+        # Full round trip preserves everything: both sources, components,
+        # provenance tags, and the one registered transform.
+        restored = MultiSourceSession.from_dict(session.to_dict())
+        restored_phone = [s for s in restored.sources() if s.source_id == phone_record.source_id][0]
+        restored_plain = [s for s in restored.sources() if s.source_id == plain_record.source_id][0]
+
+        assert len(restored.sources()) == 2
+        assert len(restored.package.all_assets()) == 3
+        assert restored_phone.components[CaptureComponent.GPS.value] == ["gps/track.csv"]
+        assert restored_phone.registration["status"] == "registered"
+        assert restored_plain.registration == {"status": "unknown", "transform": None}
+
+        # Downstream evidence summary still works unchanged (reuses the
+        # real orchestrator gate -- 3 photos clears MIN_IMAGE_EVIDENCE=2).
+        summary = restored.evidence_summary()
+        assert summary["ready_for_reconstruction"] is True

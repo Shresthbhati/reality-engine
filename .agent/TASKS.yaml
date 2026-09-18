@@ -440,7 +440,7 @@ tasks:
 
   # ================= PHASE 6 — DENSE GEOMETRY + FUSION =================
 
-- id: P6-01
+  - id: P6-01
     name: true dense MVS
     status: DONE
     basis: >
@@ -1055,6 +1055,14 @@ tasks:
     verification:
       - two-commit revision chain with checkout equality
       - crash-during-commit recovery test
+    progress: >
+      2026-09-18: StoredVersion/save_version now record
+      changed_entity_ids + changed_geometry_ids (auto-computed via
+      world_ir.diff.diff_worlds against the parent at save time) and
+      optional source_session_ids -- closes the "track changed
+      entities/geometry/source sessions" part of world versioning.
+      Additive/defaulted fields; pre-existing saved version records
+      still load. tests/test_world_store.py extended (3 new tests).
 
   # ================= PHASE 12 — INCREMENTAL COMPILATION ==============
 
@@ -1069,6 +1077,17 @@ tasks:
     spec: docs/future/worldstore/INCREMENTAL_COMPILATION.md
     verification:
       - equivalence test (incremental vs full, identical artifact hashes)
+    progress: >
+      2026-09-18: world_ir/incremental.py -- affected_closure(), a BFS
+      over Relationship edges (PART_OF/CONTAINS/ATTACHED_TO/SUPPORTS/
+      RESTS_ON by default) from a set of directly-changed entity ids to
+      the full "regional recompilation" set. This is the missing link
+      between diff_worlds() (says WHAT changed) and a real incremental
+      pipeline (needs to know what ELSE might be stale because of it,
+      e.g. a wall's room/supported entities when only the wall's own
+      fields changed). 7 tests in tests/test_world_ir_incremental.py.
+      Not yet wired to actually SKIP recompiling unaffected regions in
+      a real compiler stage -- that wiring is the remaining item.
 
   # ================= PHASE 13 — LARGE WORLD ==========================
 
@@ -1084,6 +1103,13 @@ tasks:
       entity counts (not points) are indexed; engine/scene_graph/
       spatial_index.py keeps its documented flat-scan contract for
       scene-graph queries until a measured workload justifies a tree.
+      Additionally, engine/scene_graph/spatial_tiling.py provides a
+      parallel scene-graph-level uniform-grid tiling (SpatialTiling):
+      entities with real geometry bounds are membership-indexed into
+      every chunk their AABB touches (not just their centroid's chunk),
+      verified against SpatialIndex's flat-scan reference
+      (tests/test_spatial_tiling.py, 5 tests, bbox-union-correctness
+      check per LARGE_WORLD.md acceptance criterion).
     scope: spatial cells, R-tree/octree/BVH where appropriate.
     dependencies: [P11-01]
     spec: docs/future/large-world/LARGE_WORLD.md
@@ -1091,6 +1117,14 @@ tasks:
       - "tests/test_spatial_tiles.py: tile assignment determinism,
         query correctness vs brute force, empty tiles, degenerate
         extents"
+      - "tests/test_spatial_tiling.py: scene-graph-level chunk
+        membership vs flat-scan reference"
+    open: >
+      R-tree-class indexing for large chunk counts, chunk-based mesh
+      compilation + boundary welding, and WorldIR partitioning metadata
+      remain MISSING (correctly deferred -- see P13-02 and
+      LARGE_WORLD.md items 2-4, which require real mesh-stitching logic
+      not improvised here).
 
   - id: P13-02
     name: LOD + streaming + artifact paging

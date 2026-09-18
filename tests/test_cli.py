@@ -331,3 +331,52 @@ class TestPhysics:
         payload = json.loads(capsys.readouterr().out)
         assert "results" in payload
         assert len(payload["results"]) > 0
+
+
+class TestCompositeCaptureCLI:
+    def _jpeg(self, seed_byte: int = 0x01) -> bytes:
+        return b"\xff\xd8\xff\xe0" + bytes([seed_byte]) * 64
+
+    def _phone_capture_folder(self, tmp_path):
+        folder = tmp_path / "phone_capture_001"
+        (folder / "rgb").mkdir(parents=True)
+        (folder / "rgb" / "0001.jpg").write_bytes(self._jpeg(0x01))
+        (folder / "rgb" / "0002.jpg").write_bytes(self._jpeg(0x02))
+        (folder / "gps").mkdir()
+        (folder / "gps" / "track.csv").write_text("lat,lon\n1.0,2.0\n")
+        return folder
+
+    def test_add_source_with_capture_type_flag(self, tmp_path, capsys):
+        session_dir = tmp_path / "session"
+        folder = self._phone_capture_folder(tmp_path)
+
+        assert main(["session", "create", "Building_A", "-o", str(session_dir)]) == 0
+        capsys.readouterr()
+        exit_code = main([
+            "session", "add-source", str(session_dir), str(folder), "--capture-type", "phone",
+        ])
+        out = capsys.readouterr().out
+
+        assert exit_code == 0
+        assert "ingested" in out
+        assert "phone_capture" in out
+
+    def test_inspect_source_shows_components_and_registration(self, tmp_path, capsys):
+        session_dir = tmp_path / "session"
+        folder = self._phone_capture_folder(tmp_path)
+        main(["session", "create", "Building_A", "-o", str(session_dir)])
+        capsys.readouterr()
+        main(["session", "add-source", str(session_dir), str(folder), "--capture-type", "phone"])
+        capsys.readouterr()
+
+        # Discover the source id the same way a user would: via `session list`.
+        main(["session", "list", str(session_dir)])
+        list_out = capsys.readouterr().out
+        source_id = list_out.splitlines()[0].split("\t")[0]
+
+        exit_code = main(["session", "inspect-source", str(session_dir), source_id])
+        out = capsys.readouterr().out
+
+        assert exit_code == 0
+        assert "gps" in out
+        assert "registration: unknown" in out

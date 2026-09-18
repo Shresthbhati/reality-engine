@@ -381,8 +381,150 @@ capabilities:
       J Sigma J^T linear, R Sigma R^T point transform, 6x6 pose
       composition via central-difference Jacobians of the exact
       RigidTransform.compose). UNKNOWN propagates as UNKNOWN through
-      every operator. Producers do not emit Uncertain yet (honest gap).
+      every operator.
+      COMPLETION 2026-09-18: the module now carries BOTH halves -- the
+      numeric-Jacobian operators above PLUS the analytic per-point
+      chain (Covariance3, depth_to_world_covariance,
+      propagate_point_through_pose, propagate_chain): closed-form
+      Jacobians for depth -> unprojection -> pose verified against
+      finite differences of the REAL PinholeCamera model; directional
+      rotation levers; partial calibration yields UNKNOWN naming the
+      missing stage; the pinhole-only analytic path REFUSES distorted
+      cameras; sigma is never collapsed into confidence.
     tests: tests/test_object_measurement.py, tests/test_registration.py, tests/test_uncertainty_propagation.py
+  - name: room_building_graph
+    category: perception
+    backend: "perception.architecture.room_graph: build_room_graph / build_building_graph"
+    inputs: [classify_planes output (plane evidence with inliers)]
+    outputs: >-
+      RoomGraph (rooms as floor+ceiling+walls with measured dimensions,
+      doorway openings, adjacency via shared walls) and BuildingGraph
+      (storeys grouped by ceiling band, building envelope)
+    license: project-internal
+    hardware_requirements: none
+    accuracy: measured from real plane evidence; multi-storey band
+      membership tested (two-storey fixture)
+    runtime: O(planes)
+    maturity: IMPLEMENTED
+    tests: tests/test_room_building_graph.py
+  - name: worldir_v2_extensions
+    category: worldir
+    backend: "world_ir.v2_extensions: TopologyGraph / temporal_history / ExternalReference"
+    inputs: [WorldIR]
+    outputs: >-
+      additive topology (hierarchy + adjacency + containment, seam
+      entities connect their adjacency targets), world-level ordered
+      temporal history, typed external references; v1 worlds load
+      unchanged
+    license: project-internal
+    hardware_requirements: none
+    accuracy: query correctness tested against hand-built worlds
+    runtime: O(entities + edges)
+    maturity: IMPLEMENTED
+    tests: tests/test_world_ir_v2.py
+  - name: spatial_tiles
+    category: large-world
+    backend: "world_ir.spatial_tiles: uniform spatial tiles + region queries + chunked paging"
+    inputs: [WorldIR entities, explicit tile_size / max_chunk_entities]
+    outputs: >-
+      deterministic tile assignment, AABB/radius region queries,
+      neighbor-tile enumeration, streamed chunks with memory bounded
+      by chunk size (tracemalloc-measured)
+    license: project-internal
+    hardware_requirements: none
+    accuracy: query correctness verified vs brute force
+    runtime: O(entities); uniform grid chosen deliberately over a tree
+      (entity counts, not points, are indexed)
+    maturity: IMPLEMENTED
+    tests: tests/test_spatial_tiles.py
+  - name: procedural_room_grammar
+    category: procedural
+    backend: "procedural.room_grammar: spec -> deterministic WorldIR"
+    inputs: [RoomGrammarSpec (rooms, wall openings, adjacency)]
+    outputs: >-
+      WorldIR with real geometry (AABB/boxes), floor-graph adjacency,
+      StatementState.PROCEDURAL provenance; deterministic (same spec ->
+      identical to_dict)
+    license: project-internal
+    hardware_requirements: none
+    accuracy: geometry + adjacency known-answer tested; determinism
+      byte-verified
+    runtime: O(spec size)
+    maturity: IMPLEMENTED
+    tests: tests/test_procedural_room_grammar.py
+  - name: cityjson_exporter
+    category: exporters
+    backend: "exporters.cityjson.exporter: WorldIR -> CityJSON 1.1"
+    inputs: [WorldIR]
+    outputs: >-
+      real CityJSON 1.1 document (transform quantization with integer
+      vertices, semantic CityObjects, metadata with entity count +
+      provenance); orphan entities skipped with reason
+    license: project-internal (CityJSON is open spec)
+    hardware_requirements: none
+    accuracy: spec-structure tests; official tooling parseable layout
+    runtime: O(entities)
+    maturity: IMPLEMENTED
+    tests: tests/test_cityjson_exporter.py
+  - name: ifc_bridge
+    category: exporters
+    backend: "exporters.ifc_bridge: WorldIR -> IFC4 via IfcOpenShell 0.8.x"
+    inputs: [WorldIR architectural entities]
+    outputs: >-
+      IfcProject -> IfcSite -> IfcBuilding -> IfcBuildingStorey
+      hierarchy with one semantic IFC class per entity (wall/slab/
+      column/beam/door/window/roof/proxy)
+    license: >-
+      Apache 2.0 (IfcOpenShell); recorded per LICENSES discipline
+    hardware_requirements: none (pure-Python path)
+    accuracy: written file parsed back via ifcopenshell; hierarchy and
+      classes asserted
+    runtime: O(entities)
+    maturity: IMPLEMENTED
+    tests: tests/test_ifc_bridge.py
+  - name: simulation_loop
+    category: simulation
+    backend: "engine.compiler.simulation_loop: WorldIR -> SimulationState -> WorldStateDelta -> branched WorldIR"
+    inputs: [WorldIR with physical geometry, PhysicsCompiler, steps/dt]
+    outputs: >-
+      WorldStateDelta (changed/unchanged entity ids, tick/dt) and the
+      branched WorldIR with StatementState.SIMULATED provenance;
+      snapshots taken before stepping (no aliasing false-equals)
+    license: project-internal
+    hardware_requirements: none
+    accuracy: diff correctness known-answer tested; physics e2e suite
+      remains green
+    runtime: O(entities x steps)
+    maturity: IMPLEMENTED
+    tests: tests/test_simulation_loop.py
+  - name: benchmark_suite
+    category: benchmarks
+    backend: "benchmarks.suite: descriptor-driven same-pipeline benchmark runs"
+    inputs: [BenchmarkDescriptor list]
+    outputs: >-
+      per-descriptor measured StageTiming records + metrics dict via
+      the SAME detail-spine pipeline (no per-benchmark special cases);
+      runs recorded in docs/BENCHMARKS.md
+    license: project-internal
+    hardware_requirements: none
+    accuracy: metrics are measured outputs of the real stages
+    runtime: dominated by the pipeline stages themselves
+    maturity: IMPLEMENTED
+    tests: tests/test_benchmark_suite.py
+  - name: city_compiler_core
+    category: compiler
+    backend: "engine.compiler.city_compiler: city feature descriptors -> WorldIR -> CityJSON"
+    inputs: [CityFeature descriptors (terrain/roads/buildings/vegetation/water)]
+    outputs: >-
+      WorldIR entities with real bounds and explicit transforms ->
+      CityJSON; geometry-less features refuse at construction
+    license: project-internal
+    hardware_requirements: none
+    accuracy: bounds/transform/refusal known-answer tested
+    runtime: O(features)
+    maturity: PARTIAL (core translation landed; GIS/OSM ingestion and
+      CityGML/3DCityDB writers open)
+    tests: tests/test_city_compiler.py
   - name: architectural_parametric_perception
     category: perception
     backend: >-

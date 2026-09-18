@@ -84,6 +84,19 @@ class EvidenceQualityReport:
     #: cameras that did NOT observe them (projection said out of
     #: bounds / behind the camera plane).
     overclaim_count: int
+    #: Measured per-point view-angle diversity (directive section 11:
+    #: view angle diversity is an evidence-quality input, previously
+    #: unmeasured). For each observed point: the local surface normal
+    #: from the point's k nearest neighbors (PCA smallest-eigenvalue
+    #: vector, closed-form eigensolver -- the repo's established
+    #: approach), then the angular spread of the observing cameras'
+    #: ray-to-normal angles: (max - min) in degrees. Median across
+    #: observed points. Points with < 2 observers or a degenerate
+    #: local neighborhood contribute nothing (excluded from the
+    #: median, counted in view_angle_diversity_n). None when no point
+    #: has a measurable diversity.
+    view_angle_diversity_deg: Optional[float] = None
+    view_angle_diversity_n: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -93,6 +106,8 @@ class EvidenceQualityReport:
             "view_counts": dict(self.view_counts),
             "unprojectable_point_ids": list(self.unprojectable_point_ids),
             "overclaim_count": self.overclaim_count,
+            "view_angle_diversity_deg": self.view_angle_diversity_deg,
+            "view_angle_diversity_n": self.view_angle_diversity_n,
         }
 
 
@@ -147,12 +162,14 @@ def assess_evidence_quality(
     unprojectable: List[str] = []
     overclaims = 0
     per_point_gsd: List[float] = []
+    #: point index -> observing camera indices (for the diversity pass).
+    obs_by_point: Dict[int, List[int]] = {}
 
-    for point in result.points:
+    for p_idx, point in enumerate(result.points):
         px, py, pz = (float(c) for c in point.position)
         views = 0
         seen_by = set()
-        for cam, pose in zip(cameras, result.camera_poses):
+        for cam_idx, (cam, pose) in enumerate(zip(cameras, result.camera_poses)):
             proj = cam.project(Vec3(px, py, pz))
             if proj is None:
                 continue
@@ -160,6 +177,7 @@ def assess_evidence_quality(
             if 0.0 <= u < cam.intrinsics.width and 0.0 <= v < cam.intrinsics.height:
                 views += 1
                 seen_by.add(pose.evidence_id)
+                obs_by_point.setdefault(p_idx, []).append(cam_idx)
                 dx = px - cam.extrinsics.position.x
                 dy = py - cam.extrinsics.position.y
                 dz = pz - cam.extrinsics.position.z
@@ -184,6 +202,10 @@ def assess_evidence_quality(
     observed = len(result.points) - len(unprojectable)
     observed_fraction = (observed / len(result.points)) if result.points else 0.0
     min_views = min(view_counts.values()) if view_counts else 0
+
+    diversity_deg, diversity_n = _view_angle_diversity(
+        result, cameras, obs_by_point
+    )
     return EvidenceQualityReport(
         gsd_mm_per_px=gsd,
         detail_tier=_detail_tier(gsd, min_views, thresholds),
@@ -191,7 +213,96 @@ def assess_evidence_quality(
         view_counts=view_counts,
         unprojectable_point_ids=tuple(sorted(unprojectable)),
         overclaim_count=overclaims,
+        view_angle_diversity_deg=diversity_deg,
+        view_angle_diversity_n=diversity_n,
     )
+
+
+def _view_angle_diversity(
+    result: ReconstructionResult,
+    cameras: Sequence[PinholeCamera],
+    obs_by_point: Dict[int, List[int]],
+    k_neighbors: int = 6,
+    max_points: int = 512,
+) -> Tuple[Optional[float], int]:
+    """Measured per-point view-angle diversity (directive section 11:
+    previously an unmeasured evidence-quality input).
+
+    For each observed point with >= 2 observing cameras: estimate the
+    local surface normal from the point's `k_neighbors` nearest
+    neighbors (PCA smallest-eigenvalue eigenvector of the local
+    covariance, numpy's eigh on the real symmetric scatter -- the
+    repo's established PCA approach), then measure the angular spread
+    (max - min, degrees) of the observing cameras' ray-to-normal
+    angles: angle between the camera->point ray and the normal, folded
+    into [0, 90] via abs(cos) since PCA normals have no orientation.
+
+    Honest limitations (documented, not hidden):
+      - Points with a degenerate local neighborhood (collinear or
+        coincident kNN: rank-deficient covariance) have no defensible
+        normal and contribute nothing -- a fabricated normal would be
+        worse than no measurement.
+      - Only points with >= 2 observers carry an angular SPREAD; a
+        single view direction has nothing to spread.
+      - Sampling: if more than `max_points` eligible points exist, a
+        deterministic stride sample is measured (fixed stride, no
+        randomness) so the report stays affordable on large clouds;
+        the sample size is in `view_angle_diversity_n`.
+
+    Returns (median diversity in degrees, number of points measured).
+    """
+    eligible = sorted(i for i, cs in obs_by_point.items() if len(cs) >= 2)
+    if not eligible:
+        return None, 0
+    if len(eligible) > max_points:
+        stride = math.ceil(len(eligible) / max_points)
+        eligible = eligible[::stride]
+
+    import numpy as np
+    from scipy.spatial import cKDTree
+
+    pts = np.asarray(
+        [[float(c) for c in result.points[i].position] for i in eligible]
+    )
+    tree = cKDTree(pts)
+    k = min(k_neighbors, len(pts))
+    _, idx = tree.query(pts, k=k, workers=1)
+    if k == 1:
+        idx = idx.reshape(-1, 1)
+
+    spreads: List[float] = []
+    for row, i in enumerate(eligible):
+        neigh = pts[idx[row]]
+        centered = neigh - neigh.mean(axis=0)
+        scatter = centered.T @ centered
+        eigvals, eigvecs = np.linalg.eigh(scatter)
+        # Smallest eigenvalue's eigenvector is the normal. A rank-2
+        # neighborhood (an exactly planar patch) HAS a defensible
+        # normal; degenerate means rank < 2 (collinear/coincident
+        # points), where no plane is defined. Relative threshold:
+        # floating-point noise on an exactly collinear fixture leaves
+        # eigvals[1] at numerical zero, not exact zero.
+        if eigvals[1] <= 1e-9 * max(eigvals[2], 1.0):
+            continue
+        normal = eigvecs[:, 0]
+        # pts rows correspond to the (possibly stride-sampled) eligible
+        # list; index by row, not by the original point id i.
+        px, py, pz = pts[row]
+        angles = []
+        for c_idx in obs_by_point[i]:
+            cam = cameras[c_idx].extrinsics.position
+            ray = np.array([px - cam.x, py - cam.y, pz - cam.z])
+            norm = float(np.linalg.norm(ray))
+            if norm <= 0.0:
+                continue
+            cos_a = abs(float(np.dot(ray, normal)) / norm)
+            angles.append(math.degrees(math.acos(max(-1.0, min(1.0, cos_a)))))
+        if len(angles) < 2:
+            continue
+        spreads.append(max(angles) - min(angles))
+    if not spreads:
+        return None, 0
+    return statistics.median(spreads), len(spreads)
 
 
 def recommend_capture(report: EvidenceQualityReport) -> Dict[str, object]:

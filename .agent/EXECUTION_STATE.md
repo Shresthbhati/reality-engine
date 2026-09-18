@@ -927,3 +927,23 @@ Article II/IV).
   +incremental_compilation, +uncertainty_propagation.
 - Verification: full suite 1,720 passed / 1 skipped / 0 failed; SAM
   real-model integration test run separately (passed, ~58 s CPU).
+## 2026-09-18 — Campaign: graphs, uncertainty, tracking, WorldIR 2.0, large-world, compilers, simulation, benchmarks
+
+Branch claude/graphs-uncertainty-world-compilers (worktree
+.claude/worktrees/reality-engine-architecture-ed811e).
+
+- Landed (all red-first, all in TASKS.yaml as DONE): P8-01/P8-02
+  room+building graphs; P10-02 uncertainty (both halves merged after
+  cherry-picking onto post-#44 main); P7-02 2D tracking + ID-switch
+  diagnostics; P7-04 view-angle diversity; P9-01 WorldIR 2.0
+  extensions; P13-01/02 spatial tiles + measured-bounded paging;
+  P15-01 procedural room grammar; P16-01 CityJSON exporter;
+  P8-03 IFC4 bridge (IfcOpenShell installed for real); P17-01
+  simulation loop; P19-01 benchmark suite + docs/BENCHMARKS.md
+  reconciliation; P14-01 city compiler core (PARTIAL, honest opens).
+- Ledger after sync: 31 DONE / 7 PARTIAL / 0 MISSING. Remaining
+  PARTIALs are honest external/incremental remainders (real RGB-D
+  device, real VIO run with Docker down, outdoor arch classes
+  without fixtures, per-cell GSD re-measurement + adaptive
+  subdivision, GIS/OSM ingestion + CityGML/3DCityDB).
+- Full unbounded suite gate recorded below (exact numbers).

@@ -361,3 +361,24 @@ class TestViewAngleDiversity:
         report = assess_evidence_quality(_result(pts, cams), cams)
         assert report.view_angle_diversity_deg is None
         assert report.view_angle_diversity_n == 0
+
+
+class TestViewAngleDiversitySamplingRegression:
+    """Regression (2026-09-18): when eligible points exceed max_points,
+    the stride sample reindexes pts -- the per-point loop must index by
+    the SAMPLED row, not the original point id (IndexError before the
+    fix; caught by the CLI vertical-slice on a 25-point fixture)."""
+
+    def test_stride_sampling_indexes_sampled_rows(self):
+        cams = [TestViewAngleDiversity()._div_cam(
+            f"c{i}", (0.4 * i - 0.6, 0.0, 0.0), 0.0) for i in range(4)]
+        # 600 eligible (>=2 observers) planar points -> the default
+        # max_points=512 stride sample kicks in and reindexes pts.
+        pts = [_point(f"p{i}",
+                      (0.2 * (i % 20) - 2.0, 0.1 * (i // 20) - 1.0, 2.0),
+                      ["c0", "c1", "c2"])
+               for i in range(600)]
+        report = assess_evidence_quality(_result(pts, cams), cams)
+        assert report.view_angle_diversity_deg is not None
+        assert report.view_angle_diversity_n > 0
+        assert report.view_angle_diversity_n <= 512

@@ -285,7 +285,9 @@ def _view_angle_diversity(
         if eigvals[1] <= 1e-9 * max(eigvals[2], 1.0):
             continue
         normal = eigvecs[:, 0]
-        px, py, pz = pts[i]
+        # pts rows correspond to the (possibly stride-sampled) eligible
+        # list; index by row, not by the original point id i.
+        px, py, pz = pts[row]
         angles = []
         for c_idx in obs_by_point[i]:
             cam = cameras[c_idx].extrinsics.position

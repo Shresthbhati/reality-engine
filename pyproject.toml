@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "reality-engine"
 version = "0.1.0"
-description = "World Compiler + Universal Physics + Destruction + Disaster + Studio UI (foundation layer)"
+description = "Reality Engine core: evidence -> reconstruction -> WorldIR -> WorldStore -> viewer"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0"]
 perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0"]
 colmap = ["colmap-cli>=4.2"]
 
@@ -25,11 +25,35 @@ reality = "apps.cli.main:main"
 include = [
     "engine*", "world_ir*", "provenance*", "events*",
     "evidence*", "reconstruction*", "perception*", "exporters*",
-    "sdk*", "apps*", "uncertainty*",
+    "sdk*", "apps*", "uncertainty*", "worldstore*",
+    "registration*", "trajectories*",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
     "slow: long-running test (real-model downloads, GPU); deselect with -m 'not slow'",
+    "e2e: end-to-end vertical slice test",
+    "integration: integration test across real modules",
+    "physics: downstream physics/simulation test (requires reality-engine-child); excluded from core CI",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = [
+    "E501",   # line too long — enforced by formatter, not linter
+    "UP006",  # use 'type' instead of 'Type' (keep 3.9 compat annotations)
+    "UP007",  # use X | Y (keep 3.9 compat union annotations)
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+# Core packages only — perception extras are optional
+ignore_missing_imports = true

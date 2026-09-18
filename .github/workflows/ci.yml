@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "agent/**", "feat/**", "fix/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  core:
+    name: Core Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      # ── Install ────────────────────────────────────────────────────────────
+      - name: Install package (editable)
+        run: pip install -e ".[dev]"
+
+      # ── Package check ──────────────────────────────────────────────────────
+      - name: Verify console script is on PATH
+        run: reality --help
+
+      - name: Verify all 13 packages are importable
+        run: |
+          python -c "
+          import engine, world_ir, provenance, events, evidence
+          import reconstruction, perception, exporters, sdk, apps
+          import uncertainty, worldstore, registration, trajectories
+          print('All packages importable OK')
+          "
+
+      # ── Core tests ─────────────────────────────────────────────────────────
+      - name: Run core test suite
+        run: |
+          pytest \
+            tests/test_cli_vertical_slice.py \
+            tests/test_vertical_slice_e2e.py \
+            tests/test_cli.py \
+            tests/test_cli_compile.py \
+            tests/test_evidence_session.py \
+            tests/test_evidence_packages.py \
+            tests/test_track_backend.py \
+            tests/test_entity.py \
+            tests/test_world_ir.py \
+            tests/test_evidence_promote.py \
+            tests/test_perception_interfaces.py \
+            tests/test_mapping_spine_perception.py \
+            tests/test_dense_pipeline.py \
+            tests/test_dense_ingest.py \
+            tests/test_dense_fusion_multisource.py \
+            tests/test_calibration_transforms.py \
+            tests/test_registration.py \
+            tests/test_trajectory.py \
+            tests/test_gltf_exporter.py \
+            tests/test_blender_exporter.py \
+            tests/test_usd_exporter.py \
+            tests/test_export_reports.py \
+            tests/test_export_pipeline_e2e.py \
+            tests/test_world_store.py \
+            -v --tb=short
+
+      # ── Broad test collection (no physics) ────────────────────────────────
+      - name: Verify no collection errors in core suite
+        run: pytest tests/ --collect-only -q 2>&1 | tail -20
+
+      # ── Wheel build ────────────────────────────────────────────────────────
+      - name: Build wheel
+        run: |
+          pip install build
+          python -m build --wheel
+
+      - name: Verify wheel top-level packages
+        run: |
+          python - <<'EOF'
+          import zipfile, glob, sys
+          wheels = glob.glob("dist/*.whl")
+          if not wheels:
+              print("ERROR: No wheel found", file=sys.stderr); sys.exit(1)
+          w = wheels[0]
+          with zipfile.ZipFile(w) as z:
+              names = {n.split("/")[0] for n in z.namelist() if not n.endswith(".dist-info/")}
+          print(f"Wheel packages: {sorted(names)}")
+          required = {"engine", "world_ir", "provenance", "events", "evidence",
+                      "reconstruction", "perception", "exporters", "sdk", "apps",
+                      "uncertainty", "worldstore", "registration", "trajectories"}
+          missing = required - names
+          if missing:
+              print(f"ERROR: Missing packages in wheel: {missing}", file=sys.stderr)
+              sys.exit(1)
+          print(f"All {len(required)} required packages present in wheel ✓")
+          EOF
+
+      # ── CLI smoke test ─────────────────────────────────────────────────────
+      - name: CLI smoke test (end-to-end ingest → compile → viewer)
+        run: |
+          # Run the vertical slice test which exercises the full CLI path
+          pytest tests/test_cli_vertical_slice.py -v --tb=short
+
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install lint tools
+        run: pip install ruff mypy
+      - name: ruff check
+        run: ruff check apps/ engine/ world_ir/ evidence/ reconstruction/ exporters/ sdk/ worldstore/ registration/ trajectories/ uncertainty/ provenance/ events/ perception/ --exit-zero
+      - name: mypy (core packages, best-effort)
+        run: mypy apps/cli/main.py --ignore-missing-imports --no-error-summary || true

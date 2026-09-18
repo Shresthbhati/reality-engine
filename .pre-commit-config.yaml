@@ -1,0 +1,41 @@
+repos:
+  # ── Ruff: fast Python linter + formatter ──────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # ── Trailing whitespace / EOF / YAML / TOML ───────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+        exclude: "^(agent5_|test_results|t\\.txt|_br\\.txt|_dd\\.txt)"
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: debug-statements
+        language_version: python3
+
+  # ── Fast unit tests (core subset) ─────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: pytest-core-fast
+        name: pytest (core vertical slice)
+        language: system
+        entry: python -m pytest
+        args:
+          - tests/test_cli_vertical_slice.py
+          - tests/test_vertical_slice_e2e.py
+          - tests/test_world_store.py
+          - tests/test_entity.py
+          - tests/test_world_ir.py
+          - --tb=short
+          - -q
+        pass_filenames: false
+        stages: [pre-push]

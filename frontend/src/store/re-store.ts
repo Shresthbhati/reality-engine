@@ -45,8 +45,10 @@ import {
   checkBackendStatus,
   fetchWorldList,
   fetchWorldDetail,
+  fetchWorldPointCloud,
   convertBackendEntityToEntity,
   type BackendWorldSummary,
+  type BackendGeometryPayload,
 } from "@/lib/api";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
@@ -776,6 +778,10 @@ interface RealityEngineStore {
   setBenchmarkCategoryFilter: (cat: BenchmarkCategory | "ALL") => void;
   loadMockData: () => void;
 
+  // ── Measurements actions
+  addMeasurement: (measurement: Measurement) => void;
+  clearMeasurements: () => void;
+
   // ── Real Backend State & Actions (NO FAKE COMPLETION)
   backendConnected: boolean;
   backendError: string | null;
@@ -784,6 +790,14 @@ interface RealityEngineStore {
   worldVersions: BackendWorldSummary[];
   loadWorldFromBackend: (versionId?: string) => Promise<boolean>;
   refreshWorldVersions: () => Promise<void>;
+
+  // ── Point Cloud / Mesh Artifacts (Real Streaming)
+  pointCloudPositions: Float32Array | null;
+  pointCloudColors: Float32Array | null;
+  pointCloudCount: number;
+  pointCloudStatus: "IDLE" | "LOADING" | "AVAILABLE" | "UNAVAILABLE";
+  pointCloudError: string | null;
+  geometries: Record<string, BackendGeometryPayload>;
 }
 
 export const useREStore = create<RealityEngineStore>()(
@@ -965,6 +979,12 @@ export const useREStore = create<RealityEngineStore>()(
     loadedFromBackend: false,
     activeWorldVersion: null,
     worldVersions: [],
+    pointCloudPositions: null,
+    pointCloudColors: null,
+    pointCloudCount: 0,
+    pointCloudStatus: "IDLE",
+    pointCloudError: null,
+    geometries: {},
 
     // ── Actions
     setProject: (project) => set({ project }),
@@ -1054,6 +1074,9 @@ export const useREStore = create<RealityEngineStore>()(
 
     setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
     setActiveMeasurementTool: (activeMeasurementTool) => set({ activeMeasurementTool }),
+    addMeasurement: (measurement) =>
+      set((s) => ({ measurements: [measurement, ...s.measurements] })),
+    clearMeasurements: () => set({ measurements: [] }),
     setStudioBottomTab: (studioBottomTab) => set({ studioBottomTab }),
 
     toggleOutliner: () => set((s) => ({ outlinerCollapsed: !s.outlinerCollapsed })),
@@ -1159,18 +1182,32 @@ export const useREStore = create<RealityEngineStore>()(
           backendConnected: false,
           backendError: status.error ?? "Backend offline",
           loadedFromBackend: false,
+          pointCloudPositions: null,
+          pointCloudColors: null,
+          pointCloudCount: 0,
+          pointCloudStatus: "UNAVAILABLE",
+          pointCloudError: status.error ?? "Backend offline",
         });
         get().loadMockData();
         return false;
       }
 
-      set({ backendConnected: true, backendError: null });
+      set({
+        backendConnected: true,
+        backendError: null,
+        pointCloudStatus: "LOADING",
+        pointCloudError: null,
+      });
       const worlds = await fetchWorldList();
       set({ worldVersions: worlds });
 
       const targetVid = versionId ?? status.latest_version ?? worlds[0]?.version_id;
       if (!targetVid) {
-        set({ loadedFromBackend: false });
+        set({
+          loadedFromBackend: false,
+          pointCloudStatus: "UNAVAILABLE",
+          pointCloudError: "No version available",
+        });
         get().loadMockData();
         return false;
       }
@@ -1180,13 +1217,20 @@ export const useREStore = create<RealityEngineStore>()(
         set({
           backendError: detail?.error ?? "Failed to load WorldIR version",
           loadedFromBackend: false,
+          pointCloudStatus: "UNAVAILABLE",
+          pointCloudError: detail?.error ?? "Failed to load WorldIR version",
         });
         get().loadMockData();
         return false;
       }
 
+      // Real point cloud streaming (NO FAKE COMPLETION)
+      const pcResult = await fetchWorldPointCloud(targetVid);
+
       const entityMap = new Map<EntityId, Entity>();
-      const converted = detail.entities.map(convertBackendEntityToEntity);
+      const converted = detail.entities.map((e) =>
+        convertBackendEntityToEntity(e, detail.geometries)
+      );
       converted.forEach((e) => entityMap.set(e.id, e));
       const roots = converted.filter((e) => !e.parentId).map((e) => e.id);
 
@@ -1196,6 +1240,12 @@ export const useREStore = create<RealityEngineStore>()(
         activeWorldVersion: targetVid,
         loadedFromBackend: true,
         selectedWorldId: detail.world_id,
+        geometries: detail.geometries ?? {},
+        pointCloudPositions: pcResult.available && pcResult.data ? pcResult.data.positions : null,
+        pointCloudColors: pcResult.available && pcResult.data ? (pcResult.data.colors ?? null) : null,
+        pointCloudCount: pcResult.available && pcResult.data ? pcResult.data.pointCount : 0,
+        pointCloudStatus: pcResult.available ? "AVAILABLE" : "UNAVAILABLE",
+        pointCloudError: pcResult.available ? null : (pcResult.error ?? "No point cloud artifact found"),
         world: {
           id: detail.world_id,
           projectId: "proj-backend-active",
@@ -1213,7 +1263,11 @@ export const useREStore = create<RealityEngineStore>()(
       get().addNotification({
         type: "success",
         title: "Real WorldIR Loaded",
-        message: `Successfully mounted ${detail.entity_count} entities from WorldStore version ${targetVid}.`,
+        message: `Mounted ${detail.entity_count} entities from version ${targetVid}. Point cloud: ${
+          pcResult.available && pcResult.data
+            ? `${pcResult.data.pointCount.toLocaleString()} points`
+            : "Unavailable"
+        }.`,
       });
       return true;
     },

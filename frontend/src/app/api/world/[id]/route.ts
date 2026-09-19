@@ -29,8 +29,8 @@ export async function GET(
     return NextResponse.json({ error: "Missing version id" }, { status: 400 });
   }
 
-  // Sanitize: version IDs are "v-<12 hex chars>" per WorldStore
-  if (!/^v-[0-9a-f]{8,16}$/.test(id) && id !== "latest") {
+  // Sanitize: alphanumeric version IDs per WorldStore (e.g. v-f145b8290bfc, v-kolkata-01, v-1, latest)
+  if (!/^[a-zA-Z0-9_\-\.]+$/.test(id)) {
     return NextResponse.json(
       { error: `Invalid version id format: ${id}` },
       { status: 400 }

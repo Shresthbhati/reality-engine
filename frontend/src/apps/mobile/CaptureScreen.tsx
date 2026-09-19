@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { XCircle, ChevronLeft, ClipboardCheck, AlertTriangle, CircleSlash } from 'lucide-react';
 import { useMobileStore } from './store';
 import type { FrameVerdict } from './types';
+import { computeCoverage, coverageGuidance, coverageSummaryLine } from './coverage';
 
 type CamState = 'idle' | 'starting' | 'live' | 'error';
 
@@ -179,6 +180,28 @@ export function CaptureScreen({ onExit }: { onExit: () => void }) {
           <span>{captureError}</span>
         </div>
       )}
+
+      {(() => {
+        if (!activeSession) return null;
+        const model = computeCoverage(activeSession);
+        const gaps = coverageGuidance(model);
+        const line = coverageSummaryLine(model);
+        if (!line) return null;
+        const next = gaps[0];
+        return (
+          <div className={`border-b px-4 py-2 ${model.fullyCovered ? 'border-[#2ecc71]/40 bg-[#2ecc71]/10' : next ? 'border-[#f1c40f]/40 bg-[#f1c40f]/10' : 'border-[#1f222b] bg-[#171922]'}`}>
+            <div className={`text-[11px] font-semibold ${model.fullyCovered ? 'text-[#2ecc71]' : 'text-[#f1c40f]'}`}>
+              {model.fullyCovered ? '✓ You don\'t need more footage here' : line}
+            </div>
+            {next && (
+              <div className="mt-0.5 text-[11px] leading-snug text-[#f0f1f6]">Next: {next.guidance}</div>
+            )}
+            {gaps.length > 1 && (
+              <div className="mt-0.5 font-mono text-[9px] text-[#9296a6]">+{gaps.length - 1} more direction{gaps.length - 1 === 1 ? '' : 's'} to cover</div>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="relative min-h-0 flex-1 bg-black">
         <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />

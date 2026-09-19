@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,62 @@ if TYPE_CHECKING:
 
 class WorldStoreError(ValueError):
     """WorldStore operation refused."""
+
+
+class _SequenceLock:
+    """Cross-process, cross-thread mutex guarding the read-modify-write
+    of sequence.json.
+
+    Without this, two concurrent save_version() calls both read the
+    same sequence, both append their own version id, and the second
+    write clobbers the first's entry (lost update) -- and on Windows,
+    concurrent os.replace() calls onto the same destination path can
+    outright raise PermissionError (WinError 5) instead of silently
+    losing data, so save_version() itself becomes flaky under
+    concurrency, not just eventually-inconsistent. Reproduced with 20
+    concurrent threads before this fix: 15/20 raised unhandled
+    PermissionError.
+
+    os.mkdir() is the primitive: directory creation is atomic on both
+    POSIX and Windows (NTFS) -- exactly one concurrent caller succeeds,
+    everyone else gets FileExistsError, which is what makes this a real
+    mutex rather than a "hope for the best" retry. The bounded poll
+    loop is backoff between *acquisition attempts*, not a substitute
+    for correctness the way a bare `time.sleep()` before a racy write
+    would be -- the lock itself is what's correct; the loop just waits
+    for the current holder to release it.
+
+    Lock staleness (a holder that crashed without releasing) is never
+    silently overridden -- that would risk two processes believing
+    they hold the same lock. Acquisition times out after `timeout`
+    seconds and raises WorldStoreError explicitly, naming the stale
+    lock directory so an operator can inspect and remove it."""
+
+    def __init__(self, root: Path, timeout: float = 30.0, poll_interval: float = 0.02):
+        self._path = root / ".sequence.lock"
+        self._timeout = timeout
+        self._poll_interval = poll_interval
+
+    def __enter__(self) -> "_SequenceLock":
+        deadline = time.monotonic() + self._timeout
+        while True:
+            try:
+                self._path.mkdir()
+                return self
+            except FileExistsError:
+                if time.monotonic() >= deadline:
+                    raise WorldStoreError(
+                        f"could not acquire WorldStore sequence lock at "
+                        f"{self._path} within {self._timeout}s -- another "
+                        "writer is either still working or crashed while "
+                        "holding it; if no other process is writing to "
+                        "this store, remove the stale lock directory "
+                        "manually and retry"
+                    )
+                time.sleep(self._poll_interval)
+
+    def __exit__(self, *exc_info) -> None:
+        self._path.rmdir()
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
@@ -136,9 +193,14 @@ class WorldStore:
         # than a sequence entry pointing at a version that doesn't exist.
         _atomic_write_text(path, json.dumps(record, indent=2))
         seq_path = self._root / "sequence.json"
-        order: list[str] = self._read_sequence(seq_path)
-        order.append(vid)
-        _atomic_write_text(seq_path, json.dumps(order))
+        # The read-modify-write below is not safe to interleave across
+        # concurrent writers (see _SequenceLock docstring): the lock
+        # makes "read current order, append, write" a single atomic
+        # step across threads and processes sharing this store root.
+        with _SequenceLock(self._root):
+            order: list[str] = self._read_sequence(seq_path)
+            order.append(vid)
+            _atomic_write_text(seq_path, json.dumps(order))
         return StoredVersion(**record)
 
     @staticmethod

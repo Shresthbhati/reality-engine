@@ -388,6 +388,21 @@ tasks:
       reads PLY/JSON point clouds, optional GNSS anchors, optional initial
       transform, outputs RegistrationResult with transform, covariance,
       ResidualStats, attempt log. 22 CLI tests pass.
+      Cross-session registration landed 2026-09-19
+      (registration/cross_session.py): contact gate (expanded-bbox
+      intersection refuses no-contact sessions BEFORE any ICP can
+      hallucinate a plausible local minimum), deterministic global coarse
+      alignment (centroid + 60 icosahedral rotations scored by
+      correspondence rmse + bounded coarse-to-fine Euler descent
+      15->3.75 deg, no RNG), ICP refinement of top starts via the
+      existing register_icp acceptance gates with a full-cloud polish
+      pass, identity verified by measurement (never assumed),
+      align_session_chain resolves sessions into the reference frame by
+      composition with unresolved sessions labeled and explained, and
+      align_reconstructed_sessions consumes orchestrator
+      ReconstructionResults directly. 16 pair/chain tests
+      (tests/test_cross_session_registration.py) + 7 vertical-slice
+      tests (tests/test_multi_session_alignment.py).
     verification:
       - "DONE: deterministic synthetic two-cloud known-offset test"
       - "DONE: rejection tests: no-overlap and degenerate geometry"
@@ -539,6 +554,17 @@ tasks:
     open: >
       NONE -- consumer and WorldIR write-back landed this pass.
       CLOSED 2026-09-15: reconstruction/fusion/consumer.py ingests plural
+      ADDITION 2026-09-19: cross-view depth consistency check landed
+      (reconstruction/consistency.py, wired into the orchestrator via
+      reconstruction/orchestrator_consistency.py): detects contradictory
+      depth evidence between views BEFORE fusion -- co-visibility in
+      pixel space (world-space association is circular), world-space
+      disagreement between unprojected samples normalized by mean
+      camera range, degenerate-baseline pairs excluded as inconclusive
+      (never counted "consistent"), contradiction records carry BOTH
+      measured depths, relative-depth maps refused. 9 tests
+      (tests/test_depth_consistency.py) + 4 orchestrator-wiring tests
+      (tests/test_orchestrator_consistency.py).
 
   - id: P6-03
     name: canonical MeshData completion
@@ -1224,7 +1250,8 @@ tasks:
   - id: P16-01
     name: downstream world compilers
     status: DONE
-    basis: glTF/Blender/USD exporters exist and are tested. Completed
+    basis: >-
+      glTF/Blender/USD exporters exist and are tested. Completed
       2026-09-18: CityJSON 1.1 writer (exporters/cityjson/exporter.py
       -- real CityJSON 1.1 structure: "type": "CityJSON",
       "version": "1.1", transform quantization with integer vertices,

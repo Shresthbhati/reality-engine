@@ -368,8 +368,9 @@ in `tests/test_evidence_quality.py`, full suite 1826 passed /
 
 ## Completed priorities (exact IDs — do NOT redo)
 
-Derived mechanically from `.agent/TASKS.yaml` (36 tasks: 12 DONE /
-13 PARTIAL / 11 MISSING after the P2-01 pass), not from prose:
+Derived mechanically from `.agent/TASKS.yaml` (39 tasks: 33 DONE /
+6 PARTIAL / 0 MISSING after the 2026-09-19 reliability campaign —
+earlier snapshots in this section are historical), not from prose:
 
 DONE: P0-01, P0-02, P0-03, P1-01, P1-02, P2-01 (all six sync methods
 landed 2026-09-15), P2-02, P3-01, P3-03, P5-01, P6-03 (bad-scale
@@ -459,3 +460,33 @@ Everything in "Completed priorities" has landed code + tests + ledger
 evidence. Do not reimplement from stale documents. Source of truth:
 source code, current tests, current TASKS.yaml, current
 EXECUTION_STATE.md, git log, the PR diff.
+
+
+## 2026-09-19 — Reliability campaign (agent4-recon-perception worktree)
+
+Branch `agent/freebuff-reconstruction` off post-#45 main. Landed
+(all red-first, ledger updated):
+
+- Cross-view depth consistency (reconstruction/consistency.py +
+  orchestrator_consistency.py wiring): contradictory metric depth
+  between views is DETECTED and REPORTED before fusion — pixel-space
+  co-visibility, world-space unprojected-disagreement measure,
+  degenerate-baseline pairs "inconclusive" (never counted consistent),
+  both depths carried on every contradiction record. 13 tests.
+- Cross-session registration (registration/cross_session.py): contact
+  gate + deterministic icosahedral coarse search + coarse-to-fine
+  descent + ICP refinement over the existing acceptance gates; chain
+  composition into a reference frame; unalignable sessions stay
+  "unresolved", identity is verified by measurement or refused.
+  align_reconstructed_sessions consumes orchestrator outputs directly.
+  23 tests.
+- Real-model availability report (perception/availability.py):
+  probe-only, side-effect-free; explicit status/reason/remediation per
+  real model (colmap/midas/sam/mask_rcnn — all AVAILABLE on this
+  machine, measured). 6 tests.
+- Ledger YAML repairs: P6-01 0-indent "- id" (whole-file parse break),
+  P16-01 plain-scalar basis; CAPABILITIES.yaml +4 entries (48 total).
+
+Full-suite gate: 2087 passed / 5 skipped / 0 failed (275.6 s, first
+run; re-verified post-ledger-edit). Ledger: 33 DONE / 6 PARTIAL /
+0 MISSING.

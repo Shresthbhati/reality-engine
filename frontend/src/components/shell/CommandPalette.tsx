@@ -13,6 +13,8 @@ import type { WorkspaceId } from '@/types/reality-engine';
 // ─── Command Definitions ──────────────────────────────────────────────────────
 
 type CommandCategory =
+  | 'Mode'
+  | 'Scale'
   | 'World'
   | 'Session'
   | 'Build'
@@ -36,9 +38,14 @@ export default function CommandPalette() {
   const commandPaletteOpen = useREStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useREStore((s) => s.setCommandPaletteOpen);
   const setActiveWorkspace = useREStore((s) => s.setActiveWorkspace);
+  const globalMode = useREStore((s) => s.globalMode);
+  const setGlobalMode = useREStore((s) => s.setGlobalMode);
+  const spatialScale = useREStore((s) => s.spatialScale);
+  const setSpatialScale = useREStore((s) => s.setSpatialScale);
   const toggleViewportOption = useREStore((s) => s.toggleViewportOption);
   const setActiveMeasurementTool = useREStore((s) => s.setActiveMeasurementTool);
   const toggleOutliner = useREStore((s) => s.toggleOutliner);
+  const toggleLeftNav = useREStore((s) => s.toggleLeftNav);
   const toggleInspector = useREStore((s) => s.toggleInspector);
   const toggleBottomDrawer = useREStore((s) => s.toggleBottomDrawer);
   const setShadingMode = useREStore((s) => s.setShadingMode);
@@ -65,6 +72,142 @@ export default function CommandPalette() {
 
   const commands: Command[] = useMemo(
     () => [
+      // ── Global Modes
+      {
+        id: 'mode-explore',
+        label: 'Mode: EXPLORE (Free Navigation & View)',
+        category: 'Mode',
+        keywords: ['explore', 'fly', 'orbit', 'walk'],
+        action: () => {
+          setGlobalMode('EXPLORE');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'mode-inspect',
+        label: 'Mode: INSPECT (Entity & Uncertainty Analysis)',
+        category: 'Mode',
+        keywords: ['inspect', 'metrics', 'provenance', 'error'],
+        action: () => {
+          setGlobalMode('INSPECT');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'mode-edit',
+        label: 'Mode: EDIT (Spatial Geometry & Annotations)',
+        category: 'Mode',
+        keywords: ['edit', 'modify', 'transform', 'tag'],
+        action: () => {
+          setGlobalMode('EDIT');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'mode-capture',
+        label: 'Mode: CAPTURE (Multi-Sensor Instrument & Guidance)',
+        category: 'Mode',
+        keywords: ['capture', 'sensor', 'camera', 'lidar', 'mobile'],
+        action: () => {
+          setGlobalMode('CAPTURE');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'mode-build',
+        label: 'Mode: BUILD (Reconstruction Pipeline & DAG)',
+        category: 'Mode',
+        keywords: ['build', 'reconstruct', 'pipeline', 'dag'],
+        action: () => {
+          setGlobalMode('BUILD');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'mode-review',
+        label: 'Mode: REVIEW (Evidence Lineage & Validation)',
+        category: 'Mode',
+        keywords: ['review', 'evidence', 'lineage', 'qa'],
+        action: () => {
+          setGlobalMode('REVIEW');
+          setCommandPaletteOpen(false);
+        },
+      },
+
+      // ── Global Spatial Scales
+      {
+        id: 'scale-room',
+        label: 'Scale: ROOM (0 – 10 m · Sub-Centimeter Detail)',
+        category: 'Scale',
+        keywords: ['scale', 'room', 'interior', 'lod4'],
+        action: () => {
+          setSpatialScale('ROOM');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'scale-building',
+        label: 'Scale: BUILDING (10 – 50 m · Facades & Massing)',
+        category: 'Scale',
+        keywords: ['scale', 'building', 'structure', 'lod3'],
+        action: () => {
+          setSpatialScale('BUILDING');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'scale-street',
+        label: 'Scale: STREET (50 – 200 m · Right-of-Way & Utilities)',
+        category: 'Scale',
+        keywords: ['scale', 'street', 'road', 'corridor'],
+        action: () => {
+          setSpatialScale('STREET');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'scale-block',
+        label: 'Scale: BLOCK (200 – 1,000 m · Urban Parcels)',
+        category: 'Scale',
+        keywords: ['scale', 'block', 'parcels', 'lod2'],
+        action: () => {
+          setSpatialScale('BLOCK');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'scale-district',
+        label: 'Scale: DISTRICT (15 – 40 km · Urban Sectors)',
+        category: 'Scale',
+        keywords: ['scale', 'district', 'borough', 'lod1'],
+        action: () => {
+          setSpatialScale('DISTRICT');
+          setCommandPaletteOpen(false);
+        },
+      },
+      {
+        id: 'scale-city',
+        label: 'Scale: CITY (40+ km · Metropolitan Area)',
+        category: 'Scale',
+        keywords: ['scale', 'city', 'metro', 'lod0'],
+        action: () => {
+          setSpatialScale('CITY');
+          setCommandPaletteOpen(false);
+        },
+      },
+
+      // Navigation & Panels
+      {
+        id: 'toggle-left-nav',
+        label: 'Toggle World Navigation Panel (⌘B)',
+        category: 'Workspace',
+        shortcut: '⌘B',
+        action: () => {
+          toggleLeftNav();
+          setCommandPaletteOpen(false);
+        },
+      },
+
       // Reconstruction & Build
       {
         id: 'start-reconstruction',
@@ -346,6 +489,8 @@ export default function CommandPalette() {
   if (!commandPaletteOpen) return null;
 
   const CATEGORY_COLORS: Record<CommandCategory, string> = {
+    Mode:      '#00e5ff',
+    Scale:     '#38bdf8',
     World:     '#3d8ef7',
     Session:   '#9898b0',
     Build:     '#f0a050',

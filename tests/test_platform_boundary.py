@@ -16,10 +16,12 @@ docs/implementation/PLATFORM_APPLICATION_SEPARATION.md.
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.physics
+
 import ast
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

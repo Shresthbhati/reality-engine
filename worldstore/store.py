@@ -28,9 +28,12 @@ import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING
 
 from world_ir.artifact_store import FileArtifactStore
+
+if TYPE_CHECKING:
+    from world_ir.world_v1 import WorldIR
 
 
 class WorldStoreError(ValueError):
@@ -63,7 +66,7 @@ def _atomic_write_text(path: Path, text: str) -> None:
 class StoredVersion:
     version_id: str
     world_id: str
-    parent: Optional[str]
+    parent: str | None
     artifact_uri: str
     artifact_hash: str
     #: Ids of entities/geometries that differ from `parent`'s saved world
@@ -93,11 +96,11 @@ class WorldStore:
 
     def save_version(
         self,
-        world: "WorldIR",
+        world: WorldIR,
         *,
-        parent: Optional[str],
-        version_id: Optional[str] = None,
-        source_session_ids: Optional[List[str]] = None,
+        parent: str | None,
+        version_id: str | None = None,
+        source_session_ids: list[str] | None = None,
     ) -> StoredVersion:
         vid = version_id or f"v-{uuid.uuid4().hex[:12]}"
         path = self._versions_dir / f"{vid}.json"
@@ -106,8 +109,8 @@ class WorldStore:
                 f"version {vid} already exists -- versions are immutable; "
                 "save a new version instead of overwriting observed reality"
             )
-        changed_entity_ids: List[str] = []
-        changed_geometry_ids: List[str] = []
+        changed_entity_ids: list[str] = []
+        changed_geometry_ids: list[str] = []
         if parent is not None:
             from world_ir.diff import diff_worlds
 
@@ -133,13 +136,13 @@ class WorldStore:
         # than a sequence entry pointing at a version that doesn't exist.
         _atomic_write_text(path, json.dumps(record, indent=2))
         seq_path = self._root / "sequence.json"
-        order: List[str] = self._read_sequence(seq_path)
+        order: list[str] = self._read_sequence(seq_path)
         order.append(vid)
         _atomic_write_text(seq_path, json.dumps(order))
         return StoredVersion(**record)
 
     @staticmethod
-    def _read_sequence(seq_path: Path) -> List[str]:
+    def _read_sequence(seq_path: Path) -> list[str]:
         if not seq_path.exists():
             return []
         try:
@@ -170,9 +173,7 @@ class WorldStore:
                 f"version {version_id} record is corrupted: {exc}"
             ) from exc
 
-    def load_version(self, version_id: str) -> "WorldIR":
-        from world_ir.world_v1 import WorldIR
-
+    def load_version(self, version_id: str) -> WorldIR:
         record = self._record(version_id)
         payload = self._store.get(record["artifact_uri"])
         digest = record["artifact_hash"]
@@ -183,15 +184,16 @@ class WorldStore:
                 f"version {version_id} artifact hash mismatch -- stored "
                 "world bytes are corrupted or tampered"
             )
+        from world_ir.world_v1 import WorldIR
         return WorldIR.from_dict(json.loads(payload.decode("utf-8")))
 
-    def parents(self, version_id: str) -> List[str]:
+    def parents(self, version_id: str) -> list[str]:
         parent = self._record(version_id)["parent"]
         return [parent] if parent else []
 
-    def ancestors(self, version_id: str) -> List[str]:
+    def ancestors(self, version_id: str) -> list[str]:
         """Root-first lineage (V1, V2 for a V3 whose parent is V2)."""
-        chain: List[str] = []
+        chain: list[str] = []
         current = self._record(version_id)["parent"]
         seen = set()
         while current and current not in seen:
@@ -201,7 +203,7 @@ class WorldStore:
         chain.reverse()
         return chain
 
-    def list_versions(self) -> List[StoredVersion]:
+    def list_versions(self) -> list[StoredVersion]:
         """Save-order listing (not uuid order): the version file's
         mtime ranks creations; ties fall back to the sequence number
         implied by an index file maintained at save time.
@@ -223,13 +225,13 @@ class WorldStore:
 
     # ---- integrity ----
 
-    def verify_version(self, version_id: str) -> List[dict]:
+    def verify_version(self, version_id: str) -> list[dict]:
         """Re-digest the stored world bytes. Returns a list of failure
         records (empty when the version verifies)."""
         import hashlib
 
         record = self._record(version_id)
-        failures: List[dict] = []
+        failures: list[dict] = []
         try:
             payload = self._store.get(record["artifact_uri"])
         except Exception as exc:  # ArtifactNotFoundError or filesystem loss

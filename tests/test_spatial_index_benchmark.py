@@ -21,7 +21,13 @@ from typing import List, Tuple
 from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Vector3
 from world_ir.world_v1 import WorldIR
 
-from engine.scene_graph.spatial_index import SpatialIndex, AcceleratedSpatialIndex
+from engine.scene_graph.spatial_index import SpatialIndex
+
+# NOTE: the standalone AcceleratedSpatialIndex/SpatialIndex split this file
+# originally benchmarked was superseded during PR review: SpatialIndex
+# itself is now grid-accelerated (engine/scene_graph/spatial_index.py),
+# so "accelerated" below is just SpatialIndex and "flat" is a brute-force
+# reference scan kept inline for the comparison this file exists to make.
 
 
 Point = Tuple[float, float, float]
@@ -75,6 +81,46 @@ class BenchmarkResult:
     use_accel: bool
 
 
+class _BruteForceIndex:
+    """O(n) reference scan -- the "flat" comparison arm now that
+    SpatialIndex itself is grid-accelerated. Same query surface as
+    SpatialIndex (nearest/within_radius/within_region/__len__), no grid."""
+
+    def __init__(self, world: WorldIR):
+        self.world = world
+        self._entities = [
+            (e, e.transform["position"]) for e in world.entities.values() if e.transform
+        ]
+
+    def __len__(self):
+        return len(self._entities)
+
+    def nearest(self, point, k=1):
+        ranked = sorted(
+            self._entities,
+            key=lambda pair: math.dist(point, (pair[1]["x"], pair[1]["y"], pair[1]["z"])),
+        )
+        return [
+            (e, math.dist(point, (p["x"], p["y"], p["z"]))) for e, p in ranked[:k]
+        ]
+
+    def within_radius(self, point, radius):
+        results = []
+        for e, p in self._entities:
+            d = math.dist(point, (p["x"], p["y"], p["z"]))
+            if d <= radius:
+                results.append((e, d))
+        results.sort(key=lambda pair: pair[1])
+        return results
+
+    def within_region(self, bounds_min, bounds_max):
+        results = []
+        for e, p in self._entities:
+            if all(bounds_min[i] <= (p["x"], p["y"], p["z"])[i] <= bounds_max[i] for i in range(3)):
+                results.append(e)
+        return results
+
+
 def run_benchmark(
     entity_count: int,
     use_accel: bool = True,
@@ -89,9 +135,9 @@ def run_benchmark(
     gc.collect()
     start = time.perf_counter()
     if use_accel:
-        index = AcceleratedSpatialIndex(world, force_accel=True)
-    else:
         index = SpatialIndex(world)
+    else:
+        index = _BruteForceIndex(world)
     build_time = time.perf_counter() - start
     
     # Verify index has expected number of entities
@@ -192,8 +238,8 @@ def main():
     # Verify correctness: both modes should return same results
     print("\nCorrectness check (1000 entities):")
     world = _make_world_with_entities(1000)
-    idx_accel = AcceleratedSpatialIndex(world, force_accel=True)
-    idx_flat = SpatialIndex(world)
+    idx_accel = SpatialIndex(world)
+    idx_flat = _BruteForceIndex(world)
     
     q = (10.0, 5.0, 0.0)
     nearest_accel = idx_accel.nearest(q, k=5)

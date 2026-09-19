@@ -15,6 +15,7 @@ from typing import Optional
 
 from .coordinates import Frame
 from .entity import EntityRegistry
+from .v2_extensions import TemporalHistory, TopologyGraph
 
 
 @dataclass
@@ -35,8 +36,13 @@ class WorldIR:
     temporal_state: dict = field(default_factory=dict)
     branches: dict = field(default_factory=dict)
 
+    # WorldIR 2.0 (P9-01, additive): the world's ordered event log.
+    # v1 worlds serialize without this key (empty history is omitted)
+    # and load with an empty history -- never a fabricated one.
+    temporal_history: TemporalHistory = field(default_factory=TemporalHistory)
+
     def to_dict(self) -> dict:
-        return {
+        d = {
             "id": self.id,
             "version": self.version,
             "coordinate_system": self.coordinate_system.value,
@@ -51,6 +57,17 @@ class WorldIR:
             "temporal_state": self.temporal_state,
             "branches": self.branches,
         }
+        if self.temporal_history.events:
+            d["temporal_history"] = self.temporal_history.to_dict()
+        return d
+
+    def topology(self) -> TopologyGraph:
+        """Containment + connectivity DERIVED from the current entity
+        relationships -- computed on demand, never stale, never stored
+        as a second source of truth. Dangling relationship targets are
+        visible on the returned graph (reported_dangling), not healed.
+        """
+        return TopologyGraph.from_registry(list(self.entities))
 
     @staticmethod
     def from_dict(data: dict) -> "WorldIR":
@@ -68,4 +85,7 @@ class WorldIR:
             sessions=data.get("sessions", {}),
             temporal_state=data.get("temporal_state", {}),
             branches=data.get("branches", {}),
+            temporal_history=TemporalHistory.from_dict(
+                data.get("temporal_history", [])
+            ),
         )

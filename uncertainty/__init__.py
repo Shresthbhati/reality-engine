@@ -8,9 +8,14 @@ error propagation over the repo's geometry types, and UNKNOWN
 propagates as UNKNOWN through every operator."""
 
 from uncertainty.propagation import (
+    Covariance3,
+    PropagationError,
     compose_pose_covariances,
+    depth_to_world_covariance,
     difference,
     linear_propagate,
+    propagate_chain,
+    propagate_point_through_pose,
     rotate_covariance,
     scale,
     sum,
@@ -22,6 +27,11 @@ __all__ = [
     "UNKNOWN",
     "BASES",
     "Uncertain",
+    "Covariance3",
+    "PropagationError",
+    "depth_to_world_covariance",
+    "propagate_chain",
+    "propagate_point_through_pose",
     "sum",
     "difference",
     "scale",

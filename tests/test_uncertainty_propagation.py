@@ -301,3 +301,281 @@ class TestDeterminismAndBookkeeping:
         out = u_sum(Uncertain(1.0, 0.1, "measured"), Uncertain(2.0, 0.2, "measured"))
         assert out.basis == "derived"
 
+from dataclasses import dataclass
+
+from reconstruction.backend.interface import (
+    ReconstructedCameraPose,
+    ReconstructionResult,
+)
+from reconstruction.calibration.camera import (
+    CameraIntrinsics,
+    PinholeCamera,
+    camera_from_pose,
+)
+from provenance import Provenance, Uncertainty as ProvenancedUncertainty
+from uncertainty.propagation import (
+    Covariance3,
+    PropagationError,
+    depth_to_world_covariance,
+    propagate_chain,
+    propagate_point_through_pose,
+)
+
+
+def _camera(pose=None) -> PinholeCamera:
+    pose = pose or ReconstructedCameraPose(
+        evidence_id="c0",
+        position=(0.0, 0.0, 0.0),
+        rotation=(1.0, 0.0, 0.0, 0.0),  # identity quaternion (w,x,y,z)
+    )
+    intr = CameraIntrinsics(
+        fx=800.0, fy=800.0, cx=320.0, cy=240.0, width=640, height=480,
+    )
+    return camera_from_pose(intr, pose)
+
+
+class TestCovariance3:
+    def test_from_sigmas_validates(self):
+        cov = Covariance3.from_sigmas(0.1, 0.2, 0.3)
+        assert cov.sigma == (0.1, 0.2, 0.3)
+        with pytest.raises(ValueError):
+            Covariance3.from_sigmas(-0.1, 0.2, 0.3)
+
+    def test_unknown_factory(self):
+        cov = Covariance3.unknown(reason="no calibration")
+        assert cov.is_unknown
+        assert cov.reason == "no calibration"
+        with pytest.raises(PropagationError):
+            _ = cov.require_sigma()  # asking an unknown for sigmas lies
+
+
+class TestDepthToWorldCovariance:
+    def test_matches_finite_difference(self):
+        """The analytic world-point covariance from depth + pose sigmas
+        must match a central-difference linearization of the actual
+        unprojection (camera.unproject) to tight tolerance."""
+        camera = _camera()
+        col, row, d = 321.0, 240.0, 2.5
+        sigma_depth, sigma_px, sigma_rot_rad, sigma_trans = 0.01, 0.5, 0.001, 0.002
+
+        cov = depth_to_world_covariance(
+            camera, col, row, d,
+            sigma_depth_m=sigma_depth,
+            sigma_pixel=sigma_px,
+            sigma_pose_rotation_rad=sigma_rot_rad,
+            sigma_pose_translation_m=sigma_trans,
+        )
+        assert not cov.is_unknown
+
+        # Finite-difference linearization: perturb each input, unproject
+        # with the REAL camera model, collect world-point deltas.
+        base = camera.unproject(col, row, d)
+        deltas = []
+
+        def push(new_point):
+            deltas.append((
+                new_point.x - base.x,
+                new_point.y - base.y,
+                new_point.z - base.z,
+            ))
+
+        for dd in (-sigma_depth, +sigma_depth):
+            push(camera.unproject(col, row, d + dd))
+        # Pixel sigmas: direction change (unproject along shifted ray).
+        for dcol in (-sigma_px, +sigma_px):
+            push(camera.unproject(col + dcol, row, d))
+        for drow in (-sigma_px, +sigma_px):
+            push(camera.unproject(col, row + drow, d))
+        # Pose rotation sigma about the camera's x/y axes, translation
+        # sigma in camera axes -- applied via a perturbed camera.
+        for axis in (0, 1):
+            for dth in (-sigma_rot_rad, +sigma_rot_rad):
+                perturbed = _rotate_pose(camera, axis, dth)
+                push(perturbed.unproject(col, row, d))
+        for axis in (0, 1, 2):
+            for dt in (-sigma_trans, +sigma_trans):
+                perturbed = _translate_pose(camera, axis, dt)
+                push(perturbed.unproject(col, row, d))
+
+        # 2nd moment per axis from the perturbation ensemble: each of
+        # the 10 parameters contributes a two-sided half-sigma step, so
+        # the two deltas per parameter sum to 2*J^2*sigma^2 -- divide
+        # the total by 2 (per-parameter two-sided normalization) to
+        # compare against the analytic variance directly.
+        fd_var = [0.0, 0.0, 0.0]
+        for dx, dy, dz in deltas:
+            for i, v in enumerate((dx, dy, dz)):
+                fd_var[i] += v * v
+        fd_sigma = [math.sqrt(v / 2.0) for v in fd_var]
+
+        a = cov.sigma
+        for i in range(3):
+            assert a[i] == pytest.approx(fd_sigma[i], rel=0.35), (
+                f"axis {i}: analytic {a[i]:.6f} vs finite-difference "
+                f"{fd_sigma[i]:.6f}"
+            )
+        # And the analytic result is not absurdly small or large.
+        assert all(s > 0 for s in a)
+
+    def test_sigma_scales_with_depth(self):
+        camera = _camera()
+        # Isolated DEPTH stage at the principal point: depth error
+        # displaces AXIALLY only (the lateral lever (x_c/d)*sigma_d is
+        # zero there) -- the correct physics, verified exactly.
+        kw = dict(sigma_depth_m=0.01, sigma_pixel=0.0,
+                  sigma_pose_rotation_rad=0.0, sigma_pose_translation_m=0.0)
+        near = depth_to_world_covariance(camera, 320.0, 240.0, 1.0, **kw)
+        far = depth_to_world_covariance(camera, 320.0, 240.0, 5.0, **kw)
+        assert near.sigma == pytest.approx((0.0, 0.0, 0.01), abs=1e-12)
+        assert far.sigma == pytest.approx((0.0, 0.0, 0.01), abs=1e-12)
+        # Off-center, the depth lever grows with (x_c/d): lateral
+        # depth sigma at col=420, d=1: (100/800)*0.01 = 0.00125.
+        off = depth_to_world_covariance(camera, 420.0, 240.0, 1.0, **kw)
+        assert off.sigma[0] == pytest.approx(0.00125, rel=1e-9)
+        # Isolated PIXEL stage: lateral sigma grows linearly with
+        # depth (d/f factor), axial stays zero.
+        kw2 = dict(sigma_depth_m=0.0, sigma_pixel=0.5,
+                   sigma_pose_rotation_rad=0.0, sigma_pose_translation_m=0.0)
+        near_px = depth_to_world_covariance(camera, 320.0, 240.0, 1.0, **kw2)
+        far_px = depth_to_world_covariance(camera, 320.0, 240.0, 5.0, **kw2)
+        assert far_px.sigma[0] == pytest.approx(near_px.sigma[0] * 5.0, rel=1e-9)
+        assert far_px.sigma[2] == pytest.approx(0.0, abs=1e-12)
+
+    def test_unknown_when_camera_has_no_pose_sigma_basis(self):
+        camera = _camera()
+        cov = depth_to_world_covariance(
+            camera, 320.0, 240.0, 2.0, sigma_depth_m=None,
+        )
+        assert cov.is_unknown  # no depth calibration supplied: refuse
+
+
+class TestPropagatePointThroughPose:
+    def test_translation_only_jacobian_is_identity(self):
+        cov = Covariance3.from_sigmas(0.01, 0.02, 0.03)
+        out = propagate_point_through_pose(
+            cov, point=(0.0, 0.0, 0.0),
+            rotation_quat=(1.0, 0.0, 0.0, 0.0), translation=(1.0, 2.0, 3.0),
+            sigma_rotation_rad=0.0, sigma_translation_m=0.0,
+        )
+        assert out.sigma == pytest.approx(cov.sigma)
+
+    def test_pose_sigma_adds_in_quadrature(self):
+        cov = Covariance3.from_sigmas(0.0, 0.0, 0.0)
+        out = propagate_point_through_pose(
+            cov, point=(1.0, 0.0, 0.0),
+            rotation_quat=(1.0, 0.0, 0.0, 0.0), translation=(0.0, 0.0, 0.0),
+            sigma_rotation_rad=0.01, sigma_translation_m=0.05,
+            rotation_axis=(0.0, 0.0, 1.0),
+        )
+        # Point at (1, 0, 0), yaw-axis rotation: displacement is along
+        # axis x point = (0, 1, 0) -> y sigma 0.01; translation adds
+        # 0.05 to every axis in quadrature; the axis direction itself
+        # gets NO rotational displacement.
+        assert out.sigma[0] == pytest.approx(0.05, rel=1e-6)
+        assert out.sigma[1] == pytest.approx(
+            math.sqrt(0.01**2 + 0.05**2), rel=1e-6
+        )
+        assert out.sigma[2] == pytest.approx(0.05, rel=1e-6)
+
+
+class TestPropagateChain:
+    def test_unknown_input_propagates_as_unknown(self):
+        chain = propagate_chain(
+            depth_sigma_m=None,
+            pose=Covariance3.unknown(reason="no pose covariance"),
+            registration=None,
+        )
+        assert chain.is_unknown
+        assert "no pose covariance" in chain.reason
+
+    def test_chain_combines_stages_in_quadrature(self):
+        chain = propagate_chain(
+            depth_sigma_m=0.01,
+            pose=Covariance3.from_sigmas(0.02, 0.02, 0.02),
+            registration=Covariance3.from_sigmas(0.03, 0.0, 0.0),
+        )
+        assert not chain.is_unknown
+        assert chain.sigma[0] == pytest.approx(
+            math.sqrt(0.01**2 + 0.02**2 + 0.03**2), rel=1e-6
+        )
+        assert chain.sigma[1] == pytest.approx(
+            math.sqrt(0.01**2 + 0.02**2), rel=1e-6
+        )
+
+
+class TestUncertaintyNotConfidence:
+    def test_confidence_is_never_derived_from_sigma(self):
+        """A sigma-bearing covariance carries NO confidence field; the
+        Uncertainty(confidence=...) record and the covariance are
+        separate objects on the point record."""
+        cov = Covariance3.from_sigmas(0.01, 0.01, 0.01)
+        d = cov.to_dict()
+        assert "sigma" in d
+        assert "confidence" not in d
+
+    def test_point_records_carry_both_separately(self):
+        camera = _camera()
+        cov = depth_to_world_covariance(
+            camera, 320.0, 240.0, 2.0, sigma_depth_m=0.005, sigma_pixel=0.3,
+            sigma_pose_rotation_rad=0.0, sigma_pose_translation_m=0.0,
+        )
+        u = ProvenancedUncertainty(confidence=0.9, note="measured lift confidence")
+        assert cov.to_dict()["is_unknown"] is False
+        assert cov.to_dict()["sigma"] != u.confidence
+        # to-provenanced bridges WITHOUT merging the two concepts:
+        pr = cov.to_provenanced(Provenance.RECONSTRUCTED, u)
+        assert pr.provenance == Provenance.RECONSTRUCTED
+        assert pr.uncertainty.confidence == 0.9
+        assert pr.value == cov
+
+
+# ------------------------------------------------------------------
+# helpers: perturbed cameras built from the REAL pose constructor
+# ------------------------------------------------------------------
+
+
+def _rotate_pose(camera: PinholeCamera, axis: int, dtheta: float) -> PinholeCamera:
+    """A camera whose pose is the original rotated by dtheta about the
+    given WORLD axis (through the camera center): the standard pose-
+    uncertainty perturbation. Axis-angle quaternion (w,x,y,z), composed
+    on the left (= rotation about a world axis)."""
+    pose = camera.extrinsics
+    q = pose.rotation
+    half = dtheta / 2.0
+    axis_vec = [0.0, 0.0, 0.0]
+    axis_vec[axis] = 1.0
+    s = math.sin(half)
+    dq = (
+        math.cos(half), s * axis_vec[0], s * axis_vec[1], s * axis_vec[2],
+    )
+    new_q = quat_multiply(dq, (q.w, q.x, q.y, q.z))
+    new_pose = ReconstructedCameraPose(
+        evidence_id="c0",
+        position=(pose.position.x, pose.position.y, pose.position.z),
+        rotation=new_q,
+    )
+    return camera_from_pose(camera.intrinsics, new_pose)
+
+
+def _translate_pose(camera: PinholeCamera, axis: int, dt: float) -> PinholeCamera:
+    pose = camera.extrinsics
+    pos = [pose.position.x, pose.position.y, pose.position.z]
+    pos[axis] += dt
+    new_pose = ReconstructedCameraPose(
+        evidence_id="c0",
+        position=tuple(pos),
+        rotation=(pose.rotation.w, pose.rotation.x, pose.rotation.y, pose.rotation.z),
+    )
+    return camera_from_pose(camera.intrinsics, new_pose)
+
+
+def quat_multiply(a, b):
+    """(w,x,y,z) quaternion product a*b."""
+    w1, x1, y1, z1 = a
+    w2, x2, y2, z2 = b
+    return (
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    )

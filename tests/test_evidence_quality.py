@@ -264,3 +264,121 @@ class TestDomainAgnosticismAndDeterminism:
         assert report.gsd_mm_per_px is None
         assert report.detail_tier == "unsupported"
         assert report.observed_fraction == 0.0
+
+
+class TestViewAngleDiversity:
+    """P7-04 expansion (directive section 11): view-angle diversity is
+    MEASURED per point -- the angular spread of the observing cameras'
+    ray-to-normal angles. A degenerate local neighborhood (collinear /
+    coincident kNN) has no defensible normal; those points contribute
+    nothing rather than a fabricated normal."""
+
+    def _div_cam(self, eid, pos, pitch_deg):
+        """Camera looking +Z pitched by pitch_deg about +X (w,x,y,z)."""
+        import math as _m
+        half = _m.radians(pitch_deg) / 2.0
+        pose = ReconstructedCameraPose(
+            evidence_id=eid,
+            position=pos,
+            rotation=(_m.cos(half), _m.sin(half), 0.0, 0.0),
+        )
+        return camera_from_pose(_intrinsics(), pose)
+
+    def _aimed_cam(self, eid, pos):
+        """Camera at `pos` with its optical axis aimed exactly at the
+        ring fixture's cluster center (0,0,2): yaw about +Y then pitch
+        about the local +X, both as half-angle quaternions."""
+        import math as _m
+        dx, dy, dz = -pos[0], -pos[1], 2.0 - pos[2]
+        yaw = _m.atan2(dx, dz)          # about +Y
+        pitch = -_m.atan2(dy, _m.hypot(dx, dz))  # about +X
+        qy = (_m.cos(yaw / 2), 0.0, _m.sin(yaw / 2), 0.0)
+        qx = (_m.cos(pitch / 2), _m.sin(pitch / 2), 0.0, 0.0)
+        from engine.physics.math3 import Quat
+        q = Quat(*qy).multiply(Quat(*qx))
+        pose = ReconstructedCameraPose(
+            evidence_id=eid, position=pos,
+            rotation=(q.w, q.x, q.y, q.z))
+        return camera_from_pose(_intrinsics(), pose)
+
+    def test_flat_wall_single_view_direction_low_diversity(self):
+        # All cameras in a row looking at a planar z=2 wall: every ray
+        # hits the normal head-on -> angular spread ~ 0.
+        cams = [self._div_cam(f"c{i}", (0.4 * i - 0.4, 0.0, 0.0), 0.0)
+                for i in range(4)]
+        # Planar z=2 patch spread in BOTH x and y (collinear points
+        # would be a degenerate neighborhood, not a wall).
+        pts = [_point(f"p{i}", (0.2 * (i % 3) - 0.3, 0.1 * (i // 3) - 0.05,
+                                2.0), ["c0", "c1", "c2"])
+               for i in range(6)]
+        report = assess_evidence_quality(_result(pts, cams), cams)
+        assert report.view_angle_diversity_deg is not None
+        assert report.view_angle_diversity_deg < 30.0
+        assert report.view_angle_diversity_n == 6
+
+    def test_converging_ring_high_diversity(self):
+        # Cameras ring the point cluster at wide angles: rays approach
+        # the surface normal from very different directions -> large
+        # angular spread.
+        # Elevation CONTRAST is what spreads ray-to-normal angles on a
+        # horizontal patch: c0 nearly overhead (~0 deg), c1/c2 far and
+        # low (~59 deg). A same-height ring grazes at a constant angle
+        # and measures ~0 by construction -- not a diverse capture.
+        cams = [self._aimed_cam("c0", (0.0, 0.0, 0.5)),
+                self._aimed_cam("c1", (2.5, 0.0, 0.5)),
+                self._aimed_cam("c2", (-2.5, 0.0, 0.5))]
+        pts = [_point(f"p{i}", (0.05 * i - 0.1, 0.03 * ((i % 2) * 2 - 1),
+                                2.0), ["c0", "c1", "c2"])
+               for i in range(4)]
+        report = assess_evidence_quality(_result(pts, cams), cams)
+        assert report.view_angle_diversity_deg is not None
+        assert report.view_angle_diversity_deg > 45.0
+
+    def test_degenerate_neighborhood_excluded(self):
+        # Collinear points: kNN covariance is rank-1 -> no defensible
+        # normal -> the point contributes nothing (n = 0), not a
+        # fabricated angle.
+        cams = [self._div_cam("c0", (0.0, 0.0, 0.0), 0.0)]
+        pts = [_point(f"p{i}", (0.1 * i, 0.0, 2.0), ["c0"]) for i in range(5)]
+        report = assess_evidence_quality(_result(pts, cams), cams)
+        assert report.view_angle_diversity_deg is None
+        assert report.view_angle_diversity_n == 0
+
+    def test_single_observer_contributes_nothing(self):
+        # One camera = no angular spread to measure; the point is
+        # excluded from the median even though its normal is fine.
+        cams = [self._div_cam("c0", (0.0, 0.0, 0.0), 0.0),
+                self._div_cam("c1", (5.0, 0.0, 0.0), 0.0)]  # c1 looks away
+        pts = [_point("p0", (0.0, 0.0, 2.0), ["c0"]),
+               _point("p1", (0.0, 0.0, 2.5), ["c0"])]
+        report = assess_evidence_quality(_result(pts, cams), cams)
+        assert report.view_angle_diversity_deg is None
+        assert report.view_angle_diversity_n == 0
+
+    def test_unknown_when_nothing_observed(self):
+        cams = [self._div_cam("c0", (0.0, 0.0, 0.0), 0.0)]
+        pts = [_point("p0", (0.0, 0.0, -2.0), ["c0"])]  # behind camera
+        report = assess_evidence_quality(_result(pts, cams), cams)
+        assert report.view_angle_diversity_deg is None
+        assert report.view_angle_diversity_n == 0
+
+
+class TestViewAngleDiversitySamplingRegression:
+    """Regression (2026-09-18): when eligible points exceed max_points,
+    the stride sample reindexes pts -- the per-point loop must index by
+    the SAMPLED row, not the original point id (IndexError before the
+    fix; caught by the CLI vertical-slice on a 25-point fixture)."""
+
+    def test_stride_sampling_indexes_sampled_rows(self):
+        cams = [TestViewAngleDiversity()._div_cam(
+            f"c{i}", (0.4 * i - 0.6, 0.0, 0.0), 0.0) for i in range(4)]
+        # 600 eligible (>=2 observers) planar points -> the default
+        # max_points=512 stride sample kicks in and reindexes pts.
+        pts = [_point(f"p{i}",
+                      (0.2 * (i % 20) - 2.0, 0.1 * (i // 20) - 1.0, 2.0),
+                      ["c0", "c1", "c2"])
+               for i in range(600)]
+        report = assess_evidence_quality(_result(pts, cams), cams)
+        assert report.view_angle_diversity_deg is not None
+        assert report.view_angle_diversity_n > 0
+        assert report.view_angle_diversity_n <= 512

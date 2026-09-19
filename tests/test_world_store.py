@@ -97,3 +97,42 @@ class TestWorldStorePersistence:
         store = WorldStore(root)
         with pytest.raises(WorldStoreError, match="unknown version"):
             store.load_version("v-nope")
+
+    def test_root_version_has_no_changed_ids(self, root):
+        from worldstore.store import WorldStore
+
+        store = WorldStore(root)
+        v1 = store.save_version(_world_with_entity(), parent=None)
+        assert v1.changed_entity_ids == []
+        assert v1.changed_geometry_ids == []
+
+    def test_child_version_records_changed_entity_ids(self, root):
+        from provenance import Provenance
+        from world_ir import Entity, EntityType
+        from worldstore.store import WorldStore
+
+        store = WorldStore(root)
+        v1 = store.save_version(_world_with_entity("w-1"), parent=None)
+
+        modified = _world_with_entity("w-1")
+        modified.entities["entity-a"].confidence = 0.99  # changes entity-a
+        modified.entities["entity-b"] = Entity(  # adds entity-b
+            id="entity-b", type=EntityType.STRUCTURE, name="Fence",
+            provenance=Provenance.RECONSTRUCTED, confidence=0.5,
+        )
+        v2 = store.save_version(modified, parent=v1.version_id)
+
+        assert v2.changed_entity_ids == ["entity-a", "entity-b"]
+
+    def test_source_session_ids_recorded(self, root):
+        from worldstore.store import WorldStore
+
+        store = WorldStore(root)
+        v1 = store.save_version(
+            _world_with_entity(), parent=None, source_session_ids=["session-1", "session-2"],
+        )
+        assert v1.source_session_ids == ["session-1", "session-2"]
+        # Survives a fresh store instance over the same root.
+        store2 = WorldStore(root)
+        reloaded = [v for v in store2.list_versions() if v.version_id == v1.version_id][0]
+        assert reloaded.source_session_ids == ["session-1", "session-2"]

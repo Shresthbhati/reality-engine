@@ -40,10 +40,20 @@ import pytest
 from provenance import Provenance
 from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Vector3
 from world_ir.world_v1 import WorldIR
-from engine.compiler.physics_compiler import (
-    compile_physics_world,
-    build_stepped_physics_world,
+
+# engine.compiler.physics_compiler moved to the reality-engine-child
+# project during core/child separation (pyproject.toml's `physics`
+# marker note: "requires reality-engine-child; excluded from core
+# CI") -- skip cleanly here instead of a hard collection error when
+# only the core package is installed, same pattern as this repo's
+# other optional-dependency tests (see test_ifc_bridge.py).
+physics_compiler = pytest.importorskip(
+    "engine.compiler.physics_compiler",
+    reason="physics_compiler lives in reality-engine-child, not the core package",
 )
+compile_physics_world = physics_compiler.compile_physics_world
+build_stepped_physics_world = physics_compiler.build_stepped_physics_world
+
 from engine.compiler.simulation_loop import (
     SimulationRun,
     WorldStateDelta,

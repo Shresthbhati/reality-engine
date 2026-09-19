@@ -266,3 +266,78 @@ export async function fetchWorldPointCloud(versionId: string): Promise<PointClou
     };
   }
 }
+
+export interface BackendWorldDiffSummary {
+  entities_added: number;
+  entities_removed: number;
+  entities_modified: number;
+  geometries_added: number;
+  geometries_removed: number;
+  geometries_modified: number;
+}
+
+export interface BackendEntityDiff {
+  entity_id: string;
+  kind: "added" | "removed" | "modified";
+  changes: Array<{
+    field: string;
+    old: unknown;
+    new: unknown;
+  }>;
+}
+
+export interface BackendGeometryDiff {
+  geometry_id: string;
+  kind: "added" | "removed" | "modified";
+  changes: Array<{
+    field: string;
+    old: unknown;
+    new: unknown;
+  }>;
+}
+
+export interface BackendWorldDiffPayload {
+  from_world_id: string;
+  to_world_id: string;
+  from_version_id: string;
+  to_version_id: string;
+  summary: BackendWorldDiffSummary;
+  entities: BackendEntityDiff[];
+  geometries: BackendGeometryDiff[];
+  error?: string;
+}
+
+export interface WorldDiffResult {
+  available: boolean;
+  diff?: BackendWorldDiffPayload;
+  error?: string;
+}
+
+export async function fetchWorldDiff(
+  baseVid: string,
+  headVid: string
+): Promise<WorldDiffResult> {
+  try {
+    const res = await fetch(
+      `/api/world/diff?base=${encodeURIComponent(baseVid)}&head=${encodeURIComponent(headVid)}`,
+      { cache: "no-store" }
+    );
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      return {
+        available: false,
+        error: data.error || `HTTP ${res.status}`,
+      };
+    }
+    return {
+      available: true,
+      diff: data,
+    };
+  } catch (err) {
+    return {
+      available: false,
+      error: err instanceof Error ? err.message : "Failed to fetch world diff",
+    };
+  }
+}
+

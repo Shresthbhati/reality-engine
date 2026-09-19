@@ -27,7 +27,10 @@ from .schema_v1 import (
 )
 from .world_v1 import WorldIR, Branch, Scenario, SimulationState, TemporalState
 from .diff import diff_worlds, WorldDiff, EntityDiff, GeometryDiff, ChangeKind
-from .incremental import affected_closure, DEFAULT_PROPAGATING_KINDS
+from .incremental import (
+    affected_closure, apply_incremental_update,
+    DEFAULT_PROPAGATING_KINDS, IncrementalUpdateResult,
+)
 
 __all__ = [
     # Coordinates
@@ -75,4 +78,6 @@ __all__ = [
     # Incremental
     "affected_closure",
     "DEFAULT_PROPAGATING_KINDS",
+    "apply_incremental_update",
+    "IncrementalUpdateResult",
 ]

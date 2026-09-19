@@ -20,9 +20,12 @@ relationship kinds are considered "propagating" for a given call.
 
 from __future__ import annotations
 
-from typing import Collection, FrozenSet, Iterable, Optional, Set
+import copy
+from dataclasses import dataclass
+from typing import Collection, FrozenSet, Iterable, Optional, Set, Tuple
 
-from world_ir.schema_v1 import RelationshipKind
+from world_ir.schema_v1 import Entity, Geometry, RelationshipKind
+from world_ir.spatial_tiles import SpatialTiles
 from world_ir.world_v1 import WorldIR
 
 #: Relationship kinds that propagate "this might be stale" to a neighbor.
@@ -92,3 +95,148 @@ def affected_closure(
         hops += 1
 
     return visited
+
+
+@dataclass(frozen=True)
+class IncrementalUpdateResult:
+    """The output of `apply_incremental_update`: the new WorldIR plus a
+    complete, deterministic report of exactly what changed, what was
+    merely affected (relationship-reachable, not itself modified), and
+    what spatial tiles that touches -- so a caller never has to guess
+    whether "incremental" actually happened."""
+
+    new_world: WorldIR
+    #: Entity/geometry ids directly supplied as new/updated by the caller.
+    changed_entity_ids: FrozenSet[str]
+    changed_geometry_ids: FrozenSet[str]
+    #: affected_closure() over the changed ids -- everything relationship-
+    #: reachable that MIGHT need downstream re-derivation. This function
+    #: does not itself re-derive them (it has no domain/perception logic);
+    #: it reports the set so a real compiler stage can act on it.
+    affected_entity_ids: FrozenSet[str]
+    #: Tile keys (from world_ir.spatial_tiles.SpatialTiles) touched by any
+    #: changed or affected entity, in EITHER the base world's tile (old
+    #: position) or the new world's tile (new position) -- an entity that
+    #: moved tiles invalidates both, not just its destination.
+    invalidated_tile_ids: FrozenSet[Tuple[int, int, int]]
+    #: Entity/geometry ids present in base_world that were NOT directly
+    #: changed -- new_world.entities[id] / new_world.geometries[id] is
+    #: the SAME object as base_world's for every id in these sets.
+    reused_entity_ids: FrozenSet[str]
+    reused_geometry_ids: FrozenSet[str]
+
+
+def apply_incremental_update(
+    base_world: WorldIR,
+    updated_entities: Iterable[Entity],
+    *,
+    updated_geometries: Iterable[Geometry] = (),
+    relationship_kinds: Optional[Collection[RelationshipKind]] = None,
+    max_hops: Optional[int] = None,
+    tile_size: float = 10.0,
+) -> IncrementalUpdateResult:
+    """The localized WorldIR update primitive: `base_world` (World V1) +
+    new/updated entities and geometries (from fresh evidence, already
+    promoted by registration/reconstruction/perception) -> World V2,
+    without rebuilding anything not touched.
+
+    Contract (what makes this a real incremental update, not a full
+    rebuild dressed up as one):
+      - `new_world.entities[id] is base_world.entities[id]` for every
+        entity id NOT in `changed_entity_ids` -- same object reference,
+        not merely equal. Same for geometries. Verified by identity
+        assertions in tests/test_world_ir_apply_incremental_update.py,
+        not by equality after the fact.
+      - `changed_entity_ids`/`changed_geometry_ids` are exactly what the
+        caller supplied -- nothing else is mutated or replaced.
+      - `affected_entity_ids` is the relationship-closure report
+        (world_ir.incremental.affected_closure) over the changed set,
+        PLUS any entity whose geometry_ids reference a changed geometry
+        (a geometry changing under an entity is itself a reason that
+        entity is affected, even if the entity's own fields are
+        untouched). This function does NOT re-derive affected entities'
+        fields -- it has no perception/compiler logic -- it only reports
+        the set so a real compiler stage knows what to re-check.
+      - `invalidated_tile_ids` uses the EXISTING world_ir.spatial_tiles.
+        SpatialTiles grid (no second tiling system): every tile a
+        changed-or-affected entity occupied in base_world OR occupies in
+        new_world (an entity that moved tiles invalidates both its old
+        and new tile).
+      - `new_world.version = base_world.version + 1`; `new_world.id`
+        stays the same (same world, next version) -- lineage between the
+        two is the caller's job via `WorldStore.save_version(new_world,
+        parent=<base_world's stored version id>)`, which independently
+        re-derives changed_entity_ids/changed_geometry_ids via
+        diff_worlds() -- callers can and should cross-check the two
+        agree.
+
+    Known limitation (documented, not hidden): `new_world` is built via
+    a shallow copy of `base_world` with only `entities`/`geometries`
+    replaced by fresh dict containers -- every OTHER field (materials,
+    surfaces, components, branches, temporal_state, ...) is the SAME
+    object as base_world's, not just equal. Mutating one of those
+    collections on `new_world` after this call would also mutate
+    `base_world`'s. This function only guarantees the entity/geometry
+    identity contract the incremental-update mission asks for; a
+    caller needing full structural independence should not mutate
+    those shared collections in place.
+    """
+    updated_entities = list(updated_entities)
+    updated_geometries = list(updated_geometries)
+    changed_entity_ids = {e.id for e in updated_entities}
+    changed_geometry_ids = {g.id for g in updated_geometries}
+
+    # A changed geometry marks every entity that references it as
+    # affected too -- their geometry_ids membership points at evidence
+    # that's now stale, even though the entity's OWN fields (name, type,
+    # relationships, ...) are untouched.
+    geometry_owners = {
+        eid for eid, entity in base_world.entities.items()
+        if changed_geometry_ids & set(entity.geometry_ids)
+    }
+    seed_ids = changed_entity_ids | geometry_owners
+
+    affected_entity_ids = affected_closure(
+        base_world, seed_ids,
+        relationship_kinds=relationship_kinds, max_hops=max_hops,
+    )
+
+    # New containers so base_world.entities/geometries are never mutated
+    # in place; every value not overwritten below is the SAME object
+    # reference copied out of base_world's dict, not a rebuilt copy.
+    new_entities = dict(base_world.entities)
+    for entity in updated_entities:
+        new_entities[entity.id] = entity
+
+    new_geometries = dict(base_world.geometries)
+    for geometry in updated_geometries:
+        new_geometries[geometry.id] = geometry
+
+    new_world = copy.copy(base_world)
+    new_world.entities = new_entities
+    new_world.geometries = new_geometries
+    new_world.version = base_world.version + 1
+
+    reused_entity_ids = frozenset(base_world.entities) - changed_entity_ids
+    reused_geometry_ids = frozenset(base_world.geometries) - changed_geometry_ids
+
+    invalidated_tile_ids: Set[Tuple[int, int, int]] = set()
+    touch_ids = changed_entity_ids | affected_entity_ids
+    if touch_ids:
+        entity_tile: dict[str, Set[Tuple[int, int, int]]] = {}
+        for tiles in (SpatialTiles(base_world, tile_size=tile_size), SpatialTiles(new_world, tile_size=tile_size)):
+            for key in tiles.tile_ids():
+                for eid in tiles.entities_in_tile(key):
+                    entity_tile.setdefault(eid, set()).add(key)
+        for eid in touch_ids:
+            invalidated_tile_ids |= entity_tile.get(eid, set())
+
+    return IncrementalUpdateResult(
+        new_world=new_world,
+        changed_entity_ids=frozenset(changed_entity_ids),
+        changed_geometry_ids=frozenset(changed_geometry_ids),
+        affected_entity_ids=frozenset(affected_entity_ids),
+        invalidated_tile_ids=frozenset(invalidated_tile_ids),
+        reused_entity_ids=reused_entity_ids,
+        reused_geometry_ids=reused_geometry_ids,
+    )

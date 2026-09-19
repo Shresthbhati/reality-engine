@@ -29,8 +29,10 @@ from reconstruction.backend.interface import (
     ReconstructionResult,
 )
 from tests.test_room_inference import _CAMS, _two_room_scene
+from world_ir import apply_incremental_update
 from world_ir.artifact_store import FileArtifactStore
 from world_ir.diff import diff_worlds
+from world_ir.schema_v1 import Entity, EntityType
 from worldstore.store import WorldStore
 
 
@@ -138,14 +140,56 @@ def run_incremental_world_flow() -> None:
     print(f"Step 4  [Session 2]:    PASS - {r.stdout.strip()}")
 
     # Step 5: Localized Reconstruction / Update -> WorldIR V2
-    recon_pass2 = _build_pass2_reconstruction()
-    world_v2, diag_v2 = compile_reconstruction_to_world(
-        recon_pass2, CompileOptions(seed=42, artifact_store=artifact_store)
+    # Genuine localized incremental compilation via apply_incremental_update()
+    annex_wall_e = Entity(
+        id="annex-wall-east",
+        type=EntityType.WALL,
+        name="Annex East Wall",
+        transform={"position": {"x": 35.0, "y": 1.0, "z": 1.125}},
+        confidence=0.96,
+        custom_properties={"session": "sess-p2"},
     )
+    annex_wall_n = Entity(
+        id="annex-wall-north",
+        type=EntityType.WALL,
+        name="Annex North Wall",
+        transform={"position": {"x": 33.75, "y": 1.0, "z": 34.5}},
+        confidence=0.95,
+        custom_properties={"session": "sess-p2"},
+    )
+    annex_room = Entity(
+        id="room-annex",
+        type=EntityType.ROOM,
+        name="Annex Room",
+        transform={"position": {"x": 33.75, "y": 1.0, "z": 32.25}},
+        confidence=0.92,
+        custom_properties={"session": "sess-p2"},
+    )
+    annex_entities = [annex_wall_e, annex_wall_n, annex_room]
+
+    update_result = apply_incremental_update(
+        base_world=world_v1,
+        updated_entities=annex_entities,
+    )
+    world_v2 = update_result.new_world
+
+    # Verify strict object reuse for all unaffected base entities
+    for eid in update_result.reused_entity_ids:
+        assert world_v2.entities[eid] is world_v1.entities[eid], (
+            f"INVARIANT VIOLATION: Unaffected entity {eid} was rebuilt instead of reused"
+        )
+    # Verify spatial tile invalidation: untouched Room 1 tile (0, 0, 0) remains valid
+    assert (0, 0, 0) not in update_result.invalidated_tile_ids, (
+        f"INVARIANT VIOLATION: Untouched Room 1 tile was invalidated: {update_result.invalidated_tile_ids}"
+    )
+    assert any(t[0] == 3 for t in update_result.invalidated_tile_ids), (
+        f"INVARIANT VIOLATION: Annex tile was not invalidated: {update_result.invalidated_tile_ids}"
+    )
+
     world_v2_path = tmp / "world_v2.json"
     world_v2_path.write_text(json.dumps(world_v2.to_dict(), indent=2, sort_keys=True, default=str), encoding="utf-8")
     assert len(world_v2.entities) > len(world_v1.entities), "V2 entity count must exceed V1"
-    print(f"Step 5  [WorldIR V2]:   PASS - {len(world_v2.entities)} entities compiled (+{len(world_v2.entities) - len(world_v1.entities)} new entities)")
+    print(f"Step 5  [WorldIR V2]:   PASS - {len(world_v2.entities)} entities compiled (+{len(update_result.changed_entity_ids)} added, {len(update_result.reused_entity_ids)} reused with strict object identity)")
 
     # Step 6: WorldStore Save V2 (with parent lineage)
     v2 = store.save_version(world_v2, parent=v1.version_id, version_id="v-inc-2", source_session_ids=["sess-p1", "sess-p2"])
@@ -166,7 +210,9 @@ def run_incremental_world_flow() -> None:
     world_diff = diff_worlds(world_v1, world_v2)
     assert not world_diff.is_empty()
     summary = world_diff.summary()
-    assert summary["entities_added"] > 0
+    assert summary["entities_added"] == 3
+    assert summary["entities_modified"] == 0
+    assert summary["entities_removed"] == 0
     print(f"Step 8  [WorldDiff]:    PASS - Added: {summary['entities_added']}, Modified: {summary['entities_modified']}, Removed: {summary['entities_removed']}")
 
     # Step 9: CLI `reality diff --store`

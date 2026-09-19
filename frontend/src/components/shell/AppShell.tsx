@@ -8,6 +8,7 @@ import TitleBar from './TitleBar';
 import WorkspaceSwitcher from './WorkspaceSwitcher';
 import StatusBar from './StatusBar';
 import CommandPalette from './CommandPalette';
+import { ToastContainer } from '@/components/ui/toast';
 
 // ─── Lazy workspace imports ───────────────────────────────────────────────────
 
@@ -134,13 +135,13 @@ const RE_CSS_VARS = `
 // ─── Root shell ───────────────────────────────────────────────────────────────
 
 export default function AppShell() {
-  const loadMockData = useREStore((s) => s.loadMockData);
+  const loadWorldFromBackend = useREStore((s) => s.loadWorldFromBackend);
   const activeWorkspace = useREStore((s) => s.activeWorkspace);
 
-  // Load mock data once on mount
+  // Initialize workstation: attempt real WorldIR backend mount, fallback to demo mode
   useEffect(() => {
-    loadMockData();
-  }, [loadMockData]);
+    loadWorldFromBackend();
+  }, [loadWorldFromBackend]);
 
   return (
     <>
@@ -171,6 +172,7 @@ export default function AppShell() {
 
         {/* ── Overlays */}
         <CommandPalette />
+        <ToastContainer />
       </div>
     </>
   );

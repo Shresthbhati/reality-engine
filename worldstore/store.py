@@ -24,6 +24,8 @@ the existing canonical WorldIR v1 dict -- no competing schema.
 from __future__ import annotations
 
 import json
+import os
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +41,84 @@ class WorldStoreError(ValueError):
     """WorldStore operation refused."""
 
 
+class _SequenceLock:
+    """Cross-process, cross-thread mutex guarding the read-modify-write
+    of sequence.json.
+
+    Without this, two concurrent save_version() calls both read the
+    same sequence, both append their own version id, and the second
+    write clobbers the first's entry (lost update) -- and on Windows,
+    concurrent os.replace() calls onto the same destination path can
+    outright raise PermissionError (WinError 5) instead of silently
+    losing data, so save_version() itself becomes flaky under
+    concurrency, not just eventually-inconsistent. Reproduced with 20
+    concurrent threads before this fix: 15/20 raised unhandled
+    PermissionError.
+
+    os.mkdir() is the primitive: directory creation is atomic on both
+    POSIX and Windows (NTFS) -- exactly one concurrent caller succeeds,
+    everyone else gets FileExistsError, which is what makes this a real
+    mutex rather than a "hope for the best" retry. The bounded poll
+    loop is backoff between *acquisition attempts*, not a substitute
+    for correctness the way a bare `time.sleep()` before a racy write
+    would be -- the lock itself is what's correct; the loop just waits
+    for the current holder to release it.
+
+    Lock staleness (a holder that crashed without releasing) is never
+    silently overridden -- that would risk two processes believing
+    they hold the same lock. Acquisition times out after `timeout`
+    seconds and raises WorldStoreError explicitly, naming the stale
+    lock directory so an operator can inspect and remove it."""
+
+    def __init__(self, root: Path, timeout: float = 30.0, poll_interval: float = 0.02):
+        self._path = root / ".sequence.lock"
+        self._timeout = timeout
+        self._poll_interval = poll_interval
+
+    def __enter__(self) -> "_SequenceLock":
+        deadline = time.monotonic() + self._timeout
+        while True:
+            try:
+                self._path.mkdir()
+                return self
+            except FileExistsError:
+                if time.monotonic() >= deadline:
+                    raise WorldStoreError(
+                        f"could not acquire WorldStore sequence lock at "
+                        f"{self._path} within {self._timeout}s -- another "
+                        "writer is either still working or crashed while "
+                        "holding it; if no other process is writing to "
+                        "this store, remove the stale lock directory "
+                        "manually and retry"
+                    )
+                time.sleep(self._poll_interval)
+
+    def __exit__(self, *exc_info) -> None:
+        self._path.rmdir()
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` to `path` so a crash mid-write can never leave a
+    truncated/partial file at `path`: write to a sibling temp file,
+    fsync it, then os.replace() onto the final name. os.replace() is
+    atomic on both POSIX and Windows NTFS -- readers of `path` always
+    see either the previous complete content or the new complete
+    content, never a partial write. Without this, a process crash
+    during write_text() left a truncated JSON file that every future
+    _record()/list_versions() call on that version would fail to
+    parse (a corrupted store, not a "no partially committed world
+    state" failure)."""
+    tmp = path.with_suffix(path.suffix + f".tmp-{uuid.uuid4().hex[:8]}")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 @dataclass(frozen=True)
 class StoredVersion:
     version_id: str
@@ -46,11 +126,20 @@ class StoredVersion:
     parent: str | None
     artifact_uri: str
     artifact_hash: str
-    # Fields for tracking what changed between versions (for diff/lineage)
-    changed_entity_ids: list[str] | None = None
-    changed_geometry_ids: list[str] | None = None
-    # Source session IDs that contributed to this version
-    source_session_ids: list[str] | None = None
+    #: Ids of entities/geometries that differ from `parent`'s saved world
+    #: (empty for a root version with no parent). Computed once at save
+    #: time via `world_ir.diff.diff_worlds` -- not recomputed on read, so
+    #: it survives even if the parent version is later deleted/corrupted.
+    #: Optional/defaulted so records written before this field existed
+    #: still deserialize (`StoredVersion(**record)` in list_versions/
+    #: verify_version) with an explicit "unknown" empty tuple rather than
+    #: an error.
+    changed_entity_ids: tuple = ()
+    changed_geometry_ids: tuple = ()
+    #: Ids of the evidence-acquisition Sessions this version's world was
+    #: (re)compiled from, when the caller supplies them -- the "which raw
+    #: captures does this version trace back to" provenance link.
+    source_session_ids: tuple = ()
 
 
 class WorldStore:
@@ -77,31 +166,15 @@ class WorldStore:
                 f"version {vid} already exists -- versions are immutable; "
                 "save a new version instead of overwriting observed reality"
             )
-
-        # Compute changes from parent version
         changed_entity_ids: list[str] = []
         changed_geometry_ids: list[str] = []
-        if parent:
-            parent_world = self.load_version(parent)
-            # Track entity changes
-            for eid, entity in world.entities.items():
-                if eid not in parent_world.entities:
-                    changed_entity_ids.append(eid)
-                elif parent_world.entities[eid] != entity:
-                    changed_entity_ids.append(eid)
-            for eid in parent_world.entities:
-                if eid not in world.entities:
-                    changed_entity_ids.append(eid)
-            # Track geometry changes
-            for gid, geom in world.geometries.items():
-                if gid not in parent_world.geometries:
-                    changed_geometry_ids.append(gid)
-                elif parent_world.geometries[gid] != geom:
-                    changed_geometry_ids.append(gid)
-            for gid in parent_world.geometries:
-                if gid not in world.geometries:
-                    changed_geometry_ids.append(gid)
+        if parent is not None:
+            from world_ir.diff import diff_worlds
 
+            parent_world = self.load_version(parent)
+            world_diff = diff_worlds(parent_world, world)
+            changed_entity_ids = sorted(d.entity_id for d in world_diff.entity_diffs)
+            changed_geometry_ids = sorted(d.geometry_id for d in world_diff.geometry_diffs)
         payload = json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")
         uri, digest = self._store.put(payload)
         record = {
@@ -112,25 +185,38 @@ class WorldStore:
             "artifact_hash": digest,
             "changed_entity_ids": changed_entity_ids,
             "changed_geometry_ids": changed_geometry_ids,
-            "source_session_ids": source_session_ids,
+            "source_session_ids": list(source_session_ids or []),
         }
-        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        # Write the version record before the sequence index so a crash
+        # between the two leaves an orphan version file (harmless --
+        # list_versions() below already appends unrecorded files) rather
+        # than a sequence entry pointing at a version that doesn't exist.
+        _atomic_write_text(path, json.dumps(record, indent=2))
         seq_path = self._root / "sequence.json"
-        order: list[str] = []
-        if seq_path.exists():
-            order = json.loads(seq_path.read_text(encoding="utf-8"))
-        order.append(vid)
-        seq_path.write_text(json.dumps(order), encoding="utf-8")
-        return StoredVersion(
-            version_id=vid,
-            world_id=world.id,
-            parent=parent,
-            artifact_uri=uri,
-            artifact_hash=digest,
-            changed_entity_ids=changed_entity_ids,
-            changed_geometry_ids=changed_geometry_ids,
-            source_session_ids=source_session_ids,
-        )
+        # The read-modify-write below is not safe to interleave across
+        # concurrent writers (see _SequenceLock docstring): the lock
+        # makes "read current order, append, write" a single atomic
+        # step across threads and processes sharing this store root.
+        with _SequenceLock(self._root):
+            order: list[str] = self._read_sequence(seq_path)
+            order.append(vid)
+            _atomic_write_text(seq_path, json.dumps(order))
+        return StoredVersion(**record)
+
+    @staticmethod
+    def _read_sequence(seq_path: Path) -> list[str]:
+        if not seq_path.exists():
+            return []
+        try:
+            return json.loads(seq_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            # The atomic write above makes this unreachable in normal
+            # operation; surfaced explicitly (never silently reset to an
+            # empty sequence, which would look like lost history) for a
+            # store touched by something other than this class.
+            raise WorldStoreError(
+                f"sequence index at {seq_path} is corrupted: {exc}"
+            ) from exc
 
     # ---- read ----
 
@@ -138,7 +224,16 @@ class WorldStore:
         path = self._versions_dir / f"{version_id}.json"
         if not path.exists():
             raise WorldStoreError(f"unknown version: {version_id}")
-        return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            # Explicit, actionable failure instead of a raw parser
+            # exception -- a corrupted version record is a store
+            # integrity problem the caller must handle, not something
+            # to guess at or silently skip.
+            raise WorldStoreError(
+                f"version {version_id} record is corrupted: {exc}"
+            ) from exc
 
     def load_version(self, version_id: str) -> WorldIR:
         record = self._record(version_id)
@@ -173,20 +268,21 @@ class WorldStore:
     def list_versions(self) -> list[StoredVersion]:
         """Save-order listing (not uuid order): the version file's
         mtime ranks creations; ties fall back to the sequence number
-        implied by an index file maintained at save time."""
+        implied by an index file maintained at save time.
+
+        Raises WorldStoreError naming the specific version if any
+        record on disk is corrupted -- history is never silently
+        truncated or dropped to hide the corruption from the caller."""
         records = []
         seq_path = self._root / "sequence.json"
-        order: list[str] = []
-        if seq_path.exists():
-            order = json.loads(seq_path.read_text(encoding="utf-8"))
+        order = self._read_sequence(seq_path)
         known = {p.stem for p in self._versions_dir.glob("v-*.json")}
         # Any version file not in the recorded order (e.g. written by an
         # older store) is appended in sorted order -- history is never
         # dropped.
         ordered = [v for v in order if v in known] + sorted(known - set(order))
         for vid in ordered:
-            r = json.loads((self._versions_dir / f"{vid}.json").read_text(encoding="utf-8"))
-            records.append(StoredVersion(**r))
+            records.append(StoredVersion(**self._record(vid)))
         return records
 
     # ---- integrity ----

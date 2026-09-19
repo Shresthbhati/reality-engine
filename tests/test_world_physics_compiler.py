@@ -8,19 +8,20 @@ at rest on a compiled floor).
 """
 
 from __future__ import annotations
-pytestmark = pytest.mark.physics
 
 import pytest
 
+pytestmark = pytest.mark.physics
+
 try:
     from engine.physics.world_compiler import (
+        CompiledBody,
+        PhysicsCompileReport,
+        compile_entity,
+        compile_world_to_physics,
+    )
 except ImportError:
     pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
-    CompiledBody,
-    PhysicsCompileReport,
-    compile_entity,
-    compile_world_to_physics,
-)
 from provenance import Provenance
 from world_ir import WorldIR
 from world_ir.schema_v1 import (
@@ -225,15 +226,14 @@ class TestCompiledWorldSimulates:
         """A dynamic box added above a compiled floor plane must fall,
         contact it, and come to rest ON it -- proof the bridge produces a
         real, simulatable world from WorldIR."""
-try:
+        try:
             from engine.physics.backend.simple_backend import SimpleRigidBodyBackend
             from engine.physics.math3 import Vec3
             from engine.physics.collision.shapes import Box
             from engine.physics.materials.material import PhysicsMaterial
             from engine.physics.rigid.body import RigidBody
-    
-except ImportError:
-    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
+        except ImportError:
+            pytest.skip("engine.physics module not available - requires reality-engine-child")
         phys, report = compile_world_to_physics(self._floor_only_world(), seed=7)
         assert report.static_count == 1
 
@@ -269,16 +269,15 @@ except ImportError:
         compiled wall is an INFINITE plane, so a slider pushed toward it is
         stopped even though real reconstruction geometry has finite extent.
         Asserted so a future extent-enforcing plane consciously flips it."""
-try:
+        try:
             from engine.physics.backend.simple_backend import SimpleRigidBodyBackend
             from engine.physics.math3 import Vec3
             from engine.physics.collision.shapes import Box
             from engine.physics.materials.material import PhysicsMaterial
             from engine.physics.rigid.body import RigidBody
-    
-            # Wall-only world: one vertical sheet at z=0.
-except ImportError:
-    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
+        except ImportError:
+            pytest.skip("engine.physics module not available - requires reality-engine-child")
+        # Wall-only world: one vertical sheet at z=0.
         wall_world = _box_world(
             geometry_type=GeometryType.PLANE,
             bmin=(0.0, 0.0, 0.0),

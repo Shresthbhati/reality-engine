@@ -1,21 +1,22 @@
 """Tests for the WorldIR -> Physics compiler bridge (engine/compiler/physics_compiler.py)."""
 
 from __future__ import annotations
+
+import pytest
+
 pytestmark = pytest.mark.physics
 
 from provenance import Provenance
 from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Vector3
 from world_ir.world_v1 import WorldIR
 
-from engine.compiler.physics_compiler import (
-    PhysicsCompileStatus,
-    compile_entity_physics,
-    compile_physics_world,
-)
 try:
+    from engine.compiler.physics_compiler import (
+        PhysicsCompileStatus,
+        compile_entity_physics,
+        compile_physics_world,
+    )
     from engine.physics.materials.material import CANONICAL_MATERIALS
-    
-    
 except ImportError:
     pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 def _entity_with_bounds(entity_id, entity_type, bmin, bmax, **kwargs):

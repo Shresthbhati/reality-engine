@@ -947,3 +947,75 @@ Branch claude/graphs-uncertainty-world-compilers (worktree
   without fixtures, per-cell GSD re-measurement + adaptive
   subdivision, GIS/OSM ingestion + CityGML/3DCityDB).
 - Full unbounded suite gate recorded below (exact numbers).
+
+
+## 2026-09-19 — Campaign: evidence-to-world reliability (depth consistency, cross-session registration, real-model availability)
+
+Branch agent/freebuff-reconstruction (worktree
+.claude/worktrees/agent4-recon-perception), fresh off post-#45 main.
+
+Reliability priorities executed (all red-first):
+
+- **Cross-view depth consistency** (reconstruction/consistency.py,
+  P6-02 addition): detects contradictory metric depth between views —
+  co-visibility established in PIXEL space (world-space association is
+  circular: a biased depth displaces its unprojection and hides the
+  contradiction it should reveal); the measure is world-space
+  disagreement between per-view UNPROJECTED samples normalized by mean
+  camera range (raw depths legitimately differ across cameras);
+  mutual-ray-angle gates exclude degenerate baselines as "inconclusive"
+  (never counted "consistent"); contradiction records carry BOTH
+  measured depths; relative-depth maps refused; views without cameras
+  named, not dropped. 9 tests.
+- **Cross-session registration** (registration/cross_session.py,
+  P4-01 addition): contact gate (expanded-bbox) refuses no-contact
+  sessions before ICP can hallucinate a local minimum (measured: plain
+  ICP spuriously "accepts" a 100-unit-offset grid); deterministic
+  global coarse alignment (centroid + 60 icosahedral rotations + bounded
+  coarse-to-fine Euler descent 15->3.75 deg, no RNG) — the icosahedral
+  set alone is NOT within ICP's basin for 30-deg rotations (measured
+  rmse 0.466 across all 60 starts on the fixture); refinement via the
+  existing register_icp gates + full-cloud polish; identity verified by
+  measurement, never assumed; chain composition resolves sessions into
+  the reference frame, unresolved stays unresolved. 16 + 7 tests
+  (pair/chain + orchestrator vertical slice).
+- **Orchestrator wiring** (reconstruction/orchestrator_consistency.py):
+  run_with_depth_consistency adds diagnostics.depth_consistency to the
+  frozen diagnostics record (additive field, None = honest absence);
+  contradictory verdicts are recorded, results never rewritten. 4 tests.
+- **Real-model availability report** (perception/availability.py):
+  probe-only (find_spec + cache-file resolution + PATH; no imports of
+  torch stacks, no downloads, no model construction, deterministic —
+  double-probe test enforced); "available" only when dependency AND
+  checkpoint verifiably resolve; blocked names the exact missing piece
+  with actionable remediation; covers colmap/midas/sam/mask_rcnn
+  (current machine: all four AVAILABLE — measured via the report).
+  6 tests.
+- **Ledger repairs** (pre-existing defects, found by yaml.safe_load
+  gate): P6-01 entry had 0-indent "- id" breaking the whole file;
+  P16-01 basis was an unparseable multi-line plain scalar;
+  CAPABILITIES.yaml gained 4 entries (cross_view_depth_consistency,
+  cross_session_registration, orchestrator_depth_consistency_gate,
+  real_model_availability_report) — now 48 entries, parses clean.
+
+Full unbounded suite gate at branch head: **2087 passed / 5 skipped /
+0 failed** in 275.6 s (skips are the pre-existing real-data gates).
+Ledger after sync: 33 DONE / 6 PARTIAL / 0 MISSING.
+
+
+## 2026-09-19 (2) — P4-01 landmark method closed (branch agent/freebuff-reconstruction-perception)
+
+- registration/landmarks.py: register_landmarks — declared-identity
+  correspondences -> closed-form Kabsch + deterministic
+  exhaustive-triple outlier consensus; ambiguous landmark ids excluded
+  and reported; degenerate geometry (n<3, collinear) refuses naming
+  the fix; coplanar-but-non-collinear sets SOLVE (Procrustes: point
+  identity pins all 6 DOF — the earlier coplanar-refusal design was
+  mathematically wrong and was corrected red-first) with weaker
+  conditioning reported via covariance degenerate_axes.
+- RegistrationEngine confidence order now GNSS anchors > landmarks >
+  ICP; landmark refusal falls through to ICP (attempt recorded).
+- Ledger: P4-01's last PENDING verification item closed; CAPABILITIES
+  +landmark_registration (49 entries).
+- Full unbounded suite: 2133 passed / 5 skipped / 0 failed (timing
+  guard verified standalone: green).

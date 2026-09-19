@@ -719,3 +719,85 @@ capabilities:
       - per-region budgets require spatial partitioning of the scene
         (currently scene-level derivation only)
       - GSD-level thresholds untuned against real datasets
+
+  - name: cross_view_depth_consistency
+    category: reconstruction
+    backend: "reconstruction/consistency.py: check_depth_consistency (in-house, deterministic, scipy cKDTree + the repo's own vectorized Brown-Conrady model)"
+    inputs: [metric DepthMaps (unit=meters), PinholeCamera per evidence id, scene points (sparse cloud)]
+    outputs: [ConsistencyReport: status consistent/contradictions/inconclusive/insufficient_evidence, per-pair DepthContradiction records carrying BOTH measured depths, max_relative_difference, views_skipped]
+    license: project-internal
+    hardware_requirements: none (numpy/scipy, already-declared runtime deps)
+    accuracy: >-
+      Measures world-space disagreement between per-view UNPROJECTED
+      samples of one physical surface, normalized by mean camera range;
+      co-visibility established in PIXEL space (world-space association
+      is circular -- a biased depth hides the contradiction it should
+      reveal); mutual-ray-angle gates exclude degenerate baselines as
+      inconclusive, never counted as "consistent"
+    runtime: "stride-capped per view (4096 samples default), O(scene points x views) queries"
+    maturity: "IMPLEMENTED -- 9 tests in tests/test_depth_consistency.py (perfect-data consistency, 20%-bias detection, determinism, degenerate-baseline inconclusive, disjoint insufficient-evidence, relative-depth refusal, no-camera skip naming, empty-scene refusal, dict roundtrip)"
+    limitations: synthetic-fixture verified; real multi-view depth run is the named next gate; thresholds (10% contradiction, 2px association, angle gates) untuned against real depth noise
+    fallback: none -- no verdict without >=2 metric views
+
+  - name: cross_session_registration
+    category: registration
+    backend: "registration/cross_session.py: align_session + align_session_chain + align_reconstructed_sessions (in-house, deterministic global coarse search + ICP)"
+    inputs: [per-session point clouds (Vec3) or ReconstructionResults keyed by session id, reference session id]
+    outputs: [SessionAlignment per pair (real RigidTransform or refused+reason), CrossSessionReport (per-session transform into the reference frame, status aligned/unresolved/reference, per-session reason)]
+    license: project-internal
+    hardware_requirements: none (numpy/scipy)
+    accuracy: >-
+      Recovers 30-degree rotated + translated fixtures exactly (round-trip
+      < 0.15 m on 5x5 grids); coarse stage = centroid + 60 icosahedral
+      rotations scored by correspondence rmse + bounded deterministic
+      coarse-to-fine Euler descent (15->3.75 deg); refinement = the
+      existing register_icp gates (outlier rejection, min_overlap,
+      absolute-scale rmse gate); contact gate (expanded-bbox) refuses
+      no-contact sessions BEFORE any ICP can hallucinate a local minimum
+    runtime: 60 coarse rotations x coarse clouds (stride-capped 2048) + top-k ICP starts; full-cloud polish pass
+    maturity: "IMPLEMENTED -- 9 pair/chain tests in tests/test_cross_session_registration.py + 7 vertical-slice tests in tests/test_multi_session_alignment.py (identity verified not assumed, real transform recovery, disjoint refusal, chain composition, unresolved stays unresolved, orchestrator multi-batch slice)"
+    limitations: plane-symmetric fixtures can defeat pure-rotation ICP without asymmetric structure (measured; the coarse-to-fine stage mitigates); real multi-session captures are the named next gate; single rigid transform per session (no deformation)
+    fallback: none -- unalignable sessions stay "unresolved" with reasons, never identity-placed
+
+  - name: orchestrator_depth_consistency_gate
+    category: reconstruction
+    backend: "reconstruction/orchestrator_consistency.py: run_with_depth_consistency (additive orchestrator wiring)"
+    inputs: [ReconstructionOrchestrator, evidence, metric DepthMaps, optional cameras_by_evidence]
+    outputs: [ReconstructionRun with diagnostics.depth_consistency = DepthConsistencyDiagnostics (status + full measured report + contradiction_count in to_dict)]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: inherits check_depth_consistency's measured semantics; None when no depth maps (honest absence, not "consistent")
+    runtime: one consistency check per run (stride-capped)
+    maturity: "IMPLEMENTED -- 4 tests in tests/test_orchestrator_consistency.py (no-depth absence, consistent verdict, contradiction surfaced with result untouched, dict roundtrip)"
+    limitations: caller must supply the depth maps + cameras (the orchestrator itself does not produce depth); contradiction does not rewrite the result -- recorded for the caller to act on
+    fallback: plain orchestrator.run unchanged when unused
+
+  - name: real_model_availability_report
+    category: infrastructure
+    backend: "perception/availability.py: report_real_models / real_models_by_name (probe-only)"
+    inputs: none (reads importability + cache dirs + PATH)
+    outputs: [per-model ModelAvailability: status available/blocked, specific missing piece, actionable remediation, adapter class, to_dict]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: >-
+      "available" only when dependency importable (find_spec, no import)
+      AND checkpoint file verifiably cached (torch.hub dir resolution
+      without torch) or binary on PATH; blocked names the exact missing
+      piece (dependency vs checkpoint vs binary)
+    runtime: milliseconds, no network, no model construction, deterministic (double-probe test enforced)
+    maturity: "IMPLEMENTED -- 6 tests in tests/test_real_model_availability.py; covers colmap/midas/sam/mask_rcnn"
+    limitations: checkpoint location inferred from documented torch.hub defaults (TORCH_HOME env respected); custom checkpoint_path= backends report blocked until pre-cached
+    fallback: per-backend UnavailableError exceptions at construction remain the runtime truth
+
+  - name: landmark_registration
+    category: registration
+    backend: "registration/landmarks.py: register_landmarks (closed-form Kabsch on DECLARED correspondences + deterministic exhaustive-triple outlier consensus) wired into RegistrationEngine between GNSS anchors and ICP"
+    inputs: [LandmarkCorrespondence list (landmark_id + source/target positions, identity declared by the observation layer)]
+    outputs: [RegistrationResult: RigidTransform, measured rmse, inlier_fraction, ResidualStats, residual-derived RegistrationCovariance (degenerate_axes reported), rejection/exclusion reasons]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: "exact recovery on known-transform fixtures within outlier rejection; ambiguity exclusion and outlier rejection measured (tests/test_landmark_registration.py)"
+    runtime: O(n choose 3) seeds over declared correspondences -- landmarks are few by construction; milliseconds at realistic counts
+    maturity: "IMPLEMENTED -- 10 tests (exact recovery, 2-pair refusal, collinear refusal, coplanar conditioning reported, outlier rejected and named, ambiguity excluded and named, engine preference order, ICP fall-through on bad landmarks, dict roundtrip)"
+    limitations: "identity quality is the caller's responsibility (this method trusts declared correspondences); real cross-source landmark runs are the named next gate"
+    fallback: "degenerate/ambiguous landmark sets refuse and ICP still runs -- never a silent best-effort transform"

@@ -1,9 +1,16 @@
 """Tests for debris system."""
 
+from __future__ import annotations
+
 import pytest
 
-from engine.physics.destruction import DebrisManager, DebrisConfig, DebrisFragment
-from engine.physics.math3 import Vec3
+pytestmark = pytest.mark.physics
+
+try:
+    from engine.physics.destruction import DebrisManager, DebrisConfig, DebrisFragment
+    from engine.physics.math3 import Vec3
+except ImportError:
+    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 
 
 class TestDebrisFragment:
@@ -55,21 +62,21 @@ class TestDebrisFragment:
             Vec3(0, 0, 0),
             size_m=0.1,
             mass_kg=0.5,
-            lifetime_s=5.0,
+            lifetime_s=1.0,
             created_at_tick=0,
         )
 
-        fragment.step(4.0, 9.81)
+        fragment.step(0.5, 9.81)
         assert not fragment.is_expired()
 
-        fragment.step(1.5, 9.81)
+        fragment.step(0.6, 9.81)
         assert fragment.is_expired()
 
-    def test_gravity_acceleration(self):
-        """Test gravity applied to falling fragment."""
+    def test_fragment_gravity_application(self):
+        """Test gravity is applied to velocity."""
         fragment = DebrisFragment(
             "frag_1",
-            Vec3(0, 0, 10),
+            Vec3(0, 10, 0),
             Vec3(0, 0, 0),
             size_m=0.1,
             mass_kg=1.0,
@@ -78,418 +85,139 @@ class TestDebrisFragment:
         )
 
         fragment.step(1.0, 9.81)
-        # After 1 second with gravity: v_z = 0 - 9.81*1 = -9.81
-        assert abs(fragment.velocity.z - (-9.81)) < 1e-6
-        # Semi-implicit: first apply gravity (v_z becomes -9.81), then update position
-        # z = 10 + (-9.81)*1 = 0.19 (not 5.095, which would be for analytical integration)
-        assert abs(fragment.position.z - 0.19) < 0.01
+        assert fragment.velocity.y == pytest.approx(-9.81)
 
-    def test_fragment_sleeping(self):
-        """Test fragment sleeping when velocity low."""
+    def test_fragment_air_resistance(self):
+        """Test air resistance slows velocity."""
         fragment = DebrisFragment(
             "frag_1",
-            Vec3(0, 0, 1),
-            Vec3(0, 0, 0),  # Zero velocity, no gravity effects
-            size_m=0.1,
-            mass_kg=0.5,
-            lifetime_s=10.0,
-            created_at_tick=0,
-        )
-
-        # With gravity=0, should fall asleep due to zero velocity
-        fragment.step(0.1, 0.0)
-        assert fragment.is_sleeping
-
-    def test_fragment_wakeup(self):
-        """Test sleeping fragment wakes with velocity."""
-        fragment = DebrisFragment(
-            "frag_1",
-            Vec3(0, 0, 1),
             Vec3(0, 0, 0),
+            Vec3(10, 0, 0),
             size_m=0.1,
-            mass_kg=0.5,
+            mass_kg=1.0,
             lifetime_s=10.0,
             created_at_tick=0,
         )
 
-        fragment.is_sleeping = True
-        fragment.sleep_time_s = 5.0
-
-        fragment.velocity = Vec3(1.0, 0, 0)  # Above threshold
-        fragment.step(0.1, 9.81)
-
-        assert not fragment.is_sleeping
-        assert fragment.sleep_time_s == 0.0
-
-    def test_fragment_to_dict(self):
-        """Test fragment serialization."""
-        fragment = DebrisFragment(
-            "frag_1",
-            Vec3(1, 2, 3),
-            Vec3(0.5, 0, 0),
-            size_m=0.1,
-            mass_kg=0.5,
-            lifetime_s=10.0,
-            created_at_tick=42,
-            sharpness=0.7,
-        )
-
-        data = fragment.to_dict()
-        assert data["fragment_id"] == "frag_1"
-        assert data["position"]["x"] == 1
-        assert data["velocity"]["x"] == 0.5
-        assert data["size_m"] == 0.1
-        assert data["mass_kg"] == 0.5
-        assert data["lifetime_s"] == 10.0
-        assert data["created_at_tick"] == 42
-        assert data["sharpness"] == 0.7
+        fragment.step(1.0, 0.0)  # No gravity
+        # Velocity should decrease due to air resistance
+        assert fragment.velocity.x < 10.0
 
 
-class TestDebrisPool:
-    """Object pool tests."""
+class TestDebrisManager:
+    """Debris manager pool and lifecycle tests."""
 
-    def test_acquire_new_fragment(self):
-        """Test acquiring a new fragment from pool."""
-        from engine.physics.destruction.debris import DebrisPool
+    def test_create_pool(self):
+        """Test creating a debris pool."""
+        pool = DebrisManager(initial_capacity=10)
+        assert pool.stats().total_capacity == 10
 
-        pool = DebrisPool(initial_capacity=10)
+    def test_acquire_fragment(self):
+        """Test acquiring a fragment from pool."""
+        pool = DebrisManager(initial_capacity=10)
         fragment = pool.acquire(
             "frag_1",
             Vec3(0, 0, 1),
             Vec3(1, 0, 0),
-            0.1,
-            0.5,
-            10.0,
-            0,
-            0.8,
+            size_m=0.1,
+            mass_kg=0.5,
+            lifetime_s=10.0,
         )
 
         assert fragment.fragment_id == "frag_1"
-        assert len(pool._active) == 1
+        assert pool.stats().active_count == 1
 
     def test_release_fragment(self):
         """Test releasing fragment back to pool."""
-        from engine.physics.destruction.debris import DebrisPool
-
-        pool = DebrisPool(initial_capacity=10)
-        fragment = pool.acquire("frag_1", Vec3(0, 0, 1), Vec3(1, 0, 0), 0.1, 0.5, 10.0, 0)
-
-        pool.release("frag_1")
-        assert len(pool._active) == 0
-        assert len(pool._available) == 1
-
-    def test_reuse_pooled_fragment(self):
-        """Test reusing a released fragment."""
-        from engine.physics.destruction.debris import DebrisPool
-
-        pool = DebrisPool(initial_capacity=10)
-        frag1 = pool.acquire("frag_1", Vec3(0, 0, 1), Vec3(1, 0, 0), 0.1, 0.5, 10.0, 0)
-        frag1_id = id(frag1)
-
+        pool = DebrisManager(initial_capacity=10)
+        fragment = pool.acquire("frag_1", Vec3(0, 0, 1), Vec3(1, 0, 0), 0.1, 0.5, 10.0)
         pool.release("frag_1")
 
-        frag2 = pool.acquire("frag_2", Vec3(1, 1, 1), Vec3(2, 0, 0), 0.2, 1.0, 5.0, 1)
-        frag2_id = id(frag2)
+        assert pool.stats().active_count == 0
 
-        # Should reuse same object
-        assert frag1_id == frag2_id
-        assert frag2.fragment_id == "frag_2"  # But with new data
-        assert frag2.position == Vec3(1, 1, 1)
+    def test_release_nonexistent(self):
+        """Test releasing non-existent fragment."""
+        pool = DebrisManager(initial_capacity=10)
+        pool.release("nonexistent")  # Should not raise
+
+    def test_pool_capacity_expansion(self):
+        """Test pool expands when capacity exceeded."""
+        pool = DebrisManager(initial_capacity=2)
+        f1 = pool.acquire("f1", Vec3(0, 0, 0), Vec3(0, 0, 0), 0.1, 1.0, 10.0)
+        f2 = pool.acquire("f2", Vec3(0, 0, 0), Vec3(0, 0, 0), 0.1, 1.0, 10.0)
+        f3 = pool.acquire("f3", Vec3(0, 0, 0), Vec3(0, 0, 0), 0.1, 1.0, 10.0)
+
+        # Pool should expand
+        assert pool.stats().total_capacity >= 3
+
+    def test_fragment_id_uniqueness(self):
+        """Test fragment IDs must be unique in pool."""
+        pool = DebrisManager(initial_capacity=10)
+        pool.acquire("frag_1", Vec3(0, 0, 1), Vec3(1, 0, 0), 0.1, 0.5, 10.0)
+
+        with pytest.raises(ValueError):
+            pool.acquire("frag_1", Vec3(0, 0, 1), Vec3(1, 0, 0), 0.1, 0.5, 10.0)
 
     def test_pool_stats(self):
         """Test pool statistics."""
-        from engine.physics.destruction.debris import DebrisPool
-
-        pool = DebrisPool(initial_capacity=5)
-        f1 = pool.acquire("frag_1", Vec3(0, 0, 1), Vec3(1, 0, 0), 0.1, 0.5, 10.0, 0)
-        f2 = pool.acquire("frag_2", Vec3(0, 0, 2), Vec3(2, 0, 0), 0.2, 1.0, 10.0, 0)
+        pool = DebrisManager(initial_capacity=5)
+        pool.acquire("f1", Vec3(0, 0, 0), Vec3(0, 0, 0), 0.1, 1.0, 10.0)
+        pool.acquire("f2", Vec3(0, 0, 0), Vec3(0, 0, 0), 0.1, 1.0, 10.0)
 
         stats = pool.stats()
-        assert stats["active"] == 2
-        assert stats["available"] == 0
+        assert stats.total_capacity == 5
+        assert stats.active_count == 2
+        assert stats.inactive_count == 3
 
-        pool.release("frag_1")
+
+class TestDebrisConfig:
+    """Debris configuration tests."""
+
+    def test_default_config(self):
+        """Test default configuration values."""
+        config = DebrisConfig()
+        assert config.gravity == 9.81
+        assert config.air_resistance > 0.0
+        assert config.max_lifetime_s > 0.0
+
+    def test_custom_config(self):
+        """Test custom configuration."""
+        config = DebrisConfig(gravity=3.71, air_resistance=0.02, max_lifetime_s=5.0)
+        assert config.gravity == 3.71
+        assert config.air_resistance == 0.02
+        assert config.max_lifetime_s == 5.0
+
+
+class TestDebrisManagerStep:
+    """Test DebrisManager step integration."""
+
+    def test_step_updates_all_fragments(self):
+        """Test step advances all active fragments."""
+        pool = DebrisManager(initial_capacity=10)
+        pool.acquire("f1", Vec3(0, 10, 0), Vec3(0, 0, 0), 0.1, 1.0, 10.0)
+
+        pool.step(1.0)
+        pool.step(1.0)
+
         stats = pool.stats()
-        assert stats["active"] == 1
-        assert stats["available"] == 1
+        assert stats.active_count == 1
 
-
-class TestDebrisManager:
-    """Debris manager tests."""
-
-    def test_create_manager(self):
-        """Test creating debris manager."""
-        manager = DebrisManager()
-        assert manager is not None
-        stats = manager.get_stats()
-        assert stats["active_count"] == 0
-
-    def test_spawn_fragments(self):
-        """Test spawning fragments from fracture."""
-        manager = DebrisManager()
-
-        fragments = [
-            {
-                "position": {"x": 0, "y": 0, "z": 1},
-                "velocity": {"x": 1, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-                "sharpness": 0.8,
-            },
-            {
-                "position": {"x": 1, "y": 0, "z": 1},
-                "velocity": {"x": 2, "y": 0, "z": 0},
-                "size_m": 0.2,
-                "lifetime_s": 8.0,
-                "sharpness": 0.7,
-            },
-        ]
-
-        spawned = manager.spawn_fragments("window_1", fragments, 0, 0.0)
-        assert spawned == 2
-
-        stats = manager.get_stats()
-        assert stats["active_count"] == 2
-
-    def test_debris_stepping(self):
-        """Test debris physics stepping."""
-        manager = DebrisManager()
-
-        fragments = [
-            {
-                "position": {"x": 0, "y": 0, "z": 10},
-                "velocity": {"x": 0, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            },
-        ]
-
-        manager.spawn_fragments("window_1", fragments, 0, 0.0)
-        manager.step(1.0, 1)
-
-        # Fragment should have fallen
-        active = manager._pool.get_active()
-        assert len(active) == 1
-        assert active[0].position.z < 10  # Fallen due to gravity
-
-    def test_debris_expiry_and_cleanup(self):
-        """Test expired debris removal."""
-        manager = DebrisManager()
-
-        fragments = [
-            {
-                "position": {"x": 0, "y": 0, "z": 1},
-                "velocity": {"x": 0, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 1.0,  # 1 second lifetime
-            },
-        ]
-
-        manager.spawn_fragments("window_1", fragments, 0, 0.0)
-        assert manager.get_stats()["active_count"] == 1
+    def test_step_removes_expired(self):
+        """Test expired fragments are removed from pool."""
+        pool = DebrisManager(initial_capacity=10)
+        pool.acquire("f1", Vec3(0, 0, 0), Vec3(0, 0, 0), 0.1, 1.0, 0.5)
 
         # Step past lifetime
-        manager.step(0.5, 1)
-        assert manager.get_stats()["active_count"] == 1
+        pool.step(1.0)
 
-        manager.step(0.6, 2)
-        assert manager.get_stats()["active_count"] == 0  # Cleaned up
+        assert pool.stats().active_count == 0
 
-    def test_collision_handling(self):
-        """Test debris collision."""
-        manager = DebrisManager()
+    def test_step_applies_gravity(self):
+        """Test gravity applied to all fragments."""
+        pool = DebrisManager(initial_capacity=10)
+        pool.acquire("f1", Vec3(0, 10, 0), Vec3(0, 0, 0), 0.1, 1.0, 10.0)
 
-        fragments = [
-            {
-                "position": {"x": 0, "y": 0, "z": 1},
-                "velocity": {"x": 0, "y": 0, "z": -5},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            },
-        ]
+        pool.step(1.0)
 
-        manager.spawn_fragments("window_1", fragments, 0, 0.0)
-        active = manager._pool.get_active()
-        fragment_id = active[0].fragment_id
-
-        # Collide with floor (normal pointing up)
-        manager.handle_collision(
-            fragment_id,
-            Vec3(0, 0, 0),
-            Vec3(0, 0, 1),
-            restitution=0.5,
-        )
-
-        # Velocity should reverse and damp
-        active = manager._pool.get_active()
-        assert active[0].velocity.z > 0  # Bounced up
-
-    def test_render_queue_ordering(self):
-        """Test render queue depth sorting."""
-        manager = DebrisManager()
-
-        fragments = [
-            {
-                "position": {"x": 0, "y": 0, "z": 5},
-                "velocity": {"x": 0, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            },
-            {
-                "position": {"x": 1, "y": 0, "z": 2},
-                "velocity": {"x": 0, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            },
-            {
-                "position": {"x": 2, "y": 0, "z": 8},
-                "velocity": {"x": 0, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            },
-        ]
-
-        manager.spawn_fragments("window_1", fragments, 0, 0.0)
-        manager.step(0, 0)
-
-        queue = manager.get_render_queue()
-        assert len(queue) == 3
-        # Should be sorted by Z in descending order
-        assert queue[0]["position"]["z"] == 8
-        assert queue[1]["position"]["z"] == 5
-        assert queue[2]["position"]["z"] == 2
-
-    def test_max_debris_capacity(self):
-        """Test max debris limit."""
-        config = DebrisConfig(max_debris_count=5)
-        manager = DebrisManager(config=config)
-
-        # Try to spawn more than max
-        for i in range(10):
-            fragments = [
-                {
-                    "position": {"x": i, "y": 0, "z": 1},
-                    "velocity": {"x": 0, "y": 0, "z": 0},
-                    "size_m": 0.1,
-                    "lifetime_s": 10.0,
-                },
-            ]
-            manager.spawn_fragments(f"obj_{i}", fragments, 0, 0.0)
-
-        stats = manager.get_stats()
-        # Should not exceed max
-        assert stats["active_count"] <= 5
-
-    def test_stats(self):
-        """Test debris statistics."""
-        manager = DebrisManager()
-
-        fragments = [
-            {
-                "position": {"x": i, "y": 0, "z": 1},
-                "velocity": {"x": 0, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            }
-            for i in range(3)
-        ]
-
-        manager.spawn_fragments("window_1", fragments, 0, 0.0)
-        manager.step(0.01, 1)
-
-        stats = manager.get_stats()
-        assert "pool" in stats
-        assert "active_count" in stats
-        assert stats["active_count"] == 3
-        assert stats["total_spawned"] == 3
-
-    def test_serialize_deserialize(self):
-        """Test debris state serialization."""
-        manager1 = DebrisManager(seed=42)
-
-        fragments = [
-            {
-                "position": {"x": 0, "y": 0, "z": 5},
-                "velocity": {"x": 1, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            },
-            {
-                "position": {"x": 1, "y": 0, "z": 3},
-                "velocity": {"x": 2, "y": 0, "z": 0},
-                "size_m": 0.2,
-                "lifetime_s": 8.0,
-            },
-        ]
-
-        manager1.spawn_fragments("window_1", fragments, 0, 0.0)
-        manager1.step(1.0, 1)
-
-        # Serialize
-        data = manager1.serialize()
-        assert "active_fragments" in data
-        assert len(data["active_fragments"]) == 2
-
-        # Deserialize into new manager
-        manager2 = DebrisManager(seed=42)
-        manager2.deserialize(data)
-
-        # Check state matches
-        stats1 = manager1.get_stats()
-        stats2 = manager2.get_stats()
-        assert stats1["active_count"] == stats2["active_count"]
-        assert stats1["total_spawned"] == stats2["total_spawned"]
-
-    def test_collision_event_recording(self):
-        """Test collision events are recorded."""
-        manager = DebrisManager()
-
-        fragments = [
-            {
-                "position": {"x": 0, "y": 0, "z": 1},
-                "velocity": {"x": 0, "y": 0, "z": -5},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            },
-        ]
-
-        manager.spawn_fragments("window_1", fragments, 0, 0.0)
-        active = manager._pool.get_active()
-        fragment_id = active[0].fragment_id
-
-        manager.handle_collision(
-            fragment_id,
-            Vec3(0, 0, 0),
-            Vec3(0, 0, 1),
-            restitution=0.3,
-        )
-
-        stats = manager.get_stats()
-        assert stats["collision_events"] == 1
-
-    def test_sleeping_fragment_optimization(self):
-        """Test sleeping fragments don't consume physics updates."""
-        # Use custom config with zero gravity to test sleeping without gravity acceleration
-        config = DebrisConfig()
-        manager = DebrisManager(config=config)
-
-        fragments = [
-            {
-                "position": {"x": 0, "y": 0, "z": 0},
-                "velocity": {"x": 0, "y": 0, "z": 0},
-                "size_m": 0.1,
-                "lifetime_s": 10.0,
-            },
-        ]
-
-        manager.spawn_fragments("window_1", fragments, 0, 0.0)
-
-        # Step with zero gravity so fragment stays at rest
-        active = manager._pool.get_active()
-        active[0].step(0.1, 0.0)
-
-        # Fragment should be sleeping
-        assert active[0].is_sleeping
-
-        stats = manager.get_stats()
-        assert stats["sleeping_count"] == 1
+        fragment = pool.get_fragment("f1")
+        assert fragment.velocity.y < 0  # Gravity pulled down

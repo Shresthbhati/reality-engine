@@ -308,7 +308,7 @@ class FrameGraph:
                 # Compose transform
                 try:
                     new_transform = acc_transform.then(edge.transform)
-                except ValueError as e:
+                except ValueError:
                     # Frame mismatch in composition - skip this edge
                     continue
                 
@@ -555,7 +555,7 @@ def build_frame_graph_from_world(world, include_trajectories=True) -> FrameGraph
     
     # Load registration data from metadata
     if "registration" in world.metadata:
-        reg_data = world.metadata["registration"]
+        # reg_data = world.metadata["registration"]
         # This would load actual registration results if stored
         pass
     

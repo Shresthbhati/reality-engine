@@ -28,11 +28,33 @@
   --re-text-link:      #5ba3fa;
 
   /* ─── Accent / Brand ─────────────────────────────────────── */
-  --re-accent:         #3d8ef7;  /* primary electric blue */
-  --re-accent-hover:   #5ba3fa;
-  --re-accent-active:  #2a7ae8;
-  --re-accent-subtle:  rgba(61, 142, 247, 0.12);
-  --re-accent-glow:    rgba(61, 142, 247, 0.20);
+  --re-accent:         #00e5ff;  /* electric cyan (visual source of truth) */
+  --re-accent-blue:    #3d8ef7;  /* secondary workstation blue */
+  --re-accent-hover:   #33ebff;
+  --re-accent-active:  #00b4d8;
+  --re-accent-subtle:  rgba(0, 229, 255, 0.12);
+  --re-accent-glow:    rgba(0, 229, 255, 0.25);
+  --re-accent-border:  rgba(0, 229, 255, 0.35);
+
+  /* ─── Global Modes ───────────────────────────────────────── */
+  --re-mode-explore:   #38bdf8;
+  --re-mode-inspect:   #00e5ff;
+  --re-mode-edit:      #f59e0b;
+  --re-mode-capture:   #a855f7;
+  --re-mode-build:     #10b981;
+  --re-mode-review:    #ec4899;
+
+  /* ─── Global Spatial Scales ──────────────────────────────── */
+  --re-scale-room:        #ec4899;
+  --re-scale-building:    #a855f7;
+  --re-scale-street:      #8b5cf6;
+  --re-scale-plot:        #6366f1;
+  --re-scale-block:       #3b82f6;
+  --re-scale-multiblock:  #0ea5e9;
+  --re-scale-locality:    #06b6d4;
+  --re-scale-ward:        #14b8a6;
+  --re-scale-district:    #10b981;
+  --re-scale-city:        #22c55e;
 
   /* ─── Semantic Colors ────────────────────────────────────── */
   --re-success:        #34c76f;
@@ -49,15 +71,17 @@
   --re-confidence-mid:    #f5a623;
   --re-confidence-low:    #e54d4d;
   --re-confidence-none:   #5c5c78;
+  --re-uncertainty:       #a855f7;
+  --re-uncertainty-subtle: rgba(168, 85, 247, 0.15);
 
   /* ─── Data Visualization Palette ────────────────────────── */
-  --re-data-1: #3d8ef7;
-  --re-data-2: #34c76f;
-  --re-data-3: #f5a623;
-  --re-data-4: #e54d4d;
-  --re-data-5: #c77df5;
-  --re-data-6: #5edaff;
-  --re-data-7: #f7a24e;
+  --re-data-1: #00e5ff;
+  --re-data-2: #3d8ef7;
+  --re-data-3: #34c76f;
+  --re-data-4: #f5a623;
+  --re-data-5: #e54d4d;
+  --re-data-6: #c77df5;
+  --re-data-7: #5edaff;
   --re-data-8: #ff6b9d;
 
   /* ─── Typography ─────────────────────────────────────────── */

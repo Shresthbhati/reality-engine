@@ -24,6 +24,9 @@ import { WorldOutliner } from '@/components/workspaces/studio/WorldOutliner';
 import { Viewport3D } from '@/components/workspaces/studio/Viewport3D';
 import { EntityInspector } from '@/components/workspaces/studio/EntityInspector';
 import EvidencePanel from '@/components/workspaces/studio/EvidencePanel';
+import WorldNavPanel from '@/components/shell/WorldNavPanel';
+import ContextInspectorPanel from '@/components/shell/ContextInspectorPanel';
+import ContextualBottomDrawer from '@/components/shell/ContextualBottomDrawer';
 import {
   Activity,
   Layers,
@@ -72,6 +75,8 @@ export default function ViewerApp() {
 
   const [showCoverageOverlay, setShowCoverageOverlay] = useState(false);
   const [showProvenanceDrawer, setShowProvenanceDrawer] = useState(false);
+  const [leftTab, setLeftTab] = useState<'nav' | 'entities'>('nav');
+  const [rightTab, setRightTab] = useState<'inspector' | 'details'>('inspector');
 
   // Global Keyboard Shortcuts (Professional Workstation Standards)
   useEffect(() => {
@@ -247,15 +252,44 @@ export default function ViewerApp() {
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         {bottomDrawerOpen ? (
           <Group orientation="vertical">
-            {/* Top Row: Outliner | 3D Viewport | Inspector */}
+            {/* Top Row: Navigation/Outliner | 3D Viewport | Context Inspector */}
             <Panel defaultSize={74} minSize={40}>
               <Group orientation="horizontal">
                 {!outlinerCollapsed && (
                   <>
                     <Panel defaultSize={20} minSize={14} maxSize={35}>
-                      <WorldOutliner />
+                      <div className="flex flex-col h-full w-full bg-[#101217] overflow-hidden">
+                        {/* Left Tab Switcher */}
+                        <div className="h-6 px-2 bg-[#0c0d11] border-b border-[#1f222b] flex items-center gap-1 shrink-0 text-[10px] font-mono">
+                          <button
+                            type="button"
+                            onClick={() => setLeftTab('nav')}
+                            className={`px-2 py-0.5 rounded transition-all ${
+                              leftTab === 'nav'
+                                ? 'bg-[#00e5ff]/20 text-[#00e5ff] font-bold'
+                                : 'text-[#54596b] hover:text-[#9296a6]'
+                            }`}
+                          >
+                            WORLD NAV
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setLeftTab('entities')}
+                            className={`px-2 py-0.5 rounded transition-all ${
+                              leftTab === 'entities'
+                                ? 'bg-[#00e5ff]/20 text-[#00e5ff] font-bold'
+                                : 'text-[#54596b] hover:text-[#9296a6]'
+                            }`}
+                          >
+                            ENTITIES
+                          </button>
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                          {leftTab === 'nav' ? <WorldNavPanel /> : <WorldOutliner />}
+                        </div>
+                      </div>
                     </Panel>
-                    <Separator className="w-1 bg-[#1f222b] hover:bg-[#3d8ef7]/50 transition-colors cursor-col-resize" />
+                    <Separator className="w-1 bg-[#1f222b] hover:bg-[#00e5ff]/50 transition-colors cursor-col-resize" />
                   </>
                 )}
 
@@ -267,21 +301,50 @@ export default function ViewerApp() {
 
                 {!inspectorCollapsed && (
                   <>
-                    <Separator className="w-1 bg-[#1f222b] hover:bg-[#3d8ef7]/50 transition-colors cursor-col-resize" />
+                    <Separator className="w-1 bg-[#1f222b] hover:bg-[#00e5ff]/50 transition-colors cursor-col-resize" />
                     <Panel defaultSize={22} minSize={16} maxSize={40}>
-                      <EntityInspector />
+                      <div className="flex flex-col h-full w-full bg-[#101217] overflow-hidden">
+                        {/* Right Tab Switcher */}
+                        <div className="h-6 px-2 bg-[#0c0d11] border-b border-[#1f222b] flex items-center gap-1 shrink-0 text-[10px] font-mono">
+                          <button
+                            type="button"
+                            onClick={() => setRightTab('inspector')}
+                            className={`px-2 py-0.5 rounded transition-all ${
+                              rightTab === 'inspector'
+                                ? 'bg-[#00e5ff]/20 text-[#00e5ff] font-bold'
+                                : 'text-[#54596b] hover:text-[#9296a6]'
+                            }`}
+                          >
+                            CONTEXT INSPECTOR
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRightTab('details')}
+                            className={`px-2 py-0.5 rounded transition-all ${
+                              rightTab === 'details'
+                                ? 'bg-[#00e5ff]/20 text-[#00e5ff] font-bold'
+                                : 'text-[#54596b] hover:text-[#9296a6]'
+                            }`}
+                          >
+                            ATTRIBUTES
+                          </button>
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                          {rightTab === 'inspector' ? <ContextInspectorPanel /> : <EntityInspector />}
+                        </div>
+                      </div>
                     </Panel>
                   </>
                 )}
               </Group>
             </Panel>
 
-            <Separator className="h-1 bg-[#1f222b] hover:bg-[#3d8ef7]/50 transition-colors cursor-row-resize" />
+            <Separator className="h-1 bg-[#1f222b] hover:bg-[#00e5ff]/50 transition-colors cursor-row-resize" />
 
             {/* Bottom Panel Drawer */}
             <Panel defaultSize={26} minSize={15} maxSize={50}>
               <div className="h-full w-full bg-[#101217] overflow-hidden flex flex-col">
-                <EvidencePanel />
+                <ContextualBottomDrawer />
               </div>
             </Panel>
           </Group>
@@ -289,8 +352,34 @@ export default function ViewerApp() {
           // Maximized Viewport Layout (Bottom Drawer Collapsed)
           <div className="flex-1 w-full h-full min-h-0 flex overflow-hidden">
             {!outlinerCollapsed && (
-              <div className="w-64 shrink-0 h-full border-r border-[#1f222b] bg-[#101217] overflow-hidden">
-                <WorldOutliner />
+              <div className="w-64 shrink-0 h-full border-r border-[#1f222b] bg-[#101217] overflow-hidden flex flex-col">
+                <div className="h-6 px-2 bg-[#0c0d11] border-b border-[#1f222b] flex items-center gap-1 shrink-0 text-[10px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => setLeftTab('nav')}
+                    className={`px-2 py-0.5 rounded transition-all ${
+                      leftTab === 'nav'
+                        ? 'bg-[#00e5ff]/20 text-[#00e5ff] font-bold'
+                        : 'text-[#54596b] hover:text-[#9296a6]'
+                    }`}
+                  >
+                    WORLD NAV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeftTab('entities')}
+                    className={`px-2 py-0.5 rounded transition-all ${
+                      leftTab === 'entities'
+                        ? 'bg-[#00e5ff]/20 text-[#00e5ff] font-bold'
+                        : 'text-[#54596b] hover:text-[#9296a6]'
+                    }`}
+                  >
+                    ENTITIES
+                  </button>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  {leftTab === 'nav' ? <WorldNavPanel /> : <WorldOutliner />}
+                </div>
               </div>
             )}
 
@@ -303,7 +392,7 @@ export default function ViewerApp() {
                   type="button"
                   onClick={toggleOutliner}
                   title="Show Outliner (⌘B)"
-                  className="absolute top-12 left-3 z-30 p-1.5 rounded-md bg-[#0f1014]/90 border border-[#1f222b] text-[#9296a6] hover:text-[#ededf2] hover:border-[#3d8ef7]/50 shadow-xl transition-all"
+                  className="absolute top-12 left-3 z-30 p-1.5 rounded-md bg-[#0f1014]/90 border border-[#1f222b] text-[#9296a6] hover:text-[#ededf2] hover:border-[#00e5ff]/50 shadow-xl transition-all"
                 >
                   <PanelLeft className="w-3.5 h-3.5" />
                 </button>
@@ -315,7 +404,7 @@ export default function ViewerApp() {
                   type="button"
                   onClick={toggleInspector}
                   title="Show Inspector (⌘I)"
-                  className="absolute top-12 right-3 z-30 p-1.5 rounded-md bg-[#0f1014]/90 border border-[#1f222b] text-[#9296a6] hover:text-[#ededf2] hover:border-[#3d8ef7]/50 shadow-xl transition-all"
+                  className="absolute top-12 right-3 z-30 p-1.5 rounded-md bg-[#0f1014]/90 border border-[#1f222b] text-[#9296a6] hover:text-[#ededf2] hover:border-[#00e5ff]/50 shadow-xl transition-all"
                 >
                   <PanelRight className="w-3.5 h-3.5" />
                 </button>
@@ -323,15 +412,41 @@ export default function ViewerApp() {
 
               {/* Active Scale & View Mode HUD Indicator on Viewport */}
               <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-mono">
-                <span className="text-[#3d8ef7] font-bold">SCALE: {activeScaleLevel}</span>
+                <span className="text-[#00e5ff] font-bold">SCALE: {activeScaleLevel}</span>
                 <span className="text-[#54596b]">•</span>
                 <span className="text-[#2ecc71] font-bold">MODE: {reconstructionViewMode}</span>
               </div>
             </div>
 
             {!inspectorCollapsed && (
-              <div className="w-76 shrink-0 h-full border-l border-[#1f222b] bg-[#101217] overflow-hidden">
-                <EntityInspector />
+              <div className="w-80 shrink-0 h-full border-l border-[#1f222b] bg-[#101217] overflow-hidden flex flex-col">
+                <div className="h-6 px-2 bg-[#0c0d11] border-b border-[#1f222b] flex items-center gap-1 shrink-0 text-[10px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => setRightTab('inspector')}
+                    className={`px-2 py-0.5 rounded transition-all ${
+                      rightTab === 'inspector'
+                        ? 'bg-[#00e5ff]/20 text-[#00e5ff] font-bold'
+                        : 'text-[#54596b] hover:text-[#9296a6]'
+                    }`}
+                  >
+                    CONTEXT INSPECTOR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRightTab('details')}
+                    className={`px-2 py-0.5 rounded transition-all ${
+                      rightTab === 'details'
+                        ? 'bg-[#00e5ff]/20 text-[#00e5ff] font-bold'
+                        : 'text-[#54596b] hover:text-[#9296a6]'
+                    }`}
+                  >
+                    ATTRIBUTES
+                  </button>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  {rightTab === 'inspector' ? <ContextInspectorPanel /> : <EntityInspector />}
+                </div>
               </div>
             )}
           </div>

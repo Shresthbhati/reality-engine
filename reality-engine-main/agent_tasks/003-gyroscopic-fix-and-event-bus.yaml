@@ -1,0 +1,66 @@
+# Agent task record (spec sec 79 AGENT CONTRACT)
+
+task:
+  id: 003-gyroscopic-fix-and-event-bus
+  objective: >
+    (a) Fix a real correctness bug in rigid-body rotational dynamics:
+    the integrator used alpha = I^-1*tau, dropping the gyroscopic term
+    omega x (I*omega) required by V11 spec sec 915's full Euler
+    equation, and was inconsistent about which frame angular velocity
+    lived in. (b) Build step 11, the event bus, using the richer field
+    schema from V11 spec sec 930, wired into the physics backend.
+  context: >
+    Triggered by review of a "V11 DETAILED" upload set (5 files,
+    ~1.1M lines). That set is almost entirely machine-generated template
+    filler (verified by diffing/deduping -- see docs/BUILD_ORDER.md for
+    the evidence); the one real addition is a ~220-line prose section
+    (V11 sec 900-969) in part 04, which is the source for both fixes in
+    this task. Do not treat the rest of that upload set as a source of
+    requirements.
+  inputs:
+    - REALITY_ENGINE_MASTER_SPECIFICATION_V10_WORLD_PHYSICS_AND_AGENT_BUILD_BIBLE.md (sec 85)
+    - V11 DETAILED PART_04.md, lines ~27946-28157 (sec 900-969, especially 915 and 930)
+  outputs:
+    - engine/physics/math3.py (moved out of rigid/ to break a circular import: collision/shapes.py needs Vec3, rigid/body.py needs Box/Sphere)
+    - engine/physics/rigid/integrator.py (gyroscopic term)
+    - engine/physics/rigid/body.py (public `inertia` property)
+    - events/{event,bus,types}.py
+    - engine/physics/backend/simple_backend.py (event_bus wiring, world.time)
+    - tests/test_physics_gyroscopic.py, tests/test_events.py, tests/test_physics_events.py
+  allowed_files:
+    - engine/physics/**
+    - events/**
+    - tests/**
+    - docs/**
+    - pyproject.toml
+  forbidden_files:
+    - engine/physics/fracture/**  # step 12, not this task
+  dependencies:
+    - 001-foundation-skeleton
+    - 002-rigid-body-collision
+  interfaces:
+    - EventBus.emit() / EventBus.subscribe() (events/bus.py)
+    - RigidBody.inertia (new public property, engine/physics/rigid/body.py)
+  invariants:
+    - "angular velocity and inertia are body-local-frame quantities everywhere they're used together (documented in math3.Quat.integrate and rigid/integrator.py)"
+    - "event ids are derived from (seed, tick, sequence), never random -- replay determinism (sec 934/90)"
+    - "an ongoing contact fires its event once on the tick it begins, not once per tick it persists"
+    - "IPhysicsBackend.step(world, dt) signature is unchanged -- event bus is an optional attribute on PhysicsWorld, not a new parameter"
+  tests: tests/test_physics_gyroscopic.py, tests/test_events.py, tests/test_physics_events.py
+  performance_target: not measured (no benchmark harness yet, per task 002)
+  memory_target: not measured
+  failure_modes:
+    - torque-free spin: angular momentum magnitude and kinetic energy must stay constant in the body frame (regression tests test_physics_gyroscopic.py)
+    - contact event spam: a resting contact must not emit more than a handful of events over 200 ticks (test_ongoing_resting_contact_does_not_spam_events)
+  acceptance_criteria:
+    - pytest tests/ passes (131/131 at time of writing)
+    - single-axis spin of an asymmetric body has zero precession (fixed point of Euler's equations); multi-axis spin visibly changes direction
+    - same-seed scenario produces byte-identical event log across two independent runs
+  known_gaps: >
+    events/types.py only declares ContactEvent/ImpactEvent -- the other
+    11 event names in spec sec 85 (BreakEvent, FractureEvent, FireEvent,
+    IgnitionEvent, FloodEvent, WindEvent, StructuralFailureEvent,
+    DebrisEvent, DamageEvent, RepairEvent, ExplosionEvent) have no
+    emitter yet and must not be added to KNOWN_EVENT_TYPES until their
+    solver exists.
+  rollback_plan: this task only adds new files plus targeted edits to rigid/integrator.py, rigid/body.py, and simple_backend.py; revert by reverting those edits and deleting the new files.

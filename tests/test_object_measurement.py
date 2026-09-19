@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from perception.instances.measurement import measure_dimensions, measure_distance
 from perception.instances.object_resolution import MergedObjectCandidate
 from provenance import Provenance

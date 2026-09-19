@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from perception.instances.track_backend import (
     MultiViewIdentityTrackBackend,
@@ -12,7 +13,7 @@ from perception.segmentation.interface import SegmentationResult, SegmentedRegio
 from perception.instances.lifting import ObjectHypothesis3D
 from perception.depth.interface import DepthMap
 from reconstruction.calibration.camera import PinholeCamera, CameraIntrinsics, CameraExtrinsics
-from engine.physics.math3 import Vec3, Quat
+from engine.math import Vec3, Quat
 from evidence.session import EvidenceItem, EvidenceKind
 from provenance import Provenance, Uncertainty
 
@@ -20,7 +21,7 @@ from provenance import Provenance, Uncertainty
 def _make_evidence(eid: str) -> EvidenceItem:
     return EvidenceItem(
         id=eid,
-        kind=EvidenceKind.IMAGE,
+        kind=EvidenceKind.PHOTO,
         source_uri=f"file:///{eid}.jpg",
         metadata={},
     )
@@ -65,10 +66,10 @@ def _make_depth_frame(evidence_id: str) -> DepthMap:
 
 def test_build_images_dict_loads_images(tmp_path):
     """Test that build_images_dict loads images from evidence items."""
-    try:
-        import imageio.v3 as iio
-    except ImportError:
-        return  # Skip if imageio not available
+    iio = pytest.importorskip(
+        "imageio.v3",
+        reason="imageio not installed; install with: pip install imageio",
+    )
     
     # Create a test image
     img_path = tmp_path / "test.jpg"
@@ -77,7 +78,7 @@ def test_build_images_dict_loads_images(tmp_path):
     
     evidence = EvidenceItem(
         id="ev-1",
-        kind=EvidenceKind.IMAGE,
+        kind=EvidenceKind.PHOTO,
         source_uri=str(img_path).replace("\\", "/"),
         metadata={},
     )

@@ -1,0 +1,52 @@
+F.F                                                                      [100%]
+================================== FAILURES ===================================
+_________ TestPayloadStoreSecurity.test_put_get_round_trip_idempotent _________
+
+self = <tests.test_session_store.TestPayloadStoreSecurity object at 0x000002818E63FD90>
+tmp_path = WindowsPath('C:/Users/shres/AppData/Local/Temp/pytest-of-shres/pytest-262/test_put_get_round_trip_idempo0')
+
+    def test_put_get_round_trip_idempotent(self, tmp_path):
+        store = SourcePayloadStore(str(tmp_path / "payloads"))
+        data = b"\xff\xd8\xff\xe0" + b"payload" * 10
+        digest = __import__("hashlib").sha256(data).hexdigest()
+>       path1 = store.put(data, digest)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_session_store.py:421: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <evidence.session_store.SourcePayloadStore object at 0x00000281ADC4DBE0>
+data = b'\xff\xd8\xff\xe0payloadpayloadpayloadpayloadpayloadpayloadpayloadpayloadpayloadpayload'
+digest = 'e82c695de197613fef63a2712733678074ff23176823ae2f0e094b30818d6334'
+
+    def put(self, data: bytes, digest: str) -> str:
+        """Store bytes under their (already computed) digest. Returns
+        the stored path. Idempotent."""
+        path = self._path_for(digest)
+        if not os.path.isfile(path):
+            tmp = path + ".tmp"
+>           with open(tmp, "wb") as f:
+                 ^^^^^^^^^^^^^^^
+E           FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\shres\\AppData\\Local\\Temp\\pytest-of-shres\\pytest-262\\test_put_get_round_trip_idempo0\\payloads\\e8\\e82c695de197613fef63a2712733678074ff23176823ae2f0e094b30818d6334.bin.tmp'
+
+evidence\session_store.py:324: FileNotFoundError
+___ TestPayloadStoreSecurity.test_raw_source_bytes_stored_content_addressed ___
+
+self = <tests.test_session_store.TestPayloadStoreSecurity object at 0x00000281ADC56520>
+tmp_path = WindowsPath('C:/Users/shres/AppData/Local/Temp/pytest-of-shres/pytest-262/test_raw_source_bytes_stored_c0')
+
+    def test_raw_source_bytes_stored_content_addressed(self, tmp_path):
+        ws = _workspace(tmp_path)
+        handle = ws.create_session("S")
+        photo = _save_photo(tmp_path / "p.jpg")
+        added = handle.add_source(photo)
+        source = handle.sources.get(added.source_id)
+>       stored_digest = source.metadata["stored_digest"]
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'stored_digest'
+
+tests\test_session_store.py:440: KeyError
+=========================== short test summary info ===========================
+FAILED tests/test_session_store.py::TestPayloadStoreSecurity::test_put_get_round_trip_idempotent
+FAILED tests/test_session_store.py::TestPayloadStoreSecurity::test_raw_source_bytes_stored_content_addressed
+2 failed, 1 passed in 0.42s

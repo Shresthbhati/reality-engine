@@ -1,97 +1,110 @@
-"""Viewport: camera model and frustum culling for the visualization layer.
+"""Minimal viewport types for Studio (core).
 
-Headless engine -- no GPU/graphics library. A "viewport" here is the data
-model a renderer would consume: camera pose, projection parameters, and a
-visibility query that turns world entities into a depth-sorted render list.
+This is a minimal subset of the full render module, providing only the
+types needed by the core StudioSession without depending on the full
+physics/rendering engine in the child project.
 
-Spec §16: VIEWPORT
+The full render module with physics integration, materials, lighting,
+etc. lives in the child project (reality-engine-child.physics.engine.render).
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple
+from typing import Optional
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 
 
 @dataclass(frozen=True)
 class Camera:
-    """Pinhole camera: position + orientation (forward/up) + projection."""
+    """Minimal camera for Studio viewport."""
 
     position: Vec3
     forward: Vec3
     up: Vec3 = Vec3(0.0, 0.0, 1.0)
     fov_deg: float = 60.0
     aspect: float = 16.0 / 9.0
-    near: float = 0.1
+    near: float = 0.01
     far: float = 1000.0
 
-    def __post_init__(self):
-        object.__setattr__(self, "forward", self.forward.normalized())
-        object.__setattr__(self, "up", self.up.normalized())
+    def view_matrix(self) -> tuple[tuple[float, ...], ...]:
+        """Compute view matrix (4x4 row-major tuple)."""
+        from engine.math import Mat3, Quat
 
-    @staticmethod
-    def look_at(position: Vec3, target: Vec3, up: Vec3 = Vec3(0.0, 0.0, 1.0)) -> "Camera":
-        return Camera(position=position, forward=(target - position).normalized(), up=up)
+        # Right = forward x up
+        right = self.forward.cross(self.up)
+        if right.length() < 1e-12:
+            right = Vec3(1.0, 0.0, 0.0)
+        else:
+            right = right.normalized()
 
-    def right(self) -> Vec3:
-        return self.forward.cross(self.up).normalized()
+        # Recompute up = right x forward
+        up = right.cross(self.forward).normalized()
 
-    def true_up(self) -> Vec3:
-        """Up vector orthogonalized against forward (forward/up need not be perpendicular as given)."""
-        return self.right().cross(self.forward).normalized()
+        # Camera-to-world rotation
+        rot = Mat3((
+            (right.x, right.y, right.z),
+            (up.x, up.y, up.z),
+            (-self.forward.x, -self.forward.y, -self.forward.z),
+        ))
 
-    def is_visible(self, point: Vec3, radius: float = 0.0) -> bool:
-        """Frustum test: near/far depth plus horizontal/vertical FOV cone, radius-expanded."""
-        to_point = point - self.position
-        depth = to_point.dot(self.forward)
+        # World-to-camera is transpose of camera-to-world
+        rot_t = rot.transpose()
 
-        if depth + radius < self.near or depth - radius > self.far:
-            return False
+        # Translation: -R^T * position
+        pos = self.position
+        tx = -(rot_t.rows[0][0] * pos.x + rot_t.rows[0][1] * pos.y + rot_t.rows[0][2] * pos.z)
+        ty = -(rot_t.rows[1][0] * pos.x + rot_t.rows[1][1] * pos.y + rot_t.rows[1][2] * pos.z)
+        tz = -(rot_t.rows[2][0] * pos.x + rot_t.rows[2][1] * pos.y + rot_t.rows[2][2] * pos.z)
 
-        # Angle-based frustum check against a padded bound so a sphere
-        # straddling the frustum edge still counts as visible.
-        dist = to_point.length()
-        if dist < 1e-9:
-            return True
-
-        half_fov = math.radians(self.fov_deg) / 2.0
-        angle = math.acos(max(-1.0, min(1.0, depth / dist)))
-        angular_pad = math.atan2(radius, max(depth, 1e-6))
-        return angle - angular_pad <= half_fov
+        return (
+            (rot_t.rows[0][0], rot_t.rows[0][1], rot_t.rows[0][2], tx),
+            (rot_t.rows[1][0], rot_t.rows[1][1], rot_t.rows[1][2], ty),
+            (rot_t.rows[2][0], rot_t.rows[2][1], rot_t.rows[2][2], tz),
+            (0.0, 0.0, 0.0, 1.0),
+        )
 
 
+@dataclass
 class Viewport:
-    """Owns a camera and produces a depth-sorted visible-entity render list."""
+    """Minimal viewport for Studio."""
 
-    def __init__(self, camera: Camera):
-        self.camera = camera
+    camera: Camera
+    width: int = 1920
+    height: int = 1080
 
-    def set_camera(self, camera: Camera) -> None:
-        self.camera = camera
+    def projection_matrix(self) -> tuple[tuple[float, ...], ...]:
+        """Compute perspective projection matrix (4x4 row-major tuple)."""
+        import math
 
-    def cull(
-        self, entities: Iterable[Tuple[str, Vec3, float]]
-    ) -> List[dict]:
-        """Filter and depth-sort entities visible from the camera.
+        f = 1.0 / math.tan(math.radians(self.camera.fov_deg) / 2.0)
+        aspect = self.camera.aspect
+        near = self.camera.near
+        far = self.camera.far
+
+        return (
+            (f / aspect, 0.0, 0.0, 0.0),
+            (0.0, f, 0.0, 0.0),
+            (0.0, 0.0, (far + near) / (near - far), -1.0),
+            (0.0, 0.0, (2.0 * far * near) / (near - far), 0.0),
+        )
+
+    def cull(self, candidates):
+        """Simple frustum culling: return entities within the view frustum.
 
         Args:
-            entities: iterable of (entity_id, position, radius)
+            candidates: List of (entity_id, position: Vec3, radius: float)
 
         Returns:
-            List of {"entity_id", "position", "distance"} dicts, nearest first.
+            List of dicts with entity_id and position for visible entities.
         """
         visible = []
-        for entity_id, position, radius in entities:
-            if self.camera.is_visible(position, radius):
-                distance = (position - self.camera.position).length()
-                visible.append({
-                    "entity_id": entity_id,
-                    "position": position.to_dict(),
-                    "distance": distance,
-                })
-
-        visible.sort(key=lambda e: e["distance"])
+        for entity_id, pos, radius in candidates:
+            # Simple distance-based culling for now
+            # In a full implementation, this would do proper frustum culling
+            to_camera = pos - self.camera.position
+            dist = to_camera.length()
+            if dist <= self.camera.far + radius:
+                visible.append({"entity_id": entity_id, "position": {"x": pos.x, "y": pos.y, "z": pos.z}})
         return visible

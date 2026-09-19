@@ -19,7 +19,7 @@ import math
 import numpy as np
 import pytest
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 from reconstruction.calibration.transforms import RigidTransform
 from uncertainty import (
     UNKNOWN,

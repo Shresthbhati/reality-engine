@@ -13,7 +13,10 @@ Usage:
 
 from __future__ import annotations
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 -- tomllib is stdlib from 3.11
+    import tomli as tomllib  # type: ignore[import-not-found,no-redef]
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Any

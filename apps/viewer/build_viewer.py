@@ -50,14 +50,14 @@ def js_safe(src: str) -> str:
     return src.replace("</script>", "<\\/script>")
 
 
-def main() -> int:
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--worldir", type=Path, default=None)
     ap.add_argument("--points", type=Path, default=None)
     ap.add_argument("--cameras", type=Path, default=None)
     ap.add_argument("--mesh", type=Path, default=None, help="binary PLY triangle mesh (MeshData.to_ply_bytes output)")
     ap.add_argument("--out", type=Path, default=VIEWER_DIR / "viewer.html")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     three_src = (VIEWER_DIR / "vendor" / "three.module.min.js").read_text(encoding="utf-8")
     controls_src = (VIEWER_DIR / "vendor" / "addons" / "controls" / "OrbitControls.js").read_text(encoding="utf-8")

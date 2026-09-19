@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 from typing import Dict, Optional, Tuple
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from provenance import Provenance
 from world_ir.schema_v1 import Measurement
 from uncertainty import Uncertain, BASES, UNKNOWN

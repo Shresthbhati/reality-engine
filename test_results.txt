@@ -1,0 +1,596 @@
+STDOUT:
+FFFF.F..FFFFFFFFFFFFFFFFF...FFF............F............................ [ 65%]
+............................FFFFF.FFFF                                   [100%]
+================================== FAILURES ===================================
+_________________ TestDetectRooms.test_finds_the_closed_room __________________
+tests\test_room_inference.py:131: in test_finds_the_closed_room
+    _, rooms, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_________ TestDetectRooms.test_ring_is_the_hand_computable_footprint __________
+tests\test_room_inference.py:143: in test_ring_is_the_hand_computable_footprint
+    _, rooms, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+______________ TestDetectRooms.test_height_is_floor_to_wall_top _______________
+tests\test_room_inference.py:152: in test_height_is_floor_to_wall_top
+    _, rooms, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_____________ TestDetectRooms.test_horizontal_slab_makes_no_room ______________
+tests\test_room_inference.py:160: in test_horizontal_slab_makes_no_room
+    _, rooms, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+___________ TestDetectRooms.test_open_facade_is_unclosed_not_a_room ___________
+tests\test_room_inference.py:222: in test_open_facade_is_unclosed_not_a_room
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_______________ TestDetectRooms.test_deterministic_across_calls _______________
+tests\test_room_inference.py:251: in test_deterministic_across_calls
+    _, rooms_a, _ = _full_pipeline()
+                    ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_ TestPromoteRoom.test_promotion_writes_entity_with_correct_type_and_provenance _
+tests\test_room_inference.py:267: in test_promotion_writes_entity_with_correct_type_and_provenance
+    world, _, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+____ TestPromoteRoom.test_contains_and_part_of_edges_are_written_both_ways ____
+tests\test_room_inference.py:275: in test_contains_and_part_of_edges_are_written_both_ways
+    world, _, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+____________ TestPromoteRoom.test_measurements_are_hand_computable ____________
+tests\test_room_inference.py:299: in test_measurements_are_hand_computable
+    world, _, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+______ TestPromoteRoom.test_measurements_also_land_in_custom_properties _______
+tests\test_room_inference.py:314: in test_measurements_also_land_in_custom_properties
+    world, _, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+___________ TestPromoteRoom.test_observation_records_the_derivation ___________
+tests\test_room_inference.py:320: in test_observation_records_the_derivation
+    world, _, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+______________ TestPromoteRoom.test_refuses_unclosed_candidates _______________
+tests\test_room_inference.py:329: in test_refuses_unclosed_candidates
+    _, rooms, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+________ TestPromoteRoom.test_refuses_when_plane_entities_are_missing _________
+tests\test_room_inference.py:336: in test_refuses_when_plane_entities_are_missing
+    room = self._detected_room()
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:263: in _detected_room
+    _, rooms, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+________ TestPromoteRoom.test_world_round_trips_through_serialization _________
+tests\test_room_inference.py:342: in test_world_round_trips_through_serialization
+    world, _, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_________ TestPromoteRoom.test_scene_graph_query_answers_whats_inside _________
+tests\test_room_inference.py:365: in test_scene_graph_query_answers_whats_inside
+    world, _, _ = _full_pipeline()
+                  ^^^^^^^^^^^^^^^^
+tests\test_room_inference.py:122: in _full_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_ TestCompilerEndToEnd.test_compiles_the_room_scene_into_structure_plus_room __
+tests\test_world_compiler.py:57: in test_compiles_the_room_scene_into_structure_plus_room
+    world, diag = _compiled_world()
+                  ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+________ TestCompilerEndToEnd.test_every_input_plane_is_accounted_for _________
+tests\test_world_compiler.py:69: in test_every_input_plane_is_accounted_for
+    world, diag = _compiled_world()
+                  ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+________ TestCompilerEndToEnd.test_provenance_semantics_are_preserved _________
+tests\test_world_compiler.py:74: in test_provenance_semantics_are_preserved
+    world, diag = _compiled_world()
+                  ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+________ TestCompilerEndToEnd.test_deterministic_byte_identical_worlds ________
+tests\test_world_compiler.py:86: in test_deterministic_byte_identical_worlds
+    world_a, diag_a = _compiled_world(seed=42)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_____ TestCompilerEndToEnd.test_different_seed_still_finds_the_structure ______
+tests\test_world_compiler.py:92: in test_different_seed_still_finds_the_structure
+    world_a, diag_a = _compiled_world(seed=42)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+______ TestCompilerEndToEnd.test_diagnostics_report_the_unassigned_floor ______
+tests\test_world_compiler.py:100: in test_diagnostics_report_the_unassigned_floor
+    _, diag = _compiled_world()
+              ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+___ TestCompilerEndToEnd.test_validation_gate_passes_on_the_compiled_world ____
+tests\test_world_compiler.py:109: in test_validation_gate_passes_on_the_compiled_world
+    world, _ = _compiled_world()
+               ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_ TestCompilerEndToEnd.test_gate_catches_corruption_between_promotion_and_return _
+tests\test_world_compiler.py:152: in test_gate_catches_corruption_between_promotion_and_return
+    compiled, _ = _compiled_world()
+                  ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+________ TestCompilerEndToEnd.test_studio_consumes_the_compiled_world _________
+tests\test_world_compiler.py:167: in test_studio_consumes_the_compiled_world
+    world, _ = _compiled_world()
+               ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+______ TestCompilerEndToEnd.test_measurements_survive_worldir_round_trip ______
+tests\test_world_compiler.py:179: in test_measurements_survive_worldir_round_trip
+    world, _ = _compiled_world()
+               ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+___ TestValidationGate.test_gate_error_raised_by_compiler_on_corrupt_input ____
+tests\test_world_compiler.py:325: in test_gate_error_raised_by_compiler_on_corrupt_input
+    world, _ = _compiled_world()
+               ^^^^^^^^^^^^^^^^^
+tests\test_world_compiler.py:49: in _compiled_world
+    return compile_reconstruction_to_world(result, CompileOptions(seed=seed))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_______ TestEndToEnd.test_orchestrated_result_drives_full_room_pipeline _______
+tests\test_reconstruction_orchestrator.py:432: in test_orchestrated_result_drives_full_room_pipeline
+    rooms = detect_rooms(summaries, _UP)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_______ TestEndToEnd.test_compiler_consumes_orchestrated_run_end_to_end _______
+tests\test_reconstruction_orchestrator.py:466: in test_compiler_consumes_orchestrated_run_end_to_end
+    world, diagnostics = compile_reconstruction_to_world(
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_ TestCompileWorldCommand.test_compile_through_pipeline_populates_session_world _
+tests\test_compile_command.py:38: in test_compile_through_pipeline_populates_session_world
+    command_result = processor.execute(CompileWorldCommand(result=result))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\commands\processor.py:93: in execute
+    event_type, source_refs = self._apply_compile_world(command)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\commands\processor.py:194: in _apply_compile_world
+    staged, diagnostics = compile_reconstruction_to_world(
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+________ TestCompileWorldCommand.test_world_compiled_event_is_emitted _________
+tests\test_compile_command.py:51: in test_world_compiled_event_is_emitted
+    processor.execute(CompileWorldCommand(result=_result_with_cameras()))
+engine\commands\processor.py:93: in execute
+    event_type, source_refs = self._apply_compile_world(command)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\commands\processor.py:194: in _apply_compile_world
+    staged, diagnostics = compile_reconstruction_to_world(
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+______ TestCompileWorldCommand.test_diagnostics_available_after_success _______
+tests\test_compile_command.py:60: in test_diagnostics_available_after_success
+    processor.execute(CompileWorldCommand(result=_result_with_cameras()))
+engine\commands\processor.py:93: in execute
+    event_type, source_refs = self._apply_compile_world(command)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\commands\processor.py:194: in _apply_compile_world
+    staged, diagnostics = compile_reconstruction_to_world(
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_____________ TestCompileWorldCommand.test_gate_failure_is_atomic _____________
+tests\test_compile_command.py:95: in test_gate_failure_is_atomic
+    processor.execute(CompileWorldCommand(result=result))
+engine\commands\processor.py:93: in execute
+    event_type, source_refs = self._apply_compile_world(command)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\commands\processor.py:194: in _apply_compile_world
+    staged, diagnostics = compile_reconstruction_to_world(
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+____________ TestCompileWorldCommand.test_recompile_is_idempotent _____________
+tests\test_compile_command.py:114: in test_recompile_is_idempotent
+    processor.execute(CompileWorldCommand(result=result))
+engine\commands\processor.py:93: in execute
+    event_type, source_refs = self._apply_compile_world(command)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\commands\processor.py:194: in _apply_compile_world
+    staged, diagnostics = compile_reconstruction_to_world(
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+___ TestCompileWorldCommand.test_studio_compile_reconstruction_convenience ____
+tests\test_compile_command.py:126: in test_studio_compile_reconstruction_convenience
+    command_result = studio.compile_reconstruction(_result_with_cameras(), CompileOptions(seed=7))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\studio\session.py:100: in compile_reconstruction
+    return self.commands.execute(
+engine\commands\processor.py:93: in execute
+    event_type, source_refs = self._apply_compile_world(command)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\commands\processor.py:194: in _apply_compile_world
+    staged, diagnostics = compile_reconstruction_to_world(
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+_ TestCompileWorldCommand.test_global_provenance_stamp_flows_from_staged_world _
+tests\test_compile_command.py:141: in test_global_provenance_stamp_flows_from_staged_world
+    processor.execute(CompileWorldCommand(result=_result_with_cameras()))
+engine\commands\processor.py:93: in execute
+    event_type, source_refs = self._apply_compile_world(command)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+engine\commands\processor.py:194: in _apply_compile_world
+    staged, diagnostics = compile_reconstruction_to_world(
+engine\compiler\world_compiler.py:274: in compile_reconstruction_to_world
+    room_candidates: List[DetectedRoom] = detect_rooms(summaries, options.up)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:645: in detect_rooms
+    lines = _merge_coplanar_lines(_wall_lines_in_floor(floor, contacting))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+evidence\promote_rooms.py:312: in _wall_lines_in_floor
+    wall_plane_ids=(wall.plane_id,),
+                    ^^^^^^^^^^
+E   AttributeError: 'PlaneSummary' object has no attribute 'plane'
+=========================== short test summary info ===========================
+FAILED tests/test_room_inference.py::TestDetectRooms::test_finds_the_closed_room
+FAILED tests/test_room_inference.py::TestDetectRooms::test_ring_is_the_hand_computable_footprint
+FAILED tests/test_room_inference.py::TestDetectRooms::test_height_is_floor_to_wall_top
+FAILED tests/test_room_inference.py::TestDetectRooms::test_horizontal_slab_makes_no_room
+FAILED tests/test_room_inference.py::TestDetectRooms::test_open_facade_is_unclosed_not_a_room
+FAILED tests/test_room_inference.py::TestDetectRooms::test_deterministic_across_calls
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_promotion_writes_entity_with_correct_type_and_provenance
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_contains_and_part_of_edges_are_written_both_ways
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_measurements_are_hand_computable
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_measurements_also_land_in_custom_properties
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_observation_records_the_derivation
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_refuses_unclosed_candidates
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_refuses_when_plane_entities_are_missing
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_world_round_trips_through_serialization
+FAILED tests/test_room_inference.py::TestPromoteRoom::test_scene_graph_query_answers_whats_inside
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_compiles_the_room_scene_into_structure_plus_room
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_every_input_plane_is_accounted_for
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_provenance_semantics_are_preserved
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_deterministic_byte_identical_worlds
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_different_seed_still_finds_the_structure
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_diagnostics_report_the_unassigned_floor
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_validation_gate_passes_on_the_compiled_world
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_gate_catches_corruption_between_promotion_and_return
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_studio_consumes_the_compiled_world
+FAILED tests/test_world_compiler.py::TestCompilerEndToEnd::test_measurements_survive_worldir_round_trip
+FAILED tests/test_world_compiler.py::TestValidationGate::test_gate_error_raised_by_compiler_on_corrupt_input
+FAILED tests/test_reconstruction_orchestrator.py::TestEndToEnd::test_orchestrated_result_drives_full_room_pipeline
+FAILED tests/test_reconstruction_orchestrator.py::TestEndToEnd::test_compiler_consumes_orchestrated_run_end_to_end
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_compile_through_pipeline_populates_session_world
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_world_compiled_event_is_emitted
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_diagnostics_available_after_success
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_gate_failure_is_atomic
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_recompile_is_idempotent
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_studio_compile_reconstruction_convenience
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_global_provenance_stamp_flows_from_staged_world
+35 failed, 75 passed in 41.73s
+
+STDERR:
+
+Return code: 1

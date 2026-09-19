@@ -49,7 +49,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, Tuple
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 from reconstruction.calibration.camera import (
     CameraIntrinsics,
     PinholeCamera,

@@ -1,7 +1,7 @@
 """Tests for viewport camera and frustum culling."""
 
 from engine.render import Camera, Viewport
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 
 
 class TestCamera:

@@ -324,6 +324,11 @@ class TestQuery:
 
 
 class TestPhysics:
+    @pytest.mark.skip(
+        reason="'physics' CLI subcommand moved to reality-engine-child during "
+        "core/child separation and no longer exists in apps/cli/main.py's core "
+        "parser; see the `physics` marker note in pyproject.toml."
+    )
     def test_physics_compiles_bodies_for_the_room_scene(self, tmp_path, capsys):
         world_path = _write_world(tmp_path, _compiled_world_fixture())
         rc = main(["physics", world_path])

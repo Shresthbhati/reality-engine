@@ -46,7 +46,7 @@ import statistics
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from reconstruction.backend.interface import ReconstructionResult
 from reconstruction.calibration.camera import PinholeCamera
 

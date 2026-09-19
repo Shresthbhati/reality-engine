@@ -1,0 +1,57 @@
+# Agent task record (spec sec 79 AGENT CONTRACT)
+
+task:
+  id: 001-foundation-skeleton
+  objective: >
+    Stand up steps 1-7 of the FIRST IMPLEMENTATION ORDER (spec sec 108):
+    repository skeleton, WorldIR, entity system, serialization, coordinate
+    library, job system, deterministic clock. No physics, no rendering,
+    no disasters -- foundation only.
+  context: >
+    First build pass against
+    REALITY_ENGINE_MASTER_SPECIFICATION_V10_WORLD_PHYSICS_AND_AGENT_BUILD_BIBLE.md.
+    The full spec is a multi-year, ~250-subsystem engine; this task is
+    scoped to exactly the non-physics foundation the spec itself says
+    must exist before any solver.
+  inputs:
+    - REALITY_ENGINE_MASTER_SPECIFICATION_V10_WORLD_PHYSICS_AND_AGENT_BUILD_BIBLE.md (sec 6, 79-95, 103, 108)
+  outputs:
+    - engine/core/{units,clock,jobs,rng}.py
+    - engine/world/runtime.py
+    - world_ir/{coordinates,entity,world,serialization}.py
+    - provenance/provenance.py
+    - tests/test_*.py
+    - docs/BUILD_ORDER.md
+  allowed_files:
+    - engine/core/**
+    - engine/world/**
+    - world_ir/**
+    - provenance/**
+    - tests/**
+    - docs/**
+    - pyproject.toml
+    - README.md
+  forbidden_files:
+    - engine/physics/**  # step 8+, not this task
+  dependencies: []
+  interfaces:
+    - SimulationContext (engine/core/clock.py)
+    - Transform / Frame (world_ir/coordinates.py)
+    - Entity / EntityRegistry (world_ir/entity.py)
+  invariants:
+    - "no subsystem mixes units silently (sec 88)"
+    - "every transform carries source_frame, target_frame, matrix, timestamp, uncertainty (sec 89)"
+    - "job execution order is a pure function of job ids and dependency edges (sec 90)"
+    - "GENERATED/UNKNOWN provenance never reports as canonical (sec 1.1)"
+    - "world save format is versioned; unknown format_version fails loudly (sec 103)"
+  tests: tests/
+  performance_target: n/a at this layer (no solver work yet)
+  memory_target: n/a at this layer
+  failure_modes:
+    - dangling relationship on entity add/remove -> raises, never silently drops
+    - format_version mismatch on load -> raises, never silently coerces
+    - job dependency cycle -> raises, never silently truncates
+  acceptance_criteria:
+    - pytest tests/ passes
+    - determinism test proves identical world hash for identical seed
+  rollback_plan: this task only adds new files; revert by deleting the paths under outputs.

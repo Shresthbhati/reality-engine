@@ -36,7 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from perception.instances.appearance import AppearanceDescriptor, appearance_similarity
 from perception.instances.epipolar import (
     DEFAULT_EPIPOLAR_TOLERANCE_PX,

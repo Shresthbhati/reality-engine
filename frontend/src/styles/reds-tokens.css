@@ -1,0 +1,215 @@
+/**
+ * Reality Engine Design System (REDS) — Design Tokens
+ * Professional dark-first spatial computing workstation aesthetic
+ * Inspired by: Blender, Unreal, VS Code, Linear, professional CAD tools
+ */
+
+:root {
+  /* ─── Base Surfaces ─────────────────────────────────────────── */
+  --re-bg-base:        #0d0d0f;  /* deepest background */
+  --re-bg-elevated:    #121215;  /* panels, sidebars */
+  --re-bg-surface:     #17171c;  /* cards, inputs */
+  --re-bg-overlay:     #1c1c23;  /* hover states, dropdowns */
+  --re-bg-subtle:      #22222c;  /* subtle differentiation */
+  --re-bg-muted:       #2a2a36;  /* borders-as-backgrounds */
+
+  /* ─── Borders ─────────────────────────────────────────────── */
+  --re-border-subtle:  #1e1e28;
+  --re-border-default: #272733;
+  --re-border-strong:  #34344a;
+  --re-border-focus:   #3d8ef7;
+
+  /* ─── Text ────────────────────────────────────────────────── */
+  --re-text-primary:   #e8e8f0;  /* main content */
+  --re-text-secondary: #9898b0;  /* secondary labels */
+  --re-text-tertiary:  #5c5c78;  /* placeholders, disabled */
+  --re-text-muted:     #3c3c54;  /* very subtle */
+  --re-text-inverse:   #0d0d0f;  /* on accent */
+  --re-text-link:      #5ba3fa;
+
+  /* ─── Accent / Brand ─────────────────────────────────────── */
+  --re-accent:         #3d8ef7;  /* primary electric blue */
+  --re-accent-hover:   #5ba3fa;
+  --re-accent-active:  #2a7ae8;
+  --re-accent-subtle:  rgba(61, 142, 247, 0.12);
+  --re-accent-glow:    rgba(61, 142, 247, 0.20);
+
+  /* ─── Semantic Colors ────────────────────────────────────── */
+  --re-success:        #34c76f;
+  --re-success-subtle: rgba(52, 199, 111, 0.12);
+  --re-warning:        #f5a623;
+  --re-warning-subtle: rgba(245, 166, 35, 0.12);
+  --re-error:          #e54d4d;
+  --re-error-subtle:   rgba(229, 77, 77, 0.12);
+  --re-info:           #64b5f6;
+  --re-info-subtle:    rgba(100, 181, 246, 0.12);
+
+  /* ─── Evidence / Confidence Colors ─────────────────────── */
+  --re-confidence-high:   #34c76f;
+  --re-confidence-mid:    #f5a623;
+  --re-confidence-low:    #e54d4d;
+  --re-confidence-none:   #5c5c78;
+
+  /* ─── Data Visualization Palette ────────────────────────── */
+  --re-data-1: #3d8ef7;
+  --re-data-2: #34c76f;
+  --re-data-3: #f5a623;
+  --re-data-4: #e54d4d;
+  --re-data-5: #c77df5;
+  --re-data-6: #5edaff;
+  --re-data-7: #f7a24e;
+  --re-data-8: #ff6b9d;
+
+  /* ─── Typography ─────────────────────────────────────────── */
+  --re-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --re-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  --re-text-2xs: 10px;
+  --re-text-xs:  11px;
+  --re-text-sm:  12px;
+  --re-text-md:  13px;
+  --re-text-base: 14px;
+  --re-text-lg:  16px;
+  --re-text-xl:  18px;
+  --re-text-2xl: 22px;
+  --re-text-3xl: 28px;
+
+  --re-leading-tight:  1.2;
+  --re-leading-normal: 1.4;
+  --re-leading-relaxed: 1.6;
+
+  --re-weight-normal: 400;
+  --re-weight-medium: 500;
+  --re-weight-semibold: 600;
+  --re-weight-bold: 700;
+
+  /* ─── Spacing ─────────────────────────────────────────────── */
+  --re-space-1:  2px;
+  --re-space-2:  4px;
+  --re-space-3:  6px;
+  --re-space-4:  8px;
+  --re-space-5:  10px;
+  --re-space-6:  12px;
+  --re-space-7:  14px;
+  --re-space-8:  16px;
+  --re-space-10: 20px;
+  --re-space-12: 24px;
+  --re-space-16: 32px;
+  --re-space-20: 40px;
+  --re-space-24: 48px;
+
+  /* ─── UI Density ──────────────────────────────────────────── */
+  --re-row-height-xs:  20px;
+  --re-row-height-sm:  24px;
+  --re-row-height-md:  28px;  /* default tree/list row */
+  --re-row-height-lg:  32px;
+  --re-row-height-xl:  36px;
+  --re-row-height-2xl: 40px;
+  --re-panel-header-h: 30px;
+  --re-toolbar-h:      36px;
+  --re-statusbar-h:    22px;
+  --re-titlebar-h:     40px;
+
+  /* ─── Radius ──────────────────────────────────────────────── */
+  --re-radius-none: 0;
+  --re-radius-sm:   2px;
+  --re-radius-md:   3px;
+  --re-radius-lg:   4px;
+  --re-radius-xl:   6px;
+  --re-radius-pill: 999px;
+
+  /* ─── Shadows / Elevation ────────────────────────────────── */
+  --re-shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
+  --re-shadow-sm: 0 2px 4px rgba(0,0,0,0.5);
+  --re-shadow-md: 0 4px 12px rgba(0,0,0,0.6);
+  --re-shadow-lg: 0 8px 24px rgba(0,0,0,0.7);
+  --re-shadow-xl: 0 16px 48px rgba(0,0,0,0.8);
+
+  /* ─── Z-index ─────────────────────────────────────────────── */
+  --re-z-base:    0;
+  --re-z-raised:  10;
+  --re-z-dropdown: 100;
+  --re-z-sticky:  200;
+  --re-z-overlay: 300;
+  --re-z-modal:   400;
+  --re-z-toast:   500;
+  --re-z-tooltip: 600;
+  --re-z-max:     9999;
+
+  /* ─── Transitions ─────────────────────────────────────────── */
+  --re-dur-instant: 50ms;
+  --re-dur-fast:    100ms;
+  --re-dur-normal:  150ms;
+  --re-dur-slow:    250ms;
+  --re-dur-slower:  400ms;
+  --re-ease-default: cubic-bezier(0.16, 1, 0.3, 1);
+  --re-ease-in:      cubic-bezier(0.4, 0, 1, 1);
+  --re-ease-out:     cubic-bezier(0, 0, 0.2, 1);
+  --re-ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ─── Global Resets ────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  height: 100%;
+  background: var(--re-bg-base);
+  color: var(--re-text-primary);
+  font-family: var(--re-font-sans);
+  font-size: var(--re-text-base);
+  line-height: var(--re-leading-normal);
+  overflow: hidden; /* Desktop app — no body scroll */
+}
+
+#__next, #root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Scrollbars ──────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--re-border-strong);
+  border-radius: var(--re-radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--re-text-tertiary);
+}
+
+/* ─── Focus Styles ────────────────────────────────────────── */
+:focus-visible {
+  outline: 1.5px solid var(--re-border-focus);
+  outline-offset: 1px;
+}
+
+/* ─── Selection ───────────────────────────────────────────── */
+::selection {
+  background: var(--re-accent-subtle);
+  color: var(--re-text-primary);
+}
+
+/* ─── Reduced Motion ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

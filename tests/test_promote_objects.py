@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from evidence.promote_objects import ObjectPromotionError, promote_object_to_entity
 from perception.instances.object_resolution import MergedObjectCandidate
 from provenance import Provenance

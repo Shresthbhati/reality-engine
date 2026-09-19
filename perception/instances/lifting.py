@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from provenance import Provenance, Uncertainty
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from perception.depth.interface import DepthMap
 from perception.segmentation.interface import SegmentedRegion
 from reconstruction.calibration.camera import PinholeCamera

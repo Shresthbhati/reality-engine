@@ -15,7 +15,7 @@ Honesty rules under test:
 
 import pytest
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from provenance import Provenance
 from reconstruction.backend.interface import ReconstructedPoint
 from reconstruction.fusion.consumer import fuse_pipeline_points

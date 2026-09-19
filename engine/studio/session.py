@@ -30,7 +30,7 @@ from engine.commands import (
 from engine.commands.permissions import PermissionPolicy
 from engine.geometry.adjacency import infer_geometric_relationships
 from engine.inspector.inspector import Inspector
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from engine.render.viewport import Camera, Viewport
 from events.bus import EventBus
 

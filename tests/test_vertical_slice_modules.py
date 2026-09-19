@@ -208,7 +208,7 @@ def test_canonicalize_frame_rotates_camera_rotations_consistently():
     rotated, record = canonicalize_frame(result, seed=7)
 
     R_record = np.array(record.rotation)
-    from engine.physics.math3 import Quat
+    from engine.math import Quat
 
     for orig, rot in zip(result.camera_poses, rotated.camera_poses):
         R_orig = quat_to_matrix(Quat(*orig.rotation).normalized())

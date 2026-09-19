@@ -206,6 +206,16 @@ class EvidenceAsset:
     def is_canonical(self) -> bool:
         return self.provenance not in (Provenance.GENERATED, Provenance.UNKNOWN, Provenance.CONFLICT)
 
+    def to_evidence_item(self) -> "EvidenceItem":
+        """Bridge to the session layer's EvidenceItem shape (the one
+        reconstruction backends already consume)."""
+        return EvidenceItem(
+            id=self.id, kind=self.kind, source_uri=self.source_uri,
+            captured_at=self.acquired_at, sha256=self.sha256,
+            metadata=dict(self.sensor_metadata),
+            provenance=self.provenance, uncertainty=self.uncertainty,
+        )
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -366,18 +376,41 @@ class EvidencePackage:
             raise ValueError(f"observation set {observation_set.set_id} already exists")
         self.observation_sets[observation_set.set_id] = observation_set
 
+    def merge_from(self, fragment: "EvidencePackage") -> dict:
+        """Merge another package's sources, assets, and observation sets
+        into self -- the incremental-ingest path: each new evidence
+        source is staged into its own fragment package via
+        DeterministicPackageBuilder.build(), then folded into the
+        session's running package by content, not by replacement.
+
+        Deduplication reuses add_asset's existing content-hash contract
+        (self.has_content/self._content_index) rather than a second
+        dedup mechanism -- an asset already present by sha256 is a
+        duplicate regardless of which fragment (or re-ingest) produced
+        it, and the caller (session_store's re-ingest idempotency path)
+        depends on that being the SAME check add_asset already makes.
+
+        Returns {"added": [ids newly added to self], "duplicates": [ids
+        whose content already existed in self]}, in fragment iteration
+        order (deterministic -- fragment.all_assets() is itself
+        insertion-ordered)."""
+        for source in fragment.sources.values():
+            self.register_source(source)
+        added: List[str] = []
+        duplicates: List[str] = []
+        for asset in fragment.all_assets():
+            was_duplicate = self.has_content(asset.sha256)
+            resulting_id = self.add_asset(asset)
+            (duplicates if was_duplicate else added).append(resulting_id)
+        for observation_set in fragment.observation_sets.values():
+            if observation_set.set_id not in self.observation_sets:
+                self.add_observation_set(observation_set)
+        return {"added": added, "duplicates": duplicates}
+
     def to_evidence_items(self) -> List[EvidenceItem]:
         """Bridge to the existing session layer: every asset becomes the
         EvidenceItem shape reconstruction backends already consume."""
-        return [
-            EvidenceItem(
-                id=a.id, kind=a.kind, source_uri=a.source_uri,
-                captured_at=a.acquired_at, sha256=a.sha256,
-                metadata=dict(a.sensor_metadata),
-                provenance=a.provenance, uncertainty=a.uncertainty,
-            )
-            for a in self.all_assets()
-        ]
+        return [a.to_evidence_item() for a in self.all_assets()]
 
     def to_dict(self) -> dict:
         return {

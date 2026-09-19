@@ -333,3 +333,68 @@ class TestCannotSecretlyRebuildEverything:
         assert result.new_world.entities["room-1"] is sentinel_room
         assert result.new_world.entities["far-tree"] is sentinel_tree
         assert result.new_world.geometries["geom-wall-1"] is sentinel_geom
+
+
+class TestEntityDeletion:
+    def test_removed_entity_is_absent_from_new_world(self):
+        base = _base_world()
+        result = apply_incremental_update(base, [], removed_entities=["far-tree"])
+        assert "far-tree" not in result.new_world.entities
+        assert result.removed_entity_ids == frozenset({"far-tree"})
+        # base_world itself is untouched.
+        assert "far-tree" in base.entities
+
+    def test_removed_entitys_old_tile_is_rebuilt(self):
+        base = _base_world()
+        result = apply_incremental_update(base, [], removed_entities=["far-tree"])
+        assert (5, 0, 0) in result.rebuilt_tile_ids  # far-tree's old tile at x=50
+
+    def test_removing_a_part_of_entity_affects_its_container(self):
+        base = _base_world()
+        result = apply_incremental_update(base, [], removed_entities=["wall-1"])
+        assert "room-1" in result.affected_entity_ids
+        assert "room-1" not in result.removed_entity_ids
+        assert result.new_world.entities["room-1"] is base.entities["room-1"]
+
+    def test_cannot_update_and_remove_same_entity(self):
+        import pytest
+
+        base = _base_world()
+        with pytest.raises(ValueError, match="both updated and removed"):
+            apply_incremental_update(
+                base, [_entity("wall-1", 2.0, 0.0, 0.0)], removed_entities=["wall-1"],
+            )
+
+    def test_unknown_removed_id_is_ignored_not_erroring(self):
+        base = _base_world()
+        result = apply_incremental_update(base, [], removed_entities=["does-not-exist"])
+        assert result.removed_entity_ids == frozenset()
+        assert set(result.new_world.entities) == set(base.entities)
+
+
+class TestEntityAddition:
+    def test_new_entity_id_not_in_base_world_is_added(self):
+        base = _base_world()
+        brand_new = _entity("new-lamp", 2.0, 0.0, 0.0)
+        result = apply_incremental_update(base, [brand_new])
+        assert result.new_world.entities["new-lamp"] is brand_new
+        assert "new-lamp" in result.changed_entity_ids
+        assert "new-lamp" not in base.entities  # base_world never gains it
+
+
+class TestGeometryExpansionCrossesTileBoundary:
+    def test_expanded_geometry_invalidates_the_newly_covered_tile(self):
+        base = _base_world()
+        # geom-wall-1 originally spans x in [0.0, 1.0] (tile 0). Expand
+        # it to reach x=12.0 (tile 1) -- a real cross-tile-boundary case.
+        expanded = Geometry(
+            id="geom-wall-1", type=GeometryType.PLANE,
+            bounds_min=Vector3(0.0, 0.0, 0.0), bounds_max=Vector3(12.0, 3.0, 0.2),
+            provenance=Provenance.OBSERVED,
+        )
+        result = apply_incremental_update(base, [], updated_geometries=[expanded], tile_size=10.0)
+        assert result.changed_geometry_ids == frozenset({"geom-wall-1"})
+        # wall-1 (the owning entity, positioned via transform, not moved
+        # itself) is affected by its geometry's expansion.
+        assert "wall-1" in result.affected_entity_ids
+        assert result.new_world.entities["wall-1"] is base.entities["wall-1"]

@@ -102,17 +102,33 @@ class Transform:
         )
 
     def then(self, other: "Transform") -> "Transform":
-        """Compose self (A->B) with other (B->C) to get A->C."""
+        """Compose self (A->B) with other (B->C) to get A->C.
+
+        Uncertainty composes too: two independent transforms chained
+        together are never more certain than either one alone, so the
+        combined confidence is the product of the two (each factor in
+        [0, 1], so the product only ever goes down or stays the same --
+        never fabricates certainty a multi-hop path didn't earn). Before
+        this, a composed transform silently reset to the Uncertainty()
+        default (confidence=1.0), which understated the error of any
+        chained lookup through CoordinateRegistry.
+        """
         if self.target_frame != other.source_frame:
             raise ValueError(
                 f"cannot compose {self.source_frame}->{self.target_frame} "
                 f"with {other.source_frame}->{other.target_frame}: frame mismatch"
             )
+        combined_confidence = self.uncertainty.confidence * other.uncertainty.confidence
+        notes = [n for n in (self.uncertainty.note, other.uncertainty.note) if n]
         return Transform(
             source_frame=self.source_frame,
             target_frame=other.target_frame,
             matrix=_mat_mul(other.matrix, self.matrix),
             timestamp=other.timestamp if other.timestamp is not None else self.timestamp,
+            uncertainty=Uncertainty(
+                confidence=combined_confidence,
+                note="; ".join(notes) if notes else None,
+            ),
         )
 
     def to_dict(self) -> dict:

@@ -173,6 +173,41 @@ manifest intrinsics f=1160.07; 17 registered cameras):
 - Suite at branch head: 1,892 passed / 1 skipped / 0 failed,
   unbounded (incl. SAM real-model), 139 s.
 
+## 2026-09-17 (4) -- P7-06 REAL-DATA VERIFICATION: full detail chain on room_capture_mvs
+
+The detail spine ran end-to-end on the real 294,345-point CUDA
+COLMAP MVS fused.ply (metricized via anchor_metric_scale against the
+manifest's measured baseline; scale 0.245879 m/unit verified rigid
+across all 136 station pairs, ratio 4.039-4.079 std 0.006; trusted
+manifest intrinsics f=1160.07; 17 registered cameras):
+
+- MEASURED: GSD 1.169 mm/px -> tier "fine", observed 100%, overclaim
+  0, views/point median 13 (min 3). Discovery 103 cells -- 96
+  structure (planarity median 0.9997: walls/floor/ceiling), 1 detail,
+  6 other. 12 ROIs -> 12 refined / 0 refused: planes rms 0.3-1.1 mm
+  (q=1.000), cylinders honestly mediocre on clutter (rms up to
+  47.9 mm, q=0.814). WorldIR +12 entities +12 geometries, validation
+  gate passed. Full chain 182.7 s wall time.
+- DEFECT FOUND AND FIXED RED-FIRST (tests/test_detail_structure.py,
+  6 tests): oriented planar structure was invisible to discovery
+  because a plane's curvature ratio is ~0 BY CONSTRUCTION -- the
+  room's walls/floor/ceiling produced 1 detail ROI without the fix.
+  Discovery now measures planarity (1 - lambda_min/lambda_max, same
+  covariance solve) and records is_structure; ROI generation seeds
+  from structure cells via include_structure (provenance
+  seed="structure"), with the pass-through wired through
+  run_detail_pipeline. With the fix: 96 structure cells seed, 12
+  ROIs.
+- HONEST CAVEAT RECORDED: an earlier scratch probe mixed raw-unit
+  fused points with metric cameras and reported GSD 2.787 "medium"
+  -- a caller unit error (4.07x = the model scale ratio), NOT an
+  engine defect; the canonical assessor is unit-faithful. The
+  corrected run's 1.169 "fine" is the record.
+- Determinism verified on real data: repeated discover_detail /
+  generate_rois are byte-identical.
+- Suite at branch head: 1,892 passed / 1 skipped / 0 failed,
+  unbounded (incl. SAM real-model), 139 s.
+
 ## 2026-09-17 (3) -- P7-06 WorldIR integration: refined outcomes become world statements
 
 The dead-end closed: the detail chain's output now lands in the
@@ -892,3 +927,95 @@ Article II/IV).
   +incremental_compilation, +uncertainty_propagation.
 - Verification: full suite 1,720 passed / 1 skipped / 0 failed; SAM
   real-model integration test run separately (passed, ~58 s CPU).
+## 2026-09-18 — Campaign: graphs, uncertainty, tracking, WorldIR 2.0, large-world, compilers, simulation, benchmarks
+
+Branch claude/graphs-uncertainty-world-compilers (worktree
+.claude/worktrees/reality-engine-architecture-ed811e).
+
+- Landed (all red-first, all in TASKS.yaml as DONE): P8-01/P8-02
+  room+building graphs; P10-02 uncertainty (both halves merged after
+  cherry-picking onto post-#44 main); P7-02 2D tracking + ID-switch
+  diagnostics; P7-04 view-angle diversity; P9-01 WorldIR 2.0
+  extensions; P13-01/02 spatial tiles + measured-bounded paging;
+  P15-01 procedural room grammar; P16-01 CityJSON exporter;
+  P8-03 IFC4 bridge (IfcOpenShell installed for real); P17-01
+  simulation loop; P19-01 benchmark suite + docs/BENCHMARKS.md
+  reconciliation; P14-01 city compiler core (PARTIAL, honest opens).
+- Ledger after sync: 31 DONE / 7 PARTIAL / 0 MISSING. Remaining
+  PARTIALs are honest external/incremental remainders (real RGB-D
+  device, real VIO run with Docker down, outdoor arch classes
+  without fixtures, per-cell GSD re-measurement + adaptive
+  subdivision, GIS/OSM ingestion + CityGML/3DCityDB).
+- Full unbounded suite gate recorded below (exact numbers).
+
+
+## 2026-09-19 — Campaign: evidence-to-world reliability (depth consistency, cross-session registration, real-model availability)
+
+Branch agent/freebuff-reconstruction (worktree
+.claude/worktrees/agent4-recon-perception), fresh off post-#45 main.
+
+Reliability priorities executed (all red-first):
+
+- **Cross-view depth consistency** (reconstruction/consistency.py,
+  P6-02 addition): detects contradictory metric depth between views —
+  co-visibility established in PIXEL space (world-space association is
+  circular: a biased depth displaces its unprojection and hides the
+  contradiction it should reveal); the measure is world-space
+  disagreement between per-view UNPROJECTED samples normalized by mean
+  camera range (raw depths legitimately differ across cameras);
+  mutual-ray-angle gates exclude degenerate baselines as "inconclusive"
+  (never counted "consistent"); contradiction records carry BOTH
+  measured depths; relative-depth maps refused; views without cameras
+  named, not dropped. 9 tests.
+- **Cross-session registration** (registration/cross_session.py,
+  P4-01 addition): contact gate (expanded-bbox) refuses no-contact
+  sessions before ICP can hallucinate a local minimum (measured: plain
+  ICP spuriously "accepts" a 100-unit-offset grid); deterministic
+  global coarse alignment (centroid + 60 icosahedral rotations + bounded
+  coarse-to-fine Euler descent 15->3.75 deg, no RNG) — the icosahedral
+  set alone is NOT within ICP's basin for 30-deg rotations (measured
+  rmse 0.466 across all 60 starts on the fixture); refinement via the
+  existing register_icp gates + full-cloud polish; identity verified by
+  measurement, never assumed; chain composition resolves sessions into
+  the reference frame, unresolved stays unresolved. 16 + 7 tests
+  (pair/chain + orchestrator vertical slice).
+- **Orchestrator wiring** (reconstruction/orchestrator_consistency.py):
+  run_with_depth_consistency adds diagnostics.depth_consistency to the
+  frozen diagnostics record (additive field, None = honest absence);
+  contradictory verdicts are recorded, results never rewritten. 4 tests.
+- **Real-model availability report** (perception/availability.py):
+  probe-only (find_spec + cache-file resolution + PATH; no imports of
+  torch stacks, no downloads, no model construction, deterministic —
+  double-probe test enforced); "available" only when dependency AND
+  checkpoint verifiably resolve; blocked names the exact missing piece
+  with actionable remediation; covers colmap/midas/sam/mask_rcnn
+  (current machine: all four AVAILABLE — measured via the report).
+  6 tests.
+- **Ledger repairs** (pre-existing defects, found by yaml.safe_load
+  gate): P6-01 entry had 0-indent "- id" breaking the whole file;
+  P16-01 basis was an unparseable multi-line plain scalar;
+  CAPABILITIES.yaml gained 4 entries (cross_view_depth_consistency,
+  cross_session_registration, orchestrator_depth_consistency_gate,
+  real_model_availability_report) — now 48 entries, parses clean.
+
+Full unbounded suite gate at branch head: **2087 passed / 5 skipped /
+0 failed** in 275.6 s (skips are the pre-existing real-data gates).
+Ledger after sync: 33 DONE / 6 PARTIAL / 0 MISSING.
+
+
+## 2026-09-19 (2) — P4-01 landmark method closed (branch agent/freebuff-reconstruction-perception)
+
+- registration/landmarks.py: register_landmarks — declared-identity
+  correspondences -> closed-form Kabsch + deterministic
+  exhaustive-triple outlier consensus; ambiguous landmark ids excluded
+  and reported; degenerate geometry (n<3, collinear) refuses naming
+  the fix; coplanar-but-non-collinear sets SOLVE (Procrustes: point
+  identity pins all 6 DOF — the earlier coplanar-refusal design was
+  mathematically wrong and was corrected red-first) with weaker
+  conditioning reported via covariance degenerate_axes.
+- RegistrationEngine confidence order now GNSS anchors > landmarks >
+  ICP; landmark refusal falls through to ICP (attempt recorded).
+- Ledger: P4-01's last PENDING verification item closed; CAPABILITIES
+  +landmark_registration (49 entries).
+- Full unbounded suite: 2133 passed / 5 skipped / 0 failed (timing
+  guard verified standalone: green).

@@ -222,33 +222,37 @@ def _solve_linear(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 def estimate_registration_covariance(
-    residual_stats: ResidualStats,
-    source_points: Sequence[Vec3],
+    transformed_source: np.ndarray,
     target_points: Sequence[Vec3],
-    transform: "RigidTransform",
+    distances: np.ndarray,
+    indices: np.ndarray,
+    inlier_mask: np.ndarray,
 ) -> RegistrationCovariance:
     """Derive a defensible registration covariance from measured
     residuals and the correspondence geometry (first-order error
     propagation; see RegistrationCovariance's docstring for the model).
+
+    `transformed_source`/`distances`/`indices`/`inlier_mask` MUST be the
+    exact arrays the caller's own ICP loop already computed for its
+    final transform -- NOT re-derived here from a `RigidTransform`.
+    Recomputing them by round-tripping the rotation through
+    matrix->quaternion->matrix (the previous implementation) introduces
+    floating-point error too small to matter for the transform itself
+    but large enough to flip a borderline correspondence across the
+    inlier threshold differently on different numpy/BLAS builds --
+    which silently made this function's own inlier count diverge from
+    `ResidualStats.count` (observed: 299 vs 300 on Linux CI vs a
+    passing count locally). Reusing the caller's arrays makes the two
+    counts equal by construction, not by coincidence.
     """
     import numpy as _np
 
-    src = _to_array(source_points)
     tgt = _to_array(target_points)
-    tree = cKDTree(tgt)
-    q = transform.rotation
-    tv = transform.translation
-    rot = _quat_to_matrix(q)
-    transformed = src @ rot.T + _np.array([tv.x, tv.y, tv.z])
-    distances, indices = tree.query(transformed)
-    # Inliers only: the residual model describes correspondences the
-    # transform actually used, not outliers it rejected.
-    inlier_mask = distances <= (float(_np.median(distances)) * 3.0 if float(_np.median(distances)) > 0 else _np.isfinite(distances))
     if int(inlier_mask.sum()) < 3:
         raise RegistrationError(
             "covariance estimation needs >= 3 inlier correspondences"
         )
-    p = transformed[inlier_mask]
+    p = transformed_source[inlier_mask]
     q_pts = tgt[indices[inlier_mask]]
     n = int(inlier_mask.sum())
     rms = float(_np.sqrt(_np.mean((distances[inlier_mask]) ** 2)))
@@ -426,7 +430,7 @@ def register_icp(
     if residual_stats is not None:
         try:
             covariance = estimate_registration_covariance(
-                residual_stats, source, target, transform
+                src @ r.T + t, target, final_distances, final_indices, inliers
             )
         except RegistrationError:
             covariance = None  # degenerate correspondences: honest None
@@ -540,7 +544,7 @@ def register_icp_point_to_plane(
             break
         prev_cost = cost
 
-    final_distances, _ = tree.query(src @ r.T + t)
+    final_distances, final_indices = tree.query(src @ r.T + t)
     median = float(np.median(final_distances))
     threshold = median * inlier_multiplier if median > 0 else float("inf")
     inliers = final_distances <= threshold
@@ -578,7 +582,7 @@ def register_icp_point_to_plane(
     if residual_stats is not None:
         try:
             covariance = estimate_registration_covariance(
-                residual_stats, source, target, transform
+                src @ r.T + t, target, final_distances, final_indices, inliers
             )
         except RegistrationError:
             covariance = None
@@ -664,12 +668,19 @@ class RegistrationEngine:
         anchor_target: Optional[Sequence[Vec3]] = None,
         min_overlap: float = 0.5,
         initial_transform: Optional[RigidTransform] = None,
+        landmarks: Optional[Sequence["object"]] = None,
     ) -> RegistrationResult:
         """`initial_transform` seeds ICP when a prior exists (known
         extrinsics, GNSS/trajectory prior -- the spec's pipeline puts a
         coarse alignment BEFORE ICP for exactly this reason: ICP is a
         local optimizer and an unseeded run on far-apart clouds is a
-        guess, not an alignment)."""
+        guess, not an alignment).
+
+        `landmarks` (optional) supplies declared landmark
+        correspondences (registration.landmarks.LandmarkCorrespondence);
+        they are tried AFTER GNSS anchors and BEFORE ICP in the
+        confidence order -- declared identity is strictly stronger
+        evidence than geometric proximity."""
         attempts: list[AttemptRecord] = []
 
         # Pre-flight (spec pipeline, before any method): a prior
@@ -747,6 +758,37 @@ class RegistrationEngine:
                 "gnss_anchor", "blocked", "no anchor pairs provided -- "
                 "cannot fabricate positions"
             ))
+
+        # Method 1.5: declared landmark correspondences (when
+        # supplied) -- stronger than ICP (declared identity, no
+        # local-minimum failure mode), weaker than measured GNSS
+        # positions. Degenerate/ambiguous landmark sets are recorded
+        # and ICP still gets its chance.
+        if landmarks is not None:
+            from .landmarks import register_landmarks
+            try:
+                lm_result = register_landmarks(
+                    landmarks, from_frame=from_frame, to_frame=to_frame,
+                )
+            except RegistrationError as exc:
+                attempts.append(AttemptRecord("landmark", "blocked", str(exc)))
+            else:
+                attempts.append(AttemptRecord("landmark", lm_result.status, lm_result.reason))
+                if lm_result.status == "accepted":
+                    return RegistrationResult(
+                        transform=lm_result.transform,
+                        method=lm_result.method,
+                        status=lm_result.status,
+                        reason=lm_result.reason,
+                        rmse=lm_result.rmse,
+                        inlier_fraction=lm_result.inlier_fraction,
+                        iterations=lm_result.iterations,
+                        source_points=lm_result.source_points,
+                        target_points=lm_result.target_points,
+                        residual_stats=lm_result.residual_stats,
+                        covariance=lm_result.covariance,
+                        attempts=tuple(attempts),
+                    )
 
         # Method 2: point-to-plane ICP when normals are available (the
         # spec's named algorithm; strictly more information than

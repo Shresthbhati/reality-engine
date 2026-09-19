@@ -6,6 +6,72 @@ verified repository reality, not intention. If a statement here
 contradicts the repository, the repository wins — re-inspect, then fix
 this file.
 
+## UPDATE 2026-09-18 — graphs/uncertainty/compilers campaign (newest)
+
+Branch claude/graphs-uncertainty-world-compilers (this worktree). All
+items below landed with red-first tests and are in TASKS.yaml as DONE.
+
+- P8-01/P8-02 room/building graphs: perception/architecture/
+  room_graph.py -- classify_planes evidence -> room enclosures
+  (floor+ceiling+walls, measured dimensions, doorway openings,
+  adjacency via shared walls) -> building graph (storeys via
+  ceiling-band grouping; walls positively overlapping the
+  floor->ceiling band only -- the multi-storey balloon bug caught by
+  the two-storey fixture). tests/test_room_building_graph.py (9).
+- P10-02 uncertainty: BOTH halves merged into
+  uncertainty/propagation.py (studio-viewer PR #44's numeric-Jacobian
+  scalar algebra + the analytic per-point chain half: Covariance3,
+  depth_to_world_covariance, propagate_point_through_pose,
+  propagate_chain -- closed-form Jacobians finite-difference-verified
+  against the real PinholeCamera; directional rotation levers; UNKNOWN
+  propagates as UNKNOWN; distorted cameras REFUSED, never guessed;
+  sigma never collapsed into confidence). Cherry-picked onto main
+  after the merge race; 40 tests.
+- P7-02 temporal tracking completed: track_boxes_2d (per-class greedy
+  IoU + motion gating), untimed detections get explicit own tracks,
+  AssociationResult decisions with ambiguity + provisional-band
+  ID-switch diagnostics (provisional_ratio documented parameter).
+  tests/test_tracking_2d.py (12).
+- P7-04 view-angle diversity: measured per-point normal-vs-ray angle
+  spread (cKDTree kNN PCA normals, rank>=2, deterministic stride).
+  Degenerate check fixed: exactly-planar neighborhoods have valid
+  normals. tests/test_evidence_quality.py 23 total.
+- P9-01 WorldIR 2.0: world_ir/v2_extensions.py (TopologyGraph
+  hierarchy/adjacency/containment -- seam entities connect their
+  targets to each other; world temporal_history; typed
+  ExternalReference), additive, v1 worlds load unchanged.
+  tests/test_world_ir_v2.py (29).
+- P13-01/02: world_ir/spatial_tiles.py -- deterministic uniform tiles
+  over entity geometry, region queries, chunked paging with the
+  memory-bound-by-chunk-size property tracemalloc-measured.
+  tests/test_spatial_tiles.py.
+- P15-01 procedural room grammar: procedural/room_grammar.py --
+  spec -> deterministic WorldIR (PROCEDURAL statement state, byte
+  identical to_dict across runs). tests/test_procedural_room_grammar.py (7).
+- P16-01 CityJSON 1.1 exporter (exporters/cityjson/exporter.py,
+  spec-structure tested, 9 tests) + P8-03 IFC4 bridge
+  (exporters/ifc_bridge.py, IfcOpenShell 0.8.x installed and used
+  for real, spatial hierarchy parsed back, 4 tests, license
+  recorded).
+- P17-01 simulation loop: engine/compiler/simulation_loop.py --
+  WorldIR -> SimulationState -> deterministic stepping ->
+  WorldStateDelta (snapshots BEFORE stepping; absolute positions) ->
+  branched WorldIR, StatementState.SIMULATED provenance.
+  tests/test_simulation_loop.py (12).
+- P19-01 benchmark suite: benchmarks/suite.py descriptor-driven
+  same-pipeline runs + docs/BENCHMARKS.md reconciled with measured
+  runs. tests/test_benchmark_suite.py (7).
+- P14-01 city compiler core: engine/compiler/city_compiler.py --
+  feature descriptors -> WorldIR with real bounds -> CityJSON;
+  geometry-less features refuse at construction.
+  tests/test_city_compiler.py.
+- Ledger status after sync: 31 DONE / 7 PARTIAL / 0 MISSING.
+  PARTIAL are honest remainders: P1-03 (real RGB-D device),
+  P3-01/P3-02 (real VIO backend run; Docker daemon down),
+  P7-03 (outdoor classes lack fixtures -- refusing to guess),
+  P7-05/P7-06 (per-cell GSD re-measurement, adaptive subdivision),
+  P14-01 (GIS/OSM ingestion, CityGML/3DCityDB writers).
+
 ## UPDATE 2026-09-17d — P7-06 REAL-DATA VERIFICATION + structure-aware discovery (newest)
 
 - The full detail chain (quality -> discovery -> ROI -> refinement ->
@@ -302,8 +368,9 @@ in `tests/test_evidence_quality.py`, full suite 1826 passed /
 
 ## Completed priorities (exact IDs — do NOT redo)
 
-Derived mechanically from `.agent/TASKS.yaml` (36 tasks: 12 DONE /
-13 PARTIAL / 11 MISSING after the P2-01 pass), not from prose:
+Derived mechanically from `.agent/TASKS.yaml` (39 tasks: 33 DONE /
+6 PARTIAL / 0 MISSING after the 2026-09-19 reliability campaign —
+earlier snapshots in this section are historical), not from prose:
 
 DONE: P0-01, P0-02, P0-03, P1-01, P1-02, P2-01 (all six sync methods
 landed 2026-09-15), P2-02, P3-01, P3-03, P5-01, P6-03 (bad-scale
@@ -393,3 +460,41 @@ Everything in "Completed priorities" has landed code + tests + ledger
 evidence. Do not reimplement from stale documents. Source of truth:
 source code, current tests, current TASKS.yaml, current
 EXECUTION_STATE.md, git log, the PR diff.
+
+
+## 2026-09-19 — Reliability campaign (agent4-recon-perception worktree)
+
+Branch `agent/freebuff-reconstruction` off post-#45 main. Landed
+(all red-first, ledger updated):
+
+- Cross-view depth consistency (reconstruction/consistency.py +
+  orchestrator_consistency.py wiring): contradictory metric depth
+  between views is DETECTED and REPORTED before fusion — pixel-space
+  co-visibility, world-space unprojected-disagreement measure,
+  degenerate-baseline pairs "inconclusive" (never counted consistent),
+  both depths carried on every contradiction record. 13 tests.
+- Cross-session registration (registration/cross_session.py): contact
+  gate + deterministic icosahedral coarse search + coarse-to-fine
+  descent + ICP refinement over the existing acceptance gates; chain
+  composition into a reference frame; unalignable sessions stay
+  "unresolved", identity is verified by measurement or refused.
+  align_reconstructed_sessions consumes orchestrator outputs directly.
+  23 tests.
+- Real-model availability report (perception/availability.py):
+  probe-only, side-effect-free; explicit status/reason/remediation per
+  real model (colmap/midas/sam/mask_rcnn — all AVAILABLE on this
+  machine, measured). 6 tests.
+- Ledger YAML repairs: P6-01 0-indent "- id" (whole-file parse break),
+  P16-01 plain-scalar basis; CAPABILITIES.yaml +4 entries (48 total).
+
+Full-suite gate: 2087 passed / 5 skipped / 0 failed (275.6 s, first
+run; re-verified post-ledger-edit). Ledger: 33 DONE / 6 PARTIAL /
+0 MISSING.
+
+
+## 2026-09-19 (2) — landmark method (P4-01 fully closed)
+
+Branch agent/freebuff-reconstruction-perception (stacked on
+agent/freebuff-reconstruction / PR #49). register_landmarks +
+RegistrationEngine wiring; 10 tests; suite 2133 green. P4-01 now has
+zero PENDING items in TASKS.yaml.

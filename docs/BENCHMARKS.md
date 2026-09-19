@@ -1,42 +1,55 @@
 # Benchmarks
 
-**Honest state: zero benchmarks exist.** `benchmarks/` is an empty
-directory (no files at all). Every BUILD_LEDGER entry to date lists
-`**Benchmark**: None`. This file exists so that claim is visible and
-tracked, not hidden — per the directive's §41 ("no fake completion") and
-§39 ("never optimize without measuring").
+**Status: measured benchmark infrastructure exists.** This document was
+previously a "zero benchmarks exist" placeholder; it is reconciled here
+against the actual code (the doc must follow implementation, never lead
+it).
 
-## Why none yet
+## What exists now
 
-Every subsystem built so far (Steps 1-16, REQ-001 through REQ-029)
-operates at test-scale entity counts (single digits to low tens) inside
-the pytest suite. No subsystem has been exercised at a scale where its
-performance characteristics would be measurable or meaningful, and no
-optimization has been claimed that would need justifying.
+| Subsystem | File | What is measured | Status |
+|---|---|---|---|
+| Timing harness | `benchmarks/harness.py` | stdlib perf_counter, real wall clock, crashing benchmark = failing benchmark | working, tested |
+| Physics stepping | `benchmarks/physics_bench.py` | rigid-body stepping at 2 scales, command pipeline throughput | working, tested |
+| Quality report scaling | `benchmarks/quality_bench.py` | O(entities) scan of `compute_quality_report` (regression catcher) | working, tested |
+| Architectural | `benchmarks/architectural.py` | full perception stack over a ReconstructionResult; CAPTURE_PENDING recorded honestly | working, tested |
+| **Descriptor suite** | `benchmarks/suite.py` | descriptor-driven (P19-01, directive item 18): any scene runs through the SAME quality → discovery → ROI pipeline with no per-benchmark special cases; per-stage wall-clock timings + measured counts; `ground_truth=None` descriptors report accuracy as None, never a guess | working, tested |
 
-## Known algorithmic ceilings worth benchmarking first
+Run: `python -m benchmarks.run_all` (physics/quality); the descriptor
+suite is invoked programmatically (see `tests/test_benchmark_suite.py`)
+— a CLI wrapper is not built yet.
 
-These are the spots in [DECISIONS.md](DECISIONS.md) and
-[KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) already flagged as
-"acceptable until proven otherwise" — the first candidates once real
-benchmarks exist:
+## Measured records (reproducible)
+
+Synthetic planar-wall descriptors (this branch, Windows, i7; the exact
+scene builder is `tests/test_benchmark_suite.py::_scene`):
+
+| Descriptor | points | quality | discovery | roi | candidates | ROIs | GSD | tier |
+|---|---|---|---|---|---|---|---|---|
+| synthetic-wall-400 | 400 | 357.7 ms | 0.6 ms | 0.5 ms | 4 | 1 | 3.19 mm/px | fine |
+| synthetic-wall-4000 | 4000 | 56.5 ms | 7.2 ms | 60.3 ms | 22 | 1 | 3.21 mm/px | fine |
+
+Real-data detail-spine records (PR #43 branch `claude/detail-real-run`,
+294,345-point CUDA COLMAP MVS fused.ply): GSD 1.169 mm/px (fine), 103
+discovery cells (96 structure), 12 ROIs, 12 refined / 0 refused, full
+chain 182.7 s — see `.agent/TASKS.yaml` P7-06 `real_data_verification`
+and `.agent/EXECUTION_STATE.md` entry 4 for the full measured table.
+
+## Not yet benchmarked (honest gaps)
+
+Accuracy/ATE/RPE/mesh-quality comparisons against COLMAP/OpenSfM/ODM/
+Open3D/OpenMVS/AliceVision/ORB-SLAM3/RoomFormer/Nerfstudio and the
+other systems named in ledger P19-01 remain future work: they require
+public datasets with ground truth wired into the suite as descriptors
+(`ground_truth=` populated). The suite's descriptor contract is that
+seam — no accuracy number may be published for a descriptor whose
+ground_truth is None.
+
+Known algorithmic ceilings worth benchmarking first (from
+DECISIONS.md / KNOWN_LIMITATIONS.md):
 
 | Subsystem | Ceiling | File |
 |---|---|---|
 | Collision broadphase | O(n²) pair checks | `engine/physics/collision/broadphase.py` |
 | Contact solver | Single-pass, no iteration | `engine/physics/constraints/contact_solver.py` |
-| Debris | No spatial partitioning for fragment queries | `engine/physics/destruction/debris.py` |
-| Caching | Substring-match pattern invalidation | `engine/world/caching.py` |
-
-## What §39 asks for (not yet built)
-
-reconstruction accuracy, metric scale error, semantic accuracy, material
-classification accuracy, entity association accuracy, physics stability,
-collision performance, simulation throughput, memory consumption, GPU
-utilization, CPU utilization, world serialization time, branch creation
-time, query latency, AI command latency.
-
-None of these have a harness yet. Do not report a number for any of
-them until one exists and is checked into `benchmarks/` with a
-reproducible script — a guessed or extrapolated figure here would be
-exactly the "fake completion" the directive prohibits.
+| Detail discovery | per-cell Python loop over all points | `perception/detail/discovery.py` |

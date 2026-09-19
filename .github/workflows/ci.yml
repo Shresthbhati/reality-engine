@@ -45,7 +45,7 @@ jobs:
         run: |
           pytest \
             tests/test_cli_vertical_slice.py \
-            tests/test_vertical_slice_e2e.py \
+            tests/test_vertical_slice_modules.py \
             tests/test_cli.py \
             tests/test_cli_compile.py \
             tests/test_evidence_session.py \

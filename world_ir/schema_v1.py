@@ -84,6 +84,20 @@ class EntityType(str, Enum):
     CURB = "curb"  # Raised edge between road and sidewalk
     SIDEWALK = "sidewalk"  # Pedestrian walking surface adjacent to a road
     INFRASTRUCTURE = "infrastructure"  # General built infrastructure not otherwise classified
+    # City-scale hierarchy (Agent 3 world-construction; additive -- same
+    # backward-compatible pattern as the P7-03 expansion above). These are
+    # containment-level classifications, not new geometry kinds: a City
+    # entity has no geometry of its own, only PART_OF/CONTAINS relationship
+    # edges to the Districts/Blocks/Buildings/Rooms beneath it (see
+    # engine/scene_graph/graph.py SceneGraph.contents_of/container_of).
+    STREET = "street"  # Named public way; distinct from a ROAD's physical travel surface
+    PLOT = "plot"  # Single parcel of land (may hold one or more Buildings)
+    BLOCK = "block"  # Group of adjacent Plots bounded by Streets
+    MULTI_BLOCK = "multi_block"  # Aggregation of adjacent Blocks
+    LOCALITY = "locality"  # Named neighborhood/area
+    WARD = "ward"  # Administrative subdivision of a District
+    DISTRICT = "district"  # Administrative subdivision of a City
+    CITY = "city"  # Top-level city-scale containment root
     UNKNOWN = "unknown"
 
 

@@ -39,6 +39,7 @@ _logger = get_logger("evidence.session")
 class EvidenceKind(str, Enum):
     """spec: capture layer evidence types (photo, video, point cloud, ...)."""
     PHOTO = "photo"
+    IMAGE = "photo"  # alias: some perception call sites use IMAGE; canonical value stays "photo"
     VIDEO = "video"
     POINT_CLOUD = "point_cloud"
     DEPTH = "depth"

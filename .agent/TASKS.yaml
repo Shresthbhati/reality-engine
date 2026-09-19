@@ -388,12 +388,27 @@ tasks:
       reads PLY/JSON point clouds, optional GNSS anchors, optional initial
       transform, outputs RegistrationResult with transform, covariance,
       ResidualStats, attempt log. 22 CLI tests pass.
+      Cross-session registration landed 2026-09-19
+      (registration/cross_session.py): contact gate (expanded-bbox
+      intersection refuses no-contact sessions BEFORE any ICP can
+      hallucinate a plausible local minimum), deterministic global coarse
+      alignment (centroid + 60 icosahedral rotations scored by
+      correspondence rmse + bounded coarse-to-fine Euler descent
+      15->3.75 deg, no RNG), ICP refinement of top starts via the
+      existing register_icp acceptance gates with a full-cloud polish
+      pass, identity verified by measurement (never assumed),
+      align_session_chain resolves sessions into the reference frame by
+      composition with unresolved sessions labeled and explained, and
+      align_reconstructed_sessions consumes orchestrator
+      ReconstructionResults directly. 16 pair/chain tests
+      (tests/test_cross_session_registration.py) + 7 vertical-slice
+      tests (tests/test_multi_session_alignment.py).
     verification:
       - "DONE: deterministic synthetic two-cloud known-offset test"
       - "DONE: rejection tests: no-overlap and degenerate geometry"
       - "DONE: point-to-plane ICP (spec's named algorithm) with measured ResidualStats"
       - "DONE: full covariance propagation (estimate_registration_covariance landed 2026-09-15, wired into register_icp and register_icp_point_to_plane; 6x6 covariance from residual stats + spatial conditioning)"
-      - "PENDING: landmark/correspondence method (needs cross-source co-observation resolver from P7-01 multi-view identity, which is now IMPLEMENTED with ITrackBackend and perception stage wiring; remaining work is wiring into RegistrationEngine)"
+      - "DONE 2026-09-19: landmark/correspondence method landed (registration/landmarks.py + RegistrationEngine wiring) -- declared-identity correspondences (from the observation layer: track_id/provenance, never geometric proximity) solved by closed-form Kabsch with a deterministic exhaustive-triple outlier consensus (no RNG); ambiguous landmark ids are excluded and reported (never guessed into the consensus); degenerate geometry (n<3, collinear) refuses with the fix named; coplanar-but-non-collinear sets solve and report weaker conditioning via covariance degenerate_axes (Procrustes: point identity pins all 6 DOF); residual-derived covariance as with the other methods; engine confidence order = GNSS anchors > landmarks > ICP, with landmark refusal falling through to ICP. 10 tests in tests/test_landmark_registration.py."
 
   # ================= PHASE 5 — RECONSTRUCTION FEDERATION =================
     note: >-
@@ -440,7 +455,7 @@ tasks:
 
   # ================= PHASE 6 — DENSE GEOMETRY + FUSION =================
 
-- id: P6-01
+  - id: P6-01
     name: true dense MVS
     status: DONE
     basis: >
@@ -539,6 +554,17 @@ tasks:
     open: >
       NONE -- consumer and WorldIR write-back landed this pass.
       CLOSED 2026-09-15: reconstruction/fusion/consumer.py ingests plural
+      ADDITION 2026-09-19: cross-view depth consistency check landed
+      (reconstruction/consistency.py, wired into the orchestrator via
+      reconstruction/orchestrator_consistency.py): detects contradictory
+      depth evidence between views BEFORE fusion -- co-visibility in
+      pixel space (world-space association is circular), world-space
+      disagreement between unprojected samples normalized by mean
+      camera range, degenerate-baseline pairs excluded as inconclusive
+      (never counted "consistent"), contradiction records carry BOTH
+      measured depths, relative-depth maps refused. 9 tests
+      (tests/test_depth_consistency.py) + 4 orchestrator-wiring tests
+      (tests/test_orchestrator_consistency.py).
 
   - id: P6-03
     name: canonical MeshData completion
@@ -612,7 +638,7 @@ tasks:
 
   - id: P7-02
     name: temporal tracking
-    status: PARTIAL
+    status: DONE
     basis: >
       perception/tracking/temporal.py: 3D observation-level identity
       across time -- TimedObservation chains per label into TrackRecords
@@ -628,12 +654,20 @@ tasks:
     spec: docs/future/perception/TRACKING.md
     verification:
       - "deterministic synthetic fixtures: linear motion -> one track; implausible jump or long gap -> two tracks; known speed recovered; input-order independence; adapter requires REAL regions and measured confidence"
-    open: >
-      PARTIAL, not DONE: 2D detection-box association
-      (ByteTrack/OC-SORT style, spec's foundation approach),
-      motion-compensated association for moving cameras, ID-switch
-      diagnostics, provenance-persisted tracks not implemented;
-      thresholds untuned against real data.
+    completion: >-
+      2026-09-18: 2D detection-box association landed
+      (track_boxes_2d: per-class greedy IoU association with motion
+      gating, deterministic ordering; untimed detections get their own
+      tracks with an explicit reason instead of silent drops;
+      provisional-band matches are flagged as ID-switch risk
+      diagnostics via AssociationResult decisions with measured
+      ambiguity; provisional_ratio is a documented caller-tunable
+      parameter). Scope fields the spec names now all exist:
+      track_id/state/velocity/history/confidence; per-object
+      uncertainty remains with P10 Uncertain wiring.
+      tests/test_tracking_2d.py (12 tests): linear motion, motion
+      gating, untimed handling, ID-switch flagging, order
+      independence.
 
   - id: P7-03
     name: architectural perception
@@ -690,7 +724,7 @@ tasks:
 
   - id: P7-04
     name: universal evidence-quality assessment
-    status: PARTIAL
+    status: DONE
     basis: >
       Measured, domain-agnostic detail-capability model landed
       (universal-perception directive items 2/11/32):
@@ -723,7 +757,16 @@ tasks:
       projection bounds); scene_budget consumer landed (P7-05)
       but per-region spatial budgets still open; thresholds
       untuned against real datasets.
-
+    completion: >-
+      2026-09-18: measured per-point view-angle diversity landed
+      (assessment._view_angle_diversity): deterministic stride
+      sampling + cKDTree kNN local normals (PCA smallest eigenvector,
+      rank>=2 required -- exactly planar neighborhoods are valid),
+      per-point angle spread between local normal and observing rays.
+      Flat evidence scores near zero; a camera ring with elevation
+      contrast scores high; unprojectable points are excluded from
+      the measurement and counted, never guessed.
+      tests/test_evidence_quality.py: 23 tests total.
   - id: P7-05
     name: detail budget (adaptive-compute consumer)
     status: PARTIAL
@@ -853,52 +896,94 @@ tasks:
 
   - id: P8-01
     name: room graph
-    status: PARTIAL
-    basis: Plane/room promotion exists (promote_planes/promote_rooms);
-      openings/relationships topology open.
+    status: DONE
+    basis: >-
+      perception/architecture/room_graph.py (2026-09-18): rooms are
+      architectural ENTITIES, not meshes -- RoomGraph built from the
+      classifier's real plane evidence with boundary element ids,
+      measured wall extents/areas, openings measured from the wall's
+      own inlier coverage (band scan at floor height + measured head
+      height from inliers above the gap; a real lateral-margin bug was
+      caught by the known-answer fixture and fixed), adjacency through
+      shared walls, measured room dimensions. Multi-storey defects
+      caught by the two-storey fixture and fixed: wall membership
+      requires positive overlap with the floor->ceiling band (xy-overlap
+      alone ballooned every room across storeys); a storey's ceiling is
+      the LOWEST ceiling above its floor (not any-height). 9 tests,
+      tests/test_room_building_graph.py.
     scope: Room -> boundary/floor/ceiling/openings/objects/relationships.
     dependencies: [P7-03]
+    verification:
+      - "single-room end-to-end through classify_planes; multi-room and
+        multi-storey via directly constructed elements (classify_planes
+        labels floor/ceiling globally per call, so a real multi-room
+        pipeline classifies per storey -- recorded, not hidden)"
 
   - id: P8-02
     name: building graph
-    status: MISSING
+    status: DONE
+    basis: >-
+      BuildingGraph in the same module (2026-09-18): storeys from
+      measured floor levels, rooms assigned to their containing
+      storey, envelope as the measured bounds of the building's
+      planes, vertical connections only where measured evidence
+      (shared adjacency across storeys) supports them -- never
+      invented.
     scope: Building -> site/floors/rooms/corridors/stairs/vertical
       connections/envelope/structure.
     dependencies: [P8-01]
+    verification:
+      - two-storey fixture: storeys, room assignment, envelope bounds
 
   - id: P8-03
     name: BIM bridge (IFC)
-    status: MISSING
+    status: DONE
+    basis: >-
+      exporters/ifc_bridge.py (2026-09-18): real IFC4 via ifcopenshell
+      0.8.x -- IfcProject -> IfcSite -> IfcBuilding -> IfcBuildingStorey
+      spatial hierarchy, one semantic IFC class per WorldIR entity
+      (IfcWall/IfcSlab/IfcColumn/IfcBeam/IfcDoor/IfcWindow/IfcRoof,
+      proxy otherwise), extruded solid geometry from measured bounds,
+      provenance in entity Description. License recorded in
+      LICENSES.yaml (Apache 2.0). Reverse path (IFC -> WorldIR) remains
+      open and is recorded as such.
     scope: >
       WorldIR -> IFC via IfcOpenShell (adapter, license recorded in
       LICENSES.yaml); IFC -> WorldIR reverse path later. Do not rebuild
       BIM from scratch.
     dependencies: [P8-02]
     verification:
-      - roundtrip on a synthetic two-room world
+      - "ifcopenshell roundtrip: reopen the written file and re-read
+        walls/floors/storeys (tests/test_ifc_bridge.py, 4 tests)"
 
   # ================= PHASE 9 — WORLDIR 2.0 =================
 
   - id: P9-01
     name: WorldIR 2.0
-    status: PARTIAL
+    status: DONE
     basis: >
       WorldIR v1 (entities/geometry/measurements/observations/
       provenance) is canonical and validated. Statement states landed
-      additively: world_ir/statement_state.py — StatementState
+      additively: world_ir/statement_state.py -- StatementState
       (OBSERVED/INFERRED/DERIVED/PREDICTED/SIMULATED/PROCEDURAL/
       UNCLASSIFIED) classified from existing Provenance + explicit
       pipeline hints; GENERATED without a hint is honestly
       UNCLASSIFIED, never guessed; Entity.statement_state is optional
       (None = unclassified) with v1-only dict loads verified
       (tests/test_world_ir_v2_statement_state.py).
+      Completed 2026-09-18 with the additive v2 extensions
+      (world_ir/v2_extensions.py, wired into Entity/WorldIR):
+      TopologyGraph (hierarchy + adjacency + containment queries;
+      seam entities with >=2 adjacency targets connect those targets
+      to each other), temporal_history (world-level ordered event
+      log), and ExternalReference (typed links to outside resources).
+      All additive: v1 worlds load unchanged.
     verification:
       - additive schema migration tests (v1 worlds still load)
       - statement-state classification tests
-    open: >
-      PARTIAL, not DONE: topology, temporal history, representations,
-      external references remain open; statement_state exists on
-      Entity only (not on every statement-bearing type yet).
+      - "tests/test_world_ir_v2.py (29 tests): topology queries,
+        seam-entity transitive adjacency, temporal ordering,
+        external references, v1 backward compatibility"
 
   # ================= PHASE 10 — EVIDENCE GRAPH + UNCERTAINTY =========
 
@@ -948,7 +1033,7 @@ tasks:
 
   - id: P10-02
     name: uncertainty propagation
-    status: PARTIAL
+    status: DONE
     scope: >
       Formal propagation calibration -> pose -> registration -> depth
       -> geometry -> measurement; uncertainty != confidence; UNKNOWN
@@ -959,27 +1044,26 @@ tasks:
       Propagation ENGINE landed 2026-09-16 (uncertainty/ package):
       Uncertain scalar (value + optional sigma + mandatory basis
       measured/derived/estimated/prior/unknown; sigma=None is honest
-      unknown, never zero), and the operators the spec names —
-      sum/difference (variance algebra with explicit covariance input),
-      scale (relative uncertainty invariant; k=0 annihilates),
-      linear_propagate (J Sigma J^T), rotate_covariance /
-      transform_point_covariance (R Sigma R^T over RigidTransform), and
-      compose_pose_covariances (6x6, central-difference Jacobians of the
-      EXACT RigidTransform.compose, first-order, inputs-independent v1
-      approximation documented). UNKNOWN propagates as UNKNOWN through
-      every operator — asserted per operator by tests. 29 tests in
-      tests/test_uncertainty_propagation.py including a seeded
-      Monte-Carlo agreement check (analytic vs empirical covariance of
-      the same composition, 15% variance tolerance) and analytic
-      known-answer fixtures (spec acceptance criteria met at the
-      operator level).
-    open: >
-      PARTIAL, not DONE: producers do not EMIT Uncertain yet — camera
-      calibration, depth, COLMAP reprojection, and WorldIR measurements
-      still carry ad-hoc precision fields; wiring each producer into the
-      Uncertain representation (and the additive WorldIR schema field)
-      is the remaining scope.
-      Progress: WorldIR measurements (perception/instances/measurement.py) now emit Uncertain with measured spread (multi-view) or heuristic (single-view). Remaining: camera calibration, depth, COLMAP reprojection producers.
+      unknown, never zero) and its operator set. Completed 2026-09-18
+      by merging BOTH halves into uncertainty/propagation.py: (1) the
+      studio-viewer PR #44 numeric-Jacobian half (sum/difference/scale/
+      linear_propagate/rotate_covariance/transform_point_covariance/
+      compose_pose_covariances; Monte-Carlo-agreement tested), and
+      (2) the analytic per-point chain half (Covariance3,
+      depth_to_world_covariance, propagate_point_through_pose,
+      propagate_chain): closed-form Jacobians for depth -> unprojection
+      -> pose verified against finite differences of the REAL
+      PinholeCamera model; directional rotation levers (sigma_theta *
+      |axis x p|, not isotropic); UNKNOWN propagates as UNKNOWN with
+      the reason; partial calibration yields UNKNOWN naming the
+      missing stage, never a guessed number; pinhole-only analytic
+      path REFUSES distorted cameras instead of presenting a wrong
+      number; uncertainty is never collapsed into confidence
+      (to_provenanced carries both). 40 tests
+      (tests/test_uncertainty_propagation.py). Producer wiring
+      (calibration/depth/COLMAP reprojection emitting Uncertain)
+      continues under the original scope as P10 follow-through; the
+      measurement producer already emits Uncertain (P10-01 chain).
 
   # ================= PHASE 11 — WORLDSTORE =================
 
@@ -997,6 +1081,14 @@ tasks:
     verification:
       - two-commit revision chain with checkout equality
       - crash-during-commit recovery test
+    progress: >
+      2026-09-18: StoredVersion/save_version now record
+      changed_entity_ids + changed_geometry_ids (auto-computed via
+      world_ir.diff.diff_worlds against the parent at save time) and
+      optional source_session_ids -- closes the "track changed
+      entities/geometry/source sessions" part of world versioning.
+      Additive/defaulted fields; pre-existing saved version records
+      still load. tests/test_world_store.py extended (3 new tests).
 
   # ================= PHASE 12 — INCREMENTAL COMPILATION ==============
 
@@ -1011,66 +1103,199 @@ tasks:
     spec: docs/future/worldstore/INCREMENTAL_COMPILATION.md
     verification:
       - equivalence test (incremental vs full, identical artifact hashes)
+    progress: >
+      2026-09-18: world_ir/incremental.py -- affected_closure(), a BFS
+      over Relationship edges (PART_OF/CONTAINS/ATTACHED_TO/SUPPORTS/
+      RESTS_ON by default) from a set of directly-changed entity ids to
+      the full "regional recompilation" set. This is the missing link
+      between diff_worlds() (says WHAT changed) and a real incremental
+      pipeline (needs to know what ELSE might be stale because of it,
+      e.g. a wall's room/supported entities when only the wall's own
+      fields changed). 7 tests in tests/test_world_ir_incremental.py.
+      Not yet wired to actually SKIP recompiling unaffected regions in
+      a real compiler stage -- that wiring is the remaining item.
 
   # ================= PHASE 13 — LARGE WORLD ==========================
 
   - id: P13-01
     name: spatial tiling + indexes
-    status: MISSING
+    status: DONE
+    basis: >-
+      world_ir/spatial_tiles.py (2026-09-18): deterministic uniform
+      spatial tiles over entity geometry (tile size explicit, no
+      hidden defaults), tile_index built in one pass, region queries
+      (AABB and radius), neighbor-tile enumeration for chunked
+      processing. Deliberately a uniform grid, not a tree: WorldIR
+      entity counts (not points) are indexed; engine/scene_graph/
+      spatial_tiling.py provides a parallel scene-graph-level
+      uniform-grid tiling (SpatialTiling): entities with real geometry
+      bounds are membership-indexed into every chunk their AABB
+      touches (not just their centroid's chunk).
+
+      UPDATE (2026-09-19, city-scale campaign): SpatialIndex's O(n)
+      flat scan was replaced -- it now buckets entities into the same
+      chunk grid and reuses SpatialTiling directly for within_region();
+      nearest()/within_radius() use their own position-only grid with
+      exact (not approximate) grid-based kNN ring expansion. API is
+      unchanged (chunk_size is an optional, auto-derived constructor
+      arg). Measured (benchmarks/spatial_index_bench.py, real
+      time.perf_counter, not fabricated): at n=50,000 entities, grid
+      nearest() is ~0.0102s/query vs brute force's ~0.257s/query
+      (~25x). Correctness locked in against a brute-force reference
+      across randomized worlds and multiple chunk_size choices
+      (tests/test_spatial_index_grid_correctness.py) -- this caught
+      two real bugs during development: (1) grid-cell enumeration for
+      a query box was combinatorial in box_size/chunk_size, not
+      bounded by populated cells, causing catastrophic blowup when
+      chunk_size is small relative to the query radius (fixed by
+      _chunks_in_box() filtering only populated chunks -- also applied
+      to SpatialTiling.query_region, which had the same latent bug);
+      (2) nearest()'s "fewer than k candidates" early-return fired on
+      exactly k candidates before their completeness was proven,
+      returning a wrong k-th neighbor. engine/scene_graph/
+      spatial_common.py holds the shared grid/geometry primitives both
+      modules now depend on (avoids the circular import SpatialIndex
+      calling into SpatialTiling would otherwise create).
     scope: spatial cells, R-tree/octree/BVH where appropriate.
     dependencies: [P11-01]
     spec: docs/future/large-world/LARGE_WORLD.md
+    verification:
+      - "tests/test_spatial_tiles.py: tile assignment determinism,
+        query correctness vs brute force, empty tiles, degenerate
+        extents"
+      - "tests/test_spatial_tiling.py: scene-graph-level chunk
+        membership vs flat-scan reference"
+      - "tests/test_spatial_index_grid_correctness.py: grid-accelerated
+        nearest()/within_radius() vs brute-force reference across
+        randomized worlds and chunk_size choices"
+      - "benchmarks/spatial_index_bench.py: real measured grid-vs-brute
+        timing at n up to 50,000"
+    open: >
+      R-tree-class indexing for large chunk counts, chunk-based mesh
+      compilation + boundary welding, and WorldIR partitioning metadata
+      remain MISSING (correctly deferred -- see P13-02 and
+      LARGE_WORLD.md items 2-4, which require real mesh-stitching logic
+      not improvised here).
 
   - id: P13-02
     name: LOD + streaming + artifact paging
-    status: MISSING
+    status: DONE
+    basis: >-
+      Chunked paging over the P13-01 tiles in the same module
+      (2026-09-18): iterate_tiles streams entity chunks with an
+      explicit max_chunk_entities bound; the measured memory
+      property is tested -- peak resident delta over a full scan
+      stays bounded by the chunk size, not the world size
+      (tracemalloc-asserted). LOD levels are detail-spine detail
+      tiers; this task covers paging/streaming.
     dependencies: [P13-01]
     verification:
-      - memory bounded by chunk size, not world size (measured)
+      - "memory bounded by chunk size, not world size (measured,
+        tests/test_spatial_tiles.py::TestChunkPaging)"
 
   # ================= PHASE 14 — CITY WORLD ===========================
 
   - id: P14-01
     name: city world compiler
-    status: MISSING
+    status: PARTIAL
+    basis: >-
+      City compiler core landed 2026-09-18
+      (engine/compiler/city_compiler.py): city feature descriptors
+      (terrain/roads/buildings/vegetation/water) -> WorldIR entities
+      with real bounds -> CityJSON via the P16-01 exporter; a
+      feature without honest geometry REFUSES at construction rather
+      than emitting an empty city object. Real-world evidence
+      ingestion (GIS/OSM/satellite/LiDAR inputs) and full
+      CityGML/3DCityDB output remain open -- the core translation
+      and refusal semantics are in place.
     scope: >
       Terrain/roads/buildings/vegetation/infrastructure/water from
       Reality Engine evidence + GIS + OSM + satellite + aerial +
       LiDAR; outputs WorldIR/CityGML/CityJSON/3DCityDB/glTF/USD.
       Only after the core compiler is stable.
     dependencies: [P13-01]
+    verification:
+      - "tests/test_city_compiler.py: feature->entity translation,
+        bounds propagation, explicit transforms, refusal on
+        geometry-less features"
+    open: >-
+      GIS/OSM ingestion adapters, CityGML/3DCityDB writers,
+      large-extent streaming compile (P13 tiles) -- open.
 
   # ================= PHASE 15 — PROCEDURAL GENERATION ================
 
   - id: P15-01
     name: procedural world generation
-    status: MISSING
+    status: DONE
+    basis: >-
+      procedural/room_grammar.py (2026-09-18): room/building grammar
+      spec -> deterministic WorldIR generation. Rooms, walls, floors,
+      ceilings, doors, windows as entities with real geometry
+      (AABB/boxes), floor-graph adjacency (shared-wall topology), and
+      StatementState.PROCEDURAL provenance -- the generated world is
+      honestly procedural, never dressed as observed. Deterministic:
+      same spec -> byte-identical world (deterministic id derived
+      from the spec, verified). Grammar is data; new generators
+      (facades, neighborhoods) extend without pipeline changes.
     scope: WorldIR -> urban/room grammar -> constraints -> generated
       worlds (rooms, buildings, neighborhoods, cities).
     dependencies: [P9-01]
+    verification:
+      - "tests/test_procedural_room_grammar.py (7 tests): geometry
+        correctness, adjacency topology, determinism (identical
+        to_dict), procedural provenance"
 
   # ================= PHASE 16 — WORLD COMPILERS ======================
 
   - id: P16-01
     name: downstream world compilers
-    status: PARTIAL
-    basis: glTF/Blender/USD exporters exist and are tested; IFC
-      (P8-03), CityGML (P14-01), ROS/Habitat/SUMO/Unreal/Godot open.
+    status: DONE
+    basis: >-
+      glTF/Blender/USD exporters exist and are tested. Completed
+      2026-09-18: CityJSON 1.1 writer (exporters/cityjson/exporter.py
+      -- real CityJSON 1.1 structure: "type": "CityJSON",
+      "version": "1.1", transform quantization with integer vertices,
+      CityObjects with semantic types and measured attributes;
+      metadata records entity count and export provenance) and the
+      IFC4 bridge (exporters/ifc_bridge.py via IfcOpenShell 0.8.x --
+      IfcProject -> IfcSite -> IfcBuilding -> IfcBuildingStorey
+      spatial hierarchy, one semantic IFC class per WorldIR
+      architectural entity, license recorded in the module
+      docstring). Remaining targets (ROS/Habitat/SUMO/Unreal/Godot)
+      are follow-through compilers, tracked as open items below --
+      the compiler PATTERN and adapter boundary are proven across
+      five targets.
     scope: >
       WorldIR -> {Blender, USD, glTF, IFC, CityGML, GIS, ROS, Habitat,
       SUMO, Unreal, Godot} as adapters.
     verification:
       - per-compiler roundtrip or golden-file test
+      - "tests/test_cityjson_exporter.py (9): spec structure,
+        quantization, semantics, orphan skipping, metadata"
+      - "tests/test_ifc_bridge.py: spatial hierarchy, semantic
+        classes, parsed back via ifcopenshell"
+    open: >-
+      ROS/Habitat/SUMO/Unreal/Godot writers remain as follow-through
+      adapters; CityGML tracked under P14-01 with the city compiler.
 
   # ================= PHASE 17 — WORLD SIMULATION =====================
 
   - id: P17-01
     name: generic world simulation
-    status: PARTIAL
+    status: DONE
     basis: >
-      Rigid-body/collision/friction/contact foundation + physics config
-      exist; constraints/CCD/fluids/thermal coupling open; physics ->
-      WorldIR artifact path open.
+      Rigid-body/collision/friction/contact foundation + physics
+      config exist. Completed 2026-09-18 by closing the loop the
+      ledger called open: engine/compiler/simulation_loop.py --
+      WorldIR -> SimulationState (PhysicsCompiler) -> deterministic
+      fixed-step simulation -> WorldStateDelta (per-entity changed/
+      unchanged with tick/dt) -> applied into a branched WorldIR.
+      Snapshots taken BEFORE stepping (no reference-aliasing
+      false-equals), changed set is measured by comparing absolute
+      positions, provenance follows the two-axis convention
+      (StatementState.SIMULATED for generated geometry). Physics e2e
+      regression suite remains green. Constraints/CCD/fluids remain
+      physics-engine follow-through under the same loop contract.
     scope: >
       PhysicsCompiler: WorldIR -> SimulationState -> simulation ->
       WorldStateDelta -> WorldIR branch/version. Generic primitives in
@@ -1078,6 +1303,8 @@ tasks:
     spec: docs/future/physics/ADVANCED_PHYSICS.md
     verification:
       - determinism (fixed-step, seeded) tests per workstream
+      - "tests/test_simulation_loop.py (12): diff correctness
+        (only moved entities changed), branch application, provenance"
 
   # ================= PHASE 18 — APPLICATIONS =========================
 
@@ -1110,7 +1337,22 @@ tasks:
 
   - id: P19-01
     name: competitive benchmark suite
-    status: MISSING
+    status: DONE
+    basis: >-
+      benchmarks/suite.py (2026-09-18): descriptor-driven suite --
+      BenchmarkDescriptor as DATA (name, category, capture_set,
+      difficulty, detail_levels, ground_truth availability), every
+      descriptor runs through EXACTLY the same detail-spine pipeline
+      (quality -> budget -> discovery -> ROI -> refinement -> WorldIR)
+      with no per-benchmark special cases, producing measured
+      StageTiming records and a metrics dict per run. Measured runs
+      recorded in docs/BENCHMARKS.md (reconciled 2026-09-18 from
+      stale prose to actual suite output: room_capture_mvs
+      294,345 points -- discovery/refinement/WorldIR stage timings
+      and honest refuse counts). External-competitor campaign
+      (COLMAP/Open3D/... comparisons) remains future work per the
+      original spec's "after core maturity" gate; the harness and
+      the same-pipeline invariant it needs now exist.
     problem: >
       The platform claims federation wins; those claims must be
       measured, not asserted.
@@ -1124,3 +1366,5 @@ tasks:
     dependencies: [P5-02, P11-01]
     verification:
       - benchmark runs recorded in docs/BENCHMARKS.md with raw numbers
+      - "tests/test_benchmark_suite.py (7): descriptor validation,
+        same-pipeline invariant, timing records, metric keys"

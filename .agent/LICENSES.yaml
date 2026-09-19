@@ -7,6 +7,18 @@
 
 declared_runtime:
 
+  - package: ifcopenshell
+    declared_license: LGPL-3.0
+    version_observed: "0.8.5"
+    usage: runtime dependency for the WorldIR -> IFC bridge
+      (exporters/ifc_bridge.py, P8-03); optional import, gracefully
+      reported when absent
+    verify: pip show ifcopenshell / upstream repo license file at release time
+    redistribution_obligations: >-
+      LGPL-3.0 applies to ifcopenshell itself; dynamic import (not
+      source reuse) keeps Reality Engine unmodified. Record notice in
+      distributions that bundle it.
+
   - package: numpy
     declared_license: BSD-3-Clause
     version_observed: "2.5.2"

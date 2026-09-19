@@ -4,7 +4,7 @@ explicit frame names, composable transformation chains, GNSS frames
 reprojection-residual quality statistics.
 
 Builds on what exists rather than replacing it: rotation/translation
-math reuses `engine.physics.math3.Quat`/`Vec3` (the same primitives
+math reuses `engine.math.math3.Quat`/`Vec3` (the same primitives
 `camera.py` documents as the repo's one rotation implementation);
 camera geometry reuses `CameraIntrinsics`/`CameraExtrinsics`/
 `PinholeCamera` verbatim (the same types PR #28's SensorDescriptor

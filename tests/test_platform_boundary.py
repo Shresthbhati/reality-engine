@@ -148,27 +148,14 @@ def test_allowlist_is_minimal_and_documented():
             )
 
 
-def test_simulation_bridge_is_reachable_only_through_the_sdk_facade():
-    """Physics/simulation was fully extracted from core in the
-    child-project isolation (constitution Article XI,
-    CHILD_PROJECT_ISOLATION_SUMMARY.md, 2026-09-18): engine.compiler.
-    physics_compiler and sdk.reality.compile_physics were both removed
-    from core, not merely relocated behind a bridge. There is
-    therefore no in-core "simulation bridge" left to test the
-    reachability of -- the current invariant is simply that no
-    platform package references the now-nonexistent bridge module at
-    all (if one ever does, that's either stale code or a real
-    boundary violation reintroducing the removed coupling).
-
-    engine.compiler.world_compiler is NOT a simulation attachment: it
-    is the platform's own WorldIR compilation step and may be imported
-    freely by the chain."""
+def test_simulation_bridge_is_absent_from_core():
+    """Child-project isolation (3dc02ab) removed the physics compiler
+    bridge from core: the SDK facade must not re-import it, and no core
+    package may reference engine.compiler.physics_compiler."""
     bridge = REPO_ROOT / "engine" / "compiler" / "physics_compiler.py"
     assert not bridge.is_file(), (
-        "engine/compiler/physics_compiler.py exists again -- physics is a "
-        "child-project capability (see CHILD_PROJECT_ISOLATION_SUMMARY.md); "
-        "if this file is back on purpose, update this test deliberately "
-        "rather than leaving it green by accident"
+        "physics compiler bridge returned to core -- re-run the isolation "
+        "split or update this guard deliberately"
     )
     violations: list[str] = []
     for package in PLATFORM_PACKAGES:
@@ -182,5 +169,9 @@ def test_simulation_bridge_is_reachable_only_through_the_sdk_facade():
                 if imported == "engine.compiler.physics_compiler" or imported.startswith(
                     "engine.compiler.physics_compiler."
                 ):
-                    violations.append(f"{rel} imports {imported} -- the removed simulation bridge")
+                    violations.append(
+                        f"{rel} imports {imported} -- the physics compiler "
+                        "bridge was deliberately removed from core "
+                        "(child-project isolation); core must not depend on it"
+                    )
     assert not violations, "\n  ".join([""] + violations)

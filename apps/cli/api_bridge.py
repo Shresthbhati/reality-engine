@@ -257,6 +257,61 @@ def cmd_list_sessions() -> int:
         return 1
 
 
+def cmd_diff(base_vid: str, head_vid: str) -> int:
+    store_root = _store_path()
+    try:
+        from worldstore import WorldStore
+        from world_ir.diff import diff_worlds
+
+        store = WorldStore(store_root)
+        versions = store.list_versions()
+        if not versions:
+            _emit({
+                "error": "No versions stored in WorldStore to diff",
+                "from_version_id": base_vid,
+                "to_version_id": head_vid,
+            })
+            return 1
+
+        vid_map = {v.version_id: v for v in versions}
+        actual_base = versions[-1].version_id if base_vid == "latest" else base_vid
+        actual_head = versions[-1].version_id if head_vid == "latest" else head_vid
+
+        if actual_base not in vid_map:
+            _emit({
+                "error": f"Base version not found: {base_vid}",
+                "from_version_id": base_vid,
+                "to_version_id": head_vid,
+            })
+            return 1
+
+        if actual_head not in vid_map:
+            _emit({
+                "error": f"Head version not found: {head_vid}",
+                "from_version_id": base_vid,
+                "to_version_id": head_vid,
+            })
+            return 1
+
+        base_world = store.load_version(actual_base)
+        head_world = store.load_version(actual_head)
+        diff = diff_worlds(base_world, head_world)
+        res = diff.to_dict()
+        res["from_version_id"] = actual_base
+        res["to_version_id"] = actual_head
+        res["entities"] = res.get("entity_diffs", [])
+        res["geometries"] = res.get("geometry_diffs", [])
+        _emit(res)
+        return 0
+    except Exception as exc:
+        _emit({
+            "error": str(exc),
+            "from_version_id": base_vid,
+            "to_version_id": head_vid,
+        })
+        return 1
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         _emit({"error": "Usage: api_bridge.py <command> [args...]"})
@@ -272,6 +327,11 @@ def main() -> int:
             _emit({"error": "load-world requires <version_id>"})
             return 1
         return cmd_load_world(sys.argv[2])
+    elif cmd == "diff":
+        if len(sys.argv) < 4:
+            _emit({"error": "diff requires <base_version_id> <head_version_id>"})
+            return 1
+        return cmd_diff(sys.argv[2], sys.argv[3])
     elif cmd == "points-path":
         if len(sys.argv) < 3:
             _emit({"error": "points-path requires <version_id>"})

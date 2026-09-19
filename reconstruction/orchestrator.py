@@ -174,8 +174,16 @@ def validate_evidence(evidence: List[EvidenceItem]) -> Dict[str, object]:
             f"insufficient image evidence: {len(image_items)} "
             f"PHOTO/VIDEO item(s), need >= {MIN_IMAGE_EVIDENCE}"
         )
-    ids = [e.id for e in evidence]
-    duplicate_ids = sorted({i for i in ids if ids.count(i) > 1})
+    # Single-pass duplicate scan: the input gate runs on EVERY batch,
+    # including 10k+ image captures, so this must not be O(N^2).
+    seen: set = set()
+    duplicated: set = set()
+    for e in evidence:
+        if e.id in seen:
+            duplicated.add(e.id)
+        else:
+            seen.add(e.id)
+    duplicate_ids = sorted(duplicated)
     if duplicate_ids:
         issues.append(f"duplicate evidence ids: {duplicate_ids}")
 

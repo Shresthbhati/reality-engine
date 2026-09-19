@@ -166,11 +166,11 @@ class WorldStore:
                 f"version {vid} already exists -- versions are immutable; "
                 "save a new version instead of overwriting observed reality"
             )
+        # Compute changes from parent version
         changed_entity_ids: list[str] = []
         changed_geometry_ids: list[str] = []
-        if parent is not None:
+        if parent:
             from world_ir.diff import diff_worlds
-
             parent_world = self.load_version(parent)
             world_diff = diff_worlds(parent_world, world)
             changed_entity_ids = sorted(d.entity_id for d in world_diff.entity_diffs)

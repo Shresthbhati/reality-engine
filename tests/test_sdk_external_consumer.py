@@ -45,12 +45,10 @@ def _room_evidence() -> ReconstructionResult:
 
 
 def test_external_app_full_flow_through_sdk_only():
-    """ingest -> compile -> validate -> export -> diff, calling nothing
-    but sdk.reality. Physics compilation is deliberately not part of
-    this chain: per the child-project isolation (constitution Article
-    XI, CHILD_PROJECT_ISOLATION_SUMMARY.md), compile_physics was
-    removed from the core SDK facade -- physics is a child-project
-    consumer, not a core capability this boundary test should exercise."""
+    """ingest -> compile -> validate -> export -> diff, calling
+    nothing but sdk.reality. (Physics compilation was deliberately
+    removed from the core SDK in the child-project isolation split;
+    the boundary guard enforces its absence.)"""
     evidence = _room_evidence()
 
     world, diagnostics = reality.compile_world_from_reconstruction(evidence)

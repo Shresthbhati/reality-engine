@@ -148,9 +148,13 @@ export function convertBackendEntityToEntity(
     }
   }
 
+  const sessionIdsFromObs = b.observations?.map((o) => o.frame_id).filter(Boolean) ?? [];
+  const entitySessionId = b.custom_properties?.session_id ? [String(b.custom_properties.session_id)] : [];
+  const allSessionIds = Array.from(new Set([...entitySessionId, ...sessionIdsFromObs]));
+
   return {
     id: b.id,
-    name: b.id.replace(/-/g, " "),
+    name: (b.custom_properties?.name as string) ?? b.id.replace(/-/g, " "),
     type: mapBackendTypeToEntityType(b.type),
     childIds: b.relationships
       .filter((r) => r.kind.toLowerCase() === "contains" || r.kind.toLowerCase() === "parent_of")
@@ -174,7 +178,7 @@ export function convertBackendEntityToEntity(
       bounds: primaryBounds,
     },
     representations: b.geometry_ids.length > 0 ? ["MESH"] : ["POINT_CLOUD"],
-    sessionIds: ["sess-001"],
+    sessionIds: allSessionIds.length > 0 ? allSessionIds : ["unknown"],
     observationCount: b.observations.length,
     evidenceCount: b.observations.length,
   };
@@ -266,3 +270,78 @@ export async function fetchWorldPointCloud(versionId: string): Promise<PointClou
     };
   }
 }
+
+export interface BackendWorldDiffSummary {
+  entities_added: number;
+  entities_removed: number;
+  entities_modified: number;
+  geometries_added: number;
+  geometries_removed: number;
+  geometries_modified: number;
+}
+
+export interface BackendEntityDiff {
+  entity_id: string;
+  kind: "added" | "removed" | "modified";
+  changes: Array<{
+    field: string;
+    old: unknown;
+    new: unknown;
+  }>;
+}
+
+export interface BackendGeometryDiff {
+  geometry_id: string;
+  kind: "added" | "removed" | "modified";
+  changes: Array<{
+    field: string;
+    old: unknown;
+    new: unknown;
+  }>;
+}
+
+export interface BackendWorldDiffPayload {
+  from_world_id: string;
+  to_world_id: string;
+  from_version_id: string;
+  to_version_id: string;
+  summary: BackendWorldDiffSummary;
+  entities: BackendEntityDiff[];
+  geometries: BackendGeometryDiff[];
+  error?: string;
+}
+
+export interface WorldDiffResult {
+  available: boolean;
+  diff?: BackendWorldDiffPayload;
+  error?: string;
+}
+
+export async function fetchWorldDiff(
+  baseVid: string,
+  headVid: string
+): Promise<WorldDiffResult> {
+  try {
+    const res = await fetch(
+      `/api/world/diff?base=${encodeURIComponent(baseVid)}&head=${encodeURIComponent(headVid)}`,
+      { cache: "no-store" }
+    );
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      return {
+        available: false,
+        error: data.error || `HTTP ${res.status}`,
+      };
+    }
+    return {
+      available: true,
+      diff: data,
+    };
+  } catch (err) {
+    return {
+      available: false,
+      error: err instanceof Error ? err.message : "Failed to fetch world diff",
+    };
+  }
+}
+

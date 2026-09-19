@@ -8,7 +8,7 @@ from engine.commands.processor import WorldCommandProcessor
 from engine.physics.backend import PhysicsWorldConfig, SimpleRigidBodyBackend
 from engine.physics.collision.shapes import Box
 from engine.physics.materials import CANONICAL_MATERIALS
-from engine.physics.math3 import Vec3
+from engine.math.math3 import Vec3
 from engine.physics.rigid.body import RigidBody
 from events import EventBus
 from world_ir import WorldIR

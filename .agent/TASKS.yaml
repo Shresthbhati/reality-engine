@@ -196,6 +196,35 @@ tasks:
         autonomously. Recorded 2026-09-15; EXR and device-raw adapters
         (format ladder) remain open with it."
 
+  - id: P0-ROBUST-01
+    name: reconstruction robustness classification + quality-aware admission
+    status: DONE
+    problem: >
+      Real captures are large, messy, incomplete, imperfect. Item-level
+      quality signals recorded by the importer (blur/exposure metrics)
+      were never consulted before reconstruction spend; no shared
+      outcome vocabulary existed below the batch level, so low-quality
+      evidence could be silently processed or silently dropped.
+    scope: >
+      reconstruction/robustness.py (item-level classify_evidence_items
+      ACCEPTED/REJECTED/DEGRADED/UNRESOLVED/FAILED with measured
+      reasons; run-level classify_reconstruction_run);
+      reconstruction/robustness_admission.py (admit_for_reconstruction
+      + reconstruct_with_admission composing the orchestrator);
+      orchestrator input-gate duplicate scan O(N^2) -> single pass;
+      scale harness benchmarks/robustness_scale.py.
+    verification:
+      - "24 red-first tests green (tests/test_reconstruction_robustness.py 17,
+        tests/test_robustness_admission.py 7)"
+      - "scale measured 20..5000 images, linear, deterministic 80/10/5/5
+        outcome mix, peak 9.8MB python allocs at 5k (benchmarks/robustness_scale.py)"
+      - "input gate on 20k items with duplicates: raise path < 1s (was >10s class)"
+      - "real-evidence path re-verified on this branch: 4/4
+        tests/test_dense_real_capture_integration.py (294,345-pt GPU COLMAP capture)"
+    notes: >
+      Real COLMAP spend-avoidance E2E (admission observed saving GPU
+      work on a real capture) is the named next gate.
+
   # ================= PHASE 2 — TIME + CALIBRATION =================
 
   - id: P2-01

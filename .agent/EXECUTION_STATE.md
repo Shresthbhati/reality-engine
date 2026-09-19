@@ -1019,3 +1019,41 @@ Ledger after sync: 33 DONE / 6 PARTIAL / 0 MISSING.
   +landmark_registration (49 entries).
 - Full unbounded suite: 2133 passed / 5 skipped / 0 failed (timing
   guard verified standalone: green).
+
+## 2026-09-19 (Freebuff — checkpoint 2: large-set validation + main-repair)
+
+- **Main-repair (blocking)**: commit 3dc02ab moved engine/physics/math3.py to
+  engine/math/math3.py but missed 28 importers across production + tests
+  (registration/landmarks, cross_session, reconstruction/consistency, calibration,
+  epipolar, simulation tests) -- full-suite collection was broken at main HEAD.
+  All imports rewritten engine.physics.math3 -> engine.math.math3 (vendored
+  reality-engine-main/ child copy untouched).
+- **Large image-set robustness (mission P1)**: reconstruction/validation.py's
+  validate_reconstructions replaced O(N*M) pure-python nearest scan with a cKDTree
+  indexed match -- 60k-vs-60k point validation now completes in seconds (red gate:
+  >300s killed before). Report semantics pinned unchanged via a brute-force oracle
+  test (agreement ordering, b-side consumption on disagreement, unmatched_b
+  track_id set-collapse); all 5 pre-existing Goal-F tests green untouched.
+- CAPABILITIES: +reconstruction_cross_validation (50 entries, parses).
+- Full unbounded suite: see gate log (running at entry-write time; result recorded
+  in handoff on completion).
+
+## Session: RECONSTRUCTION_ROBUSTNESS (Freebuff, branch agent/freebuff-reconstruction-perception)
+
+- Main repairs (cross-agent, all #51/isolation fallout, red-first where testable):
+  engine.physics.math3 -> engine.math.math3 import rewrite (28 files),
+  Camera.look_at/right/is_visible + Viewport frustum cull/set_camera implemented to
+  their committed test contracts, platform-boundary guards rewritten for the
+  post-isolation architecture (allowlist engine.math prefix; bridge-absence guard),
+  SDK external-consumer flow test updated to the post-isolation facade.
+- reconstruction/robustness.py: item-level ACCEPTED/REJECTED/DEGRADED/UNRESOLVED/FAILED
+  classifier with measured reasons + run-level mapping (17 tests).
+- reconstruction/robustness_admission.py: quality-aware compute admission composing
+  the orchestrator; exclusions recorded, batch refusal names counts (7 tests).
+- reconstruction/orchestrator.py: duplicate scan O(N^2) -> single pass (20k items >10s -> <1s).
+- benchmarks/robustness_scale.py: measured 20..5000 images -- linear, deterministic
+  outcome mix, peak 9.8MB python allocs at 5k.
+- Real-evidence path re-verified: 4/4 test_dense_real_capture_integration (294,345-pt
+  GPU COLMAP fused.ply -> canonical geometry with provenance).
+- Full unbounded suite at branch head: 1881 passed / 1 failed / 8 skipped before the
+  SDK test repair; repaired failure re-run green; affected-cluster re-gate 48 passed.

@@ -45,8 +45,10 @@ def _room_evidence() -> ReconstructionResult:
 
 
 def test_external_app_full_flow_through_sdk_only():
-    """ingest -> compile -> validate -> physics -> export -> diff, calling
-    nothing but sdk.reality."""
+    """ingest -> compile -> validate -> export -> diff, calling
+    nothing but sdk.reality. (Physics compilation was deliberately
+    removed from the core SDK in the child-project isolation split;
+    the boundary guard enforces its absence.)"""
     evidence = _room_evidence()
 
     world, diagnostics = reality.compile_world_from_reconstruction(evidence)
@@ -55,9 +57,6 @@ def test_external_app_full_flow_through_sdk_only():
 
     report = reality.validate(world)
     assert report.is_valid()
-
-    physics = reality.compile_physics(world)
-    assert len(physics.compiled) > 0
 
     gltf_content, gltf_report = reality.export(world, "gltf")
     assert gltf_report.entities_exported

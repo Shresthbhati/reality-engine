@@ -46,20 +46,11 @@ class StoredVersion:
     parent: str | None
     artifact_uri: str
     artifact_hash: str
-    #: Ids of entities/geometries that differ from `parent`'s saved world
-    #: (empty for a root version with no parent). Computed once at save
-    #: time via `world_ir.diff.diff_worlds` -- not recomputed on read, so
-    #: it survives even if the parent version is later deleted/corrupted.
-    #: Optional/defaulted so records written before this field existed
-    #: still deserialize (`StoredVersion(**record)` in list_versions/
-    #: verify_version) with an explicit "unknown" empty tuple rather than
-    #: an error.
-    changed_entity_ids: tuple = ()
-    changed_geometry_ids: tuple = ()
-    #: Ids of the evidence-acquisition Sessions this version's world was
-    #: (re)compiled from, when the caller supplies them -- the "which raw
-    #: captures does this version trace back to" provenance link.
-    source_session_ids: tuple = ()
+    # Fields for tracking what changed between versions (for diff/lineage)
+    changed_entity_ids: list[str] | None = None
+    changed_geometry_ids: list[str] | None = None
+    # Source session IDs that contributed to this version
+    source_session_ids: list[str] | None = None
 
 
 class WorldStore:
@@ -86,15 +77,16 @@ class WorldStore:
                 f"version {vid} already exists -- versions are immutable; "
                 "save a new version instead of overwriting observed reality"
             )
+        # Compute changes from parent version
         changed_entity_ids: list[str] = []
         changed_geometry_ids: list[str] = []
-        if parent is not None:
+        if parent:
             from world_ir.diff import diff_worlds
-
             parent_world = self.load_version(parent)
             world_diff = diff_worlds(parent_world, world)
             changed_entity_ids = sorted(d.entity_id for d in world_diff.entity_diffs)
             changed_geometry_ids = sorted(d.geometry_id for d in world_diff.geometry_diffs)
+
         payload = json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")
         uri, digest = self._store.put(payload)
         record = {
@@ -105,7 +97,7 @@ class WorldStore:
             "artifact_hash": digest,
             "changed_entity_ids": changed_entity_ids,
             "changed_geometry_ids": changed_geometry_ids,
-            "source_session_ids": list(source_session_ids or []),
+            "source_session_ids": source_session_ids,
         }
         path.write_text(json.dumps(record, indent=2), encoding="utf-8")
         seq_path = self._root / "sequence.json"
@@ -114,7 +106,16 @@ class WorldStore:
             order = json.loads(seq_path.read_text(encoding="utf-8"))
         order.append(vid)
         seq_path.write_text(json.dumps(order), encoding="utf-8")
-        return StoredVersion(**record)
+        return StoredVersion(
+            version_id=vid,
+            world_id=world.id,
+            parent=parent,
+            artifact_uri=uri,
+            artifact_hash=digest,
+            changed_entity_ids=changed_entity_ids,
+            changed_geometry_ids=changed_geometry_ids,
+            source_session_ids=source_session_ids,
+        )
 
     # ---- read ----
 

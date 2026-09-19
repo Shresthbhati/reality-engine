@@ -45,7 +45,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 from scipy.spatial import cKDTree
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from reconstruction.backend.interface import ReconstructionResult
 from reconstruction.calibration.camera import quat_to_matrix
 from reconstruction.calibration.transforms import RigidTransform

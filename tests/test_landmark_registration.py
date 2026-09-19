@@ -36,7 +36,7 @@ import math
 
 import pytest
 
-from engine.physics.math3 import Quat, Vec3
+from engine.math import Quat, Vec3
 from registration.landmarks import (
     LandmarkAmbiguity,
     LandmarkCorrespondence,

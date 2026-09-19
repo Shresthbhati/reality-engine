@@ -51,7 +51,7 @@ from typing import Dict, List, Sequence, Tuple
 import numpy as np
 from scipy.spatial import cKDTree
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from perception.depth.interface import DepthMap
 from reconstruction.calibration.camera import (
     PinholeCamera,

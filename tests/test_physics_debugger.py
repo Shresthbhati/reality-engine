@@ -1,15 +1,19 @@
 """Tests for the Physics Debugger debug-draw facade."""
 
 import pytest
+pytestmark = pytest.mark.physics
 
-from engine.physics.backend import PhysicsWorldConfig, SimpleRigidBodyBackend, StaticPlane
-from engine.physics.collision.shapes import Box, Plane, Sphere
-from engine.physics.debug.debugger import PhysicsDebugger
-from engine.physics.materials import CANONICAL_MATERIALS
-from engine.physics.rigid.body import RigidBody, SleepState
-from engine.physics.math3 import Vec3
-
-
+try:
+    from engine.physics.backend import PhysicsWorldConfig, SimpleRigidBodyBackend, StaticPlane
+    from engine.physics.collision.shapes import Box, Plane, Sphere
+    from engine.physics.debug.debugger import PhysicsDebugger
+    from engine.physics.materials import CANONICAL_MATERIALS
+    from engine.physics.rigid.body import RigidBody, SleepState
+    from engine.physics.math3 import Vec3
+    
+    
+except ImportError:
+    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 def ground_plane() -> StaticPlane:
     return StaticPlane(
         id="ground",

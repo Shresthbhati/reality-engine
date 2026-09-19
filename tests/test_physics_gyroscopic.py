@@ -5,14 +5,18 @@ identically zero for any omega. An asymmetric box is required.
 """
 
 import pytest
+pytestmark = pytest.mark.physics
 
-from engine.physics.collision.shapes import Box
-from engine.physics.materials import CANONICAL_MATERIALS
-from engine.physics.rigid.body import RigidBody
-from engine.physics.rigid.integrator import integrate
-from engine.physics.math3 import Vec3
-
-
+try:
+    from engine.physics.collision.shapes import Box
+    from engine.physics.materials import CANONICAL_MATERIALS
+    from engine.physics.rigid.body import RigidBody
+    from engine.physics.rigid.integrator import integrate
+    from engine.physics.math3 import Vec3
+    
+    
+except ImportError:
+    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 def make_asymmetric_box(**overrides) -> RigidBody:
     kwargs = dict(
         id="box",

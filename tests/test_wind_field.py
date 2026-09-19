@@ -8,19 +8,23 @@ F = 0.5 * 1.225 * Cd * A * v^2.
 """
 
 from __future__ import annotations
-pytestmark = pytest.mark.physics
 
 import math
 
 import pytest
 
-from engine.environment.wind import (
-    AIR_DENSITY_KG_M3,
-    BeaufortBand,
-    WindConfig,
-    WindField,
-    classify_beaufort,
-)
+pytestmark = pytest.mark.physics
+
+try:
+    from engine.environment.wind import (
+        AIR_DENSITY_KG_M3,
+        BeaufortBand,
+        WindConfig,
+        WindField,
+        classify_beaufort,
+    )
+except ImportError:
+    pytest.skip("engine.environment module not available - requires reality-engine-child", allow_module_level=True)
 from engine.world.events import EventBus
 
 
@@ -170,16 +174,15 @@ class TestDragCoupling:
     def test_wind_loads_push_real_physics_bodies(self):
         """The causal hook: wind impulses move real dynamic bodies in the
         SimpleRigidBodyBackend; static bodies are untouched."""
-try:
+        try:
             from engine.physics.backend.simple_backend import SimpleRigidBodyBackend
             from engine.physics.backend.interface import PhysicsWorldConfig
             from engine.physics.math3 import Vec3
             from engine.physics.collision.shapes import Box
             from engine.physics.materials.material import PhysicsMaterial
             from engine.physics.rigid.body import RigidBody
-    
-except ImportError:
-    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
+        except ImportError:
+            pytest.skip("engine.physics module not available - requires reality-engine-child")
         backend = SimpleRigidBodyBackend()
         world = backend.create_world(PhysicsWorldConfig())
         world.add_body(RigidBody(
@@ -207,16 +210,15 @@ except ImportError:
         assert after > before  # the impulse actually accelerated the body
 
     def test_static_bodies_receive_no_loads(self):
-try:
+        try:
             from engine.physics.backend.simple_backend import SimpleRigidBodyBackend
             from engine.physics.backend.interface import PhysicsWorldConfig
             from engine.physics.math3 import Vec3
             from engine.physics.collision.shapes import Box
             from engine.physics.materials.material import PhysicsMaterial
             from engine.physics.rigid.body import RigidBody
-    
-except ImportError:
-    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
+        except ImportError:
+            pytest.skip("engine.physics module not available - requires reality-engine-child")
         backend = SimpleRigidBodyBackend()
         world = backend.create_world(PhysicsWorldConfig())
         world.add_body(RigidBody(

@@ -9,6 +9,9 @@ opening complaint.
 """
 
 from __future__ import annotations
+
+import pytest
+
 pytestmark = pytest.mark.physics
 
 from evidence.promote_planes import promote_plane_to_entity
@@ -17,13 +20,12 @@ from perception.geometry.planes import detect_planes
 from reconstruction.backend.interface import ReconstructedPoint, ReconstructionResult
 from world_ir import WorldIR
 
-from engine.compiler.physics_compiler import build_stepped_physics_world, compile_physics_world
 try:
+    from engine.compiler.physics_compiler import build_stepped_physics_world, compile_physics_world
     from engine.physics.backend.interface import PhysicsWorldConfig
     from engine.physics.backend.simple_backend import SimpleRigidBodyBackend
     from engine.physics.math3 import Vec3
     from engine.physics.rigid.integrator import integrate
-    
 except ImportError:
     pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 _UP = (0.0, 1.0, 0.0)

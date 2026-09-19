@@ -1,12 +1,11 @@
 import math
-pytestmark = pytest.mark.physics
 
 import pytest
 
+pytestmark = pytest.mark.physics
+
 try:
     from engine.physics.math3 import Mat3, Quat, Vec3
-    
-    
 except ImportError:
     pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 def test_vec3_arithmetic():

@@ -46,6 +46,11 @@ class StoredVersion:
     parent: str | None
     artifact_uri: str
     artifact_hash: str
+    # Fields for tracking what changed between versions (for diff/lineage)
+    changed_entity_ids: list[str] | None = None
+    changed_geometry_ids: list[str] | None = None
+    # Source session IDs that contributed to this version
+    source_session_ids: list[str] | None = None
 
 
 class WorldStore:
@@ -63,6 +68,7 @@ class WorldStore:
         *,
         parent: str | None,
         version_id: str | None = None,
+        source_session_ids: list[str] | None = None,
     ) -> StoredVersion:
         vid = version_id or f"v-{uuid.uuid4().hex[:12]}"
         path = self._versions_dir / f"{vid}.json"
@@ -71,6 +77,31 @@ class WorldStore:
                 f"version {vid} already exists -- versions are immutable; "
                 "save a new version instead of overwriting observed reality"
             )
+
+        # Compute changes from parent version
+        changed_entity_ids: list[str] = []
+        changed_geometry_ids: list[str] = []
+        if parent:
+            parent_world = self.load_version(parent)
+            # Track entity changes
+            for eid, entity in world.entities.items():
+                if eid not in parent_world.entities:
+                    changed_entity_ids.append(eid)
+                elif parent_world.entities[eid] != entity:
+                    changed_entity_ids.append(eid)
+            for eid in parent_world.entities:
+                if eid not in world.entities:
+                    changed_entity_ids.append(eid)
+            # Track geometry changes
+            for gid, geom in world.geometries.items():
+                if gid not in parent_world.geometries:
+                    changed_geometry_ids.append(gid)
+                elif parent_world.geometries[gid] != geom:
+                    changed_geometry_ids.append(gid)
+            for gid in parent_world.geometries:
+                if gid not in world.geometries:
+                    changed_geometry_ids.append(gid)
+
         payload = json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")
         uri, digest = self._store.put(payload)
         record = {
@@ -79,6 +110,9 @@ class WorldStore:
             "parent": parent,
             "artifact_uri": uri,
             "artifact_hash": digest,
+            "changed_entity_ids": changed_entity_ids,
+            "changed_geometry_ids": changed_geometry_ids,
+            "source_session_ids": source_session_ids,
         }
         path.write_text(json.dumps(record, indent=2), encoding="utf-8")
         seq_path = self._root / "sequence.json"
@@ -87,7 +121,16 @@ class WorldStore:
             order = json.loads(seq_path.read_text(encoding="utf-8"))
         order.append(vid)
         seq_path.write_text(json.dumps(order), encoding="utf-8")
-        return StoredVersion(**record)
+        return StoredVersion(
+            version_id=vid,
+            world_id=world.id,
+            parent=parent,
+            artifact_uri=uri,
+            artifact_hash=digest,
+            changed_entity_ids=changed_entity_ids,
+            changed_geometry_ids=changed_geometry_ids,
+            source_session_ids=source_session_ids,
+        )
 
     # ---- read ----
 

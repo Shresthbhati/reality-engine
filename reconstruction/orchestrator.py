@@ -35,9 +35,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 from provenance import Uncertainty
+
+if TYPE_CHECKING:  # circular at runtime; consistency module imports this one
+    from reconstruction.orchestrator_consistency import DepthConsistencyDiagnostics
 
 from evidence.session import EvidenceItem, EvidenceKind
 from .backend.interface import (
@@ -124,9 +127,13 @@ class ReconstructionRunDiagnostics:
     backend_name: str = ""
     duration_s: float = 0.0
     error: str = ""
+    # Cross-view depth-consistency verdict for runs that carry metric
+    # depth maps (reconstruction/orchestrator_consistency.py). None =
+    # no depth evidence was checked -- honest absence, not "consistent".
+    depth_consistency: Optional["DepthConsistencyDiagnostics"] = None
 
     def to_dict(self) -> Dict[str, object]:
-        return {
+        d: Dict[str, object] = {
             "evidence_count": self.evidence_count,
             "image_evidence_count": self.image_evidence_count,
             "evidence_validation": dict(self.evidence_validation),
@@ -136,6 +143,9 @@ class ReconstructionRunDiagnostics:
             "duration_s": round(self.duration_s, 6),
             "error": self.error,
         }
+        if self.depth_consistency is not None:
+            d["depth_consistency"] = self.depth_consistency.to_dict()
+        return d
 
 
 @dataclass(frozen=True)

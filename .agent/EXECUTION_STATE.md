@@ -1001,3 +1001,21 @@ Reliability priorities executed (all red-first):
 Full unbounded suite gate at branch head: **2087 passed / 5 skipped /
 0 failed** in 275.6 s (skips are the pre-existing real-data gates).
 Ledger after sync: 33 DONE / 6 PARTIAL / 0 MISSING.
+
+
+## 2026-09-19 (2) — P4-01 landmark method closed (branch agent/freebuff-reconstruction-perception)
+
+- registration/landmarks.py: register_landmarks — declared-identity
+  correspondences -> closed-form Kabsch + deterministic
+  exhaustive-triple outlier consensus; ambiguous landmark ids excluded
+  and reported; degenerate geometry (n<3, collinear) refuses naming
+  the fix; coplanar-but-non-collinear sets SOLVE (Procrustes: point
+  identity pins all 6 DOF — the earlier coplanar-refusal design was
+  mathematically wrong and was corrected red-first) with weaker
+  conditioning reported via covariance degenerate_axes.
+- RegistrationEngine confidence order now GNSS anchors > landmarks >
+  ICP; landmark refusal falls through to ICP (attempt recorded).
+- Ledger: P4-01's last PENDING verification item closed; CAPABILITIES
+  +landmark_registration (49 entries).
+- Full unbounded suite: 2133 passed / 5 skipped / 0 failed (timing
+  guard verified standalone: green).

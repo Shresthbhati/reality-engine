@@ -408,7 +408,7 @@ tasks:
       - "DONE: rejection tests: no-overlap and degenerate geometry"
       - "DONE: point-to-plane ICP (spec's named algorithm) with measured ResidualStats"
       - "DONE: full covariance propagation (estimate_registration_covariance landed 2026-09-15, wired into register_icp and register_icp_point_to_plane; 6x6 covariance from residual stats + spatial conditioning)"
-      - "PENDING: landmark/correspondence method (needs cross-source co-observation resolver from P7-01 multi-view identity, which is now IMPLEMENTED with ITrackBackend and perception stage wiring; remaining work is wiring into RegistrationEngine)"
+      - "DONE 2026-09-19: landmark/correspondence method landed (registration/landmarks.py + RegistrationEngine wiring) -- declared-identity correspondences (from the observation layer: track_id/provenance, never geometric proximity) solved by closed-form Kabsch with a deterministic exhaustive-triple outlier consensus (no RNG); ambiguous landmark ids are excluded and reported (never guessed into the consensus); degenerate geometry (n<3, collinear) refuses with the fix named; coplanar-but-non-collinear sets solve and report weaker conditioning via covariance degenerate_axes (Procrustes: point identity pins all 6 DOF); residual-derived covariance as with the other methods; engine confidence order = GNSS anchors > landmarks > ICP, with landmark refusal falling through to ICP. 10 tests in tests/test_landmark_registration.py."
 
   # ================= PHASE 5 — RECONSTRUCTION FEDERATION =================
     note: >-

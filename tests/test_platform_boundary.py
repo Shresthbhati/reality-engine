@@ -63,7 +63,7 @@ ALLOWLISTED_FILES = {
     "evidence/dataset.py",
     # engine.core.rng (F1)
     "perception/geometry/planes.py",
-    # engine.math.math3 (F1): Quat/Vec3 basic algebra
+    # engine.math (F1): Quat/Vec3 basic algebra
     "reconstruction/calibration/camera.py",
     "perception/instances/lifting.py",
     "perception/instances/object_resolution.py",
@@ -126,7 +126,7 @@ def test_platform_package_does_not_import_simulation_domains(package):
 
 def test_allowlist_is_minimal_and_documented():
     """Every allowlisted file must actually exist and import nothing
-    beyond basic utilities (engine.core.*, engine.math.*,
+    beyond basic utilities (engine.core.*, engine.math,
     engine.scene_graph.spatial_index)."""
     allowed_prefixes = (
         "engine.core.",

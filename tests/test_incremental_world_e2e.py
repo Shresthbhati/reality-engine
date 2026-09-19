@@ -114,11 +114,47 @@ def test_e2e_incremental_world_flow(tmp_path):
     assert v1.parent is None
     assert v1.source_session_ids == ["sess-pass-1"]
 
-    # ── PASS 2: Incremental Capture -> WorldIR V2 -> WorldStore V2 ──
-    recon_pass2 = _build_pass2_reconstruction()
-    world_v2, diag_v2 = compile_reconstruction_to_world(
-        recon_pass2, CompileOptions(seed=42, artifact_store=artifact_store)
+    # ── PASS 2: Incremental Capture -> Localized WorldIR V2 -> WorldStore V2 ──
+    from world_ir import apply_incremental_update
+    from world_ir.schema_v1 import Entity, EntityType
+
+    annex_wall_e = Entity(
+        id="annex-wall-east",
+        type=EntityType.WALL,
+        name="Annex East Wall",
+        transform={"position": {"x": 35.0, "y": 1.0, "z": 1.125}},
+        confidence=0.96,
+        custom_properties={"session": "sess-pass-2"},
     )
+    annex_wall_n = Entity(
+        id="annex-wall-north",
+        type=EntityType.WALL,
+        name="Annex North Wall",
+        transform={"position": {"x": 33.75, "y": 1.0, "z": 34.5}},
+        confidence=0.95,
+        custom_properties={"session": "sess-pass-2"},
+    )
+    annex_room = Entity(
+        id="room-annex",
+        type=EntityType.ROOM,
+        name="Annex Room",
+        transform={"position": {"x": 33.75, "y": 1.0, "z": 32.25}},
+        confidence=0.92,
+        custom_properties={"session": "sess-pass-2"},
+    )
+    annex_entities = [annex_wall_e, annex_wall_n, annex_room]
+
+    update_res = apply_incremental_update(
+        base_world=world_v1,
+        updated_entities=annex_entities,
+    )
+    world_v2 = update_res.new_world
+
+    # Invariants: strict object reuse and spatial tile invalidation
+    for eid in update_res.reused_entity_ids:
+        assert world_v2.entities[eid] is world_v1.entities[eid], f"Entity {eid} not reused"
+    assert (0, 0, 0) not in update_res.invalidated_tile_ids
+    assert any(t[0] == 3 for t in update_res.invalidated_tile_ids)
     assert len(world_v2.entities) > len(world_v1.entities)
 
     v2 = store.save_version(
@@ -130,7 +166,7 @@ def test_e2e_incremental_world_flow(tmp_path):
     assert v2.version_id == "v-slice-2"
     assert v2.parent == "v-slice-1"
     assert v2.source_session_ids == ["sess-pass-1", "sess-pass-2"]
-    assert len(v2.changed_entity_ids) > 0
+    assert len(v2.changed_entity_ids) == 3
 
     # ── VERIFICATION 1: Store Lineage & Reloading ──
     fresh_store = WorldStore(store_root)
@@ -147,8 +183,10 @@ def test_e2e_incremental_world_flow(tmp_path):
     diff = diff_worlds(reloaded_v1, reloaded_v2)
     assert not diff.is_empty()
     summary = diff.summary()
-    assert summary["entities_added"] > 0 or summary["entities_modified"] > 0
-    assert len(diff.added_entity_ids) > 0
+    assert summary["entities_added"] == 3
+    assert summary["entities_modified"] == 0
+    assert summary["entities_removed"] == 0
+    assert len(diff.added_entity_ids) == 3
 
     # ── VERIFICATION 3: CLI `reality diff --store` ──
     r = subprocess.run(

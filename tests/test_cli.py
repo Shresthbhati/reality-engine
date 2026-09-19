@@ -375,7 +375,6 @@ class TestInspect:
         rc = main(["inspect", world_path])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
-<<<<<<< HEAD
         assert payload["entities"] > 0
 
     def test_inspect_entity_and_unknown(self, tmp_path, capsys):
@@ -391,9 +390,6 @@ class TestInspect:
         capsys.readouterr()
         rc = main(["inspect", world_path, "--entity", "no-such-entity"])
         assert rc == 1
-=======
-        assert "results" in payload
-        assert len(payload["results"]) > 0
 
 
 class TestCompositeCaptureCLI:
@@ -443,4 +439,3 @@ class TestCompositeCaptureCLI:
         assert exit_code == 0
         assert "gps" in out
         assert "registration: unknown" in out
->>>>>>> origin/main

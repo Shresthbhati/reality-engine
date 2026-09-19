@@ -42,7 +42,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from engine.physics.math3 import Vec3
+from engine.math import Vec3
 from registration.registration import (
     RegistrationCovariance,
     RegistrationError,

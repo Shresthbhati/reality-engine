@@ -2,11 +2,16 @@
 
 Exercises every subcommand end-to-end against real files on disk (no
 mocking of the SDK layer): ingest a folder of real JPEGs into a package,
-then validate/diff/export/physics against a real compiled WorldIR built
+then validate/diff/export against a real compiled WorldIR built
 the same way tests/test_world_compiler.py builds one. `reconstruct` is
 tested separately for its honest-failure path (no COLMAP/canned data ->
 refuses, never fabricates) since a full photogrammetry run needs a real
 multi-view photoset this repo does not ship.
+
+NOTE (2026-09-18, child-project isolation): the `reality physics`
+command was removed from the core CLI -- physics compilation lives in
+the reality-engine-child project. The stale TestPhysics class below was
+deleted for the same reason; do not re-add a physics CLI test here.
 """
 
 from __future__ import annotations
@@ -323,11 +328,65 @@ class TestQuery:
         assert "unknown entity" in capsys.readouterr().err.lower()
 
 
-class TestPhysics:
-    def test_physics_compiles_bodies_for_the_room_scene(self, tmp_path, capsys):
+class TestStore:
+    """`reality store save/load/list/verify` against a real on-disk WorldStore."""
+
+    def test_store_round_trip_and_verify(self, tmp_path, capsys):
         world_path = _write_world(tmp_path, _compiled_world_fixture())
-        rc = main(["physics", world_path])
+        store_dir = str(tmp_path / "store")
+
+        rc = main(["store", "save", world_path, "--store", store_dir, "--version-id", "v-1"])
+        assert rc == 0
+        assert "v-1" in capsys.readouterr().out
+
+        rc = main(["store", "list", "--store", store_dir])
+        assert rc == 0
+        assert "v-1" in capsys.readouterr().out
+
+        rc = main(["store", "verify", "--store", store_dir, "--version", "v-1"])
+        assert rc == 0
+
+        out_path = str(tmp_path / "reloaded.json")
+        rc = main(["store", "load", "--store", store_dir, "--version", "v-1", "-o", out_path])
+        assert rc == 0
+        reloaded = json.loads((tmp_path / "reloaded.json").read_text(encoding="utf-8"))
+        original = json.loads((tmp_path / "world.json").read_text(encoding="utf-8"))
+        assert reloaded["id"] == original["id"]
+        assert set(reloaded["entities"]) == set(original["entities"])
+
+    def test_store_verify_rejects_unknown_version(self, tmp_path, capsys):
+        rc = main(["store", "verify", "--store", str(tmp_path / "store"), "--version", "v-nope"])
+        assert rc == 1
+        assert "unknown version" in capsys.readouterr().err.lower()
+
+    def test_store_save_refuses_duplicate_version(self, tmp_path, capsys):
+        world_path = _write_world(tmp_path, _compiled_world_fixture())
+        store_dir = str(tmp_path / "store")
+        assert main(["store", "save", world_path, "--store", store_dir, "--version-id", "v-1"]) == 0
+        capsys.readouterr()
+        rc = main(["store", "save", world_path, "--store", store_dir, "--version-id", "v-1"])
+        assert rc == 1
+        assert "immutable" in capsys.readouterr().err.lower()
+
+
+class TestInspect:
+    def test_inspect_summary(self, tmp_path, capsys):
+        world_path = _write_world(tmp_path, _compiled_world_fixture())
+        rc = main(["inspect", world_path])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
-        assert "results" in payload
-        assert len(payload["results"]) > 0
+        assert payload["entities"] > 0
+
+    def test_inspect_entity_and_unknown(self, tmp_path, capsys):
+        world = _compiled_world_fixture()
+        entity_id = sorted(world.entities)[0]
+        world_path = _write_world(tmp_path, world)
+        rc = main(["inspect", world_path, "--entity", entity_id])
+        assert rc == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["id"] == entity_id
+        assert "provenance" in payload
+
+        capsys.readouterr()
+        rc = main(["inspect", world_path, "--entity", "no-such-entity"])
+        assert rc == 1

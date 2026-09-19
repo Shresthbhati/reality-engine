@@ -25,10 +25,32 @@
   --re-text-inverse:        #08090b;
 
   /* ── Accent & Brand ──────────────────────────────────────────────────── */
-  --re-accent:              #3d8ef7;
-  --re-accent-hover:        #5ca2f9;
-  --re-accent-subtle:       rgba(61, 142, 247, 0.15);
-  --re-accent-border:       rgba(61, 142, 247, 0.35);
+  --re-accent:              #00e5ff;
+  --re-accent-blue:         #3d8ef7;
+  --re-accent-hover:        #33ebff;
+  --re-accent-subtle:       rgba(0, 229, 255, 0.12);
+  --re-accent-border:       rgba(0, 229, 255, 0.35);
+  --re-accent-glow:         rgba(0, 229, 255, 0.25);
+
+  /* ── Global Modes ────────────────────────────────────────────────────── */
+  --re-mode-explore:        #38bdf8;
+  --re-mode-inspect:        #00e5ff;
+  --re-mode-edit:           #f59e0b;
+  --re-mode-capture:        #a855f7;
+  --re-mode-build:          #10b981;
+  --re-mode-review:         #ec4899;
+
+  /* ── Global Spatial Scales ───────────────────────────────────────────── */
+  --re-scale-room:          #ec4899;
+  --re-scale-building:      #a855f7;
+  --re-scale-street:        #8b5cf6;
+  --re-scale-plot:          #6366f1;
+  --re-scale-block:         #3b82f6;
+  --re-scale-multiblock:    #0ea5e9;
+  --re-scale-locality:      #06b6d4;
+  --re-scale-ward:          #14b8a6;
+  --re-scale-district:      #10b981;
+  --re-scale-city:          #22c55e;
 
   /* ── Status & Feedback ───────────────────────────────────────────────── */
   --re-success:             #2ecc71;

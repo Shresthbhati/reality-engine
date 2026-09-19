@@ -9,8 +9,9 @@
  * - Provenance traceability for every change
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useREStore, Entity, EntityId, WorldVersionItem } from '@/store/re-store';
+import { fetchWorldDiff, type BackendWorldDiffPayload } from '@/lib/api';
 import {
   ChevronRight,
   ChevronDown,
@@ -26,6 +27,8 @@ import {
   Download,
   RotateCcw,
   History,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 
 export type DiffKind = 'ADDED' | 'REMOVED' | 'MODIFIED' | 'MOVED' | 'UNCHANGED';
@@ -76,137 +79,161 @@ export function WorldDiff({
     world,
     entities,
     selectedVersionId,
+    worldVersions,
+    refreshWorldVersions,
     setSelectedVersionId,
     setActiveWorkspace,
     addNotification,
   } = useREStore();
 
-  const [baseVersionId, setBaseVersionId] = useState(propBaseVersionId || 'v1');
-  const [headVersionId, setHeadVersionId] = useState(propHeadVersionId || selectedVersionId || 'v3');
+  const versions: WorldVersionItem[] = useMemo(() => {
+    if (worldVersions && worldVersions.length > 0) {
+      return worldVersions.map((wv) => ({
+        id: wv.version_id,
+        label: wv.name || `World ${wv.world_id}`,
+        tag: wv.parent ? `PARENT_${wv.parent.slice(0, 8)}` : 'BASELINE',
+        isCurrent: wv.version_id === (selectedVersionId || worldVersions[worldVersions.length - 1]?.version_id),
+        date: wv.created_at ? new Date(wv.created_at * 1000).toISOString().split('T')[0] : 'stored',
+      }));
+    }
+    return [];
+  }, [worldVersions, selectedVersionId]);
+
+  const [baseVersionId, setBaseVersionId] = useState(
+    propBaseVersionId || (worldVersions.length >= 2 ? worldVersions[worldVersions.length - 2].version_id : worldVersions[0]?.version_id || '')
+  );
+  const [headVersionId, setHeadVersionId] = useState(
+    propHeadVersionId || selectedVersionId || (worldVersions.length >= 1 ? worldVersions[worldVersions.length - 1].version_id : '')
+  );
+
+  useEffect(() => {
+    refreshWorldVersions();
+  }, [refreshWorldVersions]);
+
+  useEffect(() => {
+    if (worldVersions.length >= 2) {
+      if (!baseVersionId) setBaseVersionId(worldVersions[worldVersions.length - 2].version_id);
+      if (!headVersionId) setHeadVersionId(worldVersions[worldVersions.length - 1].version_id);
+    } else if (worldVersions.length === 1) {
+      if (!baseVersionId) setBaseVersionId(worldVersions[0].version_id);
+      if (!headVersionId) setHeadVersionId(worldVersions[0].version_id);
+    }
+  }, [worldVersions, baseVersionId, headVersionId]);
+
   const [filterKind, setFilterKind] = useState<DiffKind | 'ALL'>('ALL');
   const [expandedDiffs, setExpandedDiffs] = useState<Set<EntityId>>(new Set());
   const [showOnlyChanged, setShowOnlyChanged] = useState(true);
   const [viewMode, setViewMode] = useState<'LIST' | 'SPATIAL'>('LIST');
 
-  const versions: WorldVersionItem[] = useMemo(() => [
-    { id: 'v1', label: 'Initial Reconstruction', tag: 'BASELINE', isCurrent: false, date: '2026-09-14' },
-    { id: 'v2', label: 'Facade Pass Integration', tag: 'FACADE_PASS', isCurrent: false, date: '2026-09-15' },
-    { id: 'v3', label: 'Detail + Micro-Detail Pass', tag: 'MICRO_DETAIL', isCurrent: true, date: '2026-09-16' },
-    { id: 'v4', label: 'LiDAR Fusion', tag: 'LIDAR_FUSION', isCurrent: false, date: '2026-09-17' },
-  ], []);
+  const [backendDiff, setBackendDiff] = useState<BackendWorldDiffPayload | null>(null);
+  const [isLoadingDiff, setIsLoadingDiff] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
 
-  // Generate mock diff data (in production, this comes from `reality diff` CLI or WorldStore)
+  useEffect(() => {
+    if (!baseVersionId || !headVersionId) {
+      setBackendDiff(null);
+      setDiffError(null);
+      return;
+    }
+    let active = true;
+    setIsLoadingDiff(true);
+    setDiffError(null);
+
+    fetchWorldDiff(baseVersionId, headVersionId).then((res) => {
+      if (!active) return;
+      setIsLoadingDiff(false);
+      if (res.available && res.diff) {
+        setBackendDiff(res.diff);
+        setDiffError(null);
+      } else {
+        setBackendDiff(null);
+        setDiffError(res.error || 'Failed to compute diff between versions');
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [baseVersionId, headVersionId]);
+
   const diffs = useMemo((): EntityDiff[] => {
-    const mockDiffs: EntityDiff[] = [
-      {
-        entityId: 'ent-micro-weathering',
-        kind: 'ADDED',
-        name: 'Surface Weathering & Fine Marble Veins',
-        type: 'OBJECT',
-        headEntity: entities.get('ent-micro-weathering'),
-        propertyDiffs: [],
-        provenanceChange: 'MICRO_DETAIL_PASS: Sub-pixel Disparity Fusion from oblique macro captures',
-      },
-      {
-        entityId: 'ent-ornament-floral',
+    if (!backendDiff) return [];
+    const result: EntityDiff[] = [];
+
+    for (const ed of backendDiff.entities || []) {
+      const kind: DiffKind =
+        ed.kind === 'added' ? 'ADDED' :
+        ed.kind === 'removed' ? 'REMOVED' :
+        ed.kind === 'modified' ? 'MODIFIED' : 'UNCHANGED';
+
+      const existing = entities.get(ed.entity_id);
+      const name = existing?.name || ed.entity_id;
+      const type = existing?.type || 'ENTITY';
+
+      const propertyDiffs: PropertyDiff[] = (ed.changes || []).map((c) => ({
+        path: c.field,
         kind: 'MODIFIED',
-        name: 'Carved Leaf & Floral Relief',
-        type: 'OBJECT',
-        baseEntity: { ...entities.get('ent-ornament-floral')!, provenance: { ...entities.get('ent-ornament-floral')!.provenance, confidence: 0.92 } },
-        headEntity: entities.get('ent-ornament-floral'),
-        propertyDiffs: [
-          { path: 'provenance.confidence', kind: 'MODIFIED', baseValue: 0.92, headValue: 0.96, confidenceChange: 0.04 },
-          { path: 'provenance.uncertainty', kind: 'MODIFIED', baseValue: 0.003, headValue: 0.001, uncertaintyChange: -0.002 },
-          { path: 'metadata.relief_depth_mm', kind: 'MODIFIED', baseValue: 42, headValue: 45, uncertaintyChange: 0.001 },
-        ],
-        spatialShift: { distance: 0.002, uncertainty: 0.0005 },
-        provenanceChange: 'DETAIL_PASS → MICRO_DETAIL_PASS: Sub-pixel refinement reduced uncertainty by 67%',
-      },
-      {
-        entityId: 'ent-capital-ionic-04',
+        baseValue: c.old,
+        headValue: c.new,
+      }));
+
+      result.push({
+        entityId: ed.entity_id,
+        kind,
+        name,
+        type,
+        baseEntity: existing ? { ...existing } : undefined,
+        headEntity: existing ? { ...existing } : undefined,
+        propertyDiffs,
+        provenanceChange: `Change detected in field(s): ${ed.changes.map(c => c.field).join(', ') || 'state'}`,
+      });
+    }
+
+    for (const gd of backendDiff.geometries || []) {
+      const kind: DiffKind =
+        gd.kind === 'added' ? 'ADDED' :
+        gd.kind === 'removed' ? 'REMOVED' :
+        gd.kind === 'modified' ? 'MODIFIED' : 'UNCHANGED';
+
+      const propertyDiffs: PropertyDiff[] = (gd.changes || []).map((c) => ({
+        path: c.field,
         kind: 'MODIFIED',
-        name: 'Carved Ionic Capital & Volutes',
-        type: 'OBJECT',
-        baseEntity: { ...entities.get('ent-capital-ionic-04')!, provenance: { ...entities.get('ent-capital-ionic-04')!.provenance, confidence: 0.94 } },
-        headEntity: entities.get('ent-capital-ionic-04'),
-        propertyDiffs: [
-          { path: 'provenance.confidence', kind: 'MODIFIED', baseValue: 0.94, headValue: 0.97, confidenceChange: 0.03 },
-          { path: 'provenance.uncertainty', kind: 'MODIFIED', baseValue: 0.005, headValue: 0.002, uncertaintyChange: -0.003 },
-        ],
-        spatialShift: { distance: 0.003, uncertainty: 0.001 },
-        provenanceChange: 'DETAIL_PASS → MICRO_DETAIL_PASS: Dense macro captures improved geometry',
-      },
-      {
-        entityId: 'ent-column-ionic-04',
-        kind: 'MODIFIED',
-        name: 'Ionic Fluted Column #4',
-        type: 'WALL',
-        baseEntity: { ...entities.get('ent-column-ionic-04')!, provenance: { ...entities.get('ent-column-ionic-04')!.provenance, confidence: 0.96 } },
-        headEntity: entities.get('ent-column-ionic-04'),
-        propertyDiffs: [
-          { path: 'provenance.confidence', kind: 'MODIFIED', baseValue: 0.96, headValue: 0.99, confidenceChange: 0.03 },
-          { path: 'metadata.flute_count', kind: 'MODIFIED', baseValue: 22, headValue: 24, confidenceChange: 0.02 },
-        ],
-        spatialShift: { distance: 0.001, uncertainty: 0.0008 },
-        provenanceChange: 'FACADE_PASS → DETAIL_PASS: Additional oblique views resolved flute geometry',
-      },
-      {
-        entityId: 'ent-dome-central',
-        kind: 'MODIFIED',
-        name: 'Central Queen\'s Dome and Angel of Victory',
-        type: 'WALL',
-        baseEntity: { ...entities.get('ent-dome-central')!, provenance: { ...entities.get('ent-dome-central')!.provenance, confidence: 0.94 } },
-        headEntity: entities.get('ent-dome-central'),
-        propertyDiffs: [
-          { path: 'provenance.confidence', kind: 'MODIFIED', baseValue: 0.94, headValue: 0.97, confidenceChange: 0.03 },
-          { path: 'provenance.uncertainty', kind: 'MODIFIED', baseValue: 0.025, headValue: 0.018, uncertaintyChange: -0.007 },
-        ],
-        spatialShift: { distance: 0.005, uncertainty: 0.002 },
-        provenanceChange: 'DETAIL_PASS: Dense stereo on dome curvature reduced apex uncertainty',
-      },
-      {
-        entityId: 'ent-facade-south',
-        kind: 'ADDED',
-        name: 'South Facade & Terrace',
-        type: 'WALL',
-        headEntity: {
-          id: 'ent-facade-south',
-          name: 'South Facade & Terrace',
-          type: 'WALL',
-          provenance: { state: 'RECONSTRUCTED', confidence: 0.78, algorithm: 'Dense Multi-view Stereo', uncertainty: 0.038 },
-          sessionIds: ['sess-003'],
-        },
-        propertyDiffs: [],
-        provenanceChange: 'LIDAR_FUSION: Terrestrial LiDAR scans added south facade coverage',
-      },
-      {
-        entityId: 'ent-structure-east',
-        kind: 'REMOVED',
-        name: 'East Facade Glazed Marble (Low Confidence)',
-        type: 'WALL',
-        baseEntity: {
-          id: 'ent-structure-east',
-          name: 'East Facade Glazed Marble',
-          type: 'WALL',
-          provenance: { state: 'RECONSTRUCTED', confidence: 0.42, algorithm: 'Dense Multi-view Stereo', uncertainty: 0.12 },
-          sessionIds: ['sess-002'],
-        },
-        propertyDiffs: [],
-        provenanceChange: 'VALIDATION_GATE: Insufficient feature matches (inlier ratio 0.08) — entity rejected',
-      },
-    ];
-    return mockDiffs;
-  }, [entities]);
+        baseValue: c.old,
+        headValue: c.new,
+      }));
+
+      result.push({
+        entityId: gd.geometry_id,
+        kind,
+        name: `Geometry ${gd.geometry_id.slice(0, 8)}`,
+        type: 'GEOMETRY',
+        propertyDiffs,
+        provenanceChange: `Geometry geometry_id=${gd.geometry_id}`,
+      });
+    }
+
+    return result;
+  }, [backendDiff, entities]);
 
   const filteredDiffs = useMemo(() => {
     return diffs.filter(d => filterKind === 'ALL' || d.kind === filterKind);
   }, [diffs, filterKind]);
 
   const stats = useMemo(() => {
+    if (backendDiff?.summary) {
+      const s = backendDiff.summary;
+      return {
+        ADDED: s.entities_added + s.geometries_added,
+        REMOVED: s.entities_removed + s.geometries_removed,
+        MODIFIED: s.entities_modified + s.geometries_modified,
+        MOVED: 0,
+        UNCHANGED: 0,
+      };
+    }
     const counts: Record<DiffKind, number> = { ADDED: 0, REMOVED: 0, MODIFIED: 0, MOVED: 0, UNCHANGED: 0 };
     diffs.forEach(d => counts[d.kind]++);
     return counts;
-  }, [diffs]);
+  }, [backendDiff, diffs]);
 
   const toggleExpand = useCallback((id: EntityId) => {
     setExpandedDiffs(prev => {
@@ -267,11 +294,15 @@ export function WorldDiff({
               onChange={e => setBaseVersionId(e.target.value)}
               className="w-full px-2 py-1.5 rounded bg-[#14161f] border border-[#1f222b] text-[11px] font-mono text-[#ededf2] focus:border-[#3d8ef7]/60 outline-none"
             >
-              {versions.map(v => (
-                <option key={v.id} value={v.id}>
-                  {v.label} ({v.tag}) — {v.date}
-                </option>
-              ))}
+              {versions.length === 0 ? (
+                <option value="">No stored versions</option>
+              ) : (
+                versions.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.id} — {v.label} ({v.tag})
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -285,11 +316,15 @@ export function WorldDiff({
               onChange={e => setHeadVersionId(e.target.value)}
               className="w-full px-2 py-1.5 rounded bg-[#14161f] border border-[#1f222b] text-[11px] font-mono text-[#ededf2] focus:border-[#3d8ef7]/60 outline-none"
             >
-              {versions.map(v => (
-                <option key={v.id} value={v.id}>
-                  {v.label} ({v.tag}) — {v.date}
-                </option>
-              ))}
+              {versions.length === 0 ? (
+                <option value="">No stored versions</option>
+              ) : (
+                versions.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.id} — {v.label} ({v.tag})
+                  </option>
+                ))
+              )}
             </select>
           </div>
         </div>
@@ -371,7 +406,25 @@ export function WorldDiff({
 
       {/* ── Diff List ── */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {filteredDiffs.length === 0 ? (
+        {isLoadingDiff ? (
+          <div className="flex flex-col items-center justify-center h-full text-[#3d8ef7]">
+            <Loader2 className="w-8 h-8 animate-spin mb-2" />
+            <span className="text-xs font-mono">Computing structural diff...</span>
+          </div>
+        ) : diffError ? (
+          <div className="flex flex-col items-center justify-center h-full p-6 text-center text-[#ef4444]">
+            <AlertCircle className="w-10 h-10 mb-2 text-[#ef4444]" />
+            <p className="text-xs font-mono font-bold uppercase tracking-wider">DIFF: UNAVAILABLE</p>
+            <p className="text-[11px] font-mono mt-1 text-[#f87171] max-w-sm">{diffError}</p>
+            <p className="text-[10px] text-[#54596b] mt-3">Select two stored WorldStore versions to compare.</p>
+          </div>
+        ) : versions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full p-6 text-center text-[#54596b]">
+            <History className="w-10 h-10 mb-2 text-[#1f222b]" />
+            <p className="text-xs font-mono font-bold uppercase tracking-wider">NO STORED VERSIONS</p>
+            <p className="text-[11px] mt-1 text-[#54596b] max-w-sm">No versions found in WorldStore. Save multiple versions to visualize diffs.</p>
+          </div>
+        ) : filteredDiffs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-[#54596b]">
             <GitCompare className="w-12 h-12 text-[#1f222b] mb-3" />
             <p className="text-sm font-mono">No differences found</p>

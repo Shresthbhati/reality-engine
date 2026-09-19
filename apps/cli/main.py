@@ -380,8 +380,14 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_diff(args: argparse.Namespace) -> int:
-    before = _load_world(args.before)
-    after = _load_world(args.after)
+    if getattr(args, "store", None):
+        from worldstore.store import WorldStore
+        store = WorldStore(args.store)
+        before = store.load_version(args.before)
+        after = store.load_version(args.after)
+    else:
+        before = _load_world(args.before)
+        after = _load_world(args.after)
     world_diff = reality.diff(before, after)
     print(json.dumps(world_diff.to_dict(), indent=2, sort_keys=True))
     return 0
@@ -726,9 +732,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("world", help="world JSON path")
     p_validate.set_defaults(func=cmd_validate)
 
-    p_diff = sub.add_parser("diff", help="structural diff between two WorldIR snapshots")
-    p_diff.add_argument("before")
-    p_diff.add_argument("after")
+    p_diff = sub.add_parser("diff", help="structural diff between two WorldIR snapshots or versions")
+    p_diff.add_argument("before", help="before world JSON path or version ID")
+    p_diff.add_argument("after", help="after world JSON path or version ID")
+    p_diff.add_argument("--store", default=None, help="optional WorldStore root directory when comparing version IDs")
     p_diff.set_defaults(func=cmd_diff)
 
     p_export = sub.add_parser(

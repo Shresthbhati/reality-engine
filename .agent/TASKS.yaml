@@ -1218,8 +1218,23 @@ tasks:
       - "tests/test_city_compiler.py: feature->entity translation,
         bounds propagation, explicit transforms, refusal on
         geometry-less features"
+      - "tests/test_citygml_exporter.py (11 tests): CityGML 2.0
+        structure, semantic mapping, LoD1 solid geometry (6 real
+        faces), attribute traceability, determinism, ExportReport
+        skip discipline"
+    completion: >-
+      2026-09-19: CityGML 2.0 writer landed
+      (exporters/citygml/exporter.py) -- reuses the exact AABB
+      corner/face math from exporters/cityjson/exporter.py so both
+      writers agree on entity geometry; Building maps to
+      bldg:Building, everything else to gen:GenericCityObject with
+      worldir_type/provenance/confidence recorded as gen attributes;
+      LoD1 gml:Solid/CompositeSurface from the 6 real box faces;
+      same skip-reason ExportReport discipline as the other
+      exporters. 3DCityDB (a database target, not a file format) and
+      LoD0/2/3/4/semantic surfaces remain out of scope for this pass.
     open: >-
-      GIS/OSM ingestion adapters, CityGML/3DCityDB writers,
+      GIS/OSM ingestion adapters, 3DCityDB database export,
       large-extent streaming compile (P13 tiles) -- open.
 
   # ================= PHASE 15 — PROCEDURAL GENERATION ================
@@ -1274,9 +1289,11 @@ tasks:
         quantization, semantics, orphan skipping, metadata"
       - "tests/test_ifc_bridge.py: spatial hierarchy, semantic
         classes, parsed back via ifcopenshell"
+      - "tests/test_citygml_exporter.py: CityGML 2.0 writer (see
+        P14-01 completion note)"
     open: >-
       ROS/Habitat/SUMO/Unreal/Godot writers remain as follow-through
-      adapters; CityGML tracked under P14-01 with the city compiler.
+      adapters; 3DCityDB (database export) tracked under P14-01.
 
   # ================= PHASE 17 — WORLD SIMULATION =====================
 

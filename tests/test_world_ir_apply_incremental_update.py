@@ -217,3 +217,119 @@ class TestFailureLeavesV1Untouched:
         v1_reloaded = store.load_version("v-1")
         assert v1_reloaded.entities["wall-1"].transform["position"]["x"] == 1.0
         assert "v-2" not in {v.version_id for v in store.list_versions()}
+
+
+class TestMultipleChangedEntities:
+    def test_two_independent_changes_both_land_others_untouched(self):
+        base = _base_world()
+        new_wall = _entity("wall-1", 1.5, 0.0, 0.0)
+        new_tree = _entity("far-tree", 51.0, 0.0, 0.0, type=EntityType.VEGETATION)
+        result = apply_incremental_update(base, [new_wall, new_tree])
+        assert result.changed_entity_ids == frozenset({"wall-1", "far-tree"})
+        assert result.new_world.entities["wall-1"] is new_wall
+        assert result.new_world.entities["far-tree"] is new_tree
+        # The only untouched entity keeps its object.
+        assert result.new_world.entities["room-1"] is base.entities["room-1"]
+        assert result.reused_entity_ids == frozenset({"room-1"})
+
+
+class TestCoordinateFramePreserved:
+    def test_coordinate_frame_unchanged(self):
+        from world_ir.coordinates import Frame
+
+        base = _base_world()
+        base.coordinate_frame = Frame.WORLD
+        new_wall = _entity("wall-1", 1.5, 0.0, 0.0)
+        result = apply_incremental_update(base, [new_wall])
+        assert result.new_world.coordinate_frame == Frame.WORLD
+        assert result.new_world.coordinate_frame == base.coordinate_frame
+
+
+class TestV1Immutability:
+    def test_base_world_dicts_are_not_mutated_in_place(self):
+        base = _base_world()
+        original_wall_obj = base.entities["wall-1"]
+        original_entities_dict = base.entities
+        new_wall = _entity("wall-1", 1.5, 0.0, 0.0)
+
+        result = apply_incremental_update(base, [new_wall])
+
+        # base_world's own dict object was never touched or replaced.
+        assert base.entities is original_entities_dict
+        assert base.entities["wall-1"] is original_wall_obj
+        assert base.entities["wall-1"].transform["position"]["x"] == 1.0
+        assert base.version == 1
+
+
+class TestTileExampleFromSpec:
+    def test_tile_a_and_c_reused_tile_b_rebuilt(self):
+        """The exact scenario from the mission spec: three tiles A/B/C,
+        new evidence affects only tile B -> A and C are fully reused
+        (absent from both report sets), B is rebuilt."""
+        base = WorldIR(id="w-abc")
+        base.entities["a1"] = _entity("a1", 1.0, 0.0, 0.0)     # tile A = (0,0,0)
+        base.entities["b1"] = _entity("b1", 15.0, 0.0, 0.0)    # tile B = (1,0,0)
+        base.entities["c1"] = _entity("c1", 30.0, 0.0, 0.0)    # tile C = (3,0,0)
+
+        new_b1 = _entity("b1", 16.0, 0.0, 0.0)  # still tile B, new evidence
+        result = apply_incremental_update(base, [new_b1], tile_size=10.0)
+
+        tile_a, tile_b, tile_c = (0, 0, 0), (1, 0, 0), (3, 0, 0)
+        assert tile_b in result.rebuilt_tile_ids
+        assert tile_a not in result.invalidated_tile_ids
+        assert tile_c not in result.invalidated_tile_ids
+        assert result.new_world.entities["a1"] is base.entities["a1"]
+        assert result.new_world.entities["c1"] is base.entities["c1"]
+        assert result.new_world.entities["b1"] is new_b1
+
+
+class TestRebuiltIsSubsetOfInvalidated:
+    def test_affected_only_tile_is_invalidated_but_not_rebuilt(self):
+        """A tile holding only an AFFECTED (relationship-connected, not
+        directly changed) entity is flagged for re-check but never
+        counted as rebuilt -- rebuilt means content actually replaced."""
+        base = WorldIR(id="w-affected-tile")
+        # wall-1 (tile A) is PART_OF room-1, placed far away in tile B.
+        base.entities["wall-1"] = _entity(
+            "wall-1", 1.0, 0.0, 0.0,
+            relationships=[Relationship(kind=RelationshipKind.PART_OF, target_id="room-1")],
+        )
+        base.entities["room-1"] = _entity("room-1", 25.0, 0.0, 0.0, type=EntityType.ROOM)
+
+        new_wall = _entity(
+            "wall-1", 1.2, 0.0, 0.0,
+            relationships=[Relationship(kind=RelationshipKind.PART_OF, target_id="room-1")],
+        )
+        result = apply_incremental_update(base, [new_wall], tile_size=10.0)
+
+        tile_a, tile_room = (0, 0, 0), (2, 0, 0)
+        assert tile_a in result.rebuilt_tile_ids
+        assert tile_room in result.invalidated_tile_ids
+        assert tile_room not in result.rebuilt_tile_ids
+        assert result.rebuilt_tile_ids <= result.invalidated_tile_ids
+        # room-1's object itself is untouched -- only its tile is flagged.
+        assert result.new_world.entities["room-1"] is base.entities["room-1"]
+
+
+class TestCannotSecretlyRebuildEverything:
+    def test_full_rebuild_implementation_would_fail_this(self):
+        """A sabotaged implementation that returns a fresh deep-copied
+        WorldIR (equal in every field but with new objects everywhere)
+        would pass every equality-based test in this file but MUST fail
+        here: identity, not equality, is asserted on every untouched
+        entity/geometry, and the ids/keys of the returned dicts must be
+        the exact same Python objects the base world already held."""
+        base = _base_world()
+        sentinel_room = base.entities["room-1"]
+        sentinel_tree = base.entities["far-tree"]
+        sentinel_geom = base.geometries["geom-wall-1"]
+        new_wall = _entity("wall-1", 1.5, 0.0, 0.0)
+
+        result = apply_incremental_update(base, [new_wall])
+
+        # A full-rebuild implementation (e.g. deepcopy + patch) would
+        # produce equal-looking but DIFFERENT objects here -- `is`
+        # catches that; `==` would not.
+        assert result.new_world.entities["room-1"] is sentinel_room
+        assert result.new_world.entities["far-tree"] is sentinel_tree
+        assert result.new_world.geometries["geom-wall-1"] is sentinel_geom

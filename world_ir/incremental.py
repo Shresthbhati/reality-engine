@@ -115,10 +115,22 @@ class IncrementalUpdateResult:
     #: it reports the set so a real compiler stage can act on it.
     affected_entity_ids: FrozenSet[str]
     #: Tile keys (from world_ir.spatial_tiles.SpatialTiles) touched by any
-    #: changed or affected entity, in EITHER the base world's tile (old
+    #: changed OR affected entity, in EITHER the base world's tile (old
     #: position) or the new world's tile (new position) -- an entity that
-    #: moved tiles invalidates both, not just its destination.
+    #: moved tiles invalidates both, not just its destination. This is
+    #: the "needs re-check" superset: it includes tiles that only hold an
+    #: AFFECTED-but-unchanged entity (e.g. a room whose wall changed),
+    #: even though nothing in that tile was actually replaced.
     invalidated_tile_ids: FrozenSet[Tuple[int, int, int]]
+    #: Tile keys that hold a DIRECTLY changed entity (old or new
+    #: position) -- a true content rebuild, not just a relationship
+    #: flag. Always a subset of invalidated_tile_ids. In the example
+    #: "tile A/B/C, new evidence affects tile B": rebuilt_tile_ids =
+    #: {B}; invalidated_tile_ids may additionally contain a tile whose
+    #: only connection to the change is an affected (not directly
+    #: changed) entity; A and C, having no changed or affected entity
+    #: at all, appear in neither set and are fully reused.
+    rebuilt_tile_ids: FrozenSet[Tuple[int, int, int]]
     #: Entity/geometry ids present in base_world that were NOT directly
     #: changed -- new_world.entities[id] / new_world.geometries[id] is
     #: the SAME object as base_world's for every id in these sets.
@@ -220,16 +232,21 @@ def apply_incremental_update(
     reused_entity_ids = frozenset(base_world.entities) - changed_entity_ids
     reused_geometry_ids = frozenset(base_world.geometries) - changed_geometry_ids
 
-    invalidated_tile_ids: Set[Tuple[int, int, int]] = set()
     touch_ids = changed_entity_ids | affected_entity_ids
+    entity_tile: dict[str, Set[Tuple[int, int, int]]] = {}
     if touch_ids:
-        entity_tile: dict[str, Set[Tuple[int, int, int]]] = {}
         for tiles in (SpatialTiles(base_world, tile_size=tile_size), SpatialTiles(new_world, tile_size=tile_size)):
             for key in tiles.tile_ids():
                 for eid in tiles.entities_in_tile(key):
                     entity_tile.setdefault(eid, set()).add(key)
-        for eid in touch_ids:
-            invalidated_tile_ids |= entity_tile.get(eid, set())
+
+    rebuilt_tile_ids: Set[Tuple[int, int, int]] = set()
+    for eid in changed_entity_ids:
+        rebuilt_tile_ids |= entity_tile.get(eid, set())
+
+    invalidated_tile_ids: Set[Tuple[int, int, int]] = set(rebuilt_tile_ids)
+    for eid in touch_ids:
+        invalidated_tile_ids |= entity_tile.get(eid, set())
 
     return IncrementalUpdateResult(
         new_world=new_world,
@@ -237,6 +254,7 @@ def apply_incremental_update(
         changed_geometry_ids=frozenset(changed_geometry_ids),
         affected_entity_ids=frozenset(affected_entity_ids),
         invalidated_tile_ids=frozenset(invalidated_tile_ids),
+        rebuilt_tile_ids=frozenset(rebuilt_tile_ids),
         reused_entity_ids=reused_entity_ids,
         reused_geometry_ids=reused_geometry_ids,
     )

@@ -5,16 +5,20 @@ need to change to support it.
 """
 
 import pytest
+pytestmark = pytest.mark.physics
 
-from engine.physics.backend import PhysicsWorldConfig, SimpleRigidBodyBackend, StaticPlane
-from engine.physics.collision.shapes import Box, Plane, Sphere
-from engine.physics.materials import CANONICAL_MATERIALS
-from engine.physics.math3 import Vec3
-from engine.physics.rigid.body import RigidBody
-from events import EventBus
-from events.types import CONTACT_EVENT, IMPACT_EVENT
-
-
+try:
+    from engine.physics.backend import PhysicsWorldConfig, SimpleRigidBodyBackend, StaticPlane
+    from engine.physics.collision.shapes import Box, Plane, Sphere
+    from engine.physics.materials import CANONICAL_MATERIALS
+    from engine.physics.math3 import Vec3
+    from engine.physics.rigid.body import RigidBody
+    from events import EventBus
+    from events.types import CONTACT_EVENT, IMPACT_EVENT
+    
+    
+except ImportError:
+    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 def ground_plane() -> StaticPlane:
     return StaticPlane(id="ground", plane=Plane(Vec3(0, 1, 0), 0.0), material=CANONICAL_MATERIALS["concrete"])
 

@@ -1,12 +1,16 @@
 import pytest
+pytestmark = pytest.mark.physics
 
-from engine.physics.collision.shapes import Sphere
-from engine.physics.diagnostics.numerics import SimulationDivergedError, check_world
-from engine.physics.materials import CANONICAL_MATERIALS
-from engine.physics.rigid.body import RigidBody
-from engine.physics.math3 import Vec3
-
-
+try:
+    from engine.physics.collision.shapes import Sphere
+    from engine.physics.diagnostics.numerics import SimulationDivergedError, check_world
+    from engine.physics.materials import CANONICAL_MATERIALS
+    from engine.physics.rigid.body import RigidBody
+    from engine.physics.math3 import Vec3
+    
+    
+except ImportError:
+    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 def make_body(**overrides) -> RigidBody:
     kwargs = dict(id="b", shape=Sphere(1.0), material=CANONICAL_MATERIALS["steel"], mass=1.0)
     kwargs.update(overrides)

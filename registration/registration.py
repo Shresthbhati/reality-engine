@@ -664,12 +664,19 @@ class RegistrationEngine:
         anchor_target: Optional[Sequence[Vec3]] = None,
         min_overlap: float = 0.5,
         initial_transform: Optional[RigidTransform] = None,
+        landmarks: Optional[Sequence["object"]] = None,
     ) -> RegistrationResult:
         """`initial_transform` seeds ICP when a prior exists (known
         extrinsics, GNSS/trajectory prior -- the spec's pipeline puts a
         coarse alignment BEFORE ICP for exactly this reason: ICP is a
         local optimizer and an unseeded run on far-apart clouds is a
-        guess, not an alignment)."""
+        guess, not an alignment).
+
+        `landmarks` (optional) supplies declared landmark
+        correspondences (registration.landmarks.LandmarkCorrespondence);
+        they are tried AFTER GNSS anchors and BEFORE ICP in the
+        confidence order -- declared identity is strictly stronger
+        evidence than geometric proximity."""
         attempts: list[AttemptRecord] = []
 
         # Pre-flight (spec pipeline, before any method): a prior
@@ -747,6 +754,37 @@ class RegistrationEngine:
                 "gnss_anchor", "blocked", "no anchor pairs provided -- "
                 "cannot fabricate positions"
             ))
+
+        # Method 1.5: declared landmark correspondences (when
+        # supplied) -- stronger than ICP (declared identity, no
+        # local-minimum failure mode), weaker than measured GNSS
+        # positions. Degenerate/ambiguous landmark sets are recorded
+        # and ICP still gets its chance.
+        if landmarks is not None:
+            from .landmarks import register_landmarks
+            try:
+                lm_result = register_landmarks(
+                    landmarks, from_frame=from_frame, to_frame=to_frame,
+                )
+            except RegistrationError as exc:
+                attempts.append(AttemptRecord("landmark", "blocked", str(exc)))
+            else:
+                attempts.append(AttemptRecord("landmark", lm_result.status, lm_result.reason))
+                if lm_result.status == "accepted":
+                    return RegistrationResult(
+                        transform=lm_result.transform,
+                        method=lm_result.method,
+                        status=lm_result.status,
+                        reason=lm_result.reason,
+                        rmse=lm_result.rmse,
+                        inlier_fraction=lm_result.inlier_fraction,
+                        iterations=lm_result.iterations,
+                        source_points=lm_result.source_points,
+                        target_points=lm_result.target_points,
+                        residual_stats=lm_result.residual_stats,
+                        covariance=lm_result.covariance,
+                        attempts=tuple(attempts),
+                    )
 
         # Method 2: point-to-plane ICP when normals are available (the
         # spec's named algorithm; strictly more information than

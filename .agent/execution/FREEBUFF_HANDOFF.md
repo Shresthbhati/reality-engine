@@ -490,3 +490,11 @@ Branch `agent/freebuff-reconstruction` off post-#45 main. Landed
 Full-suite gate: 2087 passed / 5 skipped / 0 failed (275.6 s, first
 run; re-verified post-ledger-edit). Ledger: 33 DONE / 6 PARTIAL /
 0 MISSING.
+
+
+## 2026-09-19 (2) — landmark method (P4-01 fully closed)
+
+Branch agent/freebuff-reconstruction-perception (stacked on
+agent/freebuff-reconstruction / PR #49). register_landmarks +
+RegistrationEngine wiring; 10 tests; suite 2133 green. P4-01 now has
+zero PENDING items in TASKS.yaml.

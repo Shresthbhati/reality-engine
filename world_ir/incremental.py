@@ -115,15 +115,30 @@ class IncrementalUpdateResult:
     #: it reports the set so a real compiler stage can act on it.
     affected_entity_ids: FrozenSet[str]
     #: Tile keys (from world_ir.spatial_tiles.SpatialTiles) touched by any
-    #: changed or affected entity, in EITHER the base world's tile (old
+    #: changed OR affected entity, in EITHER the base world's tile (old
     #: position) or the new world's tile (new position) -- an entity that
-    #: moved tiles invalidates both, not just its destination.
+    #: moved tiles invalidates both, not just its destination. This is
+    #: the "needs re-check" superset: it includes tiles that only hold an
+    #: AFFECTED-but-unchanged entity (e.g. a room whose wall changed),
+    #: even though nothing in that tile was actually replaced.
     invalidated_tile_ids: FrozenSet[Tuple[int, int, int]]
+    #: Tile keys that hold a DIRECTLY changed entity (old or new
+    #: position) -- a true content rebuild, not just a relationship
+    #: flag. Always a subset of invalidated_tile_ids. In the example
+    #: "tile A/B/C, new evidence affects tile B": rebuilt_tile_ids =
+    #: {B}; invalidated_tile_ids may additionally contain a tile whose
+    #: only connection to the change is an affected (not directly
+    #: changed) entity; A and C, having no changed or affected entity
+    #: at all, appear in neither set and are fully reused.
+    rebuilt_tile_ids: FrozenSet[Tuple[int, int, int]]
     #: Entity/geometry ids present in base_world that were NOT directly
     #: changed -- new_world.entities[id] / new_world.geometries[id] is
     #: the SAME object as base_world's for every id in these sets.
     reused_entity_ids: FrozenSet[str]
     reused_geometry_ids: FrozenSet[str]
+    #: Entity ids present in base_world and absent from new_world --
+    #: deletions the caller requested via `removed_entities`.
+    removed_entity_ids: FrozenSet[str]
 
 
 def apply_incremental_update(
@@ -131,6 +146,7 @@ def apply_incremental_update(
     updated_entities: Iterable[Entity],
     *,
     updated_geometries: Iterable[Geometry] = (),
+    removed_entities: Iterable[str] = (),
     relationship_kinds: Optional[Collection[RelationshipKind]] = None,
     max_hops: Optional[int] = None,
     tile_size: float = 10.0,
@@ -183,23 +199,31 @@ def apply_incremental_update(
     """
     updated_entities = list(updated_entities)
     updated_geometries = list(updated_geometries)
+    removed_entity_ids = {eid for eid in removed_entities if eid in base_world.entities}
     changed_entity_ids = {e.id for e in updated_entities}
     changed_geometry_ids = {g.id for g in updated_geometries}
+    if changed_entity_ids & removed_entity_ids:
+        raise ValueError(
+            "an entity id cannot be both updated and removed in the same "
+            f"call: {sorted(changed_entity_ids & removed_entity_ids)}"
+        )
 
     # A changed geometry marks every entity that references it as
     # affected too -- their geometry_ids membership points at evidence
     # that's now stale, even though the entity's OWN fields (name, type,
-    # relationships, ...) are untouched.
+    # relationships, ...) are untouched. A removed entity's OWN
+    # relationships seed the closure too -- whatever it was PART_OF/
+    # SUPPORTS/etc. now has a dangling edge and is affected.
     geometry_owners = {
         eid for eid, entity in base_world.entities.items()
         if changed_geometry_ids & set(entity.geometry_ids)
     }
-    seed_ids = changed_entity_ids | geometry_owners
+    seed_ids = changed_entity_ids | geometry_owners | removed_entity_ids
 
     affected_entity_ids = affected_closure(
         base_world, seed_ids,
         relationship_kinds=relationship_kinds, max_hops=max_hops,
-    )
+    ) - removed_entity_ids  # a removed entity is not "affected", it's gone
 
     # New containers so base_world.entities/geometries are never mutated
     # in place; every value not overwritten below is the SAME object
@@ -207,6 +231,8 @@ def apply_incremental_update(
     new_entities = dict(base_world.entities)
     for entity in updated_entities:
         new_entities[entity.id] = entity
+    for eid in removed_entity_ids:
+        del new_entities[eid]
 
     new_geometries = dict(base_world.geometries)
     for geometry in updated_geometries:
@@ -217,19 +243,24 @@ def apply_incremental_update(
     new_world.geometries = new_geometries
     new_world.version = base_world.version + 1
 
-    reused_entity_ids = frozenset(base_world.entities) - changed_entity_ids
+    reused_entity_ids = frozenset(base_world.entities) - changed_entity_ids - removed_entity_ids
     reused_geometry_ids = frozenset(base_world.geometries) - changed_geometry_ids
 
-    invalidated_tile_ids: Set[Tuple[int, int, int]] = set()
-    touch_ids = changed_entity_ids | affected_entity_ids
+    touch_ids = changed_entity_ids | affected_entity_ids | removed_entity_ids
+    entity_tile: dict[str, Set[Tuple[int, int, int]]] = {}
     if touch_ids:
-        entity_tile: dict[str, Set[Tuple[int, int, int]]] = {}
         for tiles in (SpatialTiles(base_world, tile_size=tile_size), SpatialTiles(new_world, tile_size=tile_size)):
             for key in tiles.tile_ids():
                 for eid in tiles.entities_in_tile(key):
                     entity_tile.setdefault(eid, set()).add(key)
-        for eid in touch_ids:
-            invalidated_tile_ids |= entity_tile.get(eid, set())
+
+    rebuilt_tile_ids: Set[Tuple[int, int, int]] = set()
+    for eid in changed_entity_ids | removed_entity_ids:
+        rebuilt_tile_ids |= entity_tile.get(eid, set())
+
+    invalidated_tile_ids: Set[Tuple[int, int, int]] = set(rebuilt_tile_ids)
+    for eid in touch_ids:
+        invalidated_tile_ids |= entity_tile.get(eid, set())
 
     return IncrementalUpdateResult(
         new_world=new_world,
@@ -237,6 +268,8 @@ def apply_incremental_update(
         changed_geometry_ids=frozenset(changed_geometry_ids),
         affected_entity_ids=frozenset(affected_entity_ids),
         invalidated_tile_ids=frozenset(invalidated_tile_ids),
+        rebuilt_tile_ids=frozenset(rebuilt_tile_ids),
         reused_entity_ids=reused_entity_ids,
         reused_geometry_ids=reused_geometry_ids,
+        removed_entity_ids=frozenset(removed_entity_ids),
     )

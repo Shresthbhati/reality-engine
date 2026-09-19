@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useREStore } from '@/store/re-store';
 import type { SpatialScale } from '@/types/reality-engine';
 import {
@@ -20,6 +20,7 @@ import {
   FileText,
   Image as ImageIcon,
   Boxes,
+  RotateCw,
 } from 'lucide-react';
 
 interface NavSection {
@@ -41,6 +42,17 @@ export default function WorldNavPanel() {
   const toggleLeftNav = useREStore((s) => s.toggleLeftNav);
   const setSpatialScale = useREStore((s) => s.setSpatialScale);
   const addNotification = useREStore((s) => s.addNotification);
+
+  // Backend state integration
+  const worldVersions = useREStore((s) => s.worldVersions);
+  const activeWorldVersion = useREStore((s) => s.activeWorldVersion);
+  const loadedFromBackend = useREStore((s) => s.loadedFromBackend);
+  const loadWorldFromBackend = useREStore((s) => s.loadWorldFromBackend);
+  const refreshWorldVersions = useREStore((s) => s.refreshWorldVersions);
+
+  useEffect(() => {
+    refreshWorldVersions();
+  }, [refreshWorldVersions]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -95,6 +107,33 @@ export default function WorldNavPanel() {
     { id: 'v6.5', label: 'V6.5 (Baseline)', isCurrent: false },
   ];
 
+  const displayWorlds = useMemo(() => {
+    if (worldVersions && worldVersions.length > 0) {
+      return worldVersions.map((wv) => ({
+        id: wv.world_id,
+        versionId: wv.version_id,
+        name: wv.name || wv.world_id,
+        version: wv.version_id,
+        status: activeWorldVersion === wv.version_id ? 'Active' : 'Available',
+        area: `${wv.entity_count} nodes`,
+        isBackend: true,
+      }));
+    }
+    return worlds.map((w) => ({ ...w, versionId: w.version, isBackend: false }));
+  }, [worldVersions, activeWorldVersion, worlds]);
+
+  const displayVersions = useMemo(() => {
+    if (worldVersions && worldVersions.length > 0) {
+      return worldVersions.map((wv) => ({
+        id: wv.version_id,
+        label: `${wv.version_id} (${wv.entity_count} nodes)`,
+        isCurrent: activeWorldVersion === wv.version_id,
+        isBackend: true,
+      }));
+    }
+    return versions.map((v) => ({ ...v, isBackend: false }));
+  }, [worldVersions, activeWorldVersion, versions]);
+
   const q = searchQuery.toLowerCase().trim();
 
   return (
@@ -104,17 +143,39 @@ export default function WorldNavPanel() {
     >
       {/* ── Header ── */}
       <div className="h-10 px-3 border-b border-[#1f222b] flex items-center justify-between shrink-0 bg-[#0d0e12]">
-        <span className="text-[11px] font-mono font-bold tracking-wider text-[#9296a6] uppercase">
-          World Navigation
-        </span>
-        <button
-          type="button"
-          onClick={toggleLeftNav}
-          className="p-1 rounded text-[#54596b] hover:text-[#f0f1f6] hover:bg-white/5 transition-colors"
-          title="Collapse Panel (⌘B)"
-        >
-          <PanelLeftClose className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-mono font-bold tracking-wider text-[#9296a6] uppercase">
+            World Navigation
+          </span>
+          {loadedFromBackend && (
+            <span className="w-1.5 h-1.5 rounded-full bg-[#2ecc71]" title="Backend Connected" />
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              refreshWorldVersions();
+              addNotification({
+                type: 'info',
+                title: 'Refreshed',
+                message: 'Refreshed WorldStore versions from backend.',
+              });
+            }}
+            className="p-1 rounded text-[#54596b] hover:text-[#f0f1f6] hover:bg-white/5 transition-colors"
+            title="Refresh Backend Versions"
+          >
+            <RotateCw className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={toggleLeftNav}
+            className="p-1 rounded text-[#54596b] hover:text-[#f0f1f6] hover:bg-white/5 transition-colors"
+            title="Collapse Panel (⌘B)"
+          >
+            <PanelLeftClose className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* ── Search Filter ── */}
@@ -149,20 +210,24 @@ export default function WorldNavPanel() {
 
           {openSections.worlds && (
             <div className="mt-0.5 space-y-0.5 pl-2">
-              {worlds
-                .filter((w) => !q || w.name.toLowerCase().includes(q))
+              {displayWorlds
+                .filter((w) => !q || w.name.toLowerCase().includes(q) || w.version.toLowerCase().includes(q))
                 .map((w) => {
-                  const isSelected = selectedWorldId === w.id;
+                  const isSelected = selectedWorldId === w.id || activeWorldVersion === w.versionId;
                   return (
                     <div
-                      key={w.id}
+                      key={`${w.id}-${w.versionId}`}
                       onClick={() => {
-                        setSelectedWorldId(w.id);
-                        addNotification({
-                          type: 'info',
-                          title: 'World Loaded',
-                          message: `Loaded spatial world: ${w.name} (${w.version})`,
-                        });
+                        if (w.isBackend) {
+                          loadWorldFromBackend(w.versionId);
+                        } else {
+                          setSelectedWorldId(w.id);
+                          addNotification({
+                            type: 'info',
+                            title: 'World Loaded',
+                            message: `Loaded spatial world: ${w.name} (${w.version})`,
+                          });
+                        }
                       }}
                       className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer transition-colors ${
                         isSelected
@@ -362,21 +427,27 @@ export default function WorldNavPanel() {
 
           {openSections.versions && (
             <div className="mt-0.5 space-y-0.5 pl-2">
-              {versions.map((v) => {
-                const isSelected = selectedVersionId === v.id;
+              {displayVersions.map((v) => {
+                const isSelected = activeWorldVersion === v.id || selectedVersionId === v.id;
                 return (
                   <div
                     key={v.id}
-                    onClick={() => setSelectedVersionId(v.id)}
+                    onClick={() => {
+                      if (v.isBackend) {
+                        loadWorldFromBackend(v.id);
+                      } else {
+                        setSelectedVersionId(v.id);
+                      }
+                    }}
                     className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer transition-colors ${
                       isSelected
                         ? 'bg-[#ec4899]/15 text-[#ec4899] border border-[#ec4899]/30 font-semibold'
                         : 'text-[#9296a6] hover:text-[#f0f1f6] hover:bg-white/5'
                     }`}
                   >
-                    <span className="text-[11px]">{v.label}</span>
+                    <span className="text-[11px] truncate">{v.label}</span>
                     {v.isCurrent && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#ec4899]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#ec4899] shrink-0" />
                     )}
                   </div>
                 );

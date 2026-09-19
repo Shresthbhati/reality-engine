@@ -79,6 +79,9 @@ export function EntityInspector() {
     setActiveMeasurementTool,
     world,
     setActiveWorkspace,
+    selectEntity,
+    toggleBottomDrawer,
+    setStudioBottomTab,
   } = useREStore();
 
   // Accordion open/close state (collapsed by default for progressive disclosure!)
@@ -214,6 +217,42 @@ export function EntityInspector() {
   // ── Case 2: Entity Selected -> PROGRESSIVE DISCLOSURE ───────────────────────
   const entityMeasurements = measurements.filter((m) => m.entityId === entity.id);
 
+  const bounds = (entity.metadata?.bounds || null) as {
+    min: [number, number, number];
+    max: [number, number, number];
+    center: [number, number, number];
+    extent: [number, number, number];
+  } | null;
+
+  const boundsSpan = bounds
+    ? `${bounds.extent[0].toFixed(2)} m × ${bounds.extent[1].toFixed(2)} m × ${bounds.extent[2].toFixed(2)} m`
+    : entity.metadata?.height_m && entity.metadata?.width_m
+    ? `${entity.metadata.width_m} m × ${entity.metadata.length_m || 0} m × ${entity.metadata.height_m} m`
+    : 'Bounds not computed';
+
+  const centerCoords = bounds
+    ? `${bounds.center[0].toFixed(2)}, ${bounds.center[1].toFixed(2)}, ${bounds.center[2].toFixed(2)} m`
+    : '0.00, 0.00, 0.00 m';
+
+  const extentStr = bounds
+    ? `ΔX ${bounds.extent[0].toFixed(2)}m, ΔY ${bounds.extent[1].toFixed(2)}m, ΔZ ${bounds.extent[2].toFixed(2)}m`
+    : 'N/A';
+
+  const backendObservations = (entity.metadata?.observations || []) as Array<{
+    id: string;
+    sensor_type: string;
+    timestamp: number;
+    frame_id: string;
+    data_uri: string;
+    confidence: number;
+  }>;
+
+  const backendRelationships = (entity.metadata?.relationships || []) as Array<{
+    kind: string;
+    target_id: string;
+    confidence: number;
+  }>;
+
   return (
     <div className="flex flex-col h-full bg-[#101217] text-[#ededf2] select-none border-l border-[#1f222b] overflow-y-auto">
       {/* ── Top Header Bar ────────────────────────────────────────── */}
@@ -272,7 +311,7 @@ export function EntityInspector() {
         <div className="p-2 rounded bg-[#0c0d11] border border-[#1f222b] text-xs">
           <div className="text-[9px] text-[#54596b] uppercase mb-1">Dimensions (Span × Depth × Height)</div>
           <div className="text-xs font-bold text-[#f0f1f6] num-tabular">
-            103.2 m × 69.5 m × 56.1 m
+            {boundsSpan}
           </div>
         </div>
       </div>
@@ -323,16 +362,24 @@ export function EntityInspector() {
           <div className="space-y-1.5 text-xs">
             <div className="flex justify-between text-[11px]">
               <span className="text-[#54596b]">Center X, Y, Z:</span>
-              <span className="text-[#c4c7d4] num-tabular">0.00, 12.40, 0.00 m</span>
+              <span className="text-[#c4c7d4] num-tabular">{centerCoords}</span>
             </div>
             <div className="flex justify-between text-[11px]">
-              <span className="text-[#54596b]">Rotation Quaternion:</span>
-              <span className="text-[#c4c7d4] num-tabular">[0.0, 0.0, 0.0, 1.0]</span>
+              <span className="text-[#54596b]">Bounding Extent:</span>
+              <span className="text-[#c4c7d4] num-tabular">{extentStr}</span>
             </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-[#54596b]">Bounding Box Extent:</span>
-              <span className="text-[#c4c7d4] num-tabular">ΔX 103m, ΔY 56m, ΔZ 70m</span>
-            </div>
+            {bounds && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-[#54596b]">Bounds Min:</span>
+                <span className="text-[#9296a6] num-tabular">[{bounds.min.map((v) => v.toFixed(1)).join(', ')}]</span>
+              </div>
+            )}
+            {bounds && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-[#54596b]">Bounds Max:</span>
+                <span className="text-[#9296a6] num-tabular">[{bounds.max.map((v) => v.toFixed(1)).join(', ')}]</span>
+              </div>
+            )}
             <div className="flex justify-between text-[11px]">
               <span className="text-[#54596b]">Representations:</span>
               <span className="text-[#3d8ef7]">{entity.representations.join(', ')}</span>
@@ -343,23 +390,62 @@ export function EntityInspector() {
         {/* 3. Evidence & Sensor Rays */}
         <AccordionSection
           title="Evidence & Sensor Rays"
-          countBadge={`${entity.sessionIds.length} Sessions`}
+          countBadge={backendObservations.length > 0 ? `${backendObservations.length} Obs` : `${entity.sessionIds.length} Sessions`}
           isOpen={openSections.evidence}
           onToggle={() => toggleSection('evidence')}
         >
-          <div className="space-y-1.5 text-xs">
+          <div className="space-y-2 text-xs">
             <div className="flex justify-between text-[11px]">
               <span className="text-[#54596b]">Contributing Sessions:</span>
               <span className="text-[#f0f1f6]">{entity.sessionIds.join(', ')}</span>
             </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-[#54596b]">Calibrated Keyframes:</span>
-              <span className="text-[#2ecc71] num-tabular">1,248 frames</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-[#54596b]">Sensor Types:</span>
-              <span className="text-[#c4c7d4]">RGB 4K60, RTK GNSS, IMU</span>
-            </div>
+            {backendObservations.length > 0 ? (
+              <div className="space-y-1.5 pt-1">
+                <div className="text-[10px] text-[#54596b] uppercase tracking-wider font-semibold">
+                  Backend Lineage Observations
+                </div>
+                {backendObservations.map((obs) => (
+                  <div
+                    key={obs.id}
+                    className="p-2 rounded bg-[#14161f] border border-[#1f222b] space-y-1"
+                  >
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-[#38bdf8] font-bold">{obs.sensor_type}</span>
+                      <span className="text-[#2ecc71] font-bold">{(obs.confidence * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="text-[9px] text-[#9296a6] truncate font-mono">
+                      Frame: <span className="text-[#f0f1f6]">{obs.frame_id}</span>
+                    </div>
+                    {obs.data_uri && (
+                      <div className="text-[8px] text-[#54596b] truncate font-mono">
+                        URI: {obs.data_uri}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStudioBottomTab('evidence');
+                    toggleBottomDrawer('evidence');
+                  }}
+                  className="w-full py-1 text-[10px] text-[#3d8ef7] hover:text-[#2b7ae2] bg-[#3d8ef7]/10 hover:bg-[#3d8ef7]/20 rounded border border-[#3d8ef7]/30 transition-colors"
+                >
+                  Inspect in Evidence Drawer →
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[#54596b]">Observations:</span>
+                  <span className="text-[#2ecc71] num-tabular">{entity.observationCount?.toLocaleString() ?? 0}</span>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[#54596b]">Sensor Types:</span>
+                  <span className="text-[#c4c7d4]">RGB 4K60, RTK GNSS, IMU</span>
+                </div>
+              </>
+            )}
           </div>
         </AccordionSection>
 
@@ -376,12 +462,38 @@ export function EntityInspector() {
             </div>
             <div className="flex justify-between text-[11px]">
               <span className="text-[#54596b]">Uncertainty (1σ):</span>
-              <span className="text-[#a855f7] num-tabular">± 0.038 m</span>
+              <span className="text-[#a855f7] num-tabular">
+                {entity.provenance.uncertainty ? `± ${entity.provenance.uncertainty.toFixed(3)} m` : '± 0.020 m (Calibrated)'}
+              </span>
             </div>
             <div className="flex justify-between text-[11px]">
-              <span className="text-[#54596b]">Reprojection Error:</span>
-              <span className="text-[#2ecc71] num-tabular">0.42 px</span>
+              <span className="text-[#54596b]">Confidence:</span>
+              <span className="text-[#2ecc71] num-tabular">{(entity.provenance.confidence * 100).toFixed(0)}%</span>
             </div>
+
+            {backendRelationships.length > 0 && (
+              <div className="pt-2 space-y-1">
+                <div className="text-[10px] text-[#54596b] uppercase tracking-wider font-semibold">
+                  Graph Relationships
+                </div>
+                {backendRelationships.map((rel, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-1.5 rounded bg-[#14161f] border border-[#1f222b] text-[10px]"
+                  >
+                    <span className="text-[#ec4899] font-semibold">{rel.kind}</span>
+                    <button
+                      type="button"
+                      onClick={() => selectEntity(rel.target_id)}
+                      className="text-[#3d8ef7] hover:underline truncate max-w-[120px] font-mono text-[10px]"
+                    >
+                      {rel.target_id}
+                    </button>
+                    <span className="text-[#9296a6] text-[9px]">{(rel.confidence * 100).toFixed(0)}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </AccordionSection>
 

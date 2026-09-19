@@ -8,6 +8,8 @@
 
 import type { Entity, EntityType, ProvenanceState } from "@/types/reality-engine";
 
+import { parsePlyBuffer, type ParsedPointCloud } from "./ply";
+
 export interface BackendStatus {
   backend: boolean;
   store_path: string;
@@ -32,6 +34,20 @@ export interface BackendWorldSummary {
   modified_at?: number | null;
 }
 
+export interface BackendGeometryPayload {
+  id: string;
+  type: string;
+  lod_level?: number;
+  vertex_count?: number | null;
+  triangle_count?: number | null;
+  data_uri?: string;
+  data_hash?: string;
+  bounds_min?: { x: number; y: number; z: number } | null;
+  bounds_max?: { x: number; y: number; z: number } | null;
+  provenance?: string;
+  confidence?: number;
+}
+
 export interface BackendWorldDetail {
   version_id: string;
   world_id: string;
@@ -43,6 +59,7 @@ export interface BackendWorldDetail {
   entity_count: number;
   entities: BackendEntityPayload[];
   geometry_count: number;
+  geometries?: Record<string, BackendGeometryPayload>;
   error?: string;
 }
 
@@ -93,7 +110,44 @@ function mapBackendProvToProvenanceState(rawProv: string): ProvenanceState {
   return "UNKNOWN";
 }
 
-export function convertBackendEntityToEntity(b: BackendEntityPayload): Entity {
+export function convertBackendEntityToEntity(
+  b: BackendEntityPayload,
+  geometries?: Record<string, BackendGeometryPayload>
+): Entity {
+  let primaryBounds: {
+    min: [number, number, number];
+    max: [number, number, number];
+    center: [number, number, number];
+    extent: [number, number, number];
+  } | null = null;
+
+  if (geometries && b.geometry_ids && b.geometry_ids.length > 0) {
+    const firstGeom = geometries[b.geometry_ids[0]];
+    if (firstGeom?.bounds_min && firstGeom?.bounds_max) {
+      const min: [number, number, number] = [
+        firstGeom.bounds_min.x,
+        firstGeom.bounds_min.y,
+        firstGeom.bounds_min.z,
+      ];
+      const max: [number, number, number] = [
+        firstGeom.bounds_max.x,
+        firstGeom.bounds_max.y,
+        firstGeom.bounds_max.z,
+      ];
+      const center: [number, number, number] = [
+        (min[0] + max[0]) / 2,
+        (min[1] + max[1]) / 2,
+        (min[2] + max[2]) / 2,
+      ];
+      const extent: [number, number, number] = [
+        max[0] - min[0],
+        max[1] - min[1],
+        max[2] - min[2],
+      ];
+      primaryBounds = { min, max, center, extent };
+    }
+  }
+
   return {
     id: b.id,
     name: b.id.replace(/-/g, " "),
@@ -113,8 +167,11 @@ export function convertBackendEntityToEntity(b: BackendEntityPayload): Entity {
     metadata: {
       geometry_ids: b.geometry_ids,
       observations_count: b.observations.length,
+      observations: b.observations,
       relationships_count: b.relationships.length,
+      relationships: b.relationships,
       custom_properties: b.custom_properties ?? {},
+      bounds: primaryBounds,
     },
     representations: b.geometry_ids.length > 0 ? ["MESH"] : ["POINT_CLOUD"],
     sessionIds: ["sess-001"],
@@ -177,5 +234,35 @@ export async function fetchSessionList(): Promise<unknown[]> {
     return data.sessions ?? [];
   } catch {
     return [];
+  }
+}
+
+export interface PointCloudResult {
+  available: boolean;
+  data?: ParsedPointCloud;
+  error?: string;
+}
+
+export async function fetchWorldPointCloud(versionId: string): Promise<PointCloudResult> {
+  try {
+    const res = await fetch(`/api/world/${encodeURIComponent(versionId)}/points`, { cache: "no-store" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      return {
+        available: false,
+        error: err.error ?? `Artifact unavailable (HTTP ${res.status})`,
+      };
+    }
+    const buffer = await res.arrayBuffer();
+    const data = parsePlyBuffer(buffer);
+    return {
+      available: true,
+      data,
+    };
+  } catch (err) {
+    return {
+      available: false,
+      error: err instanceof Error ? err.message : "Failed to load point cloud buffer",
+    };
   }
 }

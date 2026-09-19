@@ -24,6 +24,7 @@ the existing canonical WorldIR v1 dict -- no competing schema.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,28 @@ from world_ir.artifact_store import FileArtifactStore
 
 class WorldStoreError(ValueError):
     """WorldStore operation refused."""
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` to `path` so a crash mid-write can never leave a
+    truncated/partial file at `path`: write to a sibling temp file,
+    fsync it, then os.replace() onto the final name. os.replace() is
+    atomic on both POSIX and Windows NTFS -- readers of `path` always
+    see either the previous complete content or the new complete
+    content, never a partial write. Without this, a process crash
+    during write_text() left a truncated JSON file that every future
+    _record()/list_versions() call on that version would fail to
+    parse (a corrupted store, not a "no partially committed world
+    state" failure)."""
+    tmp = path.with_suffix(path.suffix + f".tmp-{uuid.uuid4().hex[:8]}")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 @dataclass(frozen=True)
@@ -104,14 +127,31 @@ class WorldStore:
             "changed_geometry_ids": changed_geometry_ids,
             "source_session_ids": list(source_session_ids or []),
         }
-        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        # Write the version record before the sequence index so a crash
+        # between the two leaves an orphan version file (harmless --
+        # list_versions() below already appends unrecorded files) rather
+        # than a sequence entry pointing at a version that doesn't exist.
+        _atomic_write_text(path, json.dumps(record, indent=2))
         seq_path = self._root / "sequence.json"
-        order: List[str] = []
-        if seq_path.exists():
-            order = json.loads(seq_path.read_text(encoding="utf-8"))
+        order: List[str] = self._read_sequence(seq_path)
         order.append(vid)
-        seq_path.write_text(json.dumps(order), encoding="utf-8")
+        _atomic_write_text(seq_path, json.dumps(order))
         return StoredVersion(**record)
+
+    @staticmethod
+    def _read_sequence(seq_path: Path) -> List[str]:
+        if not seq_path.exists():
+            return []
+        try:
+            return json.loads(seq_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            # The atomic write above makes this unreachable in normal
+            # operation; surfaced explicitly (never silently reset to an
+            # empty sequence, which would look like lost history) for a
+            # store touched by something other than this class.
+            raise WorldStoreError(
+                f"sequence index at {seq_path} is corrupted: {exc}"
+            ) from exc
 
     # ---- read ----
 
@@ -119,7 +159,16 @@ class WorldStore:
         path = self._versions_dir / f"{version_id}.json"
         if not path.exists():
             raise WorldStoreError(f"unknown version: {version_id}")
-        return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            # Explicit, actionable failure instead of a raw parser
+            # exception -- a corrupted version record is a store
+            # integrity problem the caller must handle, not something
+            # to guess at or silently skip.
+            raise WorldStoreError(
+                f"version {version_id} record is corrupted: {exc}"
+            ) from exc
 
     def load_version(self, version_id: str) -> "WorldIR":
         from world_ir.world_v1 import WorldIR
@@ -155,20 +204,21 @@ class WorldStore:
     def list_versions(self) -> List[StoredVersion]:
         """Save-order listing (not uuid order): the version file's
         mtime ranks creations; ties fall back to the sequence number
-        implied by an index file maintained at save time."""
+        implied by an index file maintained at save time.
+
+        Raises WorldStoreError naming the specific version if any
+        record on disk is corrupted -- history is never silently
+        truncated or dropped to hide the corruption from the caller."""
         records = []
         seq_path = self._root / "sequence.json"
-        order: List[str] = []
-        if seq_path.exists():
-            order = json.loads(seq_path.read_text(encoding="utf-8"))
+        order = self._read_sequence(seq_path)
         known = {p.stem for p in self._versions_dir.glob("v-*.json")}
         # Any version file not in the recorded order (e.g. written by an
         # older store) is appended in sorted order -- history is never
         # dropped.
         ordered = [v for v in order if v in known] + sorted(known - set(order))
         for vid in ordered:
-            r = json.loads((self._versions_dir / f"{vid}.json").read_text(encoding="utf-8"))
-            records.append(StoredVersion(**r))
+            records.append(StoredVersion(**self._record(vid)))
         return records
 
     # ---- integrity ----

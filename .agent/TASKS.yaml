@@ -1080,7 +1080,12 @@ tasks:
     spec: docs/future/worldstore/WORLDSTORE.md
     verification:
       - two-commit revision chain with checkout equality
-      - crash-during-commit recovery test
+      - "crash-during-commit recovery: tests/test_world_store_atomicity.py
+        (7 tests) -- atomic temp-file+os.replace() writes for both the
+        version record and the sequence index (no partial JSON can ever
+        land on disk), corrupted on-disk records raise WorldStoreError
+        naming the version instead of a raw JSONDecodeError, and a
+        failed save (bad parent) registers no orphan sequence entry"
     progress: >
       2026-09-18: StoredVersion/save_version now record
       changed_entity_ids + changed_geometry_ids (auto-computed via
@@ -1089,6 +1094,26 @@ tasks:
       entities/geometry/source sessions" part of world versioning.
       Additive/defaulted fields; pre-existing saved version records
       still load. tests/test_world_store.py extended (3 new tests).
+    completion: >-
+      2026-09-19 (parallel checkpoint, claude-city-world-core P2):
+      closed the "crash-during-commit recovery" verification gap --
+      save_version()'s version-record and sequence.json writes were
+      plain write_text() (non-atomic); a crash mid-write left a
+      truncated JSON file that every future _record()/list_versions()
+      call on that store would fail to parse with a raw
+      JSONDecodeError, effectively wedging the whole store's history.
+      Fixed with a shared _atomic_write_text() (temp file + fsync +
+      os.replace(), atomic on POSIX and Windows NTFS) used for both
+      writes, plus explicit WorldStoreError on corrupted records
+      (never a leaked parser exception). No API/schema change.
+      tests/test_world_store_atomicity.py (7 tests): no temp files
+      left behind, both files parse after a normal save, corrupted
+      version record / corrupted sequence index each raise
+      WorldStoreError naming the failure, unknown-version vs
+      corrupted-version stay distinguishable, and a failed save (bad
+      parent) leaves no orphan sequence entry or version file. Full
+      worldstore/world_ir/spatial/frame_graph/diff suite: 182 passed,
+      1 skipped (unrelated pre-existing skip), 0 failed.
 
   # ================= PHASE 12 — INCREMENTAL COMPILATION ==============
 

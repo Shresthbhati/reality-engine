@@ -294,7 +294,7 @@ class TestViewAngleDiversity:
         pitch = -_m.atan2(dy, _m.hypot(dx, dz))  # about +X
         qy = (_m.cos(yaw / 2), 0.0, _m.sin(yaw / 2), 0.0)
         qx = (_m.cos(pitch / 2), _m.sin(pitch / 2), 0.0, 0.0)
-        from engine.physics.math3 import Quat
+        from engine.math.math3 import Quat
         q = Quat(*qy).multiply(Quat(*qx))
         pose = ReconstructedCameraPose(
             evidence_id=eid, position=pos,

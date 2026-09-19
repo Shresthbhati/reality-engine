@@ -203,6 +203,17 @@ class EvidenceAsset:
         """The dedup key: the payload's own hash."""
         return self.sha256
 
+    def to_evidence_item(self) -> EvidenceItem:
+        """Bridge to the session layer (the exact conversion
+        EvidencePackage.to_evidence_items uses per asset, factored out
+        so the session store can mirror individual assets)."""
+        return EvidenceItem(
+            id=self.id, kind=self.kind, source_uri=self.source_uri,
+            captured_at=self.acquired_at, sha256=self.sha256,
+            metadata=dict(self.sensor_metadata),
+            provenance=self.provenance, uncertainty=self.uncertainty,
+        )
+
     def is_canonical(self) -> bool:
         return self.provenance not in (Provenance.GENERATED, Provenance.UNKNOWN, Provenance.CONFLICT)
 
@@ -333,6 +344,30 @@ class EvidencePackage:
         self._content_index[asset.sha256] = asset.id
         self._order.append(asset.id)
         return asset.id
+
+    def merge_from(self, fragment: "EvidencePackage") -> Dict[str, List[str]]:
+        """Content-addressed fragment merge (the session-store ingestion
+        seam): absorb a builder-built fragment's assets into this
+        package. Assets whose sha256 content already exists resolve to
+        the existing asset's id (duplicate by content, never re-stored).
+
+        Returns {"added": [newly added asset ids], "duplicates":
+        [ids of existing assets the incoming content duplicated]}."""
+        added: List[str] = []
+        duplicates: List[str] = []
+        for source in fragment.sources.values():
+            self.register_source(source)
+        for asset_id in fragment._order:
+            asset = fragment.assets[asset_id]
+            existing = self._content_index.get(asset.sha256)
+            if existing is not None:
+                duplicates.append(existing)
+            else:
+                self.add_asset(asset)
+                added.append(asset.id)
+        for obs_id, obs in fragment.observation_sets.items():
+            self.observation_sets.setdefault(obs_id, obs)
+        return {"added": added, "duplicates": duplicates}
 
     def has_content(self, sha256: str) -> bool:
         return sha256 in self._content_index

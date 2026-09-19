@@ -126,6 +126,27 @@ capabilities:
       - validation measures only; mesh REPAIR out of scope by design
     fallback: report is always computable; absent expectation -> scale fields None (honest absence)
 
+  - name: reconstruction_cross_validation
+    category: reconstruction
+    backend: reconstruction/validation.py (cKDTree-indexed nearest-point match)
+    inputs: [ReconstructionResult, ReconstructionResult, distance_threshold_m]
+    outputs: [ValidationReport (agreements, PointDisagreement list, unmatched_a/b)]
+    license: project-internal
+    hardware_requirements: CPU (scipy cKDTree; same dependency as consistency/fusion/quality)
+    accuracy: exact nearest-neighbor matching, deterministic; semantics pinned by a
+      brute-force oracle test on shuffled non-trivial data (agreement ordering, b-side
+      consumption on disagreement, unmatched_b track_id set-collapse)
+    runtime: 60k-vs-60k point validation completes in seconds (was O(N*M) pure-python,
+      >300s killed at that scale); bounded-time test enforces the gate
+    maturity: IMPLEMENTED — large-set scale gate landed 2026-09-19 (large image-set
+      robustness, mission priority P1); report semantics unchanged for callers
+      (evidence/promote_reconstruction.py consumes it unchanged)
+    limitations:
+      - exact-tie nearest candidates resolve deterministically but may differ from a
+        naive first-min scan (documented; report stays deterministic either way)
+      - validates POINT sets only; pose Trajectory comparison is a separate concern
+    fallback: empty-b short-circuit reports all of a as unmatched_a (unchanged semantics)
+
   - name: dense_mvs
     category: dense_geometry
     backend: "CUDA COLMAP (colmap/colmap release 4.2.0, colmap-x64-windows-cuda.zip). Real end-to-end GPU run completed 2026-09-15 (CLI-level, not yet Python-integrated): feature_extractor -> exhaustive_matcher -> mapper (17/20 registered) -> image_undistorter -> patch_match_stereo --geom_consistency true (GPU, ~6.9 min) -> stereo_fusion, 294,345 fused points written to a real PLY. Not yet wired: reconstruction/depth_to_points.py does not parse COLMAP dense output (fused.ply) into this repo's DepthFrame/point types -- only monocular/RGB-D sidecar paths are integrated. OpenMVS slot still open."
@@ -801,3 +822,16 @@ capabilities:
     maturity: "IMPLEMENTED -- 10 tests (exact recovery, 2-pair refusal, collinear refusal, coplanar conditioning reported, outlier rejected and named, ambiguity excluded and named, engine preference order, ICP fall-through on bad landmarks, dict roundtrip)"
     limitations: "identity quality is the caller's responsibility (this method trusts declared correspondences); real cross-source landmark runs are the named next gate"
     fallback: "degenerate/ambiguous landmark sets refuse and ICP still runs -- never a silent best-effort transform"
+
+  - name: reconstruction_robustness_classification
+    category: reconstruction
+    backend: "reconstruction/robustness.py: classify_evidence_items (item-level) + classify_reconstruction_run (run-level); reconstruction/robustness_admission.py: admit_for_reconstruction + reconstruct_with_admission (quality-aware compute gate composing the orchestrator, orchestrator untouched)"
+    inputs: [EvidenceItem batch with importer-recorded pixel-quality metrics under the quality metadata key, thresholds (injectable), ReconstructionResult]
+    outputs: [AdmissionReport (per-item ACCEPTED/REJECTED/DEGRADED/UNRESOLVED/FAILED with measured reason, counts, accepted/degraded/rejected/unresolved/failed id splits), AdmissionDecision (admitted/excluded/proceeded_unresolved + full classification), RunAdmission]
+    license: project-internal
+    hardware_requirements: none
+    accuracy: "thresholds over importer-measured laplacian_variance/clipped_fraction; decode failure -> FAILED, absent metrics -> UNRESOLVED (never silently accepted); hard-defect REJECTED beats DEGRADED"
+    runtime: "admission is dict lookups + comparisons -- milliseconds at 5k images (benchmarks/robustness_scale.py: classify 0.023s, orchestrate 0.046s, peak 9.8MB python allocs at 5k images); O(N^2) duplicate scan in orchestrator input gate replaced with single pass (20k items: >10s -> <1s)"
+    maturity: "IMPLEMENTED -- 17 tests in tests/test_reconstruction_robustness.py + 7 in tests/test_robustness_admission.py (red-first); scale harness benchmarks/robustness_scale.py measured 20..5000 images, linear scaling, deterministic 80/10/5/5 outcome mix"
+    limitations: "classification trusts importer-recorded metrics; UNRESOLVED items proceed flagged (absence of metrics must not veto good captures); real COLMAP spend-avoidance end-to-end is the named next gate"
+    fallback: "batch refusal (AdmissionError) names admitted/excluded counts when admission leaves too little evidence; exclusions are recorded facts, never silent drops"

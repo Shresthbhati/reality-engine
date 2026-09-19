@@ -17,7 +17,7 @@ is the CAMERA-TO-WORLD orientation (rotating a direction expressed in the
 camera's local frame into world space), `position` is the camera's
 position in world space. World-to-camera uses the orientation's
 conjugate (a unit quaternion's inverse rotation, see
-`engine.physics.math3.Quat.conjugate`) -- reused rather than
+`engine.math.math3.Quat.conjugate`) -- reused rather than
 reimplemented, same rotation math the physics engine already relies on.
 
 Distortion model: standard Brown-Conrady (radial k1/k2/k3 + tangential

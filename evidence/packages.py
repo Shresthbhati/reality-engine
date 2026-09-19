@@ -206,26 +206,24 @@ class EvidenceAsset:
     def to_evidence_item(self) -> EvidenceItem:
         """Bridge to the session layer (the exact conversion
         EvidencePackage.to_evidence_items uses per asset, factored out
-        so the session store can mirror individual assets)."""
+        so the session store can mirror individual assets).
+
+        Measured quality metrics travel in metadata["quality"] -- the
+        robustness/admission layer classifies items from them; an
+        empty quality dict stays absent so 'no metrics' remains
+        distinguishable from 'measured, unremarkable'."""
+        metadata = dict(self.sensor_metadata)
+        if self.quality:
+            metadata["quality"] = dict(self.quality)
         return EvidenceItem(
             id=self.id, kind=self.kind, source_uri=self.source_uri,
             captured_at=self.acquired_at, sha256=self.sha256,
-            metadata=dict(self.sensor_metadata),
+            metadata=metadata,
             provenance=self.provenance, uncertainty=self.uncertainty,
         )
 
     def is_canonical(self) -> bool:
         return self.provenance not in (Provenance.GENERATED, Provenance.UNKNOWN, Provenance.CONFLICT)
-
-    def to_evidence_item(self) -> "EvidenceItem":
-        """Bridge to the session layer's EvidenceItem shape (the one
-        reconstruction backends already consume)."""
-        return EvidenceItem(
-            id=self.id, kind=self.kind, source_uri=self.source_uri,
-            captured_at=self.acquired_at, sha256=self.sha256,
-            metadata=dict(self.sensor_metadata),
-            provenance=self.provenance, uncertainty=self.uncertainty,
-        )
 
     def to_dict(self) -> dict:
         return {
@@ -444,7 +442,9 @@ class EvidencePackage:
 
     def to_evidence_items(self) -> List[EvidenceItem]:
         """Bridge to the existing session layer: every asset becomes the
-        EvidenceItem shape reconstruction backends already consume."""
+        EvidenceItem shape reconstruction backends already consume, with
+        measured quality metrics in metadata["quality"] (carried by
+        EvidenceAsset.to_evidence_item)."""
         return [a.to_evidence_item() for a in self.all_assets()]
 
     def to_dict(self) -> dict:

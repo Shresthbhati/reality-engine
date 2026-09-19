@@ -486,3 +486,58 @@ class TestSerialization:
         }
         assert d["kind"] == "photo"
         assert d["provenance"] == "OBSERVED"
+
+
+class TestQualityMetricsSurviveTheBridge:
+    """Importer-measured pixel metrics live on EvidenceAsset.quality;
+    the EvidenceItem bridges MUST carry them into metadata["quality"]
+    -- otherwise the robustness classifier sees nothing on real
+    imported captures and the admission gate gates nothing."""
+
+    def _package_with_quality(self, quality):
+        builder = _builder("qual")
+        builder.add_payload(
+            _jpeg(0x33), kind=EvidenceKind.PHOTO, source=_CAM,
+            source_uri="a/q.jpg", acquired_at=3.0,
+            quality=quality,
+        )
+        return builder.build()
+
+    def test_package_bridge_carries_quality(self):
+        pkg = self._package_with_quality({"laplacian_variance": 1200.0, "measured": 1.0})
+        items = pkg.to_evidence_items()
+        assert items[0].metadata.get("quality") == {"laplacian_variance": 1200.0, "measured": 1.0}
+
+    def test_asset_bridge_carries_quality(self):
+        pkg = self._package_with_quality({"clipped_fraction": 0.7, "measured": 1.0})
+        asset = next(iter(pkg.assets.values()))
+        item = asset.to_evidence_item()
+        assert item.metadata.get("quality") == {"clipped_fraction": 0.7, "measured": 1.0}
+
+    def test_unmeasured_quality_still_travels(self):
+        pkg = self._package_with_quality({"measured": 0.0, "quality_note": "pixel decode failed"})
+        item = pkg.to_evidence_items()[0]
+        assert item.metadata["quality"]["measured"] == 0.0
+
+    def test_no_quality_means_no_quality_key(self):
+        pkg = self._package_with_quality({})
+        item = pkg.to_evidence_items()[0]
+        assert "quality" not in item.metadata
+
+    def test_bridged_quality_drives_classification(self):
+        from evidence.importers import EvidenceKind as EK
+        from reconstruction.robustness import (
+            ACCEPTED, DEGRADED, FAILED, REJECTED, UNRESOLVED, classify_evidence_items,
+        )
+        builder = _builder("mix")
+        builder.add_payload(_jpeg(0x41), kind=EK.PHOTO, source=_CAM, source_uri="a/sharp.jpg",
+                            quality={"laplacian_variance": 1200.0, "measured": 1.0})
+        builder.add_payload(_jpeg(0x42), kind=EK.PHOTO, source=_CAM, source_uri="a/blur.jpg",
+                            quality={"laplacian_variance": 5.0, "measured": 1.0})
+        builder.add_payload(_png(0x43), kind=EK.PHOTO, source=_CAM, source_uri="a/dead.png",
+                            quality={"measured": 0.0, "quality_note": "pixel decode failed"})
+        builder.add_payload(_png(0x44), kind=EK.PHOTO, source=_CAM, source_uri="a/bare.png")
+        outcomes = {a.evidence_id: a.outcome
+                    for a in classify_evidence_items(builder.build().to_evidence_items()).admissions}
+        got = sorted(outcomes.values())
+        assert got == sorted([ACCEPTED, REJECTED, FAILED, UNRESOLVED])

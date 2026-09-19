@@ -1,8 +1,8 @@
 # cli
 
 `reality` -- a headless command-line client of `sdk.reality`. Every
-subcommand is a direct call into the SDK; the CLI adds no logic of its
-own beyond argument parsing and file I/O.
+subcommand is a direct call into the SDK/engine; the CLI adds no logic of
+its own beyond argument parsing and file I/O.
 
 `pip install .` (or `pip install -e .`) installs `reality` as a real
 console-script entry point (`[project.scripts]` in `pyproject.toml`,
@@ -11,13 +11,26 @@ needed, and no repo checkout on `PYTHONPATH` required once installed:
 
 ```
 reality ingest <photos-folder> -o package.json
+reality session create <id> -o <session-dir>
+reality session add-source <session-dir> <path>
+reality session list <session-dir>
+reality session inspect <session-dir>
+reality session inspect-source <session-dir> <source-id>
+reality session export-package <session-dir> -o package.json
+reality compile <dataset> [-o pipeline_out] [--no-depth] [--no-mesh]
 reality reconstruct package.json -o world.json [--colmap-binary PATH] [--gpu] [--no-real-geometry]
 reality validate world.json
 reality diff before.json after.json
 reality export world.json --format gltf|usda|blender -o out.file
-reality physics world.json
+reality register <source> <target> -o result.json --from-frame A --to-frame B [--anchors a.json]
 reality query nearest world.json <x> <y> <z> [--k N]
 reality query contents world.json <entity-id>
+reality store save world.json --store <dir> [--parent V] [--version-id V]
+reality store load --store <dir> --version V -o world.json
+reality store list --store <dir>
+reality store verify --store <dir> --version V
+reality inspect world.json [--entity <id>]
+reality viewer --worldir worldir.json --points points.ply --cameras cameras.json -o viewer.html
 ```
 
 The `python -m apps.cli.main ...` form (equivalent, useful when running
@@ -59,4 +72,5 @@ per-entity geometry instead of the placeholder cube. If
 with `--no-real-geometry`, or predates this feature), every format
 falls back to its placeholder-shape behavior exactly as before.
 
-Tests: `tests/test_cli.py`.
+Tests: `tests/test_cli.py`, `tests/test_cli_vertical_slice.py` (integration),
+`tests/test_vertical_slice_e2e.py` (end-to-end, fake backend).

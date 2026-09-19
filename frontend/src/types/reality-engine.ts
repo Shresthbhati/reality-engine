@@ -635,3 +635,118 @@ export interface DetailProvenanceRecord {
   geometryLOD: 'MACRO_MASSING' | 'SURFACE_FACET' | 'HIGH_FREQ_RELIEF' | 'MICRO_DISPLACEMENT';
 }
 
+// ─── Global Modes (Visual Source of Truth) ───────────────────────────────────
+
+export type GlobalMode =
+  | 'EXPLORE'
+  | 'INSPECT'
+  | 'EDIT'
+  | 'CAPTURE'
+  | 'BUILD'
+  | 'REVIEW';
+
+// ─── Global Spatial Scales (10 Continuous LOD Scales) ─────────────────────────
+
+export type SpatialScale =
+  | 'ROOM'
+  | 'BUILDING'
+  | 'STREET'
+  | 'PLOT'
+  | 'BLOCK'
+  | 'MULTI-BLOCK'
+  | 'LOCALITY'
+  | 'WARD'
+  | 'DISTRICT'
+  | 'CITY';
+
+export interface SpatialScaleInfo {
+  scale: SpatialScale;
+  label: string;
+  approxDistance: string;
+  typicalUnits: string;
+  defaultLOD: number;
+}
+
+export const SPATIAL_SCALES: SpatialScaleInfo[] = [
+  { scale: 'ROOM', label: 'Room', approxDistance: '0 – 10 m', typicalUnits: 'mm / cm', defaultLOD: 4 },
+  { scale: 'BUILDING', label: 'Building', approxDistance: '10 – 50 m', typicalUnits: 'cm', defaultLOD: 3 },
+  { scale: 'STREET', label: 'Street', approxDistance: '50 – 200 m', typicalUnits: 'm', defaultLOD: 3 },
+  { scale: 'PLOT', label: 'Plot', approxDistance: '100 – 300 m', typicalUnits: 'm', defaultLOD: 2 },
+  { scale: 'BLOCK', label: 'Block', approxDistance: '200 – 1,000 m', typicalUnits: 'm', defaultLOD: 2 },
+  { scale: 'MULTI-BLOCK', label: 'Multi-Block', approxDistance: '1 – 3 km', typicalUnits: 'm', defaultLOD: 2 },
+  { scale: 'LOCALITY', label: 'Locality', approxDistance: '3 – 8 km', typicalUnits: 'm / km', defaultLOD: 1 },
+  { scale: 'WARD', label: 'Ward', approxDistance: '5 – 15 km', typicalUnits: 'km', defaultLOD: 1 },
+  { scale: 'DISTRICT', label: 'District', approxDistance: '15 – 40 km', typicalUnits: 'km', defaultLOD: 1 },
+  { scale: 'CITY', label: 'City', approxDistance: '40+ km', typicalUnits: 'km', defaultLOD: 0 },
+];
+
+// ─── UI Notifications & Toast System ──────────────────────────────────────────
+
+export type NotificationType = 'info' | 'success' | 'warning' | 'error' | 'pipeline';
+
+export interface UINotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  timestamp: string;
+  durationMs?: number;
+  actionLabel?: string;
+  onAction?: () => void;
+  metadata?: Record<string, unknown>;
+}
+
+// ─── World Navigation Categories (Left Navigation Panel) ──────────────────────
+
+export interface WorldItem {
+  id: string;
+  name: string;
+  versionTag: string;
+  status: 'ACTIVE' | 'ARCHIVED' | 'PROCESSING';
+  coverageKm2?: number;
+  lastUpdated?: string;
+}
+
+export interface CaptureSessionItem {
+  id: string;
+  title: string;
+  sensorType: 'LASER' | 'DRONE' | 'MOBILE' | 'SATELLITE' | 'GROUND';
+  date: string;
+  frameCount?: number;
+  status: 'ALIGNED' | 'PENDING' | 'WARNING';
+}
+
+export interface EvidenceCategoryItem {
+  id: string;
+  title: string;
+  iconName: string;
+  count: number;
+  unit: string;
+}
+
+export interface PlaceItem {
+  id: string;
+  name: string;
+  category: string;
+  scale: SpatialScale;
+  coordinates: [number, number];
+}
+
+export interface BookmarkItem {
+  id: string;
+  title: string;
+  timestamp: string;
+  viewState?: {
+    scale: SpatialScale;
+    position: Vec3;
+  };
+}
+
+export interface WorldVersionItem {
+  id: string;
+  label: string;
+  tag: string;
+  isCurrent: boolean;
+  date: string;
+}
+

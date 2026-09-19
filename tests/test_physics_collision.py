@@ -1,12 +1,16 @@
 import pytest
+pytestmark = pytest.mark.physics
 
-from engine.physics.collision.broadphase import body_pairs
-from engine.physics.collision.narrowphase import box_vs_box, box_vs_plane, sphere_vs_plane, sphere_vs_sphere
-from engine.physics.collision.raycast import ray_vs_box, ray_vs_plane, ray_vs_sphere
-from engine.physics.collision.shapes import Box, Plane, Sphere
-from engine.physics.math3 import Vec3
-
-
+try:
+    from engine.physics.collision.broadphase import body_pairs
+    from engine.physics.collision.narrowphase import box_vs_box, box_vs_plane, sphere_vs_plane, sphere_vs_sphere
+    from engine.physics.collision.raycast import ray_vs_box, ray_vs_plane, ray_vs_sphere
+    from engine.physics.collision.shapes import Box, Plane, Sphere
+    from engine.physics.math3 import Vec3
+    
+    
+except ImportError:
+    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 def test_sphere_vs_sphere_overlap():
     a = Sphere(1.0)
     b = Sphere(1.0)

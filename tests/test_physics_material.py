@@ -1,8 +1,12 @@
 import pytest
+pytestmark = pytest.mark.physics
 
-from engine.physics.materials import CANONICAL_MATERIALS, PhysicsMaterial
-
-
+try:
+    from engine.physics.materials import CANONICAL_MATERIALS, PhysicsMaterial
+    
+    
+except ImportError:
+    pytest.skip("engine.physics module not available - requires reality-engine-child", allow_module_level=True)
 def test_canonical_materials_present():
     for name in ("concrete", "steel", "wood", "glass", "rubber", "ice"):
         assert name in CANONICAL_MATERIALS

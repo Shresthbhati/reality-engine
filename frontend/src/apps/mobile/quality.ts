@@ -84,6 +84,42 @@ export interface AssessResult {
 }
 
 
+const T = QUALITY_THRESHOLDS;
+
+/**
+ * The triage decision, isolated from pixel decoding so it is deterministic and
+ * directly testable: metrics in, verdict + machine-checkable reasons out.
+ * Blur or exposure failure dominates; a frame that duplicates the previous one
+ * is REDUNDANT rather than REJECTED (duplicates are not bad evidence, they are
+ * unnecessary evidence — the distinction the field user acts on).
+ */
+export function classifyQuality(metrics: FrameQuality): { verdict: FrameVerdict; reasons: QualityReason[] } {
+  const { sharpness, exposure, clippedRatio, diffVsPrevious } = metrics;
+  const reasons: QualityReason[] = [];
+  const blurry = sharpness < T.sharpnessMin;
+  const badExposure =
+    exposure < T.exposureMin || exposure > T.exposureMax || clippedRatio > T.clippedMax;
+
+  if (diffVsPrevious !== null && diffVsPrevious < T.redundantDiffMax) {
+    reasons.push('duplicate_of_previous');
+    if (blurry) reasons.push('sharpness_low');
+    if (badExposure) reasons.push(exposure > 0.5 ? 'overexposed' : 'underexposed');
+    return { verdict: 'REDUNDANT', reasons };
+  }
+  if (blurry || badExposure) {
+    if (blurry) reasons.push('sharpness_low');
+    if (badExposure) reasons.push(exposure > 0.5 ? 'overexposed' : 'underexposed');
+    return { verdict: 'REJECTED', reasons };
+  }
+  reasons.push('sharpness_ok', 'exposure_ok');
+  if (diffVsPrevious !== null && diffVsPrevious < T.novelDiffMin) {
+    reasons.push('similar_to_previous');
+  } else if (diffVsPrevious === null) {
+    reasons.push('no_reference_available');
+  }
+  return { verdict: 'USEFUL', reasons };
+}
+
 export async function assessFrame(input: AssessInput): Promise<AssessResult> {
   const { data: gray, w, h } = await blobToGrayPixels(input.blob);
 
@@ -95,46 +131,16 @@ export async function assessFrame(input: AssessInput): Promise<AssessResult> {
     sum += v;
     if (v >= 0.99 || v <= 0.01) clipped++;
   }
-  const exposure = sum / gray.length;
-  const clippedRatio = clipped / gray.length;
-  const sharpness = laplacianVariance(gray, w, h);
-  const T = QUALITY_THRESHOLDS;
-
-  const diffVsPrevious =
-    input.previousGray !== null ? grayDiff(gray, input.previousGray.data) : null;
-
-  const reasons: QualityReason[] = [];
-  let verdict: FrameVerdict;
-
-  const blurry = sharpness < T.sharpnessMin;
-  const badExposure =
-    exposure < T.exposureMin || exposure > T.exposureMax || clippedRatio > T.clippedMax;
-
-  if (diffVsPrevious !== null && diffVsPrevious < T.redundantDiffMax) {
-    verdict = 'REDUNDANT';
-    reasons.push('duplicate_of_previous');
-    if (blurry) reasons.push('sharpness_low');
-    if (badExposure) reasons.push(exposure > 0.5 ? 'overexposed' : 'underexposed');
-  } else if (blurry || badExposure) {
-    verdict = 'REJECTED';
-    if (blurry) reasons.push('sharpness_low');
-    if (badExposure) reasons.push(exposure > 0.5 ? 'overexposed' : 'underexposed');
-  } else {
-    verdict = 'USEFUL';
-    reasons.push('sharpness_ok', 'exposure_ok');
-    if (diffVsPrevious !== null && diffVsPrevious < T.novelDiffMin) {
-      reasons.push('similar_to_previous');
-    } else if (diffVsPrevious === null) {
-      reasons.push('no_reference_available');
-    }
-  }
-
-  return {
-    quality: { sharpness, exposure, clippedRatio, diffVsPrevious },
-    verdict,
-    reasons,
-    gray: { data: gray, w, h },
+  const quality: FrameQuality = {
+    sharpness: laplacianVariance(gray, w, h),
+    exposure: sum / gray.length,
+    clippedRatio: clipped / gray.length,
+    diffVsPrevious: input.previousGray !== null ? grayDiff(gray, input.previousGray.data) : null,
   };
+
+  const { verdict, reasons } = classifyQuality(quality);
+
+  return { quality, verdict, reasons, gray: { data: gray, w, h } };
 }
 
 /** Human-glanceable verdict line, derived from computed state only. */

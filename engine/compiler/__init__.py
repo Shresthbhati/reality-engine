@@ -1,5 +1,9 @@
-"""World compiler public API (spec sec 16/24)."""
-
+from engine.compiler.incremental_adapter import (
+    IncrementalUpdatePackage,
+    ReconstructionAdapterError,
+    adapt_reconstruction_to_incremental_update,
+    apply_reconstruction_update,
+)
 from engine.compiler.world_compiler import (
     CompileDiagnostics,
     CompileInputError,
@@ -14,4 +18,8 @@ __all__ = [
     "CompileOptions",
     "WorldValidationGateError",
     "compile_reconstruction_to_world",
+    "IncrementalUpdatePackage",
+    "ReconstructionAdapterError",
+    "adapt_reconstruction_to_incremental_update",
+    "apply_reconstruction_update",
 ]

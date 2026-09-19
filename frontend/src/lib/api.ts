@@ -148,9 +148,13 @@ export function convertBackendEntityToEntity(
     }
   }
 
+  const sessionIdsFromObs = b.observations?.map((o) => o.frame_id).filter(Boolean) ?? [];
+  const entitySessionId = b.custom_properties?.session_id ? [String(b.custom_properties.session_id)] : [];
+  const allSessionIds = Array.from(new Set([...entitySessionId, ...sessionIdsFromObs]));
+
   return {
     id: b.id,
-    name: b.id.replace(/-/g, " "),
+    name: (b.custom_properties?.name as string) ?? b.id.replace(/-/g, " "),
     type: mapBackendTypeToEntityType(b.type),
     childIds: b.relationships
       .filter((r) => r.kind.toLowerCase() === "contains" || r.kind.toLowerCase() === "parent_of")
@@ -174,7 +178,7 @@ export function convertBackendEntityToEntity(
       bounds: primaryBounds,
     },
     representations: b.geometry_ids.length > 0 ? ["MESH"] : ["POINT_CLOUD"],
-    sessionIds: ["sess-001"],
+    sessionIds: allSessionIds.length > 0 ? allSessionIds : ["unknown"],
     observationCount: b.observations.length,
     evidenceCount: b.observations.length,
   };

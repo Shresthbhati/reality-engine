@@ -88,6 +88,7 @@ from reconstruction.backend.interface import (
 )
 from reconstruction.calibration.transforms import RigidTransform
 from reconstruction.robustness import ACCEPTED, DEGRADED, FAILED, classify_evidence_items
+from perception.contract import ReconstructionContract
 from registration.cross_session import SessionAlignment
 from world_ir.artifact_store import FileArtifactStore
 from world_ir.coordinates import Frame
@@ -916,3 +917,78 @@ class TestMobileToDesktopEndToEnd:
         assert load_payload["entities"][0]["custom_properties"]["session_id"] == sess_id
         assert load_payload["entities"][0]["observations"][0]["data_uri"] == f"evidence://{evidence_items[0].id}"
         assert load_payload["global_provenance"] == "RECONSTRUCTED"
+
+
+class TestReconstructionContractIntegration:
+    """P1: Consumes FreeBuff's canonical ReconstructionContract directly into WorldOS."""
+
+    def test_reconstruction_contract_to_worldos_tiled_store(self, tmp_path):
+        store = WorldStore(tmp_path / "store")
+        base_world = _load_real_structural_world()
+        recon = _load_real_room_reconstruction_result()
+
+        # 1. Compose FreeBuff's canonical ReconstructionContract (V1 surface)
+        contract = ReconstructionContract(
+            contract_version="v1",
+            status="success",
+            result=recon,
+            diagnostics={
+                "solver": "COLMAP-MVS",
+                "inlier_ratio": 0.94,
+                "reprojection_error_px": 0.42,
+            },
+            detail="",
+        )
+        assert contract.to_dict()["status"] == "success"
+
+        # 2. Feed ReconstructionContract directly into apply_reconstruction_update
+        res = apply_reconstruction_update(
+            base_world=base_world,
+            reconstruction=contract,
+            session_id="sess-contract-001",
+            target_entity_id="struct-plane-000",
+            artifact_store=store._store,
+            tile_size=2.0,
+        )
+
+        world_v2 = res.new_world
+        assert world_v2 is not None
+        target_entity = world_v2.entities["struct-plane-000"]
+        assert target_entity.custom_properties["registration_status"] == "success"
+        assert target_entity.custom_properties["reconstruction_contract"]["status"] == "success"
+        assert target_entity.custom_properties["reconstruction_contract"]["diagnostics"]["solver"] == "COLMAP-MVS"
+
+        # 3. Store into WorldStore and query lazily
+        save_version_tiled(
+            store,
+            world_v2,
+            parent=None,
+            version_id="v-contract-001",
+            incremental_result=res,
+            tile_size=2.0,
+        )
+
+        handle = open_version(store, "v-contract-001")
+        assert handle.manifest.version_id == "v-contract-001"
+        assert len(handle.list_tiles()) > 0
+
+    def test_reconstruction_contract_failure_refusal(self):
+        base_world = _load_real_structural_world()
+
+        # Failed contract carrying structured diagnostics but zero result payload
+        failed_contract = ReconstructionContract(
+            contract_version="v1",
+            status="failed",
+            result=None,
+            diagnostics={"error_stage": "feature_matching", "inliers": 3},
+            detail="Feature matches below minimal geometric consensus threshold",
+        )
+
+        with pytest.raises(ReconstructionAdapterError, match="Feature matches below"):
+            apply_reconstruction_update(
+                base_world=base_world,
+                reconstruction=failed_contract,
+                session_id="sess-contract-fail",
+                target_entity_id="struct-plane-000",
+            )
+

@@ -22,6 +22,11 @@ import os
 import sys
 from pathlib import Path
 
+# Ensure repo root is always at the front of sys.path, avoiding site-packages shadowing
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 
 def _store_path() -> Path:
     env = os.environ.get("REALITY_STORE_PATH")

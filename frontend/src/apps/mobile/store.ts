@@ -15,10 +15,35 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CaptureTask, FieldSession, FrameRecord, FrameVerdict, SessionSummary } from './types';
+import type {
+  CaptureTask,
+  CaptureTaskStatus,
+  FieldSession,
+  FrameRecord,
+  FrameVerdict,
+  QualityReason,
+  SessionSummary,
+} from './types';
+import { TASK_STATUSES } from './types';
 import { assessFrame, verdictMessage, type AssessResult } from './quality';
 import { bytesToBlob, vaultGet, vaultPut } from './frameVault';
 import { MOBILE_TASK_SCHEMA, parseMobileBundle, sha256HexBytes } from './bundle';
+
+/**
+ * The frame-triage vocabulary shared with the engine. A task file may only
+ * carry these reason codes in its typed `reasons` field, so a malformed or
+ * newer engine file cannot inject values this app's quality model cannot show.
+ */
+const QUALITY_REASONS = new Set<QualityReason>([
+  'sharpness_ok',
+  'sharpness_low',
+  'exposure_ok',
+  'overexposed',
+  'underexposed',
+  'duplicate_of_previous',
+  'similar_to_previous',
+  'no_reference_available',
+]);
 
 export interface FrameCaptureInput {
   blob: Blob;
@@ -40,6 +65,41 @@ export interface ImportBundleResult {
 export function openTasksFor(tasks: CaptureTask[], sessionId: string | null): CaptureTask[] {
   if (!sessionId) return [];
   return tasks.filter((t) => t.sessionId === sessionId && t.status === 'OPEN');
+}
+
+/**
+ * A task status this app cannot represent is a version mismatch and must be
+ * reported, not coerced: guessing could either hide a live request or send the
+ * operator back out for something the engine already considers serviced.
+ */
+export function parseTaskStatus(value: unknown, taskId: string): CaptureTaskStatus {
+  if (typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value)) {
+    return value as CaptureTaskStatus;
+  }
+  throw new Error(
+    `Task ${taskId || '(unnamed)'} has unsupported status ${JSON.stringify(value)} ` +
+      `(this build understands: ${TASK_STATUSES.join(', ')}) — the engine file is newer or malformed`,
+  );
+}
+
+/**
+ * Reconcile an engine-issued task with the copy this device already holds.
+ *
+ * The engine's `SUPERSEDED` retraction is derived from *measured* evidence (a
+ * newer bundle proved the gap covered) and therefore always wins. Otherwise the
+ * device's own completion/cancel work wins — the engine cannot see local
+ * progress until the next handoff, and a re-emitted file must never erase it.
+ */
+export function mergeTaskState(known: CaptureTask, incoming: CaptureTask): CaptureTask {
+  const superseded = incoming.status === 'SUPERSEDED';
+  return {
+    ...known,
+    ...incoming,
+    status: superseded ? 'SUPERSEDED' : known.status,
+    guidance: incoming.guidance || known.guidance,
+    completedByFrameIds: known.completedByFrameIds,
+    completedAt: known.completedAt,
+  };
 }
 
 export interface MobileStore {
@@ -300,21 +360,68 @@ export const useMobileStore = create<MobileStore>()(
         }
         if (!Array.isArray(root.tasks)) throw new Error("Task file is missing a 'tasks' array");
         const incoming: CaptureTask[] = (root.tasks as Record<string, unknown>[])
-          .map((t) => ({
-            taskId: String(t.taskId ?? ''),
-            sessionId: String(t.sessionId ?? ''),
-            createdAt: String(t.createdAt ?? ''),
-            createdBy: String(t.createdBy ?? 'engine'),
-            targetFrameIds: Array.isArray(t.targetFrameIds) ? (t.targetFrameIds as string[]) : [],
-            reasons: (t.reasons ?? []) as CaptureTask['reasons'],
-            guidance: String(t.guidance ?? ''),
-            status: (t.status ?? 'OPEN') as CaptureTask['status'],
-            completedByFrameIds: [],
-            completedAt: null,
-          }))
+          .map((t) => {
+            const region = (t.region ?? {}) as Record<string, unknown>;
+            const viewpoint = t.desiredViewpoint as Record<string, unknown> | null | undefined;
+            return {
+              taskId: String(t.taskId ?? ''),
+              sessionId: String(t.sessionId ?? ''),
+              createdAt: String(t.createdAt ?? ''),
+              createdBy: String(t.createdBy ?? 'engine'),
+              kind: (t.kind ?? 'reframe') as CaptureTask['kind'],
+              region: {
+                type: (region.type ?? 'scene') as CaptureTask['region']['type'],
+                frameId: typeof region.frameId === 'string' ? region.frameId : undefined,
+                octant: typeof region.octant === 'string' ? region.octant : undefined,
+                headingDeg: typeof region.headingDeg === 'number' ? region.headingDeg : undefined,
+                label: String(region.label ?? ''),
+              },
+              // The engine only sends a viewpoint when it wants pixels. It never
+              // sends heading/position unless the bundle measured them, so
+              // poseAvailable is carried through verbatim.
+              desiredViewpoint: viewpoint
+                ? {
+                    description: String(viewpoint.description ?? ''),
+                    sourceFrameId:
+                      typeof viewpoint.sourceFrameId === 'string' ? viewpoint.sourceFrameId : undefined,
+                    headingDeg: typeof viewpoint.headingDeg === 'number' ? viewpoint.headingDeg : undefined,
+                    poseAvailable: viewpoint.poseAvailable === true,
+                  }
+                : null,
+              evidenceType: String(t.evidenceType ?? 'photo'),
+              priority: (t.priority ?? 'medium') as CaptureTask['priority'],
+              guidance: String(t.guidance ?? ''),
+              reason: String(t.reason ?? ''),
+              reasonCodes: Array.isArray(t.reasonCodes) ? (t.reasonCodes as string[]) : [],
+              expectedCoverageContribution: String(t.expectedCoverageContribution ?? ''),
+              targetFrameIds: Array.isArray(t.targetFrameIds) ? (t.targetFrameIds as string[]) : [],
+              reasons: Array.isArray(t.reasons)
+                ? (t.reasons as unknown[]).filter((r): r is QualityReason => QUALITY_REASONS.has(r as QualityReason))
+                : [],
+              status: parseTaskStatus(t.status ?? 'OPEN', String(t.taskId ?? '')),
+              supersededBy:
+                t.supersededBy && typeof t.supersededBy === 'object'
+                  ? {
+                      bundleId: String((t.supersededBy as Record<string, unknown>).bundleId ?? ''),
+                      exportedAt: String((t.supersededBy as Record<string, unknown>).exportedAt ?? ''),
+                      reason: String((t.supersededBy as Record<string, unknown>).reason ?? ''),
+                    }
+                  : undefined,
+              completedByFrameIds: [],
+              completedAt: null,
+            };
+          })
           .filter((t) => t.taskId !== '' && t.sessionId !== '');
         set((s) => ({
-          tasks: [...incoming.filter((t) => !s.tasks.some((x) => x.taskId === t.taskId)), ...s.tasks],
+          // A re-emitted engine file must never erase work already done on this
+          // device, and a measured retraction must never be undone by it.
+          tasks: [
+            ...incoming.map((t) => {
+              const known = s.tasks.find((x) => x.taskId === t.taskId);
+              return known ? mergeTaskState(known, t) : t;
+            }),
+            ...s.tasks.filter((x) => !incoming.some((t) => t.taskId === x.taskId)),
+          ],
         }));
         return incoming.length;
       },

@@ -22,7 +22,9 @@ export type ProvenanceState =
   | "DERIVED"         // computed from other entities
   | "SYNTHETIC"       // procedurally generated
   | "IMPORTED"        // from external dataset
-  | "UNKNOWN";
+  | "UNKNOWN"
+  | "PENDING"         // awaiting validation
+  | "FAILED_VALIDATION"; // failed quality gates
 
 export type ConfidenceLevel = "HIGH" | "MID" | "LOW" | "NONE";
 
@@ -116,11 +118,32 @@ export interface Entity {
   visibility: EntityVisibility;
   lock: EntityLock;
   tags: string[];
-  metadata: Record<string, unknown>;
+  metadata: Record<string, unknown> & {
+    bounds?: {
+      min: [number, number, number];
+      max: [number, number, number];
+      center: [number, number, number];
+      extent: [number, number, number];
+    };
+    observations?: Array<{
+      id: string;
+      sensor_type: string;
+      timestamp: number;
+      frame_id: string;
+      data_uri: string;
+      confidence: number;
+    }>;
+    relationships?: Array<{
+      kind: string;
+      target_id: string;
+      confidence: number;
+    }>;
+  };
   representations: RepresentationType[];
   sessionIds: SessionId[];   // which sessions contributed to this entity
   observationCount: number;
   evidenceCount: number;
+  scaleLevel?: ScaleLevel;
 }
 
 export type RepresentationType =
@@ -183,6 +206,12 @@ export interface Session {
   quality?: number;          // 0.0 – 1.0
   worldFragmentId?: string;
   buildIds: BuildId[];
+  // Extended fields for health dashboard
+  gnssMode?: "RTK_FIX" | "RTK_FLOAT" | "PPK" | "NONE";
+  bundleAdjustmentResidual?: number;
+  imuCalibrated?: boolean;
+  cameraCalibrated?: boolean;
+  captureDurationSec?: number;
 }
 
 // ─── World ────────────────────────────────────────────────────────────────────
@@ -273,6 +302,10 @@ export interface Build {
   startedAt?: string;
   completedAt?: string;
   logs: LogEntry[];
+  // Extended fields for health dashboard
+  name?: string;
+  errorMessage?: string;
+  worldVersionId?: string;
 }
 
 // ─── Evidence ─────────────────────────────────────────────────────────────────
@@ -440,6 +473,8 @@ export interface Measurement {
   confidence: number;
   timestamp: string;
   method?: string;
+  calibrationStatus?: "CALIBRATED" | "UNVERIFIED" | "UNAVAILABLE";
+  calibrationAvailable?: boolean;
 }
 
 // ─── Benchmark Corpus Types ─────────────────────────────────────────────────

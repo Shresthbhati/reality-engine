@@ -35,6 +35,7 @@ import type {
   GlobalMode,
   SpatialScale,
   UINotification,
+  Vec3,
 } from "@/types/reality-engine";
 import { BENCHMARK_STRUCTURES } from "./benchmark-corpus";
 
@@ -650,6 +651,13 @@ interface RealityEngineStore {
   measurements: Measurement[];
   activeMeasurementTool: MeasurementType | null;
 
+  // ── Interactive Measurement State (Point-to-Point)
+  measurementPoints: Array<{ id: string; position: Vec3; label: string }>;
+  addMeasurementPoint: (position: Vec3) => void;
+  clearMeasurementPoints: () => void;
+  activeMeasurement: Measurement | null;
+  setActiveMeasurement: (measurement: Measurement | null) => void;
+
   // ── Studio Workstation Panels (Collapsible & Progressive)
   outlinerCollapsed: boolean;
   inspectorCollapsed: boolean;
@@ -836,6 +844,10 @@ export const useREStore = create<RealityEngineStore>()(
     // ── Measurements
     measurements: MOCK_MEASUREMENTS,
     activeMeasurementTool: null,
+
+    // ── Interactive Measurement State
+    measurementPoints: [],
+    activeMeasurement: null,
 
     // ── Studio Workstation Panels (Collapsible & Progressive)
     outlinerCollapsed: false,
@@ -1074,6 +1086,20 @@ export const useREStore = create<RealityEngineStore>()(
 
     setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
     setActiveMeasurementTool: (activeMeasurementTool) => set({ activeMeasurementTool }),
+    
+    addMeasurementPoint: (position) => set((state) => {
+      const newPoint = {
+        id: `mp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        position,
+        label: `Point ${state.measurementPoints.length + 1}`,
+      };
+      return { measurementPoints: [...state.measurementPoints, newPoint] };
+    }),
+    
+    clearMeasurementPoints: () => set({ measurementPoints: [] }),
+    
+    setActiveMeasurement: (activeMeasurement) => set({ activeMeasurement }),
+    
     addMeasurement: (measurement) =>
       set((s) => ({ measurements: [measurement, ...s.measurements] })),
     clearMeasurements: () => set({ measurements: [] }),

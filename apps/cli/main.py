@@ -200,6 +200,80 @@ def cmd_session_export_package(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_session_ingest_mobile(args: argparse.Namespace) -> int:
+    from apps.cli.mobile_bridge import ingest_mobile_bundle_to_dir, load_mobile_bundle
+
+    bundle = load_mobile_bundle(args.bundle)
+    session = _load_session(args.session_dir)
+    report = ingest_mobile_bundle_to_dir(bundle, session, Path(args.session_dir))
+    _save_session(session, args.session_dir)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    if report["integrity_failures"]:
+        for failure in report["integrity_failures"]:
+            _eprint(f"integrity failure: {failure.get('frameId')}: {failure.get('reason')}")
+        return 1
+    if report["frames_verified"] == 0:
+        _eprint("no verified frames in bundle -- nothing was ingested")
+        return 1
+    return 0
+
+
+def cmd_session_mobile_tasks(args: argparse.Namespace) -> int:
+    from apps.cli.mobile_bridge import (
+        derive_capture_tasks,
+        load_mobile_bundle,
+        merge_capture_tasks,
+        write_capture_tasks,
+    )
+
+    bundle = load_mobile_bundle(args.bundle)
+    payload = derive_capture_tasks(bundle, max_tasks=args.max_tasks)
+    # Merge with a previously emitted task file: ids stay stable across runs
+    # and a stale bundle can never roll the measured coverage snapshot back.
+    out_path = Path(args.output)
+    merge_report: dict | None = None
+    if out_path.exists() and not args.overwrite:
+        try:
+            existing = json.loads(out_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            _eprint(f"existing task file is not valid JSON ({exc}); use --overwrite to replace it")
+            return 1
+        if not isinstance(existing, dict):
+            _eprint("existing task file is not a JSON object; use --overwrite to replace it")
+            return 1
+        payload, merge_report = merge_capture_tasks(payload, existing)
+    write_capture_tasks(payload, args.output)
+    print(
+        f"derived {len(payload['tasks'])} capture task(s) "
+        f"(coverage: {payload['coverageAnalysis'].get('state', 'UNKNOWN')}) -> {args.output}"
+    )
+    if merge_report is not None:
+        snapshot = merge_report["snapshot"]
+        print(
+            f"  coverage snapshot: {snapshot['selected']} "
+            f"({snapshot['comparison']}; bundle {merge_report['selectedBundleId'] or 'unidentified'})"
+        )
+        if merge_report["tasks_superseded"]:
+            print(
+                f"  retracted {len(merge_report['tasks_superseded'])} serviced task(s): "
+                + ", ".join(merge_report["tasks_superseded"])
+            )
+        if merge_report["staleBundle"]:
+            # Loud, not silent: the operator handed over an older measurement.
+            _eprint(
+                f"stale bundle: {args.bundle} was exported {snapshot['incomingExportedAt'] or 'at an unknown time'} "
+                f"but the task file already holds the newer snapshot from "
+                f"{snapshot['incumbentBundleId']} ({snapshot['incumbentExportedAt']}). "
+                "The persisted coverage analysis was kept; re-export from the device to refresh it."
+            )
+    for task in payload["tasks"]:
+        print(
+            f"  {task['priority']:6}\t{task['kind']:12}\t{task['taskId']}\t"
+            f"[{task.get('status', 'OPEN')}]\t{task['guidance']}"
+        )
+    return 0
+
+
 def cmd_reconstruct(args: argparse.Namespace) -> int:
     package = EvidencePackage.from_dict(json.loads(Path(args.package).read_text(encoding="utf-8")))
     evidence = package.to_evidence_items()
@@ -701,6 +775,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_session_export.add_argument("session_dir")
     p_session_export.add_argument("-o", "--output", required=True)
     p_session_export.set_defaults(func=cmd_session_export_package)
+
+    p_ingest_mobile = session_sub.add_parser(
+        "ingest-mobile",
+        help="ingest a verified re.mobile-session-bundle/v1 file from the mobile field app",
+    )
+    p_ingest_mobile.add_argument("bundle", help="path to the mobile session bundle JSON")
+    p_ingest_mobile.add_argument("session_dir", help="directory holding session.json (from `session create`)")
+    p_ingest_mobile.set_defaults(func=cmd_session_ingest_mobile)
+
+    p_mobile_tasks = session_sub.add_parser(
+        "mobile-tasks",
+        help="derive re.mobile-capture-task/v1 follow-up capture requests from a mobile bundle",
+    )
+    p_mobile_tasks.add_argument("bundle", help="path to the mobile session bundle JSON")
+    p_mobile_tasks.add_argument("-o", "--output", required=True, help="task file output path")
+    p_mobile_tasks.add_argument(
+        "--max-tasks", type=int, default=12, help="maximum tasks in one file (default: 12)"
+    )
+    p_mobile_tasks.add_argument(
+        "--overwrite", action="store_true",
+        help="replace the output file instead of merging with previously emitted tasks",
+    )
+    p_mobile_tasks.set_defaults(func=cmd_session_mobile_tasks)
 
     p_compile = sub.add_parser(
         "compile",

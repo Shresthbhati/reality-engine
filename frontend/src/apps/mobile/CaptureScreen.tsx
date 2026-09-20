@@ -31,38 +31,44 @@ export function CaptureScreen({ onExit }: { onExit: () => void }) {
   const activeTask = useMobileStore((s) => s.tasks.find((t) => t.taskId === s.activeTaskId) ?? null);
   const setActiveTask = useMobileStore((s) => s.setActiveTask);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [retryTrigger, setRetryTrigger] = useState(0);
 
-  const startCamera = useCallback(async () => {
-    setCamState('starting');
-    setCamError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 } },
-        audio: false,
-      });
+  const startCamera = useCallback(() => {
+    setRetryTrigger((c) => c + 1);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    navigator.mediaDevices?.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 } },
+      audio: false,
+    }).then(async (stream) => {
+      if (!active) {
+        for (const t of stream.getTracks()) t.stop();
+        return;
+      }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
       setCamState('live');
-    } catch (err) {
+    }).catch((err) => {
+      if (!active) return;
       setCamState('error');
       setCamError(
         (err as Error).name === 'NotAllowedError'
           ? 'Camera permission denied. Grant access in the browser to capture evidence.'
           : `Camera unavailable: ${(err as Error).message}`,
       );
-    }
-  }, []);
+    });
 
-  useEffect(() => {
-    void startCamera();
     return () => {
+      active = false;
       const v = videoRef.current;
       const stream = v?.srcObject as MediaStream | null;
       if (stream) for (const t of stream.getTracks()) t.stop();
     };
-  }, [startCamera]);
+  }, [retryTrigger]);
 
   // Real device telemetry, only when the device provides it.
   useEffect(() => {

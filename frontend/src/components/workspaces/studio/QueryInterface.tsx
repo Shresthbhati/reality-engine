@@ -154,47 +154,6 @@ export function QueryInterface({
     ? entities.get(selection.focusedEntityId)?.transform?.position 
     : { x: 0, y: 8, z: 0 };
 
-  // Execute query against real spatial index (SDK)
-  const executeQuery = useCallback(async () => {
-    setIsExecuting(true);
-    setError(null);
-    
-    try {
-      // In production: const result = await reality.query(params)
-      // For now, simulate with client-side filtering
-      await new Promise(r => setTimeout(r, 100));
-      
-      const filtered = filterEntities(params);
-      const result: QueryResult = {
-        query_id: `qry-${Date.now()}`,
-        type: params.type,
-        params: { ...params },
-        timestamp: new Date().toISOString(),
-        execution_time_ms: Math.floor(Math.random() * 50) + 10,
-        entities: filtered,
-        total_count: filtered.length,
-        metadata: {
-          spatial_index_used: true,
-          fallback_used: false,
-          partial: false,
-        },
-      };
-      
-      setResults(result);
-      setHistory(prev => [result, ...prev.slice(0, 19)]);
-      addNotification({
-        type: 'success',
-        title: 'Query Executed',
-        message: `Found ${filtered.length} entities in ${result.execution_time_ms}ms`,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Query failed');
-      addNotification({ type: 'error', title: 'Query Failed', message: String(err) });
-    } finally {
-      setIsExecuting(false);
-    }
-  }, [params, entities, addNotification]);
-
   const filterEntities = useCallback((p: QueryParams): Entity[] => {
     let filtered = Array.from(entities.values());
     
@@ -265,17 +224,57 @@ export function QueryInterface({
     return filtered;
   }, [entities]);
 
-  // Update params when query type changes
-  useEffect(() => {
-    setParams(prev => ({ ...prev, type: queryType }));
-  }, [queryType]);
-
-  // Sync camera position to point params
-  useEffect(() => {
-    if (['nearest', 'within_radius', 'contains'].includes(queryType) && cameraPosition) {
-      setParams(prev => ({ ...prev, point: { ...cameraPosition } }));
+  // Execute query against real spatial index (SDK)
+  const executeQuery = useCallback(async () => {
+    setIsExecuting(true);
+    setError(null);
+    
+    try {
+      // In production: const result = await reality.query(params)
+      // For now, simulate with client-side filtering
+      await new Promise(r => setTimeout(r, 100));
+      
+      const filtered = filterEntities(params);
+      const result: QueryResult = {
+        query_id: `qry-${Date.now()}`,
+        type: params.type,
+        params: { ...params },
+        timestamp: new Date().toISOString(),
+        execution_time_ms: Math.floor(Math.random() * 50) + 10,
+        entities: filtered,
+        total_count: filtered.length,
+        metadata: {
+          spatial_index_used: true,
+          fallback_used: false,
+          partial: false,
+        },
+      };
+      
+      setResults(result);
+      setHistory(prev => [result, ...prev.slice(0, 19)]);
+      addNotification({
+        type: 'success',
+        title: 'Query Executed',
+        message: `Found ${filtered.length} entities in ${result.execution_time_ms}ms`,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Query failed');
+      addNotification({ type: 'error', title: 'Query Failed', message: String(err) });
+    } finally {
+      setIsExecuting(false);
     }
-  }, [cameraPosition, queryType]);
+  }, [params, filterEntities, addNotification]);
+
+  const handleQueryTypeChange = useCallback((newType: QueryType) => {
+    setQueryType(newType);
+    setParams(prev => {
+      const updated: QueryParams = { ...prev, type: newType };
+      if (['nearest', 'within_radius', 'contains'].includes(newType) && cameraPosition) {
+        updated.point = { ...cameraPosition };
+      }
+      return updated;
+    });
+  }, [cameraPosition]);
 
   const saveQuery = useCallback(() => {
     const name = prompt('Save query as:', `${queryType} query`);
@@ -325,7 +324,7 @@ export function QueryInterface({
       <div className={`flex items-center gap-2 ${className}`}>
         <select
           value={queryType}
-          onChange={e => setQueryType(e.target.value as QueryType)}
+          onChange={e => handleQueryTypeChange(e.target.value as QueryType)}
           className="px-2 py-1 rounded bg-[#14161f] border border-[#1f222b] text-[10px] font-mono text-[#ededf2] focus:border-[#3d8ef7]/60 outline-none"
         >
           {Object.entries(queryTypeGroups).flatMap(([group, types]) => (
@@ -377,7 +376,7 @@ export function QueryInterface({
                   <button
                     key={t}
                     type="button"
-                    onClick={() => setQueryType(t)}
+                    onClick={() => handleQueryTypeChange(t)}
                     className={`px-2 py-1 rounded text-[10px] font-mono transition-colors ${
                       queryType === t
                         ? 'bg-[#3d8ef7] text-[#08090b] font-bold'
@@ -611,7 +610,7 @@ function renderParamInputs(
   setParams: React.Dispatch<React.SetStateAction<QueryParams>>,
   cameraPosition: Vec3 | undefined
 ) {
-  const update = (key: string, value: any) => setParams(prev => ({ ...prev, [key]: value }));
+  const update = (key: string, value: unknown) => setParams(prev => ({ ...prev, [key]: value }));
 
   const commonPoint = () => (
     <div className="space-y-1">

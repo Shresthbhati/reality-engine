@@ -21,6 +21,7 @@ Preserves:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -70,7 +71,7 @@ class IncrementalUpdatePackage:
 
 def adapt_reconstruction_to_incremental_update(
     base_world: WorldIR,
-    reconstruction: ReconstructionResult,
+    reconstruction: Union[ReconstructionResult, Any],
     *,
     session_id: str,
     target_entity_id: str,
@@ -80,11 +81,11 @@ def adapt_reconstruction_to_incremental_update(
     artifact_store: Optional[ArtifactStore] = None,
     timestamp: Optional[float] = None,
 ) -> IncrementalUpdatePackage:
-    """Adapts a FreeBuff `ReconstructionResult` into updated entities/geometries.
+    """Adapts a FreeBuff `ReconstructionResult` or `ReconstructionContract` into updated entities/geometries.
 
     Args:
         base_world: The current canonical world state (World V1).
-        reconstruction: The output of a reconstruction pass (from rescan).
+        reconstruction: The output of a reconstruction pass (ReconstructionResult or ReconstructionContract).
         session_id: Identity of the capture session.
         target_entity_id: ID of entity being updated or created.
         alignment: Optional rigid registration transform from session to world.
@@ -96,6 +97,21 @@ def adapt_reconstruction_to_incremental_update(
     Returns:
         IncrementalUpdatePackage with entities and geometries ready for `apply_incremental_update`.
     """
+    # 0. Canonical ReconstructionContract Support (P1)
+    contract_meta: Optional[Dict[str, Any]] = None
+    if hasattr(reconstruction, "contract_version") and hasattr(reconstruction, "status"):
+        if reconstruction.status == "failed" or reconstruction.result is None:
+            detail = getattr(reconstruction, "detail", "status is failed")
+            raise ReconstructionAdapterError(
+                f"Cannot adapt failed ReconstructionContract for session '{session_id}': {detail}"
+            )
+        contract_meta = reconstruction.to_dict() if hasattr(reconstruction, "to_dict") else {
+            "contract_version": reconstruction.contract_version,
+            "status": reconstruction.status,
+            "diagnostics": getattr(reconstruction, "diagnostics", {}),
+        }
+        reconstruction = reconstruction.result
+
     # 1. Input Gate: Refuse failed or empty reconstructions
     if reconstruction.registration_status == "failed":
         raise ReconstructionAdapterError(
@@ -125,6 +141,22 @@ def adapt_reconstruction_to_incremental_update(
     else:
         raise TypeError(f"Unsupported alignment type: {type(alignment)}")
 
+    expected_frame = base_world.coordinate_frame.value if hasattr(base_world.coordinate_frame, "value") else str(base_world.coordinate_frame)
+    valid_target_frames = {expected_frame, "world"}
+    if isinstance(alignment, SessionAlignment):
+        if alignment.from_session and alignment.from_session != session_id:
+            raise ReconstructionAdapterError(
+                f"Coordinate frame mismatch: alignment from '{alignment.from_session}' does not match session '{session_id}'"
+            )
+        valid_target_frames.add(alignment.to_session)
+
+    if isinstance(transform, RigidTransform) and transform.to_frame:
+        target_frame = transform.to_frame.value if hasattr(transform.to_frame, "value") else str(transform.to_frame)
+        if target_frame not in valid_target_frames:
+            raise ReconstructionAdapterError(
+                f"Coordinate frame mismatch: alignment targets '{target_frame}', but world is in '{expected_frame}'"
+            )
+
     # 3. Transform Points into Base World Frame
     transformed_points: List[Tuple[float, float, float]] = []
     confidences: List[float] = []
@@ -132,6 +164,10 @@ def adapt_reconstruction_to_incremental_update(
 
     for pt in reconstruction.points:
         px, py, pz = pt.position
+        if not (math.isfinite(px) and math.isfinite(py) and math.isfinite(pz)):
+            raise ReconstructionAdapterError(
+                f"Malformed point coordinates (non-finite): {(px, py, pz)}"
+            )
         if transform is not None:
             if isinstance(transform, RigidTransform):
                 v_out = transform.apply(Vec3(px, py, pz))
@@ -216,6 +252,9 @@ def adapt_reconstruction_to_incremental_update(
     custom_props["session_id"] = session_id
     custom_props["source_evidence_ids"] = source_evidence_ids
     custom_props["point_count"] = len(transformed_points)
+    custom_props["registration_status"] = reconstruction.registration_status
+    if contract_meta:
+        custom_props["reconstruction_contract"] = contract_meta
 
     # Centroid for transform position
     centroid_x = (min_x + max_x) / 2.0
@@ -252,7 +291,7 @@ def adapt_reconstruction_to_incremental_update(
 
 def apply_reconstruction_update(
     base_world: WorldIR,
-    reconstruction: ReconstructionResult,
+    reconstruction: Union[ReconstructionResult, Any],
     *,
     session_id: str,
     target_entity_id: str,

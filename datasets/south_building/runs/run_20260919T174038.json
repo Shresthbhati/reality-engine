@@ -1,0 +1,43 @@
+{
+  "dataset": "south-building (committed 32-image subset)",
+  "dataset_identity": "South Building, UNC Chapel Hill; 128 real photographs, single Panasonic DMC-TZ3 camera",
+  "python": "3.14.7",
+  "colmap_version": "COLMAP 4.2.0 (Commit be5e291 on 2026-08-31 with CUDA)",
+  "gpu": false,
+  "ingested": {
+    "imported": 32,
+    "duplicates_skipped": 0,
+    "unhandled": 0,
+    "items": 32
+  },
+  "admission": {
+    "accepted": 30,
+    "degraded": 2,
+    "unresolved": 0,
+    "failed": 0,
+    "rejected": 0
+  },
+  "reconstruction": {
+    "backend": "ColmapReconstructionBackend",
+    "status": "partial",
+    "duration_s": 161.5,
+    "poses": 22,
+    "points": 4391
+  },
+  "outcome": {
+    "outcome": "degraded",
+    "reason": "registration_status=partial: result usable but incomplete",
+    "registration_status": "partial"
+  },
+  "gt_comparison": {
+    "common_images": 0
+  },
+  "fusion": {
+    "observations": 22,
+    "fused_value": 0.1452,
+    "fused_precision": 0.01066,
+    "fused_provenance": "CONFLICT",
+    "conflicts_preserved": 197
+  },
+  "total_runtime_s": 162.8
+}

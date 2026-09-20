@@ -1,0 +1,997 @@
+{
+  "dataset": "south-building (COLMAP example set derivative)",
+  "identity": "South Building, UNC Chapel Hill; 128 real photographs, single Panasonic DMC-TZ3 camera",
+  "source": {
+    "url": "https://github.com/colmap/colmap/releases/download/3.11.1/south-building.zip",
+    "original_sha256": "d210016bd2de20936a5f02b87fd38a76bf0440c42d045231218372cf9db9a7a1",
+    "original_image_count": 128,
+    "original_resolution": [
+      3072,
+      2304
+    ],
+    "credit": "Kindly provided by Christopher Zach (per COLMAP datasets page)"
+  },
+  "derivative_recipe": {
+    "method": "PIL resize LANCZOS to width 1024, JPEG quality 90, files sorted by name",
+    "deterministic": true,
+    "note": "regenerate via scripts/fetch_south_building.py and compare per-image sha256"
+  },
+  "camera_metadata": {
+    "exif_make_model_available": true,
+    "make": "Panasonic",
+    "model": "DMC-TZ3"
+  },
+  "ground_truth": {
+    "kind": "COLMAP sparse text model (cameras.txt, images.txt, points3D.txt)",
+    "note": "reference reconstruction shipped with the example set"
+  },
+  "images": [
+    {
+      "file": "P1180141.JPG",
+      "sha256": "b3cb3cbf0fee642112b6140809ff2172f8307bc1f6990f7ef408ad1f11be4560",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180142.JPG",
+      "sha256": "19f48177d339aec7dcf529fb9c080649b82a8f19dc761f2d6c5c117c4c75a74d",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180143.JPG",
+      "sha256": "d326a64a0cd6e5754eb540ae4f48f3e96f0ff9de0a33733b06c769c3e11d7c55",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180144.JPG",
+      "sha256": "1152f381c0aa37dfe1ffc98e533d9cb17a66deea6504caece6db261715e799aa",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180145.JPG",
+      "sha256": "daa214a087cb021a7965ebf7c63e6df93ff85831652cdb6428e3fe5fb2f51e81",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180146.JPG",
+      "sha256": "f3fd4cdee6e657caa94a05929a4ea750f226b910ef9a4d5de8ecc42a20b71159",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180147.JPG",
+      "sha256": "6c77bac7ea75c48b3a1ad6e982e7172fab50f8adcdfd9eeccb7fd2cefffd6227",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180148.JPG",
+      "sha256": "f055e1a4f004a78753f10787c68999f93590fd1204b9e1966287a493a1659970",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180149.JPG",
+      "sha256": "653247a88443531b98ce6bfdbcfa8c6def963356d0595f51eb31f2eb77f5deaa",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180150.JPG",
+      "sha256": "7aeafd644259772d871a3bd03981ebe73d4e47e0069a7b62b1b7c9e4cc04438f",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180151.JPG",
+      "sha256": "b958ee6ffa44f3c0659ca754b252282d5f4fcd3c28c96390ab51d187bb40e413",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180152.JPG",
+      "sha256": "dea7b3bcc4a42d427b535045799888ddc1d21f23c619d0b5638574ff43ea5625",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180153.JPG",
+      "sha256": "b4bb75bc6b83ab1c575d4552164b59912d945c8d8188d4c1c3db324cfe7e0e1f",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180154.JPG",
+      "sha256": "acfd7f50cd7cc0de57c836c595681f0ece9fc405187a9fd49ee1c2beefb00585",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180155.JPG",
+      "sha256": "40b1f91992a9e06cbcef97efeaf896509447e7da5eacf2f078722ec612dbaf10",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180156.JPG",
+      "sha256": "7893d30219b4bdb2a859ce3b05cf2e3609788de1cdc8bb582ff40db53f584f9f",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180157.JPG",
+      "sha256": "40305596771297ffe575abba1a03bba02763647b13bda2a69bfb0075b02df77a",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180158.JPG",
+      "sha256": "76c701e43c07db1e95b4c97fe76776c3027e0f565d27315b34ee5e4476a0dbd1",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180159.JPG",
+      "sha256": "f3407eeb8b22cf51a4d1015d940f115ef42986de427029605d927fd888aa4ab9",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180160.JPG",
+      "sha256": "ca09f06c92fdf4df8ecc80def0c5154e07aeebe4789acb1c69f3da1f805f2385",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180161.JPG",
+      "sha256": "607ac72444151e63ea58475e2d2aca4a711debb06f4ad140b43db8b7f1f33a27",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180162.JPG",
+      "sha256": "76dba00797f9f78bf7af57ba122db6e8263d32e4a7b369ecb7c552a7eb9141c3",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180163.JPG",
+      "sha256": "5b49548626654609b9bdbe930a503c8f9b1ea1b71a3d683116ffe7cc83482de7",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180164.JPG",
+      "sha256": "6abc354d0283bd73b2b4c1333e6e45c82f47428f384c8cf9ab4a6ad764223204",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180165.JPG",
+      "sha256": "6347daa83d388bf04611899a3861da73681a3d22e97b6e1ede468d15153c9b35",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180166.JPG",
+      "sha256": "279ad905604df85ea2a76799daf3bff36a503b1e8575cab771930b02a7691e30",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180167.JPG",
+      "sha256": "e4b77746537c9f49a4a3fe32db6a2908242d74f1ff3bacde2fc50065647d14e9",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180168.JPG",
+      "sha256": "a564acaddea43adcaf0531c560c40b863fd456b610d61dfd7df23c0df66c9097",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180169.JPG",
+      "sha256": "523708e760032167f6dfe03828c719633c9e1b60b942b1247ac97c17aa987ccd",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180170.JPG",
+      "sha256": "6a3bca3750a3e0d851f6b871e6945d5b91267c3c8a63fb741f59199ca2093c79",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180171.JPG",
+      "sha256": "13e42b58b3c294be988c27c273928e412cc9b28eab053053ee6d60ccd26fc2bf",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180172.JPG",
+      "sha256": "7fa2fbcb797d11a0742336e468faec3b6210476eb1957a602bc1fbb454844c39",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180173.JPG",
+      "sha256": "477fb522f1702411a5c97faa8df664945e974ab8a119cb72b2d1fc5468f67616",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180174.JPG",
+      "sha256": "07ce4a03e82e5f6c847b66bbb45549787c40e217af065f87283ab3a5ebb93cdb",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180175.JPG",
+      "sha256": "46e22715abaadfe932b255c4a1f0ec7de4d6adc82f13ba10f9ba59cdc4a785a6",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180176.JPG",
+      "sha256": "70261fc0b521c6187f640f6e85b4733cea0c8fd99951af0507c9a13f0712d995",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180177.JPG",
+      "sha256": "9773e3098f2573285d6897f979a684a5b2de256663a57b524fa7771473ea5127",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180178.JPG",
+      "sha256": "070e26c3ee906227a0cc9a2373670c8e79a7323d8f8a4488fd60d48b0a9eff77",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180179.JPG",
+      "sha256": "f7c4d7ac0a815076f32f33b002b6bf2b9ab4431f96fc4c8493014bf6683275e5",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180180.JPG",
+      "sha256": "50dd0a122e83d7216770b80814fb545ebda161cf82fc9608e67638290f274821",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180181.JPG",
+      "sha256": "c9c2898880a6bb8d5e9e6d7a343db1a5a21436aa4c0dc8d93d28581855b0754e",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180182.JPG",
+      "sha256": "e55f9b8f715b2317a26d11972bd06b31cf368ce8e4b6558132f2d196db0bc39a",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180183.JPG",
+      "sha256": "f98f4b9e58869031197a6ef474793fd08e149dd08c0db05852eea66b919e8018",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180184.JPG",
+      "sha256": "f09a16ffae22c397578aa97b7314a85a9e668070fae19b9ea2ea9bd595c63a3f",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180185.JPG",
+      "sha256": "2108609d7b35e0c43ea0323c81f1b34a12c6dc5f136464b97d7e2f5b0341ca8d",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180186.JPG",
+      "sha256": "847b5eea6aa630c19a780ea5df04a3c56ad0d13cec1d8c6a7dc0033e4feef5ee",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180187.JPG",
+      "sha256": "8d01453594e0d83326dd38d98e7514de374ae0c3536841b9a0c5fd013bb4c626",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180188.JPG",
+      "sha256": "82abac56b4b3966ed62d86745a19239db59fee90548ec5f649dc3d1e37260f80",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180189.JPG",
+      "sha256": "8c4e06b5e2d6b5943825c1eb6ace745358966a2baf6f4937b0b6ccf6260438bd",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180190.JPG",
+      "sha256": "08615befab94277b272d5e9f776c2cb61f66b0e2b0529576faa685269f587e6c",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180191.JPG",
+      "sha256": "1cacf5c3446e9abb7b17115a9d566e70367e7f7aaae523ea43f889ecc705ab27",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180192.JPG",
+      "sha256": "0c1260e3f4c5722bf6f917d742c8518b1f0ff3ffcd2a5a3962c110ac9162b709",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180193.JPG",
+      "sha256": "104dadbcb46cca17f65ec55ec6d3c245725668b2fadfcf8925210d50bc775591",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180194.JPG",
+      "sha256": "d98af16427274eb4d117146f70fda7183e6199e19766ddee503605b5a35d3551",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180195.JPG",
+      "sha256": "a0d33e11fce73a93005ef94a7ae9afdd46cddcea1ad1d9107f880dc40314d686",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180196.JPG",
+      "sha256": "f7c9558b02b5864c57b1af22764fa7049e1110012d1a3551949791a4e0c32280",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180197.JPG",
+      "sha256": "beb3c84231e151a3fa1c1a665a09042ec656d9a162a7981745b53fc812ef9dd3",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180198.JPG",
+      "sha256": "390739aaab5624d4452b0675a0e97f614b0c000d7d5d0a54785feb3013924d6a",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180199.JPG",
+      "sha256": "408c47a4595486add2f247629c824d8250d82df0ae9dbdaf1b67a9defed08aa4",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180200.JPG",
+      "sha256": "1270401e9bf41416eaedb3663b5a0f4a490ffb9719a3bdb2be62feeb9593af8b",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180201.JPG",
+      "sha256": "75c1af7d00380d9efb30fb2bf57f58f81ae943dae87dc16fcc94b5ac561fd8ac",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180202.JPG",
+      "sha256": "18651e35b158babb324b8ff94dd086588e71616f40b921c828d08e058ec2d4a6",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180203.JPG",
+      "sha256": "0a65efa993f9e517a09f6cb7995dd7a18806165e330f37f79aa08aa468a4f771",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180204.JPG",
+      "sha256": "7833a1a1789518db99cfb1c0bb2744700c3a696080c581917851c287e782d533",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180205.JPG",
+      "sha256": "42c6b484c831784d4ef7e4e8e4faafb8779ec4fce814b109c607a15e9dd6f0ff",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180206.JPG",
+      "sha256": "2f835b435e7a64bb9f06de7584f4abc4b0bda4d1ff699e742b4a4248d3e316ab",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180207.JPG",
+      "sha256": "3383fe34b282204a1352f03f6b49540078d0dd5f5e1fb998998532ba67811fbe",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180208.JPG",
+      "sha256": "e938e09eb9cab860fa6f16532cebb13945e15c7f11c0356c3dd00566b0652506",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180209.JPG",
+      "sha256": "f86f5eb93c09e1e7fb669c3b92b4d15e280dc31112eb19b015adbb7ce4a3e214",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180210.JPG",
+      "sha256": "1c810cd70b2fd3509c3ead68f747b06a3ff382fbb70010fb3934004cc9c046cf",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180211.JPG",
+      "sha256": "1b8be44a45cba43f62ba5d07d0a8c655f21dfd878cbb6cf596810c812632e5bd",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180212.JPG",
+      "sha256": "d44ddddde20adf3730ac252260f0188826f33327cab4c1d98bf3a6bee831b045",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180213.JPG",
+      "sha256": "f1d65884cdc62471fad26567b72cd12ce00a0ce60523d52ae0a3b3310bfb5efb",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180214.JPG",
+      "sha256": "dc30b93a89d0504fcfde34a73e6649961efd7692e60989870e66bf4f0d634067",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180215.JPG",
+      "sha256": "10f68846076d0e0c9e145fcfbd328a4b294d53f545d7d985052f6133b44b87a4",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180216.JPG",
+      "sha256": "6313d7187003319f9152003c498a5de2d2482c73aa384f9f60008b562d5d4e22",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180217.JPG",
+      "sha256": "ac114d5c7a8f22c981ffc62c8133391b251e2da55f49609f6964fde627ff320f",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180218.JPG",
+      "sha256": "3b301654a63122c91f4797636c947da93f7994b59a55779fa68de9d897c81619",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180219.JPG",
+      "sha256": "27abcdd4bb0061ec4c3b8c85daac42344669a2d23dce899e2d6c6a8fb4d8856a",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180220.JPG",
+      "sha256": "21e65aab0e7aa43bd576ed934171a94e839aee34d14ff9110fefc8af0bfa1cbb",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180221.JPG",
+      "sha256": "ebbd9cf01b38c40d91634c7349d5511d3086780025d0b5824d82deaedb20dcc1",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180222.JPG",
+      "sha256": "f0026733a6615bc355044a20b24e104fa561850ef790350a6dc556fe393993b1",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180223.JPG",
+      "sha256": "77c1473ac8c2d77b0b851bd850b8c9c1f6194b2a5299f89fa627adbfb2a81a13",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180224.JPG",
+      "sha256": "d482ef79e747019612855b245eefd398abcce58b63e1e7bb34809567e3a5bcef",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180225.JPG",
+      "sha256": "db7360dc851da386cc10f3a3191ac880a51a0b830059c5a0e154811a2d757212",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180305.JPG",
+      "sha256": "236ead2d30c10286494379ade464490fb5bbf07f0707a1bb3035bdf1e61eca95",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180306.JPG",
+      "sha256": "4d1c653ac29286c074b482755a77e59a19e437b182d80ef33196c7e2978e7d9b",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180307.JPG",
+      "sha256": "97f9e477a824c328a7561d4c0a770b3c106d985e453a0d349efabd3544fd3792",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180308.JPG",
+      "sha256": "43dcda77f284ba087bcbc9c48ad8ef55ac8316007d0dd3a6b464afddfd3be358",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180309.JPG",
+      "sha256": "7e4fef28a5bc03c9cf789cf564c034fb96dd590296b36f949686f9841734e018",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180310.JPG",
+      "sha256": "957d563f76637a5d2136e9134d1ce668dd170ce1c8869818e547b552c0c63528",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180311.JPG",
+      "sha256": "55d088d28b3895bc9fd7e722c673a086417a8852184d39c4b6bd68b5b97e55c7",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180312.JPG",
+      "sha256": "9208666f44bf283e922c543562817a25441244a96f1a242413058e6364739ed6",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180313.JPG",
+      "sha256": "ba35ad4cb03529e405bec4b1f5aaffad007e1145f0e81eb84d7f0e19b21f1243",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180314.JPG",
+      "sha256": "d8f13c4af9319d00fbd4e5f335a85a6bc355e00e566326816a6ff3b56a9fc4a0",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180315.JPG",
+      "sha256": "253895e13993aa377caba510cbaf3a9c71340d62d4338b5a4da7af19e5980753",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180316.JPG",
+      "sha256": "7f434fa6b78f0ca46ed58406c7c9e9140e597227ca1fa5be673b5e9bc88a14c7",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180317.JPG",
+      "sha256": "b927c60a5558928e16f806788109d89a3f6386cc4ae2f57bd75ed8075a019f55",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180318.JPG",
+      "sha256": "ae384d23561a03b81e32b07c25af36b459102eecbe40af92fb7e3a00316ee981",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180319.JPG",
+      "sha256": "a42aa216d04936e9781266d336a54a19d7611840bd5e820d0ab11adf2e83ddb5",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180320.JPG",
+      "sha256": "b2cf76c307a7a4e6e048c05384ad666f6b238128f31a27c561e45dd1db4c1f7e",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180321.JPG",
+      "sha256": "807881487a4761d2d58bee6f8e6d51ff323e17fd1aec45f9874f4af10c668ab3",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180322.JPG",
+      "sha256": "98ace071506387c03b17e51fc6b5b0a31ba53d683448fc09205d1e34de0a5727",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180323.JPG",
+      "sha256": "9797e44842ae8149622990bc89766f2b70d4bad099000d5d5c61b7a4bc945df6",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180324.JPG",
+      "sha256": "ea984bb006655a4c1ee416d109de09c20202e94df71c5752cff5892f2771c1dc",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180325.JPG",
+      "sha256": "b8e39dc41cbc36ee08ddf8a8e3a6b78890e2bb8ce30ec2b278c02ae5b7a3dace",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180326.JPG",
+      "sha256": "a7516b5b1ccc668690ff113d58bcfd01457b8fe9c33fadc3b26dcef65f883f08",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180327.JPG",
+      "sha256": "ffaa5fce99f82a3daef695055613acbba6bc58ece33d8d96449072004a5aaac4",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180328.JPG",
+      "sha256": "d529f382396ce54a89608408fb8e571440ecefac8096a53fe0554b730949ffb6",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180329.JPG",
+      "sha256": "a4fd0d3affa1b1202bff2d7ed2185e2fad716a2e07bb282de940a9f6baf17e32",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180330.JPG",
+      "sha256": "20b1804b906dcc7f87603b429bc4ca6b69316c81b26c804aa90b9e3c54c6d698",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180331.JPG",
+      "sha256": "6d7e54fbb9e8862f88c95ea11017a4d618d7f8c9ed24dd84b7f7a3c67e1216d8",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180332.JPG",
+      "sha256": "b42fcbaf55d7a5ac0ae9595ff7403719134433c0a2ab90150017c881d8722f10",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180333.JPG",
+      "sha256": "7f945796a5c460d2b4d0eca8ea1619b40240d131f2a2ee8d677956585387137b",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180334.JPG",
+      "sha256": "907f88f00150fc05c058884aed41c8e8b7b4cdd7563a80fdcaca944b652164bd",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180335.JPG",
+      "sha256": "bf73ceaabc881f192ca978db84ddffc5474a4a4feea81eb75359247e1f262933",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180336.JPG",
+      "sha256": "bb0f90328f2ce1e3dbb31fafc07961808cd696542f1b2f13723971fda8040673",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180337.JPG",
+      "sha256": "e40c6716b82ab90478c28e40676774e620688fc109a1609b913b1f5310671764",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180338.JPG",
+      "sha256": "455cdc40f76904555285232dc7f9dc4b0a43ee36b645d4006fc83cdbe42a2a8f",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180339.JPG",
+      "sha256": "55d480d779599c615d3be048de218f9c0228c0d6191f4bcfba0a2720e4e0cb27",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180340.JPG",
+      "sha256": "e86745312006735abafc156fff3a728b60a8ba91cb000039215107725c61dfc2",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180341.JPG",
+      "sha256": "1f97e95f6c9b41f8866ee723d56bd3e88b5c02ec363bd32a3e4ea3cf9381ff32",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180342.JPG",
+      "sha256": "8ffa63d3a1ec2661b36f143c84120b25423d2e2c906ee30c8ddd6efd2440b739",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180343.JPG",
+      "sha256": "4b483989dd215aba59a910f05c03b796f1f99d9df9aa2ef4ac21a1d51d4e163f",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180344.JPG",
+      "sha256": "0919b3419da020205a50c4ce48905990f9b74bc2ebb86649c2fa2b19b9f4d958",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180345.JPG",
+      "sha256": "8595f07d75d3e0dd656110d4fb45699096bb2f9dc07a662efd0ebbae24db04bb",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180346.JPG",
+      "sha256": "a9896f3340f7edb2f213f1259e9136a0f6c3e28cdfb88c13a450b3428b463b5d",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "file": "P1180347.JPG",
+      "sha256": "336c5d07dca84d1970505667d18eed8d07e5a6eb42291071ae1e787079d7a1f1",
+      "width": 1024,
+      "height": 768
+    }
+  ],
+  "committed_subset": {
+    "selection": "every 4th image in sorted filename order (stride 4)",
+    "image_count": 32,
+    "rationale": "keeps the committed dataset small (mission preference: 20-50 photos); full 128-image set reproducible via scripts/fetch_south_building.py",
+    "images": [
+      {
+        "file": "P1180141.JPG",
+        "sha256": "b3cb3cbf0fee642112b6140809ff2172f8307bc1f6990f7ef408ad1f11be4560",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180145.JPG",
+        "sha256": "daa214a087cb021a7965ebf7c63e6df93ff85831652cdb6428e3fe5fb2f51e81",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180149.JPG",
+        "sha256": "653247a88443531b98ce6bfdbcfa8c6def963356d0595f51eb31f2eb77f5deaa",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180153.JPG",
+        "sha256": "b4bb75bc6b83ab1c575d4552164b59912d945c8d8188d4c1c3db324cfe7e0e1f",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180157.JPG",
+        "sha256": "40305596771297ffe575abba1a03bba02763647b13bda2a69bfb0075b02df77a",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180161.JPG",
+        "sha256": "607ac72444151e63ea58475e2d2aca4a711debb06f4ad140b43db8b7f1f33a27",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180165.JPG",
+        "sha256": "6347daa83d388bf04611899a3861da73681a3d22e97b6e1ede468d15153c9b35",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180169.JPG",
+        "sha256": "523708e760032167f6dfe03828c719633c9e1b60b942b1247ac97c17aa987ccd",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180173.JPG",
+        "sha256": "477fb522f1702411a5c97faa8df664945e974ab8a119cb72b2d1fc5468f67616",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180177.JPG",
+        "sha256": "9773e3098f2573285d6897f979a684a5b2de256663a57b524fa7771473ea5127",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180181.JPG",
+        "sha256": "c9c2898880a6bb8d5e9e6d7a343db1a5a21436aa4c0dc8d93d28581855b0754e",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180185.JPG",
+        "sha256": "2108609d7b35e0c43ea0323c81f1b34a12c6dc5f136464b97d7e2f5b0341ca8d",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180189.JPG",
+        "sha256": "8c4e06b5e2d6b5943825c1eb6ace745358966a2baf6f4937b0b6ccf6260438bd",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180193.JPG",
+        "sha256": "104dadbcb46cca17f65ec55ec6d3c245725668b2fadfcf8925210d50bc775591",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180197.JPG",
+        "sha256": "beb3c84231e151a3fa1c1a665a09042ec656d9a162a7981745b53fc812ef9dd3",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180201.JPG",
+        "sha256": "75c1af7d00380d9efb30fb2bf57f58f81ae943dae87dc16fcc94b5ac561fd8ac",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180205.JPG",
+        "sha256": "42c6b484c831784d4ef7e4e8e4faafb8779ec4fce814b109c607a15e9dd6f0ff",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180209.JPG",
+        "sha256": "f86f5eb93c09e1e7fb669c3b92b4d15e280dc31112eb19b015adbb7ce4a3e214",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180213.JPG",
+        "sha256": "f1d65884cdc62471fad26567b72cd12ce00a0ce60523d52ae0a3b3310bfb5efb",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180217.JPG",
+        "sha256": "ac114d5c7a8f22c981ffc62c8133391b251e2da55f49609f6964fde627ff320f",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180221.JPG",
+        "sha256": "ebbd9cf01b38c40d91634c7349d5511d3086780025d0b5824d82deaedb20dcc1",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180225.JPG",
+        "sha256": "db7360dc851da386cc10f3a3191ac880a51a0b830059c5a0e154811a2d757212",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180308.JPG",
+        "sha256": "43dcda77f284ba087bcbc9c48ad8ef55ac8316007d0dd3a6b464afddfd3be358",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180312.JPG",
+        "sha256": "9208666f44bf283e922c543562817a25441244a96f1a242413058e6364739ed6",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180316.JPG",
+        "sha256": "7f434fa6b78f0ca46ed58406c7c9e9140e597227ca1fa5be673b5e9bc88a14c7",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180320.JPG",
+        "sha256": "b2cf76c307a7a4e6e048c05384ad666f6b238128f31a27c561e45dd1db4c1f7e",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180324.JPG",
+        "sha256": "ea984bb006655a4c1ee416d109de09c20202e94df71c5752cff5892f2771c1dc",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180328.JPG",
+        "sha256": "d529f382396ce54a89608408fb8e571440ecefac8096a53fe0554b730949ffb6",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180332.JPG",
+        "sha256": "b42fcbaf55d7a5ac0ae9595ff7403719134433c0a2ab90150017c881d8722f10",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180336.JPG",
+        "sha256": "bb0f90328f2ce1e3dbb31fafc07961808cd696542f1b2f13723971fda8040673",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180340.JPG",
+        "sha256": "e86745312006735abafc156fff3a728b60a8ba91cb000039215107725c61dfc2",
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "file": "P1180344.JPG",
+        "sha256": "0919b3419da020205a50c4ce48905990f9b74bc2ebb86649c2fa2b19b9f4d958",
+        "width": 1024,
+        "height": 768
+      }
+    ]
+  }
+}

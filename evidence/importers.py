@@ -486,6 +486,7 @@ class FolderImportReport:
     duplicates_skipped: List[Tuple[str, str]] = field(default_factory=list)   # (path, existing asset id)
     near_duplicates_marked: List[Tuple[str, str]] = field(default_factory=list)  # (path, asset id)
     unhandled_paths: List[str] = field(default_factory=list)  # unknown extension: recorded, not imported
+    failed_paths: List[Tuple[str, str]] = field(default_factory=list)  # (path, reason) -- batch-survival policy
 
     def to_dict(self) -> dict:
         return {
@@ -493,6 +494,7 @@ class FolderImportReport:
             "duplicates_skipped": [list(pair) for pair in self.duplicates_skipped],
             "near_duplicates_marked": [list(pair) for pair in self.near_duplicates_marked],
             "unhandled_paths": list(self.unhandled_paths),
+            "failed_paths": [list(pair) for pair in self.failed_paths],
         }
 
 
@@ -753,6 +755,7 @@ def import_folder(
     source=None,
     frame_strategy: Optional[IFrameSelectionStrategy] = None,
     frame_min_bytes: int = 2048,
+    on_error: str = "raise",
 ) -> FolderImportReport:
     """Import every known-format file under `folder` (recursive) into
     the builder.
@@ -760,10 +763,22 @@ def import_folder(
     Deterministic: files are visited in sorted full-path order, so the
     same folder contents reproduce the same package ids. Unknown
     extensions are RECORDED in the report (unhandled_paths), never
-    silently skipped. Corrupt files raise (corrupt evidence cannot be
-    imported honestly); duplicate/near-duplicate handling is per the
+    silently skipped. Duplicate/near-duplicate handling is per the
     two-layer policy above.
+
+    Error policy for per-file failures (corrupt payload, missing
+    decoder, ...):
+
+      - on_error="raise" (default): the first failure raises -- corrupt
+        evidence cannot be imported honestly, and the caller must know.
+      - on_error="record": batch survival for large messy captures --
+        the failing file is recorded in failed_paths as (path, reason)
+        and the remaining files still import. A recorded failure is a
+        fact in the report, never a silent skip; a caller choosing this
+        policy owns checking failed_paths before trusting the package.
     """
+    if on_error not in ("raise", "record"):
+        raise ValueError(f"unknown on_error policy {on_error!r}")
     report = FolderImportReport()
     paths: List[str] = []
     for root, _dirs, files in os.walk(folder):
@@ -791,14 +806,19 @@ def import_folder(
             report.unhandled_paths.append(path)
             continue
         use_source = source if source is not None else default_source
-        if extension in _PHOTO_EXTS:
-            _import_photo(builder, use_source, path, report, pixel_hashes)
-        elif extension in _LAS_EXTS:
-            _import_las(builder, use_source, path, report)
-        elif extension in _VIDEO_EXTS:
-            _import_video(
-                builder, use_source, path, report,
-                frame_strategy or UniformTimeSamplingStrategy(target_count=8),
-                frame_min_bytes,
-            )
+        try:
+            if extension in _PHOTO_EXTS:
+                _import_photo(builder, use_source, path, report, pixel_hashes)
+            elif extension in _LAS_EXTS:
+                _import_las(builder, use_source, path, report)
+            elif extension in _VIDEO_EXTS:
+                _import_video(
+                    builder, use_source, path, report,
+                    frame_strategy or UniformTimeSamplingStrategy(target_count=8),
+                    frame_min_bytes,
+                )
+        except Exception as exc:
+            if on_error == "raise":
+                raise
+            report.failed_paths.append((path, f"{type(exc).__name__}: {exc}"))
     return report

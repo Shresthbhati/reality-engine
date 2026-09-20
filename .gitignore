@@ -8,3 +8,18 @@ __pycache__/
 # never committed (docs/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md).
 datasets/*/
 !datasets/README.md
+
+# Exception: the committed reproducible real dataset (RECONSTRUCTION_
+# REAL_WORLD_ROBUSTNESS P0) -- a deterministic 32-photo subset of the
+# public COLMAP South Building set with filtered sparse ground truth.
+# Regenerable any time via scripts/fetch_south_building.py (download,
+# verify, subset, filter); images are public distributed by the COLMAP
+# authors for exactly this purpose.
+!datasets/south_building/
+!datasets/south_building/images/
+!datasets/south_building/images/*
+!datasets/south_building/sparse/
+!datasets/south_building/sparse/*
+!datasets/south_building/MANIFEST.json
+!datasets/south_building/runs/
+!datasets/south_building/runs/*

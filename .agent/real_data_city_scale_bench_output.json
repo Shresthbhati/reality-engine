@@ -1,0 +1,120 @@
+======================================================================
+SYNTHETIC BENCHMARK -- no real (sensor-captured) dataset exists
+in this repository. Every number below is generated fixture
+data. Do NOT cite these as real-world city performance.
+======================================================================
+{
+  "scale": "ROOM",
+  "entity_count": 20,
+  "tile_count": 4,
+  "full_save_time_s": 0.0092,
+  "tiled_save_time_s": 0.0335,
+  "partitioned_save_time_s": 0.0124,
+  "full_load_time_s": 0.0015,
+  "lazy_open_time_s": 0.001532,
+  "local_region_query_time_s": 0.001973,
+  "local_region_query_entities": 10,
+  "nearest_k5_time_s": 0.001248,
+  "radius_query_time_s": 0.000908,
+  "radius_query_entities": 8,
+  "local_incremental_update_time_s": 0.000248,
+  "incremental_rebuilt_tiles": 1,
+  "whole_world_store_total_bytes": 20633,
+  "partitioned_store_total_bytes": 11909,
+  "speedup_lazy_open_vs_full_load": 1.0,
+  "speedup_local_query_vs_full_load": 0.8
+}
+{
+  "scale": "BUILDING",
+  "entity_count": 200,
+  "tile_count": 8,
+  "full_save_time_s": 0.0188,
+  "tiled_save_time_s": 0.0635,
+  "partitioned_save_time_s": 0.0291,
+  "full_load_time_s": 0.0093,
+  "lazy_open_time_s": 0.001625,
+  "local_region_query_time_s": 0.020438,
+  "local_region_query_entities": 50,
+  "nearest_k5_time_s": 0.003297,
+  "radius_query_time_s": 0.00341,
+  "radius_query_entities": 38,
+  "local_incremental_update_time_s": 0.001275,
+  "incremental_rebuilt_tiles": 1,
+  "whole_world_store_total_bytes": 176413,
+  "partitioned_store_total_bytes": 92268,
+  "speedup_lazy_open_vs_full_load": 5.7,
+  "speedup_local_query_vs_full_load": 0.5
+}
+{
+  "scale": "STREET",
+  "entity_count": 2000,
+  "tile_count": 80,
+  "full_save_time_s": 0.1095,
+  "tiled_save_time_s": 0.4971,
+  "partitioned_save_time_s": 0.2284,
+  "full_load_time_s": 0.1123,
+  "lazy_open_time_s": 0.013564,
+  "local_region_query_time_s": 0.048173,
+  "local_region_query_entities": 100,
+  "nearest_k5_time_s": 0.009214,
+  "radius_query_time_s": 0.008033,
+  "radius_query_entities": 52,
+  "local_incremental_update_time_s": 0.014022,
+  "incremental_rebuilt_tiles": 1,
+  "whole_world_store_total_bytes": 1762770,
+  "partitioned_store_total_bytes": 918899,
+  "speedup_lazy_open_vs_full_load": 8.3,
+  "speedup_local_query_vs_full_load": 2.3
+}
+{
+  "scale": "BLOCK",
+  "entity_count": 5000,
+  "tile_count": 200,
+  "full_save_time_s": 0.2966,
+  "tiled_save_time_s": 1.1889,
+  "partitioned_save_time_s": 1.079,
+  "full_load_time_s": 0.7,
+  "lazy_open_time_s": 0.020849,
+  "local_region_query_time_s": 0.055256,
+  "local_region_query_entities": 100,
+  "nearest_k5_time_s": 0.015401,
+  "radius_query_time_s": 0.014218,
+  "radius_query_entities": 52,
+  "local_incremental_update_time_s": 0.082286,
+  "incremental_rebuilt_tiles": 1,
+  "whole_world_store_total_bytes": 4418484,
+  "partitioned_store_total_bytes": 2303313,
+  "speedup_lazy_open_vs_full_load": 33.6,
+  "speedup_local_query_vs_full_load": 12.7
+}
+{
+  "scale": "MULTI_BLOCK",
+  "entity_count": 20000,
+  "tile_count": 800,
+  "full_save_time_s": 3.2253,
+  "tiled_save_time_s": 20.6492,
+  "partitioned_save_time_s": 9.2824,
+  "full_load_time_s": 4.4424,
+  "lazy_open_time_s": 0.108313,
+  "local_region_query_time_s": 0.094735,
+  "local_region_query_entities": 100,
+  "nearest_k5_time_s": 0.02899,
+  "radius_query_time_s": 0.026414,
+  "radius_query_entities": 52,
+  "local_incremental_update_time_s": 0.517691,
+  "incremental_rebuilt_tiles": 1,
+  "whole_world_store_total_bytes": 17751468,
+  "partitioned_store_total_bytes": 9257696,
+  "speedup_lazy_open_vs_full_load": 41.0,
+  "speedup_local_query_vs_full_load": 46.9
+}
+{
+  "fixture": "two_room_scene (SYNTHETIC, structured, NOT a real capture)",
+  "entity_count": 8,
+  "rooms_detected": 1,
+  "compile_time_s": 19.8181,
+  "tiled_save_time_s": 0.037127,
+  "lazy_open_time_s": 0.002548,
+  "full_spatial_index_build_time_s": 0.000313,
+  "nearest_k3_time_s": 5.9e-05
+}

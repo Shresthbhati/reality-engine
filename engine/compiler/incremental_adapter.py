@@ -325,3 +325,80 @@ def apply_reconstruction_update(
         updated_geometries=pkg.updated_geometries,
         tile_size=tile_size,
     )
+
+
+@dataclass(frozen=True)
+class CompiledIncrementalUpdate:
+    """The end-to-end result of the real compiler stage: not just an
+    in-memory `IncrementalUpdateResult`, but proof that persisting it
+    actually reused unaffected tile artifacts instead of rewriting the
+    whole city. `stored.version_id` is ready to hand to
+    `worldstore.tiles.open_version()` for lazy access."""
+    result: IncrementalUpdateResult
+    stored: "object"  # worldstore.store.StoredVersion (avoid import cycle at module load)
+    tiles_total: int
+    tiles_rebuilt: int
+    tiles_reused: int
+
+
+def apply_reconstruction_update_tiled(
+    store: "object",  # worldstore.store.WorldStore
+    base_world: WorldIR,
+    reconstruction: Union[ReconstructionResult, Any],
+    *,
+    parent_version_id: str,
+    session_id: str,
+    target_entity_id: str,
+    alignment: Optional[Union[SessionAlignment, RigidTransform, Transform]] = None,
+    target_entity_type: Optional[EntityType] = None,
+    target_entity_name: Optional[str] = None,
+    artifact_store: Optional[ArtifactStore] = None,
+    tile_size: float = 10.0,
+    timestamp: Optional[float] = None,
+) -> CompiledIncrementalUpdate:
+    """The real compiler stage this adapter was missing: new evidence ->
+    `apply_reconstruction_update` (changed entities -> affected_closure
+    -> affected/rebuilt tiles) -> `worldstore.tiles.save_version_tiled`
+    (recompile only the rebuilt tiles, reuse every other tile's exact
+    prior artifact) -> instrumentation proving the reuse actually
+    happened, not just that a diff was computed.
+
+    `store` is a `worldstore.store.WorldStore` whose `parent_version_id`
+    was already saved via `save_version_tiled` (or has no tile manifest
+    yet, in which case every tile is necessarily rebuilt -- still
+    correct, just with zero reuse to report).
+    """
+    from worldstore.tiles import save_version_tiled  # local import: worldstore -> engine.compiler would cycle otherwise
+
+    result = apply_reconstruction_update(
+        base_world=base_world,
+        reconstruction=reconstruction,
+        session_id=session_id,
+        target_entity_id=target_entity_id,
+        alignment=alignment,
+        target_entity_type=target_entity_type,
+        target_entity_name=target_entity_name,
+        artifact_store=artifact_store,
+        tile_size=tile_size,
+        timestamp=timestamp,
+    )
+
+    stored = save_version_tiled(
+        store, result.new_world,
+        parent=parent_version_id,
+        tile_size=tile_size,
+        source_session_ids=[session_id],
+        incremental_result=result,
+    )
+
+    from worldstore.tiles import open_version  # same cycle-avoidance as above
+    handle = open_version(store, stored.version_id)
+    tiles_total = len(handle.manifest.tiles)
+    tiles_rebuilt = len(result.rebuilt_tile_ids)
+    tiles_reused = tiles_total - tiles_rebuilt
+
+    return CompiledIncrementalUpdate(
+        result=result, stored=stored,
+        tiles_total=tiles_total, tiles_rebuilt=tiles_rebuilt, tiles_reused=tiles_reused,
+    )
+

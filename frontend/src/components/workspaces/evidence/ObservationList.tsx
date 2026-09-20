@@ -1,37 +1,98 @@
 'use client';
 
+/**
+ * Contributing-observations table for the SELECTED entity, fed from
+ * real backend state (ReconstructionContract observations carried on
+ * each entity by the bridge).
+ *
+ * The previous version rendered a hardcoded MOCK_OBSERVATIONS list with
+ * invented residuals ("0.42 px") and fake sessions. Now every row is a
+ * real observation: frame id, sensor type, measured confidence. There
+ * is no residual column because the backend does not currently expose a
+ * per-observation residual — showing one would be fabrication; the
+ * timestamp is the observation's own recorded value.
+ *
+ * Honesty rules:
+ *  - No selection -> explicit empty state.
+ *  - Entity with zero observations -> "no observations recorded",
+ *    which is data, not an error.
+ *  - Backend offline -> UNAVAILABLE, never demo rows.
+ */
+
 import React, { useState } from 'react';
-import { ShieldCheck, ArrowUpDown, Filter, Search } from 'lucide-react';
+import { ShieldCheck, Search, CircleAlert, Box } from 'lucide-react';
+import { useREStore } from '@/store/re-store';
+import type { Entity } from '@/types/reality-engine';
 
 interface ObservationRow {
   id: string;
   type: string;
-  sessionId: string;
   sourceFile: string;
   timestamp: string;
   confidence: number;
-  residual: string;
-  backend: string;
 }
 
-const MOCK_OBSERVATIONS: ObservationRow[] = [
-  { id: 'obs-0841', type: 'KEYPOINT_RAY', sessionId: 'sess-001', sourceFile: 'DJI_0491.JPG', timestamp: '08:34:12.100', confidence: 0.98, residual: '0.42 px', backend: 'COLMAP' },
-  { id: 'obs-0842', type: 'KEYPOINT_RAY', sessionId: 'sess-001', sourceFile: 'DJI_0492.JPG', timestamp: '08:34:14.300', confidence: 0.97, residual: '0.48 px', backend: 'COLMAP' },
-  { id: 'obs-0843', type: 'KEYPOINT_RAY', sessionId: 'sess-001', sourceFile: 'DJI_0493.JPG', timestamp: '08:34:16.500', confidence: 0.94, residual: '0.62 px', backend: 'COLMAP' },
-  { id: 'obs-0844', type: 'DEPTH_VOXEL', sessionId: 'sess-001', sourceFile: 'OpenMVS_Sweep01', timestamp: '08:35:00.000', confidence: 0.91, residual: '0.012 m', backend: 'OpenMVS' },
-  { id: 'obs-0845', type: 'KEYPOINT_RAY', sessionId: 'sess-002', sourceFile: 'IMG_8120.HEIC', timestamp: '08:41:02.120', confidence: 0.89, residual: '1.10 px', backend: 'COLMAP' },
-  { id: 'obs-0846', type: 'KEYPOINT_RAY', sessionId: 'sess-002', sourceFile: 'IMG_8121.HEIC', timestamp: '08:41:04.400', confidence: 0.86, residual: '1.24 px', backend: 'COLMAP' },
-  { id: 'obs-0847', type: 'LIDAR_POINT', sessionId: 'sess-003', sourceFile: 'Scan_Sector4.las', timestamp: '09:10:22.000', confidence: 0.99, residual: '0.004 m', backend: 'RTE LiDAR' },
-  { id: 'obs-0848', type: 'SEMANTIC_MASK', sessionId: 'sess-001', sourceFile: 'SAM2_Mask_042', timestamp: '09:12:00.000', confidence: 0.95, residual: '0.92 IoU', backend: 'SAM2' },
-];
+function rowsFromEntity(entity: Entity): ObservationRow[] {
+  const obs = (entity.metadata.observations as Array<{
+    id: string;
+    sensor_type: string;
+    timestamp?: number;
+    frame_id: string;
+    confidence: number;
+  }> | undefined) ?? [];
+  return obs.map((o) => ({
+    id: o.id,
+    type: o.sensor_type,
+    sourceFile: o.frame_id || '—',
+    timestamp:
+      typeof o.timestamp === 'number' && Number.isFinite(o.timestamp)
+        ? new Date(o.timestamp * 1000).toISOString().replace('T', ' ').slice(0, 19)
+        : '—',
+    confidence: o.confidence,
+  }));
+}
 
 export function ObservationList() {
   const [filter, setFilter] = useState('');
+  const entities = useREStore((s) => s.entities);
+  const selectedIds = useREStore((s) => s.selection.selectedEntityIds);
+  const backendConnected = useREStore((s) => s.backendConnected);
+  const backendError = useREStore((s) => s.backendError);
 
-  const filtered = MOCK_OBSERVATIONS.filter((o) => 
-    o.id.toLowerCase().includes(filter.toLowerCase()) ||
-    o.sourceFile.toLowerCase().includes(filter.toLowerCase()) ||
-    o.type.toLowerCase().includes(filter.toLowerCase())
+  const entity: Entity | null = selectedIds.length
+    ? entities.get(selectedIds[0]) ?? null
+    : null;
+
+  if (!backendConnected) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-2 bg-[#121215] text-[#e8e8f0] px-6 text-center">
+        <CircleAlert className="w-6 h-6 text-[#f5a623]" />
+        <div className="text-[11px] font-semibold uppercase tracking-wider">BACKEND UNAVAILABLE</div>
+        <div className="text-[10px] font-mono text-[#9898b0] max-w-[320px]">
+          {backendError ?? 'The Reality Engine backend is not reachable.'} Observations come from real reconstruction runs; none can be listed right now.
+        </div>
+      </div>
+    );
+  }
+
+  if (!entity) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-2 bg-[#121215] text-[#e8e8f0] px-6 text-center">
+        <Box className="w-6 h-6 text-[#3d3d55]" />
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-[#9898b0]">NO ENTITY SELECTED</div>
+        <div className="text-[10px] font-mono text-[#5c5c78] max-w-[320px]">
+          Select an entity to inspect the observations that support it.
+        </div>
+      </div>
+    );
+  }
+
+  const allRows = rowsFromEntity(entity);
+  const filtered = allRows.filter(
+    (o) =>
+      o.id.toLowerCase().includes(filter.toLowerCase()) ||
+      o.sourceFile.toLowerCase().includes(filter.toLowerCase()) ||
+      o.type.toLowerCase().includes(filter.toLowerCase())
   );
 
   return (
@@ -41,7 +102,11 @@ export function ObservationList() {
         <div className="flex items-center gap-2">
           <span className="font-semibold text-[10px] uppercase tracking-wider text-[#9898b0] flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-[#34c76f]" />
-            Contributing Observations ({MOCK_OBSERVATIONS.length})
+            Contributing Observations ({filtered.length}
+            {filtered.length !== allRows.length ? ` of ${allRows.length}` : ''})
+          </span>
+          <span className="text-[9px] font-mono text-[#5c5c78] truncate max-w-[220px]">
+            {entity.id}
           </span>
         </div>
 
@@ -53,47 +118,49 @@ export function ObservationList() {
               placeholder="Filter observations..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
+              aria-label="Filter observations"
               className="bg-transparent text-[10px] font-mono text-[#e8e8f0] focus:outline-none w-36"
             />
           </div>
-          <span className="text-[9px] font-mono text-[#5c5c78]">
-            {"// WIRE: GET /api/entities/{id}/observations"}
-          </span>
         </div>
       </div>
 
-      {/* Observation Table */}
-      <div className="flex-1 overflow-y-auto">
-        <table className="w-full border-collapse font-mono text-[11px] text-left">
-          <thead>
-            <tr className="bg-[#17171c] border-b border-[#1e1e28] text-[9px] text-[#5c5c78] uppercase tracking-wider">
-              <th className="py-1.5 px-3">Observation ID</th>
-              <th className="py-1.5 px-3">Type</th>
-              <th className="py-1.5 px-3">Source Artifact</th>
-              <th className="py-1.5 px-3">Timestamp (UTC)</th>
-              <th className="py-1.5 px-3">Confidence</th>
-              <th className="py-1.5 px-3">Residual / Error</th>
-              <th className="py-1.5 px-3">Solver</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((row) => (
-              <tr 
-                key={row.id} 
-                className="border-b border-[#1e1e28]/50 hover:bg-[#1c1c23] transition-colors cursor-pointer"
-              >
-                <td className="py-1.5 px-3 text-[#3d8ef7] font-semibold">{row.id}</td>
-                <td className="py-1.5 px-3 text-[#9898b0]">{row.type}</td>
-                <td className="py-1.5 px-3 text-[#e8e8f0]">{row.sourceFile}</td>
-                <td className="py-1.5 px-3 text-[#5c5c78]">{row.timestamp}</td>
-                <td className="py-1.5 px-3 text-green-400">{Math.round(row.confidence * 100)}%</td>
-                <td className="py-1.5 px-3 text-[#f5a623]">{row.residual}</td>
-                <td className="py-1.5 px-3 text-[#9898b0]">{row.backend}</td>
+      {allRows.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
+          <Box className="w-5 h-5 text-[#3d3d55]" />
+          <div className="text-[10px] font-mono text-[#9898b0]">
+            No observations recorded for this entity. The backend carries none — nothing is synthesized here.
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          <table className="w-full border-collapse font-mono text-[11px] text-left">
+            <thead>
+              <tr className="bg-[#17171c] border-b border-[#1e1e28] text-[9px] text-[#5c5c78] uppercase tracking-wider">
+                <th className="py-1.5 px-3">Observation ID</th>
+                <th className="py-1.5 px-3">Type</th>
+                <th className="py-1.5 px-3">Source Frame</th>
+                <th className="py-1.5 px-3">Timestamp (UTC)</th>
+                <th className="py-1.5 px-3">Confidence</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {filtered.map((row) => (
+                <tr
+                  key={row.id}
+                  className="border-b border-[#1e1e28]/50 hover:bg-[#1c1c23] transition-colors"
+                >
+                  <td className="py-1.5 px-3 text-[#3d8ef7] font-semibold">{row.id}</td>
+                  <td className="py-1.5 px-3 text-[#9898b0]">{row.type}</td>
+                  <td className="py-1.5 px-3 text-[#e8e8f0]">{row.sourceFile}</td>
+                  <td className="py-1.5 px-3 text-[#5c5c78]">{row.timestamp}</td>
+                  <td className="py-1.5 px-3 text-green-400">{Math.round(row.confidence * 100)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

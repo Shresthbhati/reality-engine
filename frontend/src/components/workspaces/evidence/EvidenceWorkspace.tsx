@@ -1,36 +1,69 @@
 'use client';
 
+/**
+ * Evidence Investigation Console.
+ *
+ * Answers the mission's workflow for the SELECTED entity:
+ *   Entity -> why does it exist? -> supporting evidence -> source frame
+ *   -> observation -> algorithm -> result
+ *
+ * Every value in the header comes from the selected entity's real
+ * provenance record (confidence as recorded by the backend, uncertainty
+ * only when the backend measured one). The previous version displayed a
+ * hardcoded fake entity ("Wall_042"), an invented 94.2% confidence and
+ * a fabricated "± 2.7 cm" — all removed. With no selection the console
+ * says so; with no backend it says UNAVAILABLE.
+ */
+
 import React, { useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { ProvenanceChain, MOCK_PROVENANCE_NODES, type ProvenanceNode } from './ProvenanceChain';
+import { ProvenanceChain, type ProvenanceNode } from './ProvenanceChain';
 import { SourceViewer } from './SourceViewer';
 import { ObservationList } from './ObservationList';
+import { useREStore } from '@/store/re-store';
 
 export function EvidenceWorkspace() {
-  const [selectedNode, setSelectedNode] = useState<ProvenanceNode>(MOCK_PROVENANCE_NODES[0]);
+  const [selectedNode, setSelectedNode] = useState<ProvenanceNode | null>(null);
+  const entities = useREStore((s) => s.entities);
+  const selectedIds = useREStore((s) => s.selection.selectedEntityIds);
+  const backendConnected = useREStore((s) => s.backendConnected);
+
+  const entity = selectedIds.length ? entities.get(selectedIds[0]) ?? null : null;
 
   return (
     <div className="flex flex-col w-full h-full overflow-hidden bg-[#0d0d0f] text-[#e8e8f0]">
       {/* ── Top Header Context Bar ───────────────────────────────── */}
       <div className="flex items-center justify-between px-4 h-[38px] bg-[#121215] border-b border-[#1e1e28] select-none">
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-semibold tracking-wider text-[#e8e8f0] uppercase flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#34c76f]" />
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-[11px] font-semibold tracking-wider text-[#e8e8f0] uppercase flex items-center gap-1.5 shrink-0">
+            <span className={`w-2 h-2 rounded-full ${backendConnected ? 'bg-[#34c76f]' : 'bg-[#f5a623]'}`} />
             EVIDENCE INVESTIGATION CONSOLE
           </span>
-          <span className="text-[10px] text-[#9898b0] font-mono px-2 py-0.5 bg-[#17171c] rounded border border-[#272733]">
-            Target Entity: ent-building-a / Wall_042
-          </span>
-          <span className="text-[10px] text-green-400 font-mono bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">
-            Overall Confidence: 94.2%
-          </span>
-          <span className="text-[10px] text-[#f5a623] font-mono">
-            Spatial Uncertainty: ± 2.7 cm
-          </span>
+          {entity ? (
+            <>
+              <span className="text-[10px] text-[#9898b0] font-mono px-2 py-0.5 bg-[#17171c] rounded border border-[#272733] truncate max-w-[280px]">
+                {entity.name} · {entity.id}
+              </span>
+              <span className="text-[10px] text-green-400 font-mono bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20 shrink-0">
+                Confidence: {(entity.provenance.confidence * 100).toFixed(1)}%
+              </span>
+              {typeof entity.provenance.uncertainty === 'number' && (
+                <span className="text-[10px] text-[#f5a623] font-mono shrink-0">
+                  Uncertainty: ± {entity.provenance.uncertainty} m
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-[10px] text-[#5c5c78] font-mono">
+              {backendConnected
+                ? 'No entity selected — select one in the Outliner or Viewport'
+                : 'Backend unavailable'}
+            </span>
+          )}
         </div>
 
-        <div className="text-[10px] text-[#5c5c78] font-mono">
-          Answering: &quot;Why does Reality Engine believe this wall exists?&quot;
+        <div className="text-[10px] text-[#5c5c78] font-mono shrink-0">
+          Answering: &quot;Why does Reality Engine believe this exists?&quot;
         </div>
       </div>
 
@@ -44,7 +77,7 @@ export function EvidenceWorkspace() {
               <Panel defaultSize={32} minSize={24} maxSize={45}>
                 <div className="h-full w-full bg-[#121215] border-r border-[#1e1e28] overflow-hidden">
                   <ProvenanceChain
-                    selectedNodeId={selectedNode.id}
+                    selectedNodeId={selectedNode?.id ?? ''}
                     onSelectNode={setSelectedNode}
                   />
                 </div>
@@ -55,7 +88,7 @@ export function EvidenceWorkspace() {
               {/* Right: Source Sensor Keyframe & Extrinsics Inspector */}
               <Panel defaultSize={68} minSize={40}>
                 <div className="h-full w-full bg-[#0d0d0f] overflow-hidden">
-                  <SourceViewer node={selectedNode} />
+                  <SourceViewer node={selectedNode} entity={entity} />
                 </div>
               </Panel>
             </Group>

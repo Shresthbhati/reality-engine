@@ -222,6 +222,12 @@ def main() -> int:
     t0 = time.perf_counter()
     run = orchestrator.run(admitted)
     record["reconstruction"] = {
+        # Diagnostics MUST survive: a false sub-model merge with a
+        # discarded report left no trace in earlier runs (measured
+        # 2026-09-20 -- run_20260920T200832 was poisoned by exactly
+        # this). When present, the serialized CrossSessionReport lists
+        # every sub-model's status, transform, and refusal reason.
+        "merge_report": getattr(run.result, "merge_report", None),
         "backend": run.diagnostics.backend_name,
         "status": run.diagnostics.final_status,
         "duration_s": round(time.perf_counter() - t0, 1),

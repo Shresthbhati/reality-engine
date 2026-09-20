@@ -1,9 +1,23 @@
 'use client';
 
+/**
+ * Context Inspector — every value from the SELECTED entity's real
+ * backend record; nothing invented.
+ *
+ * The previous version fell back to a hardcoded "Central Street Light
+ * #14" with fabricated mesh counts, invented EXIF-style provenance and
+ * a made-up temporal history whenever no entity was selected — a fake
+ * dashboard. Now:
+ *  - no selection  -> explicit "no entity selected" state;
+ *  - real entity   -> sections render only what the backend actually
+ *    carries (bounds from geometry, provenance state/confidence/
+ *    algorithm, observation count, relationships from WorldIR);
+ *  - a field the backend does not measure (material, height, per-LOD
+ *    resolution, per-observation residuals) is OMITTED, not decorated.
+ */
+
 import React, { useState } from 'react';
 import { useREStore } from '@/store/re-store';
-import { ConfidenceGauge } from '@/components/ui/confidence-gauge';
-import { EmptyState } from '@/components/ui/empty-state';
 import {
   PanelRightClose,
   Box,
@@ -11,13 +25,42 @@ import {
   Sparkles,
   Camera,
   Activity,
-  History,
   Network,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
-  ShieldCheck,
 } from 'lucide-react';
+import type { Entity } from '@/types/reality-engine';
+
+interface EntityRelationship {
+  kind: string;
+  target_id: string;
+  confidence: number;
+}
+
+function relationshipsOf(entity: Entity): EntityRelationship[] {
+  const rels = entity.metadata.relationships as EntityRelationship[] | undefined;
+  return Array.isArray(rels) ? rels : [];
+}
+
+function boundsOf(entity: Entity): {
+  min: [number, number, number];
+  max: [number, number, number];
+  extent: [number, number, number];
+} | null {
+  const b = entity.metadata.bounds as
+    | { min: [number, number, number]; max: [number, number, number]; extent?: [number, number, number] }
+    | undefined;
+  if (!b || !b.min || !b.max) return null;
+  return {
+    min: b.min,
+    max: b.max,
+    extent: b.extent ?? [
+      b.max[0] - b.min[0],
+      b.max[1] - b.min[1],
+      b.max[2] - b.min[2],
+    ],
+  };
+}
 
 export default function ContextInspectorPanel() {
   const selection = useREStore((s) => s.selection);
@@ -31,7 +74,6 @@ export default function ContextInspectorPanel() {
     evidence: true,
     provenance: true,
     uncertainty: true,
-    temporal: true,
     relationships: true,
   });
 
@@ -40,36 +82,9 @@ export default function ContextInspectorPanel() {
   };
 
   const selectedEntityId = selection.selectedEntityIds[0] ?? selection.focusedEntityId;
-  const entity = selectedEntityId ? entities.get(selectedEntityId) : undefined;
-
-  // Fallback realistic inspection data (when an entity or placeholder is selected)
-  const inspectionData = {
-    name: entity?.name ?? 'Central Street Light #14',
-    type: entity?.type ?? 'Street_Light',
-    meshCount: 1880,
-    triangles: 2880,
-    vertices: 133,
-    lods: '8.5m / LOD 2',
-    material: 'Galvanized Steel & High-Pressure Sodium',
-    height: '8.5 m',
-    sourceSession: 'Laser Scan [2024-05-15]',
-    imageFrames: 'Frame 345, 346, 350',
-    resolution: '1.8 mm/px',
-    algorithm: 'SfM MVS → Lidar Fusion → Mesh Gen',
-    processedBy: 'Reality Engine Daemon v7.3',
-    geometricErrorCm: 2.1,
-    semanticConfidencePct: 98.2,
-    temporalHistory: [
-      { version: 'V6.3', event: 'Initial Spatial Anchoring' },
-      { version: 'V7.1', event: 'Luminaire Replacement' },
-      { version: 'V7.3', event: 'Current Reconstructed State', isCurrent: true },
-    ],
-    relationships: [
-      { relation: 'Connected To', target: 'Power Grid Node 12' },
-      { relation: 'Located On', target: 'Main Street Sidewalk #4' },
-      { relation: 'Occluded By', target: 'Northern Oak Canopy' },
-    ],
-  };
+  const entity: Entity | undefined = selectedEntityId
+    ? entities.get(selectedEntityId)
+    : undefined;
 
   return (
     <aside
@@ -97,244 +112,258 @@ export default function ContextInspectorPanel() {
         </button>
       </div>
 
-      {/* ── Entity Title / Badge ── */}
-      <div className="p-3 border-b border-[#1f222b] bg-[#0f1116] shrink-0">
-        <div className="flex items-center justify-between gap-1">
-          <div className="flex items-center gap-1.5 truncate">
-            <div className="w-2 h-2 rounded-full bg-[#00e5ff] shadow-[0_0_6px_#00e5ff]" />
-            <h3 className="text-xs font-bold text-[#f0f1f6] truncate font-sans">
-              {inspectionData.name}
-            </h3>
+      {!entity ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
+          <Box className="w-6 h-6 text-[#3d3d55]" />
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#9296a6]">
+            NO ENTITY SELECTED
           </div>
-          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-[#9296a6]">
-            {inspectionData.type}
-          </span>
+          <div className="text-[10px] font-mono text-[#54596b]">
+            Select an entity in the Outliner or Viewport. The inspector
+            shows only what the backend has actually measured for it.
+          </div>
         </div>
-        <div className="flex items-center gap-2 mt-1 text-[10px] font-mono text-[#54596b]">
-          <span>ID: {selectedEntityId ?? 'ent-active-01'}</span>
-          <span>•</span>
-          <span className="text-[#2ecc71] font-semibold">VERIFIED</span>
-        </div>
-      </div>
-
-      {/* ── Scrollable Inspector Sections ── */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3 font-mono text-xs">
-        {/* 1. GEOMETRY */}
-        <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('geometry')}
-            className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
-          >
-            <span className="flex items-center gap-1.5">
-              <Box className="w-3.5 h-3.5 text-[#38bdf8]" />
-              <span className="text-[#f0f1f6]">GEOMETRY</span>
-            </span>
-            {openSections.geometry ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
-
-          {openSections.geometry && (
-            <div className="p-2.5 pt-0 grid grid-cols-2 gap-2 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
-              <div>
-                <div className="text-[#54596b]">Mesh Count</div>
-                <div className="text-[#f0f1f6] font-bold font-num">{inspectionData.meshCount}</div>
+      ) : (
+        <>
+          {/* ── Entity Title / Badge ── */}
+          <div className="p-3 border-b border-[#1f222b] bg-[#0f1116] shrink-0">
+            <div className="flex items-center justify-between gap-1">
+              <div className="flex items-center gap-1.5 truncate">
+                <div className="w-2 h-2 rounded-full bg-[#00e5ff] shadow-[0_0_6px_#00e5ff]" />
+                <h3 className="text-xs font-bold text-[#f0f1f6] truncate font-sans">
+                  {entity.name}
+                </h3>
               </div>
-              <div>
-                <div className="text-[#54596b]">Triangles</div>
-                <div className="text-[#f0f1f6] font-bold font-num">{inspectionData.triangles.toLocaleString()}</div>
-              </div>
-              <div>
-                <div className="text-[#54596b]">Vertices</div>
-                <div className="text-[#f0f1f6] font-bold font-num">{inspectionData.vertices}</div>
-              </div>
-              <div>
-                <div className="text-[#54596b]">LOD Resolution</div>
-                <div className="text-[#00e5ff] font-bold font-num">{inspectionData.lods}</div>
-              </div>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-[#9296a6]">
+                {entity.type}
+              </span>
             </div>
-          )}
-        </div>
-
-        {/* 2. SEMANTICS */}
-        <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('semantics')}
-            className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
-          >
-            <span className="flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-[#a855f7]" />
-              <span className="text-[#f0f1f6]">SEMANTICS</span>
-            </span>
-            {openSections.semantics ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
-
-          {openSections.semantics && (
-            <div className="p-2.5 pt-0 space-y-1.5 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
-              <div className="flex justify-between">
-                <span className="text-[#54596b]">Class:</span>
-                <span className="text-[#f0f1f6] font-semibold">{inspectionData.type}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#54596b]">Material:</span>
-                <span className="text-[#f0f1f6] font-semibold">{inspectionData.material}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#54596b]">Height:</span>
-                <span className="text-[#00e5ff] font-bold">{inspectionData.height}</span>
-              </div>
+            <div className="flex items-center gap-2 mt-1 text-[10px] font-mono text-[#54596b]">
+              <span className="truncate max-w-[150px]">ID: {entity.id}</span>
+              <span>•</span>
+              {/* Provenance state comes from the backend, not a hardcoded VERIFIED. */}
+              <span
+                className={
+                  entity.provenance.state === 'RECONSTRUCTED' || entity.provenance.state === 'OBSERVED'
+                    ? 'text-[#2ecc71] font-semibold'
+                    : 'text-[#f5a623] font-semibold'
+                }
+              >
+                {entity.provenance.state}
+              </span>
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* 3. EVIDENCE */}
-        <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('evidence')}
-            className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
-          >
-            <span className="flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5 text-[#2ecc71]" />
-              <span className="text-[#f0f1f6]">EVIDENCE</span>
-            </span>
-            {openSections.evidence ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
-
-          {openSections.evidence && (
-            <div className="p-2.5 pt-0 space-y-1.5 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
-              <div className="flex justify-between">
-                <span className="text-[#54596b]">Source:</span>
-                <span className="text-[#f0f1f6] truncate max-w-[150px]">{inspectionData.sourceSession}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#54596b]">Image Frame:</span>
-                <span className="text-[#f0f1f6]">{inspectionData.imageFrames}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#54596b]">Resolution:</span>
-                <span className="text-[#2ecc71] font-bold">{inspectionData.resolution}</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 4. PROVENANCE */}
-        <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('provenance')}
-            className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
-          >
-            <span className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#ec4899]" />
-              <span className="text-[#f0f1f6]">PROVENANCE</span>
-            </span>
-            {openSections.provenance ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
-
-          {openSections.provenance && (
-            <div className="p-2.5 pt-0 space-y-1.5 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
-              <div>
-                <div className="text-[#54596b]">Algorithm:</div>
-                <div className="text-[#f0f1f6] text-[9px] mt-0.5 leading-relaxed">{inspectionData.algorithm}</div>
-              </div>
-              <div>
-                <div className="text-[#54596b]">Processed By:</div>
-                <div className="text-[#9296a6] text-[9px]">{inspectionData.processedBy}</div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 5. UNCERTAINTY & CONFIDENCE */}
-        <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('uncertainty')}
-            className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
-          >
-            <span className="flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-[#f5a623]" />
-              <span className="text-[#f0f1f6]">UNCERTAINTY</span>
-            </span>
-            {openSections.uncertainty ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
-
-          {openSections.uncertainty && (
-            <div className="p-2.5 pt-0 space-y-2.5 border-t border-white/5 mt-1">
-              <ConfidenceGauge
-                label="Geometric Error"
-                value={42}
-                displayValue={`${inspectionData.geometricErrorCm} cm`}
-                variant="error"
-              />
-              <ConfidenceGauge
-                label="Semantic Confidence"
-                value={inspectionData.semanticConfidencePct}
-                variant="confidence"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* 6. TEMPORAL HISTORY */}
-        <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('temporal')}
-            className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
-          >
-            <span className="flex items-center gap-1.5">
-              <History className="w-3.5 h-3.5 text-[#38bdf8]" />
-              <span className="text-[#f0f1f6]">TEMPORAL HISTORY</span>
-            </span>
-            {openSections.temporal ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
-
-          {openSections.temporal && (
-            <div className="p-2.5 pt-0 space-y-1.5 text-[9px] border-t border-white/5 mt-1">
-              {inspectionData.temporalHistory.map((item) => (
-                <div
-                  key={item.version}
-                  className={`flex items-center justify-between p-1.5 rounded ${
-                    item.isCurrent ? 'bg-[#00e5ff]/10 text-[#00e5ff] font-bold' : 'text-[#9296a6]'
-                  }`}
+          {/* ── Scrollable Inspector Sections ── */}
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3 font-mono text-xs">
+            {/* 1. GEOMETRY — bounds from the backend's geometry payload. */}
+            {boundsOf(entity) && (
+              <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('geometry')}
+                  className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
                 >
-                  <span>{item.version}:</span>
-                  <span>{item.event}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                  <span className="flex items-center gap-1.5">
+                    <Box className="w-3.5 h-3.5 text-[#38bdf8]" />
+                    <span className="text-[#f0f1f6]">GEOMETRY</span>
+                  </span>
+                  {openSections.geometry ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                </button>
+                {openSections.geometry && (
+                  <div className="p-2.5 pt-0 space-y-1.5 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
+                    <div className="flex justify-between">
+                      <span className="text-[#54596b]">Representations:</span>
+                      <span className="text-[#f0f1f6]">{entity.representations.join(', ')}</span>
+                    </div>
+                    <div className="text-[#54596b] pt-1">Bounds (world units):</div>
+                    <div className="grid grid-cols-2 gap-x-2 font-num">
+                      <span>min</span>
+                      <span className="text-[#f0f1f6] text-right truncate">
+                        {boundsOf(entity)!.min.map((v) => v.toFixed(2)).join(', ')}
+                      </span>
+                      <span>max</span>
+                      <span className="text-[#f0f1f6] text-right truncate">
+                        {boundsOf(entity)!.max.map((v) => v.toFixed(2)).join(', ')}
+                      </span>
+                      <span>extent</span>
+                      <span className="text-[#00e5ff] text-right truncate">
+                        {boundsOf(entity)!.extent.map((v) => v.toFixed(2)).join(' × ')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
-        {/* 7. RELATIONSHIPS */}
-        <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleSection('relationships')}
-            className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
-          >
-            <span className="flex items-center gap-1.5">
-              <Network className="w-3.5 h-3.5 text-[#00e5ff]" />
-              <span className="text-[#f0f1f6]">RELATIONSHIPS</span>
-            </span>
-            {openSections.relationships ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
+            {/* 2. SEMANTICS — the entity's real class and tags. */}
+            <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('semantics')}
+                className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-[#a855f7]" />
+                  <span className="text-[#f0f1f6]">SEMANTICS</span>
+                </span>
+                {openSections.semantics ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              </button>
 
-          {openSections.relationships && (
-            <div className="p-2.5 pt-0 space-y-1.5 text-[9px] text-[#9296a6] border-t border-white/5 mt-1">
-              {inspectionData.relationships.map((rel, i) => (
-                <div key={i} className="flex justify-between items-center p-1 rounded hover:bg-white/5">
-                  <span className="text-[#54596b]">{rel.relation}:</span>
-                  <span className="text-[#f0f1f6] font-semibold">{rel.target}</span>
+              {openSections.semantics && (
+                <div className="p-2.5 pt-0 space-y-1.5 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
+                  <div className="flex justify-between">
+                    <span className="text-[#54596b]">Class:</span>
+                    <span className="text-[#f0f1f6] font-semibold">{entity.type}</span>
+                  </div>
+                  {entity.tags.length > 0 && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-[#54596b] shrink-0">Tags:</span>
+                      <span className="text-[#f0f1f6] text-right">{entity.tags.join(', ')}</span>
+                    </div>
+                  )}
+                  {entity.childIds.length > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-[#54596b]">Children:</span>
+                      <span className="text-[#f0f1f6] font-semibold">{entity.childIds.length}</span>
+                    </div>
+                  )}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
-      </div>
+
+            {/* 3. EVIDENCE — real observation count; detail in the Evidence workspace. */}
+            <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('evidence')}
+                className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-[#2ecc71]" />
+                  <span className="text-[#f0f1f6]">EVIDENCE</span>
+                </span>
+                {openSections.evidence ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              </button>
+
+              {openSections.evidence && (
+                <div className="p-2.5 pt-0 space-y-1.5 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
+                  <div className="flex justify-between">
+                    <span className="text-[#54596b]">Observations:</span>
+                    <span className="text-[#f0f1f6] font-bold font-num">{entity.observationCount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#54596b]">Sessions:</span>
+                    <span className="text-[#f0f1f6]">{entity.sessionIds.join(', ')}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 4. PROVENANCE — state, confidence, algorithm as recorded. */}
+            <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('provenance')}
+                className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#ec4899]" />
+                  <span className="text-[#f0f1f6]">PROVENANCE</span>
+                </span>
+                {openSections.provenance ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              </button>
+
+              {openSections.provenance && (
+                <div className="p-2.5 pt-0 space-y-1.5 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
+                  <div className="flex justify-between">
+                    <span className="text-[#54596b]">State:</span>
+                    <span className="text-[#f0f1f6] font-semibold">{entity.provenance.state}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#54596b]">Algorithm:</span>
+                    <span className="text-[#f0f1f6] truncate max-w-[150px]">
+                      {entity.provenance.algorithm ?? 'not recorded'}
+                    </span>
+                  </div>
+                  {entity.provenance.coordinateFrame && (
+                    <div className="flex justify-between">
+                      <span className="text-[#54596b]">Frame:</span>
+                      <span className="text-[#f0f1f6]">{entity.provenance.coordinateFrame}</span>
+                    </div>
+                  )}
+                  {entity.provenance.version && (
+                    <div className="flex justify-between">
+                      <span className="text-[#54596b]">Version:</span>
+                      <span className="text-[#f0f1f6]">{entity.provenance.version}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 5. CONFIDENCE / UNCERTAINTY — only when the backend measured them. */}
+            <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('uncertainty')}
+                className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-[#f5a623]" />
+                  <span className="text-[#f0f1f6]">CONFIDENCE</span>
+                </span>
+                {openSections.uncertainty ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              </button>
+
+              {openSections.uncertainty && (
+                <div className="p-2.5 pt-0 space-y-1.5 text-[10px] text-[#9296a6] border-t border-white/5 mt-1">
+                  <div className="flex justify-between">
+                    <span className="text-[#54596b]">Confidence:</span>
+                    <span className="text-[#2ecc71] font-bold">
+                      {(entity.provenance.confidence * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  {typeof entity.provenance.uncertainty === 'number' && (
+                    <div className="flex justify-between">
+                      <span className="text-[#54596b]">Uncertainty:</span>
+                      <span className="text-[#f5a623] font-bold">± {entity.provenance.uncertainty} m</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 6. RELATIONSHIPS — straight from WorldIR relationships. */}
+            {relationshipsOf(entity).length > 0 && (
+              <div className="rounded-lg bg-[#14161f] border border-[#1f222b] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('relationships')}
+                  className="w-full flex items-center justify-between p-2.5 hover:bg-white/5 text-[10px] font-bold text-[#54596b] uppercase"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Network className="w-3.5 h-3.5 text-[#00e5ff]" />
+                    <span className="text-[#f0f1f6]">RELATIONSHIPS</span>
+                  </span>
+                  {openSections.relationships ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                </button>
+
+                {openSections.relationships && (
+                  <div className="p-2.5 pt-0 space-y-1.5 text-[9px] text-[#9296a6] border-t border-white/5 mt-1">
+                    {relationshipsOf(entity).map((rel, i) => (
+                      <div key={`${rel.kind}-${rel.target_id}-${i}`} className="flex justify-between items-center p-1 rounded hover:bg-white/5">
+                        <span className="text-[#54596b]">{rel.kind}:</span>
+                        <span className="text-[#f0f1f6] font-semibold truncate max-w-[140px]">{rel.target_id}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </aside>
   );
 }

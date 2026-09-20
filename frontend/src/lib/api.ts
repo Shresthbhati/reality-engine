@@ -241,6 +241,35 @@ export async function fetchSessionList(): Promise<unknown[]> {
   }
 }
 
+/**
+ * One evidence session as the canonical SessionWorkspace reports it:
+ * only MEASURED fields (evidence/source counts, lifecycle status).
+ * Registration counts, reprojection error, and quality scores are
+ * absent until a reconstruction actually produces them -- the UI must
+ * render their absence honestly, never invent them.
+ */
+export interface BackendSessionSummary {
+  id: string;
+  name: string;
+  status: string;
+  evidence_count: number;
+  source_count: number;
+  source_types?: Record<string, number>;
+  error?: string;
+}
+
+export async function fetchBackendSessions(): Promise<BackendSessionSummary[]> {
+  try {
+    const res = await fetch("/api/sessions", { cache: "no-store" });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (data.error) return [];
+    return (data.sessions ?? []) as BackendSessionSummary[];
+  } catch {
+    return [];
+  }
+}
+
 export interface PointCloudResult {
   available: boolean;
   data?: ParsedPointCloud;

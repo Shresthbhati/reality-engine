@@ -43,9 +43,13 @@ export default function TitleBar() {
   const setCommandPaletteOpen = useREStore((s) => s.setCommandPaletteOpen);
   const setActiveWorkspace = useREStore((s) => s.setActiveWorkspace);
   const notifications = useREStore((s) => s.notifications);
-  const selectedWorldId = useREStore((s) => s.selectedWorldId);
-
-  const activeWorldLabel = selectedWorldId === 'world-middletown' ? 'Middletown | V7.3 Active' : 'River Cross | V2.1';
+  const activeWorldVersion = useREStore((s) => s.activeWorldVersion);
+  const worldVersions = useREStore((s) => s.worldVersions);
+  // Real mounted version from the backend store; no invented world names.
+  const activeWorld = worldVersions.find((w) => w.version_id === activeWorldVersion);
+  const activeWorldLabel = activeWorld
+    ? `${activeWorld.name || activeWorld.world_id} | ${activeWorld.version_id}`
+    : activeWorldVersion || 'No world mounted';
 
   return (
     <header className="flex flex-col shrink-0 select-none bg-[#0a0b0e] border-b border-[#1f222b] text-[#ededf2]">

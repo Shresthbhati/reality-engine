@@ -44,6 +44,14 @@ from reconstruction.backend.interface import ReconstructedCameraPose
 
 Vec3 = Tuple[float, float, float]
 
+#: Per-camera rotation disagreement above which a camera is treated as
+#: an outlier for the GAUGE REFIT (it stays fully measured in the
+#: report). 15 deg is far above any healthy COLMAP residual (measured
+#: medians on real data: 0.15-0.21 deg) and far below the near-flip
+#: signature of a false merge (90-180 deg), so the separation is wide
+#: and the constant is calibration, not tuning.
+OUTLIER_REJECTION_DEG = 15.0
+
 
 # ---------------------------------------------------------------------------
 # Quaternion / matrix primitives (deterministic, closed-form)
@@ -263,7 +271,7 @@ def evaluate_point_cloud(
         "dist_mean": float(d.mean()),
         "dist_median": float(d_sorted[n // 2]),
         "dist_p90": float(d_sorted[int(0.9 * (n - 1))]),
-        "dist_max": float(d[-1]),
+        "dist_max": float(d_sorted[-1]),
         "est_points_total": len(points),
     }
 
@@ -322,41 +330,90 @@ def evaluate_absolute_poses(
     # the scale from center distance ratios (well-defined for planar
     # and collinear configurations, unlike a rank-deficient Umeyama
     # call); the translation from the center centroids.
-    R_align = _horn_rotation_from_quats([est[n].rotation for n in common], [gt[n][0] for n in common])
+    all_idx = list(range(len(common)))
 
-    est_d = gt_d = 0.0
-    for i in range(len(common)):
-        for j in range(i + 1, len(common)):
-            est_d += math.dist(est_centers[i], est_centers[j])
-            gt_d += math.dist(gt_centers[i], gt_centers[j])
-    if est_d <= 1e-12:
+    def _gauge_from(active):
+        """Least-squares gauge from the given camera indices (Horn on
+        orientation frames; scale from center-distance ratios; t from
+        centroids). Returns None for degenerate active sets."""
+        R_a = _horn_rotation_from_quats(
+            [est[common[i]].rotation for i in active],
+            [gt[common[i]][0] for i in active],
+        )
+        est_d = gt_d = 0.0
+        for a in range(len(active)):
+            for b in range(a + 1, len(active)):
+                i, j = active[a], active[b]
+                est_d += math.dist(est_centers[i], est_centers[j])
+                gt_d += math.dist(gt_centers[i], gt_centers[j])
+        if est_d <= 1e-12:
+            return None
+        s_a = gt_d / est_d
+        em = [sum(est_centers[i][k] for i in active) / len(active) for k in range(3)]
+        gm = [sum(gt_centers[i][k] for i in active) / len(active) for k in range(3)]
+        rem = [sum(R_a[r][k] * em[k] for k in range(3)) for r in range(3)]
+        t_a = tuple(gm[r] - s_a * rem[r] for r in range(3))
+        return (R_a, t_a, s_a)
+
+    def _errors(gauge, idxs):
+        R_a, t_a, s_a = gauge
+        rots, cens = [], []
+        for i in idxs:
+            R_est = quat_to_matrix(est[common[i]].rotation)
+            R_al = [[sum(R_a[r][k] * R_est[k][c] for k in range(3)) for c in range(3)]
+                    for r in range(3)]
+            rots.append(quat_angle_deg(_matrix_to_quat(R_al), gt[common[i]][0]))
+            mapped = tuple(
+                s_a * sum(R_a[r][k] * est_centers[i][k] for k in range(3)) + t_a[r]
+                for r in range(3)
+            )
+            cens.append(math.dist(mapped, gt[common[i]][1]))
+        return rots, cens
+
+    first = _gauge_from(all_idx)
+    if first is None:
         return {
             "refused": True,
             "reason": "degenerate estimated geometry (zero center spread)",
             "common_cameras": len(common),
         }
-    s = gt_d / est_d  # scale mapping estimated scene onto reference
+    R_align, t, s = first
+    rot_errors, cen_errors = _errors(first, all_idx)
+
+    # Outlier-honest refit: one falsely-merged camera must not drag the
+    # least-squares gauge (measured 2026-09-20: a single flipped camera
+    # out of 23 pushed the WHOLE model's reported median from 0.15 deg
+    # to 3.1 deg -- the metric was measuring the outlier's pull, not
+    # fidelity). Refit the gauge on cameras whose first-pass disagreement
+    # is plausible, then re-measure EVERY camera under the robust gauge.
+    # Excluded cameras remain fully measured and are NAMED in `outliers`
+    # -- outlier-honest means separated and reported, never dropped.
+    outliers: List[dict] = []
+    plausible = [i for i in all_idx if rot_errors[i] <= OUTLIER_REJECTION_DEG]
+    if len(plausible) < len(all_idx) and len(plausible) >= min_cameras:
+        robust = _gauge_from(plausible)
+        if robust is not None:
+            R_align, t, s = robust
+            rot_errors, cen_errors = _errors(robust, all_idx)
+            outliers = sorted(
+                (
+                    {
+                        "camera": common[i],
+                        "rotation_deg": round(rot_errors[i], 4),
+                        "center_error": round(cen_errors[i], 6),
+                    }
+                    for i in all_idx
+                    if rot_errors[i] > OUTLIER_REJECTION_DEG
+                ),
+                key=lambda o: o["camera"],
+            )
+            notes.append(
+                f"gauge refit on {len(plausible)}/{len(all_idx)} cameras; "
+                f"{len(outliers)} implausible camera(s) (> {OUTLIER_REJECTION_DEG:g} deg "
+                "after first pass) reported in outliers, still fully measured"
+            )
+
     scale_ratio = 1.0 / s
-
-    est_mean = (sum(c[0] for c in est_centers) / len(common),
-                sum(c[1] for c in est_centers) / len(common),
-                sum(c[2] for c in est_centers) / len(common))
-    gt_mean = (sum(c[0] for c in gt_centers) / len(common),
-               sum(c[1] for c in gt_centers) / len(common),
-               sum(c[2] for c in gt_centers) / len(common))
-    rot_est_mean = [sum(R_align[r][k] * est_mean[k] for k in range(3)) for r in range(3)]
-    t = tuple(gt_mean[r] - s * rot_est_mean[r] for r in range(3))
-
-    rot_errors: List[float] = []
-    cen_errors: List[float] = []
-    for idx, n in enumerate(common):
-        R_est = quat_to_matrix(est[n].rotation)
-        R_est_aligned = [[sum(R_align[r][k] * R_est[k][c] for k in range(3)) for c in range(3)] for r in range(3)]
-        q_est_aligned = _matrix_to_quat(R_est_aligned)
-        rot_errors.append(quat_angle_deg(q_est_aligned, gt[n][0]))
-        mapped = tuple(s * sum(R_align[r][k] * est_centers[idx][k] for k in range(3)) + t[r] for r in range(3))
-        cen_errors.append(math.dist(mapped, gt[n][1]))
-
     rot_errors.sort()
     cen_errors.sort()
     n = len(rot_errors)
@@ -371,6 +428,7 @@ def evaluate_absolute_poses(
         "center_error_max": cen_errors[-1],
         "center_error_mean": sum(cen_errors) / n,
         "scale_ratio": scale_ratio,
+        "outliers": outliers,
         "notes": notes,
         "gauge_transform": (R_align, t, s),
     }

@@ -251,22 +251,148 @@ def cmd_points_path(version_id: str) -> int:
 
 
 def cmd_list_sessions() -> int:
+    """List evidence sessions from the canonical SessionWorkspace
+    (evidence/session_store.py: <root>/sessions/<id>/session.json +
+    sources.json). The previous implementation globbed *.json files in
+    a directory that the canonical store never writes, so real
+    sessions were always reported as absent."""
     store_root = _store_path()
     try:
-        sessions_dir = store_root.parent / "sessions"
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+        from evidence.session_store import SessionWorkspace
+
+        workspace = SessionWorkspace(str(store_root.parent))
         sessions = []
-        if sessions_dir.exists():
-            for p in sorted(sessions_dir.glob("*.json")):
+        for entry in workspace.list_sessions():
+            sid = str(entry.get("id", ""))
+            detail: dict = {
+                "id": sid,
+                "name": entry.get("name") or sid,
+                "status": entry.get("status", ""),
+                "evidence_count": entry.get("evidence_count", 0),
+                "source_count": entry.get("source_count", 0),
+            }
+            if entry.get("error"):
+                detail["error"] = entry["error"]
+            # Per-source composition from sources.json (real file lists,
+            # never invented): the UI's session browser shows what the
+            # capture actually contains.
+            sources_path = (
+                store_root.parent / "sessions" / sid / "sources.json"
+            )
+            if sources_path.is_file():
                 try:
-                    data = json.loads(p.read_text())
-                    sessions.append(data)
-                except Exception:
-                    sessions.append({"id": p.stem, "error": "parse_error"})
+                    sdata = json.loads(sources_path.read_text())
+                    types: dict = {}
+                    for s in sdata.get("sources", {}).values():
+                        t = str(s.get("source_type", s.get("type", "other")))
+                        types[t] = types.get(t, 0) + 1
+                    detail["source_types"] = types
+                except (json.JSONDecodeError, OSError):
+                    pass
+            sessions.append(detail)
         _emit({"sessions": sessions, "count": len(sessions)})
         return 0
     except Exception as exc:
         _emit({"error": str(exc), "sessions": [], "count": 0})
         return 1
+
+
+def cmd_run_log() -> int:
+    """Serve the newest measured reconstruction run record
+    (datasets/*/runs/*.json) as a log timeline for the UI's Log
+    Stream. Every entry is derived from the recorded run (stages,
+    durations, outcomes, refusal reasons); when no record exists the
+    answer says so -- nothing is synthesized."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    run_dirs = [repo_root / "datasets"]
+    best_m, best_path = None, None
+    for base in run_dirs:
+        if not base.is_dir():
+            continue
+        for p in base.glob("*/runs/*.json"):
+            name = p.name
+            if not name.startswith("run_"):
+                continue
+            if best_m is None or name > best_m:
+                best_m, best_path = name, p
+    if best_path is None:
+        _emit({
+            "available": False,
+            "reason": "no reconstruction run record found under datasets/*/runs/ -- "
+                      "run scripts/run_south_building_e2e.py to produce one",
+        })
+        return 0
+    try:
+        data = json.loads(best_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        _emit({"available": False, "reason": f"run record unreadable: {exc}"})
+        return 1
+
+    entries = []
+    recon = data.get("reconstruction", {})
+    if recon:
+        entries.append({
+            "level": "INFO",
+            "timestamp": best_m.replace("run_", "").replace("_gpu", "").replace(".json", "") if best_m else "",
+            "module": recon.get("backend", "ReconstructionBackend"),
+            "message": (
+                f"status={recon.get('status')} poses={recon.get('poses')} "
+                f"points={recon.get('points')} duration={recon.get('duration_s')}s"
+            ),
+        })
+        mr = recon.get("merge_report")
+        if mr:
+            for name, status in (mr.get("status_by_session") or {}).items():
+                reason = (mr.get("reasons") or {}).get(name, "")
+                lvl = "INFO" if status in ("aligned", "reference") else "WARNING"
+                entries.append({
+                    "level": lvl, "timestamp": "", "module": "SubModelMerge",
+                    "message": f"sub-model {name}: {status}" + (f" -- {reason}" if reason else ""),
+                })
+    outcome = data.get("outcome", {})
+    if outcome:
+        entries.append({
+            "level": "INFO" if outcome.get("outcome") == "accepted" else "WARNING",
+            "timestamp": "", "module": "RunClassification",
+            "message": (
+                f"outcome={outcome.get('outcome')} "
+                f"reason={outcome.get('reason', '')}"
+            ),
+        })
+    gt = data.get("gt_comparison", {})
+    if gt and not gt.get("refused"):
+        for o in gt.get("outliers", []):
+            entries.append({
+                "level": "WARNING", "timestamp": "", "module": "PoseEvaluation",
+                "message": (
+                    f"outlier camera {o.get('camera')}: rotation "
+                    f"{o.get('rotation_deg')} deg, center {o.get('center_error')}"
+                ),
+            })
+        entries.append({
+            "level": "INFO", "timestamp": "", "module": "PoseEvaluation",
+            "message": (
+                f"pose fidelity median={gt.get('rotation_deg_median')} deg "
+                f"over {gt.get('common_cameras')} cameras"
+            ),
+        })
+    pf = data.get("point_fidelity", {})
+    if pf and not pf.get("refused"):
+        entries.append({
+            "level": "INFO", "timestamp": "", "module": "PointFidelity",
+            "message": (
+                f"point->reference median={pf.get('dist_median')} "
+                f"p90={pf.get('dist_p90')} over {pf.get('measured_points')} pts"
+            ),
+        })
+    _emit({
+        "available": bool(entries),
+        "source": str(best_path.relative_to(repo_root)) if entries else None,
+        "reason": None if entries else "run record exists but has no recognized stages",
+        "entries": entries,
+    })
+    return 0
 
 
 def cmd_diff(base_vid: str, head_vid: str) -> int:
@@ -361,6 +487,8 @@ def main() -> int:
         return cmd_points_path(sys.argv[2])
     elif cmd == "list-sessions":
         return cmd_list_sessions()
+    elif cmd == "run-log":
+        return cmd_run_log()
     else:
         _emit({"error": f"Unknown command: {cmd}"})
         return 1

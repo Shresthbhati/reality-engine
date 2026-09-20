@@ -47,9 +47,11 @@ import {
   fetchWorldList,
   fetchWorldDetail,
   fetchWorldPointCloud,
+  fetchBackendSessions,
   convertBackendEntityToEntity,
   type BackendWorldSummary,
   type BackendGeometryPayload,
+  type BackendSessionSummary,
 } from "@/lib/api";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
@@ -796,8 +798,18 @@ interface RealityEngineStore {
   loadedFromBackend: boolean;
   activeWorldVersion: string | null;
   worldVersions: BackendWorldSummary[];
+  /** Real evidence sessions (canonical SessionWorkspace via bridge). */
+  backendSessions: BackendSessionSummary[];
   loadWorldFromBackend: (versionId?: string) => Promise<boolean>;
   refreshWorldVersions: () => Promise<void>;
+  /**
+   * Real evidence sessions from the canonical SessionWorkspace
+   * (via the Python bridge). Each maps the backend's honest fields
+   * -- evidence_count / source_count / status -- with NO invented
+   * registration, quality, or sensor values. Unmeasured fields are
+   * undefined and the UI must render them as unmeasured.
+   */
+  loadSessionsFromBackend: () => Promise<BackendSessionSummary[]>;
 
   // ── Point Cloud / Mesh Artifacts (Real Streaming)
   pointCloudPositions: Float32Array | null;
@@ -952,10 +964,14 @@ export const useREStore = create<RealityEngineStore>()(
     showQualityDetails: false,
 
     // ── Loader State
-    validationIssues: MOCK_VALIDATION_ISSUES,
+    // NO fabricated validation issues: the backend produces none yet, so
+    // the list starts EMPTY (the old hardcoded PTP-drift/multipath/
+    // glare issues were invented diagnostics shown before any capture
+    // existed). The DEMO action loads its labeled fixture set only.
+    validationIssues: [],
     selectedSourceTypeFilter: null,
-    selectedSessionId: "sess-001",
-    timelineScrubSec: 42,
+    selectedSessionId: null,
+    timelineScrubSec: 0,
 
     // ── Benchmark Explorer
     benchmarks: BENCHMARK_STRUCTURES,
@@ -991,6 +1007,7 @@ export const useREStore = create<RealityEngineStore>()(
     loadedFromBackend: false,
     activeWorldVersion: null,
     worldVersions: [],
+    backendSessions: [],
     pointCloudPositions: null,
     pointCloudColors: null,
     pointCloudCount: 0,
@@ -1201,20 +1218,35 @@ export const useREStore = create<RealityEngineStore>()(
       set({ worldVersions: worlds });
     },
 
+    loadSessionsFromBackend: async () => {
+      const sessions = await fetchBackendSessions();
+      set({ backendSessions: sessions });
+      return sessions;
+    },
+
     loadWorldFromBackend: async (versionId?: string) => {
       const status = await checkBackendStatus();
       if (!status.backend) {
+        // NO FAKE COMPLETION: an unreachable backend leaves the store
+        // EMPTY with an explicit error -- components must render their
+        // real unavailable/empty states, never demo data (directive §6:
+        // backend unavailable must never silently become fake world).
         set({
           backendConnected: false,
           backendError: status.error ?? "Backend offline",
           loadedFromBackend: false,
+          entities: new Map(),
+          entityTree: [],
+          sessions: [],
+          measurements: [],
+          validationIssues: [],
+          world: null,
           pointCloudPositions: null,
           pointCloudColors: null,
           pointCloudCount: 0,
           pointCloudStatus: "UNAVAILABLE",
           pointCloudError: status.error ?? "Backend offline",
         });
-        get().loadMockData();
         return false;
       }
 
@@ -1234,7 +1266,6 @@ export const useREStore = create<RealityEngineStore>()(
           pointCloudStatus: "UNAVAILABLE",
           pointCloudError: "No version available",
         });
-        get().loadMockData();
         return false;
       }
 
@@ -1246,7 +1277,6 @@ export const useREStore = create<RealityEngineStore>()(
           pointCloudStatus: "UNAVAILABLE",
           pointCloudError: detail?.error ?? "Failed to load WorldIR version",
         });
-        get().loadMockData();
         return false;
       }
 

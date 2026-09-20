@@ -404,7 +404,8 @@ class TestFolderImport:
         _builder, report = _import(capture_folder)
         data = report.to_dict()
         assert set(data.keys()) == {
-            "imported", "duplicates_skipped", "near_duplicates_marked", "unhandled_paths"
+            "imported", "duplicates_skipped", "near_duplicates_marked", "unhandled_paths",
+            "failed_paths",  # batch-survival policy (on_error="record")
         }
         assert len(data["imported"]) == len(report.imported)
 

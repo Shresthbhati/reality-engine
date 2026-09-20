@@ -225,6 +225,43 @@ tasks:
       Real COLMAP spend-avoidance E2E (admission observed saving GPU
       work on a real capture) is the named next gate.
 
+  - id: P0-ROBUST-02
+    name: reproducible real-data validation (south-building) + batch-survival import
+    status: DONE
+    problem: >
+      No committed real-photo dataset: real COLMAP execution was not
+      reproducible from repository data alone, and import_folder aborted
+      an entire batch on one corrupt file (a 500-image capture could
+      lose 499 good frames to one broken payload).
+    scope: >
+      datasets/south_building (committed 32-photo deterministic subset of
+      the public COLMAP South Building set + filtered sparse reference +
+      MANIFEST.json with per-image sha256 + regeneration script
+      scripts/fetch_south_building.py with checksum verify); real E2E
+      driver scripts/run_south_building_e2e.py (ingestion -> admission ->
+      real COLMAP -> fusion -> honest run record in datasets/south_building/runs/);
+      import_folder on_error="record" batch-survival policy (failed_paths
+      recorded with reasons, remaining files still import).
+    verification:
+      - "scripts/fetch_south_building.py verify: 32/32 images match MANIFEST.json"
+      - "real E2E (run_20260919T203748.json): COLMAP 4.2.0 CUDA, 429.5s,
+        22/32 poses registered, 4510 points, outcome degraded with reason,
+        GT comparison 22 common images (8.94deg median rotation disagreement
+        after conjugation), fusion 197 conflicts preserved"
+      - "tests/test_bad_evidence_real.py 8/8 red-first on real bytes:
+        blur rejected with measured laplacian, duplicates deduped and
+        recorded, truncated classify FAILED, corrupt batch survival
+        (7/8 survive, failure recorded), exposure clipping measured,
+        admission gate excludes exactly failed/rejected, RUN A vs RUN B
+        workload delta measured, run-level connectivity honesty"
+      - "EvidenceItem bridges carry measured quality metrics (commit e5361fc)
+        -- without this the classifier saw nothing on real captures"
+    notes: >
+      Dataset is REAL (public photographs, provenance in MANIFEST.json);
+      the rendered room capture remains the synthetic reference fixture.
+      GT translation comparison requires Sim(3) alignment -- recorded as
+      not claimed. registered 22/32 = honest partial on a hard outdoor ring.
+
   # ================= PHASE 2 — TIME + CALIBRATION =================
 
   - id: P2-01

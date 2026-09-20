@@ -1057,3 +1057,41 @@ Ledger after sync: 33 DONE / 6 PARTIAL / 0 MISSING.
   GPU COLMAP fused.ply -> canonical geometry with provenance).
 - Full unbounded suite at branch head: 1881 passed / 1 failed / 8 skipped before the
   SDK test repair; repaired failure re-run green; affected-cluster re-gate 48 passed.
+
+## Session: RECONSTRUCTION_REAL_DATA_READY (Freebuff, branch agent/freebuff-reconstruction-perception, 2026-09-20)
+
+Mission: move reconstruction from architecturally-implemented to reproducibly
+verified against REAL evidence (P0: committed reproducible real dataset, bad
+evidence failure recovery, quality admission; P1: outdoor exercise, real-model
+diagnostics).
+
+- **Committed real dataset**: datasets/south_building — 32-photo deterministic
+  subset of the public COLMAP South Building set (width-1024 LANCZOS q90,
+  stride subset) + sparse reference filtered to those images (provenance ids
+  kept) + MANIFEST.json (per-image sha256, source URL, original zip sha256,
+  credit, recipe). scripts/fetch_south_building.py regenerates/verifies;
+  `verify` mode: 32/32 match. Dataset is REAL; provenance recorded.
+- **Real E2E** (scripts/run_south_building_e2e.py, run record
+  datasets/south_building/runs/run_20260919T203748.json): ingestion 32 ->
+  admission (30 accepted / 2 degraded) -> REAL COLMAP 4.2.0 CUDA 429.5s ->
+  22/32 poses, 4510 points -> outcome degraded WITH reason ->
+  GT comparison 22 common images, 8.94deg median rotation disagreement
+  (quaternion conjugation; Sim(3) translation alignment NOT claimed) ->
+  fusion 22 observations, 197 conflicts preserved.
+- **Batch survival**: import_folder(on_error="record") — a corrupt file is
+  recorded in failed_paths (path, reason) and remaining files import;
+  default "raise" unchanged. Red-first: one corrupt file no longer kills a
+  large ingest.
+- **Bridge fix** (commit e5361fc): EvidenceAsset -> EvidenceItem bridges were
+  dropping importer-measured quality metrics — the classifier saw nothing on
+  real captures. Found by behavioral verification, fixed red-first.
+- **Real-evidence tests**: tests/test_bad_evidence_real.py 8/8 (blur REJECTED
+  with measured laplacian, duplicates deduped+recorded, truncated FAILED,
+  corrupt batch survival, exposure clipping, admission gate exact, RUN A vs
+  RUN B workload delta, run-level connectivity honesty) — derived at test
+  time from the committed real bytes, real-data-gated skip with exact path.
+- Full suite gate: relaunched (arch-bench perf guard failure during earlier
+  run was CPU contention from concurrent agent suites, not a regression).
+- Ledgers: TASKS.yaml P0-ROBUST-02 DONE (measured verification),
+  CAPABILITIES.yaml 52 entries (reproducible_real_data_validation),
+  handoff .handoffs/RECONSTRUCTION_REAL_DATA_READY.md.

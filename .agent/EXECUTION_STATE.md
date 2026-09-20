@@ -1135,3 +1135,30 @@ datasets/real_room_capture_worldir/); copied from the main checkout
 to unblock (13/13 green). Fresh clones without them see 9 failures
 with explicit "Missing real pipeline ..." assertions — a known gap
 between that test file and the repo's skip-cleanly discipline.
+
+## Session 2026-09-21 — CANONICAL_SYSTEM_INTEGRATION_RELEASE_CAPTAIN (Antigravity)
+
+Closed canonical end-to-end integration proof and release hardening across all subsystems:
+
+1. **Canonical Golden World Flow Upgrade** (`tests/integration/test_golden_world_flow.py`):
+   - **Mobile Capture Bundle Ingestion**: Built from real JPEG payloads with real sensor telemetry (`headingDeg`, structured `geolocation`), triage verdicts, and content-derived SHA-256 hashes.
+   - **Desktop Loader**: Ingests mobile bundle into `MultiSourceSession` with on-disk session asset persistence, payload verification, and deduplication.
+   - **Capture Task Derivation**: Derives next-action capture tasks (`coverage_gap`, `reframe`, `telemetry`) from real measured compass octants and GPS bounds (`state: AVAILABLE`).
+   - **WorldIR V1 Compilation**: Compiles multi-room evidence into entities, geometries, and topological relationships (`ADJACENT_TO`).
+   - **WorldStore V1 Lineage**: Persists version with parent=None and source session lineage (`sess-base-001`).
+   - **Spatial Indexing & Desktop Loader**: Validates spatial tile boundaries and Desktop API bridge consumption (`cmd_load_world`).
+   - **Pass 2 Localized Rescan**: Second capture session, cross-session alignment (`align_session`), dependency closure computation (`affected_closure`), and localized incremental update (`apply_incremental_update()`). Strict reference identity preserved for untouched entities (`room-1`).
+   - **WorldStore V2 & WorldDiff**: Persists V2 with parent=V1; computes WorldDiff proving untouched entities are completely absent from change set; verified via Desktop API bridge (`cmd_diff`).
+   - **Multi-Format Export & Readback Validation**:
+     - glTF 2.0: Spec-compliant JSON structure with base64 binary buffer decoded and verified.
+     - CityGML 2.0: Validated XML with ElementTree parsing verifying `core:CityModel` and `Solid` geometry.
+     - USDA 1.0: Validated USD ASCII text with sanitized prim identifiers and translation xformOps.
+     - CityJSON 1.1: Validated CityObjects mapping and geometry hierarchy.
+
+2. **Full Integration Suite Verification**:
+   - `pytest tests/test_mobile_bridge.py tests/test_reconstruction_batch.py tests/test_city_import.py tests/test_detail_subdivision.py tests/integration/`: **147 passed, 7 skipped in 85.28s**.
+   - `test_golden_world_flow.py`: **1 passed in 1.96s**.
+
+3. **Frontend Production Build**:
+   - `npm run build`: **Compiled successfully in 12.2s**, TypeScript passed in 10.2s, all 12/12 routes generated statically and dynamically without errors.
+

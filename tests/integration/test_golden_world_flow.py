@@ -39,22 +39,35 @@ Incremental updates update the existing world locally without recompiling from z
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import io
 import json
 import os
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import pytest
 
 from apps.cli import api_bridge
+from apps.cli.mobile_bridge import (
+    derive_capture_tasks,
+    ingest_mobile_bundle_to_dir,
+    load_mobile_bundle,
+)
 from engine.compiler import CompileOptions, compile_reconstruction_to_world
 from engine.math import Vec3
+from evidence.multi_source import MultiSourceSession
 from evidence.packages import (
     DeterministicPackageBuilder,
     EvidenceKind,
     EvidenceSource,
 )
 from evidence.session import EvidenceItem, Session
+from exporters.citygml.exporter import export_to_citygml
+from exporters.cityjson.exporter import export_to_cityjson
+from exporters.gltf.exporter import export_to_gltf
+from exporters.usd.exporter import export_to_usda
 from provenance import Provenance, Uncertainty
 from reconstruction.backend.interface import (
     ReconstructedCameraPose,
@@ -91,26 +104,72 @@ class TestGoldenWorldFlowSuite:
         # PASS 1: Base World (Room 1 + Room Annex)
         # =====================================================================
 
-        # 1. Evidence capture
-        source_1 = EvidenceSource(source_id="device-iphone-1", platform="ios", device="iPhone 15 Pro")
-        pkg_builder_1 = DeterministicPackageBuilder("pkg-sess-1")
-        pkg_builder_1.register_source(source_1)
-
-        payload_img_1 = b"\xff\xd8\xff\xe0" + b"REAL_SENSOR_PAYLOAD_ROOM_1" + b"\xff\xd9"
-        asset_id_1 = pkg_builder_1.add_payload(
-            payload=payload_img_1,
-            kind=EvidenceKind.PHOTO,
-            source=source_1,
-            source_uri="file:///captures/room1.jpg",
+        # 0. Mobile Capture Bundle Creation (Phone Export)
+        raw_jpeg_1 = (
+            b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb\x00C\x00\x08\x06"
+            b"\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14"
+            b"\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\xff\xc0\x00\x0b"
+            b"\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01"
+            b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda\x00"
+            b"\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
         )
-        pkg_1 = pkg_builder_1.build()
-        assert len(pkg_1.assets) == 1
+        sha_1 = hashlib.sha256(raw_jpeg_1).hexdigest()
+        frame_id_1 = f"frame:{sha_1[:16]}"
+        bundle_doc_1 = {
+            "schema": "re.mobile-session-bundle/v1",
+            "bundleId": "bundle:golden-001",
+            "exportedAt": "2026-09-20T10:00:00Z",
+            "device": "iPhone 15 Pro",
+            "session": {
+                "sessionId": "sess-base-001",
+                "name": "Golden Capture Site",
+                "intent": "inspection",
+            },
+            "frames": [
+                {
+                    "frameId": frame_id_1,
+                    "contentSha256": sha_1,
+                    "capturedAt": "2026-09-20T09:59:00Z",
+                    "width": 1920,
+                    "height": 1080,
+                    "bytes": len(raw_jpeg_1),
+                    "mime": "image/jpeg",
+                    "verdict": "USEFUL",
+                    "reasons": ["sharpness_ok", "exposure_ok"],
+                    "telemetry": {
+                        "headingDeg": 15.0,
+                        "geolocation": {
+                            "latitude": 37.7749,
+                            "longitude": -122.4194,
+                            "accuracyM": 5,
+                        },
+                    },
+                    "payloadBase64": base64.b64encode(raw_jpeg_1).decode("ascii"),
+                }
+            ],
+            "skippedFrames": [],
+            "taskOutcomes": [],
+        }
+        bundle_path_1 = tmp_path / "mobile_bundle_1.json"
+        bundle_path_1.write_text(json.dumps(bundle_doc_1), encoding="utf-8")
 
-        # 2. Session 1
-        sess_1 = Session("sess-base-001")
-        item_1 = pkg_1.assets[asset_id_1].to_evidence_item()
-        sess_1.add_evidence(item_1)
-        assert len(sess_1.all_evidence()) == 1
+        # 1. Desktop Loader: Ingest Mobile Bundle into Session Store
+        sess_dir_1 = tmp_path / "session_1"
+        sess_dir_1.mkdir(parents=True, exist_ok=True)
+        bundle_1 = load_mobile_bundle(str(bundle_path_1))
+        sess_1 = MultiSourceSession("sess-base-001", name="Golden Capture Site")
+        ingest_report_1 = ingest_mobile_bundle_to_dir(bundle_1, sess_1, sess_dir_1)
+        assert ingest_report_1["frames_verified"] == 1
+        assert ingest_report_1["integrity_failures"] == []
+        assert (sess_dir_1 / "mobile" / "rgb" / f"{sha_1}.jpg").exists()
+
+        # Follow-up capture tasks derived from real bundle telemetry
+        tasks_doc_1 = derive_capture_tasks(bundle_1)
+        assert tasks_doc_1["coverageAnalysis"]["state"] == "AVAILABLE"
+        assert tasks_doc_1["gpsBounds"] is not None
+
+        # Extract evidence item from ingested session
+        item_1 = sess_1.package.all_assets()[0].to_evidence_item()
 
         # 3. Reconstruction 1: Two rooms (room-1: x in [0, 4], annex: x in [5, 8])
         pts_room1 = [
@@ -159,6 +218,7 @@ class TestGoldenWorldFlowSuite:
             provenance=Provenance.RECONSTRUCTED,
             confidence=0.95,
         )
+        e_room1.transform = {"position": {"x": 2.0, "y": 2.0, "z": 1.5}}
         geom_r1 = Geometry(
             id="geom-r1",
             type=GeometryType.BOX,
@@ -174,6 +234,7 @@ class TestGoldenWorldFlowSuite:
             provenance=Provenance.RECONSTRUCTED,
             confidence=0.92,
         )
+        e_annex.transform = {"position": {"x": 6.5, "y": 2.0, "z": 1.5}}
         geom_annex = Geometry(
             id="geom-annex-v1",
             type=GeometryType.BOX,
@@ -202,7 +263,7 @@ class TestGoldenWorldFlowSuite:
             world_v1,
             parent=None,
             version_id="v-golden-1",
-            source_session_ids=[sess_1.id],
+            source_session_ids=[sess_1.session_id],
         )
         assert ver_1.version_id == "v-golden-1"
         assert ver_1.parent is None
@@ -253,7 +314,7 @@ class TestGoldenWorldFlowSuite:
         # 2. Alignment: Align Session 2 cloud to Session 1
         cloud_sess1 = [Vec3(x, y, 1.0) for x in range(5, 8) for y in range(0, 4)]
         cloud_sess2 = [Vec3(x + 0.05, y + 0.02, 1.01) for x in range(5, 8) for y in range(0, 4)]
-        align_report = align_session(cloud_sess2, cloud_sess1, from_session=sess_2.id, to_session=sess_1.id)
+        align_report = align_session(cloud_sess2, cloud_sess1, from_session=sess_2.id, to_session=sess_1.session_id)
         assert align_report.status == "accepted"
         assert align_report.transform is not None
 
@@ -278,6 +339,7 @@ class TestGoldenWorldFlowSuite:
             confidence=0.98,
             geometry_ids=["geom-annex-v2"],
         )
+        e_annex_v2.transform = {"position": {"x": 6.75, "y": 2.25, "z": 1.6}}
 
         update_result = apply_incremental_update(
             base_world=world_v1,
@@ -323,3 +385,43 @@ class TestGoldenWorldFlowSuite:
         changed_entities = [d["entity_id"] for d in diff_payload["entities"]]
         assert "room-annex" in changed_entities
         assert "room-1" not in changed_entities
+
+        # =====================================================================
+        # STEP 8: Export Pipeline & Readback Validation
+        # =====================================================================
+
+        # 1. glTF 2.0 Export & Readback
+        gltf_out = export_to_gltf(world_v2, artifact_store=store._store)
+        assert gltf_out["asset"]["version"] == "2.0"
+        node_names = [n.get("name") for n in gltf_out.get("nodes", [])]
+        assert "room-1" in node_names
+        assert "room-annex" in node_names
+        assert len(gltf_out.get("meshes", [])) >= 1
+        assert len(gltf_out.get("buffers", [])) >= 1
+        buf_uri = gltf_out["buffers"][0]["uri"]
+        assert buf_uri.startswith("data:application/octet-stream;base64,")
+        b64_data = buf_uri.split(",", 1)[1]
+        decoded_bytes = base64.b64decode(b64_data)
+        assert len(decoded_bytes) > 0
+
+        # 2. CityGML 2.0 Export & Readback
+        citygml_out = export_to_citygml(world_v2)
+        assert "CityModel" in citygml_out
+        root_elem = ET.fromstring(citygml_out)
+        assert root_elem.tag.endswith("CityModel")
+        assert "room-1" in citygml_out
+        assert "room-annex" in citygml_out
+        assert "Solid" in citygml_out
+
+        # 3. USDA (Universal Scene Description) Export & Readback
+        usda_out = export_to_usda(world_v2, artifact_store=store._store)
+        assert usda_out.startswith("#usda 1.0")
+        assert '"room_1"' in usda_out
+        assert '"room_annex"' in usda_out
+
+        # 4. CityJSON Export & Readback
+        cityjson_out = export_to_cityjson(world_v2)
+        assert cityjson_out["type"] == "CityJSON"
+        assert cityjson_out["version"] == "1.1"
+        assert "room-1" in cityjson_out["CityObjects"]
+        assert "room-annex" in cityjson_out["CityObjects"]

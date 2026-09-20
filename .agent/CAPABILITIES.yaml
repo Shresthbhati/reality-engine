@@ -835,3 +835,16 @@ capabilities:
     maturity: "IMPLEMENTED -- 17 tests in tests/test_reconstruction_robustness.py + 7 in tests/test_robustness_admission.py (red-first); scale harness benchmarks/robustness_scale.py measured 20..5000 images, linear scaling, deterministic 80/10/5/5 outcome mix"
     limitations: "classification trusts importer-recorded metrics; UNRESOLVED items proceed flagged (absence of metrics must not veto good captures); real COLMAP spend-avoidance end-to-end is the named next gate"
     fallback: "batch refusal (AdmissionError) names admitted/excluded counts when admission leaves too little evidence; exclusions are recorded facts, never silent drops"
+
+  - name: reproducible_real_data_validation
+    category: reconstruction
+    backend: "datasets/south_building (committed 32-photo deterministic subset of the public COLMAP South Building set, filtered sparse reference, MANIFEST.json with per-image sha256); scripts/fetch_south_building.py (download/verify/subset/filter, checksum verify mode); scripts/run_south_building_e2e.py (ingestion -> admission -> REAL COLMAP -> fusion -> honest run record)"
+    inputs: [repository dataset (no network needed for the committed subset), local COLMAP install for the E2E]
+    outputs: [verified dataset, run record JSON in datasets/south_building/runs/ (backend versions, runtime, poses, points, outcome+reason, GT comparison, fusion conflicts)]
+    license: "dataset: public photographs distributed by the COLMAP authors (credit Christopher Zach, UNC Chapel Hill); provenance pinned by original-zip sha256 in MANIFEST.json"
+    hardware_requirements: "CPU sufficient (measured run used COLMAP 4.2.0 CUDA build, ~7 min wall for 32 photos at 1024x768)"
+    accuracy: "REAL data: 22/32 poses registered vs the reference model (8.94 deg median rotation disagreement after quaternion conjugation; translation comparison requires Sim(3) alignment and is NOT claimed); honest outcome=degraded with reason recorded"
+    runtime: "COLMAP 429.5s + ingestion/admission/fusion ~5s on the dev machine; full chain reproducible from repository data alone"
+    maturity: "VERIFIED -- scripts/fetch_south_building.py verify: 32/32 images match MANIFEST.json; real E2E run_20260919T203748.json recorded; tests/test_bad_evidence_real.py 8/8 red-first on real bytes (blur REJECTED with measured laplacian, duplicates deduped+recorded, truncated FAILED, corrupt batch survival 7/8 with recorded failure, exposure clipping measured, admission gate exact, RUN A vs RUN B workload delta, run-level connectivity honesty)"
+    limitations: "GT translation comparison not performed (Sim(3) alignment out of scope of this checkpoint); 10/32 images unregistered by mapping on the hard outdoor ring -- recorded, not hidden; E2E driver requires a local COLMAP install and is NOT wired into CI"
+    fallback: "import_folder on_error=\"record\" batch survival: a corrupt file is recorded in failed_paths with its reason and the remaining files still import (tests/test_bad_evidence_real.py::test_corrupt_file_does_not_lose_the_whole_batch); the default on_error=\"raise\" policy is unchanged for callers that want fail-fast"

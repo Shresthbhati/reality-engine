@@ -106,54 +106,50 @@ def _evidence_id_to_name(items) -> dict:
 
 
 def _compare_to_gt(poses, gt_images, id_to_name=None):
-    """Rotation disagreement per common camera, degrees.
+    """Absolute-pose fidelity vs the reference model, measured through
+    reconstruction.evaluation (the canonical evaluator). Returns
+    (report, gauge_transform) -- the transform is reused for the
+    point-cloud fidelity measurement (ONE gauge explains orientations,
+    centers and points).
 
-    The backend stores CAMERA-TO-WORLD quaternions (documented on
-    ReconstructedCameraPose); COLMAP's images.txt is WORLD->CAMERA, so
-    each GT quaternion is conjugated before comparison. Translation is
-    in an independently-arbitrary scale/origin between runs, so only
-    rotation is directly comparable without Sim(3) alignment."""
-    gt_cam_to_world = {
-        name: (qw, -qx, -qy, -qz)
-        for name, (qw, qx, qy, qz, *_t) in gt_images.items()
-    }
+    Honesty correction (P1 fidelity mission): an incremental SfM run is
+    recovered in an ARBITRARY gauge -- comparing its quaternions
+    directly against the reference model (the previous implementation)
+    measured mostly the gauge difference, not fidelity (the recorded
+    8.94 deg "median disagreement" was dominated by gauge). The
+    canonical evaluator least-squares-aligns the estimate to the
+    reference (Horn rotation on orientation frames + scale/translation
+    from camera-center geometry) and only then measures per-camera
+    disagreement. Refuses rather than guesses when too few common
+    cameras or degenerate geometry cannot define the alignment."""
+    from reconstruction.evaluation import evaluate_absolute_poses
+
     by_name = {p.evidence_id: p for p in poses}
     if id_to_name:
-        by_name = {
-            id_to_name[eid]: pose
-            for eid, pose in by_name.items()
-            if eid in id_to_name
-        }
-    common = sorted(set(by_name) & set(gt_cam_to_world))
-    if not common:
-        return {"common_images": 0}
-    angles = []
-    for name in common:
-        angles.append(_quat_angle_deg(by_name[name].rotation, gt_cam_to_world[name]))
-    angles.sort()
-    return {
-        "common_images": len(common),
-        "rotation_disagreement_deg_median": round(angles[len(angles) // 2], 3),
-        "rotation_disagreement_deg_max": round(angles[-1], 3),
-        "registered_of_gt": f"{len(common)}/{len(gt_cam_to_world)}",
-        "note": ("rotation is comparable without alignment (GT conjugated "
-                 "to camera-to-world); translation comparison requires "
-                 "Sim(3) alignment and is not claimed here"),
-    }
-    if not common:
-        return {"common_images": 0}
-    angles = []
-    for name in common:
-        angles.append(_quat_angle_deg(by_name[name].rotation, gt_cam_to_world[name]))
-    angles.sort()
-    return {
-        "common_images": len(common),
-        "rotation_disagreement_deg_median": round(angles[len(angles) // 2], 3),
-        "rotation_disagreement_deg_max": round(angles[-1], 3),
-        "note": ("rotation is comparable without alignment (GT conjugated "
-                 "to camera-to-world); translation comparison requires "
-                 "Sim(3) alignment and is not claimed here"),
-    }
+        # The evaluator matches poses to the reference by the pose's
+        # evidence_id; rebuild each frozen pose under its ORIGINAL
+        # filename (the only name the reference model knows).
+        import dataclasses
+
+        renamed = []
+        for eid, pose in by_name.items():
+            name = id_to_name.get(eid)
+            if name is not None:
+                renamed.append(dataclasses.replace(pose, evidence_id=name))
+        by_name = {p.evidence_id: p for p in renamed}
+    report = evaluate_absolute_poses(list(by_name.values()), gt_images)
+    if report.get("refused"):
+        return {"refused": True, "reason": report.get("reason", "unspecified")}, None
+    out = dict(report)
+    transform = out.pop("gauge_transform")
+    common = len(set(by_name) & set(gt_images))
+    out["registered_of_gt"] = f"{common}/{len(gt_images)}"
+    out["note"] = (
+        "measured after least-squares gauge alignment (Horn rotation on "
+        "orientation frames; scale/translation from camera-center "
+        "geometry) -- raw pre-alignment disagreement is gauge, not error"
+    )
+    return out, transform
 
 
 def _load_run_output_model(workdir: Path):
@@ -241,10 +237,20 @@ def main() -> int:
     # Pose keys are evidence ids (the backend renames images into its
     # workspace), so translate to the GT's original filenames first.
     gt_images = _load_gt_images(DATASET / "sparse" / "images.txt")
-    record["gt_comparison"] = _compare_to_gt(
+    record["gt_comparison"], gauge_transform = _compare_to_gt(
         run.result.camera_poses, gt_images,
         _evidence_id_to_name(admitted),
     )
+    # Geometric fidelity: how far are reconstructed points from the
+    # reference surface, after the SAME gauge transform? This is the
+    # mission's "are the surfaces actually correct" metric.
+    if gauge_transform is not None:
+        from reconstruction.evaluation import evaluate_point_cloud
+
+        gt_points = _load_gt_points(DATASET / "sparse" / "points3D.txt")
+        record["point_fidelity"] = evaluate_point_cloud(
+            run.result.points, gt_points, gauge_transform
+        )
     # Keep the COLMAP workspace artifacts on disk for inspection; also
     # record where they are so the run is reproducible/auditable.
     record["colmap_note"] = (

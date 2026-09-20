@@ -84,6 +84,68 @@ the fidelity question is now answered with measured numbers.
 
 ---
 
+## 1b. Coverage campaign (measured, on the same real subset)
+
+The coverage gap from §1 was attacked with controlled ablations on the
+committed 32 photos. Every number is a real COLMAP 4.2.0 run measured
+from its own database/models, not an assumption:
+
+| Config | Cameras registered | Points | Pose fidelity (median) | Verdict |
+|---|---|---|---|---|
+| A: baseline SIFT | 22 / 32 | 4,438 | **0.164°** | the §1 run |
+| B: affine+DSP SIFT | 22 / 32 | **5,392** (+22%) | **0.164°** | STRICT WIN — adopted as default |
+| C: affine+DSP + guided matching | 31 / 32 | 11,632 | **24.6°** (max 160.9°) | FALSE COVERAGE — rejected |
+| D: B + multi-model merge (first attempt) | 23 | 5,395 | 3.1° | CONTAMINATED — fixed (below) |
+| E: D's fixes (robust gauge + merge minimum), final run | 22 / 32 | 5,388 | **0.172°** (max 0.482°) | CLEAN — the adopted default |
+
+**Final run (run_20260920T210502_gpu.json, COLMAP 4.2.0 CUDA, 699 s** —
+the affine+DSP extraction is CPU-bound and ~14× slower than baseline;
+that is the measured price of +21% verified points at unchanged
+fidelity). Zero outliers — the robust gauge was not even needed on a
+healthy run, which is exactly how it should behave: it exists for the
+unhealthy ones. Center-error median improved to 0.0107 (baseline
+0.0215). Single sub-model this run, so the merge path was not exercised
+in production — its refusal discipline is proven by unit tests
+(`test_tiny_submodel_refused_not_merged`, `test_merge_report_travels_on_result`).
+Point fidelity: median 0.0065, p90 0.0162 reference units (median 6.5 mm
+at building scale) — identical to baseline within noise.
+
+**Guided matching is measurably UNSAFE on repetitive architecture.** Its
+9 extra cameras came from forcing matches through similar facade
+windows; the warp is visible in the geometry itself (median point error
+0.206 vs 0.0068 reference units). `DEFAULT_GUIDED_MATCHING = False`;
+it remains opt-in (`--guided-matching`) with this measurement as the
+reason. Affine-shape + domain-size-pooling extraction (B) keeps fidelity
+intact while adding 22% verified points — adopted as default.
+
+**Config D exposed two more honesty defects, both fixed red-first:**
+
+1. **The degenerate-merge hole.** COLMAP's mapper split off a 3-point
+   sub-model; `merge_submodel_results` ICP-snapped it onto the 5,392-
+   point reference with ~zero residual (3 points always fit 3 nearest
+   neighbors) — every existing gate (RMSE, inlier fraction, scale
+   sanity) passed, its one camera entered the scene, and the merge
+   report was DISCARDED by the backend (`_merge_report` unused), leaving
+   zero trace. Fix: `MIN_MERGE_POINTS = 8` verification minimum (a
+   cloud too small to constrain a transform cannot be certified as a
+   same-scene registration — refusal with recorded reason, geometry
+   excluded, nothing identity-placed or silently dropped), and the
+   serialized merge report now travels ON the ReconstructionResult
+   (`merge_report` field) and into the E2E run record.
+2. **The gauge was outlier-naive.** One flipped camera out of 23 dragged
+   the plain least-squares Horn gauge so far that every healthy camera
+   reported 3.1° median / 156.5° max — the metric measured the
+   outlier's pull on the gauge, not fidelity (unit test proves a single
+   160° camera pushes the old evaluator to 1.44° median on otherwise
+   perfect data). Fix: outlier-honest two-pass gauge — refit on cameras
+   within `OUTLIER_REJECTION_DEG = 15°` (healthy COLMAP medians here:
+   0.15–0.21°; false-merge signature: 90–180°) then re-measure EVERY
+   camera under the robust gauge. Outliers stay fully measured and are
+   NAMED in the report's `outliers` list — separated and reported,
+   never dropped or averaged away.
+
+---
+
 ## 2. Victoria Memorial (euro-009)
 
 **INPUT.** None in this repository. `benchmarks/structures/__init__.py`

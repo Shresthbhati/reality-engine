@@ -254,6 +254,65 @@ class TestRefusal:
         assert report["refused"] is True
 
 
+class TestOutlierHonesty:
+    """Measured property P5: the gauge fit must be OUTLIER-HONEST.
+
+    Real failure (2026-09-20 run): one falsely-merged camera out of 23
+    dragged the plain least-squares gauge so far that every healthy
+    camera reported 3.1 deg median / 156 deg max -- the metric measured
+    the outlier's pull on the gauge, not camera fidelity. A robust
+    gauge keeps the majority's measurement true and NAMES the outlier
+    instead of silently averaging it away.
+    """
+
+    def test_single_flipped_camera_does_not_poison_majority(self):
+        gauge_q = _axis_angle_quat((0.3, 1.0, -0.2), 1.234)
+        shifted = _apply_gauge(GT, gauge_q, 2.5, (100.0, -7.0, 3.0))
+        poses = _poses_from_gt(shifted)
+        # One catastrophically wrong orientation (a near-flip), center
+        # untouched -- the falsely-merged-camera signature.
+        flip = _axis_angle_quat((0.0, 0.0, 1.0), math.radians(160.0))
+        poses = [
+            _Pose(
+                p.evidence_id,
+                _quat_mul(flip, p.rotation) if p.evidence_id == "img03.jpg" else p.rotation,
+                p.position,
+            )
+            for p in poses
+        ]
+        report = evaluate_absolute_poses(poses, GT)
+        assert report["refused"] is False
+        # The majority must still measure as truth.
+        assert report["rotation_deg_median"] < 1.0
+        # The outlier is MEASURED (max stays large) and NAMED.
+        assert report["rotation_deg_max"] > 90.0
+        assert report["outliers"], "outlier must be reported, not averaged away"
+        assert report["outliers"][0]["camera"] == "img03.jpg"
+        assert report["outliers"][0]["rotation_deg"] > 90.0
+
+    def test_outlier_report_is_deterministic_and_sorted(self):
+        gauge_q = _axis_angle_quat((0.1, 0.5, -0.9), 0.7)
+        shifted = _apply_gauge(GT, gauge_q, 1.0, (5.0, 5.0, 5.0))
+        poses = _poses_from_gt(shifted)
+        flip = _axis_angle_quat((0.0, 1.0, 0.0), math.radians(170.0))
+        poses = [
+            _Pose(
+                p.evidence_id,
+                _quat_mul(flip, p.rotation)
+                if p.evidence_id in ("img01.jpg", "img06.jpg")
+                else p.rotation,
+                p.position,
+            )
+            for p in poses
+        ]
+        a = evaluate_absolute_poses(poses, GT)
+        b = evaluate_absolute_poses(poses, GT)
+        assert a["outliers"] == b["outliers"]
+        assert len(a["outliers"]) == 2
+        cams = [o["camera"] for o in a["outliers"]]
+        assert cams == sorted(cams)
+
+
 class TestDeterminism:
     def test_identical_inputs_identical_report(self):
         poses = _poses_from_gt(GT)

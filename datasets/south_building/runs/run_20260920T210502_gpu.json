@@ -1,0 +1,67 @@
+{
+  "dataset": "south-building (committed 32-image subset)",
+  "dataset_identity": "South Building, UNC Chapel Hill; 128 real photographs, single Panasonic DMC-TZ3 camera",
+  "python": "3.14.7",
+  "colmap_version": "COLMAP 4.2.0 (Commit be5e291 on 2026-08-31 with CUDA)",
+  "gpu": true,
+  "ingested": {
+    "imported": 32,
+    "duplicates_skipped": 0,
+    "unhandled": 0,
+    "items": 32
+  },
+  "admission": {
+    "accepted": 30,
+    "degraded": 2,
+    "unresolved": 0,
+    "failed": 0,
+    "rejected": 0
+  },
+  "reconstruction": {
+    "merge_report": null,
+    "backend": "ColmapReconstructionBackend",
+    "status": "partial",
+    "duration_s": 699.2,
+    "poses": 22,
+    "points": 5388
+  },
+  "outcome": {
+    "outcome": "degraded",
+    "reason": "registration_status=partial: result usable but incomplete",
+    "registration_status": "partial"
+  },
+  "gt_comparison": {
+    "refused": false,
+    "common_cameras": 22,
+    "rotation_deg_median": 0.17238929209443613,
+    "rotation_deg_max": 0.4819543596049369,
+    "rotation_deg_mean": 0.18185872446780837,
+    "center_error_median": 0.010704024808052008,
+    "center_error_max": 0.04706026231025588,
+    "center_error_mean": 0.012251619902681497,
+    "scale_ratio": 1.0665328875917948,
+    "outliers": [],
+    "notes": [],
+    "registered_of_gt": "22/32",
+    "note": "measured after least-squares gauge alignment (Horn rotation on orientation frames; scale/translation from camera-center geometry) -- raw pre-alignment disagreement is gauge, not error"
+  },
+  "point_fidelity": {
+    "refused": false,
+    "measured_points": 5388,
+    "reference_points": 49608,
+    "dist_mean": 0.02565226924116846,
+    "dist_median": 0.006450270910300356,
+    "dist_p90": 0.016232700257512882,
+    "dist_max": 33.94419640084427,
+    "est_points_total": 5388
+  },
+  "colmap_note": "backend runs COLMAP in a temporary workspace (database.db, feature/match/mapper outputs); it is removed after the run -- only the parsed result and this record persist",
+  "fusion": {
+    "observations": 22,
+    "fused_value": -0.0146,
+    "fused_precision": 0.01066,
+    "fused_provenance": "CONFLICT",
+    "conflicts_preserved": 196
+  },
+  "total_runtime_s": 707.0
+}

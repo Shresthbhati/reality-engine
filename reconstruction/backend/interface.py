@@ -45,6 +45,11 @@ class ReconstructionResult:
     points: List[ReconstructedPoint]
     camera_poses: List[ReconstructedCameraPose]
     registration_status: str  # "success" | "partial" | "failed" -- never fabricated
+    #: CrossSessionReport.to_dict() when this result was produced by
+    #: MERGING multiple sub-models (diagnostics must survive: a false
+    #: merge with a discarded report leaves no trace). None = single
+    #: model, no merge happened.
+    merge_report: Optional[dict] = None
 
 
 class IReconstructionBackend(ABC):

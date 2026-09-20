@@ -58,6 +58,11 @@ const SESSION_COLORS: Record<string, string> = {
   'sess-004': '#a855f7', // Camera Rig - purple
 };
 
+function seededPseudoRandom(seed: number): number {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
 export function GhostCameraMode({
   className = '',
   compact = false,
@@ -73,9 +78,8 @@ export function GhostCameraMode({
     addNotification,
   } = useREStore();
 
-  const [cameraPoses, setCameraPoses] = useState<CameraPose[]>([]);
   const [filterSession, setFilterSession] = useState<string | 'ALL'>('ALL');
-  const [filterErrorMax, setFilterErrorMax] = useState<number>(1.0);
+  const [filterErrorMax, setFilterErrorMax] = useState<number>(2.0);
   const [showFrustums, setShowFrustums] = useState(true);
   const [showImagePlanes, setShowImagePlanes] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
@@ -84,7 +88,7 @@ export function GhostCameraMode({
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   // Generate camera poses from sessions (in production: load from cameras.json / WorldIR)
-  useEffect(() => {
+  const cameraPoses = useMemo((): CameraPose[] => {
     const poses: CameraPose[] = [];
     
     sessions.forEach(session => {
@@ -92,19 +96,25 @@ export function GhostCameraMode({
       for (let i = 0; i < count; i++) {
         const isDrone = session.sources[0]?.type === 'DRONE';
         const isPhone = session.sources[0]?.type === 'PHONE';
-        const isLidar = session.sources[0]?.type === 'LIDAR';
         
+        const s0 = i * 11 + (session.id.charCodeAt(session.id.length - 1) || 1);
+        const r1 = seededPseudoRandom(s0 + 1);
+        const r2 = seededPseudoRandom(s0 + 2);
+        const r3 = seededPseudoRandom(s0 + 3);
+        const r4 = seededPseudoRandom(s0 + 4);
+        const r5 = seededPseudoRandom(s0 + 5);
+
         let position: [number, number, number];
         if (isDrone) {
-          const radius = 40 + Math.random() * 30;
-          const angle = Math.random() * Math.PI * 2;
-          const height = 15 + Math.random() * 20;
+          const radius = 40 + r1 * 30;
+          const angle = r2 * Math.PI * 2;
+          const height = 15 + r3 * 20;
           position = [Math.cos(angle) * radius, height, Math.sin(angle) * radius];
         } else if (isPhone) {
           position = [
-            (Math.random() - 0.5) * 60,
-            1.5 + Math.random() * 3,
-            (Math.random() - 0.5) * 40,
+            (r1 - 0.5) * 60,
+            1.5 + r2 * 3,
+            (r3 - 0.5) * 40,
           ];
         } else {
           position = [0, 1.6, 0]; // LiDAR stationary
@@ -118,20 +128,20 @@ export function GhostCameraMode({
             ? [0.7, 0, 0, 0.7] // Looking down
             : [0.9, 0, 0, 0.1], // Looking forward
           imageSize: isDrone ? [5472, 3648] : [4032, 3024],
-          reprojectionError: (session.reprojectionError ?? 0.5) + (Math.random() - 0.5) * 0.2,
+          reprojectionError: (session.reprojectionError ?? 0.5) + (r4 - 0.5) * 0.2,
           gnssPosition: session.sources[0]?.hasGNSS ? [
-            position[0] + (Math.random() - 0.5) * 0.5,
-            position[1] + (Math.random() - 0.5) * 0.5,
-            position[2] + (Math.random() - 0.5) * 0.5,
+            position[0] + (r1 - 0.5) * 0.5,
+            position[1] + (r2 - 0.5) * 0.5,
+            position[2] + (r3 - 0.5) * 0.5,
           ] : undefined,
-          gnssAccuracy: session.sources[0]?.hasGNSS ? 0.01 + Math.random() * 0.05 : undefined,
-          timestamp: new Date(Date.now() - Math.random() * 86400000).toISOString(),
-          coverageScore: 0.3 + Math.random() * 0.7,
+          gnssAccuracy: session.sources[0]?.hasGNSS ? 0.01 + r4 * 0.05 : undefined,
+          timestamp: new Date(1726000000000 + i * 60000).toISOString(),
+          coverageScore: 0.3 + r5 * 0.7,
         });
       }
     });
     
-    setCameraPoses(poses);
+    return poses;
   }, [sessions]);
 
   const filteredPoses = useMemo(() => {
@@ -170,18 +180,20 @@ export function GhostCameraMode({
     onSelectCamera?.(pose);
   }, [selectedPoseId, onSelectCamera]);
 
-  const handleViewportResize = useCallback(() => {
-    const container = document.querySelector('.viewport3d-container');
-    if (container) {
-      setViewportSize({ width: container.clientWidth, height: container.clientHeight });
-    }
-  }, []);
-
   useEffect(() => {
-    handleViewportResize();
+    const handleViewportResize = () => {
+      const container = document.querySelector('.viewport3d-container');
+      if (container) {
+        setViewportSize({ width: container.clientWidth, height: container.clientHeight });
+      }
+    };
+    const timer = setTimeout(handleViewportResize, 0);
     window.addEventListener('resize', handleViewportResize);
-    return () => window.removeEventListener('resize', handleViewportResize);
-  }, [handleViewportResize]);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleViewportResize);
+    };
+  }, []);
 
   if (compact) {
     const visibleCount = showCameras ? filteredPoses.length : 0;

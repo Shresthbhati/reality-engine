@@ -8,7 +8,7 @@
  * new capture. Large touch targets, minimal typing.
  */
 import { useRef, useState } from 'react';
-import { Plus, ChevronRight, Camera, FolderCheck, Search, ClipboardList, Upload, Images, AlertTriangle } from 'lucide-react';
+import { Plus, ChevronRight, Camera, FolderCheck, Search, ClipboardList, ClipboardCheck, Upload, Images, AlertTriangle, Compass, RotateCcw, Radar } from 'lucide-react';
 import { openTasksFor, summarizeSession, useMobileStore } from './store';
 import type { CaptureTask, FieldSession } from './types';
 
@@ -17,6 +17,19 @@ const STATUS_STYLE: Record<FieldSession['status'], string> = {
   READY_TO_SYNC: 'text-[#f1c40f]',
   SYNCED: 'text-[#2ecc71]',
   ARCHIVED: 'text-[#9296a6]',
+};
+
+/** How each engine-issued request presents at a glance in the field. */
+const TASK_KIND: Record<CaptureTask['kind'], { label: string; icon: typeof Camera }> = {
+  reframe: { label: 're-shoot requested', icon: RotateCcw },
+  coverage_gap: { label: 'coverage gap', icon: Compass },
+  telemetry: { label: 'telemetry request', icon: Radar },
+};
+
+const PRIORITY_STYLE: Record<CaptureTask['priority'], string> = {
+  high: 'bg-[#e74c3c] text-white',
+  medium: 'bg-[#f1c40f] text-black',
+  low: 'bg-[#2b3040] text-[#9296a6]',
 };
 
 export function HomeScreen({
@@ -42,6 +55,11 @@ export function HomeScreen({
 
   const filtered = sessions.filter((s) => s.name.toLowerCase().includes(query.toLowerCase()));
   const requested = openTasksFor(tasks, activeId);
+  /**
+   * Requests the engine has retracted from measured evidence (`SUPERSEDED`) —
+   * shown, never hidden: a serviced request is real information about coverage.
+   */
+  const retracted = tasks.filter((t) => t.sessionId === activeId && t.status === 'SUPERSEDED');
 
   const startCapture = () => {
     const trimmed = name.trim() || `Site capture ${new Date().toLocaleDateString()}`;
@@ -174,27 +192,118 @@ export function HomeScreen({
               requested captures · {requested.length}
             </div>
             <ul className="space-y-2">
-              {requested.map((task) => (
-                <li key={task.taskId} className="rounded-2xl border border-[#f1c40f]/40 bg-[#f1c40f]/10 p-3">
-                  <p className="text-xs font-medium leading-snug text-[#f0f1f6]">{task.guidance}</p>
-                  <p className="mt-1 font-mono text-[9px] leading-relaxed text-[#9296a6]">
-                    {task.taskId}
-                    {task.targetFrameIds.length > 0 && ` · because ${task.targetFrameIds.join(', ')}`}
-                    {task.reasons.length > 0 && ` · ${task.reasons.join(', ')}`}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => shootForTask(task)}
-                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#f1c40f] py-2 text-xs font-bold text-black"
+              {requested.map((task) => {
+                const meta = TASK_KIND[task.kind] ?? TASK_KIND.reframe;
+                const Icon = meta.icon;
+                return (
+                  <li
+                    key={task.taskId}
+                    className="overflow-hidden rounded-2xl border border-[#f1c40f]/40 bg-[#f1c40f]/10"
                   >
-                    <Camera className="h-4 w-4" /> Shoot this
-                  </button>
+                    <div className="flex items-center gap-2 border-b border-[#f1c40f]/20 px-3 py-2">
+                      <Icon className="h-3.5 w-3.5 shrink-0 text-[#f1c40f]" />
+                      <span className="font-mono text-[9px] uppercase tracking-wide text-[#f1c40f]">
+                        {meta.label}
+                      </span>
+                      <span
+                        className={`ml-auto rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase ${PRIORITY_STYLE[task.priority]}`}
+                      >
+                        {task.priority}
+                      </span>
+                    </div>
+                    <div className="p-3">
+                      <p className="text-xs font-medium leading-snug text-[#f0f1f6]">
+                        {task.guidance}
+                      </p>
+                      {task.region.label && (
+                        <p className="mt-1.5 text-[11px] leading-snug text-[#c8ccdb]">
+                          <span className="text-[#9296a6]">Region · </span>
+                          {task.region.label}
+                        </p>
+                      )}
+                      {task.desiredViewpoint ? (
+                        <p className="mt-1 text-[11px] leading-snug text-[#9296a6]">
+                          <span className="text-[#4a4f60]">Viewpoint · </span>
+                          {task.desiredViewpoint.description}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-[11px] leading-snug text-[#9296a6]">
+                          No viewpoint requested — this task adds no pixels.
+                        </p>
+                      )}
+                      {/*
+                        The engine asks for a compass direction, it does not report
+                        one. A heading it requests is a target the operator must
+                        find, so it is shown as the request, never as device pose.
+                      */}
+                      {task.desiredViewpoint && !task.desiredViewpoint.poseAvailable && (
+                        <p className="mt-1 font-mono text-[9px] text-[#f1c40f]/80">
+                          pose · UNAVAILABLE (no measured pose in bundle)
+                        </p>
+                      )}
+                      <p className="mt-2 text-[11px] leading-snug text-[#c8ccdb]">
+                        <span className="text-[#4a4f60]">Why · </span>
+                        {task.reason}
+                      </p>
+                      {task.expectedCoverageContribution && (
+                        <p className="mt-1 text-[11px] leading-snug text-[#9296a6]">
+                          <span className="text-[#4a4f60]">Coverage · </span>
+                          {task.expectedCoverageContribution}
+                        </p>
+                      )}
+                      <p className="mt-2 font-mono text-[9px] leading-relaxed text-[#4a4f60]">
+                        {task.taskId}
+                        {task.targetFrameIds.length > 0 &&
+                          ` · ${task.targetFrameIds.join(', ')}`}
+                        {task.reasons.length > 0 && ` · ${task.reasons.join(', ')}`}
+                        {task.reasonCodes.length > 0 && ` · ${task.reasonCodes.join(', ')}`}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => shootForTask(task)}
+                        className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#f1c40f] py-2 text-xs font-bold text-black"
+                      >
+                        <Camera className="h-4 w-4" /> Shoot this
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {retracted.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-[#2ecc71]">
+              serviced by a newer handoff · {retracted.length}
+            </div>
+            <ul className="space-y-1.5">
+              {retracted.map((task) => (
+                <li
+                  key={task.taskId}
+                  className="rounded-xl border border-[#2ecc71]/30 bg-[#2ecc71]/5 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-[#2ecc71]" />
+                    <span className="font-mono text-[9px] uppercase tracking-wide text-[#2ecc71]">
+                      {(TASK_KIND[task.kind] ?? TASK_KIND.reframe).label} · retracted
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-[#c8ccdb]">
+                    {task.supersededBy?.reason || 'The engine retracted this request.'}
+                  </p>
+                  {task.supersededBy?.exportedAt && (
+                    <p className="mt-1 font-mono text-[9px] text-[#4a4f60]">
+                      {task.supersededBy.bundleId || 'unidentified bundle'} ·{' '}
+                      {task.supersededBy.exportedAt}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
           </div>
         )}
-
         <div className="mb-3 flex items-center gap-2 rounded-xl border border-[#2b3040] bg-[#171922] px-3 py-2">
           <Search className="h-4 w-4 shrink-0 text-[#9296a6]" />
           <input

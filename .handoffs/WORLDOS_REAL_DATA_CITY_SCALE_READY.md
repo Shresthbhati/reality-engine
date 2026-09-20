@@ -395,3 +395,68 @@ fixture) → all passing.
   both kinds of versions freely (verified) — pick per-version based on
   whether you need the whole-world blob (e.g. for `diff_worlds()`-based
   lineage on that specific version) or not.
+
+## Recovered Architecture & Verification Ledger (CLAIM / FILE / SYMBOL / TEST / RESULT)
+
+| CLAIM | FILE | SYMBOL | TEST | RESULT |
+|---|---|---|---|---|
+| O(affected) delta manifest persistence | `worldstore/tiles.py` | `TileManifestDelta`, `save_version_partitioned_delta()` | `tests/test_delta_manifest.py::test_delta_write_is_far_smaller_than_a_full_manifest_rewrite` | PASS (214.9x / ~215x byte reduction on 400-tile grid) |
+| Transparent delta-chain manifest resolution | `worldstore/tiles.py` | `_resolve_manifest()`, `open_version()` | `tests/test_delta_manifest.py::test_delta_chain_of_three_versions_resolves_correctly` | PASS (identical effective tiles & entity data across 3-version chain) |
+| Tile artifact reuse across delta parents | `worldstore/tiles.py` | `build_tile_manifest_delta()` | `tests/test_delta_manifest.py::test_delta_reuses_unaffected_tile_artifacts_across_the_chain` | PASS (exact `artifact_uri` equality across delta-chained versions) |
+| Delta chain depth tracking | `worldstore/tiles.py` | `delta_chain_depth()` | `tests/test_manifest_compaction.py::test_delta_chain_depth_grows_with_each_delta_save` | PASS (depth increments per delta save, resets on compaction) |
+| In-place manifest compaction | `worldstore/tiles.py` | `compact_manifest_chain()` | `tests/test_manifest_compaction.py::test_compact_manifest_chain_resets_depth_to_zero` | PASS (resets depth to 0, preserves byte-identical tile content) |
+| Compacting ancestor shortens descendant chains | `worldstore/tiles.py` | `compact_manifest_chain()` | `tests/test_manifest_compaction.py::test_compacting_an_ancestor_shortens_descendant_chains_too` | PASS (compacting v-3 drops v-6 depth from 5 to 3) |
+| Crash-safe atomic delta persistence | `worldstore/tiles.py` | `save_version_partitioned_delta()` | `tests/test_delta_manifest.py::test_delta_save_crash_leaves_parent_chain_valid_and_new_version_unreferenced` | PASS (parent chain intact, new version unreferenced on disk failure) |
+| Lazy spatial queries over partitioned & delta tiles | `worldstore/lazy_query.py` | `lazy_within_region()`, `lazy_within_radius()`, `lazy_nearest()` | `tests/test_lazy_query.py` (6 tests) | PASS (deterministic parity with full SpatialIndex, touches minimal tiles) |
+| Locality: no covert full-world loads | `tests/test_locality_instrumentation.py` | `TestLocalityInstrumentation` | `tests/test_locality_instrumentation.py::test_lazy_within_region_loads_fewer_tiles_than_the_whole_world` | PASS (<10 of 100 tiles touched for local queries) |
+| Incremental compiler stage with tile reuse | `engine/compiler/incremental_adapter.py` | `apply_reconstruction_update_tiled()`, `CompiledIncrementalUpdate` | `tests/test_incremental_compiler_stage.py` (3 tests) | PASS (proves 99 reused, 1 rebuilt on 100-tile world) |
+| Real Reconstruction → Multi-Delta Chain → Compaction → Desktop | `tests/integration/test_system_runtime_proof.py` | `TestRealReconstructionDeltaManifestToDesktop` | `test_real_reconstruction_multi_delta_chain_compaction_and_desktop_query` | PASS (58-plane room: V1 full -> V2 delta -> V3 delta -> V4 delta -> lazy query -> Desktop load/diff -> compaction -> byte-identical equivalence) |
+
+## Full Integration Trace: Real Reconstruction to Desktop Studio
+
+The Reality Engine integration pipeline is now fully verified against the real structural room dataset:
+
+```text
+FreeBuff Reconstruction / Real Room Capture (58 structural planes)
+       │
+       ▼
+ReconstructionResult / ReconstructionContract
+       │
+       ▼
+WorldIR Base Compilation (V1)
+       │
+       ▼
+WorldStore save_version_partitioned("v-room-1")
+       │
+       ├─────────────────────────────────────────┐
+       ▼                                         ▼
+Rescan Session 1 (0.98 confidence)       Rescan Session 2 (0.95 confidence)
+       │                                         │
+       ▼                                         ▼
+apply_reconstruction_update()            apply_reconstruction_update()
+       │                                         │
+       ▼                                         ▼
+save_version_partitioned_delta("v-room-2") save_version_partitioned_delta("v-room-3")
+       │                                         │
+       └────────────────────┬────────────────────┘
+                            ▼
+           Removal of entity struct-plane-005
+                            │
+                            ▼
+           save_version_partitioned_delta("v-room-4") (Chain Depth = 3)
+                            │
+              ┌─────────────┴─────────────┐
+              ▼                           ▼
+    worldstore.lazy_query         apps.cli.api_bridge
+    - lazy_within_region()        - cmd_load_world("v-room-4") -> NDJSON 57 entities
+    - lazy_nearest() (k=5)        - cmd_diff("v-room-1", "v-room-4") -> 2 mod, 1 del
+              │                           │
+              └─────────────┬─────────────┘
+                            ▼
+               compact_manifest_chain("v-room-4")
+                            │
+                            ▼
+               Chain Depth = 0 (Full snapshot materialized)
+               Byte-identical entity and geometry equivalence verified
+```
+

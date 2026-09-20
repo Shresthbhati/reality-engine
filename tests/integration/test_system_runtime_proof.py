@@ -110,10 +110,17 @@ from worldstore.store import WorldStore, WorldStoreError
 from worldstore.tiles import (
     TileArtifactRef,
     TileManifest,
+    TileManifestDelta,
     WorldVersionHandle,
+    compact_manifest_chain,
+    delta_chain_depth,
+    load_version_partitioned,
     open_version,
+    save_version_partitioned,
+    save_version_partitioned_delta,
     save_version_tiled,
 )
+from worldstore.lazy_query import lazy_nearest, lazy_within_region
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 REAL_CAPTURE_DIR = REPO_ROOT / "datasets" / "real_room_capture"
@@ -991,4 +998,224 @@ class TestReconstructionContractIntegration:
                 session_id="sess-contract-fail",
                 target_entity_id="struct-plane-000",
             )
+
+
+# =============================================================================
+# SECTION G: REAL RECONSTRUCTION -> MULTI-DELTA CHAIN -> COMPACTION -> DESKTOP
+# =============================================================================
+
+class TestRealReconstructionDeltaManifestToDesktop:
+    """Proves full end-to-end integration:
+    Real Reconstruction -> WorldIR -> Partitioned WorldStore -> Multi-Delta Chains ->
+    Chain Compaction -> Lazy Query -> Desktop Studio NDJSON API Bridge.
+    """
+
+    def test_real_reconstruction_multi_delta_chain_compaction_and_desktop_query(self, tmp_path, monkeypatch):
+        store_path = tmp_path / "delta_store"
+        monkeypatch.setenv("REALITY_STORE_PATH", str(store_path))
+        store = WorldStore(store_path)
+
+        # 1. Load real 58-entity structural world as base WorldIR (V1)
+        world_v1 = _load_real_structural_world()
+        total_v1_entities = len(world_v1.entities)
+        assert total_v1_entities == 58
+        assert "struct-plane-000" in world_v1.entities
+        assert "struct-plane-003" in world_v1.entities
+        assert "struct-plane-005" in world_v1.entities
+
+        # 2. Persist V1 via partitioned persistence (full manifest + residual + tiles)
+        v1_rec = save_version_partitioned(
+            store,
+            world_v1,
+            parent=None,
+            version_id="v-room-1",
+            tile_size=2.0,
+            source_session_ids=["sess-room-001"],
+        )
+        assert delta_chain_depth(store, "v-room-1") == 0
+        h_v1 = open_version(store, "v-room-1")
+        v1_tiles = {t.tile_key: t for t in h_v1.manifest.tiles}
+        assert len(v1_tiles) > 1
+
+        # 3. Delta 1 (V2): Localized update of struct-plane-000 from rescan session 1
+        rescan_recon_1 = ReconstructionResult(
+            points=[
+                ReconstructedPoint(
+                    position=(0.15, -2.18, 3.25),
+                    track_id="pt-rescan-01",
+                    source_evidence_ids=["ev-rescan-01"],
+                    uncertainty=Uncertainty(confidence=0.98),
+                )
+            ],
+            camera_poses=[
+                ReconstructedCameraPose(
+                    evidence_id="ev-rescan-01",
+                    position=(0.10, -2.00, 3.50),
+                    rotation=(1.0, 0.0, 0.0, 0.0),
+                    uncertainty=Uncertainty(confidence=0.99),
+                )
+            ],
+            registration_status="success",
+        )
+        r2 = apply_reconstruction_update(
+            base_world=world_v1,
+            reconstruction=rescan_recon_1,
+            session_id="sess-rescan-001",
+            target_entity_id="struct-plane-000",
+            artifact_store=store._store,
+            tile_size=2.0,
+        )
+        v2_rec = save_version_partitioned_delta(
+            store,
+            r2.new_world,
+            parent="v-room-1",
+            version_id="v-room-2",
+            tile_size=2.0,
+            incremental_result=r2,
+            source_session_ids=["sess-rescan-001"],
+        )
+        assert delta_chain_depth(store, "v-room-2") == 1
+
+        # 4. Delta 2 (V3): Localized update of struct-plane-003 from rescan session 2
+        rescan_recon_2 = ReconstructionResult(
+            points=[
+                ReconstructedPoint(
+                    position=(-0.85, 1.45, 0.12),
+                    track_id="pt-rescan-02",
+                    source_evidence_ids=["ev-rescan-02"],
+                    uncertainty=Uncertainty(confidence=0.95),
+                )
+            ],
+            camera_poses=[
+                ReconstructedCameraPose(
+                    evidence_id="ev-rescan-02",
+                    position=(-0.80, 1.40, 0.50),
+                    rotation=(1.0, 0.0, 0.0, 0.0),
+                )
+            ],
+            registration_status="success",
+        )
+        r3 = apply_reconstruction_update(
+            base_world=r2.new_world,
+            reconstruction=rescan_recon_2,
+            session_id="sess-rescan-002",
+            target_entity_id="struct-plane-003",
+            artifact_store=store._store,
+            tile_size=2.0,
+        )
+        v3_rec = save_version_partitioned_delta(
+            store,
+            r3.new_world,
+            parent="v-room-2",
+            version_id="v-room-3",
+            tile_size=2.0,
+            incremental_result=r3,
+            source_session_ids=["sess-rescan-002"],
+        )
+        assert delta_chain_depth(store, "v-room-3") == 2
+
+        # 5. Delta 3 (V4): Deletion of struct-plane-005 (proving deleted tiles disappear)
+        r4 = apply_incremental_update(
+            r3.new_world,
+            [],
+            removed_entities=["struct-plane-005"],
+            tile_size=2.0,
+        )
+        v4_rec = save_version_partitioned_delta(
+            store,
+            r4.new_world,
+            parent="v-room-3",
+            version_id="v-room-4",
+            tile_size=2.0,
+            incremental_result=r4,
+            source_session_ids=["sess-removal-003"],
+        )
+        assert delta_chain_depth(store, "v-room-4") == 3
+
+        # 6. Verify multi-delta chain resolution & transparent manifest resolution
+        h_v4 = open_version(store, "v-room-4")
+        v4_tiles = {t.tile_key: t for t in h_v4.manifest.tiles}
+        assert "struct-plane-005" not in [eid for t in v4_tiles.values() for eid in t.entity_ids]
+
+        # Verify unchanged tiles reuse exact artifact_uri & content_hash across the 4 versions
+        untouched_plane = "struct-plane-010"
+        untouched_key = next(k for k, t in v1_tiles.items() if untouched_plane in t.entity_ids)
+        assert v4_tiles[untouched_key].artifact_uri == v1_tiles[untouched_key].artifact_uri
+        assert v4_tiles[untouched_key].content_hash == v1_tiles[untouched_key].content_hash
+
+        # Verify changed tiles were replaced with new artifacts
+        modified_plane = "struct-plane-000"
+        modified_key = next(k for k, t in v1_tiles.items() if modified_plane in t.entity_ids)
+        assert v4_tiles[modified_key].artifact_uri != v1_tiles[modified_key].artifact_uri
+
+        # 7. Verify historical versions remain strictly readable and immutable
+        w1_reloaded = load_version_partitioned(store, "v-room-1")
+        w2_reloaded = load_version_partitioned(store, "v-room-2")
+        w3_reloaded = load_version_partitioned(store, "v-room-3")
+        w4_reloaded = load_version_partitioned(store, "v-room-4")
+
+        assert len(w1_reloaded.entities) == 58
+        assert len(w2_reloaded.entities) == 58
+        assert len(w3_reloaded.entities) == 58
+        assert len(w4_reloaded.entities) == 57
+
+        assert w1_reloaded.entities["struct-plane-000"].confidence == world_v1.entities["struct-plane-000"].confidence
+        assert abs(w2_reloaded.entities["struct-plane-000"].confidence - 0.98) < 1e-3
+        assert "struct-plane-005" in w3_reloaded.entities
+        assert "struct-plane-005" not in w4_reloaded.entities
+
+        # 8. Lazy query over delta-chained version (bounds and nearest)
+        region_entities = lazy_within_region(
+            h_v4,
+            bounds_min=(-5.0, -5.0, -5.0),
+            bounds_max=(5.0, 5.0, 5.0),
+        )
+        assert len(region_entities) > 0
+
+        nearest_res = lazy_nearest(h_v4, point=(0.0, 0.0, 0.0), k=5)
+        assert len(nearest_res) == 5
+        assert all(isinstance(e, Entity) and dist >= 0.0 for e, dist in nearest_res)
+
+        # 9. Desktop Studio NDJSON API Bridge integration
+        out_load = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out_load)
+        assert api_bridge.cmd_load_world("v-room-4") == 0
+        load_payload = json.loads(out_load.getvalue().strip())
+        assert load_payload["version_id"] == "v-room-4"
+        assert load_payload["entity_count"] == 57
+
+        out_diff = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out_diff)
+        assert api_bridge.cmd_diff("v-room-1", "v-room-4") == 0
+        diff_payload = json.loads(out_diff.getvalue().strip())
+        assert diff_payload["summary"]["entities_modified"] == 2
+        assert diff_payload["summary"]["entities_removed"] == 1
+
+        # 10. Manifest-chain compaction: delta chain -> compaction -> resolved world
+        collapsed = compact_manifest_chain(store, "v-room-4")
+        assert collapsed == 3
+        assert delta_chain_depth(store, "v-room-4") == 0
+
+        # PROVE semantic equivalence before and after compaction:
+        w4_compacted = load_version_partitioned(store, "v-room-4")
+        assert set(w4_compacted.entities) == set(w4_reloaded.entities)
+        for eid in w4_reloaded.entities:
+            assert w4_compacted.entities[eid].to_dict() == w4_reloaded.entities[eid].to_dict()
+
+        # Re-query after compaction must be byte-identical
+        region_entities_post = lazy_within_region(
+            open_version(store, "v-room-4"),
+            bounds_min=(-5.0, -5.0, -5.0),
+            bounds_max=(5.0, 5.0, 5.0),
+        )
+        assert {e.id for e in region_entities_post} == {e.id for e in region_entities}
+
+        # Desktop load after compaction returns exact same payload
+        out_load_post = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out_load_post)
+        assert api_bridge.cmd_load_world("v-room-4") == 0
+        load_post_payload = json.loads(out_load_post.getvalue().strip())
+        assert load_post_payload["entity_count"] == 57
+        assert {e["id"] for e in load_post_payload["entities"]} == {e["id"] for e in load_payload["entities"]}
+
 

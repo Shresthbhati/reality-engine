@@ -175,7 +175,7 @@ export function convertBackendEntityToEntity(
       relationships_count: b.relationships.length,
       relationships: b.relationships,
       custom_properties: b.custom_properties ?? {},
-      bounds: primaryBounds,
+      bounds: primaryBounds ?? undefined,
     },
     representations: b.geometry_ids.length > 0 ? ["MESH"] : ["POINT_CLOUD"],
     sessionIds: allSessionIds.length > 0 ? allSessionIds : ["unknown"],

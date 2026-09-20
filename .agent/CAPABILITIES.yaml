@@ -1,850 +1,1143 @@
-# Reality Engine — Capability Registry
-# Verified against the repository 2026-09-15. Maturity uses the
-# constitution's scale. "accuracy: not measured" is an honest value,
-# not a placeholder — benchmarks are P19-01. This registry is the
-# basis for backend selection (P5-02); entries are cross-checked
-# against code, not documentation claims.
-
 capabilities:
+- name: sparse_reconstruction
+  category: reconstruction
+  backend: 'COLMAP 4.2.0 (subprocess: feature_extractor/exhaustive_matcher/mapper/model_converter)'
+  inputs:
+  - image set
+  - optional intrinsics
+  outputs:
+  - camera poses (camera-to-world
+  - wxyz quat)
+  - sparse 3D points
+  - registration_status
+  license: BSD-3-Clause (COLMAP) — verify at binding time
+  hardware_requirements: CUDA build now installed (2026-09-15, colmap/colmap release
+    4.2.0 colmap-x64-windows-cuda.zip; RTX 4050, driver 616.56 verified via nvidia-smi);
+    GPU feature extraction confirmed genuinely working (SIFT GPU extractor ran on
+    synthetic images). Old CPU-only build kept at colmap-extracted-nocuda-backup.
+  accuracy: not measured formally; observed 25/28 cameras on room capture (measured
+    on the prior CPU build; not re-run on CUDA build yet)
+  runtime: observed ~23 s on 4 images (CPU build; CUDA build not yet timed)
+  maturity: IMPLEMENTED
+  limitations:
+  - one 4-image scene + one room capture exercised, not a stress test
+  - CUDA build's sparse pipeline not yet re-run end-to-end (only GPU feature extraction
+    smoke-tested)
+  fallback: deterministic fake backend (REALITY_TEST_BACKEND, tests only — never production)
+- name: metric_scale_anchoring
+  category: reconstruction
+  backend: reconstruction/scale.py (in-house, measured-baseline math)
+  inputs:
+  - reconstruction
+  - ScaleReference (measured camera baseline)
+  outputs:
+  - scaled result in meters
+  - scale_state
+  - meters_per_unit
+  - diagnostics
+  license: project-internal
+  hardware_requirements: none
+  accuracy: exact for the anchor pair (ratio); rigidity gate guards degenerate pairs
+  runtime: negligible
+  maturity: IMPLEMENTED
+  limitations: single-baseline scale; no multi-baseline least squares yet
+  fallback: honest RELATIVE state (never invented scale)
+- name: monocular_depth
+  category: depth
+  backend: MiDaS DPT_Hybrid via torch.hub (perception/depth/midAS_backend.py)
+  inputs:
+  - evidence items (photos/frames)
+  outputs:
+  - relative DepthMap per view
+  license: MiDaS Apache-2.0; torch BSD-style — verify at binding time
+  hardware_requirements: CPU works (slow); CUDA better; weights download on first
+    use
+  accuracy: relative only — metricized per-view against sparse cloud (documented approximation,
+    residual reported)
+  runtime: model-load dominated; seconds per view CPU
+  maturity: IMPLEMENTED
+  limitations:
+  - torch-hub network/cache fragility (env)
+  - relative depth, never metric until alignment
+  fallback: RGB-D sidecar path when the capture carries device depth; honest skip
+    otherwise
+- name: depth_sidecar_ingestion
+  category: evidence
+  backend: evidence/depth_frames.py (Pillow-based 16-bit PNG decoder)
+  inputs:
+  - depth/*.png
+  - depth/manifest.json (depth_scale
+  - invalid_value
+  - units)
+  outputs:
+  - DepthFrame (raw + explicit scale)
+  - meters via iter_meters/meters_at
+  license: project-internal (Pillow HPND-style license — verify at binding time)
+  hardware_requirements: none
+  accuracy: exact to device depth; scale inherited from manifest
+  runtime: negligible
+  maturity: IMPLEMENTED
+  limitations:
+  - 16-bit PNG only (Decision 020 ladder); EXR and device-raw are open adapters
+  - requires explicit depth_scale — refuses otherwise (by design)
+  fallback: none by design (DepthScaleUnavailable is the honest refusal)
+- name: rgbd_dense_unprojection
+  category: dense_geometry
+  backend: engine/pipeline/vertical_slice.py::_sidecar_depth_stage + reconstruction/depth_to_points.py
+  inputs:
+  - DepthFrames
+  - registered cameras
+  - trusted intrinsics
+  - METRIC scale state
+  outputs:
+  - device-metric dense points ('depth-' track ids)
+  - per-view facts
+  license: project-internal
+  hardware_requirements: none
+  accuracy: exact camera math (PinholeCamera unproject); verified on synthetic wall
+    at z=2.0 m
+  runtime: negligible at test scale
+  maturity: IMPLEMENTED (synthetic-verified; real-device capture is the VERIFIED gate)
+  limitations:
+  - requires METRIC-anchored world (scale coherence gate)
+  - frame matching by filename stem
+  fallback: MiDaS relative-depth path; honest skip in RELATIVE worlds
+- name: depth_fusion_monocular
+  category: dense_geometry
+  backend: reconstruction/depth_to_points.py metricize_all + reconstruction/fusion/
+  inputs:
+  - relative depth maps
+  - sparse cloud
+  - intrinsics
+  - poses
+  outputs:
+  - fused metric point cloud (metric-by-alignment)
+  license: project-internal
+  hardware_requirements: none
+  accuracy: residual_median_m + inlier_fraction reported per view; not benchmarked
+  runtime: observed 121k-point fused cloud from room capture
+  maturity: IMPLEMENTED
+  limitations: per-view scale fit (not global optimization); camera-envelope filter
+    required for depth outliers
+  fallback: sparse-only world (mesh stage skips honestly)
+- name: surface_reconstruction
+  category: meshing
+  backend: COLMAP poisson_mesher (subprocess) via reconstruction/meshing/surface.py
+  inputs:
+  - oriented point cloud (scipy PCA normals
+  - camera-oriented)
+  outputs:
+  - MeshData (vertices/faces)
+  - artifact via ArtifactStore
+  license: BSD-3-Clause (COLMAP) — verify at binding time
+  hardware_requirements: CPU
+  accuracy: not measured formally; observed 240,735 verts / 482,142 faces on room
+    capture
+  runtime: observed 1.6 s for 40k points (depth-adaptive, trim retry)
+  maturity: IMPLEMENTED
+  limitations:
+  - Poisson depth bounded by point density (auto-retry logic)
+  - trim defaults to 0 (dense-cloud trim=10 empties sparse clouds)
+  fallback: honest skip with reason (never a placeholder mesh; AABB fallback only
+    in viewer, labeled)
+- name: mesh_quality_validation
+  category: meshing
+  backend: reconstruction/meshing/validation.py (pure-python measured counts)
+  inputs:
+  - MeshData
+  - optional declared expected_extent_m + scale_tolerance
+  outputs:
+  - MeshQualityReport (degenerate/non-manifold/bad-normal/hole/component counts
+  - self-intersection proxy candidates
+  - extent
+  - per-axis scale ratios + verdict)
+  license: project-internal
+  hardware_requirements: CPU (O(n^2) bbox-overlap proxy; BVH noted if meshes grow)
+  accuracy: measured counts, deterministic; scale check is declared-expectation only
+  runtime: sub-second on validation-sized meshes
+  maturity: IMPLEMENTED — bad-scale check landed 2026-09-15; report recorded into
+    Geometry.quality_metrics at mesh-stage export time (vertical_slice seam)
+  limitations:
+  - self-intersection is a documented bbox-overlap PROXY (necessary-not-sufficient)
+  - scale verdict requires a caller-declared expected extent; never inferred
+  - validation measures only; mesh REPAIR out of scope by design
+  fallback: report is always computable; absent expectation -> scale fields None (honest
+    absence)
+- name: reconstruction_cross_validation
+  category: reconstruction
+  backend: reconstruction/validation.py (cKDTree-indexed nearest-point match)
+  inputs:
+  - ReconstructionResult
+  - ReconstructionResult
+  - distance_threshold_m
+  outputs:
+  - ValidationReport (agreements
+  - PointDisagreement list
+  - unmatched_a/b)
+  license: project-internal
+  hardware_requirements: CPU (scipy cKDTree; same dependency as consistency/fusion/quality)
+  accuracy: exact nearest-neighbor matching, deterministic; semantics pinned by a
+    brute-force oracle test on shuffled non-trivial data (agreement ordering, b-side
+    consumption on disagreement, unmatched_b track_id set-collapse)
+  runtime: 60k-vs-60k point validation completes in seconds (was O(N*M) pure-python,
+    >300s killed at that scale); bounded-time test enforces the gate
+  maturity: IMPLEMENTED — large-set scale gate landed 2026-09-19 (large image-set
+    robustness, mission priority P1); report semantics unchanged for callers (evidence/promote_reconstruction.py
+    consumes it unchanged)
+  limitations:
+  - exact-tie nearest candidates resolve deterministically but may differ from a naive
+    first-min scan (documented; report stays deterministic either way)
+  - validates POINT sets only; pose Trajectory comparison is a separate concern
+  fallback: empty-b short-circuit reports all of a as unmatched_a (unchanged semantics)
+- name: dense_mvs
+  category: dense_geometry
+  backend: 'CUDA COLMAP (colmap/colmap release 4.2.0, colmap-x64-windows-cuda.zip).
+    Real end-to-end GPU run completed 2026-09-15 (CLI-level, not yet Python-integrated):
+    feature_extractor -> exhaustive_matcher -> mapper (17/20 registered) -> image_undistorter
+    -> patch_match_stereo --geom_consistency true (GPU, ~6.9 min) -> stereo_fusion,
+    294,345 fused points written to a real PLY. Not yet wired: reconstruction/depth_to_points.py
+    does not parse COLMAP dense output (fused.ply) into this repo''s DepthFrame/point
+    types -- only monocular/RGB-D sidecar paths are integrated. OpenMVS slot still
+    open.'
+  inputs:
+  - calibrated images
+  - poses
+  - intrinsics
+  outputs:
+  - dense depth maps per view
+  - fused point cloud (PLY) -- not yet parsed into this repo's canonical types
+  license: n/a until a backend binds
+  hardware_requirements: RTX 4050 present and CUDA-capable (compute 8.9, driver 616.56)
+    — previously believed unavailable; that was a software-build gap (CPU-only COLMAP),
+    not a hardware gap. Resolved and exercised.
+  accuracy: not measured against ground truth; output geometry is coherent (tight
+    point-cloud mean/std, real sampled texture colors) but in COLMAP's own uncalibrated
+    SfM scale, not yet metric-anchored
+  runtime: ~6.9 min patch_match_stereo (GPU, geom_consistency on) + ~6s stereo_fusion,
+    17 views, RTX 4050 laptop GPU
+  maturity: PARTIAL (real GPU dense reconstruction verified working end-to-end via
+    CLI 2026-09-15; the reconstruction/ Python-level integration — parsing dense output
+    into canonical types, wiring into the orchestrator — is the remaining scope; see
+    docs/future/dense-reconstruction/DENSE_MVS.md)
+  limitations: CLI-proven only, not yet callable from reconstruction/ Python code;
+    scale not metric-anchored in this run; single synthetic scene exercised, not a
+    stress test
+  fallback: monocular depth + RGB-D sidecars (labeled as such, never passed off as
+    MVS)
+- name: object_detection
+  category: perception
+  backend: torchvision Mask R-CNN (perception/detection/maskrcnn_backend.py)
+  inputs:
+  - evidence items
+  outputs:
+  - per-view instance masks + scores
+  license: torchvision BSD-style; weights per torchvision docs — verify at binding
+    time
+  hardware_requirements: CPU works; weights download on first use
+  accuracy: not measured (score threshold 0.5 default)
+  runtime: seconds per view CPU
+  maturity: IMPLEMENTED
+  limitations: weights acquisition needed; 2D only — 3D lift needs metric depth
+  fallback: honest skip (perception stage refuses without metric depth)
+- name: image_segmentation
+  category: perception
+  backend: SAM via segment-anything pip package (sam_model_registry) + checkpoint
+    file
+  inputs:
+  - images
+  - prompt boxes/masks
+  outputs:
+  - masks
+  license: SAM Apache-2.0 — verify at binding time
+  hardware_requirements: CPU/GPU; checkpoint download (~375 MB for vit_b)
+  accuracy: not measured in-repo
+  runtime: real-model load + inference verified on CPU (vit_b, 320x240, ~90 s with
+    points_per_side=32)
+  maturity: IMPLEMENTED — real-model integration test passes; torch.hub.load("facebookresearch/segment-anything")
+    removed (upstream repo has no hubconf.py — 0 commits touching it — so source="github"
+    loads were structurally broken)
+  limitations: checkpoint resolved in order explicit path -> torch-hub cache -> direct
+    download; offline environments must pre-cache weights; confidence clamped at conversion
+    boundary because SAM's predicted_iou can exceed 1.0 by float round-off
+  fallback: Mask R-CNN detection path
+- name: calibration_frames
+  category: calibration
+  backend: reconstruction/calibration/transforms.py (RigidTransform + CalibrationChain
+    + SensorRig + WGS84/ENU conversions + reprojection_residual_stats; rotation math
+    = engine.physics.math3, camera types reused verbatim)
+  inputs:
+  - declared rig transforms (sensor frame -> rig frame)
+  - GNSS anchor (geodetic reference)
+  - camera + (world point
+  - observed pixel) observations
+  outputs:
+  - frame-validated transform chains
+  - geodetic<->ECEF<->ENU points
+  - per-camera pixel residual stats
+  license: project-internal
+  hardware_requirements: none
+  accuracy: exact known-answer math (sub-mm geodetic roundtrip; pixel stats are measured
+    facts of the given observations; ENU triad proven orthonormal)
+  runtime: negligible
+  maturity: IMPLEMENTED (P2-02; 45 tests in tests/test_calibration_transforms.py;
+    ENU matrix bug caught by known-answer test and fixed, triad structurally proven)
+  limitations:
+  - declared/assumed calibration only -- no estimation (fit) procedures yet
+  - height is ellipsoidal; geoid separation models are a caller concern (recorded,
+    not modeled)
+  - no real-device calibration evidence yet (synthetic known answers only)
+  fallback: absent calibration is recorded as absent (rig members without a pose raise
+    on chain requests, never guess); unprojectable points counted, never given fabricated
+    residuals
+- name: time_synchronization
+  category: temporal
+  backend: 'evidence/clocks.py (in-house linear clock model; preference-ordered backend
+    registry: metadata_alignment, gnss_pps, trigger, signal_correlation, optimization)
 
-  - name: sparse_reconstruction
-    category: reconstruction
-    backend: "COLMAP 4.2.0 (subprocess: feature_extractor/exhaustive_matcher/mapper/model_converter)"
-    inputs: [image set, optional intrinsics]
-    outputs: [camera poses (camera-to-world, wxyz quat), sparse 3D points, registration_status]
-    license: BSD-3-Clause (COLMAP) — verify at binding time
-    hardware_requirements: "CUDA build now installed (2026-09-15, colmap/colmap release 4.2.0 colmap-x64-windows-cuda.zip; RTX 4050, driver 616.56 verified via nvidia-smi); GPU feature extraction confirmed genuinely working (SIFT GPU extractor ran on synthetic images). Old CPU-only build kept at colmap-extracted-nocuda-backup."
-    accuracy: not measured formally; observed 25/28 cameras on room capture (measured on the prior CPU build; not re-run on CUDA build yet)
-    runtime: observed ~23 s on 4 images (CPU build; CUDA build not yet timed)
-    maturity: IMPLEMENTED
-    limitations:
-      - one 4-image scene + one room capture exercised, not a stress test
-      - CUDA build's sparse pipeline not yet re-run end-to-end (only GPU feature extraction smoke-tested)
-    fallback: deterministic fake backend (REALITY_TEST_BACKEND, tests only — never production)
+    '
+  inputs:
+  - SensorStream
+  - clock_id
+  - capture metadata (shared_clock / clock_offset_s / clock_drift / gnss_anchor_pairs
+    / trigger_pairs / reference+observed event trains / cross_stream_constraints)
+  outputs:
+  - TimeAlignment (per-sample original_t + global_t)
+  - SynchronizationDiagnostics (measured residual_max_s
+  - backend attempts
+  - rejection notes)
+  - ClockModel
+  consumers: 'trajectories/backend/sync.py (apply_clock_model + estimate_trajectory:
+    canonical Trajectory stamps carry clock_id/sync_state/sync_method; model_unit
+    is explicit -- ''s'' for stream-fitted models, ''ns'' canonical)'
+  license: project-internal
+  hardware_requirements: none (GNSS/PPS consumed from declared anchors or already-GNSS-time
+    streams; no timing hardware required)
+  accuracy: exact for the declared model; estimated methods carry measured max-correspondence-residual
+    as estimate quality (construction-only methods report None, never a fabricated
+    zero)
+  runtime: negligible (correlation grid is O(drifts x offsets x events))
+  maturity: IMPLEMENTED (P2-01 complete; all six spec methods with deterministic known-answer
+    fixtures; 56 tests in tests/test_clocks.py); consumers wired via trajectories/backend/sync.py,
+    16 tests in tests/test_sync_consumers.py
+  limitations:
+  - estimated methods require trusted correspondences from metadata or the stream
+    itself; none are inferred from raw signal content (e.g. no audio waveform correlation
+    yet)
+  - clock identity resolves from declared sensor identity when present (P1-02), else
+    caller-supplied
+  fallback: honest UNSYNCHRONIZED samples with reasons (never a guessed offset); correlation
+    declines unless alignment meets an event-spacing plausibility gate
+- name: sensor_identity
+  category: evidence
+  backend: evidence/sensors.py (SensorDescriptor + load_sensor_identity + attach_sensor_identities;
+    <component>/sensor_identity.json sidecar)
+  inputs:
+  - capture component directory
+  - optional sensor_identity.json
+  outputs:
+  - SensorDescriptor attached to SensorStream/samples/CalibrationRecord/DepthFrame
+    (sensor_id
+  - source_id
+  - capture_id
+  - clock_id
+  - frame
+  - coordinate_system
+  - units
+  - quality
+  - intrinsics
+  - extrinsics
+  - provenance)
+  license: project-internal
+  hardware_requirements: none
+  accuracy: exact for what is declared; absent fields recorded as None (never defaulted,
+    never inferred from contents)
+  runtime: negligible (one JSON file per component)
+  maturity: IMPLEMENTED (P1-02; 22 tests in tests/test_sensor_identity.py; attachment
+    wired through MultiSourceSession sensor_streams/calibrations/depth_frames; clock_id
+    feeds evidence.clocks)
+  limitations:
+  - declared metadata only -- quality is what the capture declared, not measured diagnostics
+  - no real-device capture with a sensor_identity.json exercised yet (synthetic fixtures
+    only)
+  fallback: identity None (undeclared) -- evidence stays parseable; no identity is
+    ever guessed
+- name: vio_localization
+  category: localization
+  backend: ORB-SLAM3 / OpenVINS / Basalt subprocess adapters bound behind trajectories.backend.ITrajectoryBackend
+    (P3-02); none of the three binaries are installed on this machine (verified via
+    shutil.which), so estimate() honestly raises TrajectoryBackendUnavailableError
+    -- no real VIO run has been exercised yet
+  inputs:
+  - image directory or video
+  - optional IMU log
+  - caller-supplied argv (tool CLIs are build-specific
+  - not guessed)
+  outputs:
+  - Trajectory (P3-01): TrajectoryFrame sequence
+  - monotonic global-ns timestamps
+  - frame_source
+  - drift_estimate
+  license: GPL-3.0 (ORB-SLAM3), GPL-3.0-with-exceptions (OpenVINS, verify), AGPL-3.0
+    (Basalt, verify) — all subprocess-only, recorded in LICENSES.yaml federation_candidates;
+    nothing vendored/linked
+  hardware_requirements: backend-dependent (none installed here)
+  accuracy: not measured — no real backend run yet
+  runtime: n/a
+  maturity: PARTIAL (P3-02; adapter interface + TUM-format parser + try-in-order selection
+    landed, 21 tests in tests/test_trajectory_backend.py, including a real subprocess
+    adapter-contract test against a fake binary; real backend run when a binary is
+    present is the named VERIFIED gate, per spec)
+  limitations: no VIO binary installed on this machine; exact CLI invocation is left
+    to the caller (options["command"]) since none of the three tools expose one stable
+    CLI across builds
+  fallback: per-session SfM camera poses (labeled per-session, not a continuous trajectory)
+- name: provenance_graph
+  category: provenance
+  backend: 'provenance.graph: ProvenanceGraph over the content-addressed ArtifactStore
+    (nodes keyed by sha256 digest, derived_from edges added-only, cycle-rejecting)'
+  inputs:
+  - artifact digests from any ArtifactStore backend (memory/file)
+  outputs:
+  - parents/children/ancestors/descendants walks
+  - why_exists stage chain
+  - verify_all tamper report
+  - tombstones
+  license: project-internal
+  hardware_requirements: none
+  accuracy: exact (digest equality is content equality)
+  runtime: linear in graph size per walk; verify_all is O(nodes) store reads
+  maturity: IMPLEMENTED (P10-01; 11 tests on a compiled-style fixture; CLI `reality
+    provenance` surface remains with the commands layer)
+  limitations: CLI query command not yet exposed; cross-session lineage (multi-store)
+    not yet joined
+  fallback: absent graph = per-artifact provenance records still stand
+- name: cross_source_registration
+  category: registration
+  backend: 'registration.registration: point-to-plane ICP (spec''s named algorithm;
+    caller-supplied normals, 6-DOF linearized solve) + point-to-point ICP + translation-only
+    GNSS anchors, orchestrated by RegistrationEngine (confidence-ordered, every attempt
+    recorded)'
+  inputs:
+  - two point-cloud Vec3 lists (+ optional caller-supplied normals)
+  - or paired anchor position lists
+  - optional prior RigidTransform
+  outputs:
+  - RegistrationResult: RigidTransform or None
+  - status accepted/blocked+reason
+  - rmse
+  - inlier_fraction
+  - ResidualStats (measured median/p95/max/rmse)
+  - per-method AttemptRecord trail
+  license: n/a (numpy/scipy, already-declared runtime deps)
+  hardware_requirements: none
+  accuracy: exact recovery on synthetic known-offset fixtures (trihedral-corner scenes)
+    within cloud-scale offsets (tests/test_registration.py); real multi-source capture
+    not exercised
+  runtime: not measured
+  maturity: 'IMPLEMENTED (P4-01 complete: engine orchestration, point-to-plane ICP,
+    contact pre-flight, prior seeding; residual stats recorded; covariance propagation
+    and the landmark/correspondence method remain PENDING in the ledger)
 
-  - name: metric_scale_anchoring
-    category: reconstruction
-    backend: reconstruction/scale.py (in-house, measured-baseline math)
-    inputs: [reconstruction, ScaleReference (measured camera baseline)]
-    outputs: [scaled result in meters, scale_state, meters_per_unit, diagnostics]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: exact for the anchor pair (ratio); rigidity gate guards degenerate pairs
-    runtime: negligible
-    maturity: IMPLEMENTED
-    limitations: single-baseline scale; no multi-baseline least squares yet
-    fallback: honest RELATIVE state (never invented scale)
-
-  - name: monocular_depth
-    category: depth
-    backend: MiDaS DPT_Hybrid via torch.hub (perception/depth/midAS_backend.py)
-    inputs: [evidence items (photos/frames)]
-    outputs: [relative DepthMap per view]
-    license: MiDaS Apache-2.0; torch BSD-style — verify at binding time
-    hardware_requirements: CPU works (slow); CUDA better; weights download on first use
-    accuracy: relative only — metricized per-view against sparse cloud (documented approximation, residual reported)
-    runtime: model-load dominated; seconds per view CPU
-    maturity: IMPLEMENTED
-    limitations:
-      - torch-hub network/cache fragility (env)
-      - relative depth, never metric until alignment
-    fallback: RGB-D sidecar path when the capture carries device depth; honest skip otherwise
-
-  - name: depth_sidecar_ingestion
-    category: evidence
-    backend: evidence/depth_frames.py (Pillow-based 16-bit PNG decoder)
-    inputs: [depth/*.png, depth/manifest.json (depth_scale, invalid_value, units)]
-    outputs: [DepthFrame (raw + explicit scale), meters via iter_meters/meters_at]
-    license: project-internal (Pillow HPND-style license — verify at binding time)
-    hardware_requirements: none
-    accuracy: exact to device depth; scale inherited from manifest
-    runtime: negligible
-    maturity: IMPLEMENTED
-    limitations:
-      - 16-bit PNG only (Decision 020 ladder); EXR and device-raw are open adapters
-      - requires explicit depth_scale — refuses otherwise (by design)
-    fallback: none by design (DepthScaleUnavailable is the honest refusal)
-
-  - name: rgbd_dense_unprojection
-    category: dense_geometry
-    backend: engine/pipeline/vertical_slice.py::_sidecar_depth_stage + reconstruction/depth_to_points.py
-    inputs: [DepthFrames, registered cameras, trusted intrinsics, METRIC scale state]
-    outputs: [device-metric dense points ('depth-' track ids), per-view facts]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: exact camera math (PinholeCamera unproject); verified on synthetic wall at z=2.0 m
-    runtime: negligible at test scale
-    maturity: IMPLEMENTED (synthetic-verified; real-device capture is the VERIFIED gate)
-    limitations:
-      - requires METRIC-anchored world (scale coherence gate)
-      - frame matching by filename stem
-    fallback: MiDaS relative-depth path; honest skip in RELATIVE worlds
-
-  - name: depth_fusion_monocular
-    category: dense_geometry
-    backend: reconstruction/depth_to_points.py metricize_all + reconstruction/fusion/
-    inputs: [relative depth maps, sparse cloud, intrinsics, poses]
-    outputs: [fused metric point cloud (metric-by-alignment)]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: residual_median_m + inlier_fraction reported per view; not benchmarked
-    runtime: observed 121k-point fused cloud from room capture
-    maturity: IMPLEMENTED
-    limitations: per-view scale fit (not global optimization); camera-envelope filter required for depth outliers
-    fallback: sparse-only world (mesh stage skips honestly)
-
-  - name: surface_reconstruction
-    category: meshing
-    backend: COLMAP poisson_mesher (subprocess) via reconstruction/meshing/surface.py
-    inputs: [oriented point cloud (scipy PCA normals, camera-oriented)]
-    outputs: [MeshData (vertices/faces), artifact via ArtifactStore]
-    license: BSD-3-Clause (COLMAP) — verify at binding time
-    hardware_requirements: CPU
-    accuracy: not measured formally; observed 240,735 verts / 482,142 faces on room capture
-    runtime: observed 1.6 s for 40k points (depth-adaptive, trim retry)
-    maturity: IMPLEMENTED
-    limitations:
-      - Poisson depth bounded by point density (auto-retry logic)
-      - trim defaults to 0 (dense-cloud trim=10 empties sparse clouds)
-    fallback: honest skip with reason (never a placeholder mesh; AABB fallback only in viewer, labeled)
-
-  - name: mesh_quality_validation
-    category: meshing
-    backend: reconstruction/meshing/validation.py (pure-python measured counts)
-    inputs: [MeshData, optional declared expected_extent_m + scale_tolerance]
-    outputs: [MeshQualityReport (degenerate/non-manifold/bad-normal/hole/component counts,
-      self-intersection proxy candidates, extent, per-axis scale ratios + verdict)]
-    license: project-internal
-    hardware_requirements: CPU (O(n^2) bbox-overlap proxy; BVH noted if meshes grow)
-    accuracy: measured counts, deterministic; scale check is declared-expectation only
-    runtime: sub-second on validation-sized meshes
-    maturity: IMPLEMENTED — bad-scale check landed 2026-09-15; report recorded into
-      Geometry.quality_metrics at mesh-stage export time (vertical_slice seam)
-    limitations:
-      - self-intersection is a documented bbox-overlap PROXY (necessary-not-sufficient)
-      - scale verdict requires a caller-declared expected extent; never inferred
-      - validation measures only; mesh REPAIR out of scope by design
-    fallback: report is always computable; absent expectation -> scale fields None (honest absence)
-
-  - name: reconstruction_cross_validation
-    category: reconstruction
-    backend: reconstruction/validation.py (cKDTree-indexed nearest-point match)
-    inputs: [ReconstructionResult, ReconstructionResult, distance_threshold_m]
-    outputs: [ValidationReport (agreements, PointDisagreement list, unmatched_a/b)]
-    license: project-internal
-    hardware_requirements: CPU (scipy cKDTree; same dependency as consistency/fusion/quality)
-    accuracy: exact nearest-neighbor matching, deterministic; semantics pinned by a
-      brute-force oracle test on shuffled non-trivial data (agreement ordering, b-side
-      consumption on disagreement, unmatched_b track_id set-collapse)
-    runtime: 60k-vs-60k point validation completes in seconds (was O(N*M) pure-python,
-      >300s killed at that scale); bounded-time test enforces the gate
-    maturity: IMPLEMENTED — large-set scale gate landed 2026-09-19 (large image-set
-      robustness, mission priority P1); report semantics unchanged for callers
-      (evidence/promote_reconstruction.py consumes it unchanged)
-    limitations:
-      - exact-tie nearest candidates resolve deterministically but may differ from a
-        naive first-min scan (documented; report stays deterministic either way)
-      - validates POINT sets only; pose Trajectory comparison is a separate concern
-    fallback: empty-b short-circuit reports all of a as unmatched_a (unchanged semantics)
-
-  - name: dense_mvs
-    category: dense_geometry
-    backend: "CUDA COLMAP (colmap/colmap release 4.2.0, colmap-x64-windows-cuda.zip). Real end-to-end GPU run completed 2026-09-15 (CLI-level, not yet Python-integrated): feature_extractor -> exhaustive_matcher -> mapper (17/20 registered) -> image_undistorter -> patch_match_stereo --geom_consistency true (GPU, ~6.9 min) -> stereo_fusion, 294,345 fused points written to a real PLY. Not yet wired: reconstruction/depth_to_points.py does not parse COLMAP dense output (fused.ply) into this repo's DepthFrame/point types -- only monocular/RGB-D sidecar paths are integrated. OpenMVS slot still open."
-    inputs: [calibrated images, poses, intrinsics]
-    outputs: [dense depth maps per view, fused point cloud (PLY) -- not yet parsed into this repo's canonical types]
-    license: n/a until a backend binds
-    hardware_requirements: "RTX 4050 present and CUDA-capable (compute 8.9, driver 616.56) — previously believed unavailable; that was a software-build gap (CPU-only COLMAP), not a hardware gap. Resolved and exercised."
-    accuracy: "not measured against ground truth; output geometry is coherent (tight point-cloud mean/std, real sampled texture colors) but in COLMAP's own uncalibrated SfM scale, not yet metric-anchored"
-    runtime: "~6.9 min patch_match_stereo (GPU, geom_consistency on) + ~6s stereo_fusion, 17 views, RTX 4050 laptop GPU"
-    maturity: PARTIAL (real GPU dense reconstruction verified working end-to-end via CLI 2026-09-15; the reconstruction/ Python-level integration — parsing dense output into canonical types, wiring into the orchestrator — is the remaining scope; see docs/future/dense-reconstruction/DENSE_MVS.md)
-    limitations: CLI-proven only, not yet callable from reconstruction/ Python code; scale not metric-anchored in this run; single synthetic scene exercised, not a stress test
-    fallback: monocular depth + RGB-D sidecars (labeled as such, never passed off as MVS)
-
-  - name: object_detection
-    category: perception
-    backend: torchvision Mask R-CNN (perception/detection/maskrcnn_backend.py)
-    inputs: [evidence items]
-    outputs: [per-view instance masks + scores]
-    license: torchvision BSD-style; weights per torchvision docs — verify at binding time
-    hardware_requirements: CPU works; weights download on first use
-    accuracy: not measured (score threshold 0.5 default)
-    runtime: seconds per view CPU
-    maturity: IMPLEMENTED
-    limitations: weights acquisition needed; 2D only — 3D lift needs metric depth
-    fallback: honest skip (perception stage refuses without metric depth)
-
-  - name: image_segmentation
-    category: perception
-    backend: SAM via segment-anything pip package (sam_model_registry) + checkpoint file
-    inputs: [images, prompt boxes/masks]
-    outputs: [masks]
-    license: SAM Apache-2.0 — verify at binding time
-    hardware_requirements: CPU/GPU; checkpoint download (~375 MB for vit_b)
-    accuracy: not measured in-repo
-    runtime: real-model load + inference verified on CPU (vit_b, 320x240, ~90 s with points_per_side=32)
-    maturity: IMPLEMENTED — real-model integration test passes; torch.hub.load("facebookresearch/segment-anything")
-      removed (upstream repo has no hubconf.py — 0 commits touching it — so source="github" loads were structurally broken)
-    limitations: checkpoint resolved in order explicit path -> torch-hub cache -> direct download; offline environments must
-      pre-cache weights; confidence clamped at conversion boundary because SAM's predicted_iou can exceed 1.0 by float round-off
-    fallback: Mask R-CNN detection path
-
-  - name: calibration_frames
-    category: calibration
-    backend: reconstruction/calibration/transforms.py (RigidTransform + CalibrationChain + SensorRig + WGS84/ENU conversions + reprojection_residual_stats; rotation math = engine.physics.math3, camera types reused verbatim)
-    inputs: [declared rig transforms (sensor frame -> rig frame), GNSS anchor (geodetic reference), camera + (world point, observed pixel) observations]
-    outputs: [frame-validated transform chains, geodetic<->ECEF<->ENU points, per-camera pixel residual stats]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: exact known-answer math (sub-mm geodetic roundtrip; pixel stats are measured facts of the given observations; ENU triad proven orthonormal)
-    runtime: negligible
-    maturity: IMPLEMENTED (P2-02; 45 tests in tests/test_calibration_transforms.py; ENU matrix bug caught by known-answer test and fixed, triad structurally proven)
-    limitations:
-      - declared/assumed calibration only -- no estimation (fit) procedures yet
-      - height is ellipsoidal; geoid separation models are a caller concern (recorded, not modeled)
-      - no real-device calibration evidence yet (synthetic known answers only)
-    fallback: absent calibration is recorded as absent (rig members without a pose raise on chain requests, never guess); unprojectable points counted, never given fabricated residuals
-
-  - name: time_synchronization
-    category: temporal
-    backend: >
-      evidence/clocks.py (in-house linear clock model;
-      preference-ordered backend registry: metadata_alignment, gnss_pps,
-      trigger, signal_correlation, optimization)
-    inputs: [SensorStream, clock_id, capture metadata (shared_clock / clock_offset_s / clock_drift / gnss_anchor_pairs / trigger_pairs / reference+observed event trains / cross_stream_constraints)]
-    outputs: [TimeAlignment (per-sample original_t + global_t), SynchronizationDiagnostics (measured residual_max_s, backend attempts, rejection notes), ClockModel]
-    consumers: >-
-      trajectories/backend/sync.py (apply_clock_model +
-      estimate_trajectory: canonical Trajectory stamps carry
-      clock_id/sync_state/sync_method; model_unit is explicit --
-      's' for stream-fitted models, 'ns' canonical)
-    license: project-internal
-    hardware_requirements: none (GNSS/PPS consumed from declared anchors or already-GNSS-time streams; no timing hardware required)
-    accuracy: exact for the declared model; estimated methods carry measured max-correspondence-residual as estimate quality (construction-only methods report None, never a fabricated zero)
-    runtime: negligible (correlation grid is O(drifts x offsets x events))
-    maturity: IMPLEMENTED (P2-01 complete; all six spec methods with deterministic known-answer fixtures; 56 tests in tests/test_clocks.py); consumers wired via trajectories/backend/sync.py, 16 tests in tests/test_sync_consumers.py
-    limitations:
-      - estimated methods require trusted correspondences from metadata or the stream itself; none are inferred from raw signal content (e.g. no audio waveform correlation yet)
-      - clock identity resolves from declared sensor identity when present (P1-02), else caller-supplied
-    fallback: honest UNSYNCHRONIZED samples with reasons (never a guessed offset); correlation declines unless alignment meets an event-spacing plausibility gate
-
-  - name: sensor_identity
-    category: evidence
-    backend: evidence/sensors.py (SensorDescriptor + load_sensor_identity + attach_sensor_identities; <component>/sensor_identity.json sidecar)
-    inputs: [capture component directory, optional sensor_identity.json]
-    outputs: [SensorDescriptor attached to SensorStream/samples/CalibrationRecord/DepthFrame (sensor_id, source_id, capture_id, clock_id, frame, coordinate_system, units, quality, intrinsics, extrinsics, provenance)]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: exact for what is declared; absent fields recorded as None (never defaulted, never inferred from contents)
-    runtime: negligible (one JSON file per component)
-    maturity: IMPLEMENTED (P1-02; 22 tests in tests/test_sensor_identity.py; attachment wired through MultiSourceSession sensor_streams/calibrations/depth_frames; clock_id feeds evidence.clocks)
-    limitations:
-      - declared metadata only -- quality is what the capture declared, not measured diagnostics
-      - no real-device capture with a sensor_identity.json exercised yet (synthetic fixtures only)
-    fallback: identity None (undeclared) -- evidence stays parseable; no identity is ever guessed
-
-  - name: vio_localization
-    category: localization
-    backend: "ORB-SLAM3 / OpenVINS / Basalt subprocess adapters bound behind trajectories.backend.ITrajectoryBackend (P3-02); none of the three binaries are installed on this machine (verified via shutil.which), so estimate() honestly raises TrajectoryBackendUnavailableError -- no real VIO run has been exercised yet"
-    inputs: [image directory or video, optional IMU log, caller-supplied argv (tool CLIs are build-specific, not guessed)]
-    outputs: [Trajectory (P3-01): TrajectoryFrame sequence, monotonic global-ns timestamps, frame_source, drift_estimate]
-    license: GPL-3.0 (ORB-SLAM3), GPL-3.0-with-exceptions (OpenVINS, verify), AGPL-3.0 (Basalt, verify) — all subprocess-only, recorded in LICENSES.yaml federation_candidates; nothing vendored/linked
-    hardware_requirements: backend-dependent (none installed here)
-    accuracy: not measured — no real backend run yet
-    runtime: n/a
-    maturity: PARTIAL (P3-02; adapter interface + TUM-format parser + try-in-order selection landed, 21 tests in tests/test_trajectory_backend.py, including a real subprocess adapter-contract test against a fake binary; real backend run when a binary is present is the named VERIFIED gate, per spec)
-    limitations: no VIO binary installed on this machine; exact CLI invocation is left to the caller (options["command"]) since none of the three tools expose one stable CLI across builds
-    fallback: per-session SfM camera poses (labeled per-session, not a continuous trajectory)
-
-  - name: provenance_graph
-    category: provenance
-    backend: "provenance.graph: ProvenanceGraph over the content-addressed ArtifactStore (nodes keyed by sha256 digest, derived_from edges added-only, cycle-rejecting)"
-    inputs: [artifact digests from any ArtifactStore backend (memory/file)]
-    outputs: [parents/children/ancestors/descendants walks, why_exists stage chain, verify_all tamper report, tombstones]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: exact (digest equality is content equality)
-    runtime: linear in graph size per walk; verify_all is O(nodes) store reads
-    maturity: IMPLEMENTED (P10-01; 11 tests on a compiled-style fixture; CLI `reality provenance` surface remains with the commands layer)
-    limitations: CLI query command not yet exposed; cross-session lineage (multi-store) not yet joined
-    fallback: absent graph = per-artifact provenance records still stand
-
-  - name: cross_source_registration
-    category: registration
-    backend: "registration.registration: point-to-plane ICP (spec's named algorithm; caller-supplied normals, 6-DOF linearized solve) + point-to-point ICP + translation-only GNSS anchors, orchestrated by RegistrationEngine (confidence-ordered, every attempt recorded)"
-    inputs: [two point-cloud Vec3 lists (+ optional caller-supplied normals), or paired anchor position lists, optional prior RigidTransform]
-    outputs: [RegistrationResult: RigidTransform or None, status accepted/blocked+reason, rmse, inlier_fraction, ResidualStats (measured median/p95/max/rmse), per-method AttemptRecord trail]
-    license: n/a (numpy/scipy, already-declared runtime deps)
-    hardware_requirements: none
-    accuracy: "exact recovery on synthetic known-offset fixtures (trihedral-corner scenes) within cloud-scale offsets (tests/test_registration.py); real multi-source capture not exercised"
-    runtime: not measured
-    maturity: >
-      IMPLEMENTED (P4-01 complete: engine orchestration, point-to-plane
-      ICP, contact pre-flight, prior seeding; residual stats recorded;
-      covariance propagation and the landmark/correspondence method
-      remain PENDING in the ledger)
-    limitations: covariance not yet propagated (residual stats are); landmark method needs a cross-source co-observation resolver (P7-01); no orchestration wiring into world compilation yet; ICP remains a local optimizer (prior/contact gate refuses guesses)
-    fallback: none -- separate worlds stay separate and labeled
-
-  - name: world_compilation
-    category: worldir
-    backend: engine/compiler/world_compiler.py + engine/pipeline/vertical_slice.py
-    inputs: [ReconstructionResult, options, ArtifactStore]
-    outputs: [WorldIR v1 (entities/measurements/metadata), compile diagnostics]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: validation gate enforced (validate_world_ir)
-    runtime: negligible at test scale
-    maturity: IMPLEMENTED
-    limitations: v1 schema (topology/temporal history/representations open — P9-01)
-    fallback: none (compile failure fails loudly)
-
-  - name: artifact_storage
-    category: persistence
-    backend: world_ir/artifact_store.py (content-addressed sha256)
-    inputs: [bytes]
-    outputs: [data_uri, data_hash]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: hash-exact
-    runtime: negligible
-    maturity: IMPLEMENTED
-    limitations: local filesystem; no remote object storage yet (WorldStore P11-01)
-    fallback: none
-
-  - name: export_gltf
-    category: compilers
-    backend: exporters/gltf/exporter.py
-    inputs: [WorldIR + resolvable artifacts]
-    outputs: [glTF 2.0 (TRIANGLES mesh, POINTS entities)]
-    license: project-internal (glTF spec, royalty-free)
-    hardware_requirements: none
-    accuracy: verified on real 240k-vertex mesh (uint32 indices)
-    runtime: negligible at test scale
-    maturity: IMPLEMENTED
-    limitations: material/texture export minimal
-    fallback: unresolvable artifacts export as labeled placeholders (honest fallback rule)
-
-  - name: export_blender_usd
-    category: compilers
-    backend: exporters/blender/, exporters/usd/
-    inputs: [WorldIR]
-    outputs: [Blender scene / USD stage]
-    license: project-internal
-    hardware_requirements: Blender for .blend verification (external, gated)
-    accuracy: golden-file tested where CI-able
-    runtime: negligible
-    maturity: IMPLEMENTED (basic)
-    limitations: fidelity below glTF path
-    fallback: none
-
-  - name: physics_rigid_body
-    category: simulation
-    backend: engine/physics/backend/simple_backend.py
-    inputs: [world entities + materials]
-    outputs: [simulated state, contact/friction behavior]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: golden tests (RB_001/RB_002)
-    runtime: real-time at test scale
-    maturity: "PARTIAL (foundation: rigid bodies/collision/friction/contacts; constraints/CCD/fluids open — P17-01)"
-    limitations: no constraints/joints yet; determinism tested fixed-step
-    fallback: none
-
-  - name: one_command_compile
-    category: product
-    backend: apps/cli/main.py `reality compile` (also scripts/run_vertical_slice.py)
-    inputs: [capture dataset directory]
-    outputs: [worldir.json, points.ply, cameras.json, exports/, report.json]
-    license: project-internal
-    hardware_requirements: backend-dependent (COLMAP for real runs)
-    accuracy: inherits stages; report.json records every stage's honest status
-    runtime: COLMAP-dominated on real captures
-    maturity: IMPLEMENTED
-    limitations: orchestrator->compile only; session/source management CLI open
-    fallback: deterministic backend injection (REALITY_TEST_BACKEND) for offline tests
-  - name: world_store
-    category: persistence
-    backend: "worldstore.store: filesystem-backed versioned store (WorldStore)"
-    maturity: IMPLEMENTED
-    notes: >-
-      Content-addressed ArtifactStore underneath; save_world persists an
-      immutable snapshot + metadata (parents, message); load_world restores
-      any version; versions()/parents()/ancestors() expose the DAG; list()
-      preserves save order. Observed reality is recoverable across process
-      restarts.
-    tests: tests/test_world_store.py
-
-  - name: incremental_compilation
-    category: engine
-    backend: "engine.incremental: dependency-graph invalidation compiler"
-    maturity: IMPLEMENTED
-    notes: >-
-      Stages declare dependencies; compiler re-runs ONLY stages whose
-      transitive inputs changed (content hashes), preserves unaffected
-      artifacts across versions, detects cycles at registration, and
-      resumes from a prior CompilationState.
-    tests: tests/test_incremental.py
-
-  - name: uncertainty_propagation
-    category: uncertainty
-    backend: "perception.instances.measurement: measured-spread precision; registration.registration: 6-DOF covariance"
-    maturity: IMPLEMENTED
-    notes: >-
-      Measurements carry precision from MEASURED inter-view disagreement
-      (RMS spread, leave-one-out 5-sigma conflict detection, n=2 honestly
-      undecidable, single-view falls back to the documented heuristic --
-      every measurement names its precision source via precision_note).
-      ICP results carry 6x6 covariance from correspondences. Fusion
-      precision is inverse-variance (existing).
-      EXPANSION 2026-09-16 (P10-02): uncertainty/ package — Uncertain
-      scalar (value/sigma/basis; sigma=None honest unknown, never zero)
-      and first-order propagation operators (sum/difference/scale,
-      J Sigma J^T linear, R Sigma R^T point transform, 6x6 pose
-      composition via central-difference Jacobians of the exact
-      RigidTransform.compose). UNKNOWN propagates as UNKNOWN through
-      every operator.
-      COMPLETION 2026-09-18: the module now carries BOTH halves -- the
-      numeric-Jacobian operators above PLUS the analytic per-point
-      chain (Covariance3, depth_to_world_covariance,
-      propagate_point_through_pose, propagate_chain): closed-form
-      Jacobians for depth -> unprojection -> pose verified against
-      finite differences of the REAL PinholeCamera model; directional
-      rotation levers; partial calibration yields UNKNOWN naming the
-      missing stage; the pinhole-only analytic path REFUSES distorted
-      cameras; sigma is never collapsed into confidence.
-    tests: tests/test_object_measurement.py, tests/test_registration.py, tests/test_uncertainty_propagation.py
-  - name: room_building_graph
-    category: perception
-    backend: "perception.architecture.room_graph: build_room_graph / build_building_graph"
-    inputs: [classify_planes output (plane evidence with inliers)]
-    outputs: >-
-      RoomGraph (rooms as floor+ceiling+walls with measured dimensions,
-      doorway openings, adjacency via shared walls) and BuildingGraph
-      (storeys grouped by ceiling band, building envelope)
-    license: project-internal
-    hardware_requirements: none
-    accuracy: measured from real plane evidence; multi-storey band
-      membership tested (two-storey fixture)
-    runtime: O(planes)
-    maturity: IMPLEMENTED
-    tests: tests/test_room_building_graph.py
-  - name: worldir_v2_extensions
-    category: worldir
-    backend: "world_ir.v2_extensions: TopologyGraph / temporal_history / ExternalReference"
-    inputs: [WorldIR]
-    outputs: >-
-      additive topology (hierarchy + adjacency + containment, seam
-      entities connect their adjacency targets), world-level ordered
-      temporal history, typed external references; v1 worlds load
-      unchanged
-    license: project-internal
-    hardware_requirements: none
-    accuracy: query correctness tested against hand-built worlds
-    runtime: O(entities + edges)
-    maturity: IMPLEMENTED
-    tests: tests/test_world_ir_v2.py
-  - name: spatial_tiles
-    category: large-world
-    backend: "world_ir.spatial_tiles: uniform spatial tiles + region queries + chunked paging"
-    inputs: [WorldIR entities, explicit tile_size / max_chunk_entities]
-    outputs: >-
-      deterministic tile assignment, AABB/radius region queries,
-      neighbor-tile enumeration, streamed chunks with memory bounded
-      by chunk size (tracemalloc-measured)
-    license: project-internal
-    hardware_requirements: none
-    accuracy: query correctness verified vs brute force
-    runtime: O(entities); uniform grid chosen deliberately over a tree
-      (entity counts, not points, are indexed)
-    maturity: IMPLEMENTED
-    tests: tests/test_spatial_tiles.py
-  - name: procedural_room_grammar
-    category: procedural
-    backend: "procedural.room_grammar: spec -> deterministic WorldIR"
-    inputs: [RoomGrammarSpec (rooms, wall openings, adjacency)]
-    outputs: >-
-      WorldIR with real geometry (AABB/boxes), floor-graph adjacency,
-      StatementState.PROCEDURAL provenance; deterministic (same spec ->
-      identical to_dict)
-    license: project-internal
-    hardware_requirements: none
-    accuracy: geometry + adjacency known-answer tested; determinism
-      byte-verified
-    runtime: O(spec size)
-    maturity: IMPLEMENTED
-    tests: tests/test_procedural_room_grammar.py
-  - name: cityjson_exporter
-    category: exporters
-    backend: "exporters.cityjson.exporter: WorldIR -> CityJSON 1.1"
-    inputs: [WorldIR]
-    outputs: >-
-      real CityJSON 1.1 document (transform quantization with integer
-      vertices, semantic CityObjects, metadata with entity count +
-      provenance); orphan entities skipped with reason
-    license: project-internal (CityJSON is open spec)
-    hardware_requirements: none
-    accuracy: spec-structure tests; official tooling parseable layout
-    runtime: O(entities)
-    maturity: IMPLEMENTED
-    tests: tests/test_cityjson_exporter.py
-  - name: ifc_bridge
-    category: exporters
-    backend: "exporters.ifc_bridge: WorldIR -> IFC4 via IfcOpenShell 0.8.x"
-    inputs: [WorldIR architectural entities]
-    outputs: >-
-      IfcProject -> IfcSite -> IfcBuilding -> IfcBuildingStorey
-      hierarchy with one semantic IFC class per entity (wall/slab/
-      column/beam/door/window/roof/proxy)
-    license: >-
-      Apache 2.0 (IfcOpenShell); recorded per LICENSES discipline
-    hardware_requirements: none (pure-Python path)
-    accuracy: written file parsed back via ifcopenshell; hierarchy and
-      classes asserted
-    runtime: O(entities)
-    maturity: IMPLEMENTED
-    tests: tests/test_ifc_bridge.py
-  - name: simulation_loop
-    category: simulation
-    backend: "engine.compiler.simulation_loop: WorldIR -> SimulationState -> WorldStateDelta -> branched WorldIR"
-    inputs: [WorldIR with physical geometry, PhysicsCompiler, steps/dt]
-    outputs: >-
-      WorldStateDelta (changed/unchanged entity ids, tick/dt) and the
-      branched WorldIR with StatementState.SIMULATED provenance;
-      snapshots taken before stepping (no aliasing false-equals)
-    license: project-internal
-    hardware_requirements: none
-    accuracy: diff correctness known-answer tested; physics e2e suite
-      remains green
-    runtime: O(entities x steps)
-    maturity: IMPLEMENTED
-    tests: tests/test_simulation_loop.py
-  - name: benchmark_suite
-    category: benchmarks
-    backend: "benchmarks.suite: descriptor-driven same-pipeline benchmark runs"
-    inputs: [BenchmarkDescriptor list]
-    outputs: >-
-      per-descriptor measured StageTiming records + metrics dict via
-      the SAME detail-spine pipeline (no per-benchmark special cases);
-      runs recorded in docs/BENCHMARKS.md
-    license: project-internal
-    hardware_requirements: none
-    accuracy: metrics are measured outputs of the real stages
-    runtime: dominated by the pipeline stages themselves
-    maturity: IMPLEMENTED
-    tests: tests/test_benchmark_suite.py
-  - name: city_compiler_core
-    category: compiler
-    backend: "engine.compiler.city_compiler: city feature descriptors -> WorldIR -> CityJSON"
-    inputs: [CityFeature descriptors (terrain/roads/buildings/vegetation/water)]
-    outputs: >-
-      WorldIR entities with real bounds and explicit transforms ->
-      CityJSON; geometry-less features refuse at construction
-    license: project-internal
-    hardware_requirements: none
-    accuracy: bounds/transform/refusal known-answer tested
-    runtime: O(features)
-    maturity: PARTIAL (core translation landed; GIS/OSM ingestion and
-      CityGML/3DCityDB writers open)
-    tests: tests/test_city_compiler.py
-  - name: architectural_parametric_perception
-    category: perception
-    backend: >-
-      perception/architecture/{parametric,segments,registry,components,promotion}.py
-      (in-house deterministic geometry; no external dependency)
-    inputs: [ReconstructionResult (real points), world up, class registry]
-    outputs: >-
-      parametric fits (CylinderFit/SphereFit/CircleFit with measured
-      rms/max residuals), Segment list, ComponentObservation records
-      (accepted + unaccepted with reasons), CandidateComponents
-      (multi-view resolved), RepetitionPrior/SymmetryPrior,
-      canonical WorldIR Entities + adjacency edges
-    license: project-internal
-    hardware_requirements: none (pure Python float math, deterministic)
-    accuracy: >-
-      known-answer fits recover exact parameters on clean shells;
-      measured residuals are the quality claim -- no fabricated
-      confidence; degenerate/under-constrained inputs raise FitRefused
-    runtime: O(points) segmentation; fits are closed-form + local search
-    maturity: IMPLEMENTED (Phase 1 parametric perception; 58 tests in
-      tests/test_parametric_fits.py, test_arch_registry.py,
-      test_arch_components.py, test_arch_worldir.py,
-      test_arch_benchmark.py)
-    limitations:
-      - cylinder axis search is local (seeded); exotic point sets may
-        need more seeds
-      - dome fit is spherical (ellipsoidal/compound later phases)
-      - arch fit is circular (pointed/elliptical hypotheses later)
-      - repetition/symmetry are priors over resolved components, not
-        per-point detectors
-      - real-capture benchmarks (Victoria Memorial) are CAPTURE_PENDING
-        -- capture is an external dependency, never simulated
-
-  - name: temporal_tracking
-    category: perception
-    backend: perception/tracking/temporal.py (in-house, deterministic)
-    inputs: >-
-      TimedObservation list (observation_id, label, position, evidence_id,
-      captured_at, measured confidence) + speed/gap budgets
-    outputs: >-
-      TrackRecord list (track_id, label, observation history,
-      path_length_m, duration_s, implied_speed_m_s, min-of-measured
-      confidence) + separate untimed-observation list;
-      instance_tracks_from adapter onto InstanceTrack
-    license: project-internal
-    hardware_requirements: none (pure Python, deterministic)
-    accuracy: >-
-      continuation requires BOTH speed budget (distance <= max(merge
-      _distance, max_speed * gap)) and gap budget; observations never
-      forced into tracks; unknown confidence/untimed time stays unknown
-    runtime: O(observations x open-tracks-per-label)
-    maturity: PARTIAL (3D observation-level layer; 14 tests in
-      tests/test_temporal_tracking.py)
-    limitations:
-      - 2D box association (ByteTrack/OC-SORT), motion compensation,
-        ID-switch diagnostics not implemented
-      - thresholds untuned against real data
-
-  - name: evidence_quality_assessment
-    category: perception
-    backend: perception/quality/assessment.py (in-house, deterministic)
-    inputs: >-
-      ReconstructionResult (points with source_evidence_ids, camera
-      poses) + calibrated PinholeCamera list (camera_from_pose)
-    outputs: >-
-      EvidenceQualityReport (measured median GSD mm/px, detail tier
-      fine/medium/coarse/unsupported, observed_fraction, per-point
-      view counts, unprojectable point ids, overclaim count) +
-      capture recommendations (close-range / overlapping views /
-      coverage gaps)
-    license: project-internal
-    hardware_requirements: none (pure Python, deterministic)
-    accuracy: >-
-      GSD measured from real geometry (euclidean distance x 1000 /
-      max(fx,fy)); observation decided by projection inside image
-      bounds, NOT by trusting source_evidence_ids (overclaims
-      reported); tiers by documented thresholds; unknown stays
-      unknown (no observations -> GSD None + "unsupported"; refuses
-      to guess intrinsics)
-    runtime: O(points x cameras)
-    maturity: PARTIAL (18 tests in tests/test_evidence_quality.py)
-    limitations:
-      - directive-section-11 inputs not yet measured (view angle,
-        focus/motion blur, texture richness, depth confidence,
-        occlusion beyond projection bounds)
-      - thresholds untuned against real datasets
-
-  - name: detail_budget
-    category: perception
-    backend: perception/quality/detail_budget.py (in-house, deterministic)
-    inputs: >-
-      EvidenceQualityReport from evidence_quality_assessment (measured
-      GSD, per-point view counts, coverage)
-    outputs: >-
-      DetailBudget (justified_level L0-L4 on the multi-scale scale,
-      compute_tier none/survey/light/standard/high/full,
-      max_gsd_mm_per_px, coverage_capped, basis) — the maximum
-      defensible detail level + compute allocation for a region
-    license: project-internal
-  - name: detail_discovery
-    category: perception
-    backend: perception/detail/discovery.py (in-house, deterministic)
-    inputs: >-
-      ReconstructionResult points + EvidenceQualityReport from
-      evidence_quality_assessment (scene GSD + per-track view counts)
-    outputs: >-
-      DetailCandidate list in stable spatial order (cell_id, centroid,
-      n_points, measured PCA curvature ratio, measured planarity
-      1 - lambda_min/lambda_max from the same covariance solve,
-      density_per_m2, is_detail, is_structure, per-cell DetailBudget,
-      point_ids) — WHERE detail is recoverable AND which cells are
-      oriented planar structure (invisible to the curvature gate by
-      construction), domain-agnostic; voxelized, min_points-skipping,
-      budget-attached (hallucination gate). REAL-DATA VERIFIED on
-      room_capture_mvs (294,345 pts): 103 cells, 96 structure at
-      planarity median 0.9997, determinism byte-identical across
-      reruns
-    license: project-internal
-  - name: roi_generation
-    category: perception
-    backend: perception/detail/roi.py (in-house, deterministic)
-    inputs: >-
-      DetailCandidate list from detail_discovery + voxel_size
-      (+ optional include_structure / planarity_seed_threshold:
-      structure cells also seed ROIs, provenance seed="structure")
-    outputs: >-
-      RegionOfInterest list (roi_id, bounds, member cells, unioned
-      point provenance, aggregate MIN DetailBudget, pending status,
-      provenance) — bounded local-reconstruction work orders
-    license: project-internal
-  - name: roi_refinement
-    category: perception
-    backend: >-
-      perception/detail/refinement.py + perception/detail/backends.py
-      (in-house, deterministic; sphere/cylinder reuse
-      perception/architecture/parametric.py unchanged)
-    inputs: >-
-      Pending RegionOfInterest work orders + a point-id lookup (e.g.
-      the reconstruction's own track_id -> position table)
-    outputs: >-
-      RefinementOutcome per ROI (refined with measured rms/max
-      residual, documented-map quality, winning backend, measured fit
-      counters; or refused with a diagnostic reason naming the
-      evidence gap) + apply_outcomes state transitions carried on the
-      work-order records
-    license: project-internal
-  - name: detail_pipeline
-    category: perception
-    backend: perception/detail/pipeline.py (in-house, deterministic)
-    inputs: >-
-      ReconstructionResult + calibrated PinholeCameras (+ optional
-      point lookup, voxel size, up)
-    outputs: >-
-      DetailPipelineReport (measured EvidenceQualityReport, detail
-      candidates, transitioned ROIs, outcomes, summary counts) — the
-      one-call assess -> discover -> ROI -> refine -> apply driver;
-      optional build_world_ir integrates refined outcomes into a
-      WorldIR instance and reports entity/geometry ids + refusals;
-      include_structure pass-through seeds ROIs from measured planar
-      structure cells (the real room capture's walls/floor/ceiling
-      were invisible without it). REAL-DATA VERIFIED end-to-end:
-      room_capture_mvs fused.ply (294,345 pts) -> GSD 1.169 mm/px
-      "fine", 12 ROIs -> 12 refined / 0 refused, +12 WorldIR
-      entities/geometries, 182.7 s wall time
-    license: project-internal
-  - name: detail_worldir_integration
-    category: perception
-    backend: perception/detail/worldir.py (in-house, deterministic)
-    inputs: >-
-      RegionOfInterest list + aligned RefinementOutcome list + a
-      WorldIR instance
-    outputs: >-
-      WorldIR Geometry (typed by winning backend, lod_level from the
-      budget, measured quality as confidence, provenance Observation
-      with fit parameters + algorithm identity + point provenance) +
-      linked Entity (RECONSTRUCTED, DERIVED statement state); refusals
-      recorded as facts on the report, never geometry; validate-
-      rollback on any validation error
-    license: project-internal
-    hardware_requirements: none (pure Python, deterministic)
-    accuracy: >-
-      Derived from measured facts by documented mapping (gsd<=5 -> L4,
-      <=25 -> L2, <=100 -> L1, else L0; min 2 views to hold the level,
-      else capped at L2); observed-points-without-GSD reports refuse
-      (bypass detection); empty/coverage-failed scenes -> honest
-      zero-allocation unsupported budget
-    runtime: O(1)
-    maturity: PARTIAL (10 tests in tests/test_detail_budget.py; wired
-      into recommend_capture as scene_budget --
-      tests/test_capture_feedback_wiring.py)
-    limitations:
-      - per-region budgets require spatial partitioning of the scene
-        (currently scene-level derivation only)
-      - GSD-level thresholds untuned against real datasets
-
-  - name: cross_view_depth_consistency
-    category: reconstruction
-    backend: "reconstruction/consistency.py: check_depth_consistency (in-house, deterministic, scipy cKDTree + the repo's own vectorized Brown-Conrady model)"
-    inputs: [metric DepthMaps (unit=meters), PinholeCamera per evidence id, scene points (sparse cloud)]
-    outputs: [ConsistencyReport: status consistent/contradictions/inconclusive/insufficient_evidence, per-pair DepthContradiction records carrying BOTH measured depths, max_relative_difference, views_skipped]
-    license: project-internal
-    hardware_requirements: none (numpy/scipy, already-declared runtime deps)
-    accuracy: >-
-      Measures world-space disagreement between per-view UNPROJECTED
-      samples of one physical surface, normalized by mean camera range;
-      co-visibility established in PIXEL space (world-space association
-      is circular -- a biased depth hides the contradiction it should
-      reveal); mutual-ray-angle gates exclude degenerate baselines as
-      inconclusive, never counted as "consistent"
-    runtime: "stride-capped per view (4096 samples default), O(scene points x views) queries"
-    maturity: "IMPLEMENTED -- 9 tests in tests/test_depth_consistency.py (perfect-data consistency, 20%-bias detection, determinism, degenerate-baseline inconclusive, disjoint insufficient-evidence, relative-depth refusal, no-camera skip naming, empty-scene refusal, dict roundtrip)"
-    limitations: synthetic-fixture verified; real multi-view depth run is the named next gate; thresholds (10% contradiction, 2px association, angle gates) untuned against real depth noise
-    fallback: none -- no verdict without >=2 metric views
-
-  - name: cross_session_registration
-    category: registration
-    backend: "registration/cross_session.py: align_session + align_session_chain + align_reconstructed_sessions (in-house, deterministic global coarse search + ICP)"
-    inputs: [per-session point clouds (Vec3) or ReconstructionResults keyed by session id, reference session id]
-    outputs: [SessionAlignment per pair (real RigidTransform or refused+reason), CrossSessionReport (per-session transform into the reference frame, status aligned/unresolved/reference, per-session reason)]
-    license: project-internal
-    hardware_requirements: none (numpy/scipy)
-    accuracy: >-
-      Recovers 30-degree rotated + translated fixtures exactly (round-trip
-      < 0.15 m on 5x5 grids); coarse stage = centroid + 60 icosahedral
-      rotations scored by correspondence rmse + bounded deterministic
-      coarse-to-fine Euler descent (15->3.75 deg); refinement = the
-      existing register_icp gates (outlier rejection, min_overlap,
-      absolute-scale rmse gate); contact gate (expanded-bbox) refuses
-      no-contact sessions BEFORE any ICP can hallucinate a local minimum
-    runtime: 60 coarse rotations x coarse clouds (stride-capped 2048) + top-k ICP starts; full-cloud polish pass
-    maturity: "IMPLEMENTED -- 9 pair/chain tests in tests/test_cross_session_registration.py + 7 vertical-slice tests in tests/test_multi_session_alignment.py (identity verified not assumed, real transform recovery, disjoint refusal, chain composition, unresolved stays unresolved, orchestrator multi-batch slice)"
-    limitations: plane-symmetric fixtures can defeat pure-rotation ICP without asymmetric structure (measured; the coarse-to-fine stage mitigates); real multi-session captures are the named next gate; single rigid transform per session (no deformation)
-    fallback: none -- unalignable sessions stay "unresolved" with reasons, never identity-placed
-
-  - name: orchestrator_depth_consistency_gate
-    category: reconstruction
-    backend: "reconstruction/orchestrator_consistency.py: run_with_depth_consistency (additive orchestrator wiring)"
-    inputs: [ReconstructionOrchestrator, evidence, metric DepthMaps, optional cameras_by_evidence]
-    outputs: [ReconstructionRun with diagnostics.depth_consistency = DepthConsistencyDiagnostics (status + full measured report + contradiction_count in to_dict)]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: inherits check_depth_consistency's measured semantics; None when no depth maps (honest absence, not "consistent")
-    runtime: one consistency check per run (stride-capped)
-    maturity: "IMPLEMENTED -- 4 tests in tests/test_orchestrator_consistency.py (no-depth absence, consistent verdict, contradiction surfaced with result untouched, dict roundtrip)"
-    limitations: caller must supply the depth maps + cameras (the orchestrator itself does not produce depth); contradiction does not rewrite the result -- recorded for the caller to act on
-    fallback: plain orchestrator.run unchanged when unused
-
-  - name: real_model_availability_report
-    category: infrastructure
-    backend: "perception/availability.py: report_real_models / real_models_by_name (probe-only)"
-    inputs: none (reads importability + cache dirs + PATH)
-    outputs: [per-model ModelAvailability: status available/blocked, specific missing piece, actionable remediation, adapter class, to_dict]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: >-
-      "available" only when dependency importable (find_spec, no import)
-      AND checkpoint file verifiably cached (torch.hub dir resolution
-      without torch) or binary on PATH; blocked names the exact missing
-      piece (dependency vs checkpoint vs binary)
-    runtime: milliseconds, no network, no model construction, deterministic (double-probe test enforced)
-    maturity: "IMPLEMENTED -- 6 tests in tests/test_real_model_availability.py; covers colmap/midas/sam/mask_rcnn"
-    limitations: checkpoint location inferred from documented torch.hub defaults (TORCH_HOME env respected); custom checkpoint_path= backends report blocked until pre-cached
-    fallback: per-backend UnavailableError exceptions at construction remain the runtime truth
-
-  - name: landmark_registration
-    category: registration
-    backend: "registration/landmarks.py: register_landmarks (closed-form Kabsch on DECLARED correspondences + deterministic exhaustive-triple outlier consensus) wired into RegistrationEngine between GNSS anchors and ICP"
-    inputs: [LandmarkCorrespondence list (landmark_id + source/target positions, identity declared by the observation layer)]
-    outputs: [RegistrationResult: RigidTransform, measured rmse, inlier_fraction, ResidualStats, residual-derived RegistrationCovariance (degenerate_axes reported), rejection/exclusion reasons]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: "exact recovery on known-transform fixtures within outlier rejection; ambiguity exclusion and outlier rejection measured (tests/test_landmark_registration.py)"
-    runtime: O(n choose 3) seeds over declared correspondences -- landmarks are few by construction; milliseconds at realistic counts
-    maturity: "IMPLEMENTED -- 10 tests (exact recovery, 2-pair refusal, collinear refusal, coplanar conditioning reported, outlier rejected and named, ambiguity excluded and named, engine preference order, ICP fall-through on bad landmarks, dict roundtrip)"
-    limitations: "identity quality is the caller's responsibility (this method trusts declared correspondences); real cross-source landmark runs are the named next gate"
-    fallback: "degenerate/ambiguous landmark sets refuse and ICP still runs -- never a silent best-effort transform"
-
-  - name: reconstruction_robustness_classification
-    category: reconstruction
-    backend: "reconstruction/robustness.py: classify_evidence_items (item-level) + classify_reconstruction_run (run-level); reconstruction/robustness_admission.py: admit_for_reconstruction + reconstruct_with_admission (quality-aware compute gate composing the orchestrator, orchestrator untouched)"
-    inputs: [EvidenceItem batch with importer-recorded pixel-quality metrics under the quality metadata key, thresholds (injectable), ReconstructionResult]
-    outputs: [AdmissionReport (per-item ACCEPTED/REJECTED/DEGRADED/UNRESOLVED/FAILED with measured reason, counts, accepted/degraded/rejected/unresolved/failed id splits), AdmissionDecision (admitted/excluded/proceeded_unresolved + full classification), RunAdmission]
-    license: project-internal
-    hardware_requirements: none
-    accuracy: "thresholds over importer-measured laplacian_variance/clipped_fraction; decode failure -> FAILED, absent metrics -> UNRESOLVED (never silently accepted); hard-defect REJECTED beats DEGRADED"
-    runtime: "admission is dict lookups + comparisons -- milliseconds at 5k images (benchmarks/robustness_scale.py: classify 0.023s, orchestrate 0.046s, peak 9.8MB python allocs at 5k images); O(N^2) duplicate scan in orchestrator input gate replaced with single pass (20k items: >10s -> <1s)"
-    maturity: "IMPLEMENTED -- 17 tests in tests/test_reconstruction_robustness.py + 7 in tests/test_robustness_admission.py (red-first); scale harness benchmarks/robustness_scale.py measured 20..5000 images, linear scaling, deterministic 80/10/5/5 outcome mix"
-    limitations: "classification trusts importer-recorded metrics; UNRESOLVED items proceed flagged (absence of metrics must not veto good captures); real COLMAP spend-avoidance end-to-end is the named next gate"
-    fallback: "batch refusal (AdmissionError) names admitted/excluded counts when admission leaves too little evidence; exclusions are recorded facts, never silent drops"
-
-  - name: reproducible_real_data_validation
-    category: reconstruction
-    backend: "datasets/south_building (committed 32-photo deterministic subset of the public COLMAP South Building set, filtered sparse reference, MANIFEST.json with per-image sha256); scripts/fetch_south_building.py (download/verify/subset/filter, checksum verify mode); scripts/run_south_building_e2e.py (ingestion -> admission -> REAL COLMAP -> fusion -> honest run record)"
-    inputs: [repository dataset (no network needed for the committed subset), local COLMAP install for the E2E]
-    outputs: [verified dataset, run record JSON in datasets/south_building/runs/ (backend versions, runtime, poses, points, outcome+reason, GT comparison, fusion conflicts)]
-    license: "dataset: public photographs distributed by the COLMAP authors (credit Christopher Zach, UNC Chapel Hill); provenance pinned by original-zip sha256 in MANIFEST.json"
-    hardware_requirements: "CPU sufficient (measured run used COLMAP 4.2.0 CUDA build, ~7 min wall for 32 photos at 1024x768)"
-    accuracy: "REAL data: 22/32 poses registered vs the reference model (8.94 deg median rotation disagreement after quaternion conjugation; translation comparison requires Sim(3) alignment and is NOT claimed); honest outcome=degraded with reason recorded"
-    runtime: "COLMAP 429.5s + ingestion/admission/fusion ~5s on the dev machine; full chain reproducible from repository data alone"
-    maturity: "VERIFIED -- scripts/fetch_south_building.py verify: 32/32 images match MANIFEST.json; real E2E run_20260919T203748.json recorded; tests/test_bad_evidence_real.py 8/8 red-first on real bytes (blur REJECTED with measured laplacian, duplicates deduped+recorded, truncated FAILED, corrupt batch survival 7/8 with recorded failure, exposure clipping measured, admission gate exact, RUN A vs RUN B workload delta, run-level connectivity honesty)"
-    limitations: "GT translation comparison not performed (Sim(3) alignment out of scope of this checkpoint); 10/32 images unregistered by mapping on the hard outdoor ring -- recorded, not hidden; E2E driver requires a local COLMAP install and is NOT wired into CI"
-    fallback: "import_folder on_error=\"record\" batch survival: a corrupt file is recorded in failed_paths with its reason and the remaining files still import (tests/test_bad_evidence_real.py::test_corrupt_file_does_not_lose_the_whole_batch); the default on_error=\"raise\" policy is unchanged for callers that want fail-fast"
+    '
+  limitations: covariance not yet propagated (residual stats are); landmark method
+    needs a cross-source co-observation resolver (P7-01); no orchestration wiring
+    into world compilation yet; ICP remains a local optimizer (prior/contact gate
+    refuses guesses)
+  fallback: none -- separate worlds stay separate and labeled
+- name: world_compilation
+  category: worldir
+  backend: engine/compiler/world_compiler.py + engine/pipeline/vertical_slice.py
+  inputs:
+  - ReconstructionResult
+  - options
+  - ArtifactStore
+  outputs:
+  - WorldIR v1 (entities/measurements/metadata)
+  - compile diagnostics
+  license: project-internal
+  hardware_requirements: none
+  accuracy: validation gate enforced (validate_world_ir)
+  runtime: negligible at test scale
+  maturity: IMPLEMENTED
+  limitations: v1 schema (topology/temporal history/representations open — P9-01)
+  fallback: none (compile failure fails loudly)
+- name: artifact_storage
+  category: persistence
+  backend: world_ir/artifact_store.py (content-addressed sha256)
+  inputs:
+  - bytes
+  outputs:
+  - data_uri
+  - data_hash
+  license: project-internal
+  hardware_requirements: none
+  accuracy: hash-exact
+  runtime: negligible
+  maturity: IMPLEMENTED
+  limitations: local filesystem; no remote object storage yet (WorldStore P11-01)
+  fallback: none
+- name: export_gltf
+  category: compilers
+  backend: exporters/gltf/exporter.py
+  inputs:
+  - WorldIR + resolvable artifacts
+  outputs:
+  - glTF 2.0 (TRIANGLES mesh
+  - POINTS entities)
+  license: project-internal (glTF spec, royalty-free)
+  hardware_requirements: none
+  accuracy: verified on real 240k-vertex mesh (uint32 indices)
+  runtime: negligible at test scale
+  maturity: IMPLEMENTED
+  limitations: material/texture export minimal
+  fallback: unresolvable artifacts export as labeled placeholders (honest fallback
+    rule)
+- name: export_blender_usd
+  category: compilers
+  backend: exporters/blender/, exporters/usd/
+  inputs:
+  - WorldIR
+  outputs:
+  - Blender scene / USD stage
+  license: project-internal
+  hardware_requirements: Blender for .blend verification (external, gated)
+  accuracy: golden-file tested where CI-able
+  runtime: negligible
+  maturity: IMPLEMENTED (basic)
+  limitations: fidelity below glTF path
+  fallback: none
+- name: physics_rigid_body
+  category: simulation
+  backend: engine/physics/backend/simple_backend.py
+  inputs:
+  - world entities + materials
+  outputs:
+  - simulated state
+  - contact/friction behavior
+  license: project-internal
+  hardware_requirements: none
+  accuracy: golden tests (RB_001/RB_002)
+  runtime: real-time at test scale
+  maturity: 'PARTIAL (foundation: rigid bodies/collision/friction/contacts; constraints/CCD/fluids
+    open — P17-01)'
+  limitations: no constraints/joints yet; determinism tested fixed-step
+  fallback: none
+- name: one_command_compile
+  category: product
+  backend: apps/cli/main.py `reality compile` (also scripts/run_vertical_slice.py)
+  inputs:
+  - capture dataset directory
+  outputs:
+  - worldir.json
+  - points.ply
+  - cameras.json
+  - exports/
+  - report.json
+  license: project-internal
+  hardware_requirements: backend-dependent (COLMAP for real runs)
+  accuracy: inherits stages; report.json records every stage's honest status
+  runtime: COLMAP-dominated on real captures
+  maturity: IMPLEMENTED
+  limitations: orchestrator->compile only; session/source management CLI open
+  fallback: deterministic backend injection (REALITY_TEST_BACKEND) for offline tests
+- name: world_store
+  category: persistence
+  backend: 'worldstore.store: filesystem-backed versioned store (WorldStore)'
+  maturity: IMPLEMENTED
+  notes: Content-addressed ArtifactStore underneath; save_world persists an immutable
+    snapshot + metadata (parents, message); load_world restores any version; versions()/parents()/ancestors()
+    expose the DAG; list() preserves save order. Observed reality is recoverable across
+    process restarts.
+  tests: tests/test_world_store.py
+- name: incremental_compilation
+  category: engine
+  backend: 'engine.incremental: dependency-graph invalidation compiler'
+  maturity: IMPLEMENTED
+  notes: Stages declare dependencies; compiler re-runs ONLY stages whose transitive
+    inputs changed (content hashes), preserves unaffected artifacts across versions,
+    detects cycles at registration, and resumes from a prior CompilationState.
+  tests: tests/test_incremental.py
+- name: uncertainty_propagation
+  category: uncertainty
+  backend: 'perception.instances.measurement: measured-spread precision; registration.registration:
+    6-DOF covariance'
+  maturity: IMPLEMENTED
+  notes: 'Measurements carry precision from MEASURED inter-view disagreement (RMS
+    spread, leave-one-out 5-sigma conflict detection, n=2 honestly undecidable, single-view
+    falls back to the documented heuristic -- every measurement names its precision
+    source via precision_note). ICP results carry 6x6 covariance from correspondences.
+    Fusion precision is inverse-variance (existing). EXPANSION 2026-09-16 (P10-02):
+    uncertainty/ package — Uncertain scalar (value/sigma/basis; sigma=None honest
+    unknown, never zero) and first-order propagation operators (sum/difference/scale,
+    J Sigma J^T linear, R Sigma R^T point transform, 6x6 pose composition via central-difference
+    Jacobians of the exact RigidTransform.compose). UNKNOWN propagates as UNKNOWN
+    through every operator. COMPLETION 2026-09-18: the module now carries BOTH halves
+    -- the numeric-Jacobian operators above PLUS the analytic per-point chain (Covariance3,
+    depth_to_world_covariance, propagate_point_through_pose, propagate_chain): closed-form
+    Jacobians for depth -> unprojection -> pose verified against finite differences
+    of the REAL PinholeCamera model; directional rotation levers; partial calibration
+    yields UNKNOWN naming the missing stage; the pinhole-only analytic path REFUSES
+    distorted cameras; sigma is never collapsed into confidence.'
+  tests: tests/test_object_measurement.py, tests/test_registration.py, tests/test_uncertainty_propagation.py
+- name: room_building_graph
+  category: perception
+  backend: 'perception.architecture.room_graph: build_room_graph / build_building_graph'
+  inputs:
+  - classify_planes output (plane evidence with inliers)
+  outputs: RoomGraph (rooms as floor+ceiling+walls with measured dimensions, doorway
+    openings, adjacency via shared walls) and BuildingGraph (storeys grouped by ceiling
+    band, building envelope)
+  license: project-internal
+  hardware_requirements: none
+  accuracy: measured from real plane evidence; multi-storey band membership tested
+    (two-storey fixture)
+  runtime: O(planes)
+  maturity: IMPLEMENTED
+  tests: tests/test_room_building_graph.py
+- name: worldir_v2_extensions
+  category: worldir
+  backend: 'world_ir.v2_extensions: TopologyGraph / temporal_history / ExternalReference'
+  inputs:
+  - WorldIR
+  outputs: additive topology (hierarchy + adjacency + containment, seam entities connect
+    their adjacency targets), world-level ordered temporal history, typed external
+    references; v1 worlds load unchanged
+  license: project-internal
+  hardware_requirements: none
+  accuracy: query correctness tested against hand-built worlds
+  runtime: O(entities + edges)
+  maturity: IMPLEMENTED
+  tests: tests/test_world_ir_v2.py
+- name: spatial_tiles
+  category: large-world
+  backend: 'world_ir.spatial_tiles: uniform spatial tiles + region queries + chunked
+    paging'
+  inputs:
+  - WorldIR entities
+  - explicit tile_size / max_chunk_entities
+  outputs: deterministic tile assignment, AABB/radius region queries, neighbor-tile
+    enumeration, streamed chunks with memory bounded by chunk size (tracemalloc-measured)
+  license: project-internal
+  hardware_requirements: none
+  accuracy: query correctness verified vs brute force
+  runtime: O(entities); uniform grid chosen deliberately over a tree (entity counts,
+    not points, are indexed)
+  maturity: IMPLEMENTED
+  tests: tests/test_spatial_tiles.py
+- name: procedural_room_grammar
+  category: procedural
+  backend: 'procedural.room_grammar: spec -> deterministic WorldIR'
+  inputs:
+  - RoomGrammarSpec (rooms
+  - wall openings
+  - adjacency)
+  outputs: WorldIR with real geometry (AABB/boxes), floor-graph adjacency, StatementState.PROCEDURAL
+    provenance; deterministic (same spec -> identical to_dict)
+  license: project-internal
+  hardware_requirements: none
+  accuracy: geometry + adjacency known-answer tested; determinism byte-verified
+  runtime: O(spec size)
+  maturity: IMPLEMENTED
+  tests: tests/test_procedural_room_grammar.py
+- name: cityjson_exporter
+  category: exporters
+  backend: 'exporters.cityjson.exporter: WorldIR -> CityJSON 1.1'
+  inputs:
+  - WorldIR
+  outputs: real CityJSON 1.1 document (transform quantization with integer vertices,
+    semantic CityObjects, metadata with entity count + provenance); orphan entities
+    skipped with reason
+  license: project-internal (CityJSON is open spec)
+  hardware_requirements: none
+  accuracy: spec-structure tests; official tooling parseable layout
+  runtime: O(entities)
+  maturity: IMPLEMENTED
+  tests: tests/test_cityjson_exporter.py
+- name: ifc_bridge
+  category: exporters
+  backend: 'exporters.ifc_bridge: WorldIR -> IFC4 via IfcOpenShell 0.8.x'
+  inputs:
+  - WorldIR architectural entities
+  outputs: IfcProject -> IfcSite -> IfcBuilding -> IfcBuildingStorey hierarchy with
+    one semantic IFC class per entity (wall/slab/ column/beam/door/window/roof/proxy)
+  license: Apache 2.0 (IfcOpenShell); recorded per LICENSES discipline
+  hardware_requirements: none (pure-Python path)
+  accuracy: written file parsed back via ifcopenshell; hierarchy and classes asserted
+  runtime: O(entities)
+  maturity: IMPLEMENTED
+  tests: tests/test_ifc_bridge.py
+- name: simulation_loop
+  category: simulation
+  backend: 'engine.compiler.simulation_loop: WorldIR -> SimulationState -> WorldStateDelta
+    -> branched WorldIR'
+  inputs:
+  - WorldIR with physical geometry
+  - PhysicsCompiler
+  - steps/dt
+  outputs: WorldStateDelta (changed/unchanged entity ids, tick/dt) and the branched
+    WorldIR with StatementState.SIMULATED provenance; snapshots taken before stepping
+    (no aliasing false-equals)
+  license: project-internal
+  hardware_requirements: none
+  accuracy: diff correctness known-answer tested; physics e2e suite remains green
+  runtime: O(entities x steps)
+  maturity: IMPLEMENTED
+  tests: tests/test_simulation_loop.py
+- name: benchmark_suite
+  category: benchmarks
+  backend: 'benchmarks.suite: descriptor-driven same-pipeline benchmark runs'
+  inputs:
+  - BenchmarkDescriptor list
+  outputs: per-descriptor measured StageTiming records + metrics dict via the SAME
+    detail-spine pipeline (no per-benchmark special cases); runs recorded in docs/BENCHMARKS.md
+  license: project-internal
+  hardware_requirements: none
+  accuracy: metrics are measured outputs of the real stages
+  runtime: dominated by the pipeline stages themselves
+  maturity: IMPLEMENTED
+  tests: tests/test_benchmark_suite.py
+- name: city_compiler_core
+  category: compiler
+  backend: 'engine.compiler.city_compiler: city feature descriptors -> WorldIR ->
+    CityJSON'
+  inputs:
+  - CityFeature descriptors (terrain/roads/buildings/vegetation/water)
+  outputs: WorldIR entities with real bounds and explicit transforms -> CityJSON;
+    geometry-less features refuse at construction
+  license: project-internal
+  hardware_requirements: none
+  accuracy: bounds/transform/refusal known-answer tested
+  runtime: O(features)
+  maturity: PARTIAL (core translation landed; GIS/OSM ingestion and CityGML/3DCityDB
+    writers open)
+  tests: tests/test_city_compiler.py
+- name: architectural_parametric_perception
+  category: perception
+  backend: perception/architecture/{parametric,segments,registry,components,promotion}.py
+    (in-house deterministic geometry; no external dependency)
+  inputs:
+  - ReconstructionResult (real points)
+  - world up
+  - class registry
+  outputs: parametric fits (CylinderFit/SphereFit/CircleFit with measured rms/max
+    residuals), Segment list, ComponentObservation records (accepted + unaccepted
+    with reasons), CandidateComponents (multi-view resolved), RepetitionPrior/SymmetryPrior,
+    canonical WorldIR Entities + adjacency edges
+  license: project-internal
+  hardware_requirements: none (pure Python float math, deterministic)
+  accuracy: known-answer fits recover exact parameters on clean shells; measured residuals
+    are the quality claim -- no fabricated confidence; degenerate/under-constrained
+    inputs raise FitRefused
+  runtime: O(points) segmentation; fits are closed-form + local search
+  maturity: IMPLEMENTED (Phase 1 parametric perception; 58 tests in tests/test_parametric_fits.py,
+    test_arch_registry.py, test_arch_components.py, test_arch_worldir.py, test_arch_benchmark.py)
+  limitations:
+  - cylinder axis search is local (seeded); exotic point sets may need more seeds
+  - dome fit is spherical (ellipsoidal/compound later phases)
+  - arch fit is circular (pointed/elliptical hypotheses later)
+  - repetition/symmetry are priors over resolved components, not per-point detectors
+  - real-capture benchmarks (Victoria Memorial) are CAPTURE_PENDING -- capture is
+    an external dependency, never simulated
+- name: temporal_tracking
+  category: perception
+  backend: perception/tracking/temporal.py (in-house, deterministic)
+  inputs: TimedObservation list (observation_id, label, position, evidence_id, captured_at,
+    measured confidence) + speed/gap budgets
+  outputs: TrackRecord list (track_id, label, observation history, path_length_m,
+    duration_s, implied_speed_m_s, min-of-measured confidence) + separate untimed-observation
+    list; instance_tracks_from adapter onto InstanceTrack
+  license: project-internal
+  hardware_requirements: none (pure Python, deterministic)
+  accuracy: continuation requires BOTH speed budget (distance <= max(merge _distance,
+    max_speed * gap)) and gap budget; observations never forced into tracks; unknown
+    confidence/untimed time stays unknown
+  runtime: O(observations x open-tracks-per-label)
+  maturity: PARTIAL (3D observation-level layer; 14 tests in tests/test_temporal_tracking.py)
+  limitations:
+  - 2D box association (ByteTrack/OC-SORT), motion compensation, ID-switch diagnostics
+    not implemented
+  - thresholds untuned against real data
+- name: evidence_quality_assessment
+  category: perception
+  backend: perception/quality/assessment.py (in-house, deterministic)
+  inputs: ReconstructionResult (points with source_evidence_ids, camera poses) + calibrated
+    PinholeCamera list (camera_from_pose)
+  outputs: EvidenceQualityReport (measured median GSD mm/px, detail tier fine/medium/coarse/unsupported,
+    observed_fraction, per-point view counts, unprojectable point ids, overclaim count)
+    + capture recommendations (close-range / overlapping views / coverage gaps)
+  license: project-internal
+  hardware_requirements: none (pure Python, deterministic)
+  accuracy: GSD measured from real geometry (euclidean distance x 1000 / max(fx,fy));
+    observation decided by projection inside image bounds, NOT by trusting source_evidence_ids
+    (overclaims reported); tiers by documented thresholds; unknown stays unknown (no
+    observations -> GSD None + "unsupported"; refuses to guess intrinsics)
+  runtime: O(points x cameras)
+  maturity: PARTIAL (18 tests in tests/test_evidence_quality.py)
+  limitations:
+  - directive-section-11 inputs not yet measured (view angle, focus/motion blur, texture
+    richness, depth confidence, occlusion beyond projection bounds)
+  - thresholds untuned against real datasets
+- name: detail_budget
+  category: perception
+  backend: perception/quality/detail_budget.py (in-house, deterministic)
+  inputs: EvidenceQualityReport from evidence_quality_assessment (measured GSD, per-point
+    view counts, coverage)
+  outputs: DetailBudget (justified_level L0-L4 on the multi-scale scale, compute_tier
+    none/survey/light/standard/high/full, max_gsd_mm_per_px, coverage_capped, basis)
+    — the maximum defensible detail level + compute allocation for a region
+  license: project-internal
+- name: detail_discovery
+  category: perception
+  backend: perception/detail/discovery.py (in-house, deterministic)
+  inputs: ReconstructionResult points + EvidenceQualityReport from evidence_quality_assessment
+    (scene GSD + per-track view counts)
+  outputs: 'DetailCandidate list in stable spatial order (cell_id, centroid, n_points,
+    measured PCA curvature ratio, measured planarity 1 - lambda_min/lambda_max from
+    the same covariance solve, density_per_m2, is_detail, is_structure, per-cell DetailBudget,
+    point_ids) — WHERE detail is recoverable AND which cells are oriented planar structure
+    (invisible to the curvature gate by construction), domain-agnostic; voxelized,
+    min_points-skipping, budget-attached (hallucination gate). REAL-DATA VERIFIED
+    on room_capture_mvs (294,345 pts): 103 cells, 96 structure at planarity median
+    0.9997, determinism byte-identical across reruns'
+  license: project-internal
+- name: roi_generation
+  category: perception
+  backend: perception/detail/roi.py (in-house, deterministic)
+  inputs: 'DetailCandidate list from detail_discovery + voxel_size (+ optional include_structure
+    / planarity_seed_threshold: structure cells also seed ROIs, provenance seed="structure")'
+  outputs: RegionOfInterest list (roi_id, bounds, member cells, unioned point provenance,
+    aggregate MIN DetailBudget, pending status, provenance) — bounded local-reconstruction
+    work orders
+  license: project-internal
+- name: roi_refinement
+  category: perception
+  backend: perception/detail/refinement.py + perception/detail/backends.py (in-house,
+    deterministic; sphere/cylinder reuse perception/architecture/parametric.py unchanged)
+  inputs: Pending RegionOfInterest work orders + a point-id lookup (e.g. the reconstruction's
+    own track_id -> position table)
+  outputs: RefinementOutcome per ROI (refined with measured rms/max residual, documented-map
+    quality, winning backend, measured fit counters; or refused with a diagnostic
+    reason naming the evidence gap) + apply_outcomes state transitions carried on
+    the work-order records
+  license: project-internal
+- name: detail_pipeline
+  category: perception
+  backend: perception/detail/pipeline.py (in-house, deterministic)
+  inputs: ReconstructionResult + calibrated PinholeCameras (+ optional point lookup,
+    voxel size, up)
+  outputs: 'DetailPipelineReport (measured EvidenceQualityReport, detail candidates,
+    transitioned ROIs, outcomes, summary counts) — the one-call assess -> discover
+    -> ROI -> refine -> apply driver; optional build_world_ir integrates refined outcomes
+    into a WorldIR instance and reports entity/geometry ids + refusals; include_structure
+    pass-through seeds ROIs from measured planar structure cells (the real room capture''s
+    walls/floor/ceiling were invisible without it). REAL-DATA VERIFIED end-to-end:
+    room_capture_mvs fused.ply (294,345 pts) -> GSD 1.169 mm/px "fine", 12 ROIs ->
+    12 refined / 0 refused, +12 WorldIR entities/geometries, 182.7 s wall time'
+  license: project-internal
+- name: detail_worldir_integration
+  category: perception
+  backend: perception/detail/worldir.py (in-house, deterministic)
+  inputs: RegionOfInterest list + aligned RefinementOutcome list + a WorldIR instance
+  outputs: WorldIR Geometry (typed by winning backend, lod_level from the budget,
+    measured quality as confidence, provenance Observation with fit parameters + algorithm
+    identity + point provenance) + linked Entity (RECONSTRUCTED, DERIVED statement
+    state); refusals recorded as facts on the report, never geometry; validate- rollback
+    on any validation error
+  license: project-internal
+  hardware_requirements: none (pure Python, deterministic)
+  accuracy: Derived from measured facts by documented mapping (gsd<=5 -> L4, <=25
+    -> L2, <=100 -> L1, else L0; min 2 views to hold the level, else capped at L2);
+    observed-points-without-GSD reports refuse (bypass detection); empty/coverage-failed
+    scenes -> honest zero-allocation unsupported budget
+  runtime: O(1)
+  maturity: PARTIAL (10 tests in tests/test_detail_budget.py; wired into recommend_capture
+    as scene_budget -- tests/test_capture_feedback_wiring.py)
+  limitations:
+  - per-region budgets require spatial partitioning of the scene (currently scene-level
+    derivation only)
+  - GSD-level thresholds untuned against real datasets
+- name: cross_view_depth_consistency
+  category: reconstruction
+  backend: 'reconstruction/consistency.py: check_depth_consistency (in-house, deterministic,
+    scipy cKDTree + the repo''s own vectorized Brown-Conrady model)'
+  inputs:
+  - metric DepthMaps (unit=meters)
+  - PinholeCamera per evidence id
+  - scene points (sparse cloud)
+  outputs:
+  - ConsistencyReport: status consistent/contradictions/inconclusive/insufficient_evidence
+  - per-pair DepthContradiction records carrying BOTH measured depths
+  - max_relative_difference
+  - views_skipped
+  license: project-internal
+  hardware_requirements: none (numpy/scipy, already-declared runtime deps)
+  accuracy: Measures world-space disagreement between per-view UNPROJECTED samples
+    of one physical surface, normalized by mean camera range; co-visibility established
+    in PIXEL space (world-space association is circular -- a biased depth hides the
+    contradiction it should reveal); mutual-ray-angle gates exclude degenerate baselines
+    as inconclusive, never counted as "consistent"
+  runtime: stride-capped per view (4096 samples default), O(scene points x views)
+    queries
+  maturity: IMPLEMENTED -- 9 tests in tests/test_depth_consistency.py (perfect-data
+    consistency, 20%-bias detection, determinism, degenerate-baseline inconclusive,
+    disjoint insufficient-evidence, relative-depth refusal, no-camera skip naming,
+    empty-scene refusal, dict roundtrip)
+  limitations: synthetic-fixture verified; real multi-view depth run is the named
+    next gate; thresholds (10% contradiction, 2px association, angle gates) untuned
+    against real depth noise
+  fallback: none -- no verdict without >=2 metric views
+- name: cross_session_registration
+  category: registration
+  backend: 'registration/cross_session.py: align_session + align_session_chain + align_reconstructed_sessions
+    (in-house, deterministic global coarse search + ICP)'
+  inputs:
+  - per-session point clouds (Vec3) or ReconstructionResults keyed by session id
+  - reference session id
+  outputs:
+  - SessionAlignment per pair (real RigidTransform or refused+reason)
+  - CrossSessionReport (per-session transform into the reference frame
+  - status aligned/unresolved/reference
+  - per-session reason)
+  license: project-internal
+  hardware_requirements: none (numpy/scipy)
+  accuracy: Recovers 30-degree rotated + translated fixtures exactly (round-trip <
+    0.15 m on 5x5 grids); coarse stage = centroid + 60 icosahedral rotations scored
+    by correspondence rmse + bounded deterministic coarse-to-fine Euler descent (15->3.75
+    deg); refinement = the existing register_icp gates (outlier rejection, min_overlap,
+    absolute-scale rmse gate); contact gate (expanded-bbox) refuses no-contact sessions
+    BEFORE any ICP can hallucinate a local minimum
+  runtime: 60 coarse rotations x coarse clouds (stride-capped 2048) + top-k ICP starts;
+    full-cloud polish pass
+  maturity: IMPLEMENTED -- 9 pair/chain tests in tests/test_cross_session_registration.py
+    + 7 vertical-slice tests in tests/test_multi_session_alignment.py (identity verified
+    not assumed, real transform recovery, disjoint refusal, chain composition, unresolved
+    stays unresolved, orchestrator multi-batch slice)
+  limitations: plane-symmetric fixtures can defeat pure-rotation ICP without asymmetric
+    structure (measured; the coarse-to-fine stage mitigates); real multi-session captures
+    are the named next gate; single rigid transform per session (no deformation)
+  fallback: none -- unalignable sessions stay "unresolved" with reasons, never identity-placed
+- name: orchestrator_depth_consistency_gate
+  category: reconstruction
+  backend: 'reconstruction/orchestrator_consistency.py: run_with_depth_consistency
+    (additive orchestrator wiring)'
+  inputs:
+  - ReconstructionOrchestrator
+  - evidence
+  - metric DepthMaps
+  - optional cameras_by_evidence
+  outputs:
+  - ReconstructionRun with diagnostics.depth_consistency = DepthConsistencyDiagnostics
+    (status + full measured report + contradiction_count in to_dict)
+  license: project-internal
+  hardware_requirements: none
+  accuracy: inherits check_depth_consistency's measured semantics; None when no depth
+    maps (honest absence, not "consistent")
+  runtime: one consistency check per run (stride-capped)
+  maturity: IMPLEMENTED -- 4 tests in tests/test_orchestrator_consistency.py (no-depth
+    absence, consistent verdict, contradiction surfaced with result untouched, dict
+    roundtrip)
+  limitations: caller must supply the depth maps + cameras (the orchestrator itself
+    does not produce depth); contradiction does not rewrite the result -- recorded
+    for the caller to act on
+  fallback: plain orchestrator.run unchanged when unused
+- name: real_model_availability_report
+  category: infrastructure
+  backend: 'perception/availability.py: report_real_models / real_models_by_name (probe-only)'
+  inputs: none (reads importability + cache dirs + PATH)
+  outputs:
+  - per-model ModelAvailability: status available/blocked
+  - specific missing piece
+  - actionable remediation
+  - adapter class
+  - to_dict
+  license: project-internal
+  hardware_requirements: none
+  accuracy: '"available" only when dependency importable (find_spec, no import) AND
+    checkpoint file verifiably cached (torch.hub dir resolution without torch) or
+    binary on PATH; blocked names the exact missing piece (dependency vs checkpoint
+    vs binary)'
+  runtime: milliseconds, no network, no model construction, deterministic (double-probe
+    test enforced)
+  maturity: IMPLEMENTED -- 6 tests in tests/test_real_model_availability.py; covers
+    colmap/midas/sam/mask_rcnn
+  limitations: checkpoint location inferred from documented torch.hub defaults (TORCH_HOME
+    env respected); custom checkpoint_path= backends report blocked until pre-cached
+  fallback: per-backend UnavailableError exceptions at construction remain the runtime
+    truth
+- name: landmark_registration
+  category: registration
+  backend: 'registration/landmarks.py: register_landmarks (closed-form Kabsch on DECLARED
+    correspondences + deterministic exhaustive-triple outlier consensus) wired into
+    RegistrationEngine between GNSS anchors and ICP'
+  inputs:
+  - LandmarkCorrespondence list (landmark_id + source/target positions
+  - identity declared by the observation layer)
+  outputs:
+  - RegistrationResult: RigidTransform
+  - measured rmse
+  - inlier_fraction
+  - ResidualStats
+  - residual-derived RegistrationCovariance (degenerate_axes reported)
+  - rejection/exclusion reasons
+  license: project-internal
+  hardware_requirements: none
+  accuracy: exact recovery on known-transform fixtures within outlier rejection; ambiguity
+    exclusion and outlier rejection measured (tests/test_landmark_registration.py)
+  runtime: O(n choose 3) seeds over declared correspondences -- landmarks are few
+    by construction; milliseconds at realistic counts
+  maturity: IMPLEMENTED -- 10 tests (exact recovery, 2-pair refusal, collinear refusal,
+    coplanar conditioning reported, outlier rejected and named, ambiguity excluded
+    and named, engine preference order, ICP fall-through on bad landmarks, dict roundtrip)
+  limitations: identity quality is the caller's responsibility (this method trusts
+    declared correspondences); real cross-source landmark runs are the named next
+    gate
+  fallback: degenerate/ambiguous landmark sets refuse and ICP still runs -- never
+    a silent best-effort transform
+- name: reconstruction_robustness_classification
+  category: reconstruction
+  backend: 'reconstruction/robustness.py: classify_evidence_items (item-level) + classify_reconstruction_run
+    (run-level); reconstruction/robustness_admission.py: admit_for_reconstruction
+    + reconstruct_with_admission (quality-aware compute gate composing the orchestrator,
+    orchestrator untouched)'
+  inputs:
+  - EvidenceItem batch with importer-recorded pixel-quality metrics under the quality
+    metadata key
+  - thresholds (injectable)
+  - ReconstructionResult
+  outputs:
+  - AdmissionReport (per-item ACCEPTED/REJECTED/DEGRADED/UNRESOLVED/FAILED with measured
+    reason
+  - counts
+  - accepted/degraded/rejected/unresolved/failed id splits)
+  - AdmissionDecision (admitted/excluded/proceeded_unresolved + full classification)
+  - RunAdmission
+  license: project-internal
+  hardware_requirements: none
+  accuracy: thresholds over importer-measured laplacian_variance/clipped_fraction;
+    decode failure -> FAILED, absent metrics -> UNRESOLVED (never silently accepted);
+    hard-defect REJECTED beats DEGRADED
+  runtime: 'admission is dict lookups + comparisons -- milliseconds at 5k images (benchmarks/robustness_scale.py:
+    classify 0.023s, orchestrate 0.046s, peak 9.8MB python allocs at 5k images); O(N^2)
+    duplicate scan in orchestrator input gate replaced with single pass (20k items:
+    >10s -> <1s)'
+  maturity: IMPLEMENTED -- 17 tests in tests/test_reconstruction_robustness.py + 7
+    in tests/test_robustness_admission.py (red-first); scale harness benchmarks/robustness_scale.py
+    measured 20..5000 images, linear scaling, deterministic 80/10/5/5 outcome mix
+  limitations: classification trusts importer-recorded metrics; UNRESOLVED items proceed
+    flagged (absence of metrics must not veto good captures); real COLMAP spend-avoidance
+    end-to-end is the named next gate
+  fallback: batch refusal (AdmissionError) names admitted/excluded counts when admission
+    leaves too little evidence; exclusions are recorded facts, never silent drops
+- name: reproducible_real_data_validation
+  category: reconstruction
+  backend: datasets/south_building (committed 32-photo deterministic subset of the
+    public COLMAP South Building set, filtered sparse reference, MANIFEST.json with
+    per-image sha256); scripts/fetch_south_building.py (download/verify/subset/filter,
+    checksum verify mode); scripts/run_south_building_e2e.py (ingestion -> admission
+    -> REAL COLMAP -> fusion -> honest run record)
+  inputs:
+  - repository dataset (no network needed for the committed subset)
+  - local COLMAP install for the E2E
+  outputs:
+  - verified dataset
+  - run record JSON in datasets/south_building/runs/ (backend versions
+  - runtime
+  - poses
+  - points
+  - outcome+reason
+  - GT comparison
+  - fusion conflicts)
+  license: 'dataset: public photographs distributed by the COLMAP authors (credit
+    Christopher Zach, UNC Chapel Hill); provenance pinned by original-zip sha256 in
+    MANIFEST.json'
+  hardware_requirements: CPU sufficient (measured run used COLMAP 4.2.0 CUDA build,
+    ~7 min wall for 32 photos at 1024x768)
+  accuracy: 'REAL data: 22/32 poses registered vs the reference model (8.94 deg median
+    rotation disagreement after quaternion conjugation; translation comparison requires
+    Sim(3) alignment and is NOT claimed); honest outcome=degraded with reason recorded'
+  runtime: COLMAP 429.5s + ingestion/admission/fusion ~5s on the dev machine; full
+    chain reproducible from repository data alone
+  maturity: 'VERIFIED -- scripts/fetch_south_building.py verify: 32/32 images match
+    MANIFEST.json; real E2E run_20260919T203748.json recorded; tests/test_bad_evidence_real.py
+    8/8 red-first on real bytes (blur REJECTED with measured laplacian, duplicates
+    deduped+recorded, truncated FAILED, corrupt batch survival 7/8 with recorded failure,
+    exposure clipping measured, admission gate exact, RUN A vs RUN B workload delta,
+    run-level connectivity honesty)'
+  limitations: GT translation comparison not performed (Sim(3) alignment out of scope
+    of this checkpoint); 10/32 images unregistered by mapping on the hard outdoor
+    ring -- recorded, not hidden; E2E driver requires a local COLMAP install and is
+    NOT wired into CI
+  fallback: 'import_folder on_error="record" batch survival: a corrupt file is recorded
+    in failed_paths with its reason and the remaining files still import (tests/test_bad_evidence_real.py::test_corrupt_file_does_not_lose_the_whole_batch);
+    the default on_error="raise" policy is unchanged for callers that want fail-fast'
+- name: production_batch_reconstruction
+  category: reconstruction
+  backend: reconstruction/batch.py run_batch (composes robustness_admission -> ReconstructionOrchestrator
+    -> registration.cross_session; MemoryBudget bounded submission; per-group failure
+    isolation; honest outcome vocabulary)
+  inputs:
+  - EvidenceItems (any importer)
+  - declared session prefixes
+  - backend list (real or explicitly probed)
+  outputs:
+  - 'JSON-serializable batch report: per-session status/points/uncertainty, registration
+    chain, deferred_capacity, outcome complete|degraded'
+  status: DONE
+  verification: tests/test_reconstruction_batch.py 12/12 (grouping, isolation, determinism,
+    bounded memory, unavailable backend, partial->degraded)
+  limitations:
+  - grouping is prefix-declared (no automatic scene split)
+  - deferred_capacity frames recorded, not retried
+- name: city_evidence_ingestion_boundary
+  category: evidence
+  backend: evidence/city_import.py import_osm_xml + import_geojson (canonical EvidenceAssets
+    kind=OTHER, provenance OBSERVED, content-hash dedup, CorruptEvidenceError on malformed
+    input, unresolved node refs recorded)
+  inputs:
+  - OSM XML extract
+  - GeoJSON FeatureCollection/Feature
+  outputs:
+  - one asset per OSM way / GeoJSON feature with verbatim geometry, tags/properties,
+    element ids; node-collection asset
+  status: DONE
+  verification: tests/test_city_import.py 9/9 on the committed REAL OSM fixture (datasets/city_osm/south_building_campus.osm,
+    733 nodes / 137 ways, ODbL)
+  limitations:
+  - no OSM API fetcher (fixture + acquisition recipe in MANIFEST.json)
+  - no reprojection (geometry verbatim by design)
+- name: adaptive_detail_subdivision
+  category: perception/detail
+  backend: perception/detail/subdivision.py subdivide_adaptive (measured score from
+    the shared PCA eigensolver + optional caller importance; density as support gate;
+    bounded max_cells; deterministic highest-score-first frontier; machine-readable
+    stop reasons)
+  inputs:
+  - point region (Vec3/tuples)
+  - threshold/depth/min_points/max_cells
+  - optional importance_fn
+  outputs:
+  - 'SubdivisionReport: per-cell measured score, depth, stop reason; work accounting'
+  status: DONE
+  verification: tests/test_detail_subdivision.py 9/9 including REAL south-building
+    sparse points (all scores finite, work bounded)
+  limitations:
+  - importance defaults to 0 (no fabricated semantics)
+  - score components measured per cell at visit time
+- name: production_pipeline_measurement
+  category: benchmarks
+  backend: benchmarks/pipeline_measurement.py (per-stage tracemalloc + runtime over
+    the REAL dataset through run_batch with REAL COLMAP; BACKEND_UNAVAILABLE recorded
+    honestly when absent)
+  inputs:
+  - datasets/south_building/images (committed REAL photos)
+  - datasets/city_osm (REAL OSM fixture)
+  outputs:
+  - measured record JSON in datasets/south_building/runs/
+  status: DONE
+  verification: 'pipeline_measurement_20260920T104919.json: ingest 0.82s/7.5MB; admission
+    30 accepted/2 degraded (measured clipping); REAL COLMAP 24.3s/20.3MB 32 frames
+    -> 4446 points, partial/degraded honest; uncertainty mean 0.827 min 0.2506; city
+    137 features'
+  limitations:
+  - single-session dataset (cross-session registration measured in unit tests with
+    the ring double)

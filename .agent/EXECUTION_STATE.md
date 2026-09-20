@@ -1095,3 +1095,43 @@ diagnostics).
 - Ledgers: TASKS.yaml P0-ROBUST-02 DONE (measured verification),
   CAPABILITIES.yaml 52 entries (reproducible_real_data_validation),
   handoff .handoffs/RECONSTRUCTION_REAL_DATA_READY.md.
+
+
+## Session 2026-09-20 — REAL_RECONSTRUCTION_PERCEPTION_CITY_READY (Freebuff)
+
+Four production increments over the canonical architecture, all red-first:
+
+1. `reconstruction/batch.py` — production batch path: declared session
+   grouping, per-group failure isolation (admission/orchestrator/
+   unavailable-backend reasons recorded, batch continues), MemoryBudget
+   bounded submission (deferred_capacity recorded), cross-session
+   registration via cross_session.align_reconstructed_sessions with
+   reference fallback, honest outcome vocabulary (partial session =>
+   degraded batch), measured per-session uncertainty summary.
+   tests/test_reconstruction_batch.py 12/12.
+2. `evidence/city_import.py` — OSM XML + GeoJSON -> canonical
+   EvidenceAssets (kind OTHER, provenance OBSERVED, content-hash dedup,
+   CorruptEvidenceError on malformed input, unresolved node refs
+   recorded, no fabricated geometry). REAL committed fixture
+   datasets/city_osm/south_building_campus.osm (733 nodes / 137 ways,
+   ODbL, MANIFEST.json). tests/test_city_import.py 9/9.
+3. `perception/detail/subdivision.py` — measured adaptive octree
+   subdivision (shared PCA eigensolver; density as support gate, not
+   score term; bounded max_cells; deterministic frontier; stop reasons
+   below_threshold|max_depth|min_points|budget_exhausted).
+   tests/test_detail_subdivision.py 9/9 incl. real sparse points.
+4. `benchmarks/pipeline_measurement.py` — per-stage runtime+peak-alloc
+   measurement over the real dataset through run_batch with REAL
+   COLMAP. Record 20260920T104919: ingest 0.82s/7.5MB; admission
+   30 accepted / 2 degraded (measured clipping 0.264>0.25); REAL
+   COLMAP GPU 24.3s/20.3MB, 32 frames -> 4446 points, honest
+   partial/degraded; uncertainty mean 0.827 / min 0.2506; city
+   ingestion 137 features/1.8MB.
+
+Environment note: tests/integration/test_system_runtime_proof.py
+requires locally-generated gitignored artifacts
+(datasets/room_capture/pipeline_out/, datasets/real_room_capture/,
+datasets/real_room_capture_worldir/); copied from the main checkout
+to unblock (13/13 green). Fresh clones without them see 9 failures
+with explicit "Missing real pipeline ..." assertions — a known gap
+between that test file and the repo's skip-cleanly discipline.

@@ -154,47 +154,6 @@ export function QueryInterface({
     ? entities.get(selection.focusedEntityId)?.transform?.position 
     : { x: 0, y: 8, z: 0 };
 
-  // Execute query against real spatial index (SDK)
-  const executeQuery = useCallback(async () => {
-    setIsExecuting(true);
-    setError(null);
-    
-    try {
-      // In production: const result = await reality.query(params)
-      // For now, simulate with client-side filtering
-      await new Promise(r => setTimeout(r, 100));
-      
-      const filtered = filterEntities(params);
-      const result: QueryResult = {
-        query_id: `qry-${Date.now()}`,
-        type: params.type,
-        params: { ...params },
-        timestamp: new Date().toISOString(),
-        execution_time_ms: Math.floor(Math.random() * 50) + 10,
-        entities: filtered,
-        total_count: filtered.length,
-        metadata: {
-          spatial_index_used: true,
-          fallback_used: false,
-          partial: false,
-        },
-      };
-      
-      setResults(result);
-      setHistory(prev => [result, ...prev.slice(0, 19)]);
-      addNotification({
-        type: 'success',
-        title: 'Query Executed',
-        message: `Found ${filtered.length} entities in ${result.execution_time_ms}ms`,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Query failed');
-      addNotification({ type: 'error', title: 'Query Failed', message: String(err) });
-    } finally {
-      setIsExecuting(false);
-    }
-  }, [params, entities, addNotification]);
-
   const filterEntities = useCallback((p: QueryParams): Entity[] => {
     let filtered = Array.from(entities.values());
     
@@ -264,6 +223,47 @@ export function QueryInterface({
     
     return filtered;
   }, [entities]);
+
+  // Execute query against real spatial index (SDK)
+  const executeQuery = useCallback(async () => {
+    setIsExecuting(true);
+    setError(null);
+
+    try {
+      // In production: const result = await reality.query(params)
+      // For now, simulate with client-side filtering
+      await new Promise(r => setTimeout(r, 100));
+
+      const filtered = filterEntities(params);
+      const result: QueryResult = {
+        query_id: `qry-${Date.now()}`,
+        type: params.type,
+        params: { ...params },
+        timestamp: new Date().toISOString(),
+        execution_time_ms: Math.floor(Math.random() * 50) + 10,
+        entities: filtered,
+        total_count: filtered.length,
+        metadata: {
+          spatial_index_used: true,
+          fallback_used: false,
+          partial: false,
+        },
+      };
+
+      setResults(result);
+      setHistory(prev => [result, ...prev.slice(0, 19)]);
+      addNotification({
+        type: 'success',
+        title: 'Query Executed',
+        message: `Found ${filtered.length} entities in ${result.execution_time_ms}ms`,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Query failed');
+      addNotification({ type: 'error', title: 'Query Failed', message: String(err) });
+    } finally {
+      setIsExecuting(false);
+    }
+  }, [params, filterEntities, addNotification]);
 
   // Update params when query type changes
   useEffect(() => {
@@ -611,7 +611,7 @@ function renderParamInputs(
   setParams: React.Dispatch<React.SetStateAction<QueryParams>>,
   cameraPosition: Vec3 | undefined
 ) {
-  const update = (key: string, value: any) => setParams(prev => ({ ...prev, [key]: value }));
+  const update = (key: keyof QueryParams, value: unknown) => setParams(prev => ({ ...prev, [key]: value }) as QueryParams);
 
   const commonPoint = () => (
     <div className="space-y-1">

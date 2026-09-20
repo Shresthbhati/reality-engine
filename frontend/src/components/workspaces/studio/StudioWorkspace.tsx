@@ -16,6 +16,7 @@ import { WorldOutliner } from './WorldOutliner';
 import { Viewport3D } from './Viewport3D';
 import { EntityInspector } from './EntityInspector';
 import EvidencePanel from './EvidencePanel';
+import { WorldHealthDashboard } from './WorldHealthDashboard';
 import {
   ChevronUp,
   ChevronDown,
@@ -27,6 +28,28 @@ import {
   PanelLeft,
   PanelRight,
 } from 'lucide-react';
+
+type BottomDrawerTab = 'jobs' | 'pipeline' | 'evidence' | 'diagnostics' | 'console';
+
+/** Real content per bottom-drawer tab. Tabs without a backing component show
+ * an honest "not yet implemented" state instead of silently falling back
+ * to another tab's panel. */
+function BottomDrawerContent({ tab }: { tab: BottomDrawerTab }) {
+  switch (tab) {
+    case 'evidence':
+      return <EvidencePanel />;
+    case 'diagnostics':
+      return <WorldHealthDashboard />;
+    case 'jobs':
+    case 'pipeline':
+    case 'console':
+      return (
+        <div className="flex h-full w-full items-center justify-center text-[11px] font-mono text-[#54596b]">
+          {tab} panel not yet implemented
+        </div>
+      );
+  }
+}
 
 export default function StudioWorkspace() {
   const {
@@ -121,7 +144,7 @@ export default function StudioWorkspace() {
             {/* Bottom Panel Drawer */}
             <Panel defaultSize={26} minSize={15} maxSize={50}>
               <div className="h-full w-full bg-[#101217] overflow-hidden flex flex-col">
-                <EvidencePanel />
+                <BottomDrawerContent tab={bottomDrawerTab} />
               </div>
             </Panel>
           </Group>

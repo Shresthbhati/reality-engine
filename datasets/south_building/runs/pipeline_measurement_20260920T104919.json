@@ -1,0 +1,116 @@
+{
+  "measurement": "production-pipeline (batch path, real dataset)",
+  "dataset": "south-building (committed 32-image REAL subset)",
+  "python": "3.14.7",
+  "stages": {
+    "ingest": {
+      "runtime_s": 0.818,
+      "peak_python_alloc_mb": 7.473,
+      "files_imported": 32,
+      "duplicates_skipped": 0,
+      "failed_paths": 0,
+      "frames": 32
+    },
+    "admission": {
+      "runtime_s": 0.0,
+      "peak_python_alloc_mb": 0.012,
+      "frames": 32,
+      "admitted": 32,
+      "excluded": 0,
+      "exclusion_reasons": [],
+      "item_outcomes_measured": {
+        "accepted": 30,
+        "degraded": 2,
+        "unresolved": 0,
+        "failed": 0,
+        "rejected": 0
+      },
+      "sample_reasons": [
+        {
+          "evidence_id": "ev-pipeline-measure-0000-b3cb3cbf0fee6421",
+          "outcome": "degraded",
+          "reason": "partial clipping: clipped_fraction 0.264409 above degrade threshold 0.25"
+        },
+        {
+          "evidence_id": "ev-pipeline-measure-0001-daa214a087cb021a",
+          "outcome": "accepted",
+          "reason": "measured metrics within thresholds"
+        },
+        {
+          "evidence_id": "ev-pipeline-measure-0002-653247a88443531b",
+          "outcome": "accepted",
+          "reason": "measured metrics within thresholds"
+        }
+      ]
+    },
+    "reconstruction": {
+      "runtime_s": 24.336,
+      "peak_python_alloc_mb": 20.291,
+      "outcome": "degraded",
+      "sessions": {
+        "images": {
+          "frame_count": 32,
+          "status": "partial",
+          "reason": "",
+          "points": 4446,
+          "backend": "ColmapReconstructionBackend",
+          "deferred_capacity": 0,
+          "uncertainty": {
+            "points_with_uncertainty": 4446,
+            "confidence_mean": 0.827,
+            "confidence_min": 0.2506
+          }
+        }
+      },
+      "registration": {
+        "reference_session": "images",
+        "resolved": [],
+        "unresolved": [],
+        "reasons": {
+          "<reference>": "single successful session; no cross-session registration needed"
+        }
+      },
+      "totals": {
+        "frames_submitted": 32,
+        "points": 4446,
+        "deferred_capacity": 0
+      }
+    },
+    "coverage": {
+      "points": 4446,
+      "frames_submitted": 32,
+      "registration": {
+        "reference_session": "images",
+        "resolved": [],
+        "unresolved": [],
+        "reasons": {
+          "<reference>": "single successful session; no cross-session registration needed"
+        }
+      }
+    },
+    "city_ingestion": {
+      "runtime_s": 0.045,
+      "peak_python_alloc_mb": 1.798,
+      "features": 137,
+      "nodes_seen": 733,
+      "unresolved_node_refs": 0
+    }
+  },
+  "provenance": {
+    "backend": "ColmapReconstructionBackend",
+    "admission": "reconstruction.robustness_admission.admit_for_reconstruction",
+    "batch_path": "reconstruction.batch.run_batch",
+    "dataset_manifest": "datasets/south_building/MANIFEST.json"
+  },
+  "totals": {
+    "frames": 32,
+    "admitted": 32,
+    "outcome_counts_measured": {
+      "accepted": 30,
+      "degraded": 2,
+      "unresolved": 0,
+      "failed": 0,
+      "rejected": 0
+    }
+  }
+}

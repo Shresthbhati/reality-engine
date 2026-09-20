@@ -960,6 +960,24 @@ tasks:
 
   # ================= PHASE 8 — ROOM / BUILDING UNDERSTANDING =========
 
+  - id: P7-05-ADAPTIVE-SUBDIVISION
+    title: measured adaptive subdivision for the detail spine
+    status: DONE
+    area: perception/detail
+    owner: freebuff-reconstruction-perception
+    notes: >-
+      perception/detail/subdivision.py — octree subdivision driven by a
+      measured detail score (shared PCA eigensolver curvature +
+      optional caller-measured importance), bounded work (max_cells,
+      deterministic highest-score-first frontier), measured stopping
+      criteria (below_threshold|max_depth|min_points|budget_exhausted),
+      support gate (2x min_points so children stay measurable).
+      Verified: tests/test_detail_subdivision.py 9/9 including REAL
+      south-building sparse points; full-suite gate recorded in
+      EXECUTION_STATE.md.
+    verification: >-
+      Red-first tests green; real committed dataset exercised through
+      the same path with all-finite measured scores.
   - id: P8-01
     name: room graph
     status: DONE

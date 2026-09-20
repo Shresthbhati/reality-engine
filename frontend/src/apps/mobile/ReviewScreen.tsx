@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { ChevronLeft, ImageOff, ClipboardCheck } from 'lucide-react';
 import { useMobileStore } from './store';
 import { QUALITY_THRESHOLDS } from './quality';
+import { computeCoverage, coverageSummaryLine } from './coverage';
 import type { FrameRecord, FrameVerdict } from './types';
 
 const VERDICT_LABEL: Record<FrameVerdict, string> = {
@@ -54,6 +55,8 @@ export function ReviewScreen({ onExit }: { onExit: () => void }) {
   const open = session.frames.find((f) => f.frameId === openId) ?? null;
   const missingCount = session.frames.filter((f) => f.localCopy === 'missing').length;
   const visible = filter === 'ALL' ? session.frames : session.frames.filter((f) => f.verdict === filter);
+  const coverageModel = computeCoverage(session);
+  const coverageLine = coverageSummaryLine(coverageModel);
 
   return (
     <div className="relative flex h-full flex-col bg-[#0d0e12] text-[#f0f1f6]">
@@ -66,6 +69,12 @@ export function ReviewScreen({ onExit }: { onExit: () => void }) {
           <div className="font-mono text-[10px] text-[#9296a6]">{session.frames.length} frames · sha256 content ids</div>
         </div>
       </div>
+
+      {coverageLine && (
+        <div className={`border-b px-4 py-1.5 text-[11px] font-medium ${coverageModel.fullyCovered ? 'border-[#2ecc71]/40 bg-[#2ecc71]/10 text-[#2ecc71]' : 'border-[#f1c40f]/40 bg-[#f1c40f]/10 text-[#f1c40f]'}`}>
+          {coverageModel.fullyCovered ? `✓ ${coverageLine}` : coverageLine}
+        </div>
+      )}
 
       {session.frames.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">

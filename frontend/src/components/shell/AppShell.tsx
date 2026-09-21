@@ -47,11 +47,6 @@ const EvidenceWorkspace = dynamic(
   { ssr: false, loading: () => <WorkspacePlaceholder label="Evidence" /> },
 );
 
-const SimulationWorkspace = dynamic(
-  () => import('@/components/workspaces/simulation/SimulationWorkspace'),
-  { ssr: false, loading: () => <WorkspacePlaceholder label="Simulate" /> },
-);
-
 const DiagnosticsWorkspace = dynamic(
   () => import('@/components/workspaces/diagnostics/DiagnosticsWorkspace'),
   { ssr: false, loading: () => <WorkspacePlaceholder label="Diagnostics" /> },
@@ -102,8 +97,6 @@ function ActiveWorkspace({ id }: { id: WorkspaceId }) {
       return <CityBuilderWorkspace />;
     case 'evidence':
       return <EvidenceWorkspace />;
-    case 'simulation':
-      return <SimulationWorkspace />;
     case 'diagnostics':
       return <DiagnosticsWorkspace />;
     case 'settings':

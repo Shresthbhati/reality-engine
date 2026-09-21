@@ -22,6 +22,11 @@ import os
 import sys
 from pathlib import Path
 
+# Ensure repo root is always at the front of sys.path, avoiding site-packages shadowing
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 
 def _store_path() -> Path:
     env = os.environ.get("REALITY_STORE_PATH")
@@ -83,9 +88,12 @@ def cmd_list_worlds() -> int:
                 "parent": sv.parent,
                 "artifact_uri": sv.artifact_uri,
             }
-            # Try to load entity count from world without full load
             try:
-                world = store.load_version(sv.version_id)
+                try:
+                    world = store.load_version(sv.version_id)
+                except Exception:
+                    from worldstore.tiles import load_version_partitioned
+                    world = load_version_partitioned(store, sv.version_id)
                 entry["entity_count"] = len(world.entities)
                 entry["global_provenance"] = world.global_provenance.value
                 entry["global_confidence"] = world.global_confidence
@@ -117,7 +125,11 @@ def cmd_load_world(version_id: str) -> int:
                 return 1
             version_id = versions[-1].version_id
 
-        world = store.load_version(version_id)
+        try:
+            world = store.load_version(version_id)
+        except Exception:
+            from worldstore.tiles import load_version_partitioned
+            world = load_version_partitioned(store, version_id)
 
         entities = []
         for e in world.entities.values():
@@ -419,8 +431,18 @@ def cmd_diff(base_vid: str, head_vid: str) -> int:
             })
             return 1
 
-        base_world = store.load_version(actual_base)
-        head_world = store.load_version(actual_head)
+        try:
+            base_world = store.load_version(actual_base)
+        except Exception:
+            from worldstore.tiles import load_version_partitioned
+            base_world = load_version_partitioned(store, actual_base)
+
+        try:
+            head_world = store.load_version(actual_head)
+        except Exception:
+            from worldstore.tiles import load_version_partitioned
+            head_world = load_version_partitioned(store, actual_head)
+
         diff = diff_worlds(base_world, head_world)
         res = diff.to_dict()
         res["from_version_id"] = actual_base

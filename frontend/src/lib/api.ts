@@ -119,7 +119,7 @@ export function convertBackendEntityToEntity(
     max: [number, number, number];
     center: [number, number, number];
     extent: [number, number, number];
-  } | null = null;
+  } | undefined = undefined;
 
   if (geometries && b.geometry_ids && b.geometry_ids.length > 0) {
     const firstGeom = geometries[b.geometry_ids[0]];

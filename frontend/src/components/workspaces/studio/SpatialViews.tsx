@@ -80,8 +80,8 @@ export function SpatialViews({
   // Compute world bounds
   const worldBounds = useMemo((): BoundingBox | null => {
     if (geometricEntities.length === 0) return null;
-    let min = { x: Infinity, y: Infinity, z: Infinity };
-    let max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    const min = { x: Infinity, y: Infinity, z: Infinity };
+    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
     geometricEntities.forEach(e => {
       if (e.boundingBox) {
         min.x = Math.min(min.x, e.boundingBox.min.x);
@@ -117,11 +117,11 @@ export function SpatialViews({
       <div className={`flex items-center gap-2 ${className}`}>
         <div className="flex items-center gap-1 px-2 py-1 rounded bg-[#14161f] border border-[#1f222b]">
           <Compass className="w-3.5 h-3.5 text-[#3d8ef7]" />
-          <span className="text-xs font-mono font-bold text-[#f0f1f6}">Spatial Views</span>
+          <span className="text-xs font-mono font-bold text-[#f0f1f6]">Spatial Views</span>
         </div>
         <select
           value={activeView}
-          onChange={e => handleViewChange(e.target.value as any)}
+          onChange={e => handleViewChange(e.target.value as 'SECTION' | 'FLOORPLAN' | 'MINIMAP')}
           className="px-2 py-1 rounded bg-[#14161f] border border-[#1f222b] text-[10px] font-mono text-[#ededf2] focus:border-[#3d8ef7]/60 outline-none"
         >
           <option value="SECTION">🔪 Section</option>
@@ -146,7 +146,7 @@ export function SpatialViews({
               <button
                 key={key}
                 type="button"
-                onClick={() => handleViewChange(key as any)}
+                onClick={() => handleViewChange(key as 'SECTION' | 'FLOORPLAN' | 'MINIMAP')}
                 className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono transition-colors ${
                   activeView === key
                     ? 'bg-[#3d8ef7] text-[#08090b] font-bold'
@@ -403,97 +403,101 @@ function SectionViewCanvas({
     return () => window.removeEventListener('resize', resize);
   }, []);
 
-  const ctx = canvasRef.current?.getContext('2d');
-  if (!ctx || dimensions.width === 0) return <canvas ref={canvasRef} className="w-full h-full" />;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || dimensions.width === 0) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-  // Draw section view
-  ctx.clearRect(0, 0, dimensions.width, dimensions.height);
-  ctx.fillStyle = '#08090b';
-  ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+    // Draw section view
+    ctx.clearRect(0, 0, dimensions.width, dimensions.height);
+    ctx.fillStyle = '#08090b';
+    ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
-  if (!worldBounds) return <canvas ref={canvasRef} className="w-full h-full" />;
+    if (!worldBounds) return;
 
-  // World to screen transform
-  const worldW = worldBounds.max.x - worldBounds.min.x;
-  const worldH = worldBounds.max.z - worldBounds.min.z;
-  const padding = 40;
-  const scaleX = (dimensions.width - padding * 2) / worldW;
-  const scaleY = (dimensions.height - padding * 2) / worldH;
-  const scale = Math.min(scaleX, scaleY);
-  const offsetX = (dimensions.width - worldW * scale) / 2;
-  const offsetY = (dimensions.height - worldH * scale) / 2;
+    // World to screen transform
+    const worldW = worldBounds.max.x - worldBounds.min.x;
+    const worldH = worldBounds.max.z - worldBounds.min.z;
+    const padding = 40;
+    const scaleX = (dimensions.width - padding * 2) / worldW;
+    const scaleY = (dimensions.height - padding * 2) / worldH;
+    const scale = Math.min(scaleX, scaleY);
+    const offsetX = (dimensions.width - worldW * scale) / 2;
+    const offsetY = (dimensions.height - worldH * scale) / 2;
 
-  const worldToScreen = (x: number, z: number) => ({
-    x: offsetX + (x - worldBounds.min.x) * scale,
-    y: offsetY + (worldBounds.max.z - z) * scale, // Flip Z
-  });
-
-  // Draw grid
-  ctx.strokeStyle = '#1f222b';
-  ctx.lineWidth = 1;
-  const gridSize = 10;
-  for (let x = Math.ceil(worldBounds.min.x / gridSize) * gridSize; x <= worldBounds.max.x; x += gridSize) {
-    const s = worldToScreen(x, worldBounds.min.z);
-    const e = worldToScreen(x, worldBounds.max.z);
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(e.x, e.y);
-    ctx.stroke();
-  }
-  for (let z = Math.ceil(worldBounds.min.z / gridSize) * gridSize; z <= worldBounds.max.z; z += gridSize) {
-    const s = worldToScreen(worldBounds.min.x, z);
-    const e = worldToScreen(worldBounds.max.x, z);
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(e.x, e.y);
-    ctx.stroke();
-  }
-
-  // Draw section plane line
-  if (sectionPlane.normal.y === 1) {
-    // Horizontal slice - draw as horizontal line across
-    const yScreen = offsetY + (worldBounds.max.y - sectionPlane.distance) * scale * 0.1; // Approximate
-    ctx.strokeStyle = '#3d8ef7';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(padding, yScreen);
-    ctx.lineTo(dimensions.width - padding, yScreen);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // Draw entity intersections
-  if (showEntities) {
-    entities.forEach(entity => {
-      if (!entity.boundingBox) return;
-      const intersects = intersectsSection(entity, sectionPlane);
-      if (!intersects) return;
-
-      const bbox = entity.boundingBox;
-      const screenMin = worldToScreen(bbox.min.x, bbox.max.z); // Note: Z flipped
-      const screenMax = worldToScreen(bbox.max.x, bbox.min.z);
-      const w = screenMax.x - screenMin.x;
-      const h = screenMax.y - screenMin.y;
-
-      const isSelected = selectedEntity?.id === entity.id;
-      ctx.fillStyle = isSelected ? 'rgba(61, 132, 247, 0.5)' : getEntityColor(entity.type);
-      ctx.strokeStyle = isSelected ? '#3d8ef7' : 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = isSelected ? 2 : 1;
-
-      ctx.fillRect(screenMin.x, screenMin.y, w, h);
-      ctx.strokeRect(screenMin.x, screenMin.y, w, h);
-
-      // Label
-      if (w > 60) {
-        ctx.fillStyle = '#ededf2';
-        ctx.font = '10px monospace';
-        ctx.fillText(entity.name, screenMin.x + 2, screenMin.y + 12);
-      }
+    const worldToScreen = (x: number, z: number) => ({
+      x: offsetX + (x - worldBounds.min.x) * scale,
+      y: offsetY + (worldBounds.max.z - z) * scale, // Flip Z
     });
-  }
 
-  return <canvas ref={canvasRef} className="w-full h-full" />;
+    // Draw grid
+    ctx.strokeStyle = '#1f222b';
+    ctx.lineWidth = 1;
+    const gridSize = 10;
+    for (let x = Math.ceil(worldBounds.min.x / gridSize) * gridSize; x <= worldBounds.max.x; x += gridSize) {
+      const s = worldToScreen(x, worldBounds.min.z);
+      const e = worldToScreen(x, worldBounds.max.z);
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(e.x, e.y);
+      ctx.stroke();
+    }
+    for (let z = Math.ceil(worldBounds.min.z / gridSize) * gridSize; z <= worldBounds.max.z; z += gridSize) {
+      const s = worldToScreen(worldBounds.min.x, z);
+      const e = worldToScreen(worldBounds.max.x, z);
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(e.x, e.y);
+      ctx.stroke();
+    }
+
+    // Draw section plane line
+    if (sectionPlane.normal.y === 1) {
+      // Horizontal slice - draw as horizontal line across
+      const yScreen = offsetY + (worldBounds.max.y - sectionPlane.distance) * scale * 0.1; // Approximate
+      ctx.strokeStyle = '#3d8ef7';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(padding, yScreen);
+      ctx.lineTo(dimensions.width - padding, yScreen);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw entity intersections
+    if (showEntities) {
+      entities.forEach(entity => {
+        if (!entity.boundingBox) return;
+        const intersects = intersectsSection(entity, sectionPlane);
+        if (!intersects) return;
+
+        const bbox = entity.boundingBox;
+        const screenMin = worldToScreen(bbox.min.x, bbox.max.z); // Note: Z flipped
+        const screenMax = worldToScreen(bbox.max.x, bbox.min.z);
+        const w = screenMax.x - screenMin.x;
+        const h = screenMax.y - screenMin.y;
+
+        const isSelected = selectedEntity?.id === entity.id;
+        ctx.fillStyle = isSelected ? 'rgba(61, 132, 247, 0.5)' : getEntityColor(entity.type);
+        ctx.strokeStyle = isSelected ? '#3d8ef7' : 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = isSelected ? 2 : 1;
+
+        ctx.fillRect(screenMin.x, screenMin.y, w, h);
+        ctx.strokeRect(screenMin.x, screenMin.y, w, h);
+
+        // Label
+        if (w > 60) {
+          ctx.fillStyle = '#ededf2';
+          ctx.font = '10px monospace';
+          ctx.fillText(entity.name, screenMin.x + 2, screenMin.y + 12);
+        }
+      });
+    }
+  }, [dimensions, worldBounds, sectionPlane, showEntities, entities, selectedEntity]);
+
+  return <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} className="w-full h-full" />;
 }
 
 function FloorPlanCanvas({
@@ -530,83 +534,84 @@ function FloorPlanCanvas({
     return () => window.removeEventListener('resize', resize);
   }, []);
 
-  if (!worldBounds) return <canvas ref={canvasRef} className="w-full h-full" />;
+  useEffect(() => {
+    if (!worldBounds || !canvasRef.current || dimensions.width === 0 || dimensions.height === 0) return;
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
 
-  const ctx = canvasRef.current?.getContext('2d');
-  if (!ctx || dimensions.width === 0) return <canvas ref={canvasRef} className="w-full h-full" />;
+    ctx.clearRect(0, 0, dimensions.width, dimensions.height);
+    ctx.fillStyle = '#08090b';
+    ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
-  ctx.clearRect(0, 0, dimensions.width, dimensions.height);
-  ctx.fillStyle = '#08090b';
-  ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+    const worldW = worldBounds.max.x - worldBounds.min.x;
+    const worldH = worldBounds.max.z - worldBounds.min.z;
+    const padding = 40;
+    const scaleX = (dimensions.width - padding * 2) / worldW;
+    const scaleY = (dimensions.height - padding * 2) / worldH;
+    const scale = Math.min(scaleX, scaleY);
+    const offsetX = (dimensions.width - worldW * scale) / 2;
+    const offsetY = (dimensions.height - worldH * scale) / 2;
 
-  const worldW = worldBounds.max.x - worldBounds.min.x;
-  const worldH = worldBounds.max.z - worldBounds.min.z;
-  const padding = 40;
-  const scaleX = (dimensions.width - padding * 2) / worldW;
-  const scaleY = (dimensions.height - padding * 2) / worldH;
-  const scale = Math.min(scaleX, scaleY);
-  const offsetX = (dimensions.width - worldW * scale) / 2;
-  const offsetY = (dimensions.height - worldH * scale) / 2;
-
-  const worldToScreen = (x: number, z: number) => ({
-    x: offsetX + (x - worldBounds.min.x) * scale,
-    y: offsetY + (worldBounds.max.z - z) * scale,
-  });
-
-  // Grid
-  if (showGridLines) {
-    ctx.strokeStyle = '#1f222b';
-    ctx.lineWidth = 1;
-    const gridSize = 10;
-    for (let x = Math.ceil(worldBounds.min.x / gridSize) * gridSize; x <= worldBounds.max.x; x += gridSize) {
-      const s = worldToScreen(x, worldBounds.min.z);
-      const e = worldToScreen(x, worldBounds.max.z);
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
-    }
-    for (let z = Math.ceil(worldBounds.min.z / gridSize) * gridSize; z <= worldBounds.max.z; z += gridSize) {
-      const s = worldToScreen(worldBounds.min.x, z);
-      const e = worldToScreen(worldBounds.max.x, z);
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
-    }
-  }
-
-  // Slice height indicator
-  ctx.strokeStyle = '#3d8ef7';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([5, 5]);
-  const hScreen = worldToScreen(worldBounds.min.x, height);
-  ctx.beginPath(); ctx.moveTo(padding, hScreen.y); ctx.lineTo(dimensions.width - padding, hScreen.y); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Entities in floor plan range
-  if (showEntities) {
-    entities.forEach(entity => {
-      if (!entity.boundingBox) return;
-      if (!intersectsFloorPlan(entity, height, range)) return;
-
-      const bbox = entity.boundingBox;
-      const screenMin = worldToScreen(bbox.min.x, bbox.max.z);
-      const screenMax = worldToScreen(bbox.max.x, bbox.min.z);
-      const w = screenMax.x - screenMin.x;
-      const h = screenMax.y - screenMin.y;
-
-      const isSelected = selectedEntity?.id === entity.id;
-      ctx.fillStyle = isSelected ? 'rgba(61, 132, 247, 0.5)' : getEntityColor(entity.type);
-      ctx.strokeStyle = isSelected ? '#3d8ef7' : 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = isSelected ? 2 : 1;
-
-      ctx.fillRect(screenMin.x, screenMin.y, w, h);
-      ctx.strokeRect(screenMin.x, screenMin.y, w, h);
-
-      if (w > 50) {
-        ctx.fillStyle = '#ededf2';
-        ctx.font = '9px monospace';
-        ctx.fillText(entity.name, screenMin.x + 2, screenMin.y + 10);
-      }
+    const worldToScreen = (x: number, z: number) => ({
+      x: offsetX + (x - worldBounds.min.x) * scale,
+      y: offsetY + (worldBounds.max.z - z) * scale,
     });
-  }
 
-  return <canvas ref={canvasRef} className="w-full h-full" />;
+    // Grid
+    if (showGridLines) {
+      ctx.strokeStyle = '#1f222b';
+      ctx.lineWidth = 1;
+      const gridSize = 10;
+      for (let x = Math.ceil(worldBounds.min.x / gridSize) * gridSize; x <= worldBounds.max.x; x += gridSize) {
+        const s = worldToScreen(x, worldBounds.min.z);
+        const e = worldToScreen(x, worldBounds.max.z);
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+      }
+      for (let z = Math.ceil(worldBounds.min.z / gridSize) * gridSize; z <= worldBounds.max.z; z += gridSize) {
+        const s = worldToScreen(worldBounds.min.x, z);
+        const e = worldToScreen(worldBounds.max.x, z);
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+      }
+    }
+
+    // Slice height indicator
+    ctx.strokeStyle = '#3d8ef7';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    const hScreen = worldToScreen(worldBounds.min.x, height);
+    ctx.beginPath(); ctx.moveTo(padding, hScreen.y); ctx.lineTo(dimensions.width - padding, hScreen.y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Entities in floor plan range
+    if (showEntities) {
+      entities.forEach(entity => {
+        if (!entity.boundingBox) return;
+        if (!intersectsFloorPlan(entity, height, range)) return;
+
+        const bbox = entity.boundingBox;
+        const screenMin = worldToScreen(bbox.min.x, bbox.max.z);
+        const screenMax = worldToScreen(bbox.max.x, bbox.min.z);
+        const w = screenMax.x - screenMin.x;
+        const h = screenMax.y - screenMin.y;
+
+        const isSelected = selectedEntity?.id === entity.id;
+        ctx.fillStyle = isSelected ? 'rgba(61, 132, 247, 0.5)' : getEntityColor(entity.type);
+        ctx.strokeStyle = isSelected ? '#3d8ef7' : 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = isSelected ? 2 : 1;
+
+        ctx.fillRect(screenMin.x, screenMin.y, w, h);
+        ctx.strokeRect(screenMin.x, screenMin.y, w, h);
+
+        if (w > 50) {
+          ctx.fillStyle = '#ededf2';
+          ctx.font = '9px monospace';
+          ctx.fillText(entity.name, screenMin.x + 2, screenMin.y + 10);
+        }
+      });
+    }
+  }, [dimensions, worldBounds, height, range, showEntities, showGridLines, entities, selectedEntity]);
+
+  return <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} className="w-full h-full" />;
 }
 
 function MinimapCanvas({
@@ -641,87 +646,87 @@ function MinimapCanvas({
     return () => window.removeEventListener('resize', resize);
   }, []);
 
-  if (!worldBounds) return <canvas ref={canvasRef} className="w-full h-full" />;
+  useEffect(() => {
+    if (!worldBounds || !canvasRef.current || dimensions.width === 0 || dimensions.height === 0) return;
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
 
-  const ctx = canvasRef.current?.getContext('2d');
-  if (!ctx || dimensions.width === 0) return <canvas ref={canvasRef} className="w-full h-full" />;
+    ctx.clearRect(0, 0, dimensions.width, dimensions.height);
+    ctx.fillStyle = '#08090b';
+    ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
-  ctx.clearRect(0, 0, dimensions.width, dimensions.height);
-  ctx.fillStyle = '#08090b';
-  ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+    const worldW = (worldBounds.max.x - worldBounds.min.x) * scale;
+    const worldH = (worldBounds.max.z - worldBounds.min.z) * scale;
+    const padding = 40;
+    const scaleX = (dimensions.width - padding * 2) / worldW;
+    const scaleY = (dimensions.height - padding * 2) / worldH;
+    const finalScale = Math.min(scaleX, scaleY);
+    const offsetX = (dimensions.width - worldW * finalScale) / 2;
+    const offsetY = (dimensions.height - worldH * finalScale) / 2;
 
-  const worldW = (worldBounds.max.x - worldBounds.min.x) * scale;
-  const worldH = (worldBounds.max.z - worldBounds.min.z) * scale;
-  const padding = 40;
-  const scaleX = (dimensions.width - padding * 2) / worldW;
-  const scaleY = (dimensions.height - padding * 2) / worldH;
-  const finalScale = Math.min(scaleX, scaleY);
-  const offsetX = (dimensions.width - worldW * finalScale) / 2;
-  const offsetY = (dimensions.height - worldH * finalScale) / 2;
-
-  const worldToScreen = (x: number, z: number) => ({
-    x: offsetX + (x - worldBounds.min.x) * finalScale * scale,
-    y: offsetY + (worldBounds.max.z - z) * finalScale * scale,
-  });
-
-  // Grid
-  if (showGridLines) {
-    ctx.strokeStyle = '#1f222b';
-    ctx.lineWidth = 1;
-    const gridSize = 50 * scale;
-    for (let x = Math.ceil(worldBounds.min.x / gridSize) * gridSize; x <= worldBounds.max.x; x += gridSize) {
-      const s = worldToScreen(x, worldBounds.min.z);
-      const e = worldToScreen(x, worldBounds.max.z);
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
-    }
-    for (let z = Math.ceil(worldBounds.min.z / gridSize) * gridSize; z <= worldBounds.max.z; z += gridSize) {
-      const s = worldToScreen(worldBounds.min.x, z);
-      const e = worldToScreen(worldBounds.max.x, z);
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
-    }
-  }
-
-  // Entities
-  if (showEntities) {
-    entities.forEach(entity => {
-      if (!entity.boundingBox) return;
-      const bbox = entity.boundingBox;
-      const screenMin = worldToScreen(bbox.min.x, bbox.max.z);
-      const screenMax = worldToScreen(bbox.max.x, bbox.min.z);
-      const w = screenMax.x - screenMin.x;
-      const h = screenMax.y - screenMin.y;
-
-      if (w < 1 && h < 1) {
-        // Too small, draw as dot
-        ctx.fillStyle = getEntityColor(entity.type);
-        const cx = (screenMin.x + screenMax.x) / 2;
-        const cy = (screenMin.y + screenMax.y) / 2;
-        ctx.beginPath(); ctx.arc(cx, cy, 1.5, 0, Math.PI * 2); ctx.fill();
-        return;
-      }
-
-      const isSelected = selectedEntity?.id === entity.id;
-      ctx.fillStyle = isSelected ? 'rgba(61, 132, 247, 0.6)' : getEntityColor(entity.type);
-      ctx.strokeStyle = isSelected ? '#3d8ef7' : 'rgba(255,255,255,0.2)';
-      ctx.lineWidth = isSelected ? 2 : 0.5;
-
-      ctx.fillRect(screenMin.x, screenMin.y, w, h);
-      ctx.strokeRect(screenMin.x, screenMin.y, w, h);
+    const worldToScreen = (x: number, z: number) => ({
+      x: offsetX + (x - worldBounds.min.x) * finalScale * scale,
+      y: offsetY + (worldBounds.max.z - z) * finalScale * scale,
     });
-  }
 
-  // Viewport indicator (would come from 3D viewport camera)
-  // This is a placeholder - in real implementation, this would be driven by Viewport3D camera
-  ctx.strokeStyle = '#3d8ef7';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(
-    dimensions.width * 0.35,
-    dimensions.height * 0.35,
-    dimensions.width * 0.3,
-    dimensions.height * 0.3
-  );
+    // Grid
+    if (showGridLines) {
+      ctx.strokeStyle = '#1f222b';
+      ctx.lineWidth = 1;
+      const gridSize = 50 * scale;
+      for (let x = Math.ceil(worldBounds.min.x / gridSize) * gridSize; x <= worldBounds.max.x; x += gridSize) {
+        const s = worldToScreen(x, worldBounds.min.z);
+        const e = worldToScreen(x, worldBounds.max.z);
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+      }
+      for (let z = Math.ceil(worldBounds.min.z / gridSize) * gridSize; z <= worldBounds.max.z; z += gridSize) {
+        const s = worldToScreen(worldBounds.min.x, z);
+        const e = worldToScreen(worldBounds.max.x, z);
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+      }
+    }
 
-  return <canvas ref={canvasRef} className="w-full h-full" />;
+    // Entities
+    if (showEntities) {
+      entities.forEach(entity => {
+        if (!entity.boundingBox) return;
+        const bbox = entity.boundingBox;
+        const screenMin = worldToScreen(bbox.min.x, bbox.max.z);
+        const screenMax = worldToScreen(bbox.max.x, bbox.min.z);
+        const w = screenMax.x - screenMin.x;
+        const h = screenMax.y - screenMin.y;
+
+        if (w < 1 && h < 1) {
+          // Too small, draw as dot
+          ctx.fillStyle = getEntityColor(entity.type);
+          const cx = (screenMin.x + screenMax.x) / 2;
+          const cy = (screenMin.y + screenMax.y) / 2;
+          ctx.beginPath(); ctx.arc(cx, cy, 1.5, 0, Math.PI * 2); ctx.fill();
+          return;
+        }
+
+        const isSelected = selectedEntity?.id === entity.id;
+        ctx.fillStyle = isSelected ? 'rgba(61, 132, 247, 0.6)' : getEntityColor(entity.type);
+        ctx.strokeStyle = isSelected ? '#3d8ef7' : 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = isSelected ? 2 : 0.5;
+
+        ctx.fillRect(screenMin.x, screenMin.y, w, h);
+        ctx.strokeRect(screenMin.x, screenMin.y, w, h);
+      });
+    }
+
+    // Viewport indicator
+    ctx.strokeStyle = '#3d8ef7';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+      dimensions.width * 0.35,
+      dimensions.height * 0.35,
+      dimensions.width * 0.3,
+      dimensions.height * 0.3
+    );
+  }, [dimensions, worldBounds, scale, showEntities, showGridLines, entities, selectedEntity]);
+
+  return <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} className="w-full h-full" />;
 }
 
 function intersectsSection(entity: Entity, plane: { normal: Vec3; distance: number }): boolean {

@@ -101,4 +101,8 @@ Every step runs through `reality` CLI or StudioSession + browser viewer.
 - gitignore + wheel contents fixed; stale physics refs removed.
 - Spatial index benchmarks pass correctness verification.
 - Frame graph tests: 21/21 pass including safety checks.
+- Canonical Golden World Flow E2E: tests/integration/test_golden_world_flow.py passing 100% across all 8 pipeline phases (Mobile bundle -> Desktop Loader -> Reconstruction -> WorldIR V1 -> WorldStore V1 -> Desktop Bridge -> Pass 2 Alignment -> Closure -> Localized Update -> WorldStore V2 -> WorldDiff -> Exporters glTF/CityGML/USDA/CityJSON).
+- Integration test suite: 147 passed, 7 skipped.
+- Frontend Next.js production build: 12/12 routes static/dynamic compiled cleanly without errors.
+
 

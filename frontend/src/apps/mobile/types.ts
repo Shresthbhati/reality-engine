@@ -97,7 +97,51 @@ export interface SyncState {
   lastSyncError: string | null;
 }
 
-export type CaptureTaskStatus = 'OPEN' | 'DONE' | 'CANCELLED';
+/**
+ * Task lifecycle. `SUPERSEDED` is the engine's *retraction*: a newer bundle
+ * proved the request serviced (the gap is covered by USEFUL frames carrying
+ * real headings) without deleting the task — the history stays visible.
+ */
+export type CaptureTaskStatus = 'OPEN' | 'DONE' | 'CANCELLED' | 'SUPERSEDED';
+
+/** Every status this app can represent. Anything else is a version mismatch. */
+export const TASK_STATUSES: readonly CaptureTaskStatus[] = [
+  'OPEN',
+  'DONE',
+  'CANCELLED',
+  'SUPERSEDED',
+] as const;
+
+/** Which engine-issued follow-up this task is. */
+export type CaptureTaskKind = 'reframe' | 'coverage_gap' | 'telemetry';
+
+/** Where on site the capture should happen (verbatim engine description). */
+export interface CaptureTaskRegion {
+  type: 'reframe' | 'viewing_direction' | 'scene';
+  /** Present for `reframe`: the rejected frame to re-shoot. */
+  frameId?: string;
+  /** Present for `viewing_direction`: compass octant name (N, NE, ...). */
+  octant?: string;
+  /** Present for `viewing_direction`: octant centre heading in degrees. */
+  headingDeg?: number;
+  label: string;
+}
+
+/**
+ * The viewpoint the engine wants.
+ *
+ * `poseAvailable: false` is the honest state for every bundle that carried no
+ * measured pose. The engine never invents heading, pitch, roll or position,
+ * so this app must not either — a false value renders as UNAVAILABLE.
+ */
+export interface CaptureTaskViewpoint {
+  description: string;
+  /** For `reframe`: the rejected frame whose viewpoint to re-take. */
+  sourceFrameId?: string;
+  /** For `coverage_gap`: the octant centre the device should face. */
+  headingDeg?: number;
+  poseAvailable: boolean;
+}
 
 /**
  * A desktop-requested capture task (`re.mobile-capture-task/v1`).
@@ -112,13 +156,33 @@ export interface CaptureTask {
   sessionId: string;
   createdAt: string;
   createdBy: string;
+  /** Which follow-up this is: `reframe`, `coverage_gap` or `telemetry`. */
+  kind: CaptureTaskKind;
+  /** Where to shoot, as described by the engine. Empty label if unspecified. */
+  region: CaptureTaskRegion;
+  /** What to shoot; null when the task adds no pixels (telemetry request). */
+  desiredViewpoint: CaptureTaskViewpoint | null;
+  /** Evidence the engine expects back, e.g. `photo` or `telemetry`. */
+  evidenceType: string;
+  priority: 'high' | 'medium' | 'low';
+  /** Human, actionable instruction. */
+  guidance: string;
+  /** Human-readable reason this task exists. */
+  reason: string;
+  /** Machine reason codes in the engine's vocabulary. */
+  reasonCodes: string[];
+  /** What this capture would add to measured coverage. */
+  expectedCoverageContribution: string;
   /** Evidence that motivated the request (may be empty for coverage tasks). */
   targetFrameIds: string[];
   /** Verbatim reason codes from the mobile triage that motivated the request. */
   reasons: QualityReason[];
-  /** Human, actionable guidance derived from those reasons. */
-  guidance: string;
   status: CaptureTaskStatus;
+  /**
+   * Present when the engine retracted this request (`status: 'SUPERSEDED'`):
+   * the bundle that proved it serviced, and why. Never invented on-device.
+   */
+  supersededBy?: { bundleId: string; exportedAt: string; reason: string };
   /** Frames captured against this task on this device. */
   completedByFrameIds: string[];
   completedAt: string | null;

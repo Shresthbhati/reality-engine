@@ -71,7 +71,12 @@ export default function ViewerApp() {
     toggleEntityVisibility,
     isolateEntity,
     builds,
+    loadWorldFromBackend,
   } = useREStore();
+
+  useEffect(() => {
+    loadWorldFromBackend();
+  }, [loadWorldFromBackend]);
 
   const [showCoverageOverlay, setShowCoverageOverlay] = useState(false);
   const [showProvenanceDrawer, setShowProvenanceDrawer] = useState(false);

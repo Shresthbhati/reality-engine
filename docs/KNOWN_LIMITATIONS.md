@@ -75,13 +75,21 @@ materials/geometries/measurements API — see [DECISIONS.md](DECISIONS.md) #12.
 
 ## Not yet started (honest gap, not a limitation of something built)
 
-Everything in §21-38 of the master directive beyond what
-[BUILD_LEDGER.md](BUILD_LEDGER.md) marks TESTED/VERIFIED/IMPLEMENTED:
-fluids, fire, weather, disaster composers, causal graph, branching/
-counterfactual engine, AI copilot, natural-language query, rendering
-(beyond the viewport camera model), Studio, debug visualization, export
-adapters, datasets, and benchmarks. These are empty directories in the
-repo (`engine/fluids`, `engine/fire`, `engine/weather`, `engine/disasters`,
-`reconstruction/*`, `perception/*`, `apps/*`, `exporters/`, `gpu/`,
-`benchmarks/`, `datasets/`, `plugins/`, `shaders/`, `tools/`) — scaffolding
-only, no stub classes claiming completion.
+**STALE, PARTIALLY CORRECTED 2026-09-21**: this section predates the
+2026-09-15 through 2026-09-21 execution campaigns; `.agent/TASKS.yaml`
+(canonical status ledger — see `.agent/EXECUTION_STATE.md` for
+evidence) is authoritative over this file when they disagree.
+Verified by file count: `reconstruction/` (34 .py files), `perception/`
+(45), `apps/` (6, incl. the full `reality` CLI), `exporters/` (13),
+`benchmarks/` (13) are NOT empty scaffolding — they implement most of
+P5-P9, P16, and P19 (reconstruction backends, perception/tracking/
+detail pipelines, the `apps/cli/main.py` command-line client, glTF/
+CityJSON/USDA exporters, the competitive benchmark suite). Still
+genuinely empty/not started, matching TASKS.yaml and the platform/
+application boundary (P0-02/P18-01 — disaster-application logic is
+intentionally excluded from core): `engine/fluids`, `engine/fire`,
+`engine/weather`, `engine/disasters`, `gpu/`, `datasets/` (used only as
+a runtime data directory, not a code package), `plugins/`, `shaders/`,
+`tools/`. Causal graph, branching/counterfactual engine, AI copilot,
+natural-language query, and Studio debug visualization remain
+unstarted as this section originally said.

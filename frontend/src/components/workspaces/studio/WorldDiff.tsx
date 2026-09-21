@@ -99,26 +99,15 @@ export function WorldDiff({
     return [];
   }, [worldVersions, selectedVersionId]);
 
-  const [baseVersionId, setBaseVersionId] = useState(
-    propBaseVersionId || (worldVersions.length >= 2 ? worldVersions[worldVersions.length - 2].version_id : worldVersions[0]?.version_id || '')
-  );
-  const [headVersionId, setHeadVersionId] = useState(
-    propHeadVersionId || selectedVersionId || (worldVersions.length >= 1 ? worldVersions[worldVersions.length - 1].version_id : '')
-  );
+  const [baseVersionId, setBaseVersionId] = useState(propBaseVersionId || '');
+  const [headVersionId, setHeadVersionId] = useState(propHeadVersionId || selectedVersionId || '');
+
+  const effectiveBaseVersionId = baseVersionId || (worldVersions.length >= 2 ? worldVersions[worldVersions.length - 2].version_id : worldVersions[0]?.version_id || '');
+  const effectiveHeadVersionId = headVersionId || selectedVersionId || (worldVersions.length >= 1 ? worldVersions[worldVersions.length - 1].version_id : '');
 
   useEffect(() => {
     refreshWorldVersions();
   }, [refreshWorldVersions]);
-
-  useEffect(() => {
-    if (worldVersions.length >= 2) {
-      if (!baseVersionId) setBaseVersionId(worldVersions[worldVersions.length - 2].version_id);
-      if (!headVersionId) setHeadVersionId(worldVersions[worldVersions.length - 1].version_id);
-    } else if (worldVersions.length === 1) {
-      if (!baseVersionId) setBaseVersionId(worldVersions[0].version_id);
-      if (!headVersionId) setHeadVersionId(worldVersions[0].version_id);
-    }
-  }, [worldVersions, baseVersionId, headVersionId]);
 
   const [filterKind, setFilterKind] = useState<DiffKind | 'ALL'>('ALL');
   const [expandedDiffs, setExpandedDiffs] = useState<Set<EntityId>>(new Set());
@@ -130,16 +119,18 @@ export function WorldDiff({
   const [diffError, setDiffError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!baseVersionId || !headVersionId) {
-      setBackendDiff(null);
-      setDiffError(null);
+    if (!effectiveBaseVersionId || !effectiveHeadVersionId) {
       return;
     }
     let active = true;
-    setIsLoadingDiff(true);
-    setDiffError(null);
+    Promise.resolve().then(() => {
+      if (active) {
+        setIsLoadingDiff(true);
+        setDiffError(null);
+      }
+    });
 
-    fetchWorldDiff(baseVersionId, headVersionId).then((res) => {
+    fetchWorldDiff(effectiveBaseVersionId, effectiveHeadVersionId).then((res) => {
       if (!active) return;
       setIsLoadingDiff(false);
       if (res.available && res.diff) {
@@ -154,7 +145,7 @@ export function WorldDiff({
     return () => {
       active = false;
     };
-  }, [baseVersionId, headVersionId]);
+  }, [effectiveBaseVersionId, effectiveHeadVersionId]);
 
   const diffs = useMemo((): EntityDiff[] => {
     if (!backendDiff) return [];
@@ -290,7 +281,7 @@ export function WorldDiff({
               Base Version (From)
             </label>
             <select
-              value={baseVersionId}
+              value={effectiveBaseVersionId}
               onChange={e => setBaseVersionId(e.target.value)}
               className="w-full px-2 py-1.5 rounded bg-[#14161f] border border-[#1f222b] text-[11px] font-mono text-[#ededf2] focus:border-[#3d8ef7]/60 outline-none"
             >
@@ -312,7 +303,7 @@ export function WorldDiff({
               Head Version (To)
             </label>
             <select
-              value={headVersionId}
+              value={effectiveHeadVersionId}
               onChange={e => setHeadVersionId(e.target.value)}
               className="w-full px-2 py-1.5 rounded bg-[#14161f] border border-[#1f222b] text-[11px] font-mono text-[#ededf2] focus:border-[#3d8ef7]/60 outline-none"
             >
@@ -334,8 +325,8 @@ export function WorldDiff({
           <button
             type="button"
             onClick={() => {
-              setBaseVersionId(headVersionId);
-              setHeadVersionId(baseVersionId);
+              setBaseVersionId(effectiveHeadVersionId);
+              setHeadVersionId(effectiveBaseVersionId);
             }}
             className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono text-[#9296a6] hover:text-[#ededf2] bg-[#14161f] border border-[#1f222b] transition-colors"
             title="Swap base/head"

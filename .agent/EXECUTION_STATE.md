@@ -1,9 +1,216 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-17 (completion campaign, worktree
-`claude/completion-master` off origin/main @ PR #39 merge eb062b6)
+**Session end:** 2026-09-21 (World Core convergence pass, worktree
+`reality-engine-agent-os-4f461d`)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
+
+## 2026-09-21 (7) — World Core: real-data integration fixtures unblocked (not regenerated -- found and copied)
+
+Correction to my own prior "would need a dedicated GPU COLMAP session"
+assessment: before attempting to REGENERATE the 58-plane room fixture,
+checked the MAIN CHECKOUT (`C:\Users\shres\OneDrive\Desktop\codes\
+reality-engine\`, one level up from this worktree) for the same
+gitignored paths -- the 2026-09-20 session's own note ("copied from
+the main checkout to unblock") was the clue I'd missed. Found all
+three fixture directories present and INTACT there:
+`datasets/room_capture/pipeline_out/` (worldir.json verified: 58
+entities, 58 geometries, `struct-plane-000` present -- exact match to
+what the tests hardcode), `datasets/real_room_capture/` (21 real
+iPhone JPEGs + COLMAP ground truth), `datasets/real_room_capture_
+worldir/` (evidence_package.json + reconstruction_result.json).
+Copied all three into this worktree (they're gitignored, so this is a
+local unblock, same as every prior session that touched this file has
+done -- not a repo change).
+
+Verified: `pytest tests/integration/test_system_runtime_proof.py -q`
+-> **21 passed, 0 skipped, 0 failed** (previously 7 passed, 14 skipped
+after the skip-discipline fix; before that fix, 14 hard FAILED). All
+14 previously-skipped tests now run for real: strict entity/geometry
+`is`-identity across 57 untouched entities/geometries after a
+localized update, zero-rewrite tile reuse, all 13 adversarial failure
+modes, Desktop bridge load/diff, reconstruction-contract refusal, and
+the full multi-delta-chain-compaction-to-Desktop proof.
+`pytest tests/ -k "worldstore or worldir" -q` -> 74 passed, 1 skipped
+(name-filter mismatch vs the earlier 181/2 count -- test_system_
+runtime_proof.py's test names don't literally contain "worldstore"/
+"worldir", so this filter undercounts; the file-level run above is the
+authoritative number). `pytest tests/integration/test_golden_world_
+flow.py -q` -> 1 passed (unaffected, uses its own generated data).
+Full non-slow suite re-run in background to confirm no wider
+interaction; will record the result when it lands.
+
+Known limitation UNCHANGED by this: these are still gitignored,
+locally-present artifacts, not committed to the repo -- a genuinely
+fresh clone still needs either this same main-checkout copy trick (if
+available) or a real regeneration run. The skip-cleanly fix from entry
+2 still matters for that case.
+
+## 2026-09-21 (6) — World Core: docs/KNOWN_LIMITATIONS.md status reconciliation
+
+Investigating the world_ir dual-representation compat shim (see entry
+5's correction) led to docs/KNOWN_LIMITATIONS.md — confirmed the shim
+itself is fine (already fixed, regression-tested, documented in
+DECISIONS.md #14/#15; nothing to act on there). But the doc's own
+"Not yet started" section was stale in a way that could mislead a
+future session: it claimed `reconstruction/`, `perception/`, `apps/*`,
+`exporters/`, `benchmarks/` are "empty directories... scaffolding
+only" -- verified false by file count (34/45/6/13/13 .py files
+respectively), directly contradicting .agent/TASKS.yaml's DONE status
+for P5-P9/P16/P19. Corrected the section in place: named which
+directories really are still empty (fluids/fire/weather/disasters/gpu/
+datasets/plugins/shaders/tools, matching the platform/application
+boundary) vs which were stale claims, and pointed future readers at
+.agent/TASKS.yaml as authoritative when the two disagree.
+
+No code/test changes -- docs-only correction, per the same
+status-reconciliation duty as entry 5.
+
+## 2026-09-21 (5) — World Core: status reconciliation (P7-05) + dead-code observation
+
+Small increment per Agent OS status-reconciliation duty: found
+P7-05's `open:` note claiming "local refinement does not yet consume
+compute_tier (no ROI refinement backend exists)" -- verified FALSE
+against actual code (perception/detail/refinement.py:228 reads
+`roi.budget.compute_tier` and escalates backends by tier; the executor
+landed under P7-06 after P7-05's note was written and P7-05's open
+field was never updated). Corrected in .agent/TASKS.yaml with the
+stale claim struck through and the real remaining gaps (threshold
+tuning, per-cell vs scene-level GSD) kept.
+
+CORRECTION (same session, next entry): the "world_ir/serialization.py +
+world_ir/world.py = dead code" observation two lines above was WRONG --
+my grep excluded lines/files containing the substring "test", which
+also hid real production callers whose paths don't say "test"
+(engine/world/runtime.py imports `from world_ir import WorldIR,
+load_world, save_world`; evidence/multi_source.py, evidence/packages.py,
+evidence/session.py, worldstore/lazy_query.py all touch
+world_ir.coordinates/entity from the same legacy model). This is a
+DELIBERATE, DOCUMENTED dual representation: engine/world/runtime.py's
+`_iter_world_entities`/`_resolve_entity_transform` explicitly branch on
+"legacy world_ir.world.WorldIR (EntityRegistry, real Transform objects)"
+vs "V1-schema world_ir.world_v1.WorldIR (dict, externalized transform)",
+citing a KNOWN_LIMITATIONS.md crash this compatibility shim exists to
+prevent. Not dead code, not a candidate for removal without a much
+deeper look at KNOWN_LIMITATIONS.md and why two WorldIR representations
+coexist -- out of scope for a quick pass. Retracted; do not act on the
+earlier claim.
+
+No code/test changes this entry -- ledger-only correction + retraction.
+
+## 2026-09-21 (4) — World Core: GeoJSON -> CityFeature bridge (city-compile now compiles both sources)
+
+Closed this session's own recorded "NEXT RECOMMENDED TASK": GeoJSON was
+imported as evidence but never translated into CityFeatures, so
+`--geojson`-only runs compiled 0 entities.
+
+- engine/compiler/geojson_features.py: mirrors osm_features.py's
+  structure (GeoJsonCompileReport, geojson_record_to_city_feature,
+  geojson_records_to_city_features) but REUSES
+  osm_features.classify_osm_tags directly on GeoJSON `properties` --
+  OSM tags and GeoJSON properties are both flat string-keyed dicts, so
+  one documented tag->kind table serves both, not a duplicated scheme
+  (reuse-first, per the ladder). Only Polygon geometry compiles (exterior
+  ring); Point/LineString/other geometry types are skipped and recorded
+  (unsupported_geometry), never approximated into a fake footprint.
+  Height only from the feature's own height/building:levels/levels
+  properties.
+- apps/cli/main.py: cmd_city_compile now runs BOTH bridges and
+  concatenates their features before compile_city_world, so `--osm` and
+  `--geojson` inputs land in the same WorldIR; the report gained a
+  `geojson_compile` block alongside `osm_compile`.
+- 9 new library tests (tests/test_geojson_city_features.py) + 3 new CLI
+  tests in tests/test_cli_city_compile.py (Polygon-only compiles,
+  combined OSM+GeoJSON run produces both entities, existing Point test
+  re-verified as an honest 0-entity/unmapped_kind case, not a crash).
+- Manually re-ran the real CLI process with both `--osm` and `--geojson`
+  flags together (not just in-process `main()` calls): 2 entities from
+  2 different evidence sources compiled into one world.json.
+
+Verified: `pytest tests/test_cli_city_compile.py tests/test_geojson_city_features.py
+tests/test_osm_city_features.py tests/test_city_import.py tests/test_city_compiler.py
+tests/test_cli_compile.py tests/test_cli.py -q` -> **76 passed, 7 skipped**
+(skips unchanged, pre-existing missing real OSM dataset).
+`.agent/TASKS.yaml` P14-01 basis updated with this evidence.
+
+## 2026-09-21 (3) — World Core: `reality city-compile` CLI wiring (osm_features reachable end-to-end)
+
+Continuation of the same session's P14-01 close-out: osm_features.py
+existed but had no caller anywhere in the repo, per the prior handoff's
+"NEXT RECOMMENDED TASK". Closed:
+
+- `apps/cli/main.py`: new `cmd_city_compile` +
+  `reality city-compile --osm <path> [--geojson <path>]... -o <world.json>
+  [--report <path>] [--name <id>]` subcommand, following the existing
+  `cmd_compile`/`_save_world` conventions exactly (no new patterns).
+  Imports OSM/GeoJSON via evidence.city_import (honest
+  CorruptEvidenceError -> exit 1), bridges via
+  engine.compiler.osm_features.osm_records_to_city_features, compiles
+  via engine.compiler.city_compiler.compile_city_world, writes
+  worldir.json + a JSON report (import stats + osm_compile stats +
+  entities_compiled).
+- 5 new tests (tests/test_cli_city_compile.py): missing-input rejection,
+  malformed-OSM rejection, full osm->worldir->report roundtrip
+  (asserts entity name/count, too_few_points recorded for a 2-point
+  way), GeoJSON-only run (imported but honestly 0 entities since
+  compile_city_world only consumes OSM ways this pass -- not a crash,
+  not fabricated geometry), custom --report path.
+- Manually ran `python -m apps.cli.main city-compile --osm <file> -o
+  <out>` as a real process (not just in-process `main()` calls) to
+  confirm actual CLI reachability, not just test-harness reachability.
+
+Verified: `pytest tests/test_cli_city_compile.py tests/test_osm_city_features.py
+tests/test_city_import.py tests/test_city_compiler.py tests/test_cli_compile.py
+tests/test_cli.py -q` -> **65 passed, 7 skipped** (skips unchanged,
+pre-existing missing real OSM dataset). `.agent/TASKS.yaml` P14-01
+basis updated with this evidence.
+
+## 2026-09-21 (2) — World Core: fix hard-fail vs skip-cleanly gap in real-data integration tests
+
+Independent verification (per World Core agent's "do not trust old task
+statuses without checking the implementation" directive): ran
+`pytest tests/ -k "worldstore or worldir"` fresh in this worktree.
+Found 14 failures, all `AssertionError: Missing real pipeline worldir/
+reconstruction/evidence-package at <gitignored datasets/... path>` in
+`tests/integration/test_system_runtime_proof.py` — a real discipline
+gap, previously named but not fixed
+(EXECUTION_STATE 2026-09-20 note: "a known gap between that test file
+and the repo's skip-cleanly discipline").
+
+Root cause: three loader helpers/inline checks used a bare `assert
+path.exists()` instead of `pytest.skip(...)` for datasets that are
+gitignored and only exist after a local run of
+`scripts/generate_room_dataset.py` — so a fresh clone/worktree hard-fails
+instead of skipping, unlike every other real-data-gated test in the repo
+(e.g. `tests/test_city_import.py`'s `@pytest.mark.skipif`).
+
+Fix (tests/integration/test_system_runtime_proof.py):
+  - `_load_real_room_reconstruction_result()`: assert -> `pytest.skip`
+  - `_load_real_structural_world()`: assert -> `pytest.skip`
+  - `TestRealDatasetVerticalSlice.test_real_room_evidence_admission_and_compilation`'s
+    inline `assert pkg_path.exists()` -> `pytest.skip`
+
+No test logic weakened: when the fixtures ARE present (as in a prior
+session that copied them from the main checkout), these tests still run
+and assert real behavior; only the fresh-checkout failure mode changed
+from a hard fail to an honest skip naming the missing path and how to
+generate it.
+
+Verified: `pytest tests/integration/test_system_runtime_proof.py -q` ->
+**7 passed, 14 skipped** (was 14 failed, 7 passed before the fix).
+`pytest tests/ -k "worldstore or worldir" -q` -> **181 passed, 2 skipped**
+(was 1 failed, 181 passed, 1 skipped).
+
+Also this session: P14-01 (city world compiler) OSM-ingestion remainder
+closed — `engine/compiler/osm_features.py` translates
+`evidence/city_import.py`'s OSM way records into `CityFeature` via a
+documented tag->kind table; unmapped tags / <3-point ways are skipped
+and recorded, never guessed; height only from the way's own tags.
+16 new tests (`tests/test_osm_city_features.py`), full
+city_import -> osm_features -> compile_city_world pipeline verified
+deterministic. `.agent/TASKS.yaml` P14-01 basis updated with this
+evidence. Satellite/aerial/LiDAR ingestion and full CityGML/3DCityDB
+output remain open (unchanged scope).
 
 ## 2026-09-17 (5) — P7-01: Multi-view object identity (ITrackBackend + perception stage wiring)
 
@@ -1135,3 +1342,30 @@ datasets/real_room_capture_worldir/); copied from the main checkout
 to unblock (13/13 green). Fresh clones without them see 9 failures
 with explicit "Missing real pipeline ..." assertions — a known gap
 between that test file and the repo's skip-cleanly discipline.
+
+## Session 2026-09-21 — CANONICAL_SYSTEM_INTEGRATION_RELEASE_CAPTAIN (Antigravity)
+
+Closed canonical end-to-end integration proof and release hardening across all subsystems:
+
+1. **Canonical Golden World Flow Upgrade** (`tests/integration/test_golden_world_flow.py`):
+   - **Mobile Capture Bundle Ingestion**: Built from real JPEG payloads with real sensor telemetry (`headingDeg`, structured `geolocation`), triage verdicts, and content-derived SHA-256 hashes.
+   - **Desktop Loader**: Ingests mobile bundle into `MultiSourceSession` with on-disk session asset persistence, payload verification, and deduplication.
+   - **Capture Task Derivation**: Derives next-action capture tasks (`coverage_gap`, `reframe`, `telemetry`) from real measured compass octants and GPS bounds (`state: AVAILABLE`).
+   - **WorldIR V1 Compilation**: Compiles multi-room evidence into entities, geometries, and topological relationships (`ADJACENT_TO`).
+   - **WorldStore V1 Lineage**: Persists version with parent=None and source session lineage (`sess-base-001`).
+   - **Spatial Indexing & Desktop Loader**: Validates spatial tile boundaries and Desktop API bridge consumption (`cmd_load_world`).
+   - **Pass 2 Localized Rescan**: Second capture session, cross-session alignment (`align_session`), dependency closure computation (`affected_closure`), and localized incremental update (`apply_incremental_update()`). Strict reference identity preserved for untouched entities (`room-1`).
+   - **WorldStore V2 & WorldDiff**: Persists V2 with parent=V1; computes WorldDiff proving untouched entities are completely absent from change set; verified via Desktop API bridge (`cmd_diff`).
+   - **Multi-Format Export & Readback Validation**:
+     - glTF 2.0: Spec-compliant JSON structure with base64 binary buffer decoded and verified.
+     - CityGML 2.0: Validated XML with ElementTree parsing verifying `core:CityModel` and `Solid` geometry.
+     - USDA 1.0: Validated USD ASCII text with sanitized prim identifiers and translation xformOps.
+     - CityJSON 1.1: Validated CityObjects mapping and geometry hierarchy.
+
+2. **Full Integration Suite Verification**:
+   - `pytest tests/test_mobile_bridge.py tests/test_reconstruction_batch.py tests/test_city_import.py tests/test_detail_subdivision.py tests/integration/`: **147 passed, 7 skipped in 85.28s**.
+   - `test_golden_world_flow.py`: **1 passed in 1.96s**.
+
+3. **Frontend Production Build**:
+   - `npm run build`: **Compiled successfully in 12.2s**, TypeScript passed in 10.2s, all 12/12 routes generated statically and dynamically without errors.
+

@@ -58,6 +58,20 @@ def capture_env(tmp_path, monkeypatch):
         calls.append(list(argv))
         assert kwargs.get("shell") is False, "COLMAP must never run via shell"
         assert "QT_QPA_PLATFORM" in kwargs["env"]
+        # The pipeline probes each dense stage's real --help before
+        # passing version-specific flags; the fake answers with the
+        # documented old-style option names it also asserts on.
+        if len(argv) == 3 and argv[2] == "--help":
+            if argv[1] == "patch_match_stereo":
+                return _FakeProc(0, (
+                    "  --workspace_path arg\n"
+                    "  --PatchMatchStereo.geom_consistency arg\n"
+                    "  --PatchMatchStereo.use_gpu arg\n"), "")
+            if argv[1] == "stereo_fusion":
+                return _FakeProc(0, (
+                    "  --workspace_path arg\n"
+                    "  --StereoFusion.input_type arg\n"
+                    "  --StereoFusion.output arg\n"), "")
         if argv[1] == "stereo_fusion":
             out = argv[argv.index("--StereoFusion.output") + 1]
             _write_fused_ply(Path(out), n=12)
@@ -85,13 +99,15 @@ class TestContract:
             image_dir=image_dir, sparse_model_dir=sparse, workspace=ws,
             binary="colmap", use_gpu=True,
         )
-        steps = [c[1] for c in capture_env]
+        exec_calls = [c for c in capture_env
+                      if not (len(c) > 2 and c[2] == "--help")]
+        steps = [c[1] for c in exec_calls]
         assert steps == ["image_undistorter", "patch_match_stereo", "stereo_fusion"]
-        pm = capture_env[1]
+        pm = exec_calls[1]
         assert "--PatchMatchStereo.geom_consistency" in pm
         assert pm[pm.index("--PatchMatchStereo.geom_consistency") + 1] == "true"
         assert pm[pm.index("--PatchMatchStereo.use_gpu") + 1] == "1"
-        fusion = capture_env[2]
+        fusion = exec_calls[2]
         assert fusion[fusion.index("--StereoFusion.input_type") + 1] == "geometric"
         # the observed facts are real, not invented
         assert run.n_fused_points == 12
@@ -110,6 +126,8 @@ class TestContract:
         monkeypatch.setattr(dp.shutil, "which", lambda n: "C:/fake/colmap.exe")
 
         def fake_run(argv, **kwargs):
+            if len(argv) == 3 and argv[2] == "--help":
+                return _FakeProc(0, "  --PatchMatchStereo.geom_consistency arg\n", "")
             if argv[1] == "patch_match_stereo":
                 return _FakeProc(1, "", "CUDA error: out of memory")
             return _FakeProc(0, "", "")
@@ -122,9 +140,13 @@ class TestContract:
     def test_success_without_fused_ply_is_an_error(self, tmp_path, monkeypatch):
         image_dir, sparse, ws = _inputs(tmp_path)
         monkeypatch.setattr(dp.shutil, "which", lambda n: "C:/fake/colmap.exe")
-        monkeypatch.setattr(
-            dp.subprocess, "run", lambda argv, **kw: _FakeProc(0, "", "")
-        )
+
+        def fake_run(argv, **kw):
+            if len(argv) == 3 and argv[2] == "--help":
+                return _FakeProc(0, "  --StereoFusion.output arg\n", "")
+            return _FakeProc(0, "", "")
+
+        monkeypatch.setattr(dp.subprocess, "run", fake_run)
         with pytest.raises(DenseMVSRunError, match="no fused.ply"):
             run_dense_mvs(image_dir=image_dir, sparse_model_dir=sparse,
                           workspace=ws)
@@ -150,6 +172,8 @@ class TestContract:
         monkeypatch.setattr(dp.shutil, "which", lambda n: "C:/fake/colmap.exe")
 
         def fake_run(argv, **kwargs):
+            if len(argv) == 3 and argv[2] == "--help":
+                return _FakeProc(0, "  --PatchMatchStereo.geom_consistency arg\n", "")
             raise subprocess.TimeoutExpired(cmd=argv[0], timeout=1.0)
 
         monkeypatch.setattr(dp.subprocess, "run", fake_run)

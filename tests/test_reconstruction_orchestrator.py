@@ -470,3 +470,32 @@ class TestEndToEnd:
         entity_types = {e.type.name for e in world.entities.values()}
         assert "WALL" in entity_types and "FLOOR" in entity_types
         assert diagnostics.rooms_detected == 1
+
+class TestProvenanceStampingKeepsDiagnostics:
+    def test_stamp_preserves_merge_and_dense_fields(self):
+        """The stamp rebuilds the frozen result; a rebuild that dropped
+        optional diagnostics would silently erase a merge report or a
+        completed dense cloud (both classes of loss were measured once
+        already)."""
+        from provenance import Uncertainty
+
+        result = ReconstructionResult(
+            points=[ReconstructedPoint(position=(0, 0, 0), track_id="t1",
+                                       source_evidence_ids=["a"])],
+            camera_poses=[ReconstructedCameraPose(
+                evidence_id="a", position=(0, 0, 1),
+                rotation=(1, 0, 0, 0))],
+            registration_status="success",
+            merge_report={"sessions": {"x": "reference"}},
+            dense_points=[ReconstructedPoint(position=(1, 1, 1),
+                                             track_id="dense:0",
+                                             source_evidence_ids=["a"])],
+            dense_report={"n_fused_points": 1},
+        )
+        stamped = ReconstructionOrchestrator._stamp_provenance(result, "stub")
+        assert stamped.merge_report == result.merge_report
+        assert stamped.dense_report == result.dense_report
+        assert stamped.dense_points is not None
+        assert stamped.dense_points[0].track_id == "dense:0"
+        # Stamping still adds its own identity note.
+        assert "backend=stub" in stamped.points[0].uncertainty.note

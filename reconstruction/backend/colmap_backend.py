@@ -282,7 +282,8 @@ def _subprocess_env(colmap_path: str) -> Dict[str, str]:
 
 class ColmapReconstructionBackend(IReconstructionBackend):
     def __init__(self, colmap_binary: str = "colmap", use_gpu: bool = False,
-                 robust_sift: bool = True, guided_matching: bool = False):
+                 robust_sift: bool = True, guided_matching: bool = False,
+                 dense_mvs: bool = False, artifact_store=None):
         self._colmap_binary = colmap_binary
         # Default False: the official Windows release used here is a
         # no-GPU build ("without GPU support" per its own version banner);
@@ -299,6 +300,26 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         #: rotation error vs 0.164 deg without). Opt in only when the
         #: capture lacks repetitive structures.
         self.guided_matching = guided_matching
+        #: Dense-MVS continuation. Default OFF (heavyweight, GPU-bound):
+        #: when True, reconstruct() continues the mapper's sparse model
+        #: through image_undistorter -> patch_match_stereo ->
+        #: stereo_fusion IN THE SAME WORKSPACE and attaches the parsed
+        #: fused cloud to the result (dense_points/dense_report). The
+        #: binary must PROBE as dense-capable before any compute is
+        #: spent; a dense failure raises rather than degrading into a
+        #: sparse-only success.
+        self.dense_mvs = dense_mvs
+        #: Optional ArtifactStore. When set AND dense_mvs=True, the
+        #: fused cloud is ingested through the canonical chain
+        #: (parse -> PointCloudData -> content-addressed artifact)
+        #: INSIDE the workspace lifetime. This is not decoration: the
+        #: backend deletes its workspace on return, so a fused.ply left
+        #: on disk there is an ORPHANED artifact by construction
+        #: (measured 2026-09-21 -- the first real dense run's fused.ply
+        #: died with the temp dir). Without a store the parsed cloud
+        #: still travels on dense_points, and the report says no
+        #: artifact was persisted.
+        self.artifact_store = artifact_store
 
     # ---- orchestrator integration (reconstruction/orchestrator.py) ----
     # availability_probe: can COLMAP run in this environment at all?
@@ -347,6 +368,24 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             )
         env = _subprocess_env(colmap_path)
         gpu_flag = "1" if self._use_gpu else "0"
+
+        # Dense continuation is an explicit opt-in, and its capability
+        # precondition is checked BEFORE any compute is spent: a binary
+        # that cannot run patch_match_stereo must be refused with the
+        # dense-specific reason, not after minutes of sparse SfM.
+        if self.dense_mvs:
+            from reconstruction.dense_pipeline import dense_mvs_available
+            if not dense_mvs_available(self._colmap_binary):
+                from reconstruction.dense_pipeline import (
+                    DenseMVSUnavailableError,
+                )
+                raise DenseMVSUnavailableError(
+                    f"COLMAP '{self._colmap_binary}' does not list "
+                    "patch_match_stereo in its help -- this build cannot "
+                    "run dense MVS (dense_mvs=True was requested); "
+                    "refusing to spend compute on a chain that cannot "
+                    "complete"
+                )
 
         with tempfile.TemporaryDirectory(prefix="colmap_") as workspace:
             workspace = Path(workspace)
@@ -453,13 +492,131 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 )
 
             if len(model_results) == 1:
-                return next(iter(model_results.values()))
-            from reconstruction.merge import merge_submodel_results
+                sparse_result = next(iter(model_results.values()))
+            else:
+                from reconstruction.merge import merge_submodel_results
 
-            # The most complete sub-model is the reference frame.
-            reference = max(
-                sorted(model_results),
-                key=lambda n: len(model_results[n].points),
+                # The most complete sub-model is the reference frame.
+                reference = max(
+                    sorted(model_results),
+                    key=lambda n: len(model_results[n].points),
+                )
+                sparse_result, _merge_report = merge_submodel_results(
+                    model_results, reference=reference)
+
+            if not self.dense_mvs:
+                return sparse_result
+            return self._continue_dense(
+                workspace=workspace, image_dir=image_dir,
+                sparse_result=sparse_result,
+                evidence_id_by_name=evidence_id_by_name,
             )
-            merged, _merge_report = merge_submodel_results(model_results, reference=reference)
-            return merged
+
+    def _continue_dense(self, *, workspace: Path, image_dir: Path,
+                        sparse_result: ReconstructionResult,
+                        evidence_id_by_name: Dict[str, str]) -> ReconstructionResult:
+        """Continue the mapper's sparse model through the canonical dense
+        chain IN THE SAME WORKSPACE and attach the fused cloud to the
+        result. Honesty rules:
+
+        - the binary must PROBE dense-capable first (a COLMAP on PATH
+          proves nothing about the build) -- refusal happens BEFORE any
+          sparse/dense compute is spent;
+        - the sub-model continued is the mapper's reference model (the
+          one whose points won the merge reference, or the sole model);
+        - fused provenance is the REGISTERED evidence ids (only cameras
+          the sparse model actually solved contribute images to the
+          dense rectification);
+        - a dense failure propagates -- a broken dense chain never
+          degrades into a sparse-only success.
+        """
+        from reconstruction.backend.dense_output import parse_fused_ply
+
+        # Capability was already probed at the top of reconstruct()
+        # (before any compute); this continuation assumes it.
+        from reconstruction.dense_pipeline import run_dense_mvs
+
+        # The sub-model to continue: the mapper's most complete model.
+        # The workspace layout is <ws>/sparse/<n> after model_converter
+        # (TXT in place); pick by point count via the parsed results.
+        sparse_dir = workspace / "sparse"
+        model_dirs = _collect_submodels(sparse_dir, None)
+        # Map evidence ids -> registered model names for provenance.
+        registered_ids = [pose.evidence_id for pose in sparse_result.camera_poses]
+
+        # Reference model = the sub-model with the most points (same
+        # criterion the merge uses); with a single model it's that one.
+        reference_dir = None
+        best = -1
+        for d in model_dirs:
+            pts_file = d / "points3D.txt"
+            n = sum(1 for line in pts_file.read_text().splitlines()
+                    if line.strip() and not line.startswith("#")) if pts_file.is_file() else 0
+            if n > best:
+                best, reference_dir = n, d
+        if reference_dir is None:
+            raise DenseMVSUnavailableError(
+                "no sparse sub-model directory found to continue into "
+                f"dense MVS (looked under {sparse_dir})"
+            )
+
+        run = run_dense_mvs(
+            image_dir=image_dir,
+            sparse_model_dir=reference_dir,
+            workspace=workspace,
+            binary=self._colmap_binary,
+            # Dense stereo honors the same GPU decision as sparse; the
+            # CPU Windows build must not be handed use_gpu=1.
+            use_gpu=True if self._use_gpu else False,
+        )
+
+        fused_bytes = Path(run.fused_ply_path).read_bytes()
+        dense_points, parse_facts = parse_fused_ply(
+            fused_bytes,
+            source_evidence_ids=sorted(set(registered_ids)),
+            return_facts=True,
+        )
+
+        report = run.to_dict()
+        report["sparse_model"] = reference_dir.name
+        report["source_evidence_ids"] = sorted(set(registered_ids))
+        report["parse_facts"] = parse_facts
+
+        # Persist BEFORE the workspace dies: ingest through the
+        # canonical chain so the cloud becomes a content-addressed,
+        # traceable artifact instead of an orphaned file in a temp dir
+        # that this method's caller is about to delete. Refusal (not
+        # fallback) when the cloud would be untraceable.
+        if self.artifact_store is not None:
+            from world_ir.artifact_store import ArtifactStore
+            from reconstruction.dense_ingest import ingest_fused_ply
+            if not isinstance(self.artifact_store, ArtifactStore):
+                raise TypeError(
+                    "artifact_store must be a world_ir.artifact_store."
+                    "ArtifactStore (canonical content-addressed store), "
+                    f"got {type(self.artifact_store).__name__}"
+                )
+            geometry = ingest_fused_ply(
+                fused_bytes,
+                artifact_store=self.artifact_store,
+                source_evidence_ids=sorted(set(registered_ids)),
+            )
+            report["artifact_uri"] = geometry.data_uri
+            report["artifact_sha256"] = geometry.data_hash
+            report["artifact_vertex_count"] = geometry.vertex_count
+            report["provenance"] = geometry.provenance.value
+        else:
+            report["artifact"] = (
+                "NOT PERSISTED -- no artifact_store configured; the "
+                "parsed cloud travels on dense_points but the workspace "
+                "(and fused.ply) is deleted with it"
+            )
+
+        return ReconstructionResult(
+            points=sparse_result.points,
+            camera_poses=sparse_result.camera_poses,
+            registration_status=sparse_result.registration_status,
+            merge_report=sparse_result.merge_report,
+            dense_points=dense_points,
+            dense_report=report,
+        )

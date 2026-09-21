@@ -50,6 +50,18 @@ class ReconstructionResult:
     #: merge with a discarded report leaves no trace). None = single
     #: model, no merge happened.
     merge_report: Optional[dict] = None
+    #: Fused dense-MVS cloud parsed from the backend's own fused.ply
+    #: (ReconstructedPoint list, track ids "dense:<i>", provenance =
+    #: the registered evidence ids). None = no dense run happened
+    #: (default; dense is an explicit opt-in continuation).
+    dense_points: Optional[List[ReconstructedPoint]] = None
+    #: The dense run's observed facts: DenseMVSRun.to_dict() plus the
+    #: sub-model it continued from ("sparse_model"), the parse facts
+    #: ("parse_facts"), and provenance ("source_evidence_ids"). None =
+    #: no dense run. A dense failure RAISES -- it never degrades into a
+    #: sparse-only success, so this field's presence is proof of a
+    #: completed, parsed dense chain.
+    dense_report: Optional[dict] = None
 
 
 class IReconstructionBackend(ABC):

@@ -56,6 +56,11 @@ class DenseMVSRun:
     stage_durations_s: Dict[str, float]
     geom_consistency: bool
     use_gpu: Optional[bool]
+    #: True only when the installed binary actually accepted a GPU flag
+    #: (newer COLMAP builds removed --PatchMatchStereo.use_gpu and pick
+    #: GPU themselves). False + use_gpu set = the request could not be
+    #: applied and is recorded as such, never silently ignored.
+    gpu_flag_applied: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -66,6 +71,7 @@ class DenseMVSRun:
             },
             "geom_consistency": self.geom_consistency,
             "use_gpu": self.use_gpu,
+            "gpu_flag_applied": self.gpu_flag_applied,
         }
 
 
@@ -77,6 +83,21 @@ def _find_colmap(binary: str) -> str:
             "unavailable (set colmap_binary or install COLMAP)"
         )
     return resolved
+
+
+def _help_text(colmap_path: str, step: str) -> str:
+    """The step's own --help output (its real, installed option names).
+    Empty on any failure -- callers treat that as 'unknown' and skip
+    option probing."""
+    try:
+        proc = subprocess.run(
+            [colmap_path, step, "--help"],
+            capture_output=True, text=True, timeout=30, shell=False,
+            env=_subprocess_env(colmap_path),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return (proc.stdout or "") + (proc.stderr or "")
 
 
 def dense_mvs_available(binary: str = "colmap") -> bool:
@@ -162,6 +183,30 @@ def run_dense_mvs(
 
     stage_durations: Dict[str, float] = {}
 
+    # COLMAP's dense CLI has drifted across versions and this module's
+    # flags were written blind (measured 2026-09-21: the installed 4.2
+    # build rejects --PatchMatchStereo.use_gpu -- GPU selection moved
+    # out of the option manager -- and stereo_fusion lost its
+    # --StereoFusion. prefix entirely). Each stage's --help is now
+    # PROBED and only options the installed binary actually accepts
+    # are passed; what was probed is recorded, never guessed.
+    pm_help = _help_text(colmap_path, "patch_match_stereo")
+    fusion_help = _help_text(colmap_path, "stereo_fusion")
+    if not pm_help.strip():
+        raise DenseMVSRunError(
+            "could not read patch_match_stereo --help; refusing to "
+            "guess the installed COLMAP's dense option names"
+        )
+    if not fusion_help.strip():
+        raise DenseMVSRunError(
+            "could not read stereo_fusion --help; refusing to guess "
+            "the installed COLMAP's dense option names"
+        )
+
+    def _accepts(help_text: str, option: str) -> bool:
+        # '--PatchMatchStereo.use_gpu arg' / '--input_type arg' etc.
+        return option in help_text
+
     # Stage 1: image_undistorter -- rectified images + dense workspace.
     start = time.perf_counter()
     run_step("image_undistorter", [
@@ -178,19 +223,40 @@ def run_dense_mvs(
         "--PatchMatchStereo.geom_consistency",
         "true" if geom_consistency else "false",
     ]
-    if use_gpu is not None:
+    gpu_flag_applied = False
+    if use_gpu is not None and _accepts(pm_help, "--PatchMatchStereo.use_gpu"):
         pm_args += ["--PatchMatchStereo.use_gpu", "1" if use_gpu else "0"]
+        gpu_flag_applied = True
     run_step("patch_match_stereo", pm_args)
     stage_durations["patch_match_stereo"] = time.perf_counter() - start
 
     # Stage 3: stereo_fusion -- geometric-consistency-fused point cloud.
+    # Old CLI: --StereoFusion.input_type/--StereoFusion.output;
+    # 4.x CLI: bare --input_type/--output_path (probed, not assumed).
     fused_ply = dense_dir / "fused.ply"
     start = time.perf_counter()
-    run_step("stereo_fusion", [
-        "--workspace_path", str(dense_dir),
-        "--StereoFusion.input_type", "geometric" if geom_consistency else "photometric",
-        "--StereoFusion.output", str(fused_ply),
-    ])
+    fusion_args = ["--workspace_path", str(dense_dir)]
+    if _accepts(fusion_help, "--StereoFusion.input_type"):
+        fusion_args += [
+            "--StereoFusion.input_type",
+            "geometric" if geom_consistency else "photometric",
+        ]
+    elif _accepts(fusion_help, "--input_type"):
+        fusion_args += [
+            "--input_type",
+            "geometric" if geom_consistency else "photometric",
+        ]
+    if _accepts(fusion_help, "--StereoFusion.output"):
+        fusion_args += ["--StereoFusion.output", str(fused_ply)]
+    elif _accepts(fusion_help, "--output_path"):
+        fusion_args += ["--output_path", str(fused_ply)]
+    else:
+        raise DenseMVSRunError(
+            "stereo_fusion accepts neither --StereoFusion.output nor "
+            "--output_path; cannot determine where fused output would "
+            "be written"
+        )
+    run_step("stereo_fusion", fusion_args)
     stage_durations["stereo_fusion"] = time.perf_counter() - start
 
     if not fused_ply.is_file():
@@ -205,5 +271,6 @@ def run_dense_mvs(
         stage_durations_s=stage_durations,
         geom_consistency=geom_consistency,
         use_gpu=use_gpu,
+        gpu_flag_applied=gpu_flag_applied,
     )
 

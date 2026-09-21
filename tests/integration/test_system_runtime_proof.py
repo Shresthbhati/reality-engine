@@ -132,7 +132,9 @@ PIPELINE_OUT_DIR = REPO_ROOT / "datasets" / "room_capture" / "pipeline_out"
 def _load_real_room_reconstruction_result() -> ReconstructionResult:
     """Loads canonical real room reconstruction result from disk."""
     recon_path = REAL_WORLDIR_DIR / "reconstruction_result.json"
-    assert recon_path.exists(), f"Missing real reconstruction data at {recon_path}"
+    if not recon_path.exists():
+        pytest.skip(f"real reconstruction fixture not generated locally: {recon_path} "
+                     f"(gitignored; see scripts/generate_room_dataset.py)")
     data = json.loads(recon_path.read_text(encoding="utf-8"))
 
     points = [
@@ -185,7 +187,9 @@ def _load_south_building_reconstruction_result(max_points: int = 500) -> Reconst
 def _load_real_structural_world() -> WorldIR:
     """Loads compiled room structural WorldIR from pipeline output."""
     world_path = PIPELINE_OUT_DIR / "worldir.json"
-    assert world_path.exists(), f"Missing real pipeline worldir at {world_path}"
+    if not world_path.exists():
+        pytest.skip(f"real pipeline worldir not generated locally: {world_path} "
+                     f"(gitignored; see scripts/generate_room_dataset.py)")
     data = json.loads(world_path.read_text(encoding="utf-8"))
     return WorldIR.from_dict(data)
 
@@ -202,7 +206,9 @@ class TestRealDatasetVerticalSlice:
 
         # 1. Real evidence items with real files, hashes, and EXIF/quality metadata
         pkg_path = REAL_WORLDIR_DIR / "evidence_package.json"
-        assert pkg_path.exists()
+        if not pkg_path.exists():
+            pytest.skip(f"real evidence package fixture not generated locally: {pkg_path} "
+                         f"(gitignored; see scripts/generate_room_dataset.py)")
         pkg_data = json.loads(pkg_path.read_text(encoding="utf-8"))
 
         sess = Session("sess-real-room-001")

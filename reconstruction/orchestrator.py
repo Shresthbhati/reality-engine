@@ -446,8 +446,14 @@ class ReconstructionOrchestrator:
             )
             for p in result.camera_poses
         ]
+        # Diagnostics travel: a rebuild that dropped merge_report once
+        # already erased a false-merge's only trace (measured
+        # 2026-09-20); dense fields must not meet the same fate.
         return ReconstructionResult(
             points=stamped_points,
             camera_poses=stamped_poses,
             registration_status=result.registration_status,
+            merge_report=result.merge_report,
+            dense_points=result.dense_points,
+            dense_report=result.dense_report,
         )

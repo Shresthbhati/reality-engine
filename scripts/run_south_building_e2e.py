@@ -173,13 +173,81 @@ def _load_run_output_model(workdir: Path):
     return poses, points
 
 
+def _verify_artifact(store, result) -> dict:
+    """Round-trip proof that the dense cloud is a persisted, traceable
+    canonical artifact -- not an orphaned file:
+
+    1. store.get(result.dense_report['artifact_uri']) RESOLVES (the
+       artifact outlived the deleted workspace);
+    2. its bytes decode to the same vertex count the report recorded;
+    3. the canonical float64 encoding round-trips byte-identically.
+    """
+    from world_ir.geometry_data import PointCloudData
+
+    report = result.dense_report
+    uri = report.get("artifact_uri")
+    if not uri:
+        return {"resolved": False, "reason": report.get("artifact", "")}
+    blob = store.get(uri)
+    cloud = PointCloudData.from_bytes(blob)
+    return {
+        "resolved": True,
+        "decodes": len(cloud.points) == report["artifact_vertex_count"],
+        "n_points_decoded": len(cloud.points),
+        "round_trips": blob == PointCloudData(points=cloud.points).to_bytes(),
+        "sha256_recorded": report["artifact_sha256"],
+    }
+
+
+def _dense_vs_sparse_fidelity(sparse_points, dense_points):
+    """Measured agreement between the two independent point clouds the
+    SAME run produced (sparse SfM tracks vs dense MVS fusion):
+    for each sparse point, the distance to its nearest dense neighbor
+    (KD-tree, no downsampling). This is a consistency check between two
+    real outputs, not a fabricated score."""
+    if not sparse_points or not dense_points:
+        return None
+    from scipy.spatial import cKDTree
+
+    import numpy as np
+
+    d = np.asarray([p.position for p in dense_points], dtype=np.float64)
+    s = np.asarray([p.position for p in sparse_points], dtype=np.float64)
+    tree = cKDTree(d)
+    dist, _ = tree.query(s, k=1)
+    return {
+        "n_sparse": int(len(s)),
+        "n_dense": int(len(d)),
+        "sparse_to_dense_median_m": round(float(np.median(dist)), 5),
+        "sparse_to_dense_p95_m": round(float(np.percentile(dist, 95)), 5),
+        "note": "distances in COLMAP's own SfM scale (no metric anchor; "
+                "recorded honestly as model units)",
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gpu", action="store_true",
                         help="enable COLMAP GPU (CUDA build required)")
     parser.add_argument("--max-images", type=int, default=None,
                         help="limit images (subset runs); default all 32")
+    parser.add_argument("--dense", action="store_true",
+                        help="continue the sparse model through COLMAP's "
+                             "dense MVS chain (image_undistorter -> "
+                             "patch_match_stereo -> stereo_fusion); the "
+                             "fused cloud is ingested into the canonical "
+                             "artifact store and carried through fidelity "
+                             "evaluation")
     args = parser.parse_args()
+
+    if args.dense:
+        from reconstruction.dense_pipeline import dense_mvs_available
+        if not dense_mvs_available("colmap"):
+            print("DENSE UNAVAILABLE: the 'colmap' binary on PATH does not "
+                  "list patch_match_stereo -- this build cannot run dense "
+                  "MVS. Nothing was faked; re-run without --dense.",
+                  file=sys.stderr)
+            return 2
 
     from evidence.importers import import_folder
     from evidence.packages import DeterministicPackageBuilder
@@ -189,6 +257,7 @@ def main() -> int:
     from reconstruction.orchestrator import ReconstructionOrchestrator
     from reconstruction.robustness import classify_reconstruction_run
     from reconstruction.robustness_admission import admit_for_reconstruction
+    from world_ir.artifact_store import FileArtifactStore
 
     started = time.perf_counter()
     record = {
@@ -217,7 +286,13 @@ def main() -> int:
     record["admission"] = decision.to_dict()["classification"]["counts"]
 
     # 3. REAL COLMAP reconstruction through the orchestrator.
-    backend = ColmapReconstructionBackend(colmap_binary="colmap", use_gpu=args.gpu)
+    # Dense runs get a PERSISTENT artifact store under the dataset's
+    # runs dir: the backend must ingest the fused cloud inside its
+    # workspace lifetime or the artifact dies with the temp dir.
+    store = FileArtifactStore(root=DATASET / "runs" / "artifacts") if args.dense else None
+    backend = ColmapReconstructionBackend(colmap_binary="colmap",
+                                          use_gpu=args.gpu, dense_mvs=args.dense,
+                                          artifact_store=store)
     orchestrator = ReconstructionOrchestrator([backend])
     t0 = time.perf_counter()
     run = orchestrator.run(admitted)
@@ -234,6 +309,25 @@ def main() -> int:
         "poses": len(run.result.camera_poses),
         "points": len(run.result.points),
     }
+
+    # 3b. Dense continuation: the backend ingested the fused cloud
+    # through the canonical chain INSIDE its workspace lifetime (a
+    # fused.ply left in the temp workspace would be an orphaned
+    # artifact by construction -- the workspace is deleted on return;
+    # measured 2026-09-21). Here the record only VERIFIES the
+    # persisted artifact: it resolves, decodes, and matches the cloud
+    # that traveled on the result.
+    if args.dense:
+        dense_report = run.result.dense_report
+        assert dense_report is not None  # dense_mvs=True guarantees it
+        record["dense"] = {
+            **dense_report,
+            "artifact_verification": _verify_artifact(
+                backend.artifact_store, run.result),
+            "fidelity_vs_sparse": _dense_vs_sparse_fidelity(
+                run.result.points, run.result.dense_points),
+        }
+
     outcome = classify_reconstruction_run(run.result)
     record["outcome"] = outcome.to_dict()
 

@@ -1,7 +1,10 @@
 # Dense MVS (Multi-View Stereo)
 
-Status: PARTIAL → target IMPLEMENTED via depth-fusion + optional MVS
-backend (2026-09-14)
+Status: IMPLEMENTED (Python-wired dense chain, real run recorded
+2026-09-21) — was PARTIAL with a stale "CUDA-blocked" claim: the
+2026-09-15 CUDA backend swap resolved the blocker, and the installed
+COLMAP 4.2.0 CUDA build probes `patch_match_stereo` as available.
+See P6-01 in `.agent/TASKS.yaml` for the measured runs.
 
 ## Purpose
 
@@ -14,12 +17,23 @@ absent and the highest-fidelity source when they are not.
 - Depth-map fusion from MiDaS monocular depth exists
   (`reconstruction/depth_to_points.py`, `reconstruction/fusion/`) and
   feeds meshing (P0.11–P0.13, PR #16).
-- COLMAP 4.2.0 CPU-only is available: `patch_match_stereo` (the real
-  MVS densifier) requires CUDA and is **dependency-blocked** on this
-  machine; `poisson_mesher`/`delaunay_mesher` are used for surface
-  reconstruction (`reconstruction/meshing/surface.py`).
-- Therefore: today's dense geometry = monocular depth fused into a
-  cloud + SfM metric scale. Real MVS is a backend slot that is empty.
+- REAL dense MVS is wired into Python (2026-09-21):
+  `reconstruction/dense_pipeline.run_dense_mvs` runs the canonical
+  chain (image_undistorter → patch_match_stereo → stereo_fusion) as a
+  deterministic, diagnosable stage; `ColmapReconstructionBackend`
+  (`dense_mvs=True`) continues its own sparse model through it IN THE
+  SAME WORKSPACE and attaches the parsed fused cloud + observed facts
+  to `ReconstructionResult.dense_points` / `dense_report`.
+- The fused cloud does not stay an orphaned artifact:
+  `reconstruction/dense_ingest.ingest_fused_ply` persists it through
+  the content-addressed ArtifactStore into a canonical WorldIR
+  POINTCLOUD Geometry with dense provenance.
+- Version discipline (measured): COLMAP's dense CLI drifted — the
+  installed 4.2 build rejects `--PatchMatchStereo.use_gpu` and uses
+  bare `--input_type`/`--output_path` on stereo_fusion. The pipeline
+  now PROBES each stage's `--help` and passes only options the binary
+  actually accepts; what was probed/applied is recorded in the run
+  facts (`gpu_flag_applied`), never guessed.
 
 ## Backend contract
 

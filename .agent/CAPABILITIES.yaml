@@ -192,20 +192,28 @@ capabilities:
 - name: dense_mvs
   category: dense_geometry
   backend: 'CUDA COLMAP (colmap/colmap release 4.2.0, colmap-x64-windows-cuda.zip).
-    Real end-to-end GPU run completed 2026-09-15 (CLI-level, not yet Python-integrated):
-    feature_extractor -> exhaustive_matcher -> mapper (17/20 registered) -> image_undistorter
-    -> patch_match_stereo --geom_consistency true (GPU, ~6.9 min) -> stereo_fusion,
-    294,345 fused points written to a real PLY. Not yet wired: reconstruction/depth_to_points.py
-    does not parse COLMAP dense output (fused.ply) into this repo''s DepthFrame/point
-    types -- only monocular/RGB-D sidecar paths are integrated. OpenMVS slot still
-    open.'
+    PYTHON-INTEGRATED 2026-09-21: reconstruction/dense_pipeline.run_dense_mvs runs the
+    canonical chain (image_undistorter -> patch_match_stereo -> stereo_fusion) as a
+    deterministic stage; ColmapReconstructionBackend(dense_mvs=True) continues its own
+    sparse model IN THE SAME WORKSPACE and attaches the parsed fused cloud + observed
+    facts to ReconstructionResult.dense_points/dense_report. The cloud is ingested
+    through reconstruction/dense_ingest.ingest_fused_ply into the content-addressed
+    ArtifactStore -> canonical WorldIR POINTCLOUD geometry with dense provenance
+    (never an orphaned artifact). CLI-drift discipline: each dense stage''s --help is
+    PROBED and only accepted options are passed (the installed 4.2 build rejects
+    --PatchMatchStereo.use_gpu and uses bare --input_type/--output_path); what was
+    applied is recorded (gpu_flag_applied). Real GPU run on the committed 32-photo
+    south-building dataset recorded 2026-09-21 (see datasets/south_building/runs/).
+    OpenMVS slot still open.'
   inputs:
-  - calibrated images
-  - poses
+  - calibrated images (or the backend''s own ingested evidence)
+  - poses (the mapper''s sparse model — produced in-run when dense_mvs=True)
   - intrinsics
   outputs:
   - dense depth maps per view
-  - fused point cloud (PLY) -- not yet parsed into this repo's canonical types
+  - fused point cloud parsed into canonical ReconstructedPoints (track ids
+    dense:<i>, provenance = registered evidence ids)
+  - persisted WorldIR POINTCLOUD geometry (content-addressed artifact + hash)
   license: n/a until a backend binds
   hardware_requirements: RTX 4050 present and CUDA-capable (compute 8.9, driver 616.56)
     — previously believed unavailable; that was a software-build gap (CPU-only COLMAP),
@@ -215,13 +223,12 @@ capabilities:
     SfM scale, not yet metric-anchored
   runtime: ~6.9 min patch_match_stereo (GPU, geom_consistency on) + ~6s stereo_fusion,
     17 views, RTX 4050 laptop GPU
-  maturity: PARTIAL (real GPU dense reconstruction verified working end-to-end via
-    CLI 2026-09-15; the reconstruction/ Python-level integration — parsing dense output
-    into canonical types, wiring into the orchestrator — is the remaining scope; see
+  maturity: IMPLEMENTED (Python-integrated dense chain + canonical ingestion, real
+    GPU runs on synthetic room 2026-09-15 and committed real photos 2026-09-21; see
     docs/future/dense-reconstruction/DENSE_MVS.md)
-  limitations: CLI-proven only, not yet callable from reconstruction/ Python code;
-    scale not metric-anchored in this run; single synthetic scene exercised, not a
-    stress test
+  limitations: scale not metric-anchored in these runs (COLMAP SfM scale, recorded
+    honestly); dense coverage bounded by patch_match's texture dependence; CLI drift
+    handled by probing, not version pinning
   fallback: monocular depth + RGB-D sidecars (labeled as such, never passed off as
     MVS)
 - name: object_detection

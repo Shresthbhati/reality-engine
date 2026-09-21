@@ -1,0 +1,128 @@
+{
+  "dataset": "south-building (committed 32-image subset)",
+  "dataset_identity": "South Building, UNC Chapel Hill; 128 real photographs, single Panasonic DMC-TZ3 camera",
+  "python": "3.14.7",
+  "colmap_version": "COLMAP 4.2.0 (Commit be5e291 on 2026-08-31 with CUDA)",
+  "gpu": true,
+  "ingested": {
+    "imported": 32,
+    "duplicates_skipped": 0,
+    "unhandled": 0,
+    "items": 32
+  },
+  "admission": {
+    "accepted": 30,
+    "degraded": 2,
+    "unresolved": 0,
+    "failed": 0,
+    "rejected": 0
+  },
+  "reconstruction": {
+    "merge_report": null,
+    "backend": "ColmapReconstructionBackend",
+    "status": "partial",
+    "duration_s": 620.3,
+    "poses": 22,
+    "points": 5402
+  },
+  "dense": {
+    "fused_ply_path": "C:\\Users\\shres\\AppData\\Local\\Temp\\colmap_54roc2rs\\dense\\fused.ply",
+    "n_fused_points": 246816,
+    "stage_durations_s": {
+      "image_undistorter": 0.389,
+      "patch_match_stereo": 343.695,
+      "stereo_fusion": 4.462
+    },
+    "geom_consistency": true,
+    "use_gpu": true,
+    "gpu_flag_applied": false,
+    "sparse_model": "0",
+    "source_evidence_ids": [
+      "ev-south-building-e2e-0000-b3cb3cbf0fee6421",
+      "ev-south-building-e2e-0001-daa214a087cb021a",
+      "ev-south-building-e2e-0002-653247a88443531b",
+      "ev-south-building-e2e-0003-b4bb75bc6b83ab1c",
+      "ev-south-building-e2e-0011-2108609d7b35e0c4",
+      "ev-south-building-e2e-0012-8c4e06b5e2d6b594",
+      "ev-south-building-e2e-0013-104dadbcb46cca17",
+      "ev-south-building-e2e-0014-beb3c84231e151a3",
+      "ev-south-building-e2e-0015-75c1af7d00380d9e",
+      "ev-south-building-e2e-0016-42c6b484c831784d",
+      "ev-south-building-e2e-0017-f86f5eb93c09e1e7",
+      "ev-south-building-e2e-0018-f1d65884cdc62471",
+      "ev-south-building-e2e-0019-ac114d5c7a8f22c9",
+      "ev-south-building-e2e-0020-ebbd9cf01b38c40d",
+      "ev-south-building-e2e-0021-db7360dc851da386",
+      "ev-south-building-e2e-0022-43dcda77f284ba08",
+      "ev-south-building-e2e-0023-9208666f44bf283e",
+      "ev-south-building-e2e-0024-7f434fa6b78f0ca4",
+      "ev-south-building-e2e-0025-b2cf76c307a7a4e6",
+      "ev-south-building-e2e-0026-ea984bb006655a4c",
+      "ev-south-building-e2e-0027-d529f382396ce54a",
+      "ev-south-building-e2e-0028-b42fcbaf55d7a5ac"
+    ],
+    "parse_facts": {
+      "n_points": 246816,
+      "n_properties": 9,
+      "had_colors": true,
+      "had_normals": true
+    },
+    "artifact_uri": "artifact://7caea00460a2afd7a0b84dc1f085e95743e20794ef5d1c9bf1dc40383d6fa642",
+    "artifact_sha256": "7caea00460a2afd7a0b84dc1f085e95743e20794ef5d1c9bf1dc40383d6fa642",
+    "artifact_vertex_count": 246816,
+    "provenance": "ESTIMATED",
+    "artifact_verification": {
+      "resolved": true,
+      "decodes": true,
+      "n_points_decoded": 246816,
+      "round_trips": true,
+      "sha256_recorded": "7caea00460a2afd7a0b84dc1f085e95743e20794ef5d1c9bf1dc40383d6fa642"
+    },
+    "fidelity_vs_sparse": {
+      "n_sparse": 5402,
+      "n_dense": 246816,
+      "sparse_to_dense_median_m": 0.00376,
+      "sparse_to_dense_p95_m": 0.0197,
+      "note": "distances in COLMAP's own SfM scale (no metric anchor; recorded honestly as model units)"
+    }
+  },
+  "outcome": {
+    "outcome": "degraded",
+    "reason": "registration_status=partial: result usable but incomplete",
+    "registration_status": "partial"
+  },
+  "gt_comparison": {
+    "refused": false,
+    "common_cameras": 22,
+    "rotation_deg_median": 0.17591699908050573,
+    "rotation_deg_max": 0.38257666572217264,
+    "rotation_deg_mean": 0.1878698881944893,
+    "center_error_median": 0.011455832874311074,
+    "center_error_max": 0.04688293922297984,
+    "center_error_mean": 0.01472214143969468,
+    "scale_ratio": 1.0867479139588756,
+    "outliers": [],
+    "notes": [],
+    "registered_of_gt": "22/32",
+    "note": "measured after least-squares gauge alignment (Horn rotation on orientation frames; scale/translation from camera-center geometry) -- raw pre-alignment disagreement is gauge, not error"
+  },
+  "point_fidelity": {
+    "refused": false,
+    "measured_points": 5402,
+    "reference_points": 49608,
+    "dist_mean": 0.024958868390343576,
+    "dist_median": 0.005010991446053254,
+    "dist_p90": 0.016180006917671914,
+    "dist_max": 34.16970337899319,
+    "est_points_total": 5402
+  },
+  "colmap_note": "backend runs COLMAP in a temporary workspace (database.db, feature/match/mapper outputs); it is removed after the run -- only the parsed result and this record persist",
+  "fusion": {
+    "observations": 22,
+    "fused_value": 0.1495,
+    "fused_precision": 0.01066,
+    "fused_provenance": "CONFLICT",
+    "conflicts_preserved": 196
+  },
+  "total_runtime_s": 626.8
+}

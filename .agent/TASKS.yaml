@@ -580,6 +580,49 @@ tasks:
       pass: 46 tests covering dense MVS + three-source fusion
       (tests/test_dense_mvs_stage.py, test_fusion_pipeline.py,
       test_fusion_stage.py).
+
+      COMPLETED 2026-09-21 (backend continuation + honest CLI drift):
+      ColmapReconstructionBackend(dense_mvs=True) continues the
+      mapper's sparse model through run_dense_mvs IN THE SAME
+      WORKSPACE and attaches the parsed fused cloud + observed facts
+      to ReconstructionResult.dense_points/dense_report (new fields,
+      default None: sparse-only results untouched). Capability is
+      probed BEFORE any compute (a binary without patch_match_stereo
+      is refused with the dense-specific reason); a dense failure
+      RAISES, never degrades into a sparse-only success. dense_pipeline
+      now PROBES each stage's --help and passes only options the
+      installed binary accepts (measured: COLMAP 4.2 rejects
+      --PatchMatchStereo.use_gpu and uses bare --input_type /
+      --output_path on stereo_fusion -- the old hard-coded flags were
+      written blind and had never executed); gpu_flag_applied records
+      whether the GPU request could actually be applied. The E2E
+      driver (scripts/run_south_building_e2e.py --dense) ingests the
+      fused cloud through canonical ingest_fused_ply into the
+      content-addressed FileArtifactStore (round-trip verified in the
+      run record) and measures sparse-vs-dense nearest-neighbor
+      fidelity. Tests: tests/test_colmap_backend_dense.py (6, fake
+      COLMAP writing real output formats), test_dense_pipeline.py
+      updated for the probe contract -- 67 dense/backend tests green.
+
+      REAL DENSE RUN 2026-09-21 (run_20260921T164048_gpu.json, committed
+      32-photo south-building subset, COLMAP 4.2.0 CUDA): sparse 22/32
+      cameras, 5402 points, GT rotation median 0.176 deg (max 0.383,
+      zero outliers) -> dense 246,816 fused points (45.7x sparse),
+      patch_match_stereo 343.7 s + stereo_fusion 4.5 s (RTX 4050),
+      gpu_flag_applied=false (4.2 removed the option; recorded), fused
+      cloud ingested INSIDE the workspace lifetime into the
+      content-addressed store (artifact://7caea004..., resolved +
+      decoded + round-trip verified in the run record), sparse-vs-dense
+      nearest-neighbor median 3.8e-3 model units (p95 2.0e-2). Honesty:
+      outcome stays 'degraded' (registration partial, 22/32); the
+      dense cloud did NOT upgrade it. Two real defects were found by
+      this run and fixed red-first: (1) the orchestrator's provenance
+      stamp dropped dense fields (same loss class as the 2026-09-20
+      merge_report loss) -- regression test added; (2) the first run's
+      fused.ply died with the temp workspace (orphaned artifact by
+      construction) -- ingestion now happens in the backend inside the
+      workspace lifetime, no-store runs record 'NOT PERSISTED'
+      honestly.
   - id: P6-02
     name: evidence fusion (plural dense sources)
     status: DONE

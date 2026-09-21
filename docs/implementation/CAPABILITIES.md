@@ -16,6 +16,13 @@ JSON + persisted artifacts + report. Backend injection via
 `REALITY_TEST_BACKEND` supports deterministic offline runs.
 
 - SfM camera poses (COLMAP), metric scale from measurement priors
+- TRUE dense MVS (COLMAP patch_match_stereo → stereo_fusion): wired
+  as a backend continuation (`dense_mvs=True`) — runs in the same
+  workspace as sparse SfM, probes the binary's dense capability and
+  per-stage CLI options, parses fused.ply into canonical points, and
+  ingests the cloud through the content-addressed ArtifactStore into
+  WorldIR geometry with dense provenance. Real GPU dense run on the
+  committed real-photo dataset recorded 2026-09-21.
 - Monocular depth (MiDaS) → fused point cloud (provenance per view)
 - Poisson surface mesh from oriented fused points (CPU COLMAP
   mesher; auto depth/trim adaptation; camera-envelope outlier
@@ -43,7 +50,6 @@ excluded, tracked).
 
 ## Explicitly NOT capabilities yet
 
-- Dense MVS (`patch_match_stereo`) — CUDA-blocked on this machine
 - Sensor depth ingestion (16-bit PNG sidecars) — spec written
 - Time sync / VIO / cross-source registration — specs written
 - Multi-view object identity, tracking, materials — specs written

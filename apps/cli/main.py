@@ -444,6 +444,85 @@ def cmd_compile(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_city_compile(args: argparse.Namespace) -> int:
+    """OSM/GeoJSON files -> canonical evidence -> CityFeatures -> WorldIR.
+
+    Reuses the evidence layer (evidence.city_import: OBSERVED-provenance
+    EvidenceAssets, content-hash dedup, honest CorruptEvidenceError on
+    malformed input) and both feature bridges
+    (engine.compiler.osm_features / engine.compiler.geojson_features:
+    documented tag/property->kind table shared via classify_osm_tags;
+    unmapped tags and under-specified/non-polygon geometry are skipped
+    and recorded, never guessed) before compile_city_world produces the
+    WorldIR from the combined feature set. No separate ingestion path,
+    no fabricated geometry.
+    """
+    from evidence.city_import import CorruptEvidenceError, import_geojson, import_osm_xml
+    from evidence.packages import DeterministicPackageBuilder, EvidenceSource
+    from engine.compiler.osm_features import osm_records_to_city_features
+    from engine.compiler.geojson_features import geojson_records_to_city_features
+    from engine.compiler.city_compiler import compile_city_world
+
+    if not args.osm and not args.geojson:
+        _eprint("city-compile: at least one --osm or --geojson input is required")
+        return 1
+
+    builder = DeterministicPackageBuilder()
+    source = EvidenceSource(
+        source_id="src-city-compile", platform="external_map_data",
+        device="reality city-compile CLI",
+    )
+    import_reports: dict = {"osm": [], "geojson": []}
+    try:
+        for path in args.osm:
+            report = import_osm_xml(builder, source, path)
+            import_reports["osm"].append(report.to_dict())
+        for path in args.geojson:
+            report = import_geojson(builder, source, path)
+            import_reports["geojson"].append(report.to_dict())
+    except CorruptEvidenceError as exc:
+        _eprint(f"city-compile: {exc}")
+        return 1
+
+    package = builder.build("pkg-city-compile")
+    osm_records = [
+        asset.sensor_metadata for asset in package.all_assets()
+        if "osm" in asset.sensor_metadata
+        and asset.sensor_metadata["osm"].get("element_type") == "way"
+    ]
+    gis_records = [
+        asset.sensor_metadata for asset in package.all_assets()
+        if "gis" in asset.sensor_metadata
+    ]
+    osm_features, osm_compile_report = osm_records_to_city_features(osm_records)
+    gis_features, gis_compile_report = geojson_records_to_city_features(gis_records)
+    features = osm_features + gis_features
+
+    world = compile_city_world(features, name=args.name)
+
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    _save_world(world, str(out))
+
+    report = {
+        "imports": import_reports,
+        "osm_compile": osm_compile_report.to_dict(),
+        "geojson_compile": gis_compile_report.to_dict(),
+        "entities_compiled": len(world.entities),
+        "world": str(out),
+    }
+    report_path = args.report or str(out) + ".report.json"
+    Path(report_path).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+
+    print(f"compiled {len(world.entities)} entities "
+          f"({len(osm_compile_report.unmapped_kind) + len(gis_compile_report.unmapped_kind)} unmapped, "
+          f"{len(osm_compile_report.too_few_points) + len(gis_compile_report.unsupported_geometry)} "
+          f"skipped-geometry)")
+    print(f"world -> {out}")
+    print(f"report -> {report_path}")
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     world = _load_world(args.world)
     report = reality.validate(world)
@@ -812,6 +891,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_compile.add_argument("--no-depth", action="store_true", help="skip the depth stage")
     p_compile.add_argument("--no-mesh", action="store_true", help="skip surface reconstruction")
     p_compile.set_defaults(func=cmd_compile)
+
+    p_city_compile = sub.add_parser(
+        "city-compile",
+        help="OSM/GeoJSON files -> CityFeatures -> compiled WorldIR (no photo capture required)",
+    )
+    p_city_compile.add_argument("--osm", action="append", default=[], help="OSM XML extract path (repeatable)")
+    p_city_compile.add_argument("--geojson", action="append", default=[], help="GeoJSON file path (repeatable)")
+    p_city_compile.add_argument("-o", "--output", required=True, help="world JSON output path")
+    p_city_compile.add_argument("--report", default=None, help="report JSON path (default: <output>.report.json)")
+    p_city_compile.add_argument("--name", default="city", help="world/branch name (default: city)")
+    p_city_compile.set_defaults(func=cmd_city_compile)
 
     p_recon = sub.add_parser("reconstruct", help="evidence package -> reconstruction -> compiled WorldIR")
     p_recon.add_argument("package", help="package JSON produced by `ingest`")

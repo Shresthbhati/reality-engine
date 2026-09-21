@@ -864,10 +864,16 @@ tasks:
         and takes the MIN budget over member cells (weakest evidence
         bounds the group; tests/test_detail_roi.py, 4 tests).
     open: >-
-      PARTIAL, not DONE: local refinement does not yet consume
-      compute_tier (no ROI refinement backend exists); thresholds
-      (voxel size, curvature, GSD bands) untuned against real
-      datasets.
+      PARTIAL, not DONE: thresholds (voxel size, curvature, GSD bands)
+      untuned against real datasets; per-cell budgets reuse the
+      scene-level GSD measurement rather than per-cell re-measurement.
+      STALE NOTE CORRECTED 2026-09-21 (status reconciliation): this
+      previously said "local refinement does not yet consume
+      compute_tier (no ROI refinement backend exists)" -- FALSE as of
+      P7-06's refinement executor landing (perception/detail/
+      refinement.py:228 reads roi.budget.compute_tier and escalates
+      backends by tier; verified directly in code, not just docs).
+      See P7-06 for the refinement executor itself.
 
   - id: P7-06
     name: detail discovery + ROI generation + refinement executor
@@ -1313,10 +1319,40 @@ tasks:
       (terrain/roads/buildings/vegetation/water) -> WorldIR entities
       with real bounds -> CityJSON via the P16-01 exporter; a
       feature without honest geometry REFUSES at construction rather
-      than emitting an empty city object. Real-world evidence
-      ingestion (GIS/OSM/satellite/LiDAR inputs) and full
-      CityGML/3DCityDB output remain open -- the core translation
-      and refusal semantics are in place.
+      than emitting an empty city object. OSM evidence ingestion is
+      now wired end-to-end (2026-09-21):
+      engine/compiler/osm_features.py translates evidence/city_import.py's
+      OSM way records into CityFeature via a documented tag->kind
+      table (building/highway/natural=water/waterway/landuse=forest,wood/
+      power/man_made/amenity -> infrastructure); unmapped tags and
+      ways with <3 resolved points are skipped and recorded
+      (unmapped_kind, too_few_points), never guessed; height comes
+      only from the way's own height/building:levels tags. 16 new
+      tests (tests/test_osm_city_features.py) incl. a full
+      city_import -> osm_features -> compile_city_world pipeline
+      verified deterministic. CLI wiring landed same day:
+      `reality city-compile --osm <path> [--geojson <path>] -o <world.json>`
+      (apps/cli/main.py cmd_city_compile) reaches the whole stack from
+      the command line -- honest CorruptEvidenceError exit 1 on
+      malformed input, JSON report with import + compile stats
+      alongside the WorldIR. 5 CLI tests
+      (tests/test_cli_city_compile.py) incl. a real subprocess-style
+      `python -m apps.cli.main` invocation. Satellite/aerial/LiDAR
+      ingestion and full CityGML/3DCityDB output remain open.
+      GeoJSON compilation closed same day:
+      engine/compiler/geojson_features.py mirrors osm_features.py
+      (reuses classify_osm_tags directly on GeoJSON `properties` --
+      one shared tag/property->kind table, not a second scheme);
+      Polygon features compile, non-Polygon geometry and unmapped
+      properties are skipped and recorded (unsupported_geometry,
+      unmapped_kind), never guessed. `reality city-compile` now
+      combines OSM + GeoJSON features into one WorldIR
+      (osm_compile + geojson_compile stats in the report). 9 new
+      library tests (tests/test_geojson_city_features.py) + 3 new CLI
+      tests proving Polygon compilation and combined-source runs;
+      manually verified via a real `python -m apps.cli.main
+      city-compile --osm ... --geojson ...` process run (2 entities
+      from 2 different sources into one world).
     scope: >
       Terrain/roads/buildings/vegetation/infrastructure/water from
       Reality Engine evidence + GIS + OSM + satellite + aerial +

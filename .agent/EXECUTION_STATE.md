@@ -1369,3 +1369,35 @@ Closed canonical end-to-end integration proof and release hardening across all s
 3. **Frontend Production Build**:
    - `npm run build`: **Compiled successfully in 12.2s**, TypeScript passed in 10.2s, all 12/12 routes generated statically and dynamically without errors.
 
+---
+
+## 2026-09-21 — Dense reconstruction verified (DENSE_RECONSTRUCTION_VERIFIED_READY)
+
+**Critical priority closed**: the real dense MVS path is Python-wired,
+executed for real, and produces canonical persisted artifacts.
+
+- Committed `d3dbf86` + main merge `68ac162`, pushed; PR #79 (all 8 CI checks green).
+- `ColmapReconstructionBackend(dense_mvs=True, artifact_store=…)`:
+  probe-before-compute, in-workspace dense continuation, canonical
+  ingestion INSIDE workspace lifetime (first real run proved a
+  fused.ply left in the temp dir dies with it — orphaned artifact),
+  dense failure raises, no-store runs record NOT PERSISTED.
+- CLI drift: COLMAP 4.2 dense flags probed per-stage from --help
+  (old hard-coded flags were written blind and had never executed);
+  gpu_flag_applied recorded.
+- Orchestrator stamp no longer drops merge/dense diagnostics
+  (regression-tested; same loss class as 2026-09-20 merge_report loss).
+- REAL run run_20260921T164048_gpu.json (32-photo south-building,
+  COLMAP 4.2.0 CUDA): sparse 22/32 cams 5,402 pts GT 0.176 deg ->
+  dense 246,816 pts, artifact://7caea004 verified round-trip,
+  sparse-dense NN median 3.8e-3. Outcome honestly degraded.
+- Tests: test_colmap_backend_dense.py (7 new), dense cluster 129 green.
+- Registry/docs: dense_mvs maturity PARTIAL -> IMPLEMENTED; stale
+  CUDA-blocked claims removed.
+- Handoff: .handoffs/DENSE_RECONSTRUCTION_VERIFIED_READY.md
+  (next: Antigravity binds artifact_uri -> WorldStore geometry;
+  Studio surfaces dense_report).
+- Next gap: exercise the vertical-slice dense stage
+  (_dense_mvs_stage) against the same real data so the fused cloud
+  also flows through cross-source fusion; metric scale anchoring for
+  the south-building world.

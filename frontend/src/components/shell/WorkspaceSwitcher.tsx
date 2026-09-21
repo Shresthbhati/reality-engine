@@ -9,7 +9,6 @@ import {
   Box,
   Zap,
   Building2,
-  Activity,
   Cpu,
   Settings,
   Workflow,
@@ -35,7 +34,6 @@ const TABS: TabItem[] = [
 
   // ── 2. Downstream Consumers (Consuming WorldIR)
   { id: 'city', label: 'City Builder', group: 'DOWNSTREAM', icon: <Building2 className="w-3.5 h-3.5" /> },
-  { id: 'simulation', label: 'Simulation', group: 'DOWNSTREAM', icon: <Activity className="w-3.5 h-3.5" /> },
 
   // ── 3. System & Diagnostics
   { id: 'diagnostics', label: 'Diagnostics', group: 'SYSTEM', icon: <Cpu className="w-3.5 h-3.5" /> },

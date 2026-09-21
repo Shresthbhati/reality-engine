@@ -366,29 +366,6 @@ export interface LogEntry {
   data?: Record<string, unknown>;
 }
 
-// ─── Simulation ───────────────────────────────────────────────────────────────
-
-export type SimulationStatus =
-  | "IDLE"
-  | "CONFIGURING"
-  | "RUNNING"
-  | "PAUSED"
-  | "COMPLETE"
-  | "FAILED";
-
-export interface SimulationScenario {
-  id: string;
-  name: string;
-  worldId: WorldId;
-  type: string;           // e.g. "FLOOD", "TRAFFIC", "STRUCTURAL"
-  parameters: Record<string, number | string | boolean>;
-  durationSeconds: number;
-  agentCount?: number;
-  status: SimulationStatus;
-  currentTimeSec: number;
-  metrics: Record<string, number>;
-}
-
 // ─── UI State ─────────────────────────────────────────────────────────────────
 
 export type DensityMode = "comfortable" | "compact" | "dense";
@@ -401,7 +378,6 @@ export type WorkspaceId =
   | "build"
   | "city"
   | "evidence"
-  | "simulation"
   | "diagnostics"
   | "settings";
 

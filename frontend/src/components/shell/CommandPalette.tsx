@@ -399,7 +399,6 @@ export default function CommandPalette() {
       makeWorkspaceSwitcher('evidence',    'Switch to Evidence Investigation Console'),
       makeWorkspaceSwitcher('benchmarks',  'Switch to Benchmark Explorer (40 Targets)'),
       makeWorkspaceSwitcher('city',        'Switch to City Builder (Downstream WorldIR)'),
-      makeWorkspaceSwitcher('simulation',  'Switch to Simulation Control Room'),
       makeWorkspaceSwitcher('diagnostics', 'Switch to Engine Hardware Diagnostics'),
       makeWorkspaceSwitcher('settings',    'Switch to Workstation Settings & Standards'),
     ],

@@ -16,7 +16,6 @@ import type {
   SelectionState,
   WorkspaceId,
   ComputeMetrics,
-  SimulationScenario,
   LogEntry,
   DensityMode,
   MobileSensorStatus,
@@ -733,10 +732,6 @@ interface RealityEngineStore {
   // ── Compute and Diagnostics
   computeMetrics: ComputeMetrics;
 
-  // ── Simulation (Downstream Consumer)
-  activeScenario: SimulationScenario | null;
-  simulationStatus: string;
-
   // ── Logs
   logs: LogEntry[];
 
@@ -991,8 +986,6 @@ export const useREStore = create<RealityEngineStore>()(
       networkIn: 0,
       networkOut: 0,
     },
-    activeScenario: null,
-    simulationStatus: "IDLE",
     logs: [
       { id: "log-1", level: "INFO", timestamp: "10:14:02", module: "COLMAP", message: "Bundle adjustment converged with 0.62 px mean reprojection error." },
       { id: "log-2", level: "INFO", timestamp: "10:14:18", module: "OpenMVS", message: "Dense point cloud fused: 4,360,000 spatial samples." },

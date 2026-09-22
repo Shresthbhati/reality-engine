@@ -5,7 +5,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import StatusBadge from "@/components/ui/StatusBadge";
 import EmptyState from "@/components/ui/EmptyState";
 import type { AnalysisRow } from "@/lib/types";
-import { getAnalysis, resultsForAnalysis } from "@/lib/data";
+import { getAnalysisDetail, getResults, isApiError, type ResultRow } from "@/lib/api";
 
 const STAGES = ["INPUTS", "CONFIGURATION", "VALIDATION", "RUN", "SESSION", "RESULT"] as const;
 
@@ -15,13 +15,20 @@ export default async function AnalysisDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const analysis = getAnalysis(id);
+  const { row: analysis, resource } = await getAnalysisDetail(id);
 
   if (!analysis) {
-    notFound();
+    return (
+      <div className="flex flex-col h-full">
+        <PageHeader title="Analysis" />
+        <div className="flex-1 flex items-center justify-center px-6 py-6">
+          <EmptyState icon={FileText} message={resource.reason} />
+        </div>
+      </div>
+    );
   }
 
-  const results = resultsForAnalysis(analysis.id);
+  const { items: results } = await getResults();
 
   return (
     <div className="flex flex-col h-full">

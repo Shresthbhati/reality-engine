@@ -1,14 +1,14 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Camera, Plus, Search } from "lucide-react";
+import { Camera, Plus, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
 import type { ProcessingState } from "@/lib/types";
-import { SESSIONS } from "@/lib/data";
+import { isApiError, listSessions, type SessionRow } from "@/lib/api";
 
 const FILTERS: Array<{ id: ProcessingState | "ALL"; label: string }> = [
   { id: "ALL", label: "All" },
@@ -37,8 +37,30 @@ function SessionsPageInner() {
     isProcessingState(stateParam) ? stateParam : "ALL",
   );
   const [query, setQuery] = useState("");
+  const [sessions, setSessions] = useState<SessionRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const rows = SESSIONS.filter((s) => (filter === "ALL" || s.state === filter))
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { rows } = await listSessions();
+      setSessions(rows);
+    } catch (err) {
+      setSessions(null);
+      setError(isApiError(err) ? err.describe() : (err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const rows = (sessions ?? [])
+    .filter((s) => filter === "ALL" || s.state === filter)
     .filter((s) => !query || s.name.toLowerCase().includes(query.toLowerCase()));
 
   return (
@@ -90,22 +112,44 @@ function SessionsPageInner() {
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {error && (
+        <div
+          className="mx-6 mt-4 flex items-start gap-2 rounded-md px-3 py-2 text-sm"
+          style={{ background: "var(--error-subtle)", color: "var(--error)" }}
+          role="alert"
+        >
+          <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button type="button" onClick={() => void load()} className="flex items-center gap-1 text-xs font-medium shrink-0">
+            <RefreshCw className="w-3 h-3" /> Retry
+          </button>
+        </div>
+      )}
+
+      {loading && sessions === null ? (
+        <div className="flex-1 flex items-center justify-center py-24">
+          <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
+            Loading Sessions…
+          </p>
+        </div>
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={Camera}
           message={
-            SESSIONS.length === 0
-              ? "No Sessions yet."
-              : "No Sessions match this filter."
+            sessions === null
+              ? "Sessions could not be loaded."
+              : sessions.length === 0
+                ? "No Sessions yet."
+                : "No Sessions match this filter."
           }
-          actionLabel={SESSIONS.length === 0 ? "Create Session" : undefined}
-          actionHref={SESSIONS.length === 0 ? "/sessions/new" : undefined}
+          actionLabel={sessions !== null && sessions.length === 0 ? "Create Session" : undefined}
+          actionHref={sessions !== null && sessions.length === 0 ? "/sessions/new" : undefined}
         />
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left border-b" style={{ borderColor: "var(--border)" }}>
-              {["Session", "State", "World", "Location", "Captured", "Duration"].map((h) => (
+              {["Session", "State", "World", "Location", "Evidence", "Captured"].map((h) => (
                 <th key={h} className="px-6 py-2 font-medium" style={{ color: "var(--text-tertiary)" }}>
                   {h}
                 </th>
@@ -124,16 +168,16 @@ function SessionsPageInner() {
                   <StatusBadge state={s.state} />
                 </td>
                 <td className="px-6 py-2.5" style={{ color: "var(--text-secondary)" }}>
-                  {s.worldName ?? "Standalone"}
+                  {s.worldId ? (s.worldName ?? s.worldId) : "Standalone"}
                 </td>
                 <td className="px-6 py-2.5" style={{ color: "var(--text-secondary)" }}>
-                  {s.location ?? "—"}
+                  {s.location ?? "No location"}
+                </td>
+                <td className="px-6 py-2.5 font-mono-num" style={{ color: "var(--text-secondary)" }}>
+                  {s.evidenceCount}
                 </td>
                 <td className="px-6 py-2.5 font-mono-num" style={{ color: "var(--text-secondary)" }}>
                   {s.capturedAt ?? "—"}
-                </td>
-                <td className="px-6 py-2.5 font-mono-num" style={{ color: "var(--text-secondary)" }}>
-                  {s.durationSec != null ? `${Math.round(s.durationSec / 60)}m` : "—"}
                 </td>
               </tr>
             ))}

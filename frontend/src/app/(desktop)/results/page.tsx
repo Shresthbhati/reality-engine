@@ -2,18 +2,38 @@ import Link from "next/link";
 import { FileText } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import EmptyState from "@/components/ui/EmptyState";
-import { RESULTS } from "@/lib/data";
+import { useEffect, useState } from "react";
+import { getResults, isApiError, type UnsupportedResource } from "@/lib/api";
+import type { ResultRow } from "@/lib/types";
 
 export default function ResultsPage() {
+  const [rows, setRows] = useState<ResultRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [resource, setResource] = useState<UnsupportedResource | null>(null);
+
+  useEffect(() => {
+    getResults()
+      .then((d) => { setRows(d.items); setResource(d.resource); })
+      .catch((e) => setError(isApiError(e) ? e.describe() : String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader title="Results" />
 
-      {RESULTS.length === 0 ? (
-        <EmptyState icon={FileText} message="Results will appear here after Analysis completes." />
+      {loading ? (
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading…</p>
+      ) : error ? (
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--error)" }}>{error}</p>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={FileText} message={
+          resource?.reason ?? "Results will appear here after Analysis completes."
+        } />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-6 overflow-y-auto">
-          {RESULTS.map((r) => (
+          {rows.map((r) => (
             <Link
               key={r.id}
               href={`/results/${r.id}`}

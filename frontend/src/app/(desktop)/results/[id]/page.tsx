@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { MapPin } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import WorldMap from "@/components/map/WorldMap";
-import { getResult, getSession, getAnalysis, evidenceForSession } from "@/lib/data";
+import { getResultDetail, getSession, getEvidence, listEvidence, isApiError } from "@/lib/api";
 import type { ResultRow, SessionRow, AnalysisRow } from "@/lib/types";
 
 export default async function ResultDetailPage({
@@ -12,15 +12,26 @@ export default async function ResultDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const result = getResult(id);
+  const { row: result, resource } = await getResultDetail(id);
 
   if (!result) {
-    notFound();
+    return (
+      <div className="flex flex-col h-full">
+        <PageHeader title="Result" />
+        <div className="flex-1 flex items-center justify-center px-6 py-6">
+          <EmptyState icon={MapPin} message={resource.reason} />
+        </div>
+      </div>
+    );
   }
 
   const hasLocation = result.lat != null && result.lng != null;
-  const session = result.sessionId ? getSession(result.sessionId) : undefined;
-  const analysis = result.analysisId ? getAnalysis(result.analysisId) : undefined;
+  let session: SessionRow | undefined;
+  if (result.sessionId) {
+    try { session = (await getSession(result.sessionId)).row; }
+    catch (e) { if (isApiError(e) && e.code === "not_found") session = undefined; else throw e; }
+  }
+  const analysis: AnalysisRow | undefined = undefined;
   const worldId = hasLocation && session?.worldId ? session.worldId : null;
 
   return (
@@ -158,7 +169,8 @@ function ProvenanceChain({
   }
 
   if (session) {
-    const count = evidenceForSession(session.id).length;
+    let count = 0;
+    if (session) { count = (await listEvidence({ sessionId: session.id })).rows.length; }
     segments.push({ label: `${count} Evidence item${count === 1 ? "" : "s"}` });
   }
 

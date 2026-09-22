@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
 import { EVIDENCE_TYPE_ICONS, humanizeEvidenceType, EvidenceStatusPill } from "@/components/ui/EvidenceCard";
-import { getEvidence } from "@/lib/data";
+import { getEvidence, isApiError } from "@/lib/api";
+import type { EvidenceRow } from "@/lib/types";
 
 export default async function EvidenceDetailPage({
   params,
@@ -10,10 +11,12 @@ export default async function EvidenceDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const evidence = getEvidence(id);
-
-  if (!evidence) {
-    notFound();
+  let evidence: EvidenceRow;
+  try {
+    evidence = (await getEvidence(id)).row;
+  } catch (e) {
+    if (isApiError(e) && e.code === "not_found") notFound();
+    throw e;
   }
 
   const Icon = EVIDENCE_TYPE_ICONS[evidence.type];

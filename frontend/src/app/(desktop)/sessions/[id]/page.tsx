@@ -4,7 +4,7 @@ import { Map } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import StatusBadge from "@/components/ui/StatusBadge";
 import SessionTimeline from "@/components/ui/SessionTimeline";
-import { getSession, evidenceForSession, analysisForSession, resultsForAnalysis } from "@/lib/data";
+import { getSession, listEvidence, isApiError, unsupportedForAnalysis } from "@/lib/api";
 
 export default async function SessionDetailPage({
   params,
@@ -12,16 +12,19 @@ export default async function SessionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = getSession(id);
+  let session;
+  try { session = (await getSession(id)).row; }
+  catch (e) { if (isApiError(e) && e.code === "not_found") notFound(); throw e; }
 
-  if (!session) {
-    notFound();
-  }
+  let evidenceList: { id: string; name: string; type: string; processingState?: string }[] = [];
+  let evidenceError: string | null = null;
+  try { evidenceList = (await listEvidence({ sessionId: session.id })).rows; }
+  catch (e) { evidenceError = isApiError(e) ? e.describe() : String(e); }
 
-  const evidence = evidenceForSession(session.id);
-  const analysis = analysisForSession(session.id);
-  // A Session's Results are reached via its Analyses — ResultRow has no direct sessionId.
-  const results = analysis.flatMap((a) => resultsForAnalysis(a.id));
+  // Analysis API is not yet supported — surface an unsupported resource empty state.
+  const analysisResource = unsupportedForAnalysis();
+  const analysis: never[] = [];
+  const results: never[] = [];
 
   return (
     <div className="flex flex-col h-full">
@@ -77,7 +80,7 @@ export default async function SessionDetailPage({
           </InfoSection>
 
           <InfoSection title="Evidence">
-            <InfoRow label="Items" value={String(session.evidenceCount)} />
+            <InfoRow label="Items" value={String(evidenceList.length)} />
           </InfoSection>
         </aside>
       </div>
@@ -96,13 +99,13 @@ export default async function SessionDetailPage({
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-tertiary)" }}>
           Evidence
         </h3>
-        {evidence.length === 0 ? (
+        {evidenceList.length === 0 || evidenceError ? (
           <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
-            No Evidence recorded for this Session.
+            {evidenceError ?? "No Evidence recorded for this Session."}
           </p>
         ) : (
           <div className="flex flex-col gap-1.5">
-            {evidence.map((e) => (
+            {evidenceList.map((e) => (
               <Link
                 key={e.id}
                 href={`/evidence/${e.id}`}
@@ -126,27 +129,11 @@ export default async function SessionDetailPage({
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-tertiary)" }}>
           Analysis
         </h3>
-        {analysis.length === 0 ? (
-          <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
-            No Analysis has been run against this Session.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {analysis.map((a) => (
-              <Link
-                key={a.id}
-                href={`/analysis/${a.id}`}
-                className="flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors hover:opacity-80"
-                style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}
-              >
-                <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                  {a.name}
-                </span>
-                <StatusBadge state={a.state} />
-              </Link>
-            ))}
-          </div>
-        )}
+        <EmptyState
+          icon={FileText}
+          message={analysisResource.reason}
+          actionLabel="Unsupported"
+        />
       </div>
 
       <div className="shrink-0 border-t px-6 py-4" style={{ borderColor: "var(--border)" }}>

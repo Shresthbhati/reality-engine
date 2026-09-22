@@ -1,18 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
-import { SESSIONS } from "@/lib/data";
+import { listSessions, isApiError } from "@/lib/api";
+import type { SessionRow } from "@/lib/types";
 
 const METHODS = ["Structural inspection", "Environmental analysis", "Coverage validation"];
 
 export default function CreateAnalysisPage() {
-  const [sessionId, setSessionId] = useState(SESSIONS[0]?.id ?? "");
+  const [sessionId, setSessionId] = useState("");
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listSessions()
+      .then((d) => {
+        setSessions(d.rows);
+        setSessionId((prev) => prev || (d.rows[0]?.id ?? ""));
+      })
+      .catch((e) => setSessionsError(isApiError(e) ? e.describe() : String(e)));
+  }, []);
   const [method, setMethod] = useState(METHODS[0]);
 
-  const selectedSession = SESSIONS.find((s) => s.id === sessionId) ?? null;
+  const selectedSession = sessions.find((s) => s.id === sessionId) ?? null;
   const hasEvidence = selectedSession ? selectedSession.evidenceCount > 0 : false;
   const hasLocation = selectedSession ? selectedSession.lat !== null && selectedSession.lng !== null : false;
 
@@ -26,7 +38,7 @@ export default function CreateAnalysisPage() {
         <Field
           label="Session"
           hint={
-            SESSIONS.length === 0 ? (
+            sessions.length === 0 ? (
               <>
                 Create a Session first to run Analysis against it.{" "}
                 <Link href="/sessions/new" className="underline" style={{ color: "var(--accent)" }}>
@@ -39,13 +51,13 @@ export default function CreateAnalysisPage() {
           <select
             value={sessionId}
             onChange={(e) => setSessionId(e.target.value)}
-            disabled={SESSIONS.length === 0}
+            disabled={sessions.length === 0}
             className="input"
           >
-            {SESSIONS.length === 0 ? (
+            {sessions.length === 0 ? (
               <option>No Sessions available</option>
             ) : (
-              SESSIONS.map((s) => (
+              sessions.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
@@ -88,7 +100,7 @@ export default function CreateAnalysisPage() {
 
         <button
           type="submit"
-          disabled={SESSIONS.length === 0 || !selectedSession || !hasEvidence}
+          disabled={sessions.length === 0 || !selectedSession || !hasEvidence || !!sessionsError}
           className="h-9 px-4 rounded-md text-sm font-medium self-start transition-colors disabled:opacity-40"
           style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
         >

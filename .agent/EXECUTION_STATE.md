@@ -1401,3 +1401,25 @@ executed for real, and produces canonical persisted artifacts.
   (_dense_mvs_stage) against the same real data so the fused cloud
   also flows through cross-source fusion; metric scale anchoring for
   the south-building world.
+
+## Session 2026-09-22 (PR #86: stairs + per-cell GSD)
+
+- P1 perception breadth: measured stair detector
+  (perception/architecture/stairs.py) — z-histogram level bands,
+  rise/going rhythm CV gates, ascent-direction = horizontal direction
+  correlated with z (PCA width-axis bug caught by fixture), honest
+  StairFitRefused on noise/ramp/irregular rhythm; wired observation ->
+  union-find -> WorldIR promotion. 12 tests.
+- P2 per-cell GSD: EvidenceQualityReport.per_point_gsd_mm (finest
+  observation per track id); discovery._cell_budget medians the
+  cell's OWN measured GSDs, scene median only as all-unprojectable
+  fallback. Near/far cells in one scene now get different budgets.
+  3 new tests (discovery total 10).
+- Verified: detail cluster 114, architecture/perception cluster 103,
+  dense/backend/city cluster 109 — all green; TASKS.yaml P7-03/P7-05
+  updated and parses; PR #86 created, all 8 CI checks green.
+- Pre-existing failure NOT touched: tests/test_reconstruction_batch.py
+  runtime regression (9.9 s vs 5.0 s bound) — reproduced with my
+  changes stashed; owned by whichever agent added the large fixture.
+- Next gap: columns/beams/windows/roofs detectors (P1); real-capture
+  threshold tuning for GSD bands and stair rhythm gates (P2/P7-05/06).

@@ -5,97 +5,14 @@ import type { SessionRow, WorldRow, EvidenceRow, AnalysisRow, ResultRow, ReportR
  * These are the single real (empty) sources every screen reads from —
  * never duplicate a list literal in a page component.
  */
-export const SESSIONS: SessionRow[] = [
-  {
-    id: "test-verify",
-    name: "Verify Session",
-    state: "COMPLETE",
-    worldId: "test-world",
-    worldName: "Verify World",
-    location: "Chennai, Tamil Nadu",
-    lat: 13.0827,
-    lng: 80.2707,
-    coverageKm2: 1.8,
-    capturedAt: "21 Sep 2026 · 14:12",
-    durationSec: 1122,
-    evidenceCount: 1,
-    stages: [{ label: "Session created", timestamp: "14:12", status: "COMPLETE" }],
-  },
-];
-export const WORLDS: WorldRow[] = [
-  {
-    id: "test-world",
-    name: "Verify World",
-    location: "Chennai, Tamil Nadu",
-    lat: 13.0827,
-    lng: 80.2707,
-    coverageKm2: 12.8,
-    sessionCount: 1,
-    evidenceCount: 1,
-    timeRangeStart: "18 Sep 2026",
-    timeRangeEnd: "21 Sep 2026",
-    updatedAt: "21 Sep 2026 · 15:00",
-  },
-];
-export const EVIDENCE: EvidenceRow[] = [
-  {
-    id: "test-evidence",
-    name: "Exterior Wall",
-    type: "IMAGE",
-    location: "Chennai, Tamil Nadu",
-    sessionId: "test-verify",
-    sessionName: "Verify Session",
-    worldId: "test-world",
-    worldName: "Verify World",
-    capturedAt: "21 Sep 2026 · 14:42",
-    uploadedAt: "21 Sep 2026 · 14:43",
-    processedAt: "21 Sep 2026 · 14:45",
-    processingState: "PROCESSED",
-  },
-];
-export const ANALYSIS: AnalysisRow[] = [
-  {
-    id: "test-analysis",
-    name: "Structural inspection",
-    type: "Structural inspection",
-    state: "COMPLETE",
-    currentStage: null,
-    sessionId: "test-verify",
-    sessionName: "Verify Session",
-    startedAt: "21 Sep 2026 · 14:20",
-    completedAt: "21 Sep 2026 · 14:38",
-    owner: "Shresth Bhati",
-  },
-];
-export const RESULTS: ResultRow[] = [
-  {
-    id: "test-result",
-    title: "Structural Change",
-    type: "Structural",
-    finding: "Minor deflection detected in east wall panel.",
-    sessionId: "test-verify",
-    sessionName: "Verify Session",
-    analysisId: "test-analysis",
-    location: "Chennai, Tamil Nadu",
-    lat: 13.0827,
-    lng: 80.2707,
-    generatedAt: "21 Sep 2026 · 15:02",
-  },
-];
+export const SESSIONS: SessionRow[] = [];
+export const WORLDS: WorldRow[] = [];
+export const EVIDENCE: EvidenceRow[] = [];
+export const ANALYSIS: AnalysisRow[] = [];
+export const RESULTS: ResultRow[] = [];
 export const REPORTS: ReportRow[] = [];
-export const PLACES: PlaceRow[] = [
-  { id: "test-place", name: "North Corridor", worldId: "test-world", lat: 13.084, lng: 80.271 },
-];
-export const WORLD_VERSIONS: WorldVersionRow[] = [
-  {
-    id: "test-version",
-    worldId: "test-world",
-    label: "Version 2",
-    createdAt: "21 Sep 2026 · 15:00",
-    changeSummary: "Added Verify Session",
-    isCurrent: true,
-  },
-];
+export const PLACES: PlaceRow[] = [];
+export const WORLD_VERSIONS: WorldVersionRow[] = [];
 
 export function getSession(id: string): SessionRow | undefined {
   return SESSIONS.find((s) => s.id === id);

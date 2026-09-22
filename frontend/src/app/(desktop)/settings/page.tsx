@@ -21,11 +21,7 @@ function readReduceMotion(): boolean {
 }
 
 export default function SettingsPage() {
-  const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    setReduceMotion(readReduceMotion());
-  }, []);
+  const [reduceMotion, setReduceMotion] = useState(readReduceMotion);
 
   const toggleReduceMotion = () => {
     const next = !reduceMotion;

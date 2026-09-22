@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from perception.architecture.beams import BeamFit
+from perception.architecture.columns import ColumnFit
 from perception.architecture.stairs import StaircaseFit
 from perception.architecture.parametric import (
     CircleFit,
@@ -142,6 +144,16 @@ def _position_of(fit) -> Point3:
         return fit.center
     if isinstance(fit, StaircaseFit):
         return fit.position
+    if isinstance(fit, ColumnFit):
+        cyl = fit.cylinder
+        t_mid = 0.5 * (cyl.height_min_m + cyl.height_max_m)
+        return (
+            cyl.axis_point[0] + cyl.axis[0] * t_mid,
+            cyl.axis_point[1] + cyl.axis[1] * t_mid,
+            cyl.axis_point[2] + cyl.axis[2] * t_mid,
+        )
+    if isinstance(fit, BeamFit):
+        return fit.position
     raise ValueError(f"unsupported fit type {type(fit).__name__}")
 
 
@@ -196,18 +208,19 @@ def build_component_observations(
     reg = registry or get_default_registry()
     observations: List[ComponentObservation] = []
     for segment_ids, fit, evidence_ids in fitted_segments:
-        if isinstance(fit, StaircaseFit):
-            # Self-classifying fit: a measured stair rhythm proposes
-            # exactly one class. Gates were applied at fit time (a
-            # refused rhythm raised rather than producing geometry).
+        if isinstance(fit, (StaircaseFit, ColumnFit, BeamFit)):
+            # Self-classifying fit: a measured stair rhythm / vertical
+            # member / horizontal prism proposes exactly one class.
+            # Gates were applied at fit time (a refused structure
+            # raised rather than producing geometry).
             observations.append(ComponentObservation(
                 segment_id="+".join(segment_ids),
-                arch_class="stairs",
+                arch_class=fit.kind,
                 fit=fit,
                 evidence_ids=tuple(sorted(set(evidence_ids))),
                 confidence=fit.confidence,
                 accepted=True,
-                position=fit.position,
+                position=_position_of(fit),
             ))
             continue
         kind = _kind_of(fit)

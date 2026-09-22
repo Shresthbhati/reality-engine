@@ -23,3 +23,5 @@ datasets/*/
 !datasets/south_building/MANIFEST.json
 !datasets/south_building/runs/
 !datasets/south_building/runs/*
+
+data/

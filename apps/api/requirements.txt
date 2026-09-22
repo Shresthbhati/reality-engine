@@ -1,0 +1,7 @@
+# Application API service (FastAPI) — install on top of base requirements
+fastapi
+uvicorn
+sqlalchemy>=2.0
+aiosqlite
+python-multipart
+httpx

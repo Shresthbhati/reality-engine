@@ -9,7 +9,7 @@ import WorldInspector from "@/components/ui/WorldInspector";
 import StatusBadge from "@/components/ui/StatusBadge";
 import EmptyState from "@/components/ui/EmptyState";
 import ActivityFeed from "@/components/ui/ActivityFeed";
-import { getActivity } from "@/lib/activity";
+import { getActivity, type ActivityEvent } from "@/lib/activity";
 import type {
   AnalysisRow,
   EvidenceRow,
@@ -47,6 +47,8 @@ interface WorldWorkspaceClientProps {
   versions: WorldVersionRow[];
   results: ResultRow[];
   analysis: AnalysisRow[];
+  /** True when a secondary collection could not be loaded from the API. */
+  partial?: boolean;
 }
 
 export default function WorldWorkspaceClient({
@@ -57,6 +59,7 @@ export default function WorldWorkspaceClient({
   versions,
   results,
   analysis,
+  partial = false,
 }: WorldWorkspaceClientProps) {
   const [nav, setNav] = useState<(typeof NAV)[number]>("Overview");
   const [bottomTab, setBottomTab] = useState<(typeof BOTTOM_TABS)[number]>("Activity");
@@ -70,11 +73,17 @@ export default function WorldWorkspaceClient({
   });
 
   const mapRef = useRef<MapLibreMap | null>(null);
+  const [worldActivity, setWorldActivity] = useState<ActivityEvent[]>([]);
 
-  // The map only stays mounted while the user is on Overview/Places (the only
-  // tabs that render it). Once it unmounts, WorldMap's own effect calls
-  // map.remove(); clear our copy of the reference so we never call a method
-  // on a removed map instance from the Layers tab's checkboxes.
+  useEffect(() => {
+    const relevantHrefs = new Set([
+      ...sessions.map((s) => `/sessions/${s.id}`),
+      ...evidence.map((e) => `/evidence/${e.id}`),
+      ...analysis.map((a) => `/analysis/${a.id}`),
+      ...results.map((r) => `/results/${r.id}`),
+    ]);
+    getActivity().then((events) => setWorldActivity(events.filter((e) => relevantHrefs.has(e.href))));
+  }, []);
   useEffect(() => {
     if (nav !== "Overview" && nav !== "Places") {
       mapRef.current = null;
@@ -144,14 +153,6 @@ export default function WorldWorkspaceClient({
     mapRef.current?.flyTo({ center: [lng, lat], zoom: 12 });
   }, []);
 
-  const relevantHrefs = new Set<string>([
-    ...sessions.map((s) => `/sessions/${s.id}`),
-    ...evidence.map((e) => `/evidence/${e.id}`),
-    ...analysis.map((a) => `/analysis/${a.id}`),
-    ...results.map((r) => `/results/${r.id}`),
-  ]);
-  const worldActivity = getActivity().filter((e) => relevantHrefs.has(e.href));
-
   const mapEl = (
     <WorldMap
       center={world.lat != null && world.lng != null ? [world.lng, world.lat] : undefined}
@@ -178,6 +179,17 @@ export default function WorldWorkspaceClient({
           <span>{world.evidenceCount} Evidence</span>
         </div>
       </div>
+
+      {partial && (
+        <div
+          className="px-6 py-2 text-xs border-b"
+          style={{ background: "var(--error-subtle)", color: "var(--error)", borderColor: "var(--border)" }}
+          role="status"
+        >
+          Some collections for this World could not be loaded from the Reality Engine API. What is shown is complete; the
+          rest is unavailable, not empty by design.
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0">
         {/* World nav */}

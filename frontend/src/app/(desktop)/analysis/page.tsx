@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus, Search, Workflow } from "lucide-react";
+import { Plus, Search, RefreshCw, TriangleAlert, Workflow } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
 import type { ProcessingState } from "@/lib/types";
-import { ANALYSIS } from "@/lib/data";
+import { getAnalysis, isApiError, type AnalysisRow } from "@/lib/api";
+
 
 const FILTERS: Array<{ id: ProcessingState | "ALL"; label: string }> = [
   { id: "ALL", label: "All" },
@@ -20,9 +21,22 @@ export default function AnalysisPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("ALL");
   const [query, setQuery] = useState("");
 
-  const rows = ANALYSIS.filter((a) => filter === "ALL" || a.state === filter).filter(
-    (a) => !query || a.name.toLowerCase().includes(query.toLowerCase())
-  );
+      const [rows, setRows] = useState<AnalysisRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    getAnalysis()
+      .then((d) => setRows(d.items as AnalysisRow[]))
+      .catch((e) => setError(isApiError(e) ? e.describe() : String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = rows.filter(
+    (a) => filter === "ALL" || a.state === filter,
+  ).filter((a) => !query || a.name.toLowerCase().includes(query.toLowerCase()));
 
   return (
     <div className="flex flex-col h-full">
@@ -73,7 +87,11 @@ export default function AnalysisPage() {
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {loading ? (
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading…</p>
+      ) : error ? (
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--error)" }}>{error}</p>
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={Workflow}
           message="No Analysis has been run yet. Analysis needs a Session or Evidence to work from."
@@ -92,7 +110,7 @@ export default function AnalysisPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((a) => (
+            {filtered.map((a) => (
               <tr key={a.id} className="border-b" style={{ borderColor: "var(--border-subtle)" }}>
                 <td className="px-6 py-2.5">
                   <Link href={`/analysis/${a.id}`} className="font-medium hover:underline" style={{ color: "var(--text-primary)" }}>

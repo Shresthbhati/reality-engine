@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import ActivityFeed from "@/components/ui/ActivityFeed";
-import { getActivity, type ActivityType } from "@/lib/activity";
+import { getActivity, type ActivityType, type ActivityEvent } from "@/lib/activity";
 
 const FILTERS: Array<{ id: ActivityType | "ALL"; label: string }> = [
   { id: "ALL", label: "All" },
@@ -17,7 +17,11 @@ const FILTERS: Array<{ id: ActivityType | "ALL"; label: string }> = [
 
 export default function ActivityPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("ALL");
-  const events = getActivity().filter((e) => filter === "ALL" || e.type === filter);
+  const [events, setEvents] = useState<ActivityEvent[]>([]);
+
+  useEffect(() => {
+    getActivity().then((rows) => setEvents(rows.filter((e) => filter === "ALL" || e.type === filter)));
+  }, [filter]);
 
   return (
     <div className="flex flex-col h-full">

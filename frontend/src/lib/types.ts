@@ -12,11 +12,15 @@ export interface SessionRow {
   id: string;
   name: string;
   state: ProcessingState;
+  /** Exact server status string, kept so no screen has to guess the nuance. */
+  statusRaw?: string;
   worldId: string | null;
   worldName: string | null;
   location: string | null;
   lat: number | null;
   lng: number | null;
+  locationAccuracyM?: number | null;
+  locationSource?: string | null;
   coverageKm2: number | null;
   capturedAt: string | null;
   durationSec: number | null;
@@ -27,6 +31,8 @@ export interface SessionRow {
 export interface WorldRow {
   id: string;
   name: string;
+  description?: string | null;
+  status?: string;
   location: string | null;
   lat: number | null;
   lng: number | null;
@@ -35,6 +41,7 @@ export interface WorldRow {
   evidenceCount: number;
   timeRangeStart: string | null;
   timeRangeEnd: string | null;
+  currentVersionId?: string | null;
   updatedAt: string | null;
 }
 
@@ -45,6 +52,8 @@ export interface EvidenceRow {
   id: string;
   name: string;
   type: EvidenceType;
+  /** Exact server type/state strings; the UI unions are a lossy view of them. */
+  typeRaw?: string;
   location: string | null;
   sessionId: string | null;
   sessionName: string | null;
@@ -54,6 +63,10 @@ export interface EvidenceRow {
   uploadedAt: string | null;
   processedAt: string | null;
   processingState: EvidenceProcessingState;
+  processingStateRaw?: string;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  checksum?: string | null;
 }
 
 export interface AnalysisRow {

@@ -1,17 +1,49 @@
-import { Camera, Globe, ShieldCheck, FileText } from "lucide-react";
+import { Camera, Globe, ShieldCheck, FileText, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
 import ActivityFeed from "@/components/ui/ActivityFeed";
-import { SESSIONS, WORLDS, EVIDENCE, RESULTS } from "@/lib/data";
-import { getActivity } from "@/lib/activity";
+import {
+  isApiError,
+  listEvidence,
+  listSessions,
+  listWorlds,
+  type EvidenceRow,
+  type SessionRow,
+  type WorldRow,
+} from "@/lib/api";
+import { getActivity, type ActivityEvent } from "@/lib/activity";
 
-export default function HomePage() {
-  const activeSessions = SESSIONS.filter((s) => s.state === "PROCESSING" || s.state === "QUEUED");
-  const recentWorlds = WORLDS.slice(0, 4);
-  const recentEvidence = EVIDENCE.slice(0, 4);
-  const recentResults = RESULTS.slice(0, 4);
-  const activity = getActivity();
+/**
+ * Home reads real backend state only: active Sessions, recent Worlds, recent
+ * Evidence and the platform activity log. When the API cannot be reached the
+ * failure is shown as-is — there is no fallback dataset to fall back to.
+ */
+export default async function HomePage() {
+  let sessions: SessionRow[] = [];
+  let worlds: WorldRow[] = [];
+  let evidence: EvidenceRow[] = [];
+  let activity: ActivityEvent[] = [];
+  let failure: string | null = null;
+
+  try {
+    const [s, w, e, a] = await Promise.all([
+      listSessions(),
+      listWorlds(),
+      listEvidence(),
+      getActivity(5),
+    ]);
+    sessions = s.rows;
+    worlds = w.rows;
+    evidence = e.rows;
+    activity = a;
+  } catch (err) {
+    failure = isApiError(err) ? err.describe() : (err as Error).message;
+  }
+
+  const activeSessions = sessions.filter((s) => s.state === "PROCESSING" || s.state === "QUEUED");
+  const recentWorlds = worlds.slice(0, 4);
+  const recentEvidence = evidence.slice(0, 4);
 
   return (
     <div className="flex flex-col">
@@ -47,6 +79,17 @@ export default function HomePage() {
           </Link>
         </div>
       </div>
+
+      {failure && (
+        <div
+          className="mx-6 mb-4 flex items-start gap-2 rounded-md px-3 py-2 text-sm"
+          style={{ background: "var(--error-subtle)", color: "var(--error)" }}
+          role="alert"
+        >
+          <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{failure}</span>
+        </div>
+      )}
 
       <div className="px-6 pb-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-tertiary)" }}>
@@ -97,13 +140,12 @@ export default function HomePage() {
           ))}
         </HomeSection>
 
-        <HomeSection title="Recent Results" icon={FileText} emptyMessage="Results will appear here after Analysis completes.">
-          {recentResults.map((r) => (
-            <Link key={r.id} href={`/results/${r.id}`} className="flex items-center justify-between px-2 py-1.5 rounded-md text-sm" style={{ color: "var(--text-primary)" }}>
-              <span className="truncate">{r.title}</span>
-              <span className="text-xs font-mono-num shrink-0" style={{ color: "var(--text-tertiary)" }}>{r.generatedAt ?? "—"}</span>
-            </Link>
-          ))}
+        <HomeSection
+          title="Results"
+          icon={FileText}
+          emptyMessage="No analysis service is available yet — Results will appear here when one is."
+        >
+          {[]}
         </HomeSection>
 
         <div>

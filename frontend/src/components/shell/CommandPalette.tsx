@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -44,6 +44,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [searchState, setSearchState] = useState<{ q: string; rows: SearchResult[] }>({ q: "", rows: [] });
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<Element | null>(null);
@@ -54,7 +55,6 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   useEffect(() => {
     if (open) {
       previousFocusRef.current = document.activeElement;
-      setQuery("");
       requestAnimationFrame(() => inputRef.current?.focus());
     } else {
       const el = previousFocusRef.current;
@@ -65,13 +65,48 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     }
   }, [open]);
 
-  const results: SearchResult[] = useMemo(() => searchAll(query), [query]);
-  const flatList = query.trim() === "" ? COMMANDS : results;
+  // Reset query + keyboard highlight when the palette opens — the react.dev
+  // "adjust state during render" pattern (guarded, so nothing stateful runs
+  // inside an effect body).
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setQuery("");
+      setHighlightedIndex(0);
+    }
+  }
 
-  // Reset the keyboard highlight whenever the query changes or the palette opens.
-  useEffect(() => {
+  // Reset the keyboard highlight whenever the query changes.
+  const [prevQuery, setPrevQuery] = useState(query);
+  if (query !== prevQuery) {
+    setPrevQuery(query);
     setHighlightedIndex(0);
-  }, [query, open]);
+  }
+
+  // `searchAll` fetches real collections over the API, so it resolves into
+  // state — only promise callbacks touch state, never the effect body. Rows
+  // are tagged with the query they answer; a superseded query's late response
+  // is discarded via `cancelled`.
+  useEffect(() => {
+    if (query.trim() === "") return;
+    let cancelled = false;
+    searchAll(query)
+      .then((rows) => {
+        if (!cancelled) setSearchState({ q: query, rows });
+      })
+      .catch(() => {
+        if (!cancelled) setSearchState({ q: query, rows: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [query]);
+
+  // Only rows that answer the current query are shown; anything stale (or
+  // from a previous palette session) reads as an empty result set.
+  const results = searchState.q === query ? searchState.rows : [];
+  const flatList = query.trim() === "" ? COMMANDS : results;
 
   const go = useCallback(
     (href: string) => {

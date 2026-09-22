@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { MapPin } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
+import EmptyState from "@/components/ui/EmptyState";
 import WorldMap from "@/components/map/WorldMap";
-import { getResultDetail, getSession, getEvidence, listEvidence, isApiError } from "@/lib/api";
+import { getResultDetail, getSession, listEvidence, isApiError } from "@/lib/api";
 import type { ResultRow, SessionRow, AnalysisRow } from "@/lib/types";
 
 export default async function ResultDetailPage({
@@ -33,6 +33,16 @@ export default async function ResultDetailPage({
   }
   const analysis: AnalysisRow | undefined = undefined;
   const worldId = hasLocation && session?.worldId ? session.worldId : null;
+  // Evidence count for the provenance chain. null = unknown (API error), so the
+  // chain omits the segment instead of fabricating a count.
+  let provenanceEvidenceCount: number | null = null;
+  if (session) {
+    try {
+      provenanceEvidenceCount = (await listEvidence({ sessionId: session.id })).rows.length;
+    } catch {
+      provenanceEvidenceCount = null;
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -94,7 +104,7 @@ export default async function ResultDetailPage({
           <InfoSection title="Analysis">
             <InfoRow
               label="Reference"
-              value={result.analysisId ? (analysis?.name ?? "View Analysis") : "Unavailable"}
+              value={result.analysisId ?? "Unavailable"}
               href={result.analysisId ? `/analysis/${result.analysisId}` : undefined}
             />
           </InfoSection>
@@ -113,7 +123,7 @@ export default async function ResultDetailPage({
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-tertiary)" }}>
           Provenance
         </h3>
-        <ProvenanceChain result={result} session={session} analysis={analysis} />
+        <ProvenanceChain result={result} analysis={analysis} evidenceCount={provenanceEvidenceCount} />
       </div>
     </div>
   );
@@ -151,12 +161,13 @@ function InfoRow({ label, value, href }: { label: string; value: string; href?: 
 // data chain actually resolves — never a fabricated full chain.
 function ProvenanceChain({
   result,
-  session,
   analysis,
+  evidenceCount,
 }: {
   result: ResultRow;
-  session: SessionRow | undefined;
   analysis: AnalysisRow | undefined;
+  /** null = the Evidence API did not answer; the segment is omitted, not guessed. */
+  evidenceCount: number | null;
 }) {
   const segments: { label: string; href?: string }[] = [{ label: result.title }];
 
@@ -168,10 +179,8 @@ function ProvenanceChain({
     segments.push({ label: result.sessionName, href: `/sessions/${result.sessionId}` });
   }
 
-  if (session) {
-    let count = 0;
-    if (session) { count = (await listEvidence({ sessionId: session.id })).rows.length; }
-    segments.push({ label: `${count} Evidence item${count === 1 ? "" : "s"}` });
+  if (evidenceCount !== null) {
+    segments.push({ label: `${evidenceCount} Evidence item${evidenceCount === 1 ? "" : "s"}` });
   }
 
   if (segments.length <= 1) {

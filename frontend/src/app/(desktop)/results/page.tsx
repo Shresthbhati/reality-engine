@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
@@ -24,7 +26,7 @@ export default function ResultsPage() {
       <PageHeader title="Results" />
 
       {loading ? (
-        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading…</p>
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loadingâ€¦</p>
       ) : error ? (
         <p className="px-6 py-4 text-sm" style={{ color: "var(--error)" }}>{error}</p>
       ) : rows.length === 0 ? (

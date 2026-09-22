@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus, Search, RefreshCw, TriangleAlert, Workflow } from "lucide-react";
+import { Plus, Search, Workflow } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -26,8 +26,6 @@ export default function AnalysisPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
     getAnalysis()
       .then((d) => setRows(d.items as AnalysisRow[]))
       .catch((e) => setError(isApiError(e) ? e.describe() : String(e)))
@@ -88,7 +86,7 @@ export default function AnalysisPage() {
       </div>
 
       {loading ? (
-        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading…</p>
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loadingï¿½</p>
       ) : error ? (
         <p className="px-6 py-4 text-sm" style={{ color: "var(--error)" }}>{error}</p>
       ) : filtered.length === 0 ? (

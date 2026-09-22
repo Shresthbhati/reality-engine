@@ -28,8 +28,6 @@ export default function EvidencePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
     listEvidence()
       .then((d) => setRows(d.rows))
       .catch((e) => setError(isApiError(e) ? e.describe() : String(e)))
@@ -89,7 +87,7 @@ export default function EvidencePage() {
       </div>
 
       {loading ? (
-        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading…</p>
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loadingï¿½</p>
       ) : error ? (
         <p className="px-6 py-4 text-sm" style={{ color: "var(--error)" }}>{error}</p>
       ) : filtered.length === 0 ? (

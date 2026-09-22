@@ -39,6 +39,9 @@ function MobileCameraPageInner() {
   // are shown honestly rather than silently defaulted.
   useEffect(() => {
     if (!("geolocation" in navigator)) {
+      // Capability probe can only run client-side after mount; reporting the
+      // unsupported API here is the one correct place for this state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGps({ status: "unavailable", reason: "Not supported" });
       return;
     }

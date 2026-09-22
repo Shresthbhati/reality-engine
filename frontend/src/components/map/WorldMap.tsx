@@ -28,8 +28,13 @@ export default function WorldMap({ center = [0, 20], zoom = 1.4, pitch = 0, bear
   const mapRef = useRef<MapLibreMap | null>(null);
   const onLoadRef = useRef(onLoad);
   const onClickRef = useRef(onClick);
-  onLoadRef.current = onLoad;
-  onClickRef.current = onClick;
+  // Keep the latest callbacks in refs from an effect — refs must not be
+  // written during render; the map's long-lived listeners read the ref, so
+  // they always invoke the current callbacks.
+  useEffect(() => {
+    onLoadRef.current = onLoad;
+    onClickRef.current = onClick;
+  });
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;

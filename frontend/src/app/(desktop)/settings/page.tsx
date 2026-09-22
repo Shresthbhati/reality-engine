@@ -24,6 +24,10 @@ export default function SettingsPage() {
   const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
+    // Hydration-safe read of a client-only preference: the server cannot know
+    // localStorage, so state must be adopted after mount. A lazy initializer
+    // would mismatch server-rendered HTML; this one line is the correct spot.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReduceMotion(readReduceMotion());
   }, []);
 

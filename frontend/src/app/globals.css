@@ -1,162 +1,92 @@
 @import "tailwindcss";
 
+/* ── Obsidian Cartography — design tokens ──────────────────────────────
+   Every value here is used somewhere. Delete a token when it stops
+   being referenced; don't leave dead tokens for "later".            */
 :root {
-  /* ── Core Dark Theme Surfaces ────────────────────────────────────────── */
-  --background:             #09090b;
-  --foreground:             #ededf2;
+  --bg-base: #08090b;
+  --bg-surface: #0e1013;
+  --bg-elevated: #151821;
+  --bg-hover: rgba(255, 255, 255, 0.04);
 
-  --re-bg-base:             #08090b;
-  --re-bg-surface:          #0f1014;
-  --re-bg-elevated:         #15171d;
-  --re-bg-selected:         rgba(61, 142, 247, 0.12);
-  --re-bg-active:           rgba(61, 142, 247, 0.18);
-  --re-bg-hover:            rgba(255, 255, 255, 0.04);
+  --border: #1f222b;
+  --border-subtle: #171921;
 
-  /* ── Borders ─────────────────────────────────────────────────────────── */
-  --re-border-default:      #1f222b;
-  --re-border-subtle:       #171920;
-  --re-border-focused:      #3d8ef7;
-  --re-border-hover:        #2d323f;
+  --text-primary: #f0f1f6;
+  --text-secondary: #9296a6;
+  --text-tertiary: #5b6070;
 
-  /* ── Text Hierarchy ──────────────────────────────────────────────────── */
-  --re-text-primary:        #f0f1f6;
-  --re-text-secondary:      #9296a6;
-  --re-text-tertiary:       #54596b;
-  --re-text-inverse:        #08090b;
+  --accent: #00e5ff;
+  --accent-subtle: rgba(0, 229, 255, 0.12);
+  --accent-border: rgba(0, 229, 255, 0.35);
 
-  /* ── Accent & Brand ──────────────────────────────────────────────────── */
-  --re-accent:              #00e5ff;
-  --re-accent-blue:         #3d8ef7;
-  --re-accent-hover:        #33ebff;
-  --re-accent-subtle:       rgba(0, 229, 255, 0.12);
-  --re-accent-border:       rgba(0, 229, 255, 0.35);
-  --re-accent-glow:         rgba(0, 229, 255, 0.25);
+  --success: #2ecc71;
+  --success-subtle: rgba(46, 204, 113, 0.12);
+  --warning: #f5a623;
+  --warning-subtle: rgba(245, 166, 35, 0.12);
+  --error: #e74c3c;
+  --error-subtle: rgba(231, 76, 60, 0.12);
+  --info: #3d8ef7;
+  --info-subtle: rgba(61, 142, 247, 0.12);
 
-  /* ── Global Modes ────────────────────────────────────────────────────── */
-  --re-mode-explore:        #38bdf8;
-  --re-mode-inspect:        #00e5ff;
-  --re-mode-edit:           #f59e0b;
-  --re-mode-capture:        #a855f7;
-  --re-mode-build:          #10b981;
-  --re-mode-review:         #ec4899;
-
-  /* ── Global Spatial Scales ───────────────────────────────────────────── */
-  --re-scale-room:          #ec4899;
-  --re-scale-building:      #a855f7;
-  --re-scale-street:        #8b5cf6;
-  --re-scale-plot:          #6366f1;
-  --re-scale-block:         #3b82f6;
-  --re-scale-multiblock:    #0ea5e9;
-  --re-scale-locality:      #06b6d4;
-  --re-scale-ward:          #14b8a6;
-  --re-scale-district:      #10b981;
-  --re-scale-city:          #22c55e;
-
-  /* ── Status & Feedback ───────────────────────────────────────────────── */
-  --re-success:             #2ecc71;
-  --re-success-subtle:      rgba(46, 204, 113, 0.12);
-  --re-warning:             #f39c12;
-  --re-warning-subtle:      rgba(243, 156, 18, 0.12);
-  --re-error:               #e74c3c;
-  --re-error-subtle:        rgba(231, 76, 60, 0.12);
-  --re-info:                #3498db;
-  --re-info-subtle:         rgba(52, 152, 219, 0.12);
-
-  /* ── Confidence & Uncertainty ────────────────────────────────────────── */
-  --re-confidence-high:     #2ecc71;
-  --re-confidence-mid:      #f39c12;
-  --re-confidence-low:      #e74c3c;
-  --re-uncertainty:         #a855f7;
-  --re-uncertainty-subtle:  rgba(168, 85, 247, 0.15);
-
-  /* ── Density Scales (Default: Compact) ───────────────────────────────── */
-  --re-density-row-h:       28px;
-  --re-density-pad-x:       8px;
-  --re-density-pad-y:       4px;
-  --re-density-gap:         6px;
-  --re-density-font:        12px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-[data-density="comfortable"] {
-  --re-density-row-h:       34px;
-  --re-density-pad-x:       12px;
-  --re-density-pad-y:       6px;
-  --re-density-gap:         8px;
-  --re-density-font:        13px;
-}
-
-[data-density="compact"] {
-  --re-density-row-h:       28px;
-  --re-density-pad-x:       8px;
-  --re-density-pad-y:       4px;
-  --re-density-gap:         6px;
-  --re-density-font:        12px;
-}
-
-[data-density="dense"] {
-  --re-density-row-h:       24px;
-  --re-density-pad-x:       6px;
-  --re-density-pad-y:       2px;
-  --re-density-gap:         4px;
-  --re-density-font:        11px;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-*, *::before, *::after {
+* {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   margin: 0;
-  padding: 0;
 }
 
 body {
-  background: var(--re-bg-base);
-  color: var(--re-text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Tabular numbers for engineering measurements ────────────────────────── */
-.font-num, .num-tabular {
+.font-mono-num {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Thin engineering scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--re-border-default) transparent;
+  scrollbar-color: var(--border) transparent;
 }
 *::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
+  width: 6px;
+  height: 6px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--re-border-default);
-  border-radius: 2px;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--re-text-tertiary);
+  background: var(--border);
+  border-radius: 3px;
 }
 
-/* Base resets */
-input::placeholder {
-  color: var(--re-text-tertiary);
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
-button {
-  font-family: inherit;
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Real user-controlled override (Settings > Appearance > Reduce motion),
+   independent of the OS-level prefers-reduced-motion media query above. */
+[data-reduce-motion="true"] *,
+[data-reduce-motion="true"] *::before,
+[data-reduce-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  transition-duration: 0.001ms !important;
 }

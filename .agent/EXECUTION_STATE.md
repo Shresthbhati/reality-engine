@@ -1423,3 +1423,22 @@ executed for real, and produces canonical persisted artifacts.
   changes stashed; owned by whichever agent added the large fixture.
 - Next gap: columns/beams/windows/roofs detectors (P1); real-capture
   threshold tuning for GSD bands and stair rhythm gates (P2/P7-05/06).
+
+## Session 2026-09-22b (columns + beams, P1 breadth)
+
+- ColumnFit: perception/architecture/columns.py wraps fit_cylinder
+  unchanged + measured verticality (0.9) / extent (0.5 m) gates,
+  confidence = cyl.confidence x up-dot. ColumnRefused.
+- BeamFit: perception/architecture/beams.py PCA prism measurement
+  (elongation >= 4, horizontal <= 0.35, len >= 1 m, cross-section
+  >= 0.05 m both axes, face-shell >= 0.35, aspect >= 3), box-shell
+  rms residual, confidence = 1 - rms/scale. BeamRefused.
+- Both self-classifying in build_component_observations; beam ->
+  EntityType.BEAM in promotion; measured fit properties carried.
+- 19 detector tests (incl. end-to-end promotion both classes);
+  clusters: arch/perception 140, parametric+detail 72.
+- Registry CAPABILITIES.yaml +57th entry architectural_class_detectors
+  (IMPLEMENTED); TASKS.yaml P7-03 EXPANSION; handoff
+  COLUMN_BEAM_DETECTORS_READY.md.
+- Remaining declared-but-unwired: windows, roofs. Untouched:
+  tests/test_reconstruction_batch.py runtime flake (other agent's).

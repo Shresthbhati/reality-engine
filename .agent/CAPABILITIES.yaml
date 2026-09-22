@@ -745,6 +745,35 @@ capabilities:
   - repetition/symmetry are priors over resolved components, not per-point detectors
   - real-capture benchmarks (Victoria Memorial) are CAPTURE_PENDING -- capture is
     an external dependency, never simulated
+- name: architectural_class_detectors
+  category: perception
+  backend: perception/architecture/{stairs,columns,beams}.py (in-house deterministic;
+    columns wrap parametric.fit_cylinder unchanged, beams reuse parametric's Jacobi
+    eigensolver; PR #86 pattern: measured structure + *Refused over best-effort)
+  inputs: segment point list (real points) + world up (columns/beams)
+  outputs: 'self-classifying fits -- StaircaseFit (rhythm), ColumnFit (vertical
+    member: axis, radius, measured height, up-dot), BeamFit (horizontal prism:
+    axis, length/height/width, aspect ratio, box-shell rms) -- each refusing with
+    the measured fact when structure does not support the class; wired into
+    build_component_observations -> union-find resolution -> WorldIR promotion
+    (entity confidence = fit confidence; custom_properties = measured fit facts;
+    evidence = the fit''s own band/point support ids)'
+  license: project-internal
+  hardware_requirements: none (pure Python float math, deterministic)
+  accuracy: known-answer fixtures (vertical shell 0.3 m radius/3.75 m height; 3x0.3x0.2
+    m beam) recover exact parameters; refusal gates are measured (up-dot, height,
+    elongation sqrt(l1/l2), horizontality, cross-section extents, face-shell ratio,
+    rhythm CV) -- no label-only classification
+  runtime: columns O(fit_cylinder local search); beams O(points) after one eigen solve
+  maturity: IMPLEMENTED (19 tests in tests/test_column_beam_detectors.py incl.
+    observation->resolution->promotion integration; 12 stair tests in
+    tests/test_stair_detector.py)
+  limitations:
+  - windows/doors remain plane-fit openings from classify.py, not dedicated
+    measured detectors
+  - thresholds are documented wide windows, untuned against real capture
+  - real staircase/column/beam captures are external dependencies -- never
+    simulated; fixture verification is synthetic-by-construction
 - name: temporal_tracking
   category: perception
   backend: perception/tracking/temporal.py (in-house, deterministic)

@@ -46,6 +46,8 @@ from perception.architecture.components import (
     ConfidenceTier,
 )
 from perception.architecture.parametric import CircleFit, CylinderFit, SphereFit
+from perception.architecture.beams import BeamFit
+from perception.architecture.columns import ColumnFit
 from perception.architecture.stairs import StaircaseFit
 
 #: Adjacency band for same-class structural neighbors (colonnades,
@@ -59,6 +61,7 @@ ADJACENT_MIN_DISTANCE_M = 0.05
 
 _ARCH_CLASS_TO_ENTITY_TYPE: Dict[str, EntityType] = {
     "column": EntityType.COLUMN,
+    "beam": EntityType.BEAM,
     "dome": EntityType.DOME,
     "arch": EntityType.ARCH,
     "wall": EntityType.WALL,
@@ -105,6 +108,28 @@ def _fit_properties(fit) -> dict:
             "plane_normal": list(fit.plane_normal),
             "angular_span_rad": fit.angular_span_rad,
             "extrusion_depth_m": fit.extrusion_depth_m,
+            "rms_residual_m": fit.rms_residual_m,
+            "n_points": fit.n_points,
+        }
+    if isinstance(fit, ColumnFit):
+        return {
+            "fit_kind": "column",
+            "radius_m": fit.radius_m,
+            "axis": list(fit.axis),
+            "height_m": fit.height_m,
+            "axis_up_dot": fit.axis_up_dot,
+            "rms_residual_m": fit.cylinder.rms_residual_m,
+            "max_residual_m": fit.cylinder.max_residual_m,
+            "n_points": fit.n_points,
+        }
+    if isinstance(fit, BeamFit):
+        return {
+            "fit_kind": "beam",
+            "axis": list(fit.axis),
+            "length_m": fit.length_m,
+            "height_m": fit.height_m,
+            "width_m": fit.width_m,
+            "aspect_ratio": fit.aspect_ratio,
             "rms_residual_m": fit.rms_residual_m,
             "n_points": fit.n_points,
         }

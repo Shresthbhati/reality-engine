@@ -796,8 +796,8 @@ tasks:
       - registry/components/promotion/benchmark: 35 further tests incl. end-to-end segmentation -> fits -> components -> WorldIR
     open: >
       PARTIAL, not DONE: deliberately cut to walls/floors/ceilings/
-      doorways — columns/beams/windows/roofs have NO detector
-      (stairs landed 2026-09-21, see EXPANSION note below)
+      doorways — windows/roofs have NO detector
+      (stairs landed 2026-09-21; columns and beams 2026-09-22, see EXPANSION notes below)
       producing evidence in this repo, and facades/roads/curbs/
       infrastructure/terrain/vegetation are outdoor concepts with no
       fixture; classifying them would be guessing (skipped, not
@@ -848,6 +848,32 @@ tasks:
       produce no staircase entity (12 tests in
       tests/test_stair_detector.py incl. the observation->promotion
       integration).
+      EXPANSION 2026-09-22 (column + beam detectors, PR #86
+      pattern): perception/architecture/columns.py -- ColumnFit wraps
+      parametric.fit_cylinder UNCHANGED (no duplicated solver) and
+      adds the class's measured gates: verticality (|axis.up| >= 0.9,
+      the registry's own threshold -- a 45-degree pipe is a real
+      cylinder and NOT a column) and axial extent (>= 0.5 m -- a ring
+      or lid fits a cylinder but is not a column); confidence =
+      cylinder.confidence x measured up-dot (documented map,
+      floored). perception/architecture/beams.py -- BeamFit measures
+      a LINEAR PRISMATIC member via PCA (parametric's Jacobi solver,
+      sorted descending, explicitly documented): single-axis
+      elongation sqrt(l1/l2) >= 4, horizontality |axis.up| <= 0.35,
+      length >= 1 m, BOTH lateral extents >= 0.05 m, face-shell ratio
+      >= 0.35 x half-extent on both lateral axes (prism faces hug;
+      filled panel samples fail), aspect >= 3; residual = rms
+      distance to the measured box shell (lateral only); confidence
+      = 1 - rms/scale (documented, clamped). Both are
+      self-classifying fits wired into build_component_observations
+      (alongside StaircaseFit), _position_of,
+      promotion._fit_properties and _ARCH_CLASS_TO_ENTITY_TYPE
+      ("beam" -> EntityType.BEAM). Refusals name the measured fact:
+      tilted pipe, horizontal silo, flat patch, vertical post, wall
+      panel, isotropic blob, 45-degree ramp -- none become entities
+      (19 tests in tests/test_column_beam_detectors.py incl.
+      end-to-end observation -> resolution -> promotion for both
+      classes).
 
   - id: P7-04
     name: universal evidence-quality assessment

@@ -15,6 +15,8 @@ export * from "./evidence";
 export * from "./analysis";
 export * from "./platform";
 export * from "./unsupported";
+export * from "./worldir";
+export * from "./hooks";
 
 /**
  * The row shapes the API layer emits are the UI's view model; re-exported here

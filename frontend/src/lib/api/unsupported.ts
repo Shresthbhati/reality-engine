@@ -18,3 +18,7 @@ export function unsupportedResource(what: string): UnsupportedResource {
     items: [],
   };
 }
+
+export function unsupportedForAnalysis(): UnsupportedResource {
+  return unsupportedResource("Analysis");
+}

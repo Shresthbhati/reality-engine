@@ -1,12 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import TopBar from "./TopBar";
-import Sidebar from "./Sidebar";
-import CommandPalette from "./CommandPalette";
+import WorkspaceBar from "./WorkspaceBar";
+import CommandPalette from "@/components/shell/CommandPalette";
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
+export interface WorkspaceShellProps {
+  worldName: string;
+  worldId: string;
+  version?: string;
+  coordinateSystem?: string;
+  isProcessing?: boolean;
+  children: React.ReactNode;
+}
+
+export default function WorkspaceShell({
+  worldName,
+  worldId,
+  version,
+  coordinateSystem,
+  isProcessing,
+  children,
+}: WorkspaceShellProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -33,12 +47,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden">
-      <TopBar onOpenSearch={() => setPaletteOpen(true)} />
-      <div className="flex flex-1 min-h-0">
-        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
-        <main className="flex-1 min-w-0 h-full overflow-hidden">{children}</main>
-      </div>
+    <div
+      className="flex flex-col h-screen w-screen overflow-hidden"
+      style={{ background: "var(--bg-base)" }}
+    >
+      <WorkspaceBar
+        worldName={worldName}
+        worldId={worldId}
+        version={version}
+        coordinateSystem={coordinateSystem}
+        isProcessing={isProcessing}
+      />
+      <main className="flex-1 min-h-0 min-w-0 overflow-hidden relative">
+        {children}
+      </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );

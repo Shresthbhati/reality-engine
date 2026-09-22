@@ -47,14 +47,16 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<Element | null>(null);
+  const isOpenRef = useRef(open);
 
   // Capture the trigger element on open, restore focus to it on close
   // (Escape, backdrop click, item selection, or the parent flipping
   // `open` to false for any other reason all funnel through this).
   useEffect(() => {
+    isOpenRef.current = open;
     if (open) {
       previousFocusRef.current = document.activeElement;
-      setQuery("");
+      // Don't setQuery here - let the parent control query via key if needed
       requestAnimationFrame(() => inputRef.current?.focus());
     } else {
       const el = previousFocusRef.current;
@@ -62,15 +64,34 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         el.focus();
       }
       previousFocusRef.current = null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- cleanup on close
+      setQuery("");
+      setHighlightedIndex(0);
     }
   }, [open]);
 
-  const results: SearchResult[] = useMemo(() => searchAll(query), [query]);
+  const [results, setResults] = useState<SearchResult[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const q = query.trim();
+    if (q) {
+      searchAll(q).then((res) => {
+        if (active) setResults(res);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [query]);
+
   const flatList = query.trim() === "" ? COMMANDS : results;
 
   // Reset the keyboard highlight whenever the query changes or the palette opens.
   useEffect(() => {
-    setHighlightedIndex(0);
+    if (isOpenRef.current) {
+      setHighlightedIndex(0);
+    }
   }, [query, open]);
 
   const go = useCallback(

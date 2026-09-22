@@ -26,10 +26,6 @@ export interface WorldMapProps {
 export default function WorldMap({ center = [0, 20], zoom = 1.4, pitch = 0, bearing = 0, className, onLoad, onClick }: WorldMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const onLoadRef = useRef(onLoad);
-  const onClickRef = useRef(onClick);
-  onLoadRef.current = onLoad;
-  onClickRef.current = onClick;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -44,8 +40,8 @@ export default function WorldMap({ center = [0, 20], zoom = 1.4, pitch = 0, bear
       attributionControl: { compact: true },
     });
     map.addControl(new NavigationControl({ showCompass: false }), "top-right");
-    map.on("load", () => onLoadRef.current?.(map));
-    map.on("click", (e) => onClickRef.current?.({ lng: e.lngLat.lng, lat: e.lngLat.lat }));
+    map.on("load", () => onLoad?.(map));
+    map.on("click", (e) => onClick?.({ lng: e.lngLat.lng, lat: e.lngLat.lat }));
     mapRef.current = map;
 
     return () => {

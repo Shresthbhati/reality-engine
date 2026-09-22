@@ -28,17 +28,15 @@ export default function EvidencePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
     listEvidence()
       .then((d) => setRows(d.rows))
       .catch((e) => setError(isApiError(e) ? e.describe() : String(e)))
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = rows.filter(
-    (e) => filter === "ALL" || e.type === filter,
-  ).filter((e) => !query || e.name.toLowerCase().includes(query.toLowerCase()))
+  const filtered = rows
+    .filter((e) => filter === "ALL" || e.type === filter)
+    .filter((e) => !query || e.name.toLowerCase().includes(query.toLowerCase()));
 
   return (
     <div className="flex flex-col h-full">
@@ -81,7 +79,7 @@ export default function EvidencePage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search Evidenceâ€¦"
+            placeholder="Search Evidence..."
             className="bg-transparent outline-none text-sm w-full"
             style={{ color: "var(--text-primary)" }}
           />
@@ -89,7 +87,7 @@ export default function EvidencePage() {
       </div>
 
       {loading ? (
-        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading…</p>
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading...</p>
       ) : error ? (
         <p className="px-6 py-4 text-sm" style={{ color: "var(--error)" }}>{error}</p>
       ) : filtered.length === 0 ? (

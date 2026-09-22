@@ -56,8 +56,24 @@ function SessionsPageInner() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let active = true;
+    listSessions()
+      .then(({ rows }) => {
+        if (active) setSessions(rows);
+      })
+      .catch((err) => {
+        if (active) {
+          setSessions(null);
+          setError(isApiError(err) ? err.describe() : (err as Error).message);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const rows = (sessions ?? [])
     .filter((s) => filter === "ALL" || s.state === filter)

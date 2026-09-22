@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MapPin } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
+import EmptyState from "@/components/ui/EmptyState";
 import WorldMap from "@/components/map/WorldMap";
 import { getResultDetail, getSession, getEvidence, listEvidence, isApiError } from "@/lib/api";
 import type { ResultRow, SessionRow, AnalysisRow } from "@/lib/types";
@@ -30,6 +31,14 @@ export default async function ResultDetailPage({
   if (result.sessionId) {
     try { session = (await getSession(result.sessionId)).row; }
     catch (e) { if (isApiError(e) && e.code === "not_found") session = undefined; else throw e; }
+  }
+  let evidenceCount = 0;
+  if (session) {
+    try {
+      evidenceCount = (await listEvidence({ sessionId: session.id })).rows.length;
+    } catch {
+      evidenceCount = 0;
+    }
   }
   const analysis: AnalysisRow | undefined = undefined;
   const worldId = hasLocation && session?.worldId ? session.worldId : null;
@@ -94,7 +103,7 @@ export default async function ResultDetailPage({
           <InfoSection title="Analysis">
             <InfoRow
               label="Reference"
-              value={result.analysisId ? (analysis?.name ?? "View Analysis") : "Unavailable"}
+              value={result.analysisId ? ((analysis as AnalysisRow | undefined)?.name ?? "View Analysis") : "Unavailable"}
               href={result.analysisId ? `/analysis/${result.analysisId}` : undefined}
             />
           </InfoSection>
@@ -113,7 +122,7 @@ export default async function ResultDetailPage({
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-tertiary)" }}>
           Provenance
         </h3>
-        <ProvenanceChain result={result} session={session} analysis={analysis} />
+        <ProvenanceChain result={result} session={session} analysis={analysis} evidenceCount={evidenceCount} />
       </div>
     </div>
   );
@@ -153,10 +162,12 @@ function ProvenanceChain({
   result,
   session,
   analysis,
+  evidenceCount,
 }: {
   result: ResultRow;
   session: SessionRow | undefined;
   analysis: AnalysisRow | undefined;
+  evidenceCount: number;
 }) {
   const segments: { label: string; href?: string }[] = [{ label: result.title }];
 
@@ -168,10 +179,8 @@ function ProvenanceChain({
     segments.push({ label: result.sessionName, href: `/sessions/${result.sessionId}` });
   }
 
-  if (session) {
-    let count = 0;
-    if (session) { count = (await listEvidence({ sessionId: session.id })).rows.length; }
-    segments.push({ label: `${count} Evidence item${count === 1 ? "" : "s"}` });
+  if (session && evidenceCount > 0) {
+    segments.push({ label: `${evidenceCount} Evidence item${evidenceCount === 1 ? "" : "s"}` });
   }
 
   if (segments.length <= 1) {

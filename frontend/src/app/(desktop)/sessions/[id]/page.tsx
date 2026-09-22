@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Map } from "lucide-react";
+import { Map, FileText } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
+import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
 import SessionTimeline from "@/components/ui/SessionTimeline";
 import { getSession, listEvidence, isApiError, unsupportedForAnalysis } from "@/lib/api";
+import type { AnalysisRow, ResultRow } from "@/lib/types";
 
 export default async function SessionDetailPage({
   params,
@@ -23,8 +25,8 @@ export default async function SessionDetailPage({
 
   // Analysis API is not yet supported — surface an unsupported resource empty state.
   const analysisResource = unsupportedForAnalysis();
-  const analysis: never[] = [];
-  const results: never[] = [];
+  const analysis: AnalysisRow[] = [];
+  const results: ResultRow[] = [];
 
   return (
     <div className="flex flex-col h-full">
@@ -169,7 +171,7 @@ export default async function SessionDetailPage({
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-tertiary)" }}>
           Provenance
         </h3>
-        <ProvenanceChain evidenceCount={evidence.length} analysisCount={analysis.length} resultCount={results.length} />
+        <ProvenanceChain evidenceCount={evidenceList.length} analysisCount={analysis.length} resultCount={results.length} />
       </div>
     </div>
   );

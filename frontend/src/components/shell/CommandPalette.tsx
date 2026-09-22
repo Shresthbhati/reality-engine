@@ -70,7 +70,21 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     }
   }, [open]);
 
-  const results: SearchResult[] = useMemo(() => searchAll(query), [query]);
+  const [results, setResults] = useState<SearchResult[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const q = query.trim();
+    if (q) {
+      searchAll(q).then((res) => {
+        if (active) setResults(res);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [query]);
+
   const flatList = query.trim() === "" ? COMMANDS : results;
 
   // Reset the keyboard highlight whenever the query changes or the palette opens.

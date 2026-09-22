@@ -796,7 +796,8 @@ tasks:
       - registry/components/promotion/benchmark: 35 further tests incl. end-to-end segmentation -> fits -> components -> WorldIR
     open: >
       PARTIAL, not DONE: deliberately cut to walls/floors/ceilings/
-      doorways — stairs/columns/beams/windows/roofs have NO detector
+      doorways — columns/beams/windows/roofs have NO detector
+      (stairs landed 2026-09-21, see EXPANSION note below)
       producing evidence in this repo, and facades/roads/curbs/
       infrastructure/terrain/vegetation are outdoor concepts with no
       fixture; classifying them would be guessing (skipped, not
@@ -830,6 +831,23 @@ tasks:
       precedes plane subtraction: a cylinder's front strip is
       locally planar and plane-first subtraction shredded
       columns (measured, then fixed by classify-after-segment).
+      EXPANSION 2026-09-21 (stair detector): 
+      perception/architecture/stairs.py -- MEASURED stair detection:
+      z-histogram level bands (min separation + spread gates), each
+      band measured (rise from consecutive level medians, going from
+      ascent-direction projection where ascent = horizontal direction
+      correlated with z, depth from ascent-direction extent),
+      rhythm gates on rise/going coefficient of variation with
+      StairFitRefused over best-effort geometry, band count + walking
+      slope plausibility gates. Wired into the canonical path:
+      build_component_observations accepts staircase fits (evidence =
+      the fit's band point ids), _fit_properties/position resolution
+      carry the fit's own measured quantities, promotion resolves
+      staircase observations through the existing union-find entity
+      path. Refusals are facts: noise, ramps, and sub-gate rhythm
+      produce no staircase entity (12 tests in
+      tests/test_stair_detector.py incl. the observation->promotion
+      integration).
 
   - id: P7-04
     name: universal evidence-quality assessment
@@ -901,15 +919,23 @@ tasks:
       - tests/test_capture_feedback_wiring.py: 3 wiring tests
       - per-region budgets NOW EXIST via spatial partitioning --
         perception/detail/discovery.py bins points into a deterministic
-        voxel grid and derives each cell's budget from the scene
-        report's measured GSD + the cell's own view counts (7 tests in
-        tests/test_detail_discovery.py); ROI generation groups cells
-        and takes the MIN budget over member cells (weakest evidence
-        bounds the group; tests/test_detail_roi.py, 4 tests).
+        voxel grid and derives each cell's budget from the cell's OWN
+        measured per-point GSD + the cell's own view counts (10 tests
+        in tests/test_detail_discovery.py incl. TestPerCellGsdBudgets);
+        ROI generation groups cells and takes the MIN budget over
+        member cells (weakest evidence bounds the group;
+        tests/test_detail_roi.py, 4 tests).
     open: >-
       PARTIAL, not DONE: thresholds (voxel size, curvature, GSD bands)
-      untuned against real datasets; per-cell budgets reuse the
-      scene-level GSD measurement rather than per-cell re-measurement.
+      untuned against real datasets. PER-CELL GSD CLOSED 2026-09-21:
+      the assessor now records measured per-point GSD
+      (EvidenceQualityReport.per_point_gsd_mm, keyed by track id,
+      finest observation per point) and discovery._cell_budget derives
+      each cell's budget from the MEDIAN of its own points' measured
+      GSDs, falling back to the scene median only when no point in the
+      cell carries a measurement (all unprojectable). A near cell and
+      a far cell in one scene now receive different budgets (regression
+      tests in tests/test_detail_discovery.py::TestPerCellGsdBudgets).
       STALE NOTE CORRECTED 2026-09-21 (status reconciliation): this
       previously said "local refinement does not yet consume
       compute_tier (no ROI refinement backend exists)" -- FALSE as of

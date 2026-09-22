@@ -46,6 +46,7 @@ from perception.architecture.components import (
     ConfidenceTier,
 )
 from perception.architecture.parametric import CircleFit, CylinderFit, SphereFit
+from perception.architecture.stairs import StaircaseFit
 
 #: Adjacency band for same-class structural neighbors (colonnades,
 #: window rows). A column 3 m from its neighbor is adjacent; 50 m away
@@ -104,6 +105,16 @@ def _fit_properties(fit) -> dict:
             "plane_normal": list(fit.plane_normal),
             "angular_span_rad": fit.angular_span_rad,
             "extrusion_depth_m": fit.extrusion_depth_m,
+            "rms_residual_m": fit.rms_residual_m,
+            "n_points": fit.n_points,
+        }
+    if isinstance(fit, StaircaseFit):
+        return {
+            "fit_kind": "stairs",
+            "n_steps": fit.n_steps,
+            "rise_m": fit.rise_m,
+            "going_m": fit.going_m,
+            "span_m": fit.span_m,
             "rms_residual_m": fit.rms_residual_m,
             "n_points": fit.n_points,
         }

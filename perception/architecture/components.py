@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from perception.architecture.stairs import StaircaseFit
 from perception.architecture.parametric import (
     CircleFit,
     CylinderFit,
@@ -120,6 +121,12 @@ _KIND_TO_CLASSES: Dict[FitKind, Tuple[str, ...]] = {
     FitKind.CIRCLE: ("arch",),
 }
 
+#: POINT_CLOUD-kind fits that carry their own class proposal (a
+#: StaircaseFit IS a stairs measurement -- there is nothing else a
+#: measured stair rhythm could be). Unlike the parametric kinds above,
+#: these bypass the registry-class loop because their evidence is
+#: self-classifying; the registry row still supplies the WorldIR type.
+
 
 def _position_of(fit) -> Point3:
     if isinstance(fit, CylinderFit):
@@ -133,6 +140,8 @@ def _position_of(fit) -> Point3:
         return fit.center
     if isinstance(fit, CircleFit):
         return fit.center
+    if isinstance(fit, StaircaseFit):
+        return fit.position
     raise ValueError(f"unsupported fit type {type(fit).__name__}")
 
 
@@ -187,6 +196,20 @@ def build_component_observations(
     reg = registry or get_default_registry()
     observations: List[ComponentObservation] = []
     for segment_ids, fit, evidence_ids in fitted_segments:
+        if isinstance(fit, StaircaseFit):
+            # Self-classifying fit: a measured stair rhythm proposes
+            # exactly one class. Gates were applied at fit time (a
+            # refused rhythm raised rather than producing geometry).
+            observations.append(ComponentObservation(
+                segment_id="+".join(segment_ids),
+                arch_class="stairs",
+                fit=fit,
+                evidence_ids=tuple(sorted(set(evidence_ids))),
+                confidence=fit.confidence,
+                accepted=True,
+                position=fit.position,
+            ))
+            continue
         kind = _kind_of(fit)
         if kind is None:
             raise ValueError(f"unsupported fit type {type(fit).__name__}")

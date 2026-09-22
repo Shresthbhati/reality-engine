@@ -215,16 +215,34 @@ def _cell_budget(
     report: EvidenceQualityReport, cell_point_ids
 ) -> DetailBudget:
     """Derive ONE cell's budget from the scene report's measured facts
-    restricted to the cell: the report's measured GSD (scene-level
-    measurement -- reused, not re-guessed) and the cell's own view
-    counts. Reuses detail_budget_for unchanged (no duplicated
-    mapping); an empty view subset coverage-caps the cell honestly."""
+    restricted to the cell: the cell's OWN measured GSD (P7-05
+    remainder: per-point GSDs measured by the assessor, median over
+    this cell's points -- a near cell and a far cell in one scene get
+    different budgets) and the cell's own view counts. Falls back to
+    the scene median only when no point in the cell carries a measured
+    GSD (all unprojectable). Reuses detail_budget_for unchanged (no
+    duplicated mapping); an empty view subset coverage-caps the cell
+    honestly."""
     ids = set(cell_point_ids)
     cell_views = {
         tid: n for tid, n in report.view_counts.items() if tid in ids
     }
+    local_gsds = [
+        g for tid, g in report.per_point_gsd_mm.items() if tid in ids
+    ]
+    if local_gsds:
+        local_gsd: Optional[float] = (
+            sorted(local_gsds)[len(local_gsds) // 2]
+            if len(local_gsds) % 2 == 1
+            else (
+                sorted(local_gsds)[len(local_gsds) // 2 - 1]
+                + sorted(local_gsds)[len(local_gsds) // 2]
+            ) / 2.0
+        )
+    else:
+        local_gsd = report.gsd_mm_per_px
     return detail_budget_for(EvidenceQualityReport(
-        gsd_mm_per_px=report.gsd_mm_per_px,
+        gsd_mm_per_px=local_gsd,
         detail_tier=report.detail_tier,
         observed_fraction=report.observed_fraction,
         view_counts=cell_views,

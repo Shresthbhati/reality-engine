@@ -97,6 +97,17 @@ class EvidenceQualityReport:
     #: has a measurable diversity.
     view_angle_diversity_deg: Optional[float] = None
     view_angle_diversity_n: int = 0
+    #: Measured per-point GSD (mm/px), keyed by track id -- the same
+    #: distance/focal measurement that produces the scene median,
+    #: retained per point so region-level consumers (detail discovery
+    #: budgets, per-cell refinement) can budget from THEIR OWN measured
+    #: sampling rather than the scene median. Unprojectable points are
+    #: absent (no camera observed them -- no GSD exists).
+    per_point_gsd_mm: Dict[str, float] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.per_point_gsd_mm is None:
+            object.__setattr__(self, "per_point_gsd_mm", {})
 
     def to_dict(self) -> dict:
         return {
@@ -108,6 +119,7 @@ class EvidenceQualityReport:
             "overclaim_count": self.overclaim_count,
             "view_angle_diversity_deg": self.view_angle_diversity_deg,
             "view_angle_diversity_n": self.view_angle_diversity_n,
+            "per_point_gsd_mm": dict(self.per_point_gsd_mm),
         }
 
 
@@ -162,6 +174,7 @@ def assess_evidence_quality(
     unprojectable: List[str] = []
     overclaims = 0
     per_point_gsd: List[float] = []
+    per_point_gsd_by_id: Dict[str, float] = {}
     #: point index -> observing camera indices (for the diversity pass).
     obs_by_point: Dict[int, List[int]] = {}
 
@@ -187,7 +200,16 @@ def assess_evidence_quality(
                 # (fx == fy) this is just fx; documenting the choice
                 # keeps the formula defensible for anisotropic pixels.
                 focal_px = max(cam.intrinsics.fx, cam.intrinsics.fy)
-                per_point_gsd.append(distance_m * 1000.0 / focal_px)
+                point_gsd = distance_m * 1000.0 / focal_px
+                per_point_gsd.append(point_gsd)
+                # Keep the point's FINEST measured GSD (closest/most
+                # detailed observation): the budget question is what
+                # sampling this evidence supports, and the best
+                # observation defines that, not the median of the
+                # point's observers.
+                prev = per_point_gsd_by_id.get(point.track_id)
+                if prev is None or point_gsd < prev:
+                    per_point_gsd_by_id[point.track_id] = point_gsd
         if views == 0:
             unprojectable.append(point.track_id)
         else:
@@ -213,6 +235,7 @@ def assess_evidence_quality(
         view_counts=view_counts,
         unprojectable_point_ids=tuple(sorted(unprojectable)),
         overclaim_count=overclaims,
+        per_point_gsd_mm=per_point_gsd_by_id,
         view_angle_diversity_deg=diversity_deg,
         view_angle_diversity_n=diversity_n,
     )

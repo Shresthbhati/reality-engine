@@ -22,7 +22,10 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from perception.detail.discovery import discover_detail
+from perception.quality.assessment import EvidenceQualityReport
 from reconstruction.backend.interface import ReconstructedPoint
 from tests.test_evidence_quality import _camera, _intrinsics, _result
 
@@ -40,7 +43,7 @@ def _plane_patch(cx, cy, z=2.0, n=40, jitter=0.0):
     for i in range(n):
         pts.append(_pt(
             (cx + (i % 8) * 0.05, cy + (i // 8) * 0.05, z + jitter * i),
-            f"pl-{cx}-{i}",
+            f"pl-{cx}-{z}-{i}",  # z in the id: patches at different depths are distinct points
         ))
     return pts
 
@@ -143,3 +146,54 @@ class TestDomainAgnosticism:
         cands = discover_detail(_result(pts, _report_cameras()), report)
         curved = [c for c in cands if c.curvature > 0.1]
         assert len(curved) >= 2
+
+
+class TestPerCellGsdBudgets:
+    """P7-05 remainder: each cell's budget must derive from ITS OWN
+    measured GSD, not the scene median. The assessor measures per-point
+    GSD; discovery now consumes it."""
+
+    def test_report_records_per_point_gsd(self):
+        from perception.quality.assessment import assess_evidence_quality
+
+        cams = [_camera("cam-000", (0.0, 0.0, 0.0))]
+        pts = [
+            _pt((0.0, 0.0, 1.0), "near"),
+            _pt((0.0, 0.0, 8.0), "far"),
+        ]
+        report = assess_evidence_quality(_result(pts, cams), cams)
+        assert report.per_point_gsd_mm["near"] == pytest.approx(1000.0 / 640.0)
+        assert report.per_point_gsd_mm["far"] == pytest.approx(8000.0 / 640.0)
+
+    def test_cell_budget_uses_local_gsd_not_scene_median(self):
+        # Near patch (gsd 1.56 mm/px) and far patch (12.5 mm/px): the
+        # scene median sits between them; each cell's budget.max_gsd
+        # must equal its own distance-derived GSD.
+        pts = _plane_patch(0.0, 0.0, z=1.0) + _plane_patch(0.0, 0.0, z=8.0)
+        report = _quality_report(pts)
+        cands = discover_detail(_result(pts, _report_cameras()), report)
+        by_z = {
+            round(c.centroid[2]): c for c in cands
+        }
+        assert by_z[1].budget.max_gsd_mm_per_px == pytest.approx(1.5625, rel=0.05)
+        assert by_z[8].budget.max_gsd_mm_per_px == pytest.approx(12.5, rel=0.05)
+        # And the scene median is genuinely different from both.
+        assert report.gsd_mm_per_px != pytest.approx(1.5625)
+
+    def test_cell_without_measured_gsd_falls_back_to_scene(self):
+        # A cell whose points are all unprojectable carries no
+        # per-point GSD; its budget falls back to the scene's measured
+        # GSD rather than crashing or guessing.
+        pts = _plane_patch(0.0, 0.0, z=1.0)
+        report = _quality_report(pts)
+        composed = EvidenceQualityReport(
+            gsd_mm_per_px=report.gsd_mm_per_px,
+            detail_tier=report.detail_tier,
+            observed_fraction=report.observed_fraction,
+            view_counts={},
+            unprojectable_point_ids=("ghost",),
+            overclaim_count=0,
+            per_point_gsd_mm={},
+        )
+        cands = discover_detail(_result(pts, _report_cameras()), composed)
+        assert all(c.budget is not None for c in cands)

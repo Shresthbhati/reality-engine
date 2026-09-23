@@ -98,17 +98,10 @@ export async function POST(request: NextRequest) {
       { error: "Backend failed to create world" },
       { status: res.status }
     );
-  } catch (err: any) {
-    // If backend is offline, generate a valid client world record
-    const id = `wld_${Date.now().toString(36)}`;
+  } catch {
     return NextResponse.json(
-      {
-        id,
-        name: "New Spatial World",
-        status: "created",
-        note: "Created locally while Golden Loop backend bridge is offline",
-      },
-      { status: 201 }
+      { error: "Backend unavailable; world was not created" },
+      { status: 503 }
     );
   }
 }

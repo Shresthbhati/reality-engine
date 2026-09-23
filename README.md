@@ -1,4 +1,11 @@
-# Reality Engine V10
+# Reality Engine
+
+> **ARCHIVED README — superseded 2026-09-23.** This README references
+> the obsolete "V10" specification and incorrectly describes the project
+> state. Physics, destruction, fire, and disaster simulation were moved
+> to `reality-engine-child` on 2026-09-18. A full browser-based Studio
+> UI (Next.js 16 + Three.js) is now implemented. See
+> `docs/REALITY_ENGINE_CURRENT_STATUS.md` for the authoritative status.
 
 World Compiler + Universal Physics + Destruction + Disaster + Studio UI.
 
@@ -20,6 +27,10 @@ overwhelmingly machine-generated template filler with one substantive
 `docs/BUILD_ORDER.md` for specifics before trusting anything else from
 that upload set.
 
+> **OUTDATED:** The following "Implemented" section reflects a
+> pre-2026-09-15 state. See `docs/REALITY_ENGINE_CURRENT_STATUS.md`
+> for current status.
+
 Implemented:
 
 - **WorldIR** (`world_ir/`) — the canonical world representation: entity
@@ -33,22 +44,24 @@ Implemented:
   and a seeded RNG with reproducible sub-streams.
 - **engine/world** — a runtime that loads a `WorldIR` package and resolves
   points between coordinate frames.
-- **engine/physics** — a P1-fidelity ("gameplay physics", §1.4) rigid
-  body backend behind the `IPhysicsBackend` interface (§7.2):
-  semi-implicit Euler integration, sphere/box/plane collision (§44
-  LOD_0/1), sequential-impulse contacts with friction/restitution/
-  sleeping, numerical health checks (§86), and a versioned
-  serialize/deserialize format, and the full Euler rotational equation
-  (gyroscopic term included, V11 §915). See `docs/BUILD_ORDER.md` for
-  what it deliberately does not do yet.
-- **events** (`events/`) — a deterministic event bus (§85, V11 §930
-  schema) wired into the physics backend: a new contact emits
-  `ContactEvent` or `ImpactEvent` (by approach speed), never re-fired
-  for an ongoing resting contact.
+- **engine/physics** — **MOVED TO `reality-engine-child` 2026-09-18**
+  (rigid body backend, collision, contact solver).
+- **events** (`events/`) — a deterministic event bus
 
-Everything else under `engine/`, `reconstruction/`, `perception/`,
-`apps/`, etc. is a scaffolded directory with a placeholder `README.md`
-noting the spec section it corresponds to.
+> **CURRENTLY IMPLEMENTED (2026-09-23):**
+> - **reconstruction/** — COLMAP backend, orchestrator, scale, depth, fusion, meshing
+> - **perception/** — MiDaS, Mask R-CNN, SAM, lifting, fusion, quality, detail, tracking
+> - **apps/** — Full `reality` CLI + FastAPI backend (10 modules)
+> - **exporters/** — glTF, Blender, USDA, CityJSON, CityGML (13 modules)
+> - **benchmarks/** — Competitive benchmark suite (13 modules)
+> - **frontend/** — Next.js 16 + Three.js viewer, 12 API routes, 33 pages
+> - **.github/workflows/ci.yml** — CI with multi-Python matrix, wheel build
+
+Everything else under `engine/` (physics moved to child),
+`reconstruction/`, `perception/`, `apps/`, `exporters/`, `frontend/`
+now contains real code — see `docs/REALITY_ENGINE_CURRENT_STATUS.md`.
+`gpu/`, `datasets/`, `plugins/`, `shaders/`, `tools/` remain
+placeholder/empty.
 
 ## Setup
 

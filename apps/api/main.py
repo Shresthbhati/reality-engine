@@ -18,6 +18,7 @@ from apps.api import jobs as jobrunner
 from apps.api.db import dispose_db, init_db
 from apps.api.routes_jobs import activity, jobs, notifications
 from apps.api.routes_misc import evidence, uploads
+from apps.api.routes_procedural import procedural
 from apps.api.routes_sessions import health, sessions
 from apps.api.routes_worlds import worlds
 
@@ -29,7 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (health, sessions, uploads, evidence, worlds, jobs, notifications, activity):
+for router in (health, sessions, uploads, evidence, worlds, procedural, jobs, notifications, activity):
     app.include_router(router)
 
 

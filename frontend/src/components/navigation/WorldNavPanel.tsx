@@ -52,6 +52,7 @@ interface WorldNavPanelProps {
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
   onFrameEntity: (id: string) => void;
+  onSelectSession?: (id: string) => void;
   selectedEvidenceId?: string | null;
   onSelectEvidence?: (id: string | null) => void;
   onCompareVersions?: (base?: string, head?: string) => void;
@@ -93,6 +94,7 @@ export default function WorldNavPanel({
   selectedEntityId,
   onSelectEntity,
   onFrameEntity,
+  onSelectSession,
   selectedEvidenceId,
   onSelectEvidence,
   onCompareVersions,
@@ -586,11 +588,16 @@ export default function WorldNavPanel({
                 {sessions.map((s) => (
                   <div
                     key={s.id}
-                    onClick={() => onSelectSession?.(s.id)}
                     className="p-2.5 rounded border border-[#1f222b] bg-[#14161f] hover:border-neutral-700 transition-colors cursor-pointer space-y-1"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-xs text-white">{s.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => onSelectSession?.(s.id)}
+                        className="font-semibold text-xs text-white text-left hover:text-[#00e5ff]"
+                      >
+                        {s.name}
+                      </button>
                       <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-neutral-800 text-neutral-300">
                         {s.locationSource || "WGS84"}
                       </span>

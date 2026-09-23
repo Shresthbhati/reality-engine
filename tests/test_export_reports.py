@@ -53,7 +53,7 @@ def test_gltf_report_classifies_exported_and_skipped_entities():
     assert report.entities_exported == ("ent-exportable",)
     assert report.entities_skipped == ("ent-no-geometry", "ent-no-transform")
     assert report.skip_reasons == (
-        "no BOX/PLANE geometry to export",
+        "no BOX/PLANE/MESH geometry to export",
         "no transform.position to place a node at",
     )
     assert len(gltf["nodes"]) == 1

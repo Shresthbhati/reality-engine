@@ -3,6 +3,7 @@
 import base64
 import struct
 
+from world_ir.artifact_store import MemoryArtifactStore
 from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType
 from world_ir.world_v1 import WorldIR
 from exporters.gltf.exporter import export_to_gltf
@@ -116,3 +117,85 @@ def test_gltf_minimum_required_top_level_shape():
     assert isinstance(gltf["buffers"], list)
     for buf in gltf["buffers"]:
         assert "byteLength" in buf
+
+
+# ---------------------------------------------------------------- real geometry (TRIANGLES mesh)
+
+
+def _entity_with_real_mesh(entity_id: str, geom_id: str, vertices, faces, origin, store):
+    from reconstruction.meshing.mesh import MeshData
+
+    payload = MeshData(vertices=tuple(vertices), faces=tuple(faces)).to_bytes()
+    uri, digest = store.put(payload)
+    geom = Geometry(id=geom_id, type=GeometryType.MESH, data_uri=uri, data_hash=digest)
+    entity = Entity(
+        id=entity_id,
+        name="Meshed",
+        type=EntityType.DEBRIS,
+        transform={"position": {"x": origin[0], "y": origin[1], "z": origin[2]}},
+        geometry_ids=[geom_id],
+    )
+    return geom, entity
+
+
+def test_resolvable_mesh_geometry_emits_a_real_triangles_mesh_not_the_cube():
+    store = MemoryArtifactStore()
+    world = WorldIR()
+    origin = (1.0, 0.0, 0.0)
+    vertices = [(1.0, 0.0, 0.0), (2.0, 1.0, 0.0), (1.0, 1.0, 1.0)]
+    faces = [(0, 1, 2)]
+    geom, entity = _entity_with_real_mesh("ent-mesh", "geom-mesh", vertices, faces, origin, store)
+    world.geometries[geom.id] = geom
+    world.entities[entity.id] = entity
+
+    gltf = export_to_gltf(world, artifact_store=store)
+
+    # The node's mesh is NOT the shared placeholder cube (index 0).
+    node = gltf["nodes"][0]
+    assert node["mesh"] == 1
+    assert node["translation"] == [1.0, 0.0, 0.0]
+
+    prim = gltf["meshes"][node["mesh"]]["primitives"][0]
+    assert prim["mode"] == 4  # TRIANGLES
+    assert "indices" in prim
+
+    pos_acc = gltf["accessors"][prim["attributes"]["POSITION"]]
+    assert pos_acc["componentType"] == 5126  # FLOAT
+    assert pos_acc["count"] == 3
+    assert pos_acc["type"] == "VEC3"
+    # local-space translation: vertices relative to entity origin (1,0,0)
+    assert pos_acc["min"] == [0.0, 0.0, 0.0]
+    assert pos_acc["max"] == [1.0, 1.0, 1.0]
+
+    idx_acc = gltf["accessors"][prim["indices"]]
+    assert idx_acc["componentType"] == 5123  # UNSIGNED_SHORT (3 vertices)
+    assert idx_acc["count"] == 3
+
+    # Decode the real vertex bytes out of the buffer and verify them.
+    raw = base64.b64decode(gltf["buffers"][0]["uri"].split(",", 1)[1])
+    pos_view = gltf["bufferViews"][pos_acc["bufferView"]]
+    pos_bytes = raw[pos_view["byteOffset"]: pos_view["byteOffset"] + pos_view["byteLength"]]
+    floats = struct.unpack("<9f", pos_bytes)
+    assert floats == (0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0)
+
+
+def test_mesh_geometry_without_resolvable_artifact_falls_back_to_cube():
+    """A MESH-typed geometry is exportable, but without a resolvable
+    artifact it must not fabricate a mesh -- shared placeholder cube,
+    exactly like BOX/PLANE."""
+    store = MemoryArtifactStore()  # empty store: data_uri won't resolve
+    world = WorldIR()
+    geom = Geometry(id="geom-mesh", type=GeometryType.MESH, data_uri="artifact://" + "0" * 64)
+    entity = Entity(
+        id="ent-mesh",
+        name="Meshed",
+        type=EntityType.DEBRIS,
+        transform={"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
+        geometry_ids=["geom-mesh"],
+    )
+    world.geometries[geom.id] = geom
+    world.entities[entity.id] = entity
+
+    gltf = export_to_gltf(world, artifact_store=store)
+    assert len(gltf["meshes"]) == 1  # only the shared placeholder cube
+    assert gltf["nodes"][0]["mesh"] == 0

@@ -19,6 +19,12 @@ Honesty rules:
     -- an empty BIM file would look like success while meaning nothing.
   - If ifcopenshell is not installed, importing this module raises
     ImportError with instructions; nothing degrades to fake output.
+  - DETERMINISTIC: ifcopenshell normally mints random (uuid4) GlobalIds
+    and stamps the header with the wall-clock time; this bridge
+    overrides every GlobalId with a uuid5 derived from the WorldIR id +
+    element identity and pins the header time_stamp to the epoch, so
+    the same world -> byte-identical IFC (matching the determinism
+    contract of the other exporters).
 
 License: ifcopenshell is LGPL-3.0; recorded per the ledger's
 LICENSES.yaml convention (see the ledger sync in this change).
@@ -54,8 +60,90 @@ _IMPORT_ERROR_MESSAGE = (
 )
 
 
+#: Pinned IFC header time_stamp. ifcopenshell stamps the wall-clock
+#: time at file creation, which would break the repo's determinism
+#: contract (same world -> byte-identical export); the epoch is a
+#: fixed, honest "no authoring-time information" value.
+_FIXED_HEADER_TIMESTAMP = "1970-01-01T00:00:00"
+
+
 class IFCBridgeError(ValueError):
     pass
+
+
+def _deterministic_guid(seed: str) -> str:
+    """A valid 22-char IFC GlobalId derived deterministically from
+    `seed` (uuid5 -> ifcopenshell's base64 compression). Same seed ->
+    same GUID, forever; distinct seeds -> distinct GUIDs with the same
+    collision resistance as uuid4."""
+    import uuid
+
+    import ifcopenshell.guid
+
+    digest = uuid.uuid5(uuid.NAMESPACE_URL, f"reality-engine://ifc/{seed}").hex
+    return ifcopenshell.guid.compress(digest)
+
+
+def _normalize_unit_order(model) -> None:
+    """Sort the project's IfcUnitAssignment.Units deterministically.
+
+    ifcopenshell's unit.assign_unit collects units in a Python `set`
+    of entity instances whose iteration order is id-hash based, i.e.
+    it varies between processes; serializing that list as-is breaks
+    byte determinism. Sorting by (class, UnitType, Name) gives a
+    stable, schema-meaningful order."""
+    for project in model.by_type("IfcProject"):
+        assignment = project.UnitsInContext
+        if assignment is None:
+            continue
+        units = sorted(
+            assignment.Units,
+            key=lambda u: (
+                u.is_a(),
+                str(getattr(u, "UnitType", "")),
+                str(getattr(u, "Name", "")),
+            ),
+        )
+        assignment.Units = units
+
+
+def _reassign_relationship_guids(model, world_id: str) -> None:
+    """Give every relationship object (IfcRelAggregates from
+    root.create_entity, IfcRelContainedInSpatialStructure from
+    spatial.assign_container) a deterministic GlobalId. These are
+    created implicitly by the API with random GUIDs; their seeds use
+    the (already deterministic) GlobalIds of the objects they relate,
+    so the assignment order and values are stable."""
+    rels = list(model.by_type("IfcRelAggregates")) + list(
+        model.by_type("IfcRelContainedInSpatialStructure"))
+
+    def _key(rel):
+        # IfcRelAggregates uses RelatingObject/RelatedObjects;
+        # IfcRelContainedInSpatialStructure uses RelatingStructure/
+        # RelatedElements -- same relationship concept, different
+        # attribute names in the IFC4 schema.
+        relating = getattr(rel, "RelatingObject", None) or getattr(
+            rel, "RelatingStructure", None)
+        related = getattr(rel, "RelatedObjects", None) or getattr(
+            rel, "RelatedElements", None) or ()
+        relating_id = relating.GlobalId if relating else ""
+        related_ids = tuple(sorted(o.GlobalId for o in related))
+        return (rel.is_a(), relating_id, related_ids)
+
+    for rel in sorted(rels, key=_key):
+        cls, relating, related = _key(rel)
+        rel.GlobalId = _deterministic_guid(
+            f"{world_id}/rel/{cls}/{relating}/{'+'.join(related)}")
+        # The API accumulates RelatedElements/RelatedObjects in a hash
+        # set of swig proxies (id-address order -- varies between
+        # runs); rewrite the list sorted by the (now deterministic)
+        # GlobalIds so serialization is stable.
+        if getattr(rel, "RelatedObjects", None):
+            rel.RelatedObjects = sorted(
+                rel.RelatedObjects, key=lambda o: o.GlobalId)
+        elif getattr(rel, "RelatedElements", None):
+            rel.RelatedElements = sorted(
+                rel.RelatedElements, key=lambda o: o.GlobalId)
 
 
 def _bounds_extent(geom) -> Optional[Tuple[float, float, float]]:
@@ -87,8 +175,8 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Dict[str, str]]:
         raise ImportError(_IMPORT_ERROR_MESSAGE) from exc
 
     model = ifc_api.run("project.create_file", version="IFC4")
-    ifc_api.run("root.create_entity", model, ifc_class="IfcProject",
-                name=f"Reality Engine {world.id}")
+    project = ifc_api.run("root.create_entity", model, ifc_class="IfcProject",
+                          name=f"Reality Engine {world.id}")
     ifc_api.run("unit.assign_unit", model)
     model_ctx = ifc_api.run("context.add_context", model,
                             context_type="Model")
@@ -102,6 +190,12 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Dict[str, str]]:
                            ifc_class="IfcBuilding", name="Reality Engine Building")
     storey = ifc_api.run("root.create_entity", model,
                          ifc_class="IfcBuildingStorey", name="L0")
+    # Determinism: replace every random GlobalId the API minted with a
+    # uuid5-derived one seeded by the world id + the element's role.
+    project.GlobalId = _deterministic_guid(f"{world.id}/project")
+    site.GlobalId = _deterministic_guid(f"{world.id}/site")
+    building.GlobalId = _deterministic_guid(f"{world.id}/building")
+    storey.GlobalId = _deterministic_guid(f"{world.id}/storey")
 
     builder = shape_builder.ShapeBuilder(model)
     written: list = []
@@ -138,6 +232,10 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Dict[str, str]]:
         name = f"{entity.id} {entity.name}".strip()
         element = ifc_api.run("root.create_entity", model,
                               ifc_class=ifc_class, name=name)
+        # Deterministic identity: the GUID is a pure function of the
+        # WorldIR entity id, so re-exporting the same world re-mints
+        # the same IFC GlobalIds (traceable across exports).
+        element.GlobalId = _deterministic_guid(f"{world.id}/entity/{entity.id}")
         ifc_api.run("spatial.assign_container", model,
                     products=[element], relating_structure=storey)
 
@@ -162,6 +260,14 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Dict[str, str]]:
             "no entities were exportable to IFC -- the world has no "
             "BOX/PLANE geometry with real bounds; refusing to write an "
             "empty BIM file")
+
+    # Relationships were minted with random GUIDs by the API calls
+    # above; reseed them deterministically, normalize the unit list
+    # order (assign_unit uses a hash set), and pin the header
+    # time_stamp, before serializing.
+    _reassign_relationship_guids(model, world.id)
+    _normalize_unit_order(model)
+    model.header.file_name.time_stamp = _FIXED_HEADER_TIMESTAMP
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     model.write(str(path))

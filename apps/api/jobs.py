@@ -20,7 +20,8 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.models import ActivityEvent, Evidence, Job, Session, World, new_id, utcnow
+from apps.api.models import Evidence, Job, Session, World, utcnow
+from evidence.session import EvidenceItem, EvidenceKind
 
 log = logging.getLogger("reality.api.jobs")
 
@@ -106,200 +107,156 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> None:
     evidence.processed_at = utcnow()
     await db.commit()
 async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
-    """Run the existing ReconstructionOrchestrator for a session.
+    """Run the real capture-to-WorldIR vertical slice for a session's
+    photo evidence, then commit the result as a new WorldStore version.
 
-    Heavy dependencies (COLMAP etc.) are optional; unavailability is an
-    explicit, honest job failure, never a silent pass.
+    Heavy dependencies (COLMAP etc.) are optional; unavailability, too
+    little evidence, or a pipeline stage refusing are explicit, honest
+    job failures -- never a silent pass or a fabricated world.
     """
+    from apps.api import worldstore_service
+    from apps.api.storage import resolve_artifact
+
     session = await db.get(Session, job.entity_id)
     if session is None:
         raise RuntimeError(f"Session {job.entity_id} not found")
+    if not session.world_id:
+        raise RuntimeError(
+            "Session is not attached to a World; attach it before reconstructing "
+            "(a compiled version has nowhere to be committed otherwise)."
+        )
+    world = await db.get(World, session.world_id)
+    if world is None:
+        raise RuntimeError(f"World {session.world_id} not found")
+
     job.stage = "checking_reconstruction_backend"
     await db.commit()
-
     try:
-        import reconstruction.orchestrator  # noqa: F401
+        from engine.pipeline.vertical_slice import (
+            VerticalSliceError,
+            VerticalSliceOptions,
+            vertical_slice,
+        )
+        from world_ir.artifact_store import FileArtifactStore
     except Exception as exc:  # pragma: no cover - depends on optional deps
         raise RuntimeError(f"Reconstruction backend unavailable: {exc}") from exc
 
+    job.stage = "resolving_evidence"
+    await db.commit()
+    result = await db.execute(
+        select(Evidence).where(Evidence.session_id == session.id, Evidence.type == "photo")
+    )
+    evidence_rows = list(result.scalars().all())
+    items = []
+    for ev in evidence_rows:
+        if not ev.artifact_uri:
+            continue
+        path = resolve_artifact(ev.artifact_uri)
+        if path is None:
+            continue
+        items.append(
+            EvidenceItem(
+                id=ev.id,
+                kind=EvidenceKind.PHOTO,
+                source_uri=path.resolve().as_uri(),
+                sha256=ev.checksum,
+            )
+        )
+    if len(items) < 2:
+        raise RuntimeError(
+            f"Session has {len(items)} usable photo evidence item(s) with stored "
+            "artifacts; the reconstruction pipeline needs at least 2."
+        )
+
     job.stage = "reconstructing"
     await db.commit()
-
-    from evidence.session import EvidenceItem, EvidenceKind
-
-    # ---- application evidence -> canonical EvidenceItem (the same shape
-    # the CLI vertical slice feeds the orchestrator). Only REAL stored
-    # artifacts participate: an evidence row whose artifact cannot be
-    # resolved from the content store is recorded as skipped, never
-    # silently promoted into a fabricated input.
-    res = await db.execute(
-        select(Evidence).where(Evidence.session_id == session.id)
-    )
-    evidence_rows = res.scalars().all()
-    items: list[EvidenceItem] = []
-    skipped: list[dict] = []
-    from apps.api.storage import resolve_artifact
-
-    kind_by_type = {
-        "photo": EvidenceKind.PHOTO,
-        "video": EvidenceKind.VIDEO,
-        "point_cloud": EvidenceKind.POINT_CLOUD,
-        "depth": EvidenceKind.DEPTH,
-        "gnss": EvidenceKind.GPS_TRACK,
-        "imu": EvidenceKind.IMU,
-        "sensor_log": EvidenceKind.OTHER,
-        "dataset": EvidenceKind.OTHER,
-    }
-    for ev in evidence_rows:
-        path = resolve_artifact(ev.artifact_uri) if ev.artifact_uri else None
-        if path is None:
-            skipped.append({
-                "evidence_id": ev.id,
-                "reason": f"artifact_uri {ev.artifact_uri!r} not resolvable in content store",
-            })
-            continue
-        uri = Path(path).resolve().as_uri()
-        metadata = dict(ev.metadata_json or {})
-        metadata["application_evidence_id"] = ev.id
-        items.append(EvidenceItem(
-            id=ev.id,
-            kind=kind_by_type.get(ev.type, EvidenceKind.OTHER),
-            source_uri=uri,
-            captured_at=ev.created_at.timestamp() if ev.created_at else None,
-            sha256=ev.checksum,
-            metadata=metadata,
-        ))
-
-    image_count = sum(
-        1 for it in items if it.kind in (EvidenceKind.PHOTO, EvidenceKind.VIDEO)
-    )
-    if image_count < 2:
-        detail = "; ".join(s["reason"] for s in skipped) if skipped else "none stored"
-        raise RuntimeError(
-            f"session {session.id} has {image_count} usable image evidence items "
-            f"(need >= 2) -- no reconstruction was run. Unresolvable artifacts: {detail}"
-        )
-
-    # ---- orchestrator: the same backend chain the CLI uses. A missing
-    # COLMAP binary is an explicit job failure carrying the backend's own
-    # availability detail (never a fake success). REALITY_TEST_BACKEND
-    # ("module:Class") injects a deterministic backend for offline
-    # verification of this path, mirroring apps.cli.main._resolve_test_backend.
-    backend = None
-    spec = os.environ.get("REALITY_TEST_BACKEND", "").strip()
-    if spec:
-        import importlib
-
-        module_name, _, class_name = spec.partition(":")
-        if not module_name or not class_name:
-            raise RuntimeError(
-                f"REALITY_TEST_BACKEND must be 'module:Class', got {spec!r}"
-            )
-        backend = getattr(importlib.import_module(module_name), class_name)()
-    else:
-        from reconstruction.backend.colmap_backend import (
-            ColmapReconstructionBackend,
-        )
-
-        backend = ColmapReconstructionBackend()
-
-    from reconstruction.orchestrator import ReconstructionOrchestrator
-
-    orchestrator = ReconstructionOrchestrator(backends=[backend])
+    artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+    options = VerticalSliceOptions(artifact_store=artifact_store)
     try:
-        run = orchestrator.run(items)
-    except Exception as exc:  # noqa: BLE001 - honest job failure with the stage's own error
-        raise RuntimeError(f"reconstruction failed: {exc}") from exc
+        vs_result = await asyncio.to_thread(vertical_slice, items, options)
+    except VerticalSliceError as exc:
+        raise RuntimeError(f"Reconstruction failed: {exc}") from exc
 
-    result = run.result
-    if result.registration_status == "failed" or not result.points:
-        raise RuntimeError(
-            f"reconstruction produced nothing usable "
-            f"(status={result.registration_status!r}, {len(result.points)} points) "
-            f"-- not compiling"
-        )
-
-    job.stage = "compiling"
+    job.stage = "committing_version"
     await db.commit()
-
-    # ---- compile to WorldIR and persist a WorldStore version (real
-    # artifacts only; a refusal here is an honest job failure).
-    from sdk import reality
-    from worldstore.store import WorldStore
-    from world_ir.artifact_store import FileArtifactStore
-
-    store_root = Path(os.environ.get("WORLDSTORE_ROOT", "./data/worldstore"))
-    store_root.mkdir(parents=True, exist_ok=True)
-    compile_options = reality.CompileOptions(
-        artifact_store=FileArtifactStore(store_root / "artifacts")
-    )
-    try:
-        world, diagnostics = reality.compile_world_from_reconstruction(
-            result, compile_options
-        )
-    except (reality.CompileInputError, reality.WorldValidationGateError) as exc:
-        raise RuntimeError(f"world compile refused: {exc}") from exc
-
-    wstore = WorldStore(store_root)
-    stored = wstore.save_version(
-        world, parent=None, source_session_ids=[session.id]
-    )
-
-    job.stage = "linking"
-    await db.commit()
-
-    # ---- link the result into the application model: reuse the
-    # session's existing World when attached, else create one. The
-    # WorldVersion mirror row references the WorldStore artifact so the
-    # versions/worldir surfaces read REAL computational state.
-    world_row = None
-    if session.world_id:
-        world_row = await db.get(World, session.world_id)
-    if world_row is None:
-        world_row = World(
-            id=new_id("wld"),
-            name=f"World for {session.name}",
-        )
-        db.add(world_row)
-    session.world_id = world_row.id
-    session.status = "complete"
-    session.processing_completed_at = utcnow()
-    world_row.current_version_id = stored.version_id
-    from apps.api.models import WorldVersion
-
-    db.add(WorldVersion(
-        id=stored.version_id,
-        world_id=world_row.id,
-        parent_version_id=stored.parent,
-        artifact_uri=stored.artifact_uri,
-        artifact_hash=stored.artifact_hash,
-        source_session_ids=list(stored.source_session_ids),
-        changed_entity_ids=list(stored.changed_entity_ids),
-    ))
-    db.add(ActivityEvent(
-        id=new_id("act"),
-        type="world.version_created",
-        entity_type="world",
-        entity_id=world_row.id,
-        summary=(
-            f"Version '{stored.version_id}' created from session "
-            f"'{session.name}' ({len(result.points)} points, "
-            f"{len(result.camera_poses)} cameras)"
-        ),
-    ))
-    await db.commit()
-    job.payload = {
-        "world_id": world_row.id,
-        "version_id": stored.version_id,
-        "registration_status": result.registration_status,
-        "points": len(result.points),
-        "cameras_registered": len(result.camera_poses),
-        "attempts": [a.to_dict() for a in run.diagnostics.attempts],
-        "skipped_evidence": skipped,
+    report = {
+        "status": "SUCCESS" if vs_result.registration_status == "success" else "PARTIAL_SUCCESS",
+        "session_id": session.id,
+        "images_ingested": len(items),
+        "stages": {
+            "reconstruction": {
+                "backend": vs_result.stage_facts.get("backend"),
+                "cameras_registered": vs_result.cameras_registered,
+                "cameras_input": vs_result.cameras_input,
+                "registration_status": vs_result.registration_status,
+                "points": vs_result.points_total,
+            },
+            "scale": {"state": vs_result.scale_state, "meters_per_unit": vs_result.meters_per_unit},
+            "depth": vs_result.stage_facts.get("depth"),
+            "perception": vs_result.stage_facts.get("perception"),
+            "mesh": vs_result.stage_facts.get("mesh"),
+            "compile": {
+                "entities": len(vs_result.world.entities),
+                "measurements": vs_result.compile.measurements_count,
+                "relationships": vs_result.compile.relationships_count,
+            },
+        },
     }
-    await db.commit()
-    _notify_world_version(db, job, world_row, stored.version_id)
-    await db.commit()
+
+    points_bytes = await asyncio.to_thread(_render_points_ply, vs_result.points)
+    cameras_bytes = await asyncio.to_thread(
+        _render_cameras_json, vs_result.camera_poses, vs_result.scale_state, options.image_size
+    )
+
+    await worldstore_service.commit_version(
+        db,
+        world_id=world.id,
+        world=vs_result.world,
+        parent=world.current_version_id,
+        source_session_ids=[session.id],
+        points=points_bytes,
+        cameras=cameras_bytes,
+        report=report,
+    )
+
+
+def _render_points_ply(points) -> bytes:
+    """Same binary PLY writer engine.pipeline.artifacts.write_points_ply
+    uses, targeting an in-memory buffer instead of a file path -- the
+    job commits bytes straight into content-addressed storage rather
+    than round-tripping through a temp file on disk."""
+    import struct
+
+    n = len(points)
+    header = (
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        f"element vertex {n}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "end_header\n"
+    ).encode("ascii")
+    body = bytearray()
+    for p in points:
+        body += struct.pack("<3f", float(p[0]), float(p[1]), float(p[2]))
+    return header + bytes(body)
+
+
+def _render_cameras_json(camera_poses, scale_state: str, image_size) -> bytes:
+    """Same JSON shape engine.pipeline.artifacts.write_cameras_json
+    writes -- kept in sync with that module, in-memory."""
+    import json as _json
+
+    payload = {
+        "frame": "world (meters, +Y up after frame canonicalization)",
+        "scale_state": scale_state,
+        "rotation_convention": "camera-to-world quaternion (w, x, y, z)",
+        "image_size": list(image_size),
+        "cameras": [
+            {"evidence_id": eid, "position_m": list(pos), "rotation_wxyz": list(rot)}
+            for eid, pos, rot in camera_poses
+        ],
+    }
+    return _json.dumps(payload, indent=2).encode("utf-8")
 
 
 _HANDLERS = {
@@ -347,28 +304,6 @@ async def process_next_job(db: AsyncSession) -> Job | None:
             job.stage = None
     await db.commit()
     return job
-
-
-def _notify_world_version(db, job, world_row, version_id) -> None:
-    """A completed reconstruction is a real product event: surface it in
-    notifications and activity so the UI's world surfaces see it."""
-    from apps.api.models import Notification
-
-    db.add(Notification(
-        id=f"ntf_{uuid.uuid4().hex[:12]}",
-        type="world.version_created",
-        title="World reconstructed",
-        body=f"Version {version_id} created for world {world_row.name}",
-        entity_type="world",
-        entity_id=world_row.id,
-    ))
-    db.add(ActivityEvent(
-        id=new_id("act"),
-        type="world.version_created",
-        entity_type="world",
-        entity_id=world_row.id,
-        summary=f"World '{world_row.name}' version {version_id} created",
-    ))
 
 
 async def _emit_completion(db: AsyncSession, job: Job) -> None:

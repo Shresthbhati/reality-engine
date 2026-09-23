@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import Evidence, Job, Session, World, utcnow
+from evidence.session import EvidenceItem, EvidenceKind
 
 log = logging.getLogger("reality.api.jobs")
 
@@ -106,30 +107,156 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> None:
     evidence.processed_at = utcnow()
     await db.commit()
 async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
-    """Run the existing ReconstructionOrchestrator for a session.
+    """Run the real capture-to-WorldIR vertical slice for a session's
+    photo evidence, then commit the result as a new WorldStore version.
 
-    Heavy dependencies (COLMAP etc.) are optional; unavailability is an
-    explicit, honest job failure, never a silent pass.
+    Heavy dependencies (COLMAP etc.) are optional; unavailability, too
+    little evidence, or a pipeline stage refusing are explicit, honest
+    job failures -- never a silent pass or a fabricated world.
     """
+    from apps.api import worldstore_service
+    from apps.api.storage import resolve_artifact
+
     session = await db.get(Session, job.entity_id)
     if session is None:
         raise RuntimeError(f"Session {job.entity_id} not found")
+    if not session.world_id:
+        raise RuntimeError(
+            "Session is not attached to a World; attach it before reconstructing "
+            "(a compiled version has nowhere to be committed otherwise)."
+        )
+    world = await db.get(World, session.world_id)
+    if world is None:
+        raise RuntimeError(f"World {session.world_id} not found")
+
     job.stage = "checking_reconstruction_backend"
     await db.commit()
-
     try:
-        import reconstruction.orchestrator as orch  # noqa: F401
+        from engine.pipeline.vertical_slice import (
+            VerticalSliceError,
+            VerticalSliceOptions,
+            vertical_slice,
+        )
+        from world_ir.artifact_store import FileArtifactStore
     except Exception as exc:  # pragma: no cover - depends on optional deps
         raise RuntimeError(f"Reconstruction backend unavailable: {exc}") from exc
 
+    job.stage = "resolving_evidence"
+    await db.commit()
+    result = await db.execute(
+        select(Evidence).where(Evidence.session_id == session.id, Evidence.type == "photo")
+    )
+    evidence_rows = list(result.scalars().all())
+    items = []
+    for ev in evidence_rows:
+        if not ev.artifact_uri:
+            continue
+        path = resolve_artifact(ev.artifact_uri)
+        if path is None:
+            continue
+        items.append(
+            EvidenceItem(
+                id=ev.id,
+                kind=EvidenceKind.PHOTO,
+                source_uri=path.resolve().as_uri(),
+                sha256=ev.checksum,
+            )
+        )
+    if len(items) < 2:
+        raise RuntimeError(
+            f"Session has {len(items)} usable photo evidence item(s) with stored "
+            "artifacts; the reconstruction pipeline needs at least 2."
+        )
+
     job.stage = "reconstructing"
     await db.commit()
-    # Full orchestration invocation is wired in the reconstruction follow-up
-    # with attempt persistence; until then no fabricated results are emitted.
-    raise RuntimeError(
-        "Reconstruction orchestration for application sessions is not wired yet; "
-        "no reconstruction was run."
+    artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+    options = VerticalSliceOptions(artifact_store=artifact_store)
+    try:
+        vs_result = await asyncio.to_thread(vertical_slice, items, options)
+    except VerticalSliceError as exc:
+        raise RuntimeError(f"Reconstruction failed: {exc}") from exc
+
+    job.stage = "committing_version"
+    await db.commit()
+    report = {
+        "status": "SUCCESS" if vs_result.registration_status == "success" else "PARTIAL_SUCCESS",
+        "session_id": session.id,
+        "images_ingested": len(items),
+        "stages": {
+            "reconstruction": {
+                "backend": vs_result.stage_facts.get("backend"),
+                "cameras_registered": vs_result.cameras_registered,
+                "cameras_input": vs_result.cameras_input,
+                "registration_status": vs_result.registration_status,
+                "points": vs_result.points_total,
+            },
+            "scale": {"state": vs_result.scale_state, "meters_per_unit": vs_result.meters_per_unit},
+            "depth": vs_result.stage_facts.get("depth"),
+            "perception": vs_result.stage_facts.get("perception"),
+            "mesh": vs_result.stage_facts.get("mesh"),
+            "compile": {
+                "entities": len(vs_result.world.entities),
+                "measurements": vs_result.compile.measurements_count,
+                "relationships": vs_result.compile.relationships_count,
+            },
+        },
+    }
+
+    points_bytes = await asyncio.to_thread(_render_points_ply, vs_result.points)
+    cameras_bytes = await asyncio.to_thread(
+        _render_cameras_json, vs_result.camera_poses, vs_result.scale_state, options.image_size
     )
+
+    await worldstore_service.commit_version(
+        db,
+        world_id=world.id,
+        world=vs_result.world,
+        parent=world.current_version_id,
+        source_session_ids=[session.id],
+        points=points_bytes,
+        cameras=cameras_bytes,
+        report=report,
+    )
+
+
+def _render_points_ply(points) -> bytes:
+    """Same binary PLY writer engine.pipeline.artifacts.write_points_ply
+    uses, targeting an in-memory buffer instead of a file path -- the
+    job commits bytes straight into content-addressed storage rather
+    than round-tripping through a temp file on disk."""
+    import struct
+
+    n = len(points)
+    header = (
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        f"element vertex {n}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "end_header\n"
+    ).encode("ascii")
+    body = bytearray()
+    for p in points:
+        body += struct.pack("<3f", float(p[0]), float(p[1]), float(p[2]))
+    return header + bytes(body)
+
+
+def _render_cameras_json(camera_poses, scale_state: str, image_size) -> bytes:
+    """Same JSON shape engine.pipeline.artifacts.write_cameras_json
+    writes -- kept in sync with that module, in-memory."""
+    import json as _json
+
+    payload = {
+        "frame": "world (meters, +Y up after frame canonicalization)",
+        "scale_state": scale_state,
+        "rotation_convention": "camera-to-world quaternion (w, x, y, z)",
+        "image_size": list(image_size),
+        "cameras": [
+            {"evidence_id": eid, "position_m": list(pos), "rotation_wxyz": list(rot)}
+            for eid, pos, rot in camera_poses
+        ],
+    }
+    return _json.dumps(payload, indent=2).encode("utf-8")
 
 
 _HANDLERS = {

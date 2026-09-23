@@ -1,24 +1,30 @@
 import Link from "next/link";
 import { Globe } from "lucide-react";
-import { WORLDS } from "@/lib/data";
+import { listWorlds, isApiError } from "@/lib/api";
+import { MobileEmptyState, MobileErrorState } from "@/components/mobile/AsyncState";
 
-export default function MobileWorldsPage() {
+export default async function MobileWorldsPage() {
+  let worlds;
+  try {
+    worlds = (await listWorlds()).rows;
+  } catch (err) {
+    return (
+      <div className="flex flex-col gap-5 p-4">
+        <Header />
+        <MobileErrorState message={isApiError(err) ? err.describe() : "Unexpected error loading Worlds."} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5 p-4">
-      <h1 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-        Worlds
-      </h1>
+      <Header />
 
-      {WORLDS.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-16 px-4 text-center">
-          <Globe className="w-6 h-6" style={{ color: "var(--text-tertiary)" }} />
-          <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
-            No Worlds yet.
-          </p>
-        </div>
+      {worlds.length === 0 ? (
+        <MobileEmptyState icon={Globe} message="No Worlds yet." />
       ) : (
         <div className="flex flex-col gap-2">
-          {WORLDS.map((w) => {
+          {worlds.map((w) => {
             const metaParts: string[] = [];
             if (w.coverageKm2 !== null) metaParts.push(`${w.coverageKm2} km²`);
             metaParts.push(`${w.sessionCount} Sessions`);
@@ -48,5 +54,13 @@ export default function MobileWorldsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function Header() {
+  return (
+    <h1 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+      Worlds
+    </h1>
   );
 }

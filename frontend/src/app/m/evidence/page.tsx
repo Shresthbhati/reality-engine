@@ -1,24 +1,36 @@
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
-import { EVIDENCE } from "@/lib/data";
+import { listEvidence, isApiError } from "@/lib/api";
+import { MobileEmptyState, MobileErrorState } from "@/components/mobile/AsyncState";
 
-export default function MobileEvidencePage() {
+export default async function MobileEvidencePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ session?: string }>;
+}) {
+  const { session: sessionId } = await searchParams;
+
+  let evidence;
+  try {
+    evidence = (await listEvidence({ sessionId })).rows;
+  } catch (err) {
+    return (
+      <div className="flex flex-col gap-5 p-4">
+        <Header />
+        <MobileErrorState message={isApiError(err) ? err.describe() : "Unexpected error loading Evidence."} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5 p-4">
-      <h1 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-        Evidence
-      </h1>
+      <Header />
 
-      {EVIDENCE.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-16 px-4 text-center">
-          <ShieldCheck className="w-6 h-6" style={{ color: "var(--text-tertiary)" }} />
-          <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
-            No Evidence has been added yet.
-          </p>
-        </div>
+      {evidence.length === 0 ? (
+        <MobileEmptyState icon={ShieldCheck} message="No Evidence has been added yet." />
       ) : (
         <div className="flex flex-col gap-2">
-          {EVIDENCE.map((e) => (
+          {evidence.map((e) => (
             <Link
               key={e.id}
               href={`/m/evidence/${e.id}`}
@@ -43,5 +55,13 @@ export default function MobileEvidencePage() {
         </div>
       )}
     </div>
+  );
+}
+
+function Header() {
+  return (
+    <h1 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+      Evidence
+    </h1>
   );
 }

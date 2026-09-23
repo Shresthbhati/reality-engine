@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { Camera, List } from "lucide-react";
 import WorldMap from "@/components/map/WorldMap";
 import DesktopHandoff from "@/components/mobile/DesktopHandoff";
-import { getWorld } from "@/lib/data";
+import { MobileErrorState } from "@/components/mobile/AsyncState";
+import { getWorld, listWorldVersions, isApiError } from "@/lib/api";
 
 export default async function MobileWorldDetailPage({
   params,
@@ -11,10 +12,27 @@ export default async function MobileWorldDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const world = getWorld(id);
 
-  if (!world) {
-    notFound();
+  let world;
+  let currentVersionLabel: string | null = null;
+  try {
+    const result = await getWorld(id);
+    world = result.row;
+    if (world.currentVersionId) {
+      try {
+        const versions = await listWorldVersions(id);
+        currentVersionLabel = versions.find((v) => v.id === world.currentVersionId)?.label ?? null;
+      } catch {
+        // Version lookup is supplementary; the World detail itself still renders.
+      }
+    }
+  } catch (err) {
+    if (isApiError(err) && err.code === "not_found") notFound();
+    return (
+      <div className="flex flex-col gap-5 p-4">
+        <MobileErrorState message={isApiError(err) ? err.describe() : "Unexpected error loading this World."} />
+      </div>
+    );
   }
 
   const hasCoords = world.lat !== null && world.lng !== null;
@@ -29,6 +47,11 @@ export default async function MobileWorldDetailPage({
         <p className="text-sm mt-0.5" style={{ color: world.location ? "var(--text-secondary)" : "var(--text-tertiary)" }}>
           {world.location ?? "Unavailable"}
         </p>
+        {currentVersionLabel && (
+          <p className="text-xs mt-1 font-mono-num" style={{ color: "var(--text-tertiary)" }}>
+            Current version · {currentVersionLabel}
+          </p>
+        )}
       </div>
 
       {hasCoords && (
@@ -68,7 +91,12 @@ export default async function MobileWorldDetailPage({
         </Link>
       </div>
 
-      <DesktopHandoff href={`/worlds/${world.id}`} />
+      <DesktopHandoff
+        href={`/worlds/${world.id}`}
+        worldName={world.name}
+        versionLabel={currentVersionLabel}
+        pendingWork={world.evidenceCount > 0 ? `${world.evidenceCount} Evidence items in this World` : null}
+      />
     </div>
   );
 }

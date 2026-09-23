@@ -2,8 +2,10 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Camera, Image as ImageIcon, Video, Check, RotateCcw } from "lucide-react";
-import { getWorld } from "@/lib/data";
+import Link from "next/link";
+import { Camera, Image as ImageIcon, Video, Check, RotateCcw, AlertTriangle } from "lucide-react";
+import { getWorld, createSession, attachSessionToWorld, uploadEvidence, isApiError } from "@/lib/api";
+import type { WorldRow } from "@/lib/types";
 
 type GpsState =
   | { status: "loading" }
@@ -11,7 +13,7 @@ type GpsState =
   | { status: "unavailable"; reason: string };
 
 type CaptureMode = "photo" | "video";
-type FlowStep = "camera" | "preview" | "session" | "done";
+type FlowStep = "camera" | "preview" | "session" | "creating" | "done";
 
 export default function MobileCameraPage() {
   return (
@@ -25,7 +27,26 @@ function MobileCameraPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const worldId = searchParams.get("world");
-  const world = worldId ? getWorld(worldId) : undefined;
+
+  const [world, setWorld] = useState<WorldRow | null | "loading">(worldId ? "loading" : null);
+  useEffect(() => {
+    if (!worldId) {
+      setWorld(null);
+      return;
+    }
+    let cancelled = false;
+    setWorld("loading");
+    getWorld(worldId)
+      .then((r) => {
+        if (!cancelled) setWorld(r.row);
+      })
+      .catch(() => {
+        if (!cancelled) setWorld(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId]);
 
   const [mode, setMode] = useState<CaptureMode>("photo");
   const [step, setStep] = useState<FlowStep>("camera");
@@ -38,6 +59,8 @@ function MobileCameraPageInner() {
   });
   const [captured, setCaptured] = useState<{ file: File; url: string; at: Date } | null>(null);
   const [sessionName, setSessionName] = useState("");
+  const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(false);
@@ -87,6 +110,35 @@ function MobileCameraPageInner() {
     setStep("session");
   };
 
+  const createSessionAndUpload = async () => {
+    if (!captured || !sessionName.trim()) return;
+    setCreateError(null);
+    setStep("creating");
+    try {
+      const input = {
+        name: sessionName.trim(),
+        captured_at: captured.at.toISOString(),
+        location:
+          gps.status === "ready"
+            ? { latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracyM }
+            : undefined,
+      };
+      const session = await createSession(input);
+      if (world) {
+        await attachSessionToWorld(world.id, session.id).catch(() => {
+          // Session is created regardless; the World link is best-effort here —
+          // the user can attach it from the Session detail screen if this fails.
+        });
+      }
+      await uploadEvidence(captured.file, session.id);
+      setCreatedSessionId(session.id);
+      setStep("done");
+    } catch (err) {
+      setCreateError(isApiError(err) ? err.describe() : "Failed to create Session.");
+      setStep("session");
+    }
+  };
+
   if (step === "done") {
     return (
       <div className="flex flex-col items-center justify-center gap-4 h-full p-6 text-center">
@@ -97,24 +149,43 @@ function MobileCameraPageInner() {
           <Check className="w-6 h-6" />
         </div>
         <p className="text-sm" style={{ color: "var(--text-primary)" }}>
-          Capture saved locally.
+          Session created and Evidence uploaded.
         </p>
-        <p className="text-xs max-w-xs" style={{ color: "var(--text-tertiary)" }}>
-          Session creation isn&apos;t wired to a backend yet — nothing was uploaded or persisted.
-        </p>
-        <button
-          type="button"
-          onClick={() => router.push("/m")}
-          className="mt-2 h-10 px-4 rounded-md text-sm font-medium"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-        >
-          Back to Home
-        </button>
+        {createdSessionId && (
+          <Link
+            href={`/m/sessions/${createdSessionId}`}
+            className="text-sm font-medium"
+            style={{ color: "var(--accent)" }}
+          >
+            View Session →
+          </Link>
+        )}
+        <div className="flex gap-3 mt-2">
+          <button
+            type="button"
+            onClick={() => router.push("/m")}
+            className="h-10 px-4 rounded-md text-sm font-medium"
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+          >
+            Back to Home
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCreatedSessionId(null);
+              retake();
+            }}
+            className="h-10 px-4 rounded-md text-sm font-medium"
+            style={{ background: "var(--accent-subtle)", border: "1px solid var(--accent-border)", color: "var(--accent)" }}
+          >
+            Capture Another
+          </button>
+        </div>
       </div>
     );
   }
 
-  if (step === "session" && captured) {
+  if ((step === "session" || step === "creating") && captured) {
     return (
       <div className="flex flex-col gap-5 p-4">
         <h1 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -128,6 +199,7 @@ function MobileCameraPageInner() {
           <input
             value={sessionName}
             onChange={(e) => setSessionName(e.target.value)}
+            disabled={step === "creating"}
             className="mobile-input"
           />
         </Field>
@@ -139,24 +211,32 @@ function MobileCameraPageInner() {
         </Field>
 
         <Field label="World">
-          <div className="mobile-input flex items-center" style={{ color: world ? "var(--text-primary)" : "var(--text-tertiary)" }}>
-            {world ? world.name : "None — standalone Session"}
+          <div className="mobile-input flex items-center" style={{ color: world && world !== "loading" ? "var(--text-primary)" : "var(--text-tertiary)" }}>
+            {world === "loading" ? "Loading…" : world ? world.name : "None — standalone Session"}
           </div>
         </Field>
 
+        {createError && (
+          <div className="flex items-start gap-2 text-xs" style={{ color: "var(--error)" }}>
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{createError}</span>
+          </div>
+        )}
+
         <button
           type="button"
-          disabled={!sessionName.trim()}
-          onClick={() => setStep("done")}
+          disabled={!sessionName.trim() || step === "creating"}
+          onClick={createSessionAndUpload}
           className="h-12 rounded-lg text-sm font-semibold disabled:opacity-40"
           style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
         >
-          Create Session
+          {step === "creating" ? "Creating…" : "Create Session"}
         </button>
         <button
           type="button"
+          disabled={step === "creating"}
           onClick={retake}
-          className="h-11 rounded-md text-sm font-medium"
+          className="h-11 rounded-md text-sm font-medium disabled:opacity-40"
           style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
         >
           Retake
@@ -214,7 +294,7 @@ function MobileCameraPageInner() {
             className="text-xs font-mono-num px-2 h-6 flex items-center rounded"
             style={{ background: "rgba(8,9,11,0.7)", color: "var(--text-secondary)" }}
           >
-            {world ? world.name : "No World selected"}
+            {world === "loading" ? "Loading World…" : world ? world.name : "No World selected"}
           </span>
         </div>
 

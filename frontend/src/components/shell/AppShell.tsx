@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import TopBar from "./TopBar";
 import Sidebar from "./Sidebar";
 import CommandPalette from "./CommandPalette";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -31,6 +33,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       // Storage unavailable — falls back to the OS-level media query only.
     }
   }, []);
+
+  // Persistent spatial operating environment for spatial studio routes:
+  // Roots (`/`) and World workspaces (`/worlds/[id]`) occupy full viewport without dashboard letterboxing.
+  const isSpatialStudio =
+    pathname === "/" ||
+    (pathname.startsWith("/worlds/") && pathname !== "/worlds/new");
+
+  if (isSpatialStudio) {
+    return (
+      <div className="flex h-screen w-screen overflow-hidden bg-[#08090b]">
+        <main className="flex-1 min-w-0 h-full overflow-hidden relative">
+          {children}
+        </main>
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">

@@ -56,6 +56,9 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
         "worker_id": j.worker_id,
         "entity_type": j.entity_type,
         "entity_id": j.entity_id,
+        # Stage outputs (e.g. a reconstruction's world/version ids) so
+        # completed jobs carry their real result, not just a status.
+        "payload": j.payload,
     }
 
 

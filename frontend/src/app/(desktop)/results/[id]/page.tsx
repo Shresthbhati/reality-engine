@@ -31,6 +31,14 @@ export default async function ResultDetailPage({
     try { session = (await getSession(result.sessionId)).row; }
     catch (e) { if (isApiError(e) && e.code === "not_found") session = undefined; else throw e; }
   }
+  let evidenceCount = 0;
+  if (session) {
+    try {
+      evidenceCount = (await listEvidence({ sessionId: session.id })).rows.length;
+    } catch {
+      evidenceCount = 0;
+    }
+  }
   const analysis: AnalysisRow | undefined = undefined;
   const worldId = hasLocation && session?.worldId ? session.worldId : null;
   // Evidence count for the provenance chain. null = unknown (API error), so the

@@ -5,14 +5,8 @@ import PageHeader from "@/components/ui/PageHeader";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
 import SessionTimeline from "@/components/ui/SessionTimeline";
-import {
-  getSession,
-  listEvidence,
-  isApiError,
-  unsupportedForAnalysis,
-  type AnalysisRow,
-  type ResultRow,
-} from "@/lib/api";
+import { getSession, listEvidence, isApiError, unsupportedForAnalysis } from "@/lib/api";
+import type { AnalysisRow, ResultRow } from "@/lib/types";
 
 export default async function SessionDetailPage({
   params,
@@ -140,6 +134,7 @@ export default async function SessionDetailPage({
         <EmptyState
           icon={FileText}
           message={analysisResource.reason}
+          actionLabel="Unsupported"
         />
       </div>
 

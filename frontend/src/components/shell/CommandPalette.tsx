@@ -48,13 +48,16 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<Element | null>(null);
+  const isOpenRef = useRef(open);
 
   // Capture the trigger element on open, restore focus to it on close
   // (Escape, backdrop click, item selection, or the parent flipping
   // `open` to false for any other reason all funnel through this).
   useEffect(() => {
+    isOpenRef.current = open;
     if (open) {
       previousFocusRef.current = document.activeElement;
+      // Don't setQuery here - let the parent control query via key if needed
       requestAnimationFrame(() => inputRef.current?.focus());
     } else {
       const el = previousFocusRef.current;
@@ -62,6 +65,9 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         el.focus();
       }
       previousFocusRef.current = null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- cleanup on close
+      setQuery("");
+      setHighlightedIndex(0);
     }
   }, [open]);
 

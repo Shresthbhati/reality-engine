@@ -9,7 +9,6 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import type { ProcessingState } from "@/lib/types";
 import { getAnalysis, isApiError, type AnalysisRow } from "@/lib/api";
 
-
 const FILTERS: Array<{ id: ProcessingState | "ALL"; label: string }> = [
   { id: "ALL", label: "All" },
   { id: "PROCESSING", label: "Running" },
@@ -20,8 +19,7 @@ const FILTERS: Array<{ id: ProcessingState | "ALL"; label: string }> = [
 export default function AnalysisPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("ALL");
   const [query, setQuery] = useState("");
-
-      const [rows, setRows] = useState<AnalysisRow[]>([]);
+  const [rows, setRows] = useState<AnalysisRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -32,9 +30,9 @@ export default function AnalysisPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = rows.filter(
-    (a) => filter === "ALL" || a.state === filter,
-  ).filter((a) => !query || a.name.toLowerCase().includes(query.toLowerCase()));
+  const filtered = rows
+    .filter((a) => filter === "ALL" || a.state === filter)
+    .filter((a) => !query || a.name.toLowerCase().includes(query.toLowerCase()));
 
   return (
     <div className="flex flex-col h-full">
@@ -78,7 +76,7 @@ export default function AnalysisPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search Analysis…"
+            placeholder="Search Analysis..."
             className="bg-transparent outline-none text-sm w-full"
             style={{ color: "var(--text-primary)" }}
           />
@@ -86,7 +84,7 @@ export default function AnalysisPage() {
       </div>
 
       {loading ? (
-        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading�</p>
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading...</p>
       ) : error ? (
         <p className="px-6 py-4 text-sm" style={{ color: "var(--error)" }}>{error}</p>
       ) : filtered.length === 0 ? (

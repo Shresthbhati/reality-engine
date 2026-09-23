@@ -29,24 +29,29 @@ function MobileCameraPageInner() {
 
   const [mode, setMode] = useState<CaptureMode>("photo");
   const [step, setStep] = useState<FlowStep>("camera");
-  const [gps, setGps] = useState<GpsState>({ status: "loading" });
+  // Initialize GPS state based on whether geolocation is available
+  const [gps, setGps] = useState<GpsState>(() => {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      return { status: "unavailable", reason: "Not supported" };
+    }
+    return { status: "loading" };
+  });
   const [captured, setCaptured] = useState<{ file: File; url: string; at: Date } | null>(null);
   const [sessionName, setSessionName] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const mountedRef = useRef(false);
 
   // Real geolocation — no fabricated coordinates. Denied/unsupported states
   // are shown honestly rather than silently defaulted.
   useEffect(() => {
+    mountedRef.current = true;
     if (!("geolocation" in navigator)) {
-      // Capability probe can only run client-side after mount; reporting the
-      // unsupported API here is the one correct place for this state.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setGps({ status: "unavailable", reason: "Not supported" });
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (!mountedRef.current) return;
         setGps({
           status: "ready",
           lat: pos.coords.latitude,
@@ -55,10 +60,12 @@ function MobileCameraPageInner() {
         });
       },
       (err) => {
+        if (!mountedRef.current) return;
         setGps({ status: "unavailable", reason: err.code === err.PERMISSION_DENIED ? "Permission denied" : "Unavailable" });
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
+    return () => { mountedRef.current = false; };
   }, []);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,6 +121,7 @@ function MobileCameraPageInner() {
           New Session
         </h1>
 
+        {/* eslint-disable-next-line @next/next/no-img-element -- dynamic camera capture, not a static asset */}
         <img src={captured.url} alt="Captured preview" className="w-full h-40 object-cover rounded-lg" />
 
         <Field label="Name">
@@ -161,6 +169,7 @@ function MobileCameraPageInner() {
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 relative">
+          {/* eslint-disable-next-line @next/next/no-img-element -- dynamic camera capture, not a static asset */}
           <img src={captured.url} alt="Captured preview" className="absolute inset-0 w-full h-full object-cover" />
         </div>
         <div className="shrink-0 p-4 flex flex-col gap-3" style={{ background: "var(--bg-surface)" }}>

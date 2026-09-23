@@ -6,6 +6,8 @@ import WorldNavPanel from "@/components/navigation/WorldNavPanel";
 import World3DViewport from "@/components/viewport/World3DViewport";
 import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
+import RoomBuilderPanel from "@/components/workspace/RoomBuilderPanel";
+import { Plus } from "lucide-react";
 import {
   useWorlds,
   useSessions,
@@ -35,6 +37,7 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
   const [navOpen, setNavOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [roomBuilderOpen, setRoomBuilderOpen] = useState(false);
   
   // API Hooks
   const { data: worlds = [] } = useWorlds();
@@ -166,12 +169,28 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
 
   if (!worldIR) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-[var(--bg-base)] text-[var(--text-primary)]">
-        <div className="max-w-md text-center">
+      <div className="relative flex h-screen w-full items-center justify-center bg-[var(--bg-base)] text-[var(--text-primary)]">
+        <div className="max-w-md text-center flex flex-col items-center gap-4">
           <p className="text-lg text-[var(--text-secondary)]">
-            No reconstruction available for this world. Run the reconstruction pipeline to generate a 3D representation.
+            No reconstruction available for this world yet. Run the reconstruction pipeline, or build a room directly.
           </p>
+          <button
+            type="button"
+            onClick={() => setRoomBuilderOpen(true)}
+            className="flex items-center gap-1.5 h-9 px-4 rounded-md text-sm font-medium transition-colors"
+            style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Create Room
+          </button>
         </div>
+        {roomBuilderOpen && (
+          <RoomBuilderPanel
+            worldId={worldId}
+            onClose={() => setRoomBuilderOpen(false)}
+            onCreated={refetchIr}
+          />
+        )}
       </div>
     );
   }
@@ -212,6 +231,24 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
             selectedEntityId={selectedEntityId}
             onSelectEntity={handleSelectEntity}
           />
+
+          <button
+            type="button"
+            onClick={() => setRoomBuilderOpen(true)}
+            className="absolute top-4 left-4 z-10 flex items-center gap-1.5 h-8 px-3 rounded-md text-sm font-medium transition-colors"
+            style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Create Room
+          </button>
+
+          {roomBuilderOpen && (
+            <RoomBuilderPanel
+              worldId={worldId}
+              onClose={() => setRoomBuilderOpen(false)}
+              onCreated={refetchIr}
+            />
+          )}
         </div>
         
         {/* Right Inspector */}

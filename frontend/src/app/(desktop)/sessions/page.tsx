@@ -42,8 +42,6 @@ function SessionsPageInner() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
       const { rows } = await listSessions();
       setSessions(rows);
@@ -136,7 +134,7 @@ function SessionsPageInner() {
         >
           <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0" />
           <span className="flex-1">{error}</span>
-          <button type="button" onClick={() => void load()} className="flex items-center gap-1 text-xs font-medium shrink-0">
+          <button type="button" onClick={() => { setLoading(true); setError(null); void load(); }} className="flex items-center gap-1 text-xs font-medium shrink-0">
             <RefreshCw className="w-3 h-3" /> Retry
           </button>
         </div>

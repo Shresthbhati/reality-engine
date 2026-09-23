@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { WorldRow, SessionRow, EvidenceRow } from "@/lib/types";
+import type { WorldRow, SessionRow, EvidenceRow, WorldVersionRow } from "@/lib/types";
 import type { WorldIR, CamerasPayload } from "@/types/worldir";
-import { listWorlds } from "./worlds";
+import { listWorlds, listWorldVersions } from "./worlds";
 import { listSessions } from "./sessions";
 import { listEvidence } from "./evidence";
-import { fetchWorldIR, fetchWorldPoints, fetchWorldCameras } from "./worldir";
+import { fetchWorldIR, fetchWorldPoints, fetchWorldCameras, fetchWorldReport } from "./worldir";
 
 export interface UseApiResult<T> {
   data: T | null;
@@ -56,20 +56,8 @@ export function useApi<T>(
 
 export function useWorlds() {
   return useApi(async () => {
-    try {
-      // First check local /api/worlds proxy which provides 3D metadata flags
-      const res = await fetch("/api/worlds");
-      if (res.ok) {
-        const json = await res.json();
-        if (json.items && Array.isArray(json.items)) {
-          return json.items as (WorldRow & { has3DData?: boolean })[];
-        }
-      }
-    } catch {
-      // fallback to canonical listWorlds
-    }
     const res = await listWorlds();
-    return res.rows as (WorldRow & { has3DData?: boolean })[];
+    return res.rows;
   });
 }
 
@@ -108,41 +96,24 @@ export function useWorldCameras(worldId: string | null) {
   );
 }
 
-export function useWorldVersions(worldId: string | null) {
+export function useWorldReport(worldId: string | null) {
   return useApi(
-    async () => {
-      if (!worldId) return [];
-      try {
-        const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/versions`);
-        if (res.ok) {
-          const data = await res.json();
-          return data.items || [];
-        }
-      } catch {
-        // Fallback
-      }
-      return [];
-    },
+    () => (worldId ? fetchWorldReport(worldId) : Promise.resolve(null)),
     [worldId],
   );
 }
 
-export function useWorldDiff(worldId: string | null, baseVersion?: string, headVersion?: string) {
-  return useApi(
-    async () => {
-      if (!worldId) return null;
-      try {
-        const q = new URLSearchParams();
-        if (baseVersion) q.set("base", baseVersion);
-        if (headVersion) q.set("head", headVersion);
-        const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/diff?${q.toString()}`);
-        if (res.ok) return await res.json();
-      } catch {
-        // Fallback
-      }
-      return null;
-    },
-    [worldId, baseVersion, headVersion],
-  );
+export function useWorldVersions(worldId: string | null) {
+  return useApi(async () => {
+    if (!worldId) return [] as WorldVersionRow[];
+    const dtos = await listWorldVersions(worldId);
+    return dtos.map((v) => ({
+      id: v.id,
+      worldId: v.world_id,
+      label: v.created_at ?? v.id,
+      createdAt: v.created_at ?? v.id,
+      changeSummary: `${v.changed_entity_ids?.length ?? 0} entities changed`,
+      isCurrent: v.is_current ?? false,
+    })) satisfies WorldVersionRow[];
+  }, [worldId]);
 }
-

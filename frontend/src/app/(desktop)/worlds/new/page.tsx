@@ -1,14 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
-import { SESSIONS } from "@/lib/data";
+import { listSessions } from "@/lib/api/sessions";
+import { createWorld, attachSessionToWorld } from "@/lib/api/worlds";
+import type { SessionRow } from "@/lib/types";
 
 export default function CreateWorldPage() {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listSessions()
+      .then((res) => {
+        if (!cancelled) setSessions(res.rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSessions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function toggleSession(id: string) {
     setSelectedSessionIds((prev) => {
@@ -19,14 +40,36 @@ export default function CreateWorldPage() {
     });
   }
 
-  const selectedSessions = SESSIONS.filter((s) => selectedSessionIds.has(s.id));
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const world = await createWorld({ name: name.trim(), description: location.trim() || null });
+      await Promise.all(
+        Array.from(selectedSessionIds).map((sessionId) =>
+          attachSessionToWorld(world.id, sessionId).catch(() => {
+            // World is created regardless; a failed attach can be retried
+            // from the Session detail screen.
+          })
+        )
+      );
+      router.push(`/worlds/${world.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create world");
+      setSubmitting(false);
+    }
+  }
+
+  const selectedSessions = sessions.filter((s) => selectedSessionIds.has(s.id));
   const sessionsWithCoverage = selectedSessions.filter((s) => s.coverageKm2 != null);
   const totalCoverageKm2 = sessionsWithCoverage.reduce((sum, s) => sum + (s.coverageKm2 ?? 0), 0);
 
   return (
     <div className="flex flex-col h-full">
       <PageHeader title="Create World" />
-      <form className="flex flex-col gap-5 px-6 py-6 max-w-md" onSubmit={(e) => e.preventDefault()}>
+      <form className="flex flex-col gap-5 px-6 py-6 max-w-md" onSubmit={handleSubmit}>
         <Field label="Name">
           <input
             value={name}
@@ -49,7 +92,7 @@ export default function CreateWorldPage() {
           <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
             Sessions
           </span>
-          {SESSIONS.length === 0 ? (
+          {sessions.length === 0 ? (
             <div
               className="h-9 px-2.5 flex items-center rounded-md text-sm"
               style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-tertiary)" }}
@@ -58,7 +101,7 @@ export default function CreateWorldPage() {
             </div>
           ) : (
             <div className="flex flex-col rounded-md overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-              {SESSIONS.map((s, i) => (
+              {sessions.map((s, i) => (
                 <label
                   key={s.id}
                   className="flex items-start gap-2.5 px-2.5 py-2 cursor-pointer"
@@ -87,7 +130,7 @@ export default function CreateWorldPage() {
             </div>
           )}
           <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-            {SESSIONS.length === 0 ? (
+            {sessions.length === 0 ? (
               <>
                 No Sessions exist yet to compose this World from.{" "}
                 <Link href="/sessions/new" className="underline" style={{ color: "var(--accent)" }}>
@@ -114,18 +157,23 @@ export default function CreateWorldPage() {
           </div>
         )}
 
+        {error && (
+          <div
+            className="text-xs rounded-md px-2.5 py-2"
+            style={{ background: "var(--error-subtle, #3a1f1f)", border: "1px solid var(--error-border, #7a3030)", color: "var(--error, #e57373)" }}
+          >
+            {error}
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={!name.trim()}
+          disabled={!name.trim() || submitting}
           className="h-9 px-4 rounded-md text-sm font-medium self-start transition-colors disabled:opacity-40"
           style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
         >
-          Create World
+          {submitting ? "Creating…" : "Create World"}
         </button>
-
-        <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-          World creation isn&apos;t wired to a backend yet — this form is the real UI, not yet connected.
-        </p>
       </form>
 
       <style jsx>{`

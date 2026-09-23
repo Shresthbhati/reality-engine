@@ -14,14 +14,18 @@ import {
 } from "lucide-react";
 import type {
   Entity,
+  PipelineReport,
   WorldIR,
 } from "@/types/worldir";
 import type { SessionRow } from "@/lib/types";
+import type { ActivityEvent } from "@/lib/api/activity";
 
 interface BottomContextBarProps {
   world: WorldIR | null;
   selectedEntity: Entity | null;
   sessions: SessionRow[];
+  report: PipelineReport | null;
+  activityItems: ActivityEvent[];
   onFrameSelected: () => void;
   onClearSelection: () => void;
 }
@@ -32,6 +36,8 @@ export default function BottomContextBar({
   world,
   selectedEntity,
   sessions,
+  report,
+  activityItems,
   onFrameSelected,
   onClearSelection,
 }: BottomContextBarProps) {
@@ -217,51 +223,56 @@ export default function BottomContextBar({
 
           {activeTab === "timeline" && (
             <div className="flex items-center gap-6 h-full overflow-x-auto">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#00e5ff]" />
-                <div className="text-xs">
-                  <div className="text-white font-medium">Pipeline Initialized</div>
-                  <div className="text-neutral-500 text-[11px]">Capture & Sensor Synchronized</div>
+              {report ? (
+                (() => {
+                  const stages = (report.stages ?? {}) as Record<string, Record<string, unknown> | undefined>;
+                  const recon = stages.reconstruction;
+                  const scale = stages.scale;
+                  const compile = stages.compile;
+                  const steps: { label: string; detail: string }[] = [];
+                  if (recon) {
+                    steps.push({
+                      label: `Reconstruction (${String(recon.backend ?? "unknown backend")})`,
+                      detail: `${recon.cameras_registered ?? 0}/${recon.cameras_input ?? 0} cameras registered · ${recon.points ?? 0} points`,
+                    });
+                  }
+                  if (scale) {
+                    steps.push({
+                      label: "Scale",
+                      detail: `${scale.state ?? "unknown"}${scale.meters_per_unit != null ? ` · ${Number(scale.meters_per_unit).toFixed(4)} m/unit` : ""}`,
+                    });
+                  }
+                  if (compile) {
+                    steps.push({
+                      label: "WorldIR Compilation",
+                      detail: `${compile.entities ?? 0} entities · ${compile.measurements ?? 0} measurements · ${compile.relationships ?? 0} relationships`,
+                    });
+                  }
+                  if (steps.length === 0) {
+                    return (
+                      <div className="flex items-center gap-3 text-neutral-400">
+                        <Clock className="w-4 h-4 text-neutral-500" />
+                        <span>Pipeline report has no stage data.</span>
+                      </div>
+                    );
+                  }
+                  return steps.map((step, i) => (
+                    <div key={step.label} className="flex items-center gap-2">
+                      {i > 0 && <span className="w-8 h-px bg-neutral-800 -ml-4 mr-2" />}
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#00e5ff]" />
+                      <div className="text-xs">
+                        <div className="text-white font-medium">{step.label}</div>
+                        <div className="text-neutral-500 text-[11px]">{step.detail}</div>
+                      </div>
+                    </div>
+                  ));
+                })()
+              ) : (
+                <div className="flex items-center gap-3 text-neutral-400">
+                  <Clock className="w-4 h-4 text-neutral-500" />
+                  <span>No pipeline report available — this world has not been compiled yet.</span>
                 </div>
-              </div>
-
-              <span className="w-8 h-px bg-neutral-800" />
-
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#2ecc71]" />
-                <div className="text-xs">
-                  <div className="text-white font-medium">SfM Sparse Calibration</div>
-                  <div className="text-neutral-500 text-[11px]">
-                    {meta.reconstruction?.cameras_registered != null
-                      ? `${meta.reconstruction.cameras_registered} cameras registered · ${(meta.reconstruction.points ?? 0).toLocaleString()} points`
-                      : "Multi-view geometry calibrated"}
-                  </div>
-                </div>
-              </div>
-
-              <span className="w-8 h-px bg-neutral-800" />
-
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#35d07f]" />
-                <div className="text-xs">
-                  <div className="text-white font-medium">Scale & Depth Metricization</div>
-                  <div className="text-neutral-500 text-[11px]">
-                    {meta.scale?.state ?? "Metric"} · {meta.depth?.model ?? "Monocular fusion"}
-                  </div>
-                </div>
-              </div>
-
-              <span className="w-8 h-px bg-neutral-800" />
-
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#00e5ff]" />
-                <div className="text-xs">
-                  <div className="text-white font-medium">WorldIR Compilation</div>
-                  <div className="text-neutral-500 text-[11px]">
-                    {Object.keys(world?.entities || {}).length} structural planes compiled
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -292,21 +303,20 @@ export default function BottomContextBar({
 
           {activeTab === "activity" && (
             <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-[11px]">
-                <span className="text-neutral-500 font-mono">14:12:05</span>
-                <span className="text-[#00e5ff] font-medium">world.compiled</span>
-                <span className="text-neutral-400">Canonical WorldIR compilation succeeded for room_capture</span>
-              </div>
-              <div className="flex items-center gap-2 text-[11px]">
-                <span className="text-neutral-500 font-mono">14:11:42</span>
-                <span className="text-[#2ecc71] font-medium">planes.promoted</span>
-                <span className="text-neutral-400">58 horizontal & vertical structural bounds promoted</span>
-              </div>
-              <div className="flex items-center gap-2 text-[11px]">
-                <span className="text-neutral-500 font-mono">14:10:18</span>
-                <span className="text-[#35d07f] font-medium">cameras.registered</span>
-                <span className="text-neutral-400">25 perspective viewpoints solved</span>
-              </div>
+              {activityItems.length === 0 ? (
+                <div className="flex items-center gap-3 text-neutral-400">
+                  <Activity className="w-4 h-4 text-neutral-500" />
+                  <span>No recent activity.</span>
+                </div>
+              ) : (
+                activityItems.slice(0, 20).map((item) => (
+                  <div key={item.id} className="flex items-center gap-2 text-[11px]">
+                    <span className="text-neutral-500 font-mono">{item.timestamp}</span>
+                    <span className="text-[#00e5ff] font-medium">{item.type.toLowerCase()}</span>
+                    <span className="text-neutral-400">{item.label}</span>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>

@@ -6,6 +6,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
 import SessionTimeline from "@/components/ui/SessionTimeline";
 import { getSession, listEvidence, isApiError, unsupportedForAnalysis } from "@/lib/api";
+import ReconstructPanel from "@/components/session/ReconstructPanel";
 import type { AnalysisRow, ResultRow } from "@/lib/types";
 
 export default async function SessionDetailPage({
@@ -125,6 +126,13 @@ export default async function SessionDetailPage({
             ))}
           </div>
         )}
+      </div>
+
+      <div className="shrink-0 border-t px-6 py-4" style={{ borderColor: "var(--border)" }}>
+        <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-tertiary)" }}>
+          Reconstruction
+        </h3>
+        <ReconstructPanel sessionId={session.id} worldId={session.worldId} />
       </div>
 
       <div className="shrink-0 border-t px-6 py-4" style={{ borderColor: "var(--border)" }}>

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import WorldMap from "@/components/map/WorldMap";
-import { getSession } from "@/lib/data";
+import { getSession, isApiError } from "@/lib/api";
 
 export default async function SessionMapPage({
   params,
@@ -10,8 +10,13 @@ export default async function SessionMapPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = getSession(id);
-  if (!session) notFound();
+  let session;
+  try {
+    session = (await getSession(id)).row;
+  } catch (e) {
+    if (isApiError(e) && e.code === "not_found") notFound();
+    throw e;
+  }
 
   const hasCoverage = session.lat != null && session.lng != null;
 

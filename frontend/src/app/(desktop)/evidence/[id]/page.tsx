@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
 import { EVIDENCE_TYPE_ICONS, humanizeEvidenceType, EvidenceStatusPill } from "@/components/ui/EvidenceCard";
-import { getEvidence, isApiError } from "@/lib/api";
+import { getEvidence, isApiError, evidenceArtifactUrl } from "@/lib/api";
 import type { EvidenceRow } from "@/lib/types";
 
 export default async function EvidenceDetailPage({
@@ -38,13 +38,22 @@ export default async function EvidenceDetailPage({
       <div className="flex flex-1 min-h-0">
         <Link
           href={`/evidence/${evidence.id}/view`}
-          className="flex-1 flex items-center justify-center"
+          className="flex-1 flex items-center justify-center overflow-hidden"
           style={{ background: "var(--bg-base)" }}
         >
-          <div className="flex flex-col items-center gap-2 text-sm" style={{ color: "var(--text-tertiary)" }}>
-            <Icon className="w-8 h-8" />
-            <span>No preview available for this item.</span>
-          </div>
+          {evidence.type === "IMAGE" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={evidenceArtifactUrl(evidence.id)}
+              alt={evidence.name}
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-sm" style={{ color: "var(--text-tertiary)" }}>
+              <Icon className="w-8 h-8" />
+              <span>No inline preview for {humanizeEvidenceType(evidence.type).toLowerCase()} items.</span>
+            </div>
+          )}
         </Link>
 
         <aside

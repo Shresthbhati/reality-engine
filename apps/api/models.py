@@ -71,6 +71,15 @@ class WorldVersion(Base):
     artifact_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     source_session_ids: Mapped[list] = mapped_column(JSON, default=list)
     changed_entity_ids: Mapped[list] = mapped_column(JSON, default=list)
+    changed_geometry_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # Sibling compile-pipeline outputs (points.ply/cameras.json/report.json
+    # from engine.pipeline.vertical_slice) -- not part of the versioned
+    # WorldIR JSON itself. report is small structured data stored inline;
+    # points/cameras are binary/larger, stored content-addressed via
+    # apps/api/storage.py and referenced here by sha256:// URI.
+    report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    points_artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    cameras_artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

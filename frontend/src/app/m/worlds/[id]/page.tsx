@@ -5,6 +5,7 @@ import WorldMap from "@/components/map/WorldMap";
 import DesktopHandoff from "@/components/mobile/DesktopHandoff";
 import { MobileErrorState } from "@/components/mobile/AsyncState";
 import { getWorld, listWorldVersions, isApiError } from "@/lib/api";
+import type { WorldRow } from "@/lib/types";
 
 export default async function MobileWorldDetailPage({
   params,
@@ -13,7 +14,7 @@ export default async function MobileWorldDetailPage({
 }) {
   const { id } = await params;
 
-  let world;
+  let world: WorldRow;
   let currentVersionLabel: string | null = null;
   try {
     const result = await getWorld(id);
@@ -21,7 +22,8 @@ export default async function MobileWorldDetailPage({
     if (world.currentVersionId) {
       try {
         const versions = await listWorldVersions(id);
-        currentVersionLabel = versions.find((v) => v.id === world.currentVersionId)?.label ?? null;
+        const currentVersion = versions.find((v) => v.id === world.currentVersionId);
+        currentVersionLabel = currentVersion?.created_at ?? currentVersion?.id ?? null;
       } catch {
         // Version lookup is supplementary; the World detail itself still renders.
       }

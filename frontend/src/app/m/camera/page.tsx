@@ -30,10 +30,7 @@ function MobileCameraPageInner() {
 
   const [world, setWorld] = useState<WorldRow | null | "loading">(worldId ? "loading" : null);
   useEffect(() => {
-    if (!worldId) {
-      setWorld(null);
-      return;
-    }
+    if (!worldId) return;
     let cancelled = false;
     setWorld("loading");
     getWorld(worldId)
@@ -124,7 +121,7 @@ function MobileCameraPageInner() {
             : undefined,
       };
       const session = await createSession(input);
-      if (world) {
+      if (world && world !== "loading") {
         await attachSessionToWorld(world.id, session.id).catch(() => {
           // Session is created regardless; the World link is best-effort here —
           // the user can attach it from the Session detail screen if this fails.

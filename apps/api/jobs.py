@@ -12,13 +12,15 @@ import asyncio
 import hashlib
 import logging
 import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.models import Evidence, Job, Session, utcnow
+from apps.api.models import Evidence, Job, Session, World, utcnow
 
 log = logging.getLogger("reality.api.jobs")
 
@@ -32,6 +34,17 @@ COMPILE_WORLD = "COMPILE_WORLD"
 RUN_ANALYSIS = "RUN_ANALYSIS"
 GENERATE_REPORT = "GENERATE_REPORT"
 EXPORT_ARTIFACT = "EXPORT_ARTIFACT"
+
+# Evidence kind mapping for EvidenceItem conversion
+mapping = {
+    "PHOTO": "PHOTO",
+    "VIDEO": "VIDEO",
+    "POINT_CLOUD": "POINT_CLOUD",
+    "GNSS": "GNSS",
+    "IMU": "IMU",
+    "SENSOR_LOG": "SENSOR_LOG",
+    "DATASET": "DATASET",
+}
 
 
 def enqueue_job(

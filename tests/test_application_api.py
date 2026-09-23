@@ -149,13 +149,15 @@ def test_trajectory_honest_until_artifacts_exist(client):
     assert traj["points"] == []
 
 
-def test_reconstruct_fails_explicitly_until_wired(client):
+def test_reconstruct_fails_with_honest_error_when_no_evidence(client):
+    """Reconstruction fails with an honest error when session has no evidence."""
     sid = client.post("/api/sessions", json={"name": "Recon"}).json()["id"]
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     assert r.status_code == 200
     job = _wait_job(client, r.json()["job_id"])
     assert job["status"] == "failed"
-    assert "not wired" in (job.get("error") or "") or "unavailable" in (job.get("error") or "")
+    # Now fails with honest error about missing evidence, not fake "not wired"
+    assert "no evidence items to reconstruct" in (job.get("error") or "").lower()
 
 
 def test_unknown_entity_404s(client):

@@ -7,9 +7,6 @@ import {
   Globe,
   Camera,
   ShieldCheck,
-  Workflow,
-  FileText,
-  Users,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -21,12 +18,9 @@ const PRIMARY_NAV = [
   { href: "/worlds", label: "Worlds", icon: Globe },
   { href: "/sessions", label: "Sessions", icon: Camera },
   { href: "/evidence", label: "Evidence", icon: ShieldCheck },
-  { href: "/analysis", label: "Analysis", icon: Workflow },
-  { href: "/reports", label: "Reports", icon: FileText },
 ] as const;
 
 const SECONDARY_NAV = [
-  { href: "/team", label: "Team", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

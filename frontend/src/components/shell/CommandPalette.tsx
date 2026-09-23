@@ -7,8 +7,6 @@ import {
   Camera,
   Globe,
   ShieldCheck,
-  Workflow,
-  FileText,
   Zap,
 } from "lucide-react";
 import { searchAll, type SearchResult, type SearchResultType } from "@/lib/search";
@@ -32,12 +30,10 @@ const COMMANDS: Command[] = [
   { label: "Create Session", href: "/sessions/new", icon: Camera },
   { label: "Create World", href: "/worlds/new", icon: Globe },
   { label: "Add Evidence", href: "/evidence", icon: ShieldCheck },
-  { label: "Run Analysis", href: "/analysis/new", icon: Workflow },
   { label: "Open World", href: "/worlds", icon: Globe },
   { label: "Find Session", href: "/sessions", icon: Camera },
   { label: "Show Running Sessions", href: "/sessions?state=PROCESSING", icon: Zap },
   { label: "Show Recent Evidence", href: "/evidence", icon: ShieldCheck },
-  { label: "Open Reports", href: "/reports", icon: FileText },
 ];
 
 export default function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {

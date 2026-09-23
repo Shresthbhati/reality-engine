@@ -5,7 +5,6 @@ import {
   Globe,
   Camera,
   ShieldCheck,
-  MapPin,
   Bookmark,
   GitBranch,
   Box,
@@ -19,7 +18,6 @@ import type {
 } from "@/types/worldir";
 import type {
   EvidenceRow,
-  PlaceRow,
   SessionRow,
   WorldRow,
   WorldVersionRow,
@@ -33,7 +31,6 @@ interface WorldNavPanelProps {
   worldIR: WorldIR | null;
   sessions: SessionRow[];
   evidence: EvidenceRow[];
-  places: PlaceRow[];
   versions: WorldVersionRow[];
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
@@ -41,7 +38,7 @@ interface WorldNavPanelProps {
   onSelectSession?: (id: string) => void;
 }
 
-type NavSection = "entities" | "sessions" | "evidence" | "places" | "versions";
+type NavSection = "entities" | "sessions" | "evidence" | "versions";
 
 export default function WorldNavPanel({
   worlds,
@@ -50,7 +47,6 @@ export default function WorldNavPanel({
   worldIR,
   sessions,
   evidence,
-  places,
   versions,
   selectedEntityId,
   onSelectEntity,
@@ -133,13 +129,6 @@ export default function WorldNavPanel({
           icon={ShieldCheck}
           label="Evidence"
           count={evidence.length}
-        />
-        <NavTabButton
-          active={section === "places"}
-          onClick={() => setSection("places")}
-          icon={MapPin}
-          label="Places"
-          count={places.length}
         />
         <NavTabButton
           active={section === "versions"}
@@ -294,36 +283,10 @@ export default function WorldNavPanel({
           </div>
         )}
 
-        {section === "places" && (
-          <div className="p-2 space-y-1.5">
-            {places.length === 0 ? (
-              <p className="p-4 text-center text-xs text-neutral-500">No spatial places tagged.</p>
-            ) : (
-              places.map((p) => (
-                <div
-                  key={p.id}
-                  className="p-2 rounded-md border border-[#1f222b] bg-[#151821] text-xs flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-[#00e5ff]" />
-                    <span className="font-medium text-white">{p.name}</span>
-                  </div>
-                  <span className="font-mono text-[10px] text-neutral-400">
-                    {p.lat.toFixed(3)}, {p.lng.toFixed(3)}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
         {section === "versions" && (
           <div className="p-2 space-y-1.5">
             {versions.length === 0 ? (
-              <div className="p-3 text-xs bg-[#151821] rounded border border-[#1f222b] text-neutral-400">
-                <div className="font-semibold text-white font-mono">v1.0.0 (Root)</div>
-                <div className="text-[11px] text-neutral-500 mt-1">Immutable canonical compilation</div>
-              </div>
+              <p className="p-4 text-center text-xs text-neutral-500">No versions committed yet.</p>
             ) : (
               versions.map((v) => (
                 <div

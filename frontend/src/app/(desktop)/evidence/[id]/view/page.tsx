@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { EVIDENCE_TYPE_ICONS, humanizeEvidenceType } from "@/components/ui/EvidenceCard";
-import { getEvidence, isApiError } from "@/lib/api";
+import { getEvidence, isApiError, evidenceArtifactUrl } from "@/lib/api";
 import type { EvidenceRow } from "@/lib/types";
 
 export default async function EvidenceViewerPage({
@@ -41,10 +41,19 @@ export default async function EvidenceViewerPage({
             Back
           </Link>
 
-          <div className="flex flex-col items-center gap-3 text-sm" style={{ color: "var(--text-tertiary)" }}>
-            <Icon className="w-12 h-12" />
-            <span>No preview available for this item.</span>
-          </div>
+          {evidence.type === "IMAGE" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={evidenceArtifactUrl(evidence.id)}
+              alt={evidence.name}
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-3 text-sm" style={{ color: "var(--text-tertiary)" }}>
+              <Icon className="w-12 h-12" />
+              <span>No inline preview for {humanizeEvidenceType(evidence.type).toLowerCase()} items.</span>
+            </div>
+          )}
         </div>
 
         <aside

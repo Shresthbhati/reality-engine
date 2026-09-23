@@ -6,17 +6,21 @@ import WorldNavPanel from "@/components/navigation/WorldNavPanel";
 import World3DViewport from "@/components/viewport/World3DViewport";
 import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
-import { 
-  useWorlds, 
-  useSessions, 
-  useEvidence, 
-  useWorldIR, 
-  useWorldPoints, 
-  useWorldCameras 
+import {
+  useWorlds,
+  useSessions,
+  useEvidence,
+  useWorldIR,
+  useWorldPoints,
+  useWorldCameras,
+  useWorldReport,
+  useWorldVersions,
 } from "@/lib/api";
+import { getActivity } from "@/lib/api/activity";
+import type { ActivityEvent } from "@/lib/api/activity";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
 import type { WorldIR, Entity, CamerasPayload } from "@/types/worldir";
-import type { WorldRow, SessionRow, EvidenceRow, PlaceRow, WorldVersionRow } from "@/lib/types";
+import type { WorldRow, SessionRow, EvidenceRow } from "@/lib/types";
 import { Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +43,19 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
   const { data: worldIR, isLoading: isIrLoading, error: irError, refetch: refetchIr } = useWorldIR(worldId);
   const { data: pointsBuffer } = useWorldPoints(worldId);
   const { data: camerasPayload } = useWorldCameras(worldId);
+  const { data: report } = useWorldReport(worldId);
+  const { data: versionsData } = useWorldVersions(worldId);
+  const versions = versionsData ?? [];
+  const [activityItems, setActivityItems] = useState<ActivityEvent[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getActivity().then((items) => {
+      if (!cancelled) setActivityItems(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Derived state
   const points = useMemo(() => {
@@ -61,9 +78,7 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
   }, [pointsBuffer]);
 
   const cameras = camerasPayload || null;
-  const places: PlaceRow[] = [];
-  const versions: WorldVersionRow[] = [];
-  
+
 // Filter sessions by worldId
   const sessions = useMemo(() => 
     (allSessions || []).filter(s => s.worldId === worldId), 
@@ -179,7 +194,6 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
               worldIR={worldIR}
               sessions={sessions}
               evidence={evidence || []}
-              places={places}
               versions={versions}
               selectedEntityId={selectedEntityId}
               onSelectEntity={handleSelectEntity}
@@ -224,6 +238,8 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
           world={worldIR}
           selectedEntity={selectedEntity}
           sessions={sessions}
+          report={report ?? null}
+          activityItems={activityItems}
           onFrameSelected={() => {
             if (selectedEntityId) handleFrameEntity(selectedEntityId);
           }}

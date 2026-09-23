@@ -373,3 +373,50 @@ def test_reconstruct_honest_failure_when_backend_cannot_run(client, monkeypatch)
     # The unresolvable backend spec surfaces as an explicit job failure
     # naming the missing module - never a silent fallback or fake result.
     assert "reconstruction failed" in err or "no module named" in err
+
+
+def test_current_version_from_another_world_is_rejected(client, tmp_path, monkeypatch):
+    """A world's current_version_id pointing at a version that belongs to
+    a DIFFERENT world must not silently serve that world's WorldIR: the
+    computational surfaces return 409 instead of cross-world data."""
+    import asyncio
+
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
+
+    from world_ir.world_v1 import WorldIR
+    from worldstore.store import WorldStore
+
+    store = WorldStore(tmp_path / "ws")
+    stored = store.save_version(WorldIR(id="w-real"), parent=None, version_id="v-real")
+
+    wa = client.post("/api/worlds", json={"name": "World A"}).json()
+    wb = client.post("/api/worlds", json={"name": "World B"}).json()
+
+    async def _seed():
+        import apps.api.db as db_mod
+        from apps.api.models import World, WorldVersion
+
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(WorldVersion(
+                id=stored.version_id,
+                world_id=wa["id"],
+                parent_version_id=None,
+                artifact_uri=stored.artifact_uri,
+                artifact_hash=stored.artifact_hash,
+            ))
+            wb_row = await db.get(World, wb["id"])
+            wb_row.current_version_id = stored.version_id
+            wa_row = await db.get(World, wa["id"])
+            wa_row.current_version_id = stored.version_id
+            await db.commit()
+
+    asyncio.run(_seed())
+
+    for path in ("worldir", "points", "cameras"):
+        r = client.get(f"/api/worlds/{wb['id']}/{path}")
+        assert r.status_code == 409, (path, r.status_code, r.text[:200])
+        assert "does not belong" in r.json()["detail"]
+
+    # The owning world still reads its own version fine.
+    assert client.get(f"/api/worlds/{wa['id']}/worldir").status_code == 200

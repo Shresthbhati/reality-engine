@@ -216,6 +216,11 @@ async def _version_row(
             409,
             f"Current version '{w.current_version_id}' has no version record",
         )
+    if row.world_id != world_id:
+        raise HTTPException(
+            409,
+            f"Current version '{w.current_version_id}' does not belong to world {world_id}",
+        )
     return row
 
 

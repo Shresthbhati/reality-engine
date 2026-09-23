@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
-// In-memory version ledger for runtime session commits (persisting version lineage)
+// In-memory version ledger for runtime session commits (persisting version lineage across user actions)
 const VERSION_STORE: Record<string, any[]> = {
   "world-compiled-seed42": [
     {
-      id: "v1-canonical-seed42",
+      id: "v1-canonical-baseline",
       world_id: "world-compiled-seed42",
       label: "v1.0.0 (Canonical Baseline)",
       parent_version_id: null,
@@ -30,44 +30,35 @@ export async function GET(
 
   // 1. Try Live Backend if reachable
   try {
-    const res = await fetch(`${BACKEND_URL}/api/worlds/${id}/versions`, {
+    const res = await fetch(`${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/versions`, {
       signal: AbortSignal.timeout(2000),
     });
     if (res.ok) {
       const data = await res.json();
-      if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+      if (data.items && Array.isArray(data.items)) {
         return NextResponse.json({ items: data.items });
       }
     }
   } catch {
-    // Backend offline; use authenticated version model
+    // Backend offline; check runtime ledger
   }
 
-  const versions = VERSION_STORE[id] || [
-    {
-      id: `v1-${id}`,
-      world_id: id,
-      label: "v1.0.0 (Root)",
-      parent_version_id: null,
-      artifact_uri: `artifact://${id}`,
-      artifact_hash: "sha256:canonical",
-      source_session_ids: ["session-initial"],
-      changed_entity_ids: [],
-      changed_geometry_ids: [],
-      created_at: new Date().toISOString(),
-      is_current: true,
-      changeSummary: "Canonical compilation baseline",
-    },
-  ];
+  // 2. Check runtime commit store (e.g. from user correction commits)
+  if (VERSION_STORE[id] && VERSION_STORE[id].length > 0) {
+    return NextResponse.json({ items: VERSION_STORE[id] });
+  }
 
-  return NextResponse.json({ items: versions });
+  // 3. No versions yet — honest empty lineage (never fabricated)
+  return NextResponse.json({ items: [] });
 }
 
 export function addStoredVersion(worldId: string, version: any) {
   if (!VERSION_STORE[worldId]) {
     VERSION_STORE[worldId] = [];
   }
-  // Mark prior as not current
-  VERSION_STORE[worldId].forEach((v) => (v.is_current = false));
+  // Mark existing versions as not current
+  VERSION_STORE[worldId].forEach((v) => {
+    v.is_current = false;
+  });
   VERSION_STORE[worldId].unshift(version);
 }

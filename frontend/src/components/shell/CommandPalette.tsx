@@ -1,13 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useWorlds } from "@/lib/api";
 import {
   Search,
   Camera,
   Globe,
   ShieldCheck,
+  Workflow,
+  FileText,
   Zap,
+  Box,
+  Eye,
+  Maximize2,
+  Sparkles,
+  MapPin,
+  Map as MapIcon,
+  Compass,
+  Download,
+  Filter,
+  GitBranch,
+  Layers,
+  Sliders,
+  PanelLeft,
+  PanelRight,
 } from "lucide-react";
 import { searchAll, type SearchResult, type SearchResultType } from "@/lib/search";
 
@@ -22,19 +39,131 @@ const TYPE_LABEL: Record<SearchResultType, string> = {
 
 interface Command {
   label: string;
-  href: string;
-  icon: typeof Camera;
+  href?: string;
+  icon: any;
+  action?: () => void;
+  category?: string;
 }
 
 const COMMANDS: Command[] = [
-  { label: "Create Session", href: "/sessions/new", icon: Camera },
-  { label: "Create World", href: "/worlds/new", icon: Globe },
-  { label: "Add Evidence", href: "/evidence", icon: ShieldCheck },
-  { label: "Open World", href: "/worlds", icon: Globe },
-  { label: "Find Session", href: "/sessions", icon: Camera },
-  { label: "Show Running Sessions", href: "/sessions?state=PROCESSING", icon: Zap },
-  { label: "Show Recent Evidence", href: "/evidence", icon: ShieldCheck },
+  // Viewport & Framing
+  {
+    label: "Frame Selection / Reset View [F]",
+    icon: Maximize2,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "f" })),
+  },
+  {
+    label: "Toggle 3D Viewport / Geospatial Map [M]",
+    icon: MapIcon,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "m" })),
+  },
+  {
+    label: "Toggle Navigation Panel [ [ ]",
+    icon: PanelLeft,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "[" })),
+  },
+  {
+    label: "Toggle Adaptive Inspector [ ] ]",
+    icon: PanelRight,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "]" })),
+  },
+  // Layers
+  {
+    label: "Toggle Points Cloud Layer [1]",
+    icon: Eye,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "1" })),
+  },
+  {
+    label: "Toggle Structural Entities Layer [2]",
+    icon: Box,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "2" })),
+  },
+  {
+    label: "Toggle Camera Frustums [3]",
+    icon: Camera,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "3" })),
+  },
+  {
+    label: "Toggle Depth Noise Filter [O]",
+    icon: Layers,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "o" })),
+  },
+  {
+    label: "Toggle Uncertainty Heatmap [U]",
+    icon: Sparkles,
+    action: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "u" })),
+  },
+  // Spatial Queries
+  {
+    label: "Spatial Query: Filter Floor Planes",
+    icon: Filter,
+    action: () => window.dispatchEvent(new CustomEvent("apply-spatial-query", { detail: { type: "floor" } })),
+  },
+  {
+    label: "Spatial Query: Filter Vertical Walls",
+    icon: Filter,
+    action: () => window.dispatchEvent(new CustomEvent("apply-spatial-query", { detail: { type: "wall" } })),
+  },
+  {
+    label: "Spatial Query: Filter Objects & Furniture",
+    icon: Filter,
+    action: () => window.dispatchEvent(new CustomEvent("apply-spatial-query", { detail: { type: "object" } })),
+  },
+  {
+    label: "Spatial Query: High Confidence (≥ 80%)",
+    icon: Filter,
+    action: () => window.dispatchEvent(new CustomEvent("apply-spatial-query", { detail: { minConfidence: 0.8 } })),
+  },
+  {
+    label: "Spatial Query: Flagged for Review (< 50%)",
+    icon: Filter,
+    action: () => window.dispatchEvent(new CustomEvent("apply-spatial-query", { detail: { type: "all", minConfidence: 0 } })),
+  },
+  {
+    label: "Reset Active Spatial Query",
+    icon: Sliders,
+    action: () => window.dispatchEvent(new CustomEvent("reset-spatial-query")),
+  },
+  // Workflows & Versioning
+  {
+    label: "Compare WorldStore Versions (Diff)",
+    icon: GitBranch,
+    action: () => window.dispatchEvent(new CustomEvent("open-version-diff")),
+  },
+  {
+    label: "Open Room Construction Pipeline",
+    icon: Workflow,
+    action: () => window.dispatchEvent(new CustomEvent("open-room-construction")),
+  },
+  // Exports
+  {
+    label: "Export Canonical WorldIR (JSON)",
+    icon: Download,
+    action: () => window.dispatchEvent(new CustomEvent("trigger-export", { detail: { format: "worldir" } })),
+  },
+  {
+    label: "Export Points Cloud (PLY)",
+    icon: Download,
+    action: () => window.dispatchEvent(new CustomEvent("trigger-export", { detail: { format: "ply" } })),
+  },
+  {
+    label: "Export Camera Trajectories (JSON)",
+    icon: Download,
+    action: () => window.dispatchEvent(new CustomEvent("trigger-export", { detail: { format: "cameras" } })),
+  },
+  {
+    label: "Export Pipeline Report (JSON)",
+    icon: Download,
+    action: () => window.dispatchEvent(new CustomEvent("trigger-export", { detail: { format: "report" } })),
+  },
+  // Worlds & Navigation
+  { label: "Open Spatial Studio", href: "/", icon: Globe },
+  { label: "Create Capture Session", href: "/sessions/new", icon: Camera },
+  { label: "Create Spatial World", href: "/worlds/new", icon: Globe },
+  { label: "Attach Evidence", href: "/evidence", icon: ShieldCheck },
+  { label: "Open Reports", href: "/reports", icon: FileText },
 ];
+
 
 export default function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -105,15 +234,37 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     };
   }, [query]);
 
+  const { data: rawWorlds } = useWorlds();
+  const worlds = rawWorlds ?? [];
+
+  // Dynamically include registered worlds in default command list
+  const dynamicCommands = useMemo(() => {
+    const list = [...COMMANDS];
+    for (const w of worlds) {
+      list.push({
+        label: `Open World: ${w.name || w.id}`,
+        href: `/worlds/${w.id}`,
+        icon: Globe,
+      });
+    }
+    return list;
+  }, [worlds]);
+
   // Only rows that answer the current query are shown; anything stale (or
   // from a previous palette session) reads as an empty result set.
   const results = searchState.q === query ? searchState.rows : [];
-  const flatList = query.trim() === "" ? COMMANDS : results;
+  const flatList = query.trim() === "" ? dynamicCommands : results;
 
   const go = useCallback(
-    (href: string) => {
+    (target: string | Command) => {
       onClose();
-      router.push(href);
+      if (typeof target === "string") {
+        router.push(target);
+      } else if (target?.action) {
+        target.action();
+      } else if (target?.href) {
+        router.push(target.href);
+      }
     },
     [onClose, router]
   );
@@ -141,13 +292,14 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         const item = flatList[highlightedIndex];
         if (item) {
           e.preventDefault();
-          go(item.href);
+          go(item as any);
         }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose, flatList, highlightedIndex, go]);
+
 
   const handleDialogKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "Tab") return;
@@ -214,7 +366,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                 <button
                   key={c.label}
                   type="button"
-                  onClick={() => go(c.href)}
+                  onClick={() => go(c)}
                   className="w-full flex items-center gap-2.5 px-3 h-9 text-sm text-left transition-colors"
                   style={{
                     color: "var(--text-primary)",

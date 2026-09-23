@@ -35,13 +35,22 @@ def store_bytes(data: bytes) -> tuple[str, Path]:
 
 def resolve_artifact(uri: str) -> Path | None:
     """Resolve a sha256:// URI to a file path, validating the layout.
-    Returns None for unknown/unresolvable artifacts."""
+    Returns None for unknown/unresolvable artifacts.
+
+    Path traversal protection: ensures the resolved path is within STORAGE_ROOT
+    by using Path.resolve() and checking is_relative_to()."""
     if not uri.startswith("sha256://"):
         return None
     digest = uri.removeprefix("sha256://")
     if not digest or any(c not in "0123456789abcdef" for c in digest):
         return None
-    path = storage_root() / digest[:2] / digest[2:4] / digest
+    root = storage_root().resolve()
+    path = (root / digest[:2] / digest[2:4] / digest).resolve()
+    # Ensure the resolved path is within the storage root (prevents path traversal)
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return None
     if not path.exists():
         return None
     return path

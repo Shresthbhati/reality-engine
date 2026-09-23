@@ -835,11 +835,17 @@ def save_version_partitioned(
         "changed_geometry_ids": list(changed_geometry_ids),
         "source_session_ids": list(source_session_ids or []),
     }
-    _atomic_write_text(record_path, json.dumps(record, indent=2))
-
     seq_path = store._root / "sequence.json"
     from worldstore.store import _SequenceLock  # reuse the SAME cross-process mutex WorldStore.save_version uses
     with _SequenceLock(store._root):
+        # Authoritative immutability claim (see WorldStore.save_version):
+        # the pre-check at this function's top is only a fast path.
+        if record_path.exists():
+            raise WorldStoreError(
+                f"version {vid} already exists -- versions are immutable; "
+                "save a new version instead of overwriting observed reality"
+            )
+        _atomic_write_text(record_path, json.dumps(record, indent=2))
         order = store._read_sequence(seq_path)
         order.append(vid)
         _atomic_write_text(seq_path, json.dumps(order))
@@ -930,11 +936,17 @@ def save_version_partitioned_delta(
         "changed_geometry_ids": list(changed_geometry_ids),
         "source_session_ids": list(source_session_ids or []),
     }
-    _atomic_write_text(record_path, json.dumps(record, indent=2))
-
     seq_path = store._root / "sequence.json"
     from worldstore.store import _SequenceLock
     with _SequenceLock(store._root):
+        # Authoritative immutability claim (see WorldStore.save_version):
+        # the pre-check at this function's top is only a fast path.
+        if record_path.exists():
+            raise WorldStoreError(
+                f"version {vid} already exists -- versions are immutable; "
+                "save a new version instead of overwriting observed reality"
+            )
+        _atomic_write_text(record_path, json.dumps(record, indent=2))
         order = store._read_sequence(seq_path)
         order.append(vid)
         _atomic_write_text(seq_path, json.dumps(order))

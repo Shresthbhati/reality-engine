@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { GitCompare, X, Check, ArrowRight, Shield, Layers, Camera, AlertCircle } from "lucide-react";
-import { fetchWorldDiff } from "@/lib/api/worlds";
+import { getWorldDiff } from "@/lib/api/worlds";
 
 interface VersionDiffModalProps {
   worldId: string;
@@ -17,7 +17,7 @@ export default function VersionDiffModal({
   worldId,
   isOpen,
   onClose,
-  baseVersion = "v1-canonical-seed42",
+  baseVersion = "",
   headVersion = "latest",
   onSelectEntity,
 }: VersionDiffModalProps) {
@@ -27,15 +27,21 @@ export default function VersionDiffModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    if (!worldId || !baseVersion) {
+      setError("No base version specified. Create and commit world revisions to compare lineage differentials.");
+      setLoading(false);
+      setDiff(null);
+      return;
+    }
     setLoading(true);
     setError(null);
-    fetchWorldDiff(worldId, baseVersion, headVersion)
+    getWorldDiff(worldId, baseVersion, headVersion)
       .then((data) => {
         setDiff(data);
         setLoading(false);
       })
       .catch((err) => {
-        setError(err?.message || "Failed to load diff");
+        setError(err?.message || "No version differential available between these versions.");
         setLoading(false);
       });
   }, [isOpen, worldId, baseVersion, headVersion]);
@@ -81,9 +87,16 @@ export default function VersionDiffModal({
               <p className="text-neutral-400 font-mono text-xs">Computing WorldStore geometric & semantic delta...</p>
             </div>
           ) : error ? (
-            <div className="p-4 rounded-md border border-[#e74c3c]/30 bg-[#e74c3c]/10 text-[#e74c3c] flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
+            <div className="py-12 px-6 rounded-lg border border-[#1f222b] bg-[#12141a] text-center space-y-3">
+              <div className="w-10 h-10 rounded-full bg-[#1c202a] text-neutral-400 mx-auto flex items-center justify-center border border-neutral-700/50">
+                <GitCompare className="w-5 h-5 text-neutral-400" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-white">No Version Comparison Available</h4>
+                <p className="text-neutral-400 text-xs max-w-md mx-auto leading-relaxed">
+                  {error}
+                </p>
+              </div>
             </div>
           ) : diff ? (
             <>

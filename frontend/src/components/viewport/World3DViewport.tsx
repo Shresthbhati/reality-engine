@@ -11,11 +11,15 @@ import {
   Compass,
   RotateCcw,
   Sparkles,
+  Ruler,
+  Grid,
+  X,
 } from "lucide-react";
 import {
   WorldSceneController,
   type ViewportLayers,
   type ViewPreset,
+  type MeasurementResult,
 } from "@/lib/viewport/three-scene";
 import type {
   CamerasPayload,
@@ -36,6 +40,7 @@ interface World3DViewportProps {
   loadingMessage?: string;
   hasNoWorldData?: boolean;
   onTriggerSampleWorld?: () => void;
+  onMeasurementChange?: (measurement: MeasurementResult | null) => void;
 }
 
 export default function World3DViewport({
@@ -52,6 +57,7 @@ export default function World3DViewport({
   loadingMessage = "Initializing 3D spatial viewport...",
   hasNoWorldData = false,
   onTriggerSampleWorld,
+  onMeasurementChange,
 }: World3DViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<WorldSceneController | null>(null);
@@ -65,6 +71,9 @@ export default function World3DViewport({
     uncertainty: false,
   });
 
+  const [gridVisible, setGridVisible] = useState(true);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   const [stats, setStats] = useState({ points: 0, cameras: 0, entities: 0 });
 
   // Initialize Three.js Controller
@@ -76,13 +85,17 @@ export default function World3DViewport({
 
     controller.setCallbacks({
       onSelect: (id) => onSelectEntity(id),
+      onMeasure: (res) => {
+        setMeasurement(res);
+        onMeasurementChange?.(res);
+      },
     });
 
     return () => {
       controller.dispose();
       controllerRef.current = null;
     };
-  }, [onSelectEntity]);
+  }, [onSelectEntity, onMeasurementChange]);
 
   // Sync data into scene
   useEffect(() => {
@@ -139,7 +152,6 @@ export default function World3DViewport({
     };
   }, []);
 
-
   // Toggle Layer Helper
   const toggleLayer = useCallback((key: keyof ViewportLayers) => {
     setLayers((prev) => {
@@ -148,6 +160,32 @@ export default function World3DViewport({
       return next;
     });
   }, []);
+
+  const toggleGrid = useCallback(() => {
+    setGridVisible((prev) => {
+      const next = !prev;
+      controllerRef.current?.setGridVisible(next);
+      return next;
+    });
+  }, []);
+
+  const toggleMeasure = useCallback(() => {
+    setIsMeasuring((prev) => {
+      const next = !prev;
+      controllerRef.current?.setMeasurementMode(next);
+      if (!next) {
+        setMeasurement(null);
+        onMeasurementChange?.(null);
+      }
+      return next;
+    });
+  }, [onMeasurementChange]);
+
+  const handleClearMeasurement = useCallback(() => {
+    controllerRef.current?.clearMeasurement();
+    setMeasurement(null);
+    onMeasurementChange?.(null);
+  }, [onMeasurementChange]);
 
   const handlePreset = useCallback((preset: ViewPreset) => {
     controllerRef.current?.setViewPreset(preset);
@@ -181,23 +219,36 @@ export default function World3DViewport({
         toggleLayer("entities");
       } else if (e.key === "3") {
         toggleLayer("cameras");
+      } else if (e.key === "g" || e.key === "G") {
+        toggleGrid();
+      } else if (e.key === "m" || e.key === "M") {
+        toggleMeasure();
       } else if (e.key === "o" || e.key === "O") {
         toggleLayer("oversized");
       } else if (e.key === "u" || e.key === "U") {
         toggleLayer("uncertainty");
       } else if (e.key === "Escape") {
-        onSelectEntity(null);
+        if (isMeasuring) {
+          toggleMeasure();
+        } else {
+          onSelectEntity(null);
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleFrameAll, toggleLayer, onSelectEntity]);
+  }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, isMeasuring, onSelectEntity]);
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none bg-[#08090b]">
       {/* 3D Canvas Mount Point */}
-      <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      <div
+        ref={containerRef}
+        className={`w-full h-full ${
+          isMeasuring ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing"
+        }`}
+      />
 
       {/* Floating Viewport HUD: Top Left Stats */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2 pointer-events-none">
@@ -225,7 +276,48 @@ export default function World3DViewport({
             <span>Query: {queryMatchingIds.size} matching</span>
           </div>
         )}
+
+        {isMeasuring && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[#00e5ff]/20 border border-[#00e5ff] text-[#00e5ff] shadow-lg pointer-events-auto">
+            <Ruler className="w-3.5 h-3.5" />
+            <span>Measuring 3D Distance (click 2 points)</span>
+            <button
+              type="button"
+              onClick={toggleMeasure}
+              className="text-neutral-300 hover:text-white ml-1 cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Interactive Measurement HUD Card */}
+      {isMeasuring && measurement && measurement.distance > 0 && (
+        <div
+          className="absolute top-14 left-3 z-10 p-3 rounded-lg backdrop-blur-md text-xs font-mono border border-[#00e5ff]/40 bg-[#0e1013]/90 text-white space-y-1.5 shadow-2xl pointer-events-auto"
+          style={{ minWidth: "220px" }}
+        >
+          <div className="flex items-center justify-between text-[#00e5ff] font-semibold text-[11px] uppercase tracking-wider">
+            <span>Spatial Measurement</span>
+            <button
+              type="button"
+              onClick={handleClearMeasurement}
+              className="text-neutral-400 hover:text-white text-[10px] underline"
+            >
+              Reset
+            </button>
+          </div>
+          <div className="text-lg font-bold text-white">
+            {measurement.distance.toFixed(3)} <span className="text-xs text-[#00e5ff]">m</span>
+          </div>
+          <div className="text-[11px] text-neutral-400 space-y-0.5 pt-1 border-t border-neutral-800">
+            <div>ΔX: {measurement.delta[0].toFixed(3)} m</div>
+            <div>ΔY: {measurement.delta[1].toFixed(3)} m</div>
+            <div>ΔZ: {measurement.delta[2].toFixed(3)} m</div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Viewport HUD: Top Right Toolbar Controls */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 pointer-events-auto">
@@ -271,6 +363,30 @@ export default function World3DViewport({
           >
             <Camera className="w-3.5 h-3.5" />
             <span>Cam</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleGrid}
+            title="Toggle ENU Ground Grid [G]"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+              gridVisible ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
+            }`}
+          >
+            <Grid className="w-3.5 h-3.5" />
+            <span>Grid</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleMeasure}
+            title="Interactive 3D Measurement [M]"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+              isMeasuring ? "text-[#00e5ff] bg-[rgba(0,229,255,0.2)] border border-[#00e5ff]/50" : "text-neutral-400 hover:text-white"
+            }`}
+          >
+            <Ruler className="w-3.5 h-3.5" />
+            <span>Measure</span>
           </button>
 
           <button
@@ -361,15 +477,15 @@ export default function World3DViewport({
             No 3D Reconstructed World Available
           </h3>
           <p className="text-xs text-neutral-400 max-w-md mb-5 leading-relaxed">
-            This World does not have a compiled 3D representation yet. Reality Engine never synthesizes fake world geometry. Compile a capture session or open an existing verified dataset.
+            This World does not have a compiled 3D representation yet. Reality Engine never synthesizes fake world geometry. Reconstruct attached capture sessions or open an authentic dataset.
           </p>
           {onTriggerSampleWorld && (
             <button
               type="button"
               onClick={onTriggerSampleWorld}
-              className="px-4 py-2 rounded-md text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors"
+              className="px-4 py-2 rounded-md text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors cursor-pointer"
             >
-              Open Verified Room Capture World
+              Open Verified Dataset World
             </button>
           )}
         </div>
@@ -377,7 +493,7 @@ export default function World3DViewport({
 
       {/* Bottom overlay: View navigation hint */}
       <div className="absolute bottom-3 left-3 z-10 pointer-events-none text-[11px] font-mono text-neutral-500">
-        Left-click: Orbit · Right-click: Pan · Scroll: Zoom · Click entity to inspect
+        Left-click: Orbit · Right-click: Pan · Scroll: Zoom · Click entity to inspect · [M] Measure · [G] Grid
       </div>
     </div>
   );

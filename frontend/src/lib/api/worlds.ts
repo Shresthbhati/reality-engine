@@ -7,7 +7,17 @@
  */
 import { apiGet, apiPost } from "./client";
 import { toWorldRow } from "./adapters";
-import type { ApiList, CreateWorldInput, WorldCoverageDto, WorldDto } from "./types";
+import type {
+  ApiList,
+  CreateWorldInput,
+  WorldCoverageDto,
+  WorldDto,
+  WorldIRDto,
+  CamerasPayload,
+  WorldDiffDto,
+  CommitRequest,
+  CommitResponse,
+} from "./types";
 import type { WorldRow } from "@/lib/types";
 
 export async function listWorlds(): Promise<{ rows: WorldRow[]; dtos: WorldDto[] }> {
@@ -44,27 +54,33 @@ export function getWorldCoverage(worldId: string): Promise<WorldCoverageDto> {
   return apiGet<WorldCoverageDto>(`/api/worlds/${encodeURIComponent(worldId)}/coverage`);
 }
 
-export async function fetchWorldDiff(worldId: string, baseVersion?: string, headVersion?: string) {
+/** Fetch full WorldIR for a world's current version. */
+export async function getWorldIR(worldId: string): Promise<WorldIRDto> {
+  return apiGet<WorldIRDto>(`/api/worlds/${encodeURIComponent(worldId)}/worldir`);
+}
+
+/** Fetch camera poses for a world's current version. */
+export async function getWorldCameras(worldId: string): Promise<CamerasPayload> {
+  return apiGet<CamerasPayload>(`/api/worlds/${encodeURIComponent(worldId)}/cameras`);
+}
+
+/** Fetch world diff between two versions. */
+export async function getWorldDiff(
+  worldId: string,
+  baseVersion?: string,
+  headVersion?: string,
+): Promise<WorldDiffDto> {
   const q = new URLSearchParams();
   if (baseVersion) q.set("base", baseVersion);
   if (headVersion) q.set("head", headVersion);
-  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/diff?${q.toString()}`);
-  if (!res.ok) throw new Error("Failed to fetch world diff");
-  return res.json();
+  return apiGet<WorldDiffDto>(`/api/worlds/${encodeURIComponent(worldId)}/diff?${q.toString()}`);
 }
 
-export async function commitWorldCorrection(worldId: string, payload: {
-  entityId: string;
-  changes: Record<string, any>;
-  parentVersionId?: string;
-  commitMessage?: string;
-}) {
-  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/commit`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to commit world correction");
-  return res.json();
+/** Commit a correction to a world entity. */
+export async function commitWorldCorrection(
+  worldId: string,
+  payload: CommitRequest,
+): Promise<CommitResponse> {
+  return apiPost<CommitResponse>(`/api/worlds/${encodeURIComponent(worldId)}/commit`, payload);
 }
 

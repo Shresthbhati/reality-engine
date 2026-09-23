@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+import json
+import os
+import struct
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.models import (
     ActivityEvent,
@@ -18,10 +21,15 @@ from apps.api.models import (
     WorldVersion,
     new_id,
 )
-from apps.api.storage import resolve_artifact
 from world_ir.diff import diff_worlds
-from worldstore.store import WorldStoreError
+from world_ir.world_v1 import WorldIR
+from world_ir.artifact_store import FileArtifactStore
+from worldstore.store import WorldStore
 
+
+def _worldstore_root() -> Path:
+    """Same root the reconstruct job persists WorldStore versions under."""
+    return Path(os.environ.get("WORLDSTORE_ROOT", "./data/worldstore"))
 
 
 worlds = APIRouter(prefix="/api/worlds", tags=["worlds"])
@@ -91,9 +99,9 @@ async def get_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
-    session_count = await db.execute(
+    session_count = (await db.execute(
         select(func.count()).select_from(Session).where(Session.world_id == world_id)
-    )
+    )).scalar_one()
     return {
         "id": w.id,
         "name": w.name,
@@ -102,118 +110,37 @@ async def get_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
         "latitude": w.latitude,
         "longitude": w.longitude,
         "current_version_id": w.current_version_id,
-        "session_count": session_count.scalar_one(),
+        "session_count": session_count,
         "created_at": w.created_at.isoformat() if w.created_at else None,
-    }
-
-
-def _version_dict(v: WorldVersion, current_version_id: str | None) -> dict:
-    return {
-        "id": v.id,
-        "world_id": v.world_id,
-        "parent_version_id": v.parent_version_id,
-        "artifact_uri": v.artifact_uri,
-        "artifact_hash": v.artifact_hash,
-        "source_session_ids": v.source_session_ids or [],
-        "changed_entity_ids": v.changed_entity_ids or [],
-        "changed_geometry_ids": v.changed_geometry_ids or [],
-        "created_at": v.created_at.isoformat() if v.created_at else None,
-        "is_current": v.id == current_version_id,
     }
 
 
 @worlds.get("/{world_id}/versions")
 async def list_world_versions(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    """Application mirror of WorldStore lineage. Reconciled against the
-    real WorldStore on every read (the CLI can write versions directly
-    into the same store root, outside this process) -- never synthesized
-    here."""
+    """Application mirror of WorldStore lineage. Empty until computation
+    actually creates versions -- never synthesized here."""
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
-    await worldstore_service.resync_versions(db, world_id)
     res = await db.execute(
         select(WorldVersion).where(WorldVersion.world_id == world_id).order_by(WorldVersion.created_at.desc())
     )
-    return {"items": [_version_dict(v, w.current_version_id) for v in res.scalars().all()]}
-
-
-@worlds.get("/{world_id}/versions/{version_id}")
-async def get_world_version(
-    world_id: str, version_id: str, db: AsyncSession = Depends(get_db)
-) -> dict:
-    """The real, versioned WorldIR for a specific version -- not the
-    application World row."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    try:
-        world = worldstore_service.get_store().load_version(version_id)
-    except WorldStoreError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    return world.to_dict()
-
-
-@worlds.get("/{world_id}/worldir")
-async def world_worldir(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    """The real, current WorldIR for this world (from WorldStore) -- an
-    honest empty state until a version has actually been committed, never
-    the application World row reshaped to look like one."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    if not w.current_version_id:
-        raise HTTPException(404, "No version compiled yet for this world")
-    world = worldstore_service.get_store().load_version(w.current_version_id)
-    return world.to_dict()
-
-
-@worlds.get("/{world_id}/points")
-async def world_points(world_id: str, db: AsyncSession = Depends(get_db)):
-    version = await worldstore_service.get_current_version_row(db, world_id)
-    if version is None or not version.points_artifact_uri:
-        raise HTTPException(404, "No points artifact for this world's current version")
-    path = resolve_artifact(version.points_artifact_uri)
-    if path is None:
-        raise HTTPException(410, "Points artifact missing from store")
-    return FileResponse(path, media_type="application/octet-stream", filename="points.ply")
-
-
-@worlds.get("/{world_id}/cameras")
-async def world_cameras(world_id: str, db: AsyncSession = Depends(get_db)):
-    version = await worldstore_service.get_current_version_row(db, world_id)
-    if version is None or not version.cameras_artifact_uri:
-        raise HTTPException(404, "No cameras artifact for this world's current version")
-    path = resolve_artifact(version.cameras_artifact_uri)
-    if path is None:
-        raise HTTPException(410, "Cameras artifact missing from store")
-    return FileResponse(path, media_type="application/json", filename="cameras.json")
-
-
-@worlds.get("/{world_id}/report")
-async def world_report(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    version = await worldstore_service.get_current_version_row(db, world_id)
-    if version is None or version.report is None:
-        raise HTTPException(404, "No pipeline report for this world's current version")
-    return version.report
-
-
-@worlds.get("/{world_id}/versions/{version_id}/diff")
-async def world_version_diff(
-    world_id: str, version_id: str, against: str, db: AsyncSession = Depends(get_db)
-) -> dict:
-    """Real structural diff between two committed versions (world_ir.diff),
-    not a UI-computed approximation."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    store = worldstore_service.get_store()
-    try:
-        a = store.load_version(version_id)
-        b = store.load_version(against)
-    except WorldStoreError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    return diff_worlds(a, b).to_dict()
+    return {
+        "items": [
+            {
+                "id": v.id,
+                "world_id": v.world_id,
+                "parent_version_id": v.parent_version_id,
+                "artifact_uri": v.artifact_uri,
+                "artifact_hash": v.artifact_hash,
+                "source_session_ids": v.source_session_ids or [],
+                "changed_entity_ids": v.changed_entity_ids or [],
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+                "is_current": v.id == w.current_version_id,
+            }
+            for v in res.scalars().all()
+        ]
+    }
 
 
 @worlds.post("/{world_id}/attach/{session_id}")
@@ -251,3 +178,351 @@ async def world_coverage(world_id: str, db: AsyncSession = Depends(get_db)) -> d
     if points:
         return {"available": True, "coverage": None, "session_points": points}
     return {"available": False, "reason": "No spatial data captured for this world"}
+
+
+# --------------------------------------------------------------------------
+# Computational surfaces (WorldStore is authoritative)
+#
+# The Studio's spatial workstation fetches a world's actual reconstruction
+# through these endpoints. Everything reads from the version lineage the
+# reconstruct job created; a world with no versions has nothing to show and
+# says so explicitly (no fabrication, no placeholder geometry). A corrupted
+# artifact is a 409, never an empty success.
+# --------------------------------------------------------------------------
+
+
+async def _version_row(
+    db: AsyncSession, world_id: str, version_id: str | None
+) -> WorldVersion:
+    """The mirror row for the world's effective version (current unless
+    ?version= overrides). 404 world / 404 version / explicit None."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    if version_id is not None:
+        row = await db.get(WorldVersion, version_id)
+        if row is None or row.world_id != world_id:
+            raise HTTPException(
+                404, f"Version '{version_id}' not found for world {world_id}"
+            )
+        return row
+    if not w.current_version_id:
+        raise HTTPException(
+            404, "World has no reconstruction versions yet - run reconstruction first"
+        )
+    row = await db.get(WorldVersion, w.current_version_id)
+    if row is None:
+        raise HTTPException(
+            409,
+            f"Current version '{w.current_version_id}' has no version record",
+        )
+    if row.world_id != world_id:
+        raise HTTPException(
+            409,
+            f"Current version '{w.current_version_id}' does not belong to world {world_id}",
+        )
+    return row
+
+
+def _load_world_or_409(row: WorldVersion):
+    """Parse the version's WorldStore artifact. Corruption/absence is a 409
+    with the store's own diagnosis -- never a silently empty world."""
+    from worldstore.store import WorldStore, WorldStoreError
+
+    store = WorldStore(_worldstore_root())
+    try:
+        return store.load_version(row.id)
+    except (WorldStoreError, FileNotFoundError) as exc:
+        raise HTTPException(409, f"Version '{row.id}' artifact unreadable: {exc}")
+
+
+@worlds.get("/{world_id}/worldir")
+async def world_worldir(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """The world's compiled WorldIR (current version unless ?version=)."""
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+    return world.to_dict()
+
+
+@worlds.get("/{world_id}/points")
+async def world_points(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> Response:
+    """The version's reconstruction points as one PLY stream, rendered from
+    the geometries' own artifact bytes (real data only)."""
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+    ply = _render_points_ply(world)
+    if ply is None:
+        raise HTTPException(
+            404,
+            "Version has no point geometry - reconstruction produced no renderable points",
+        )
+    return Response(
+        content=ply,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{row.id}_points.ply"'},
+    )
+
+
+def _render_points_ply(world) -> bytes | None:
+    """Collect point positions from the world's geometries into one ASCII
+    PLY. Each geometry's data_uri artifact is decoded with the canonical
+    PointCloudData reader (RESPC001) when it carries one; geometries
+    without a resolvable payload are skipped and counted in a comment
+    header. Returns None when nothing usable exists (honest empty, not
+    zeros)."""
+    geoms = getattr(world, "geometries", None) or {}
+    positions: list[tuple[float, float, float]] = []
+    skipped = 0
+    store = None
+    for g in geoms.values():
+        data_uri = getattr(g, "data_uri", None)
+        pts: list[tuple[float, float, float]] = []
+        if data_uri:
+            if store is None:
+                from world_ir.artifact_store import FileArtifactStore
+
+                store = FileArtifactStore(_worldstore_root() / "artifacts")
+            try:
+                raw = store.get(data_uri)
+            except Exception:
+                raw = b""
+            pts = _decode_point_payload(raw)
+        if pts:
+            positions.extend(pts)
+        else:
+            skipped += 1
+    if not positions:
+        return None
+
+    header = (
+        "ply\n"
+        "format ascii 1.0\n"
+        f"comment reality-engine world points; geometries={len(geoms)} "
+        f"skipped={skipped}\n"
+        f"element vertex {len(positions)}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "end_header\n"
+    ).encode("ascii")
+    body = "".join(
+        f"{x:.6f} {y:.6f} {z:.6f}\n" for x, y, z in positions
+    ).encode("ascii")
+    return header + body
+
+
+def _decode_point_payload(raw: bytes) -> list[tuple[float, float, float]]:
+    """Decode a geometry artifact's point positions. Canonical Reality
+    Engine payloads (RESPC001 PointCloudData) take the exact reader; a
+    PLY fallback covers backend-parsed artifacts. Empty for anything
+    else -- bytes are never guessed into coordinates."""
+    if raw[:8] == b"RESPC001":
+        from world_ir.geometry_data import PointCloudData
+
+        try:
+            cloud = PointCloudData.from_bytes(raw)
+        except ValueError:
+            return []
+        return [(p[0], p[1], p[2]) for p in cloud.points]
+    return _parse_ply_xyz(raw)
+    head = raw[:4096]
+    end = head.find(b"end_header")
+    if end == -1:
+        return []
+    header = head[:end].decode("ascii", "replace")
+    body = raw[end + len(b"end_header"):].lstrip(b"\r\n")
+    binary = "format binary_little_endian" in header
+    n = 0
+    props: list[str] = []
+    for line in header.splitlines():
+        if line.startswith("element vertex"):
+            n = int(line.split()[-1])
+        elif line.startswith("property"):
+            props.append(line.split()[-1])
+    if n <= 0 or not {"x", "y", "z"} <= set(props):
+        return []
+    out: list[tuple[float, float, float]] = []
+    if binary:
+        stride = 4 * len(props)
+        xi, yi, zi = props.index("x"), props.index("y"), props.index("z")
+        for i in range(n):
+            off = i * stride
+            if off + stride > len(body):
+                break
+            vals = struct.unpack_from("<" + "f" * len(props), body, off)
+            out.append((vals[xi], vals[yi], vals[zi]))
+        return out
+    count = 0
+    for raw_line in body.splitlines():
+        if count >= n:
+            break
+        parts = raw_line.split()
+        if len(parts) < len(props):
+            continue
+        vals = dict(zip(props, parts))
+        try:
+            out.append((float(vals["x"]), float(vals["y"]), float(vals["z"])))
+            count += 1
+        except ValueError:
+            continue
+    return out
+
+
+@worlds.get("/{world_id}/cameras")
+async def world_cameras(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Registered camera poses for the version, in the field shape the
+    Studio's camera layer consumes (position_m / rotation_wxyz, world
+    frame, +Y up, camera-to-world quaternions)."""
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+
+    cameras = []
+    image_size = None
+    for ent in (world.entities or {}).values():
+        obs = getattr(ent, "observations", None) or []
+        for ob in obs:
+            meta = getattr(ob, "metadata", None)
+            if not isinstance(meta, dict):
+                continue
+            pose = meta.get("camera_pose")
+            if isinstance(pose, dict) and "position" in pose:
+                cameras.append({
+                    "evidence_id": meta.get("evidence_id") or ent.id,
+                    "position_m": [float(c) for c in pose["position"]],
+                    "rotation_wxyz": [
+                        float(c) for c in pose.get("rotation", [1.0, 0.0, 0.0, 0.0])
+                    ],
+                })
+            if image_size is None and isinstance(meta.get("image_size"), (list, tuple)):
+                image_size = [int(v) for v in meta["image_size"]]
+    return {
+        "frame": "world (meters, +Y up after frame canonicalization)",
+        "rotation_convention": "camera-to-world quaternion (w, x, y, z)",
+        "image_size": image_size,
+        "version_id": row.id,
+        "cameras": cameras,
+    }
+
+
+class DiffRequest(BaseModel):
+    base_version: str | None = None
+    head_version: str | None = None
+
+
+@worlds.get("/{world_id}/diff")
+async def get_world_diff(world_id: str, base: str | None = None, head: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Compute structural diff between two WorldIR versions."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    
+    store_path = _worldstore_root()
+    if not store_path.exists():
+        raise HTTPException(404, "WorldStore not found")
+    store = WorldStore(str(store_path))
+    
+    # Default to current version as head
+    head_version = head or w.current_version_id
+    if not head_version:
+        raise HTTPException(404, "No current version to diff")
+    
+    # Default to parent of head as base
+    if base is None:
+        head_record = store._record(head_version)
+        base = head_record.get("parent")
+    
+    if not base:
+        raise HTTPException(404, "No base version available for diff")
+    
+    try:
+        before = store.load_version(base)
+        after = store.load_version(head_version)
+    except Exception as e:
+        raise HTTPException(404, f"Version not found: {e}")
+    
+    world_diff = diff_worlds(before, after)
+    return world_diff.to_dict()
+
+
+class CommitRequest(BaseModel):
+    entity_id: str
+    changes: dict
+    parent_version_id: str | None = None
+    commit_message: str | None = None
+
+
+@worlds.post("/{world_id}/commit")
+async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncSession = Depends(get_db)):
+    """Apply a correction to a world entity and persist as new WorldStore version."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    
+    # Load current WorldIR
+    worldir = await _load_worldir_from_store(w)
+    if worldir is None:
+        raise HTTPException(404, "WorldIR not available for this world's current version")
+    
+    # Apply the entity change
+    entity = worldir.entities.get(body.entity_id)
+    if entity is None:
+        raise HTTPException(404, f"Entity {body.entity_id} not found in world")
+    
+    # Apply changes to entity fields
+    for key, value in body.changes.items():
+        if hasattr(entity, key):
+            setattr(entity, key, value)
+    
+    # Update modified_at
+    import time
+    worldir.modified_at = time.time()
+    
+    # Save as new version
+    store_path = _worldstore_root()
+    if not store_path.exists():
+        store_path.mkdir(parents=True, exist_ok=True)
+    store = WorldStore(str(store_path))
+    
+    parent_version = body.parent_version_id or w.current_version_id
+    stored = store.save_version(worldir, parent=parent_version)
+    
+    # Update World record
+    w.current_version_id = stored.version_id
+    w.modified_at = utcnow()
+    
+    db.add(
+        ActivityEvent(
+            id=new_id("act"),
+            type="world.committed",
+            entity_type="world",
+            entity_id=w.id,
+            summary=f"Committed correction to {body.entity_id}: {body.commit_message or 'no message'}",
+        )
+    )
+    
+    await db.commit()
+    
+    return {
+        "version_id": stored.version_id,
+        "world_id": w.id,
+        "entity_id": body.entity_id,
+        "changed_fields": list(body.changes.keys()),
+    }
+
+
+async def _load_worldir_from_store(world: World) -> WorldIR | None:
+    """Load the current WorldIR from WorldStore for a World."""
+    if not world.current_version_id:
+        return None
+    store_path = _worldstore_root()
+    if not store_path.exists():
+        return None
+    store = WorldStore(str(store_path))
+    try:
+        return store.load_version(world.current_version_id)
+    except Exception:
+        return None

@@ -131,3 +131,42 @@ class TestConcurrentProcessWriters:
         versions = store.list_versions()
         assert len(versions) == n
         assert sorted(v.version_id for v in versions) == sorted(f"v-{i}" for i in range(n))
+
+
+class TestConcurrentDuplicateVersionId:
+    def test_same_version_id_has_exactly_one_winner(self, tmp_path):
+        """Two writers claiming the SAME explicit version_id concurrently
+        must not both succeed: versions are immutable, so exactly one
+        wins and the loser gets an explicit WorldStoreError. Before the
+        claim-lock fix both passed the pre-lock `path.exists()` check,
+        the loser silently overwrote the record, and sequence.json logged
+        the id twice (reproduced: sequence == ['v-dup', 'v-dup'])."""
+        import json
+
+        store = WorldStore(tmp_path)
+        barrier = threading.Barrier(2)
+        outcomes: list = []
+
+        def writer(i: int) -> None:
+            try:
+                barrier.wait(timeout=10)
+                store.save_version(_world(i), parent=None, version_id="v-dup")
+                outcomes.append((i, "saved"))
+            except WorldStoreError as exc:
+                outcomes.append((i, f"refused: {exc}"))
+            except Exception as exc:  # noqa: BLE001 -- any other error is a bug
+                outcomes.append((i, f"UNEXPECTED {type(exc).__name__}: {exc}"))
+
+        threads = [threading.Thread(target=writer, args=(i,)) for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
+
+        saved = [o for o in outcomes if o[1] == "saved"]
+        refused = [o for o in outcomes if o[1].startswith("refused")]
+        assert len(saved) == 1, f"exactly one writer must win: {outcomes}"
+        assert len(refused) == 1, f"the loser must be refused explicitly: {outcomes}"
+        order = json.loads((tmp_path / "sequence.json").read_text(encoding="utf-8"))
+        assert order == ["v-dup"], f"sequence must log the id once: {order}"
+        assert [v.version_id for v in store.list_versions()] == ["v-dup"]

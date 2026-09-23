@@ -9,38 +9,22 @@ export async function GET(
   const { id } = await context.params;
 
   try {
-    const response = await fetch(`${BACKEND_URL}/api/worlds/${id}`, {
-      signal: AbortSignal.timeout(5000),
+    const response = await fetch(`${BACKEND_URL}/api/worlds/${id}/cameras`, {
+      signal: AbortSignal.timeout(10000),
     });
-    
     if (!response.ok) {
-      return NextResponse.json(
-        { error: "No cameras available for this world", world_id: id },
-        { status: 404 }
-      );
+      const data = await response.json().catch(() => ({ error: "No cameras available for this world" }));
+      return NextResponse.json({ ...data, world_id: id }, { status: response.status });
     }
-    
-    const data = await response.json();
-    
-    // Extract camera data from the world - look for camera entities/geometries
-    const cameras = data.entities
-      ?.filter((e: any) => e.type === "camera" || e.type === "camera_pose")
-      .map((e: any) => ({
-        id: e.id,
-        position: e.custom_properties?.position || [0, 0, 0],
-        rotation: e.custom_properties?.rotation || [0, 0, 0, 1],
-        intrinsics: e.custom_properties?.intrinsics,
-        frame_id: e.custom_properties?.frame_id,
-      })) || [];
-    
-    return NextResponse.json({
-      cameras,
-      coordinate_frame: data.coordinate_frame,
+    const buffer = await response.arrayBuffer();
+    return new NextResponse(buffer, {
+      headers: { "Content-Type": response.headers.get("Content-Type") || "application/json" },
     });
-  } catch {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "No cameras available for this world", world_id: id },
-      { status: 404 }
+      { error: `Failed to connect to backend: ${message}`, world_id: id },
+      { status: 503 }
     );
   }
 }

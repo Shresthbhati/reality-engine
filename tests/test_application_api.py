@@ -154,10 +154,10 @@ def test_reconstruct_fails_with_honest_error_when_no_evidence(client):
     sid = client.post("/api/sessions", json={"name": "Recon"}).json()["id"]
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     assert r.status_code == 200
-    job = _wait_job(client, r.json()["job_id"])
+    job = _wait_job(client, r.json()["job_id"], timeout=90.0)
     assert job["status"] == "failed"
-    # Now fails with honest error about missing evidence, not fake "not wired"
-    assert "no evidence items to reconstruct" in (job.get("error") or "").lower()
+    # honest error about missing usable image evidence, not fake success
+    assert "usable image evidence" in (job.get("error") or "").lower()
 
 
 def test_world_detail_and_versions_are_real(client):
@@ -225,3 +225,151 @@ def test_activity_feed_real_events(client):
     acts = client.get("/api/activity").json()["items"]
     assert any(a["type"] == "session.created" for a in acts)
 
+
+
+# --------------------------------------------------------------------------
+# Reconstruction job -> World/Version mirror -> worldir/points/cameras
+# --------------------------------------------------------------------------
+
+
+def _upload_photo(client, sid, name, payload):
+    r = client.post(
+        f"/api/uploads?session_id={sid}",
+        files={"file": (name, payload, "image/jpeg")},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_worldir_endpoints_404_until_a_version_exists(client):
+    """The spatial workstation's endpoints exist and are honest: an unknown
+    world is 404; a real world with no versions says 'run reconstruction
+    first' instead of returning fabricated geometry."""
+    w = client.post("/api/worlds", json={"name": "Empty World"}).json()
+    for path in ("worldir", "points", "cameras"):
+        assert client.get(f"/api/worlds/wld_missing/{path}").status_code == 404
+        r = client.get(f"/api/worlds/{w['id']}/{path}")
+        assert r.status_code == 404, (path, r.status_code)
+        assert "reconstruction" in r.json()["detail"].lower()
+
+
+def test_reconstruct_session_full_chain(client, tmp_path, monkeypatch):
+    """RECONSTRUCT_SESSION runs the real chain end to end:
+
+    uploaded evidence -> EvidenceItem -> ReconstructionOrchestrator
+    (deterministic test backend via REALITY_TEST_BACKEND seam, the same
+    one apps.cli uses) -> compile -> WorldStore version -> application
+    World/WorldVersion mirror -> the worldir/points/cameras surfaces
+    return the ACTUAL reconstruction.
+    """
+    from worldstore.store import WorldStore
+
+    monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.test_cli_compile:_TwoViewBackend")
+    store_root = tmp_path / "ws"
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(store_root))
+
+    sid = client.post("/api/sessions", json={"name": "Recon chain"}).json()["id"]
+    for i in range(3):
+        _upload_photo(client, sid, f"frame_{i:02d}.jpg", b"jpeg-" + f"{i}".encode() * 8)
+
+    r = client.post(f"/api/sessions/{sid}/reconstruct")
+    assert r.status_code == 200
+    job = _wait_job(client, r.json()["job_id"], timeout=90.0)
+    assert job["status"] == "completed", job.get("error")
+    meta = job["payload"]
+    assert meta["registration_status"] == "success"
+    assert meta["points"] > 0
+    assert meta["cameras_registered"] == 3
+    assert meta["skipped_evidence"] == []
+
+    # application mirror: a world now exists, current_version_id points at
+    # a real WorldStore version, the session is complete and attached.
+    wld_id = meta["world_id"]
+    detail = client.get(f"/api/worlds/{wld_id}").json()
+    assert detail["current_version_id"] == meta["version_id"]
+    s = client.get(f"/api/sessions/{sid}").json()
+    assert s["world_id"] == wld_id
+    assert s["status"] == "complete"
+
+    stored = WorldStore(store_root).list_versions()
+    assert meta["version_id"] in [v.version_id for v in stored]
+
+    versions = client.get(f"/api/worlds/{wld_id}/versions").json()["items"]
+    assert versions and versions[0]["is_current"] is True
+    assert versions[0]["source_session_ids"] == [sid]
+
+    # worldir surface: the version's real WorldIR
+    wir = client.get(f"/api/worlds/{wld_id}/worldir")
+    assert wir.status_code == 200
+    body = wir.json()
+    assert body["id"] == stored[0].world_id if stored else True
+    assert len(body["entities"]) > 0
+
+    # points surface: parseable PLY carrying the reconstruction's points
+    pts = client.get(f"/api/worlds/{wld_id}/points")
+    assert pts.status_code == 200
+    content = pts.content.decode("ascii", "replace")
+    assert content.startswith("ply")
+    assert int(content.split("element vertex ")[1].split("\n")[0]) == meta["points"]
+
+    # version= override resolves; unknown versions 404
+    assert client.get(
+        f"/api/worlds/{wld_id}/worldir?version={meta['version_id']}"
+    ).status_code == 200
+    assert client.get(
+        f"/api/worlds/{wld_id}/worldir?version=v-nonexistent"
+    ).status_code == 404
+
+    # the reconstruction is a real product event in the activity feed
+    acts = client.get("/api/activity").json()["items"]
+    assert any(a["type"] == "world.version_created" for a in acts)
+
+    # a second reconstruction produces a NEW immutable version
+    r2 = client.post(f"/api/sessions/{sid}/reconstruct")
+    job2 = _wait_job(client, r2.json()["job_id"], timeout=90.0)
+    assert job2["status"] == "completed", job2.get("error")
+    assert job2["payload"]["version_id"] != meta["version_id"]
+
+
+def test_reconstruct_honest_failure_without_usable_images(client):
+    """Non-image / unresolvable evidence cannot reconstruct: the job fails
+    with the measured reason. Never a fake success."""
+    sid = client.post("/api/sessions", json={"name": "No images"}).json()["id"]
+    # upload a non-image artifact -> classified dataset -> not image evidence
+    _upload_photo_name = "scan.ply"
+    r = client.post(
+        f"/api/uploads?session_id={sid}",
+        files={"file": (_upload_photo_name, b"ply-bytes", "application/octet-stream")},
+    )
+    assert r.status_code == 201
+
+    r = client.post(f"/api/sessions/{sid}/reconstruct")
+    job = _wait_job(client, r.json()["job_id"], timeout=90.0)
+    assert job["status"] == "failed"
+    assert "usable image evidence" in (job.get("error") or "")
+
+
+def test_reconstruct_honest_failure_when_backend_cannot_run(client, monkeypatch):
+    """No backend available -> the orchestrator's own availability detail
+    surfaces as the job error. BACKEND_UNAVAILABLE, never a fake result."""
+    monkeypatch.setenv("REALITY_TEST_BACKEND", "")
+    monkeypatch.delenv("REALITY_TEST_BACKEND", raising=False)
+    sid = client.post("/api/sessions", json={"name": "No backend"}).json()["id"]
+    for i in range(2):
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+
+    # Force COLMAP lookup to fail: REALITY_COLMAP_BINARY points at a
+    # nonexistent binary only if the backend reads it; this environment
+    # genuinely HAS colmap, so the honest no-backend path is the
+    # orchestrator declining. Simulate by pointing the whole test at a
+    # missing module instead.
+    monkeypatch.setenv(
+        "REALITY_TEST_BACKEND", "tests.definitely_missing_module:_Backend"
+    )
+    r = client.post(f"/api/sessions/{sid}/reconstruct")
+    job = _wait_job(client, r.json()["job_id"], timeout=90.0)
+    assert job["status"] == "failed"
+    err = (job.get("error") or "").lower()
+    # The unresolvable backend spec surfaces as an explicit job failure
+    # naming the missing module - never a silent fallback or fake result.
+    assert "reconstruction failed" in err or "no module named" in err

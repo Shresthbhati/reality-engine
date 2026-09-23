@@ -1,25 +1,35 @@
 import Link from "next/link";
 import { Camera } from "lucide-react";
 import StatusBadge from "@/components/ui/StatusBadge";
-import { SESSIONS } from "@/lib/data";
+import { MobileEmptyState, MobileErrorState } from "@/components/mobile/AsyncState";
+import { listSessions, isApiError } from "@/lib/api";
 
-export default function MobileSessionsPage() {
+export default async function MobileSessionsPage() {
+  let sessions;
+  try {
+    sessions = (await listSessions()).rows;
+  } catch (err) {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="text-lg font-semibold p-4 pb-0" style={{ color: "var(--text-primary)" }}>
+          Sessions
+        </h1>
+        <MobileErrorState message={isApiError(err) ? err.describe() : "Unexpected error loading Sessions."} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold p-4 pb-0" style={{ color: "var(--text-primary)" }}>
         Sessions
       </h1>
 
-      {SESSIONS.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-16 px-4 text-center">
-          <Camera className="w-6 h-6" style={{ color: "var(--text-tertiary)" }} />
-          <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
-            No Sessions yet.
-          </p>
-        </div>
+      {sessions.length === 0 ? (
+        <MobileEmptyState icon={Camera} message="No Sessions yet." />
       ) : (
         <div className="flex flex-col gap-2 px-4 pb-4">
-          {SESSIONS.map((s) => (
+          {sessions.map((s) => (
             <Link
               key={s.id}
               href={`/m/sessions/${s.id}`}

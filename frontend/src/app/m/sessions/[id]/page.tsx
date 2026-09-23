@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import StatusBadge from "@/components/ui/StatusBadge";
 import DesktopHandoff from "@/components/mobile/DesktopHandoff";
-import { getSession } from "@/lib/data";
+import ReconstructButton from "@/components/mobile/ReconstructButton";
+import { MobileErrorState } from "@/components/mobile/AsyncState";
+import { getSession, getSessionJobs, isApiError } from "@/lib/api";
 
 export default async function MobileSessionDetailPage({
   params,
@@ -11,11 +13,21 @@ export default async function MobileSessionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = getSession(id);
 
-  if (!session) {
-    notFound();
+  let session;
+  try {
+    session = (await getSession(id)).row;
+  } catch (err) {
+    if (isApiError(err) && err.code === "not_found") notFound();
+    return (
+      <div className="flex flex-col gap-5 p-4">
+        <MobileErrorState message={isApiError(err) ? err.describe() : "Unexpected error loading this Session."} />
+      </div>
+    );
   }
+
+  const jobs = await getSessionJobs(id).catch(() => []);
+  const latestJob = jobs[0] ?? null;
 
   return (
     <div className="flex flex-col gap-5 p-4">
@@ -49,7 +61,35 @@ export default async function MobileSessionDetailPage({
       )}
 
       <Section title="Evidence">
-        <Row label="Items" value={String(session.evidenceCount)} mono />
+        <div className="flex items-center justify-between">
+          <Row label="Items" value={String(session.evidenceCount)} mono />
+        </div>
+        <Link
+          href={`/m/evidence?session=${session.id}`}
+          className="text-sm font-medium min-h-[36px] flex items-center"
+          style={{ color: "var(--accent)" }}
+        >
+          Review Evidence →
+        </Link>
+      </Section>
+
+      <Section title="Processing">
+        {latestJob ? (
+          <>
+            <Row label="Job" value={latestJob.type} />
+            <Row label="Status" value={latestJob.stage ? `${latestJob.status} · ${latestJob.stage}` : latestJob.status} />
+            {latestJob.error && (
+              <p className="text-xs" style={{ color: "var(--error)" }}>
+                {latestJob.error}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
+            No reconstruction job has run yet.
+          </p>
+        )}
+        <ReconstructButton sessionId={session.id} />
       </Section>
 
       <Section title="World">
@@ -67,7 +107,12 @@ export default async function MobileSessionDetailPage({
         )}
       </Section>
 
-      <DesktopHandoff href={`/sessions/${session.id}`} />
+      <DesktopHandoff
+        href={`/sessions/${session.id}`}
+        worldName={session.worldName}
+        sessionName={session.name}
+        pendingWork={latestJob && latestJob.status !== "COMPLETE" ? `Reconstruction ${latestJob.status.toLowerCase()}` : null}
+      />
     </div>
   );
 }

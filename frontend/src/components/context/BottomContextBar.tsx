@@ -221,7 +221,7 @@ export default function BottomContextBar({
                 <span className="w-2.5 h-2.5 rounded-full bg-[#00e5ff]" />
                 <div className="text-xs">
                   <div className="text-white font-medium">Pipeline Initialized</div>
-                  <div className="text-neutral-500 text-[11px]">2026-09-22 00:00:00 UTC</div>
+                  <div className="text-neutral-500 text-[11px]">Capture & Sensor Synchronized</div>
                 </div>
               </div>
 
@@ -230,8 +230,12 @@ export default function BottomContextBar({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#2ecc71]" />
                 <div className="text-xs">
-                  <div className="text-white font-medium">SfM Sparse Reconstruction</div>
-                  <div className="text-neutral-500 text-[11px]">25 cameras registered · 121k points</div>
+                  <div className="text-white font-medium">SfM Sparse Calibration</div>
+                  <div className="text-neutral-500 text-[11px]">
+                    {meta.reconstruction?.cameras_registered != null
+                      ? `${meta.reconstruction.cameras_registered} cameras registered · ${(meta.reconstruction.points ?? 0).toLocaleString()} points`
+                      : "Multi-view geometry calibrated"}
+                  </div>
                 </div>
               </div>
 
@@ -240,8 +244,10 @@ export default function BottomContextBar({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#35d07f]" />
                 <div className="text-xs">
-                  <div className="text-white font-medium">Scale & Monocular Depth Metricized</div>
-                  <div className="text-neutral-500 text-[11px]">Inverse-depth alignment against sparse cloud</div>
+                  <div className="text-white font-medium">Scale & Depth Metricization</div>
+                  <div className="text-neutral-500 text-[11px]">
+                    {meta.scale?.state ?? "Metric"} · {meta.depth?.model ?? "Monocular fusion"}
+                  </div>
                 </div>
               </div>
 
@@ -250,8 +256,10 @@ export default function BottomContextBar({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#00e5ff]" />
                 <div className="text-xs">
-                  <div className="text-white font-medium">WorldIR Canonical Compilation</div>
-                  <div className="text-neutral-500 text-[11px]">58 structural planes promoted</div>
+                  <div className="text-white font-medium">WorldIR Compilation</div>
+                  <div className="text-neutral-500 text-[11px]">
+                    {Object.keys(world?.entities || {}).length} structural planes compiled
+                  </div>
                 </div>
               </div>
             </div>

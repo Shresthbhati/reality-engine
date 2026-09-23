@@ -107,3 +107,42 @@ export function useWorldCameras(worldId: string | null) {
     [worldId],
   );
 }
+
+export function useWorldVersions(worldId: string | null) {
+  return useApi(
+    async () => {
+      if (!worldId) return [];
+      try {
+        const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/versions`);
+        if (res.ok) {
+          const data = await res.json();
+          return data.items || [];
+        }
+      } catch {
+        // Fallback
+      }
+      return [];
+    },
+    [worldId],
+  );
+}
+
+export function useWorldDiff(worldId: string | null, baseVersion?: string, headVersion?: string) {
+  return useApi(
+    async () => {
+      if (!worldId) return null;
+      try {
+        const q = new URLSearchParams();
+        if (baseVersion) q.set("base", baseVersion);
+        if (headVersion) q.set("head", headVersion);
+        const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/diff?${q.toString()}`);
+        if (res.ok) return await res.json();
+      } catch {
+        // Fallback
+      }
+      return null;
+    },
+    [worldId, baseVersion, headVersion],
+  );
+}
+

@@ -17,7 +17,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0"]
 perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0"]
-colmap = ["colmap-cli>=4.2"]
+# colmap is a C++ binary (colmap/colmap), not a Python package.
+# The CLI expects `colmap` on PATH. No PyPI package exists.
 
 [project.scripts]
 reality = "apps.cli.main:main"

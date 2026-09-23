@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useWorlds } from "@/lib/api";
 import {
   Search,
   Camera,
@@ -156,11 +157,7 @@ const COMMANDS: Command[] = [
     action: () => window.dispatchEvent(new CustomEvent("trigger-export", { detail: { format: "report" } })),
   },
   // Worlds & Navigation
-  {
-    label: "Open Room Capture World (Canonical Slice)",
-    href: "/worlds/world-compiled-seed42",
-    icon: Globe,
-  },
+  { label: "Open Spatial Studio", href: "/", icon: Globe },
   { label: "Create Capture Session", href: "/sessions/new", icon: Camera },
   { label: "Create Spatial World", href: "/worlds/new", icon: Globe },
   { label: "Attach Evidence", href: "/evidence", icon: ShieldCheck },
@@ -237,10 +234,26 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     };
   }, [query]);
 
+  const { data: rawWorlds } = useWorlds();
+  const worlds = rawWorlds ?? [];
+
+  // Dynamically include registered worlds in default command list
+  const dynamicCommands = useMemo(() => {
+    const list = [...COMMANDS];
+    for (const w of worlds) {
+      list.push({
+        label: `Open World: ${w.name || w.id}`,
+        href: `/worlds/${w.id}`,
+        icon: Globe,
+      });
+    }
+    return list;
+  }, [worlds]);
+
   // Only rows that answer the current query are shown; anything stale (or
   // from a previous palette session) reads as an empty result set.
   const results = searchState.q === query ? searchState.rows : [];
-  const flatList = query.trim() === "" ? COMMANDS : results;
+  const flatList = query.trim() === "" ? dynamicCommands : results;
 
   const go = useCallback(
     (target: string | Command) => {

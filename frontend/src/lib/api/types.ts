@@ -168,3 +168,121 @@ export interface UploadResult {
   job_id: string;
   checksum: string;
 }
+
+/** WorldIR DTO for /api/worlds/{id}/worldir */
+export interface WorldIRDto {
+  schema_version: number;
+  id: string;
+  name: string;
+  version: number;
+  created_at: number;
+  modified_at: number;
+  entities: Record<string, WorldIREntityDto>;
+  geometries: Record<string, WorldIRGeometryDto>;
+  materials: Record<string, unknown>;
+  surfaces: Record<string, unknown>;
+  components: Record<string, unknown>;
+  temporal_state: unknown;
+  temporal_events: Record<string, unknown>;
+  causal_relations: unknown[];
+  main_branch_id: string;
+  branches: Record<string, unknown>;
+  scenarios: Record<string, unknown>;
+  coordinate_frame: string;
+  transforms: Record<string, WorldIRTransformDto>;
+  observations: Record<string, unknown>;
+  global_provenance: string;
+  global_confidence: number;
+  global_uncertainty: unknown;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorldIREntityDto {
+  id: string;
+  type: string;
+  name: string;
+  geometry_ids: string[];
+  transform?: WorldIRTransformDto;
+  provenance: string;
+  confidence: number;
+  metadata?: Record<string, unknown>;
+  statement_state?: string;
+}
+
+export interface WorldIRGeometryDto {
+  id: string;
+  type: string;
+  lod_level: number;
+  vertex_count: number;
+  triangle_count?: number;
+  data_uri: string | null;
+  data_hash: string | null;
+  bounds_min: { x: number; y: number; z: number };
+  bounds_max: { x: number; y: number; z: number };
+  provenance: string;
+  confidence: number;
+  quality_metrics?: Record<string, unknown>;
+  observations?: WorldIRObservationDto[];
+}
+
+export interface WorldIRTransformDto {
+  position: { x: number; y: number; z: number };
+  rotation: { w: number; x: number; y: number; z: number };
+}
+
+export interface WorldIRObservationDto {
+  id: string;
+  sensor_type: string;
+  confidence: number;
+  metadata?: Record<string, unknown>;
+}
+
+/** Cameras payload for /api/worlds/{id}/cameras */
+export interface CamerasPayload {
+  cameras: Array<{
+    entity_id: string;
+    position: { x: number; y: number; z: number };
+    rotation: { w: number; x: number; y: number; z: number };
+    provenance: string;
+    confidence: number;
+  }>;
+}
+
+/** World diff DTO for /api/worlds/{id}/diff */
+export interface WorldDiffDto {
+  from_world_id: string;
+  to_world_id: string;
+  summary: {
+    entities_added: number;
+    entities_removed: number;
+    entities_modified: number;
+    geometries_added: number;
+    geometries_removed: number;
+    geometries_modified: number;
+  };
+  entity_diffs: Array<{
+    entity_id: string;
+    kind: "added" | "removed" | "modified";
+    changes: string[];
+  }>;
+  geometry_diffs: Array<{
+    geometry_id: string;
+    kind: "added" | "removed" | "modified";
+    changes: string[];
+  }>;
+}
+
+/** Commit request/response for /api/worlds/{id}/commit */
+export interface CommitRequest {
+  entity_id: string;
+  changes: Record<string, unknown>;
+  parent_version_id?: string | null;
+  commit_message?: string | null;
+}
+
+export interface CommitResponse {
+  version_id: string;
+  world_id: string;
+  entity_id: string;
+  changed_fields: string[];
+}

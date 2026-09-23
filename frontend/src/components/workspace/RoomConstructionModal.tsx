@@ -90,14 +90,48 @@ export default function RoomConstructionModal({
     setRunning(true);
     setError(null);
     setCompleted(false);
+    setActiveStage(1);
 
     try {
-      // Step-by-step progress animation simulating real execution if backend is running locally
-      for (let i = 1; i <= 7; i++) {
-        setActiveStage(i);
-        // Stage 2 and 4 take slightly longer
-        const delay = i === 2 || i === 4 ? 700 : 400;
-        await new Promise((r) => setTimeout(r, delay));
+      // Dispatch real reconstruction job to backend bridge
+      const res = await fetch("/api/jobs/reconstruct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          package_path: "datasets/room_capture",
+          output_path: `data/reconstructions/${worldId}`,
+          colmap_binary: backend,
+          gpu: useGpu,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            "Reconstruction backend bridge offline (http://localhost:8100). The Golden Loop worker daemon is awaiting launch."
+        );
+      }
+
+      if (data.job_id) {
+        // Poll real job status
+        let pollCount = 0;
+        while (pollCount < 30) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const jobRes = await fetch(`/api/jobs/${data.job_id}`);
+          if (jobRes.ok) {
+            const job = await jobRes.json();
+            if (job.status === "completed") {
+              setCompleted(true);
+              setRunning(false);
+              onReconstructionSuccess?.();
+              return;
+            } else if (job.status === "failed") {
+              throw new Error(job.error || "Reconstruction job failed");
+            }
+          }
+          pollCount++;
+        }
       }
 
       setCompleted(true);
@@ -105,8 +139,12 @@ export default function RoomConstructionModal({
       setRunning(false);
       onReconstructionSuccess?.();
     } catch (err: any) {
-      setError(err?.message || "Room construction pipeline failed.");
+      setError(
+        err?.message ||
+          "Reconstruction backend bridge offline (http://localhost:8100). Golden Loop backend worker is not running."
+      );
       setRunning(false);
+      setActiveStage(null);
     }
   };
 
@@ -141,128 +179,118 @@ export default function RoomConstructionModal({
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
-          {/* Configuration Parameters */}
-          <div className="p-3.5 rounded-lg bg-[#151821] border border-[#1f222b] space-y-3">
-            <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block">
-              Pipeline Parameters
-            </span>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-[10px] text-neutral-400 block mb-1">SfM Backend</label>
-                <select
-                  value={backend}
-                  onChange={(e) => setBackend(e.target.value)}
-                  disabled={running}
-                  className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none"
-                >
-                  <option value="colmap">COLMAP / pycolmap</option>
-                  <option value="glomap">GLOMAP Global SfM</option>
-                </select>
-              </div>
+        {/* Content Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 text-xs">
+          {/* Settings Bar */}
+          <div className="grid grid-cols-3 gap-3 p-3 rounded-lg border border-[#1f222b] bg-[#14161f]">
+            <div>
+              <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
+                SfM Backend
+              </label>
+              <select
+                value={backend}
+                onChange={(e) => setBackend(e.target.value)}
+                disabled={running}
+                className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none"
+              >
+                <option value="colmap">COLMAP (pycolmap)</option>
+                <option value="openmvg">OpenMVG</option>
+              </select>
+            </div>
 
-              <div>
-                <label className="text-[10px] text-neutral-400 block mb-1">Depth Fusion Model</label>
-                <select
-                  value={depthModel}
-                  onChange={(e) => setDepthModel(e.target.value)}
-                  disabled={running}
-                  className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none"
-                >
-                  <option value="midas">MiDaS_small</option>
-                  <option value="dpt">DPT_Hybrid</option>
-                </select>
-              </div>
+            <div>
+              <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
+                Depth Model
+              </label>
+              <select
+                value={depthModel}
+                onChange={(e) => setDepthModel(e.target.value)}
+                disabled={running}
+                className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none"
+              >
+                <option value="midas">MiDaS (Monocular)</option>
+                <option value="dpt">DPT Hybrid</option>
+              </select>
+            </div>
 
-              <div>
-                <label className="text-[10px] text-neutral-400 block mb-1">Acceleration</label>
-                <button
-                  type="button"
-                  onClick={() => setUseGpu(!useGpu)}
+            <div className="flex flex-col justify-between">
+              <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
+                Acceleration
+              </label>
+              <label className="flex items-center gap-2 h-7 cursor-pointer text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={useGpu}
+                  onChange={(e) => setUseGpu(e.target.checked)}
                   disabled={running}
-                  className={`w-full h-7 px-2 rounded border text-xs font-mono transition-colors text-left flex items-center justify-between ${
-                    useGpu
-                      ? "bg-[#00e5ff]/15 border-[#00e5ff] text-[#00e5ff]"
-                      : "bg-[#0e1013] border-neutral-700 text-neutral-400"
-                  }`}
-                >
-                  <span>{useGpu ? "CUDA / GPU" : "CPU Fallback"}</span>
-                  <span className="text-[10px]">{useGpu ? "ENABLED" : "OFF"}</span>
-                </button>
-              </div>
+                  className="accent-[#00e5ff]"
+                />
+                <span>CUDA GPU</span>
+              </label>
             </div>
           </div>
 
-          {/* Pipeline Stages Progression */}
+          {/* Canonical 7 Pipeline Stages */}
           <div className="space-y-2">
-            <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold block">
+            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               Canonical Pipeline Stages
-            </span>
-
-            <div className="space-y-2">
-              {STAGES.map((st) => {
-                const Icon = st.icon;
-                const isCurrent = activeStage === st.id;
-                const isPast = (activeStage !== null && activeStage > st.id) || completed;
+            </h4>
+            <div className="space-y-1.5">
+              {STAGES.map((s) => {
+                const Icon = s.icon;
+                const isActive = activeStage === s.id;
+                const isPast = activeStage !== null && activeStage > s.id;
+                const isFinished = completed;
 
                 return (
                   <div
-                    key={st.id}
-                    className={`p-3 rounded-lg border transition-all flex items-start gap-3 ${
-                      isCurrent
-                        ? "bg-[#00e5ff]/10 border-[#00e5ff] shadow-sm"
-                        : isPast
-                        ? "bg-[#151821] border-[#2ecc71]/40"
-                        : "bg-[#151821] border-[#1f222b] opacity-75"
+                    key={s.id}
+                    className={`p-2.5 rounded-lg border transition-colors flex items-start gap-3 ${
+                      isActive
+                        ? "bg-[#182030] border-[#00e5ff]"
+                        : isPast || isFinished
+                        ? "bg-[#14161f] border-[#2ecc71]/40"
+                        : "bg-[#14161f] border-[#1f222b]"
                     }`}
                   >
                     <div
-                      className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
-                        isCurrent
-                          ? "bg-[#00e5ff] text-black animate-pulse"
-                          : isPast
+                      className={`p-1.5 rounded shrink-0 mt-0.5 ${
+                        isActive
+                          ? "bg-[#00e5ff]/20 text-[#00e5ff]"
+                          : isPast || isFinished
                           ? "bg-[#2ecc71]/20 text-[#2ecc71]"
                           : "bg-neutral-800 text-neutral-400"
                       }`}
                     >
-                      {isCurrent ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : isPast ? (
-                        <CheckCircle2 className="w-4 h-4" />
+                      {isActive ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-[#00e5ff]" />
+                      ) : isPast || isFinished ? (
+                        <CheckCircle2 className="w-4 h-4 text-[#2ecc71]" />
                       ) : (
                         <Icon className="w-4 h-4" />
                       )}
                     </div>
 
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
-                        <span
-                          className={`font-semibold text-xs ${
-                            isCurrent
-                              ? "text-[#00e5ff]"
-                              : isPast
-                              ? "text-white"
-                              : "text-neutral-300"
-                          }`}
-                        >
-                          {st.title}
-                        </span>
+                        <span className="font-semibold text-white">{s.title}</span>
                         <span
                           className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                            isCurrent
+                            isActive
                               ? "bg-[#00e5ff]/20 text-[#00e5ff]"
-                              : isPast
-                              ? "bg-[#2ecc71]/15 text-[#2ecc71]"
+                              : isPast || isFinished
+                              ? "bg-[#2ecc71]/20 text-[#2ecc71]"
                               : "bg-neutral-800 text-neutral-500"
                           }`}
                         >
-                          {isCurrent ? "PROCESSING" : isPast ? "COMPLETED" : "READY"}
+                          {isActive
+                            ? "RUNNING"
+                            : isPast || isFinished
+                            ? "COMPLETE"
+                            : "PENDING"}
                         </span>
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-0.5 leading-relaxed">
-                        {st.desc}
-                      </p>
+                      <p className="text-[11px] text-neutral-400 mt-0.5">{s.desc}</p>
                     </div>
                   </div>
                 );
@@ -270,25 +298,32 @@ export default function RoomConstructionModal({
             </div>
           </div>
 
+          {/* Honest Error Status */}
           {error && (
-            <div className="p-3 rounded-md bg-[#e74c3c]/10 border border-[#e74c3c]/30 text-[#e74c3c] flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
+            <div className="p-3 rounded-lg border border-[#e74c3c]/50 bg-[#2a1315] text-[#ff6b6b] flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-semibold text-xs">Reconstruction Pipeline Bridge Offline</div>
+                <div className="text-[11px] leading-relaxed text-neutral-300 font-mono">
+                  {error}
+                </div>
+              </div>
             </div>
           )}
 
+          {/* Success Banner */}
           {completed && (
-            <div className="p-3 rounded-md bg-[#2ecc71]/10 border border-[#2ecc71]/30 text-[#2ecc71] flex items-center gap-2">
+            <div className="p-3 rounded-lg border border-[#2ecc71]/50 bg-[#12281a] text-[#2ecc71] flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>Room construction completed. Canonical WorldIR baseline verified and ready!</span>
+              <span>Room construction finished. WorldIR compiled and persisted to WorldStore.</span>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 h-14 border-t border-[#1f222b] bg-[#12141a] text-xs">
-          <span className="text-[11px] font-mono text-neutral-500">
-            {running ? "Executing pipeline stages..." : completed ? "Pipeline run succeeded" : "Ready to execute"}
+        <div className="flex items-center justify-between px-5 h-14 border-t border-[#1f222b] bg-[#12141a]">
+          <span className="text-[11px] text-neutral-400 font-mono">
+            {running ? "Processing reconstruction job..." : "Ready for execution"}
           </span>
 
           <div className="flex items-center gap-2">
@@ -296,31 +331,28 @@ export default function RoomConstructionModal({
               type="button"
               onClick={onClose}
               disabled={running}
-              className="px-3.5 py-1.5 rounded-md font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 rounded text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
             >
-              {completed ? "Done" : "Cancel"}
+              Cancel
             </button>
-
-            {!completed && (
-              <button
-                type="button"
-                onClick={handleRunPipeline}
-                disabled={running}
-                className="px-4 py-1.5 rounded-md font-semibold text-black bg-[#00e5ff] hover:bg-[#33ebff] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                {running ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>Launch Room Construction</span>
-                  </>
-                )}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleRunPipeline}
+              disabled={running}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {running ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Executing...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Start Reconstruction</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

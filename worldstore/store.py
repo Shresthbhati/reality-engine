@@ -191,13 +191,26 @@ class WorldStore:
         # between the two leaves an orphan version file (harmless --
         # list_versions() below already appends unrecorded files) rather
         # than a sequence entry pointing at a version that doesn't exist.
-        _atomic_write_text(path, json.dumps(record, indent=2))
+        # Both writes happen under the sequence lock, and the immutability
+        # check is re-verified inside it: the pre-lock `path.exists()`
+        # check above is only a fast path -- two concurrent savers of the
+        # same explicit version_id could both pass it before either
+        # writes (TOCTOU), silently overwriting the record and logging
+        # the id twice in the sequence. The authoritative check below
+        # makes exactly one winner; the loser gets an explicit
+        # WorldStoreError and the sequence keeps a single entry.
         seq_path = self._root / "sequence.json"
         # The read-modify-write below is not safe to interleave across
         # concurrent writers (see _SequenceLock docstring): the lock
-        # makes "read current order, append, write" a single atomic
+        # makes "claim id, write record, append order" a single atomic
         # step across threads and processes sharing this store root.
         with _SequenceLock(self._root):
+            if path.exists():
+                raise WorldStoreError(
+                    f"version {vid} already exists -- versions are immutable; "
+                    "save a new version instead of overwriting observed reality"
+                )
+            _atomic_write_text(path, json.dumps(record, indent=2))
             order: list[str] = self._read_sequence(seq_path)
             order.append(vid)
             _atomic_write_text(seq_path, json.dumps(order))
@@ -281,7 +294,15 @@ class WorldStore:
         # older store) is appended in sorted order -- history is never
         # dropped.
         ordered = [v for v in order if v in known] + sorted(known - set(order))
+        seen: set[str] = set()
         for vid in ordered:
+            # A sequence written before the save_version claim-lock fix
+            # could log the same id twice (concurrent duplicate saves);
+            # report each stored version once rather than duplicating
+            # history the caller never created.
+            if vid in seen:
+                continue
+            seen.add(vid)
             records.append(StoredVersion(**self._record(vid)))
         return records
 

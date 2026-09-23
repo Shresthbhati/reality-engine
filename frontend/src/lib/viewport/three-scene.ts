@@ -22,6 +22,13 @@ export interface ViewportLayers {
 
 export type ViewPreset = "isometric" | "top" | "front" | "side";
 
+export interface MeasurementResult {
+  p1: [number, number, number];
+  p2: [number, number, number];
+  distance: number;
+  delta: [number, number, number];
+}
+
 export const TYPE_COLORS: Record<string, number> = {
   floor: 0x4da3ff,
   wall: 0xffb84d,
@@ -71,6 +78,15 @@ export class WorldSceneController {
 
   private onSelectCallback?: (id: string | null) => void;
   private onHoverCallback?: (id: string | null) => void;
+  private onMeasureCallback?: (res: MeasurementResult | null) => void;
+
+  // Spatial context & measurement tools
+  private gridHelper: THREE.GridHelper | null = null;
+  private axesHelper: THREE.AxesHelper | null = null;
+  private isMeasurementMode = false;
+  private measureP1: THREE.Vector3 | null = null;
+  private measureP2: THREE.Vector3 | null = null;
+  private measurementGroup: THREE.Group | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -79,15 +95,19 @@ export class WorldSceneController {
     this.scene.background = new THREE.Color(0x08090b);
 
     // Grid & Coordinate Frame
-    const grid = new THREE.GridHelper(20, 20, 0x1f222b, 0x151821);
-    grid.position.y = -0.01;
-    this.scene.add(grid);
+    this.gridHelper = new THREE.GridHelper(20, 20, 0x1f222b, 0x151821);
+    this.gridHelper.position.y = -0.01;
+    this.scene.add(this.gridHelper);
 
     // Subtle axes indicator
-    const axes = new THREE.AxesHelper(1.5);
-    (axes.material as THREE.Material).depthTest = false;
-    axes.renderOrder = 1;
-    this.scene.add(axes);
+    this.axesHelper = new THREE.AxesHelper(1.5);
+    (this.axesHelper.material as THREE.Material).depthTest = false;
+    this.axesHelper.renderOrder = 1;
+    this.scene.add(this.axesHelper);
+
+    // Measurement group
+    this.measurementGroup = new THREE.Group();
+    this.scene.add(this.measurementGroup);
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
@@ -128,9 +148,40 @@ export class WorldSceneController {
   public setCallbacks(callbacks: {
     onSelect?: (id: string | null) => void;
     onHover?: (id: string | null) => void;
+    onMeasure?: (res: MeasurementResult | null) => void;
   }) {
     this.onSelectCallback = callbacks.onSelect;
     this.onHoverCallback = callbacks.onHover;
+    this.onMeasureCallback = callbacks.onMeasure;
+  }
+
+  public setGridVisible(visible: boolean) {
+    if (this.gridHelper) this.gridHelper.visible = visible;
+  }
+
+  public setAxesVisible(visible: boolean) {
+    if (this.axesHelper) this.axesHelper.visible = visible;
+  }
+
+  public setMeasurementMode(active: boolean) {
+    this.isMeasurementMode = active;
+    if (!active) {
+      this.clearMeasurement();
+    }
+  }
+
+  public clearMeasurement() {
+    this.measureP1 = null;
+    this.measureP2 = null;
+    if (this.measurementGroup) {
+      while (this.measurementGroup.children.length > 0) {
+        const obj = this.measurementGroup.children[0];
+        this.measurementGroup.remove(obj);
+        if ((obj as any).geometry) (obj as any).geometry.dispose();
+        if ((obj as any).material) (obj as any).material.dispose();
+      }
+    }
+    this.onMeasureCallback?.(null);
   }
 
   public loadWorldData(
@@ -594,7 +645,7 @@ export class WorldSceneController {
   private setupEvents() {
     const dom = this.renderer.domElement;
 
-    // Handle clicks for 3D selection
+    // Handle clicks for 3D selection and measurement
     dom.addEventListener("pointerdown", (ev) => {
       if (ev.button !== 0) return;
       const rect = dom.getBoundingClientRect();
@@ -602,6 +653,30 @@ export class WorldSceneController {
       this.mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
 
       this.raycaster.setFromCamera(this.mouse, this.camera);
+
+      // Interactive Measurement Mode
+      if (this.isMeasurementMode) {
+        let pt: THREE.Vector3 | null = null;
+        const meshes = Array.from(this.entityMeshes.values()).filter((m) => m.visible);
+        const hits = this.raycaster.intersectObjects(meshes, false);
+        if (hits.length > 0) {
+          pt = hits[0].point;
+        } else {
+          const groundPoint = new THREE.Vector3();
+          const hitGround = this.raycaster.ray.intersectPlane(
+            new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+            groundPoint
+          );
+          if (hitGround) pt = groundPoint;
+        }
+
+        if (pt) {
+          this.handleMeasurementPoint(pt);
+        }
+        return;
+      }
+
+      // Entity Selection Mode
       const meshes = Array.from(this.entityMeshes.values()).filter(
         (m) => m.visible
       );
@@ -618,6 +693,64 @@ export class WorldSceneController {
     // Resize observer
     this.resizeObserver = new ResizeObserver(() => this.onResize());
     this.resizeObserver.observe(this.container);
+  }
+
+  private handleMeasurementPoint(pt: THREE.Vector3) {
+    if (!this.measurementGroup) return;
+
+    if (!this.measureP1) {
+      this.measureP1 = pt.clone();
+      const marker1 = new THREE.Mesh(
+        new THREE.SphereGeometry(0.06, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0x00e5ff, depthTest: false })
+      );
+      marker1.position.copy(pt);
+      marker1.renderOrder = 999;
+      this.measurementGroup.add(marker1);
+      this.onMeasureCallback?.({
+        p1: [pt.x, pt.y, pt.z],
+        p2: [pt.x, pt.y, pt.z],
+        distance: 0,
+        delta: [0, 0, 0],
+      });
+    } else if (!this.measureP2) {
+      this.measureP2 = pt.clone();
+      const marker2 = new THREE.Mesh(
+        new THREE.SphereGeometry(0.06, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0x35d07f, depthTest: false })
+      );
+      marker2.position.copy(pt);
+      marker2.renderOrder = 999;
+      this.measurementGroup.add(marker2);
+
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([this.measureP1, this.measureP2]);
+      const lineMat = new THREE.LineDashedMaterial({
+        color: 0x00e5ff,
+        dashSize: 0.1,
+        gapSize: 0.05,
+        depthTest: false,
+      });
+      const line = new THREE.Line(lineGeo, lineMat);
+      line.computeLineDistances();
+      line.renderOrder = 998;
+      this.measurementGroup.add(line);
+
+      const d = this.measureP1.distanceTo(this.measureP2);
+      const delta: [number, number, number] = [
+        this.measureP2.x - this.measureP1.x,
+        this.measureP2.y - this.measureP1.y,
+        this.measureP2.z - this.measureP1.z,
+      ];
+      this.onMeasureCallback?.({
+        p1: [this.measureP1.x, this.measureP1.y, this.measureP1.z],
+        p2: [this.measureP2.x, this.measureP2.y, this.measureP2.z],
+        distance: d,
+        delta,
+      });
+    } else {
+      this.clearMeasurement();
+      this.handleMeasurementPoint(pt);
+    }
   }
 
   private onResize() {

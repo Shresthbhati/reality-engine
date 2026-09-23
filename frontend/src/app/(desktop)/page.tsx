@@ -8,5 +8,5 @@ import SpatialWorkstation from "@/components/workspace/SpatialWorkstation";
  * Contextual Timeline/Diagnostics.
  */
 export default function DesktopRootPage() {
-  return <SpatialWorkstation worldId="world-compiled-seed42" />;
+  return <SpatialWorkstation />;
 }

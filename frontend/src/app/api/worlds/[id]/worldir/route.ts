@@ -21,40 +21,40 @@ export async function GET(
 ) {
   const { id } = await context.params;
 
-  // 1. Try Live Backend if reachable
+  // 1. Try Live Backend computational surface (WorldStore is authoritative)
   try {
-    const response = await fetch(`${BACKEND_URL}/api/worlds/${id}`, {
-      signal: AbortSignal.timeout(2000),
+    const response = await fetch(`${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/worldir`, {
+      signal: AbortSignal.timeout(2500),
     });
 
     if (response.ok) {
       const data = await response.json();
-      const worldir = {
-        id: data.world_id || id,
-        schema_version: data.schema_version || 1,
-        global_provenance: data.global_provenance || "RECONSTRUCTED",
-        global_confidence: data.global_confidence ?? 0.85,
-        coordinate_frame: data.coordinate_frame || "metric_enu",
-        entities: Array.isArray(data.entities)
-          ? data.entities.reduce((acc: any, e: any) => {
-              acc[e.id] = e;
-              return acc;
-            }, {})
-          : data.entities || {},
-        geometries: data.geometries || {},
-        metadata: data.metadata || {},
-      };
-
-      return NextResponse.json(worldir);
+      return NextResponse.json(data);
+    } else if (response.status === 404) {
+      // World exists in DB but has no compiled reconstruction version yet
+      return NextResponse.json(
+        {
+          error: "World has no reconstruction versions yet — run reconstruction first",
+          world_id: id,
+          available: false,
+        },
+        { status: 404 }
+      );
     }
   } catch {
-    // Backend offline or timed out; fall through to authentic local dataset
+    // Backend offline; fall through to authentic local dataset if available
   }
 
-  // 2. Verified Local Pipeline Out Dataset (world-compiled-seed42)
-  if (id === "world-compiled-seed42" || id.startsWith("world-")) {
+  // 2. Verified Local Pipeline Out Dataset (datasets/room_capture/pipeline_out)
+  const isLocalDataset =
+    id === "world-compiled-seed42" ||
+    id === "room-capture" ||
+    id === "dataset-room-capture" ||
+    id.startsWith("world-room");
+
+  if (isLocalDataset) {
     const localWorldirPath = getLocalDatasetPath("room_capture", "pipeline_out", "worldir.json");
-    if (localWorldirPath) {
+    if (localWorldirPath && fs.existsSync(localWorldirPath)) {
       try {
         const raw = fs.readFileSync(localWorldirPath, "utf-8");
         const json = JSON.parse(raw);
@@ -73,4 +73,4 @@ export async function GET(
     },
     { status: 404 }
   );
-}
+}

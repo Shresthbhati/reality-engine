@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import struct
 from pathlib import Path
@@ -20,6 +21,10 @@ from apps.api.models import (
     WorldVersion,
     new_id,
 )
+from world_ir.diff import diff_worlds
+from world_ir.world_v1 import WorldIR
+from world_ir.artifact_store import FileArtifactStore
+from worldstore.store import WorldStore
 
 
 def _worldstore_root() -> Path:
@@ -396,3 +401,123 @@ async def world_cameras(
         "version_id": row.id,
         "cameras": cameras,
     }
+
+
+class DiffRequest(BaseModel):
+    base_version: str | None = None
+    head_version: str | None = None
+
+
+@worlds.get("/{world_id}/diff")
+async def get_world_diff(world_id: str, base: str | None = None, head: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Compute structural diff between two WorldIR versions."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    
+    store_path = _worldstore_root()
+    if not store_path.exists():
+        raise HTTPException(404, "WorldStore not found")
+    store = WorldStore(str(store_path))
+    
+    # Default to current version as head
+    head_version = head or w.current_version_id
+    if not head_version:
+        raise HTTPException(404, "No current version to diff")
+    
+    # Default to parent of head as base
+    if base is None:
+        head_record = store._record(head_version)
+        base = head_record.get("parent")
+    
+    if not base:
+        raise HTTPException(404, "No base version available for diff")
+    
+    try:
+        before = store.load_version(base)
+        after = store.load_version(head_version)
+    except Exception as e:
+        raise HTTPException(404, f"Version not found: {e}")
+    
+    world_diff = diff_worlds(before, after)
+    return world_diff.to_dict()
+
+
+class CommitRequest(BaseModel):
+    entity_id: str
+    changes: dict
+    parent_version_id: str | None = None
+    commit_message: str | None = None
+
+
+@worlds.post("/{world_id}/commit")
+async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncSession = Depends(get_db)):
+    """Apply a correction to a world entity and persist as new WorldStore version."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    
+    # Load current WorldIR
+    worldir = await _load_worldir_from_store(w)
+    if worldir is None:
+        raise HTTPException(404, "WorldIR not available for this world's current version")
+    
+    # Apply the entity change
+    entity = worldir.entities.get(body.entity_id)
+    if entity is None:
+        raise HTTPException(404, f"Entity {body.entity_id} not found in world")
+    
+    # Apply changes to entity fields
+    for key, value in body.changes.items():
+        if hasattr(entity, key):
+            setattr(entity, key, value)
+    
+    # Update modified_at
+    import time
+    worldir.modified_at = time.time()
+    
+    # Save as new version
+    store_path = _worldstore_root()
+    if not store_path.exists():
+        store_path.mkdir(parents=True, exist_ok=True)
+    store = WorldStore(str(store_path))
+    
+    parent_version = body.parent_version_id or w.current_version_id
+    stored = store.save_version(worldir, parent=parent_version)
+    
+    # Update World record
+    w.current_version_id = stored.version_id
+    w.modified_at = utcnow()
+    
+    db.add(
+        ActivityEvent(
+            id=new_id("act"),
+            type="world.committed",
+            entity_type="world",
+            entity_id=w.id,
+            summary=f"Committed correction to {body.entity_id}: {body.commit_message or 'no message'}",
+        )
+    )
+    
+    await db.commit()
+    
+    return {
+        "version_id": stored.version_id,
+        "world_id": w.id,
+        "entity_id": body.entity_id,
+        "changed_fields": list(body.changes.keys()),
+    }
+
+
+async def _load_worldir_from_store(world: World) -> WorldIR | None:
+    """Load the current WorldIR from WorldStore for a World."""
+    if not world.current_version_id:
+        return None
+    store_path = _worldstore_root()
+    if not store_path.exists():
+        return None
+    store = WorldStore(str(store_path))
+    try:
+        return store.load_version(world.current_version_id)
+    except Exception:
+        return None

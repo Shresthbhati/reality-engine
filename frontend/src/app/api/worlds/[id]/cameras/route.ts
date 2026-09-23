@@ -21,27 +21,33 @@ export async function GET(
 ) {
   const { id } = await context.params;
 
-  // 1. Try Live Backend if reachable
+  // 1. Try Live Backend computational surface
   try {
-    const response = await fetch(`${BACKEND_URL}/api/worlds/${id}`, {
-      signal: AbortSignal.timeout(2000),
+    const response = await fetch(`${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/cameras`, {
+      signal: AbortSignal.timeout(2500),
     });
 
     if (response.ok) {
       const data = await response.json();
-      if (data.cameras && Array.isArray(data.cameras)) {
-        return NextResponse.json({
-          image_size: data.image_size || [1280, 960],
-          cameras: data.cameras,
-        });
-      }
+      return NextResponse.json({
+        frame: data.frame || "world (meters, +Y up)",
+        rotation_convention: data.rotation_convention || "camera-to-world quaternion (w, x, y, z)",
+        image_size: data.image_size || [1280, 960],
+        cameras: data.cameras || [],
+      });
     }
   } catch {
     // Backend offline; fall through to authentic local dataset
   }
 
-  // 2. Verified Local Pipeline Out Dataset (world-compiled-seed42)
-  if (id === "world-compiled-seed42" || id.startsWith("world-")) {
+  // 2. Verified Local Pipeline Out Dataset (datasets/room_capture/pipeline_out)
+  const isLocalDataset =
+    id === "world-compiled-seed42" ||
+    id === "room-capture" ||
+    id === "dataset-room-capture" ||
+    id.startsWith("world-room");
+
+  if (isLocalDataset) {
     const localCamerasPath = getLocalDatasetPath("room_capture", "pipeline_out", "cameras.json");
     if (localCamerasPath && fs.existsSync(localCamerasPath)) {
       try {
@@ -63,7 +69,11 @@ export async function GET(
   }
 
   return NextResponse.json(
-    { error: "No cameras available for this world", world_id: id },
+    {
+      error: "No calibrated cameras registered for this world",
+      world_id: id,
+      available: false,
+    },
     { status: 404 }
   );
-}
+}

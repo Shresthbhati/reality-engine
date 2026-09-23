@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { commitWorldCorrection } from "@/lib/api/worlds";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
+import type { MeasurementResult } from "@/lib/viewport/three-scene";
 import type { WorldIR, Entity, CamerasPayload } from "@/types/worldir";
 import type { WorldRow, SessionRow, EvidenceRow, PlaceRow, WorldVersionRow } from "@/lib/types";
 import { 
@@ -41,10 +42,10 @@ import {
 import { cn } from "@/lib/utils";
 
 interface SpatialWorkstationProps {
-  worldId: string;
+  worldId?: string;
 }
 
-export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps) {
+export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWorkstationProps) {
   const router = useRouter();
   
   // Workspace UI State
@@ -57,18 +58,26 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [constructionModalOpen, setConstructionModalOpen] = useState(false);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
+  const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   
   // Spatial Query Filter State
   const [activeQuery, setActiveQuery] = useState<SpatialQueryFilter | null>(null);
 
   // API Hooks
-  const { data: worlds = [] } = useWorlds();
-  const { data: allSessions = [] } = useSessions();
-  const { data: evidence = [] } = useEvidence();
-  const { data: worldIR, isLoading: isIrLoading, refetch: refetchIr } = useWorldIR(worldId);
-  const { data: pointsBuffer } = useWorldPoints(worldId);
-  const { data: camerasPayload } = useWorldCameras(worldId);
-  const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId);
+  const { data: rawWorlds } = useWorlds();
+  const worlds = rawWorlds ?? [];
+  const { data: rawSessions } = useSessions();
+  const allSessions = rawSessions ?? [];
+  const { data: rawEvidence } = useEvidence();
+  const evidence = rawEvidence ?? [];
+
+  // Resolve active world: prop -> first discovered world -> empty string
+  const worldId = propWorldId || (worlds.length > 0 ? worlds[0].id : "");
+
+  const { data: worldIR, isLoading: isIrLoading, refetch: refetchIr } = useWorldIR(worldId || null);
+  const { data: pointsBuffer } = useWorldPoints(worldId || null);
+  const { data: camerasPayload } = useWorldCameras(worldId || null);
+  const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null);
 
   // Derived 3D artifacts
   const points = useMemo(() => {
@@ -93,28 +102,19 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
   const cameras = camerasPayload || null;
   const places: PlaceRow[] = [];
   
-  // WorldStore immutable version lineage
+  // WorldStore immutable version lineage (honest: empty until computational commits exist)
   const versions: WorldVersionRow[] = useMemo(() => {
     if (versionsData && versionsData.length > 0) {
       return versionsData.map((v: any) => ({
         id: v.id,
         worldId: v.world_id || worldId,
         label: v.label || v.id,
-        createdAt: v.created_at ? v.created_at.slice(0, 10) : "2026-09-22",
+        createdAt: v.created_at ? v.created_at.slice(0, 10) : "Current",
         changeSummary: v.changeSummary || v.change_summary || "Compiled representation",
         isCurrent: Boolean(v.is_current),
       }));
     }
-    return [
-      {
-        id: `v1-${worldId}`,
-        worldId,
-        label: "v1.0.0 (Canonical Baseline)",
-        createdAt: "2026-09-22",
-        changeSummary: "Canonical compilation baseline",
-        isCurrent: true,
-      },
-    ];
+    return [];
   }, [versionsData, worldId]);
   
   // Filter sessions by worldId
@@ -125,17 +125,17 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
   
   const currentWorldRow = useMemo(() => 
     (worlds || []).find(w => w.id === worldId) || {
-      id: worldId,
-      name: worldId === "world-compiled-seed42" ? "Room Capture (Compiled Vertical Slice)" : worldId,
-      location: "Verified Spatial Environment",
+      id: worldId || "empty",
+      name: worldId || "No World Loaded",
+      location: "Physical Coordinate Space",
       coverageKm2: 0.05,
       sessionCount: sessions.length,
-      evidenceCount: 25,
+      evidenceCount: evidence.filter(e => e.sessionId && sessions.some(s => s.id === e.sessionId)).length,
       timeRangeStart: null,
       timeRangeEnd: null,
       updatedAt: "Current",
     },
-    [worlds, worldId, sessions]
+    [worlds, worldId, sessions, evidence]
   );
 
   const selectedEntity = useMemo(() => {
@@ -198,11 +198,12 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
   }, []);
 
   const handleCommitCorrection = useCallback(async (entityId: string, changes: any, commitMessage: string) => {
+    if (!worldId) return;
     await commitWorldCorrection(worldId, {
-      entityId,
+      entity_id: entityId,
       changes,
-      parentVersionId: versions[0]?.id || `v1-${worldId}`,
-      commitMessage,
+      parent_version_id: versions[0]?.id || "",
+      commit_message: commitMessage,
     });
     refetchVersions();
     refetchIr();
@@ -492,7 +493,8 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
               onSelectEvidence={setSelectedEvidenceId}
               queryMatchingIds={queryMatchingIds}
               hasNoWorldData={!has3DContent}
-              onTriggerSampleWorld={() => handleSelectWorld("world-compiled-seed42")}
+              onTriggerSampleWorld={worlds[0] ? () => handleSelectWorld(worlds[0].id) : undefined}
+              onMeasurementChange={setMeasurement}
             />
           ) : (
             <div className="w-full h-full relative">
@@ -543,6 +545,8 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
               if (selectedEntityId) handleFrameEntity(selectedEntityId);
             }}
             onClearSelection={handleClearSelection}
+            measurement={measurement}
+            activeVersion={versions[0]?.label || versions[0]?.id || "HEAD"}
           />
         </div>
       )}
@@ -552,7 +556,7 @@ export default function SpatialWorkstation({ worldId }: SpatialWorkstationProps)
         worldId={worldId}
         isOpen={diffModalOpen}
         onClose={() => setDiffModalOpen(false)}
-        baseVersion={diffVersions.base || versions[0]?.id || `v1-${worldId}`}
+        baseVersion={diffVersions.base || versions[0]?.id || ""}
         headVersion={diffVersions.head || "latest"}
         onSelectEntity={(eid) => {
           handleSelectEntity(eid);

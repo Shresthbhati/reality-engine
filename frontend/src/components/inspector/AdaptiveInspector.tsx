@@ -21,6 +21,8 @@ import {
   Workflow,
   Download,
   Image as ImageIcon,
+  Building,
+  GitBranch,
 } from "lucide-react";
 import type {
   Entity,
@@ -45,7 +47,7 @@ type InspectorTab = "all" | "geometry" | "evidence" | "observations" | "provenan
 
 export default function AdaptiveInspector({
   world,
-  worldId = "world-compiled-seed42",
+  worldId = "current-world",
   selectedEntityId,
   onSelectEntity,
   onFrameEntity,
@@ -217,6 +219,7 @@ function EntityDetails({
 
   const pos = entity.transform?.position;
   const observations = entity.observations || [];
+  const relationships = entity.relationships || [];
 
   // Correction Form State
   const [editedType, setEditedType] = useState(entity.type);
@@ -265,6 +268,13 @@ function EntityDetails({
       Math.abs(geometry.bounds_max.z - geometry.bounds_min.z),
   } : null;
 
+  // Derivation status
+  const derivationBadge = entity.provenance === "OBSERVED"
+    ? { label: "Directly Observed", color: "text-[#35d07f] bg-[#35d07f]/10 border-[#35d07f]/30" }
+    : entity.provenance === "PROCEDURAL"
+    ? { label: "Procedurally Extruded", color: "text-[#b28dff] bg-[#b28dff]/10 border-[#b28dff]/30" }
+    : { label: "Inferred Planar Primitive", color: "text-[#00e5ff] bg-[#00e5ff]/10 border-[#00e5ff]/30" };
+
   return (
     <div className="space-y-4">
       {/* Title Card */}
@@ -279,18 +289,30 @@ function EntityDetails({
               style={{ background: `#${hexColor}` }}
             />
             <span className="font-mono font-semibold text-white truncate text-sm">
-              {entity.id}
+              {entity.name || entity.id}
             </span>
           </div>
           <span
-            className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded shrink-0"
-            style={{
-              background: "rgba(255, 255, 255, 0.06)",
-              color: "var(--text-secondary)",
-            }}
+            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${derivationBadge.color}`}
           >
-            {entity.provenance || "INFERRED"}
+            {derivationBadge.label}
           </span>
+        </div>
+
+        {/* Identity & Classification */}
+        <div className="space-y-1 text-[11px] pt-1 border-t border-neutral-800">
+          <div className="flex justify-between items-center">
+            <span className="text-neutral-400">Entity Identity</span>
+            <span className="font-mono text-neutral-200">{entity.id}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-neutral-400">Semantic Class</span>
+            <span className="font-mono text-[#00e5ff] capitalize">{entity.type}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-neutral-400">Derivation Status</span>
+            <span className="font-mono text-white">{entity.provenance || "INFERRED"}</span>
+          </div>
         </div>
 
         {/* Confidence Meter */}
@@ -313,24 +335,22 @@ function EntityDetails({
         </div>
 
         {/* Position & Volume */}
-        {pos && (
-          <div className="pt-2 border-t border-neutral-800 space-y-1 text-[11px]">
-            <div className="flex justify-between items-center">
-              <span className="text-neutral-400">Position (XYZ m)</span>
-              <span className="font-mono text-white">
-                {pos.x.toFixed(2)}, {pos.y.toFixed(2)}, {pos.z.toFixed(2)}
-              </span>
-            </div>
-            {extentDimensions && (
-              <div className="flex justify-between items-center">
-                <span className="text-neutral-400">Bounding Volume</span>
-                <span className="font-mono text-[#00e5ff]">
-                  {extentDimensions.volume.toFixed(2)} m³
-                </span>
-              </div>
-            )}
+        <div className="pt-2 border-t border-neutral-800 space-y-1 text-[11px]">
+          <div className="flex justify-between items-center">
+            <span className="text-neutral-400">Position (XYZ m)</span>
+            <span className="font-mono text-white">
+              {pos
+                ? `${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`
+                : "Unavailable"}
+            </span>
           </div>
-        )}
+          <div className="flex justify-between items-center">
+            <span className="text-neutral-400">Bounding Volume</span>
+            <span className="font-mono text-[#00e5ff]">
+              {extentDimensions ? `${extentDimensions.volume.toFixed(2)} m³` : "Unavailable"}
+            </span>
+          </div>
+        </div>
 
         {/* Action Button Row */}
         <div className="flex items-center gap-2 pt-2 border-t border-neutral-800">
@@ -364,7 +384,7 @@ function EntityDetails({
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[#00e5ff] flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5" />
-              <span>Entity Correction</span>
+              <span>Architectural Correction</span>
             </span>
             <button
               type="button"
@@ -382,13 +402,18 @@ function EntityDetails({
               onChange={(e) => setEditedType(e.target.value)}
               className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none cursor-pointer"
             >
-              <option value="floor">Floor Plane</option>
-              <option value="wall">Vertical Wall</option>
-              <option value="ceiling">Ceiling Plane</option>
-              <option value="object">Generic Object</option>
-              <option value="table">Table / Worksurface</option>
-              <option value="door">Door / Opening</option>
-              <option value="window">Window / Glazing</option>
+              <option value="room">Room (Enclosed Space)</option>
+              <option value="wall">Wall (Vertical Partition)</option>
+              <option value="door">Door (Passage Opening)</option>
+              <option value="window">Window (Glazing Opening)</option>
+              <option value="floor">Floor (Walking Surface)</option>
+              <option value="ceiling">Ceiling (Upper Boundary)</option>
+              <option value="stair">Stair (Circulation Element)</option>
+              <option value="corridor">Corridor (Circulation Space)</option>
+              <option value="roof">Roof (Exterior Covering)</option>
+              <option value="column">Column (Vertical Structural Member)</option>
+              <option value="beam">Beam (Horizontal Structural Member)</option>
+              <option value="object">Object (Furniture / Equipment)</option>
             </select>
           </div>
 
@@ -414,8 +439,8 @@ function EntityDetails({
               type="text"
               value={editedLabels}
               onChange={(e) => setEditedLabels(e.target.value)}
-              placeholder="e.g. conference_table, wooden"
-              className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[#00e5ff] focus:outline-none"
+              placeholder="e.g. partition_wall, dry_wall"
+              className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[#00e5ff] focus:outline-none font-mono"
             />
           </div>
 
@@ -425,8 +450,8 @@ function EntityDetails({
               type="text"
               value={commitMessage}
               onChange={(e) => setCommitMessage(e.target.value)}
-              placeholder="Rationale for this version modification"
-              className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[#00e5ff] focus:outline-none"
+              placeholder="Rationale for this WorldStore version commit"
+              className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[#00e5ff] focus:outline-none font-mono"
             />
           </div>
 
@@ -455,7 +480,7 @@ function EntityDetails({
       )}
 
       {/* Geometry Section */}
-      {(tab === "all" || tab === "geometry") && geometry && (
+      {(tab === "all" || tab === "geometry") && (
         <div className="space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
             <Box className="w-3.5 h-3.5 text-[#00e5ff]" />
@@ -468,29 +493,56 @@ function EntityDetails({
             <div className="flex justify-between">
               <span className="text-neutral-400">Geometry ID</span>
               <span className="font-mono text-white truncate max-w-[150px]">
-                {geometry.id}
+                {geometry?.id || "Unavailable"}
               </span>
             </div>
-            {extentDimensions && (
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Extent Dimensions</span>
-                <span className="font-mono text-white">
-                  {extentDimensions.x.toFixed(2)} × {extentDimensions.y.toFixed(2)} × {extentDimensions.z.toFixed(2)} m
-                </span>
-              </div>
-            )}
-            {geometry.vertex_count != null && (
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Inlier / Vertex Count</span>
-                <span className="font-mono text-white">
-                  {geometry.vertex_count.toLocaleString()}
-                </span>
-              </div>
-            )}
             <div className="flex justify-between">
-              <span className="text-neutral-400">LOD Level</span>
-              <span className="font-mono text-white">{geometry.lod_level ?? 0}</span>
+              <span className="text-neutral-400">Dimensions (L × W × H)</span>
+              <span className="font-mono text-white">
+                {extentDimensions
+                  ? `${extentDimensions.x.toFixed(2)} × ${extentDimensions.y.toFixed(2)} × ${extentDimensions.z.toFixed(2)} m`
+                  : "Unavailable"}
+              </span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-neutral-400">Inlier / Vertex Count</span>
+              <span className="font-mono text-white">
+                {geometry?.vertex_count != null
+                  ? geometry.vertex_count.toLocaleString()
+                  : "Unavailable"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-neutral-400">LOD Representation</span>
+              <span className="font-mono text-white">
+                {geometry?.lod_level != null ? `LOD ${geometry.lod_level}` : "Unavailable"}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Spatial Relationships Section */}
+      {(tab === "all" || tab === "geometry") && (
+        <div className="space-y-2">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
+            <Building className="w-3.5 h-3.5 text-[#ffb84d]" />
+            <span>Spatial Relationships ({relationships.length})</span>
+          </h4>
+          <div
+            className="p-3 rounded-lg border bg-[#151821] space-y-1.5 text-[11px]"
+            style={{ borderColor: "var(--border)" }}
+          >
+            {relationships.length === 0 ? (
+              <p className="text-neutral-500 italic">No relationships linked</p>
+            ) : (
+              relationships.map((rel: any, idx) => (
+                <div key={idx} className="flex justify-between items-center font-mono">
+                  <span className="text-[#ffb84d] uppercase text-[10px]">{String(rel.kind || rel.type || "rel")}</span>
+                  <span className="text-neutral-300">{String(rel.target_entity_id || rel.target_id || "unknown")}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -504,7 +556,7 @@ function EntityDetails({
           </h4>
           <div className="space-y-2">
             {candidateEvidence.length === 0 ? (
-              <p className="text-neutral-500 italic p-2">No direct camera observations attached.</p>
+              <p className="text-neutral-500 italic p-2">No evidence linked</p>
             ) : (
               candidateEvidence.map((ce: any) => {
                 const isViewingImage = previewImageId === ce.evidence_id;
@@ -563,7 +615,6 @@ function EntityDetails({
                             alt={`Camera view ${ce.evidence_id}`}
                             className="w-full h-full object-cover"
                             onError={(e) => {
-                              // If image file missing, show honest fallback
                               e.currentTarget.style.display = "none";
                             }}
                           />
@@ -629,7 +680,7 @@ function EntityDetails({
         </div>
       )}
 
-      {/* Provenance & Engine Facts */}
+      {/* Provenance & Lineage */}
       {(tab === "all" || tab === "provenance") && (
         <div className="space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
@@ -647,11 +698,15 @@ function EntityDetails({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-400">Verification</span>
+              <span className="text-neutral-400">Source Session</span>
               <span className="text-neutral-300 font-mono">
-                {entity.confidence && entity.confidence > 0.7
-                  ? "Multi-view corroborated"
-                  : "Geometric hypothesis"}
+                {String(entity.custom_properties?.session_id || "Unassigned")}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-neutral-400">WorldStore Version</span>
+              <span className="text-[#00e5ff] font-mono">
+                {world?.version != null ? `v${world.version}.0.0` : "v1.0.0"}
               </span>
             </div>
             {entity.semantic_labels && entity.semantic_labels.length > 0 && (
@@ -678,15 +733,15 @@ function EntityDetails({
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex justify-between">
-              <span className="text-neutral-400">Certainty Weight</span>
+              <span className="text-neutral-400">Certainty Score</span>
               <span className="font-mono text-white">
                 {(conf).toFixed(3)}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-400">Depth Noise Status</span>
+              <span className="text-neutral-400">Inlier Quality</span>
               <span className="text-white">
-                {conf < 0.3 ? "High Residual / Noise candidate" : "Robust inlier"}
+                {conf < 0.3 ? "Noise candidate" : "Robust planar fit"}
               </span>
             </div>
           </div>
@@ -715,7 +770,7 @@ function WorldOverview({
           <button
             type="button"
             onClick={onOpenRoomConstruction}
-            className="px-3.5 py-1.5 rounded text-xs bg-[#00e5ff] text-black font-medium hover:bg-[#33ebff] transition-colors"
+            className="px-3.5 py-1.5 rounded text-xs bg-[#00e5ff] text-black font-medium hover:bg-[#33ebff] transition-colors cursor-pointer"
           >
             Open Room Construction
           </button>
@@ -758,20 +813,21 @@ function WorldOverview({
           <div className="flex justify-between">
             <span className="text-neutral-400">Reconstruction Backend</span>
             <span className="font-mono text-white">
-              {meta.reconstruction?.backend ?? "ColmapReconstructionBackend"}
+              {meta.reconstruction?.backend || "Unavailable"}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-neutral-400">Registration Status</span>
             <span className="font-mono text-[#2ecc71]">
-              {meta.reconstruction?.registration_status ?? "SUCCESS"}
+              {meta.reconstruction?.registration_status || "Unavailable"}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-neutral-400">Registered Cameras</span>
             <span className="font-mono text-white">
-              {meta.reconstruction?.cameras_registered ?? "25"} /{" "}
-              {meta.reconstruction?.cameras_input ?? "28"}
+              {meta.reconstruction?.cameras_registered != null
+                ? `${meta.reconstruction.cameras_registered} / ${meta.reconstruction.cameras_input ?? "—"}`
+                : "Unavailable"}
             </span>
           </div>
           <div className="flex justify-between">
@@ -794,12 +850,11 @@ function WorldOverview({
           <div className="flex justify-between">
             <span className="text-neutral-400">Scale State</span>
             <span className="font-mono font-medium text-[#00e5ff]">
-              {meta.scale?.state ?? "METRIC"}
+              {meta.scale?.state || "Unavailable"}
             </span>
           </div>
           <p className="text-neutral-400 text-[11px] leading-relaxed pt-1 border-t border-neutral-800">
-            {meta.scale?.note ||
-              "Metric scale established from registered baseline references."}
+            {meta.scale?.note || "Unavailable"}
           </p>
         </div>
       </div>
@@ -818,17 +873,19 @@ function WorldOverview({
             <div className="flex justify-between">
               <span className="text-neutral-400">Depth Model</span>
               <span className="font-mono text-white">
-                {meta.depth.model ?? "MiDaS_small"}
+                {meta.depth.model || "Unavailable"}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-400">Metricized Maps</span>
               <span className="font-mono text-white">
-                {meta.depth.metricized ?? "25"} / {meta.depth.maps ?? "28"}
+                {meta.depth.metricized != null
+                  ? `${meta.depth.metricized} / ${meta.depth.maps ?? "—"}`
+                  : "Unavailable"}
               </span>
             </div>
             <p className="text-neutral-400 text-[11px] leading-relaxed pt-1 border-t border-neutral-800">
-              {meta.depth.note ?? "Inverse-depth alignment against SfM sparse cloud."}
+              {meta.depth.note || "Unavailable"}
             </p>
           </div>
         </div>

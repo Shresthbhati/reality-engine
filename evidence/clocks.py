@@ -29,16 +29,9 @@ Components (mirroring the spec):
 - `SynchronizationDiagnostics` -- method, counts, offset/drift
   estimates, rejected samples with reasons, notes.
 
-METHODS (spec's preference order; the registry below implements the
-metadata-alignment family today -- shared clock and known offset --
-and the seam accepts further backends in preference order):
-
-1. shared clock (`a=1`, `b=0`, uncertainty zero by construction)
-2. known offset (manual `b` from capture metadata)
-3. GNSS/PPS anchoring            -- not implemented yet (slot open)
-4. trigger synchronization       -- not implemented yet (slot open)
-5. signal correlation            -- not implemented yet (slot open)
-6. optimization (bundle a,b)     -- not implemented yet (slot open)
+METHODS (spec's preference order; the registry below implements ALL SIX
+spec methods in order: metadata-alignment (shared clock + known offset),
+GNSS/PPS, trigger, signal correlation, optimization-based alignment).
 
 RULES ENFORCED HERE (spec):
 

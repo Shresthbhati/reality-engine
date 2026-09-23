@@ -19,6 +19,7 @@ export function unsupportedResource(what: string): UnsupportedResource {
   };
 }
 
+/** Explicit unsupported resource for the Analysis section (no backend yet). */
 export function unsupportedForAnalysis(): UnsupportedResource {
   return unsupportedResource("Analysis");
 }

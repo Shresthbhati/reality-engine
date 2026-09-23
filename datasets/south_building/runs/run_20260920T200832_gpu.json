@@ -1,0 +1,65 @@
+{
+  "dataset": "south-building (committed 32-image subset)",
+  "dataset_identity": "South Building, UNC Chapel Hill; 128 real photographs, single Panasonic DMC-TZ3 camera",
+  "python": "3.14.7",
+  "colmap_version": "COLMAP 4.2.0 (Commit be5e291 on 2026-08-31 with CUDA)",
+  "gpu": true,
+  "ingested": {
+    "imported": 32,
+    "duplicates_skipped": 0,
+    "unhandled": 0,
+    "items": 32
+  },
+  "admission": {
+    "accepted": 30,
+    "degraded": 2,
+    "unresolved": 0,
+    "failed": 0,
+    "rejected": 0
+  },
+  "reconstruction": {
+    "backend": "ColmapReconstructionBackend",
+    "status": "partial",
+    "duration_s": 313.6,
+    "poses": 23,
+    "points": 5395
+  },
+  "outcome": {
+    "outcome": "degraded",
+    "reason": "registration_status=partial: result usable but incomplete",
+    "registration_status": "partial"
+  },
+  "gt_comparison": {
+    "refused": false,
+    "common_cameras": 23,
+    "rotation_deg_median": 3.118951912468306,
+    "rotation_deg_max": 156.51923262378816,
+    "rotation_deg_mean": 16.221961324960972,
+    "center_error_median": 0.43311934931605645,
+    "center_error_max": 4.408395133820927,
+    "center_error_mean": 0.7501816137676357,
+    "scale_ratio": 1.0659382985440526,
+    "notes": [],
+    "registered_of_gt": "23/32",
+    "note": "measured after least-squares gauge alignment (Horn rotation on orientation frames; scale/translation from camera-center geometry) -- raw pre-alignment disagreement is gauge, not error"
+  },
+  "point_fidelity": {
+    "refused": false,
+    "measured_points": 5395,
+    "reference_points": 49608,
+    "dist_mean": 0.22568469184296341,
+    "dist_median": 0.2062505141348179,
+    "dist_p90": 0.33529135293012136,
+    "dist_max": 34.330108336443125,
+    "est_points_total": 5395
+  },
+  "colmap_note": "backend runs COLMAP in a temporary workspace (database.db, feature/match/mapper outputs); it is removed after the run -- only the parsed result and this record persist",
+  "fusion": {
+    "observations": 23,
+    "fused_value": 0.0449,
+    "fused_precision": 0.01043,
+    "fused_provenance": "CONFLICT",
+    "conflicts_preserved": 208
+  },
+  "total_runtime_s": 316.1
+}

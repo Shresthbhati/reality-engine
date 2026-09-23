@@ -1,11 +1,10 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import StatusBadge from "@/components/ui/StatusBadge";
 import EmptyState from "@/components/ui/EmptyState";
 import type { AnalysisRow } from "@/lib/types";
-import { getAnalysisDetail, getResults, isApiError, type ResultRow } from "@/lib/api";
+import { getAnalysisDetail, getResults } from "@/lib/api";
 
 const STAGES = ["INPUTS", "CONFIGURATION", "VALIDATION", "RUN", "SESSION", "RESULT"] as const;
 

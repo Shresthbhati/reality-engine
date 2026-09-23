@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -143,6 +143,36 @@ async def get_evidence(evidence_id: str, db: AsyncSession = Depends(get_db)) -> 
         loc = await _latest_location(db, "session", ev.session_id)
     loc_out = _location_out(loc).model_dump(mode="json") if loc else None
     return {**_evidence_dict(ev), "location": loc_out}
+
+
+@evidence.delete("/{evidence_id}", status_code=204)
+async def delete_evidence(evidence_id: str, db: AsyncSession = Depends(get_db)) -> Response:
+    """Remove the application Evidence record.
+
+    The content-addressed artifact is deliberately left in the store: other
+    records may reference the same sha256, and artifacts are immutable. Only
+    the application record and its upload row are deleted.
+    """
+    ev = await db.get(Evidence, evidence_id)
+    if ev is None:
+        raise HTTPException(404, "Evidence not found")
+    name, session_id, upload_id = ev.name, ev.session_id, ev.upload_id
+    await db.delete(ev)
+    if upload_id:
+        up = await db.get(Upload, upload_id)
+        if up is not None:
+            await db.delete(up)
+    db.add(
+        ActivityEvent(
+            id=new_id("act"),
+            type="evidence.deleted",
+            entity_type="evidence",
+            entity_id=evidence_id,
+            summary=f"Evidence '{name}' removed",
+        )
+    )
+    await db.commit()
+    return Response(status_code=204)
 
 
 @evidence.get("/{evidence_id}/artifact")

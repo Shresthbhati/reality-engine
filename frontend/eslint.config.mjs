@@ -1,13 +1,13 @@
-import nextConfig from "eslint-config-next";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
 
-const config = [
-  ...nextConfig,
+/** Flat config (ESLint v9) — the standard create-next-app layout for Next 16. */
+const eslintConfig = [
+  ...nextVitals,
+  ...nextTs,
   {
-    ignores: ["node_modules/", ".next/", "out/", "*.config.*"],
-    rules: {
-      "eslint-comments/no-unused-disable": "off",
-    },
+    ignores: [".next/**", "out/**", "build/**", "next-env.d.ts", "node_modules/**"],
   },
 ];
 
-export default config;
+export default eslintConfig;

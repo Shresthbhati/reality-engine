@@ -22,6 +22,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.1.16",
+    "@types/maplibre-gl": "^1.13.2",
     "@types/node": "^24.9.2",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.5",

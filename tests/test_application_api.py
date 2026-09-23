@@ -160,6 +160,60 @@ def test_reconstruct_fails_with_honest_error_when_no_evidence(client):
     assert "no evidence items to reconstruct" in (job.get("error") or "").lower()
 
 
+def test_world_detail_and_versions_are_real(client):
+    """GET /api/worlds/{id} and /versions back the UI's World screens.
+
+    Versions must be empty (not fabricated) until computation creates them,
+    and an unknown id must 404 rather than return a blank world.
+    """
+    sid = client.post("/api/sessions", json={"name": "Compose session"}).json()["id"]
+    w = client.post(
+        "/api/worlds", json={"name": "Detail World", "latitude": 12.9, "longitude": 80.2}
+    ).json()
+
+    detail = client.get(f"/api/worlds/{w['id']}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["id"] == w["id"]
+    assert body["name"] == "Detail World"
+    assert body["latitude"] == 12.9
+    assert body["session_count"] == 0
+    assert body["current_version_id"] is None
+
+    assert client.post(f"/api/worlds/{w['id']}/attach/{sid}").status_code == 200
+    assert client.get(f"/api/worlds/{w['id']}").json()["session_count"] == 1
+
+    versions = client.get(f"/api/worlds/{w['id']}/versions").json()
+    assert versions["items"] == []  # no WorldStore versions yet — not invented
+
+    assert client.get("/api/worlds/wld_missing").status_code == 404
+    assert client.get("/api/worlds/wld_missing/versions").status_code == 404
+
+
+def test_evidence_delete_removes_record_and_keeps_artifact(client):
+    """Deleting Evidence is an application-record operation.
+
+    The content-addressed artifact stays in the store (other records may
+    reference the same sha256) and the deletion is recorded as real activity.
+    """
+    up = client.post(
+        "/api/uploads",
+        files={"file": ("frame.jpg", b"jpeg-bytes-for-delete-test", "image/jpeg")},
+    ).json()
+    evidence_id = up["evidence_id"]
+
+    assert client.delete(f"/api/evidence/{evidence_id}").status_code == 204
+    assert client.get(f"/api/evidence/{evidence_id}").status_code == 404
+    assert client.get(f"/api/evidence/{evidence_id}/artifact").status_code == 404
+    assert client.delete(f"/api/evidence/{evidence_id}").status_code == 404
+
+    listed = client.get("/api/evidence").json()["items"]
+    assert all(e["id"] != evidence_id for e in listed)
+
+    acts = client.get("/api/activity").json()["items"]
+    assert any(a["type"] == "evidence.deleted" and a["entity_id"] == evidence_id for a in acts)
+
+
 def test_unknown_entity_404s(client):
     assert client.get("/api/sessions/ses_nonexistent").status_code == 404
     assert client.get("/api/evidence/ev_nonexistent").status_code == 404

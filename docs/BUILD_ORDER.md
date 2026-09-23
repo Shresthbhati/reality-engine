@@ -1,9 +1,17 @@
-# Build order
+# Build order (HISTORICAL — superseded by REALITY_ENGINE_CURRENT_STATUS.md)
 
 Source of truth: `REALITY_ENGINE_MASTER_SPECIFICATION_V10_WORLD_PHYSICS_AND_AGENT_BUILD_BIBLE.md`,
 §108 FIRST IMPLEMENTATION ORDER. Do not skip ahead to disasters/physics
 solvers before the foundation below is solid — the spec is explicit
 about this ("Do NOT begin with hurricanes.").
+> **ARCHIVED 2026-09-23:** This file predates the 2026-09-15 through
+> 2026-09-23 implementation campaigns. It lists `reconstruction/*`,
+> `perception/*`, `apps/*`, `exporters/*`, `benchmarks/*`, and the
+> frontend as "not started" — but they contain real code now. Physics
+> (`engine/physics/*`, `engine/fire/*`, `engine/fluids/*`,
+> `engine/weather/*`, `engine/disasters/*`) was moved to
+> `reality-engine-child` on 2026-09-18. See `REALITY_ENGINE_CURRENT_STATUS.md`
+> for the authoritative current state.
 
 **A note on the "V11 DETAILED" upload set (5 files, ~1.1M lines):**
 almost all of it is machine-generated template filler — the same
@@ -49,8 +57,8 @@ that upload set looking for more signal — there isn't any.
 29. tornado                not started
 30. remaining disasters    not started
 31. coupled scenarios      not started
-32. world reconstruction   not started
-33. game export            not started
+32. world reconstruction   not started   ⚠️  SUPERSEDED — reconstruction/ now has real code
+33. game export            not started   ⚠️  SUPERSEDED — exporters/ now has glTF/Blender/USD/CityGML
 ```
 
 ## What "done" means for each step (§80)

@@ -1,6 +1,9 @@
-# REALITY ENGINE — CURRENT STATUS (authoritative, 2026-09-18)
+# REALITY ENGINE — CURRENT STATUS (authoritative, reconciled 2026-09-23)
 
 > ONE authoritative status file (Agent 5). Older docs are history, not truth.
+> Reconciliation rule: claims below were cross-checked against the code on
+> 2026-09-23; dated evidence (test counts, build results) is kept with its
+> date and re-verified when the area changes.
 
 ## Vertical slice (real user path)
 
@@ -21,12 +24,11 @@ Every step runs through `reality` CLI or StudioSession + browser viewer.
 - Trajectories: model, TUM, VIO federation, sync, diagnostics.
 - Perception: MiDaS, Mask R-CNN, SAM, lifting, fusion, quality.
 - Meshing: Poisson via COLMAP + MESH export.
-- Exporters: glTF/USDA/Blender with real-geometry paths + reports.
-- Queries: spatial index + scene graph via SDK and CLI.
-- Studio: viewport/inspector/outliner/selection/commands/StudioSession.
+- Exporters: glTF/USDA/Blender/CityJSON/CityGML with real-geometry paths + reports.
+- Studio (browser): Next.js 16 + Three.js viewer; 12 API proxy routes; desktop (33 pages) + mobile layouts; selection + provenance.
 - Viewer: offline single-file Three.js + selection + provenance + CLI.
 - CLI: ingest/session/compile/reconstruct/validate/diff/export/register/query/store/inspect/viewer.
-- Packaging: pip install + wheel include worldstore/registration/trajectories.
+- API backend: FastAPI with SQLite + async worker; 10 modules; REST endpoints for health/sessions/worlds/evidence/jobs/notifications/activity.
 
 ## PARTIAL (real, with named limits)
 

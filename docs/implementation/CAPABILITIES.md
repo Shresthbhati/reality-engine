@@ -1,9 +1,12 @@
 # Capabilities Manifest
 
-What the Reality Engine can do **today**, verified 2026-09-14.
+What the Reality Engine can do **today**, verified 2026-09-23.
 Companion to `IMPLEMENTATION_STATUS.md` (component detail) and
 `PENDING_IMPLEMENTATION.md` (what is missing). A capability listed here
 has been executed against real inputs unless marked otherwise.
+
+> **Note:** This file is subsidiary to REALITY_ENGINE_CURRENT_STATUS.md.
+> Where they disagree, the latter is authoritative.
 
 ## Compile a capture into a world
 
@@ -44,19 +47,55 @@ produce identical artifact hashes.
 ## Deterministic testing path
 
 Fake reconstruction backend + synthetic fixtures run the full spine
-offline (no COLMAP, no torch) — the backbone of the test suite
-(1,279 passing at reconciliation; SAM-perception env failure
-excluded, tracked).
+offline (no COLMAP, no torch) — the backbone of the test suite.
+
+## WorldStore (versioned world persistence)
+
+SQLite-backed world versioning with:
+- Immutable world versions with lineage tracking
+- Integrity verification (hash checks)
+- CLI save/load/list/verify commands
+- Integration with WorldIR and exporters
+
+## Registration & Trajectories
+
+- **GNSS registration**: WGS84 anchors with covariance
+- **ICP registration**: Iterative Closest Point alignment
+- **Point-to-plane registration**: Refined pose estimation
+- **Trajectory model**: TUM format, VIO federation, sync, diagnostics
+
+## Reality Studio (Browser UI)
+
+Next.js 16 + Three.js viewer with:
+- **Desktop layout**: 33 page components for worlds/sessions/evidence/reports/analysis
+- **Mobile layout**: camera/evidence/sessions/worlds views
+- **12 API proxy routes**: jobs (compile/ingest/reconstruct/jobId), sessions (list/ingest-mobile/mobile-tasks), worlds (list/id/cameras/points/report/worldir)
+- **Three.js viewer**: offline single-file with selection + provenance
+
+## API Backend (FastAPI)
+
+- **10 backend modules**: db, jobs, main, models, routes_jobs, routes_misc, routes_sessions, routes_worlds, storage
+- **REST endpoints**: health, sessions (CRUD + location/trajectory/reconstruct), worlds (CRUD + versions/attach/coverage), evidence (CRUD + artifact), jobs, notifications, activity
+- **SQLite + async worker**: durable job execution
 
 ## Explicitly NOT capabilities yet
 
 - Sensor depth ingestion (16-bit PNG sidecars) — spec written
 - Time sync / VIO / cross-source registration — specs written
-- Multi-view object identity, tracking, materials — specs written
-- Uncertainty propagation, provenance graph, WorldStore, incremental
-  compilation — specs written
-- GIS, robotics, large-world partitioning, advanced physics beyond
-  the rigid-body foundation — specs written
+- Co-observation landmark resolver — identified gap
+- Uncertainty propagation — schema exists, propagation not
+- Provenance graph (queryable) — lineage exists, graph not
+- Material perception — spec written
+- Multi-material contact resolution — 4-material database only
+- GIS, robotics, large-world partitioning — specs written
 
 Each "not yet" is specified under `docs/future/` with model, failure
 modes, and acceptance criteria.
+
+## Hardware & Environment
+
+- COLMAP 4.2.0 with CUDA (RTX 4050, driver 616.56) — GPU feature extraction works
+- CPU-only fallback available
+- MiDaS via torch.hub — relative depth (metricized per-view)
+- Mask R-CNN via torchvision — real COCO detections
+- SAM via torch.hub — env-dependent (torch-hub cache fragility)

@@ -43,6 +43,8 @@ from engine.compiler.world_compiler import (
 from engine.scene_graph.graph import SceneGraph
 from engine.scene_graph.spatial_index import SpatialIndex
 from exporters.blender.exporter import export_to_blender_script_with_report
+from exporters.citygml.exporter import export_to_citygml_with_report
+from exporters.cityjson.exporter import export_to_cityjson_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
 from exporters.usd.exporter import export_to_usda_with_report
 from world_ir.artifact_store import ArtifactStore, MemoryArtifactStore
@@ -65,14 +67,34 @@ __all__ = [
     "validate",
 ]
 
+def _export_cityjson(world, artifact_store=None):
+    """CityJSON has no artifact payloads (it serializes real-bounds
+    BOX/PLANE boxes only); `artifact_store` is accepted for the uniform
+    SDK signature and ignored."""
+    return export_to_cityjson_with_report(world)
+
+
+def _export_citygml(world, artifact_store=None):
+    """CityGML has no artifact payloads (it serializes real-bounds
+    BOX/PLANE boxes only); `artifact_store` is accepted for the uniform
+    SDK signature and ignored."""
+    return export_to_citygml_with_report(world)
+
+
 #: format name -> the exporter's _with_report function. Every entry here
 #: is a real, tested exporter (exporters/gltf, exporters/usd,
-#: exporters/blender) -- adding an entry means the format is actually
-#: implemented, never a placeholder.
+#: exporters/blender, exporters/cityjson, exporters/citygml) -- adding
+#: an entry means the format is actually implemented, never a
+#: placeholder. (The IFC bridge, exporters/ifc_bridge.py, stays outside
+#: this table: it writes to a file path and returns a different report
+#: shape, so shoehorning it into (content, ExportReport) would be a
+#: dishonest adapter.)
 _EXPORTERS = {
     "gltf": export_to_gltf_with_report,
     "usda": export_to_usda_with_report,
     "blender": export_to_blender_script_with_report,
+    "cityjson": _export_cityjson,
+    "citygml": _export_citygml,
 }
 
 
@@ -120,15 +142,18 @@ def scene_graph(world: WorldIR) -> SceneGraph:
 
 def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] = None):
     """WorldIR -> (content, ExportReport) for `format` in {"gltf", "usda",
-    "blender"}. Raises UnsupportedExportFormatError for anything else --
-    the SDK never silently no-ops on an unknown format.
+    "blender", "cityjson", "citygml"}. Raises
+    UnsupportedExportFormatError for anything else -- the SDK never
+    silently no-ops on an unknown format.
 
-    `artifact_store`, when given, lets every exporter (gltf/usda/blender)
+    `artifact_store`, when given, lets the gltf/usda/blender exporters
     emit real per-entity geometry (world_ir/geometry_data.py's
-    PointCloudData) instead of the placeholder cube for any entity
-    whose Geometry resolves through it -- see exporters/gltf/exporter.py,
-    exporters/usd/exporter.py, exporters/blender/exporter.py. All three
-    accept the same parameter shape, so it is threaded through uniformly."""
+    PointCloudData / MeshData) instead of the placeholder cube for any
+    entity whose Geometry resolves through it -- see
+    exporters/gltf/exporter.py, exporters/usd/exporter.py,
+    exporters/blender/exporter.py. The cityjson/citygml exporters are
+    bounds-only and ignore it. All accept the same parameter shape, so
+    it is threaded through uniformly."""
     exporter_fn = _EXPORTERS.get(format)
     if exporter_fn is None:
         raise UnsupportedExportFormatError(

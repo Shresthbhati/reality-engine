@@ -1,5 +1,14 @@
 # Reality Engine V10 — Implementation Map
 
+> **ARCHIVED 2026-09-23.** This document references the obsolete
+> "V10 Specification" and "Four-Plane Architecture" which are no longer
+> the canonical framing. It incorrectly states that physics, destruction,
+> fire, and disaster simulation are in core — these were moved to
+> `reality-engine-child` on 2026-09-18. It lists Reality Studio UI as
+> not started, but a full Next.js 16 + Three.js frontend is now
+> implemented. See `REALITY_ENGINE_CURRENT_STATUS.md` and
+> `.agent/TASKS.yaml` for current status.
+
 **Document Authority:** `REALITY_ENGINE_MASTER_SPECIFICATION_V10_WORLD_PHYSICS_AND_AGENT_BUILD_BIBLE.md` (§0-437)
 
 **Mission:** Convert authorized real-world evidence into a persistent, semantically understood, physically coherent, temporally versioned, game-engine-native world.

@@ -1,5 +1,11 @@
 # Capability Matrix — Reality Engine (world-compiler spec)
 
+> **ARCHIVED 2026-09-23.** This matrix predates the 2026-09-15 through
+> 2026-09-23 implementation campaigns. It describes a world-compiler
+> scope that has been superseded by the broader Reality Compiler + WorldOS
+> scope in `.agent/TASKS.yaml`. See `REALITY_ENGINE_CURRENT_STATUS.md`
+> for current status.
+
 Tracks only the **Exit Goals (A-L)** from the autonomous-implementation-loop
 directive — that's what decides whether to keep looping, not the full
 40-section spec. Statuses: NOT_STARTED / SKELETON / PARTIAL / FUNCTIONAL /

@@ -117,3 +117,34 @@ class TestIfcExport:
         world.entities["empty"] = Entity(id="empty", type=EntityType.ROOM)
         with pytest.raises(IFCBridgeError):
             export_world_to_ifc(world, tmp_path / "empty.ifc")
+
+    def test_deterministic_bytes(self, tmp_path):
+        """Same world -> byte-identical IFC (the determinism contract
+        the other exporters honor). This guards against regressions to
+        ifcopenshell's defaults: random uuid4 GlobalIds, a wall-clock
+        header time_stamp, and hash-set unit ordering."""
+        world = _world()
+        out1 = tmp_path / "a" / "world.ifc"
+        out2 = tmp_path / "b" / "world.ifc"
+        export_world_to_ifc(world, out1)
+        export_world_to_ifc(world, out2)
+        assert out1.read_bytes() == out2.read_bytes()
+
+    def test_global_ids_are_stable_and_valid(self, tmp_path):
+        """GlobalIds are derived from the world id + entity id: stable
+        across runs, distinct per element, and valid 22-char IFC GUIDs
+        that expand back to real uuids."""
+        import ifcopenshell.guid
+
+        world = _world()
+        out1 = tmp_path / "a" / "world.ifc"
+        out2 = tmp_path / "b" / "world.ifc"
+        export_world_to_ifc(world, out1)
+        export_world_to_ifc(world, out2)
+        ids1 = {e.Name: e.GlobalId for e in ifcopenshell.open(str(out1)).by_type("IfcElement")}
+        ids2 = {e.Name: e.GlobalId for e in ifcopenshell.open(str(out2)).by_type("IfcElement")}
+        assert ids1 == ids2
+        assert len(set(ids1.values())) == len(ids1)  # no collisions
+        for gid in ids1.values():
+            assert len(gid) == 22
+            ifcopenshell.guid.expand(gid)  # raises if malformed

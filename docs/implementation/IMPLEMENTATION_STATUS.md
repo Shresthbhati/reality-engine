@@ -1,10 +1,13 @@
 # Implementation Status
 
-Last reconciled: 2026-09-14 (mapping campaign; PRs #14, #16, #17, #18, #19).
+Last reconciled: 2026-09-23 (cross-checked against REALITY_ENGINE_CURRENT_STATUS.md and .agent/TASKS.yaml).
 Status vocabulary is defined in `PENDING_IMPLEMENTATION.md`; transitions
 require the evidence named there. This file states **what exists and was
-verified**, not what is planned — see ROADMAP for sequence and
-PENDING_IMPLEMENTATION for the backlog.
+verified**, not what is planned — see REALITY_ENGINE_CURRENT_STATUS.md for
+the authoritative status and PENDING_IMPLEMENTATION for the backlog.
+
+> **Note:** This file is now subsidiary to REALITY_ENGINE_CURRENT_STATUS.md.
+> Where they disagree, the latter is authoritative.
 
 ## Canonical pipeline (vertical slice)
 
@@ -32,13 +35,22 @@ PENDING_IMPLEMENTATION for the backlog.
 | glTF MESH payload export | IMPLEMENTED | real-data export verified |
 | Viewer mesh layer | IMPLEMENTED | build_viewer + main.js mesh layer |
 | CLI `reality compile` (one-command path) | IMPLEMENTED | `test_cli_compile.py` fake-backend E2E |
-| CLI (session/source/orchestrator) | PARTIAL | orchestrator→compile only |
+| CLI (session/source/orchestrator) | IMPLEMENTED | Full CLI with ingest/session/compile/reconstruct/validate/diff/export/register/query/store/inspect/viewer |
 | Deterministic compiler (hash-stable outputs) | IMPLEMENTED | artifact hashes stable across runs |
-| Multi-source session manifest | FOUNDATION | manifest schema; no cross-source alignment |
-| Provenance (per-artifact records) | FOUNDATION | no queryable graph |
-| Uncertainty model | MISSING | ad hoc per-stage stats only |
-| WorldStore / incremental compilation | MISSING | per-run JSON exports only |
-| CI | MISSING | no workflows in repo (verified 2026-09-14) |
+| Multi-source session manifest | IMPLEMENTED | MultiSourceSession + full CLI |
+| Provenance (per-artifact records) | IMPLEMENTED | Per-entity provenance enum; queryable graph not yet built |
+| WorldStore / incremental compilation | IMPLEMENTED | Versioned immutable lineage + integrity + CLI save/load/list/verify |
+| Registration (GNSS/ICP/point-to-plane) | IMPLEMENTED | GNSS + ICP + point-to-plane + covariance + CLI |
+| Trajectories (model/TUM/VIO) | IMPLEMENTED | Model, TUM, VIO federation, sync, diagnostics |
+| Spatial index acceleration | IMPLEMENTED | Uniform grid + per-cell BVH (100k entities benchmarked) |
+| Coordinate frame graph | IMPLEMENTED | Full frame graph with safety checks |
+| **Reality Studio (browser UI)** | **IMPLEMENTED** | **Next.js 16 + Three.js viewer; 12 API proxy routes; desktop (33 pages) + mobile layouts; 33 frontend page components** |
+| **API backend (FastAPI)** | **IMPLEMENTED** | **apps/api/ with 10 modules; 12 REST endpoints; SQLite + async worker** |
+| **Exporters (gltf/blender/usda/cityjson/citygml)** | **IMPLEMENTED** | **13 exporter modules with real-geometry paths + reports** |
+| **Competitive benchmark suite** | **IMPLEMENTED** | **13 benchmark modules** |
+| CI | **IMPLEMENTED** | **.github/workflows/ci.yml — multi-Python matrix, wheel build, 28+ test files** |
+| Uncertainty propagation | PARTIAL | Schema fields exist; first-order propagation not implemented |
+| **Uncertainty visualization in Studio** | **MISSING** | **No Studio UI for uncertainty** |
 
 ## Known environment constraints (this machine)
 

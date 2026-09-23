@@ -1,5 +1,12 @@
 # Test Matrix
 
+> **ARCHIVED 2026-09-23.** This matrix maps test files to requirements in
+> the obsolete V11/V10 specification. It lists physics tests (test_debris,
+> test_fracture, test_glass, test_rain, test_water, etc.) that were moved
+> to `reality-engine-child` on 2026-09-18. See
+> `REALITY_ENGINE_CURRENT_STATUS.md` for current status and
+> `.agent/TASKS.yaml` for the authoritative task list.
+
 Maps each test file to the requirement(s) it verifies and its test
 category, per the directive's testing taxonomy (§40: UNIT / INTEGRATION /
 SYSTEM / END-TO-END / PROPERTY / FUZZ / DETERMINISM / PERFORMANCE /

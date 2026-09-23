@@ -182,3 +182,69 @@ def test_write_usda_file_threads_artifact_store():
             content = f.read()
     assert content == expected
     assert "def Points" in content
+
+
+# ---------------------------------------------------------------- real geometry (Mesh prim)
+
+
+def _entity_with_real_mesh(entity_id: str, geom_id: str, vertices, faces, origin, store):
+    from reconstruction.meshing.mesh import MeshData
+
+    payload = MeshData(vertices=tuple(vertices), faces=tuple(faces)).to_bytes()
+    uri, digest = store.put(payload)
+    geom = Geometry(id=geom_id, type=GeometryType.MESH, data_uri=uri, data_hash=digest)
+    entity = Entity(
+        id=entity_id,
+        name="Meshed",
+        type=EntityType.DEBRIS,
+        transform={"position": {"x": origin[0], "y": origin[1], "z": origin[2]}},
+        geometry_ids=[geom_id],
+    )
+    return geom, entity
+
+
+def test_resolvable_mesh_geometry_emits_a_real_mesh_prim_not_a_cube():
+    store = MemoryArtifactStore()
+    world = WorldIR()
+    vertices = [(1.0, 0.0, 0.0), (2.0, 1.0, 0.0), (1.0, 1.0, 1.0)]
+    faces = [(0, 1, 2)]
+    geom, entity = _entity_with_real_mesh(
+        "ent-mesh", "geom-mesh", vertices, faces, (1.0, 0.0, 0.0), store
+    )
+    world.geometries[geom.id] = geom
+    world.entities[entity.id] = entity
+
+    usda = export_to_usda(world, artifact_store=store)
+
+    assert 'def Mesh "ent_mesh"' in usda
+    assert "def Cube" not in usda
+    assert "def Points" not in usda
+    assert "int[] faceVertexCounts = [3]" in usda
+    assert "int[] faceVertexIndices = [0, 1, 2]" in usda
+    # local-space translation: vertices relative to entity origin (1,0,0)
+    assert "(0.0, 0.0, 0.0)" in usda
+    assert "(1.0, 1.0, 0.0)" in usda
+    assert "(0.0, 1.0, 1.0)" in usda
+
+
+def test_mesh_geometry_without_resolvable_artifact_falls_back_to_cube():
+    """A MESH-typed geometry is exportable, but without a resolvable
+    artifact it must not fabricate a mesh -- placeholder cube, exactly
+    like BOX/PLANE."""
+    store = MemoryArtifactStore()  # empty store: data_uri won't resolve
+    world = WorldIR()
+    geom = Geometry(id="geom-mesh", type=GeometryType.MESH, data_uri="artifact://" + "0" * 64)
+    entity = Entity(
+        id="ent-mesh",
+        name="Meshed",
+        type=EntityType.DEBRIS,
+        transform={"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
+        geometry_ids=["geom-mesh"],
+    )
+    world.geometries[geom.id] = geom
+    world.entities[entity.id] = entity
+
+    usda = export_to_usda(world, artifact_store=store)
+    assert "def Mesh" not in usda
+    assert "def Points" not in usda
+    assert usda.count("def Cube") == 1

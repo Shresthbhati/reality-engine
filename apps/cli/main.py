@@ -548,9 +548,9 @@ def cmd_diff(args: argparse.Namespace) -> int:
 
 def cmd_export(args: argparse.Namespace) -> int:
     world = _load_world(args.world)
-    # All three exporters (gltf/usda/blender) now accept artifact_store
-    # uniformly, so reconnection to a real geometry store is no longer
-    # format-specific.
+    # All exporters (gltf/usda/blender/cityjson/citygml) accept
+    # artifact_store uniformly, so reconnection to a real geometry
+    # store is no longer format-specific.
     artifact_store = None
     store_root = _artifacts_dir_for(args.world)
     if store_root.is_dir():
@@ -931,7 +931,8 @@ def build_parser() -> argparse.ArgumentParser:
              "for real geometry, if it exists)",
     )
     p_export.add_argument("world")
-    p_export.add_argument("--format", required=True, choices=["gltf", "usda", "blender"])
+    p_export.add_argument("--format", required=True,
+                          choices=["gltf", "usda", "blender", "cityjson", "citygml"])
     p_export.add_argument("-o", "--output", required=True)
     p_export.set_defaults(func=cmd_export)
 

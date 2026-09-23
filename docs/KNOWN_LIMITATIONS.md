@@ -75,21 +75,30 @@ materials/geometries/measurements API — see [DECISIONS.md](DECISIONS.md) #12.
 
 ## Not yet started (honest gap, not a limitation of something built)
 
-**STALE, PARTIALLY CORRECTED 2026-09-21**: this section predates the
-2026-09-15 through 2026-09-21 execution campaigns; `.agent/TASKS.yaml`
-(canonical status ledger — see `.agent/EXECUTION_STATE.md` for
+**CORRECTED 2026-09-23**: This section was updated to reflect the
+2026-09-15 through 2026-09-23 implementation campaigns. The canonical
+status ledger `.agent/TASKS.yaml` (see `.agent/EXECUTION_STATE.md` for
 evidence) is authoritative over this file when they disagree.
-Verified by file count: `reconstruction/` (34 .py files), `perception/`
-(45), `apps/` (6, incl. the full `reality` CLI), `exporters/` (13),
-`benchmarks/` (13) are NOT empty scaffolding — they implement most of
-P5-P9, P16, and P19 (reconstruction backends, perception/tracking/
-detail pipelines, the `apps/cli/main.py` command-line client, glTF/
-CityJSON/USDA exporters, the competitive benchmark suite). Still
-genuinely empty/not started, matching TASKS.yaml and the platform/
-application boundary (P0-02/P18-01 — disaster-application logic is
-intentionally excluded from core): `engine/fluids`, `engine/fire`,
-`engine/weather`, `engine/disasters`, `gpu/`, `datasets/` (used only as
-a runtime data directory, not a code package), `plugins/`, `shaders/`,
-`tools/`. Causal graph, branching/counterfactual engine, AI copilot,
-natural-language query, and Studio debug visualization remain
-unstarted as this section originally said.
+
+**What exists now (verified by file count):**
+- `reconstruction/` (34 .py files) — COLMAP backend, orchestrator, scale, depth, fusion, meshing
+- `perception/` (45 .py files) — MiDaS, Mask R-CNN, SAM, lifting, fusion, quality, detail, tracking
+- `apps/` (10 API backend .py files + CLI) — Full FastAPI backend (db/jobs/main/models/routes_*), reality CLI
+- `exporters/` (13 .py files) — glTF, Blender, USDA, CityJSON, CityGML
+- `benchmarks/` (13 .py files) — Competitive benchmark suite
+- `frontend/` (12 API routes + 33 page components) — Next.js 16 + Three.js viewer, desktop + mobile
+- `.github/workflows/ci.yml` — CI with multi-Python matrix, wheel build, 28+ test files
+
+**Physics removed to child (2026-09-18):**
+`engine/physics/*`, `engine/fire/*`, `engine/fluids/*`,
+`engine/weather/*`, `engine/disasters/*` were moved to
+`reality-engine-child`. Core no longer contains physics.
+
+**Still genuinely empty/not started (matching TASKS.yaml):**
+`gpu/`, `datasets/` (runtime data directory only), `plugins/`,
+`shaders/`, `tools/`. Disaster-application logic intentionally excluded
+from core (P0-02/P18-01 — platform/application boundary).
+
+**Still unstarted per TASKS.yaml:**
+Causal graph, branching/counterfactual engine, AI copilot,
+natural-language query.

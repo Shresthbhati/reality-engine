@@ -1,5 +1,12 @@
 # WorldIR V1 Complete Implementation
 
+> **ARCHIVED 2026-09-23.** This document predates the 2026-09-15 through
+> 2026-09-23 implementation campaigns. It references "V11 Specification"
+> and "four architectural planes" which are no longer the canonical
+> framing. See `REALITY_ENGINE_CURRENT_STATUS.md` and
+> `.agent/TASKS.yaml` for current status. The WorldIR V1 schema itself
+> remains valid and is the basis for current work.
+
 **Date:** 2026-09-04
 **Authority:** V11 Specification §6-§40 (WorldIR), §103 (Serialization)
 **Status:** ✅ COMPLETE — 29 comprehensive tests, 100% round-trip fidelity

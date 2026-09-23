@@ -4,9 +4,10 @@ Scope (matches exporters/gltf/exporter.py and exporters/usd/exporter.py):
   Produces a standalone Python script that, when run inside Blender
   (`blender --background --python scene.py`), recreates one mesh object
   for every WorldIR Entity that has BOTH a transform with a position AND
-  at least one Geometry of type BOX or PLANE.
+  at least one Geometry of type BOX, PLANE, or MESH.
 
-Why BOX and PLANE (unlike the gltf/usd exporters, which are BOX-only):
+Why BOX and PLANE (same exportable set as the gltf/usd exporters, which
+also accept MESH):
   `Geometry.bounds_min`/`bounds_max` (world_ir/schema_v1.py) is a real,
   non-fabricated axis-aligned bounding box whenever it is set --
   `evidence/promote_planes.py` always sets it from actual inlier points
@@ -18,23 +19,27 @@ Why BOX and PLANE (unlike the gltf/usd exporters, which are BOX-only):
 
 Real geometry (2026-09-13, matches exporters/gltf/exporter.py): pass an
 `artifact_store` (world_ir/artifact_store.py) and any entity whose
-geometry has a `data_uri` this store can resolve (a `PointCloudData`
-payload, written by evidence/promote_planes.py or
-evidence/promote_objects.py when given the same store) gets a real
-`bpy.data.meshes.new(...).from_pydata(...)` point-cloud mesh built from
-actual reconstructed point positions (translated into the entity's own
-local space, since the object's `location` already places the origin)
-instead of the placeholder/AABB-scaled cube. Nothing is fabricated: an
-entity with no resolvable real data (no store passed, no data_uri set,
-or the store doesn't have that artifact) falls back to the cube exactly
-as before.
+geometry has a `data_uri` this store can resolve gets a real
+`bpy.data.meshes.new(...).from_pydata(...)` object built from actual
+reconstructed data (translated into the entity's own local space, since
+the object's `location` already places the origin) instead of the
+placeholder/AABB-scaled cube. A reconstructed triangle mesh
+(reconstruction/meshing/mesh.py's MeshData payload) is preferred --
+emitted as a real faced mesh via `from_pydata(vertices, [], faces)` --
+then a `PointCloudData` payload (written by evidence/promote_planes.py
+or evidence/promote_objects.py when given the same store) as a
+point-cloud mesh. Nothing is fabricated: an entity with no resolvable
+real data (no store passed, no data_uri set, or the store doesn't have
+that artifact) falls back to the cube exactly as before.
 
 What is intentionally NOT exported, and why:
   - Entities with no transform: nothing to place the object at.
-  - Entities whose only geometry is MESH, POINTCLOUD, or anything other
-    than BOX/PLANE: no real vertex/point data is stored in WorldIR yet
-    (see the gltf/usd exporter docstrings) -- skipped rather than
-    fabricated.
+  - Entities whose only geometry is POINTCLOUD or anything other than
+    BOX/PLANE/MESH: the POINTCLOUD GeometryType carries no resolvable
+    vertex data in WorldIR (see the gltf/usd exporter docstrings) --
+    skipped rather than fabricated. A MESH geometry IS exportable: with
+    a resolvable artifact it becomes a real mesh, without one it falls
+    back to the placeholder cube like a BOX without bounds.
   - Real plane orientation (the PLANE Geometry does not retain the
     normal/d used at detection time, only the inlier AABB) -- the cube
     is placed and sized from that AABB, not rotated to match a wall's
@@ -63,8 +68,13 @@ if TYPE_CHECKING:
     from world_ir.world_v1 import WorldIR
 
 #: Geometry types whose bounds_min/bounds_max (when set) is real,
-#: non-fabricated data suitable for sizing an exported cube.
-_EXPORTABLE_GEOMETRY_TYPES = frozenset({GeometryType.BOX, GeometryType.PLANE})
+#: non-fabricated data suitable for sizing an exported cube. MESH is
+#: included so a MESH-typed entity with a resolvable artifact gets its
+#: real triangle mesh (and otherwise falls back to the placeholder cube,
+#: same as exporters/gltf and exporters/usd).
+_EXPORTABLE_GEOMETRY_TYPES = frozenset(
+    {GeometryType.BOX, GeometryType.PLANE, GeometryType.MESH}
+)
 
 #: Minimum dimension (meters) for any exported axis -- a degenerate
 #: (zero-thickness) plane AABB would otherwise produce an invisible,
@@ -74,7 +84,7 @@ _MIN_DIMENSION_M = 0.01
 
 
 def _entity_geometry(world: "WorldIR", entity):
-    """The first BOX/PLANE Geometry attached to `entity`, or None."""
+    """The first BOX/PLANE/MESH Geometry attached to `entity`, or None."""
     for gid in entity.geometry_ids:
         geom = world.geometries.get(gid)
         if geom is not None and geom.type in _EXPORTABLE_GEOMETRY_TYPES:
@@ -115,14 +125,35 @@ def _resolve_real_points(artifact_store: Optional[ArtifactStore], geometry) -> O
         return None  # not a PointCloudData payload this exporter understands
 
 
+def _resolve_real_mesh(artifact_store: Optional[ArtifactStore], geometry) -> Optional[tuple]:
+    """Real (vertices, faces) for `geometry`, or None if there is no
+    resolvable real mesh artifact. Mirrors
+    exporters/gltf/exporter.py._resolve_real_mesh exactly -- never
+    fabricated, the caller falls back to points/cube."""
+    if artifact_store is None or not geometry.data_uri:
+        return None
+    try:
+        payload = artifact_store.get(geometry.data_uri)
+    except ArtifactNotFoundError:
+        return None
+    from reconstruction.meshing.mesh import MeshData as _MeshData
+
+    try:
+        mesh = _MeshData.from_bytes(payload)
+    except (ValueError, struct.error):
+        return None  # not a MeshData payload this exporter understands
+    return list(mesh.vertices), list(mesh.faces)
+
+
 def export_to_blender_script(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> str:
     """Build a standalone Blender Python script that reconstructs `world`.
 
-    Only entities with a transform position AND a BOX/PLANE geometry
-    produce an object -- see module docstring for exactly what is
-    skipped and why. When `artifact_store` is given and an entity's
+    Only entities with a transform position AND a BOX/PLANE/MESH
+    geometry produce an object -- see module docstring for exactly what
+    is skipped and why. When `artifact_store` is given and an entity's
     geometry carries a resolvable `data_uri`, that entity gets a real
-    point-cloud mesh (built via `from_pydata`) instead of the shared
+    mesh (triangle mesh preferred, point-cloud mesh otherwise, both
+    built via `from_pydata`) instead of the shared
     placeholder/AABB-scaled cube -- see module docstring. Omitting
     `artifact_store` reproduces the exact prior (cube-only) output.
     """
@@ -155,22 +186,37 @@ def export_to_blender_script(world: "WorldIR", artifact_store: Optional[Artifact
         pos = entity.transform["position"]
         obj_name = entity.name or entity.id
 
-        real_points = _resolve_real_points(artifact_store, geom)
-        if real_points is not None and len(real_points) >= 1:
-            local = [
-                (x - pos["x"], y - pos["y"], z - pos["z"]) for x, y, z in real_points
+        # Real data preference: reconstructed triangle mesh > point
+        # cloud > placeholder/AABB cube (same order as exporters/gltf
+        # and exporters/usd).
+        real_mesh = _resolve_real_mesh(artifact_store, geom)
+        if real_mesh is not None and real_mesh[0] and real_mesh[1]:
+            vertices, faces = real_mesh
+            local_verts = [
+                (x - pos["x"], y - pos["y"], z - pos["z"]) for x, y, z in vertices
             ]
             lines.append(f"mesh = bpy.data.meshes.new({_py_str(obj_name)})")
-            lines.append(f"mesh.from_pydata({local!r}, [], [])")
+            lines.append(f"mesh.from_pydata({local_verts!r}, [], {list(faces)!r})")
             lines.append("mesh.update()")
             lines.append(f"obj = bpy.data.objects.new({_py_str(obj_name)}, mesh)")
             lines.append(f"obj.location = ({pos['x']}, {pos['y']}, {pos['z']})")
         else:
-            dims = _dimensions(geom)
-            lines.append(f"bpy.ops.mesh.primitive_cube_add(size=1.0, location=({pos['x']}, {pos['y']}, {pos['z']}))")
-            lines.append("obj = bpy.context.active_object")
-            lines.append(f"obj.name = {_py_str(obj_name)}")
-            lines.append(f"obj.dimensions = ({dims[0]}, {dims[1]}, {dims[2]})")
+            real_points = _resolve_real_points(artifact_store, geom)
+            if real_points is not None and len(real_points) >= 1:
+                local = [
+                    (x - pos["x"], y - pos["y"], z - pos["z"]) for x, y, z in real_points
+                ]
+                lines.append(f"mesh = bpy.data.meshes.new({_py_str(obj_name)})")
+                lines.append(f"mesh.from_pydata({local!r}, [], [])")
+                lines.append("mesh.update()")
+                lines.append(f"obj = bpy.data.objects.new({_py_str(obj_name)}, mesh)")
+                lines.append(f"obj.location = ({pos['x']}, {pos['y']}, {pos['z']})")
+            else:
+                dims = _dimensions(geom)
+                lines.append(f"bpy.ops.mesh.primitive_cube_add(size=1.0, location=({pos['x']}, {pos['y']}, {pos['z']}))")
+                lines.append("obj = bpy.context.active_object")
+                lines.append(f"obj.name = {_py_str(obj_name)}")
+                lines.append(f"obj.dimensions = ({dims[0]}, {dims[1]}, {dims[2]})")
         lines.append(f"obj['entity_id'] = {_py_str(entity.id)}")
         lines.append(f"obj['entity_type'] = {_py_str(entity.type.value)}")
         lines.append(f"obj['provenance'] = {_py_str(entity.provenance.value)}")
@@ -203,7 +249,7 @@ def _classify_entities(world: "WorldIR"):
             reasons.append("no transform.position to place an object at")
         elif _entity_geometry(world, entity) is None:
             skipped.append(entity_id)
-            reasons.append("no BOX/PLANE geometry to export")
+            reasons.append("no BOX/PLANE/MESH geometry to export")
         else:
             exported.append(entity_id)
     return tuple(exported), tuple(skipped), tuple(reasons)

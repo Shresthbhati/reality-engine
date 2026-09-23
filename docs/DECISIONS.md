@@ -1,5 +1,12 @@
 # Architecture Decision Records
 
+> **ARCHIVED 2026-09-23.** This file documents decisions made in the
+> physics implementation that was moved to `reality-engine-child` on
+> 2026-09-18. Decisions #2, #3, #7, #8, #11, #13 relate to the physics
+> backend. The remaining decisions about WorldIR, serialization, and
+> provenance are still relevant. See `REALITY_ENGINE_CURRENT_STATUS.md`
+> for current status.
+
 Distinguishes SPEC REQUIREMENT (mandated by the V11 spec) from ENGINEERING
 DECISION (a choice made where the spec is silent or permits latitude) from
 TEMPORARY APPROXIMATION (a stand-in that must be replaced, tracked in

@@ -92,7 +92,7 @@ _EXPORTABLE_GEOMETRY_TYPES = frozenset(
 
 
 def _entity_box_geometry(world: "WorldIR", entity) -> bool:
-    """True iff `entity` has at least one BOX/PLANE geometry attached."""
+    """True iff `entity` has at least one BOX/PLANE/MESH geometry attached."""
     return _entity_exportable_geometry(world, entity) is not None
 
 
@@ -129,9 +129,9 @@ def _real_points_mesh(
 def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> dict:
     """Build a glTF 2.0 JSON structure (as a plain dict) from `world`.
 
-    Only entities with a transform position AND a BOX/PLANE geometry
-    produce a node — see module docstring for exactly what is skipped
-    and why. When `artifact_store` is given and an entity's geometry
+    Only entities with a transform position AND a BOX/PLANE/MESH
+    geometry produce a node — see module docstring for exactly what is
+    skipped and why. When `artifact_store` is given and an entity's geometry
     carries a `data_uri` this store can resolve (world_ir/geometry_data.py's
     PointCloudData, written by evidence/promote_planes.py when it was
     given a store), that entity gets its OWN mesh built from real,
@@ -364,7 +364,7 @@ def _classify_entities(world: "WorldIR"):
             reasons.append("no transform.position to place a node at")
         elif not _entity_box_geometry(world, entity):
             skipped.append(entity_id)
-            reasons.append("no BOX/PLANE geometry to export")
+            reasons.append("no BOX/PLANE/MESH geometry to export")
         else:
             exported.append(entity_id)
     return tuple(exported), tuple(skipped), tuple(reasons)

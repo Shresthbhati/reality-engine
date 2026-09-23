@@ -60,12 +60,18 @@ if TYPE_CHECKING:
 #: PLANE carries a real inlier AABB (evidence/promote_planes.py always
 #: sets bounds_min/bounds_max), same as BOX -- both get the placeholder
 #: unit cube since neither stores real vertex data, but skipping PLANE
-#: would silently drop every promoted wall/floor/ceiling entity.
-_EXPORTABLE_GEOMETRY_TYPES = frozenset({GeometryType.BOX, GeometryType.PLANE})
+#: would silently drop every promoted wall/floor/ceiling entity. MESH
+#: (added for parity with exporters/gltf) carries a real MeshData
+#: artifact reference; with an artifact_store it exports as a real
+#: `def Mesh` prim, without one it falls back to the placeholder cube
+#: (same honesty rule as BOX/PLANE).
+_EXPORTABLE_GEOMETRY_TYPES = frozenset(
+    {GeometryType.BOX, GeometryType.PLANE, GeometryType.MESH}
+)
 
 
 def _entity_box_geometry(world: "WorldIR", entity) -> bool:
-    """True iff `entity` has at least one BOX/PLANE geometry attached."""
+    """True iff `entity` has at least one BOX/PLANE/MESH geometry attached."""
     for gid in entity.geometry_ids:
         geom = world.geometries.get(gid)
         if geom is not None and geom.type in _EXPORTABLE_GEOMETRY_TYPES:
@@ -111,6 +117,52 @@ def _resolve_real_points(artifact_store: Optional[ArtifactStore], geometry) -> O
         return None  # not a PointCloudData payload this exporter understands
 
 
+def _resolve_real_mesh(artifact_store: Optional[ArtifactStore], geometry) -> Optional[tuple]:
+    """Real (vertices, faces) for `geometry`, or None if there is no
+    resolvable real mesh artifact. Mirrors
+    exporters/gltf/exporter.py._resolve_real_mesh exactly -- never
+    fabricated, the caller falls back to points/cube."""
+    if artifact_store is None or not geometry.data_uri:
+        return None
+    try:
+        payload = artifact_store.get(geometry.data_uri)
+    except ArtifactNotFoundError:
+        return None
+    from reconstruction.meshing.mesh import MeshData as _MeshData
+
+    try:
+        mesh = _MeshData.from_bytes(payload)
+    except (ValueError, struct.error):
+        return None  # not a MeshData payload this exporter understands
+    return list(mesh.vertices), list(mesh.faces)
+
+
+def _mesh_prim_lines(
+    prim_name: str,
+    vertices: "list[tuple[float, float, float]]",
+    faces: "list[tuple[int, int, int]]",
+    origin: "tuple[float, float, float]",
+) -> list:
+    """USD ASCII lines for a real `Mesh` prim built from a reconstructed
+    triangle mesh, positions translated into the entity's local space
+    (the prim's own xformOp:translate already places the origin)."""
+    local = [(x - origin[0], y - origin[1], z - origin[2]) for x, y, z in vertices]
+    points_str = ", ".join(f"({x}, {y}, {z})" for x, y, z in local)
+    counts_str = ", ".join("3" for _ in faces)
+    indices_str = ", ".join(str(i) for f in faces for i in f)
+    lines = [
+        f'    def Mesh "{prim_name}"',
+        "    {",
+        f"        int[] faceVertexCounts = [{counts_str}]",
+        f"        int[] faceVertexIndices = [{indices_str}]",
+        f"        point3f[] points = [{points_str}]",
+        f'        double3 xformOp:translate = ({origin[0]}, {origin[1]}, {origin[2]})',
+        '        uniform token[] xformOpOrder = ["xformOp:translate"]',
+        "    }",
+    ]
+    return lines
+
+
 def _points_prim_lines(prim_name: str, points: "list[tuple[float, float, float]]", origin: "tuple[float, float, float]") -> list:
     """USD ASCII lines for a real `Points` prim, positions translated
     into the entity's local space (the prim's own xformOp:translate
@@ -131,15 +183,15 @@ def _points_prim_lines(prim_name: str, points: "list[tuple[float, float, float]]
 def export_to_usda(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> str:
     """Build a USD ASCII (.usda) text stage from `world`.
 
-    Only entities with a transform position AND a BOX/PLANE geometry
-    produce a prim — see module docstring for exactly what is skipped
-    and why. When `artifact_store` is given and an entity's geometry
-    carries a `data_uri` this store can resolve, that entity gets a
-    real `Points` prim built from actual reconstructed point positions
-    instead of the shared placeholder `Cube`. Entities with no
-    resolvable real data keep using the cube exactly as before — this
-    is additive, never a behavior change for callers that omit
-    `artifact_store`.
+    Only entities with a transform position AND a BOX/PLANE/MESH
+    geometry produce a prim — see module docstring for exactly what is
+    skipped and why. When `artifact_store` is given and an entity's
+    geometry carries a `data_uri` this store can resolve, that entity
+    gets a real `Mesh` prim (reconstructed triangle mesh) or `Points`
+    prim (point cloud) built from actual reconstructed data instead of
+    the shared placeholder `Cube`. Entities with no resolvable real
+    data keep using the cube exactly as before — this is additive,
+    never a behavior change for callers that omit `artifact_store`.
     """
     lines = ["#usda 1.0", "", 'def Xform "World"', "{"]
 
@@ -153,6 +205,14 @@ def export_to_usda(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
         pos = entity.transform["position"]
         prim_name = _sanitize_prim_name(entity.id)
         origin = (pos["x"], pos["y"], pos["z"])
+
+        # Real data preference: reconstructed triangle mesh > point
+        # cloud > placeholder cube (same order as exporters/gltf).
+        real_mesh = _resolve_real_mesh(artifact_store, geometry)
+        if real_mesh is not None and real_mesh[0] and real_mesh[1]:
+            vertices, faces = real_mesh
+            lines.extend(_mesh_prim_lines(prim_name, vertices, faces, origin))
+            continue
 
         real_points = _resolve_real_points(artifact_store, geometry)
         if real_points is not None and len(real_points) >= 1:
@@ -188,7 +248,7 @@ def _classify_entities(world: "WorldIR"):
             reasons.append("no transform.position to place a prim at")
         elif not _entity_box_geometry(world, entity):
             skipped.append(entity_id)
-            reasons.append("no BOX/PLANE geometry to export")
+            reasons.append("no BOX/PLANE/MESH geometry to export")
         else:
             exported.append(entity_id)
     return tuple(exported), tuple(skipped), tuple(reasons)

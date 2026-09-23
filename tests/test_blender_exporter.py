@@ -219,3 +219,65 @@ def test_no_data_uri_falls_back_to_the_cube_even_with_a_store():
 
     assert "from_pydata" not in script
     assert script.count("primitive_cube_add") == 3
+
+
+# ---------------------------------------------------------------- real geometry (triangle mesh)
+
+
+def test_entity_with_real_mesh_gets_a_faced_from_pydata_mesh_not_the_cube():
+    from reconstruction.meshing.mesh import MeshData
+
+    store = MemoryArtifactStore()
+    world = WorldIR()
+    origin = (1.0, 0.0, 0.0)
+    vertices = [(1.0, 0.0, 0.0), (2.0, 1.0, 0.0), (1.0, 1.0, 1.0)]
+    faces = [(0, 1, 2)]
+    payload = MeshData(vertices=tuple(vertices), faces=tuple(faces)).to_bytes()
+    uri, digest = store.put(payload)
+    geom = Geometry(id="geom-mesh", type=GeometryType.MESH, data_uri=uri, data_hash=digest)
+    entity = Entity(
+        id="ent-mesh",
+        name="Meshed Wall",
+        type=EntityType.WALL,
+        transform={"position": {"x": origin[0], "y": origin[1], "z": origin[2]}},
+        geometry_ids=[geom.id],
+    )
+    world.geometries[geom.id] = geom
+    world.entities[entity.id] = entity
+
+    script = export_to_blender_script(world, artifact_store=store)
+
+    ast.parse(script)  # generated script must stay valid Python
+    assert "primitive_cube_add" not in script
+    # real faced mesh: vertices AND faces, in entity-local space
+    assert (
+        "mesh.from_pydata([(0.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 1.0)], [], [(0, 1, 2)])"
+        in script
+    )
+    assert "obj = bpy.data.objects.new('Meshed Wall', mesh)" in script
+    assert "obj.location = (1.0, 0.0, 0.0)" in script
+    assert "obj['entity_id'] = 'ent-mesh'" in script
+
+
+def test_mesh_geometry_without_resolvable_artifact_falls_back_to_the_cube():
+    """A MESH-typed geometry is exportable, but without a resolvable
+    artifact it must not fabricate a mesh -- placeholder cube, exactly
+    like BOX/PLANE."""
+    store = MemoryArtifactStore()  # empty store: data_uri won't resolve
+    world = WorldIR()
+    geom = Geometry(id="geom-mesh", type=GeometryType.MESH, data_uri="artifact://" + "0" * 64)
+    entity = Entity(
+        id="ent-mesh",
+        name="Meshed Wall",
+        type=EntityType.WALL,
+        transform={"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
+        geometry_ids=[geom.id],
+    )
+    world.geometries[geom.id] = geom
+    world.entities[entity.id] = entity
+
+    script = export_to_blender_script(world, artifact_store=store)
+
+    ast.parse(script)
+    assert "from_pydata" not in script
+    assert script.count("primitive_cube_add") == 1

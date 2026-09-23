@@ -9,8 +9,11 @@ real, unit-explicit ``DepthFrame`` records a downstream consumer
 logic.
 
 FORMAT LADDER (Decision 020): 16-bit PNG first -- lossless integer,
-inspectable, Pillow-native. EXR (float) and device-specific raw
-formats are NOT parsed here; they need their own explicit adapters.
+inspectable, Pillow-native. EXR (float meters) is the second rung,
+implemented in evidence/depth_exr.py with its own explicit contract
+(float meters need no scale; quantized to this module's integer
+DepthFrame). Device-specific raw formats still need their own
+explicit adapters.
 
 THE SCALE RULE (the reason this module exists):
 
@@ -385,22 +388,33 @@ def parse_depth_frames(
     manifest: Optional[DepthSidecarManifest] = None,
     identity: Optional[SensorDescriptor] = None,
 ) -> List[DepthFrame]:
-    """Parse every ``.png`` in `paths` (a source's recorded DEPTH
-    component files). Non-``.png`` files are skipped, matching the
-    honest-subset behavior of parse_component_streams. Scale rules are
-    parse_depth_png's; with a manifest, per-file overrides apply and
-    files the manifest cannot resolve raise DepthScaleUnavailable
-    naming that file. ``identity`` is the declared sensor identity
-    (P1-02) attached to every parsed frame."""
-    return [
-        parse_depth_png(
-            p,
-            depth_scale,
-            invalid_value=invalid_value,
-            units=units,
-            manifest=manifest,
-            identity=identity,
-        )
-        for p in paths
-        if p.lower().endswith(".png")
-    ]
+    """Parse the DEPTH component files in `paths` (a source's recorded
+    depth stream). ``.exr`` routes to evidence.depth_exr.parse_depth_exr
+    (float meters); ``.png`` routes to parse_depth_png (16-bit integers
+    + scale). Other extensions are skipped, matching the honest-subset
+    behavior of parse_component_streams. With a manifest, per-file
+    overrides apply (PNG scale rules; EXR requires scale 1.0 or none)
+    and files the manifest cannot resolve raise, naming that file.
+    ``identity`` is the declared sensor identity (P1-02) attached to
+    every parsed frame."""
+    from evidence.depth_exr import parse_depth_exr  # local: avoids import cycle at module load
+
+    frames: List[DepthFrame] = []
+    for p in paths:
+        lower = p.lower()
+        if lower.endswith(".png"):
+            frames.append(
+                parse_depth_png(
+                    p,
+                    depth_scale,
+                    invalid_value=invalid_value,
+                    units=units,
+                    manifest=manifest,
+                    identity=identity,
+                )
+            )
+        elif lower.endswith(".exr"):
+            frames.append(
+                parse_depth_exr(p, manifest=manifest, identity=identity)
+            )
+    return frames

@@ -767,13 +767,37 @@ capabilities:
   runtime: columns O(fit_cylinder local search); beams O(points) after one eigen solve
   maturity: IMPLEMENTED (19 tests in tests/test_column_beam_detectors.py incl.
     observation->resolution->promotion integration; 12 stair tests in
-    tests/test_stair_detector.py)
+    tests/test_stair_detector.py; 16 window+roof tests in
+    tests/test_window_roof_detectors.py incl. integration)
   limitations:
-  - windows/doors remain plane-fit openings from classify.py, not dedicated
-    measured detectors
+  - doors remain classify.py's plane-fit openings (dedicated measured detector
+    not yet separated from the window opening measurement)
   - thresholds are documented wide windows, untuned against real capture
-  - real staircase/column/beam captures are external dependencies -- never
-    simulated; fixture verification is synthetic-by-construction
+  - real staircase/column/beam/window/roof captures are external dependencies
+    -- never simulated; fixture verification is synthetic-by-construction
+- name: city_streaming_compile
+  category: engine
+  backend: engine/compiler/streaming.py (in-house, deterministic; composes
+    compile_city_world per tile -- a partitioning of the canonical compiler,
+    not a second one)
+  inputs: CityFeature sequence + tile_size
+  outputs: generator of (tile_key, WorldIR) per non-empty tile in sorted key
+    order, then (None, report) with measured counts (features_compiled,
+    tiles_emitted, features_spanning_tiles, tile_size); multi-tile features
+    compile into every touched tile, spans_multiple_tiles stamped on the entity
+  license: project-internal
+  hardware_requirements: none
+  accuracy: deterministic (identical input -> identical fragment sequence,
+    world.to_dict equality tested); spanning rule mirrors SpatialTiling's
+    multi-chunk membership; unknown kinds refuse via CityFeature's constructor
+  runtime: O(features + tiles*slice); memory bounded by one tile's features
+  measured: 200k features / 320-tile grid streamed at 67.7 MB peak tracked
+    memory, 14.1 s, all 200000 entities emitted exactly once (2026-09-23)
+  maturity: IMPLEMENTED (6 tests in tests/test_city_streaming_compile.py)
+  limitations:
+  - footprint compiled as AABB per compile_city_world (concave decomposition
+    remains an open item there, not silently approximated here)
+  - fragments are not persisted here -- WorldStore owns persistence/partitioning
 - name: temporal_tracking
   category: perception
   backend: perception/tracking/temporal.py (in-house, deterministic)

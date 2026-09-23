@@ -16,10 +16,11 @@ P7-03 and this module's test file for the full rationale):
     point cloud -- no label-only guessing.
 
 Explicitly OUT of scope, skipped rather than faked:
-  - door-leaf/window-as-distinct-from-opening, stairs, columns, beams,
-    roofs: this repo has no detector producing evidence for any of
-    these (no stair-step detection, no column/beam segmentation), so
-    classifying them would be guessing, not classification.
+  - door-leaf/window-as-distinct-from-opening: no leaf-level detector
+    exists. The opening-level classes now have measured detectors
+    (stairs 2026-09-21, columns/beams 2026-09-22, windows and
+    horizontal-slab roofs 2026-09-22 in windows.py/roofs.py); sloped
+    roof aggregation still has no evidence path here.
   - facades/roads/curbs/infrastructure/terrain/vegetation: outdoor/
     city-scale concepts with no synthetic or real fixture in this repo
     to classify against.
@@ -130,8 +131,9 @@ def classify_planes(
     orientation and, for horizontal planes, relative height.
 
     Never guesses: a plane whose orientation is neither clearly
-    vertical nor clearly horizontal (e.g. a sloped roof plane -- out
-    of scope, no roof detector exists) is UNKNOWN. A horizontal plane
+    vertical nor clearly horizontal (e.g. a sloped roof plane --
+    horizontal-slab roofs are measured by roofs.detect_roof; sloped
+    aggregation is still out of scope) is UNKNOWN. A horizontal plane
     whose floor-vs-ceiling role can't be resolved from context is also
     UNKNOWN rather than picked arbitrarily.
     """

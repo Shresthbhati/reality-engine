@@ -48,7 +48,9 @@ from perception.architecture.components import (
 from perception.architecture.parametric import CircleFit, CylinderFit, SphereFit
 from perception.architecture.beams import BeamFit
 from perception.architecture.columns import ColumnFit
+from perception.architecture.roofs import RoofFit
 from perception.architecture.stairs import StaircaseFit
+from perception.architecture.windows import WindowFit
 
 #: Adjacency band for same-class structural neighbors (colonnades,
 #: window rows). A column 3 m from its neighbor is adjacent; 50 m away
@@ -132,6 +134,27 @@ def _fit_properties(fit) -> dict:
             "aspect_ratio": fit.aspect_ratio,
             "rms_residual_m": fit.rms_residual_m,
             "n_points": fit.n_points,
+        }
+    if isinstance(fit, WindowFit):
+        return {
+            "fit_kind": "window",
+            "wall_plane_id": fit.wall_plane_id,
+            "width_m": fit.width_m,
+            "height_m": fit.height_m,
+            "sill_height_m": fit.sill_height_m,
+            "bounds_min": list(fit.bounds_min),
+            "bounds_max": list(fit.bounds_max),
+            "n_points": fit.n_points,
+        }
+    if isinstance(fit, RoofFit):
+        return {
+            "fit_kind": "roof",
+            "plane_id": fit.plane_id,
+            "width_m": fit.width_m,
+            "depth_m": fit.depth_m,
+            "height_m": fit.height_m,
+            "up_dot": fit.up_dot,
+            "n_planes": fit.n_planes,
         }
     if isinstance(fit, StaircaseFit):
         return {

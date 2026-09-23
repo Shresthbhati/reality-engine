@@ -35,7 +35,9 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from perception.architecture.beams import BeamFit
 from perception.architecture.columns import ColumnFit
+from perception.architecture.roofs import RoofFit
 from perception.architecture.stairs import StaircaseFit
+from perception.architecture.windows import WindowFit
 from perception.architecture.parametric import (
     CircleFit,
     CylinderFit,
@@ -154,6 +156,10 @@ def _position_of(fit) -> Point3:
         )
     if isinstance(fit, BeamFit):
         return fit.position
+    if isinstance(fit, WindowFit):
+        return fit.position
+    if isinstance(fit, RoofFit):
+        return fit.position
     raise ValueError(f"unsupported fit type {type(fit).__name__}")
 
 
@@ -208,7 +214,7 @@ def build_component_observations(
     reg = registry or get_default_registry()
     observations: List[ComponentObservation] = []
     for segment_ids, fit, evidence_ids in fitted_segments:
-        if isinstance(fit, (StaircaseFit, ColumnFit, BeamFit)):
+        if isinstance(fit, (StaircaseFit, ColumnFit, BeamFit, WindowFit, RoofFit)):
             # Self-classifying fit: a measured stair rhythm / vertical
             # member / horizontal prism proposes exactly one class.
             # Gates were applied at fit time (a refused structure

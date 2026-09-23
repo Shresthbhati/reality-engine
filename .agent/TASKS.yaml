@@ -191,10 +191,19 @@ tasks:
       and device-raw adapters open per the format ladder.
     verification:
       - DONE: deterministic RGB-D E2E (synthetic wall -> z=2.0 m)
+      - "DONE 2026-09-22: EXR rung of the format ladder closed
+        (evidence/depth_exr.py): single-channel float EXR depth in
+        meters -- no scale machinery applies (a manifest scale other
+        than 1.0 is a contradiction and is rejected); NaN/+inf/negative
+        masked and counted; quantization to the canonical integer
+        DepthFrame (mm precision) documented; missing OpenEXR raises
+        DepthFrameError naming the dependency (never a silent skip);
+        parse_depth_frames now routes .exr and .png by extension.
+        tests/test_depth_exr.py: 7 tests; depth cluster 60 green."
       - "BLOCKED (hardware): real device capture E2E into WorldIR geometry
         -- requires an actual RGB-D device; cannot be resolved
-        autonomously. Recorded 2026-09-15; EXR and device-raw adapters
-        (format ladder) remain open with it."
+        autonomously. Recorded 2026-09-15; device-raw adapters (format
+        ladder rung 3) remain open with it."
 
   - id: P0-ROBUST-01
     name: reconstruction robustness classification + quality-aware admission
@@ -795,13 +804,23 @@ tasks:
       - parametric fits: known-answer cylinder/sphere/circle + honest refusals (23 tests)
       - registry/components/promotion/benchmark: 35 further tests incl. end-to-end segmentation -> fits -> components -> WorldIR
     open: >
-      PARTIAL, not DONE: deliberately cut to walls/floors/ceilings/
-      doorways — windows/roofs have NO detector
-      (stairs landed 2026-09-21; columns and beams 2026-09-22, see EXPANSION notes below)
-      producing evidence in this repo, and facades/roads/curbs/
-      infrastructure/terrain/vegetation are outdoor concepts with no
-      fixture; classifying them would be guessing (skipped, not
-      faked), see module docstring for the full scope rationale.
+      PARTIAL, not DONE: windows and horizontal-slab roofs CLOSED
+      2026-09-22 (perception/architecture/windows.py: measured
+      edge-bounded opening in a wall's own inlier coverage via largest-
+      empty-rectangle over the lateral-x-height coverage grid, with
+      size bands, sill gate that owns the floor-reaching door-shaped
+      fact, and boundary-touch refusal so missing data cannot pass as
+      an opening edge; perception/architecture/roofs.py: topmost
+      horizontal plane of the supplied exterior set with coplanar-band
+      support, extent gate refusing caps/skylights, tilted-plane
+      refusal carrying the measured up-dot; both wired into
+      build_component_observations -> resolve_components ->
+      promote_component_to_entity, 16 red-first tests in
+      tests/test_window_roof_detectors.py). Remaining: facades/roads/
+      curbs/infrastructure/terrain/vegetation are outdoor concepts
+      with no fixture; classifying them would be guessing (skipped,
+      not faked). Sloped-roof multi-slope aggregation also has no
+      evidence path yet.
       EXPANSION 2026-09-16 (P7-03 architectural-perception expansion,
       Victoria Memorial directive): parametric perception landed --
       perception/architecture/parametric.py (deterministic
@@ -962,9 +981,11 @@ tasks:
       cell carries a measurement (all unprojectable). A near cell and
       a far cell in one scene now receive different budgets (regression
       tests in tests/test_detail_discovery.py::TestPerCellGsdBudgets).
-      STALE NOTE CORRECTED 2026-09-21 (status reconciliation): this
-      previously said "local refinement does not yet consume
-      compute_tier (no ROI refinement backend exists)" -- FALSE as of
+      COMPUTE-TIER CONSUMPTION VERIFIED 2026-09-22
+      (perception/detail/refinement.py:228): the refinement executor
+      escalates backends by tier (none refuses; survey/light/standard
+      run plane; high/full add cylinder+sphere) -- the earlier
+      "no ROI refinement backend exists" note was FALSE as of
       P7-06's refinement executor landing (perception/detail/
       refinement.py:228 reads roi.budget.compute_tier and escalates
       backends by tier; verified directly in code, not just docs).
@@ -1027,12 +1048,16 @@ tasks:
       - tests/test_detail_worldir.py: 9 tests (refined outcome -> entity+geometry with linkage and measured confidence, geometry typed by winning backend + lod_level from budget, provenance observation answers what produced this incl. DERIVED statement state, refused ROI records fact not geometry, determinism + validate-clean, mixed refined/refused, pipeline build_world_ir flag incl. off-path, vertical-slice stage integrates into the real world)
       - eigensolver validated against numpy.linalg.eigvalsh (200-trial, 1e-9)
     open: >-
-      PARTIAL, not DONE: per-cell budgets reuse the scene-level GSD
-      measurement rather than per-cell re-measurement (documented in
-      _cell_budget); thresholds untuned (deferral documented at each
-      threshold); no adaptive subdivision planner yet (directive
-      section 13 scoring); detail statements are not yet persisted by
-      a WorldStore consumer (P11 scope).
+      PARTIAL, not DONE: STALE ITEMS RECONCILED 2026-09-22 --
+      per-cell GSD budgets CLOSED 2026-09-21 (see P7-05: assessor
+      records per-point GSD; discovery._cell_budget medians the cell's
+      own measurements) and the adaptive subdivision planner CLOSED
+      2026-09-22 (P7-05-ADAPTIVE-SUBDIVISION DONE:
+      perception/detail/subdivision.py, 9 tests incl. real
+      south-building points). Remaining: thresholds (voxel size,
+      curvature, GSD bands) untuned against real datasets (deferral
+      documented at each threshold); detail statements are not yet
+      persisted by a WorldStore consumer (P11 scope).
     real_data_verification: >-
       2026-09-17, room_capture_mvs fused.ply (294,345 points, real CUDA
       COLMAP MVS output), metricized via anchor_metric_scale against the
@@ -1474,8 +1499,19 @@ tasks:
       exporters. 3DCityDB (a database target, not a file format) and
       LoD0/2/3/4/semantic surfaces remain out of scope for this pass.
     open: >-
-      GIS/OSM ingestion adapters, 3DCityDB database export,
-      large-extent streaming compile (P13 tiles) -- open.
+      GIS/OSM ingestion adapters (OSM/GeoJSON done -- see city_import),
+      3DCityDB database export -- open. Large-extent streaming compile
+      CLOSED 2026-09-23: engine/compiler/streaming.py
+      (compile_city_world_streaming) compiles CityFeatures into
+      deterministic per-tile WorldIR fragments as a generator (one
+      non-empty tile at a time + final (None, report) summary;
+      multi-tile features compile into every touched tile with
+      spans_multiple_tiles stamped and counted; same canonical
+      per-feature rules as compile_city_world -- a partitioning, not a
+      second compiler). Measured: 200k features / 320-tile grid
+      streamed at 67.7 MB peak RSS-tracked memory, 14.1 s, all 200000
+      entities emitted exactly once. Tests:
+      tests/test_city_streaming_compile.py (6).
 
   # ================= PHASE 15 — PROCEDURAL GENERATION ================
 

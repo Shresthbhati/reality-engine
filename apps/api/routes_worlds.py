@@ -13,6 +13,7 @@ from apps.api.models import (
     Location,
     Session,
     World,
+    WorldVersion,
     new_id,
 )
 
@@ -76,6 +77,55 @@ async def list_worlds(db: AsyncSession = Depends(get_db)) -> dict:
                 "created_at": w.created_at.isoformat() if w.created_at else None,
             }
             for w in res.scalars().all()
+        ]
+    }
+
+
+@worlds.get("/{world_id}")
+async def get_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    session_count = await db.execute(
+        select(func.count()).select_from(Session).where(Session.world_id == world_id)
+    )
+    return {
+        "id": w.id,
+        "name": w.name,
+        "description": w.description,
+        "status": w.status,
+        "latitude": w.latitude,
+        "longitude": w.longitude,
+        "current_version_id": w.current_version_id,
+        "session_count": session_count.scalar_one(),
+        "created_at": w.created_at.isoformat() if w.created_at else None,
+    }
+
+
+@worlds.get("/{world_id}/versions")
+async def list_world_versions(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Application mirror of WorldStore lineage. Empty until computation
+    actually creates versions — never synthesized here."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    res = await db.execute(
+        select(WorldVersion).where(WorldVersion.world_id == world_id).order_by(WorldVersion.created_at.desc())
+    )
+    return {
+        "items": [
+            {
+                "id": v.id,
+                "world_id": v.world_id,
+                "parent_version_id": v.parent_version_id,
+                "artifact_uri": v.artifact_uri,
+                "artifact_hash": v.artifact_hash,
+                "source_session_ids": v.source_session_ids or [],
+                "changed_entity_ids": v.changed_entity_ids or [],
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+                "is_current": v.id == w.current_version_id,
+            }
+            for v in res.scalars().all()
         ]
     }
 

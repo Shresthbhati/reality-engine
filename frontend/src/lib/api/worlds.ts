@@ -43,3 +43,28 @@ export function attachSessionToWorld(worldId: string, sessionId: string) {
 export function getWorldCoverage(worldId: string): Promise<WorldCoverageDto> {
   return apiGet<WorldCoverageDto>(`/api/worlds/${encodeURIComponent(worldId)}/coverage`);
 }
+
+export async function fetchWorldDiff(worldId: string, baseVersion?: string, headVersion?: string) {
+  const q = new URLSearchParams();
+  if (baseVersion) q.set("base", baseVersion);
+  if (headVersion) q.set("head", headVersion);
+  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/diff?${q.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch world diff");
+  return res.json();
+}
+
+export async function commitWorldCorrection(worldId: string, payload: {
+  entityId: string;
+  changes: Record<string, any>;
+  parentVersionId?: string;
+  commitMessage?: string;
+}) {
+  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to commit world correction");
+  return res.json();
+}
+

@@ -1,5 +1,12 @@
 # Integration Audit — Canonical API Boundary & Delivery Gate
 
+> **ARCHIVED 2026-09-23.** This audit was performed on branch
+> `feat/canonical-api-client` and describes a state that has been
+> superseded by the current frontend implementation. The frontend now
+> has a full Next.js 16 + Three.js Studio UI with 12 API proxy routes
+> and 33 page components. See `REALITY_ENGINE_CURRENT_STATUS.md` for
+> current status.
+
 **Date:** 2026-09-22 · **Branch:** `feat/canonical-api-client` (based on `main` @ `2642bac`)
 **Scope:** mechanical verification only — every claim below was checked with a command
 (typecheck, lint, build, git, `gh`, route greps), not narrative.

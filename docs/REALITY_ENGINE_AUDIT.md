@@ -1,5 +1,11 @@
 # Reality Engine — Repository Audit
 
+> **ARCHIVED 2026-09-23.** This audit from 2026-09-12 describes a state
+> where `perception/`, `exporters/`, `apps/`, `benchmarks/`, and
+> `frontend/` were empty scaffolding. All of these now contain real code.
+> Physics was moved to `reality-engine-child` on 2026-09-18. See
+> `REALITY_ENGINE_CURRENT_STATUS.md` for current status.
+
 **Date:** 2026-09-12
 **Method:** Direct inspection (`find`, `git log`, `pytest`), not documentation claims.
 **Scope:** Compares actual repository state against the full "evidence-grounded

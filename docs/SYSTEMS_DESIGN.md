@@ -1,5 +1,10 @@
 # Reality Engine V11 — Cross-Cutting Systems Design
 
+> **ARCHIVED 2026-09-23.** This document references the obsolete "V11
+> specification" (§82-90). It documents systems design that has been
+> superseded by the current implementation. See
+> `REALITY_ENGINE_CURRENT_STATUS.md` for current status.
+
 **Authority:** V11 §82-90 (configuration, logging, error handling, events, serialization, versioning)
 **Status:** Binding specification for implementation
 **Date:** 2026-09-04

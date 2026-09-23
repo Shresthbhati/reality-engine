@@ -21,10 +21,24 @@ governing doctrine `.agent/ENGINEERING_CONSTITUTION.md` and
 ## Legacy documents
 
 Root-level audit/ledger/matrix documents (REALITY_ENGINE_AUDIT.md,
-BUILD_LEDGER.md, CAPABILITY_MATRIX.md, TEST_MATRIX.md, …) are
-point-in-time audit records: historically accurate, not maintained as
-canonical. When a root document and the canonical tree disagree, the
-canonical tree wins — and the root document should be treated as an
-artifact of its date. New status claims belong in
-`implementation/IMPLEMENTATION_STATUS.md` and the pending-implementation
-registry, not in new root-level files.
+BUILD_LEDGER.md, CAPABILITY_MATRIX.md, TEST_MATRIX.md, BUILD_ORDER.md,
+IMPLEMENTATION_MAP.md, REALITY_STUDIO_PRODUCTION_AUDIT.md, DECISIONS.md,
+SYSTEMS_DESIGN.md, WORLD_IR_IMPLEMENTATION.md, INTEGRATION_AUDIT.md,
+WIRING_POINTS.md, …) are point-in-time audit records: historically
+accurate for their date, but many are now **ARCHIVED/SUPERSEDED** by
+the 2026-09-15 through 2026-09-23 implementation campaigns:
+
+- Physics (`engine/physics/*`, `engine/fire/*`, `engine/fluids/*`,
+  `engine/weather/*`, `engine/disasters/*`) was moved to
+  `reality-engine-child` on 2026-09-18.
+- Frontend/Studio is implemented: Next.js 16 + Three.js viewer,
+  12 API proxy routes, 33 page components (desktop + mobile).
+- API backend is implemented: FastAPI with SQLite + async worker.
+- Exporters include CityJSON/CityGML (not just glTF/USDA/Blender).
+- CI exists: `.github/workflows/ci.yml` with multi-Python matrix.
+
+When a root document and the canonical tree disagree, the canonical
+tree wins — and the root document should be treated as an artifact of
+its date. New status claims belong in
+`REALITY_ENGINE_CURRENT_STATUS.md` (authoritative) and
+`implementation/IMPLEMENTATION_STATUS.md`, not in new root-level files.

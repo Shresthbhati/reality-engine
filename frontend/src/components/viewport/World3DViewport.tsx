@@ -29,6 +29,9 @@ interface World3DViewportProps {
   mesh?: { positions: Float32Array; indices: Uint32Array } | null;
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
+  highlightedEvidenceId?: string | null;
+  onSelectEvidence?: (id: string | null) => void;
+  queryMatchingIds?: Set<string> | null;
   isLoading?: boolean;
   loadingMessage?: string;
   hasNoWorldData?: boolean;
@@ -42,6 +45,9 @@ export default function World3DViewport({
   mesh = null,
   selectedEntityId,
   onSelectEntity,
+  highlightedEvidenceId,
+  onSelectEvidence,
+  queryMatchingIds = null,
   isLoading = false,
   loadingMessage = "Initializing 3D spatial viewport...",
   hasNoWorldData = false,
@@ -89,12 +95,50 @@ export default function World3DViewport({
     }
   }, [world, points, cameras, mesh]);
 
+  // Sync spatial query filtering
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    controller.applyEntityFilter(queryMatchingIds ?? null);
+  }, [queryMatchingIds]);
+
   // Sync external selection (e.g. from nav panel or inspector)
   useEffect(() => {
     const controller = controllerRef.current;
     if (!controller) return;
     controller.selectEntity(selectedEntityId, true);
   }, [selectedEntityId]);
+
+  // Sync external camera/evidence focus
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (!controller || !highlightedEvidenceId) return;
+    controller.flyToCamera(highlightedEvidenceId);
+  }, [highlightedEvidenceId]);
+
+  // Listen for custom frame events
+  useEffect(() => {
+    const handleFlyToEntity = (e: any) => {
+      if (e.detail?.id) controllerRef.current?.flyToEntity(e.detail.id);
+    };
+    const handleFlyToCamera = (e: any) => {
+      if (e.detail?.id) controllerRef.current?.flyToCamera(e.detail.id);
+    };
+    const handleFlyToPosition = (e: any) => {
+      if (e.detail) controllerRef.current?.flyToPosition(e.detail.x, e.detail.y, e.detail.z);
+    };
+
+    window.addEventListener("frame-entity", handleFlyToEntity as EventListener);
+    window.addEventListener("frame-camera", handleFlyToCamera as EventListener);
+    window.addEventListener("frame-position", handleFlyToPosition as EventListener);
+
+    return () => {
+      window.removeEventListener("frame-entity", handleFlyToEntity as EventListener);
+      window.removeEventListener("frame-camera", handleFlyToCamera as EventListener);
+      window.removeEventListener("frame-position", handleFlyToPosition as EventListener);
+    };
+  }, []);
+
 
   // Toggle Layer Helper
   const toggleLayer = useCallback((key: keyof ViewportLayers) => {
@@ -174,6 +218,13 @@ export default function World3DViewport({
           <span>{stats.entities} entities</span>
           <span>{stats.cameras} cameras</span>
         </div>
+
+        {queryMatchingIds !== null && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[#00e5ff]/15 border border-[#00e5ff]/40 text-[#00e5ff] shadow-md">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00e5ff] animate-ping" />
+            <span>Query: {queryMatchingIds.size} matching</span>
+          </div>
+        )}
       </div>
 
       {/* Floating Viewport HUD: Top Right Toolbar Controls */}

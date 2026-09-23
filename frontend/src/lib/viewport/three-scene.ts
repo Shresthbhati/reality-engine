@@ -439,6 +439,31 @@ export class WorldSceneController {
     }
   }
 
+  public applyEntityFilter(matchingIds: Set<string> | null) {
+    for (const [eid, mesh] of this.entityMeshes.entries()) {
+      const mat = mesh.material as THREE.MeshLambertMaterial;
+      const conf = mesh.userData.confidence ?? 0.5;
+      const isOversized = mesh.userData.isOversized;
+      const outlierScale = isOversized ? 0.25 : 1.0;
+
+      if (matchingIds === null) {
+        mesh.visible =
+          this.layerVisibility.entities &&
+          (!isOversized || this.layerVisibility.oversized);
+        mat.opacity = Math.max(0.12, (0.15 + 0.35 * conf) * outlierScale);
+      } else {
+        const matches = matchingIds.has(eid);
+        if (matches) {
+          mesh.visible = true;
+          mat.opacity = Math.max(0.45, (0.35 + 0.5 * conf) * outlierScale);
+        } else {
+          mesh.visible = true;
+          mat.opacity = 0.04;
+        }
+      }
+    }
+  }
+
   public selectEntity(id: string | null, updateCamera = false) {
     this.selectedEntityId = id;
 
@@ -491,6 +516,25 @@ export class WorldSceneController {
     this.controls.target.copy(mesh.position);
     this.controls.update();
   }
+
+  public flyToCamera(evidenceId: string) {
+    if (!this.camerasData || !this.camerasData.cameras) return;
+    const cam = this.camerasData.cameras.find(
+      (c) => (c.evidence_id || c.id) === evidenceId
+    );
+    if (!cam) return;
+    const p = cam.position_m;
+    this.camera.position.set(p[0] + 0.9, p[1] + 0.6, p[2] + 0.9);
+    this.controls.target.set(p[0], p[1], p[2]);
+    this.controls.update();
+  }
+
+  public flyToPosition(x: number, y: number, z: number) {
+    this.camera.position.set(x + 2.5, y + 2, z + 2.5);
+    this.controls.target.set(x, y, z);
+    this.controls.update();
+  }
+
 
   public frameAll() {
     if (this.pointsData && this.pointsData.length > 0) {

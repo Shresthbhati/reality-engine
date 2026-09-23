@@ -1,5 +1,11 @@
 # Reality Engine — Frontend Architecture & Backend Wiring Guide
 
+> **ARCHIVED 2026-09-23.** This document references the obsolete "V11 UI/UX
+> Architecture" and describes a planned 8-surface platform. The actual
+> frontend implementation is a Next.js 16 + Three.js viewer with 12 API
+> proxy routes and 33 page components. See
+> `REALITY_ENGINE_CURRENT_STATUS.md` for current status.
+
 **Document Authority:** Reality Engine V11 UI/UX Architecture  
 **Target Application:** `frontend/` (Next.js 16 + React 19 + Turbopack + Tailwind v4 + Zustand + R3F)  
 **Date:** 2026-09-15  

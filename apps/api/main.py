@@ -44,7 +44,21 @@ async def _startup() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
+    import logging
+
+    log = logging.getLogger("reality.api.shutdown")
     task = getattr(app.state, "worker", None)
     if task:
         task.cancel()
-    await dispose_db()
+        try:
+            # Bounded shutdown: a worker wedged in an uninterruptible
+            # await must not wedge process exit (or test-client
+            # teardown) forever -- running jobs are reaped as stale on
+            # the next startup instead.
+            await asyncio.wait_for(asyncio.shield(task), timeout=10.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            log.warning("worker did not stop within 10s; leaving it behind")
+    try:
+        await asyncio.wait_for(dispose_db(), timeout=10.0)
+    except asyncio.TimeoutError:
+        log.warning("db dispose timed out; leaving pool behind")

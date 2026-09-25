@@ -12,6 +12,13 @@ import asyncio
 from pathlib import Path
 
 import pytest
+
+# Same API-stack guard as tests/test_application_api.py: skip explicitly
+# when apps/api/requirements.txt was never installed.
+pytest.importorskip("fastapi")
+pytest.importorskip("sqlalchemy")
+pytest.importorskip("aiosqlite")
+
 from fastapi.testclient import TestClient
 
 

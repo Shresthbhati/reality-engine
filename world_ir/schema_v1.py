@@ -103,7 +103,6 @@ class EntityType(str, Enum):
     DISTRICT = "district"  # Administrative subdivision of a City
     CITY = "city"  # Top-level city-scale containment root
     # Interior architectural hierarchy (additive, backward-compatible):
-    CORRIDOR = "corridor"  # Enclosed interior circulation space
     LEVEL = "level"  # Building vertical level / storey
     UNKNOWN = "unknown"
 

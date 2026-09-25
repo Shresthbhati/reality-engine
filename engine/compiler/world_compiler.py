@@ -123,6 +123,9 @@ class CompileOptions:
     #: only vertex_count + bounds. Optional and additive: omitting it
     #: (default) reproduces the exact pre-existing behavior.
     artifact_store: Optional[ArtifactStore] = None
+    #: When True, promoted corridor candidates are added directly to world.entities.
+    #: Default False keeps core plane/room entity counts exact while space_graph metadata is always attached.
+    promote_corridors: bool = False
 
 
 @dataclass(frozen=True)
@@ -310,6 +313,90 @@ def compile_reconstruction_to_world(
                 "status": room.status,
                 "notes": "; ".join(room.notes),
             })
+
+    # ---- interior architecture: corridor, stair, building & space graph ----
+    from perception.architecture.classify import ArchitecturalElement, PlaneInput
+    from perception.architecture.corridor import detect_corridors
+    from perception.architecture.room_graph import build_room_graph, build_building_graph
+    from perception.architecture.space_graph import InteriorSpaceGraph
+
+    arch_elements = []
+    plane_inputs_map = {}
+    for plane in oriented:
+        if plane.role == "unknown":
+            continue
+        p_inliers = positions.get(plane.plane.plane_id, ())
+        if p_inliers:
+            bmin = (min(p[0] for p in p_inliers), min(p[1] for p in p_inliers), min(p[2] for p in p_inliers))
+            bmax = (max(p[0] for p in p_inliers), max(p[1] for p in p_inliers), max(p[2] for p in p_inliers))
+            cen = ((bmin[0] + bmax[0]) / 2.0, (bmin[1] + bmax[1]) / 2.0, (bmin[2] + bmax[2]) / 2.0)
+        else:
+            bmin = (0.0, 0.0, 0.0)
+            bmax = (0.0, 0.0, 0.0)
+            cen = (0.0, 0.0, 0.0)
+        pi = PlaneInput(
+            plane_id=plane.plane.plane_id,
+            normal=plane.normal,
+            centroid=cen,
+            bounds_min=bmin,
+            bounds_max=bmax,
+            inlier_positions=tuple(p_inliers),
+        )
+        plane_inputs_map[plane.plane.plane_id] = pi
+        arch_elements.append(ArchitecturalElement(
+            element_id=f"{options.structure_prefix}-{plane.plane.plane_id}",
+            element_type=plane.role,
+            source_plane_id=plane.plane.plane_id,
+            reason=plane.uncertainty.note or f"classified as {plane.role}",
+            bounds_min=bmin,
+            bounds_max=bmax,
+        ))
+
+    # Detect corridors from plane elements
+    corridors = detect_corridors(arch_elements, up=options.up, plane_inputs=plane_inputs_map)
+
+    # Detect stairs from point cloud
+    detected_stairs = []
+    try:
+        from perception.architecture.stairs import detect_stairs
+        pts = [p.position for p in result.points]
+        st_fit = detect_stairs(pts)
+        if st_fit is not None:
+            detected_stairs.append(st_fit)
+    except Exception:
+        pass
+
+    rg_rooms = build_room_graph(arch_elements, up=options.up, plane_inputs=plane_inputs_map)
+    bld_graph = build_building_graph(rg_rooms, up=options.up, corridors=corridors, stairs=detected_stairs)
+
+    if bld_graph:
+        space_graph = InteriorSpaceGraph.from_building(bld_graph, rg_rooms, corridors, detected_stairs)
+        world.metadata["interior_space_graph"] = space_graph.to_dict()
+
+        # Promote corridors into WorldIR if requested
+        if options.promote_corridors:
+            from world_ir.schema_v1 import Geometry, GeometryType, Vector3, Entity, EntityType
+            for c in corridors:
+                cid = f"corridor-{c.corridor_id}"
+                if cid not in world.entities:
+                    c_bmin, c_bmax = c.bounds_min, c.bounds_max
+                    c_geom_id = f"geom-{cid}"
+                    world.geometries[c_geom_id] = Geometry(
+                        id=c_geom_id,
+                        type=GeometryType.BOX,
+                        bounds_min=Vector3(c_bmin[0], c_bmin[1], c_bmin[2]),
+                        bounds_max=Vector3(c_bmax[0], c_bmax[1], c_bmax[2]),
+                    )
+                    world.entities[cid] = Entity(
+                        id=cid,
+                        type=EntityType.CORRIDOR,
+                        name=f"Corridor {c.corridor_id.rsplit('-', 1)[-1]}",
+                        geometry_ids=[c_geom_id],
+                        custom_properties=c.to_dict(),
+                        provenance=Provenance.INFERRED,
+                        confidence=c.confidence,
+                    )
+                    entities_created.append(cid)
 
     # ---- provenance stamping on the world itself ----
     # The world as a whole is derived from reconstruction; its

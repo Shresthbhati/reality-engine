@@ -113,30 +113,44 @@ export default function RoomConstructionModal({
       }
 
       if (data.job_id) {
-        // Poll real job status
+        // Poll real job status with honest stage tracking
         let pollCount = 0;
-        while (pollCount < 30) {
+        const stageMap: Record<string, number> = {
+          evidence: 1,
+          sfm: 2,
+          scale: 3,
+          depth: 4,
+          planes: 5,
+          worldir: 6,
+          worldstore: 7,
+        };
+
+        while (pollCount < 60) {
           await new Promise((r) => setTimeout(r, 2000));
           const jobRes = await fetch(`/api/jobs/${data.job_id}`);
           if (jobRes.ok) {
             const job = await jobRes.json();
-            if (job.status === "completed") {
+            if (job.stage && stageMap[job.stage]) {
+              setActiveStage(stageMap[job.stage]);
+            }
+            if (job.status === "succeeded" || job.status === "partial") {
+              setActiveStage(7);
               setCompleted(true);
               setRunning(false);
               onReconstructionSuccess?.();
               return;
             } else if (job.status === "failed") {
-              throw new Error(job.error || "Reconstruction job failed");
+              throw new Error(job.error || "Reconstruction job failed during processing");
+            } else if (job.status === "cancelled") {
+              throw new Error("Reconstruction job was cancelled");
             }
           }
           pollCount++;
         }
+        throw new Error("Reconstruction job timed out awaiting completion (exceeded 120s)");
+      } else {
+        throw new Error("Reconstruction service accepted request but did not return a tracking job ID");
       }
-
-      setCompleted(true);
-      setActiveStage(null);
-      setRunning(false);
-      onReconstructionSuccess?.();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setError(

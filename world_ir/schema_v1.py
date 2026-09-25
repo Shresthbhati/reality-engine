@@ -98,6 +98,9 @@ class EntityType(str, Enum):
     WARD = "ward"  # Administrative subdivision of a District
     DISTRICT = "district"  # Administrative subdivision of a City
     CITY = "city"  # Top-level city-scale containment root
+    # Interior architectural hierarchy (additive, backward-compatible):
+    CORRIDOR = "corridor"  # Enclosed interior circulation space
+    LEVEL = "level"  # Building vertical level / storey
     UNKNOWN = "unknown"
 
 
@@ -112,6 +115,7 @@ class RelationshipKind(str, Enum):
     SUPPORTS = "supports"  # Load-bearing
     CROSSES = "crosses"  # Spatial intersection (without support)
     RESTS_ON = "rests_on"  # Gravity support
+    CONNECTS = "connects"  # Functional connection (doorway connects spaces, stair connects levels)
     UNKNOWN = "unknown"
 
 

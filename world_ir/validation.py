@@ -16,6 +16,9 @@ that self-check does not perform:
   - provenance/confidence consistency: UNKNOWN-provenance entities must
     not claim high confidence (0.9+) -- claiming to not know while
     claiming certainty is a spec violation, not a style choice;
+  - reconstruction traceability: RECONSTRUCTED entities must carry
+    their build trace (session/backend/config) -- WARNING, so
+    pre-stamp worlds stay loadable while new drops are flagged;
   - coordinate-frame consistency for transforms that reference entities.
 
 Severity matters: ERROR blocks the world compiler's gate (and any
@@ -225,6 +228,33 @@ def _check_provenance_confidence(world: WorldIR, issues: List[ValidationIssue]) 
             ))
 
 
+def _check_reconstruction_trace(world: WorldIR, issues: List[ValidationIssue]) -> None:
+    """Every RECONSTRUCTED entity must carry its build trace (session,
+    backend, configuration) in custom_properties.reconstruction -- stamped
+    by the reconstruction job before persistence. Without it the entity
+    cannot be traced back to its capture/session/evidence and stage, so
+    a reload cannot prove where it came from. WARNING (not ERROR): worlds
+    persisted before stamping existed remain loadable, but any new
+    reconstruction that drops its trace is flagged, and the job grader
+    treats warnings as PARTIAL rather than SUCCEEDED."""
+    for entity_id in sorted(world.entities):
+        entity = world.entities[entity_id]
+        if entity.provenance is not Provenance.RECONSTRUCTED:
+            continue
+        trace = entity.custom_properties.get("reconstruction") if isinstance(
+            entity.custom_properties, dict) else None
+        if not isinstance(trace, dict) or not trace.get("session_id"):
+            issues.append(ValidationIssue(
+                severity=ValidationSeverity.WARNING,
+                code="reconstruction_untraced",
+                message=(
+                    f"entity {entity_id} claims RECONSTRUCTED provenance but "
+                    "carries no reconstruction trace (session/backend/config) "
+                    "-- untraceable after reload"
+                ),
+            ))
+
+
 def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     """Full validation: structural self-check + geometric/provenance
     depth. Deterministic issue ordering (sorted entity/geometry ids,
@@ -245,5 +275,6 @@ def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     _check_duplicate_identity(world, issues)
     _check_measurements(world, issues)
     _check_provenance_confidence(world, issues)
+    _check_reconstruction_trace(world, issues)
 
     return WorldValidationReport(issues=issues)

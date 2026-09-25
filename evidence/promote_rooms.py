@@ -582,6 +582,18 @@ def detect_rooms(
                 _plane_signed_distance(floor.normal, floor.d, c)
                 for c in _aabb_corners(wall.bounds_min, wall.bounds_max)
             )
+            highest = max(
+                _plane_signed_distance(floor.normal, floor.d, c)
+                for c in _aabb_corners(wall.bounds_min, wall.bounds_max)
+            )
+            # Protect room topology against furniture/clutter (<0.8m)
+            if (highest - lowest) < 0.8:
+                notes.append(
+                    f"wall {wall.plane_id} vertical extent {highest - lowest:.2f} m < 0.8 m "
+                    "(furniture/clutter/riser) -- excluded from room boundary"
+                )
+                continue
+
             if abs(lowest) <= WALL_FLOOR_CONTACT_TOLERANCE_M:
                 contacting.append(wall)
             else:
@@ -605,6 +617,16 @@ def detect_rooms(
             )
             for w in contacting
         }
+        max_top = max(wall_tops.values())
+        # Filter out partial-height objects/risers if sufficient full-height walls exist
+        full_height_walls = [
+            w for w in contacting
+            if (max_top - wall_tops[w.plane_id]) <= WALL_TOP_TOLERANCE_M
+        ]
+        if len(full_height_walls) >= MIN_WALLS:
+            contacting = full_height_walls
+            wall_tops = {w.plane_id: wall_tops[w.plane_id] for w in contacting}
+
         top_spread = max(wall_tops.values()) - min(wall_tops.values())
         if top_spread > WALL_TOP_TOLERANCE_M:
             notes.append(

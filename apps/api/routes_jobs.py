@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
 from apps.api.models import ActivityEvent, Job, Notification
+from apps.api.models import utcnow
 
 
 
@@ -54,12 +56,37 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
         "attempts": j.attempts,
         "error": j.error,
         "worker_id": j.worker_id,
+        "cancel_requested": j.cancel_requested,
         "entity_type": j.entity_type,
         "entity_id": j.entity_id,
         # Stage outputs (e.g. a reconstruction's world/version ids) so
-        # completed jobs carry their real result, not just a status.
+        # terminal jobs carry their real result, not just a status.
         "payload": j.payload,
     }
+
+
+@jobs.post("/{job_id}/cancel", status_code=200)
+async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Cancel a job. Queued jobs stop immediately (cancelled); running
+    jobs are flagged and stop at their next stage boundary, reported
+    with 202 while the worker winds down. Terminal jobs cannot be
+    cancelled (409)."""
+    j = await db.get(Job, job_id)
+    if j is None:
+        raise HTTPException(404, "Job not found")
+    if j.status == "queued":
+        j.status = "cancelled"
+        j.completed_at = utcnow()
+        await db.commit()
+        return {"id": j.id, "status": j.status}
+    if j.status == "running":
+        j.cancel_requested = True
+        await db.commit()
+        return JSONResponse(
+            {"id": j.id, "status": j.status, "cancel_requested": True},
+            status_code=202,
+        )
+    raise HTTPException(409, f"Job already {j.status}; only queued/running jobs can be cancelled")
 
 
 notifications = APIRouter(prefix="/api/notifications", tags=["notifications"])

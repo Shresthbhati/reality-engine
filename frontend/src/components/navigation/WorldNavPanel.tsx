@@ -814,15 +814,14 @@ interface SpatialAnchor {
               <span className="text-[#00e5ff] font-mono">Immutable Snapshots</span>
             </div>
 
-            {/* Version Diff Launcher */}
-            {onCompareVersions && versions.length > 0 && (
+            {onCompareVersions && versions.length > 0 && versions[0]?.parentVersionId && (
               <button
                 type="button"
-                onClick={() => onCompareVersions(versions[0]?.id, "latest")}
+                onClick={() => onCompareVersions(versions[0].parentVersionId ?? undefined, versions[0].id)}
                 className="w-full py-1.5 rounded font-medium text-xs bg-[#182030] hover:bg-[#1f2b42] text-[#00e5ff] border border-[#00e5ff]/30 transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-sans"
               >
                 <GitBranch className="w-3.5 h-3.5" />
-                <span>Compare Versions (Diff)</span>
+                <span>Compare HEAD vs Parent</span>
               </button>
             )}
 
@@ -860,8 +859,17 @@ interface SpatialAnchor {
                     <p className="text-[11px] text-neutral-400 line-clamp-2 font-sans">
                       {v.changeSummary}
                     </p>
-                    <div className="text-[10px] font-mono text-neutral-500 pt-1 border-t border-neutral-800">
-                      {v.createdAt} · ID: {v.id}
+                    <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-1 border-t border-neutral-800">
+                      <span>{v.createdAt} · ID: {v.id}</span>
+                      {onCompareVersions && v.parentVersionId && (
+                        <button
+                          type="button"
+                          onClick={() => onCompareVersions(v.parentVersionId ?? undefined, v.id)}
+                          className="text-[#00e5ff] hover:underline font-sans shrink-0 cursor-pointer"
+                        >
+                          vs parent
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

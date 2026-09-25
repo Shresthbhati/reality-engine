@@ -108,6 +108,7 @@ export const FIXTURE_WORLD_VERSIONS: WorldVersionRow[] = [
   {
     id: "test-version",
     worldId: "test-world",
+    parentVersionId: null,
     label: "Version 2",
     createdAt: "21 Sep 2026 · 15:00",
     changeSummary: "Added Verify Session",

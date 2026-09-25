@@ -120,6 +120,7 @@ export interface PlaceRow {
 export interface WorldVersionRow {
   id: string;
   worldId: string;
+  parentVersionId: string | null;
   label: string;
   createdAt: string;
   changeSummary: string | null;

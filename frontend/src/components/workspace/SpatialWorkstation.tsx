@@ -554,8 +554,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         worldId={worldId}
         isOpen={diffModalOpen}
         onClose={() => setDiffModalOpen(false)}
-        baseVersion={diffVersions.base || versions[0]?.id || ""}
-        headVersion={diffVersions.head || "latest"}
+        baseVersion={diffVersions.base || versions[0]?.parentVersionId || ""}
+        headVersion={diffVersions.head || versions[0]?.id || ""}
         onSelectEntity={(eid) => {
           handleSelectEntity(eid);
           handleFrameEntity(eid);

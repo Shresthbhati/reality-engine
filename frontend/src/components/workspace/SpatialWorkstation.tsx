@@ -21,22 +21,17 @@ import {
 import { commitWorldCorrection } from "@/lib/api/worlds";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
-import type { WorldIR, Entity, CamerasPayload } from "@/types/worldir";
-import type { WorldRow, SessionRow, EvidenceRow, PlaceRow, WorldVersionRow } from "@/lib/types";
+import type { PlaceRow, WorldVersionRow } from "@/lib/types";
 import { 
   Loader2, 
-  Globe, 
   Box, 
   Map as MapIcon, 
-  Sliders, 
-  Layers, 
   PanelLeftClose, 
   PanelLeftOpen, 
   PanelRightClose, 
   PanelRightOpen,
   Workflow,
   Search,
-  Download,
   Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -65,11 +60,11 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
 
   // API Hooks
   const { data: rawWorlds } = useWorlds();
-  const worlds = rawWorlds ?? [];
+  const worlds = useMemo(() => rawWorlds ?? [], [rawWorlds]);
   const { data: rawSessions } = useSessions();
-  const allSessions = rawSessions ?? [];
+  const allSessions = useMemo(() => rawSessions ?? [], [rawSessions]);
   const { data: rawEvidence } = useEvidence();
-  const evidence = rawEvidence ?? [];
+  const evidence = useMemo(() => rawEvidence ?? [], [rawEvidence]);
 
   // Resolve active world: prop -> first discovered world -> empty string
   const worldId = propWorldId || (worlds.length > 0 ? worlds[0].id : "");
@@ -94,7 +89,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     if (!pointsBuffer) return null;
     try {
       return parseMeshPly(new Uint8Array(pointsBuffer));
-    } catch (e) {
+    } catch {
       return null;
     }
   }, [pointsBuffer]);
@@ -104,18 +99,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   
   // WorldStore immutable version lineage (honest: empty until computational commits exist)
   const versions: WorldVersionRow[] = useMemo(() => {
-    if (versionsData && versionsData.length > 0) {
-      return versionsData.map((v: any) => ({
-        id: v.id,
-        worldId: v.world_id || worldId,
-        label: v.label || v.id,
-        createdAt: v.created_at ? v.created_at.slice(0, 10) : "Current",
-        changeSummary: v.changeSummary || v.change_summary || "Compiled representation",
-        isCurrent: Boolean(v.is_current),
-      }));
-    }
-    return [];
-  }, [versionsData, worldId]);
+    return versionsData || [];
+  }, [versionsData]);
   
   // Filter sessions by worldId
   const sessions = useMemo(() => 
@@ -197,7 +182,11 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     window.dispatchEvent(new CustomEvent('frame-camera', { detail: { id: evidenceId } }));
   }, []);
 
-  const handleCommitCorrection = useCallback(async (entityId: string, changes: any, commitMessage: string) => {
+  const handleCommitCorrection = useCallback(async (
+    entityId: string,
+    changes: { type?: string; confidence?: number; semantic_labels?: string[] },
+    commitMessage: string
+  ) => {
     if (!worldId) return;
     await commitWorldCorrection(worldId, {
       entity_id: entityId,
@@ -273,9 +262,10 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       }
     };
 
-    const handleApplyQueryEvent = (e: any) => {
-      if (e.detail) {
-        setActiveQuery(prev => ({ ...(prev || {}), ...e.detail }));
+    const handleApplyQueryEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<SpatialQueryFilter>;
+      if (customEvent.detail) {
+        setActiveQuery(prev => ({ ...(prev || {}), ...customEvent.detail }));
       }
     };
 
@@ -291,9 +281,10 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       setConstructionModalOpen(true);
     };
 
-    const handleTriggerExportEvent = (e: any) => {
-      if (e.detail?.format) {
-        handleExport(e.detail.format);
+    const handleTriggerExportEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ format: "worldir" | "ply" | "cameras" | "report" }>;
+      if (customEvent.detail?.format) {
+        handleExport(customEvent.detail.format);
       }
     };
     
@@ -471,6 +462,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onSelectEvidence={handleSelectEvidence}
               onCompareVersions={handleOpenDiff}
               onSelectSession={(sid) => router.push(`/sessions/${sid}`)}
+              onSelectPlace={(place) => {
+                window.dispatchEvent(
+                  new CustomEvent("frame-position", {
+                    detail: { x: place.position[0], y: place.position[1], z: place.position[2] },
+                  })
+                );
+              }}
               activeQuery={activeQuery}
               onUpdateQuery={setActiveQuery}
               onOpenRoomConstruction={() => setConstructionModalOpen(true)}

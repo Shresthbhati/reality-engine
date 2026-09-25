@@ -1,0 +1,69 @@
+{
+  "measurement": "production-pipeline (batch path, real dataset)",
+  "dataset": "south-building (committed 32-image REAL subset)",
+  "python": "3.14.7",
+  "stages": {
+    "ingest": {
+      "runtime_s": 1.115,
+      "peak_python_alloc_mb": 7.49,
+      "files_imported": 32,
+      "duplicates_skipped": 0,
+      "failed_paths": 0,
+      "frames": 32
+    },
+    "admission": {
+      "runtime_s": 0.0,
+      "peak_python_alloc_mb": 0.012,
+      "frames": 32,
+      "admitted": 32,
+      "excluded": 0,
+      "exclusion_reasons": [],
+      "item_outcomes_measured": {
+        "accepted": 0,
+        "degraded": 0,
+        "unresolved": 32,
+        "failed": 0,
+        "rejected": 0
+      },
+      "sample_reasons": [
+        {
+          "evidence_id": "ev-pipeline-measure-0000-b3cb3cbf0fee6421",
+          "outcome": "unresolved",
+          "reason": "no pixel-quality metrics recorded; cannot classify"
+        },
+        {
+          "evidence_id": "ev-pipeline-measure-0001-daa214a087cb021a",
+          "outcome": "unresolved",
+          "reason": "no pixel-quality metrics recorded; cannot classify"
+        },
+        {
+          "evidence_id": "ev-pipeline-measure-0002-653247a88443531b",
+          "outcome": "unresolved",
+          "reason": "no pixel-quality metrics recorded; cannot classify"
+        }
+      ]
+    },
+    "reconstruction": {
+      "status": "SKIPPED_BY_FLAG",
+      "reason": "--skip-colmap: reconstruction stage not measured"
+    },
+    "city_ingestion": {
+      "runtime_s": 0.049,
+      "peak_python_alloc_mb": 1.753,
+      "features": 137,
+      "nodes_seen": 733,
+      "unresolved_node_refs": 0
+    }
+  },
+  "totals": {
+    "frames": 32,
+    "admitted": 32,
+    "outcome_counts_measured": {
+      "accepted": 0,
+      "degraded": 0,
+      "unresolved": 32,
+      "failed": 0,
+      "rejected": 0
+    }
+  }
+}

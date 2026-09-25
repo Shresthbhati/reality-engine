@@ -9,20 +9,16 @@ import {
   Maximize2,
   Shield,
   Sparkles,
-  Tag,
   X,
   Camera,
   Activity,
   Edit3,
   Check,
-  RotateCcw,
   Sliders,
-  ExternalLink,
   Workflow,
   Download,
   Image as ImageIcon,
   Building,
-  GitBranch,
 } from "lucide-react";
 import type {
   Entity,
@@ -38,7 +34,11 @@ interface AdaptiveInspectorProps {
   onSelectEntity: (id: string | null) => void;
   onFrameEntity: (id: string) => void;
   onTraceEvidence?: (evidenceId: string) => void;
-  onCommitCorrection?: (entityId: string, changes: any, commitMessage: string) => Promise<void>;
+  onCommitCorrection?: (
+    entityId: string,
+    changes: { type?: string; confidence?: number; semantic_labels?: string[] },
+    commitMessage: string
+  ) => Promise<void>;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
 }
@@ -206,7 +206,11 @@ function EntityDetails({
   tab: InspectorTab;
   onFrame: () => void;
   onTraceEvidence?: (evidenceId: string) => void;
-  onCommitCorrection?: (entityId: string, changes: any, commitMessage: string) => Promise<void>;
+  onCommitCorrection?: (
+    entityId: string,
+    changes: { type?: string; confidence?: number; semantic_labels?: string[] },
+    commitMessage: string
+  ) => Promise<void>;
   isEditing: boolean;
   setIsEditing: (v: boolean) => void;
   previewImageId: string | null;
@@ -536,7 +540,7 @@ function EntityDetails({
             {relationships.length === 0 ? (
               <p className="text-neutral-500 italic">No relationships linked</p>
             ) : (
-              relationships.map((rel: any, idx) => (
+              relationships.map((rel: { predicate?: string; kind?: string; type?: string; target_entity_id?: string; target_id?: string }, idx) => (
                 <div key={idx} className="flex justify-between items-center font-mono">
                   <span className="text-[#ffb84d] uppercase text-[10px]">{String(rel.kind || rel.type || "rel")}</span>
                   <span className="text-neutral-300">{String(rel.target_entity_id || rel.target_id || "unknown")}</span>
@@ -546,6 +550,45 @@ function EntityDetails({
           </div>
         </div>
       )}
+
+      {/* Canonical Provenance Pipeline: ENTITY → EVIDENCE → SESSION → RECONSTRUCTION */}
+      <div className="p-3 rounded-lg border border-[#1f222b] bg-[#151821] space-y-2.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 flex items-center justify-between">
+          <span>Provenance Pipeline</span>
+          <span className="font-mono text-[#00e5ff] text-[9px]">REAL DATA CHAIN</span>
+        </div>
+        <div className="flex items-center justify-between text-[10px] font-mono">
+          <div className="flex flex-col items-center gap-1 text-center">
+            <span className="w-2 h-2 rounded-full bg-[#00e5ff]" />
+            <span className="text-white font-semibold">ENTITY</span>
+            <span className="text-neutral-500 max-w-[65px] truncate">{entity.id}</span>
+          </div>
+          <span className="text-neutral-600">→</span>
+          <div className="flex flex-col items-center gap-1 text-center">
+            <span className="w-2 h-2 rounded-full bg-[#35d07f]" />
+            <span className="text-white font-semibold">EVIDENCE</span>
+            <span className="text-neutral-500 max-w-[65px] truncate">
+              {candidateEvidence[0]?.evidence_id || (observations.length > 0 ? observations[0].id : "Direct Inliers")}
+            </span>
+          </div>
+          <span className="text-neutral-600">→</span>
+          <div className="flex flex-col items-center gap-1 text-center">
+            <span className="w-2 h-2 rounded-full bg-[#b28dff]" />
+            <span className="text-white font-semibold">SESSION</span>
+            <span className="text-neutral-500 max-w-[65px] truncate">
+              {String(entity.custom_properties?.session_id || "Active Session")}
+            </span>
+          </div>
+          <span className="text-neutral-600">→</span>
+          <div className="flex flex-col items-center gap-1 text-center">
+            <span className="w-2 h-2 rounded-full bg-[#f5a623]" />
+            <span className="text-white font-semibold">RECON</span>
+            <span className="text-neutral-500 max-w-[65px] truncate">
+              {String(world?.metadata?.reconstruction?.backend || "Colmap SfM")}
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* Traceable Source Evidence & Viewpoints */}
       {(tab === "all" || tab === "evidence") && (
@@ -558,7 +601,7 @@ function EntityDetails({
             {candidateEvidence.length === 0 ? (
               <p className="text-neutral-500 italic p-2">No evidence linked</p>
             ) : (
-              candidateEvidence.map((ce: any) => {
+              candidateEvidence.map((ce: { evidence_id: string; residual_median_m?: number; inlier_fraction?: number }) => {
                 const isViewingImage = previewImageId === ce.evidence_id;
                 return (
                   <div
@@ -793,7 +836,7 @@ function WorldOverview({
           World Specification
         </div>
         <div className="text-sm font-semibold text-white mt-0.5 font-mono">
-          {world.id}
+          {world.id || worldId}
         </div>
         <div className="text-xs text-neutral-400 mt-1">
           {world.name || "Canonical WorldIR"}

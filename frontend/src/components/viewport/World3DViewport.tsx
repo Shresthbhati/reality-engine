@@ -5,11 +5,9 @@ import {
   Maximize2,
   Eye,
   Camera,
-  Layers,
   Box,
   AlertTriangle,
   Compass,
-  RotateCcw,
   Sparkles,
   Ruler,
   Grid,
@@ -51,7 +49,6 @@ export default function World3DViewport({
   selectedEntityId,
   onSelectEntity,
   highlightedEvidenceId,
-  onSelectEvidence,
   queryMatchingIds = null,
   isLoading = false,
   loadingMessage = "Initializing 3D spatial viewport...",
@@ -131,14 +128,17 @@ export default function World3DViewport({
 
   // Listen for custom frame events
   useEffect(() => {
-    const handleFlyToEntity = (e: any) => {
-      if (e.detail?.id) controllerRef.current?.flyToEntity(e.detail.id);
+    const handleFlyToEntity = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id: string }>;
+      if (customEvent.detail?.id) controllerRef.current?.flyToEntity(customEvent.detail.id);
     };
-    const handleFlyToCamera = (e: any) => {
-      if (e.detail?.id) controllerRef.current?.flyToCamera(e.detail.id);
+    const handleFlyToCamera = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id: string }>;
+      if (customEvent.detail?.id) controllerRef.current?.flyToCamera(customEvent.detail.id);
     };
-    const handleFlyToPosition = (e: any) => {
-      if (e.detail) controllerRef.current?.flyToPosition(e.detail.x, e.detail.y, e.detail.z);
+    const handleFlyToPosition = (e: Event) => {
+      const customEvent = e as CustomEvent<{ x: number; y: number; z: number }>;
+      if (customEvent.detail) controllerRef.current?.flyToPosition(customEvent.detail.x, customEvent.detail.y, customEvent.detail.z);
     };
 
     window.addEventListener("frame-entity", handleFlyToEntity as EventListener);

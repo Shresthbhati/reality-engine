@@ -25,3 +25,15 @@ datasets/*/
 !datasets/south_building/runs/*
 
 data/
+
+# Scratch, build and logs
+_*
+*.log
+*.err
+.antigravity/
+MagicMock/
+build/
+dist/
+*.canvas
+tmpcheck.py
+security_audit_report.json

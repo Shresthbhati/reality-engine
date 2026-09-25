@@ -49,8 +49,8 @@ export async function GET(
 
   if (isLocalDataset) {
     const localPlyPath = getLocalDatasetPath("room_capture", "pipeline_out", "points.ply");
-    if (localPlyPath && fs.existsSync(localPlyPath)) {
-      const buffer = fs.readFileSync(localPlyPath);
+    if (localPlyPath && fs.existsSync(/*turbopackIgnore: true*/ localPlyPath)) {
+      const buffer = fs.readFileSync(/*turbopackIgnore: true*/ localPlyPath);
       return new NextResponse(buffer, {
         headers: {
           "Content-Type": "application/octet-stream",

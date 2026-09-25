@@ -44,9 +44,16 @@ const MAX_POLLS = 60; // ~2 minutes; the backend job is the source of truth
 const STAGE_TO_STEP: Record<string, number> = {
   checking_reconstruction_backend: 1,
   resolving_evidence: 1,
+  evidence: 1,
   reconstructing: 2,
+  sfm: 2,
+  scale: 3,
+  depth: 4,
+  planes: 5,
   compiling: 6,
+  worldir: 6,
   committing_version: 7,
+  worldstore: 7,
 };
 
 function stepForStage(stage: string | null | undefined): number | null {
@@ -171,7 +178,7 @@ export default function RoomConstructionModal({
           if (step) setActiveStage(step);
         }
 
-        if (job.status === "completed") {
+        if (job.status === "succeeded" || job.status === "partial" || job.status === "completed") {
           setActiveStage(7);
           setCompleted(true);
           setRunning(false);
@@ -180,7 +187,11 @@ export default function RoomConstructionModal({
         }
 
         if (job.status === "failed") {
-          throw new Error(job.error || "Reconstruction job failed.");
+          throw new Error(job.error || "Reconstruction job failed during processing.");
+        }
+
+        if (job.status === "cancelled") {
+          throw new Error("Reconstruction job was cancelled.");
         }
 
         pollCount++;

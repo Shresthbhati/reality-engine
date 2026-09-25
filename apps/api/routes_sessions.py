@@ -238,7 +238,8 @@ async def reconstruct_session(session_id: str, db: AsyncSession = Depends(get_db
 
     # A reconstruction already queued/running for this session is a
     # duplicate request, not a new job: 409 instead of a second version
-    # pipeline. A finished (completed/failed) job does not block a retry.
+    # pipeline. A terminal (succeeded/partial/failed/cancelled) job does
+    # not block a retry.
     existing = await db.execute(
         _select(_Job).where(
             _Job.entity_type == "session",

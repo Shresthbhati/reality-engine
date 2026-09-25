@@ -37,9 +37,14 @@ export default function ReconstructPanel({
       try {
         const latest = await getJob(jobId);
         setJob(latest);
-        if (latest.status === "completed" || latest.status === "failed") {
+        if (
+          latest.status === "succeeded" ||
+          latest.status === "partial" ||
+          latest.status === "failed" ||
+          latest.status === "cancelled"
+        ) {
           if (pollRef.current) clearInterval(pollRef.current);
-          if (latest.status === "completed" && worldId) {
+          if ((latest.status === "succeeded" || latest.status === "partial") && worldId) {
             router.push(`/worlds/${worldId}`);
           }
         }
@@ -64,7 +69,12 @@ export default function ReconstructPanel({
     }
   }
 
-  const isRunning = job != null && job.status !== "completed" && job.status !== "failed";
+  const isRunning =
+    job != null &&
+    job.status !== "succeeded" &&
+    job.status !== "partial" &&
+    job.status !== "failed" &&
+    job.status !== "cancelled";
 
   return (
     <div className="flex flex-col gap-2">
@@ -86,10 +96,24 @@ export default function ReconstructPanel({
         {isRunning ? `Reconstructing (${job?.stage ?? job?.status})…` : "Start Reconstruction"}
       </button>
 
-      {job?.status === "completed" && (
+      {job?.status === "succeeded" && (
         <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--success, #2ecc71)" }}>
           <CheckCircle2 className="w-3.5 h-3.5" />
           Reconstruction complete — opening World…
+        </p>
+      )}
+
+      {job?.status === "partial" && (
+        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning, #e6a23c)" }}>
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Reconstruction partially complete — opening World…
+        </p>
+      )}
+
+      {job?.status === "cancelled" && (
+        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-tertiary)" }}>
+          <XCircle className="w-3.5 h-3.5" />
+          Reconstruction cancelled.
         </p>
       )}
 

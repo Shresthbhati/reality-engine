@@ -45,7 +45,7 @@ def _wait_job(client: TestClient, job_id: str, timeout: float = 15.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
         job = client.get(f"/api/jobs/{job_id}").json()
-        if job["status"] in ("completed", "failed"):
+        if job["status"] in ("succeeded", "partial", "failed", "cancelled"):
             return job
         time.sleep(0.2)
     raise AssertionError(f"job {job_id} did not settle in time")
@@ -109,7 +109,7 @@ def test_upload_creates_evidence_and_processing_job_completes(client):
     assert ev["size"] == len(payload)
 
     job = _wait_job(client, body["job_id"])
-    assert job["status"] == "completed", job.get("error")
+    assert job["status"] == "succeeded", job.get("error")
 
     ev = client.get(f"/api/evidence/{body['evidence_id']}").json()
     assert ev["processing_state"] == "processed"
@@ -801,7 +801,7 @@ def test_reconstruct_duplicate_in_progress_409(client, tmp_path, monkeypatch):
     assert "in progress" in second.json()["detail"].lower()
     # The first job still settles on its own; no duplicate pipeline ran.
     job = _wait_job(client, first.json()["job_id"], timeout=90.0)
-    assert job["status"] in ("completed", "failed")
+    assert job["status"] in ("succeeded", "partial", "failed", "cancelled")
 
 
 def test_failed_job_exhausts_retries(client):
@@ -890,3 +890,216 @@ def test_job_handler_timeout_fails_explicitly(client, monkeypatch):
     status, error = asyncio.run(_scenario())
     assert status == "failed"
     assert "timed out" in (error or "").lower()
+
+
+# --------------------------------------------------------------------------
+# Reconstruction grading: SUCCEEDED only when clean end to end; degraded
+# runs adopt a version but say PARTIAL; cancellation is explicit.
+# --------------------------------------------------------------------------
+
+
+def _attach(client, wid, sid):
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
+
+
+def test_reconstruct_succeeded_grading_deterministic(client, tmp_path, monkeypatch):
+    """Deterministic backend, clean run: status SUCCEEDED with a measured
+    payload, stamped provenance, valid WorldIR, adopted HEAD, readable
+    surfaces, and a version-created activity event."""
+    monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.test_cli_compile:_TwoViewBackend")
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
+    import apps.api.worldstore_service as ws_svc
+
+    ws_svc._store = None
+    sid = client.post("/api/sessions", json={"name": "Grade clean"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Grade world"}).json()["id"]
+    _attach(client, wid, sid)
+    for i in range(3):
+        _upload_photo(client, sid, f"frame_{i:02d}.jpg", b"jpeg-" + f"{i}".encode() * 8)
+
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
+                    timeout=90.0)
+    assert job["status"] == "succeeded", job.get("error")
+    meta = job["payload"]
+    assert meta["outcome"] == "succeeded"
+    assert meta["degraded"] == []
+    assert meta["registration_status"] == "success"
+    assert meta["points"] > 0
+    assert meta["cameras_registered"] == 3
+    assert meta["skipped_evidence"] == []
+
+    detail = client.get(f"/api/worlds/{wid}").json()
+    assert detail["current_version_id"] == meta["version_id"]
+    wir = client.get(f"/api/worlds/{wid}/worldir").json()
+    assert len(wir["entities"]) > 0
+    for ent in wir["entities"].values():
+        stamp = (ent.get("custom_properties") or {}).get("reconstruction")
+        assert stamp is not None, f"entity {ent.get('id')} lost provenance"
+        assert stamp["session_id"] == sid
+        assert stamp["backend"], "backend must be recorded"
+        assert stamp["images_ingested"] == 3
+        assert 0.0 <= ent.get("confidence", -1) <= 1.0
+    pts = client.get(f"/api/worlds/{wid}/points")
+    assert pts.status_code == 200
+    assert int(pts.content.decode("ascii", "replace").split("element vertex ")[1].split("\n")[0]) == meta["points"]
+    acts = client.get("/api/activity").json()["items"]
+    assert any(a["type"] == "world.version_created" for a in acts)
+
+
+def test_reconstruct_partial_on_skipped_evidence(client, tmp_path, monkeypatch):
+    """Two good photos plus one unresolvable photo row: the run adopts a
+    real version but grades PARTIAL with the skip on record."""
+    import asyncio
+
+    monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.test_cli_compile:_TwoViewBackend")
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
+    import apps.api.worldstore_service as ws_svc
+
+    ws_svc._store = None
+    sid = client.post("/api/sessions", json={"name": "Grade partial"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Partial world"}).json()["id"]
+    _attach(client, wid, sid)
+    for i in range(2):
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+
+    async def _add_ghost():
+        import apps.api.db as db_mod
+        from apps.api.models import Evidence
+
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(Evidence(
+                id="ev_ghost001", name="ghost.ply", type="photo",
+                session_id=sid, artifact_uri="artifact://" + "f" * 64,
+            ))
+            await db.commit()
+
+    asyncio.run(_add_ghost())
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
+                    timeout=90.0)
+    assert job["status"] == "partial", job.get("error") or job["payload"]
+    meta = job["payload"]
+    assert meta["outcome"] == "partial"
+    assert any("skipped" in d for d in meta["degraded"])
+    assert len(meta["skipped_evidence"]) == 1
+    # A partial run still adopts a real, readable version.
+    detail = client.get(f"/api/worlds/{wid}").json()
+    assert detail["current_version_id"] == meta["version_id"]
+    assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
+
+
+def test_cancel_queued_job(client):
+    """Cancelling a queued job stops it immediately: CANCELLED with no
+    version adopted and no error fabricated."""
+    import asyncio
+
+    import apps.api.db as db_mod
+    import apps.api.jobs as jobs_mod
+    from apps.api.models import Job
+
+    async def _noop(_db):
+        return None
+
+    # Freeze the worker so the seeded job cannot be claimed mid-test.
+    import unittest.mock as mock
+
+    async def _seed():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(Job(
+                id="job_cancel001", type="RECONSTRUCT_SESSION",
+                entity_type="session", entity_id="ses_x",
+                status="queued",
+            ))
+            await db.commit()
+
+    asyncio.run(_seed())
+    with mock.patch.object(jobs_mod, "process_next_job", _noop):
+        r = client.post("/api/jobs/job_cancel001/cancel")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "cancelled"
+
+    async def _check():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            job = await db.get(Job, "job_cancel001")
+            return job.status, job.completed_at is not None
+
+    status, stamped = asyncio.run(_check())
+    assert status == "cancelled" and stamped
+
+
+class _GateBackendForCancel:
+    """Deterministic backend for the running-cancel test: parks inside
+    reconstruct until the test releases the module-level gate (the block
+    runs in a worker thread, so the event loop stays free to serve the
+    cancel request). After release it behaves like _TwoViewBackend."""
+
+    gate = None
+
+    def reconstruct(self, evidence):
+        assert type(self).gate is not None, "cancel gate not armed"
+        assert type(self).gate.wait(timeout=60), "cancel test setup failed"
+        from tests.test_cli_compile import _TwoViewBackend
+
+        return _TwoViewBackend().reconstruct(evidence)
+
+
+def test_cancel_running_job(client, tmp_path, monkeypatch):
+    """Cancelling a running job stops it at a stage boundary: CANCELLED,
+    HEAD unmoved, no version adopted from the cancelled run."""
+    import threading
+
+    _GateBackendForCancel.gate = threading.Event()
+    monkeypatch.setenv(
+        "REALITY_TEST_BACKEND", "tests.test_application_api:_GateBackendForCancel"
+    )
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
+    import apps.api.worldstore_service as ws_svc
+
+    ws_svc._store = None
+    sid = client.post("/api/sessions", json={"name": "Cancel run"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Cancel world"}).json()["id"]
+    _attach(client, wid, sid)
+    for i in range(2):
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+
+    job_id = client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"]
+    try:
+        # Wait until the worker has claimed the job and parked inside the
+        # gated backend.
+        deadline = time.time() + 30.0
+        while True:
+            seen = client.get(f"/api/jobs/{job_id}").json()["status"]
+            if seen == "running":
+                break
+            assert time.time() < deadline, "worker never claimed the job"
+            time.sleep(0.2)
+
+        r = client.post(f"/api/jobs/{job_id}/cancel")
+        assert r.status_code == 202, r.text
+        assert r.json()["cancel_requested"] is True
+    finally:
+        _GateBackendForCancel.gate.set()
+
+    job = _wait_job(client, job_id, timeout=90.0)
+    assert job["status"] == "cancelled", job
+    assert "cancelled by operator" in (job.get("error") or "").lower()
+    # Nothing was adopted from the cancelled run.
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is None
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+
+
+def test_cancel_terminal_job_409(client):
+    sid = client.post("/api/sessions", json={"name": "Cancel term"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Cancel term world"}).json()["id"]
+    _attach(client, wid, sid)
+    client.post(
+        f"/api/uploads?session_id={sid}",
+        files={"file": ("scan.ply", b"ply-bytes", "application/octet-stream")},
+    )
+    job_id = client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"]
+    terminal = _wait_job(client, job_id, timeout=90.0)
+    assert terminal["status"] == "failed"
+    r = client.post(f"/api/jobs/{job_id}/cancel")
+    assert r.status_code == 409, r.text

@@ -495,11 +495,11 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
 
     cutoff = utcnow() - timedelta(seconds=_stale_after_seconds())
     result = await db.execute(
-        select(Job).where(Job.status == "running", Job.heartbeat_at < cutoff)
+        select(Job).where(Job.status == JOB_RUNNING, Job.heartbeat_at < cutoff)
     )
     reaped = 0
     for job in result.scalars().all():
-        job.status = "queued"
+        job.status = JOB_QUEUED
         job.stage = None
         job.worker_id = None
         reaped += 1
@@ -513,14 +513,14 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     """Claim and run one queued job. Returns the job, or None if queue empty."""
     result = await db.execute(
         select(Job)
-        .where(Job.status == "queued")
+        .where(Job.status == JOB_QUEUED)
         .order_by(Job.priority.desc(), Job.created_at.asc())
         .limit(1)
     )
     job = result.scalar_one_or_none()
     if job is None:
         return None
-    job.status = "running"
+    job.status = JOB_RUNNING
     job.worker_id = WORKER_ID
     job.attempts += 1
     job.started_at = utcnow()

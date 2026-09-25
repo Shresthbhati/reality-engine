@@ -76,17 +76,33 @@ class RoomOpening:
     """A measured opening in one of the room's boundary walls."""
 
     wall_element_id: str
-    kind: str  # "doorway" (the one gap type classify.py measures)
+    kind: str  # "doorway" | "window" | "generic_opening" | "unresolved"
     width_m: float
     height_m: float
+    sill_height_m: float = 0.0
+    connected_space_ids: Tuple[str, ...] = ()
+    confidence: float = 1.0
+    is_exterior: bool = False
+    evidence_ids: Tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "wall_element_id": self.wall_element_id,
             "kind": self.kind,
             "width_m": self.width_m,
             "height_m": self.height_m,
         }
+        if self.sill_height_m > 0:
+            d["sill_height_m"] = self.sill_height_m
+        if self.connected_space_ids:
+            d["connected_space_ids"] = list(self.connected_space_ids)
+        if self.confidence < 1.0:
+            d["confidence"] = self.confidence
+        if self.is_exterior:
+            d["is_exterior"] = True
+        if self.evidence_ids:
+            d["evidence_ids"] = list(self.evidence_ids)
+        return d
 
 
 @dataclass(frozen=True)
@@ -101,9 +117,16 @@ class RoomGraph:
     floor_area_m2: float
     openings: Tuple[RoomOpening, ...] = ()
     adjacent_room_ids: Tuple[str, ...] = ()
+    corridor_ids: Tuple[str, ...] = ()
+    status: str = "detected"  # "detected" | "partial" | "inferred" | "refused"
+    confidence: float = 1.0
+    boundary_completeness: float = 1.0
+    ceiling_evidence: str = "measured"  # "measured" | "partial" | "missing"
+    notes: Tuple[str, ...] = ()
+    level_id: Optional[str] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "room_id": self.room_id,
             "boundary_element_ids": list(self.boundary_element_ids),
             "bounds_min": list(self.bounds_min),
@@ -113,6 +136,21 @@ class RoomGraph:
             "openings": [o.to_dict() for o in self.openings],
             "adjacent_room_ids": list(self.adjacent_room_ids),
         }
+        if self.corridor_ids:
+            d["corridor_ids"] = list(self.corridor_ids)
+        if self.status != "detected":
+            d["status"] = self.status
+        if self.confidence < 1.0:
+            d["confidence"] = self.confidence
+        if self.boundary_completeness < 1.0:
+            d["boundary_completeness"] = self.boundary_completeness
+        if self.ceiling_evidence != "measured":
+            d["ceiling_evidence"] = self.ceiling_evidence
+        if self.notes:
+            d["notes"] = list(self.notes)
+        if self.level_id:
+            d["level_id"] = self.level_id
+        return d
 
 
 @dataclass(frozen=True)
@@ -122,13 +160,20 @@ class Storey:
     storey_id: str
     floor_height_m: float
     room_ids: Tuple[str, ...]
+    corridor_ids: Tuple[str, ...] = ()
+    stair_ids: Tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "storey_id": self.storey_id,
             "floor_height_m": self.floor_height_m,
             "room_ids": list(self.room_ids),
         }
+        if self.corridor_ids:
+            d["corridor_ids"] = list(self.corridor_ids)
+        if self.stair_ids:
+            d["stair_ids"] = list(self.stair_ids)
+        return d
 
 
 @dataclass(frozen=True)
@@ -139,14 +184,21 @@ class BuildingGraph:
     storeys: Tuple[Storey, ...]
     envelope_bounds_min: Tuple[float, float, float]
     envelope_bounds_max: Tuple[float, float, float]
+    corridors: Tuple[object, ...] = ()
+    stairs: Tuple[object, ...] = ()
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "building_id": self.building_id,
             "storeys": [s.to_dict() for s in self.storeys],
             "envelope_bounds_min": list(self.envelope_bounds_min),
             "envelope_bounds_max": list(self.envelope_bounds_max),
         }
+        if self.corridors:
+            d["corridors"] = [c.to_dict() if hasattr(c, "to_dict") else c for c in self.corridors]
+        if self.stairs:
+            d["stairs"] = [s.to_dict() if hasattr(s, "to_dict") else s for s in self.stairs]
+        return d
 
 
 def _vec_sub(a, b):
@@ -240,6 +292,13 @@ def _group_enclosures(
             and w.bounds_min[2] < ceiling_z
             and w.bounds_max[2] > fh
         ]
+        # Furniture/clutter filter: an architectural wall encloses a room only if its
+        # vertical span is substantial (at least 0.8m) and reaches near the floor band.
+        # Low tables, desks, sofa backs (< 0.8m tall) are interior objects, not room-bounding walls.
+        room_walls = [
+            w for w in room_walls
+            if (w.bounds_max[2] - w.bounds_min[2]) >= 0.8
+        ]
         members: List[ArchitecturalElement] = [floor, ceiling] + room_walls
         if len(room_walls) < MIN_WALLS_FOR_ROOM or not room_ceilings:
             continue  # cannot enclose: refuse this floor, no guess
@@ -253,30 +312,46 @@ def _openings_for(
     up: Sequence[float],
     plane_inputs: Dict[str, PlaneInput],
 ) -> List[RoomOpening]:
-    """Measured openings on one wall, via classify.detect_wall_opening
-    (unchanged reuse) + the gap's measured extent."""
+    """Measured openings on one wall (doorways via classify.detect_wall_opening
+    and windows via windows.detect_window)."""
     plane = plane_inputs.get(wall.source_plane_id)
     if plane is None:
         return []
+
+    openings: List[RoomOpening] = []
+
+    # 1. Doorway detection at floor height
     opening = detect_wall_opening(plane, tuple(up), floor_height)
-    if opening is None:
-        return []
-    # The gap's measured extent: re-derive width/height from the
-    # wall's inlier coverage around the detected gap. detect_wall_
-    # opening returns the element only; the gap width is the empty
-    # run's lateral extent -- measured here from the same bucket scan.
-    # For honesty, width/height come from the wall plane's actual
-    # inliers, using the same bucketing.
-    lat = _gap_extent_m(plane, tuple(up), floor_height)
-    if lat is None:
-        return []
-    width, height = lat
-    return [RoomOpening(
-        wall_element_id=wall.element_id,
-        kind="doorway",
-        width_m=width,
-        height_m=height,
-    )]
+    if opening is not None:
+        lat = _gap_extent_m(plane, tuple(up), floor_height)
+        if lat is not None:
+            width, height = lat
+            openings.append(RoomOpening(
+                wall_element_id=wall.element_id,
+                kind="doorway",
+                width_m=width,
+                height_m=height,
+                sill_height_m=0.0,
+            ))
+
+    # 2. Window detection above floor height
+    try:
+        from perception.architecture.windows import detect_window
+        win = detect_window(plane, floor_height, tuple(up))
+        if win is not None:
+            openings.append(RoomOpening(
+                wall_element_id=wall.element_id,
+                kind="window",
+                width_m=win.width_m,
+                height_m=win.height_m,
+                sill_height_m=win.sill_height_m,
+                confidence=win.confidence,
+                evidence_ids=win.evidence_ids,
+            ))
+    except Exception:
+        pass
+
+    return openings
 
 
 def _gap_extent_m(
@@ -479,39 +554,101 @@ def build_room_graph(
 def build_building_graph(
     rooms: Sequence[RoomGraph],
     up: Sequence[float] = (0.0, 0.0, 1.0),
+    corridors: Optional[Sequence[object]] = None,
+    stairs: Optional[Sequence[object]] = None,
 ) -> Optional[BuildingGraph]:
-    """Assemble rooms into storeys (measured floor heights) and a
-    building envelope. None when there are no rooms -- an empty
+    """Assemble rooms, corridors, and stairs into storeys (measured floor heights)
+    and a building envelope. None when there are no rooms or corridors -- an empty
     building is a refusal, not an empty shell."""
-    if not rooms:
+    corridors_list = list(corridors or [])
+    stairs_list = list(stairs or [])
+    if not rooms and not corridors_list:
         return None
-    # Storey assignment needs each room's floor height: the bounds z
-    # minimum is the measured floor level of the room's enclosure.
+
+    # Collect all space floor heights (rooms + corridors)
     rooms_sorted = sorted(rooms, key=lambda r: r.room_id)
-    by_height: List[Tuple[float, List[str]]] = []
-    for room in rooms_sorted:
-        h = room.bounds_min[2]
-        if by_height and abs(h - by_height[-1][0]) <= FLOOR_HEIGHT_TOLERANCE_M:
-            by_height[-1][1].append(room.room_id)
+    corridors_sorted = sorted(corridors_list, key=lambda c: getattr(c, "corridor_id", ""))
+
+    by_height: List[dict] = []
+
+    def _add_to_storey(height: float, room_id: Optional[str] = None, corridor_id: Optional[str] = None):
+        for entry in by_height:
+            if abs(height - entry["height"]) <= FLOOR_HEIGHT_TOLERANCE_M:
+                if room_id and room_id not in entry["room_ids"]:
+                    entry["room_ids"].append(room_id)
+                if corridor_id and corridor_id not in entry["corridor_ids"]:
+                    entry["corridor_ids"].append(corridor_id)
+                return
+        # New storey
+        by_height.append({
+            "height": height,
+            "room_ids": [room_id] if room_id else [],
+            "corridor_ids": [corridor_id] if corridor_id else [],
+            "stair_ids": [],
+        })
+
+    for r in rooms_sorted:
+        _add_to_storey(r.bounds_min[2], room_id=r.room_id)
+    for c in corridors_sorted:
+        c_bmin = getattr(c, "bounds_min", (0, 0, 0))
+        c_id = getattr(c, "corridor_id", "")
+        _add_to_storey(c_bmin[2], corridor_id=c_id)
+
+    by_height.sort(key=lambda x: x["height"])
+
+    # Link stairs to storeys by measured vertical elevation
+    for st in stairs_list:
+        st_id = getattr(st, "stair_id", getattr(st, "id", "stair-001"))
+        pos = getattr(st, "position", None)
+        rise = getattr(st, "rise_m", 0.17)
+        n_steps = getattr(st, "n_steps", 10)
+        total_rise = rise * n_steps
+        if pos:
+            z_mid = pos[2]
+            z_lo = z_mid - total_rise / 2.0
+            z_hi = z_mid + total_rise / 2.0
         else:
-            by_height.append((h, [room.room_id]))
+            z_lo = 0.0
+            z_hi = total_rise
+
+        # Find matching lower and upper storeys
+        for entry in by_height:
+            h = entry["height"]
+            if abs(h - z_lo) <= 0.4 or abs(h - z_hi) <= 0.4 or (z_lo <= h <= z_hi):
+                if st_id not in entry["stair_ids"]:
+                    entry["stair_ids"].append(st_id)
+
     storeys = tuple(
         Storey(
             storey_id=f"storey-{i:02d}",
-            floor_height_m=h,
-            room_ids=tuple(ids),
+            floor_height_m=entry["height"],
+            room_ids=tuple(sorted(entry["room_ids"])),
+            corridor_ids=tuple(sorted(entry["corridor_ids"])),
+            stair_ids=tuple(sorted(entry["stair_ids"])),
         )
-        for i, (h, ids) in enumerate(sorted(by_height, key=lambda x: x[0]), start=1)
+        for i, entry in enumerate(by_height, start=1)
     )
+
+    # Compute overall building envelope
     lo = [math.inf] * 3
     hi = [-math.inf] * 3
     for room in rooms_sorted:
         for i in range(3):
             lo[i] = min(lo[i], room.bounds_min[i])
             hi[i] = max(hi[i], room.bounds_max[i])
+    for corridor in corridors_sorted:
+        c_bmin = getattr(corridor, "bounds_min", None)
+        c_bmax = getattr(corridor, "bounds_max", None)
+        if c_bmin and c_bmax:
+            for i in range(3):
+                lo[i] = min(lo[i], c_bmin[i])
+                hi[i] = max(hi[i], c_bmax[i])
+
     return BuildingGraph(
         building_id="building-001",
         storeys=storeys,
         envelope_bounds_min=tuple(lo),
         envelope_bounds_max=tuple(hi),
+        corridors=tuple(corridors_sorted),
+        stairs=tuple(stairs_list),
     )

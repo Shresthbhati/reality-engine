@@ -706,6 +706,19 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         elif key == "transform":
             entity.transform = value
 
+    # Malformed WorldIR must never be persisted by a correction: validate
+    # the corrected world and refuse with the validator's own diagnosis.
+    # Only ERRORs block (warnings stay readable, matching the recon path).
+    from world_ir.validation import validate_world_ir as _validate_world
+
+    _validation = _validate_world(worldir)
+    if not _validation.is_valid():
+        raise HTTPException(
+            422,
+            "corrected world failed validation: "
+            + "; ".join(_validation.messages()[:5]),
+        )
+
     # Stale-client guard: an explicit parent that is no longer HEAD is a
     # 409, not a silent fork -- the caller must rebase onto HEAD.
     effective_parent = body.parent_version_id or w.current_version_id
@@ -821,15 +834,199 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
     }
 
 
-async def _load_worldir_from_store(world: World) -> WorldIR | None:
-    """Load the current WorldIR from WorldStore for a World."""
-    if not world.current_version_id:
+async def _load_worldir_from_store(world: World, version_id: str | None = None) -> WorldIR | None:
+    """Load WorldIR from WorldStore for a World (current or specified version)."""
+    vid = version_id or world.current_version_id
+    if not vid:
         return None
     store_path = _worldstore_root()
     if not store_path.exists():
         return None
     store = WorldStore(str(store_path))
     try:
-        return store.load_version(world.current_version_id)
+        return store.load_version(vid)
     except Exception:
         return None
+
+
+def _get_worldir_space_graph(worldir: WorldIR) -> dict:
+    """Extract or derive interior space graph from WorldIR metadata and entities."""
+    if "interior_space_graph" in worldir.metadata:
+        return worldir.metadata["interior_space_graph"]
+
+    levels = []
+    rooms = []
+    corridors = []
+    openings = []
+    stairs = []
+
+    for eid, entity in worldir.entities.items():
+        etype = entity.type.value if hasattr(entity.type, "value") else str(entity.type)
+        if etype == "level":
+            levels.append({
+                "level_id": eid,
+                "elevation_m": entity.custom_properties.get("elevation_m", 0.0),
+                "room_ids": list(entity.custom_properties.get("room_ids", [])),
+                "corridor_ids": list(entity.custom_properties.get("corridor_ids", [])),
+                "stair_ids": list(entity.custom_properties.get("stair_ids", [])),
+            })
+        elif etype == "room":
+            rooms.append({
+                "room_id": eid,
+                "floor_area_m2": entity.custom_properties.get("floor_area_m2", 0.0),
+                "adjacent_room_ids": list(entity.custom_properties.get("adjacent_room_ids", [])),
+                "corridor_ids": list(entity.custom_properties.get("corridor_ids", [])),
+                "boundary_completeness": entity.custom_properties.get("boundary_completeness", 1.0),
+                "notes": list(entity.custom_properties.get("notes", [])),
+                "status": entity.custom_properties.get("status", "detected"),
+            })
+        elif etype == "corridor":
+            corridors.append({
+                "corridor_id": eid,
+                "aspect_ratio": entity.custom_properties.get("aspect_ratio", 2.0),
+                "width_m": entity.custom_properties.get("width_m", 1.2),
+                "length_m": entity.custom_properties.get("length_m", 3.0),
+                "height_m": entity.custom_properties.get("height_m", 2.4),
+                "floor_area_m2": entity.custom_properties.get("floor_area_m2", 3.6),
+                "connected_room_ids": list(entity.custom_properties.get("connected_room_ids", [])),
+                "longitudinal_axis": list(entity.custom_properties.get("longitudinal_axis", [1.0, 0.0, 0.0])),
+                "bounds_min": list(entity.custom_properties.get("bounds_min", [0.0, 0.0, 0.0])),
+                "bounds_max": list(entity.custom_properties.get("bounds_max", [0.0, 0.0, 0.0])),
+            })
+        elif etype in ("door", "window"):
+            openings.append({
+                "opening_id": eid,
+                "kind": "window" if etype == "window" else "doorway",
+                "width_m": entity.custom_properties.get("width_m", 0.9),
+                "height_m": entity.custom_properties.get("height_m", 2.1),
+                "sill_height_m": entity.custom_properties.get("sill_height_m", 0.0),
+                "connected_space_ids": list(entity.custom_properties.get("connected_space_ids", [])),
+                "is_exterior": entity.custom_properties.get("is_exterior", etype == "window"),
+            })
+        elif etype == "stairs":
+            stairs.append({
+                "stair_id": eid,
+                "step_count": entity.custom_properties.get("step_count", 0),
+                "total_rise_m": entity.custom_properties.get("total_rise_m", 0.0),
+                "total_run_m": entity.custom_properties.get("total_run_m", 0.0),
+                "connected_level_ids": list(entity.custom_properties.get("connected_level_ids", [])),
+            })
+
+    for rel in worldir.relationships.values():
+        rkind = rel.kind.value if hasattr(rel.kind, "value") else str(rel.kind)
+        if rkind == "connects":
+            for op in openings:
+                if op["opening_id"] == rel.source_id and rel.target_id not in op["connected_space_ids"]:
+                    op["connected_space_ids"].append(rel.target_id)
+        elif rkind == "part_of":
+            for lvl in levels:
+                if lvl["level_id"] == rel.target_id:
+                    if "room" in rel.source_id and rel.source_id not in lvl["room_ids"]:
+                        lvl["room_ids"].append(rel.source_id)
+                    elif "corridor" in rel.source_id and rel.source_id not in lvl["corridor_ids"]:
+                        lvl["corridor_ids"].append(rel.source_id)
+
+    return {
+        "building_id": worldir.id,
+        "levels": levels,
+        "rooms": rooms,
+        "corridors": corridors,
+        "openings": openings,
+        "stairs": stairs,
+        "summary": {
+            "level_count": len(levels),
+            "room_count": len(rooms),
+            "corridor_count": len(corridors),
+            "opening_count": len(openings),
+            "stair_count": len(stairs),
+        },
+    }
+
+
+@worlds.get("/{world_id}/space-graph")
+async def get_world_space_graph(
+    world_id: str,
+    version_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Retrieve the authoritative InteriorSpaceGraph for a world."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+
+    worldir = await _load_worldir_from_store(w, version_id)
+    if worldir is None:
+        raise HTTPException(404, "WorldIR not available for this world/version")
+
+    return _get_worldir_space_graph(worldir)
+
+
+@worlds.get("/{world_id}/query/spaces")
+async def query_world_spaces(
+    world_id: str,
+    room_id: str | None = None,
+    corridor_id: str | None = None,
+    level_id: str | None = None,
+    space_id: str | None = None,
+    space_a: str | None = None,
+    space_b: str | None = None,
+    level_a: str | None = None,
+    level_b: str | None = None,
+    version_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Query topological connectivity and spatial metrics within a world."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+
+    worldir = await _load_worldir_from_store(w, version_id)
+    if worldir is None:
+        raise HTTPException(404, "WorldIR not available for this world/version")
+
+    graph_dict = _get_worldir_space_graph(worldir)
+    from perception.architecture.space_graph import InteriorSpaceGraph
+    graph = InteriorSpaceGraph.from_dict(graph_dict)
+
+    if corridor_id:
+        return {
+            "query": "corridor_reachability",
+            "corridor_id": corridor_id,
+            "reachable_rooms": graph.rooms_reachable_from_corridor(corridor_id),
+        }
+    if room_id:
+        return {
+            "query": "connected_rooms",
+            "room_id": room_id,
+            "connected_spaces": graph.rooms_connected_to(room_id),
+        }
+    if space_a and space_b:
+        return {
+            "query": "openings_connecting",
+            "space_a": space_a,
+            "space_b": space_b,
+            "openings": graph.openings_connecting(space_a, space_b),
+        }
+    if level_a and level_b:
+        return {
+            "query": "stairs_connecting_levels",
+            "level_a": level_a,
+            "level_b": level_b,
+            "stairs": graph.stairs_connecting_levels(level_a, level_b),
+        }
+    if space_id:
+        return {
+            "query": "space_info",
+            "space_id": space_id,
+            "level": graph.level_of_space(space_id),
+            "evidence": graph.trace_space_evidence(space_id),
+        }
+    if level_id:
+        return {
+            "query": "level_spaces",
+            "level_id": level_id,
+            "level": graph.levels.get(level_id),
+        }
+
+    return {"query": "all", "space_graph": graph_dict}
+

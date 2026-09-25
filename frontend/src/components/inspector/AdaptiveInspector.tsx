@@ -581,6 +581,132 @@ function EntityDetails({
         </div>
       )}
 
+      {/* Corridor Specification Details */}
+      {(entity.type === "corridor" || entity.id.startsWith("corridor")) && (
+        <div className="p-3 rounded-lg border border-[#06b6d4]/40 bg-[#06b6d4]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#06b6d4] uppercase tracking-wide">
+            <span className="flex items-center gap-1.5">
+              <Workflow className="w-3.5 h-3.5" />
+              <span>Corridor Circulation Route</span>
+            </span>
+            <span className="font-mono text-[10px]">
+              {(entity.custom_properties?.aspect_ratio as number | undefined)?.toFixed(1) ?? "—"} : 1 aspect
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
+            <div>
+              <span className="text-neutral-500">Width: </span>
+              <span>{(entity.custom_properties?.width_m as number | undefined)?.toFixed(2) ?? "—"} m</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Length: </span>
+              <span>{(entity.custom_properties?.length_m as number | undefined)?.toFixed(2) ?? "—"} m</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Area: </span>
+              <span>{(entity.custom_properties?.floor_area_m2 as number | undefined)?.toFixed(2) ?? "—"} m²</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Height: </span>
+              <span>{(entity.custom_properties?.height_m as number | undefined)?.toFixed(2) ?? "—"} m</span>
+            </div>
+          </div>
+
+          {Array.isArray(entity.custom_properties?.connected_room_ids) && (entity.custom_properties.connected_room_ids as string[]).length > 0 && (
+            <div className="pt-1.5 border-t border-[#06b6d4]/20 space-y-1">
+              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Connected Spaces</span>
+              <div className="flex flex-wrap gap-1">
+                {(entity.custom_properties.connected_room_ids as string[]).map((rId) => (
+                  <button
+                    key={rId}
+                    type="button"
+                    onClick={() => onSelectEntity(rId)}
+                    className="px-2 py-0.5 rounded bg-[#06b6d4]/20 text-[#06b6d4] hover:bg-[#06b6d4]/30 text-[10px] font-mono cursor-pointer border border-[#06b6d4]/30"
+                  >
+                    {rId}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stair Specification Details */}
+      {(entity.type === "stairs" || entity.id.startsWith("stair")) && (
+        <div className="p-3 rounded-lg border border-[#a855f7]/40 bg-[#a855f7]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#a855f7] uppercase tracking-wide">
+            <span className="flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5" />
+              <span>Measured Staircase</span>
+            </span>
+            <span className="font-mono text-[10px]">
+              {String(entity.custom_properties?.step_count ?? "—")} steps
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
+            <div>
+              <span className="text-neutral-500">Total Rise: </span>
+              <span>{(entity.custom_properties?.total_rise_m as number | undefined)?.toFixed(2) ?? "—"} m</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Total Run: </span>
+              <span>{(entity.custom_properties?.total_run_m as number | undefined)?.toFixed(2) ?? "—"} m</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Room Topology Details */}
+      {(entity.type === "room" || entity.id.startsWith("room")) && (
+        <div className="p-3 rounded-lg border border-[#3b82f6]/40 bg-[#3b82f6]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#3b82f6] uppercase tracking-wide">
+            <span className="flex items-center gap-1.5">
+              <Building className="w-3.5 h-3.5" />
+              <span>Room Topology</span>
+            </span>
+            <span className="font-mono text-[10px]">
+              {(entity.custom_properties?.floor_area_m2 as number | undefined)?.toFixed(2) ?? "—"} m² floor
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
+            <div>
+              <span className="text-neutral-500">Boundary: </span>
+              <span>
+                {entity.custom_properties?.boundary_completeness != null
+                  ? `${(Number(entity.custom_properties.boundary_completeness) * 100).toFixed(0)}% complete`
+                  : "Resolved"}
+              </span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Ceiling: </span>
+              <span>{entity.custom_properties?.ceiling_evidence ? "Measured" : "Unmeasured"}</span>
+            </div>
+          </div>
+
+          {Array.isArray(entity.custom_properties?.adjacent_room_ids) && (entity.custom_properties.adjacent_room_ids as string[]).length > 0 && (
+            <div className="pt-1.5 border-t border-[#3b82f6]/20 space-y-1">
+              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Adjacent Spaces</span>
+              <div className="flex flex-wrap gap-1">
+                {(entity.custom_properties.adjacent_room_ids as string[]).map((rId) => (
+                  <button
+                    key={rId}
+                    type="button"
+                    onClick={() => onSelectEntity(rId)}
+                    className="px-2 py-0.5 rounded bg-[#3b82f6]/20 text-[#3b82f6] hover:bg-[#3b82f6]/30 text-[10px] font-mono cursor-pointer border border-[#3b82f6]/30"
+                  >
+                    {rId}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Geometry Section */}
       {(tab === "all" || tab === "geometry") && (
         <div className="space-y-2">

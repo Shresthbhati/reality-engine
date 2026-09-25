@@ -130,13 +130,30 @@ export default function WorldNavPanel({
   }, [entitiesList]);
 
   const corridorsList = useMemo(() => {
-    return entitiesList.filter((e) => {
+    const fromEntities = entitiesList.filter((e) => {
       const t = e.type.toLowerCase();
       const sub = String((e.custom_properties as Record<string, unknown> | undefined)?.subtype || "").toLowerCase();
       const labels = (e.semantic_labels || []).map((l) => l.toLowerCase());
       return t === "corridor" || sub === "corridor" || labels.includes("corridor");
     });
-  }, [entitiesList]);
+    const entityIds = new Set(fromEntities.map((e) => e.id));
+    const metaCorridors = ((worldIR?.metadata?.interior_space_graph as Record<string, unknown> | undefined)?.corridors as Array<Record<string, unknown>> | undefined) || [];
+    const fromMeta: Entity[] = [];
+    for (const c of metaCorridors) {
+      const cid = String(c.corridor_id || "");
+      if (cid && !entityIds.has(cid) && !entityIds.has(`corridor-${cid}`)) {
+        fromMeta.push({
+          id: cid.startsWith("corridor-") ? cid : `corridor-${cid}`,
+          name: `Corridor ${cid.replace(/^corridor-/, "")}`,
+          type: "corridor",
+          confidence: Number(c.confidence ?? 0.85),
+          provenance: "inferred",
+          custom_properties: c,
+        } as Entity);
+      }
+    }
+    return [...fromEntities, ...fromMeta];
+  }, [entitiesList, worldIR]);
 
   const wallsList = useMemo(() => {
     return entitiesList.filter((e) => e.type.toLowerCase() === "wall");
@@ -293,6 +310,16 @@ export default function WorldNavPanel({
 
   // Derived building levels
   const levelsList = useMemo(() => {
+    const metaLevels = ((worldIR?.metadata?.interior_space_graph as Record<string, unknown> | undefined)?.levels as Array<Record<string, unknown>> | undefined) || [];
+    if (metaLevels.length > 0) {
+      return metaLevels.map((lvl, idx) => ({
+        index: idx,
+        id: String(lvl.level_id || `level-${idx}`),
+        name: `Level ${idx} (${Number(lvl.elevation_m || 0).toFixed(1)}m)`,
+        elevationY: Number(lvl.elevation_m || 0),
+        elementCount: ((lvl.room_ids as string[] | undefined) || []).length + ((lvl.corridor_ids as string[] | undefined) || []).length,
+      }));
+    }
     const explicit = entitiesList.filter((e) => {
       const t = e.type.toLowerCase();
       return t === "level" || t === "floor_level";

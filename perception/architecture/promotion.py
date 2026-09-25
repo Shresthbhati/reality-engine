@@ -75,6 +75,9 @@ _ARCH_CLASS_TO_ENTITY_TYPE: Dict[str, EntityType] = {
     "stairs": EntityType.STAIRS,
     "building": EntityType.BUILDING,
     "facade": EntityType.WALL,
+    "corridor": EntityType.CORRIDOR,
+    "level": EntityType.LEVEL,
+    "room": EntityType.ROOM,
 }
 
 
@@ -309,3 +312,252 @@ def _dist(a, b) -> float:
     return (
         (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
     ) ** 0.5
+
+
+def promote_interior_graph_to_world(
+    building_graph,
+    rooms: Sequence[object],
+    corridors: Optional[Sequence[object]],
+    world: WorldIR,
+    stairs: Optional[Sequence[object]] = None,
+) -> Dict[str, str]:
+    """Promote a BuildingGraph, its rooms, corridors, openings, and stairs
+    into canonical WorldIR entities and structural relationships."""
+    from world_ir.schema_v1 import Geometry, GeometryType, Vector3
+
+    created_ids: Dict[str, str] = {}
+    if building_graph is None:
+        return created_ids
+
+    # 1. Building entity
+    bld_id = f"bld-{building_graph.building_id}"
+    bmin = building_graph.envelope_bounds_min
+    bmax = building_graph.envelope_bounds_max
+    geom_id = f"geom-{bld_id}"
+    world.geometries[geom_id] = Geometry(
+        id=geom_id,
+        type=GeometryType.BOX,
+        bounds_min=Vector3(bmin[0], bmin[1], bmin[2]),
+        bounds_max=Vector3(bmax[0], bmax[1], bmax[2]),
+    )
+    bld_entity = Entity(
+        id=bld_id,
+        type=EntityType.BUILDING,
+        name=f"Building {building_graph.building_id}",
+        geometry_ids=[geom_id],
+        custom_properties={
+            "storey_count": len(building_graph.storeys),
+            "envelope_bounds_min": list(bmin),
+            "envelope_bounds_max": list(bmax),
+        },
+        provenance=Provenance.INFERRED,
+        confidence=1.0,
+    )
+    world.entities[bld_id] = bld_entity
+    created_ids["building"] = bld_id
+
+    # Storey mapping: storey_id -> level_entity_id
+    storey_to_level: Dict[str, str] = {}
+    space_to_level: Dict[str, str] = {}
+
+    # 2. Level entities (one per storey)
+    for idx, storey in enumerate(building_graph.storeys, start=1):
+        lvl_id = f"lvl-{idx:02d}"
+        storey_to_level[storey.storey_id] = lvl_id
+        for rid in storey.room_ids:
+            space_to_level[rid] = lvl_id
+        for cid in storey.corridor_ids:
+            space_to_level[cid] = lvl_id
+
+        lvl_entity = Entity(
+            id=lvl_id,
+            type=EntityType.LEVEL,
+            name=f"Level {idx - 1}",
+            custom_properties={
+                "floor_height_m": storey.floor_height_m,
+                "room_ids": list(storey.room_ids),
+                "corridor_ids": list(storey.corridor_ids),
+                "stair_ids": list(storey.stair_ids),
+                "storey_id": storey.storey_id,
+            },
+            provenance=Provenance.INFERRED,
+            confidence=1.0,
+            relationships=[
+                Relationship(kind=RelationshipKind.PART_OF, target_id=bld_id)
+            ],
+        )
+        world.entities[lvl_id] = lvl_entity
+        created_ids[storey.storey_id] = lvl_id
+
+    # 3. Room entities
+    for r in rooms:
+        rid = f"room-{r.room_id}"
+        r_bmin, r_bmax = r.bounds_min, r.bounds_max
+        r_geom_id = f"geom-{rid}"
+        world.geometries[r_geom_id] = Geometry(
+            id=r_geom_id,
+            type=GeometryType.BOX,
+            bounds_min=Vector3(r_bmin[0], r_bmin[1], r_bmin[2]),
+            bounds_max=Vector3(r_bmax[0], r_bmax[1], r_bmax[2]),
+        )
+        lvl_id = space_to_level.get(r.room_id)
+        rels = []
+        if lvl_id:
+            rels.append(Relationship(kind=RelationshipKind.PART_OF, target_id=lvl_id))
+        for be in r.boundary_element_ids:
+            if be in world.entities:
+                rels.append(Relationship(kind=RelationshipKind.CONTAINS, target_id=be))
+        for adj in r.adjacent_room_ids:
+            adj_id = f"room-{adj}"
+            rels.append(Relationship(kind=RelationshipKind.ADJACENT_TO, target_id=adj_id))
+
+        r_entity = Entity(
+            id=rid,
+            type=EntityType.ROOM,
+            name=f"Room {r.room_id.rsplit('-', 1)[-1]}",
+            geometry_ids=[r_geom_id],
+            custom_properties={
+                "dimensions_m": dict(r.dimensions_m),
+                "floor_area_m2": r.floor_area_m2,
+                "height_m": r.dimensions_m.get("z", 2.4),
+                "boundary_element_ids": list(r.boundary_element_ids),
+                "adjacent_room_ids": list(r.adjacent_room_ids),
+                "corridor_ids": list(getattr(r, "corridor_ids", ())),
+                "status": getattr(r, "status", "detected"),
+                "confidence": getattr(r, "confidence", 1.0),
+                "boundary_completeness": getattr(r, "boundary_completeness", 1.0),
+                "ceiling_evidence": getattr(r, "ceiling_evidence", "measured"),
+                "notes": list(getattr(r, "notes", ())),
+            },
+            relationships=rels,
+            provenance=Provenance.INFERRED,
+            confidence=getattr(r, "confidence", 1.0),
+        )
+        world.entities[rid] = r_entity
+        created_ids[r.room_id] = rid
+
+    # 4. Corridor entities
+    for c in (corridors or []):
+        cid = f"corridor-{getattr(c, 'corridor_id', '001')}"
+        c_bmin = getattr(c, "bounds_min", (0, 0, 0))
+        c_bmax = getattr(c, "bounds_max", (1, 1, 1))
+        c_geom_id = f"geom-{cid}"
+        world.geometries[c_geom_id] = Geometry(
+            id=c_geom_id,
+            type=GeometryType.BOX,
+            bounds_min=Vector3(c_bmin[0], c_bmin[1], c_bmin[2]),
+            bounds_max=Vector3(c_bmax[0], c_bmax[1], c_bmax[2]),
+        )
+        lvl_id = space_to_level.get(getattr(c, "corridor_id", ""))
+        c_rels = []
+        if lvl_id:
+            c_rels.append(Relationship(kind=RelationshipKind.PART_OF, target_id=lvl_id))
+        for r_id in getattr(c, "connected_room_ids", ()):
+            target_rid = f"room-{r_id}"
+            c_rels.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=target_rid))
+            c_rels.append(Relationship(kind=RelationshipKind.ADJACENT_TO, target_id=target_rid))
+
+        c_entity = Entity(
+            id=cid,
+            type=EntityType.CORRIDOR,
+            name=f"Corridor {getattr(c, 'corridor_id', '').rsplit('-', 1)[-1]}",
+            geometry_ids=[c_geom_id],
+            custom_properties={
+                "length_m": getattr(c, "length_m", 0.0),
+                "width_m": getattr(c, "width_m", 0.0),
+                "height_m": getattr(c, "height_m", 2.4),
+                "floor_area_m2": getattr(c, "floor_area_m2", 0.0),
+                "longitudinal_axis": list(getattr(c, "longitudinal_axis", (1, 0, 0))),
+                "connected_room_ids": list(getattr(c, "connected_room_ids", ())),
+                "boundary_element_ids": list(getattr(c, "boundary_element_ids", ())),
+                "status": getattr(c, "status", "detected"),
+                "confidence": getattr(c, "confidence", 1.0),
+                "notes": list(getattr(c, "notes", ())),
+            },
+            relationships=c_rels,
+            provenance=Provenance.INFERRED,
+            confidence=getattr(c, "confidence", 1.0),
+        )
+        world.entities[cid] = c_entity
+        created_ids[getattr(c, "corridor_id", "")] = cid
+
+    # 5. Openings (Doorways and Windows)
+    all_spaces = list(rooms) + list(corridors or [])
+    op_counter = 0
+    for sp in all_spaces:
+        sp_id = getattr(sp, "room_id", getattr(sp, "corridor_id", ""))
+        target_space_entity_id = created_ids.get(sp_id, sp_id)
+        for op in getattr(sp, "openings", ()):
+            op_dict = op.to_dict() if hasattr(op, "to_dict") else dict(op)
+            op_kind = op_dict.get("kind", "doorway")
+            op_entity_type = EntityType.DOOR if op_kind == "doorway" else EntityType.WINDOW
+            ent_op_id = f"op-{op_kind}-{op_counter:04d}"
+            op_counter += 1
+
+            host_wall = op_dict.get("wall_element_id")
+            op_rels = []
+            if host_wall and host_wall in world.entities:
+                op_rels.append(Relationship(kind=RelationshipKind.PART_OF, target_id=host_wall))
+            if target_space_entity_id and target_space_entity_id in world.entities:
+                op_rels.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=target_space_entity_id))
+
+            op_entity = Entity(
+                id=ent_op_id,
+                type=op_entity_type,
+                name=f"{op_kind.capitalize()} {op_counter}",
+                custom_properties={
+                    "opening_kind": op_kind,
+                    "width_m": op_dict.get("width_m", 0.9),
+                    "height_m": op_dict.get("height_m", 2.1),
+                    "sill_height_m": op_dict.get("sill_height_m", 0.0),
+                    "host_wall_id": host_wall,
+                    "connected_space_ids": [target_space_entity_id],
+                    "confidence": op_dict.get("confidence", 1.0),
+                },
+                relationships=op_rels,
+                provenance=Provenance.INFERRED,
+                confidence=op_dict.get("confidence", 1.0),
+            )
+            world.entities[ent_op_id] = op_entity
+            created_ids[ent_op_id] = ent_op_id
+
+    # 6. Stairs
+    for st in (stairs or []):
+        st_id = f"stair-{getattr(st, 'stair_id', getattr(st, 'id', '001'))}"
+        st_dict = st.to_dict() if hasattr(st, "to_dict") else dict(st)
+        pos = getattr(st, "position", (0, 0, 0))
+        st_geom_id = f"geom-{st_id}"
+        world.geometries[st_geom_id] = Geometry(
+            id=st_geom_id,
+            type=GeometryType.POINTCLOUD,
+            bounds_min=Vector3(pos[0] - 1.0, pos[1] - 1.0, pos[2] - 1.0),
+            bounds_max=Vector3(pos[0] + 1.0, pos[1] + 1.0, pos[2] + 1.0),
+        )
+        st_rels = []
+        for s in building_graph.storeys:
+            if getattr(st, "stair_id", getattr(st, "id", "stair-001")) in s.stair_ids:
+                lvl_id = storey_to_level.get(s.storey_id)
+                if lvl_id:
+                    st_rels.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=lvl_id))
+
+        st_entity = Entity(
+            id=st_id,
+            type=EntityType.STAIRS,
+            name=f"Stairs {st_id.rsplit('-', 1)[-1]}",
+            geometry_ids=[st_geom_id],
+            custom_properties={
+                "n_steps": getattr(st, "n_steps", 10),
+                "rise_m": getattr(st, "rise_m", 0.17),
+                "going_m": getattr(st, "going_m", 0.28),
+                "span_m": getattr(st, "span_m", 2.8),
+                "confidence": getattr(st, "confidence", 1.0),
+            },
+            relationships=st_rels,
+            provenance=Provenance.INFERRED,
+            confidence=getattr(st, "confidence", 1.0),
+        )
+        world.entities[st_id] = st_entity
+        created_ids[st_id] = st_id
+
+    return created_ids
+

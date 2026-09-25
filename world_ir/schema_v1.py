@@ -75,6 +75,10 @@ class EntityType(str, Enum):
     DOOR = "door"  # Openable wall opening for passage
     WINDOW = "window"  # Wall opening for light/view
     STAIRS = "stairs"  # Vertical circulation element
+    # Building-topology coherence (auto-recon sprint; additive -- same
+    # backward-compatible pattern as the P7-03 expansion above):
+    STOREY = "storey"  # One building level; CONTAINS the rooms at its measured floor height
+    CORRIDOR = "corridor"  # Elongated circulation space connecting rooms on its sides
     # Architectural perception expansion (P7-03; additive -- v1 worlds
     # without these values are unaffected, and enum serialization is
     # by value so old data loads unchanged):

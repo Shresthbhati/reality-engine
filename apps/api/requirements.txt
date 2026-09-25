@@ -2,6 +2,7 @@
 fastapi
 uvicorn
 sqlalchemy>=2.0
-aiosqlite
+# Async SQLite driver backing the async engine used by apps/api/db.py
+aiosqlite>=0.20.0
 python-multipart
 httpx

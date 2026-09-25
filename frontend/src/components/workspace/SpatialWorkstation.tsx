@@ -8,6 +8,8 @@ import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
+import QueryPanel from "@/components/workspace/QueryPanel";
+import ExportPanel from "@/components/workspace/ExportPanel";
 import WorldMap from "@/components/map/WorldMap";
 import { 
   useWorlds, 
@@ -33,6 +35,7 @@ import {
   Workflow,
   Search,
   Terminal,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +55,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [viewMode, setViewMode] = useState<"3d" | "map">("3d");
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [constructionModalOpen, setConstructionModalOpen] = useState(false);
+  const [queryPanelOpen, setQueryPanelOpen] = useState(false);
+  const [exportPanelOpen, setExportPanelOpen] = useState(false);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   
@@ -107,6 +112,21 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     (allSessions || []).filter(s => s.worldId === worldId), 
     [allSessions, worldId]
   );
+
+  // Session the room-construction job is enqueued for. Defaults to the first
+  // attached session; the modal can switch it. Falls back if it goes away.
+  const [constructionSessionId, setConstructionSessionId] = useState<string | null>(null);
+  const effectiveConstructionSessionId = useMemo(() => {
+    if (constructionSessionId && sessions.some(s => s.id === constructionSessionId)) {
+      return constructionSessionId;
+    }
+    return sessions.length > 0 ? sessions[0].id : null;
+  }, [constructionSessionId, sessions]);
+  const constructionSessions = useMemo(
+    () => sessions.map(s => ({ id: s.id, name: s.name || s.id })),
+    [sessions]
+  );
+
   
   const currentWorldRow = useMemo(() => 
     (worlds || []).find(w => w.id === worldId) || {
@@ -281,18 +301,28 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       setConstructionModalOpen(true);
     };
 
+    const handleOpenQueryEvent = () => {
+      setQueryPanelOpen(true);
+    };
+
+    const handleOpenExportPanelEvent = () => {
+      setExportPanelOpen(true);
+    };
+
     const handleTriggerExportEvent = (e: Event) => {
       const customEvent = e as CustomEvent<{ format: "worldir" | "ply" | "cameras" | "report" }>;
       if (customEvent.detail?.format) {
         handleExport(customEvent.detail.format);
       }
     };
-    
+
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("apply-spatial-query", handleApplyQueryEvent as EventListener);
     window.addEventListener("reset-spatial-query", handleResetQueryEvent as EventListener);
     window.addEventListener("open-version-diff", handleOpenDiffEvent as EventListener);
     window.addEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
+    window.addEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
+    window.addEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
     window.addEventListener("trigger-export", handleTriggerExportEvent as EventListener);
 
     return () => {
@@ -301,6 +331,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       window.removeEventListener("reset-spatial-query", handleResetQueryEvent as EventListener);
       window.removeEventListener("open-version-diff", handleOpenDiffEvent as EventListener);
       window.removeEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
+      window.removeEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
+      window.removeEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
       window.removeEventListener("trigger-export", handleTriggerExportEvent as EventListener);
     };
   }, [selectedEntityId, handleClearSelection, handleFrameEntity, handleExport]);
@@ -398,6 +430,36 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           >
             <Workflow className="w-3.5 h-3.5 text-[#00e5ff]" />
             <span className="hidden sm:inline">Construction</span>
+          </button>
+
+          {/* Spatial Query Launcher */}
+          <button
+            type="button"
+            onClick={() => setQueryPanelOpen((v) => !v)}
+            title="Spatial Query"
+            className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
+              queryPanelOpen
+                ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40"
+                : "bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[#1f222b]"
+            }`}
+          >
+            <Search className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <span className="hidden sm:inline">Query</span>
+          </button>
+
+          {/* Export Launcher */}
+          <button
+            type="button"
+            onClick={() => setExportPanelOpen((v) => !v)}
+            title="Export World"
+            className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
+              exportPanelOpen
+                ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40"
+                : "bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[#1f222b]"
+            }`}
+          >
+            <Download className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <span className="hidden sm:inline">Export</span>
           </button>
 
           {/* Quick Layout Toggles */}
@@ -507,6 +569,20 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               </div>
             </div>
           )}
+
+          {queryPanelOpen && (
+            <QueryPanel
+              worldId={worldId}
+              selectedEntityId={selectedEntityId}
+              onClose={() => setQueryPanelOpen(false)}
+              onSelectEntity={handleSelectEntity}
+              onFrameEntity={handleFrameEntity}
+            />
+          )}
+
+          {exportPanelOpen && (
+            <ExportPanel worldId={worldId} onClose={() => setExportPanelOpen(false)} />
+          )}
         </div>
         
         {/* Right Adaptive Inspector */}
@@ -554,8 +630,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         worldId={worldId}
         isOpen={diffModalOpen}
         onClose={() => setDiffModalOpen(false)}
-        baseVersion={diffVersions.base || versions[0]?.id || ""}
-        headVersion={diffVersions.head || "latest"}
+        baseVersion={diffVersions.base || versions[0]?.parentVersionId || ""}
+        headVersion={diffVersions.head || versions[0]?.id || ""}
         onSelectEntity={(eid) => {
           handleSelectEntity(eid);
           handleFrameEntity(eid);
@@ -565,6 +641,9 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       {/* Room Construction Pipeline Modal */}
       <RoomConstructionModal
         worldId={worldId}
+        sessions={constructionSessions}
+        sessionId={effectiveConstructionSessionId}
+        onSelectSession={setConstructionSessionId}
         isOpen={constructionModalOpen}
         onClose={() => setConstructionModalOpen(false)}
         onReconstructionSuccess={() => {

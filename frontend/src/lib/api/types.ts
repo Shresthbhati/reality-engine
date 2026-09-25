@@ -248,7 +248,27 @@ export interface CamerasPayload {
   }>;
 }
 
-/** World diff DTO for /api/worlds/{id}/diff */
+/** A single field's before/after value, as world_ir.diff.FieldChange.to_dict() emits it. */
+export interface FieldChangeDto {
+  field: string;
+  old: unknown;
+  new: unknown;
+}
+
+export interface EntityDiffDto {
+  entity_id: string;
+  kind: "added" | "removed" | "modified";
+  changes: FieldChangeDto[];
+}
+
+export interface GeometryDiffDto {
+  geometry_id: string;
+  kind: "added" | "removed" | "modified";
+  changes: FieldChangeDto[];
+}
+
+/** World diff DTO for /api/worlds/{id}/diff -- mirrors world_ir.diff.WorldDiff.to_dict()
+ * exactly (summary() only counts entities; there is no geometry summary). */
 export interface WorldDiffDto {
   from_world_id: string;
   to_world_id: string;
@@ -256,20 +276,9 @@ export interface WorldDiffDto {
     entities_added: number;
     entities_removed: number;
     entities_modified: number;
-    geometries_added: number;
-    geometries_removed: number;
-    geometries_modified: number;
   };
-  entity_diffs: Array<{
-    entity_id: string;
-    kind: "added" | "removed" | "modified";
-    changes: string[];
-  }>;
-  geometry_diffs: Array<{
-    geometry_id: string;
-    kind: "added" | "removed" | "modified";
-    changes: string[];
-  }>;
+  entity_diffs: EntityDiffDto[];
+  geometry_diffs: GeometryDiffDto[];
 }
 
 /** Commit request/response for /api/worlds/{id}/commit */

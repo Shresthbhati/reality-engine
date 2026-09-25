@@ -135,6 +135,16 @@ const COMMANDS: Command[] = [
     icon: Workflow,
     action: () => window.dispatchEvent(new CustomEvent("open-room-construction")),
   },
+  {
+    label: "Open Spatial Query",
+    icon: Search,
+    action: () => window.dispatchEvent(new CustomEvent("open-spatial-query")),
+  },
+  {
+    label: "Export World (glTF / USD / Blender / CityJSON)",
+    icon: Download,
+    action: () => window.dispatchEvent(new CustomEvent("open-export-panel")),
+  },
   // Exports
   {
     label: "Export Canonical WorldIR (JSON)",

@@ -110,6 +110,7 @@ export function useWorldVersions(worldId: string | null) {
     return dtos.map((v) => ({
       id: v.id,
       worldId: v.world_id,
+      parentVersionId: v.parent_version_id ?? null,
       label: v.created_at ?? v.id,
       createdAt: v.created_at ?? v.id,
       changeSummary: `${v.changed_entity_ids?.length ?? 0} entities changed`,

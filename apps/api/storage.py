@@ -13,10 +13,12 @@ from pathlib import Path
 
 
 def storage_root() -> Path:
+    # Always absolute: store_bytes() and resolve_artifact() must agree on
+    # the layout, and a relative root made them disagree (stored path
+    # relative vs resolved absolute), breaking round-trip equality.
     root = os.environ.get("STORAGE_ROOT")
-    if root:
-        return Path(root)
-    return Path("./data/artifacts")
+    base = Path(root) if root else Path("./data/artifacts")
+    return base.resolve()
 
 
 def store_bytes(data: bytes) -> tuple[str, Path]:

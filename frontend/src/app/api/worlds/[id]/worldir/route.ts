@@ -54,9 +54,9 @@ export async function GET(
 
   if (isLocalDataset) {
     const localWorldirPath = getLocalDatasetPath("room_capture", "pipeline_out", "worldir.json");
-    if (localWorldirPath && fs.existsSync(localWorldirPath)) {
+    if (localWorldirPath && fs.existsSync(/*turbopackIgnore: true*/ localWorldirPath)) {
       try {
-        const raw = fs.readFileSync(localWorldirPath, "utf-8");
+        const raw = fs.readFileSync(/*turbopackIgnore: true*/ localWorldirPath, "utf-8");
         const json = JSON.parse(raw);
         return NextResponse.json(json);
       } catch (err) {

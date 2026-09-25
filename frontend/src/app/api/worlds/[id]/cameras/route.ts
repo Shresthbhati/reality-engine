@@ -49,13 +49,13 @@ export async function GET(
 
   if (isLocalDataset) {
     const localCamerasPath = getLocalDatasetPath("room_capture", "pipeline_out", "cameras.json");
-    if (localCamerasPath && fs.existsSync(localCamerasPath)) {
+    if (localCamerasPath && fs.existsSync(/*turbopackIgnore: true*/ localCamerasPath)) {
       try {
-        const raw = fs.readFileSync(localCamerasPath, "utf-8");
+        const raw = fs.readFileSync(/*turbopackIgnore: true*/ localCamerasPath, "utf-8");
         const json = JSON.parse(raw);
         return NextResponse.json({
           image_size: json.image_size || [1280, 960],
-          cameras: (json.cameras || []).map((c: any) => ({
+          cameras: (json.cameras || []).map((c: { evidence_id: string; position_m: [number, number, number]; rotation_wxyz: [number, number, number, number] }) => ({
             id: c.evidence_id,
             evidence_id: c.evidence_id,
             position_m: c.position_m,

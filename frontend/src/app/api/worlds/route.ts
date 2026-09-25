@@ -16,7 +16,7 @@ function getLocalDatasetPath(...segments: string[]) {
 }
 
 export async function GET() {
-  const items: any[] = [];
+  const items: Array<Record<string, unknown>> = [];
 
   // 1. Try live backend
   try {
@@ -50,9 +50,9 @@ export async function GET() {
 
   // 2. Discover authentic local datasets present on disk
   const roomCaptureWorldir = getLocalDatasetPath("room_capture", "pipeline_out", "worldir.json");
-  if (roomCaptureWorldir && fs.existsSync(roomCaptureWorldir)) {
+  if (roomCaptureWorldir && fs.existsSync(/*turbopackIgnore: true*/ roomCaptureWorldir)) {
     try {
-      const raw = fs.readFileSync(roomCaptureWorldir, "utf-8");
+      const raw = fs.readFileSync(/*turbopackIgnore: true*/ roomCaptureWorldir, "utf-8");
       const parsed = JSON.parse(raw);
       const datasetId = parsed.id || "world-compiled-seed42";
       if (!items.some((w) => w.id === datasetId)) {

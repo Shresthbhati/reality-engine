@@ -9,20 +9,15 @@ import {
   GitBranch,
   Box,
   ChevronDown,
+  ChevronRight,
   Search,
   Maximize2,
   Filter,
-  Download,
   Workflow,
-  Sparkles,
   Layers,
-  Sliders,
-  Check,
-  AlertCircle,
-  Eye,
-  Plus,
-  Compass,
   Building,
+  Eye,
+  Crosshair,
 } from "lucide-react";
 import type { WorldIR, Entity } from "@/types/worldir";
 import type {
@@ -56,7 +51,6 @@ interface WorldNavPanelProps {
   selectedEvidenceId?: string | null;
   onSelectEvidence?: (id: string | null) => void;
   onCompareVersions?: (base?: string, head?: string) => void;
-  onSelectSession?: (id: string) => void;
   onSelectPlace?: (place: { name: string; position: [number, number, number] }) => void;
   activeQuery?: SpatialQueryFilter | null;
   onUpdateQuery?: (query: SpatialQueryFilter | null) => void;
@@ -64,23 +58,8 @@ interface WorldNavPanelProps {
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
 }
 
-// Canonical 5 Left-Panel Sections
-type NavSection = "hierarchy" | "evidence" | "sessions" | "versions" | "query";
-
-// Canonical Architectural Primitives
-const ARCHITECTURAL_PRIMITIVES = [
-  { type: "room", label: "Room", icon: Building },
-  { type: "wall", label: "Wall", icon: Box },
-  { type: "door", label: "Door", icon: Box },
-  { type: "window", label: "Window", icon: Box },
-  { type: "floor", label: "Floor", icon: Layers },
-  { type: "ceiling", label: "Ceiling", icon: Layers },
-  { type: "stair", label: "Stair", icon: Box },
-  { type: "corridor", label: "Corridor", icon: Box },
-  { type: "roof", label: "Roof", icon: Layers },
-  { type: "column", label: "Column", icon: Box },
-  { type: "beam", label: "Beam", icon: Box },
-] as const;
+// Canonical Left-Panel Navigation Sections
+type NavSection = "hierarchy" | "evidence" | "sessions" | "places" | "versions" | "query";
 
 export default function WorldNavPanel({
   worlds,
@@ -98,63 +77,206 @@ export default function WorldNavPanel({
   selectedEvidenceId,
   onSelectEvidence,
   onCompareVersions,
-  onSelectSession,
   onSelectPlace,
   activeQuery = null,
   onUpdateQuery,
   onOpenRoomConstruction,
-  onExport,
 }: WorldNavPanelProps) {
   const [section, setSection] = useState<NavSection>("hierarchy");
   const [filterText, setFilterText] = useState(activeQuery?.search || "");
   const [typeFilter, setTypeFilter] = useState<string>(activeQuery?.type || "all");
   const [minConfFilter, setMinConfFilter] = useState<number>(activeQuery?.minConfidence || 0);
 
-  // Architectural Hierarchy State
-  const [selectedLevel, setSelectedLevel] = useState<string>("all");
-  const [selectedSpace, setSelectedSpace] = useState<string>("all");
-  const [selectedPrimitive, setSelectedPrimitive] = useState<string>("all");
+  // Tree node expansion state
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
+    root: true,
+    "level-0": true,
+    "level-upper": true,
+    "unenclosed-0": true,
+    "spaces-0": true,
+  });
+
+  const toggleNode = (nodeKey: string) => {
+    setExpandedNodes((prev) => ({
+      ...prev,
+      [nodeKey]: !prev[nodeKey],
+    }));
+  };
 
   const entitiesList = useMemo(
     () => Object.values(worldIR?.entities || {}),
     [worldIR]
   );
 
-  // Group entities by primitive type
-  const primitiveCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    ARCHITECTURAL_PRIMITIVES.forEach((p) => {
-      counts[p.type] = 0;
+  // --------------------------------------------------------------------------
+  // CANONICAL HIERARCHY MODEL:
+  // WORLD
+  //  ├── LEVEL
+  //  │    ├── SPACE
+  //  │    │    ├── ELEMENT
+  //  │    │    └── ELEMENT
+  //  │    └── SPACE
+  //  ├── EVIDENCE
+  //  ├── SESSIONS
+  //  └── VERSIONS
+  // --------------------------------------------------------------------------
+  const hierarchyTree = useMemo(() => {
+    if (!worldIR || entitiesList.length === 0) return null;
+
+    // 1. Identify Spaces (Rooms / Corridors / Enclosures)
+    const spaceEntities = entitiesList.filter((e) => {
+      const t = e.type.toLowerCase();
+      return t === "room" || t === "space" || t === "corridor";
     });
-    counts["other"] = 0;
+
+    // 2. Identify Levels
+    const explicitLevels = entitiesList.filter((e) => {
+      const t = e.type.toLowerCase();
+      return t === "level" || t === "floor_level";
+    });
+
+    // 3. Map element-to-space containment
+    const spaceChildrenMap: Record<string, Entity[]> = {};
+    spaceEntities.forEach((s) => {
+      spaceChildrenMap[s.id] = [];
+    });
+
+    const unassignedElements: Entity[] = [];
 
     entitiesList.forEach((e) => {
       const t = e.type.toLowerCase();
-      if (counts[t] !== undefined) {
-        counts[t]++;
+      if (t === "room" || t === "space" || t === "corridor" || t === "level" || t === "floor_level") {
+        return;
+      }
+
+      // Check relationships for containment
+      let assignedSpaceId: string | null = null;
+      for (const rel of e.relationships || []) {
+        const kind = (rel.type || (rel as { kind?: string }).kind || "").toLowerCase();
+        if (kind === "part_of" && spaceChildrenMap[rel.target_id]) {
+          assignedSpaceId = rel.target_id;
+          break;
+        }
+      }
+
+      // Check reverse containment on spaces
+      if (!assignedSpaceId) {
+        for (const s of spaceEntities) {
+          for (const rel of s.relationships || []) {
+            const kind = (rel.type || (rel as { kind?: string }).kind || "").toLowerCase();
+            if (kind === "contains" && rel.target_id === e.id) {
+              assignedSpaceId = s.id;
+              break;
+            }
+          }
+          if (assignedSpaceId) break;
+        }
+      }
+
+      if (assignedSpaceId && spaceChildrenMap[assignedSpaceId]) {
+        spaceChildrenMap[assignedSpaceId].push(e);
       } else {
-        counts["other"]++;
+        unassignedElements.push(e);
       }
     });
-    return counts;
-  }, [entitiesList]);
 
-  // Filter entities according to Hierarchy tab selections (Level / Space / Element)
-  const hierarchyEntities = useMemo(() => {
-    return entitiesList.filter((e) => {
-      // Element/Primitive filter
-      if (selectedPrimitive !== "all" && e.type.toLowerCase() !== selectedPrimitive) {
-        return false;
-      }
-      // Level filter
-      if (selectedLevel !== "all" && e.transform?.position) {
-        const z = e.transform.position.z;
-        if (selectedLevel === "ground" && (z < -1.5 || z > 1.5)) return false;
-        if (selectedLevel === "upper" && z <= 1.5) return false;
-      }
-      return true;
-    }).sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  }, [entitiesList, selectedPrimitive, selectedLevel]);
+    // Partition elements into levels
+    const groundElements = unassignedElements.filter((e) => {
+      const z = e.transform?.position?.z ?? 0;
+      return z <= 1.5;
+    });
+
+    const upperElements = unassignedElements.filter((e) => {
+      const z = e.transform?.position?.z ?? 0;
+      return z > 1.5;
+    });
+
+    return {
+      worldId: worldIR.id || activeWorldId,
+      worldName: worldIR.name || activeWorldId,
+      coordinateSystem: String(worldIR.coordinate_frame || worldIR.coordinate_system || "metric_enu"),
+      explicitLevels,
+      spaces: spaceEntities.map((s) => ({
+        space: s,
+        elements: spaceChildrenMap[s.id] || [],
+      })),
+      groundElements,
+      upperElements,
+      totalElements: entitiesList.length,
+    };
+  }, [worldIR, entitiesList, activeWorldId]);
+
+  // Derived authentic evidence list
+  const effectiveEvidence = useMemo(() => {
+    const views = (worldIR?.metadata?.depth?.per_view as Array<{
+      evidence_id: string;
+      residual_median_m?: number;
+      inlier_fraction?: number;
+    }>) || [];
+    if (evidence.length > 0) {
+      return evidence.map((e) => ({
+        id: e.id,
+        name: e.name,
+        type: e.type,
+        status: e.processingState || "Captured",
+        residual: null as string | null,
+        inlierFraction: null as number | null,
+      }));
+    }
+    if (views.length > 0) {
+      return views.map((dv) => ({
+        id: dv.evidence_id,
+        name: `Pose ${dv.evidence_id}`,
+        type: "Calibrated Camera Pose",
+        status: dv.inlier_fraction
+          ? `${(dv.inlier_fraction * 100).toFixed(0)}% inliers`
+          : "Calibrated",
+        residual: dv.residual_median_m
+          ? `${(dv.residual_median_m * 1000).toFixed(0)} mm res`
+          : null,
+        inlierFraction: dv.inlier_fraction ?? null,
+      }));
+    }
+    return [];
+  }, [evidence, worldIR?.metadata?.depth?.per_view]);
+
+interface SpatialAnchor {
+  id: string;
+  name: string;
+  worldId: string;
+  position: [number, number, number];
+  createdAt?: string;
+}
+
+  // Authentic Spatial Anchors & Places
+  const effectivePlaces = useMemo<SpatialAnchor[]>(() => {
+    const list: SpatialAnchor[] = places.map((p) => ({
+      id: p.id,
+      name: p.name,
+      worldId: p.worldId,
+      position: [p.lng, p.lat, 0],
+      createdAt: "Saved Place",
+    }));
+
+    list.unshift({
+      id: "anchor-enu-origin",
+      name: "Metric ENU Origin [0, 0, 0]",
+      worldId: activeWorldId,
+      position: [0, 0, 0],
+      createdAt: "System Coordinate Anchor",
+    });
+
+    if (entitiesList.length > 0) {
+      list.push({
+        id: "anchor-reconstruction-center",
+        name: "Reconstruction Center",
+        worldId: activeWorldId,
+        position: [0, 1.2, 0],
+        createdAt: "Spatial Bounding Center",
+      });
+    }
+    return list;
+  }, [places, activeWorldId, entitiesList]);
 
   // Filtered entities matching Query tab
   const filteredEntities = useMemo(() => {
@@ -173,36 +295,6 @@ export default function WorldNavPanel({
       })
       .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
   }, [entitiesList, filterText, typeFilter, minConfFilter]);
-
-  // Derived authentic evidence list
-  const depthViews = worldIR?.metadata?.depth?.per_view || [];
-  const effectiveEvidence = useMemo(() => {
-    if (evidence.length > 0) {
-      return evidence.map((e) => ({
-        id: e.id,
-        name: e.name,
-        type: e.type,
-        status: e.processingState || "Captured",
-        residual: null as string | null,
-        inlierFraction: null as number | null,
-      }));
-    }
-    if (depthViews.length > 0) {
-      return depthViews.map((dv: any) => ({
-        id: dv.evidence_id,
-        name: `Pose ${dv.evidence_id}`,
-        type: "Calibrated Camera Pose",
-        status: dv.inlier_fraction
-          ? `${(dv.inlier_fraction * 100).toFixed(0)}% inliers`
-          : "Calibrated",
-        residual: dv.residual_median_m
-          ? `${(dv.residual_median_m * 1000).toFixed(0)} mm res`
-          : null,
-        inlierFraction: dv.inlier_fraction ?? null,
-      }));
-    }
-    return [];
-  }, [evidence, depthViews]);
 
   const handleApplyQuery = (type?: string, minConf?: number, text?: string) => {
     const nextType = type !== undefined ? type : typeFilter;
@@ -267,7 +359,7 @@ export default function WorldNavPanel({
         </div>
       </div>
 
-      {/* Primary 5 Desktop Nav Tabs */}
+      {/* Primary Left Nav Tabs */}
       <div
         className="flex items-center px-2 py-1.5 border-b gap-1 shrink-0 overflow-x-auto text-xs bg-[#101217]"
         style={{ borderColor: "var(--border-subtle)" }}
@@ -294,6 +386,13 @@ export default function WorldNavPanel({
           count={sessions.length}
         />
         <NavTabButton
+          active={section === "places"}
+          onClick={() => setSection("places")}
+          icon={MapPin}
+          label="Places"
+          count={effectivePlaces.length}
+        />
+        <NavTabButton
           active={section === "versions"}
           onClick={() => setSection("versions")}
           icon={GitBranch}
@@ -315,189 +414,239 @@ export default function WorldNavPanel({
         {/* 1. HIERARCHY: WORLD → LEVEL → SPACE → ELEMENT                */}
         {/* ============================================================ */}
         {section === "hierarchy" && (
-          <div className="p-3 space-y-3">
-            {/* Level & Space Slices */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                <span>Spatial Hierarchy</span>
-                <span className="text-neutral-500 font-mono">WORLD → LEVEL → SPACE → ELEMENT</span>
-              </div>
-
-              {/* Level Slices */}
-              <div className="grid grid-cols-3 gap-1">
+          <div className="p-3 space-y-3 font-mono text-xs">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+              <span>World Hierarchy</span>
+              {onOpenRoomConstruction && (
                 <button
                   type="button"
-                  onClick={() => setSelectedLevel("all")}
-                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                    selectedLevel === "all"
-                      ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40"
-                      : "bg-[#151821] text-neutral-400 hover:text-white"
-                  }`}
+                  onClick={onOpenRoomConstruction}
+                  className="text-[#00e5ff] hover:underline flex items-center gap-1 font-mono lowercase"
                 >
-                  All Levels
+                  <Workflow className="w-3 h-3" />
+                  <span>reconstruct</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedLevel("ground")}
-                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                    selectedLevel === "ground"
-                      ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40"
-                      : "bg-[#151821] text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  Level 0 (ENU)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedLevel("upper")}
-                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                    selectedLevel === "upper"
-                      ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40"
-                      : "bg-[#151821] text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  Upper Levels
-                </button>
-              </div>
-            </div>
-
-            {/* Architectural Primitives Breakdown */}
-            <div className="space-y-1.5 pt-2 border-t border-[#1f222b]">
-              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                <span>Architectural Elements</span>
-                <span className="font-mono text-neutral-500">
-                  {selectedPrimitive === "all" ? "All Elements" : selectedPrimitive}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1 max-h-48 overflow-y-auto pr-1">
-                <button
-                  type="button"
-                  onClick={() => setSelectedPrimitive("all")}
-                  className={`flex items-center justify-between px-2 py-1 rounded text-[11px] font-mono transition-colors ${
-                    selectedPrimitive === "all"
-                      ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40"
-                      : "bg-[#151821] text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  <span>All Primitives</span>
-                  <span className="text-[10px] font-semibold">{entitiesList.length}</span>
-                </button>
-
-                {ARCHITECTURAL_PRIMITIVES.map((p) => {
-                  const count = primitiveCounts[p.type] || 0;
-                  const isReconstructed = count > 0;
-                  return (
-                    <button
-                      key={p.type}
-                      type="button"
-                      onClick={() => setSelectedPrimitive(p.type)}
-                      className={`flex items-center justify-between px-2 py-1 rounded text-[11px] font-mono transition-colors ${
-                        selectedPrimitive === p.type
-                          ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40"
-                          : "bg-[#151821] text-neutral-400 hover:text-white"
-                      }`}
-                    >
-                      <span className="capitalize">{p.label}</span>
-                      <span
-                        className={`text-[10px] px-1 py-0.2 rounded font-semibold ${
-                          isReconstructed
-                            ? "bg-[#00e5ff]/15 text-[#00e5ff]"
-                            : "bg-neutral-800 text-neutral-500"
-                        }`}
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Elements List */}
-            <div className="space-y-1.5 pt-2 border-t border-[#1f222b]">
-              <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                <span>Compiled Entities ({hierarchyEntities.length})</span>
-                {onOpenRoomConstruction && (
-                  <button
-                    type="button"
-                    onClick={onOpenRoomConstruction}
-                    className="text-[#00e5ff] hover:underline flex items-center gap-1 font-mono lowercase"
-                  >
-                    <Workflow className="w-3 h-3" />
-                    <span>reconstruct</span>
-                  </button>
-                )}
-              </div>
-
-              {hierarchyEntities.length === 0 ? (
-                <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-1.5">
-                  <p className="font-medium text-white">
-                    {selectedPrimitive === "all"
-                      ? "No entities compiled in this World"
-                      : `No '${selectedPrimitive}' elements reconstructed`}
-                  </p>
-                  <p className="text-[11px] text-neutral-500">
-                    {selectedPrimitive === "all"
-                      ? "Reconstruct attached session evidence or load an authentic WorldIR."
-                      : "Primitive classifier not detected in current SfM/depth pass. Showing honest unavailable state."}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {hierarchyEntities.map((e) => {
-                    const isSelected = e.id === selectedEntityId;
-                    const hexColor = (TYPE_COLORS[e.type] || TYPE_COLORS.default)
-                      .toString(16)
-                      .padStart(6, "0");
-                    const conf = typeof e.confidence === "number" ? e.confidence : 0.5;
-
-                    return (
-                      <div
-                        key={e.id}
-                        onClick={() => onSelectEntity(isSelected ? null : e.id)}
-                        className={`group p-2 rounded border transition-colors cursor-pointer flex items-center justify-between ${
-                          isSelected
-                            ? "bg-[#182030] border-[#00e5ff] shadow-sm"
-                            : "bg-[#14161f] border-[#1f222b] hover:border-neutral-700"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ background: `#${hexColor}` }}
-                          />
-                          <div className="min-w-0">
-                            <div className="font-mono text-xs font-medium text-neutral-200 truncate group-hover:text-white">
-                              {e.name || e.id}
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
-                              <span className="capitalize">{e.type}</span>
-                              <span>·</span>
-                              <span className="font-mono-num">{(conf * 100).toFixed(0)}% conf</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              onFrameEntity(e.id);
-                            }}
-                            title="Frame Entity [F]"
-                            className="p-1 rounded text-neutral-400 hover:text-[#00e5ff] hover:bg-neutral-800 transition-colors"
-                          >
-                            <Maximize2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               )}
             </div>
+
+            {!hierarchyTree ? (
+              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-1.5 font-sans">
+                <p className="font-medium text-white">No WorldIR entities loaded</p>
+                <p className="text-[11px] text-neutral-500">
+                  This world has no compiled entities yet. Reconstruct attached session evidence to promote structural geometry.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5 border border-[#1f222b] rounded-lg p-2 bg-[#12141a]">
+                {/* 1. Root: WORLD Node */}
+                <div className="flex items-center justify-between text-neutral-200 py-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleNode("root")}
+                      className="text-neutral-500 hover:text-white"
+                    >
+                      {expandedNodes["root"] ? (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                    <Globe className="w-3.5 h-3.5 text-[#00e5ff] shrink-0" />
+                    <span className="font-semibold text-white truncate">
+                      {hierarchyTree.worldName}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-neutral-500 font-mono">
+                    {hierarchyTree.totalElements} entities
+                  </span>
+                </div>
+
+                {expandedNodes["root"] && (
+                  <div className="pl-4 space-y-2 border-l border-neutral-800 ml-2">
+                    {/* LEVEL 0 (ENU Ground Plane) */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between py-0.5 text-neutral-300">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleNode("level-0")}
+                            className="text-neutral-500 hover:text-white"
+                          >
+                            {expandedNodes["level-0"] ? (
+                              <ChevronDown className="w-3 h-3" />
+                            ) : (
+                              <ChevronRight className="w-3 h-3" />
+                            )}
+                          </button>
+                          <Layers className="w-3.5 h-3.5 text-[#4da3ff] shrink-0" />
+                          <span className="font-medium text-neutral-200">
+                            Level 0 (ENU 0.0m)
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-neutral-500">
+                          {hierarchyTree.groundElements.length +
+                            hierarchyTree.spaces.reduce((acc, s) => acc + s.elements.length, 0)}{" "}
+                          items
+                        </span>
+                      </div>
+
+                      {expandedNodes["level-0"] && (
+                        <div className="pl-4 space-y-1.5 border-l border-neutral-800 ml-2">
+                          {/* SPACES / ROOMS */}
+                          {hierarchyTree.spaces.length > 0 ? (
+                            hierarchyTree.spaces.map(({ space, elements }) => {
+                              const isSpaceExpanded = expandedNodes[space.id] ?? true;
+                              const isSelected = space.id === selectedEntityId;
+                              return (
+                                <div key={space.id} className="space-y-1">
+                                  <div
+                                    onClick={() => onSelectEntity(isSelected ? null : space.id)}
+                                    className={`flex items-center justify-between p-1 rounded transition-colors cursor-pointer ${
+                                      isSelected
+                                        ? "bg-[#182030] text-[#00e5ff]"
+                                        : "hover:bg-neutral-800/60 text-neutral-300"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <button
+                                        type="button"
+                                        onClick={(ev) => {
+                                          ev.stopPropagation();
+                                          toggleNode(space.id);
+                                        }}
+                                        className="text-neutral-500 hover:text-white"
+                                      >
+                                        {isSpaceExpanded ? (
+                                          <ChevronDown className="w-3 h-3" />
+                                        ) : (
+                                          <ChevronRight className="w-3 h-3" />
+                                        )}
+                                      </button>
+                                      <Building className="w-3.5 h-3.5 text-[#35d07f] shrink-0" />
+                                      <span className="truncate">{space.name || space.id}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <span className="text-[10px] text-neutral-500">
+                                        {elements.length} elements
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(ev) => {
+                                          ev.stopPropagation();
+                                          onFrameEntity(space.id);
+                                        }}
+                                        title="Frame Room [F]"
+                                        className="p-0.5 text-neutral-400 hover:text-[#00e5ff]"
+                                      >
+                                        <Maximize2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Space Elements */}
+                                  {isSpaceExpanded && (
+                                    <div className="pl-4 space-y-0.5 border-l border-neutral-800 ml-2">
+                                      {elements.map((e) => (
+                                        <HierarchyElementRow
+                                          key={e.id}
+                                          entity={e}
+                                          isSelected={e.id === selectedEntityId}
+                                          onSelect={() => onSelectEntity(e.id === selectedEntityId ? null : e.id)}
+                                          onFrame={() => onFrameEntity(e.id)}
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="p-1.5 rounded bg-[#14161f] border border-dashed border-neutral-800 text-[11px] text-neutral-500 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-1">
+                                  <Building className="w-3 h-3 text-neutral-600" />
+                                  <span>Spaces: 0 detected</span>
+                                </span>
+                                <span className="text-[10px] text-[#00e5ff]/70 font-mono">
+                                  unclosed rings
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-neutral-600 font-sans">
+                                Raw planar geometry available below. Room boundary closure required for space promotion.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* UNENCLOSED / PLANAR STRUCTURAL ELEMENTS */}
+                          {hierarchyTree.groundElements.length > 0 && (
+                            <div className="space-y-1 pt-1">
+                              <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                                <span className="flex items-center gap-1">
+                                  <Box className="w-3 h-3 text-neutral-500" />
+                                  <span>Structural Elements ({hierarchyTree.groundElements.length})</span>
+                                </span>
+                              </div>
+                              <div className="space-y-0.5 max-h-60 overflow-y-auto pr-1">
+                                {hierarchyTree.groundElements.map((e) => (
+                                  <HierarchyElementRow
+                                    key={e.id}
+                                    entity={e}
+                                    isSelected={e.id === selectedEntityId}
+                                    onSelect={() => onSelectEntity(e.id === selectedEntityId ? null : e.id)}
+                                    onFrame={() => onFrameEntity(e.id)}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* UPPER LEVELS (if any) */}
+                    {hierarchyTree.upperElements.length > 0 && (
+                      <div className="space-y-1 pt-1 border-t border-neutral-800/80">
+                        <div className="flex items-center justify-between py-0.5 text-neutral-300">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleNode("level-upper")}
+                              className="text-neutral-500 hover:text-white"
+                            >
+                              {expandedNodes["level-upper"] ? (
+                                <ChevronDown className="w-3 h-3" />
+                              ) : (
+                                <ChevronRight className="w-3 h-3" />
+                              )}
+                            </button>
+                            <Layers className="w-3.5 h-3.5 text-[#b28dff] shrink-0" />
+                            <span className="font-medium text-neutral-200">Upper Elevation</span>
+                          </div>
+                          <span className="text-[10px] text-neutral-500">
+                            {hierarchyTree.upperElements.length} items
+                          </span>
+                        </div>
+
+                        {expandedNodes["level-upper"] && (
+                          <div className="pl-4 space-y-0.5 border-l border-neutral-800 ml-2">
+                            {hierarchyTree.upperElements.map((e) => (
+                              <HierarchyElementRow
+                                key={e.id}
+                                entity={e}
+                                isSelected={e.id === selectedEntityId}
+                                onSelect={() => onSelectEntity(e.id === selectedEntityId ? null : e.id)}
+                                onFrame={() => onFrameEntity(e.id)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -505,14 +654,14 @@ export default function WorldNavPanel({
         {/* 2. EVIDENCE: CAMERA POSES & INLIERS                          */}
         {/* ============================================================ */}
         {section === "evidence" && (
-          <div className="p-3 space-y-3">
+          <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Calibrated Viewpoints ({effectiveEvidence.length})</span>
               <span className="text-[#00e5ff] font-mono">Multi-View SfM</span>
             </div>
 
             {effectiveEvidence.length === 0 ? (
-              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400">
+              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 font-sans">
                 No calibrated camera evidence available.
               </div>
             ) : (
@@ -552,6 +701,9 @@ export default function WorldNavPanel({
                         onClick={(e) => {
                           e.stopPropagation();
                           onSelectEvidence?.(ev.id);
+                          window.dispatchEvent(
+                            new CustomEvent("frame-camera", { detail: { id: ev.id } })
+                          );
                         }}
                         title="Frame Camera Viewpoint"
                         className="p-1 rounded text-neutral-400 hover:text-[#00e5ff] hover:bg-neutral-800 transition-colors"
@@ -570,14 +722,14 @@ export default function WorldNavPanel({
         {/* 3. SESSIONS: ATTACHED CAPTURE SESSIONS                       */}
         {/* ============================================================ */}
         {section === "sessions" && (
-          <div className="p-3 space-y-3">
+          <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Attached Sessions ({sessions.length})</span>
               <span className="text-[#00e5ff] font-mono">Capture Ingestion</span>
             </div>
 
             {sessions.length === 0 ? (
-              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-2">
+              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-2 font-sans">
                 <p>No capture sessions attached to this World yet.</p>
                 <p className="text-[11px] text-neutral-500">
                   Attach an existing session or start a new mobile capture.
@@ -588,16 +740,13 @@ export default function WorldNavPanel({
                 {sessions.map((s) => (
                   <div
                     key={s.id}
+                    onClick={() => onSelectSession?.(s.id)}
                     className="p-2.5 rounded border border-[#1f222b] bg-[#14161f] hover:border-neutral-700 transition-colors cursor-pointer space-y-1"
                   >
                     <div className="flex items-center justify-between">
-                      <button
-                        type="button"
-                        onClick={() => onSelectSession?.(s.id)}
-                        className="font-semibold text-xs text-white text-left hover:text-[#00e5ff]"
-                      >
+                      <span className="font-semibold text-xs text-white hover:text-[#00e5ff]">
                         {s.name}
-                      </button>
+                      </span>
                       <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-neutral-800 text-neutral-300">
                         {s.locationSource || "WGS84"}
                       </span>
@@ -614,10 +763,52 @@ export default function WorldNavPanel({
         )}
 
         {/* ============================================================ */}
-        {/* 4. VERSIONS: LINEAGE & DIFF                                  */}
+        {/* 4. PLACES & SPATIAL ANCHORS                                  */}
+        {/* ============================================================ */}
+        {section === "places" && (
+          <div className="p-3 space-y-3 font-mono text-xs">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+              <span>Spatial Anchors ({effectivePlaces.length})</span>
+              <span className="text-[#00e5ff] font-mono">ENU Coordinate Frame</span>
+            </div>
+
+            <div className="space-y-1.5">
+              {effectivePlaces.map((pl) => (
+                <div
+                  key={pl.id}
+                  onClick={() => {
+                    const pos = pl.position || [0, 0, 0];
+                    onSelectPlace?.({ name: pl.name, position: pos as [number, number, number] });
+                    window.dispatchEvent(
+                      new CustomEvent("frame-position", {
+                        detail: { x: pos[0], y: pos[1], z: pos[2] },
+                      })
+                    );
+                  }}
+                  className="p-2.5 rounded border border-[#1f222b] bg-[#14161f] hover:border-[#00e5ff]/50 transition-colors cursor-pointer space-y-1"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-white font-medium">
+                      <MapPin className="w-3.5 h-3.5 text-[#00e5ff]" />
+                      <span>{pl.name}</span>
+                    </div>
+                    <Crosshair className="w-3 h-3 text-neutral-500 hover:text-white" />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-neutral-400">
+                    <span>Pos: [{pl.position.map((v: number) => v.toFixed(1)).join(", ")}] m</span>
+                    <span className="text-neutral-500">{pl.createdAt}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* 5. VERSIONS: LINEAGE & DIFF                                  */}
         {/* ============================================================ */}
         {section === "versions" && (
-          <div className="p-3 space-y-3">
+          <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>WorldStore Lineage</span>
               <span className="text-[#00e5ff] font-mono">Immutable Snapshots</span>
@@ -628,7 +819,7 @@ export default function WorldNavPanel({
               <button
                 type="button"
                 onClick={() => onCompareVersions(versions[0]?.id, "latest")}
-                className="w-full py-1.5 rounded font-medium text-xs bg-[#182030] hover:bg-[#1f2b42] text-[#00e5ff] border border-[#00e5ff]/30 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-1.5 rounded font-medium text-xs bg-[#182030] hover:bg-[#1f2b42] text-[#00e5ff] border border-[#00e5ff]/30 transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-sans"
               >
                 <GitBranch className="w-3.5 h-3.5" />
                 <span>Compare Versions (Diff)</span>
@@ -636,7 +827,7 @@ export default function WorldNavPanel({
             )}
 
             {versions.length === 0 ? (
-              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-1.5">
+              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-1.5 font-sans">
                 <p className="font-medium text-white">No version snapshots recorded yet</p>
                 <p className="text-[11px] text-neutral-500">
                   Reconstruction or correction commit required to create an initial WorldStore version snapshot.
@@ -644,7 +835,7 @@ export default function WorldNavPanel({
               </div>
             ) : (
               <div className="space-y-2">
-                {versions.map((v, i) => (
+                {versions.map((v) => (
                   <div
                     key={v.id}
                     className="p-2.5 rounded border border-[#1f222b] bg-[#14161f] space-y-1"
@@ -666,7 +857,7 @@ export default function WorldNavPanel({
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-neutral-400 line-clamp-2">
+                    <p className="text-[11px] text-neutral-400 line-clamp-2 font-sans">
                       {v.changeSummary}
                     </p>
                     <div className="text-[10px] font-mono text-neutral-500 pt-1 border-t border-neutral-800">
@@ -680,10 +871,10 @@ export default function WorldNavPanel({
         )}
 
         {/* ============================================================ */}
-        {/* 5. QUERY: SPATIAL QUERY & FILTERING                          */}
+        {/* 6. QUERY: SPATIAL QUERY & FILTERING                          */}
         {/* ============================================================ */}
         {section === "query" && (
-          <div className="p-3 space-y-3">
+          <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Spatial Query Engine</span>
               {activeQuery && (
@@ -754,6 +945,61 @@ export default function WorldNavPanel({
   );
 }
 
+function HierarchyElementRow({
+  entity,
+  isSelected,
+  onSelect,
+  onFrame,
+}: {
+  entity: Entity;
+  isSelected: boolean;
+  onSelect: () => void;
+  onFrame: () => void;
+}) {
+  const hexColor = (TYPE_COLORS[entity.type] || TYPE_COLORS.default)
+    .toString(16)
+    .padStart(6, "0");
+  const conf = typeof entity.confidence === "number" ? entity.confidence : 0.5;
+
+  return (
+    <div
+      onClick={onSelect}
+      className={`group p-1.5 rounded border transition-colors cursor-pointer flex items-center justify-between text-[11px] font-mono ${
+        isSelected
+          ? "bg-[#182030] border-[#00e5ff]"
+          : "bg-[#14161f] border-[#1f222b] hover:border-neutral-700"
+      }`}
+    >
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ background: `#${hexColor}` }}
+        />
+        <span className="text-neutral-200 truncate group-hover:text-white">
+          {entity.name || entity.id}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-1 shrink-0">
+        <span className="text-[10px] text-neutral-500 font-mono-num">
+          {(conf * 100).toFixed(0)}%
+        </span>
+        <button
+          type="button"
+          onClick={(ev) => {
+            ev.stopPropagation();
+            onFrame();
+          }}
+          title="Frame Entity [F]"
+          className="p-0.5 text-neutral-400 hover:text-[#00e5ff] rounded"
+        >
+          <Maximize2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function NavTabButton({
   active,
   onClick,
@@ -763,7 +1009,7 @@ function NavTabButton({
 }: {
   active: boolean;
   onClick: () => void;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   count?: number;
 }) {

@@ -43,6 +43,32 @@ class RoomIn(BaseModel):
 
 
 def _spec_from_body(body: RoomIn) -> RoomGrammarSpec:
+    import math
+
+    if not body.name or not body.name.strip():
+        raise HTTPException(422, "room name must be a non-empty string")
+    if len(body.name) > 200:
+        raise HTTPException(422, "room name must be at most 200 chars")
+    if len(body.openings) > 200:
+        raise HTTPException(413, "too many wall openings (at most 200)")
+    numerics = {
+        "width": body.width,
+        "depth": body.depth,
+        "height": body.height,
+        **{f"origin[{i}]": v for i, v in enumerate(body.origin)},
+    }
+    for opening in body.openings:
+        numerics.update({
+            f"opening.lateral_offset": opening.lateral_offset,
+            f"opening.width": opening.width,
+            f"opening.bottom": opening.bottom,
+            f"opening.top": opening.top,
+        })
+    for label, value in numerics.items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise HTTPException(422, f"room {label} must be a number")
+        if not math.isfinite(value):
+            raise HTTPException(422, f"room {label} must be finite (no NaN/infinity)")
     try:
         return RoomGrammarSpec(
             name=body.name,
@@ -74,13 +100,18 @@ async def create_room(
 
     added_ids = [eid for eid in world.entities if eid not in before_ids]
 
-    version = await worldstore_service.commit_version(
-        db,
-        world_id=world_id,
-        world=world,
-        parent=w.current_version_id,
-        source_session_ids=[],
-    )
+    base_head = w.current_version_id
+    try:
+        version = await worldstore_service.commit_version(
+            db,
+            world_id=world_id,
+            world=world,
+            parent=base_head,
+            source_session_ids=[],
+            expect_parent=base_head,
+        )
+    except worldstore_service.ConcurrentModificationError as exc:
+        raise HTTPException(409, str(exc)) from exc
     db.add(
         ActivityEvent(
             id=new_id("act"),

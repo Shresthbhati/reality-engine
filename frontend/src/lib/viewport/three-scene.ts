@@ -177,8 +177,14 @@ export class WorldSceneController {
       while (this.measurementGroup.children.length > 0) {
         const obj = this.measurementGroup.children[0];
         this.measurementGroup.remove(obj);
-        if ((obj as any).geometry) (obj as any).geometry.dispose();
-        if ((obj as any).material) (obj as any).material.dispose();
+        if (obj instanceof THREE.Mesh || obj instanceof THREE.Line) {
+          obj.geometry.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => m.dispose());
+          } else {
+            obj.material.dispose();
+          }
+        }
       }
     }
     this.onMeasureCallback?.(null);
@@ -290,8 +296,12 @@ export class WorldSceneController {
 
         const mn = [g.bounds_min.x, g.bounds_min.y, g.bounds_min.z];
         const mx = [g.bounds_max.x, g.bounds_max.y, g.bounds_max.z];
-        const size = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]];
-        if (size.some((s) => !isFinite(s) || s <= 0)) continue;
+        const size = [
+          Math.max(0.02, mx[0] - mn[0]),
+          Math.max(0.02, mx[1] - mn[1]),
+          Math.max(0.02, mx[2] - mn[2]),
+        ];
+        if (size.some((s) => !isFinite(s))) continue;
 
         const extent = Math.max(size[0], size[1], size[2]);
         const isOversized = this.robustExtent > 0 && extent > 4 * this.robustExtent;
@@ -368,10 +378,10 @@ export class WorldSceneController {
       for (const c of this.camerasData.cameras) {
         const p = c.position_m;
         quat.set(
-          c.rotation_wxyz[0],
           c.rotation_wxyz[1],
           c.rotation_wxyz[2],
-          c.rotation_wxyz[3]
+          c.rotation_wxyz[3],
+          c.rotation_wxyz[0]
         );
         cam.position.set(p[0], p[1], p[2]);
         cam.quaternion.copy(quat);
@@ -575,8 +585,19 @@ export class WorldSceneController {
     );
     if (!cam) return;
     const p = cam.position_m;
-    this.camera.position.set(p[0] + 0.9, p[1] + 0.6, p[2] + 0.9);
-    this.controls.target.set(p[0], p[1], p[2]);
+    const quat = new THREE.Quaternion(
+      cam.rotation_wxyz[1],
+      cam.rotation_wxyz[2],
+      cam.rotation_wxyz[3],
+      cam.rotation_wxyz[0]
+    );
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+    this.camera.position.set(p[0], p[1], p[2]);
+    this.controls.target.set(
+      p[0] + forward.x * 2.5,
+      p[1] + forward.y * 2.5,
+      p[2] + forward.z * 2.5
+    );
     this.controls.update();
   }
 

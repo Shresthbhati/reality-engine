@@ -14,13 +14,13 @@ import logging
 import os
 import tempfile
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.models import Evidence, Job, Session, World, utcnow
+from apps.api.models import ActivityEvent, Evidence, Job, Session, World, new_id, utcnow
 from evidence.session import EvidenceItem, EvidenceKind
 
 log = logging.getLogger("reality.api.jobs")
@@ -130,6 +130,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         raise RuntimeError(f"World {session.world_id} not found")
 
     job.stage = "checking_reconstruction_backend"
+    job.heartbeat_at = utcnow()
     await db.commit()
     try:
         from engine.pipeline.vertical_slice import (
@@ -141,18 +142,47 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
     except Exception as exc:  # pragma: no cover - depends on optional deps
         raise RuntimeError(f"Reconstruction backend unavailable: {exc}") from exc
 
+    # Deterministic-backend seam for offline verification (same
+    # "module:Class" contract apps.cli uses): when set, the injected
+    # backend drives vertical_slice and the heavyweight learned stages
+    # are disabled, since they need real pixels, model weights, and GPU
+    # -- none of which a synthetic backend provides.
+    test_backend = None
+    backend_spec = os.environ.get("REALITY_TEST_BACKEND", "").strip()
+    if backend_spec:
+        import importlib
+
+        module_name, _, class_name = backend_spec.partition(":")
+        if not module_name or not class_name:
+            raise RuntimeError(
+                f"REALITY_TEST_BACKEND must be 'module:Class', got {backend_spec!r}"
+            )
+        try:
+            test_backend = getattr(importlib.import_module(module_name), class_name)()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Reconstruction failed: test backend {backend_spec!r} unavailable: {exc}"
+            ) from exc
+
     job.stage = "resolving_evidence"
+    job.heartbeat_at = utcnow()
     await db.commit()
     result = await db.execute(
         select(Evidence).where(Evidence.session_id == session.id, Evidence.type == "photo")
     )
     evidence_rows = list(result.scalars().all())
     items = []
+    skipped_evidence = []
     for ev in evidence_rows:
         if not ev.artifact_uri:
+            skipped_evidence.append({"evidence_id": ev.id, "reason": "no stored artifact"})
             continue
         path = resolve_artifact(ev.artifact_uri)
         if path is None:
+            skipped_evidence.append({
+                "evidence_id": ev.id,
+                "reason": f"artifact_uri {ev.artifact_uri!r} not resolvable in content store",
+            })
             continue
         items.append(
             EvidenceItem(
@@ -169,15 +199,27 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         )
 
     job.stage = "reconstructing"
+    job.heartbeat_at = utcnow()
     await db.commit()
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
-    options = VerticalSliceOptions(artifact_store=artifact_store)
+    if test_backend is not None:
+        options = VerticalSliceOptions(
+            artifact_store=artifact_store,
+            reconstruction_backend=test_backend,
+            depth_model=None,
+            perception_model=None,
+            mesh_enabled=False,
+            detail_enabled=False,
+        )
+    else:
+        options = VerticalSliceOptions(artifact_store=artifact_store)
     try:
         vs_result = await asyncio.to_thread(vertical_slice, items, options)
     except VerticalSliceError as exc:
         raise RuntimeError(f"Reconstruction failed: {exc}") from exc
 
     job.stage = "committing_version"
+    job.heartbeat_at = utcnow()
     await db.commit()
     report = {
         "status": "SUCCESS" if vs_result.registration_status == "success" else "PARTIAL_SUCCESS",
@@ -208,16 +250,42 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         _render_cameras_json, vs_result.camera_poses, vs_result.scale_state, options.image_size
     )
 
-    await worldstore_service.commit_version(
-        db,
-        world_id=world.id,
-        world=vs_result.world,
-        parent=world.current_version_id,
-        source_session_ids=[session.id],
-        points=points_bytes,
-        cameras=cameras_bytes,
-        report=report,
-    )
+    base_head = world.current_version_id
+    try:
+        version_row = await worldstore_service.commit_version(
+            db,
+            world_id=world.id,
+            world=vs_result.world,
+            parent=base_head,
+            source_session_ids=[session.id],
+            points=points_bytes,
+            cameras=cameras_bytes,
+            report=report,
+            expect_parent=base_head,
+        )
+    except worldstore_service.ConcurrentModificationError as exc:
+        # Retryable: the next attempt reloads HEAD and either dedups
+        # (identical content) or chains onto the new HEAD.
+        raise RuntimeError(f"reconstruction superseded: {exc}") from exc
+
+    # The completed reconstruction is a real product event: link it into
+    # the application model (session complete + attached world), carry
+    # the measured result on the job payload (never invented numbers),
+    # and surface it in notifications/activity so world surfaces see it.
+    session.world_id = world.id
+    session.status = "complete"
+    session.processing_completed_at = utcnow()
+    job.payload = {
+        "world_id": world.id,
+        "version_id": version_row.id,
+        "registration_status": vs_result.registration_status,
+        "points": len(vs_result.points),
+        "cameras_registered": vs_result.cameras_registered,
+        "skipped_evidence": skipped_evidence,
+    }
+    await db.commit()
+    _notify_world_version(db, job, world, version_row.id)
+    await db.commit()
 
 
 def _render_points_ply(points) -> bytes:
@@ -259,10 +327,71 @@ def _render_cameras_json(camera_poses, scale_state: str, image_size) -> bytes:
     return _json.dumps(payload, indent=2).encode("utf-8")
 
 
+def _notify_world_version(db, job, world_row, version_id) -> None:
+    """A completed reconstruction is a real product event: surface it in
+    notifications and activity so the UI's world surfaces see it."""
+    from apps.api.models import Notification
+
+    db.add(Notification(
+        id=f"ntf_{uuid.uuid4().hex[:12]}",
+        type="world.version_created",
+        title="World reconstructed",
+        body=f"Version {version_id} created for world {world_row.name}",
+        entity_type="world",
+        entity_id=world_row.id,
+    ))
+    db.add(ActivityEvent(
+        id=new_id("act"),
+        type="world.version_created",
+        entity_type="world",
+        entity_id=world_row.id,
+        summary=f"World '{world_row.name}' version {version_id} created",
+    ))
+
+
 _HANDLERS = {
     PROCESS_EVIDENCE: _run_process_evidence,
     RECONSTRUCT_SESSION: _run_reconstruct_session,
 }
+
+
+def _stale_after_seconds() -> float:
+    try:
+        return max(30.0, float(os.environ.get("JOB_STALE_AFTER_SECONDS", "300")))
+    except ValueError:
+        return 300.0
+
+
+def _job_timeout_seconds() -> float:
+    try:
+        return max(1.0, float(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")))
+    except ValueError:
+        return 1800.0
+
+
+async def reap_stale_jobs(db: AsyncSession) -> int:
+    """Recover jobs stranded in 'running' by a crashed worker/restart.
+
+    A claimed job heartbeats at claim time; one still 'running' past the
+    staleness horizon belongs to a dead worker and is requeued for pickup
+    instead of wedging its entity forever. Returns the requeued count.
+    """
+    from datetime import timedelta
+
+    cutoff = utcnow() - timedelta(seconds=_stale_after_seconds())
+    result = await db.execute(
+        select(Job).where(Job.status == "running", Job.heartbeat_at < cutoff)
+    )
+    reaped = 0
+    for job in result.scalars().all():
+        job.status = "queued"
+        job.stage = None
+        job.worker_id = None
+        reaped += 1
+    if reaped:
+        await db.commit()
+        log.warning("reaped %d stale running job(s) back to queued", reaped)
+    return reaped
 
 
 async def process_next_job(db: AsyncSession) -> Job | None:
@@ -287,7 +416,14 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     try:
         if handler is None:
             raise RuntimeError(f"No handler for job type {job.type}")
-        await handler(db, job)
+        # Bound every handler: a wedged backend (or lost dependency)
+        # must fail this job, never stall the whole queue behind it.
+        try:
+            await asyncio.wait_for(handler(db, job), timeout=_job_timeout_seconds())
+        except TimeoutError as exc:
+            raise RuntimeError(
+                f"job handler timed out after {_job_timeout_seconds():.0f}s"
+            ) from exc
         job.status = "completed"
         job.completed_at = utcnow()
         await _emit_completion(db, job)
@@ -329,9 +465,17 @@ async def worker_loop(poll_seconds: float = 1.0) -> None:
     from apps.api.db import get_sessionmaker
 
     maker = get_sessionmaker()
+    # A previous process may have died mid-job: reap once at startup so
+    # stranded 'running' jobs become pickable again instead of wedging.
+    try:
+        async with maker() as db:
+            await reap_stale_jobs(db)
+    except Exception:
+        log.exception("startup reap failed")
     while True:
         try:
             async with maker() as db:
+                await reap_stale_jobs(db)
                 job = await process_next_job(db)
             if job is None:
                 await asyncio.sleep(poll_seconds)

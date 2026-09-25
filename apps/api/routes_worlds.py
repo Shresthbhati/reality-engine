@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
+import math
 import os
 import struct
 from pathlib import Path
+
+log = logging.getLogger("reality.api.worlds")
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -22,9 +26,10 @@ from apps.api.models import (
     new_id,
 )
 from world_ir.diff import diff_worlds
+from world_ir.schema_v1 import EntityType
 from world_ir.world_v1 import WorldIR
 from world_ir.artifact_store import FileArtifactStore
-from worldstore.store import WorldStore
+from worldstore.store import WorldStore, WorldStoreError
 
 
 def _worldstore_root() -> Path:
@@ -117,11 +122,24 @@ async def get_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
 
 @worlds.get("/{world_id}/versions")
 async def list_world_versions(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    """Application mirror of WorldStore lineage. Empty until computation
-    actually creates versions -- never synthesized here."""
+    """Application mirror of WorldStore lineage. Reconciled against the
+    on-disk store on every read (writers outside this process, or a
+    version orphaned by a failed commit, must not drift silently from
+    what is listed) -- never synthesized here. A corrupted store degrades
+    to the DB mirror instead of failing the whole listing; the corrupt
+    version itself still fails explicitly (409) when read."""
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    try:
+        from apps.api import worldstore_service
+
+        await worldstore_service.resync_versions(db, world_id)
+    except Exception as exc:
+        # A corrupted/unreadable store must not take the whole listing
+        # down: fall back to the DB mirror. Per-version reads still fail
+        # explicitly (409) via _load_world_or_409.
+        log.warning("versions resync degraded for world %s: %s", world_id, exc)
     res = await db.execute(
         select(WorldVersion).where(WorldVersion.world_id == world_id).order_by(WorldVersion.created_at.desc())
     )
@@ -289,19 +307,29 @@ def _render_points_ply(world) -> bytes | None:
     geoms = getattr(world, "geometries", None) or {}
     positions: list[tuple[float, float, float]] = []
     skipped = 0
-    store = None
+    stores = None
     for g in geoms.values():
         data_uri = getattr(g, "data_uri", None)
         pts: list[tuple[float, float, float]] = []
         if data_uri:
-            if store is None:
+            if stores is None:
                 from world_ir.artifact_store import FileArtifactStore
 
-                store = FileArtifactStore(_worldstore_root() / "artifacts")
-            try:
-                raw = store.get(data_uri)
-            except Exception:
-                raw = b""
+                # Geometry payloads live in the pipeline-artifacts store
+                # the compile pipeline was given; the WorldStore artifacts
+                # store is the legacy location. Consult both so a version
+                # renders regardless of which store its geometries reference.
+                stores = [
+                    FileArtifactStore(_worldstore_root() / "pipeline-artifacts"),
+                    FileArtifactStore(_worldstore_root() / "artifacts"),
+                ]
+            raw = b""
+            for store in stores:
+                try:
+                    raw = store.get(data_uri)
+                except Exception:
+                    continue
+                break
             pts = _decode_point_payload(raw)
         if pts:
             positions.extend(pts)
@@ -338,7 +366,8 @@ def _decode_point_payload(raw: bytes) -> list[tuple[float, float, float]]:
         except ValueError:
             return []
         return [(p[0], p[1], p[2]) for p in cloud.points]
-    return _parse_ply_xyz(raw)
+    # PLY fallback: parse the header-declared vertex layout (ascii and
+    # binary_little_endian); anything else decodes to empty, never crash.
     head = raw[:4096]
     end = head.find(b"end_header")
     if end == -1:
@@ -460,6 +489,24 @@ async def get_world_diff(world_id: str, base: str | None = None, head: str | Non
     return world_diff.to_dict()
 
 
+# Fields a correction commit may change on an entity. Everything else
+# (id, geometry/material/surface/component linkage, provenance,
+# observations, relationships, ...) is rejected: silently ignoring an
+# unsupported field while still minting a version made failed corrections
+# look successful, and setattr on an arbitrary attribute could corrupt
+# entity invariants (e.g. overwriting `id` or `type` with a plain string).
+_COMMIT_MUTABLE_FIELDS = (
+    "name",
+    "type",
+    "confidence",
+    "semantic_labels",
+    "custom_properties",
+    "transform",
+)
+_MAX_COMMIT_CHANGES = 32
+_MAX_COMMIT_VALUE_BYTES = 16 * 1024
+
+
 class CommitRequest(BaseModel):
     entity_id: str
     changes: dict
@@ -467,45 +514,200 @@ class CommitRequest(BaseModel):
     commit_message: str | None = None
 
 
+def _validate_commit_changes(changes: dict) -> dict:
+    """Validate a correction payload. Returns sanitized {field: value};
+    raises 422/413 naming the offending field -- never silently drops."""
+    if not isinstance(changes, dict) or not changes:
+        raise HTTPException(422, "changes must be a non-empty object")
+    if len(changes) > _MAX_COMMIT_CHANGES:
+        raise HTTPException(
+            413, f"too many changed fields ({len(changes)} > {_MAX_COMMIT_CHANGES})"
+        )
+    validated: dict = {}
+    for key, value in changes.items():
+        if key not in _COMMIT_MUTABLE_FIELDS:
+            raise HTTPException(
+                422,
+                f"unsupported mutation field '{key}'; mutable fields are "
+                f"{list(_COMMIT_MUTABLE_FIELDS)}",
+            )
+        try:
+            size = len(json.dumps(value, sort_keys=True, default=str).encode("utf-8"))
+        except (TypeError, ValueError):
+            raise HTTPException(422, f"field '{key}' is not JSON-serializable")
+        if size > _MAX_COMMIT_VALUE_BYTES:
+            raise HTTPException(
+                413, f"field '{key}' exceeds {_MAX_COMMIT_VALUE_BYTES} bytes"
+            )
+        if key == "name":
+            if not isinstance(value, str) or not value or len(value) > 300:
+                raise HTTPException(
+                    422, "field 'name' must be a non-empty string of at most 300 chars"
+                )
+            validated[key] = value
+        elif key == "type":
+            try:
+                validated[key] = EntityType(value)
+            except ValueError:
+                raise HTTPException(
+                    422,
+                    f"field 'type' must be one of {[t.value for t in EntityType]}",
+                )
+        elif key == "confidence":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise HTTPException(422, "field 'confidence' must be a number")
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise HTTPException(
+                    422, "field 'confidence' must be finite and within [0, 1]"
+                )
+            validated[key] = float(value)
+        elif key == "semantic_labels":
+            if (
+                not isinstance(value, list)
+                or len(value) > 100
+                or not all(isinstance(v, str) for v in value)
+            ):
+                raise HTTPException(
+                    422, "field 'semantic_labels' must be a list of at most 100 strings"
+                )
+            validated[key] = list(value)
+        elif key in ("custom_properties", "transform"):
+            if not isinstance(value, dict):
+                raise HTTPException(422, f"field '{key}' must be an object")
+            validated[key] = dict(value)
+    return validated
+
+
 @worlds.post("/{world_id}/commit")
 async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncSession = Depends(get_db)):
-    """Apply a correction to a world entity and persist as new WorldStore version."""
+    """Apply a correction to a world entity and persist as new WorldStore version.
+
+    Failure contract: validation failures (422/413), stale parents (409),
+    and store failures (404/409) all return BEFORE anything is persisted --
+    a failed commit never moves HEAD, never writes a mirror row, and never
+    looks successful. A byte-identical retry returns the current version
+    (duplicate: true) instead of minting a duplicate version.
+    """
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
-    
+
     # Load current WorldIR
     worldir = await _load_worldir_from_store(w)
     if worldir is None:
         raise HTTPException(404, "WorldIR not available for this world's current version")
-    
+
     # Apply the entity change
     entity = worldir.entities.get(body.entity_id)
     if entity is None:
         raise HTTPException(404, f"Entity {body.entity_id} not found in world")
-    
-    # Apply changes to entity fields
-    for key, value in body.changes.items():
-        if hasattr(entity, key):
-            setattr(entity, key, value)
-    
-    # Update modified_at
+
+    validated = _validate_commit_changes(body.changes)
+    # Unify identifiers (same invariant worldstore_service.commit_version
+    # enforces): the WorldIR's own id is the application world id, so
+    # on-disk versions filter by world and the DB mirror stays truthful.
+    worldir.id = w.id
+    base_snapshot = worldir.to_dict()
+    for key, value in validated.items():
+        if key == "name":
+            entity.name = value
+        elif key == "type":
+            entity.type = value
+        elif key == "confidence":
+            entity.confidence = value
+        elif key == "semantic_labels":
+            entity.semantic_labels = value
+        elif key == "custom_properties":
+            entity.custom_properties = value
+        elif key == "transform":
+            entity.transform = value
+
+    # Stale-client guard: an explicit parent that is no longer HEAD is a
+    # 409, not a silent fork -- the caller must rebase onto HEAD.
+    effective_parent = body.parent_version_id or w.current_version_id
+    if body.parent_version_id is not None and body.parent_version_id != w.current_version_id:
+        raise HTTPException(
+            409,
+            f"parent version '{body.parent_version_id}' is stale; "
+            f"current HEAD is '{w.current_version_id}' -- reload and reapply",
+        )
+
+    # Duplicate-request guard: a byte-identical retry (same content, same
+    # parent) returns the adopted version instead of minting a duplicate.
+    # modified_at is wall-clock bookkeeping, excluded from the comparison.
     import time
+    new_snapshot = worldir.to_dict()
+    base_cmp = dict(base_snapshot)
+    new_cmp = dict(new_snapshot)
+    base_cmp.pop("modified_at", None)
+    new_cmp.pop("modified_at", None)
+    if (
+        effective_parent is not None
+        and effective_parent == w.current_version_id
+        and json.dumps(base_cmp, sort_keys=True) == json.dumps(new_cmp, sort_keys=True)
+    ):
+        return {
+            "version_id": w.current_version_id,
+            "world_id": w.id,
+            "entity_id": body.entity_id,
+            "changed_fields": [],
+            "duplicate": True,
+        }
     worldir.modified_at = time.time()
-    
+
     # Save as new version
     store_path = _worldstore_root()
     if not store_path.exists():
         store_path.mkdir(parents=True, exist_ok=True)
     store = WorldStore(str(store_path))
-    
-    parent_version = body.parent_version_id or w.current_version_id
-    stored = store.save_version(worldir, parent=parent_version)
-    
-    # Update World record
-    w.current_version_id = stored.version_id
-    w.modified_at = utcnow()
-    
+
+    try:
+        stored = store.save_version(worldir, parent=effective_parent)
+    except WorldStoreError as exc:
+        msg = str(exc)
+        if "unknown version" in msg:
+            raise HTTPException(404, msg)
+        raise HTTPException(409, msg)
+
+    # Atomic adoption: advance HEAD only if it still holds the parent
+    # this commit was based on. The conditional UPDATE is a single
+    # atomic statement, so two concurrent commits cannot both win -- the
+    # loser's rowcount is 0 and it gets an explicit 409 while its saved
+    # version file stays on disk (harmless, never adopted). An in-memory
+    # re-check could not close this race: concurrent requests use
+    # separate sessions whose commits serialize after the check.
+    if effective_parent is None:  # defensive: unreachable (404 above)
+        raise HTTPException(404, "World has no HEAD version to commit onto")
+    from sqlalchemy import update as _sa_update
+
+    head_update = await db.execute(
+        _sa_update(World)
+        .where(World.id == w.id, World.current_version_id == effective_parent)
+        .values(current_version_id=stored.version_id)
+    )
+    if head_update.rowcount == 0:
+        current = (await db.get(World, w.id)).current_version_id
+        raise HTTPException(
+            409,
+            f"HEAD moved during commit (now '{current}'); "
+            f"version '{stored.version_id}' was saved but not adopted -- "
+            "reload and reapply",
+        )
+
+    # Adopt atomically: HEAD pointer + DB mirror row + activity share one
+    # commit, so a version is never HEAD without its mirror record (which
+    # previously made committed worlds unreadable with 409).
+    db.add(
+        WorldVersion(
+            id=stored.version_id,
+            world_id=w.id,
+            parent_version_id=stored.parent,
+            artifact_uri=stored.artifact_uri,
+            artifact_hash=stored.artifact_hash,
+            source_session_ids=list(stored.source_session_ids),
+            changed_entity_ids=list(stored.changed_entity_ids),
+        )
+    )
     db.add(
         ActivityEvent(
             id=new_id("act"),
@@ -515,14 +717,15 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
             summary=f"Committed correction to {body.entity_id}: {body.commit_message or 'no message'}",
         )
     )
-    
+
     await db.commit()
-    
+
     return {
         "version_id": stored.version_id,
         "world_id": w.id,
         "entity_id": body.entity_id,
-        "changed_fields": list(body.changes.keys()),
+        "changed_fields": list(validated.keys()),
+        "duplicate": False,
     }
 
 

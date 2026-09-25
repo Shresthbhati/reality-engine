@@ -45,8 +45,8 @@ export async function GET(
   for (const ext of imageExtensions) {
     const filename = evidenceId.endsWith(ext) ? evidenceId : `${evidenceId}${ext}`;
     const imagePath = getLocalDatasetPath("room_capture", "images", filename);
-    if (imagePath && fs.existsSync(imagePath)) {
-      const buffer = fs.readFileSync(imagePath);
+    if (imagePath && fs.existsSync(/*turbopackIgnore: true*/ imagePath)) {
+      const buffer = fs.readFileSync(/*turbopackIgnore: true*/ imagePath);
       const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
       return new NextResponse(buffer, {
         headers: {

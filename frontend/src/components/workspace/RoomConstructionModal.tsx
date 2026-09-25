@@ -6,7 +6,6 @@ import {
   X,
   Play,
   CheckCircle2,
-  Clock,
   AlertCircle,
   Cpu,
   Layers,
@@ -138,9 +137,10 @@ export default function RoomConstructionModal({
       setActiveStage(null);
       setRunning(false);
       onReconstructionSuccess?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       setError(
-        err?.message ||
+        message ||
           "Reconstruction backend bridge offline (http://localhost:8100). Golden Loop backend worker is not running."
       );
       setRunning(false);

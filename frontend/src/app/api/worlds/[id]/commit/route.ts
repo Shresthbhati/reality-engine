@@ -70,9 +70,10 @@ export async function POST(
       success: true,
       version: newVersion,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: err?.message || "Failed to commit world version" },
+      { error: message || "Failed to commit world version" },
       { status: 500 }
     );
   }

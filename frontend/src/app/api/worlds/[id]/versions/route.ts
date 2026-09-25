@@ -2,8 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
+export interface StoredVersionItem {
+  id: string;
+  world_id: string;
+  label: string;
+  parent_version_id: string | null;
+  artifact_uri: string;
+  artifact_hash: string;
+  source_session_ids: string[];
+  changed_entity_ids: string[];
+  changed_geometry_ids: string[];
+  created_at: string;
+  is_current: boolean;
+  changeSummary?: string;
+}
+
 // In-memory version ledger for runtime session commits (persisting version lineage across user actions)
-const VERSION_STORE: Record<string, any[]> = {
+const VERSION_STORE: Record<string, StoredVersionItem[]> = {
   "world-compiled-seed42": [
     {
       id: "v1-canonical-baseline",
@@ -52,7 +67,7 @@ export async function GET(
   return NextResponse.json({ items: [] });
 }
 
-export function addStoredVersion(worldId: string, version: any) {
+export function addStoredVersion(worldId: string, version: StoredVersionItem) {
   if (!VERSION_STORE[worldId]) {
     VERSION_STORE[worldId] = [];
   }

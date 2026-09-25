@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.db import get_db
 from apps.api.models import (
     ActivityEvent,
+    Evidence,
     Location,
     Session,
     World,
@@ -262,6 +263,89 @@ async def world_worldir(
     row = await _version_row(db, world_id, version)
     world = _load_world_or_409(row)
     return world.to_dict()
+
+
+@worlds.get("/{world_id}/entities/{entity_id}/provenance")
+async def entity_provenance(
+    world_id: str, entity_id: str, version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Trace an entity back to the Evidence it was built from.
+
+    The compile pipeline (engine.pipeline.vertical_slice) does not yet
+    stamp per-observation evidence links on every entity it produces --
+    only the version's source_session_ids record which capture sessions
+    fed it. So tracing has two honest precision levels, tried in order:
+
+      1. observation: an Observation on the entity carries a data_hash
+         that matches a real Evidence.checksum (or a data_uri matching
+         Evidence.artifact_uri) -- exact, file-level provenance, for
+         whichever pipeline stage populates it.
+      2. session: no per-observation match exists, so this falls back to
+         every Evidence row belonging to the version's source sessions --
+         still real, just coarser (this entity came from *this session's*
+         capture, not a specific frame within it).
+
+    A PROCEDURAL entity (e.g. a generated room) has no source sessions at
+    all -- trace_level is "none", never a fabricated session guess.
+    """
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+    entity = world.entities.get(entity_id)
+    if entity is None:
+        raise HTTPException(404, f"Entity '{entity_id}' not found in version '{row.id}'")
+
+    observation_matches: list[dict] = []
+    for obs in getattr(entity, "observations", None) or []:
+        ev = None
+        if obs.data_hash:
+            res = await db.execute(select(Evidence).where(Evidence.checksum == obs.data_hash))
+            ev = res.scalar_one_or_none()
+        if ev is None and obs.data_uri:
+            res = await db.execute(select(Evidence).where(Evidence.artifact_uri == obs.data_uri))
+            ev = res.scalar_one_or_none()
+        if ev is not None:
+            observation_matches.append({
+                "observation_id": obs.id,
+                "evidence_id": ev.id,
+                "evidence_name": ev.name,
+                "evidence_type": ev.type,
+            })
+
+    if observation_matches:
+        return {
+            "entity_id": entity_id,
+            "version_id": row.id,
+            "provenance": entity.provenance.value if entity.provenance else None,
+            "trace_level": "observation",
+            "evidence": observation_matches,
+        }
+
+    session_ids = row.source_session_ids or []
+    if session_ids:
+        res = await db.execute(select(Evidence).where(Evidence.session_id.in_(session_ids)))
+        session_evidence = [
+            {"evidence_id": e.id, "evidence_name": e.name, "evidence_type": e.type,
+             "session_id": e.session_id}
+            for e in res.scalars().all()
+        ]
+        return {
+            "entity_id": entity_id,
+            "version_id": row.id,
+            "provenance": entity.provenance.value if entity.provenance else None,
+            "trace_level": "session",
+            "source_session_ids": session_ids,
+            "evidence": session_evidence,
+        }
+
+    return {
+        "entity_id": entity_id,
+        "version_id": row.id,
+        "provenance": entity.provenance.value if entity.provenance else None,
+        "trace_level": "none",
+        "evidence": [],
+        "reason": "This version has no source capture sessions (procedurally generated, or predates session tracking).",
+    }
 
 
 @worlds.get("/{world_id}/report")

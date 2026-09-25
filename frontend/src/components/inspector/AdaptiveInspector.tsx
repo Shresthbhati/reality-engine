@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { fetchEntityProvenance, type EntityProvenance } from "@/lib/api/provenance";
 import {
   Box,
   Compass,
@@ -159,6 +160,7 @@ export default function AdaptiveInspector({
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 text-xs">
         {entity ? (
           <EntityDetails
+            key={entity.id}
             world={world}
             worldId={worldId}
             entity={entity}
@@ -233,9 +235,24 @@ function EntityDetails({
   const [submitting, setSubmitting] = useState(false);
   const [committedSuccess, setCommittedSuccess] = useState(false);
 
-  // Discover candidate evidence cameras observing this entity
-  const depthViews = world?.metadata?.depth?.per_view || [];
-  const candidateEvidence = depthViews.slice(0, 6);
+  // Real, entity-specific trace-to-evidence -- refetched whenever the
+  // selected entity (or world) changes. Never falls back to fabricated
+  // per-entity data; an honest loading/empty/error state throughout.
+  // `EntityDetails` is remounted via `key={entity.id}` in the parent, so
+  // this state starts fresh (undefined = not yet loaded) on every entity
+  // switch -- no manual reset needed, and no synchronous setState in the
+  // effect body.
+  const [provenance, setProvenance] = useState<EntityProvenance | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    fetchEntityProvenance(worldId, entity.id).then((p) => {
+      if (!cancelled) setProvenance(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId, entity.id]);
+  const provenanceLoading = provenance === undefined;
 
   const handleSaveCorrection = async () => {
     if (!onCommitCorrection) return;
@@ -568,7 +585,7 @@ function EntityDetails({
             <span className="w-2 h-2 rounded-full bg-[#35d07f]" />
             <span className="text-white font-semibold">EVIDENCE</span>
             <span className="text-neutral-500 max-w-[65px] truncate">
-              {candidateEvidence[0]?.evidence_id || (observations.length > 0 ? observations[0].id : "Direct Inliers")}
+              {provenance?.evidence[0]?.evidence_name || (provenance?.trace_level === "none" ? "None" : "—")}
             </span>
           </div>
           <span className="text-neutral-600">→</span>
@@ -576,7 +593,7 @@ function EntityDetails({
             <span className="w-2 h-2 rounded-full bg-[#b28dff]" />
             <span className="text-white font-semibold">SESSION</span>
             <span className="text-neutral-500 max-w-[65px] truncate">
-              {String(entity.custom_properties?.session_id || "Active Session")}
+              {provenance?.source_session_ids?.[0] || (provenance?.trace_level === "none" ? "None" : "—")}
             </span>
           </div>
           <span className="text-neutral-600">→</span>
@@ -590,86 +607,84 @@ function EntityDetails({
         </div>
       </div>
 
-      {/* Traceable Source Evidence & Viewpoints */}
+      {/* Traceable Source Evidence -- real trace, never fabricated */}
       {(tab === "all" || tab === "evidence") && (
         <div className="space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
             <Camera className="w-3.5 h-3.5 text-[#35d07f]" />
-            <span>Source Evidence & Viewpoints</span>
+            <span>Source Evidence</span>
           </h4>
           <div className="space-y-2">
-            {candidateEvidence.length === 0 ? (
-              <p className="text-neutral-500 italic p-2">No evidence linked</p>
+            {provenanceLoading ? (
+              <p className="text-neutral-500 italic p-2">Tracing evidence…</p>
+            ) : !provenance || provenance.evidence.length === 0 ? (
+              <p className="text-neutral-500 italic p-2">
+                {provenance?.reason || "No evidence linked to this entity or its capture session."}
+              </p>
             ) : (
-              candidateEvidence.map((ce: { evidence_id: string; residual_median_m?: number; inlier_fraction?: number }) => {
-                const isViewingImage = previewImageId === ce.evidence_id;
-                return (
-                  <div
-                    key={ce.evidence_id}
-                    className="p-2.5 rounded-lg border border-[#1f222b] bg-[#151821] text-[11px] space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-semibold text-white">
-                        {ce.evidence_id}
-                      </span>
-                      <span className="font-mono text-[10px] text-[#2ecc71] px-1 rounded bg-[#2ecc71]/10">
-                        {ce.inlier_fraction ? `${(ce.inlier_fraction * 100).toFixed(0)}% inlier` : "Calibrated"}
-                      </span>
-                    </div>
-
-                    {ce.residual_median_m && (
-                      <div className="flex justify-between text-neutral-400 text-[10px]">
-                        <span>Residual Median</span>
-                        <span className="font-mono-num text-neutral-300">
-                          {(ce.residual_median_m * 1000).toFixed(1)} mm
+              <>
+                {provenance.trace_level === "session" && (
+                  <p className="text-neutral-500 text-[10px] px-0.5">
+                    Traced at session level: this entity&apos;s version came from this session&apos;s
+                    capture, not a specific frame within it.
+                  </p>
+                )}
+                {provenance.evidence.map((ev) => {
+                  const isViewingImage = previewImageId === ev.evidence_id;
+                  return (
+                    <div
+                      key={ev.evidence_id}
+                      className="p-2.5 rounded-lg border border-[#1f222b] bg-[#151821] text-[11px] space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-semibold text-white truncate">
+                          {ev.evidence_name}
+                        </span>
+                        <span className="font-mono text-[10px] text-[#35d07f] px-1 rounded bg-[#35d07f]/10 shrink-0">
+                          {ev.evidence_type}
                         </span>
                       </div>
-                    )}
 
-                    <div className="flex items-center justify-between pt-1 border-t border-neutral-800">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onTraceEvidence?.(ce.evidence_id);
-                          window.dispatchEvent(new CustomEvent("frame-camera", { detail: { id: ce.evidence_id } }));
-                        }}
-                        className="text-[10px] text-[#00e5ff] hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Maximize2 className="w-3 h-3" />
-                        <span>Focus Frustum in 3D</span>
-                      </button>
+                      <div className="flex items-center justify-between pt-1 border-t border-neutral-800">
+                        <a
+                          href={`/evidence/${ev.evidence_id}`}
+                          onClick={() => onTraceEvidence?.(ev.evidence_id)}
+                          className="text-[10px] text-[#00e5ff] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                          <span>Open Evidence</span>
+                        </a>
 
-                      <button
-                        type="button"
-                        onClick={() => setPreviewImageId(isViewingImage ? null : ce.evidence_id)}
-                        className="text-[10px] text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                      >
-                        <ImageIcon className="w-3 h-3" />
-                        <span>{isViewingImage ? "Hide Image" : "View Photo"}</span>
-                      </button>
-                    </div>
+                        {ev.evidence_type === "photo" && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImageId(isViewingImage ? null : ev.evidence_id)}
+                            className="text-[10px] text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                          >
+                            <ImageIcon className="w-3 h-3" />
+                            <span>{isViewingImage ? "Hide Image" : "View Photo"}</span>
+                          </button>
+                        )}
+                      </div>
 
-                    {/* Authentic Evidence Photo Preview */}
-                    {isViewingImage && (
-                      <div className="pt-2 border-t border-neutral-800 space-y-1">
-                        <div className="relative w-full h-36 rounded overflow-hidden bg-black border border-neutral-800">
-                          <img
-                            src={`/api/worlds/${worldId}/evidence/${ce.evidence_id}/image`}
-                            alt={`Camera view ${ce.evidence_id}`}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                            }}
-                          />
-                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-mono text-neutral-300">
-                            {ce.evidence_id}.jpg
+                      {isViewingImage && (
+                        <div className="pt-2 border-t border-neutral-800 space-y-1">
+                          <div className="relative w-full h-36 rounded overflow-hidden bg-black border border-neutral-800">
+                            <img
+                              src={`/api/worlds/${worldId}/evidence/${ev.evidence_id}/image`}
+                              alt={ev.evidence_name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                              }}
+                            />
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+                      )}
+                    </div>
+                  );
+                })}
+              </>
             )}
           </div>
         </div>
@@ -743,7 +758,7 @@ function EntityDetails({
             <div className="flex justify-between">
               <span className="text-neutral-400">Source Session</span>
               <span className="text-neutral-300 font-mono">
-                {String(entity.custom_properties?.session_id || "Unassigned")}
+                {provenance?.source_session_ids?.join(", ") || "Unassigned"}
               </span>
             </div>
             <div className="flex justify-between">

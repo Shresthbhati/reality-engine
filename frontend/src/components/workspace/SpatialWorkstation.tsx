@@ -107,6 +107,21 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     (allSessions || []).filter(s => s.worldId === worldId), 
     [allSessions, worldId]
   );
+
+  // Session the room-construction job is enqueued for. Defaults to the first
+  // attached session; the modal can switch it. Falls back if it goes away.
+  const [constructionSessionId, setConstructionSessionId] = useState<string | null>(null);
+  const effectiveConstructionSessionId = useMemo(() => {
+    if (constructionSessionId && sessions.some(s => s.id === constructionSessionId)) {
+      return constructionSessionId;
+    }
+    return sessions.length > 0 ? sessions[0].id : null;
+  }, [constructionSessionId, sessions]);
+  const constructionSessions = useMemo(
+    () => sessions.map(s => ({ id: s.id, name: s.name || s.id })),
+    [sessions]
+  );
+
   
   const currentWorldRow = useMemo(() => 
     (worlds || []).find(w => w.id === worldId) || {
@@ -565,6 +580,9 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       {/* Room Construction Pipeline Modal */}
       <RoomConstructionModal
         worldId={worldId}
+        sessions={constructionSessions}
+        sessionId={effectiveConstructionSessionId}
+        onSelectSession={setConstructionSessionId}
         isOpen={constructionModalOpen}
         onClose={() => setConstructionModalOpen(false)}
         onReconstructionSuccess={() => {

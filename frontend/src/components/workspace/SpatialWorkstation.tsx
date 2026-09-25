@@ -8,6 +8,7 @@ import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
+import QueryPanel from "@/components/workspace/QueryPanel";
 import WorldMap from "@/components/map/WorldMap";
 import { 
   useWorlds, 
@@ -52,6 +53,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [viewMode, setViewMode] = useState<"3d" | "map">("3d");
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [constructionModalOpen, setConstructionModalOpen] = useState(false);
+  const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   
@@ -281,18 +283,23 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       setConstructionModalOpen(true);
     };
 
+    const handleOpenQueryEvent = () => {
+      setQueryPanelOpen(true);
+    };
+
     const handleTriggerExportEvent = (e: Event) => {
       const customEvent = e as CustomEvent<{ format: "worldir" | "ply" | "cameras" | "report" }>;
       if (customEvent.detail?.format) {
         handleExport(customEvent.detail.format);
       }
     };
-    
+
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("apply-spatial-query", handleApplyQueryEvent as EventListener);
     window.addEventListener("reset-spatial-query", handleResetQueryEvent as EventListener);
     window.addEventListener("open-version-diff", handleOpenDiffEvent as EventListener);
     window.addEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
+    window.addEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
     window.addEventListener("trigger-export", handleTriggerExportEvent as EventListener);
 
     return () => {
@@ -301,6 +308,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       window.removeEventListener("reset-spatial-query", handleResetQueryEvent as EventListener);
       window.removeEventListener("open-version-diff", handleOpenDiffEvent as EventListener);
       window.removeEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
+      window.removeEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
       window.removeEventListener("trigger-export", handleTriggerExportEvent as EventListener);
     };
   }, [selectedEntityId, handleClearSelection, handleFrameEntity, handleExport]);
@@ -398,6 +406,21 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           >
             <Workflow className="w-3.5 h-3.5 text-[#00e5ff]" />
             <span className="hidden sm:inline">Construction</span>
+          </button>
+
+          {/* Spatial Query Launcher */}
+          <button
+            type="button"
+            onClick={() => setQueryPanelOpen((v) => !v)}
+            title="Spatial Query"
+            className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
+              queryPanelOpen
+                ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40"
+                : "bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[#1f222b]"
+            }`}
+          >
+            <Search className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <span className="hidden sm:inline">Query</span>
           </button>
 
           {/* Quick Layout Toggles */}
@@ -506,6 +529,16 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
                 <div className="text-neutral-400 text-[11px] mt-0.5">Lat: 37.7749° N · Lon: -122.4194° W · ENU Origin</div>
               </div>
             </div>
+          )}
+
+          {queryPanelOpen && (
+            <QueryPanel
+              worldId={worldId}
+              selectedEntityId={selectedEntityId}
+              onClose={() => setQueryPanelOpen(false)}
+              onSelectEntity={handleSelectEntity}
+              onFrameEntity={handleFrameEntity}
+            />
           )}
         </div>
         

@@ -98,6 +98,10 @@ def _default_registry() -> "ArchitectureRegistry":
     reg.register(ArchClass(
         "stairs", "stairs", FitKind.POINT_CLOUD, 1, min_extent_m=0.5,
     ))
+    reg.register(ArchClass(
+        "corridor", "corridor", FitKind.POINT_CLOUD, 1,
+        min_extent_m=2.0,
+    ))
     # ---- Phase 2 ----
     reg.register(ArchClass("cornice", "beam", FitKind.PLANE, 2))
     reg.register(ArchClass("balustrade", "wall", FitKind.POINT_CLOUD, 2))

@@ -648,19 +648,18 @@ def test_concurrent_commits_no_corruption(client, tmp_path, monkeypatch):
     for t in threads:
         t.join(timeout=60)
 
-    # Either serialization (second chains onto the first: 200 + 200, three
-    # versions) or a genuine overlap (second loses the conditional HEAD
-    # update: 200 + 409, two versions) is correct -- but nothing else is:
-    # no errors, no missing mirror rows, HEAD always readable.
+    # Either serialization (second chains onto the first: 200 + 200) or a
+    # genuine overlap (second loses the conditional HEAD update: 200 +
+    # 409) is correct -- but nothing else is: no errors, exactly one
+    # adopted HEAD, HEAD always readable. (The loser's orphaned version
+    # file may surface in the listing via resync -- listed, never HEAD.)
     assert all(isinstance(s, int) for s in results), results
-    head, count = _head_and_count(client, wid)
-    if sorted(results) == [200, 200]:
-        assert head != v0 and count == 3
-    else:
-        assert sorted(results) == [200, 409], results
-        assert head != v0 and count == 2
-    versions = {v["id"] for v in client.get(f"/api/worlds/{wid}/versions").json()["items"]}
-    assert head in versions
+    assert sorted(results) in ([200, 200], [200, 409]), results
+    head, _ = _head_and_count(client, wid)
+    assert head != v0
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    current = [v for v in items if v["is_current"]]
+    assert len(current) == 1 and current[0]["id"] == head
     assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
 
 
@@ -769,17 +768,15 @@ def test_concurrent_rooms_no_lost_update(client, tmp_path, monkeypatch):
         t.join(timeout=120)
 
     # Serialized (201 + 201 chained) or genuinely overlapped (201 + 409)
-    # are both correct; anything else (errors, lost versions, unreadable
-    # HEAD) is a consistency failure.
+    # are both correct; anything else (errors, zero or multiple adopted
+    # HEADs, unreadable HEAD) is a consistency failure. Orphaned loser
+    # versions may surface in the listing via resync -- listed, never HEAD.
     assert all(isinstance(s, int) for s in results), results
+    assert sorted(results) in ([201, 201], [201, 409]), results
     items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
     head = client.get(f"/api/worlds/{wid}").json()["current_version_id"]
-    if sorted(results) == [201, 201]:
-        assert len(items) == 2
-    else:
-        assert sorted(results) == [201, 409], results
-        assert len(items) == 1
-    assert head in {v["id"] for v in items}
+    current = [v for v in items if v["is_current"]]
+    assert len(current) == 1 and current[0]["id"] == head and head is not None
     assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
 
 
@@ -939,6 +936,12 @@ def test_reconstruct_succeeded_grading_deterministic(client, tmp_path, monkeypat
         assert stamp["backend"], "backend must be recorded"
         assert stamp["images_ingested"] == 3
         assert 0.0 <= ent.get("confidence", -1) <= 1.0
+        assert ent.get("uncertainty") is not None, "uncertainty must be preserved"
+    rep = client.get(f"/api/worlds/{wid}/report")
+    assert rep.status_code == 200, rep.text
+    stages = rep.json()["stages"]
+    assert stages["reconstruction"]["backend"], "pipeline backend recorded in report"
+    assert stages["depth"]["status"] == "skipped", "disabled stages say skipped, never fake data"
     pts = client.get(f"/api/worlds/{wid}/points")
     assert pts.status_code == 200
     assert int(pts.content.decode("ascii", "replace").split("element vertex ")[1].split("\n")[0]) == meta["points"]

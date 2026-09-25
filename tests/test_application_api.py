@@ -558,6 +558,40 @@ def test_commit_unknown_entity_404(client, tmp_path, monkeypatch):
     assert _commit(client, wid, entity_id="ent-missing", changes={"name": "X"}).status_code == 404
 
 
+def test_commit_failed_worldstore_write_leaves_head_intact(client, tmp_path, monkeypatch):
+    """A WorldStore failure mid-commit is explicit (409) with HEAD
+    unmoved and no mirror row -- never a silent success."""
+    wid, v0 = _seed_compiled_world(client, tmp_path, monkeypatch)
+    from worldstore import store as ws_mod
+    from worldstore.store import WorldStoreError
+
+    def _boom(self, world, **kwargs):
+        raise WorldStoreError("simulated disk failure")
+
+    monkeypatch.setattr(ws_mod.WorldStore, "save_version", _boom)
+    r = _commit(client, wid, changes={"name": "Barn"})
+    assert r.status_code == 409, r.text
+    head, count = _head_and_count(client, wid)
+    assert (head, count) == (v0, 1)
+    assert client.get(f"/api/worlds/{wid}/worldir").json()["entities"]["ent-shed"]["name"] == "Shed"
+
+
+def test_commit_failed_db_write_rolls_back(client, tmp_path, monkeypatch):
+    """A DB outage at adopt time is an explicit 503: HEAD unmoved, no
+    mirror row, the orphaned version file never adopted."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    wid, v0 = _seed_compiled_world(client, tmp_path, monkeypatch)
+
+    async def _down(self, *args, **kwargs):
+        raise RuntimeError("simulated db outage")
+
+    monkeypatch.setattr(AsyncSession, "commit", _down)
+    r = _commit(client, wid, changes={"name": "Barn"})
+    assert r.status_code == 503, r.text
+    assert "not adopted" in r.json()["detail"].lower()
+
+
 def test_conditional_head_update_single_winner(client, tmp_path, monkeypatch):
     """The adoption primitive itself: two sessions racing the same HEAD
     value -- the conditional UPDATE lets exactly one win (rowcount 1);

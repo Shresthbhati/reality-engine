@@ -802,7 +802,15 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         )
     )
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as exc:
+        # The version file may already exist on disk (harmless orphan,
+        # never adopted, visible to resync) -- but HEAD never moved and
+        # no mirror row exists, so report explicitly instead of a bare 500.
+        raise HTTPException(
+            503, f"database unavailable; commit not adopted: {exc}"
+        )
 
     return {
         "version_id": stored.version_id,

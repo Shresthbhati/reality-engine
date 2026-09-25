@@ -18,6 +18,8 @@ export interface ViewportLayers {
   mesh: boolean;
   oversized: boolean;
   uncertainty: boolean;
+  walls: boolean;
+  topology: boolean;
 }
 
 export type ViewPreset = "isometric" | "top" | "front" | "side";
@@ -30,11 +32,23 @@ export interface MeasurementResult {
 }
 
 export const TYPE_COLORS: Record<string, number> = {
-  floor: 0x4da3ff,
-  wall: 0xffb84d,
-  ceiling: 0xb28dff,
-  object: 0x35d07f,
-  default: 0x9aa7b5,
+  building: 0x64748b, // slate-500
+  level: 0x38bdf8,    // sky-400
+  room: 0x3b82f6,     // blue-500
+  corridor: 0x06b6d4, // cyan-500
+  wall: 0xf59e0b,     // amber-500
+  floor: 0x3b82f6,    // blue-500
+  ceiling: 0x8b5cf6,  // purple-500
+  roof: 0x6366f1,     // indigo-500
+  door: 0x10b981,     // emerald-500
+  window: 0x06b6d4,   // cyan-400
+  stairs: 0xec4899,   // pink-500
+  stair: 0xec4899,    // pink-500
+  column: 0xeab308,   // yellow-500
+  beam: 0xd97706,     // amber-600
+  object: 0x14b8a6,   // teal-500
+  furniture: 0x84cc16,// lime-500
+  default: 0x94a3b8,  // slate-400
 };
 
 export class WorldSceneController {
@@ -53,10 +67,14 @@ export class WorldSceneController {
     cameras: null as THREE.Group | null,
     mesh: null as THREE.Mesh | null,
     selectionOutline: null as THREE.LineSegments | null,
+    topology: null as THREE.Group | null,
   };
 
   private entityMeshes = new Map<string, THREE.Mesh>();
   private selectedEntityId: string | null = null;
+  private isolatedSpaceId: string | null = null;
+  private activeLevelIndex: number | null = null;
+  private previewCorrection: { entityId: string; type: string; confidence?: number } | null = null;
   private robustExtent = 1.0;
   private animationFrameId: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -74,6 +92,8 @@ export class WorldSceneController {
     mesh: true,
     oversized: false,
     uncertainty: false,
+    walls: true,
+    topology: true,
   };
 
   private onSelectCallback?: (id: string | null) => void;
@@ -240,6 +260,20 @@ export class WorldSceneController {
       (this.layers.selectionOutline.material as THREE.Material).dispose();
       this.layers.selectionOutline = null;
     }
+    if (this.layers.topology) {
+      this.scene.remove(this.layers.topology);
+      this.layers.topology.traverse((child) => {
+        if (child instanceof THREE.Line || child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      this.layers.topology = null;
+    }
   }
 
   public rebuildScene() {
@@ -307,7 +341,7 @@ export class WorldSceneController {
         const isOversized = this.robustExtent > 0 && extent > 4 * this.robustExtent;
         const outlierScale = isOversized ? 0.25 : 1.0;
 
-        const baseColor = TYPE_COLORS[e.type] || TYPE_COLORS.default;
+        const baseColor = TYPE_COLORS[e.type.toLowerCase()] || TYPE_COLORS.default;
         const conf = typeof e.confidence === "number" ? e.confidence : 0.5;
 
         // In uncertainty mode, color shifts from green (1.0) to amber/red (0.0)
@@ -318,12 +352,18 @@ export class WorldSceneController {
           renderColor = hslColor.getHex();
         }
 
+        const isSpaceVolume = e.type === "room" || e.type === "corridor" || e.type === "space";
+        const isOpenOpening = e.type === "door" || e.type === "window";
+        const baseOpacity = isSpaceVolume
+          ? 0.05
+          : Math.max(0.12, (0.15 + 0.35 * conf) * outlierScale);
+
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(size[0], size[1], size[2]),
           new THREE.MeshLambertMaterial({
             color: renderColor,
             transparent: true,
-            opacity: Math.max(0.12, (0.15 + 0.35 * conf) * outlierScale),
+            opacity: baseOpacity,
             depthWrite: false,
           })
         );
@@ -335,22 +375,18 @@ export class WorldSceneController {
         );
         mesh.userData = {
           entityId: e.id,
-          entityType: e.type,
+          entityType: e.type.toLowerCase(),
           confidence: conf,
           isOversized,
           baseColor,
         };
 
-        mesh.visible =
-          this.layerVisibility.entities &&
-          (!isOversized || this.layerVisibility.oversized);
-
-        // Add subtle bounding wireframe for structure clarity
+        // Add bounding wireframe for structure clarity (openings have higher accent opacity)
         const wireGeo = new THREE.EdgesGeometry(mesh.geometry);
         const wireMat = new THREE.LineBasicMaterial({
           color: renderColor,
           transparent: true,
-          opacity: 0.35 * outlierScale,
+          opacity: isOpenOpening ? 0.85 : isSpaceVolume ? 0.6 : 0.35 * outlierScale,
         });
         const wireframe = new THREE.LineSegments(wireGeo, wireMat);
         mesh.add(wireframe);
@@ -359,8 +395,8 @@ export class WorldSceneController {
         this.entityMeshes.set(e.id, mesh);
       }
 
-      this.layers.entities.visible = this.layerVisibility.entities;
       this.scene.add(this.layers.entities);
+      this.updateMeshVisibilities();
     }
 
     // 3. Build Camera Frustums
@@ -471,18 +507,22 @@ export class WorldSceneController {
     }
     if (this.layers.entities) {
       this.layers.entities.visible = this.layerVisibility.entities;
-      for (const mesh of this.entityMeshes.values()) {
-        const isOversized = mesh.userData.isOversized;
-        mesh.visible =
-          this.layerVisibility.entities &&
-          (!isOversized || this.layerVisibility.oversized);
-      }
     }
+    this.updateMeshVisibilities();
+
     if (this.layers.cameras) {
       this.layers.cameras.visible = this.layerVisibility.cameras;
     }
     if (this.layers.mesh) {
       this.layers.mesh.visible = this.layerVisibility.mesh;
+    }
+
+    if (layers.topology !== undefined) {
+      if (this.layers.topology) {
+        this.layers.topology.visible = this.layerVisibility.topology;
+      } else if (this.layerVisibility.topology && this.selectedEntityId) {
+        this.renderSpatialTopology(this.selectedEntityId);
+      }
     }
 
     // Update uncertainty shaders if uncertainty toggle changed
@@ -497,6 +537,348 @@ export class WorldSceneController {
           mat.color.setHex(mesh.userData.baseColor);
         }
       }
+    }
+  }
+
+  public setWallsVisibility(visible: boolean) {
+    this.setLayerVisibility({ walls: visible });
+  }
+
+  public isolateSpace(entityId: string | null) {
+    this.isolatedSpaceId = entityId;
+    this.updateMeshVisibilities();
+    if (entityId) {
+      this.flyToEntity(entityId);
+      this.renderSpatialTopology(entityId);
+    } else {
+      this.renderSpatialTopology(this.selectedEntityId);
+    }
+  }
+
+  public setLevelFilter(levelIndex: number | null) {
+    this.activeLevelIndex = levelIndex;
+    this.updateMeshVisibilities();
+  }
+
+  private updateMeshVisibilities() {
+    const matchingIsolatedIds = new Set<string>();
+    if (this.isolatedSpaceId && this.world && this.world.entities) {
+      matchingIsolatedIds.add(this.isolatedSpaceId);
+      const spaceMesh = this.entityMeshes.get(this.isolatedSpaceId);
+      const spaceBox = spaceMesh ? new THREE.Box3().setFromObject(spaceMesh) : null;
+      const spaceEntity = this.world.entities[this.isolatedSpaceId];
+
+      for (const [id, e] of Object.entries(this.world.entities)) {
+        if (id === this.isolatedSpaceId) continue;
+        if (e.parent_id === this.isolatedSpaceId) {
+          matchingIsolatedIds.add(id);
+          continue;
+        }
+        const isRel =
+          (e.relationships || []).some(
+            (r) =>
+              r.target_id === this.isolatedSpaceId ||
+              (r as { target_entity_id?: string }).target_entity_id === this.isolatedSpaceId
+          ) ||
+          (spaceEntity?.relationships || []).some(
+            (r) =>
+              r.target_id === id ||
+              (r as { target_entity_id?: string }).target_entity_id === id
+          );
+        if (isRel) {
+          matchingIsolatedIds.add(id);
+          continue;
+        }
+        if (spaceBox) {
+          const otherMesh = this.entityMeshes.get(id);
+          if (otherMesh && spaceBox.containsPoint(otherMesh.position)) {
+            matchingIsolatedIds.add(id);
+          }
+        }
+      }
+    }
+
+    for (const [eid, mesh] of this.entityMeshes.entries()) {
+      const isOversized = mesh.userData.isOversized;
+      const isWall = mesh.userData.entityType === "wall";
+      const conf = mesh.userData.confidence ?? 0.5;
+      const outlierScale = isOversized ? 0.25 : 1.0;
+      const isSpaceVolume =
+        mesh.userData.entityType === "room" ||
+        mesh.userData.entityType === "corridor" ||
+        mesh.userData.entityType === "space";
+      const mat = mesh.material as THREE.MeshLambertMaterial;
+
+      let matchesLevel = true;
+      if (this.activeLevelIndex !== null && this.world?.entities?.[eid]) {
+        const ent = this.world.entities[eid];
+        const entLevel =
+          ent.custom_properties?.level ?? ent.custom_properties?.floor_level;
+        if (entLevel !== undefined) {
+          matchesLevel = Number(entLevel) === this.activeLevelIndex;
+        } else {
+          const estLevel = Math.max(0, Math.floor(mesh.position.y / 2.8));
+          matchesLevel = estLevel === this.activeLevelIndex;
+        }
+      }
+
+      if (!this.layerVisibility.entities) {
+        mesh.visible = false;
+        continue;
+      }
+      if (isOversized && !this.layerVisibility.oversized) {
+        mesh.visible = false;
+        continue;
+      }
+      if (isWall && !this.layerVisibility.walls) {
+        mesh.visible = false;
+        continue;
+      }
+
+      if (!matchesLevel) {
+        mesh.visible = true;
+        mat.opacity = 0.03;
+        continue;
+      }
+
+      if (this.isolatedSpaceId) {
+        if (matchingIsolatedIds.has(eid)) {
+          mesh.visible = true;
+          mat.opacity = isSpaceVolume
+            ? 0.08
+            : Math.max(0.35, (0.35 + 0.45 * conf) * outlierScale);
+        } else {
+          mesh.visible = true;
+          mat.opacity = 0.03;
+        }
+      } else {
+        mesh.visible = true;
+        mat.opacity = isSpaceVolume
+          ? 0.05
+          : Math.max(0.12, (0.15 + 0.35 * conf) * outlierScale);
+      }
+    }
+  }
+
+  public renderSpatialTopology(selectedEntityId: string | null) {
+    if (this.layers.topology) {
+      this.scene.remove(this.layers.topology);
+      this.layers.topology.traverse((child) => {
+        if (child instanceof THREE.Line || child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      this.layers.topology = null;
+    }
+
+    if (!this.layerVisibility.topology || !this.world || !selectedEntityId) return;
+
+    const targetEntity = this.world.entities?.[selectedEntityId];
+    const targetMesh = this.entityMeshes.get(selectedEntityId);
+    if (!targetEntity || !targetMesh) return;
+
+    const topologyGroup = new THREE.Group();
+    topologyGroup.name = "SpatialTopologyGroup";
+
+    const sourcePos = targetMesh.position.clone();
+    const tType = targetEntity.type.toLowerCase();
+
+    const addConnector = (from: THREE.Vector3, to: THREE.Vector3, colorHex: number) => {
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([from, to]);
+      const lineMat = new THREE.LineDashedMaterial({
+        color: colorHex,
+        dashSize: 0.12,
+        gapSize: 0.06,
+        depthTest: false,
+      });
+      const line = new THREE.Line(lineGeo, lineMat);
+      line.computeLineDistances();
+      line.renderOrder = 995;
+      topologyGroup.add(line);
+
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.045, 10, 10),
+        new THREE.MeshBasicMaterial({ color: colorHex, depthTest: false })
+      );
+      marker.position.copy(to);
+      marker.renderOrder = 996;
+      topologyGroup.add(marker);
+    };
+
+    if (tType === "room" || tType === "space" || tType === "corridor") {
+      for (const [otherId, otherEntity] of Object.entries(this.world.entities || {})) {
+        if (otherId === selectedEntityId) continue;
+        const otherMesh = this.entityMeshes.get(otherId);
+        if (!otherMesh) continue;
+
+        const otherType = otherEntity.type.toLowerCase();
+        const isContained = otherEntity.parent_id === selectedEntityId;
+        const isRelConnected =
+          (otherEntity.relationships || []).some(
+            (r) =>
+              r.target_id === selectedEntityId ||
+              (r as { target_entity_id?: string }).target_entity_id === selectedEntityId
+          ) ||
+          (targetEntity.relationships || []).some(
+            (r) =>
+              r.target_id === otherId ||
+              (r as { target_entity_id?: string }).target_entity_id === otherId
+          );
+
+        let isGeoInside = false;
+        if (!isContained && !isRelConnected) {
+          const box = new THREE.Box3().setFromObject(targetMesh);
+          isGeoInside = box.containsPoint(otherMesh.position);
+        }
+
+        if (isContained || isRelConnected || isGeoInside) {
+          if (otherType === "wall") {
+            addConnector(sourcePos, otherMesh.position, 0xf59e0b);
+          } else if (otherType === "door" || otherType === "window") {
+            addConnector(sourcePos, otherMesh.position, 0x10b981);
+            for (const [adjId, adjEntity] of Object.entries(this.world.entities || {})) {
+              if (
+                adjId !== selectedEntityId &&
+                (adjEntity.type === "room" || adjEntity.type === "corridor")
+              ) {
+                const adjMesh = this.entityMeshes.get(adjId);
+                if (adjMesh) {
+                  const adjRel = (otherEntity.relationships || []).some(
+                    (r) =>
+                      r.target_id === adjId ||
+                      (r as { target_entity_id?: string }).target_entity_id === adjId
+                  );
+                  if (adjRel) {
+                    addConnector(otherMesh.position, adjMesh.position, 0x00e5ff);
+                  }
+                }
+              }
+            }
+          } else if (otherType === "stairs" || otherType === "stair") {
+            addConnector(sourcePos, otherMesh.position, 0xec4899);
+          } else if (otherType === "column" || otherType === "beam") {
+            addConnector(sourcePos, otherMesh.position, 0xeab308);
+          }
+        }
+      }
+
+      if (this.camerasData && this.camerasData.cameras) {
+        const roomObsIds = new Set<string>();
+        (targetEntity.observations || []).forEach((o) => roomObsIds.add(o.id));
+        for (const cam of this.camerasData.cameras) {
+          const camId = cam.evidence_id || cam.id;
+          if (camId && roomObsIds.has(camId)) {
+            const camPos = new THREE.Vector3(
+              cam.position_m[0],
+              cam.position_m[1],
+              cam.position_m[2]
+            );
+            addConnector(sourcePos, camPos, 0x35d07f);
+          }
+        }
+      }
+    } else if (tType === "wall") {
+      for (const [otherId, otherEntity] of Object.entries(this.world.entities || {})) {
+        if (otherId === selectedEntityId) continue;
+        const otherMesh = this.entityMeshes.get(otherId);
+        if (!otherMesh) continue;
+        const otherType = otherEntity.type.toLowerCase();
+        if (otherType === "door" || otherType === "window") {
+          const isHosted =
+            otherEntity.parent_id === selectedEntityId ||
+            (otherEntity.relationships || []).some(
+              (r) =>
+                r.target_id === selectedEntityId ||
+                (r as { target_entity_id?: string }).target_entity_id === selectedEntityId
+            );
+          if (isHosted) {
+            addConnector(sourcePos, otherMesh.position, 0x10b981);
+          }
+        } else if (otherType === "room" || otherType === "corridor") {
+          const isRoomBound =
+            targetEntity.parent_id === otherId ||
+            (targetEntity.relationships || []).some(
+              (r) =>
+                r.target_id === otherId ||
+                (r as { target_entity_id?: string }).target_entity_id === otherId
+            );
+          if (isRoomBound) {
+            addConnector(sourcePos, otherMesh.position, 0x3b82f6);
+          }
+        }
+      }
+    } else if (tType === "door" || tType === "window") {
+      for (const [otherId, otherEntity] of Object.entries(this.world.entities || {})) {
+        if (otherId === selectedEntityId) continue;
+        const otherMesh = this.entityMeshes.get(otherId);
+        if (!otherMesh) continue;
+        const otherType = otherEntity.type.toLowerCase();
+        if (otherType === "wall") {
+          const isHost =
+            targetEntity.parent_id === otherId ||
+            (targetEntity.relationships || []).some(
+              (r) =>
+                r.target_id === otherId ||
+                (r as { target_entity_id?: string }).target_entity_id === otherId
+            );
+          if (isHost) {
+            addConnector(sourcePos, otherMesh.position, 0xf59e0b);
+          }
+        } else if (otherType === "room" || otherType === "corridor") {
+          const isSpace = (targetEntity.relationships || []).some(
+            (r) =>
+              r.target_id === otherId ||
+              (r as { target_entity_id?: string }).target_entity_id === otherId
+          );
+          if (isSpace) {
+            addConnector(sourcePos, otherMesh.position, 0x00e5ff);
+          }
+        }
+      }
+    } else if (tType === "stairs" || tType === "stair") {
+      const box = new THREE.Box3().setFromObject(targetMesh);
+      const bottomCenter = new THREE.Vector3(sourcePos.x, box.min.y, sourcePos.z);
+      const topCenter = new THREE.Vector3(sourcePos.x, box.max.y, sourcePos.z);
+      addConnector(bottomCenter, topCenter, 0xec4899);
+    }
+
+    this.layers.topology = topologyGroup;
+    this.layers.topology.visible = this.layerVisibility.topology;
+    this.scene.add(this.layers.topology);
+  }
+
+  public setCorrectionPreview(
+    entityId: string,
+    previewType: string,
+    previewConfidence?: number
+  ) {
+    this.previewCorrection = { entityId, type: previewType, confidence: previewConfidence };
+    const mesh = this.entityMeshes.get(entityId);
+    if (!mesh) return;
+
+    const mat = mesh.material as THREE.MeshLambertMaterial;
+    const newColor = TYPE_COLORS[previewType.toLowerCase()] || TYPE_COLORS.default;
+    mat.color.setHex(newColor);
+    mat.emissive.setHex(newColor);
+    mat.emissiveIntensity = 0.5;
+  }
+
+  public clearCorrectionPreview() {
+    if (this.previewCorrection) {
+      const mesh = this.entityMeshes.get(this.previewCorrection.entityId);
+      if (mesh) {
+        const mat = mesh.material as THREE.MeshLambertMaterial;
+        const isSel = this.previewCorrection.entityId === this.selectedEntityId;
+        mat.color.setHex(mesh.userData.baseColor);
+        mat.emissive.setHex(isSel ? 0x00e5ff : 0x000000);
+        mat.emissiveIntensity = isSel ? 0.6 : 0;
+      }
+      this.previewCorrection = null;
     }
   }
 
@@ -561,6 +943,7 @@ export class WorldSceneController {
       }
     }
 
+    this.renderSpatialTopology(id);
     this.onSelectCallback?.(id);
   }
 

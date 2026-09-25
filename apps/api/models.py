@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -166,7 +167,14 @@ class Evidence(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 class Job(Base):
-    """Durable application job."""
+    """Durable application job.
+
+    Lifecycle: queued -> running -> {succeeded | partial | failed |
+    cancelled}. Terminal states never leave the row: succeeded/partial
+    carry the measured payload, failed carries the error, cancelled
+    records an operator or timeout decision. `cancel_requested` lets an
+    operator stop a running job at the next stage boundary.
+    """
 
     __tablename__ = "jobs"
     __table_args__ = (Index("ix_jobs_entity", "entity_type", "entity_id"),)
@@ -184,6 +192,7 @@ class Job(Base):
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

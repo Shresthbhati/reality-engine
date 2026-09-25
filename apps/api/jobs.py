@@ -36,6 +36,70 @@ RUN_ANALYSIS = "RUN_ANALYSIS"
 GENERATE_REPORT = "GENERATE_REPORT"
 EXPORT_ARTIFACT = "EXPORT_ARTIFACT"
 
+# Canonical job lifecycle: queued -> running -> {succeeded | partial |
+# failed | cancelled}. SUCCEEDED is gated (output exists, validates,
+# persists, provenance present) -- a timeout, crash, or degraded run
+# can never become SUCCEEDED. PARTIAL means a version was adopted but
+# the run was degraded (partial registration, skipped evidence, failed
+# optional stages); the degradation reasons ride on the payload.
+JOB_QUEUED = "queued"
+JOB_RUNNING = "running"
+JOB_PARTIAL = "partial"
+JOB_SUCCEEDED = "succeeded"
+JOB_FAILED = "failed"
+JOB_CANCELLED = "cancelled"
+
+TERMINAL_STATES = frozenset({JOB_PARTIAL, JOB_SUCCEEDED, JOB_FAILED, JOB_CANCELLED})
+
+
+class _JobCancelled(RuntimeError):
+    """Operator requested cancellation; the job stops at a stage boundary
+    instead of running to completion."""
+
+
+async def _throw_if_cancelled(db: AsyncSession, job: Job) -> None:
+    """Stage-boundary cancellation point. Refreshes only the flag so no
+    uncommitted handler state is disturbed."""
+    await db.refresh(job, attribute_names=["cancel_requested"])
+    if job.cancel_requested:
+        raise _JobCancelled(f"job {job.id} cancelled by operator")
+
+
+def _stage_facts_degraded(stage_facts: dict) -> list[str]:
+    """Optional-stage outcomes that are neither clean runs nor honest
+    config-skips: evidence of degradation for PARTIAL grading."""
+    degraded = []
+    for stage in ("depth", "perception", "mesh"):
+        facts = stage_facts.get(stage)
+        if isinstance(facts, dict):
+            status = facts.get("status")
+            if status is not None and status not in ("ran", "skipped"):
+                degraded.append(f"{stage} stage status {status!r}")
+    return degraded
+
+
+def _stamp_reconstruction_provenance(world, *, session_id: str, backend: str | None,
+                                     options, images_ingested: int) -> None:
+    """Stamp every reconstructed entity with its build provenance
+    (session, backend, pipeline configuration). setdefault: never
+    overwrite an existing stamp, so retries stay idempotent. Stored in
+    custom_properties -- the schema's designated extension slot -- so it
+    survives WorldIR serialization, WorldStore persistence, and reload."""
+    stamp = {
+        "session_id": session_id,
+        "backend": backend,
+        "seed": getattr(options, "seed", None),
+        "depth_model": getattr(options, "depth_model", None),
+        "perception_model": getattr(options, "perception_model", None),
+        "mesh_enabled": getattr(options, "mesh_enabled", None),
+        "detail_enabled": getattr(options, "detail_enabled", None),
+        "images_ingested": images_ingested,
+    }
+    for entity in world.entities.values():
+        props = getattr(entity, "custom_properties", None)
+        if isinstance(props, dict):
+            props.setdefault("reconstruction", dict(stamp))
+
 # Evidence kind mapping for EvidenceItem conversion
 mapping = {
     "PHOTO": "PHOTO",
@@ -76,9 +140,11 @@ def _file_sha256(path) -> str:
     return h.hexdigest()
 
 
-async def _run_process_evidence(db: AsyncSession, job: Job) -> None:
+async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
     """Verify + register an evidence artifact. Real work only: artifact
-    resolution and checksum verification, recorded honestly in metadata."""
+    resolution and checksum verification, recorded honestly in metadata.
+    Returns the terminal outcome for process_next_job's grading."""
+    await _throw_if_cancelled(db, job)
     evidence = await db.get(Evidence, job.entity_id)
     if evidence is None:
         raise RuntimeError(f"Evidence {job.entity_id} not found")
@@ -106,17 +172,23 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> None:
     evidence.processing_state = "processed"
     evidence.processed_at = utcnow()
     await db.commit()
-async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
+    return "succeeded"
+
+
+async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     """Run the real capture-to-WorldIR vertical slice for a session's
     photo evidence, then commit the result as a new WorldStore version.
 
     Heavy dependencies (COLMAP etc.) are optional; unavailability, too
     little evidence, or a pipeline stage refusing are explicit, honest
-    job failures -- never a silent pass or a fabricated world.
+    job failures -- never a silent pass or a fabricated world. Returns
+    "succeeded" or "partial" for process_next_job's grading; a version
+    is only adopted on those paths, never on failure or cancellation.
     """
     from apps.api import worldstore_service
     from apps.api.storage import resolve_artifact
 
+    await _throw_if_cancelled(db, job)
     session = await db.get(Session, job.entity_id)
     if session is None:
         raise RuntimeError(f"Session {job.entity_id} not found")
@@ -198,6 +270,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
             "artifacts; the reconstruction pipeline needs at least 2."
         )
 
+    await _throw_if_cancelled(db, job)
     job.stage = "reconstructing"
     job.heartbeat_at = utcnow()
     await db.commit()
@@ -217,6 +290,29 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         vs_result = await asyncio.to_thread(vertical_slice, items, options)
     except VerticalSliceError as exc:
         raise RuntimeError(f"Reconstruction failed: {exc}") from exc
+
+    await _throw_if_cancelled(db, job)
+
+    # Provenance + determinism record: stamp every reconstructed entity
+    # with the session, backend, and pipeline configuration it was built
+    # from, before anything is validated or persisted.
+    _stamp_reconstruction_provenance(
+        vs_result.world,
+        session_id=session.id,
+        backend=vs_result.stage_facts.get("backend"),
+        options=options,
+        images_ingested=len(items),
+    )
+
+    # Validation gate: an invalid WorldIR is never persisted or adopted.
+    # The previous HEAD stays intact, so a failed refinement cannot
+    # destroy valid earlier results.
+    from world_ir.validation import validate_world_ir
+
+    validation = validate_world_ir(vs_result.world)
+    if not validation.is_valid():
+        detail = "; ".join(validation.messages()[:5])
+        raise RuntimeError(f"reconstructed WorldIR failed validation: {detail}")
 
     job.stage = "committing_version"
     job.heartbeat_at = utcnow()
@@ -268,6 +364,22 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         # (identical content) or chains onto the new HEAD.
         raise RuntimeError(f"reconstruction superseded: {exc}") from exc
 
+    # Outcome grading: SUCCEEDED only when the run is clean end to end
+    # (successful registration, nothing skipped, no degraded optional
+    # stages, no validation warnings). Anything less honest is PARTIAL:
+    # a real adopted version with the degradation reasons on record.
+    # Failed validation or missing output never reach here (raised above),
+    # and a timeout can never become either (it raises before grading).
+    degraded = []
+    if vs_result.registration_status != "success":
+        degraded.append(f"registration {vs_result.registration_status!r}")
+    if skipped_evidence:
+        degraded.append(f"{len(skipped_evidence)} skipped evidence item(s)")
+    degraded.extend(_stage_facts_degraded(vs_result.stage_facts))
+    for warning in validation.warnings:
+        degraded.append(f"validation warning: {warning}")
+    outcome = "partial" if degraded else "succeeded"
+
     # The completed reconstruction is a real product event: link it into
     # the application model (session complete + attached world), carry
     # the measured result on the job payload (never invented numbers),
@@ -279,6 +391,8 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         "world_id": world.id,
         "version_id": version_row.id,
         "registration_status": vs_result.registration_status,
+        "outcome": outcome,
+        "degraded": degraded,
         "points": len(vs_result.points),
         "cameras_registered": vs_result.cameras_registered,
         "skipped_evidence": skipped_evidence,
@@ -286,6 +400,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)
     await db.commit()
+    return outcome
 
 
 def _render_points_ply(points) -> bytes:
@@ -417,26 +532,32 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         if handler is None:
             raise RuntimeError(f"No handler for job type {job.type}")
         # Bound every handler: a wedged backend (or lost dependency)
-        # must fail this job, never stall the whole queue behind it.
+        # must fail this job, never stall the whole queue behind it. A
+        # timeout is always a failure -- it can never grade as success.
         try:
-            await asyncio.wait_for(handler(db, job), timeout=_job_timeout_seconds())
+            outcome = await asyncio.wait_for(handler(db, job), timeout=_job_timeout_seconds())
         except TimeoutError as exc:
             raise RuntimeError(
                 f"job handler timed out after {_job_timeout_seconds():.0f}s"
             ) from exc
-        job.status = "completed"
+        job.status = JOB_PARTIAL if outcome == "partial" else JOB_SUCCEEDED
         job.completed_at = utcnow()
         await _emit_completion(db, job)
+    except _JobCancelled as exc:
+        log.warning("job %s cancelled: %s", job.id, exc)
+        job.status = JOB_CANCELLED
+        job.error = f"cancelled by operator: {exc}"
+        job.completed_at = utcnow()
     except Exception:
         log.exception("job %s failed", job.id)
         import traceback
 
         job.error = traceback.format_exc()[-2000:]
         if job.attempts >= job.max_attempts:
-            job.status = "failed"
+            job.status = JOB_FAILED
             job.completed_at = utcnow()
         else:
-            job.status = "queued"
+            job.status = JOB_QUEUED
             job.stage = None
     await db.commit()
     return job

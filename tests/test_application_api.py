@@ -152,12 +152,14 @@ def test_trajectory_honest_until_artifacts_exist(client):
 def test_reconstruct_fails_with_honest_error_when_no_evidence(client):
     """Reconstruction fails with an honest error when session has no evidence."""
     sid = client.post("/api/sessions", json={"name": "Recon"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Recon world"}).json()["id"]
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     assert r.status_code == 200
     job = _wait_job(client, r.json()["job_id"], timeout=90.0)
     assert job["status"] == "failed"
-    # honest error about missing usable image evidence, not fake success
-    assert "usable image evidence" in (job.get("error") or "").lower()
+    # honest error about missing usable photo evidence, not fake success
+    assert "needs at least 2" in (job.get("error") or "").lower()
 
 
 def test_world_detail_and_versions_are_real(client):
@@ -267,10 +269,15 @@ def test_reconstruct_session_full_chain(client, tmp_path, monkeypatch):
     monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.test_cli_compile:_TwoViewBackend")
     store_root = tmp_path / "ws"
     monkeypatch.setenv("WORLDSTORE_ROOT", str(store_root))
+    import apps.api.worldstore_service as ws_svc
+
+    ws_svc._store = None  # drop cached store so this test's WORLDSTORE_ROOT takes effect
 
     sid = client.post("/api/sessions", json={"name": "Recon chain"}).json()["id"]
     for i in range(3):
         _upload_photo(client, sid, f"frame_{i:02d}.jpg", b"jpeg-" + f"{i}".encode() * 8)
+    wid = client.post("/api/worlds", json={"name": "Recon world"}).json()["id"]
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
 
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     assert r.status_code == 200
@@ -335,7 +342,9 @@ def test_reconstruct_honest_failure_without_usable_images(client):
     """Non-image / unresolvable evidence cannot reconstruct: the job fails
     with the measured reason. Never a fake success."""
     sid = client.post("/api/sessions", json={"name": "No images"}).json()["id"]
-    # upload a non-image artifact -> classified dataset -> not image evidence
+    wid = client.post("/api/worlds", json={"name": "No images world"}).json()["id"]
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
+    # upload a non-image artifact -> classified dataset -> not photo evidence
     _upload_photo_name = "scan.ply"
     r = client.post(
         f"/api/uploads?session_id={sid}",
@@ -346,7 +355,7 @@ def test_reconstruct_honest_failure_without_usable_images(client):
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     job = _wait_job(client, r.json()["job_id"], timeout=90.0)
     assert job["status"] == "failed"
-    assert "usable image evidence" in (job.get("error") or "")
+    assert "needs at least 2" in (job.get("error") or "").lower()
 
 
 def test_reconstruct_honest_failure_when_backend_cannot_run(client, monkeypatch):
@@ -355,6 +364,8 @@ def test_reconstruct_honest_failure_when_backend_cannot_run(client, monkeypatch)
     monkeypatch.setenv("REALITY_TEST_BACKEND", "")
     monkeypatch.delenv("REALITY_TEST_BACKEND", raising=False)
     sid = client.post("/api/sessions", json={"name": "No backend"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "No backend world"}).json()["id"]
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
     for i in range(2):
         _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
 

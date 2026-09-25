@@ -277,19 +277,29 @@ def _render_points_ply(world) -> bytes | None:
     geoms = getattr(world, "geometries", None) or {}
     positions: list[tuple[float, float, float]] = []
     skipped = 0
-    store = None
+    stores = None
     for g in geoms.values():
         data_uri = getattr(g, "data_uri", None)
         pts: list[tuple[float, float, float]] = []
         if data_uri:
-            if store is None:
+            if stores is None:
                 from world_ir.artifact_store import FileArtifactStore
 
-                store = FileArtifactStore(_worldstore_root() / "artifacts")
-            try:
-                raw = store.get(data_uri)
-            except Exception:
-                raw = b""
+                # Geometry payloads live in the pipeline-artifacts store
+                # the compile pipeline was given; the WorldStore artifacts
+                # store is the legacy location. Consult both so a version
+                # renders regardless of which store its geometries reference.
+                stores = [
+                    FileArtifactStore(_worldstore_root() / "pipeline-artifacts"),
+                    FileArtifactStore(_worldstore_root() / "artifacts"),
+                ]
+            raw = b""
+            for store in stores:
+                try:
+                    raw = store.get(data_uri)
+                except Exception:
+                    continue
+                break
             pts = _decode_point_payload(raw)
         if pts:
             positions.extend(pts)
@@ -326,7 +336,8 @@ def _decode_point_payload(raw: bytes) -> list[tuple[float, float, float]]:
         except ValueError:
             return []
         return [(p[0], p[1], p[2]) for p in cloud.points]
-    return _parse_ply_xyz(raw)
+    # PLY fallback: parse the header-declared vertex layout (ascii and
+    # binary_little_endian); anything else decodes to empty, never crash.
     head = raw[:4096]
     end = head.find(b"end_header")
     if end == -1:

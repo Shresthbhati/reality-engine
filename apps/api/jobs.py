@@ -14,13 +14,13 @@ import logging
 import os
 import tempfile
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.models import Evidence, Job, Session, World, utcnow
+from apps.api.models import ActivityEvent, Evidence, Job, Session, World, new_id, utcnow
 from evidence.session import EvidenceItem, EvidenceKind
 
 log = logging.getLogger("reality.api.jobs")
@@ -141,6 +141,28 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
     except Exception as exc:  # pragma: no cover - depends on optional deps
         raise RuntimeError(f"Reconstruction backend unavailable: {exc}") from exc
 
+    # Deterministic-backend seam for offline verification (same
+    # "module:Class" contract apps.cli uses): when set, the injected
+    # backend drives vertical_slice and the heavyweight learned stages
+    # are disabled, since they need real pixels, model weights, and GPU
+    # -- none of which a synthetic backend provides.
+    test_backend = None
+    backend_spec = os.environ.get("REALITY_TEST_BACKEND", "").strip()
+    if backend_spec:
+        import importlib
+
+        module_name, _, class_name = backend_spec.partition(":")
+        if not module_name or not class_name:
+            raise RuntimeError(
+                f"REALITY_TEST_BACKEND must be 'module:Class', got {backend_spec!r}"
+            )
+        try:
+            test_backend = getattr(importlib.import_module(module_name), class_name)()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Reconstruction failed: test backend {backend_spec!r} unavailable: {exc}"
+            ) from exc
+
     job.stage = "resolving_evidence"
     await db.commit()
     result = await db.execute(
@@ -148,11 +170,17 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
     )
     evidence_rows = list(result.scalars().all())
     items = []
+    skipped_evidence = []
     for ev in evidence_rows:
         if not ev.artifact_uri:
+            skipped_evidence.append({"evidence_id": ev.id, "reason": "no stored artifact"})
             continue
         path = resolve_artifact(ev.artifact_uri)
         if path is None:
+            skipped_evidence.append({
+                "evidence_id": ev.id,
+                "reason": f"artifact_uri {ev.artifact_uri!r} not resolvable in content store",
+            })
             continue
         items.append(
             EvidenceItem(
@@ -171,7 +199,17 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
     job.stage = "reconstructing"
     await db.commit()
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
-    options = VerticalSliceOptions(artifact_store=artifact_store)
+    if test_backend is not None:
+        options = VerticalSliceOptions(
+            artifact_store=artifact_store,
+            reconstruction_backend=test_backend,
+            depth_model=None,
+            perception_model=None,
+            mesh_enabled=False,
+            detail_enabled=False,
+        )
+    else:
+        options = VerticalSliceOptions(artifact_store=artifact_store)
     try:
         vs_result = await asyncio.to_thread(vertical_slice, items, options)
     except VerticalSliceError as exc:
@@ -208,7 +246,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         _render_cameras_json, vs_result.camera_poses, vs_result.scale_state, options.image_size
     )
 
-    await worldstore_service.commit_version(
+    version_row = await worldstore_service.commit_version(
         db,
         world_id=world.id,
         world=vs_result.world,
@@ -218,6 +256,25 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         cameras=cameras_bytes,
         report=report,
     )
+
+    # The completed reconstruction is a real product event: link it into
+    # the application model (session complete + attached world), carry
+    # the measured result on the job payload (never invented numbers),
+    # and surface it in notifications/activity so world surfaces see it.
+    session.world_id = world.id
+    session.status = "complete"
+    session.processing_completed_at = utcnow()
+    job.payload = {
+        "world_id": world.id,
+        "version_id": version_row.id,
+        "registration_status": vs_result.registration_status,
+        "points": len(vs_result.points),
+        "cameras_registered": vs_result.cameras_registered,
+        "skipped_evidence": skipped_evidence,
+    }
+    await db.commit()
+    _notify_world_version(db, job, world, version_row.id)
+    await db.commit()
 
 
 def _render_points_ply(points) -> bytes:
@@ -257,6 +314,28 @@ def _render_cameras_json(camera_poses, scale_state: str, image_size) -> bytes:
         ],
     }
     return _json.dumps(payload, indent=2).encode("utf-8")
+
+
+def _notify_world_version(db, job, world_row, version_id) -> None:
+    """A completed reconstruction is a real product event: surface it in
+    notifications and activity so the UI's world surfaces see it."""
+    from apps.api.models import Notification
+
+    db.add(Notification(
+        id=f"ntf_{uuid.uuid4().hex[:12]}",
+        type="world.version_created",
+        title="World reconstructed",
+        body=f"Version {version_id} created for world {world_row.name}",
+        entity_type="world",
+        entity_id=world_row.id,
+    ))
+    db.add(ActivityEvent(
+        id=new_id("act"),
+        type="world.version_created",
+        entity_type="world",
+        entity_id=world_row.id,
+        summary=f"World '{world_row.name}' version {version_id} created",
+    ))
 
 
 _HANDLERS = {

@@ -16,16 +16,41 @@ It only ever moves through `commit_version`.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import World, WorldVersion, utcnow
 from apps.api.storage import store_bytes
 from world_ir.world_v1 import WorldIR
 from worldstore.store import WorldStore
+
+
+class ConcurrentModificationError(RuntimeError):
+    """HEAD moved between a writer's base read and its adopt attempt.
+
+    Carries the orphaned (saved but never adopted) version id so callers
+    can report honestly. Retrying after reloading HEAD converges: the
+    retry either dedups (identical content) or chains onto the new HEAD.
+    """
+
+    def __init__(self, *, expected_parent: str | None, current_head: str | None, orphan_version_id: str):
+        self.expected_parent = expected_parent
+        self.current_head = current_head
+        self.orphan_version_id = orphan_version_id
+        super().__init__(
+            f"HEAD moved during commit (expected '{expected_parent}', "
+            f"now '{current_head}'); version '{orphan_version_id}' was "
+            "saved but not adopted -- reload HEAD and retry"
+        )
+
+
+def _canonical_bytes(world: WorldIR) -> bytes:
+    """Byte-identical to what WorldStore.save_version persists."""
+    return json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")
 
 _store: WorldStore | None = None
 
@@ -70,6 +95,7 @@ async def commit_version(
     points: bytes | None = None,
     cameras: bytes | None = None,
     report: dict | None = None,
+    expect_parent: str | None = None,
 ) -> WorldVersion:
     """Save a new WorldStore version and advance this World's HEAD.
 
@@ -85,9 +111,28 @@ async def commit_version(
     later lookup (resync_versions, the CLI's `reality store list`) can
     filter WorldStore's on-disk versions by the application world_id
     directly.
+
+    Duplicate requests with byte-identical content return the already
+    adopted parent version instead of minting a duplicate. When
+    `expect_parent` is given, HEAD advances only if it still holds that
+    value (one atomic conditional UPDATE); a concurrent mover wins and
+    this call raises ConcurrentModificationError -- never a silent
+    last-writer-wins overwrite.
     """
     world.id = world_id
     store = get_store()
+    new_bytes = _canonical_bytes(world)
+    if parent is not None:
+        try:
+            parent_world = store.load_version(parent)
+        except Exception:
+            parent_world = None
+        if parent_world is not None and _canonical_bytes(parent_world) == new_bytes:
+            row = await db.get(WorldVersion, parent)
+            if row is not None and row.world_id == world_id:
+                return row
+            # Mirror missing or diverged: fall through and save (safe).
+
     stored = store.save_version(
         world, parent=parent, source_session_ids=source_session_ids
     )
@@ -101,16 +146,30 @@ async def commit_version(
         digest, _ = store_bytes(cameras)
         cameras_uri = f"sha256://{digest}"
 
+    if expect_parent is not None:
+        adopted = await db.execute(
+            update(World)
+            .where(World.id == world_id, World.current_version_id == expect_parent)
+            .values(current_version_id=stored.version_id, updated_at=utcnow())
+        )
+        if adopted.rowcount == 0:
+            current = await db.get(World, world_id)
+            raise ConcurrentModificationError(
+                expected_parent=expect_parent,
+                current_head=current.current_version_id if current else None,
+                orphan_version_id=stored.version_id,
+            )
+    else:
+        w = await db.get(World, world_id)
+        if w is not None:
+            w.current_version_id = stored.version_id
+            w.updated_at = utcnow()
+
     row = _mirror_row(
         stored, report=report,
         points_artifact_uri=points_uri, cameras_artifact_uri=cameras_uri,
     )
     db.add(row)
-
-    w = await db.get(World, world_id)
-    if w is not None:
-        w.current_version_id = stored.version_id
-        w.updated_at = utcnow()
 
     await db.commit()
     await db.refresh(row)
@@ -128,7 +187,13 @@ async def get_current_version_row(db: AsyncSession, world_id: str) -> WorldVersi
     w = await db.get(World, world_id)
     if w is None or not w.current_version_id:
         return None
-    return await db.get(WorldVersion, w.current_version_id)
+    row = await db.get(WorldVersion, w.current_version_id)
+    # A HEAD pointer naming another world's version must never serve
+    # foreign content: treat as absent (callers answer 404/409), the same
+    # ownership rule the direct version routes enforce.
+    if row is not None and row.world_id != world_id:
+        return None
+    return row
 
 
 async def resync_versions(db: AsyncSession, world_id: str) -> None:

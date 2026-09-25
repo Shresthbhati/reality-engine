@@ -130,6 +130,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         raise RuntimeError(f"World {session.world_id} not found")
 
     job.stage = "checking_reconstruction_backend"
+    job.heartbeat_at = utcnow()
     await db.commit()
     try:
         from engine.pipeline.vertical_slice import (
@@ -164,6 +165,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
             ) from exc
 
     job.stage = "resolving_evidence"
+    job.heartbeat_at = utcnow()
     await db.commit()
     result = await db.execute(
         select(Evidence).where(Evidence.session_id == session.id, Evidence.type == "photo")
@@ -197,6 +199,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         )
 
     job.stage = "reconstructing"
+    job.heartbeat_at = utcnow()
     await db.commit()
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
     if test_backend is not None:
@@ -216,6 +219,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         raise RuntimeError(f"Reconstruction failed: {exc}") from exc
 
     job.stage = "committing_version"
+    job.heartbeat_at = utcnow()
     await db.commit()
     report = {
         "status": "SUCCESS" if vs_result.registration_status == "success" else "PARTIAL_SUCCESS",
@@ -246,16 +250,23 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> None:
         _render_cameras_json, vs_result.camera_poses, vs_result.scale_state, options.image_size
     )
 
-    version_row = await worldstore_service.commit_version(
-        db,
-        world_id=world.id,
-        world=vs_result.world,
-        parent=world.current_version_id,
-        source_session_ids=[session.id],
-        points=points_bytes,
-        cameras=cameras_bytes,
-        report=report,
-    )
+    base_head = world.current_version_id
+    try:
+        version_row = await worldstore_service.commit_version(
+            db,
+            world_id=world.id,
+            world=vs_result.world,
+            parent=base_head,
+            source_session_ids=[session.id],
+            points=points_bytes,
+            cameras=cameras_bytes,
+            report=report,
+            expect_parent=base_head,
+        )
+    except worldstore_service.ConcurrentModificationError as exc:
+        # Retryable: the next attempt reloads HEAD and either dedups
+        # (identical content) or chains onto the new HEAD.
+        raise RuntimeError(f"reconstruction superseded: {exc}") from exc
 
     # The completed reconstruction is a real product event: link it into
     # the application model (session complete + attached world), carry
@@ -344,6 +355,45 @@ _HANDLERS = {
 }
 
 
+def _stale_after_seconds() -> float:
+    try:
+        return max(30.0, float(os.environ.get("JOB_STALE_AFTER_SECONDS", "300")))
+    except ValueError:
+        return 300.0
+
+
+def _job_timeout_seconds() -> float:
+    try:
+        return max(1.0, float(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")))
+    except ValueError:
+        return 1800.0
+
+
+async def reap_stale_jobs(db: AsyncSession) -> int:
+    """Recover jobs stranded in 'running' by a crashed worker/restart.
+
+    A claimed job heartbeats at claim time; one still 'running' past the
+    staleness horizon belongs to a dead worker and is requeued for pickup
+    instead of wedging its entity forever. Returns the requeued count.
+    """
+    from datetime import timedelta
+
+    cutoff = utcnow() - timedelta(seconds=_stale_after_seconds())
+    result = await db.execute(
+        select(Job).where(Job.status == "running", Job.heartbeat_at < cutoff)
+    )
+    reaped = 0
+    for job in result.scalars().all():
+        job.status = "queued"
+        job.stage = None
+        job.worker_id = None
+        reaped += 1
+    if reaped:
+        await db.commit()
+        log.warning("reaped %d stale running job(s) back to queued", reaped)
+    return reaped
+
+
 async def process_next_job(db: AsyncSession) -> Job | None:
     """Claim and run one queued job. Returns the job, or None if queue empty."""
     result = await db.execute(
@@ -366,7 +416,14 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     try:
         if handler is None:
             raise RuntimeError(f"No handler for job type {job.type}")
-        await handler(db, job)
+        # Bound every handler: a wedged backend (or lost dependency)
+        # must fail this job, never stall the whole queue behind it.
+        try:
+            await asyncio.wait_for(handler(db, job), timeout=_job_timeout_seconds())
+        except TimeoutError as exc:
+            raise RuntimeError(
+                f"job handler timed out after {_job_timeout_seconds():.0f}s"
+            ) from exc
         job.status = "completed"
         job.completed_at = utcnow()
         await _emit_completion(db, job)
@@ -408,9 +465,17 @@ async def worker_loop(poll_seconds: float = 1.0) -> None:
     from apps.api.db import get_sessionmaker
 
     maker = get_sessionmaker()
+    # A previous process may have died mid-job: reap once at startup so
+    # stranded 'running' jobs become pickable again instead of wedging.
+    try:
+        async with maker() as db:
+            await reap_stale_jobs(db)
+    except Exception:
+        log.exception("startup reap failed")
     while True:
         try:
             async with maker() as db:
+                await reap_stale_jobs(db)
                 job = await process_next_job(db)
             if job is None:
                 await asyncio.sleep(poll_seconds)

@@ -331,11 +331,16 @@ def test_reconstruct_session_full_chain(client, tmp_path, monkeypatch):
     acts = client.get("/api/activity").json()["items"]
     assert any(a["type"] == "world.version_created" for a in acts)
 
-    # a second reconstruction produces a NEW immutable version
+    # a second reconstruction of identical content produces the SAME version
+    # (content-addressed deduplication: identical world -> same version ID)
     r2 = client.post(f"/api/sessions/{sid}/reconstruct")
     job2 = _wait_job(client, r2.json()["job_id"], timeout=90.0)
     assert job2["status"] == "completed", job2.get("error")
-    assert job2["payload"]["version_id"] != meta["version_id"]
+    # Content-addressed: identical reconstruction yields identical version
+    assert job2["payload"]["version_id"] == meta["version_id"]
+
+    # To create a NEW version, the world must actually change (e.g., correction)
+    # This is tested in test_golden_loop.py which performs a correction
 
 
 def test_reconstruct_honest_failure_without_usable_images(client):
@@ -659,3 +664,231 @@ def test_concurrent_commits_no_corruption(client, tmp_path, monkeypatch):
     versions = {v["id"] for v in client.get(f"/api/worlds/{wid}/versions").json()["items"]}
     assert head in versions
     assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
+
+
+# --------------------------------------------------------------------------
+# Procedural rooms (P0 concurrency + validation)
+# --------------------------------------------------------------------------
+
+
+def _room_world(client, tmp_path, monkeypatch, name="Room world"):
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
+    import apps.api.worldstore_service as ws_svc
+
+    ws_svc._store = None  # drop cached store so this test's root takes effect
+    return client.post("/api/worlds", json={"name": name}).json()["id"]
+
+
+def _room_body(name="Study", width=4.0, depth=5.0, height=2.8):
+    return {
+        "name": name, "width": width, "depth": depth, "height": height,
+        "openings": [], "seed": 7, "origin": [0.0, 0.0, 0.0],
+    }
+
+
+def test_create_room_happy_path(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/rooms", json=_room_body())
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["room_entity_id"] == "Study-room"
+    assert body["entity_ids_added"], "room creation must add entities"
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    assert len(items) == 1 and items[0]["is_current"] is True
+    wir = client.get(f"/api/worlds/{wid}/worldir")
+    assert wir.status_code == 200
+    assert "Study-room" in wir.json()["entities"]
+
+
+def test_create_room_rejects_bad_input(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    cases = [
+        dict(_room_body(), width=0.0),
+        dict(_room_body(), depth=-2.0),
+        dict(_room_body(), name="   "),
+        dict(_room_body(), openings=[
+            {"wall": "north", "kind": "door", "lateral_offset": 1.0,
+             "width": 0.9, "bottom": 0.0, "top": 2.1}
+            for _ in range(201)
+        ]),
+        dict(_room_body(), openings=[
+            {"wall": "attic", "kind": "door", "lateral_offset": 1.0,
+             "width": 0.9, "bottom": 0.0, "top": 2.1}
+        ]),
+    ]
+    for payload in cases:
+        r = client.post(f"/api/worlds/{wid}/rooms", json=payload)
+        assert r.status_code in (413, 422), (payload, r.status_code, r.text[:200])
+    # None of the rejections persisted a version.
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+
+
+def test_create_room_rejects_nan(client, tmp_path, monkeypatch):
+    import json as _json
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    payload = _room_body()
+    payload["width"] = float("nan")
+    r = client.post(
+        f"/api/worlds/{wid}/rooms",
+        content=_json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 422, r.text
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+
+
+def test_create_room_duplicate_submit(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    first = client.post(f"/api/worlds/{wid}/rooms", json=_room_body())
+    assert first.status_code == 201, first.text
+    second = client.post(f"/api/worlds/{wid}/rooms", json=_room_body())
+    assert second.status_code == 201, second.text
+    # A byte-identical retry must not mint a duplicate version.
+    assert second.json()["version_id"] == first.json()["version_id"]
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 1
+
+
+def test_concurrent_rooms_no_lost_update(client, tmp_path, monkeypatch):
+    import threading
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    barrier = threading.Barrier(2)
+    results = []
+
+    def worker(name):
+        try:
+            barrier.wait(timeout=10)
+            r = client.post(f"/api/worlds/{wid}/rooms", json=_room_body(name=name))
+            results.append(r.status_code)
+        except Exception as exc:  # noqa: BLE001
+            results.append(f"ERROR {type(exc).__name__}")
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in ("Study", "Kitchen")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=120)
+
+    # Serialized (201 + 201 chained) or genuinely overlapped (201 + 409)
+    # are both correct; anything else (errors, lost versions, unreadable
+    # HEAD) is a consistency failure.
+    assert all(isinstance(s, int) for s in results), results
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    head = client.get(f"/api/worlds/{wid}").json()["current_version_id"]
+    if sorted(results) == [201, 201]:
+        assert len(items) == 2
+    else:
+        assert sorted(results) == [201, 409], results
+        assert len(items) == 1
+    assert head in {v["id"] for v in items}
+    assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
+
+
+# --------------------------------------------------------------------------
+# Job lifecycle (P0): duplicates, retries, staleness, timeouts
+# --------------------------------------------------------------------------
+
+
+def test_reconstruct_duplicate_in_progress_409(client, tmp_path, monkeypatch):
+    sid = client.post("/api/sessions", json={"name": "Dup"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Dup world"}).json()["id"]
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
+    for i in range(2):
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+    first = client.post(f"/api/sessions/{sid}/reconstruct")
+    assert first.status_code == 200
+    second = client.post(f"/api/sessions/{sid}/reconstruct")
+    assert second.status_code == 409, second.text
+    assert "in progress" in second.json()["detail"].lower()
+    # The first job still settles on its own; no duplicate pipeline ran.
+    job = _wait_job(client, first.json()["job_id"], timeout=90.0)
+    assert job["status"] in ("completed", "failed")
+
+
+def test_failed_job_exhausts_retries(client):
+    # test_reconstruct_honest_failure_without_usable_images leaves a job
+    # that fails deterministically: it must retry (attempts > 1) and end
+    # 'failed' -- never stuck 'running', never silently dropped.
+    sid = client.post("/api/sessions", json={"name": "Retry"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Retry world"}).json()["id"]
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
+    client.post(
+        f"/api/uploads?session_id={sid}",
+        files={"file": ("scan.ply", b"ply-bytes", "application/octet-stream")},
+    )
+    r = client.post(f"/api/sessions/{sid}/reconstruct")
+    job = _wait_job(client, r.json()["job_id"], timeout=90.0)
+    assert job["status"] == "failed"
+    assert job["attempts"] == 3, job
+    assert job["error"], "a failed job must carry its error explicitly"
+
+
+def test_reap_stale_running_job(client):
+    """A job stranded 'running' by a dead worker is requeued, not wedged."""
+    import asyncio
+    from datetime import timedelta
+
+    import apps.api.db as db_mod
+    from apps.api.jobs import reap_stale_jobs
+    from apps.api.models import Job, utcnow
+
+    async def _scenario():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(Job(
+                id="job_stale001", type="PROCESS_EVIDENCE",
+                entity_type="evidence", entity_id="ev_missing",
+                status="running", worker_id="worker-dead",
+                attempts=1, max_attempts=3,
+                heartbeat_at=utcnow() - timedelta(seconds=3600),
+            ))
+            db.add(Job(
+                id="job_fresh001", type="PROCESS_EVIDENCE",
+                entity_type="evidence", entity_id="ev_missing",
+                status="running", worker_id="worker-live",
+                attempts=1, max_attempts=3,
+                heartbeat_at=utcnow(),
+            ))
+            await db.commit()
+            reaped = await reap_stale_jobs(db)
+            stale = await db.get(Job, "job_stale001")
+            fresh = await db.get(Job, "job_fresh001")
+            return reaped, stale.status, fresh.status
+
+    reaped, stale_status, fresh_status = asyncio.run(_scenario())
+    assert reaped == 1
+    assert stale_status == "queued"
+    assert fresh_status == "running"
+
+
+def test_job_handler_timeout_fails_explicitly(client, monkeypatch):
+    """A wedged handler fails the job with a timeout error instead of
+    stalling the worker queue forever."""
+    import asyncio
+
+    import apps.api.db as db_mod
+    import apps.api.jobs as jobs_mod
+    from apps.api.models import Job
+
+    async def _never(_db, _job):
+        await asyncio.sleep(60)
+
+    monkeypatch.setitem(jobs_mod._HANDLERS, "HANG_FOREVER", _never)
+    monkeypatch.setenv("JOB_TIMEOUT_SECONDS", "1")
+
+    async def _scenario():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(Job(
+                id="job_hang001", type="HANG_FOREVER",
+                entity_type="session", entity_id="ses_x",
+                status="queued", attempts=0, max_attempts=1,
+            ))
+            await db.commit()
+            job = await jobs_mod.process_next_job(db)
+            return job.status, job.error
+
+    status, error = asyncio.run(_scenario())
+    assert status == "failed"
+    assert "timed out" in (error or "").lower()

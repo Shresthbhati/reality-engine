@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import struct
 from pathlib import Path
+
+log = logging.getLogger("reality.api.worlds")
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -119,11 +122,24 @@ async def get_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
 
 @worlds.get("/{world_id}/versions")
 async def list_world_versions(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    """Application mirror of WorldStore lineage. Empty until computation
-    actually creates versions -- never synthesized here."""
+    """Application mirror of WorldStore lineage. Reconciled against the
+    on-disk store on every read (writers outside this process, or a
+    version orphaned by a failed commit, must not drift silently from
+    what is listed) -- never synthesized here. A corrupted store degrades
+    to the DB mirror instead of failing the whole listing; the corrupt
+    version itself still fails explicitly (409) when read."""
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    try:
+        from apps.api import worldstore_service
+
+        await worldstore_service.resync_versions(db, world_id)
+    except Exception as exc:
+        # A corrupted/unreadable store must not take the whole listing
+        # down: fall back to the DB mirror. Per-version reads still fail
+        # explicitly (409) via _load_world_or_409.
+        log.warning("versions resync degraded for world %s: %s", world_id, exc)
     res = await db.execute(
         select(WorldVersion).where(WorldVersion.world_id == world_id).order_by(WorldVersion.created_at.desc())
     )

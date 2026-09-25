@@ -228,9 +228,28 @@ async def session_trajectory(session_id: str, db: AsyncSession = Depends(get_db)
 
 @sessions.post("/{session_id}/reconstruct")
 async def reconstruct_session(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    from sqlalchemy import select as _select
+
+    from apps.api.models import Job as _Job
+
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+
+    # A reconstruction already queued/running for this session is a
+    # duplicate request, not a new job: 409 instead of a second version
+    # pipeline. A finished (completed/failed) job does not block a retry.
+    existing = await db.execute(
+        _select(_Job).where(
+            _Job.entity_type == "session",
+            _Job.entity_id == session_id,
+            _Job.type == jobrunner.RECONSTRUCT_SESSION,
+            _Job.status.in_(["queued", "running"]),
+        )
+    )
+    if existing.scalars().first():
+        raise HTTPException(409, "Reconstruction already in progress for this session")
+
     job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", s.id)
     s.status = "processing"
     s.processing_started_at = utcnow()

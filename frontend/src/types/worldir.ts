@@ -47,6 +47,7 @@ export interface Entity {
   id: string;
   type: "floor" | "wall" | "ceiling" | "object" | string;
   name?: string;
+  parent_id?: string;
   transform?: Transform;
   geometry_ids?: string[];
   material_ids?: string[];

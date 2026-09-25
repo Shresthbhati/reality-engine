@@ -20,6 +20,8 @@ import {
   Download,
   Image as ImageIcon,
   Building,
+  AlertTriangle,
+  Eye,
 } from "lucide-react";
 import type {
   Entity,
@@ -166,6 +168,7 @@ export default function AdaptiveInspector({
             entity={entity}
             geometry={geometry}
             tab={tab}
+            onSelectEntity={onSelectEntity}
             onFrame={() => onFrameEntity(entity.id)}
             onTraceEvidence={onTraceEvidence}
             onCommitCorrection={onCommitCorrection}
@@ -193,6 +196,7 @@ function EntityDetails({
   entity,
   geometry,
   tab,
+  onSelectEntity,
   onFrame,
   onTraceEvidence,
   onCommitCorrection,
@@ -206,6 +210,7 @@ function EntityDetails({
   entity: Entity;
   geometry: Geometry | null;
   tab: InspectorTab;
+  onSelectEntity: (id: string | null) => void;
   onFrame: () => void;
   onTraceEvidence?: (evidenceId: string) => void;
   onCommitCorrection?: (
@@ -234,14 +239,28 @@ function EntityDetails({
   const [commitMessage, setCommitMessage] = useState(`Review & verify ${entity.id}`);
   const [submitting, setSubmitting] = useState(false);
   const [committedSuccess, setCommittedSuccess] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+
+  const handleTogglePreview = () => {
+    if (isPreviewing) {
+      window.dispatchEvent(new CustomEvent("clear-correction-preview"));
+      setIsPreviewing(false);
+    } else {
+      window.dispatchEvent(
+        new CustomEvent("preview-correction", {
+          detail: {
+            entityId: entity.id,
+            type: editedType,
+            confidence: editedConfidence,
+          },
+        })
+      );
+      setIsPreviewing(true);
+    }
+  };
 
   // Real, entity-specific trace-to-evidence -- refetched whenever the
-  // selected entity (or world) changes. Never falls back to fabricated
-  // per-entity data; an honest loading/empty/error state throughout.
-  // `EntityDetails` is remounted via `key={entity.id}` in the parent, so
-  // this state starts fresh (undefined = not yet loaded) on every entity
-  // switch -- no manual reset needed, and no synchronous setState in the
-  // effect body.
+  // selected entity (or world) changes.
   const [provenance, setProvenance] = useState<EntityProvenance | null | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
@@ -257,6 +276,8 @@ function EntityDetails({
   const handleSaveCorrection = async () => {
     if (!onCommitCorrection) return;
     setSubmitting(true);
+    window.dispatchEvent(new CustomEvent("clear-correction-preview"));
+    setIsPreviewing(false);
     try {
       await onCommitCorrection(
         entity.id,
@@ -386,7 +407,13 @@ function EntityDetails({
 
           <button
             type="button"
-            onClick={() => setIsEditing(!isEditing)}
+            onClick={() => {
+              if (isEditing && isPreviewing) {
+                window.dispatchEvent(new CustomEvent("clear-correction-preview"));
+                setIsPreviewing(false);
+              }
+              setIsEditing(!isEditing);
+            }}
             className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded transition-colors text-[11px] font-medium cursor-pointer ${
               isEditing
                 ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40"
@@ -409,7 +436,13 @@ function EntityDetails({
             </span>
             <button
               type="button"
-              onClick={() => setIsEditing(false)}
+              onClick={() => {
+                if (isPreviewing) {
+                  window.dispatchEvent(new CustomEvent("clear-correction-preview"));
+                  setIsPreviewing(false);
+                }
+                setIsEditing(false);
+              }}
               className="text-neutral-400 hover:text-white cursor-pointer"
             >
               <X className="w-3 h-3" />
@@ -476,27 +509,75 @@ function EntityDetails({
             />
           </div>
 
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={handleSaveCorrection}
-            className={`w-full py-1.5 rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors ${
-              committedSuccess
-                ? "bg-[#2ecc71] text-black"
-                : "bg-[#00e5ff] hover:bg-[#33ebff] text-black cursor-pointer"
-            }`}
-          >
-            {submitting ? (
-              <span>Persisting to WorldStore...</span>
-            ) : committedSuccess ? (
-              <>
-                <Check className="w-3.5 h-3.5" />
-                <span>Version Committed!</span>
-              </>
-            ) : (
-              <span>Commit World Version</span>
-            )}
-          </button>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleTogglePreview}
+              className={`flex-1 py-1.5 rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer border ${
+                isPreviewing
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700"
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>{isPreviewing ? "Revert 3D" : "3D Preview"}</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={handleSaveCorrection}
+              className={`flex-1 py-1.5 rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors ${
+                committedSuccess
+                  ? "bg-[#2ecc71] text-black"
+                  : "bg-[#00e5ff] hover:bg-[#33ebff] text-black cursor-pointer"
+              }`}
+            >
+              {submitting ? (
+                <span>Persisting...</span>
+              ) : committedSuccess ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Committed!</span>
+                </>
+              ) : (
+                <span>Commit Version</span>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Opening Inspection Details (for Doors and Windows) */}
+      {(entity.type === "door" || entity.type === "window") && (
+        <div className="p-3 rounded-lg border border-[#10b981]/40 bg-[#10b981]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#10b981] uppercase tracking-wide">
+            <span className="flex items-center gap-1.5">
+              <Building className="w-3.5 h-3.5" />
+              <span>Opening Specification ({entity.type})</span>
+            </span>
+            <span className="font-mono text-[10px]">
+              {extentDimensions ? `${(extentDimensions.x * extentDimensions.y).toFixed(2)} m² area` : "Opening"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
+            <div>
+              <span className="text-neutral-500">Width: </span>
+              <span>{extentDimensions ? `${extentDimensions.x.toFixed(2)} m` : "—"}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Height: </span>
+              <span>{extentDimensions ? `${extentDimensions.y.toFixed(2)} m` : "—"}</span>
+            </div>
+          </div>
+
+          {conf < 0.5 && (
+            <div className="flex items-center gap-1.5 p-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-sans">
+              <AlertTriangle className="w-3 h-3 shrink-0" />
+              <span>Insufficient evidence to classify opening (depth fitting unconstrained or frame occluded)</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -543,26 +624,54 @@ function EntityDetails({
         </div>
       )}
 
-      {/* Spatial Relationships Section */}
+      {/* Spatial Topology Graph Section */}
       {(tab === "all" || tab === "geometry") && (
         <div className="space-y-2">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-            <Building className="w-3.5 h-3.5 text-[#ffb84d]" />
-            <span>Spatial Relationships ({relationships.length})</span>
-          </h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
+              <Workflow className="w-3.5 h-3.5 text-[#00e5ff]" />
+              <span>Spatial Topology Graph</span>
+            </h4>
+            <span className="text-[10px] text-neutral-500 font-mono">
+              {relationships.length} connections
+            </span>
+          </div>
+
           <div
-            className="p-3 rounded-lg border bg-[#151821] space-y-1.5 text-[11px]"
+            className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
             style={{ borderColor: "var(--border)" }}
           >
             {relationships.length === 0 ? (
-              <p className="text-neutral-500 italic">No relationships linked</p>
+              <p className="text-neutral-500 italic">No topological relationships recorded in WorldIR.</p>
             ) : (
-              relationships.map((rel: { predicate?: string; kind?: string; type?: string; target_entity_id?: string; target_id?: string }, idx) => (
-                <div key={idx} className="flex justify-between items-center font-mono">
-                  <span className="text-[#ffb84d] uppercase text-[10px]">{String(rel.kind || rel.type || "rel")}</span>
-                  <span className="text-neutral-300">{String(rel.target_entity_id || rel.target_id || "unknown")}</span>
-                </div>
-              ))
+              <div className="space-y-1.5">
+                {relationships.map((rel: { predicate?: string; kind?: string; type?: string; target_entity_id?: string; target_id?: string }, idx) => {
+                  const targetId = String(rel.target_entity_id || rel.target_id || "");
+                  const targetEnt = world?.entities?.[targetId];
+                  const relKind = String(rel.kind || rel.type || "rel").toLowerCase();
+
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => targetId && onSelectEntity(targetId)}
+                      className="group p-1.5 rounded bg-[#101217] border border-[#1f222b] hover:border-[#00e5ff] transition-colors flex items-center justify-between font-mono cursor-pointer"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 uppercase font-semibold">
+                          {relKind}
+                        </span>
+                        <span className="text-neutral-200 group-hover:text-white truncate">
+                          {targetEnt?.name || targetId || "unknown"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-neutral-500 shrink-0">
+                        {targetEnt && <span className="capitalize">{targetEnt.type}</span>}
+                        <Maximize2 className="w-3 h-3 text-neutral-500 group-hover:text-[#00e5ff]" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>

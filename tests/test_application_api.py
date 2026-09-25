@@ -936,6 +936,12 @@ def test_reconstruct_succeeded_grading_deterministic(client, tmp_path, monkeypat
         assert stamp["backend"], "backend must be recorded"
         assert stamp["images_ingested"] == 3
         assert 0.0 <= ent.get("confidence", -1) <= 1.0
+        assert ent.get("uncertainty") is not None, "uncertainty must be preserved"
+    rep = client.get(f"/api/worlds/{wid}/report")
+    assert rep.status_code == 200, rep.text
+    stages = rep.json()["stages"]
+    assert stages["reconstruction"]["backend"], "pipeline backend recorded in report"
+    assert stages["depth"]["status"] == "skipped", "disabled stages say skipped, never fake data"
     pts = client.get(f"/api/worlds/{wid}/points")
     assert pts.status_code == 200
     assert int(pts.content.decode("ascii", "replace").split("element vertex ")[1].split("\n")[0]) == meta["points"]

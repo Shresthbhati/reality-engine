@@ -590,6 +590,20 @@ def test_commit_failed_db_write_rolls_back(client, tmp_path, monkeypatch):
     r = _commit(client, wid, changes={"name": "Barn"})
     assert r.status_code == 503, r.text
     assert "not adopted" in r.json()["detail"].lower()
+    monkeypatch.undo()  # outage over: verify the crash anatomy
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
+    # The version file exists on disk (orphan) while HEAD never moved.
+    # Recovery reconciles the orphan into the listing (visible, never
+    # HEAD): nothing false was ever served, nothing durable was lost.
+    from worldstore.store import WorldStore
+
+    on_disk = {v.version_id for v in WorldStore(tmp_path / "ws").list_versions()}
+    assert len(on_disk) == 2  # base + orphan
+    head, _ = _head_and_count(client, wid)
+    assert head == v0
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    assert {v["id"] for v in items} == on_disk
+    assert [v["id"] for v in items if v["is_current"]] == [v0]
 
 
 def test_conditional_head_update_single_winner(client, tmp_path, monkeypatch):

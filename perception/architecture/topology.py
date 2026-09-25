@@ -432,8 +432,15 @@ def associate_windows_to_rooms(
         if not matched:
             continue
         for rid in matched:
-            if rid in world.entities:
-                rent = world.entities.get(rid)
+            rent = world.entities.get(rid)
+            if not rent:
+                for e in world.entities.values():
+                    if getattr(e, "type", None) == EntityType.ROOM:
+                        bounds = (e.custom_properties or {}).get("boundary_element_ids", [])
+                        if wall_element_id in bounds or any(wall_plane_id and wall_plane_id in b for b in bounds):
+                            rent = e
+                            break
+            if rent:
                 win_ids = list(rent.custom_properties.get("window_ids", []))
                 if win.id not in win_ids:
                     win_ids.append(win.id)

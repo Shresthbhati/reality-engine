@@ -462,7 +462,7 @@ function EntityDetails({
               <option value="window">Window (Glazing Opening)</option>
               <option value="floor">Floor (Walking Surface)</option>
               <option value="ceiling">Ceiling (Upper Boundary)</option>
-              <option value="stair">Stair (Circulation Element)</option>
+              <option value="stairs">Stair (Circulation Element)</option>
               <option value="corridor">Corridor (Circulation Space)</option>
               <option value="roof">Roof (Exterior Covering)</option>
               <option value="column">Column (Vertical Structural Member)</option>
@@ -545,6 +545,165 @@ function EntityDetails({
               )}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Building Envelope & Overview */}
+      {(entity.type === "building" || entity.id.startsWith("building")) && (
+        <div className="p-3 rounded-lg border border-[#f59e0b]/40 bg-[#f59e0b]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#f59e0b] uppercase tracking-wide">
+            <span className="flex items-center gap-1.5">
+              <Building className="w-3.5 h-3.5" />
+              <span>Building Envelope</span>
+            </span>
+            <span className="font-mono text-[10px]">
+              {String((entity.custom_properties?.n_storeys as number | undefined) ?? (entity.custom_properties?.storey_ids as string[] | undefined)?.length ?? "1")} Levels
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
+            <div>
+              <span className="text-neutral-500">Envelope: </span>
+              <span>{extentDimensions ? `${extentDimensions.x.toFixed(1)}×${extentDimensions.y.toFixed(1)}×${extentDimensions.z.toFixed(1)}m` : "—"}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Volume: </span>
+              <span>{extentDimensions ? `${extentDimensions.volume.toFixed(1)} m³` : "—"}</span>
+            </div>
+          </div>
+
+          {Array.isArray(entity.custom_properties?.storey_ids) && (entity.custom_properties.storey_ids as string[]).length > 0 && (
+            <div className="pt-1.5 border-t border-[#f59e0b]/20 space-y-1">
+              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Building Storeys / Levels</span>
+              <div className="flex flex-wrap gap-1">
+                {(entity.custom_properties.storey_ids as string[]).map((sId) => (
+                  <button
+                    key={sId}
+                    type="button"
+                    onClick={() => onSelectEntity(sId)}
+                    className="px-2 py-0.5 rounded bg-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/30 text-[10px] font-mono cursor-pointer border border-[#f59e0b]/30"
+                  >
+                    {sId}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Storey / Level Details */}
+      {(entity.type === "storey" || entity.type === "level" || entity.id.startsWith("storey")) && (
+        <div className="p-3 rounded-lg border border-[#8b5cf6]/40 bg-[#8b5cf6]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#8b5cf6] uppercase tracking-wide">
+            <span className="flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5" />
+              <span>Building Storey / Level</span>
+            </span>
+            <span className="font-mono text-[10px]">
+              Elev: {Number(entity.custom_properties?.floor_height_m ?? entity.custom_properties?.elevation_m ?? pos?.z ?? pos?.y ?? 0).toFixed(2)} m
+            </span>
+          </div>
+
+          <div className="space-y-1.5 text-[11px]">
+            {Array.isArray(entity.custom_properties?.room_ids) && (entity.custom_properties.room_ids as string[]).length > 0 && (
+              <div>
+                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Rooms</span>
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {(entity.custom_properties.room_ids as string[]).map((rId) => (
+                    <button
+                      key={rId}
+                      type="button"
+                      onClick={() => onSelectEntity(rId)}
+                      className="px-2 py-0.5 rounded bg-[#3b82f6]/20 text-[#3b82f6] hover:bg-[#3b82f6]/30 text-[10px] font-mono cursor-pointer border border-[#3b82f6]/30"
+                    >
+                      {rId}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {Array.isArray(entity.custom_properties?.corridor_ids) && (entity.custom_properties.corridor_ids as string[]).length > 0 && (
+              <div>
+                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Circulation Corridors</span>
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {(entity.custom_properties.corridor_ids as string[]).map((cId) => (
+                    <button
+                      key={cId}
+                      type="button"
+                      onClick={() => onSelectEntity(cId)}
+                      className="px-2 py-0.5 rounded bg-[#06b6d4]/20 text-[#06b6d4] hover:bg-[#06b6d4]/30 text-[10px] font-mono cursor-pointer border border-[#06b6d4]/30"
+                    >
+                      {cId}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {Array.isArray(entity.custom_properties?.stair_ids) && (entity.custom_properties.stair_ids as string[]).length > 0 && (
+              <div>
+                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Vertical Stairs</span>
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {(entity.custom_properties.stair_ids as string[]).map((stId) => (
+                    <button
+                      key={stId}
+                      type="button"
+                      onClick={() => onSelectEntity(stId)}
+                      className="px-2 py-0.5 rounded bg-[#a855f7]/20 text-[#a855f7] hover:bg-[#a855f7]/30 text-[10px] font-mono cursor-pointer border border-[#a855f7]/30"
+                    >
+                      {stId}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Structural Plane Details (Wall / Floor / Ceiling) */}
+      {(entity.type === "wall" || entity.type === "floor" || entity.type === "ceiling") && (
+        <div className="p-3 rounded-lg border border-[#64748b]/40 bg-[#64748b]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[#94a3b8] uppercase tracking-wide">
+            <span className="flex items-center gap-1.5">
+              <Box className="w-3.5 h-3.5" />
+              <span>Structural {entity.type} Primitive</span>
+            </span>
+            <span className="font-mono text-[10px]">
+              {geometry?.vertex_count ? `${geometry.vertex_count} inliers` : "Plane"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
+            <div>
+              <span className="text-neutral-500">Span: </span>
+              <span>{extentDimensions ? `${Math.max(extentDimensions.x, extentDimensions.y).toFixed(2)} m` : "—"}</span>
+            </div>
+            <div>
+              <span className="text-neutral-500">Thickness: </span>
+              <span>{(entity.custom_properties?.thickness_m as number | undefined)?.toFixed(3) ?? "0.100"} m</span>
+            </div>
+          </div>
+
+          {Array.isArray(entity.custom_properties?.window_ids) && (entity.custom_properties.window_ids as string[]).length > 0 && (
+            <div className="pt-1.5 border-t border-[#64748b]/20 space-y-1">
+              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Openings in Surface</span>
+              <div className="flex flex-wrap gap-1">
+                {(entity.custom_properties.window_ids as string[]).map((wId) => (
+                  <button
+                    key={wId}
+                    type="button"
+                    onClick={() => onSelectEntity(wId)}
+                    className="px-2 py-0.5 rounded bg-[#10b981]/20 text-[#10b981] hover:bg-[#10b981]/30 text-[10px] font-mono cursor-pointer border border-[#10b981]/30"
+                  >
+                    {wId}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

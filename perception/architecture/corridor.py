@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from perception.architecture.classify import ArchitecturalElement, PlaneInput
-from perception.architecture.room_graph import RoomGraph, RoomOpening, _floor_height
+from perception.architecture.room_graph import RoomGraph, RoomOpening, _floor_height, _up_axis
 
 #: Minimum length-to-width aspect ratio for a corridor candidate.
 CORRIDOR_MIN_ASPECT_RATIO = 2.0
@@ -110,14 +110,14 @@ class CorridorGraph:
         }
 
 
-def _xy_overlap(a: ArchitecturalElement, b: ArchitecturalElement) -> bool:
+def _plan_overlap(a: ArchitecturalElement, b: ArchitecturalElement, ax0: int, ax1: int) -> bool:
     if a.bounds_min is None or a.bounds_max is None or b.bounds_min is None or b.bounds_max is None:
         return False
     return (
-        a.bounds_min[0] <= b.bounds_max[0]
-        and b.bounds_min[0] <= a.bounds_max[0]
-        and a.bounds_min[1] <= b.bounds_max[1]
-        and b.bounds_min[1] <= a.bounds_max[1]
+        a.bounds_min[ax0] <= b.bounds_max[ax0]
+        and b.bounds_min[ax0] <= a.bounds_max[ax0]
+        and a.bounds_min[ax1] <= b.bounds_max[ax1]
+        and b.bounds_min[ax1] <= a.bounds_max[ax1]
     )
 
 
@@ -142,30 +142,35 @@ def detect_corridors(
     rooms = list(rooms or [])
     plane_inputs = dict(plane_inputs or {})
 
+    up_idx = _up_axis(up)
+    plan_axes = [i for i in range(3) if i != up_idx]
+    ax0, ax1 = plan_axes[0], plan_axes[1]
+    axis_names = ["x", "y", "z"]
+
     candidates: List[dict] = []
 
     for floor in floors:
-        fh = _floor_height(floor)
+        fh = _floor_height(floor, up)
         if fh is None:
             continue
 
         # Find matching ceiling above floor
         matching_ceilings = [
             c for c in ceilings
-            if c.bounds_min is not None and _xy_overlap(floor, c) and c.bounds_min[2] > fh
+            if c.bounds_min is not None and _plan_overlap(floor, c, ax0, ax1) and c.bounds_min[up_idx] > fh
         ]
         if not matching_ceilings:
             continue
-        ceiling = min(matching_ceilings, key=lambda c: c.bounds_min[2])
-        cz = ceiling.bounds_min[2]
+        ceiling = min(matching_ceilings, key=lambda c: c.bounds_min[up_idx])
+        cz = ceiling.bounds_min[up_idx]
 
         # Enclosing walls
         room_walls = [
             w for w in walls
             if w.bounds_min is not None
-            and _xy_overlap(floor, w)
-            and w.bounds_min[2] < cz
-            and w.bounds_max[2] > fh
+            and _plan_overlap(floor, w, ax0, ax1)
+            and w.bounds_min[up_idx] < cz
+            and w.bounds_max[up_idx] > fh
         ]
 
         # A corridor requires at least 2 longitudinal walls or >= 2 walls
@@ -173,18 +178,24 @@ def detect_corridors(
             continue
 
         # Bounds of this enclosure from the floor footprint and vertical clearance
-        lo = (floor.bounds_min[0], floor.bounds_min[1], fh)
-        hi = (floor.bounds_max[0], floor.bounds_max[1], cz)
+        lo = [0.0, 0.0, 0.0]
+        hi = [0.0, 0.0, 0.0]
+        lo[ax0] = floor.bounds_min[ax0]
+        hi[ax0] = floor.bounds_max[ax0]
+        lo[ax1] = floor.bounds_min[ax1]
+        hi[ax1] = floor.bounds_max[ax1]
+        lo[up_idx] = fh
+        hi[up_idx] = cz
 
-        dx = hi[0] - lo[0]
-        dy = hi[1] - lo[1]
-        dz = hi[2] - lo[2]
+        d0 = hi[ax0] - lo[ax0]
+        d1 = hi[ax1] - lo[ax1]
+        dz = hi[up_idx] - lo[up_idx]
 
-        if dx <= 0 or dy <= 0:
+        if d0 <= 0 or d1 <= 0:
             continue
 
-        length = max(dx, dy)
-        width = min(dx, dy)
+        length = max(d0, d1)
+        width = min(d0, d1)
         aspect = length / max(width, 1e-6)
 
         # Aspect ratio & width gates
@@ -198,10 +209,11 @@ def detect_corridors(
             continue
 
         # Determine longitudinal axis (unit vector)
-        if dx >= dy:
-            axis = (1.0, 0.0, 0.0)
+        axis = [0.0, 0.0, 0.0]
+        if d0 >= d1:
+            axis[ax0] = 1.0
         else:
-            axis = (0.0, 1.0, 0.0)
+            axis[ax1] = 1.0
 
         # Collect openings on corridor walls
         openings: List[RoomOpening] = []
@@ -226,31 +238,39 @@ def detect_corridors(
             "length_m": length,
             "width_m": width,
             "height_m": dz,
-            "floor_area_m2": dx * dy,
-            "axis": axis,
+            "floor_area_m2": d0 * d1,
+            "axis": tuple(axis),
             "openings": openings,
             "connected_rooms": sorted(connected_rooms),
         })
 
     # Sort deterministically
-    candidates.sort(key=lambda c: (c["bounds_min"][2], c["bounds_min"][0], c["bounds_min"][1]))
+    candidates.sort(key=lambda c: (c["bounds_min"][up_idx], c["bounds_min"][ax0], c["bounds_min"][ax1]))
 
     corridors: List[CorridorGraph] = []
     for idx, c in enumerate(candidates, start=1):
         cid = f"corridor-{idx:03d}"
         boundary_ids = sorted([c["floor"].element_id, c["ceiling"].element_id] + [w.element_id for w in c["walls"]])
 
-        # Calculate confidence based on boundary enclosure and doorways
+        # Calculate confidence and status based on boundary enclosure and doorways
         conf = 0.8
         notes = []
+        status = "detected"
         if len(c["walls"]) >= 3:
             conf += 0.1
+        elif len(c["walls"]) < 2:
+            status = "unresolved"
+            conf = min(conf, 0.5)
+            notes.append("Ambiguous circulation: insufficient boundary wall enclosure")
+
         if len(c["connected_rooms"]) >= 2:
             conf += 0.1
             notes.append(f"Connects {len(c['connected_rooms'])} rooms")
         elif len(c["connected_rooms"]) == 1:
             notes.append(f"Connects room {c['connected_rooms'][0]}")
         else:
+            if status == "detected":
+                status = "partial"
             notes.append("Circulation geometry with unresolved room connections")
 
         conf = min(1.0, conf)
@@ -268,9 +288,52 @@ def detect_corridors(
             connected_room_ids=tuple(c["connected_rooms"]),
             openings=tuple(sorted(c["openings"], key=lambda o: o.wall_element_id)),
             confidence=conf,
-            status="detected",
+            status=status,
             notes=tuple(notes),
         ))
+
+    # Harmonize with room-level corridor detection
+    try:
+        from perception.architecture.corridors import detect_corridor
+        for rm in rooms:
+            c_fit = detect_corridor(rm)
+            if c_fit is not None:
+                # Check if this space is already covered by a candidate
+                covered = any(
+                    abs(c.bounds_min[ax0] - rm.bounds_min[ax0]) < 0.2
+                    and abs(c.bounds_min[ax1] - rm.bounds_min[ax1]) < 0.2
+                    for c in corridors
+                )
+                if not covered:
+                    cid = f"corridor-{rm.room_id}"
+                    long_axis_vec = [0.0, 0.0, 0.0]
+                    if c_fit.long_axis == "x":
+                        long_axis_vec[0] = 1.0
+                    elif c_fit.long_axis == "y":
+                        long_axis_vec[1] = 1.0
+                    else:
+                        long_axis_vec[ax0] = 1.0
+                    corridors.append(CorridorGraph(
+                        corridor_id=cid,
+                        boundary_element_ids=tuple(rm.boundary_element_ids),
+                        bounds_min=rm.bounds_min,
+                        bounds_max=rm.bounds_max,
+                        length_m=c_fit.length_m,
+                        width_m=c_fit.width_m,
+                        height_m=float(rm.dimensions_m.get(axis_names[up_idx], 2.4)),
+                        floor_area_m2=rm.floor_area_m2,
+                        longitudinal_axis=tuple(long_axis_vec),
+                        connected_room_ids=tuple(rm.adjacent_room_ids),
+                        openings=rm.openings,
+                        confidence=c_fit.confidence,
+                        status="detected",
+                        notes=(
+                            f"Inferred from room {rm.room_id} with elongation {c_fit.elongation:.1f}"
+                            + (" (serves both sides)" if c_fit.connects_both_sides else " (single-side service)"),
+                        ),
+                    ))
+    except Exception:
+        pass
 
     # Detect intersections between corridors
     if len(corridors) >= 2:
@@ -282,20 +345,19 @@ def detect_corridors(
                     continue
                 # Test bounding box overlap
                 overlap = (
-                    c1.bounds_min[0] <= c2.bounds_max[0]
-                    and c2.bounds_min[0] <= c1.bounds_max[0]
-                    and c1.bounds_min[1] <= c2.bounds_max[1]
-                    and c2.bounds_min[1] <= c1.bounds_max[1]
-                    and abs(c1.bounds_min[2] - c2.bounds_min[2]) < 0.3
+                    c1.bounds_min[ax0] <= c2.bounds_max[ax0]
+                    and c2.bounds_min[ax0] <= c1.bounds_max[ax0]
+                    and c1.bounds_min[ax1] <= c2.bounds_max[ax1]
+                    and c2.bounds_min[ax1] <= c1.bounds_max[ax1]
+                    and abs(c1.bounds_min[up_idx] - c2.bounds_min[up_idx]) < 0.3
                 )
                 if overlap:
                     ix_lo = [max(c1.bounds_min[i], c2.bounds_min[i]) for i in range(3)]
                     ix_hi = [min(c1.bounds_max[i], c2.bounds_max[i]) for i in range(3)]
                     center = ((ix_lo[0] + ix_hi[0]) / 2.0, (ix_lo[1] + ix_hi[1]) / 2.0, (ix_lo[2] + ix_hi[2]) / 2.0)
                     # Check angle between axes
-                    dot_axes = (
-                        c1.longitudinal_axis[0] * c2.longitudinal_axis[0]
-                        + c1.longitudinal_axis[1] * c2.longitudinal_axis[1]
+                    dot_axes = sum(
+                        c1.longitudinal_axis[i] * c2.longitudinal_axis[i] for i in range(3)
                     )
                     kind = "cross-junction" if abs(dot_axes) < 0.3 else "T-junction"
                     intersections.append(CorridorIntersection(

@@ -633,10 +633,13 @@ def _validate_commit_changes(changes: dict) -> dict:
             try:
                 validated[key] = EntityType(value)
             except ValueError:
-                raise HTTPException(
-                    422,
-                    f"field 'type' must be one of {[t.value for t in EntityType]}",
-                )
+                if value == "stair":
+                    validated[key] = EntityType.STAIRS
+                else:
+                    raise HTTPException(
+                        422,
+                        f"field 'type' must be one of {[t.value for t in EntityType]}",
+                    )
         elif key == "confidence":
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise HTTPException(422, "field 'confidence' must be a number")

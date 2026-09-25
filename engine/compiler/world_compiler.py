@@ -124,8 +124,13 @@ class CompileOptions:
     #: (default) reproduces the exact pre-existing behavior.
     artifact_store: Optional[ArtifactStore] = None
     #: When True, promoted corridor candidates are added directly to world.entities.
-    #: Default False keeps core plane/room entity counts exact while space_graph metadata is always attached.
-    promote_corridors: bool = False
+    promote_corridors: bool = True
+    #: When True, promoted window candidates are added directly to world.entities and associated to rooms.
+    promote_windows: bool = True
+    #: When True, promoted stair candidates are added directly to world.entities and linked to storeys.
+    promote_stairs: bool = True
+    #: When True, promoted building envelope and storey entities are added directly to world.entities.
+    promote_building: bool = False
 
 
 @dataclass(frozen=True)
@@ -314,7 +319,7 @@ def compile_reconstruction_to_world(
                 "notes": "; ".join(room.notes),
             })
 
-    # ---- interior architecture: corridor, stair, building & space graph ----
+    # ---- interior architecture: rooms, corridors, windows, stairs, building & space graph ----
     from perception.architecture.classify import ArchitecturalElement, PlaneInput
     from perception.architecture.corridor import detect_corridors
     from perception.architecture.room_graph import build_room_graph, build_building_graph
@@ -352,51 +357,249 @@ def compile_reconstruction_to_world(
             bounds_max=bmax,
         ))
 
-    # Detect corridors from plane elements
-    corridors = detect_corridors(arch_elements, up=options.up, plane_inputs=plane_inputs_map)
+    # 1. Build room graph from elements
+    rg_rooms = build_room_graph(arch_elements, up=options.up, plane_inputs=plane_inputs_map)
 
-    # Detect stairs from point cloud
+    # 2. Detect circulation corridors
+    corridors = detect_corridors(arch_elements, up=options.up, plane_inputs=plane_inputs_map, rooms=rg_rooms)
+
+    # 3. Detect windows in wall planes
+    detected_windows = []
+    try:
+        from perception.architecture.windows import detect_window
+        for pid, pi in plane_inputs_map.items():
+            prole = next((p.role for p in oriented if p.plane.plane_id == pid), None)
+            if prole == "wall":
+                try:
+                    w_fit = detect_window(pi, up=options.up, floor_height=0.0)
+                    if w_fit is not None:
+                        detected_windows.append(w_fit)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # 4. Detect stairs from point cloud
     detected_stairs = []
     try:
         from perception.architecture.stairs import detect_stairs
-        pts = [p.position for p in result.points]
+        up_idx = 2
+        u = [abs(x) for x in options.up]
+        if max(u) > 1e-6:
+            up_idx = u.index(max(u))
+        if up_idx == 1:
+            pts = [(p.position[0], p.position[2], p.position[1]) for p in result.points]
+        elif up_idx == 0:
+            pts = [(p.position[1], p.position[2], p.position[0]) for p in result.points]
+        else:
+            pts = [p.position for p in result.points]
         st_fit = detect_stairs(pts)
         if st_fit is not None:
+            if up_idx == 1 and st_fit.position:
+                import dataclasses
+                pos = (st_fit.position[0], st_fit.position[2], st_fit.position[1])
+                st_fit = dataclasses.replace(st_fit, position=pos)
+            elif up_idx == 0 and st_fit.position:
+                import dataclasses
+                pos = (st_fit.position[2], st_fit.position[0], st_fit.position[1])
+                st_fit = dataclasses.replace(st_fit, position=pos)
             detected_stairs.append(st_fit)
     except Exception:
         pass
 
-    rg_rooms = build_room_graph(arch_elements, up=options.up, plane_inputs=plane_inputs_map)
+    # 5. Build building graph and assign levels
     bld_graph = build_building_graph(rg_rooms, up=options.up, corridors=corridors, stairs=detected_stairs)
 
+    from world_ir.schema_v1 import Geometry, GeometryType, Vector3, Entity, EntityType, Relationship, RelationshipKind
+
+    # 6. Promote windows into WorldIR and associate with rooms
+    promoted_windows = []
+    if options.promote_windows and detected_windows:
+        for widx, win in enumerate(detected_windows, start=1):
+            win_id = f"window-{widx:03d}"
+            if win_id not in world.entities:
+                win_geom_id = f"geom-{win_id}"
+                wbmin, wbmax = win.bounds_min, win.bounds_max
+                world.geometries[win_geom_id] = Geometry(
+                    id=win_geom_id,
+                    type=GeometryType.BOX,
+                    bounds_min=Vector3(wbmin[0], wbmin[1], wbmin[2]),
+                    bounds_max=Vector3(wbmax[0], wbmax[1], wbmax[2]),
+                )
+                win_ent = Entity(
+                    id=win_id,
+                    type=EntityType.WINDOW,
+                    name=f"Window {widx:03d}",
+                    geometry_ids=[win_geom_id],
+                    custom_properties=win.to_dict(),
+                    provenance=Provenance.INFERRED,
+                    confidence=win.confidence,
+                )
+                world.entities[win_id] = win_ent
+                entities_created.append(win_id)
+                promoted_windows.append(win_ent)
+
+        if promoted_windows and rg_rooms:
+            try:
+                from perception.architecture.topology import associate_windows_to_rooms
+                associate_windows_to_rooms(promoted_windows, rg_rooms, world)
+            except Exception:
+                pass
+
+    # 7. Promote stairs into WorldIR
+    promoted_stairs = []
+    if options.promote_stairs and detected_stairs:
+        for sidx, st in enumerate(detected_stairs, start=1):
+            st_id = f"stairs-{sidx:03d}"
+            if st_id not in world.entities:
+                st_geom_id = f"geom-{st_id}"
+                pos = getattr(st, "position", (0.0, 0.0, 0.0))
+                rise = getattr(st, "rise_m", 0.17)
+                n_steps = getattr(st, "n_steps", 8)
+                going = getattr(st, "going_m", 0.28)
+                total_rise = rise * n_steps
+                total_run = going * n_steps
+                st_bmin = (pos[0] - total_run / 2.0, pos[1] - 0.5, pos[2] - total_rise / 2.0)
+                st_bmax = (pos[0] + total_run / 2.0, pos[1] + 0.5, pos[2] + total_rise / 2.0)
+                world.geometries[st_geom_id] = Geometry(
+                    id=st_geom_id,
+                    type=GeometryType.BOX,
+                    bounds_min=Vector3(st_bmin[0], st_bmin[1], st_bmin[2]),
+                    bounds_max=Vector3(st_bmax[0], st_bmax[1], st_bmax[2]),
+                )
+                st_ent = Entity(
+                    id=st_id,
+                    type=EntityType.STAIRS,
+                    name=f"Stairs {sidx:03d}",
+                    geometry_ids=[st_geom_id],
+                    custom_properties=st.to_dict() if hasattr(st, "to_dict") else {
+                        "n_steps": n_steps,
+                        "rise_m": rise,
+                        "going_m": going,
+                        "total_rise_m": total_rise,
+                        "total_run_m": total_run,
+                    },
+                    provenance=Provenance.INFERRED,
+                    confidence=getattr(st, "confidence", 0.9),
+                )
+                world.entities[st_id] = st_ent
+                entities_created.append(st_id)
+                promoted_stairs.append(st_ent)
+
+    # 8. Promote corridors into WorldIR and wire canonical topology
+    if options.promote_corridors and corridors:
+        for c in corridors:
+            cid = f"corridor-{c.corridor_id}" if not c.corridor_id.startswith("corridor-") else c.corridor_id
+            if cid not in world.entities:
+                c_bmin, c_bmax = c.bounds_min, c.bounds_max
+                c_geom_id = f"geom-{cid}"
+                world.geometries[c_geom_id] = Geometry(
+                    id=c_geom_id,
+                    type=GeometryType.BOX,
+                    bounds_min=Vector3(c_bmin[0], c_bmin[1], c_bmin[2]),
+                    bounds_max=Vector3(c_bmax[0], c_bmax[1], c_bmax[2]),
+                )
+                c_ent = Entity(
+                    id=cid,
+                    type=EntityType.CORRIDOR,
+                    name=f"Corridor {c.corridor_id.rsplit('-', 1)[-1]}",
+                    geometry_ids=[c_geom_id],
+                    custom_properties=c.to_dict(),
+                    provenance=Provenance.INFERRED,
+                    confidence=c.confidence,
+                )
+                # Boundary containment edges
+                for bid in c.boundary_element_ids:
+                    if bid in world.entities:
+                        c_ent.relationships.append(Relationship(
+                            kind=RelationshipKind.CONTAINS,
+                            target_id=bid,
+                            confidence=c.confidence,
+                            provenance=Provenance.INFERRED,
+                            metadata={"derived_from": "corridor_boundary_membership"},
+                        ))
+                        world.entities[bid].relationships.append(Relationship(
+                            kind=RelationshipKind.PART_OF,
+                            target_id=cid,
+                            confidence=c.confidence,
+                            provenance=Provenance.INFERRED,
+                            metadata={"derived_from": "corridor_boundary_membership"},
+                        ))
+                world.entities[cid] = c_ent
+                entities_created.append(cid)
+
+            # ROOM <-> DOORWAY <-> CORRIDOR canonical connectivity
+            cent = world.entities[cid]
+            for r_id in c.connected_room_ids:
+                room_ent = None
+                if r_id in world.entities:
+                    room_ent = world.entities[r_id]
+                else:
+                    match = next((e for e in world.entities.values() if e.type == EntityType.ROOM and (r_id in e.id or e.id in r_id)), None)
+                    if match:
+                        room_ent = match
+                if room_ent:
+                    if not any(r.target_id == room_ent.id for r in cent.relationships):
+                        cent.relationships.append(Relationship(
+                            kind=RelationshipKind.CONNECTS,
+                            target_id=room_ent.id,
+                            confidence=c.confidence,
+                            provenance=Provenance.INFERRED,
+                            metadata={"derived_from": "circulation_doorway_connection", "corridor_id": cid},
+                        ))
+                    if not any(r.target_id == cid for r in room_ent.relationships):
+                        room_ent.relationships.append(Relationship(
+                            kind=RelationshipKind.CONNECTS,
+                            target_id=cid,
+                            confidence=c.confidence,
+                            provenance=Provenance.INFERRED,
+                            metadata={"derived_from": "circulation_doorway_connection", "corridor_id": cid},
+                        ))
+
+            # CORRIDOR <-> STAIR connectivity
+            for st_ent in promoted_stairs:
+                st_geom = world.geometries.get(st_ent.geometry_ids[0]) if st_ent.geometry_ids else None
+                if st_geom and st_geom.bounds_min and st_geom.bounds_max:
+                    if (c.bounds_min[0] <= st_geom.bounds_max.x and st_geom.bounds_min.x <= c.bounds_max[0] and
+                        c.bounds_min[1] <= st_geom.bounds_max.y and st_geom.bounds_min.y <= c.bounds_max[1]):
+                        if not any(r.target_id == st_ent.id for r in cent.relationships):
+                            cent.relationships.append(Relationship(
+                                kind=RelationshipKind.CONNECTS,
+                                target_id=st_ent.id,
+                                confidence=min(c.confidence, st_ent.confidence),
+                                provenance=Provenance.INFERRED,
+                                metadata={"derived_from": "corridor_stair_landing"},
+                            ))
+                        if not any(r.target_id == cid for r in st_ent.relationships):
+                            st_ent.relationships.append(Relationship(
+                                kind=RelationshipKind.CONNECTS,
+                                target_id=cid,
+                                confidence=min(c.confidence, st_ent.confidence),
+                                provenance=Provenance.INFERRED,
+                                metadata={"derived_from": "corridor_stair_landing"},
+                            ))
+
+    # 9. Promote building & storeys if requested, and attach space graph
     if bld_graph:
+        if options.promote_building:
+            try:
+                from perception.architecture.topology import promote_building_topology
+                topo_res = promote_building_topology(bld_graph, rg_rooms, world)
+                for sid in topo_res.storey_ids:
+                    entities_created.append(sid)
+                entities_created.append(topo_res.building_id)
+            except Exception:
+                pass
+
+        if detected_stairs:
+            try:
+                from perception.architecture.topology import link_stairs_to_storeys
+                link_stairs_to_storeys(detected_stairs, bld_graph, world)
+            except Exception:
+                pass
+
         space_graph = InteriorSpaceGraph.from_building(bld_graph, rg_rooms, corridors, detected_stairs)
         world.metadata["interior_space_graph"] = space_graph.to_dict()
-
-        # Promote corridors into WorldIR if requested
-        if options.promote_corridors:
-            from world_ir.schema_v1 import Geometry, GeometryType, Vector3, Entity, EntityType
-            for c in corridors:
-                cid = f"corridor-{c.corridor_id}"
-                if cid not in world.entities:
-                    c_bmin, c_bmax = c.bounds_min, c.bounds_max
-                    c_geom_id = f"geom-{cid}"
-                    world.geometries[c_geom_id] = Geometry(
-                        id=c_geom_id,
-                        type=GeometryType.BOX,
-                        bounds_min=Vector3(c_bmin[0], c_bmin[1], c_bmin[2]),
-                        bounds_max=Vector3(c_bmax[0], c_bmax[1], c_bmax[2]),
-                    )
-                    world.entities[cid] = Entity(
-                        id=cid,
-                        type=EntityType.CORRIDOR,
-                        name=f"Corridor {c.corridor_id.rsplit('-', 1)[-1]}",
-                        geometry_ids=[c_geom_id],
-                        custom_properties=c.to_dict(),
-                        provenance=Provenance.INFERRED,
-                        confidence=c.confidence,
-                    )
-                    entities_created.append(cid)
 
     # ---- provenance stamping on the world itself ----
     # The world as a whole is derived from reconstruction; its

@@ -205,15 +205,20 @@ def _vec_sub(a, b):
     return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
 
-def _floor_height(element: ArchitecturalElement) -> Optional[float]:
-    """A floor element's measured height (its bounds z midpoint; a
-    classified floor plane is horizontal, so its z extent is the
-    measurement). None for non-floor elements."""
+def _up_axis(up: Sequence[float]) -> int:
+    u = [abs(x) for x in up]
+    return u.index(max(u)) if max(u) > 1e-6 else 2
+
+
+def _floor_height(element: ArchitecturalElement, up: Sequence[float] = (0.0, 0.0, 1.0)) -> Optional[float]:
+    """A floor element's measured height (its bounds along the up axis midpoint).
+    None for non-floor elements."""
     if element.element_type != "floor":
         return None
     if element.bounds_min is None or element.bounds_max is None:
         return None
-    return (element.bounds_min[2] + element.bounds_max[2]) / 2.0
+    up_idx = _up_axis(up)
+    return (element.bounds_min[up_idx] + element.bounds_max[up_idx]) / 2.0
 
 
 def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
@@ -238,66 +243,49 @@ def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
 def _group_enclosures(
     elements: Sequence[ArchitecturalElement], up
 ) -> List[List[ArchitecturalElement]]:
-    """Group classified elements into maximal enclosure candidates.
-
-    Method: floors are room seeds (each floor plane anchors at most
-    one room at its measured height). A floor's room takes the floor,
-    the ceiling(s) at the matching height band, and every wall whose
-    measured bounds overlap the floor's xy extent. Walls shared with
-    another floor's room are allowed (shared walls); a wall spanning
-    multiple floors' xy extents stays a member of every room it
-    encloses -- the graph records membership, ownership is not
-    invented.
-    """
+    """Group classified elements into maximal enclosure candidates."""
     floors = [e for e in elements if e.element_type == "floor"]
     ceilings = [e for e in elements if e.element_type == "ceiling"]
     walls = [e for e in elements if e.element_type == "wall"]
 
+    up_idx = _up_axis(up)
+    plan_axes = [i for i in range(3) if i != up_idx]
+    ax0, ax1 = plan_axes[0], plan_axes[1]
+
     groups: List[List[ArchitecturalElement]] = []
     for floor in floors:
-        fh = _floor_height(floor)
+        fh = _floor_height(floor, up)
         if fh is None:
             continue
-        # Ceiling candidates: ceilings whose xy extent overlaps the
-        # floor's (a ceiling for a DIFFERENT room does not).
-        def _xy_overlap(a: ArchitecturalElement, b: ArchitecturalElement) -> bool:
+
+        def _plan_overlap(a: ArchitecturalElement, b: ArchitecturalElement) -> bool:
             return (
-                a.bounds_min[0] <= b.bounds_max[0]
-                and b.bounds_min[0] <= a.bounds_max[0]
-                and a.bounds_min[1] <= b.bounds_max[1]
-                and b.bounds_min[1] <= a.bounds_max[1]
+                a.bounds_min[ax0] <= b.bounds_max[ax0]
+                and b.bounds_min[ax0] <= a.bounds_max[ax0]
+                and a.bounds_min[ax1] <= b.bounds_max[ax1]
+                and b.bounds_min[ax1] <= a.bounds_max[ax1]
             )
 
         room_ceilings = [
             c for c in ceilings
-            if c.bounds_min is not None and _xy_overlap(floor, c)
-            and c.bounds_min[2] > fh
+            if c.bounds_min is not None and _plan_overlap(floor, c)
+            and c.bounds_min[up_idx] > fh
         ]
         if not room_ceilings:
             continue
-        # The storey's own ceiling is the LOWEST one above its floor
-        # (a higher ceiling belongs to the storey above).
-        ceiling = min(room_ceilings, key=lambda c: c.bounds_min[2])
-        ceiling_z = ceiling.bounds_min[2]
-        # A wall encloses THIS storey iff it positively overlaps the
-        # floor->ceiling band (strict inequalities: a wall that only
-        # touches the band's edge belongs to the adjacent storey --
-        # without this, multi-storey inputs balloon every room across
-        # all storeys). A wall spanning several storeys (shared
-        # structure) is a member of every storey it encloses.
+        ceiling = min(room_ceilings, key=lambda c: c.bounds_min[up_idx])
+        ceiling_val = ceiling.bounds_min[up_idx]
         room_walls = [
             w for w in walls
             if w.bounds_min is not None
-            and _xy_overlap(floor, w)
-            and w.bounds_min[2] < ceiling_z
-            and w.bounds_max[2] > fh
+            and _plan_overlap(floor, w)
+            and w.bounds_min[up_idx] < ceiling_val
+            and w.bounds_max[up_idx] > fh
         ]
-        # Furniture/clutter filter: an architectural wall encloses a room only if its
-        # vertical span is substantial (at least 0.8m) and reaches near the floor band.
-        # Low tables, desks, sofa backs (< 0.8m tall) are interior objects, not room-bounding walls.
+        # Furniture/clutter filter: vertical span >= 0.8m
         room_walls = [
             w for w in room_walls
-            if (w.bounds_max[2] - w.bounds_min[2]) >= 0.8
+            if (w.bounds_max[up_idx] - w.bounds_min[up_idx]) >= 0.8
         ]
         members: List[ArchitecturalElement] = [floor, ceiling] + room_walls
         if len(room_walls) < MIN_WALLS_FOR_ROOM or not room_ceilings:
@@ -491,13 +479,18 @@ def build_room_graph(
             "bmin": bmin,
             "bmax": bmax,
             "floor_height": _floor_height(
-                next(e for e in members if e.element_type == "floor")
+                next(e for e in members if e.element_type == "floor"), up
             ),
         })
     if not enclosures:
         return []
 
-    enclosures.sort(key=lambda enc: (enc["bmin"][2], enc["bmin"][0], enc["bmin"][1]))
+    up_idx = _up_axis(up)
+    plan_axes = [i for i in range(3) if i != up_idx]
+    ax0, ax1 = plan_axes[0], plan_axes[1]
+    axis_names = ["x", "y", "z"]
+
+    enclosures.sort(key=lambda enc: (enc["bmin"][up_idx], enc["bmin"][ax0], enc["bmin"][ax1]))
     for i, enc in enumerate(enclosures, start=1):
         members = enc["members"]
         bmin, bmax = enc["bmin"], enc["bmax"]
@@ -513,7 +506,7 @@ def build_room_graph(
             if w.element_type != "wall":
                 continue
             openings.extend(_openings_for(w, fh, up, plane_inputs))
-        area = dims["x"] * dims["y"]
+        area = dims[axis_names[ax0]] * dims[axis_names[ax1]]
         rooms.append(RoomGraph(
             room_id=f"room-{i:03d}",
             boundary_element_ids=tuple(sorted(e.element_id for e in members)),
@@ -565,6 +558,8 @@ def build_building_graph(
     if not rooms and not corridors_list:
         return None
 
+    up_idx = _up_axis(up)
+
     # Collect all space floor heights (rooms + corridors)
     rooms_sorted = sorted(rooms, key=lambda r: r.room_id)
     corridors_sorted = sorted(corridors_list, key=lambda c: getattr(c, "corridor_id", ""))
@@ -588,11 +583,11 @@ def build_building_graph(
         })
 
     for r in rooms_sorted:
-        _add_to_storey(r.bounds_min[2], room_id=r.room_id)
+        _add_to_storey(r.bounds_min[up_idx], room_id=r.room_id)
     for c in corridors_sorted:
         c_bmin = getattr(c, "bounds_min", (0, 0, 0))
         c_id = getattr(c, "corridor_id", "")
-        _add_to_storey(c_bmin[2], corridor_id=c_id)
+        _add_to_storey(c_bmin[up_idx], corridor_id=c_id)
 
     by_height.sort(key=lambda x: x["height"])
 
@@ -604,7 +599,7 @@ def build_building_graph(
         n_steps = getattr(st, "n_steps", 10)
         total_rise = rise * n_steps
         if pos:
-            z_mid = pos[2]
+            z_mid = pos[up_idx]
             z_lo = z_mid - total_rise / 2.0
             z_hi = z_mid + total_rise / 2.0
         else:
@@ -629,6 +624,20 @@ def build_building_graph(
         for i, entry in enumerate(by_height, start=1)
     )
 
+    # Populate level_id on corridors from matching storey
+    corridor_to_storey = {}
+    for s in storeys:
+        for cid in s.corridor_ids:
+            corridor_to_storey[cid] = s.storey_id
+
+    updated_corridors = []
+    import dataclasses
+    for c in corridors_sorted:
+        cid = getattr(c, "corridor_id", "")
+        if cid in corridor_to_storey and dataclasses.is_dataclass(c):
+            c = dataclasses.replace(c, level_id=corridor_to_storey[cid])
+        updated_corridors.append(c)
+
     # Compute overall building envelope
     lo = [math.inf] * 3
     hi = [-math.inf] * 3
@@ -636,7 +645,7 @@ def build_building_graph(
         for i in range(3):
             lo[i] = min(lo[i], room.bounds_min[i])
             hi[i] = max(hi[i], room.bounds_max[i])
-    for corridor in corridors_sorted:
+    for corridor in updated_corridors:
         c_bmin = getattr(corridor, "bounds_min", None)
         c_bmax = getattr(corridor, "bounds_max", None)
         if c_bmin and c_bmax:
@@ -649,6 +658,6 @@ def build_building_graph(
         storeys=storeys,
         envelope_bounds_min=tuple(lo),
         envelope_bounds_max=tuple(hi),
-        corridors=tuple(corridors_sorted),
+        corridors=tuple(updated_corridors),
         stairs=tuple(stairs_list),
     )

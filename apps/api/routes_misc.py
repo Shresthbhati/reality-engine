@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -52,6 +54,44 @@ _TYPE_BY_MIME = {
 }
 
 
+def _safe_filename(raw: str | None) -> str:
+    """Client filenames are untrusted: strip directory components (some
+    browsers send full paths), control characters, and header-breaking
+    quotes/CRLF before the name is stored or reflected in
+    Content-Disposition. Never empty, never overlong."""
+    name = (raw or "unnamed").replace("\\", "/").split("/")[-1]
+    name = "".join(c for c in name if c.isprintable() and c not in '"\r\n').strip(" .")
+    return name[:200] or "unnamed"
+
+
+def _max_upload_bytes() -> int:
+    default = 1024**3
+    try:
+        value = int(os.environ.get("UPLOAD_MAX_BYTES", str(default)))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+async def _read_bounded_upload(file) -> bytes:
+    """Read an upload without loading an unbounded body into memory: one
+    byte past the limit is enough to refuse with 413."""
+    limit = _max_upload_bytes()
+    chunks = []
+    remaining = limit + 1
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+        if remaining <= 0:
+            raise HTTPException(
+                413, f"upload exceeds {limit} bytes; split the capture or raise UPLOAD_MAX_BYTES"
+            )
+    return b"".join(chunks)
+
+
 def _classify(filename: str, mime: str | None) -> str:
     name = (filename or "").lower()
     if mime in _TYPE_BY_MIME:
@@ -71,7 +111,7 @@ async def create_upload(
     session_id: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    data = await file.read()
+    data = await _read_bounded_upload(file)
     if not data:
         raise HTTPException(400, "Empty upload")
     digest, _path = store_bytes(data)
@@ -79,7 +119,7 @@ async def create_upload(
         id=new_id("upl"),
         session_id=session_id,
         status="completed",
-        filename=file.filename or "unnamed",
+        filename=_safe_filename(file.filename),
         mime_type=file.content_type,
         size=len(data),
         checksum=digest,
@@ -184,5 +224,9 @@ async def evidence_artifact(evidence_id: str, db: AsyncSession = Depends(get_db)
     if path is None:
         raise HTTPException(410, "Artifact missing from store")
     return FileResponse(
-        path, media_type=ev.mime_type or "application/octet-stream", filename=ev.name
+        path,
+        media_type=ev.mime_type or "application/octet-stream",
+        # Re-sanitize: rows written before filename hygiene may hold raw
+        # client bytes (paths, quotes, CRLF) that must never reach headers.
+        filename=_safe_filename(ev.name),
     )

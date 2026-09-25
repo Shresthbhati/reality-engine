@@ -179,6 +179,89 @@ def test_cli_written_version_reconciles_into_mirror(client, tmp_path, monkeypatc
     assert client.get(f"/api/worlds/{wid}/worldir").status_code == 404
 
 
+def test_safe_filename_strips_structure_breakers():
+    from apps.api.routes_misc import _safe_filename
+
+    # Raw hostile bytes (no HTTP layer to encode them away first).
+    assert _safe_filename('../../etc/x"\r\nSet-Cookie: pwned=1.jpg') == "xSet-Cookie: pwned=1.jpg"
+    assert _safe_filename("C:\\fakepath\\photo.jpg") == "photo.jpg"
+    assert _safe_filename("") == "unnamed"
+    assert _safe_filename("...") == "unnamed"
+    assert len(_safe_filename("n" * 500)) == 200
+
+
+def test_hostile_filename_sanitized_end_to_end(client):
+    evil = '../../etc/x"\r\nSet-Cookie: pwned=1.jpg'
+    r = client.post(
+        "/api/uploads",
+        files={"file": (evil, b"jpeg-bytes", "image/jpeg")},
+    )
+    assert r.status_code == 201, r.text
+    ev_id = r.json()["evidence_id"]
+    ev = client.get(f"/api/evidence/{ev_id}").json()
+    assert ".." not in ev["name"] and "\r" not in ev["name"] and "\n" not in ev["name"]
+    assert '"' not in ev["name"]
+    assert ev["name"], "sanitized name must never be empty"
+    art = client.get(f"/api/evidence/{ev_id}/artifact")
+    assert art.status_code == 200
+    assert art.content == b"jpeg-bytes"
+    # Structural header safety: Starlette RFC-5987-encodes the filename,
+    # so hostile text may survive only as inert percent-escapes -- it must
+    # never appear raw (no CR/LF for response splitting, no raw quotes to
+    # break out of the quoted-string, no traversal).
+    disposition = art.headers.get("content-disposition", "")
+    assert "\r" not in disposition and "\n" not in disposition
+    assert '"' not in disposition
+    assert ".." not in disposition
+
+
+def test_oversized_upload_rejected(client, monkeypatch):
+    monkeypatch.setenv("UPLOAD_MAX_BYTES", "10")
+    r = client.post(
+        "/api/uploads",
+        files={"file": ("big.jpg", b"x" * 100, "image/jpeg")},
+    )
+    assert r.status_code == 413, r.text
+
+
+def test_tampered_evidence_fails_checksum_explicitly(client, tmp_path, monkeypatch):
+    """Bytes swapped under a recorded checksum: processing fails with a
+    checksum mismatch -- never registers tampered evidence as verified."""
+    import asyncio
+
+    import apps.api.db as db_mod
+    import apps.api.jobs as jobs_mod
+    from apps.api.models import Evidence, Job
+    from apps.api.storage import resolve_artifact, store_bytes
+
+    async def _scenario():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            digest, _ = store_bytes(b"original-bytes")
+            db.add(Evidence(
+                id="ev_tamper01", name="frame.jpg", type="photo",
+                session_id=None, checksum=digest,
+                artifact_uri=f"sha256://{digest}",
+            ))
+            db.add(Job(
+                id="job_tamper01", type="PROCESS_EVIDENCE",
+                entity_type="evidence", entity_id="ev_tamper01",
+                status="queued", attempts=0, max_attempts=1,
+            ))
+            await db.commit()
+            # Tamper after the record, before processing.
+            target = resolve_artifact(f"sha256://{digest}")
+            target.write_bytes(b"tampered-bytes!!")
+            job = await jobs_mod.process_next_job(db)
+            return job.status, job.error
+
+    # Direct drive (same pattern as the timeout/reap tests): the row is
+    # claimed microseconds after commit, long before the 1s worker poll.
+    status, error = asyncio.run(_scenario())
+    assert status == "failed"
+    assert "checksum mismatch" in (error or "").lower()
+
+
 def test_malformed_ids_404_without_side_effects(client):
     for path in (
         "/api/worlds/wld-../escape",

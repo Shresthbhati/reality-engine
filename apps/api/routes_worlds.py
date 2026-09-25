@@ -246,6 +246,18 @@ async def world_worldir(
     return world.to_dict()
 
 
+@worlds.get("/{world_id}/report")
+async def world_report(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """The version's compile-pipeline report (current version unless
+    ?version=) -- the real report.json stages, never fabricated."""
+    row = await _version_row(db, world_id, version)
+    if row.report is None:
+        raise HTTPException(404, f"No pipeline report recorded for version '{row.id}'")
+    return row.report
+
+
 @worlds.get("/{world_id}/points")
 async def world_points(
     world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)

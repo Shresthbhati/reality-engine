@@ -78,6 +78,17 @@ _ARCH_CLASS_TO_ENTITY_TYPE: Dict[str, EntityType] = {
 }
 
 
+def _store_entity(world, entity) -> None:
+    """Write an entity into world.entities, whichever container the
+    caller supplied: an EntityRegistry (integrity-checked .add) or a
+    plain dict (item assignment, the older test convention)."""
+    entities = world.entities
+    if hasattr(entities, "add"):
+        entities.add(entity)
+    else:
+        entities[entity.id] = entity
+
+
 def _fit_properties(fit) -> dict:
     """Measured fit facts for custom_properties -- whatever the fit
     actually measured, nothing else."""
@@ -243,7 +254,7 @@ def promote_component_to_entity(
         else component.confidence,
         provenance=Provenance.INFERRED,
     )
-    world.entities[entity_id] = entity
+    _store_entity(world, entity)
     return entity
 
 

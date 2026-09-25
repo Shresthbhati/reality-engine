@@ -821,6 +821,36 @@ tasks:
       with no fixture; classifying them would be guessing (skipped,
       not faked). Sloped-roof multi-slope aggregation also has no
       evidence path yet.
+      TOPOLOGY COHERENCE CLOSED 2026-09-25 (auto-recon sprint P0/P1,
+      building-graph consumption): (1) corridors.py -- first corridor
+      inference in the engine: a room is a corridor only when measured
+      evidence demonstrates circulation (elongation >= 3x, short axis
+      <= 2.5 m, >= 2 door openings; doors on 2+ distinct walls report
+      connects_both_sides, single-side service decays confidence);
+      every gate refusal is None, never a best-effort guess; corridor
+      class registered in the registry (min_extent 2.0). (2)
+      topology.py promote_building_topology -- the room/building graphs
+      (previously consumed by tests only) now promote into canonical
+      WorldIR: STOREY + CORRIDOR additive EntityTypes, BUILDING ->
+      CONTAINS -> STOREY -> CONTAINS -> ROOM -> CONTAINS -> wall/floor/
+      ceiling parts + inverse PART_OF edges, room custom_properties
+      carry measured dimensions/area/openings/adjacency, room
+      confidence = min(part confidences), hard refusal on rooms whose
+      boundary parts were never promoted (no dangling topology).
+      (3) link_stairs_to_storeys -- a StaircaseFit's measured vertical
+      span (support-centroid +/- n*rise/2, derived arithmetic on
+      measured quantities) links every storey floor it spans via
+      ADJACENT_TO with derived_from metadata; stair entity must exist
+      (promoted through the canonical component path) or refusal.
+      (4) associate_windows_to_rooms -- a WINDOW entity joins the room
+      whose boundary contains its measured wall (wall_plane_id ->
+      wall-<plane_id> element membership), recorded in the room's
+      window_ids properties + ADJACENT_TO edge with provenance; no
+      match = empty association (recorded absence). 13 red-first tests
+      in tests/test_topology_coherence.py (all refusal, determinism,
+      registry-declared class, entity edges, opening/window/stair
+      properties). WorldIR gains STOREY/CORRIDOR additively (same
+      backward-compatible pattern as the P7-03 expansion).
       EXPANSION 2026-09-16 (P7-03 architectural-perception expansion,
       Victoria Memorial directive): parametric perception landed --
       perception/architecture/parametric.py (deterministic

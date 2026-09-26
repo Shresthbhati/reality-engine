@@ -65,6 +65,24 @@ async def _throw_if_cancelled(db: AsyncSession, job: Job) -> None:
         raise _JobCancelled(f"job {job.id} cancelled by operator")
 
 
+def _assert_reconstruction_traced(world) -> None:
+    """Fail persistence when a RECONSTRUCTED entity lacks its build
+    trace. Procedural/generated entities are out of scope (they trace
+    to their generator, not a capture)."""
+    from provenance import Provenance as _Provenance
+
+    untraced = sorted(
+        eid for eid, entity in world.entities.items()
+        if entity.provenance is _Provenance.RECONSTRUCTED
+        and not isinstance((entity.custom_properties or {}).get("reconstruction"), dict)
+    )
+    if untraced:
+        raise RuntimeError(
+            f"reconstruction produced {len(untraced)} untraced entity(ies) "
+            f"(e.g. {untraced[0]}); refusing to persist without provenance"
+        )
+
+
 def _stage_facts_degraded(stage_facts: dict) -> list[str]:
     """Optional-stage outcomes that are neither clean runs nor honest
     config-skips: evidence of degradation for PARTIAL grading."""
@@ -313,6 +331,13 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     if not validation.is_valid():
         detail = "; ".join(validation.messages()[:5])
         raise RuntimeError(f"reconstructed WorldIR failed validation: {detail}")
+
+    # Provenance hard gate: a reconstructed entity without its build
+    # trace must never be persisted. The stamp above runs first, so a
+    # missing trace here means stamping itself failed -- persisting
+    # would create permanently untraceable state. Fail instead; HEAD
+    # stays intact.
+    _assert_reconstruction_traced(vs_result.world)
 
     job.stage = "committing_version"
     job.heartbeat_at = utcnow()

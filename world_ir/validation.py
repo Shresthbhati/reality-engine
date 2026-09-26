@@ -39,6 +39,7 @@ from typing import List
 
 from provenance import Provenance
 from world_ir import WorldIR
+from world_ir.schema_v1 import EntityType, RelationshipKind
 
 
 class ValidationSeverity(str, Enum):
@@ -255,6 +256,64 @@ def _check_reconstruction_trace(world: WorldIR, issues: List[ValidationIssue]) -
             ))
 
 
+def _check_interior_boundary_references(world: WorldIR, issues: List[ValidationIssue]) -> None:
+    """ROOM/CORRIDOR entities record their boundary parts (walls, floors,
+    ceilings) two ways: as CONTAINS relationships (checked generically by
+    world.validate()'s dangling-relationship pass) and, for entities
+    promoted by perception.architecture.topology, as a plain id list in
+    custom_properties["boundary_element_ids"]. The two can desync if a
+    future caller edits one without the other; check the informational
+    copy directly rather than trusting it matches the graph edges."""
+    for entity_id in sorted(world.entities):
+        entity = world.entities[entity_id]
+        if entity.type not in (EntityType.ROOM, EntityType.CORRIDOR):
+            continue
+        boundary_ids = entity.custom_properties.get("boundary_element_ids")
+        if not isinstance(boundary_ids, (list, tuple)):
+            continue
+        for bid in boundary_ids:
+            if bid not in world.entities:
+                issues.append(ValidationIssue(
+                    severity=ValidationSeverity.ERROR,
+                    code="interior_boundary_reference_missing",
+                    message=(
+                        f"{entity.type.value} {entity_id} references boundary "
+                        f"part {bid!r} which does not exist in the world"
+                    ),
+                ))
+
+
+def _check_single_storey_membership(world: WorldIR, issues: List[ValidationIssue]) -> None:
+    """A ROOM/CORRIDOR promoted onto two different STOREY entities via
+    CONTAINS would be physically impossible (it cannot occupy two
+    building levels at once) and is evidence of a topology-promotion bug
+    (e.g. running promote_building_topology twice, or a level-assignment
+    conflict), not a legitimate multi-level space."""
+    owners: dict = {}
+    for entity_id in sorted(world.entities):
+        entity = world.entities[entity_id]
+        if entity.type is not EntityType.STOREY:
+            continue
+        for rel in entity.relationships:
+            if rel.kind is not RelationshipKind.CONTAINS:
+                continue
+            target = world.entities.get(rel.target_id)
+            if target is None or target.type not in (EntityType.ROOM, EntityType.CORRIDOR):
+                continue
+            owners.setdefault(rel.target_id, set()).add(entity_id)
+    for member_id, storey_ids in owners.items():
+        if len(storey_ids) > 1:
+            issues.append(ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="entity_multiple_storey_membership",
+                message=(
+                    f"entity {member_id} is CONTAINS-owned by "
+                    f"{len(storey_ids)} storeys ({sorted(storey_ids)}) -- "
+                    "impossible containment, a space cannot belong to two levels"
+                ),
+            ))
+
+
 def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     """Full validation: structural self-check + geometric/provenance
     depth. Deterministic issue ordering (sorted entity/geometry ids,
@@ -276,5 +335,7 @@ def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     _check_measurements(world, issues)
     _check_provenance_confidence(world, issues)
     _check_reconstruction_trace(world, issues)
+    _check_interior_boundary_references(world, issues)
+    _check_single_storey_membership(world, issues)
 
     return WorldValidationReport(issues=issues)

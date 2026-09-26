@@ -157,6 +157,12 @@ class CompileDiagnostics:
     #: this compile did NOT understand. Consumers (coverage reasoning,
     #: quality reports) should treat this as the known-unknown floor.
     unknown_point_fraction: float = 0.0
+    #: Interior-architecture stages (window/stair detection, corridor/
+    #: building topology promotion) that raised and were skipped rather
+    #: than fabricated. Each entry is "<stage>: <exception>". An empty
+    #: list means every stage that ran, ran cleanly -- never that no
+    #: stages were attempted.
+    interior_warnings: List[str] = field(default_factory=list)
 
     def summary_text(self) -> str:
         lines = [
@@ -178,6 +184,8 @@ class CompileDiagnostics:
                 )
         if self.validation_issues:
             lines.append(f"  validation issues: {len(self.validation_issues)}")
+        for warning in self.interior_warnings:
+            lines.append(f"  interior warning: {warning}")
         return "\n".join(lines)
 
 
@@ -357,6 +365,12 @@ def compile_reconstruction_to_world(
             bounds_max=bmax,
         ))
 
+    # Interior-architecture stages below are best-effort enhancements on
+    # top of the already-validated wall/floor/ceiling/room entities: a
+    # failure here must be visible (interior_warnings), never silent and
+    # never allowed to abort a compile that otherwise succeeded.
+    interior_warnings: List[str] = []
+
     # 1. Build room graph from elements
     rg_rooms = build_room_graph(arch_elements, up=options.up, plane_inputs=plane_inputs_map)
 
@@ -366,6 +380,7 @@ def compile_reconstruction_to_world(
     # 3. Detect windows in wall planes
     detected_windows = []
     try:
+        from perception.architecture.parametric import FitRefused
         from perception.architecture.windows import detect_window
         for pid, pi in plane_inputs_map.items():
             prole = next((p.role for p in oriented if p.plane.plane_id == pid), None)
@@ -374,14 +389,21 @@ def compile_reconstruction_to_world(
                     w_fit = detect_window(pi, up=options.up, floor_height=0.0)
                     if w_fit is not None:
                         detected_windows.append(w_fit)
-                except Exception:
+                except FitRefused:
+                    # Honest "no window here" -- the detector's own
+                    # documented refusal path, not a bug. Silent by
+                    # design, same as planes_unpromoted/room_candidates
+                    # elsewhere in this compiler.
                     pass
-    except Exception:
-        pass
+                except Exception as exc:
+                    interior_warnings.append(f"window detection on {pid}: {exc}")
+    except Exception as exc:
+        interior_warnings.append(f"window detection: {exc}")
 
     # 4. Detect stairs from point cloud
     detected_stairs = []
     try:
+        from perception.architecture.parametric import FitRefused
         from perception.architecture.stairs import detect_stairs
         up_idx = 2
         u = [abs(x) for x in options.up]
@@ -404,8 +426,12 @@ def compile_reconstruction_to_world(
                 pos = (st_fit.position[2], st_fit.position[0], st_fit.position[1])
                 st_fit = dataclasses.replace(st_fit, position=pos)
             detected_stairs.append(st_fit)
-    except Exception:
+    except FitRefused:
+        # Honest "no stairs in this scene" -- the detector's own
+        # documented refusal path, not a bug.
         pass
+    except Exception as exc:
+        interior_warnings.append(f"stair detection: {exc}")
 
     # 5. Build building graph and assign levels
     bld_graph = build_building_graph(rg_rooms, up=options.up, corridors=corridors, stairs=detected_stairs)
@@ -435,6 +461,27 @@ def compile_reconstruction_to_world(
                     provenance=Provenance.INFERRED,
                     confidence=win.confidence,
                 )
+                # Wall CONTAINS window / window PART_OF wall: without this
+                # edge, "window references its host wall" is only a raw
+                # plane-id string in custom_properties, invisible to the
+                # dangling-relationship structural check and to any
+                # traversal from the wall's side.
+                wall_entity_id = f"{options.structure_prefix}-{win.wall_plane_id}"
+                if wall_entity_id in world.entities:
+                    win_ent.relationships.append(Relationship(
+                        kind=RelationshipKind.PART_OF,
+                        target_id=wall_entity_id,
+                        confidence=win.confidence,
+                        provenance=Provenance.INFERRED,
+                        metadata={"derived_from": "window_wall_host"},
+                    ))
+                    world.entities[wall_entity_id].relationships.append(Relationship(
+                        kind=RelationshipKind.CONTAINS,
+                        target_id=win_id,
+                        confidence=win.confidence,
+                        provenance=Provenance.INFERRED,
+                        metadata={"derived_from": "window_wall_host"},
+                    ))
                 world.entities[win_id] = win_ent
                 entities_created.append(win_id)
                 promoted_windows.append(win_ent)
@@ -443,8 +490,8 @@ def compile_reconstruction_to_world(
             try:
                 from perception.architecture.topology import associate_windows_to_rooms
                 associate_windows_to_rooms(promoted_windows, rg_rooms, world)
-            except Exception:
-                pass
+            except Exception as exc:
+                interior_warnings.append(f"window-to-room association: {exc}")
 
     # 7. Promote stairs into WorldIR
     promoted_stairs = []
@@ -588,15 +635,22 @@ def compile_reconstruction_to_world(
                 for sid in topo_res.storey_ids:
                     entities_created.append(sid)
                 entities_created.append(topo_res.building_id)
-            except Exception:
-                pass
+                if topo_res.unmatched_room_ids:
+                    interior_warnings.append(
+                        "building topology promotion: "
+                        f"{len(topo_res.unmatched_room_ids)} room-graph grouping(s) "
+                        f"had no matching evidence-side room and were not promoted "
+                        f"as separate entities: {list(topo_res.unmatched_room_ids)}"
+                    )
+            except Exception as exc:
+                interior_warnings.append(f"building topology promotion: {exc}")
 
         if detected_stairs:
             try:
                 from perception.architecture.topology import link_stairs_to_storeys
                 link_stairs_to_storeys(detected_stairs, bld_graph, world)
-            except Exception:
-                pass
+            except Exception as exc:
+                interior_warnings.append(f"stair-to-storey linking: {exc}")
 
         space_graph = InteriorSpaceGraph.from_building(bld_graph, rg_rooms, corridors, detected_stairs)
         world.metadata["interior_space_graph"] = space_graph.to_dict()
@@ -645,5 +699,6 @@ def compile_reconstruction_to_world(
         relationships_count=relationships_count,
         validation_issues=validation_issues,
         unknown_point_fraction=(unassigned / detection.points_total) if detection.points_total else 0.0,
+        interior_warnings=interior_warnings,
     )
     return world, diagnostics

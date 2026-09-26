@@ -373,6 +373,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
 
     base_head = world.current_version_id
     try:
+        store = worldstore_service.get_store()
         version_row = await worldstore_service.commit_version(
             db,
             world_id=world.id,
@@ -388,6 +389,17 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         # Retryable: the next attempt reloads HEAD and either dedups
         # (identical content) or chains onto the new HEAD.
         raise RuntimeError(f"reconstruction superseded: {exc}") from exc
+
+    # Read-back verification: the adopted version must load with clean
+    # hashes before anything is called a success. A version that cannot
+    # be read back is not a persisted result, however healthy the
+    # pipeline looked a moment ago.
+    verify_failures = await asyncio.to_thread(store.verify_version, version_row.id)
+    if verify_failures:
+        reasons = "; ".join(f["reason"] for f in verify_failures)
+        raise RuntimeError(
+            f"adopted version '{version_row.id}' failed read-back verification: {reasons}"
+        )
 
     # Outcome grading: SUCCEEDED only when the run is clean end to end
     # (successful registration, nothing skipped, no degraded optional

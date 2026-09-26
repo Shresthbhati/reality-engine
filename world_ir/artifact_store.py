@@ -113,6 +113,11 @@ class FileArtifactStore(ArtifactStore):
     def put(self, data: bytes) -> "tuple[str, str]":
         digest = _digest(data)
         path = self._path_for(digest)
+        if path.is_symlink():
+            # A planted symlink here would make write_bytes follow the
+            # link and write outside the store: drop the link, then
+            # write the real blob. Local tamper never escapes the root.
+            path.unlink()
         if not path.exists():  # content-addressed: identical bytes, no rewrite
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
@@ -121,6 +126,9 @@ class FileArtifactStore(ArtifactStore):
     def get(self, data_uri: str) -> bytes:
         digest = self.digest_of(data_uri)
         path = self._path_for(digest)
-        if not path.exists():
+        if path.is_symlink() or not path.exists():
+            # Never follow a symlink out of the store: a planted link is
+            # surfaced as missing (honest failure downstream), the same
+            # way a corrupt blob surfaces as a hash mismatch.
             raise ArtifactNotFoundError(data_uri)
         return path.read_bytes()

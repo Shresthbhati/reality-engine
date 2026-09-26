@@ -88,6 +88,11 @@ class TopologyPromotionResult:
     room_ids: Tuple[str, ...]
     #: room_id -> boundary entity ids contained (audit trail).
     room_parts: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+    #: RoomGraph.room_id values that had NO matching evidence-side ROOM
+    #: entity and were therefore NOT promoted (see promote_building_topology
+    #: docstring: evidence-side ring-closure detection is authoritative
+    #: whenever it has run). A refusal, recorded here, not a fabrication.
+    unmatched_room_ids: Tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -95,6 +100,7 @@ class TopologyPromotionResult:
             "storey_ids": list(self.storey_ids),
             "room_ids": list(self.room_ids),
             "room_parts": {k: list(v) for k, v in self.room_parts.items()},
+            "unmatched_room_ids": list(self.unmatched_room_ids),
         }
 
 
@@ -129,6 +135,48 @@ def _room_entity(
     )
 
 
+def _find_existing_room_entity(room: RoomGraph, world) -> Optional[str]:
+    """Match `room` against an already-promoted ROOM entity by shared
+    boundary parts (Jaccard overlap >= 0.5 of struct-* CONTAINS targets).
+
+    Two independent detectors (evidence.promote_rooms's wall-ring tracer
+    and this module's own enclosure grouping) can each promote a room
+    for the same physical space when both run against the same world;
+    without this check, promote_building_topology would mint a second,
+    differently-id'd ROOM entity for evidence that already has one --
+    a duplicate semantic entity, not a new fact. Reuse is preferred over
+    creation whenever the physical evidence overlaps enough to be the
+    same room.
+    """
+    room_parts = set(room.boundary_element_ids)
+    if not room_parts:
+        return None
+    best_id: Optional[str] = None
+    best_overlap = 0.0
+    # world.entities is a plain dict in world_ir.world_v1.WorldIR (values()
+    # yields Entity objects) but an EntityRegistry in the legacy
+    # world_ir.world.WorldIR (no values(); iterating it directly yields
+    # Entity objects instead) -- support both without assuming either.
+    entities_iter = (
+        world.entities.values() if hasattr(world.entities, "values") else world.entities
+    )
+    for ent in entities_iter:
+        if ent.type != EntityType.ROOM:
+            continue
+        eid = ent.id
+        ent_parts = {
+            r.target_id for r in ent.relationships if r.kind == RelationshipKind.CONTAINS
+        }
+        if not ent_parts:
+            continue
+        union = room_parts | ent_parts
+        overlap = len(room_parts & ent_parts) / len(union) if union else 0.0
+        if overlap >= 0.5 and overlap > best_overlap:
+            best_overlap = overlap
+            best_id = eid
+    return best_id
+
+
 def promote_building_topology(
     building: BuildingGraph,
     rooms: Sequence[RoomGraph],
@@ -143,6 +191,25 @@ def promote_building_topology(
       - a room's boundary entities do not exist in the world (promote
         the planes first -- a room over phantom parts would be a
         dangling topology, not evidence).
+
+    Room-detector reconciliation (resolved): evidence.promote_rooms's
+    wall-ring-closure detector and this module's own RoomGraph
+    enclosure grouping can independently identify rooms for the same
+    physical space, and RoomGraph feeds corridor/storey/space-graph
+    construction regardless. Evidence-side ring closure is the more
+    rigorous test (it requires a *closed* boundary, not just bounding-box
+    proximity) and is treated as authoritative: if the world already
+    contains any evidence-side ROOM entity when this runs (i.e.
+    evidence-side detection has run), a RoomGraph room with no matching
+    promoted ROOM entity (see _find_existing_room_entity) is NOT
+    independently promoted -- that would fabricate a second, unverified
+    room for evidence the stricter detector chose not to call a room.
+    Its room_id is recorded in TopologyPromotionResult.unmatched_room_ids
+    instead: a refusal, not a silent drop. Only when no evidence-side
+    ROOM entities exist yet (the standalone use of this function, e.g.
+    tests/test_topology_coherence.py) does an unmatched RoomGraph room
+    still mint its own entity -- there is no stricter detector to defer
+    to in that case.
 
     Deterministic; idempotency is the caller's responsibility (re-running
     on the same world raises DuplicateEntityError).
@@ -180,26 +247,70 @@ def promote_building_topology(
         ]
         parts_conf[room.room_id] = min(confs) if confs else 0.0
 
-    # Rooms first (storeys/building reference them).
-    for i, room in enumerate(rooms_sorted, start=1):
-        entity = _room_entity(room, i, world, parts_conf[room.room_id])
+    # Evidence-side detection has "run" for this world iff a ROOM entity
+    # already exists before this function creates any -- checked once,
+    # up front, so promoting several rooms in this call doesn't flip the
+    # answer partway through.
+    entities_iter = (
+        world.entities.values() if hasattr(world.entities, "values") else world.entities
+    )
+    evidence_side_active = any(e.type == EntityType.ROOM for e in entities_iter)
+
+    # Rooms first (storeys/building reference them). Reuse an
+    # already-promoted ROOM entity for the same physical room instead of
+    # minting a duplicate (see _find_existing_room_entity). When
+    # evidence-side detection is active and a RoomGraph room has no
+    # match, that room is a refusal (unmatched_room_ids), not a
+    # fabricated second entity (see promote_building_topology docstring,
+    # "Room-detector reconciliation").
+    room_index: Dict[str, str] = {}
+    reused_room_ids = set()
+    unmatched_room_ids: List[str] = []
+    next_index = 1
+    for room in rooms_sorted:
+        existing_id = _find_existing_room_entity(room, world)
+        if existing_id is not None:
+            room_index[room.room_id] = existing_id
+            reused_room_ids.add(room.room_id)
+            room_ids.append(existing_id)
+            continue
+        if evidence_side_active:
+            unmatched_room_ids.append(room.room_id)
+            continue
+        entity = _room_entity(room, next_index, world, parts_conf[room.room_id])
         _store_entity(world, entity)
+        room_index[room.room_id] = entity.id
         room_ids.append(entity.id)
-    room_index = {r.room_id: f"room-{i:03d}" for i, r in enumerate(rooms_sorted, start=1)}
+        next_index += 1
 
     # CONTAINS room -> part + PART_OF part -> room (both directions, so
-    # traversal from either end works).
+    # traversal from either end works). Idempotent: a reused room may
+    # already carry some of these edges from its original promotion.
+    # Unmatched rooms have no entity to wire (refused above); skip them.
     for room in rooms_sorted:
+        if room.room_id not in room_index:
+            continue
         rid = room_index[room.room_id]
         conf = parts_conf[room.room_id]
         rent = world.entities.get(rid)
+        existing_contains = {
+            r.target_id for r in rent.relationships if r.kind == RelationshipKind.CONTAINS
+        }
         for eid in room.boundary_element_ids:
-            rent.relationships.append(
-                _contains_edge(eid, conf, "room_boundary_membership")
-            )
-            world.entities.get(eid).relationships.append(
-                _part_of_edge(rid, conf, "room_boundary_membership")
-            )
+            part_ent = world.entities.get(eid)
+            if eid not in existing_contains:
+                rent.relationships.append(
+                    _contains_edge(eid, conf, "room_boundary_membership")
+                )
+            existing_part_of = {
+                r.target_id
+                for r in part_ent.relationships
+                if r.kind == RelationshipKind.PART_OF
+            }
+            if rid not in existing_part_of:
+                part_ent.relationships.append(
+                    _part_of_edge(rid, conf, "room_boundary_membership")
+                )
 
     # Storeys: reuse the building graph's measured grouping.
     storey_ids: List[str] = []
@@ -265,6 +376,7 @@ def promote_building_topology(
         storey_ids=tuple(storey_ids),
         room_ids=tuple(room_ids),
         room_parts={k: tuple(v) for k, v in room_parts.items()},
+        unmatched_room_ids=tuple(unmatched_room_ids),
     )
 
 

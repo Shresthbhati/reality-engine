@@ -453,3 +453,108 @@ def associate_windows_to_rooms(
                     metadata={"derived_from": "window_in_room_boundary_wall"},
                 ))
     return associations
+
+
+# ------------------------------------------------------------------
+# Interior connectivity (INTERIOR RECONSTRUCTION MISSION 2/3/6/7)
+# ------------------------------------------------------------------
+
+
+#: Opening kinds that form a PASSAGE between spaces. A window connects
+#: light and sight, not people -- it must never create a passage edge.
+PASSAGE_KINDS = frozenset({"doorway", "door", "opening"})
+
+
+def connected_rooms_through_openings(rooms, wall_openings) -> List[Tuple[str, str]]:
+    """Rooms connected through passages in their shared walls.
+
+    `wall_openings` yields (wall_element_id, RoomOpening) pairs: the
+    measured openings and the walls carrying them. Two distinct rooms
+    are connected iff BOTH rooms' boundary_element_ids contain the
+    opening's wall AND the opening kind is a passage (door/generic --
+    windows connect light, not people).
+
+    Returns canonical (min_id, max_id) pairs, deduplicated, sorted.
+    Pure function over measured graph facts; deterministic.
+    """
+    openings_by_wall = {}
+    for wall_id, opening in wall_openings:
+        if opening.kind not in PASSAGE_KINDS:
+            continue
+        openings_by_wall.setdefault(wall_id, []).append(opening)
+
+    links = set()
+    for room in rooms:
+        for other in rooms:
+            if other.room_id <= room.room_id:
+                continue
+            shared = (
+                set(room.boundary_element_ids)
+                & set(other.boundary_element_ids)
+            )
+            for wall_id in shared:
+                if wall_id in openings_by_wall:
+                    links.add((min(room.room_id, other.room_id),
+                               max(room.room_id, other.room_id)))
+    return sorted(links)
+
+
+@dataclass(frozen=True)
+class CorridorRoomLink:
+    """A corridor's measured passage links to the rooms it serves."""
+
+    corridor_id: str
+    room_ids: Tuple[str, ...]
+
+    def to_dict(self) -> dict:
+        return {"corridor_id": self.corridor_id, "room_ids": list(self.room_ids)}
+
+
+def link_corridor_to_rooms(corridor_room, rooms, corridor_entity_id: str) -> CorridorRoomLink:
+    """Rooms connected to a corridor through doors in shared walls.
+
+    The corridor is itself a room-graph cell (detected by
+    corridors.detect_corridor). A room is served by the corridor iff a
+    passage opening (door) lies in a wall BOTH cells share. Window-only
+    adjacency is recorded absence: no passage, no link.
+    """
+    served: List[str] = []
+    corridor_walls = set(corridor_room.boundary_element_ids)
+    for room in sorted(rooms, key=lambda r: r.room_id):
+        if room.room_id == corridor_room.room_id:
+            continue
+        shared = corridor_walls & set(room.boundary_element_ids)
+        if not shared:
+            continue
+        has_passage = any(
+            o.kind in PASSAGE_KINDS
+            for o in room.openings
+            if o.wall_element_id in shared
+        ) or any(
+            o.kind in PASSAGE_KINDS
+            for o in corridor_room.openings
+            if o.wall_element_id in shared
+        )
+        if has_passage:
+            served.append(room.room_id)
+    return CorridorRoomLink(
+        corridor_id=corridor_entity_id,
+        room_ids=tuple(served),
+    )
+
+
+def storey_connectivity(building, stair_links) -> List[Tuple[str, str]]:
+    """Level-to-level adjacency through stairs (topology, not geometry).
+
+    `stair_links` yields (stair_entity_id, storey_ids) pairs -- the
+    output shape of link_stairs_to_storeys. Every pair of storeys
+    sharing one stair becomes a CONNECTED_TO edge (canonical order,
+    deduplicated, sorted). A storey no stair reaches stays isolated:
+    recorded honestly, never bridged by a guess.
+    """
+    edges = set()
+    for _stair_id, storey_ids in stair_links:
+        for i, a in enumerate(storey_ids):
+            for b in storey_ids[i + 1:]:
+                edges.add((min(a, b), max(a, b)))
+    return sorted(edges)

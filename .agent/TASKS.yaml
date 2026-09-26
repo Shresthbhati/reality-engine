@@ -851,6 +851,30 @@ tasks:
       registry-declared class, entity edges, opening/window/stair
       properties). WorldIR gains STOREY/CORRIDOR additively (same
       backward-compatible pattern as the P7-03 expansion).
+      INTERIOR SCENE ASSEMBLY 2026-09-26 (auto-recon sprint,
+      branch agent/freebuff-auto-recon-sprint): the first end-to-end
+      automatic interior chain now runs behind
+      assemble_interior_scene (perception/architecture/scene.py):
+      capture -> plane detection -> sheet splitting (fused floor/ceil
+      slab pairs split by elevation band, split_parallel_sheets) ->
+      coplanar fragment merging (merge_coplanar_fragments) ->
+      orientation -> classification -> door/window opening detection
+      and promotion (openings.py) -> room inference measured from
+      real enclosures (room_graph.py: wall-encloses-floor thin/run
+      rule with FLOOR_WALL_GAP_TOLERANCE_M=0.25, room horizontal
+      extent measured by its floor — walls bound, floor measures;
+      fixed the 24-vs-12 m2 shared-facade bug) -> room/storey/building
+      promotion into WorldIR (topology.py) -> WorldStore persistence
+      and reload. Rooms carry boundary parts, dimensions, area,
+      openings, adjacency; storeys by measured floor height; every
+      element carries confidence/provenance from its plane fit.
+      Verification: tests/test_interior_scene_e2e.py 4/4 (full chain,
+      determinism, empty refusal, WorldStore round-trip),
+      TestSplitParallelSheets + geometric reasoning 46/46, interior
+      cluster 61/61, scripts/reconstruct_interior.py demo EXIT=0
+      (155,861-pt synthetic apartment: 15 entities, 2 rooms, 1 room
+      link, 0 unclassified planes, 0 validation issues, identical
+      reload).
       EXPANSION 2026-09-16 (P7-03 architectural-perception expansion,
       Victoria Memorial directive): parametric perception landed --
       perception/architecture/parametric.py (deterministic

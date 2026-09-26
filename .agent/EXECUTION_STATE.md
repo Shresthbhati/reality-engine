@@ -1,9 +1,60 @@
 # Reality Engine — Execution State
 
-**Session end:** 2026-09-21 (World Core convergence pass, worktree
-`reality-engine-agent-os-4f461d`)
+**Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
+worktree `.claude/worktrees/auto-recon-sprint`)
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
+
+## 2026-09-26 (1) — Interior reconstruction: rooms from real enclosures (P7-03)
+
+The interior-sprint branch lands the first full automatic interior
+chain — capture -> planes -> classification -> openings -> rooms ->
+building topology -> WorldIR -> WorldStore -> reload — behind
+`assemble_interior_scene` (perception/architecture/scene.py, new):
+
+- planes.py: `split_parallel_sheets` (elevation-band splitter for
+  merged horizontal sheets — floor slabs 5 cm apart arrive as ONE
+  plane; split only when the gap >= max band extent and both sides
+  have min_inliers), `merge_coplanar_fragments` (union-find over
+  sibling fragments whose normals and plane constants agree and whose
+  merged elevation population is unimodal; refit carries
+  "merged N coplanar fragments" provenance),
+  `canonicalize_plane_ids` (re-key after both, deterministic).
+- room_graph.py: `_wall_encloses_floor` rewritten — wall AABBs sit
+  OUTSIDE floor AABBs in real reconstructions (inliers stop short),
+  so enclosure is measured on the wall's thin/run axes with
+  FLOOR_WALL_GAP_TOLERANCE_M = 0.25 m (rejects a facade 3 m away,
+  accepts a boundary wall 0.1 m outside); `_enclosed_bounds` measures
+  a room's horizontal extent from its FLOOR (walls bound, floor
+  measures) — the union-over-wall-AABBs version reported two 12 m2
+  rooms as 24 m2 each through the shared full-span facade;
+  `_group_enclosures` seeds one room per floor with the lowest
+  ceiling above it and strict wall-band overlap.
+- scene.py stage 6 always promotes rooms + storeys via
+  `promote_building_topology` (topology.py, PR #106) with
+  `<role>-<plane_id>` -> `struct-<plane_id>` boundary-id remap;
+  InteriorSceneResult carries room_entity_ids/storey_entity_ids.
+- openings (openings.py, P4 continuing): detect + promote door/window
+  on wall planes via classify.detect_wall_opening + windows bands;
+  demo measures door 0.75x2.0 sill 0 / window 1.40x1.00 sill 0.9.
+- CLI demo scripts/reconstruct_interior.py runs the whole acceptance
+  chain and FAIL-exits on any guard (155,861-pt apartment: 15
+  entities, 2 rooms 9-15 m2, 1 room link, 0 unclassified, 0
+  validation issues; reload identical).
+- Tests: tests/test_interior_scene_e2e.py (4: full chain,
+  determinism — dict-iteration bug in the test itself fixed, the
+  pipeline was never nondeterministic — empty-refusal, WorldStore
+  round-trip incl. custom_properties + relationships),
+  tests/test_interior_connectivity.py, tests/test_interior_openings.py;
+  TestSplitParallelSheets in tests/test_geometric_reasoning.py.
+  Verified: e2e 4/4 (342 s), geometric+connectivity 46, interior
+  cluster (room_inference/room_building_graph/topology_coherence/
+  interior_openings/geometric_adjacency) 61, all green; demo EXIT=0
+  (store C:/tmp/interior_demo_store2).
+
+Session stopped here: commit + push + PR + CI watch are the next
+steps (branch agent/freebuff-auto-recon-sprint; the .agent ledger
+files and this file are part of the same change).
 
 ## 2026-09-21 (7) — World Core: real-data integration fixtures unblocked (not regenerated -- found and copied)
 

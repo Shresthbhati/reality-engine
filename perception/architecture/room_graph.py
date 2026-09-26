@@ -66,6 +66,17 @@ FLOOR_HEIGHT_TOLERANCE_M = 0.15
 #: planes for any convex room interior (2 walls cannot enclose).
 MIN_WALLS_FOR_ROOM = 3
 
+#: How far outside a floor's measured extent a boundary wall may sit
+#: and still bound THIS floor. A floor's inliers routinely stop short
+#: of its bounding walls (occlusion, furniture, scanner shadow), so
+#: the wall's line coordinate may lie a little beyond the floor edge
+#: -- but a wall hugging the OPPOSITE side of the building (many
+#: metres away, another room's boundary) must not enclose this floor
+#: too, or every room balloons across the whole plan. Beyond this
+#: gap the wall belongs to some other enclosure. Not tuned against a
+#: real dataset -- documented deferral like every threshold here.
+FLOOR_WALL_GAP_TOLERANCE_M = 0.25
+
 
 class RoomGraphError(ValueError):
     """Room/building graph construction refused."""
@@ -224,20 +235,105 @@ def _floor_height(element: ArchitecturalElement, up: Sequence[float] = (0.0, 0.0
 def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
     Tuple[Tuple[float, float, float], Tuple[float, float, float]]
 ]:
-    """The bounds enclosed by a room's boundary elements: the smallest
-    box containing all elements' bounds (the room interior is inside
-    its walls). None when any participating element lacks bounds."""
+    """The bounds enclosed by a room's boundary elements.
+
+    Horizontal extent: the FLOOR's measured extent -- the walkable
+    surface a person actually occupies. A union over the wall AABBs
+    (the earlier behavior) inflates shared-wall rooms: one continuous
+    facade wall spanning two rooms drags the union across the whole
+    building, and both rooms reported the building's footprint
+    (observed: 24 m2 per room instead of 12). Walls bound the space;
+    the floor measures it. The z extent comes from the boundary box
+    (floor bottom .. ceiling top), so vertical structure is preserved.
+
+    None when any participating element lacks bounds. With multiple
+    floors (rare; a room is normally one floor), the floors' union
+    measures the horizontal extent."""
+    if any(el.bounds_min is None or el.bounds_max is None for el in elements):
+        return None
     lo = [math.inf, math.inf, math.inf]
     hi = [-math.inf, -math.inf, -math.inf]
     for el in elements:
-        if el.bounds_min is None or el.bounds_max is None:
-            return None
         for i in range(3):
             lo[i] = min(lo[i], el.bounds_min[i])
             hi[i] = max(hi[i], el.bounds_max[i])
     if any(not math.isfinite(v) for v in lo + hi):
         return None
+    floors = [el for el in elements if el.element_type == "floor"]
+    if floors:
+        up_idx = _up_axis(up)
+        plan = [i for i in range(3) if i != up_idx]
+        for ax in plan:
+            lo[ax] = min(el.bounds_min[ax] for el in floors)
+            hi[ax] = max(el.bounds_max[ax] for el in floors)
     return tuple(lo), tuple(hi)
+
+
+def _wall_encloses_floor(
+    w: ArchitecturalElement,
+    floor: ArchitecturalElement,
+    up: Sequence[float] = (0.0, 0.0, 1.0),
+) -> bool:
+    """A wall encloses a floor when its vertical PLANE's footprint
+    reaches the floor's extent. AABB overlap fails for real
+    reconstructions: the floor's inliers stop short of its bounding
+    walls (the walls swallow the floor rim), so a boundary wall's thin
+    AABB can sit entirely OUTSIDE the floor's AABB while the wall
+    obviously encloses it.
+
+    Measured rule: for each horizontal axis, the wall has a "line"
+    coordinate (its thin axis) and a "run" interval (its long axis).
+    The wall reaches the floor iff, on every horizontal axis, either
+    the intervals overlap (run axes) or the wall's line coordinate
+    lies within the floor's extent expanded by the wall's own run --
+    the thin axis cannot demand overlap because the wall is thin by
+    definition. Concretely: overlap on the run axis AND the wall's
+    line coordinate within [floor.min - wall_run, floor.max +
+    wall_run]... simplest honest formulation: the wall's line
+    coordinate must lie within the floor's extent on its thin axis
+    (expanded by the measurement's own granularity, the wall's run
+    extent), and overlap on its run axis.
+    """
+    if w.bounds_min is None or w.bounds_max is None:
+        return False
+    up_idx = _up_axis(up)
+    plan = [i for i in range(3) if i != up_idx]
+    extents = [
+        (w.bounds_max[i] - w.bounds_min[i], i) for i in plan
+    ]
+    extents.sort()
+    thin_i = extents[0][1]      # the axis the wall is thin along
+    run_i = extents[1][1]       # the axis the wall runs along
+    # Run axis: genuine interval overlap with the floor.
+    if (w.bounds_min[run_i] > floor.bounds_max[run_i]
+            or w.bounds_max[run_i] < floor.bounds_min[run_i]):
+        return False
+    # Thin axis: the wall's line coordinate must HUG one of the
+    # floor's edges on the axis the wall runs along, within a small
+    # gap tolerance. Earlier drafts relaxed the wall's line interval
+    # by the wall's whole run extent -- under that rule a facade wall
+    # 3 m beyond a floor's far edge 'enclosed' the floor too, and
+    # every room ballooned across the entire plan (observed on the
+    # two-room apartment fixture: one 6x4 m phantom room instead of
+    # two 3x4 m rooms). A boundary wall touches this floor; a wall a
+    # room-width away bounds a different room.
+    #
+    # The wall's thin-axis interval may start up to
+    # FLOOR_WALL_GAP_TOLERANCE_M before the floor edge (its inliers
+    # may reach slightly past the boundary) and the floor edge may sit
+    # up to that tolerance outside the wall's interval (the floor's
+    # inliers may stop slightly short of the wall), but a wall whose
+    # line interval lies entirely beyond the edge + tolerance does not
+    # bound this floor.
+    gap = FLOOR_WALL_GAP_TOLERANCE_M
+    line_lo, line_hi = w.bounds_min[thin_i], w.bounds_max[thin_i]
+    f_lo, f_hi = floor.bounds_min[thin_i], floor.bounds_max[thin_i]
+    # The wall's line interval must reach the floor's extent from the
+    # outside or overlap it: its near edge may not lie further than
+    # `gap` beyond the floor's far edge on this axis. Overlaps pass
+    # trivially. A wall entirely beyond that (a facade a room-width
+    # away) does not bound this floor.
+    return (line_lo <= f_hi + gap and line_hi >= f_lo - gap)
 
 
 def _group_enclosures(
@@ -278,7 +374,7 @@ def _group_enclosures(
         room_walls = [
             w for w in walls
             if w.bounds_min is not None
-            and _plan_overlap(floor, w)
+            and _wall_encloses_floor(w, floor, up)
             and w.bounds_min[up_idx] < ceiling_val
             and w.bounds_max[up_idx] > fh
         ]
@@ -465,8 +561,12 @@ def build_room_graph(
     rooms: List[RoomGraph] = []
     plane_inputs = dict(plane_inputs or {})
     if planes:
-        for p in planes:
-            plane_inputs.setdefault(p.plane_id, p)
+        if isinstance(planes, dict):
+            for pid, p in planes.items():
+                plane_inputs.setdefault(pid, p)
+        else:
+            for p in planes:
+                plane_inputs.setdefault(p.plane_id, p)
 
     enclosures: List[dict] = []
     for members in groups:

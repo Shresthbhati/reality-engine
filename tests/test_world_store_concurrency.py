@@ -92,6 +92,23 @@ class TestConcurrentThreadWriters:
         assert not (tmp_path / ".sequence.lock").exists()
 
 
+class TestStaleLockExplicit:
+    def test_stale_lock_directory_raises_named_error(self, tmp_path):
+        """A lock directory left by a crashed holder is never silently
+        overridden (that would risk two writers believing they hold the
+        same lock): acquisition times out with an explicit error naming
+        the stale path for operator removal."""
+        from worldstore.store import WorldStore, WorldStoreError, _SequenceLock
+
+        (tmp_path / ".sequence.lock").mkdir()
+        with pytest.raises(WorldStoreError, match=".sequence.lock"):
+            with _SequenceLock(tmp_path, timeout=0.2, poll_interval=0.05):
+                pass  # pragma: no cover -- must not be reached
+        store = WorldStore(tmp_path)
+        with pytest.raises(WorldStoreError, match=".sequence.lock"):
+            store.save_version(_world(999), parent=None, version_id="v-x")
+
+
 class TestConcurrentProcessWriters:
     def test_no_lost_writes_across_real_processes(self, tmp_path):
         """Real OS processes, not threads -- no shared GIL or memory,

@@ -491,7 +491,57 @@ def test_golden_restart_correction_diff(client, tmp_path, monkeypatch):
         assert fresh.get(f"/api/worlds/{wid}").json()["current_version_id"] == v2
 
 
-def test_concurrent_reconstruct_sessions_stay_independent(client, tmp_path, monkeypatch):
+def test_same_world_concurrent_completion_single_head(client, tmp_path, monkeypatch):
+    """Two workers completing reconstructions onto the SAME world: one
+    canonical HEAD, no stale overwrite, no duplicate adopted versions,
+    mirror consistent. Retries converge (dedup or chain), never fork."""
+    import threading
+
+    monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.test_cli_compile:_TwoViewBackend")
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
+    wid = client.post("/api/worlds", json={"name": "Shared world"}).json()["id"]
+    sids = []
+    for n in ("A", "B"):
+        sid = client.post("/api/sessions", json={"name": f"Shared {n}"}).json()["id"]
+        assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
+        for i in range(2):
+            client.post(
+                f"/api/uploads?session_id={sid}",
+                files={"file": (f"{n}{i}.jpg", f"jpeg-{n}-{i}".encode(), "image/jpeg")},
+            )
+        sids.append(sid)
+
+    barrier = threading.Barrier(2)
+    outcomes = []
+
+    def worker(sid):
+        try:
+            barrier.wait(timeout=10)
+            job_id = client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"]
+            outcomes.append(_wait_job(client, job_id, timeout=120.0))
+        except Exception as exc:  # noqa: BLE001
+            outcomes.append({"status": f"ERROR {type(exc).__name__}: {exc}"})
+
+    threads = [threading.Thread(target=worker, args=(sid,)) for sid in sids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=180)
+
+    statuses = sorted(o["status"] for o in outcomes)
+    # Serialization (chained versions) or genuine overlap
+    # (conflict-retry-chained) are all honest; a lost update, a second
+    # adopted HEAD, or a stuck/errored worker is not.
+    assert len(outcomes) == 2, outcomes
+    assert all(s in ("succeeded", "partial", "failed") for s in statuses), outcomes
+    for o in outcomes:
+        if o["status"] == "failed":
+            assert o.get("error"), "failed jobs must carry their reason"
+    head = client.get(f"/api/worlds/{wid}").json()["current_version_id"]
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    current = [v for v in items if v["is_current"]]
+    assert len(current) == 1 and current[0]["id"] == head and head is not None
+    assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
     """Two sessions reconstructing at once: both succeed with distinct
     worlds and versions -- no cross-talk, no shared HEAD."""
     import threading

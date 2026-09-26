@@ -101,13 +101,11 @@ export default function WorldNavPanel({
   const [minConfFilter, setMinConfFilter] = useState<number>(activeQuery?.minConfidence || 0);
   const [activeLevelFilter, setActiveLevelFilter] = useState<number | null>(null);
 
-  // Tree node expansion state
+  // Tree node expansion state. Only the root starts expanded: pre-seeding
+  // keys like "level-0"/"level-upper" assumed storey ids the data may not
+  // contain, and real level ids are not known until WorldIR loads.
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
     root: true,
-    "level-0": true,
-    "level-upper": true,
-    "unenclosed-0": true,
-    "spaces-0": true,
   });
 
   const toggleNode = (nodeKey: string) => {
@@ -294,37 +292,46 @@ export default function WorldNavPanel({
     };
   }, [worldIR, entitiesList, activeWorldId]);
 
-  // Derived building levels
+  // Building levels, derived ONLY from canonical data.
+  //
+  // This used to fall back to slicing entities at a hard-coded y = 2.2 m and
+  // inventing two storeys with the literal ids "level-ground" and
+  // "level-upper" (elevations 0.0 / 2.8). A world with no storey
+  // information therefore displayed a building the reconstruction never
+  // produced -- a frontend-only building model. Levels now come from the
+  // compiler's own interior space graph, or from explicit level entities;
+  // when neither exists, the list is empty and the UI says so.
   const levelsList = useMemo(() => {
     const metaLevels = ((worldIR?.metadata?.interior_space_graph as Record<string, unknown> | undefined)?.levels as Array<Record<string, unknown>> | undefined) || [];
     if (metaLevels.length > 0) {
-      return metaLevels.map((lvl, idx) => ({
-        index: idx,
-        id: String(lvl.level_id || `level-${idx}`),
-        name: `Level ${idx} (${Number(lvl.elevation_m || 0).toFixed(1)}m)`,
-        elevationY: Number(lvl.elevation_m || 0),
-        elementCount: ((lvl.room_ids as string[] | undefined) || []).length + ((lvl.corridor_ids as string[] | undefined) || []).length,
-      }));
+      return metaLevels
+        .filter((lvl) => typeof lvl.level_id === "string" && lvl.level_id.length > 0)
+        .map((lvl, idx) => ({
+          index: idx,
+          id: String(lvl.level_id),
+          name: lvl.name ? String(lvl.name) : `Level ${idx}`,
+          elevationY: Number(lvl.elevation_m ?? 0),
+          elementCount:
+            ((lvl.room_ids as string[] | undefined) || []).length +
+            ((lvl.corridor_ids as string[] | undefined) || []).length,
+        }));
     }
     const explicit = entitiesList.filter((e) => {
       const t = e.type.toLowerCase();
       return t === "level" || t === "floor_level";
     });
-    if (explicit.length > 0) {
-      return explicit.map((lvl, idx) => ({
-        index: idx,
-        id: lvl.id,
-        name: lvl.name || `Level ${idx}`,
-        elevationY: lvl.transform?.position?.y ?? 0,
-        elementCount: entitiesList.filter((e) => {
-          const l =
-            (e.custom_properties as Record<string, unknown> | undefined)?.level ??
-            (e.custom_properties as Record<string, unknown> | undefined)?.floor_level;
-          return l !== undefined && Number(l) === idx;
-        }).length,
-      }));
-    }
-    return [];
+    return explicit.map((lvl, idx) => ({
+      index: idx,
+      id: lvl.id,
+      name: lvl.name || `Level ${idx}`,
+      elevationY: lvl.transform?.position?.y ?? 0,
+      elementCount: entitiesList.filter((e) => {
+        const l =
+          (e.custom_properties as Record<string, unknown> | undefined)?.level ??
+          (e.custom_properties as Record<string, unknown> | undefined)?.floor_level;
+        return l !== undefined && Number(l) === idx;
+      }).length,
+    }));
   }, [entitiesList, worldIR]);
 
   // Derived authentic evidence list
@@ -640,7 +647,14 @@ interface SpatialAnchor {
             </div>
 
             <div className="space-y-2">
-              {levelsList.map((lvl) => {
+              {levelsList.length === 0 ? (
+                <p className="text-[11px] text-neutral-500 leading-relaxed">
+                  No storeys recorded. This reconstruction produced no interior space
+                  graph and no level entities, so there is no canonical level structure
+                  to show.
+                </p>
+              ) : (
+                levelsList.map((lvl) => {
                 const isFiltered = activeLevelFilter === lvl.index;
                 return (
                   <div
@@ -681,7 +695,7 @@ interface SpatialAnchor {
                     </div>
                   </div>
                 );
-              })}
+              }))}
             </div>
 
             {/* Embedded Level Hierarchy Tree */}

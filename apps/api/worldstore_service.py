@@ -120,15 +120,25 @@ async def commit_version(
     directly.
 
     Duplicate requests with byte-identical content return the already
-    adopted parent version instead of minting a duplicate. When
-    `expect_parent` is given, HEAD advances only if it still holds that
-    value (one atomic conditional UPDATE); a concurrent mover wins and
-    this call raises ConcurrentModificationError -- never a silent
-    last-writer-wins overwrite.
+    adopted parent version instead of minting a duplicate. HEAD advances
+    only if it still holds the claimed base (one atomic conditional
+    UPDATE, including an IS NULL claim for first versions); a concurrent
+    mover wins and this call raises ConcurrentModificationError -- never
+    a silent last-writer-wins overwrite. When `expect_parent` is omitted
+    the current HEAD is claimed, so concurrent first-writers converge
+    through retry (dedup if identical, chain otherwise) instead of
+    racing blind adopts.
     """
     world.id = world_id
     store = get_store()
     new_bytes = _canonical_bytes(world)
+    if expect_parent is None:
+        head_row = await db.get(World, world_id)
+        head_now = head_row.current_version_id if head_row is not None else None
+        if head_now is not None:
+            if parent is None:
+                parent = head_now
+            expect_parent = head_now
     if parent is not None:
         try:
             parent_world = store.load_version(parent)
@@ -154,23 +164,23 @@ async def commit_version(
         cameras_uri = f"sha256://{digest}"
 
     if expect_parent is not None:
-        adopted = await db.execute(
-            update(World)
-            .where(World.id == world_id, World.current_version_id == expect_parent)
-            .values(current_version_id=stored.version_id, updated_at=utcnow())
-        )
-        if adopted.rowcount == 0:
-            current = await db.get(World, world_id)
-            raise ConcurrentModificationError(
-                expected_parent=expect_parent,
-                current_head=current.current_version_id if current else None,
-                orphan_version_id=stored.version_id,
-            )
+        head_predicate = World.current_version_id == expect_parent
     else:
-        w = await db.get(World, world_id)
-        if w is not None:
-            w.current_version_id = stored.version_id
-            w.updated_at = utcnow()
+        # No base claimed (first version racing another first version):
+        # adopt only onto an empty HEAD.
+        head_predicate = World.current_version_id.is_(None)
+    adopted = await db.execute(
+        update(World)
+        .where(World.id == world_id, head_predicate)
+        .values(current_version_id=stored.version_id, updated_at=utcnow())
+    )
+    if adopted.rowcount == 0:
+        current = await db.get(World, world_id)
+        raise ConcurrentModificationError(
+            expected_parent=expect_parent,
+            current_head=current.current_version_id if current else None,
+            orphan_version_id=stored.version_id,
+        )
 
     row = _mirror_row(
         stored, report=report,

@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 from engine.core.rng import DeterministicRNG
 from provenance import Uncertainty
@@ -64,6 +64,22 @@ REFINE_ROUNDS = 3
 #: Degenerate geometry guard: three samples spanning less than this
 #: distance (in meters) define no reliable plane.
 MIN_SAMPLE_SPREAD_M = 0.10
+
+#: Band-grouping scale for the parallel-offset sheet split, as a
+#: fraction of the collection tolerance. After the least-squares refit,
+#: a real sheet's residual noise is a fraction of the wide collection
+#: band (the tolerance exists to catch candidates, not to describe
+#: surface thickness), so offsets are grouped at this tighter scale:
+#: two sheets separated by >= this scale count as distinct bands and
+#: are split candidates. 0.25 of 0.08 m = 2 cm grouping granularity.
+SHEET_BAND_TOLERANCE_FRACTION = 0.25
+
+#: A plane qualifies as a horizontal sheet-split candidate when its
+#: normal aligns with `up` at least this much (same scale as the
+#: orientation classifier's 15-degree horizontal tolerance). Vertical
+#: walls are never elevation-split: their contamination is in-plane
+#: seams, not stacked sheets.
+HORIZONTAL_NORMAL_TILT_CANDIDATE_RAD = math.radians(30.0)
 
 
 @dataclass(frozen=True)
@@ -256,6 +272,290 @@ def _sample_three(rng: DeterministicRNG, count: int) -> Tuple[int, int, int]:
         if k == i:
             k = (k + 1) % count
     return i, j, k
+
+
+def split_parallel_sheets(
+    planes: List[DetectedPlane],
+    positions_by_id: Dict[str, Tuple[float, float, float]],
+    up: Sequence[float],
+    distance_tolerance_m: float = PLANE_DISTANCE_TOLERANCE_M,
+    min_inliers: int = MIN_INLIERS,
+) -> List[DetectedPlane]:
+    """Split detected planes that absorbed parallel offset sheets.
+
+    With a point-plane tolerance wide enough to absorb real surface
+    noise (PLANE_DISTANCE_TOLERANCE_M), RANSAC cannot tell apart two
+    parallel sheets separated by less than roughly twice that
+    tolerance (stepped floor slabs at a doorway, doubled wall
+    finishes): a single horizontal candidate collects BOTH sheets, and
+    every downstream consumer -- the floor-height reference for
+    opening sills, room enclosure tests, storey grouping -- then sees
+    a phantom surface halfway between the sheets.
+
+    The refit tilt makes signed plane offsets useless as the split
+    signal (they form a continuous ramp across the span, not two
+    clusters). The reliable signal is the elevation along `up`, which
+    is invariant to how the fit tilted: for a near-horizontal plane
+    (a floor or ceiling, the common contamination), a true sheet is a
+    tight band of up-coordinates; two sheets are two bands separated
+    by a void. The inliers' up-coordinates are therefore grouped into
+    contiguous bands (consecutive values within
+    SHEET_BAND_TOLERANCE_FRACTION * distance_tolerance_m join), and a
+    split is made ONLY when it is provable: the widest gap must be at
+    least as large as the noisier band it separates (a void, not a
+    taper), and each side must keep at least `min_inliers` points.
+    Otherwise the plane is returned untouched -- an unprovable split
+    is a guess, and guessing is what this module refuses to do.
+
+    Each band becomes its own least-squares plane with the split
+    recorded in its provenance note. Re-key to final ids via
+    canonicalize_plane_ids (below) after splitting.
+    """
+    out: List[DetectedPlane] = []
+    up_len = math.sqrt(sum(c * c for c in up))
+    if up_len == 0.0:
+        return list(planes)
+    up_unit = (up[0] / up_len, up[1] / up_len, up[2] / up_len)
+    band_tol = distance_tolerance_m * SHEET_BAND_TOLERANCE_FRACTION
+
+    for plane in planes:
+        # Only near-horizontal planes are split candidates here: a
+        # vertical wall's contamination shows up as in-plane seams,
+        # not stacked sheets, and elevation is meaningless for it.
+        up_align = abs(
+            plane.normal[0] * up_unit[0]
+            + plane.normal[1] * up_unit[1]
+            + plane.normal[2] * up_unit[2]
+        )
+        if up_align < math.cos(HORIZONTAL_NORMAL_TILT_CANDIDATE_RAD):
+            out.append(plane)
+            continue
+
+        elevations = sorted(
+            up_unit[0] * positions_by_id[pid][0]
+            + up_unit[1] * positions_by_id[pid][1]
+            + up_unit[2] * positions_by_id[pid][2]
+            for pid in plane.inlier_ids
+        )
+        bands = _offset_bands(elevations, band_tol)
+        if len(bands) < 2:
+            out.append(plane)
+            continue
+
+        gaps = [bands[i + 1][0] - bands[i][1] for i in range(len(bands) - 1)]
+        gap_index = max(range(len(gaps)), key=lambda i: gaps[i])
+        gap_width = gaps[gap_index]
+        lo_extent = bands[gap_index][1] - bands[gap_index][0]
+        hi_extent = bands[gap_index + 1][1] - bands[gap_index + 1][0]
+        # A void between two tight sheets, not a taper or a gap inside
+        # one noisy sheet: the gap must be at least as wide as the
+        # noisier band it separates.
+        if gap_width < max(lo_extent, hi_extent):
+            out.append(plane)
+            continue
+        split_lo = bands[gap_index][1]
+        split_hi = bands[gap_index + 1][0]
+
+        def _elev(pid: str) -> float:
+            p = positions_by_id[pid]
+            return (up_unit[0] * p[0] + up_unit[1] * p[1]
+                    + up_unit[2] * p[2])
+
+        lo_ids = [pid for pid in plane.inlier_ids if _elev(pid) <= split_lo]
+        hi_ids = [pid for pid in plane.inlier_ids if _elev(pid) >= split_hi]
+        if len(lo_ids) < min_inliers or len(hi_ids) < min_inliers:
+            out.append(plane)
+            continue
+
+        split_parts: List[DetectedPlane] = []
+        for part_ids in (lo_ids, hi_ids):
+            try:
+                normal, d = _fit_plane_to_inliers(
+                    [positions_by_id[pid] for pid in part_ids]
+                )
+            except ValueError:
+                split_parts = []
+                break
+            part_rms = _rms_distance(
+                [positions_by_id[pid] for pid in part_ids], normal, d
+            )
+            split_parts.append(DetectedPlane(
+                plane_id=plane.plane_id,
+                normal=normal,
+                d=d,
+                inlier_ids=sorted(part_ids),
+                inlier_rms_distance_m=part_rms,
+                uncertainty=Uncertainty(
+                    confidence=min(
+                        1.0, len(part_ids) / (len(part_ids) + 10.0)
+                    ),
+                    note=(
+                        f"split from parallel offset sheets: "
+                        f"{len(lo_ids)}+{len(hi_ids)} pts, "
+                        f"gap {gap_width:.4f} m along up"
+                    ),
+                ),
+            ))
+        out.extend(split_parts if split_parts else [plane])
+    return out
+
+
+def canonicalize_plane_ids(
+    planes: List[DetectedPlane],
+) -> List[DetectedPlane]:
+    """Sort planes by inlier count desc (structure first) and re-key
+    their ids to the final sorted position, so labeling is independent
+    of extraction or split order -- rebuilt as fresh frozen instances,
+    never mutated in place."""
+    ordered = sorted(planes, key=lambda p: (-p.inlier_count, p.plane_id))
+    return [
+        DetectedPlane(
+            plane_id=f"plane-{seq:03d}",
+            normal=plane.normal,
+            d=plane.d,
+            inlier_ids=plane.inlier_ids,
+            inlier_rms_distance_m=plane.inlier_rms_distance_m,
+            uncertainty=Uncertainty(
+                confidence=plane.uncertainty.confidence,
+                note=plane.uncertainty.note,
+            ),
+        )
+        for seq, plane in enumerate(ordered)
+    ]
+
+
+def merge_coplanar_fragments(
+    planes: List[DetectedPlane],
+    positions_by_id: Dict[str, Tuple[float, float, float]],
+    up: Sequence[float],
+    distance_tolerance_m: float = PLANE_DISTANCE_TOLERANCE_M,
+    min_inliers: int = MIN_INLIERS,
+) -> List[DetectedPlane]:
+    """Re-merge sibling fragments of one physical sheet.
+
+    Observed failure mode (two-room apartment, tolerance 0.02 m): the
+    two floor slabs left RANSAC as a main horizontal plane PLUS small
+    tilted fragment planes covering residual slab points; the sheet
+    split then produced FOUR coplanar floor fragments -- two per
+    physical slab. Every fragment seeded its own room, the plan
+    exploded from 2 rooms to 4, and room connectivity collapsed into
+    a complete graph over the phantoms.
+
+    The physical fact a merged surface rests on: two plane regions
+    are the SAME surface when they are coplanar (normals agree and
+    their plane constants agree within the collection tolerance) AND
+    their point clouds interleave along `up` (no elevation void
+    between the merged population). Both are measured conditions:
+    either failing means the regions are genuinely distinct surfaces
+    (a step, a finish layer) and stay separate.
+
+    Grouping runs over planes whose merged population stays
+    unimodal; each surviving group is refit as one plane whose
+    provenance note records the merge. Planes that never join a group
+    pass through unchanged.
+    """
+    up_len = math.sqrt(sum(c * c for c in up))
+    if up_len == 0.0:
+        return list(planes)
+    up_unit = (up[0] / up_len, up[1] / up_len, up[2] / up_len)
+    band_tol = distance_tolerance_m * SHEET_BAND_TOLERANCE_FRACTION
+
+    def _up_of(pid: str) -> float:
+        p = positions_by_id[pid]
+        return up_unit[0] * p[0] + up_unit[1] * p[1] + up_unit[2] * p[2]
+
+    def _same_surface(a: DetectedPlane, b: DetectedPlane) -> bool:
+        if len(a.inlier_ids) + len(b.inlier_ids) < 2 * min_inliers:
+            return False
+        # Normal agreement (orientation-insensitive).
+        dot = sum(a.normal[i] * b.normal[i] for i in range(3))
+        if abs(dot) < 1.0 - 1e-3:
+            return False
+        # Plane-constant agreement: normals may oppose, so compare the
+        # constants under a common normal direction.
+        d_a = a.d if dot > 0 else -a.d
+        d_b = b.d if dot > 0 else -b.d
+        if abs(d_a - d_b) > distance_tolerance_m:
+            return False
+        # Elevation interleave: the union must be one band along up.
+        merged = sorted(_up_of(pid) for pid in a.inlier_ids + b.inlier_ids)
+        return len(_offset_bands(merged, band_tol)) == 1
+
+    n = len(planes)
+    group_of = list(range(n))
+
+    def _find(i: int) -> int:
+        while group_of[i] != i:
+            group_of[i] = group_of[group_of[i]]
+            i = group_of[i]
+        return i
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _same_surface(planes[i], planes[j]):
+                group_of[_find(j)] = _find(i)
+
+    groups: Dict[int, List[DetectedPlane]] = {}
+    for i, plane in enumerate(planes):
+        groups.setdefault(_find(i), []).append(plane)
+
+    out: List[DetectedPlane] = []
+    for members in groups.values():
+        if len(members) == 1:
+            out.append(members[0])
+            continue
+        merged_ids: List[str] = []
+        for m in members:
+            merged_ids.extend(m.inlier_ids)
+        merged_ids = sorted(set(merged_ids))
+        if len(merged_ids) < min_inliers:
+            out.extend(members)
+            continue
+        try:
+            normal, d = _fit_plane_to_inliers(
+                [positions_by_id[pid] for pid in merged_ids]
+            )
+        except ValueError:
+            out.extend(members)
+            continue
+        merged_rms = _rms_distance(
+            [positions_by_id[pid] for pid in merged_ids], normal, d
+        )
+        out.append(DetectedPlane(
+            plane_id=members[0].plane_id,
+            normal=normal,
+            d=d,
+            inlier_ids=merged_ids,
+            inlier_rms_distance_m=merged_rms,
+            uncertainty=Uncertainty(
+                confidence=min(
+                    1.0, len(merged_ids) / (len(merged_ids) + 10.0)
+                ),
+                note=(
+                    f"merged {len(members)} coplanar fragments: "
+                    f"{len(merged_ids)} pts"
+                ),
+            ),
+        ))
+    return out
+
+
+def _offset_bands(
+    offsets: List[float], tolerance: float
+) -> List[Tuple[float, float]]:
+    """Group sorted scalar values into contiguous bands: consecutive
+    values within `tolerance` join; a larger gap starts a new band.
+    Returns (min, max) per band, in ascending order."""
+    if not offsets:
+        return []
+    bands: List[Tuple[float, float]] = [(offsets[0], offsets[0])]
+    for off in offsets[1:]:
+        lo, hi = bands[-1]
+        if off - hi <= tolerance:
+            bands[-1] = (lo, off)
+        else:
+            bands.append((off, off))
+    return bands
 
 
 def detect_planes(

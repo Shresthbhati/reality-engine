@@ -152,6 +152,159 @@ class TestDetectPlanes:
         assert all(p.inlier_count >= q.inlier_count for p, q in zip(det.planes, det.planes[1:]))
 
 
+class TestSplitParallelSheets:
+    """Regression suite for the merged-sheet absorption: with the 8 cm
+    collection tolerance, one horizontal RANSAC candidate collects two
+    parallel slabs 5 cm apart and its least-squares refit tilts through
+    the midpoint -- a phantom surface that corrupts sill heights, room
+    enclosures, and storey grouping downstream."""
+
+    @staticmethod
+    def _two_slab_positions_by_id():
+        by_id = {}
+        n = 0
+        for slab_z in (0.0, 0.05):
+            for i in range(60):
+                for j in range(60):
+                    n += 1
+                    by_id[f"pt-{n:05d}"] = (i * 0.05, j * 0.05, slab_z)
+        return by_id
+
+    def _merged_plane(self):
+        from perception.geometry.planes import _fit_plane_to_inliers
+
+        by_id = self._two_slab_positions_by_id()
+        ids = sorted(by_id)
+        normal, d = _fit_plane_to_inliers([by_id[pid] for pid in ids])
+        return DetectedPlane(
+            plane_id="plane-000",
+            normal=normal,
+            d=d,
+            inlier_ids=ids,
+            inlier_rms_distance_m=0.02,
+        )
+
+    def test_splits_two_offset_slabs_into_exact_sheets(self):
+        from perception.geometry.planes import split_parallel_sheets
+
+        by_id = self._two_slab_positions_by_id()
+        merged = self._merged_plane()
+        out = split_parallel_sheets([merged], by_id, up=(0.0, 0.0, 1.0))
+        assert len(out) == 2
+        heights = sorted(
+            sum(by_id[pid][2] for pid in p.inlier_ids) / p.inlier_count
+            for p in out
+        )
+        assert heights == pytest.approx([0.0, 0.05], abs=1e-9)
+        # Each part keeps exactly its own sheet's points.
+        total = sum(p.inlier_count for p in out)
+        assert total == merged.inlier_count
+        # The split is recorded in provenance, not silently rewritten.
+        assert all("split from parallel offset sheets" in p.uncertainty.note for p in out)
+
+    def test_split_parts_are_clean_least_squares_fits(self):
+        from perception.geometry.planes import split_parallel_sheets
+
+        by_id = self._two_slab_positions_by_id()
+        merged = self._merged_plane()
+        out = split_parallel_sheets([merged], by_id, up=(0.0, 0.0, 1.0))
+        for part in out:
+            # A true flat sheet fits with (near) zero residual; the
+            # merged plane's rms was 0.02 by construction.
+            assert part.inlier_rms_distance_m < 1e-6
+            assert abs(abs(part.normal[2]) - 1.0) < 1e-9  # horizontal
+
+    def test_single_sheet_is_returned_untouched(self):
+        from perception.geometry.planes import split_parallel_sheets
+
+        by_id = self._two_slab_positions_by_id()
+        ids = sorted(pid for pid, p in by_id.items() if p[2] == 0.0)
+        sheet = DetectedPlane(
+            plane_id="plane-000", normal=(0.0, 0.0, 1.0), d=0.0,
+            inlier_ids=ids, inlier_rms_distance_m=0.0,
+        )
+        out = split_parallel_sheets([sheet], by_id, up=(0.0, 0.0, 1.0))
+        assert out == [sheet]
+
+    def test_gradual_taper_is_never_split(self):
+        # A ramp from z=0 to z=0.5: many thin elevation bands, every gap
+        # tiny relative to the band widths -- no provable void, no split.
+        from perception.geometry.planes import split_parallel_sheets
+
+        by_id = {}
+        n = 0
+        for i in range(200):
+            for j in range(20):
+                n += 1
+                by_id[f"pt-{n:05d}"] = (i * 0.05, j * 0.05, i * 0.0025)
+        ramp = DetectedPlane(
+            plane_id="plane-000",
+            normal=(0.0, 0.0, 1.0),
+            d=0.0,
+            inlier_ids=sorted(by_id),
+            inlier_rms_distance_m=0.001,
+        )
+        out = split_parallel_sheets([ramp], by_id, up=(0.0, 0.0, 1.0))
+        assert len(out) == 1 and out[0] is ramp
+
+    def test_vertical_walls_are_never_elevation_split(self):
+        # Two parallel wall sheets 5 cm apart (doubled finish): not a
+        # horizontal-plane contamination, so elevation splitting must
+        # leave them alone even though their up-coordinates differ.
+        from perception.geometry.planes import split_parallel_sheets
+
+        by_id = {}
+        n = 0
+        for wall_x in (0.0, 0.05):
+            for i in range(60):
+                for j in range(40):
+                    n += 1
+                    by_id[f"pt-{n:05d}"] = (wall_x, i * 0.05, j * 0.05)
+        ids = sorted(by_id)
+        wall = DetectedPlane(
+            plane_id="plane-000", normal=(1.0, 0.0, 0.0), d=0.025,
+            inlier_ids=ids, inlier_rms_distance_m=0.02,
+        )
+        out = split_parallel_sheets([wall], by_id, up=(0.0, 0.0, 1.0))
+        assert len(out) == 1 and out[0].inlier_count == len(ids)
+
+    def test_tiny_sides_fail_the_provable_split(self):
+        # 5 points at z=0 vs 4000 at z=0.05: the thin side cannot stand
+        # alone (below min_inliers), so the plane stays whole.
+        from perception.geometry.planes import split_parallel_sheets, MIN_INLIERS
+
+        by_id = {}
+        n = 0
+        for i in range(4000):
+            n += 1
+            by_id[f"pt-{n:05d}"] = (i * 0.01, 0.0, 0.05)
+        for i in range(5):
+            n += 1
+            by_id[f"pt-{n:05d}"] = (i * 0.01, 0.5, 0.0)
+        merged = DetectedPlane(
+            plane_id="plane-000", normal=(0.0, 0.0, 1.0), d=-0.05,
+            inlier_ids=sorted(by_id), inlier_rms_distance_m=0.02,
+        )
+        out = split_parallel_sheets(
+            [merged], by_id, up=(0.0, 0.0, 1.0), min_inliers=MIN_INLIERS
+        )
+        assert len(out) == 1 and out[0] is merged
+
+    def test_canonicalize_rekeys_after_split(self):
+        from perception.geometry.planes import (
+            canonicalize_plane_ids,
+            split_parallel_sheets,
+        )
+
+        by_id = self._two_slab_positions_by_id()
+        merged = self._merged_plane()
+        out = canonicalize_plane_ids(
+            split_parallel_sheets([merged], by_id, up=(0.0, 0.0, 1.0))
+        )
+        assert [p.plane_id for p in out] == ["plane-000", "plane-001"]
+        assert out[0].inlier_count >= out[1].inlier_count
+
+
 # ----------------------------------------------------------- orientation
 
 

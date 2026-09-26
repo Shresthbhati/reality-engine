@@ -79,6 +79,7 @@ class EntityType(str, Enum):
     # backward-compatible pattern as the P7-03 expansion above):
     STOREY = "storey"  # One building level; CONTAINS the rooms at its measured floor height
     CORRIDOR = "corridor"  # Elongated circulation space connecting rooms on its sides
+    OPENING = "opening"  # Measured wall void not classifiable as door or window (generic opening)
     # Architectural perception expansion (P7-03; additive -- v1 worlds
     # without these values are unaffected, and enum serialization is
     # by value so old data loads unchanged):

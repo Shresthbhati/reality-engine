@@ -236,6 +236,62 @@ def test_single_photo_fails_honestly(client, tmp_path, monkeypatch):
     assert "needs at least 2" in (job.get("error") or "").lower()
 
 
+def test_no_shell_subprocess_in_reconstruction():
+    """Static guardrail: reconstruction backends spawn only list-argv,
+    shell=False subprocesses. A shell=True call with evidence-derived
+    paths would be remote command injection, so the shape is pinned."""
+    import ast
+
+    root = Path(__file__).resolve().parents[1] / "reconstruction"
+    offenders = []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else (
+                func.id if isinstance(func, ast.Name) else "")
+            if name == "system":
+                offenders.append(f"{path.name}:{node.lineno} os.system")
+            if name in ("run", "call", "check_call", "check_output", "Popen"):
+                for kw in node.keywords:
+                    if kw.arg == "shell" and not (
+                        isinstance(kw.value, ast.Constant) and kw.value.value is False
+                    ):
+                        offenders.append(f"{path.name}:{node.lineno} shell=")
+    assert offenders == [], f"shell subprocess invocations: {offenders}"
+
+
+def test_untraced_reconstruction_refuses_persistence():
+    """The hard gate, unit-exercised: RECONSTRUCTED entities without a
+    build trace raise instead of persisting; other provenances pass."""
+    from apps.api.jobs import _assert_reconstruction_traced
+    from provenance import Provenance
+    from world_ir import Entity, EntityType
+    from world_ir.world_v1 import WorldIR
+
+    traced = WorldIR(id="w-ok")
+    traced.entities["e1"] = Entity(
+        id="e1", type=EntityType.STRUCTURE, provenance=Provenance.RECONSTRUCTED,
+        custom_properties={"reconstruction": {"session_id": "ses_x"}},
+    )
+    _assert_reconstruction_traced(traced)
+
+    procedural = WorldIR(id="w-proc")
+    procedural.entities["e2"] = Entity(
+        id="e2", type=EntityType.ROOM, provenance=Provenance.GENERATED,
+    )
+    _assert_reconstruction_traced(procedural)
+
+    untraced = WorldIR(id="w-bad")
+    untraced.entities["e3"] = Entity(
+        id="e3", type=EntityType.STRUCTURE, provenance=Provenance.RECONSTRUCTED,
+    )
+    with pytest.raises(RuntimeError, match="untraced"):
+        _assert_reconstruction_traced(untraced)
+
+
 def test_malformed_worldir_rejected_on_load():
     """WorldIR.from_dict on garbage is an explicit error, never a
     half-built world that later corrupts a version."""

@@ -306,6 +306,19 @@ def test_malformed_worldir_rejected_on_load():
         assert isinstance(w.entities, dict) and isinstance(w.geometries, dict)
 
 
+def test_uncertainty_roundtrip_preserved():
+    """Uncertainty survives serialize -> persist -> reload with its value
+    intact, and rejects out-of-range confidence loudly at construction."""
+    from provenance import Uncertainty
+
+    u = Uncertainty(confidence=0.62, note="occluded")
+    assert Uncertainty.from_dict(u.to_dict()) == u
+    with pytest.raises(ValueError, match="confidence"):
+        Uncertainty(confidence=1.5)
+    with pytest.raises(Exception):
+        Uncertainty.from_dict(None)
+
+
 def test_invalid_topology_flagged_by_validator():
     """Dangling relationship/geometry references are ERRORs: a world
     with broken topology cannot grade as valid, so no job can call it

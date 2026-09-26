@@ -27,7 +27,7 @@ from apps.api.models import (
     new_id,
 )
 from world_ir.diff import diff_worlds
-from world_ir.schema_v1 import EntityType
+from world_ir.schema_v1 import EntityType, Relationship, RelationshipKind, Provenance
 from world_ir.world_v1 import WorldIR
 from world_ir.artifact_store import FileArtifactStore
 from worldstore.store import WorldStore, WorldStoreError
@@ -593,6 +593,10 @@ _COMMIT_MUTABLE_FIELDS = (
     "semantic_labels",
     "custom_properties",
     "transform",
+    "relationships",
+    "boundary_element_ids",
+    "connected_level_ids",
+    "connected_room_ids",
 )
 _MAX_COMMIT_CHANGES = 32
 _MAX_COMMIT_VALUE_BYTES = 16 * 1024
@@ -669,6 +673,48 @@ def _validate_commit_changes(changes: dict) -> dict:
             if not isinstance(value, dict):
                 raise HTTPException(422, f"field '{key}' must be an object")
             validated[key] = dict(value)
+        elif key == "relationships":
+            if not isinstance(value, list) or len(value) > 100:
+                raise HTTPException(
+                    422, "field 'relationships' must be a list of at most 100 items"
+                )
+            rels = []
+            for item in value:
+                if not isinstance(item, dict):
+                    raise HTTPException(422, "each relationship must be an object")
+                target_id = item.get("target_id") or item.get("target_entity_id")
+                if not isinstance(target_id, str) or not target_id or len(target_id) > 300:
+                    raise HTTPException(
+                        422, "relationship target_id must be a non-empty string <= 300 chars"
+                    )
+                kind_str = item.get("kind") or item.get("type", "connects")
+                try:
+                    kind = RelationshipKind(kind_str)
+                except ValueError:
+                    kind = RelationshipKind.CONNECTS
+                rel_conf = float(item.get("confidence", 1.0))
+                if not 0.0 <= rel_conf <= 1.0 or not math.isfinite(rel_conf):
+                    rel_conf = 1.0
+                rel_meta = item.get("metadata", {})
+                if not isinstance(rel_meta, dict):
+                    rel_meta = {}
+                rels.append({
+                    "kind": kind,
+                    "target_id": target_id,
+                    "confidence": rel_conf,
+                    "metadata": rel_meta,
+                })
+            validated[key] = rels
+        elif key in ("boundary_element_ids", "connected_level_ids", "connected_room_ids"):
+            if (
+                not isinstance(value, list)
+                or len(value) > 100
+                or not all(isinstance(v, str) and v and len(v) <= 300 for v in value)
+            ):
+                raise HTTPException(
+                    422, f"field '{key}' must be a list of at most 100 non-empty strings <= 300 chars"
+                )
+            validated[key] = list(value)
     return validated
 
 
@@ -697,6 +743,8 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         raise HTTPException(404, f"Entity {body.entity_id} not found in world")
 
     validated = _validate_commit_changes(body.changes)
+    if body.commit_message is not None and len(body.commit_message) > 500:
+        raise HTTPException(422, "commit_message must be at most 500 chars")
     # Unify identifiers (same invariant worldstore_service.commit_version
     # enforces): the WorldIR's own id is the application world id, so
     # on-disk versions filter by world and the DB mirror stays truthful.
@@ -715,6 +763,93 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
             entity.custom_properties = value
         elif key == "transform":
             entity.transform = value
+        elif key == "relationships":
+            entity.relationships = [
+                Relationship(
+                    kind=r["kind"],
+                    target_id=r["target_id"],
+                    confidence=r["confidence"],
+                    provenance=Provenance.INFERRED,
+                    metadata=r["metadata"],
+                )
+                for r in value
+            ]
+        elif key == "boundary_element_ids":
+            for bid in value:
+                if bid not in worldir.entities:
+                    raise HTTPException(422, f"boundary element '{bid}' not found in world")
+            entity.custom_properties = dict(entity.custom_properties)
+            entity.custom_properties["boundary_element_ids"] = list(value)
+            # Remove old boundary containment edges and re-link
+            entity.relationships = [
+                r for r in entity.relationships
+                if not (r.kind == RelationshipKind.CONTAINS and r.metadata.get("derived_from") == "room_boundary_membership")
+            ]
+            for bid in value:
+                entity.relationships.append(Relationship(
+                    kind=RelationshipKind.CONTAINS,
+                    target_id=bid,
+                    confidence=entity.confidence,
+                    provenance=Provenance.INFERRED,
+                    metadata={"derived_from": "room_boundary_membership"},
+                ))
+                b_ent = worldir.entities[bid]
+                if not any(r.target_id == entity.id and r.kind == RelationshipKind.PART_OF for r in b_ent.relationships):
+                    b_ent.relationships.append(Relationship(
+                        kind=RelationshipKind.PART_OF,
+                        target_id=entity.id,
+                        confidence=entity.confidence,
+                        provenance=Provenance.INFERRED,
+                        metadata={"derived_from": "room_boundary_membership"},
+                    ))
+        elif key == "connected_level_ids":
+            for lid in value:
+                if lid not in worldir.entities:
+                    raise HTTPException(422, f"level entity '{lid}' not found in world")
+            entity.custom_properties = dict(entity.custom_properties)
+            entity.custom_properties["connected_level_ids"] = list(value)
+            for lid in value:
+                if not any(r.target_id == lid for r in entity.relationships):
+                    entity.relationships.append(Relationship(
+                        kind=RelationshipKind.CONNECTS,
+                        target_id=lid,
+                        confidence=entity.confidence,
+                        provenance=Provenance.INFERRED,
+                        metadata={"derived_from": "stair_storey_connection"},
+                    ))
+                l_ent = worldir.entities[lid]
+                if not any(r.target_id == entity.id for r in l_ent.relationships):
+                    l_ent.relationships.append(Relationship(
+                        kind=RelationshipKind.CONNECTS,
+                        target_id=entity.id,
+                        confidence=entity.confidence,
+                        provenance=Provenance.INFERRED,
+                        metadata={"derived_from": "stair_storey_connection"},
+                    ))
+        elif key == "connected_room_ids":
+            for rid in value:
+                if rid not in worldir.entities:
+                    raise HTTPException(422, f"room entity '{rid}' not found in world")
+            entity.custom_properties = dict(entity.custom_properties)
+            entity.custom_properties["connected_room_ids"] = list(value)
+            for rid in value:
+                if not any(r.target_id == rid for r in entity.relationships):
+                    entity.relationships.append(Relationship(
+                        kind=RelationshipKind.CONNECTS,
+                        target_id=rid,
+                        confidence=entity.confidence,
+                        provenance=Provenance.INFERRED,
+                        metadata={"derived_from": "corridor_room_connection"},
+                    ))
+                r_ent = worldir.entities[rid]
+                if not any(r.target_id == entity.id for r in r_ent.relationships):
+                    r_ent.relationships.append(Relationship(
+                        kind=RelationshipKind.CONNECTS,
+                        target_id=entity.id,
+                        confidence=entity.confidence,
+                        provenance=Provenance.INFERRED,
+                        metadata={"derived_from": "corridor_room_connection"},
+                    ))
 
     # Malformed WorldIR must never be persisted by a correction: validate
     # the corrected world and refuse with the validator's own diagnosis.

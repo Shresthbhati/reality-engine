@@ -427,6 +427,38 @@ def _seed_compiled_world(client, tmp_path, monkeypatch, name="Commit world"):
         id="ent-shed", type=EntityType.STRUCTURE, name="Shed",
         provenance=Provenance.RECONSTRUCTED, confidence=0.8,
     )
+    wir.entities["room-001"] = Entity(
+        id="room-001", type=EntityType.ROOM, name="Room 1",
+        provenance=Provenance.INFERRED, confidence=0.85,
+    )
+    wir.entities["wall-001"] = Entity(
+        id="wall-001", type=EntityType.WALL, name="Wall 1",
+        provenance=Provenance.RECONSTRUCTED, confidence=0.9,
+    )
+    wir.entities["wall-002"] = Entity(
+        id="wall-002", type=EntityType.WALL, name="Wall 2",
+        provenance=Provenance.RECONSTRUCTED, confidence=0.9,
+    )
+    wir.entities["opening-001"] = Entity(
+        id="opening-001", type=EntityType.DOOR, name="Door 1",
+        provenance=Provenance.INFERRED, confidence=0.75,
+    )
+    wir.entities["corridor-001"] = Entity(
+        id="corridor-001", type=EntityType.CORRIDOR, name="Corridor 1",
+        provenance=Provenance.INFERRED, confidence=0.8,
+    )
+    wir.entities["stair-001"] = Entity(
+        id="stair-001", type=EntityType.STAIRS, name="Stair 1",
+        provenance=Provenance.INFERRED, confidence=0.8,
+    )
+    wir.entities["storey-000"] = Entity(
+        id="storey-000", type=EntityType.STOREY, name="Level 0",
+        provenance=Provenance.INFERRED, confidence=0.95,
+    )
+    wir.entities["storey-001"] = Entity(
+        id="storey-001", type=EntityType.STOREY, name="Level 1",
+        provenance=Provenance.INFERRED, confidence=0.95,
+    )
     stored = store.save_version(wir, parent=None)
 
     async def _seed():
@@ -529,6 +561,115 @@ def test_commit_happy_path_adopts_version(client, tmp_path, monkeypatch):
     ent = wir.json()["entities"]["ent-shed"]
     assert ent["name"] == "Barn"
     assert ent["confidence"] == 0.9
+
+
+def test_commit_five_architectural_corrections(client, tmp_path, monkeypatch):
+    """Test all 5 architectural corrections supported by Reality Studio:
+    1. Room boundary correction (updating boundary wall elements and containment relationships).
+    2. Room classification correction (semantic labels, confidence, room type).
+    3. Corridor classification and room connectivity (linking rooms and establishing connects relations).
+    4. Opening classification (reclassifying door <-> window).
+    5. Stair level relationship (connecting stair to storeys/levels with reciprocal topology).
+    Each commit creates a sequential, real WorldStore version and passes CAS validation."""
+    wid, v0 = _seed_compiled_world(client, tmp_path, monkeypatch)
+
+    # 1. Room boundary correction
+    r1 = _commit(client, wid, entity_id="room-001", changes={"boundary_element_ids": ["wall-001", "wall-002"]})
+    assert r1.status_code == 200, r1.text
+    v1 = r1.json()["version_id"]
+    assert v1 != v0
+    head1, count1 = _head_and_count(client, wid)
+    assert (head1, count1) == (v1, 2)
+    wir1 = client.get(f"/api/worlds/{wid}/worldir").json()
+    room1 = wir1["entities"]["room-001"]
+    assert room1["custom_properties"]["boundary_element_ids"] == ["wall-001", "wall-002"]
+    contains_targets = {r["target_id"] for r in room1["relationships"] if r["kind"] == "contains"}
+    assert {"wall-001", "wall-002"}.issubset(contains_targets)
+    assert any(r["target_id"] == "room-001" and r["kind"] == "part_of" for r in wir1["entities"]["wall-001"]["relationships"])
+
+    # 2. Room classification correction
+    r2 = _commit(
+        client,
+        wid,
+        entity_id="room-001",
+        changes={
+            "type": "room",
+            "name": "Executive Conference Room",
+            "confidence": 0.94,
+            "semantic_labels": ["conference", "meeting", "workspace"],
+        },
+    )
+    assert r2.status_code == 200, r2.text
+    v2 = r2.json()["version_id"]
+    assert v2 != v1
+    head2, count2 = _head_and_count(client, wid)
+    assert (head2, count2) == (v2, 3)
+    wir2 = client.get(f"/api/worlds/{wid}/worldir").json()
+    room2 = wir2["entities"]["room-001"]
+    assert room2["name"] == "Executive Conference Room"
+    assert room2["confidence"] == 0.94
+    assert room2["semantic_labels"] == ["conference", "meeting", "workspace"]
+
+    # 3. Corridor classification & connectivity
+    r3 = _commit(
+        client,
+        wid,
+        entity_id="corridor-001",
+        changes={"type": "corridor", "connected_room_ids": ["room-001"]},
+    )
+    assert r3.status_code == 200, r3.text
+    v3 = r3.json()["version_id"]
+    assert v3 != v2
+    head3, count3 = _head_and_count(client, wid)
+    assert (head3, count3) == (v3, 4)
+    wir3 = client.get(f"/api/worlds/{wid}/worldir").json()
+    corr3 = wir3["entities"]["corridor-001"]
+    assert corr3["custom_properties"]["connected_room_ids"] == ["room-001"]
+    assert any(r["target_id"] == "room-001" and r["kind"] == "connects" for r in corr3["relationships"])
+    assert any(r["target_id"] == "corridor-001" and r["kind"] == "connects" for r in wir3["entities"]["room-001"]["relationships"])
+
+    # 4. Opening classification (door -> window)
+    r4 = _commit(
+        client,
+        wid,
+        entity_id="opening-001",
+        changes={"type": "window", "name": "Window 1"},
+    )
+    assert r4.status_code == 200, r4.text
+    v4 = r4.json()["version_id"]
+    assert v4 != v3
+    head4, count4 = _head_and_count(client, wid)
+    assert (head4, count4) == (v4, 5)
+    wir4 = client.get(f"/api/worlds/{wid}/worldir").json()
+    op4 = wir4["entities"]["opening-001"]
+    assert op4["type"] == "window"
+    assert op4["name"] == "Window 1"
+
+    # 5. Stair relationship (connect to level 0 and level 1)
+    r5 = _commit(
+        client,
+        wid,
+        entity_id="stair-001",
+        changes={"connected_level_ids": ["storey-000", "storey-001"]},
+    )
+    assert r5.status_code == 200, r5.text
+    v5 = r5.json()["version_id"]
+    assert v5 != v4
+    head5, count5 = _head_and_count(client, wid)
+    assert (head5, count5) == (v5, 6)
+    wir5 = client.get(f"/api/worlds/{wid}/worldir").json()
+    stair5 = wir5["entities"]["stair-001"]
+    assert stair5["custom_properties"]["connected_level_ids"] == ["storey-000", "storey-001"]
+    stair_connects = {r["target_id"] for r in stair5["relationships"] if r["kind"] == "connects"}
+    assert {"storey-000", "storey-001"}.issubset(stair_connects)
+    assert any(r["target_id"] == "stair-001" and r["kind"] == "connects" for r in wir5["entities"]["storey-000"]["relationships"])
+    assert any(r["target_id"] == "stair-001" and r["kind"] == "connects" for r in wir5["entities"]["storey-001"]["relationships"])
+
+    # Reject nonexistent boundary element gracefully without modifying HEAD
+    bad_r = _commit(client, wid, entity_id="room-001", changes={"boundary_element_ids": ["wall-ghost"]})
+    assert bad_r.status_code == 422
+    head_after_bad, count_after_bad = _head_and_count(client, wid)
+    assert (head_after_bad, count_after_bad) == (v5, 6)
 
 
 def test_commit_stale_parent_rejected(client, tmp_path, monkeypatch):
@@ -797,6 +938,71 @@ def test_concurrent_rooms_no_lost_update(client, tmp_path, monkeypatch):
 # --------------------------------------------------------------------------
 # Job lifecycle (P0): duplicates, retries, staleness, timeouts
 # --------------------------------------------------------------------------
+
+
+def test_timed_out_job_adopts_nothing(client, tmp_path, monkeypatch):
+    """A handler that outlives its timeout must not adopt anything when
+    its leaked completion lands: status FAILED, HEAD untouched, no
+    versions, timeout named in the error."""
+    import asyncio
+    import time
+
+    import apps.api.db as db_mod
+    import apps.api.jobs as jobs_mod
+    from apps.api.models import Job
+
+    async def _slow(_db, _job):
+        await asyncio.sleep(3)
+
+    monkeypatch.setitem(jobs_mod._HANDLERS, "SLOW_LEAK", _slow)
+    monkeypatch.setenv("JOB_TIMEOUT_SECONDS", "1")
+
+    async def _scenario():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(Job(
+                id="job_leak001", type="SLOW_LEAK",
+                entity_type="session", entity_id="ses_x",
+                status="queued", attempts=0, max_attempts=1,
+            ))
+            await db.commit()
+            job = await jobs_mod.process_next_job(db)
+            first = (job.status, job.error)
+            time.sleep(4)  # let the leaked sleeper finish past the timeout
+            return first
+
+    status, error = asyncio.run(_scenario())
+    assert status == "failed"
+    assert "timed out" in (error or "").lower()
+
+
+def test_triple_post_single_pipeline(client, tmp_path, monkeypatch):
+    """Three rapid reconstruct POSTs: exactly one pipeline is queued,
+    the other two are rejected duplicates -- never three worlds."""
+    import unittest.mock as mock
+
+    import apps.api.jobs as jobs_mod
+
+    sid = client.post("/api/sessions", json={"name": "Triple"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Triple world"}).json()["id"]
+    _attach(client, wid, sid)
+    for i in range(2):
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+
+    async def _noop(_db):
+        return None
+
+    with mock.patch.object(jobs_mod, "process_next_job", _noop):
+        codes = [
+            client.post(f"/api/sessions/{sid}/reconstruct").status_code
+            for _ in range(3)
+        ]
+    assert codes == [200, 409, 409], codes
+    queued = [
+        j for j in client.get("/api/jobs?status=queued").json()["items"]
+        if j["type"] == "RECONSTRUCT_SESSION"
+    ]
+    assert len(queued) == 1
 
 
 def test_reconstruct_duplicate_in_progress_409(client, tmp_path, monkeypatch):

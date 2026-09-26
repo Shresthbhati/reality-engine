@@ -218,6 +218,34 @@ def test_viewport_does_not_paint_unmeasured_entities_as_mid_confidence():
     assert "mesh.userData.confidence ?? 0.5" not in code
 
 
+# Storey/level identity must come from the backend. The Studio used to
+# invent "level-ground"/"level-upper" and slice entities at a hard-coded
+# y = 2.2 m, displaying a building the reconstruction never produced.
+FABRICATED_LEVEL_IDS = ("level-ground", "level-upper")
+
+
+def test_no_hard_coded_level_identity():
+    offenders: list[str] = []
+    for path in _production_files():
+        code = _code(path)
+        for identifier in FABRICATED_LEVEL_IDS:
+            if f'"{identifier}"' in code or f"'{identifier}'" in code:
+                offenders.append(f"{path.relative_to(REPO_ROOT)} -> {identifier}")
+    assert not offenders, (
+        "level ids must come from WorldIR, not from string constants:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_studio_levels_derive_from_canonical_data():
+    panel = FRONTEND_SRC / "components" / "navigation" / "WorldNavPanel.tsx"
+    code = _code(panel)
+    # Levels come from the compiler's space graph or explicit level entities.
+    assert "interior_space_graph" in code
+    # No Y-threshold storey invention.
+    assert "y <= 2.2" not in code and "y > 2.2" not in code
+
+
 def test_production_sources_have_no_arbitrary_defaults():
     """Verify that arbitrary defaults (e.g. confidence = 0.85/0.5, coverage = 0.05,
     updatedAt = 'Current') are never substituted for missing backend values."""

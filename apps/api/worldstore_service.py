@@ -52,7 +52,7 @@ def _canonical_bytes(world: WorldIR) -> bytes:
     """Byte-identical to what WorldStore.save_version persists."""
     return json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")
 
-_store: WorldStore | None = None
+_stores: dict[str, WorldStore] = {}
 
 
 def worldstore_root() -> Path:
@@ -61,10 +61,17 @@ def worldstore_root() -> Path:
 
 
 def get_store() -> WorldStore:
-    global _store
-    if _store is None:
-        _store = WorldStore(worldstore_root())
-    return _store
+    """One cached WorldStore per root. A single global silently served a
+    stale root after WORLDSTORE_ROOT changed (multi-tenant processes,
+    tests), making reads/reconciliations hit the wrong store -- a
+    cross-world data leak by misdirection. Keying by resolved root keeps
+    the single-entry fast path for production while staying correct."""
+    key = str(worldstore_root().resolve())
+    store = _stores.get(key)
+    if store is None:
+        store = WorldStore(worldstore_root())
+        _stores[key] = store
+    return store
 
 
 def _mirror_row(stored, *, report: dict | None = None,

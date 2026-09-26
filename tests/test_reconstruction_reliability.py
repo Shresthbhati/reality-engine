@@ -338,6 +338,159 @@ def test_invalid_topology_flagged_by_validator():
     assert any("geom-ghost" in m for m in report.messages())
 
 
+def test_cancel_after_persistence_adopts_but_grades_cancelled(
+    client, tmp_path, monkeypatch
+):
+    """A cancel landing mid-commit: the adopted version stands (durable
+    work is not un-written), but the job grades CANCELLED with the
+    adopted version recorded -- never SUCCEEDED behind the operator."""
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    from apps.api import worldstore_service as ws_svc
+
+    orig_commit = ws_svc.commit_version
+
+    async def _flag_mid_commit(db, **kwargs):
+        from apps.api.models import Job as _Job
+
+        row = await orig_commit(db, **kwargs)
+        # Simulate POST /api/jobs/{id}/cancel landing in this window.
+        stalled = await db.get(_Job, _flag_mid_commit.job_id)
+        stalled.cancel_requested = True
+        await db.commit()
+        return row
+
+    job_id = client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"]
+    _flag_mid_commit.job_id = job_id
+    monkeypatch.setattr(ws_svc, "commit_version", _flag_mid_commit)
+    job = _wait_job(client, job_id, timeout=90.0)
+    assert job["status"] == "cancelled", job
+    meta = job["payload"]
+    assert meta["adopted_before_cancel"] == meta["version_id"]
+    # The version stands and reads; the job tells the truth about it.
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] == meta["version_id"]
+    assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
+
+
+def test_injected_validation_failure_persists_nothing(client, tmp_path, monkeypatch):
+    """A pipeline emitting an invalid WorldIR: FAILED, HEAD untouched,
+    no version adopted,     previous results intact."""
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+
+    class _BadReport:
+        def is_valid(self):
+            return False
+
+        def messages(self):
+            return ["injected: topology broken"]
+
+        @property
+        def warnings(self):
+            return []
+
+    import world_ir.validation as _validation
+
+    monkeypatch.setattr(_validation, "validate_world_ir", lambda world: _BadReport())
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
+                    timeout=90.0)
+    assert job["status"] == "failed", job
+    assert "validation" in (job.get("error") or "").lower()
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is None
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+
+
+def test_injected_worldstore_failure_persists_nothing(client, tmp_path, monkeypatch):
+    """WorldStore write fails mid-job: FAILED with HEAD untouched and no
+    mirror row -- the DB never points at a version that was never saved."""
+    from worldstore import store as ws_store_mod
+    from worldstore.store import WorldStoreError
+
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+
+    def _boom(self, world, **kwargs):
+        raise WorldStoreError("injected: disk failure")
+
+    monkeypatch.setattr(ws_store_mod.WorldStore, "save_version", _boom)
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
+                    timeout=90.0)
+    assert job["status"] == "failed", job
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is None
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+
+
+def test_injected_db_failure_persists_nothing(client, tmp_path, monkeypatch):
+    """WorldStore succeeds but the DB mirror cannot commit: FAILED with
+    HEAD untouched and no mirror row. The orphaned version file may
+    exist on disk (harmless, never adopted, visible to resync)."""
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    import apps.api.worldstore_service as ws_svc
+
+    orig_commit = ws_svc.commit_version
+
+    async def _ws_ok_db_down(db, **kwargs):
+        store = ws_svc.get_store()
+        world = kwargs["world"]
+        world.id = kwargs["world_id"]
+        store.save_version(
+            world, parent=kwargs["parent"],
+            source_session_ids=kwargs.get("source_session_ids"),
+        )
+        raise RuntimeError("injected: DB mirror unavailable")
+
+    monkeypatch.setattr(ws_svc, "commit_version", _ws_ok_db_down)
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
+                    timeout=120.0)
+    assert job["status"] == "failed", job
+    assert "mirror" in (job.get("error") or "").lower()
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is None
+    # Recovery reconciles the orphaned attempt versions into view
+    # (listed, never HEAD -- one orphan per attempt is honest).
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    assert len(items) >= 1
+    assert all(v["is_current"] is False for v in items)
+
+
+def test_golden_restart_correction_diff(client, tmp_path, monkeypatch):
+    """Golden persistence flow: reconstruct -> V1 -> RESTART (fresh
+    client over the same DB + store) -> byte-identical reload ->
+    correction -> V2 -> diff shows the change, both versions readable."""
+    import json as _json
+
+    from fastapi.testclient import TestClient
+    import apps.api.main as main_mod
+
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
+                    timeout=90.0)
+    assert job["status"] == "succeeded", job.get("error")
+    v1 = job["payload"]["version_id"]
+    before = client.get(f"/api/worlds/{wid}/worldir").json()
+    assert len(before["entities"]) > 0
+
+    # Process restart: a brand-new client over the same files.
+    with TestClient(main_mod.app) as fresh:
+        after = fresh.get(f"/api/worlds/{wid}/worldir").json()
+        assert _json.dumps(after, sort_keys=True) == _json.dumps(before, sort_keys=True)
+        assert fresh.get(f"/api/worlds/{wid}").json()["current_version_id"] == v1
+
+        # Correction -> V2 through the validated commit path.
+        ent_id = sorted(after["entities"])[0]
+        r = fresh.post(f"/api/worlds/{wid}/commit", json={
+            "entity_id": ent_id, "changes": {"name": "Corrected"},
+        })
+        assert r.status_code == 200, r.text
+        v2 = r.json()["version_id"]
+        assert v2 != v1
+
+        diff = fresh.get(f"/api/worlds/{wid}/diff?base={v1}&head={v2}").json()
+        assert diff["entity_diffs"], diff
+        assert any(d["entity_id"] == ent_id for d in diff["entity_diffs"])
+
+        # Both versions remain accessible after everything.
+        assert fresh.get(f"/api/worlds/{wid}/worldir?version={v1}").status_code == 200
+        assert fresh.get(f"/api/worlds/{wid}/worldir?version={v2}").status_code == 200
+        assert fresh.get(f"/api/worlds/{wid}").json()["current_version_id"] == v2
+
+
 def test_concurrent_reconstruct_sessions_stay_independent(client, tmp_path, monkeypatch):
     """Two sessions reconstructing at once: both succeed with distinct
     worlds and versions -- no cross-talk, no shared HEAD."""

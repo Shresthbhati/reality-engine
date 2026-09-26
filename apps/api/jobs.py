@@ -401,6 +401,13 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
             f"adopted version '{version_row.id}' failed read-back verification: {reasons}"
         )
 
+    # Late cancellation: the flag may have landed while the version was
+    # being committed. The adopted version stands (durable work is never
+    # un-written), but the job grades CANCELLED -- never SUCCEEDED --
+    # with the adopted version recorded for recovery instead of hidden.
+    await db.refresh(job, attribute_names=["cancel_requested"])
+    cancelled_late = bool(job.cancel_requested)
+
     # Outcome grading: SUCCEEDED only when the run is clean end to end
     # (successful registration, nothing skipped, no degraded optional
     # stages, no validation warnings). Anything less honest is PARTIAL:
@@ -431,12 +438,26 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         "outcome": outcome,
         "degraded": degraded,
         "points": len(vs_result.points),
+        "points_bytes": len(points_bytes),
         "cameras_registered": vs_result.cameras_registered,
+        "cameras_bytes": len(cameras_bytes),
         "skipped_evidence": skipped_evidence,
     }
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)
     await db.commit()
+    if cancelled_late:
+        # The operator cancelled while persistence was in flight. The
+        # adopted version stands (durable side effects are not rolled
+        # back), but the job must not report success it did not observe:
+        # CANCELLED with the adopted version identifier for recovery.
+        job.payload = {
+            **job.payload,
+            "outcome": "cancelled",
+            "adopted_before_cancel": version_row.id,
+        }
+        await db.commit()
+        return "cancelled"
     return outcome
 
 
@@ -577,7 +598,17 @@ async def process_next_job(db: AsyncSession) -> Job | None:
             raise RuntimeError(
                 f"job handler timed out after {_job_timeout_seconds():.0f}s"
             ) from exc
-        job.status = JOB_PARTIAL if outcome == "partial" else JOB_SUCCEEDED
+        if outcome == "partial":
+            job.status = JOB_PARTIAL
+        elif outcome == "cancelled":
+            job.status = JOB_CANCELLED
+            job.error = (
+                f"cancelled by operator after version "
+                f"{(job.payload or {}).get('version_id')} was adopted; "
+                "version stands, see payload"
+            )
+        else:
+            job.status = JOB_SUCCEEDED
         job.completed_at = utcnow()
         await _emit_completion(db, job)
     except _JobCancelled as exc:

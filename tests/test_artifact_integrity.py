@@ -126,6 +126,34 @@ def test_points_traversal_uri_never_escapes(client, tmp_path, monkeypatch):
     assert r.status_code == 404, r.text
 
 
+def test_planted_symlink_never_followed(tmp_path):
+    """A symlink planted at a blob path: get() refuses it (surfaced as
+    missing, never followed outside the store); put() drops the link
+    and writes the real blob instead of writing through it."""
+    import os
+
+    from world_ir.artifact_store import ArtifactNotFoundError, FileArtifactStore
+
+    store = FileArtifactStore(tmp_path / "artifacts")
+    data = b"real-blob-bytes"
+    uri, digest = store.put(data)
+    target = store._path_for(digest)
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"sensitive-outside-bytes")
+    target.unlink()
+    try:
+        os.symlink(outside, target)
+    except OSError:
+        pytest.skip("symlinks require privilege on this platform")
+    with pytest.raises(ArtifactNotFoundError):
+        store.get(uri)
+    uri2, digest2 = store.put(data)
+    assert (uri2, digest2) == (uri, digest)
+    assert not target.is_symlink()
+    assert target.read_bytes() == data
+    assert outside.read_bytes() == b"sensitive-outside-bytes"
+
+
 def test_worldstore_tamper_detected_on_read(tmp_path):
     from provenance import Provenance
     from world_ir import Entity, EntityType

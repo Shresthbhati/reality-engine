@@ -59,7 +59,21 @@ class _JobCancelled(RuntimeError):
 
 async def _throw_if_cancelled(db: AsyncSession, job: Job) -> None:
     """Stage-boundary cancellation point. Refreshes only the flag so no
-    uncommitted handler state is disturbed."""
+    uncommitted handler state is disturbed.
+
+    Cancellation windows and their invariants:
+      before claim (queued) ......... CANCELLED immediately, never runs
+      after claim, before work ...... CANCELLED at the next boundary
+      during reconstruction ......... CANCELLED at the pre-commit boundary
+      during WorldStore write ....... no check inside the write; surfaces
+                                      at the post-commit check below
+      during DB mirror .............. same: post-commit check
+      after HEAD adoption ........... version STANDS (durable work is not
+                                      un-written); job grades CANCELLED
+                                      with adopted_before_cancel recorded
+    Core invariant: once a version is adopted, cancellation cannot erase
+    or roll it back -- it only changes how the job itself is graded.
+    """
     await db.refresh(job, attribute_names=["cancel_requested"])
     if job.cancel_requested:
         raise _JobCancelled(f"job {job.id} cancelled by operator")
@@ -437,6 +451,8 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         "registration_status": vs_result.registration_status,
         "outcome": outcome,
         "degraded": degraded,
+        "validated": True,
+        "adopted": True,
         "points": len(vs_result.points),
         "points_bytes": len(points_bytes),
         "cameras_registered": vs_result.cameras_registered,

@@ -756,6 +756,52 @@ def test_commit_failed_db_write_rolls_back(client, tmp_path, monkeypatch):
     assert [v["id"] for v in items if v["is_current"]] == [v0]
 
 
+def test_commit_version_duplicate_returns_adopted(client, tmp_path, monkeypatch):
+    """Service-level duplicate convergence: two commit_version calls with
+    byte-identical content adopt exactly one version; the second returns
+    the adopted row instead of minting a duplicate."""
+    import asyncio
+
+    monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
+    from provenance import Provenance
+    from world_ir import Entity, EntityType
+    from world_ir.world_v1 import WorldIR
+    import apps.api.db as db_mod
+    from apps.api import worldstore_service as ws_svc
+    from apps.api.models import World
+
+    async def _scenario():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(World(id="wld_dup01", name="Dup"))
+            await db.commit()
+
+            def _world():
+                wir = WorldIR(id="wld_dup01")
+                wir.entities["e1"] = Entity(
+                    id="e1", type=EntityType.STRUCTURE, name="Shed",
+                    provenance=Provenance.RECONSTRUCTED, confidence=0.8,
+                )
+                return wir
+
+            # The identical object twice: a byte-identical retry must not
+            # mint a duplicate. (Fresh WorldIR() instances carry random
+            # branch ids and are genuinely different worlds.)
+            wir = _world()
+            first = await ws_svc.commit_version(
+                db, world_id="wld_dup01", world=wir, parent=None)
+            second = await ws_svc.commit_version(
+                db, world_id="wld_dup01", world=wir, parent=None)
+            from worldstore.store import WorldStore
+
+            on_disk = [v.version_id for v in WorldStore(tmp_path / "ws").list_versions()]
+            return first.id, second.id, on_disk
+
+    first_id, second_id, on_disk = asyncio.run(_scenario())
+    assert first_id == second_id
+    assert on_disk == [first_id]
+
+
 def test_conditional_head_update_single_winner(client, tmp_path, monkeypatch):
     """The adoption primitive itself: two sessions racing the same HEAD
     value -- the conditional UPDATE lets exactly one win (rowcount 1);
@@ -1084,6 +1130,45 @@ def test_reap_stale_running_job(client):
     assert reaped == 1
     assert stale_status == "queued"
     assert fresh_status == "running"
+
+
+def test_terminal_jobs_never_resurrected(client):
+    """Reaping and claiming must never touch terminal jobs, however
+    stale their heartbeats: succeeded/partial/failed/cancelled are
+    final. A resurrection would re-run completed work and fork state."""
+    import asyncio
+    from datetime import timedelta
+
+    import apps.api.db as db_mod
+    from apps.api.jobs import process_next_job, reap_stale_jobs
+    from apps.api.models import Job, utcnow
+
+    async def _scenario():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            for i, state in enumerate(("succeeded", "partial", "failed", "cancelled")):
+                db.add(Job(
+                    id=f"job_term{i}", type="PROCESS_EVIDENCE",
+                    entity_type="evidence", entity_id="ev_x",
+                    status=state, worker_id="worker-old",
+                    attempts=3, max_attempts=3,
+                    heartbeat_at=utcnow() - timedelta(seconds=360000),
+                    completed_at=utcnow() - timedelta(seconds=360000),
+                ))
+            await db.commit()
+            reaped = await reap_stale_jobs(db)
+            claimed = await process_next_job(db)
+            states = {}
+            for i in range(4):
+                job = await db.get(Job, f"job_term{i}")
+                states[job.id] = (job.status, job.attempts)
+            return reaped, claimed, states
+
+    reaped, claimed, states = asyncio.run(_scenario())
+    assert reaped == 0
+    assert claimed is None
+    assert all(s in ("succeeded", "partial", "failed", "cancelled") for s, _ in states.values())
+    assert all(a == 3 for _, a in states.values())
 
 
 def test_job_handler_timeout_fails_explicitly(client, monkeypatch):

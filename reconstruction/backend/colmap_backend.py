@@ -14,6 +14,7 @@ not hypothetical, and must fail loudly, not fake a result.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -408,10 +409,35 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 evidence_id_by_name[dest_name] = item.id
 
             def _run(step: str, args: List[str]) -> None:
-                proc = subprocess.run(
-                    [self._colmap_binary, step, *args],
-                    capture_output=True, env=env, text=True,
-                )
+                # Bounded subprocess lifecycle: a hung COLMAP step must
+                # fail explicitly instead of outliving its job. The
+                # API-level job timeout is the outer bound; this
+                # per-process bound also protects direct (CLI) users.
+                # List-argv, no shell: timeout changes nothing about how
+                # the command is constructed.
+                try:
+                    timeout_s = float(os.environ.get(
+                        "COLMAP_SUBPROCESS_TIMEOUT_SECONDS", "3600"))
+                except ValueError:
+                    timeout_s = 3600.0
+                try:
+                    proc = subprocess.run(
+                        [self._colmap_binary, step, *args],
+                        capture_output=True, env=env, text=True,
+                        timeout=timeout_s,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    raise ReconstructionStepError(
+                        step,
+                        subprocess.CompletedProcess(
+                            args=[self._colmap_binary, step, *args],
+                            returncode=-1,
+                            stdout=exc.stdout or "",
+                            stderr=(exc.stderr or "")
+                            + f"\n[TIMEOUT after {timeout_s:.0f}s]",
+                        ),
+                        [self._colmap_binary, step, *args],
+                    ) from exc
                 if proc.returncode != 0:
                     raise ReconstructionStepError(step, proc,
                                                   [self._colmap_binary, step, *args])

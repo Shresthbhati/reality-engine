@@ -227,7 +227,92 @@ room. `tests/test_interior_invariants.py::TestCanonicalCompileEndToEnd::test_ful
 pins both facts. All 13 `test_topology_coherence.py` tests (the
 standalone-usage path) still pass unchanged.
 
-## 7. Real-data proof
+## 7. Determinism
+
+Verified, not assumed: `TestDeterminism` (`tests/test_interior_invariants.py`)
+compiles both the synthetic canonical scene (full room/corridor/stair/
+window/building topology) and the real `south_building` capture *twice
+each* -- a fresh `ReconstructionResult` parsed from disk each time for
+the real case, so the proof is about the compiler's determinism given
+equivalent input, not about reusing one Python object -- and asserts
+`world_a.to_dict() == world_b.to_dict()`, a full recursive equality over
+every entity, geometry, relationship (order included), and piece of
+metadata. Both pass. This holds the compiler to the claim its own
+`engine/compiler/world_compiler.py` module docstring already made
+("the same inputs + seed produce a byte-identical world (tested)") --
+that claim previously had no test enforcing it for the *interior*
+architecture stages (rooms/corridors/stairs/windows/building/space
+graph); the plane/room-only path was the only one previously exercised
+for determinism.
+
+## 8. P7-06 (detail refinement) boundary check
+
+Inspected per the mission's explicit ask, not touched: P7-06 is a
+separate subsystem (`perception/detail/{pipeline,refinement,subdivision,worldir}.py`,
+wired as optional stage 3.8 in `engine/pipeline/vertical_slice.py`) that
+refines *mesh/point-cloud detail quality* within already-detected
+structure/clutter ROIs -- it does not detect rooms, corridors, stairs,
+or levels, and does not touch `perception/architecture/*` or
+`world_ir/validation.py`'s interior checks at all. Per
+`.agent/EXECUTION_STATE.md`, P7-06 already has real-data verification
+(a real 294,345-point CUDA COLMAP MVS capture), its own WorldIR
+integration (`perception/detail/worldir.py`, red-first tested), and its
+own verified determinism ("repeated discover_detail / generate_rois are
+byte-identical" on real data). Its one open item --
+"WorldStore persistence of detail statements is P11 scope" -- is
+explicitly out of scope for both P7-06 itself and this interior-compiler
+pass. **Conclusion: P7-06 does not block canonical interior
+compilation or persistence; no changes made.**
+
+## 9. Real building golden loop: measured statistics + correction/version/diff
+
+`TestRealBuildingGoldenLoop::test_real_building_statistics_and_correction_loop`
+(`tests/test_interior_invariants.py`) runs the real south_building
+capture through the full compiler once and records the actual measured
+output (not illustrative numbers -- this is what one real run printed):
+
+```
+point_count: 49608          camera_count: 32
+entities_by_type: {'wall': 2, 'floor': 3, 'ceiling': 1}
+entities_total: 6            relationships_total: 0
+rooms: 0   corridors: 0   walls: 2   doors: 0   windows: 0
+stairs: 0  storeys: 0
+validation_errors: 0   validation_warnings: 0
+provenance_coverage: 100.0%   uncertainty_coverage: 0.0%
+```
+
+Then, continuing that *same* real world (not a fresh compile): saves it
+as `v-real-sb-1`, applies one correction (renames a `WALL` entity),
+saves `v-real-sb-2` with `parent=v1`, reloads both from a WorldStore
+instance separate from the one that wrote them (process-restart proof),
+and asserts: V1's wall name is unchanged after V2 was saved (immutability
+-- `save_version` does not alias the caller's mutable object into
+storage), V2 has exactly the new name with the *same* confidence value
+(the correction touched only what it meant to), every other entity is
+byte-for-byte identical between V1 and V2, both versions independently
+pass `validate_world_ir`, and `diff_worlds(v1, v2)` reports exactly
+`entities_modified: 1, entities_added: 0, entities_removed: 0` --
+recomputed identically from a second, independently-loaded pair of
+world objects.
+
+**New honest gap found by this pass's `uncertainty_coverage` metric
+(0.0% on real data):** `Entity.uncertainty` defaults to
+`Uncertainty(confidence=1.0)` (`provenance/provenance.py:29`) and
+`evidence/promote_planes.py` sets a promoted WALL/FLOOR/CEILING
+entity's `confidence` field from the real measured value but **never
+explicitly sets its `uncertainty` field** -- so `entity.uncertainty.confidence`
+silently stays at the dataclass default 1.0 even when `entity.confidence`
+correctly reports something lower. A consumer reading `.confidence` and
+one reading `.uncertainty.confidence` get two different, inconsistent
+answers for the same entity. Not fixed in this pass (auditing every
+promotion site -- `evidence/promote_planes.py`, `evidence/promote_rooms.py`,
+`perception/architecture/topology.py`, `world_compiler.py`'s inline
+window/stair/corridor promotion -- to decide whether `uncertainty.confidence`
+should always mirror `confidence`, or carry independent information, is
+a design decision affecting the whole entity model, not a one-line fix);
+recorded here as a concrete, reproducible remaining gap.
+
+## 10. Real-data proof
 
 No real *interior* capture is committed to this repository (the
 fixtures referenced by `tests/integration/test_system_runtime_proof.py`

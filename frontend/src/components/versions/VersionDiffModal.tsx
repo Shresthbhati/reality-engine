@@ -85,7 +85,7 @@ export default function VersionDiffModal({
             <div>
               <h3 className="text-sm font-semibold text-white">WorldStore Version Comparison</h3>
               <p className="text-[11px] font-mono text-neutral-400">
-                Comparing <span className="text-[#00e5ff]">{baseVersion || "—"}</span> → <span className="text-[#2ecc71]">{headVersion || "Current"}</span>
+                Comparing <span className="text-[#00e5ff]">{baseVersion || "—"}</span> → <span className="text-[#2ecc71]">{headVersion || "HEAD (Current Version)"}</span>
               </p>
             </div>
           </div>

@@ -1007,7 +1007,7 @@ def _get_worldir_space_graph(worldir: WorldIR) -> dict:
 
     for eid, entity in worldir.entities.items():
         etype = entity.type.value if hasattr(entity.type, "value") else str(entity.type)
-        if etype == "level":
+        if etype in ("level", "storey"):
             levels.append({
                 "level_id": eid,
                 "elevation_m": entity.custom_properties.get("elevation_m", 0.0),
@@ -1048,7 +1048,7 @@ def _get_worldir_space_graph(worldir: WorldIR) -> dict:
                 "connected_space_ids": list(entity.custom_properties.get("connected_space_ids", [])),
                 "is_exterior": entity.custom_properties.get("is_exterior", etype == "window"),
             })
-        elif etype == "stairs":
+        elif etype in ("stairs", "stair"):
             stairs.append({
                 "stair_id": eid,
                 "step_count": entity.custom_properties.get("step_count", 0),
@@ -1057,19 +1057,22 @@ def _get_worldir_space_graph(worldir: WorldIR) -> dict:
                 "connected_level_ids": list(entity.custom_properties.get("connected_level_ids", [])),
             })
 
-    for rel in worldir.relationships.values():
-        rkind = rel.kind.value if hasattr(rel.kind, "value") else str(rel.kind)
-        if rkind == "connects":
-            for op in openings:
-                if op["opening_id"] == rel.source_id and rel.target_id not in op["connected_space_ids"]:
-                    op["connected_space_ids"].append(rel.target_id)
-        elif rkind == "part_of":
-            for lvl in levels:
-                if lvl["level_id"] == rel.target_id:
-                    if "room" in rel.source_id and rel.source_id not in lvl["room_ids"]:
-                        lvl["room_ids"].append(rel.source_id)
-                    elif "corridor" in rel.source_id and rel.source_id not in lvl["corridor_ids"]:
-                        lvl["corridor_ids"].append(rel.source_id)
+    # Traverse entity relationships
+    for eid, entity in worldir.entities.items():
+        for rel in (entity.relationships or []):
+            rkind = rel.kind.value if hasattr(rel.kind, "value") else str(rel.kind)
+            target_id = rel.target_id
+            if rkind == "connects":
+                for op in openings:
+                    if op["opening_id"] == eid and target_id not in op["connected_space_ids"]:
+                        op["connected_space_ids"].append(target_id)
+            elif rkind == "part_of":
+                for lvl in levels:
+                    if lvl["level_id"] == target_id:
+                        if ("room" in eid or entity.type == "room") and eid not in lvl["room_ids"]:
+                            lvl["room_ids"].append(eid)
+                        elif ("corridor" in eid or entity.type == "corridor") and eid not in lvl["corridor_ids"]:
+                            lvl["corridor_ids"].append(eid)
 
     return {
         "building_id": worldir.id,

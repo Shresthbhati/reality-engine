@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Globe,
   Camera,
@@ -19,6 +19,7 @@ import {
   Eye,
   Crosshair,
   AlertTriangle,
+  Network,
 } from "lucide-react";
 import type { WorldIR, Entity } from "@/types/worldir";
 import type {
@@ -59,8 +60,10 @@ interface WorldNavPanelProps {
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
 }
 
-// Canonical 8 Left-Panel Navigation Sections
+// Canonical Left-Panel Navigation Sections
 export type NavSection =
+  | "hierarchy"
+  | "topology"
   | "worlds"
   | "sessions"
   | "evidence"
@@ -92,7 +95,7 @@ export default function WorldNavPanel({
   onUpdateQuery,
   onOpenRoomConstruction,
 }: WorldNavPanelProps) {
-  const [section, setSection] = useState<NavSection>("levels");
+  const [section, setSection] = useState<NavSection>("hierarchy");
   const [filterText, setFilterText] = useState(activeQuery?.search || "");
   const [typeFilter, setTypeFilter] = useState<string>(activeQuery?.type || "all");
   const [minConfFilter, setMinConfFilter] = useState<number>(activeQuery?.minConfidence || 0);
@@ -130,30 +133,13 @@ export default function WorldNavPanel({
   }, [entitiesList]);
 
   const corridorsList = useMemo(() => {
-    const fromEntities = entitiesList.filter((e) => {
+    return entitiesList.filter((e) => {
       const t = e.type.toLowerCase();
       const sub = String((e.custom_properties as Record<string, unknown> | undefined)?.subtype || "").toLowerCase();
       const labels = (e.semantic_labels || []).map((l) => l.toLowerCase());
       return t === "corridor" || sub === "corridor" || labels.includes("corridor");
     });
-    const entityIds = new Set(fromEntities.map((e) => e.id));
-    const metaCorridors = ((worldIR?.metadata?.interior_space_graph as Record<string, unknown> | undefined)?.corridors as Array<Record<string, unknown>> | undefined) || [];
-    const fromMeta: Entity[] = [];
-    for (const c of metaCorridors) {
-      const cid = String(c.corridor_id || "");
-      if (cid && !entityIds.has(cid) && !entityIds.has(`corridor-${cid}`)) {
-        fromMeta.push({
-          id: cid.startsWith("corridor-") ? cid : `corridor-${cid}`,
-          name: `Corridor ${cid.replace(/^corridor-/, "")}`,
-          type: "corridor",
-          confidence: Number(c.confidence ?? 0.85),
-          provenance: "inferred",
-          custom_properties: c,
-        } as Entity);
-      }
-    }
-    return [...fromEntities, ...fromMeta];
-  }, [entitiesList, worldIR]);
+  }, [entitiesList]);
 
   const wallsList = useMemo(() => {
     return entitiesList.filter((e) => e.type.toLowerCase() === "wall");
@@ -338,34 +324,8 @@ export default function WorldNavPanel({
         }).length,
       }));
     }
-    const groundElements = entitiesList.filter((e) => {
-      const y = e.transform?.position?.y ?? 0;
-      return y <= 2.2;
-    });
-    const upperElements = entitiesList.filter((e) => {
-      const y = e.transform?.position?.y ?? 0;
-      return y > 2.2;
-    });
-    const list = [
-      {
-        index: 0,
-        id: "level-ground",
-        name: "Level 0 (Ground)",
-        elevationY: 0.0,
-        elementCount: groundElements.length,
-      },
-    ];
-    if (upperElements.length > 0) {
-      list.push({
-        index: 1,
-        id: "level-upper",
-        name: "Level 1 (Upper)",
-        elevationY: 2.8,
-        elementCount: upperElements.length,
-      });
-    }
-    return list;
-  }, [entitiesList]);
+    return [];
+  }, [entitiesList, worldIR]);
 
   // Derived authentic evidence list
   const effectiveEvidence = useMemo(() => {
@@ -411,33 +371,14 @@ interface SpatialAnchor {
 
   // Authentic Spatial Anchors & Places
   const effectivePlaces = useMemo<SpatialAnchor[]>(() => {
-    const list: SpatialAnchor[] = places.map((p) => ({
+    return places.map((p) => ({
       id: p.id,
       name: p.name,
       worldId: p.worldId,
       position: [p.lng, p.lat, 0],
       createdAt: "Saved Place",
     }));
-
-    list.unshift({
-      id: "anchor-enu-origin",
-      name: "Metric ENU Origin [0, 0, 0]",
-      worldId: activeWorldId,
-      position: [0, 0, 0],
-      createdAt: "System Coordinate Anchor",
-    });
-
-    if (entitiesList.length > 0) {
-      list.push({
-        id: "anchor-reconstruction-center",
-        name: "Reconstruction Center",
-        worldId: activeWorldId,
-        position: [0, 1.2, 0],
-        createdAt: "Spatial Bounding Center",
-      });
-    }
-    return list;
-  }, [places, activeWorldId, entitiesList]);
+  }, [places]);
 
   // Filtered entities matching Query tab
   const filteredEntities = useMemo(() => {
@@ -526,6 +467,18 @@ interface SpatialAnchor {
         style={{ borderColor: "var(--border-subtle)" }}
       >
         <NavTabButton
+          active={section === "hierarchy"}
+          onClick={() => setSection("hierarchy")}
+          icon={Network}
+          label="Hierarchy"
+        />
+        <NavTabButton
+          active={section === "topology"}
+          onClick={() => setSection("topology")}
+          icon={Workflow}
+          label="Topology"
+        />
+        <NavTabButton
           active={section === "worlds"}
           onClick={() => setSection("worlds")}
           icon={Globe}
@@ -592,6 +545,32 @@ interface SpatialAnchor {
 
       {/* Section Content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* ============================================================ */}
+        {/* 0. HIERARCHY: BUILDING → LEVELS → ROOMS → CORRIDORS → ...   */}
+        {/* ============================================================ */}
+        {section === "hierarchy" && (
+          <HierarchyExplorer
+            worldIR={worldIR}
+            entitiesList={entitiesList}
+            selectedEntityId={selectedEntityId}
+            onSelectEntity={onSelectEntity}
+            onFrameEntity={onFrameEntity}
+          />
+        )}
+
+        {/* ============================================================ */}
+        {/* 0B. TOPOLOGY: ROOM ADJACENCY, CORRIDORS, STAIRS, OPENINGS   */}
+        {/* ============================================================ */}
+        {section === "topology" && (
+          <BuildingTopologyInspector
+            worldIR={worldIR}
+            entitiesList={entitiesList}
+            selectedEntityId={selectedEntityId}
+            onSelectEntity={onSelectEntity}
+            onFrameEntity={onFrameEntity}
+          />
+        )}
+
         {/* ============================================================ */}
         {/* 1. WORLDS: ACTIVE & DISCOVERED SPATIAL WORLDS                */}
         {/* ============================================================ */}
@@ -719,7 +698,11 @@ interface SpatialAnchor {
                       return (
                         <div key={space.id} className="space-y-1">
                           <div
-                            onClick={() => onSelectEntity(isSelected ? null : space.id)}
+                            onClick={() => {
+                              const targetId = isSelected ? null : space.id;
+                              onSelectEntity(targetId);
+                              if (targetId) onFrameEntity(targetId);
+                            }}
                             className={`flex items-center justify-between p-1.5 rounded transition-colors cursor-pointer ${
                               isSelected
                                 ? "bg-[#182030] text-[#00e5ff]"
@@ -798,14 +781,21 @@ interface SpatialAnchor {
                 {roomsList.map((room) => {
                   const dims = getEntityDimensions(room);
                   const metrics = getSpaceMetrics(room.id);
-                  const conf = typeof room.confidence === "number" ? room.confidence : 0.5;
+                  const conf =
+                    typeof room.confidence === "number" && Number.isFinite(room.confidence)
+                      ? room.confidence
+                      : null;
                   const isSelected = room.id === selectedEntityId;
-                  const isLowConf = conf < 0.6;
+                  const isLowConf = conf !== null && conf < 0.6;
 
                   return (
                     <div
                       key={room.id}
-                      onClick={() => onSelectEntity(isSelected ? null : room.id)}
+                      onClick={() => {
+                        const targetId = isSelected ? null : room.id;
+                        onSelectEntity(targetId);
+                        if (targetId) onFrameEntity(targetId);
+                      }}
                       className={`p-2.5 rounded-lg border transition-all cursor-pointer space-y-2 ${
                         isSelected
                           ? "bg-[#182030] border-[#00e5ff] shadow-md shadow-[#00e5ff]/10"
@@ -865,7 +855,7 @@ interface SpatialAnchor {
                       {/* Actions */}
                       <div className="flex items-center justify-between pt-1 border-t border-neutral-800 text-[10px]">
                         <span className="text-neutral-500">
-                          Conf: {(conf * 100).toFixed(0)}%
+                          Conf: {conf !== null ? `${(conf * 100).toFixed(0)}%` : "Not available"}
                         </span>
                         <div className="flex items-center gap-1.5">
                           <button
@@ -946,7 +936,11 @@ interface SpatialAnchor {
                   return (
                     <div
                       key={corridor.id}
-                      onClick={() => onSelectEntity(isSelected ? null : corridor.id)}
+                      onClick={() => {
+                        const targetId = isSelected ? null : corridor.id;
+                        onSelectEntity(targetId);
+                        if (targetId) onFrameEntity(targetId);
+                      }}
                       className={`p-2.5 rounded-lg border transition-all cursor-pointer space-y-2 ${
                         isSelected
                           ? "bg-[#182030] border-[#00e5ff]"
@@ -1327,7 +1321,10 @@ function HierarchyElementRow({
   const hexColor = (TYPE_COLORS[entity.type] || TYPE_COLORS.default)
     .toString(16)
     .padStart(6, "0");
-  const conf = typeof entity.confidence === "number" ? entity.confidence : 0.5;
+  const conf =
+    typeof entity.confidence === "number" && Number.isFinite(entity.confidence)
+      ? entity.confidence
+      : null;
 
   return (
     <div
@@ -1350,7 +1347,7 @@ function HierarchyElementRow({
 
       <div className="flex items-center gap-1 shrink-0">
         <span className="text-[10px] text-neutral-500 font-mono-num">
-          {(conf * 100).toFixed(0)}%
+          {conf !== null ? `${(conf * 100).toFixed(0)}%` : "Not available"}
         </span>
         <button
           type="button"
@@ -1403,5 +1400,1279 @@ function NavTabButton({
         </span>
       )}
     </button>
+  );
+}
+
+function HierarchyExplorer({
+  worldIR,
+  entitiesList,
+  selectedEntityId,
+  onSelectEntity,
+  onFrameEntity,
+}: {
+  worldIR: WorldIR | null;
+  entitiesList: Entity[];
+  selectedEntityId: string | null;
+  onSelectEntity: (id: string | null) => void;
+  onFrameEntity: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    building: true,
+  });
+
+  const toggle = (key: string) => {
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // 1. Building Entity or envelope
+  const buildingEntity =
+    entitiesList.find((e) => e.type === "building" || e.id.startsWith("building")) || null;
+
+  // 2. Levels (Storeys)
+  const levelEntities = entitiesList.filter(
+    (e) => e.type === "storey" || e.type === "level" || e.id.startsWith("storey")
+  );
+
+  const levels: Array<{ id: string; name: string; entity?: Entity }> =
+    levelEntities.length > 0
+      ? levelEntities.map((lvl) => ({ id: lvl.id, name: lvl.name || lvl.id, entity: lvl }))
+      : [
+          {
+            id: "level-0",
+            name: "Level 0 (Ground)",
+          },
+        ];
+
+  // 3. Rooms
+  const rooms = entitiesList.filter((e) => {
+    const t = e.type.toLowerCase();
+    const sub = String((e.custom_properties as Record<string, unknown> | undefined)?.subtype || "").toLowerCase();
+    const labels = (e.semantic_labels || []).map((l) => l.toLowerCase());
+    return (t === "room" || t === "space") && sub !== "corridor" && !labels.includes("corridor");
+  });
+
+  // 4. Corridors
+  const corridors = entitiesList.filter((e) => {
+    const t = e.type.toLowerCase();
+    const sub = String((e.custom_properties as Record<string, unknown> | undefined)?.subtype || "").toLowerCase();
+    const labels = (e.semantic_labels || []).map((l) => l.toLowerCase());
+    return t === "corridor" || sub === "corridor" || labels.includes("corridor");
+  });
+
+  // 5. Stairs
+  const stairs = entitiesList.filter(
+    (e) => e.type === "stairs" || e.type === "stair" || e.id.startsWith("stair")
+  );
+
+  // Helper to get boundary walls of a room
+  const getRoomWalls = (room: Entity) => {
+    const boundaryIds = new Set<string>([
+      ...(Array.isArray(room.custom_properties?.boundary_element_ids)
+        ? (room.custom_properties.boundary_element_ids as string[])
+        : []),
+      ...(Array.isArray(room.custom_properties?.wall_ids)
+        ? (room.custom_properties.wall_ids as string[])
+        : []),
+    ]);
+
+    return entitiesList.filter(
+      (e) =>
+        e.type === "wall" &&
+        (boundaryIds.has(e.id) ||
+          e.parent_id === room.id ||
+          (room.relationships || []).some((r) => r.target_id === e.id))
+    );
+  };
+
+  // Helper to get doors of a room
+  const getRoomDoors = (room: Entity) => {
+    const doorIds = new Set<string>(
+      Array.isArray(room.custom_properties?.door_ids) ? (room.custom_properties.door_ids as string[]) : []
+    );
+    return entitiesList.filter(
+      (e) =>
+        e.type === "door" &&
+        (doorIds.has(e.id) ||
+          e.parent_id === room.id ||
+          (room.relationships || []).some((r) => r.target_id === e.id))
+    );
+  };
+
+  // Helper to get windows of a room
+  const getRoomWindows = (room: Entity) => {
+    const winIds = new Set<string>(
+      Array.isArray(room.custom_properties?.window_ids)
+        ? (room.custom_properties.window_ids as string[])
+        : []
+    );
+    return entitiesList.filter(
+      (e) =>
+        e.type === "window" &&
+        (winIds.has(e.id) ||
+          e.parent_id === room.id ||
+          (room.relationships || []).some((r) => r.target_id === e.id))
+    );
+  };
+
+  // Helper to get corridor openings
+  const getCorridorOpenings = (corridor: Entity) => {
+    return entitiesList.filter(
+      (e) =>
+        (e.type === "door" || e.type === "window") &&
+        (e.parent_id === corridor.id ||
+          (corridor.relationships || []).some((r) => r.target_id === e.id) ||
+          (e.relationships || []).some((r) => r.target_id === corridor.id))
+    );
+  };
+
+  // Auto-expand tree branch to reveal selected entity
+  useEffect(() => {
+    if (!selectedEntityId) return;
+    setExpanded((prev) => {
+      const next: Record<string, boolean> = { ...prev, building: true };
+      for (const lvl of levels) {
+        next[`lvl-${lvl.id}`] = true;
+      }
+      for (const room of rooms) {
+        if (room.id === selectedEntityId) {
+          next[`room-${room.id}`] = true;
+        } else {
+          const walls = getRoomWalls(room);
+          const doors = getRoomDoors(room);
+          const windows = getRoomWindows(room);
+          if (
+            walls.some((w) => w.id === selectedEntityId) ||
+            doors.some((d) => d.id === selectedEntityId) ||
+            windows.some((win) => win.id === selectedEntityId)
+          ) {
+            next[`room-${room.id}`] = true;
+          }
+        }
+      }
+      for (const c of corridors) {
+        if (c.id === selectedEntityId) {
+          next[`corridor-${c.id}`] = true;
+        } else {
+          const ops = getCorridorOpenings(c);
+          if (ops.some((op) => op.id === selectedEntityId)) {
+            next[`corridor-${c.id}`] = true;
+          }
+        }
+      }
+      return next;
+    });
+  }, [selectedEntityId, entitiesList]);
+
+  // Loose structural elements not assigned to a room
+  const assignedWallIds = new Set<string>();
+  rooms.forEach((r) => getRoomWalls(r).forEach((w) => assignedWallIds.add(w.id)));
+  const unassignedWalls = entitiesList.filter(
+    (e) => e.type === "wall" && !assignedWallIds.has(e.id)
+  );
+
+  return (
+    <div className="p-3 space-y-3 font-mono text-xs select-none">
+      <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+        <span className="flex items-center gap-1.5">
+          <Network className="w-3.5 h-3.5 text-[#00e5ff]" />
+          <span>World Hierarchy</span>
+        </span>
+        <span className="text-neutral-500 font-mono">
+          {entitiesList.length} entities
+        </span>
+      </div>
+
+      <div className="space-y-1 text-[11px]">
+        {/* ROOT: BUILDING */}
+        <div className="rounded-lg border border-[#f59e0b]/40 bg-[#f59e0b]/5 overflow-hidden">
+          <div
+            onClick={() => {
+              if (buildingEntity) {
+                onSelectEntity(buildingEntity.id);
+                onFrameEntity(buildingEntity.id);
+              }
+            }}
+            className="flex items-center justify-between p-2 hover:bg-[#f59e0b]/10 cursor-pointer transition-colors"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggle("building");
+                }}
+                className="p-0.5 text-neutral-400 hover:text-white cursor-pointer"
+              >
+                {expanded.building ? (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5" />
+                )}
+              </button>
+              <Building className="w-3.5 h-3.5 text-[#f59e0b] shrink-0" />
+              <span className="font-semibold text-white truncate">
+                {buildingEntity?.name || worldIR?.name || "Building Envelope"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] text-[#f59e0b] px-1 rounded bg-[#f59e0b]/20">
+                {levels.length} Level{levels.length > 1 ? "s" : ""}
+              </span>
+              {buildingEntity && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFrameEntity(buildingEntity.id);
+                  }}
+                  title="Frame Building [F]"
+                  className="p-1 text-neutral-400 hover:text-white"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* BUILDING CHILDREN: LEVELS */}
+          {expanded.building && (
+            <div className="pl-4 pr-2 pb-2 space-y-2 border-t border-[#f59e0b]/20 pt-2">
+              {levels.map((lvl) => {
+                const lvlKey = `lvl-${lvl.id}`;
+                const isLvlExpanded = expanded[lvlKey] ?? true;
+
+                // Elements belonging to this level
+                const lvlRooms =
+                  levels.length === 1
+                    ? rooms
+                    : rooms.filter(
+                        (r) =>
+                          r.parent_id === lvl.id ||
+                          (r.custom_properties?.storey_id as string) === lvl.id ||
+                          (r.custom_properties?.level_id as string) === lvl.id ||
+                          (r.relationships || []).some((rel) => rel.target_id === lvl.id)
+                      );
+
+                const lvlCorridors =
+                  levels.length === 1
+                    ? corridors
+                    : corridors.filter(
+                        (c) =>
+                          c.parent_id === lvl.id ||
+                          (c.custom_properties?.storey_id as string) === lvl.id ||
+                          (c.relationships || []).some((rel) => rel.target_id === lvl.id)
+                      );
+
+                const lvlStairs = stairs;
+
+                return (
+                  <div
+                    key={lvl.id}
+                    className="rounded border border-[#8b5cf6]/30 bg-[#8b5cf6]/5 overflow-hidden"
+                  >
+                    {/* LEVEL HEADER */}
+                    <div
+                      onClick={() => {
+                        if (lvl.entity) {
+                          onSelectEntity(lvl.entity.id);
+                          onFrameEntity(lvl.entity.id);
+                        }
+                      }}
+                      className="flex items-center justify-between p-1.5 hover:bg-[#8b5cf6]/10 cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggle(lvlKey);
+                          }}
+                          className="p-0.5 text-neutral-400 hover:text-white cursor-pointer"
+                        >
+                          {isLvlExpanded ? (
+                            <ChevronDown className="w-3 h-3" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3" />
+                          )}
+                        </button>
+                        <Layers className="w-3.5 h-3.5 text-[#8b5cf6] shrink-0" />
+                        <span className="font-semibold text-neutral-200 truncate">
+                          {lvl.name}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 text-[10px] text-neutral-400 shrink-0">
+                        <span>
+                          {lvlRooms.length}R · {lvlCorridors.length}C
+                        </span>
+                        {lvl.entity && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onFrameEntity(lvl.entity!.id);
+                            }}
+                            title="Frame Level [F]"
+                            className="p-0.5 text-neutral-400 hover:text-white"
+                          >
+                            <Maximize2 className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* LEVEL CHILDREN: ROOMS, CORRIDORS, STAIRS */}
+                    {isLvlExpanded && (
+                      <div className="pl-3 pr-1.5 pb-1.5 pt-1 space-y-2 border-t border-[#8b5cf6]/20">
+                        {/* 1. ROOMS OF THIS LEVEL */}
+                        {lvlRooms.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[9px] text-[#3b82f6] uppercase tracking-wider block font-semibold">
+                              Rooms ({lvlRooms.length})
+                            </span>
+                            <div className="space-y-1 pl-1">
+                              {lvlRooms.map((room) => {
+                                const roomKey = `room-${room.id}`;
+                                const isRoomExpanded = expanded[roomKey] ?? false;
+                                const isSelected = selectedEntityId === room.id;
+                                const walls = getRoomWalls(room);
+                                const doors = getRoomDoors(room);
+                                const windows = getRoomWindows(room);
+                                const area = room.custom_properties?.floor_area_m2 as number | undefined;
+
+                                return (
+                                  <div
+                                    key={room.id}
+                                    className={`rounded border transition-colors ${
+                                      isSelected
+                                        ? "border-[#00e5ff] bg-[#00e5ff]/10"
+                                        : "border-[#3b82f6]/20 bg-[#3b82f6]/5"
+                                    }`}
+                                  >
+                                    <div
+                                      onClick={() => {
+                                        onSelectEntity(room.id);
+                                        onFrameEntity(room.id);
+                                      }}
+                                      className="flex items-center justify-between p-1 hover:bg-[#3b82f6]/10 cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-1 min-w-0">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggle(roomKey);
+                                          }}
+                                          className="p-0.5 text-neutral-400 hover:text-white cursor-pointer"
+                                        >
+                                          {isRoomExpanded ? (
+                                            <ChevronDown className="w-2.5 h-2.5" />
+                                          ) : (
+                                            <ChevronRight className="w-2.5 h-2.5" />
+                                          )}
+                                        </button>
+                                        <Building className="w-3 h-3 text-[#3b82f6] shrink-0" />
+                                        <span className="text-white truncate">
+                                          {room.name || room.id}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                                        {area && (
+                                          <span className="text-neutral-400 font-mono">
+                                            {area.toFixed(1)}m²
+                                          </span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onFrameEntity(room.id);
+                                          }}
+                                          title="Frame Room [F]"
+                                          className="p-0.5 text-neutral-400 hover:text-[#00e5ff]"
+                                        >
+                                          <Maximize2 className="w-2.5 h-2.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* ROOM INTERIORS: WALLS, DOORS, WINDOWS */}
+                                    {isRoomExpanded && (
+                                      <div className="pl-4 pr-1 pb-1 pt-1 space-y-1 border-t border-[#3b82f6]/15 text-[10px]">
+                                        {/* Walls */}
+                                        {walls.length > 0 && (
+                                          <div>
+                                            <span className="text-neutral-500 uppercase tracking-wider text-[8px] block">
+                                              Walls ({walls.length})
+                                            </span>
+                                            <div className="flex flex-wrap gap-1 mt-0.5">
+                                              {walls.map((w) => (
+                                                <button
+                                                  key={w.id}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    onSelectEntity(w.id);
+                                                    onFrameEntity(w.id);
+                                                  }}
+                                                  className={`px-1 py-0.2 rounded border font-mono truncate max-w-[100px] cursor-pointer ${
+                                                    selectedEntityId === w.id
+                                                      ? "bg-[#f59e0b] text-black border-[#f59e0b]"
+                                                      : "bg-[#f59e0b]/15 text-[#f59e0b] border-[#f59e0b]/30 hover:bg-[#f59e0b]/25"
+                                                  }`}
+                                                >
+                                                  {w.id}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Doors */}
+                                        {doors.length > 0 && (
+                                          <div>
+                                            <span className="text-neutral-500 uppercase tracking-wider text-[8px] block">
+                                              Doors ({doors.length})
+                                            </span>
+                                            <div className="flex flex-wrap gap-1 mt-0.5">
+                                              {doors.map((d) => (
+                                                <button
+                                                  key={d.id}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    onSelectEntity(d.id);
+                                                    onFrameEntity(d.id);
+                                                  }}
+                                                  className={`px-1 py-0.2 rounded border font-mono truncate max-w-[100px] cursor-pointer ${
+                                                    selectedEntityId === d.id
+                                                      ? "bg-[#10b981] text-black border-[#10b981]"
+                                                      : "bg-[#10b981]/15 text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/25"
+                                                  }`}
+                                                >
+                                                  {d.id}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Windows */}
+                                        {windows.length > 0 && (
+                                          <div>
+                                            <span className="text-neutral-500 uppercase tracking-wider text-[8px] block">
+                                              Windows ({windows.length})
+                                            </span>
+                                            <div className="flex flex-wrap gap-1 mt-0.5">
+                                              {windows.map((win) => (
+                                                <button
+                                                  key={win.id}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    onSelectEntity(win.id);
+                                                    onFrameEntity(win.id);
+                                                  }}
+                                                  className={`px-1 py-0.2 rounded border font-mono truncate max-w-[100px] cursor-pointer ${
+                                                    selectedEntityId === win.id
+                                                      ? "bg-[#06b6d4] text-black border-[#06b6d4]"
+                                                      : "bg-[#06b6d4]/15 text-[#06b6d4] border-[#06b6d4]/30 hover:bg-[#06b6d4]/25"
+                                                  }`}
+                                                >
+                                                  {win.id}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. CORRIDORS OF THIS LEVEL */}
+                        {lvlCorridors.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[9px] text-[#06b6d4] uppercase tracking-wider block font-semibold">
+                              Corridors ({lvlCorridors.length})
+                            </span>
+                            <div className="space-y-1 pl-1">
+                              {lvlCorridors.map((corridor) => {
+                                const cKey = `corridor-${corridor.id}`;
+                                const isCExpanded = expanded[cKey] ?? false;
+                                const isSelected = selectedEntityId === corridor.id;
+                                const openings = getCorridorOpenings(corridor);
+
+                                return (
+                                  <div
+                                    key={corridor.id}
+                                    className={`rounded border transition-colors ${
+                                      isSelected
+                                        ? "border-[#00e5ff] bg-[#00e5ff]/10"
+                                        : "border-[#06b6d4]/20 bg-[#06b6d4]/5"
+                                    }`}
+                                  >
+                                    <div
+                                      onClick={() => {
+                                        onSelectEntity(corridor.id);
+                                        onFrameEntity(corridor.id);
+                                      }}
+                                      className="flex items-center justify-between p-1 hover:bg-[#06b6d4]/10 cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-1 min-w-0">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggle(cKey);
+                                          }}
+                                          className="p-0.5 text-neutral-400 hover:text-white cursor-pointer"
+                                        >
+                                          {isCExpanded ? (
+                                            <ChevronDown className="w-2.5 h-2.5" />
+                                          ) : (
+                                            <ChevronRight className="w-2.5 h-2.5" />
+                                          )}
+                                        </button>
+                                        <Workflow className="w-3 h-3 text-[#06b6d4] shrink-0" />
+                                        <span className="text-white truncate">
+                                          {corridor.name || corridor.id}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onFrameEntity(corridor.id);
+                                          }}
+                                          title="Frame Corridor [F]"
+                                          className="p-0.5 text-neutral-400 hover:text-[#00e5ff]"
+                                        >
+                                          <Maximize2 className="w-2.5 h-2.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {isCExpanded && openings.length > 0 && (
+                                      <div className="pl-4 pr-1 pb-1 pt-1 space-y-1 border-t border-[#06b6d4]/15 text-[10px]">
+                                        <span className="text-neutral-500 uppercase tracking-wider text-[8px] block">
+                                          Openings ({openings.length})
+                                        </span>
+                                        <div className="flex flex-wrap gap-1">
+                                          {openings.map((op) => (
+                                            <button
+                                              key={op.id}
+                                              type="button"
+                                              onClick={() => {
+                                                onSelectEntity(op.id);
+                                                onFrameEntity(op.id);
+                                              }}
+                                              className="px-1 py-0.2 rounded border border-[#10b981]/30 bg-[#10b981]/15 text-[#10b981] font-mono text-[9px] cursor-pointer"
+                                            >
+                                              {op.id}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3. STAIRS OF THIS LEVEL */}
+                        {lvlStairs.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[9px] text-[#a855f7] uppercase tracking-wider block font-semibold">
+                              Vertical Circulation ({lvlStairs.length})
+                            </span>
+                            <div className="space-y-1 pl-1">
+                              {lvlStairs.map((stair) => {
+                                const isSelected = selectedEntityId === stair.id;
+                                return (
+                                  <div
+                                    key={stair.id}
+                                    onClick={() => {
+                                      onSelectEntity(stair.id);
+                                      onFrameEntity(stair.id);
+                                    }}
+                                    className={`flex items-center justify-between p-1 rounded border transition-colors cursor-pointer ${
+                                      isSelected
+                                        ? "border-[#00e5ff] bg-[#00e5ff]/10"
+                                        : "border-[#a855f7]/20 bg-[#a855f7]/5 hover:bg-[#a855f7]/10"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <Layers className="w-3 h-3 text-[#a855f7] shrink-0" />
+                                      <span className="text-white truncate">
+                                        {stair.name || stair.id}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onFrameEntity(stair.id);
+                                      }}
+                                      title="Frame Stair [F]"
+                                      className="p-0.5 text-neutral-400 hover:text-[#00e5ff]"
+                                    >
+                                      <Maximize2 className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* UNASSIGNED STRUCTURAL ELEMENTS (if any) */}
+              {unassignedWalls.length > 0 && (
+                <div className="rounded border border-neutral-800 bg-neutral-900/40 p-1.5 space-y-1">
+                  <span className="text-[9px] text-neutral-500 uppercase tracking-wider block font-semibold">
+                    Unenclosed Walls ({unassignedWalls.length})
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {unassignedWalls.slice(0, 15).map((w) => (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectEntity(w.id);
+                          onFrameEntity(w.id);
+                        }}
+                        className="px-1 py-0.2 rounded border border-neutral-700 bg-neutral-800 text-neutral-300 font-mono text-[9px] hover:text-white cursor-pointer"
+                      >
+                        {w.id}
+                      </button>
+                    ))}
+                    {unassignedWalls.length > 15 && (
+                      <span className="text-[9px] text-neutral-500 py-0.2">
+                        +{unassignedWalls.length - 15} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// TOPOLOGY INSPECTOR: ROOM ADJACENCY, CORRIDORS, STAIRS, OPENINGS
+// ============================================================================
+
+interface SpaceGraphNode {
+  id: string;
+  type: string;
+  name?: string;
+  level_id?: string;
+  confidence?: number;
+}
+
+interface SpaceGraphData {
+  world_id: string;
+  nodes: SpaceGraphNode[];
+  edges: { source: string; target: string; type: string }[];
+  adjacencies: Record<string, string[]>;
+  corridor_connections: Record<string, string[]>;
+  stair_connections: Record<string, { connected_levels: string[]; name?: string }>;
+}
+
+export function BuildingTopologyInspector({
+  worldIR,
+  entitiesList,
+  selectedEntityId,
+  onSelectEntity,
+  onFrameEntity,
+}: {
+  worldIR: WorldIR | null;
+  entitiesList: Entity[];
+  selectedEntityId: string | null;
+  onSelectEntity: (id: string | null) => void;
+  onFrameEntity: (id: string) => void;
+}) {
+  const [graphData, setGraphData] = useState<SpaceGraphData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!worldIR?.id) {
+      setGraphData(null);
+      return;
+    }
+    let isCancelled = false;
+    setLoading(true);
+
+    fetch(`/api/worlds/${encodeURIComponent(worldIR.id)}/space-graph`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isCancelled && data && data.nodes) {
+          setGraphData(data as SpaceGraphData);
+        }
+      })
+      .catch(() => {
+        // Fallback to local derivation from entitiesList
+      })
+      .finally(() => {
+        if (!isCancelled) setLoading(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [worldIR?.id]);
+
+  // Fallback / enhanced derivation from entitiesList
+  const derivedData = useMemo(() => {
+    const rooms = entitiesList.filter((e) => e.type === "room" || e.type === "space");
+    const corridors = entitiesList.filter((e) => e.type === "corridor");
+    const levels = entitiesList.filter((e) => e.type === "level" || e.type === "storey");
+    const stairs = entitiesList.filter((e) => e.type === "stairs" || e.type === "stair");
+    const openings = entitiesList.filter((e) => e.type === "door" || e.type === "window" || e.type === "opening");
+
+    const adjacencies: Record<string, string[]> = { ...(graphData?.adjacencies || {}) };
+    const corridorConns: Record<string, string[]> = { ...(graphData?.corridor_connections || {}) };
+    const stairConns: Record<string, { connected_levels: string[]; name?: string }> = {
+      ...(graphData?.stair_connections || {}),
+    };
+
+    // Fill missing corridor connections
+    for (const c of corridors) {
+      if (!corridorConns[c.id]) {
+        const connected = new Set<string>();
+        const customRooms = (c.custom_properties?.connected_room_ids as string[]) || [];
+        customRooms.forEach((rid) => connected.add(rid));
+        for (const rel of c.relationships || []) {
+          if (rel.kind === "connects" || rel.kind === "connected_room") {
+            connected.add(rel.target_id);
+          }
+        }
+        corridorConns[c.id] = Array.from(connected);
+      }
+    }
+
+    // Fill missing stair connections
+    for (const s of stairs) {
+      if (!stairConns[s.id]) {
+        const conLevels = (s.custom_properties?.connected_level_ids as string[]) || [];
+        stairConns[s.id] = {
+          connected_levels: conLevels,
+          name: s.name || s.id,
+        };
+      }
+    }
+
+    return {
+      rooms,
+      corridors,
+      levels,
+      stairs,
+      openings,
+      adjacencies,
+      corridorConns,
+      stairConns,
+    };
+  }, [entitiesList, graphData]);
+
+  const selectedEntity = useMemo(() => {
+    if (!selectedEntityId) return null;
+    return entitiesList.find((e) => e.id === selectedEntityId) || null;
+  }, [selectedEntityId, entitiesList]);
+
+  // Selected entity specific relations
+  const selectedRelations = useMemo(() => {
+    if (!selectedEntity) return null;
+    const directTargetIds = new Set<string>();
+    for (const r of selectedEntity.relationships || []) {
+      directTargetIds.add(r.target_id);
+    }
+    // Also entities that point to selected
+    const inbound = entitiesList.filter((e) =>
+      (e.relationships || []).some((r) => r.target_id === selectedEntity.id)
+    );
+
+    // If room: connected corridors, adjacent rooms
+    const connectedCorridors = derivedData.corridors.filter((c) =>
+      (derivedData.corridorConns[c.id] || []).includes(selectedEntity.id)
+    );
+    const adjacentRooms = (derivedData.adjacencies[selectedEntity.id] || []).map((id) =>
+      entitiesList.find((e) => e.id === id)
+    ).filter(Boolean) as Entity[];
+
+    // If corridor: connected rooms
+    const corridorRooms = (derivedData.corridorConns[selectedEntity.id] || []).map((id) =>
+      entitiesList.find((e) => e.id === id)
+    ).filter(Boolean) as Entity[];
+
+    // If stair: connected levels
+    const stairLevels = derivedData.stairConns[selectedEntity.id]?.connected_levels || [];
+
+    return {
+      directTargetIds: Array.from(directTargetIds),
+      inbound,
+      connectedCorridors,
+      adjacentRooms,
+      corridorRooms,
+      stairLevels,
+    };
+  }, [selectedEntity, entitiesList, derivedData]);
+
+  return (
+    <div className="p-3 space-y-4 font-mono text-xs select-none">
+      {/* Top Banner */}
+      <div className="flex items-center justify-between border-b border-[#00e5ff]/20 pb-2">
+        <div className="flex items-center gap-1.5">
+          <Workflow className="w-4 h-4 text-[#00e5ff]" />
+          <span className="font-semibold text-white uppercase tracking-wider text-[11px]">
+            Spatial Topology
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {loading && <span className="text-[10px] text-neutral-500 animate-pulse">Syncing...</span>}
+          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/30">
+            Graph View
+          </span>
+        </div>
+      </div>
+
+      {/* Network Metrics KPIs */}
+      <div className="grid grid-cols-4 gap-1.5 text-center">
+        <div className="p-1.5 rounded bg-neutral-900 border border-neutral-800">
+          <div className="text-[10px] text-neutral-400">Rooms</div>
+          <div className="text-sm font-semibold text-[#3b82f6]">{derivedData.rooms.length}</div>
+        </div>
+        <div className="p-1.5 rounded bg-neutral-900 border border-neutral-800">
+          <div className="text-[10px] text-neutral-400">Routes</div>
+          <div className="text-sm font-semibold text-[#06b6d4]">{derivedData.corridors.length}</div>
+        </div>
+        <div className="p-1.5 rounded bg-neutral-900 border border-neutral-800">
+          <div className="text-[10px] text-neutral-400">Stairs</div>
+          <div className="text-sm font-semibold text-[#a855f7]">{derivedData.stairs.length}</div>
+        </div>
+        <div className="p-1.5 rounded bg-neutral-900 border border-neutral-800">
+          <div className="text-[10px] text-neutral-400">Portals</div>
+          <div className="text-sm font-semibold text-[#10b981]">{derivedData.openings.length}</div>
+        </div>
+      </div>
+
+      {/* 1. ACTIVE SELECTION RELATIONSHIP FOCUS */}
+      {selectedEntity && selectedRelations ? (
+        <div className="rounded-lg border border-[#00e5ff]/40 bg-[#00e5ff]/5 p-2.5 space-y-2">
+          <div className="flex items-center justify-between border-b border-[#00e5ff]/20 pb-1.5">
+            <span className="text-[10px] font-semibold text-[#00e5ff] uppercase tracking-wider flex items-center gap-1">
+              <Crosshair className="w-3 h-3 text-[#00e5ff]" />
+              Topology Context: {selectedEntity.name || selectedEntity.id}
+            </span>
+            <span className="text-[9px] uppercase px-1 rounded bg-[#00e5ff]/20 text-[#00e5ff]">
+              {selectedEntity.type}
+            </span>
+          </div>
+
+          {/* Room Specific Topology */}
+          {(selectedEntity.type === "room" || selectedEntity.type === "space") && (
+            <div className="space-y-2 text-[10px]">
+              <div>
+                <span className="text-neutral-400 block mb-1">Adjacent Rooms:</span>
+                {selectedRelations.adjacentRooms.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {selectedRelations.adjacentRooms.map((adj) => (
+                      <button
+                        key={adj.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectEntity(adj.id);
+                          onFrameEntity(adj.id);
+                        }}
+                        className="px-1.5 py-0.5 rounded border border-[#3b82f6]/40 bg-[#3b82f6]/15 text-[#3b82f6] hover:bg-[#3b82f6]/25 cursor-pointer truncate max-w-[120px]"
+                      >
+                        {adj.name || adj.id}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-neutral-500 italic">No direct wall adjacencies detected</span>
+                )}
+              </div>
+
+              <div>
+                <span className="text-neutral-400 block mb-1">Connected Corridors:</span>
+                {selectedRelations.connectedCorridors.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {selectedRelations.connectedCorridors.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectEntity(c.id);
+                          onFrameEntity(c.id);
+                        }}
+                        className="px-1.5 py-0.5 rounded border border-[#06b6d4]/40 bg-[#06b6d4]/15 text-[#06b6d4] hover:bg-[#06b6d4]/25 cursor-pointer truncate max-w-[120px]"
+                      >
+                        {c.name || c.id}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-neutral-500 italic">No corridor route connection</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Corridor Specific Topology */}
+          {selectedEntity.type === "corridor" && (
+            <div className="space-y-2 text-[10px]">
+              <span className="text-neutral-400 block mb-1">Connected Room Destinations:</span>
+              {selectedRelations.corridorRooms.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {selectedRelations.corridorRooms.map((rm) => (
+                    <button
+                      key={rm.id}
+                      type="button"
+                      onClick={() => {
+                        onSelectEntity(rm.id);
+                        onFrameEntity(rm.id);
+                      }}
+                      className="px-1.5 py-0.5 rounded border border-[#3b82f6]/40 bg-[#3b82f6]/15 text-[#3b82f6] hover:bg-[#3b82f6]/25 cursor-pointer truncate max-w-[120px]"
+                    >
+                      {rm.name || rm.id}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-neutral-500 italic">No connected room endpoints</span>
+              )}
+            </div>
+          )}
+
+          {/* Stair Specific Topology */}
+          {(selectedEntity.type === "stairs" || selectedEntity.type === "stair") && (
+            <div className="space-y-2 text-[10px]">
+              <span className="text-neutral-400 block mb-1">Spanned Vertical Levels:</span>
+              {selectedRelations.stairLevels.length > 0 ? (
+                <div className="flex items-center gap-1.5">
+                  {selectedRelations.stairLevels.map((lvlId, idx) => (
+                    <span key={lvlId} className="flex items-center gap-1">
+                      {idx > 0 && <span className="text-[#a855f7]">⮂</span>}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelectEntity(lvlId);
+                          onFrameEntity(lvlId);
+                        }}
+                        className="px-1.5 py-0.5 rounded border border-[#8b5cf6]/40 bg-[#8b5cf6]/15 text-[#8b5cf6] hover:bg-[#8b5cf6]/25 cursor-pointer font-semibold"
+                      >
+                        {lvlId}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-neutral-500 italic">No level transitions registered</span>
+              )}
+            </div>
+          )}
+
+          {/* General Inbound & Outbound Relationships */}
+          {selectedRelations.directTargetIds.length > 0 && (
+            <div className="pt-1.5 border-t border-[#00e5ff]/10">
+              <span className="text-neutral-500 uppercase text-[9px] block mb-1">
+                Linked Entities ({selectedRelations.directTargetIds.length})
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {selectedRelations.directTargetIds.slice(0, 10).map((tid) => (
+                  <button
+                    key={tid}
+                    type="button"
+                    onClick={() => {
+                      onSelectEntity(tid);
+                      onFrameEntity(tid);
+                    }}
+                    className="px-1 py-0.2 rounded border border-neutral-700 bg-neutral-800 text-neutral-300 hover:text-white text-[9px] cursor-pointer"
+                  >
+                    {tid}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="p-2.5 rounded-lg border border-neutral-800 bg-neutral-900/40 text-neutral-400 text-[11px] flex items-center gap-2">
+          <Eye className="w-4 h-4 text-neutral-500 shrink-0" />
+          <span>Select any room, corridor, or stair to reveal its spatial relationships.</span>
+        </div>
+      )}
+
+      {/* 2. SECTION: ROOM ADJACENCIES & REACHABILITY */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+          <span>Room Adjacencies ({derivedData.rooms.length})</span>
+          <span className="text-[#3b82f6]">Interior</span>
+        </div>
+        <div className="space-y-1">
+          {derivedData.rooms.map((room) => {
+            const adjs = derivedData.adjacencies[room.id] || [];
+            const connectedCorrs = derivedData.corridors.filter((c) =>
+              (derivedData.corridorConns[c.id] || []).includes(room.id)
+            );
+            const isSelected = selectedEntityId === room.id;
+
+            return (
+              <div
+                key={room.id}
+                onClick={() => {
+                  onSelectEntity(room.id);
+                  onFrameEntity(room.id);
+                }}
+                className={`p-2 rounded border transition-colors cursor-pointer space-y-1 ${
+                  isSelected
+                    ? "bg-[#182030] border-[#00e5ff]"
+                    : "bg-[#14161f] border-neutral-800 hover:border-neutral-700"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Building className="w-3.5 h-3.5 text-[#3b82f6] shrink-0" />
+                    <span className="font-semibold text-white truncate text-[11px]">
+                      {room.name || room.id}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFrameEntity(room.id);
+                    }}
+                    className="p-0.5 text-neutral-500 hover:text-white"
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {/* Adjacencies & Connected Corridors */}
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {adjs.map((adjId) => (
+                    <button
+                      key={adjId}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectEntity(adjId);
+                        onFrameEntity(adjId);
+                      }}
+                      className="px-1 py-0.2 rounded border border-[#3b82f6]/30 bg-[#3b82f6]/10 text-[#3b82f6] text-[9px] hover:bg-[#3b82f6]/20 cursor-pointer"
+                    >
+                      adj: {adjId}
+                    </button>
+                  ))}
+                  {connectedCorrs.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectEntity(c.id);
+                        onFrameEntity(c.id);
+                      }}
+                      className="px-1 py-0.2 rounded border border-[#06b6d4]/30 bg-[#06b6d4]/10 text-[#06b6d4] text-[9px] hover:bg-[#06b6d4]/20 cursor-pointer"
+                    >
+                      route: {c.name || c.id}
+                    </button>
+                  ))}
+                  {adjs.length === 0 && connectedCorrs.length === 0 && (
+                    <span className="text-neutral-500 text-[9px] italic">Isolated room enclosure</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. SECTION: CORRIDOR CIRCULATION ROUTES */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+          <span>Corridor Circulation Routes ({derivedData.corridors.length})</span>
+          <span className="text-[#06b6d4]">Routes</span>
+        </div>
+        <div className="space-y-1">
+          {derivedData.corridors.map((c) => {
+            const connectedRooms = derivedData.corridorConns[c.id] || [];
+            const isSelected = selectedEntityId === c.id;
+
+            return (
+              <div
+                key={c.id}
+                onClick={() => {
+                  onSelectEntity(c.id);
+                  onFrameEntity(c.id);
+                }}
+                className={`p-2 rounded border transition-colors cursor-pointer space-y-1 ${
+                  isSelected
+                    ? "bg-[#182030] border-[#00e5ff]"
+                    : "bg-[#14161f] border-neutral-800 hover:border-neutral-700"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Workflow className="w-3.5 h-3.5 text-[#06b6d4] shrink-0" />
+                    <span className="font-semibold text-white truncate text-[11px]">
+                      {c.name || c.id}
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-[#06b6d4] font-mono">
+                    {connectedRooms.length} room{connectedRooms.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {connectedRooms.map((rmId) => (
+                    <button
+                      key={rmId}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectEntity(rmId);
+                        onFrameEntity(rmId);
+                      }}
+                      className="px-1 py-0.2 rounded border border-[#06b6d4]/30 bg-[#06b6d4]/10 text-[#06b6d4] text-[9px] hover:bg-[#06b6d4]/20 cursor-pointer"
+                    >
+                      room: {rmId}
+                    </button>
+                  ))}
+                  {connectedRooms.length === 0 && (
+                    <span className="text-neutral-500 text-[9px] italic">No room egress points</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. SECTION: VERTICAL TRANSITIONS (STAIRS) */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+          <span>Vertical Level Transitions ({derivedData.stairs.length})</span>
+          <span className="text-[#a855f7]">Stairs</span>
+        </div>
+        <div className="space-y-1">
+          {derivedData.stairs.map((stair) => {
+            const conn = derivedData.stairConns[stair.id];
+            const levels = conn?.connected_levels || [];
+            const isSelected = selectedEntityId === stair.id;
+
+            return (
+              <div
+                key={stair.id}
+                onClick={() => {
+                  onSelectEntity(stair.id);
+                  onFrameEntity(stair.id);
+                }}
+                className={`p-2 rounded border transition-colors cursor-pointer space-y-1.5 ${
+                  isSelected
+                    ? "bg-[#182030] border-[#00e5ff]"
+                    : "bg-[#14161f] border-neutral-800 hover:border-neutral-700"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Layers className="w-3.5 h-3.5 text-[#a855f7] shrink-0" />
+                    <span className="font-semibold text-white truncate text-[11px]">
+                      {stair.name || stair.id}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFrameEntity(stair.id);
+                    }}
+                    className="p-0.5 text-neutral-500 hover:text-white"
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 text-[10px]">
+                  {levels.length > 0 ? (
+                    levels.map((lvl, idx) => (
+                      <span key={lvl} className="flex items-center gap-1">
+                        {idx > 0 && <span className="text-[#a855f7]">⮂</span>}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectEntity(lvl);
+                            onFrameEntity(lvl);
+                          }}
+                          className="px-1.5 py-0.5 rounded border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 text-[#8b5cf6] text-[9px] hover:bg-[#8b5cf6]/20 cursor-pointer"
+                        >
+                          {lvl}
+                        </button>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-neutral-500 text-[9px] italic">No level bounds set</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 5. SECTION: OPENINGS & PORTALS */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+          <span>Portals & Openings ({derivedData.openings.length})</span>
+          <span className="text-[#10b981]">Doors & Windows</span>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {derivedData.openings.slice(0, 20).map((op) => {
+            const isSelected = selectedEntityId === op.id;
+            return (
+              <button
+                key={op.id}
+                type="button"
+                onClick={() => {
+                  onSelectEntity(op.id);
+                  onFrameEntity(op.id);
+                }}
+                className={`px-1.5 py-0.5 rounded border font-mono text-[9px] truncate max-w-[120px] cursor-pointer ${
+                  isSelected
+                    ? "bg-[#10b981] text-black border-[#10b981]"
+                    : "bg-[#10b981]/15 text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/25"
+                }`}
+              >
+                {op.id}
+              </button>
+            );
+          })}
+          {derivedData.openings.length > 20 && (
+            <span className="text-[10px] text-neutral-500 py-0.5">
+              +{derivedData.openings.length - 20} more
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

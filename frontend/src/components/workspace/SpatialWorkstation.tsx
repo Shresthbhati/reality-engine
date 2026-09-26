@@ -128,20 +128,16 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   );
 
   
-  const currentWorldRow = useMemo(() => 
-    (worlds || []).find(w => w.id === worldId) || {
-      id: worldId || "empty",
-      name: worldId || "No World Loaded",
-      location: "Physical Coordinate Space",
-      coverageKm2: 0.05,
-      sessionCount: sessions.length,
-      evidenceCount: evidence.filter(e => e.sessionId && sessions.some(s => s.id === e.sessionId)).length,
-      timeRangeStart: null,
-      timeRangeEnd: null,
-      updatedAt: "Current",
-    },
-    [worlds, worldId, sessions, evidence]
+  // The selected world's real row, or null when no world is selected/loaded.
+  // This used to fall back to an invented row (location "Physical Coordinate
+  // Space", coverage 0.05 km², updatedAt "Current") so the header always had
+  // something to print; the header now shows the absence instead.
+  const currentWorldRow = useMemo(
+    () => (worlds || []).find(w => w.id === worldId) ?? null,
+    [worlds, worldId]
   );
+
+  const currentVersionId = versions[0]?.id ?? null;
 
   const selectedEntity = useMemo(() => {
     if (!worldIR || !selectedEntityId) return null;
@@ -204,7 +200,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
 
   const handleCommitCorrection = useCallback(async (
     entityId: string,
-    changes: { type?: string; confidence?: number; semantic_labels?: string[] },
+    changes: Record<string, unknown>,
     commitMessage: string
   ) => {
     if (!worldId) return;
@@ -366,13 +362,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
 
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-xs font-medium text-neutral-200 truncate max-w-[200px] sm:max-w-[300px]">
-              {currentWorldRow.name}
+              {currentWorldRow?.name ?? "No World Selected"}
             </span>
             <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 shrink-0">
-              {String(worldIR?.coordinate_frame || worldIR?.coordinate_system || "metric_enu")}
+              {String(worldIR?.coordinate_frame || worldIR?.coordinate_system || "frame unrecorded")}
             </span>
             <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/30 shrink-0">
-              {versions[0]?.label ? versions[0].label.split(" ")[0] : "v1.0.0"}
+              {currentVersionId ?? "no version"}
             </span>
           </div>
         </div>
@@ -553,20 +549,36 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onSelectEvidence={setSelectedEvidenceId}
               queryMatchingIds={queryMatchingIds}
               hasNoWorldData={!has3DContent}
-              onTriggerSampleWorld={worlds[0] ? () => handleSelectWorld(worlds[0].id) : undefined}
               onMeasurementChange={setMeasurement}
+              onOpenRoomConstruction={() => setConstructionModalOpen(true)}
             />
           ) : (
             <div className="w-full h-full relative">
-              <WorldMap
-                center={[-122.4194, 37.7749]}
-                zoom={14}
-                pitch={40}
-              />
-              <div className="absolute bottom-4 left-4 z-10 px-3 py-2 rounded-md bg-[#0e1013]/90 border border-[#1f222b] text-xs text-neutral-300 backdrop-blur-md font-mono">
-                <div className="text-white font-semibold">Geospatial Coordinate Anchor</div>
-                <div className="text-neutral-400 text-[11px] mt-0.5">Lat: 37.7749° N · Lon: -122.4194° W · ENU Origin</div>
-              </div>
+              {/* The map centres on the world's real origin; a world with no
+                  recorded coordinates gets an honest notice, not the
+                  hard-coded San Francisco anchor this panel used to print. */}
+              {currentWorldRow?.lat != null && currentWorldRow?.lng != null ? (
+                <WorldMap
+                  center={[currentWorldRow.lng, currentWorldRow.lat]}
+                  zoom={14}
+                  pitch={40}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-[#0b0c10]">
+                  <p className="text-xs text-neutral-400 max-w-sm text-center leading-relaxed">
+                    This World has no recorded geographic origin, so no map anchor exists.
+                    Reconstruction coordinates are metric-local until a capture carries GNSS.
+                  </p>
+                </div>
+              )}
+              {currentWorldRow?.lat != null && currentWorldRow?.lng != null && (
+                <div className="absolute bottom-4 left-4 z-10 px-3 py-2 rounded-md bg-[#0e1013]/90 border border-[#1f222b] text-xs text-neutral-300 backdrop-blur-md font-mono">
+                  <div className="text-white font-semibold">World origin</div>
+                  <div className="text-neutral-400 text-[11px] mt-0.5">
+                    {currentWorldRow.location ?? "coordinates unavailable"}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -620,7 +632,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             }}
             onClearSelection={handleClearSelection}
             measurement={measurement}
-            activeVersion={versions[0]?.label || versions[0]?.id || "HEAD"}
+            activeVersion={currentVersionId ?? undefined}
           />
         </div>
       )}

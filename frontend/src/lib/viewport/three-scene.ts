@@ -51,6 +51,21 @@ export const TYPE_COLORS: Record<string, number> = {
   default: 0x94a3b8,  // slate-400
 };
 
+/**
+ * Visual weight for entities whose confidence was never recorded.
+ *
+ * This is a rendering constant, not a measurement: it decides how solid a
+ * box looks, and is never displayed, colour-coded as uncertainty, or written
+ * back into WorldIR. Entities with a recorded confidence use that number.
+ */
+const UNRECORDED_RENDER_WEIGHT = 0.5;
+
+function renderWeightFor(confidence: unknown): number {
+  return typeof confidence === "number" && Number.isFinite(confidence)
+    ? confidence
+    : UNRECORDED_RENDER_WEIGHT;
+}
+
 export class WorldSceneController {
   private container: HTMLElement;
   private scene: THREE.Scene;
@@ -342,11 +357,11 @@ export class WorldSceneController {
         const outlierScale = isOversized ? 0.25 : 1.0;
 
         const baseColor = TYPE_COLORS[e.type.toLowerCase()] || TYPE_COLORS.default;
-        const conf = typeof e.confidence === "number" ? e.confidence : 0.5;
+        const conf = typeof e.confidence === "number" && Number.isFinite(e.confidence) ? e.confidence : null;
 
-        // In uncertainty mode, color shifts from green (1.0) to amber/red (0.0)
+        // In uncertainty mode, color shifts from green (1.0) to amber/red (0.0) if confidence is recorded
         let renderColor = baseColor;
-        if (this.layerVisibility.uncertainty) {
+        if (this.layerVisibility.uncertainty && conf !== null) {
           const hue = conf * 0.33; // 0.33 is green, 0 is red
           const hslColor = new THREE.Color().setHSL(hue, 0.9, 0.5);
           renderColor = hslColor.getHex();
@@ -356,7 +371,7 @@ export class WorldSceneController {
         const isOpenOpening = e.type === "door" || e.type === "window";
         const baseOpacity = isSpaceVolume
           ? 0.05
-          : Math.max(0.12, (0.15 + 0.35 * conf) * outlierScale);
+          : Math.max(0.12, (0.15 + 0.35 * renderWeightFor(conf)) * outlierScale);
 
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(size[0], size[1], size[2]),
@@ -528,12 +543,14 @@ export class WorldSceneController {
     // Update uncertainty shaders if uncertainty toggle changed
     if (layers.uncertainty !== undefined) {
       for (const mesh of this.entityMeshes.values()) {
-        const conf = mesh.userData.confidence ?? 0.5;
         const mat = mesh.material as THREE.MeshLambertMaterial;
-        if (this.layerVisibility.uncertainty) {
+        const conf = mesh.userData.confidence;
+        if (this.layerVisibility.uncertainty && typeof conf === "number") {
           const hue = conf * 0.33;
           mat.color.setHSL(hue, 0.9, 0.5);
         } else {
+          // No recorded confidence means no uncertainty colour: the entity
+          // keeps its type colour instead of being painted as if it were 0.5.
           mat.color.setHex(mesh.userData.baseColor);
         }
       }
@@ -601,7 +618,7 @@ export class WorldSceneController {
     for (const [eid, mesh] of this.entityMeshes.entries()) {
       const isOversized = mesh.userData.isOversized;
       const isWall = mesh.userData.entityType === "wall";
-      const conf = mesh.userData.confidence ?? 0.5;
+      const conf = renderWeightFor(mesh.userData.confidence);
       const outlierScale = isOversized ? 0.25 : 1.0;
       const isSpaceVolume =
         mesh.userData.entityType === "room" ||
@@ -710,7 +727,26 @@ export class WorldSceneController {
       topologyGroup.add(marker);
     };
 
-    if (tType === "room" || tType === "space" || tType === "corridor") {
+    if (tType === "room" || tType === "space") {
+      // Room relationships: walls, floor, ceiling, doors, windows, corridors, adjacent rooms, level
+      const connectedCorridorIds = new Set<string>(
+        Array.isArray(targetEntity.custom_properties?.connected_corridor_ids)
+          ? (targetEntity.custom_properties.connected_corridor_ids as string[])
+          : []
+      );
+      const adjacentRoomIds = new Set<string>(
+        Array.isArray(targetEntity.custom_properties?.adjacent_room_ids)
+          ? (targetEntity.custom_properties.adjacent_room_ids as string[])
+          : []
+      );
+      const boundaryIds = new Set<string>(
+        Array.isArray(targetEntity.custom_properties?.boundary_element_ids)
+          ? (targetEntity.custom_properties.boundary_element_ids as string[])
+          : Array.isArray(targetEntity.custom_properties?.wall_ids)
+          ? (targetEntity.custom_properties.wall_ids as string[])
+          : []
+      );
+
       for (const [otherId, otherEntity] of Object.entries(this.world.entities || {})) {
         if (otherId === selectedEntityId) continue;
         const otherMesh = this.entityMeshes.get(otherId);
@@ -730,17 +766,26 @@ export class WorldSceneController {
               (r as { target_entity_id?: string }).target_entity_id === otherId
           );
 
+        const isExplicitBoundary = boundaryIds.has(otherId);
+        const isExplicitCorridor = connectedCorridorIds.has(otherId);
+        const isExplicitAdjRoom = adjacentRoomIds.has(otherId);
+
         let isGeoInside = false;
-        if (!isContained && !isRelConnected) {
+        if (!isContained && !isRelConnected && !isExplicitBoundary) {
           const box = new THREE.Box3().setFromObject(targetMesh);
           isGeoInside = box.containsPoint(otherMesh.position);
         }
 
-        if (isContained || isRelConnected || isGeoInside) {
+        if (isContained || isRelConnected || isExplicitBoundary || isExplicitCorridor || isExplicitAdjRoom || isGeoInside) {
           if (otherType === "wall") {
             addConnector(sourcePos, otherMesh.position, 0xf59e0b);
+          } else if (otherType === "floor") {
+            addConnector(sourcePos, otherMesh.position, 0x3b82f6);
+          } else if (otherType === "ceiling") {
+            addConnector(sourcePos, otherMesh.position, 0x94a3b8);
           } else if (otherType === "door" || otherType === "window") {
-            addConnector(sourcePos, otherMesh.position, 0x10b981);
+            addConnector(sourcePos, otherMesh.position, otherType === "door" ? 0x10b981 : 0x06b6d4);
+            // Trace door onwards to adjacent space
             for (const [adjId, adjEntity] of Object.entries(this.world.entities || {})) {
               if (
                 adjId !== selectedEntityId &&
@@ -759,8 +804,14 @@ export class WorldSceneController {
                 }
               }
             }
+          } else if (otherType === "corridor") {
+            addConnector(sourcePos, otherMesh.position, 0x00e5ff);
+          } else if (otherType === "room" || otherType === "space") {
+            addConnector(sourcePos, otherMesh.position, 0x38bdf8);
           } else if (otherType === "stairs" || otherType === "stair") {
             addConnector(sourcePos, otherMesh.position, 0xec4899);
+          } else if (otherType === "storey" || otherType === "level") {
+            addConnector(sourcePos, otherMesh.position, 0x8b5cf6);
           } else if (otherType === "column" || otherType === "beam") {
             addConnector(sourcePos, otherMesh.position, 0xeab308);
           }
@@ -779,6 +830,64 @@ export class WorldSceneController {
               cam.position_m[2]
             );
             addConnector(sourcePos, camPos, 0x35d07f);
+          }
+        }
+      }
+    } else if (tType === "corridor") {
+      // Corridor reveals connected rooms, doorway openings, stairs, and level
+      const connectedRoomIds = new Set<string>(
+        Array.isArray(targetEntity.custom_properties?.connected_room_ids)
+          ? (targetEntity.custom_properties.connected_room_ids as string[])
+          : []
+      );
+
+      // Direct relationships of the corridor
+      for (const rel of targetEntity.relationships || []) {
+        const tid = (rel as { target_id?: string; target_entity_id?: string }).target_id || (rel as { target_id?: string; target_entity_id?: string }).target_entity_id;
+        if (tid) {
+          const targetEnt = this.world.entities?.[tid];
+          if (targetEnt && (targetEnt.type === "room" || targetEnt.type === "space")) {
+            connectedRoomIds.add(tid);
+          }
+        }
+      }
+
+      // 1. Draw connectors to all connected rooms
+      for (const roomId of connectedRoomIds) {
+        const roomMesh = this.entityMeshes.get(roomId);
+        if (roomMesh) {
+          addConnector(sourcePos, roomMesh.position, 0x00e5ff);
+        }
+      }
+
+      // 2. Connect to doors, walls, stairs, and containing level
+      for (const [otherId, otherEntity] of Object.entries(this.world.entities || {})) {
+        if (otherId === selectedEntityId) continue;
+        const otherMesh = this.entityMeshes.get(otherId);
+        if (!otherMesh) continue;
+
+        const otherType = otherEntity.type.toLowerCase();
+        const isRelConnected =
+          (otherEntity.relationships || []).some(
+            (r) =>
+              r.target_id === selectedEntityId ||
+              (r as { target_entity_id?: string }).target_entity_id === selectedEntityId
+          ) ||
+          (targetEntity.relationships || []).some(
+            (r) =>
+              r.target_id === otherId ||
+              (r as { target_entity_id?: string }).target_entity_id === otherId
+          );
+
+        if (isRelConnected) {
+          if (otherType === "door") {
+            addConnector(sourcePos, otherMesh.position, 0x10b981);
+          } else if (otherType === "stairs" || otherType === "stair") {
+            addConnector(sourcePos, otherMesh.position, 0xec4899);
+          } else if (otherType === "storey" || otherType === "level") {
+            addConnector(sourcePos, otherMesh.position, 0x8b5cf6);
+          } else if (otherType === "wall") {
+            addConnector(sourcePos, otherMesh.position, 0xf59e0b);
           }
         }
       }
@@ -841,10 +950,59 @@ export class WorldSceneController {
         }
       }
     } else if (tType === "stairs" || tType === "stair") {
+      // Stair reveals connected levels and landings
       const box = new THREE.Box3().setFromObject(targetMesh);
       const bottomCenter = new THREE.Vector3(sourcePos.x, box.min.y, sourcePos.z);
       const topCenter = new THREE.Vector3(sourcePos.x, box.max.y, sourcePos.z);
       addConnector(bottomCenter, topCenter, 0xec4899);
+
+      // Connected level IDs from custom_properties or relationships
+      const connectedLevelIds = new Set<string>(
+        Array.isArray(targetEntity.custom_properties?.connected_level_ids)
+          ? (targetEntity.custom_properties.connected_level_ids as string[])
+          : Array.isArray(targetEntity.custom_properties?.storey_ids)
+          ? (targetEntity.custom_properties.storey_ids as string[])
+          : []
+      );
+
+      for (const rel of targetEntity.relationships || []) {
+        const tid = (rel as { target_id?: string; target_entity_id?: string }).target_id || (rel as { target_id?: string; target_entity_id?: string }).target_entity_id;
+        if (tid) {
+          const tent = this.world.entities?.[tid];
+          if (tent && (tent.type === "storey" || tent.type === "level" || tid.startsWith("storey") || tid.startsWith("level"))) {
+            connectedLevelIds.add(tid);
+          }
+        }
+      }
+
+      // Connect to connected level meshes/planes
+      for (const levelId of connectedLevelIds) {
+        const lvlMesh = this.entityMeshes.get(levelId);
+        if (lvlMesh) {
+          const lvlPos = lvlMesh.position;
+          // Connect to top or bottom depending on elevation
+          const fromPt = lvlPos.y >= sourcePos.y ? topCenter : bottomCenter;
+          addConnector(fromPt, lvlPos, 0xa855f7);
+        } else {
+          // If level entity has elevation property but no mesh, connect to elevation plane point
+          const lvlEnt = this.world.entities?.[levelId];
+          const elev = Number(lvlEnt?.custom_properties?.elevation_m ?? lvlEnt?.custom_properties?.floor_height_m ?? (levelId.includes("1") || levelId.includes("upper") ? box.max.y : box.min.y));
+          const targetPt = new THREE.Vector3(sourcePos.x + 1.5, elev, sourcePos.z);
+          const fromPt = elev >= sourcePos.y ? topCenter : bottomCenter;
+          addConnector(fromPt, targetPt, 0xa855f7);
+        }
+      }
+
+      // Connect to any connected corridors / landing areas
+      for (const rel of targetEntity.relationships || []) {
+        const tid = (rel as { target_id?: string; target_entity_id?: string }).target_id || (rel as { target_id?: string; target_entity_id?: string }).target_entity_id;
+        if (tid && tid.startsWith("corridor")) {
+          const cMesh = this.entityMeshes.get(tid);
+          if (cMesh) {
+            addConnector(sourcePos, cMesh.position, 0x06b6d4);
+          }
+        }
+      }
     }
 
     this.layers.topology = topologyGroup;
@@ -855,9 +1013,15 @@ export class WorldSceneController {
   public setCorrectionPreview(
     entityId: string,
     previewType: string,
-    previewConfidence?: number
+    previewConfidence?: number | null
   ) {
-    this.previewCorrection = { entityId, type: previewType, confidence: previewConfidence };
+    this.previewCorrection = {
+      entityId,
+      type: previewType,
+      // null means "no confidence recorded" -- preserved as absence rather
+      // than collapsed to 0.5, so nothing downstream invents a value.
+      confidence: typeof previewConfidence === "number" ? previewConfidence : undefined,
+    };
     const mesh = this.entityMeshes.get(entityId);
     if (!mesh) return;
 
@@ -885,7 +1049,7 @@ export class WorldSceneController {
   public applyEntityFilter(matchingIds: Set<string> | null) {
     for (const [eid, mesh] of this.entityMeshes.entries()) {
       const mat = mesh.material as THREE.MeshLambertMaterial;
-      const conf = mesh.userData.confidence ?? 0.5;
+      const conf = renderWeightFor(mesh.userData.confidence);
       const isOversized = mesh.userData.isOversized;
       const outlierScale = isOversized ? 0.25 : 1.0;
 

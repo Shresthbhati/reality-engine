@@ -50,6 +50,9 @@ from world_ir.schema_v1 import (
     Provenance,
     Relationship,
     RelationshipKind,
+    Geometry,
+    GeometryType,
+    Vector3,
 )
 from perception.architecture.promotion import _store_entity
 from perception.architecture.room_graph import BuildingGraph, RoomGraph
@@ -117,10 +120,19 @@ def _room_entity(
         }
         for o in room.openings
     ]
+    rid = f"room-{index:03d}"
+    geom_id = f"geom-{rid}"
+    world.geometries[geom_id] = Geometry(
+        id=geom_id,
+        type=GeometryType.BOX,
+        bounds_min=Vector3(room.bounds_min[0], room.bounds_min[1], room.bounds_min[2]),
+        bounds_max=Vector3(room.bounds_max[0], room.bounds_max[1], room.bounds_max[2]),
+    )
     return Entity(
         id=f"room-{index:03d}",
         type=EntityType.ROOM,
         name=f"room {index:03d}",
+        geometry_ids=[geom_id],
         custom_properties={
             "boundary_element_ids": list(room.boundary_element_ids),
             "bounds_min": list(room.bounds_min),

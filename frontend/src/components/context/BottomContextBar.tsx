@@ -29,6 +29,9 @@ interface BottomContextBarProps {
   onFrameSelected: () => void;
   onClearSelection: () => void;
   measurement?: MeasurementResult | null;
+  /** The world's current WorldStore version id, or undefined when the world
+   * has no committed version. There is no default: "v1.0.0" used to be
+   * printed here for worlds whose lineage was empty. */
   activeVersion?: string;
 }
 
@@ -41,7 +44,7 @@ export default function BottomContextBar({
   onFrameSelected,
   onClearSelection,
   measurement,
-  activeVersion = "v1.0.0",
+  activeVersion,
 }: BottomContextBarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomTab>("context");
@@ -181,7 +184,7 @@ export default function BottomContextBar({
 
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 px-2 border-l border-neutral-800">
             <span className="text-neutral-500">HEAD:</span>
-            <span className="text-white font-medium">{activeVersion}</span>
+            <span className="text-white font-medium">{activeVersion ?? "no version"}</span>
           </div>
 
           <button
@@ -252,11 +255,11 @@ export default function BottomContextBar({
                 <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                   WorldStore Version
                 </span>
-                <div className="font-mono text-white font-medium text-xs">
-                  {activeVersion}
+                <div className="font-mono text-white font-medium text-xs break-all">
+                  {activeVersion ?? "—"}
                 </div>
-                <div className="text-[10px] text-[#35d07f] font-mono">
-                  Status: Canonical Head
+                <div className="text-[10px] font-mono" style={{ color: activeVersion ? "#35d07f" : "var(--text-tertiary)" }}>
+                  {activeVersion ? "Status: Canonical Head" : "No version committed"}
                 </div>
               </div>
             </div>

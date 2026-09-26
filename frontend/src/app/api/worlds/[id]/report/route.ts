@@ -1,52 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
+/**
+ * Thin proxy to `GET /api/worlds/{world_id}/report`
+ * (apps/api/routes_worlds.py), which returns the current version's real
+ * compile-pipeline report (the CLI's report.json stages, carried through
+ * WorldStore).
+ *
+ * This route previously fell back to
+ * `datasets/room_capture/pipeline_out/report.json` for ids in a hard-coded
+ * allow-list, so an uncompiled world could present a bundled pipeline report
+ * as its own reconstruction evidence. The report now comes from the world's
+ * own version, or the request fails honestly.
+ */
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
+  const { searchParams } = new URL(request.url);
+  const version = searchParams.get("version");
 
   try {
-    const response = await fetch(`${BACKEND_URL}/api/worlds/${id}/report`, {
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await response.json();
-    return NextResponse.json(
-      response.ok ? data : { ...data, world_id: id },
-      { status: response.status }
-    );
-  } catch {
-    // Backend offline; check local verified dataset report
-    const isLocalDataset =
-      id === "world-compiled-seed42" ||
-      id === "room-capture" ||
-      id === "dataset-room-capture" ||
-      id.startsWith("world-room");
+    const url = new URL(`${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/report`);
+    if (version) url.searchParams.set("version", version);
 
-    if (isLocalDataset) {
-      const candidates = [
-        path.resolve(process.cwd(), "..", "datasets", "room_capture", "pipeline_out", "report.json"),
-        path.resolve(process.cwd(), "datasets", "room_capture", "pipeline_out", "report.json"),
-      ];
-      for (const c of candidates) {
-        if (fs.existsSync(/*turbopackIgnore: true*/ c)) {
-          try {
-            const raw = fs.readFileSync(/*turbopackIgnore: true*/ c, "utf-8");
-            return NextResponse.json(JSON.parse(raw));
-          } catch (e) {
-            console.error("Failed to read report", e);
-          }
-        }
-      }
+    const response = await fetch(url.toString(), {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    const data = (await response.json().catch(() => null)) as unknown;
+
+    if (!response.ok) {
+      return NextResponse.json(
+        data ?? {
+          error: "Pipeline report request failed",
+          world_id: id,
+          available: false,
+        },
+        { status: response.status }
+      );
     }
 
+    if (data === null) {
+      return NextResponse.json(
+        { error: "API returned a non-JSON report body", world_id: id, available: false },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "No pipeline report generated for this world yet", world_id: id },
-      { status: 404 }
+      {
+        detail: `Failed to reach the Reality Engine API for this world's report: ${message}`,
+        world_id: id,
+        available: false,
+      },
+      { status: 503 }
     );
   }
 }

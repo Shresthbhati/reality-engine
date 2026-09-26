@@ -95,6 +95,12 @@ export interface JobDto {
   created_at?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
+  cancel_requested?: boolean;
+  /** Real stage outputs (apps/api/routes_jobs.py). A finished reconstruction
+   * carries `{world_id, version_id, registration_status, outcome, degraded,
+   * points, cameras_registered, skipped_evidence}` -- the evidence that a
+   * version was actually adopted, rather than a status string alone. */
+  payload?: Record<string, unknown> | null;
 }
 
 export interface NotificationDto {

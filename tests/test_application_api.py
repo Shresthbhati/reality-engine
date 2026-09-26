@@ -671,6 +671,15 @@ def test_commit_five_architectural_corrections(client, tmp_path, monkeypatch):
     head_after_bad, count_after_bad = _head_and_count(client, wid)
     assert (head_after_bad, count_after_bad) == (v5, 6)
 
+    # Verify space-graph reflects the authoritative InteriorSpaceGraph
+    sg_res = client.get(f"/api/worlds/{wid}/space-graph")
+    assert sg_res.status_code == 200, sg_res.text
+    sg = sg_res.json()
+    assert sg["summary"]["room_count"] >= 1
+    assert sg["summary"]["corridor_count"] >= 1
+    assert sg["summary"]["stair_count"] >= 1
+    assert sg["summary"]["level_count"] >= 2
+
 
 def test_commit_stale_parent_rejected(client, tmp_path, monkeypatch):
     wid, v0 = _seed_compiled_world(client, tmp_path, monkeypatch)

@@ -39,8 +39,8 @@ interface World3DViewportProps {
   isLoading?: boolean;
   loadingMessage?: string;
   hasNoWorldData?: boolean;
-  onTriggerSampleWorld?: () => void;
   onMeasurementChange?: (measurement: MeasurementResult | null) => void;
+  onOpenRoomConstruction?: () => void;
 }
 
 export default function World3DViewport({
@@ -55,8 +55,8 @@ export default function World3DViewport({
   isLoading = false,
   loadingMessage = "Initializing 3D spatial viewport...",
   hasNoWorldData = false,
-  onTriggerSampleWorld,
   onMeasurementChange,
+  onOpenRoomConstruction,
 }: World3DViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<WorldSceneController | null>(null);
@@ -159,7 +159,11 @@ export default function World3DViewport({
       setActiveLevel(lvl);
     };
     const handlePreviewCorrection = (e: Event) => {
-      const customEvent = e as CustomEvent<{ entityId: string; type: string; confidence?: number }>;
+      const customEvent = e as CustomEvent<{
+        entityId: string;
+        type: string;
+        confidence?: number | null;
+      }>;
       if (customEvent.detail) {
         controllerRef.current?.setCorrectionPreview(
           customEvent.detail.entityId,
@@ -572,23 +576,27 @@ export default function World3DViewport({
       {/* Explicit Empty State when no world data exists (honest, never fake) */}
       {!isLoading && (hasNoWorldData || (!world && stats.points === 0)) && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/90 pointer-events-auto">
-          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 mb-4">
-            <Box className="w-7 h-7" />
+          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 mb-4 shadow-inner">
+            <Box className="w-7 h-7 text-[#00e5ff]" />
           </div>
-          <h3 className="text-base font-semibold text-white mb-1">
+          <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
             No 3D Reconstructed World Available
           </h3>
-          <p className="text-xs text-neutral-400 max-w-md mb-5 leading-relaxed">
-            This World does not have a compiled 3D representation yet. Reality Engine never synthesizes fake world geometry. Reconstruct attached capture sessions or open an authentic dataset.
+          <p className="text-xs text-neutral-400 max-w-lg mb-6 leading-relaxed">
+            Reality Engine never synthesizes fake world geometry. A 3D world is generated via the
+            canonical spatial pipeline: <strong className="text-neutral-200">Capture Session</strong> → <strong className="text-neutral-200">SfM Perception</strong> → <strong className="text-neutral-200">Interior Compilation</strong> → <strong className="text-neutral-200">Reality Studio</strong>.
           </p>
-          {onTriggerSampleWorld && (
-            <button
-              type="button"
-              onClick={onTriggerSampleWorld}
-              className="px-4 py-2 rounded-md text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors cursor-pointer"
-            >
-              Open Verified Dataset World
-            </button>
+          {onOpenRoomConstruction && (
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <button
+                type="button"
+                onClick={onOpenRoomConstruction}
+                className="flex items-center gap-2 px-4 py-2 rounded-md bg-[#00e5ff] text-black font-semibold text-xs hover:bg-[#33ebff] transition-all cursor-pointer shadow-lg shadow-[#00e5ff]/20"
+              >
+                <Layers className="w-4 h-4" />
+                <span>Construct Space / Compile IR</span>
+              </button>
+            </div>
           )}
         </div>
       )}

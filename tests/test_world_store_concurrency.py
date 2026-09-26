@@ -144,12 +144,15 @@ class TestConcurrentDuplicateVersionId:
         import json
 
         store = WorldStore(tmp_path)
+        # Generous rendezvous: on a heavily loaded machine thread start
+        # itself can take seconds; the property under test (exactly one
+        # winner via the claim lock) holds with or without overlap.
         barrier = threading.Barrier(2)
         outcomes: list = []
 
         def writer(i: int) -> None:
             try:
-                barrier.wait(timeout=10)
+                barrier.wait(timeout=120)
                 store.save_version(_world(i), parent=None, version_id="v-dup")
                 outcomes.append((i, "saved"))
             except WorldStoreError as exc:

@@ -52,9 +52,23 @@ building topology -> WorldIR -> WorldStore -> reload — behind
   interior_openings/geometric_adjacency) 61, all green; demo EXIT=0
   (store C:/tmp/interior_demo_store2).
 
-Session stopped here: commit + push + PR + CI watch are the next
-steps (branch agent/freebuff-auto-recon-sprint; the .agent ledger
-files and this file are part of the same change).
+Real-data demonstration (scripts/reconstruct_interior_real.py, new):
+- south_building (real COLMAP sparse, 49,608 pts / 32 poses): chain
+  runs end-to-end -> 52 entities: 13 walls, 1 floor, 14 doors,
+  3 windows, 21 generic openings; 46 unclassified planes; rooms = 0
+  (only one floor enclosure candidate -- sparse SfM coverage does not
+  support room closure; REFUSED, not guessed). Validation surfaced
+  52 issues on real data: duplicate openings (the same gap measured
+  on two parallel wall planes -- host-wall assignment is the missing
+  dedup) and negative sill heights (the capture's z origin is
+  arbitrary; sill is measured against the detected floor height).
+  Both are honest recorded findings, not crashes.
+- real_room_capture_worldir (21-photo iPhone room, 200 sparse pts):
+  SceneAssemblyError "no planes detected" -- honest refusal; 200
+  SIFT-track points cannot support plane fitting.
+- Remaining limitation (next increment): cross-plane duplicate
+  opening suppression (same physical void claimed by sibling wall
+  planes) and up-frame normalization before sill measurement.
 
 ## 2026-09-21 (7) — World Core: real-data integration fixtures unblocked (not regenerated -- found and copied)
 

@@ -119,6 +119,7 @@ def test_enqueue_200_is_not_a_reconstruction_success(client, tmp_path, monkeypat
     # And the world must genuinely have nothing yet.
     assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is None
     assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+    _drain(client, body["job_id"])
 
 
 def test_timeout_can_never_grade_success(client, tmp_path, monkeypatch):
@@ -183,6 +184,7 @@ def test_duplicate_enqueue_is_rejected_not_fabricated(client, tmp_path, monkeypa
         if j["entity_id"] == sid and j["type"] == "RECONSTRUCT_SESSION"
     ]
     assert [j["id"] for j in reconstruct_jobs] == [first_id]
+    _drain(client, first_id)
 
 
 def test_reported_version_exists_in_world_lineage(client, tmp_path, monkeypatch):
@@ -329,6 +331,20 @@ def test_stale_parent_commit_is_refused(client, tmp_path, monkeypatch):
 
 def _entity(client, world_id: str, entity_id: str) -> dict:
     return client.get(f"/api/worlds/{world_id}/worldir").json()["entities"][entity_id]
+
+
+def _drain(client: TestClient, job_id: str) -> None:
+    """Wait out a job this test enqueued but does not assert on.
+
+    The API's worker is a background task on the app; a test that leaves a
+    reconstruction in flight hands a still-running worker to the next test's
+    database, which wedges it. Draining (outcome ignored) keeps the module
+    runnable as a whole.
+    """
+    try:
+        _wait(client, job_id)
+    except AssertionError:
+        pass
 
 
 def _any_entity(client, world_id: str) -> str:

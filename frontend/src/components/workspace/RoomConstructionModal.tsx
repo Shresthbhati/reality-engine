@@ -37,6 +37,20 @@ const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 60; // ~2 minutes; the backend job is the source of truth
 
 /**
+ * The only terminal outcomes a reconstruction job can report
+ * (apps/api/jobs.py: `job.status` becomes JOB_SUCCEEDED / JOB_PARTIAL after
+ * grading, and a version row is adopted on exactly those paths). There is no
+ * "completed" status -- treating one as success was how this modal could
+ * announce "WorldIR compiled and persisted to WorldStore" for a run that
+ * never committed anything.
+ */
+interface ReconstructionOutcome {
+  status: "succeeded" | "partial";
+  versionId: string;
+  degraded: string[];
+}
+
+/**
  * Backend job stages (apps/api/jobs.py `job.stage`) mapped onto the modal's
  * progress steps. An unmapped stage is not a failure — the run continues and
  * simply shows no step highlight.
@@ -73,7 +87,7 @@ export default function RoomConstructionModal({
   const [running, setRunning] = useState(false);
   const [activeStage, setActiveStage] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [completed, setCompleted] = useState(false);
+  const [outcome, setOutcome] = useState<ReconstructionOutcome | null>(null);
 
   if (!isOpen) return null;
 
@@ -132,7 +146,7 @@ export default function RoomConstructionModal({
 
     setRunning(true);
     setError(null);
-    setCompleted(false);
+    setOutcome(null);
     setActiveStage(1);
 
     try {
@@ -178,9 +192,33 @@ export default function RoomConstructionModal({
           if (step) setActiveStage(step);
         }
 
-        if (job.status === "succeeded" || job.status === "partial" || job.status === "completed") {
+        // Real terminal statuses only. "succeeded" and "partial" are the two
+        // outcomes on which the worker adopts a WorldStore version, and the
+        // job payload carries that version id -- without it there is no
+        // result to report, whatever the status string says.
+        if (job.status === "succeeded" || job.status === "partial") {
+          const payload = (job.payload ?? {}) as {
+            version_id?: unknown;
+            degraded?: unknown;
+          };
+          const versionId = typeof payload.version_id === "string" ? payload.version_id : null;
+          const degraded = Array.isArray(payload.degraded)
+            ? payload.degraded.filter((r): r is string => typeof r === "string")
+            : [];
+
+          if (!versionId) {
+            setRunning(false);
+            setActiveStage(null);
+            setError(
+              `Job ${jobId} reported '${job.status}' but carries no committed WorldStore ` +
+                "version id. Nothing was adopted for this world — re-run reconstruction " +
+                "and check the API logs."
+            );
+            return;
+          }
+
           setActiveStage(7);
-          setCompleted(true);
+          setOutcome({ status: job.status, versionId, degraded });
           setRunning(false);
           onReconstructionSuccess?.();
           return;
@@ -285,7 +323,12 @@ export default function RoomConstructionModal({
                 const Icon = s.icon;
                 const isActive = activeStage === s.id;
                 const isPast = activeStage !== null && activeStage > s.id;
-                const isFinished = completed;
+                // Stages are only all-complete when the run actually
+                // succeeded; a partial run keeps its unreached stages
+                // showing as pending instead of claiming the pipeline
+                // finished.
+                const isFinished = outcome?.status === "succeeded";
+                const isDone = isPast || isFinished;
 
                 return (
                   <div
@@ -293,7 +336,7 @@ export default function RoomConstructionModal({
                     className={`p-2.5 rounded-lg border transition-colors flex items-start gap-3 ${
                       isActive
                         ? "bg-[#182030] border-[#00e5ff]"
-                        : isPast || isFinished
+                        : isDone
                         ? "bg-[#14161f] border-[#2ecc71]/40"
                         : "bg-[#14161f] border-[#1f222b]"
                     }`}
@@ -302,14 +345,14 @@ export default function RoomConstructionModal({
                       className={`p-1.5 rounded shrink-0 mt-0.5 ${
                         isActive
                           ? "bg-[#00e5ff]/20 text-[#00e5ff]"
-                          : isPast || isFinished
+                          : isDone
                           ? "bg-[#2ecc71]/20 text-[#2ecc71]"
                           : "bg-neutral-800 text-neutral-400"
                       }`}
                     >
                       {isActive ? (
                         <Loader2 className="w-4 h-4 animate-spin text-[#00e5ff]" />
-                      ) : isPast || isFinished ? (
+                      ) : isDone ? (
                         <CheckCircle2 className="w-4 h-4 text-[#2ecc71]" />
                       ) : (
                         <Icon className="w-4 h-4" />
@@ -330,7 +373,7 @@ export default function RoomConstructionModal({
                         >
                           {isActive
                             ? "RUNNING"
-                            : isPast || isFinished
+                            : isDone
                             ? "COMPLETE"
                             : "PENDING"}
                         </span>
@@ -356,11 +399,37 @@ export default function RoomConstructionModal({
             </div>
           )}
 
-          {/* Success Banner */}
-          {completed && (
-            <div className="p-3 rounded-lg border border-[#2ecc71]/50 bg-[#12281a] text-[#2ecc71] flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>Room construction finished. WorldIR compiled and persisted to WorldStore.</span>
+          {/* Outcome: only a committed WorldStore version is reported */}
+          {outcome && (
+            <div
+              className={`p-3 rounded-lg border flex items-start gap-2.5 ${
+                outcome.status === "succeeded"
+                  ? "border-[#2ecc71]/50 bg-[#12281a] text-[#2ecc71]"
+                  : "border-[#e6a23c]/50 bg-[#2a2413] text-[#e6a23c]"
+              }`}
+            >
+              {outcome.status === "succeeded" ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-1 min-w-0">
+                <div className="font-semibold text-xs">
+                  {outcome.status === "succeeded"
+                    ? "Room construction finished"
+                    : "Version adopted with degraded stages"}
+                </div>
+                <div className="text-[11px] leading-relaxed font-mono break-all">
+                  WorldStore version {outcome.versionId}
+                </div>
+                {outcome.degraded.length > 0 && (
+                  <ul className="text-[11px] leading-relaxed list-disc list-inside">
+                    {outcome.degraded.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -368,7 +437,11 @@ export default function RoomConstructionModal({
         {/* Footer */}
         <div className="flex items-center justify-between px-5 h-14 border-t border-[#1f222b] bg-[#12141a]">
           <span className="text-[11px] text-neutral-400 font-mono">
-            {running ? "Processing reconstruction job..." : "Ready for execution"}
+            {running
+              ? "Processing reconstruction job..."
+              : outcome
+              ? `${outcome.status} · ${outcome.versionId}`
+              : "Ready for execution"}
           </span>
 
           <div className="flex items-center gap-2">

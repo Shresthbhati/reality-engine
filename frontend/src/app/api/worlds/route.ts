@@ -1,106 +1,91 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
-function getLocalDatasetPath(...segments: string[]) {
-  const candidates = [
-    path.resolve(process.cwd(), "..", "datasets", ...segments),
-    path.resolve(process.cwd(), "datasets", ...segments),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+/**
+ * Thin proxy to the FastAPI contract `GET/POST /api/worlds`
+ * (apps/api/routes_worlds.py). The application API is the only source of
+ * worlds.
+ *
+ * The previous revision of this route also `unshift`ed a fabricated
+ * "world-compiled-seed42" row whenever `datasets/room_capture/pipeline_out/
+ * worldir.json` happened to exist on the build machine: hard-coded San
+ * Francisco coordinates, an invented `0.05 km²` coverage, "25 Evidence",
+ * "Verified Pipeline Out". That made the product claim a reconstructed
+ * world that no session, no evidence and no WorldStore version ever
+ * produced. An unreachable API is a 503 now, not an invented world list.
+ */
+function parseJson(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 export async function GET() {
-  const items: Array<Record<string, unknown>> = [];
-
-  // 1. Try live backend
   try {
     const backendRes = await fetch(`${BACKEND_URL}/api/worlds`, {
-      signal: AbortSignal.timeout(2000),
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
     });
-    if (backendRes.ok) {
-      const data = await backendRes.json();
-      if (Array.isArray(data.items)) {
-        for (const item of data.items) {
-          items.push({
-            id: item.id,
-            name: item.name,
-            location: item.description || "Captured Spatial World",
-            lat: item.latitude,
-            lng: item.longitude,
-            coverageKm2: 0.05,
-            sessionCount: item.session_count || 0,
-            evidenceCount: 0,
-            timeRangeStart: null,
-            timeRangeEnd: null,
-            updatedAt: item.created_at || "Recent",
-            has3DData: Boolean(item.current_version_id),
-          });
-        }
-      }
-    }
-  } catch {
-    // Backend offline
-  }
 
-  // 2. Discover authentic local datasets present on disk
-  const roomCaptureWorldir = getLocalDatasetPath("room_capture", "pipeline_out", "worldir.json");
-  if (roomCaptureWorldir && fs.existsSync(/*turbopackIgnore: true*/ roomCaptureWorldir)) {
-    try {
-      const raw = fs.readFileSync(/*turbopackIgnore: true*/ roomCaptureWorldir, "utf-8");
-      const parsed = JSON.parse(raw);
-      const datasetId = parsed.id || "world-compiled-seed42";
-      if (!items.some((w) => w.id === datasetId)) {
-        items.unshift({
-          id: datasetId,
-          name: "Room Capture (Physical Environment)",
-          location: "Verified Spatial Capture Dataset",
-          lat: 37.7749,
-          lng: -122.4194,
-          coverageKm2: 0.05,
-          sessionCount: 1,
-          evidenceCount: 25,
-          timeRangeStart: "2026-09-22",
-          timeRangeEnd: "2026-09-22",
-          updatedAt: "Verified Pipeline Out",
-          has3DData: true,
-        });
-      }
-    } catch (err) {
-      console.error("Failed to parse local dataset worldir:", err);
-    }
-  }
+    const data = parseJson(await backendRes.text());
 
-  return NextResponse.json({ items });
+    if (!backendRes.ok) {
+      return NextResponse.json(
+        data ?? { detail: `World listing failed with HTTP ${backendRes.status}` },
+        { status: backendRes.status }
+      );
+    }
+
+    return NextResponse.json(data ?? { items: [] });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      {
+        detail: `Failed to reach the Reality Engine API for worlds: ${message}`,
+        available: false,
+      },
+      { status: 503 }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
+  let body: unknown;
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ detail: "World body must be valid JSON" }, { status: 400 });
+  }
+
+  try {
     const res = await fetch(`${BACKEND_URL}/api/worlds`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10000),
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      return NextResponse.json(data, { status: 201 });
+    const data = parseJson(await res.text());
+
+    if (!res.ok) {
+      return NextResponse.json(
+        data ?? { detail: `World creation failed with HTTP ${res.status}` },
+        { status: res.status }
+      );
     }
 
+    return NextResponse.json(data ?? {}, { status: 201 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Backend failed to create world" },
-      { status: res.status }
-    );
-  } catch {
-    return NextResponse.json(
-      { error: "Backend unavailable; world was not created" },
+      {
+        detail: `Backend unavailable; world was not created: ${message}`,
+        available: false,
+      },
       { status: 503 }
     );
   }

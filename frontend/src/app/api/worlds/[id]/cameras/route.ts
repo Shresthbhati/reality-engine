@@ -1,79 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 
 const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
 
-function getLocalDatasetPath(...segments: string[]) {
-  const candidates = [
-    path.resolve(process.cwd(), "..", "datasets", ...segments),
-    path.resolve(process.cwd(), "datasets", ...segments),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return null;
-}
-
+/**
+ * Thin proxy to `GET /api/worlds/{world_id}/cameras`
+ * (apps/api/routes_worlds.py), which returns the camera poses actually
+ * registered on the world's current version.
+ *
+ * Two fabrications were removed here:
+ *  - `datasets/room_capture/pipeline_out/cameras.json` was served for ids in
+ *    a hard-coded allow-list, so an uncalibrated world showed someone
+ *    else's calibrated cameras;
+ *  - the response invented `frame` / `rotation_convention` /
+ *    `image_size: [1280, 960]` defaults instead of reporting the version's
+ *    real values (the API returns `image_size: null` when unrecorded).
+ */
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
+  void request;
 
-  // 1. Try Live Backend computational surface
   try {
-    const response = await fetch(`${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/cameras`, {
-      signal: AbortSignal.timeout(2500),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      return NextResponse.json({
-        frame: data.frame || "world (meters, +Y up)",
-        rotation_convention: data.rotation_convention || "camera-to-world quaternion (w, x, y, z)",
-        image_size: data.image_size || [1280, 960],
-        cameras: data.cameras || [],
-      });
-    }
-  } catch {
-    // Backend offline; fall through to authentic local dataset
-  }
-
-  // 2. Verified Local Pipeline Out Dataset (datasets/room_capture/pipeline_out)
-  const isLocalDataset =
-    id === "world-compiled-seed42" ||
-    id === "room-capture" ||
-    id === "dataset-room-capture" ||
-    id.startsWith("world-room");
-
-  if (isLocalDataset) {
-    const localCamerasPath = getLocalDatasetPath("room_capture", "pipeline_out", "cameras.json");
-    if (localCamerasPath && fs.existsSync(/*turbopackIgnore: true*/ localCamerasPath)) {
-      try {
-        const raw = fs.readFileSync(/*turbopackIgnore: true*/ localCamerasPath, "utf-8");
-        const json = JSON.parse(raw);
-        return NextResponse.json({
-          image_size: json.image_size || [1280, 960],
-          cameras: (json.cameras || []).map((c: { evidence_id: string; position_m: [number, number, number]; rotation_wxyz: [number, number, number, number] }) => ({
-            id: c.evidence_id,
-            evidence_id: c.evidence_id,
-            position_m: c.position_m,
-            rotation_wxyz: c.rotation_wxyz,
-          })),
-        });
-      } catch (err) {
-        console.error("Failed to read local cameras:", err);
+    const response = await fetch(
+      `${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/cameras`,
+      {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(30000),
       }
-    }
-  }
+    );
 
-  return NextResponse.json(
-    {
-      error: "No calibrated cameras registered for this world",
-      world_id: id,
-      available: false,
-    },
-    { status: 404 }
-  );
+    const data = (await response.json().catch(() => null)) as unknown;
+
+    if (!response.ok) {
+      return NextResponse.json(
+        data ?? {
+          error: "Camera request failed",
+          world_id: id,
+          available: false,
+        },
+        { status: response.status }
+      );
+    }
+
+    if (data === null) {
+      return NextResponse.json(
+        { error: "API returned a non-JSON cameras body", world_id: id, available: false },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      {
+        detail: `Failed to reach the Reality Engine API for this world's cameras: ${message}`,
+        world_id: id,
+        available: false,
+      },
+      { status: 503 }
+    );
+  }
 }

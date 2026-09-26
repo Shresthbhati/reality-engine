@@ -51,13 +51,20 @@ class WorldIn(BaseModel):
 
 @worlds.post("", status_code=201)
 async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db)) -> dict:
+    from apps.api.validation import (
+        require_json_size,
+        require_latitude,
+        require_longitude,
+        require_name,
+    )
+
     w = World(
         id=new_id("wld"),
-        name=body.name,
-        description=body.description,
-        latitude=body.latitude,
-        longitude=body.longitude,
-        coverage=body.coverage,
+        name=require_name(body.name, "world name"),
+        description=require_json_size(body.description, "description"),
+        latitude=require_latitude(body.latitude) if body.latitude is not None else None,
+        longitude=require_longitude(body.longitude) if body.longitude is not None else None,
+        coverage=require_json_size(body.coverage, "coverage"),
     )
     db.add(w)
     db.add(

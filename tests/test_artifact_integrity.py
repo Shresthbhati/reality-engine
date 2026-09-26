@@ -262,6 +262,57 @@ def test_tampered_evidence_fails_checksum_explicitly(client, tmp_path, monkeypat
     assert "checksum mismatch" in (error or "").lower()
 
 
+def test_create_world_rejects_bad_input(client):
+    import json as _json
+
+    assert client.post("/api/worlds", json={"name": "   "}).status_code == 422
+    assert client.post("/api/worlds", json={"name": "w" * 201}).status_code == 422
+    assert client.post("/api/worlds", json={"name": "W", "latitude": 100.0}).status_code == 422
+    assert client.post("/api/worlds", json={"name": "W", "longitude": -200.0}).status_code == 422
+    raw = _json.dumps({"name": "W", "latitude": float("nan")})
+    r = client.post("/api/worlds", content=raw.encode(),
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 422, r.text
+    big = client.post("/api/worlds", json={"name": "W", "description": "d" * 70000})
+    assert big.status_code == 413, big.status_code
+    # None rejected cleanly: no world rows leaked.
+    assert client.post("/api/worlds", json={"name": "Fine"}).status_code == 201
+
+
+def test_create_session_rejects_bad_input(client):
+    import json as _json
+
+    assert client.post("/api/sessions", json={"name": ""}).status_code == 422
+    bad_loc = {"name": "S", "location": {"latitude": 91.0, "longitude": 0.0}}
+    assert client.post("/api/sessions", json=bad_loc).status_code == 422
+    raw = _json.dumps({"name": "S", "location": {"latitude": 1.0, "longitude": float("inf")}})
+    r = client.post("/api/sessions", content=raw.encode(),
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 422, r.text
+    big = client.post("/api/sessions", json={"name": "S", "device_metadata": {"b": "x" * 70000}})
+    assert big.status_code == 413, big.status_code
+
+
+def test_export_download_filename_safe(client):
+    from apps.api.storage import store_bytes
+
+    digest, _ = store_bytes(b"export-bytes")
+    r = client.get(f"/api/worlds/wld_ok/export/{digest}/download?format=gltf")
+    assert r.status_code == 200
+    assert "wld_ok.gltf" in r.headers.get("content-disposition", "")
+    # Request-controlled segments must never reach headers raw: quotes,
+    # CR/LF and traversal survive only as inert text, if at all.
+    r = client.get(
+        "/api/worlds/wld_x%22%0D%0A_y/export/" + digest + "/download?format=gl%22t%0Af"
+    )
+    assert r.status_code == 200, r.text
+    disposition = r.headers.get("content-disposition", "")
+    assert "\r" not in disposition and "\n" not in disposition
+    # At most the two RFC delimiters around the filename: nothing
+    # attacker-controlled can break out of the quoted string.
+    assert disposition.count('"') <= 2 and ".." not in disposition
+
+
 def test_malformed_ids_404_without_side_effects(client):
     for path in (
         "/api/worlds/wld-../escape",

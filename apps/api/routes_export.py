@@ -78,9 +78,13 @@ async def export_world(
 @export.get("/{content_hash}/download")
 async def download_export(world_id: str, content_hash: str, format: str) -> FileResponse:
     """Stream back a previously exported artifact by its content hash."""
+    from apps.api.routes_misc import _safe_filename
+
     path = resolve_artifact(f"sha256://{content_hash}")
     if path is None:
         raise HTTPException(404, "Export artifact missing from store")
     media_type = _MEDIA_TYPES.get(format, "application/octet-stream")
-    filename = f"{world_id}.{format}"
+    # world_id/format are request-controlled: sanitize before reflecting
+    # them into Content-Disposition (header-injection hardening).
+    filename = _safe_filename(f"{world_id}.{format}")
     return FileResponse(path, media_type=media_type, filename=filename)

@@ -142,9 +142,31 @@ async def _latest_location(db: AsyncSession, entity_type: str, entity_id: str) -
 
 @sessions.post("", response_model=SessionOut, status_code=201)
 async def create_session(body: SessionIn, db: AsyncSession = Depends(get_db)) -> SessionOut:
+    from apps.api.validation import (
+        require_finite,
+        require_json_size,
+        require_latitude,
+        require_longitude,
+        require_name,
+    )
+
+    name = require_name(body.name, "session name")
+    require_json_size(body.device_metadata, "device_metadata")
+    location = None
+    if body.location is not None:
+        loc = body.location
+        location = {
+            "latitude": require_latitude(loc.latitude),
+            "longitude": require_longitude(loc.longitude),
+            "altitude": require_finite(loc.altitude, "altitude") if loc.altitude is not None else None,
+            "accuracy": require_finite(loc.accuracy, "accuracy") if loc.accuracy is not None else None,
+            "heading": require_finite(loc.heading, "heading") if loc.heading is not None else None,
+            "speed": require_finite(loc.speed, "speed") if loc.speed is not None else None,
+            "source": loc.source,
+        }
     s = Session(
         id=new_id("ses"),
-        name=body.name,
+        name=name,
         status="created",
         device_metadata=body.device_metadata,
         coordinate_reference_system=body.coordinate_reference_system,
@@ -152,13 +174,13 @@ async def create_session(body: SessionIn, db: AsyncSession = Depends(get_db)) ->
     )
     db.add(s)
     await db.flush()
-    if body.location is not None:
+    if location is not None:
         db.add(
             Location(
                 id=new_id("loc"),
                 entity_type="session",
                 entity_id=s.id,
-                **body.location.model_dump(exclude={"captured_at"}),
+                **location,
                 captured_at=body.location.captured_at or utcnow(),
             )
         )

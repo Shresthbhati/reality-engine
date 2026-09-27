@@ -44,7 +44,7 @@ byte-identical output regardless of input order.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from perception.architecture.classify import (
@@ -65,6 +65,26 @@ FLOOR_HEIGHT_TOLERANCE_M = 0.15
 #: Minimum walls for an enclosure: a box has >= 3 distinct wall
 #: planes for any convex room interior (2 walls cannot enclose).
 MIN_WALLS_FOR_ROOM = 3
+
+#: A ceiling bounds a storey only when the space under it is high
+#: enough to stand in. Lower horizontal planes (tables, counters,
+#: worktops misclassified as horizontal structure) must not clip a
+#: room's wall band at 0.75 m -- the room would lose every wall that
+#: extends above the "ceiling". Measured from human clearance, not
+#: tuned to a dataset. Used ONLY when a lower candidate exists; the
+#: storey's real ceiling is the LOWEST candidate above this band.
+MIN_WALKABLE_CLEAR_HEIGHT_M = 1.4
+
+#: A horizontal plane spanning less plan area than this fraction of a
+#: floor's footprint is furniture-scale (a table top), not structure
+#: (a floor slab or ceiling). Its horizontal role is genuinely
+#: uncertain -- classified, but never promoted as storey structure:
+#: promoting a table as a floor fabricates a storey whose "floor" is
+#: 1.2 m above the real one. Measured extent vs. the storey floor;
+#: threshold between a two-person desk (~1.6 m2) and a small
+#: mezzanine landing. Not tuned against a dataset -- documented
+#: deferral.
+FURNITURE_SCALE_FLOOR_FRACTION = 0.25
 
 #: How far outside a floor's measured extent a boundary wall may sit
 #: and still bound THIS floor. A floor's inliers routinely stop short
@@ -336,6 +356,71 @@ def _wall_encloses_floor(
     return (line_lo <= f_hi + gap and line_hi >= f_lo - gap)
 
 
+def plan_area(
+    bounds_min: Sequence[float],
+    bounds_max: Sequence[float],
+    up: Sequence[float] = (0.0, 0.0, 1.0),
+) -> float:
+    """The plan (horizontal-projection) area of an axis-aligned box."""
+    up_idx = _up_axis(up)
+    plan = [i for i in range(3) if i != up_idx]
+    return (
+        (bounds_max[plan[0]] - bounds_min[plan[0]])
+        * (bounds_max[plan[1]] - bounds_min[plan[1]])
+    )
+
+
+def _plan_overlap_area(
+    a: ArchitecturalElement,
+    b: ArchitecturalElement,
+    ax0: int,
+    ax1: int,
+) -> float:
+    """Positive plan-intersection area of two elements' AABBs on the
+    two plan axes (0.0 when disjoint)."""
+    dx = min(a.bounds_max[ax0], b.bounds_max[ax0]) \
+        - max(a.bounds_min[ax0], b.bounds_min[ax0])
+    dy = min(a.bounds_max[ax1], b.bounds_max[ax1]) \
+        - max(a.bounds_min[ax1], b.bounds_min[ax1])
+    if dx <= 0.0 or dy <= 0.0:
+        return 0.0
+    return dx * dy
+
+
+def floor_undersized_vs_floors(
+    element: ArchitecturalElement,
+    floors: Sequence[ArchitecturalElement],
+    up: Sequence[float] = (0.0, 0.0, 1.0),
+    fraction: float = FURNITURE_SCALE_FLOOR_FRACTION,
+) -> bool:
+    """True when a horizontal element spans less than `fraction` of the
+    plan area of the storey's real floors -- furniture scale (table
+    tops, worktops, counter slabs that RANSAC resolved and the role
+    assignment called horizontal).
+
+    Such a plane's horizontal role is genuinely UNCERTAIN structure:
+    the geometry is measured, the semantic role is not. Callers must
+    not promote it as storey structure (a table promoted as a floor
+    fabricates a storey 1.2 m above the real one) nor let it seed
+    rooms. False when no reference floors exist (nothing to compare
+    against: keep the classification; downstream refusal paths still
+    guard every use).
+    """
+    if not floors:
+        return False
+    if element.bounds_min is None or element.bounds_max is None:
+        return False
+    refs = [
+        plan_area(f.bounds_min, f.bounds_max, up) for f in floors
+        if f.bounds_min is not None and f.bounds_max is not None
+    ]
+    ref = max(refs) if refs else 0.0
+    if ref <= 0.0:
+        return False
+    return plan_area(element.bounds_min, element.bounds_max, up) \
+        < fraction * ref
+
+
 def _group_enclosures(
     elements: Sequence[ArchitecturalElement], up
 ) -> List[List[ArchitecturalElement]]:
@@ -362,15 +447,61 @@ def _group_enclosures(
                 and b.bounds_min[ax1] <= a.bounds_max[ax1]
             )
 
+        # A horizontal plane only seeds a STOREY when a person could
+        # actually stand on it. Skip this floor when another floor sits
+        # BARELY below it (less than walkable clear height) AND overlaps
+        # it in plan: that pair is one storey level -- a finish-threshold
+        # twin (5 cm slab step between rooms) is two disjoint plans and
+        # still seeds both rooms, while a mezzanine slab or an oversized
+        # table top INSIDE a taller storey overlaps the floor below and
+        # must not fabricate a mid-air enclosure. A real upper storey
+        # keeps seeding: the floor below it is a full storey down.
+        seeded = True
+        for g in floors:
+            if g is floor or g.bounds_min is None:
+                continue
+            gh = _floor_height(g, up)
+            if gh is None or gh >= fh:
+                continue
+            if fh - gh >= MIN_WALKABLE_CLEAR_HEIGHT_M:
+                continue  # a real storey below: this floor stands alone
+            g_area = plan_area(g.bounds_min, g.bounds_max, up)
+            f_area = plan_area(floor.bounds_min, floor.bounds_max, up)
+            smaller = min(g_area, f_area)
+            if smaller > 0.0 and (
+                _plan_overlap_area(floor, g, ax0, ax1) / smaller
+                >= FURNITURE_SCALE_FLOOR_FRACTION
+            ):
+                seeded = False
+                break
+        if not seeded:
+            continue  # slab within a taller storey: no room, no guess
+
         room_ceilings = [
             c for c in ceilings
             if c.bounds_min is not None and _plan_overlap(floor, c)
             and c.bounds_min[up_idx] > fh
         ]
-        if not room_ceilings:
-            continue
-        ceiling = min(room_ceilings, key=lambda c: c.bounds_min[up_idx])
-        ceiling_val = ceiling.bounds_min[up_idx]
+        # Ceiling absence is recorded, never fatal: real captures
+        # routinely miss the ceiling (tall rooms, scan budget, dark
+        # upper finish), while the floor + enclosing walls still close
+        # the space. The storey's ceiling is the lowest candidate
+        # leaving WALKABLE clear height under it: a table top or
+        # worktop misread as "ceiling" would clip the wall band at
+        # 0.75 m and shed every wall above it -- the room would
+        # collapse exactly when furniture is present.
+        ceiling = None
+        for c in sorted(
+            room_ceilings, key=lambda c: c.bounds_min[up_idx]
+        ):
+            if (c.bounds_min[up_idx] - fh
+                    >= MIN_WALKABLE_CLEAR_HEIGHT_M):
+                ceiling = c
+                break
+        ceiling_val = (
+            ceiling.bounds_min[up_idx] if ceiling is not None
+            else math.inf
+        )
         room_walls = [
             w for w in walls
             if w.bounds_min is not None
@@ -383,8 +514,11 @@ def _group_enclosures(
             w for w in room_walls
             if (w.bounds_max[up_idx] - w.bounds_min[up_idx]) >= 0.8
         ]
-        members: List[ArchitecturalElement] = [floor, ceiling] + room_walls
-        if len(room_walls) < MIN_WALLS_FOR_ROOM or not room_ceilings:
+        members: List[ArchitecturalElement] = (
+            ([floor, ceiling] if ceiling is not None else [floor])
+            + room_walls
+        )
+        if len(room_walls) < MIN_WALLS_FOR_ROOM:
             continue  # cannot enclose: refuse this floor, no guess
         groups.append(members)
     return groups
@@ -607,6 +741,68 @@ def build_room_graph(
                 continue
             openings.extend(_openings_for(w, fh, up, plane_inputs))
         area = dims[axis_names[ax0]] * dims[axis_names[ax1]]
+
+        # Honest provenance (measured, never defaulted): how many of
+        # the floor's four plan edges are actually bounded by an
+        # enclosure wall (within the wall-gap tolerance), whether a
+        # ceiling was observed, and the derived status. A room whose
+        # capture missed a wall is PARTIAL with fractional confidence
+        # -- reporting boundary_completeness=1.0 for it would be the
+        # exact false-certainty the mission prohibits.
+        walls_m = [e for e in members if e.element_type == "wall"]
+        edge_specs = (
+            (ax0, floor.bounds_min[ax0]), (ax0, floor.bounds_max[ax0]),
+            (ax1, floor.bounds_min[ax1]), (ax1, floor.bounds_max[ax1]),
+        )
+        covered = 0
+        for axis, edge in edge_specs:
+            other = ax1 if axis == ax0 else ax0
+            for w in walls_m:
+                if w.bounds_min is None or w.bounds_max is None:
+                    continue
+                # A wall bounds an edge only when it is PERPENDICULAR
+                # to that edge: its thin plan axis is the edge's axis
+                # (a wall running ALONG the edge bounds a different
+                # edge), its line coordinate reaches the edge within
+                # the wall-gap tolerance, and it spans the floor on
+                # the other axis. All three checks are measured.
+                w_extents = {
+                    j: w.bounds_max[j] - w.bounds_min[j]
+                    for j in (ax0, ax1)
+                }
+                if min(w_extents, key=w_extents.get) != axis:
+                    continue  # wall runs along this edge, not into it
+                spans_other = (
+                    w.bounds_min[other] <= floor.bounds_max[other]
+                    and w.bounds_max[other] >= floor.bounds_min[other]
+                )
+                reaches_edge = (
+                    w.bounds_min[axis] - FLOOR_WALL_GAP_TOLERANCE_M
+                    <= edge
+                    <= w.bounds_max[axis] + FLOOR_WALL_GAP_TOLERANCE_M
+                )
+                if spans_other and reaches_edge:
+                    covered += 1
+                    break
+        boundary_completeness = covered / 4.0
+        ceiling_present = any(
+            e.element_type == "ceiling" for e in members
+        )
+        ceiling_evidence = "measured" if ceiling_present else "missing"
+        status = (
+            "detected"
+            if boundary_completeness >= 1.0 and ceiling_present
+            else "partial"
+        )
+        notes_list: List[str] = []
+        if boundary_completeness < 1.0:
+            notes_list.append(
+                f"boundary incomplete: {covered} of 4 floor edges bounded"
+            )
+        if not ceiling_present:
+            notes_list.append("no ceiling observed in the capture")
+        notes = tuple(notes_list)
+
         rooms.append(RoomGraph(
             room_id=f"room-{i:03d}",
             boundary_element_ids=tuple(sorted(e.element_id for e in members)),
@@ -615,6 +811,11 @@ def build_room_graph(
             dimensions_m=dims,
             floor_area_m2=area,
             openings=tuple(sorted(openings, key=lambda o: o.wall_element_id)),
+            status=status,
+            confidence=boundary_completeness,
+            boundary_completeness=boundary_completeness,
+            ceiling_evidence=ceiling_evidence,
+            notes=notes,
         ))
 
     # Adjacency: shared boundary element -> adjacent rooms (computed
@@ -627,17 +828,14 @@ def build_room_graph(
             shared = set(room.boundary_element_ids) & set(other.boundary_element_ids)
             if shared and other.room_id not in adjacency[room.room_id]:
                 adjacency[room.room_id].append(other.room_id)
+    # Rebuild carries ONLY the adjacency: every measured provenance
+    # field (status, confidence, boundary_completeness, ceiling_evidence,
+    # notes) must survive -- a rebuild through the constructor would
+    # reset them to their perfect defaults and report partial captures
+    # as full-confidence rooms (the exact false certainty this seam
+    # exists to prevent).
     rooms = [
-        RoomGraph(
-            room_id=r.room_id,
-            boundary_element_ids=r.boundary_element_ids,
-            bounds_min=r.bounds_min,
-            bounds_max=r.bounds_max,
-            dimensions_m=r.dimensions_m,
-            floor_area_m2=r.floor_area_m2,
-            openings=r.openings,
-            adjacent_room_ids=tuple(sorted(adjacency[r.room_id])),
-        )
+        replace(r, adjacent_room_ids=tuple(sorted(adjacency[r.room_id])))
         for r in rooms
     ]
 

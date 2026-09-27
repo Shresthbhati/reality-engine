@@ -37,7 +37,7 @@ world and identical diagnostics.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from perception.geometry.planes import (
@@ -97,6 +97,9 @@ class InteriorSceneResult:
     storey_links: List[Tuple[str, str]] = field(default_factory=list)
     #: planes the classifier could not role-label (never guessed)
     unclassified_planes: List[str] = field(default_factory=list)
+    #: horizontal planes demoted to uncertain role because they span
+    #: furniture-scale plan area vs the storey's floors (table tops)
+    demoted_furniture_planes: List[str] = field(default_factory=list)
     #: why the storey layer was skipped (absence = it ran)
     storeys_skipped: str = ""
     validation_issues: List[str] = field(default_factory=list)
@@ -195,6 +198,68 @@ def assemble_interior_scene(
 
     world = world if world is not None else WorldIR(id="world-interior")
     res = InteriorSceneResult(world=world)
+
+    # Furniture-scale horizontal planes: the role assignment is purely
+    # per-plane tilt, so a table top or worktop with cameras above it
+    # classifies as "floor" exactly like the slab does. The geometry is
+    # measured; the SEMANTIC role is not. A horizontal plane much
+    # smaller than the storey's real floors is demoted to unknown
+    # (recorded) before promotion: promoting a table as a floor
+    # fabricates a storey 1.2 m above the real one and splits the plan
+    # into phantom enclosures. The uncertainty stays on the record.
+    from provenance import Uncertainty
+    from perception.architecture.classify import ArchitecturalElement
+    from perception.architecture.room_graph import (
+        floor_undersized_vs_floors,
+    )
+
+    def _element(o: OrientedPlane) -> ArchitecturalElement:
+        pts = positions.get(o.plane.plane_id, [])
+        if not pts:
+            bmin, bmax = o.plane.bounds_min, o.plane.bounds_max
+        else:
+            bmin = tuple(min(p[i] for p in pts) for i in range(3))
+            bmax = tuple(max(p[i] for p in pts) for i in range(3))
+        return ArchitecturalElement(
+            element_id=o.plane.plane_id,
+            element_type=o.role,
+            source_plane_id=o.plane.plane_id,
+            reason="furniture-scale audit",
+            bounds_min=bmin, bounds_max=bmax,
+        )
+
+    floor_planes = [
+        o for o in oriented if o.role == "floor"
+        and (positions.get(o.plane.plane_id) or o.plane.bounds_min)
+    ]
+    demoted_ids: set = set()
+    for o in floor_planes:
+        other_stubs = [
+            _element(f) for f in floor_planes
+            if f.plane.plane_id != o.plane.plane_id
+        ]
+        if floor_undersized_vs_floors(_element(o), other_stubs, up=up):
+            demoted_ids.add(o.plane.plane_id)
+    if demoted_ids:
+        oriented = [
+            replace(
+                o, role="unknown",
+                uncertainty=Uncertainty(
+                    confidence=o.uncertainty.confidence,
+                    note=(
+                        "horizontal plane at furniture scale relative to "
+                        "the storey's floors -- floor/ceiling role "
+                        "uncertain; not promoted as storey structure"
+                    ),
+                ),
+            )
+            if o.plane.plane_id in demoted_ids else o
+            for o in oriented
+        ]
+        res.demoted_furniture_planes = sorted(demoted_ids)
+        # positions_by_plane keyed by the ORIGINAL oriented list; roles
+        # are unchanged for keys, but rebuild for consistency.
+        positions = positions_by_plane(result, oriented)
 
     # ---- stage 1: promote structural planes (walls/floors/ceilings) --
     floor_heights: List[float] = []
@@ -362,14 +427,9 @@ def _with_promoted_boundary_ids(
         if boundary == room.boundary_element_ids:
             remapped.append(room)
             continue
-        remapped.append(RoomGraph(
-            room_id=room.room_id,
-            boundary_element_ids=boundary,
-            bounds_min=room.bounds_min,
-            bounds_max=room.bounds_max,
-            dimensions_m=room.dimensions_m,
-            floor_area_m2=room.floor_area_m2,
-            openings=room.openings,
-            adjacent_room_ids=room.adjacent_room_ids,
-        ))
+        # replace() carries ONLY the boundary ids: status, confidence,
+        # boundary_completeness, ceiling_evidence, and notes are
+        # measured provenance and must survive the remap -- a
+        # constructor rebuild would reset them to perfect defaults.
+        remapped.append(replace(room, boundary_element_ids=boundary))
     return remapped

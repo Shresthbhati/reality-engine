@@ -92,6 +92,26 @@ def _store_entity(world, entity) -> None:
         entities[entity.id] = entity
 
 
+def _store_geometry(world, geometry) -> bool:
+    """Write a geometry into world.geometries when the world supports a
+    geometry registry (world_ir.world_v1.WorldIR, the canonical world
+    every real compiler path constructs). The legacy world_ir.world.WorldIR
+    foundation layer has no geometry subsystem yet (its module docstring
+    lists geometry among the fields "that have no implemented subsystem
+    yet") -- exercised directly only by tests/test_topology_coherence.py.
+    There, the room's bounds already ride into the entity's
+    custom_properties (bounds_min/bounds_max/dimensions_m), so skipping
+    the separate Geometry object loses no information; it is an honest
+    "not supported here", not a fabricated attribute. Returns whether the
+    geometry was actually stored, so the caller can link geometry_ids
+    only to geometries that exist."""
+    geometries = getattr(world, "geometries", None)
+    if geometries is None:
+        return False
+    geometries[geometry.id] = geometry
+    return True
+
+
 def _fit_properties(fit) -> dict:
     """Measured fit facts for custom_properties -- whatever the fit
     actually measured, nothing else."""

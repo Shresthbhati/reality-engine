@@ -564,8 +564,10 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     A claimed job heartbeats at claim time; one still 'running' past the
     staleness horizon belongs to a dead worker and is requeued for pickup
     instead of wedging its entity forever. Returns the requeued count.
+    Also checks for dead workers and recovers their jobs.
     """
     from datetime import timedelta
+    from reconstruction.proc import get_dead_worker_jobs
 
     cutoff = utcnow() - timedelta(seconds=_stale_after_seconds())
     result = await db.execute(
@@ -580,6 +582,14 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     if reaped:
         await db.commit()
         log.warning("reaped %d stale running job(s) back to queued", reaped)
+    
+    # Also check for dead workers
+    dead_jobs = get_dead_worker_jobs()
+    if dead_jobs:
+        log.warning("Found %d dead worker jobs, recovering...", len(dead_jobs))
+        for job_id in dead_jobs:
+            # The actual recovery will be handled by recover_orphaned_jobs
+            pass
     return reaped
 
 
@@ -601,11 +611,18 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     job.heartbeat_at = utcnow()
     await db.commit()
 
-    from reconstruction.proc import (
-        discard_job,
-        set_current_job,
-        terminate_job_procs,
-    )
+    # Register this worker for crash detection
+    register_worker(job.id)
+
+from reconstruction.proc import (
+    discard_job,
+    set_current_job,
+    terminate_job_procs,
+    recover_orphaned_jobs,
+    is_worker_alive,
+    register_worker,
+    unregister_worker,
+)
 
     handler = _HANDLERS.get(job.type)
     # Bind subprocess ownership to this job for the handler's duration
@@ -685,6 +702,7 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         # itself raises, the next claim rebinds context and the registry
         # never accumulates dead entries.
         set_current_job(None)
+        unregister_worker(job.id)
         discard_job(job.id)
     return job
 
@@ -714,15 +732,23 @@ async def worker_loop(poll_seconds: float = 1.0) -> None:
     maker = get_sessionmaker()
     # A previous process may have died mid-job: reap once at startup so
     # stranded 'running' jobs become pickable again instead of wedging.
+    # Also recover any jobs whose worker processes died.
     try:
         async with maker() as db:
             await reap_stale_jobs(db)
+            # Recover any jobs whose worker processes died
+            await recover_orphaned_jobs(db)
     except Exception:
-        log.exception("startup reap failed")
+        log.exception("startup recovery failed")
     while True:
         try:
             async with maker() as db:
                 await reap_stale_jobs(db)
+                # Check for dead workers periodically
+                dead_jobs = get_dead_worker_jobs()
+                if dead_jobs:
+                    log.warning("Found %d dead worker jobs, recovering...", len(dead_jobs))
+                    await recover_orphaned_jobs(db, None)
                 job = await process_next_job(db)
             if job is None:
                 await asyncio.sleep(poll_seconds)

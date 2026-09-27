@@ -93,6 +93,12 @@ def test_storage_resolve_rejects_traversal_and_garbage():
     assert resolve_artifact("file:///etc/passwd") is None
     assert resolve_artifact("") is None
     assert resolve_artifact("sha256://" + "0" * 64) is None  # well-formed, absent
+    # Encoded/absolute traversal shapes and cross-scheme confusion.
+    assert resolve_artifact("sha256://..%2f..%2fx") is None
+    assert resolve_artifact("sha256://%2e%2e%2fetc%2fpasswd") is None
+    assert resolve_artifact("sha256:///etc/passwd") is None
+    assert resolve_artifact("sha256://C:\\x") is None
+    assert resolve_artifact("artifact://" + "0" * 64) is None
 
 
 def test_points_missing_artifact_is_honest_404(client, tmp_path, monkeypatch):

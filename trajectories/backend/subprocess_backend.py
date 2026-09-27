@@ -18,6 +18,7 @@ discipline), and parsing the tool's real TUM-format trajectory output.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -74,12 +75,27 @@ class SubprocessTrajectoryBackend(ITrajectoryBackend):
         command = self._render_command(command_template, request)
 
         request.workdir.mkdir(parents=True, exist_ok=True)
-        proc = subprocess.run(
-            command,
-            cwd=str(request.workdir),
-            capture_output=True,
-            text=True,
-        )
+        # Bounded subprocess lifecycle: a hung VIO binary must fail
+        # explicitly instead of outliving its job. List-argv, no shell:
+        # the bound changes nothing about command construction.
+        try:
+            timeout_s = float(os.environ.get(
+                "TRAJECTORY_SUBPROCESS_TIMEOUT_SECONDS", "3600"))
+        except ValueError:
+            timeout_s = 3600.0
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(request.workdir),
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise TrajectoryBackendRunError(
+                f"{self.name} timed out after {timeout_s:.0f}s; "
+                f"command: {' '.join(command)}"
+            ) from exc
         if proc.returncode != 0:
             tail = "\n".join((proc.stderr or "").strip().splitlines()[-15:])
             raise TrajectoryBackendRunError(

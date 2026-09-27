@@ -51,8 +51,10 @@ def _find_colmap(binary: str) -> str:
 def _probe_poisson(colmap_path: str) -> bool:
     """True only if `colmap help` actually lists poisson_mesher. Presence
     of the binary alone proves nothing about this build's capabilities."""
+    from reconstruction.proc import run_owned
+
     try:
-        proc = subprocess.run(
+        proc = run_owned(
             [colmap_path, "help"],
             capture_output=True, text=True, timeout=30,
         )
@@ -145,8 +147,10 @@ def reconstruct_surface(
                 "--PoissonMeshing.num_threads", str(num_threads),
                 "--log_target", "stderr",
             ]
+            from reconstruction.proc import run_owned
+
             try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+                proc = run_owned(cmd, capture_output=True, text=True, timeout=1800)
             except subprocess.TimeoutExpired as exc:
                 raise MeshingError(f"poisson_mesher timed out after 1800s: {exc}") from exc
             if proc.returncode != 0:

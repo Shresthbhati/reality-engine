@@ -77,7 +77,7 @@ def capture_env(tmp_path, monkeypatch):
             _write_fused_ply(Path(out), n=12)
         return _FakeProc(0, "ok", "")
 
-    monkeypatch.setattr(dp.subprocess, "run", fake_run)
+    monkeypatch.setattr("reconstruction.proc.run_owned", fake_run)
     monkeypatch.setattr(
         dp.shutil, "which", lambda name: f"C:/fake/{name}.exe"
     )
@@ -132,7 +132,7 @@ class TestContract:
                 return _FakeProc(1, "", "CUDA error: out of memory")
             return _FakeProc(0, "", "")
 
-        monkeypatch.setattr(dp.subprocess, "run", fake_run)
+        monkeypatch.setattr("reconstruction.proc.run_owned", fake_run)
         with pytest.raises(DenseMVSRunError, match="patch_match_stereo"):
             run_dense_mvs(image_dir=image_dir, sparse_model_dir=sparse,
                           workspace=ws)
@@ -146,7 +146,7 @@ class TestContract:
                 return _FakeProc(0, "  --StereoFusion.output arg\n", "")
             return _FakeProc(0, "", "")
 
-        monkeypatch.setattr(dp.subprocess, "run", fake_run)
+        monkeypatch.setattr("reconstruction.proc.run_owned", fake_run)
         with pytest.raises(DenseMVSRunError, match="no fused.ply"):
             run_dense_mvs(image_dir=image_dir, sparse_model_dir=sparse,
                           workspace=ws)
@@ -155,7 +155,8 @@ class TestContract:
         called = []
         monkeypatch.setattr(dp.shutil, "which", lambda n: "C:/fake/colmap.exe")
         monkeypatch.setattr(
-            dp.subprocess, "run", lambda argv, **kw: called.append(argv) or _FakeProc(0)
+            "reconstruction.proc.run_owned",
+            lambda argv, **kw: called.append(argv) or _FakeProc(0),
         )
         image_dir = tmp_path / "images"  # exists
         image_dir.mkdir()
@@ -176,7 +177,7 @@ class TestContract:
                 return _FakeProc(0, "  --PatchMatchStereo.geom_consistency arg\n", "")
             raise subprocess.TimeoutExpired(cmd=argv[0], timeout=1.0)
 
-        monkeypatch.setattr(dp.subprocess, "run", fake_run)
+        monkeypatch.setattr("reconstruction.proc.run_owned", fake_run)
         with pytest.raises(DenseMVSRunError, match="timed out"):
             run_dense_mvs(image_dir=image_dir, sparse_model_dir=sparse,
                           workspace=ws, timeout_s=1.0)
@@ -186,7 +187,7 @@ class TestProbe:
     def test_probe_true_requires_patch_match_stereo_in_help(self, monkeypatch):
         monkeypatch.setattr(dp.shutil, "which", lambda n: "C:/fake/colmap.exe")
         monkeypatch.setattr(
-            dp.subprocess, "run",
+            "reconstruction.proc.run_owned",
             lambda argv, **kw: _FakeProc(0, "patch_match_stereo stereo_fusion", ""),
         )
         assert dense_mvs_available("colmap") is True
@@ -194,7 +195,8 @@ class TestProbe:
     def test_probe_false_when_command_missing(self, monkeypatch):
         monkeypatch.setattr(dp.shutil, "which", lambda n: "C:/fake/colmap.exe")
         monkeypatch.setattr(
-            dp.subprocess, "run", lambda argv, **kw: _FakeProc(0, "mapper", "")
+            "reconstruction.proc.run_owned",
+            lambda argv, **kw: _FakeProc(0, "mapper", ""),
         )
         assert dense_mvs_available("colmap") is False
 
@@ -221,7 +223,7 @@ class TestProbe:
             seen.append((list(argv), kwargs))
             return _FakeProc(0, "patch_match_stereo", "")
 
-        monkeypatch.setattr(dp.subprocess, "run", fake_run)
+        monkeypatch.setattr("reconstruction.proc.run_owned", fake_run)
         assert dense_mvs_available("colmap") is True
         argv, kwargs = seen[0]
         assert isinstance(argv, list)  # never a shell string

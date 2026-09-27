@@ -89,8 +89,10 @@ def _help_text(colmap_path: str, step: str) -> str:
     """The step's own --help output (its real, installed option names).
     Empty on any failure -- callers treat that as 'unknown' and skip
     option probing."""
+    from reconstruction.proc import run_owned
+
     try:
-        proc = subprocess.run(
+        proc = run_owned(
             [colmap_path, step, "--help"],
             capture_output=True, text=True, timeout=30, shell=False,
             env=_subprocess_env(colmap_path),
@@ -107,8 +109,10 @@ def dense_mvs_available(binary: str = "colmap") -> bool:
         colmap_path = _find_colmap(binary)
     except DenseMVSUnavailableError:
         return False
+    from reconstruction.proc import run_owned
+
     try:
-        proc = subprocess.run(
+        proc = run_owned(
             [colmap_path, "help"],
             capture_output=True, text=True, timeout=30, shell=False,
         )
@@ -165,8 +169,10 @@ def run_dense_mvs(
     env = _subprocess_env(colmap_path)
 
     def run_step(step: str, args: list) -> None:
+        from reconstruction.proc import run_owned
+
         try:
-            proc = subprocess.run(
+            proc = run_owned(
                 [colmap_path, step, *args],
                 capture_output=True, env=env, text=True,
                 timeout=timeout_s, shell=False,

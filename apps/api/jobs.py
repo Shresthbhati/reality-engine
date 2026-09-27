@@ -601,16 +601,36 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     job.heartbeat_at = utcnow()
     await db.commit()
 
+    from reconstruction.proc import (
+        discard_job,
+        set_current_job,
+        terminate_job_procs,
+    )
+
     handler = _HANDLERS.get(job.type)
+    # Bind subprocess ownership to this job for the handler's duration
+    # (propagates into worker threads, so synchronous backends inherit
+    # it transparently). Cleared in the finally below.
+    set_current_job(job.id)
     try:
         if handler is None:
             raise RuntimeError(f"No handler for job type {job.type}")
         # Bound every handler: a wedged backend (or lost dependency)
         # must fail this job, never stall the whole queue behind it. A
         # timeout is always a failure -- it can never grade as success.
+        # The timeout path tree-kills owned processes first, so a timed
+        # out job leaves no live child behind.
         try:
             outcome = await asyncio.wait_for(handler(db, job), timeout=_job_timeout_seconds())
         except TimeoutError as exc:
+            terminate_job_procs(job.id)
+            await db.refresh(job, attribute_names=["cancel_requested"])
+            if job.cancel_requested:
+                # Timeout and cancel raced: the operator's explicit
+                # cancel wins over the timeout failure.
+                raise _JobCancelled(
+                    f"job {job.id} cancelled by operator (timed out simultaneously)"
+                ) from exc
             raise RuntimeError(
                 f"job handler timed out after {_job_timeout_seconds():.0f}s"
             ) from exc
@@ -629,6 +649,7 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         await _emit_completion(db, job)
     except _JobCancelled as exc:
         log.warning("job %s cancelled: %s", job.id, exc)
+        terminate_job_procs(job.id)
         job.status = JOB_CANCELLED
         job.error = f"cancelled by operator: {exc}"
         job.completed_at = utcnow()
@@ -637,13 +658,34 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         import traceback
 
         job.error = traceback.format_exc()[-2000:]
-        if job.attempts >= job.max_attempts:
+        # A failure that arrives with a pending cancel request grades as
+        # CANCELLED (operator intent wins); otherwise failed/retry.
+        # Refresh only the flag: nothing else pending here is disturbed,
+        # and a refresh failure must not mask the original error.
+        try:
+            await db.refresh(job, attribute_names=["cancel_requested"])
+            cancelled = bool(job.cancel_requested)
+        except Exception:
+            cancelled = False
+        if cancelled:
+            terminate_job_procs(job.id)
+            job.status = JOB_CANCELLED
+            job.error = f"cancelled by operator: {job.error}"
+            job.completed_at = utcnow()
+        elif job.attempts >= job.max_attempts:
             job.status = JOB_FAILED
             job.completed_at = utcnow()
         else:
             job.status = JOB_QUEUED
             job.stage = None
-    await db.commit()
+    try:
+        await db.commit()
+    finally:
+        # Ownership cleanup is unconditional: even if the final commit
+        # itself raises, the next claim rebinds context and the registry
+        # never accumulates dead entries.
+        set_current_job(None)
+        discard_job(job.id)
     return job
 
 

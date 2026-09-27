@@ -875,6 +875,29 @@ tasks:
       (155,861-pt synthetic apartment: 15 entities, 2 rooms, 1 room
       link, 0 unclassified planes, 0 validation issues, identical
       reload).
+      ADVERSARIAL ROBUSTNESS PASS 2026-09-27 (same branch, post-#111):
+      twelve-case adversarial suite (tests/test_interior_adversarial.py,
+      marked slow) drives assemble_interior_scene through furniture
+      occlusion, partial walls, missing ceiling, incomplete floor,
+      noise, irregular plans, L-shaped rooms, ambiguous openings,
+      disconnected evidence, partial stairs, mezzanines, coplanar
+      fragments. ROOT CAUSE FIXED: two RoomGraph constructor rebuilds
+      (build_room_graph adjacency pass; scene.py boundary-id remap)
+      silently reset status/confidence/boundary_completeness/
+      ceiling_evidence/notes to perfect defaults -- every partial room
+      reported itself full-confidence. Both rebuilds now use
+      dataclasses.replace and carry only the changed field. Seams:
+      ceiling-optional enclosures (A), furniture-scale floor demotion
+      with recorded uncertainty (B), walkable-clear-height ceiling
+      gate (C), measured boundary_completeness/ceiling_evidence
+      provenance into WorldIR custom_properties (D), floor-seeding
+      gate for mezzanine slabs. Real south_building: rooms 0 -> 1
+      (9.3-18.8 m2 depending on subset), status=partial,
+      confidence=0.75, ceiling_evidence=missing -- measured structure
+      with measured uncertainty. KNOWN OPEN: canonical two-storey
+      fixture's upper floor is absorbed by RANSAC into a tilted junk
+      sheet (segmentation-level defect upstream of room logic; the
+      phantom storey it used to fabricate is now refused).
       EXPANSION 2026-09-16 (P7-03 architectural-perception expansion,
       Victoria Memorial directive): parametric perception landed --
       perception/architecture/parametric.py (deterministic

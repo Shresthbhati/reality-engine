@@ -75,6 +75,15 @@ function stepForStage(stage: string | null | undefined): number | null {
   return STAGE_TO_STEP[stage] ?? null;
 }
 
+export type ReconstructionJobStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "partial"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
 export default function RoomConstructionModal({
   worldId,
   sessions,
@@ -85,6 +94,7 @@ export default function RoomConstructionModal({
   onReconstructionSuccess,
 }: RoomConstructionModalProps) {
   const [running, setRunning] = useState(false);
+  const [jobStatus, setJobStatus] = useState<ReconstructionJobStatus>("idle");
   const [activeStage, setActiveStage] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ReconstructionOutcome | null>(null);
@@ -145,6 +155,7 @@ export default function RoomConstructionModal({
     }
 
     setRunning(true);
+    setJobStatus("queued");
     setError(null);
     setOutcome(null);
     setActiveStage(1);
@@ -186,6 +197,10 @@ export default function RoomConstructionModal({
 
         const job = await jobRes.json();
 
+        if (job.status === "running" || job.status === "queued") {
+          setJobStatus(job.status);
+        }
+
         if (job.stage && job.stage !== lastStage) {
           lastStage = job.stage;
           const step = stepForStage(job.stage);
@@ -208,6 +223,7 @@ export default function RoomConstructionModal({
 
           if (!versionId) {
             setRunning(false);
+            setJobStatus("failed");
             setActiveStage(null);
             setError(
               `Job ${jobId} reported '${job.status}' but carries no committed WorldStore ` +
@@ -218,6 +234,7 @@ export default function RoomConstructionModal({
           }
 
           setActiveStage(7);
+          setJobStatus(job.status);
           setOutcome({ status: job.status, versionId, degraded });
           setRunning(false);
           onReconstructionSuccess?.();
@@ -225,10 +242,12 @@ export default function RoomConstructionModal({
         }
 
         if (job.status === "failed") {
+          setJobStatus("failed");
           throw new Error(job.error || "Reconstruction job failed during processing.");
         }
 
         if (job.status === "cancelled") {
+          setJobStatus("cancelled");
           throw new Error("Reconstruction job was cancelled.");
         }
 
@@ -248,6 +267,7 @@ export default function RoomConstructionModal({
       const message = err instanceof Error ? err.message : String(err);
       setError(message || "Reconstruction failed for an unknown reason.");
       setRunning(false);
+      setJobStatus("failed");
       setActiveStage(null);
     }
   };
@@ -268,7 +288,28 @@ export default function RoomConstructionModal({
               <Workflow className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">Room Construction Pipeline</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-white">Room Construction Pipeline</h3>
+                {jobStatus !== "idle" && (
+                  <span
+                    className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
+                      jobStatus === "succeeded"
+                        ? "bg-[#2ecc71]/20 text-[#2ecc71] border-[#2ecc71]/40"
+                        : jobStatus === "partial"
+                        ? "bg-[#e6a23c]/20 text-[#e6a23c] border-[#e6a23c]/40"
+                        : jobStatus === "running"
+                        ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40 animate-pulse"
+                        : jobStatus === "queued"
+                        ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                        : jobStatus === "failed"
+                        ? "bg-red-500/20 text-red-400 border-red-500/40"
+                        : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                    }`}
+                  >
+                    {jobStatus}
+                  </span>
+                )}
+              </div>
               <p className="text-[11px] font-mono text-neutral-400">
                 Spatial World: <span className="text-[#00e5ff]">{worldId}</span>
               </p>
@@ -436,13 +477,31 @@ export default function RoomConstructionModal({
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 h-14 border-t border-[#1f222b] bg-[#12141a]">
-          <span className="text-[11px] text-neutral-400 font-mono">
-            {running
-              ? "Processing reconstruction job..."
-              : outcome
-              ? `${outcome.status} · ${outcome.versionId}`
-              : "Ready for execution"}
-          </span>
+          <div className="flex items-center gap-2 font-mono text-[11px]">
+            <span className="text-neutral-500">Status:</span>
+            <span
+              className={`font-semibold uppercase ${
+                jobStatus === "succeeded"
+                  ? "text-[#2ecc71]"
+                  : jobStatus === "partial"
+                  ? "text-[#e6a23c]"
+                  : jobStatus === "running"
+                  ? "text-[#00e5ff]"
+                  : jobStatus === "queued"
+                  ? "text-amber-400"
+                  : jobStatus === "failed"
+                  ? "text-red-400"
+                  : jobStatus === "cancelled"
+                  ? "text-neutral-400"
+                  : "text-neutral-500"
+              }`}
+            >
+              {jobStatus === "idle" ? "READY" : jobStatus}
+            </span>
+            {outcome?.versionId && (
+              <span className="text-neutral-400">· {outcome.versionId}</span>
+            )}
+          </div>
 
           <div className="flex items-center gap-2">
             <button

@@ -204,14 +204,16 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     commitMessage: string
   ) => {
     if (!worldId) return;
-    await commitWorldCorrection(worldId, {
+    const parentVersionId = versions[0]?.id || "";
+    const res = await commitWorldCorrection(worldId, {
       entity_id: entityId,
       changes,
-      parent_version_id: versions[0]?.id || "",
+      parent_version_id: parentVersionId,
       commit_message: commitMessage,
     });
     refetchVersions();
     refetchIr();
+    return { ...res, parent_version_id: parentVersionId };
   }, [worldId, versions, refetchVersions, refetchIr]);
 
   const handleOpenDiff = useCallback((base?: string, head?: string) => {
@@ -613,6 +615,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onFrameEntity={handleFrameEntity}
               onTraceEvidence={handleTraceEvidence}
               onCommitCorrection={handleCommitCorrection}
+              onOpenDiff={handleOpenDiff}
               onOpenRoomConstruction={() => setConstructionModalOpen(true)}
               onExport={handleExport}
             />

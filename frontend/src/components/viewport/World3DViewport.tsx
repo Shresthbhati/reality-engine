@@ -175,6 +175,21 @@ export default function World3DViewport({
     const handleClearCorrectionPreview = () => {
       controllerRef.current?.clearCorrectionPreview();
     };
+    const handleRequestCameraPose = () => {
+      const pose = controllerRef.current?.getCameraPose();
+      if (pose) {
+        window.dispatchEvent(new CustomEvent("viewport-camera-pose-response", { detail: pose }));
+      }
+    };
+    const handleFlyToBookmark = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        position: [number, number, number];
+        target: [number, number, number];
+      }>;
+      if (customEvent.detail?.position && customEvent.detail?.target) {
+        controllerRef.current?.flyToBookmark(customEvent.detail.position, customEvent.detail.target);
+      }
+    };
 
     window.addEventListener("frame-entity", handleFlyToEntity as EventListener);
     window.addEventListener("frame-camera", handleFlyToCamera as EventListener);
@@ -183,6 +198,8 @@ export default function World3DViewport({
     window.addEventListener("filter-level", handleFilterLevel as EventListener);
     window.addEventListener("preview-correction", handlePreviewCorrection as EventListener);
     window.addEventListener("clear-correction-preview", handleClearCorrectionPreview as EventListener);
+    window.addEventListener("request-viewport-camera-pose", handleRequestCameraPose as EventListener);
+    window.addEventListener("fly-to-bookmark", handleFlyToBookmark as EventListener);
 
     return () => {
       window.removeEventListener("frame-entity", handleFlyToEntity as EventListener);
@@ -192,6 +209,8 @@ export default function World3DViewport({
       window.removeEventListener("filter-level", handleFilterLevel as EventListener);
       window.removeEventListener("preview-correction", handlePreviewCorrection as EventListener);
       window.removeEventListener("clear-correction-preview", handleClearCorrectionPreview as EventListener);
+      window.removeEventListener("request-viewport-camera-pose", handleRequestCameraPose as EventListener);
+      window.removeEventListener("fly-to-bookmark", handleFlyToBookmark as EventListener);
     };
   }, []);
 

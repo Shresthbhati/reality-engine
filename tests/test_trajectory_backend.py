@@ -187,6 +187,22 @@ class TestSubprocessAdapterContract:
         with pytest.raises(TrajectoryBackendRunError, match="no invocation supplied"):
             backend.estimate(request)
 
+    def test_hung_binary_times_out_explicitly(self, tmp_path, monkeypatch):
+        """A hung VIO binary fails with a timeout-marked run error --
+        never an unbounded wait, never a silent pass."""
+        monkeypatch.setenv("TRAJECTORY_SUBPROCESS_TIMEOUT_SECONDS", "1")
+        backend = _FakeVioBackend()
+        request = TrajectoryEstimationRequest(
+            images_path=tmp_path / "images", workdir=tmp_path / "work",
+            options={
+                "command": [
+                    sys.executable, "-c", "import time; time.sleep(60)",
+                ],
+            },
+        )
+        with pytest.raises(TrajectoryBackendRunError, match="timed out"):
+            backend.estimate(request)
+
     def test_estimate_runs_fake_binary_and_parses_output(self, tmp_path):
         script_path = tmp_path / "write_tum.py"
         script_path.write_text(_WRITE_TUM_SCRIPT)

@@ -68,7 +68,12 @@ from perception.geometry.orientation import (
     OrientationError,
     classify_planes,
 )
-from perception.geometry.planes import detect_planes
+from perception.geometry.planes import (
+    canonicalize_plane_ids,
+    detect_planes,
+    merge_coplanar_fragments,
+    split_parallel_sheets,
+)
 from provenance import Provenance
 from world_ir import WorldIR
 
@@ -109,6 +114,23 @@ class CompileOptions:
 
     seed: int = 42
     up: Tuple[float, float, float] = (0.0, 1.0, 0.0)
+    #: Interior-scale plane detection contract, matching
+    #: assemble_interior_scene (the compiler compiles the same
+    #: reconstruction into the same interior structure). The module
+    #: defaults (0.08 m / 8 inliers) are sized for sparse outdoor SfM
+    #: clouds; at that scale a diagonal RANSAC candidate can fuse an
+    #: upper storey's floor with the storey below's ceiling into one
+    #: tilted junk plane (measured: 812+703 pts fused, rms 0.041 m),
+    #: which downstream rooms/storeys then mis-promote. The compiler
+    #: drops the tolerance to the interior scale (real interior
+    #: surfaces are smooth at ~2 cm) and keeps the module's absolute
+    #: noise-guard floor for min inliers: support sufficiency is
+    #: judged by MEASURED EXTENT (structural_plane_undersized below),
+    #: not by point count -- 15 honest points on a 2x2 m floor are
+    #: structure, 800 points on a 0.4 m collapsed shell are not.
+    #: Pass explicit values to compile at a different scale.
+    distance_tolerance_m: float = 0.02
+    min_inliers: int = 8
     #: Entity id prefixes (caller-controllable so multiple compiles can
     #: target one world without id collisions).
     structure_prefix: str = "struct"
@@ -240,10 +262,38 @@ def compile_reconstruction_to_world(
             main_branch_id=f"branch-main-{stable_world_id}",
         )
 
-    # ---- planes: detect -> classify ----
-    detection = detect_planes(result, seed=options.seed)
+    # ---- planes: detect -> refine (split parallel sheets, re-merge
+    # coplanar fragments) -> classify ----
+    # The refinement matters as much as the detection: greedy RANSAC
+    # routinely fuses two parallel sheets 0.5 m apart (an upper storey's
+    # floor with the storey below's ceiling) into ONE tilted compromise
+    # plane when a diagonal candidate collects more consensus than
+    # either true sheet (measured on the canonical two-storey fixture:
+    # 812 pts of the upper floor + 703 pts of the lower ceiling became
+    # a 1565-inlier plane at n=(0.09,0.99,-0.08), rms 0.0412 m). Left
+    # unsplit, that plane fabricates phantom rooms and storeys
+    # downstream. assemble_interior_scene has applied the same
+    # provenance-recording refinement since PR #111; the compiler path
+    # consuming raw detection was the defect.
+    detection = detect_planes(
+        result, seed=options.seed,
+        distance_tolerance_m=options.distance_tolerance_m,
+        min_inliers=options.min_inliers,
+    )
+    positions_by_id = {p.track_id: p.position for p in result.points}
+    refined_planes = merge_coplanar_fragments(
+        split_parallel_sheets(
+            detection.planes, positions_by_id, options.up,
+            distance_tolerance_m=options.distance_tolerance_m,
+            min_inliers=options.min_inliers,
+        ),
+        positions_by_id, options.up,
+        distance_tolerance_m=options.distance_tolerance_m,
+        min_inliers=options.min_inliers,
+    )
+    refined_planes = canonicalize_plane_ids(refined_planes)
     try:
-        oriented = classify_planes(detection.planes, camera_positions, options.up)
+        oriented = classify_planes(refined_planes, camera_positions, options.up)
     except OrientationError as exc:
         raise CompileInputError(f"plane classification failed: {exc}") from exc
 
@@ -253,6 +303,28 @@ def compile_reconstruction_to_world(
 
     # ---- promote structure planes ----
     positions = positions_by_plane(result, oriented)
+
+    # Sub-room-scale planes are not structure, role-independent: a
+    # plane whose two largest extents are both < ~1 m is furniture,
+    # trim, or a fragment of a collapsed reconstruction (measured on
+    # dataset room_capture: a degenerate 1,213-pt COLMAP map promoted
+    # its 0.4x0.5 m sheets as floors and walls at 0.96-0.99
+    # confidence). Demoted to unknown with recorded uncertainty -- the
+    # same audit the assembler path runs -- before any promotion
+    # consumes the roles.
+    from perception.architecture.room_graph import structural_plane_undersized
+    undersized_ids: set = set()
+    for plane in oriented:
+        if plane.role == "unknown":
+            continue
+        pin = positions.get(plane.plane.plane_id) or []
+        if not pin:
+            continue
+        bmin = tuple(min(p[i] for p in pin) for i in range(3))
+        bmax = tuple(max(p[i] for p in pin) for i in range(3))
+        if structural_plane_undersized(bmin, bmax, up=options.up):
+            undersized_ids.add(plane.plane.plane_id)
+
     entities_created: List[str] = []
     planes_unpromoted: List[Dict[str, str]] = []
     for plane in oriented:
@@ -262,6 +334,16 @@ def compile_reconstruction_to_world(
             planes_unpromoted.append({
                 "plane_id": plane.plane.plane_id,
                 "note": plane.uncertainty.note or "unclassified",
+            })
+            continue
+        if plane.plane.plane_id in undersized_ids:
+            planes_unpromoted.append({
+                "plane_id": plane.plane.plane_id,
+                "note": (
+                    "horizontal sheet below room scale in both plan axes "
+                    "-- furniture, trim, or a collapsed-reconstruction "
+                    "fragment; not promoted as structure"
+                ),
             })
             continue
         entity_id = f"{options.structure_prefix}-{plane.plane.plane_id}"

@@ -186,6 +186,21 @@ def _check_measurements(world: WorldIR, issues: List[ValidationIssue]) -> None:
     # Measurements ride on entities as (key, Measurement) pairs in
     # custom_properties; values may also be plain scalars promoted by
     # earlier layers. Both shapes are validated where applicable.
+    #
+    # Coordinate-like properties are positions IN the reconstruction's
+    # world frame, not magnitudes: the frame's origin is arbitrary
+    # (COLMAP puts it wherever the SfM solution landed -- a real
+    # capture legitimately measured its ground storey at -1.42 m), so
+    # a negative value is honest data, not corruption. Declaring these
+    # keys here is deliberate: a new position-like property must be
+    # consciously classified, and everything else ending in _m/_m2/_m3
+    # stays an extent where negative means a broken measurement.
+    COORDINATE_LIKE_PROPERTY_KEYS = {
+        "floor_height_m",     # storey elevation (measured, frame-relative)
+        "elevation_m",       # storey level elevation
+        "sill_height_m",     # opening sill elevation
+        "head_height_m",     # opening head elevation
+    }
     for entity_id in sorted(world.entities):
         entity = world.entities[entity_id]
         for key, value in entity.custom_properties.items():
@@ -199,8 +214,11 @@ def _check_measurements(world: WorldIR, issues: List[ValidationIssue]) -> None:
                 ))
                 continue
             # Dimension-like keys must be non-negative; zero is legal
-            # (absence of extent is not corruption).
-            if key.endswith(("_m", "_m2", "_m3")) and float(value) < 0.0:
+            # (absence of extent is not corruption). Coordinate-like
+            # keys are exempt: their sign carries the arbitrary frame.
+            if (key.endswith(("_m", "_m2", "_m3"))
+                    and key not in COORDINATE_LIKE_PROPERTY_KEYS
+                    and float(value) < 0.0):
                 issues.append(ValidationIssue(
                     severity=ValidationSeverity.ERROR,
                     code="measurement_negative_dimension",

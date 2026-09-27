@@ -152,6 +152,8 @@ async def create_session(body: SessionIn, db: AsyncSession = Depends(get_db)) ->
 
     name = require_name(body.name, "session name")
     require_json_size(body.device_metadata, "device_metadata")
+    if len(body.coordinate_reference_system) > 64:
+        raise HTTPException(422, "coordinate_reference_system must be at most 64 chars")
     location = None
     if body.location is not None:
         loc = body.location

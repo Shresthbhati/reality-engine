@@ -802,7 +802,42 @@ def test_commit_version_duplicate_returns_adopted(client, tmp_path, monkeypatch)
     assert on_disk == [first_id]
 
 
-def test_conditional_head_update_single_winner(client, tmp_path, monkeypatch):
+def test_four_way_commit_storm_single_head(client, tmp_path, monkeypatch):
+    """Four concurrent commits on distinct entities: every request gets
+    an explicit outcome (200 adopted or 409 rebase), exactly one HEAD is
+    adopted per round, and the world stays readable throughout."""
+    import threading
+
+    wid, v0 = _seed_compiled_world(client, tmp_path, monkeypatch)
+    # Seed three more entities so each thread corrects its own.
+    for i in range(3):
+        _commit(client, wid, changes={"name": f"Shed-{i}"})
+    head, _ = _head_and_count(client, wid)
+
+    barrier = threading.Barrier(4)
+    results = []
+
+    def worker(i):
+        try:
+            barrier.wait(timeout=30)
+            r = _commit(client, wid, changes={"confidence": 0.1 * (i + 1)})
+            results.append(r.status_code)
+        except Exception as exc:  # noqa: BLE001
+            results.append(f"ERROR {type(exc).__name__}")
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=120)
+
+    assert all(isinstance(s, int) for s in results), results
+    assert all(s in (200, 409) for s in results), results
+    assert sum(1 for s in results if s == 200) >= 1
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    current = [v for v in items if v["is_current"]]
+    assert len(current) == 1
+    assert client.get(f"/api/worlds/{wid}/worldir").status_code == 200
     """The adoption primitive itself: two sessions racing the same HEAD
     value -- the conditional UPDATE lets exactly one win (rowcount 1);
     the loser sees rowcount 0 and must rebase, never silently overwrite."""

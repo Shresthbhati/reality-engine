@@ -211,6 +211,12 @@ class WorldIR:
     # Metadata
     metadata: dict = field(default_factory=dict)
 
+    # Opaque pass-through sections (preserved verbatim across roundtrips;
+    # content is owned by external subsystems and must never be interpreted
+    # or mutated by WorldIR code).
+    environment: dict = field(default_factory=dict)   # e.g. weather, lighting
+    physics: dict = field(default_factory=dict)        # e.g. gravity, material props
+
     def to_dict(self) -> dict:
         """Serialize to deterministically-ordered JSON-compatible dict."""
         return {
@@ -258,6 +264,8 @@ class WorldIR:
             "global_confidence": self.global_confidence,
             "global_uncertainty": self.global_uncertainty.to_dict(),
             "metadata": self.metadata,
+            "environment": self.environment,
+            "physics": self.physics,
         }
 
     @staticmethod
@@ -314,6 +322,8 @@ class WorldIR:
             global_confidence=data.get("global_confidence", 0.5),
             global_uncertainty=Uncertainty.from_dict(data.get("global_uncertainty", {})),
             metadata=data.get("metadata", {}),
+            environment=data.get("environment", {}),
+            physics=data.get("physics", {}),
         )
 
     def to_json(self, indent: int = 2) -> str:
@@ -330,6 +340,11 @@ class WorldIR:
         """Deserialize from JSON string."""
         data = json.loads(json_str)
         return WorldIR.from_dict(data)
+
+    @property
+    def coordinate_system(self) -> Frame:
+        """Backward-compatible alias for coordinate_frame (old world.py name)."""
+        return self.coordinate_frame
 
     def validate(self) -> list[str]:
         """Validate world consistency and return list of issues."""

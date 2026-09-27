@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .world import WorldIR
+from .world_v1 import WorldIR
 
 WORLD_SAVE_FORMAT_VERSION = 1
 

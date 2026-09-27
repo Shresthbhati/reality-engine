@@ -54,7 +54,7 @@ from world_ir.schema_v1 import (
     GeometryType,
     Vector3,
 )
-from perception.architecture.promotion import _store_entity
+from perception.architecture.promotion import _store_entity, _store_geometry
 from perception.architecture.room_graph import BuildingGraph, RoomGraph
 
 
@@ -96,6 +96,20 @@ class TopologyPromotionResult:
     #: docstring: evidence-side ring-closure detection is authoritative
     #: whenever it has run). A refusal, recorded here, not a fabrication.
     unmatched_room_ids: Tuple[str, ...] = ()
+    #: canonical room entity id -> storey ids it was NOT linked to, because
+    #: an earlier (lower) storey already claimed it. Room-detector
+    #: reconciliation (_find_existing_room_entity) can resolve two
+    #: differently-sited RoomGraph rooms -- e.g. a real enclosure and a
+    #: taller/shorter phantom enclosure the enclosure grouper also formed
+    #: at a different measured height -- to the SAME evidence-side ROOM
+    #: entity. build_building_graph groups storeys from the raw,
+    #: un-reconciled RoomGraph heights, so without this a single canonical
+    #: room could end up CONTAINS-owned by two storeys at once (an
+    #: impossible containment world_ir/validation.py refuses). Each
+    #: canonical room is kept in exactly one storey (the lowest measured
+    #: floor height it appeared at); every other storey it would have
+    #: joined is recorded here instead of silently duplicating the edge.
+    duplicate_storey_room_ids: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -104,6 +118,9 @@ class TopologyPromotionResult:
             "room_ids": list(self.room_ids),
             "room_parts": {k: list(v) for k, v in self.room_parts.items()},
             "unmatched_room_ids": list(self.unmatched_room_ids),
+            "duplicate_storey_room_ids": {
+                k: list(v) for k, v in self.duplicate_storey_room_ids.items()
+            },
         }
 
 
@@ -122,17 +139,18 @@ def _room_entity(
     ]
     rid = f"room-{index:03d}"
     geom_id = f"geom-{rid}"
-    world.geometries[geom_id] = Geometry(
+    geometry = Geometry(
         id=geom_id,
         type=GeometryType.BOX,
         bounds_min=Vector3(room.bounds_min[0], room.bounds_min[1], room.bounds_min[2]),
         bounds_max=Vector3(room.bounds_max[0], room.bounds_max[1], room.bounds_max[2]),
     )
+    has_geometry = _store_geometry(world, geometry)
     return Entity(
         id=f"room-{index:03d}",
         type=EntityType.ROOM,
         name=f"room {index:03d}",
-        geometry_ids=[geom_id],
+        geometry_ids=[geom_id] if has_geometry else [],
         custom_properties={
             "boundary_element_ids": list(room.boundary_element_ids),
             "bounds_min": list(room.bounds_min),
@@ -324,13 +342,26 @@ def promote_building_topology(
                     _part_of_edge(rid, conf, "room_boundary_membership")
                 )
 
-    # Storeys: reuse the building graph's measured grouping.
+    # Storeys: reuse the building graph's measured grouping. building.storeys
+    # is sorted ascending by measured floor height (room_graph.py); a
+    # canonical room id already claimed by an earlier (lower) storey is
+    # never added to a later one -- see duplicate_storey_room_ids.
     storey_ids: List[str] = []
+    claimed_by_storey: Dict[str, str] = {}
+    duplicate_storey_room_ids: Dict[str, List[str]] = {}
     for si, storey in enumerate(building.storeys, start=1):
         sid = f"storey-{si:02d}"
-        member_room_ids = tuple(
+        candidate_room_ids = [
             room_index[r] for r in storey.room_ids if r in room_index
-        )
+        ]
+        member_room_ids = []
+        for rid in candidate_room_ids:
+            if rid in claimed_by_storey:
+                duplicate_storey_room_ids.setdefault(rid, []).append(sid)
+                continue
+            claimed_by_storey[rid] = sid
+            member_room_ids.append(rid)
+        member_room_ids = tuple(member_room_ids)
         confs = [
             world.entities.get(rid).confidence
             for rid in member_room_ids
@@ -389,6 +420,9 @@ def promote_building_topology(
         room_ids=tuple(room_ids),
         room_parts={k: tuple(v) for k, v in room_parts.items()},
         unmatched_room_ids=tuple(unmatched_room_ids),
+        duplicate_storey_room_ids={
+            k: tuple(v) for k, v in duplicate_storey_room_ids.items()
+        },
     )
 
 

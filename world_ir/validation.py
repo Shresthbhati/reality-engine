@@ -212,19 +212,29 @@ def _check_provenance_confidence(world: WorldIR, issues: List[ValidationIssue]) 
     for entity_id in sorted(world.entities):
         entity = world.entities[entity_id]
         provenance = entity.provenance
-        if not (0.0 <= entity.confidence <= 1.0):
+        confidence = entity.confidence
+        # Non-numeric confidence must be an explicit ERROR, never a
+        # TypeError escaping the validator (which would turn a malformed
+        # world into a crashed gate instead of a refused one).
+        if (
+            isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not math.isfinite(confidence)
+            or not 0.0 <= confidence <= 1.0
+        ):
             issues.append(ValidationIssue(
                 severity=ValidationSeverity.ERROR,
                 code="confidence_out_of_range",
-                message=f"entity {entity_id} confidence {entity.confidence} outside [0, 1]",
+                message=f"entity {entity_id} confidence {confidence!r} outside [0, 1]",
             ))
-        if provenance is Provenance.UNKNOWN and entity.confidence >= 0.9:
+            continue
+        if provenance is Provenance.UNKNOWN and confidence >= 0.9:
             issues.append(ValidationIssue(
                 severity=ValidationSeverity.ERROR,
                 code="unknown_provenance_high_confidence",
                 message=(
                     f"entity {entity_id} claims UNKNOWN provenance with confidence "
-                    f"{entity.confidence:.2f} -- cannot know nothing and be certain"
+                    f"{confidence:.2f} -- cannot know nothing and be certain"
                 ),
             ))
 

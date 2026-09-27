@@ -642,16 +642,6 @@ def compile_reconstruction_to_world(
                         f"had no matching evidence-side room and were not promoted "
                         f"as separate entities: {list(topo_res.unmatched_room_ids)}"
                     )
-                if topo_res.duplicate_storey_room_ids:
-                    interior_warnings.append(
-                        "building topology promotion: "
-                        f"{len(topo_res.duplicate_storey_room_ids)} room(s) were measured "
-                        "at more than one storey-grouping height (room-detector "
-                        "reconciliation resolved differently-sited room-graph groupings "
-                        "to the same canonical room) -- kept in their lowest storey only, "
-                        "not linked to: "
-                        f"{ {k: list(v) for k, v in topo_res.duplicate_storey_room_ids.items()} }"
-                    )
             except Exception as exc:
                 interior_warnings.append(f"building topology promotion: {exc}")
 

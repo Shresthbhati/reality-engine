@@ -32,7 +32,7 @@ from world_ir.schema_v1 import (
     Provenance,
     RelationshipKind,
 )
-from world_ir.world import WorldIR
+from world_ir.world_v1 import WorldIR
 
 UP = (0.0, 0.0, 1.0)
 
@@ -236,11 +236,12 @@ def _world_with_parts(rooms_planes):
             "wall": EntityType.WALL, "floor": EntityType.FLOOR,
             "ceiling": EntityType.CEILING,
         }[role]
-        world.entities.add(Entity(
-            id=f"{role}-{p.plane_id}", type=etype,
+        entity_id = f"{role}-{p.plane_id}"
+        world.entities[entity_id] = Entity(
+            id=entity_id, type=etype,
             name=f"{role} {p.plane_id}", confidence=0.9,
             provenance=Provenance.RECONSTRUCTED,
-        ))
+        )
     # Floor/ceiling entities for both storeys (the graph uses explicit
     # element ids for these, built in _two_storey_planes).
     for eid, etype in [
@@ -250,10 +251,10 @@ def _world_with_parts(rooms_planes):
         ("ceiling-ceiling-2", EntityType.CEILING),
     ]:
         if eid not in world.entities:
-            world.entities.add(Entity(
+            world.entities[eid] = Entity(
                 id=eid, type=etype, name=eid, confidence=0.9,
                 provenance=Provenance.RECONSTRUCTED,
-            ))
+            )
     return world
 
 
@@ -365,7 +366,7 @@ class TestBuildingTopologyPromotion:
         world = _world_with_parts(_two_storey_world_planes())
         assert building is not None
         result = promote_building_topology(building, rooms, world)
-        ids = {e.id for e in world.entities}
+        ids = {e.id for e in world.entities.values()}
         # Building, two storeys, two rooms all become entities.
         assert result.building_id in ids
         assert len(result.storey_ids) == 2
@@ -529,7 +530,7 @@ class TestWindowRoomAssociation:
             confidence=win_fit.confidence, provenance=Provenance.INFERRED,
             custom_properties={"wall_plane_id": win_fit.wall_plane_id},
         )
-        world.entities.add(win_ent)
+        world.entities[win_ent.id] = win_ent
 
         assoc = associate_windows_to_rooms([win_ent], rooms, world)
         assert assoc and assoc[0].window_id == "window-001"
@@ -549,7 +550,7 @@ class TestWindowRoomAssociation:
             id="window-x", type=EntityType.WINDOW, name="w",
             confidence=0.8, provenance=Provenance.INFERRED,
         )
-        world.entities.add(win)
+        world.entities[win.id] = win
         # A room on the far side of the world.
         room = RoomGraph(
             room_id="room-far",
@@ -593,8 +594,8 @@ class TestDeterminismAndHonesty:
         r1, w1 = run()
         r2, w2 = run()
         assert r1.to_dict() == r2.to_dict()
-        assert [e.to_dict() for e in w1.entities] == \
-               [e.to_dict() for e in w2.entities]
+        assert [e.to_dict() for e in w1.entities.values()] == \
+               [e.to_dict() for e in w2.entities.values()]
 
     def test_corridor_kind_is_registry_declared(self):
         # The corridor class must be registry-declared, not a magic

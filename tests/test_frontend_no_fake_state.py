@@ -159,6 +159,28 @@ def test_frontend_data_module_exposes_no_rows():
         assert literal.strip() == "[]", f"{name} still carries rows: {literal!r}"
 
 
+def test_sessions_consumer_reads_the_items_envelope():
+    """The client must consume the `{items}` contract the API actually serves.
+
+    The list functions in `lib/api/*` all unwrap `ApiList<T>` via `data.items`.
+    A consumer that read `data.sessions` (or fell back to `data.sessions ?? []`)
+    would be reading a key the proxy's old fabricated envelope invented and the
+    backend never emits -- it would silently render zero sessions even when the
+    API is healthy.
+    """
+    offenders: list[str] = []
+    for path in sorted((FRONTEND_SRC / "lib" / "api").glob("*.ts")):
+        code = _code(path)
+        for number, line in enumerate(code.splitlines(), start=1):
+            if not re.search(r"\b(data|res|body)\.(sessions|worlds|evidence|jobs)\b", line):
+                continue
+            offenders.append(f"{path.relative_to(REPO_ROOT)}:{number} -> {line.strip()}")
+    assert not offenders, (
+        "list consumers must unwrap the `items` envelope, not a key the API "
+        "never emits:\n" + "\n".join(offenders)
+    )
+
+
 def test_test_fixtures_stay_out_of_production_code():
     """Fixtures are legitimate fakes, but only inside the test tree."""
     offenders: list[str] = []
@@ -258,4 +280,32 @@ def test_viewport_synchronization_on_selection():
     assert "onSelectEntity(room.id);" in nav_code and "onFrameEntity(room.id);" in nav_code
     assert "onSelectEntity(corridor.id);" in nav_code and "onFrameEntity(corridor.id);" in nav_code
     assert "onSelectEntity(stair.id);" in nav_code and "onFrameEntity(stair.id);" in nav_code
+
+
+# Storey/level identity must come from the backend. The Studio used to invent
+# "level-ground"/"level-upper" and slice entities at a hard-coded y = 2.2 m,
+# displaying a building the reconstruction never produced.
+FABRICATED_LEVEL_IDS = ("level-ground", "level-upper")
+
+
+def test_no_hard_coded_level_identity():
+    offenders: list[str] = []
+    for path in _production_files():
+        code = _code(path)
+        for identifier in FABRICATED_LEVEL_IDS:
+            if f'"{identifier}"' in code or f"'{identifier}'" in code:
+                offenders.append(f"{path.relative_to(REPO_ROOT)} -> {identifier}")
+    assert not offenders, (
+        "level ids must come from WorldIR, not from string constants:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_studio_levels_derive_from_canonical_data():
+    panel = FRONTEND_SRC / "components" / "navigation" / "WorldNavPanel.tsx"
+    code = _code(panel)
+    # Levels come from the compiler's space graph or explicit level entities.
+    assert "interior_space_graph" in code
+    # No Y-threshold storey invention.
+    assert "y <= 2.2" not in code and "y > 2.2" not in code
 

@@ -306,6 +306,55 @@ def test_malformed_worldir_rejected_on_load():
         assert isinstance(w.entities, dict) and isinstance(w.geometries, dict)
 
 
+def test_colmap_step_timeout_is_honest_error(tmp_path):
+    """A hung COLMAP step fails with a timeout-marked step error --
+    never an unbounded wait, never a silent pass."""
+    import subprocess as _subprocess
+
+    import reconstruction.backend.colmap_backend as _backend
+    from evidence.session import EvidenceItem, EvidenceKind
+    from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
+
+    blob = tmp_path / "frame.jpg"
+    blob.write_bytes(b"jpeg-bytes")
+    uri = blob.resolve().as_uri()
+    items = [
+        EvidenceItem(id=f"ev-{i}", kind=EvidenceKind.PHOTO, source_uri=uri)
+        for i in range(2)
+    ]
+
+    def _hang(*args, **kwargs):
+        raise _subprocess.TimeoutExpired(cmd=args[0] if args else "colmap", timeout=1.0)
+
+    import unittest.mock as _mock
+
+    with _mock.patch.object(_backend.subprocess, "run", _hang):
+        with pytest.raises(Exception, match="(?i)timeout|TIMEOUT"):
+            ColmapReconstructionBackend().reconstruct(items)
+
+
+def test_malformed_confidence_and_frame_are_errors():
+    """Non-numeric confidence is a validation ERROR (not a validator
+    crash); garbage coordinate frames are refused at parse."""
+    from world_ir import Entity, EntityType
+    from world_ir.validation import validate_world_ir
+    from world_ir.world_v1 import WorldIR
+    from provenance import Provenance
+
+    w = WorldIR(id="w-malformed")
+    w.entities["e1"] = Entity(
+        id="e1", type=EntityType.STRUCTURE, provenance=Provenance.RECONSTRUCTED,
+        confidence=0.5,
+    )
+    w.entities["e1"].confidence = "high"
+    report = validate_world_ir(w)
+    assert not report.is_valid()
+    assert any(i.code == "confidence_out_of_range" for i in report.errors)
+
+    with pytest.raises(ValueError, match="not a valid Frame"):
+        WorldIR.from_dict({"id": "x", "coordinate_frame": "nope"})
+
+
 def test_uncertainty_roundtrip_preserved():
     """Uncertainty survives serialize -> persist -> reload with its value
     intact, and rejects out-of-range confidence loudly at construction."""

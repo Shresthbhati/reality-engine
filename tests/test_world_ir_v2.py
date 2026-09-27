@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import pytest
 
-from world_ir.entity import Entity, Relationship
+from world_ir.schema_v1 import Entity, Relationship
 from provenance import Provenance
 from world_ir.schema_v1 import TemporalEvent, TemporalEventType
 from world_ir.v2_extensions import (
@@ -181,16 +181,19 @@ class TestExternalReference:
 
 class TestWorldIntegration:
     def test_worldir_carries_v2_sections_additively(self):
-        from world_ir.world import WorldIR
+        from world_ir.world_v1 import WorldIR
         world = WorldIR(id="w1")
-        world.entities.add(Entity(id="a", type="room"))
-        world.entities.add(Entity(id="b", type="room"))
-        world.entities.add(Entity(
+        entity_a = Entity(id="a", type="room")
+        world.entities[entity_a.id] = entity_a
+        entity_b = Entity(id="b", type="room")
+        world.entities[entity_b.id] = entity_b
+        wall_entity = Entity(
             id="wall", type="wall",
             relationships=[
                 Relationship(kind="adjoins", target_id="a"),
                 Relationship(kind="adjoins", target_id="b"),
-            ]))
+            ])
+        world.entities[wall_entity.id] = wall_entity
         world.temporal_history = TemporalHistory.from_events([
             TemporalEvent(id="ev1", timestamp=1.0, entity_id="a"),
         ])
@@ -200,9 +203,10 @@ class TestWorldIntegration:
         assert got.topology().neighbors_of("a") == ["b"]
 
     def test_v1_world_dict_loads_unchanged(self):
-        from world_ir.world import WorldIR
+        from world_ir.world_v1 import WorldIR
         world = WorldIR(id="w1")
-        world.entities.add(Entity(id="a", type="room"))
+        entity_a = Entity(id="a", type="room")
+        world.entities[entity_a.id] = entity_a
         d = world.to_dict()
         # Simulate a v1 serialization: no v2 keys at all.
         d.pop("temporal_history", None)

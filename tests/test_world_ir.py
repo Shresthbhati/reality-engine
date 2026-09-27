@@ -1,12 +1,12 @@
 from world_ir.coordinates import Frame
-from world_ir.entity import Entity
-from world_ir.world import WorldIR
+from world_ir.schema_v1 import Entity
+from world_ir.world_v1 import WorldIR
 
 
 def test_default_world_is_empty_and_versioned():
     world = WorldIR(id="w1")
     assert world.version == 1
-    assert world.coordinate_system == Frame.WORLD
+    assert world.coordinate_frame == Frame.WORLD
     assert len(world.entities) == 0
 
 
@@ -19,7 +19,8 @@ def test_opaque_sections_roundtrip_untouched():
 
 def test_entities_participate_in_roundtrip():
     world = WorldIR(id="w1")
-    world.entities.add(Entity(id="e1", type="building"))
+    entity = Entity(id="e1", type="building")
+    world.entities[entity.id] = entity
     restored = WorldIR.from_dict(world.to_dict())
     assert "e1" in restored.entities
     assert restored.entities.get("e1").type == "building"

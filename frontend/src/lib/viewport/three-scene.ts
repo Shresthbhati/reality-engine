@@ -634,8 +634,17 @@ export class WorldSceneController {
         if (entLevel !== undefined) {
           matchesLevel = Number(entLevel) === this.activeLevelIndex;
         } else {
-          const estLevel = Math.max(0, Math.floor(mesh.position.y / 2.8));
-          matchesLevel = estLevel === this.activeLevelIndex;
+          // Check if canonical interior_space_graph contains this entity in the active level
+          const metaLevels = (this.world.metadata?.interior_space_graph as Record<string, unknown> | undefined)?.levels as Array<Record<string, unknown>> | undefined;
+          const activeMetaLevel = metaLevels?.[this.activeLevelIndex];
+          if (activeMetaLevel) {
+            const roomIds = (activeMetaLevel.room_ids as string[] | undefined) || [];
+            const corridorIds = (activeMetaLevel.corridor_ids as string[] | undefined) || [];
+            matchesLevel = roomIds.includes(eid) || corridorIds.includes(eid) || ent.parent_id === activeMetaLevel.level_id;
+          } else {
+            // Unassigned entities are not attributed to a level; never fabricate by dividing height
+            matchesLevel = false;
+          }
         }
       }
 
@@ -1151,6 +1160,19 @@ export class WorldSceneController {
   public flyToPosition(x: number, y: number, z: number) {
     this.camera.position.set(x + 2.5, y + 2, z + 2.5);
     this.controls.target.set(x, y, z);
+    this.controls.update();
+  }
+
+  public getCameraPose(): { position: [number, number, number]; target: [number, number, number] } {
+    return {
+      position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
+      target: [this.controls.target.x, this.controls.target.y, this.controls.target.z],
+    };
+  }
+
+  public flyToBookmark(position: [number, number, number], target: [number, number, number]) {
+    this.camera.position.set(position[0], position[1], position[2]);
+    this.controls.target.set(target[0], target[1], target[2]);
     this.controls.update();
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { fetchEntityProvenance, type EntityProvenance } from "@/lib/api/provenance";
 import {
   Box,
@@ -25,6 +25,7 @@ import {
   Plus,
   Trash2,
   Link2,
+  GitBranch,
 } from "lucide-react";
 import type {
   Entity,
@@ -44,7 +45,8 @@ interface AdaptiveInspectorProps {
     entityId: string,
     changes: Record<string, unknown>,
     commitMessage: string
-  ) => Promise<void>;
+  ) => Promise<{ version_id: string; parent_version_id?: string; world_id?: string } | void>;
+  onOpenDiff?: (base?: string, head?: string) => void;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
 }
@@ -59,6 +61,7 @@ export default function AdaptiveInspector({
   onFrameEntity,
   onTraceEvidence,
   onCommitCorrection,
+  onOpenDiff,
   onOpenRoomConstruction,
   onExport,
 }: AdaptiveInspectorProps) {
@@ -173,8 +176,10 @@ export default function AdaptiveInspector({
             tab={tab}
             onSelectEntity={onSelectEntity}
             onFrame={() => onFrameEntity(entity.id)}
+            onFrameEntity={onFrameEntity}
             onTraceEvidence={onTraceEvidence}
             onCommitCorrection={onCommitCorrection}
+            onOpenDiff={onOpenDiff}
             isEditing={isEditing}
             setIsEditing={setIsEditing}
             previewImageId={previewImageId}
@@ -201,8 +206,10 @@ function EntityDetails({
   tab,
   onSelectEntity,
   onFrame,
+  onFrameEntity,
   onTraceEvidence,
   onCommitCorrection,
+  onOpenDiff,
   isEditing,
   setIsEditing,
   previewImageId,
@@ -215,12 +222,14 @@ function EntityDetails({
   tab: InspectorTab;
   onSelectEntity: (id: string | null) => void;
   onFrame: () => void;
+  onFrameEntity?: (id: string) => void;
   onTraceEvidence?: (evidenceId: string) => void;
   onCommitCorrection?: (
     entityId: string,
     changes: Record<string, unknown>,
     commitMessage: string
-  ) => Promise<void>;
+  ) => Promise<{ version_id: string; parent_version_id?: string; world_id?: string } | void>;
+  onOpenDiff?: (base?: string, head?: string) => void;
   isEditing: boolean;
   setIsEditing: (v: boolean) => void;
   previewImageId: string | null;
@@ -296,7 +305,29 @@ function EntityDetails({
   const [commitMessage, setCommitMessage] = useState(`Review & verify ${entity.id}`);
   const [submitting, setSubmitting] = useState(false);
   const [committedSuccess, setCommittedSuccess] = useState(false);
+  const [committedVersionResult, setCommittedVersionResult] = useState<{
+    version_id: string;
+    parent_version_id?: string;
+  } | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
+
+  const childrenList = useMemo<Entity[]>(() => {
+    if (!world?.entities) return [];
+    return Object.values(world.entities).filter(
+      (e) =>
+        e.parent_id === entity.id ||
+        (entity.relationships || []).some(
+          (r) =>
+            (r.type === "contains" || (r as { kind?: string }).kind === "contains") &&
+            (r.target_id === e.id || (r as { target_entity_id?: string }).target_entity_id === e.id)
+        )
+    );
+  }, [world, entity]);
+
+  const parentEntity = useMemo(() => {
+    if (!entity.parent_id || !world?.entities) return null;
+    return world.entities[entity.parent_id] || null;
+  }, [entity.parent_id, world]);
 
   const handleTogglePreview = () => {
     if (isPreviewing) {
@@ -366,12 +397,15 @@ function EntityDetails({
         };
       }
 
-      await onCommitCorrection(entity.id, payload, commitMessage);
+      const res = await onCommitCorrection(entity.id, payload, commitMessage);
+      if (res && typeof res === "object" && "version_id" in res) {
+        setCommittedVersionResult({
+          version_id: res.version_id,
+          parent_version_id: (res as { parent_version_id?: string }).parent_version_id,
+        });
+      }
       setCommittedSuccess(true);
-      setTimeout(() => {
-        setCommittedSuccess(false);
-        setIsEditing(false);
-      }, 1500);
+      setIsEditing(false);
     } catch (e) {
       console.error("Commit failed", e);
     } finally {
@@ -404,6 +438,44 @@ function EntityDetails({
 
   return (
     <div className="space-y-4">
+      {/* Post-Commit WorldStore Version Banner */}
+      {committedVersionResult && (
+        <div className="p-3 rounded-lg border border-[#2ecc71]/40 bg-[#12281a] space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-[#2ecc71] font-semibold">
+              <Check className="w-3.5 h-3.5" />
+              <span>WorldStore Snapshot Committed</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setCommittedVersionResult(null);
+                setCommittedSuccess(false);
+              }}
+              className="text-neutral-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+          <div className="text-[11px] font-mono text-neutral-300 space-y-0.5">
+            <div>Version: <span className="text-[#00e5ff] font-semibold">{committedVersionResult.version_id}</span></div>
+            {committedVersionResult.parent_version_id && (
+              <div className="text-[10px] text-neutral-400">Parent: {committedVersionResult.parent_version_id}</div>
+            )}
+          </div>
+          {onOpenDiff && (
+            <button
+              type="button"
+              onClick={() => onOpenDiff(committedVersionResult.parent_version_id, committedVersionResult.version_id)}
+              className="w-full py-1.5 rounded bg-[#00e5ff]/20 hover:bg-[#00e5ff]/30 text-[#00e5ff] border border-[#00e5ff]/40 text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer font-medium"
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>Inspect Lineage Diff</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Title Card */}
       <div
         className="p-3 rounded-lg border bg-[#151821] space-y-3"
@@ -427,19 +499,93 @@ function EntityDetails({
         </div>
 
         {/* Identity & Classification */}
-        <div className="space-y-1 text-[11px] pt-1 border-t border-neutral-800">
+        <div className="space-y-1.5 text-[11px] pt-1 border-t border-neutral-800">
           <div className="flex justify-between items-center">
             <span className="text-neutral-400">Entity Identity</span>
             <span className="font-mono text-neutral-200">{entity.id}</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-neutral-400">Semantic Class</span>
-            <span className="font-mono text-[#00e5ff] capitalize">{entity.type}</span>
+            <div className="flex items-center gap-1">
+              <span className="font-mono text-[#00e5ff] capitalize font-medium">{entity.type}</span>
+              {Boolean(entity.custom_properties?.subtype) && (
+                <span className="text-[10px] font-mono text-neutral-400">
+                  ({String(entity.custom_properties?.subtype)})
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-neutral-400">Derivation Status</span>
             <span className="font-mono text-white">
               {entity.provenance || "Not recorded"}
+            </span>
+          </div>
+
+          {/* Parent Entity */}
+          <div className="flex justify-between items-center">
+            <span className="text-neutral-400">Parent Entity</span>
+            {entity.parent_id ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectEntity(entity.parent_id!);
+                  onFrameEntity?.(entity.parent_id!);
+                }}
+                className="font-mono text-[#00e5ff] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[170px]"
+                title={`Frame parent: ${entity.parent_id}`}
+              >
+                <Link2 className="w-3 h-3 shrink-0" />
+                <span className="truncate">
+                  {parentEntity?.name || entity.parent_id}
+                </span>
+              </button>
+            ) : (
+              <span className="font-mono text-neutral-500">None (Root Entity)</span>
+            )}
+          </div>
+
+          {/* Children Entities */}
+          <div className="flex justify-between items-start pt-0.5">
+            <span className="text-neutral-400 shrink-0">Children</span>
+            <div className="flex flex-wrap gap-1 justify-end max-w-[190px]">
+              {childrenList.length > 0 ? (
+                childrenList.slice(0, 4).map((ch) => (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    onClick={() => {
+                      onSelectEntity(ch.id);
+                      onFrameEntity?.(ch.id);
+                    }}
+                    className="text-[9px] px-1 py-0.2 rounded bg-neutral-800 hover:bg-[#00e5ff]/20 text-neutral-300 hover:text-[#00e5ff] font-mono border border-neutral-700 cursor-pointer truncate max-w-[85px]"
+                    title={`Frame child: ${ch.id}`}
+                  >
+                    {ch.name || ch.id}
+                  </button>
+                ))
+              ) : (
+                <span className="font-mono text-neutral-500">None</span>
+              )}
+              {childrenList.length > 4 && (
+                <span className="text-[9px] text-neutral-500">+{childrenList.length - 4}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Coordinate Frame */}
+          <div className="flex justify-between items-center">
+            <span className="text-neutral-400">Coordinate Frame</span>
+            <span className="font-mono text-neutral-300">
+              {String(world?.coordinate_frame || world?.coordinate_system || "metric_enu")}
+            </span>
+          </div>
+
+          {/* WorldStore Version */}
+          <div className="flex justify-between items-center">
+            <span className="text-neutral-400">WorldStore Version</span>
+            <span className="font-mono text-[#00e5ff] text-[10px] truncate max-w-[160px]">
+              {provenanceLoading ? "…" : provenance?.version_id ?? "Not compiled"}
             </span>
           </div>
         </div>
@@ -1995,15 +2141,42 @@ function EntityDetails({
             <div className="flex justify-between">
               <span className="text-neutral-400">Certainty Score</span>
               <span className="font-mono text-white">
-                {conf !== null ? conf.toFixed(3) : "Not available"}
+                {conf !== null ? `${conf.toFixed(3)} (${(conf * 100).toFixed(1)}%)` : "Not recorded"}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-400">Inlier Quality</span>
-              <span className="text-white">
-                {conf !== null ? (conf < 0.3 ? "Noise candidate" : "Robust planar fit") : "Not available"}
-              </span>
-            </div>
+            {typeof (entity.custom_properties?.inlier_fraction ?? entity.custom_properties?.inlier_ratio) === "number" && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Inlier Fraction</span>
+                <span className="font-mono text-white">
+                  {(Number(entity.custom_properties?.inlier_fraction ?? entity.custom_properties?.inlier_ratio) * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+            {typeof (entity.custom_properties?.residual_m ?? entity.custom_properties?.fit_residual_m) === "number" && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Fit Residual</span>
+                <span className="font-mono text-white">
+                  {(Number(entity.custom_properties?.residual_m ?? entity.custom_properties?.fit_residual_m) * 1000).toFixed(1)} mm
+                </span>
+              </div>
+            )}
+            {typeof entity.custom_properties?.uncertainty_sigma_m === "number" && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Spatial StdDev (σ)</span>
+                <span className="font-mono text-white">
+                  {(Number(entity.custom_properties?.uncertainty_sigma_m) * 100).toFixed(2)} cm
+                </span>
+              </div>
+            )}
+            {entity.custom_properties?.inlier_fraction === undefined &&
+              entity.custom_properties?.inlier_ratio === undefined &&
+              entity.custom_properties?.residual_m === undefined &&
+              entity.custom_properties?.fit_residual_m === undefined &&
+              entity.custom_properties?.uncertainty_sigma_m === undefined && (
+                <div className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-800">
+                  No spatial covariance matrix or residual metrics recorded for this entity.
+                </div>
+            )}
           </div>
         </div>
       )}

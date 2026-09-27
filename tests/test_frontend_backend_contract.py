@@ -105,7 +105,12 @@ def test_every_world_route_is_backed_by_the_api():
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """A real API instance over throwaway DB + artifact storage."""
+    """A real API instance over throwaway DB + artifact storage.
+
+    The background job worker is stubbed out: these tests only read/write
+    records, and a live worker outliving the TestClient leaks into whatever
+    test module runs next.
+    """
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{(tmp_path / 'app.db').as_posix()}")
     monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "artifacts"))
     monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
@@ -115,6 +120,14 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import apps.api.db as db_mod
 
     importlib.reload(db_mod)
+
+    import apps.api.jobs as jobrunner
+
+    async def _no_worker():
+        return None
+
+    monkeypatch.setattr(jobrunner, "worker_loop", _no_worker)
+
     import apps.api.main as main_mod
 
     importlib.reload(main_mod)
@@ -151,6 +164,31 @@ def test_uncompiled_world_resources_fail_instead_of_inventing_content(client):
     # The world list carries only real records.
     listed = client.get("/api/worlds").json()["items"]
     assert [w["id"] for w in listed] == [world_id]
+
+
+def test_sessions_list_contract_is_items_not_sessions(client):
+    """`GET /api/sessions` answers `{"items": [...]}`.
+
+    This is the shape the Next.js proxy forwards verbatim and that
+    `frontend/src/lib/api/sessions.ts` reads. The proxy used to invent its own
+    `{error, sessions, count}` envelope, which matched no key the API ever
+    emits -- so pinning the real contract here is what makes that divergence
+    detectable from the backend side too.
+    """
+    created = client.post("/api/sessions", json={"name": "Kitchen sweep"}).json()
+    session_id = created["id"]
+
+    listed = client.get("/api/sessions")
+    assert listed.status_code == 200
+    body = listed.json()
+    assert "items" in body, f"expected an items envelope, got keys {sorted(body)}"
+    assert "sessions" not in body, "the API never emits a `sessions` key"
+    assert [s["id"] for s in body["items"]] == [session_id]
+
+    # The world_id filter is the only query parameter the proxy forwards.
+    filtered = client.get("/api/sessions", params={"world_id": "w-does-not-exist"})
+    assert filtered.status_code == 200
+    assert filtered.json()["items"] == []
 
 
 def test_evidence_image_route_target_serves_the_real_stored_bytes(client):

@@ -147,7 +147,9 @@ def _room_entity(
     )
 
 
-def _find_existing_room_entity(room: RoomGraph, world) -> Optional[str]:
+def _find_existing_room_entity(
+    room: RoomGraph, world, already_claimed: Optional[Set[str]] = None
+) -> Optional[str]:
     """Match `room` against an already-promoted ROOM entity by shared
     boundary parts (Jaccard overlap >= 0.5 of struct-* CONTAINS targets).
 
@@ -176,6 +178,8 @@ def _find_existing_room_entity(room: RoomGraph, world) -> Optional[str]:
         if ent.type != EntityType.ROOM:
             continue
         eid = ent.id
+        if already_claimed and eid in already_claimed:
+            continue
         ent_parts = {
             r.target_id for r in ent.relationships if r.kind == RelationshipKind.CONTAINS
         }
@@ -278,12 +282,14 @@ def promote_building_topology(
     room_index: Dict[str, str] = {}
     reused_room_ids = set()
     unmatched_room_ids: List[str] = []
+    claimed_existing_ids: Set[str] = set()
     next_index = 1
     for room in rooms_sorted:
-        existing_id = _find_existing_room_entity(room, world)
+        existing_id = _find_existing_room_entity(room, world, claimed_existing_ids)
         if existing_id is not None:
             room_index[room.room_id] = existing_id
             reused_room_ids.add(room.room_id)
+            claimed_existing_ids.add(existing_id)
             room_ids.append(existing_id)
             continue
         if evidence_side_active:
@@ -292,6 +298,7 @@ def promote_building_topology(
         entity = _room_entity(room, next_index, world, parts_conf[room.room_id])
         _store_entity(world, entity)
         room_index[room.room_id] = entity.id
+        claimed_existing_ids.add(entity.id)
         room_ids.append(entity.id)
         next_index += 1
 
@@ -326,11 +333,18 @@ def promote_building_topology(
 
     # Storeys: reuse the building graph's measured grouping.
     storey_ids: List[str] = []
+    claimed_storey_rooms: Set[str] = set()
     for si, storey in enumerate(building.storeys, start=1):
         sid = f"storey-{si:02d}"
-        member_room_ids = tuple(
+        raw_member_room_ids = tuple(
             room_index[r] for r in storey.room_ids if r in room_index
         )
+        # Guarantee no double-containment across storeys
+        member_room_ids = tuple(
+            rid for rid in raw_member_room_ids if rid not in claimed_storey_rooms
+        )
+        for rid in member_room_ids:
+            claimed_storey_rooms.add(rid)
         confs = [
             world.entities.get(rid).confidence
             for rid in member_room_ids

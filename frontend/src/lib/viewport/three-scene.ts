@@ -31,6 +31,16 @@ export interface MeasurementResult {
   delta: [number, number, number];
 }
 
+export interface ViewportStatistics {
+  points: number;
+  canonicalPoints: number;
+  renderedPoints: number;
+  isLODSampled: boolean;
+  cameras: number;
+  entities: number;
+  isContextLost: boolean;
+}
+
 export const TYPE_COLORS: Record<string, number> = {
   building: 0x64748b, // slate-500
   level: 0x38bdf8,    // sky-400
@@ -93,6 +103,11 @@ export class WorldSceneController {
   private robustExtent = 1.0;
   private animationFrameId: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private abortController = new AbortController();
+
+  // WebGL Context Loss & LOD State
+  private isContextLost = false;
+  private renderedPointsCount = 0;
 
   // Data cache
   private world: WorldIR | null = null;
@@ -114,6 +129,19 @@ export class WorldSceneController {
   private onSelectCallback?: (id: string | null) => void;
   private onHoverCallback?: (id: string | null) => void;
   private onMeasureCallback?: (res: MeasurementResult | null) => void;
+  private onCameraChangeCallback?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
+  private onContextLossChangeCallback?: (isLost: boolean) => void;
+
+  private cameraAnimation: {
+    startPos: THREE.Vector3;
+    endPos: THREE.Vector3;
+    startTarget: THREE.Vector3;
+    endTarget: THREE.Vector3;
+    startTime: number;
+    duration: number;
+  } | null = null;
+  private lastAzimuthDeg = -1;
+  private lastElevationDeg = -1;
 
   // Spatial context & measurement tools
   private gridHelper: THREE.GridHelper | null = null;
@@ -169,7 +197,8 @@ export class WorldSceneController {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
+    this.controls.dampingFactor = 0.06;
+    this.controls.screenSpacePanning = true;
     this.controls.maxDistance = 200;
     this.controls.minDistance = 0.2;
 
@@ -184,10 +213,14 @@ export class WorldSceneController {
     onSelect?: (id: string | null) => void;
     onHover?: (id: string | null) => void;
     onMeasure?: (res: MeasurementResult | null) => void;
+    onCameraChange?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
+    onContextLossChange?: (isLost: boolean) => void;
   }) {
     this.onSelectCallback = callbacks.onSelect;
     this.onHoverCallback = callbacks.onHover;
     this.onMeasureCallback = callbacks.onMeasure;
+    this.onCameraChangeCallback = callbacks.onCameraChange;
+    this.onContextLossChangeCallback = callbacks.onContextLossChange;
   }
 
   public setGridVisible(visible: boolean) {
@@ -231,6 +264,12 @@ export class WorldSceneController {
     cameras: CamerasPayload | null,
     mesh: { positions: Float32Array; indices: Uint32Array } | null = null
   ) {
+    this.cameraAnimation = null;
+    if (this.selectedEntityId !== null) {
+      this.selectedEntityId = null;
+      this.onSelectCallback?.(null);
+    }
+    this.isolatedSpaceId = null;
     this.world = world;
     this.pointsData = points;
     this.camerasData = cameras;
@@ -240,6 +279,7 @@ export class WorldSceneController {
   }
 
   private clearSceneLayers() {
+    this.renderedPointsCount = 0;
     if (this.layers.points) {
       this.scene.remove(this.layers.points);
       this.layers.points.geometry.dispose();
@@ -249,18 +289,32 @@ export class WorldSceneController {
     if (this.layers.entities) {
       this.scene.remove(this.layers.entities);
       for (const mesh of this.entityMeshes.values()) {
-        mesh.geometry.dispose();
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach((m) => m.dispose());
-        } else {
-          mesh.material.dispose();
-        }
+        mesh.traverse((child) => {
+          if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
+            child.geometry.dispose();
+            if (Array.isArray(child.material)) {
+              child.material.forEach((m) => m.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
       }
       this.entityMeshes.clear();
       this.layers.entities = null;
     }
     if (this.layers.cameras) {
       this.scene.remove(this.layers.cameras);
+      this.layers.cameras.traverse((child) => {
+        if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
       this.layers.cameras = null;
     }
     if (this.layers.mesh) {
@@ -296,19 +350,41 @@ export class WorldSceneController {
 
     // 1. Build Point Cloud
     if (this.pointsData && this.pointsData.length > 0) {
-      const b = pointsBounds(this.pointsData);
-      const span = Math.max(1e-6, b.max[1] - b.min[1]);
-      const colors = new Float32Array(this.pointsData.length);
+      const totalPoints = this.pointsData.length / 3;
+      // Practical interactive WebGL rendering limit for dense point clouds
+      const MAX_RENDER_POINTS = 1_500_000;
 
-      for (let i = 0; i < this.pointsData.length; i += 3) {
-        const t = (this.pointsData[i + 1] - b.min[1]) / span; // y in [0, 1]
+      let renderPositions: Float32Array;
+      if (totalPoints > MAX_RENDER_POINTS) {
+        const stride = Math.ceil(totalPoints / MAX_RENDER_POINTS);
+        const sampledCount = Math.floor(totalPoints / stride);
+        renderPositions = new Float32Array(sampledCount * 3);
+        let dst = 0;
+        for (let i = 0; i < totalPoints; i += stride) {
+          const src = i * 3;
+          renderPositions[dst++] = this.pointsData[src];
+          renderPositions[dst++] = this.pointsData[src + 1];
+          renderPositions[dst++] = this.pointsData[src + 2];
+        }
+        this.renderedPointsCount = sampledCount;
+      } else {
+        renderPositions = this.pointsData;
+        this.renderedPointsCount = totalPoints;
+      }
+
+      const b = pointsBounds(renderPositions);
+      const span = Math.max(1e-6, b.max[1] - b.min[1]);
+      const colors = new Float32Array(renderPositions.length);
+
+      for (let i = 0; i < renderPositions.length; i += 3) {
+        const t = (renderPositions[i + 1] - b.min[1]) / span; // y in [0, 1]
         colors[i] = 0.25 + 0.65 * t; // r
         colors[i + 1] = 0.85; // g
         colors[i + 2] = 1.0 - 0.45 * t; // b
       }
 
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(this.pointsData, 3));
+      geo.setAttribute("position", new THREE.BufferAttribute(renderPositions, 3));
       geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
       this.layers.points = new THREE.Points(
@@ -322,7 +398,7 @@ export class WorldSceneController {
       this.layers.points.visible = this.layerVisibility.points;
       this.scene.add(this.layers.points);
 
-      // Frame camera based on robust bounds
+      // Frame camera based on robust bounds of canonical source data
       const rb = robustPointsBounds(this.pointsData);
       this.robustExtent = rb.extent;
       this.camera.position.set(
@@ -331,6 +407,8 @@ export class WorldSceneController {
         rb.center[2] + rb.extent * 1.3
       );
       this.controls.target.set(rb.center[0], rb.center[1], rb.center[2]);
+    } else {
+      this.renderedPointsCount = 0;
     }
 
     // 2. Build Entities
@@ -511,6 +589,8 @@ export class WorldSceneController {
     // Reselect previous entity if still exists
     if (this.selectedEntityId) {
       this.selectEntity(this.selectedEntityId);
+    } else if (this.layerVisibility.topology) {
+      this.renderSpatialTopology(null);
     }
   }
 
@@ -535,7 +615,7 @@ export class WorldSceneController {
     if (layers.topology !== undefined) {
       if (this.layers.topology) {
         this.layers.topology.visible = this.layerVisibility.topology;
-      } else if (this.layerVisibility.topology && this.selectedEntityId) {
+      } else if (this.layerVisibility.topology) {
         this.renderSpatialTopology(this.selectedEntityId);
       }
     }
@@ -563,6 +643,7 @@ export class WorldSceneController {
 
   public isolateSpace(entityId: string | null) {
     this.isolatedSpaceId = entityId;
+    if (this.isContextLost) return;
     this.updateMeshVisibilities();
     if (entityId) {
       this.flyToEntity(entityId);
@@ -572,8 +653,32 @@ export class WorldSceneController {
     }
   }
 
+  public isEntityOnActiveLevel(eid: string): boolean {
+    if (this.activeLevelIndex === null) return true;
+    if (!this.world?.entities?.[eid]) return false;
+    const ent = this.world.entities[eid];
+    const entLevel = ent.custom_properties?.level ?? ent.custom_properties?.floor_level;
+    if (entLevel !== undefined) {
+      return Number(entLevel) === this.activeLevelIndex;
+    }
+    // Check if canonical interior_space_graph contains this entity in the active level
+    const metaLevels = (this.world.metadata?.interior_space_graph as Record<string, unknown> | undefined)?.levels as Array<Record<string, unknown>> | undefined;
+    const activeMetaLevel = metaLevels?.[this.activeLevelIndex];
+    if (activeMetaLevel) {
+      const roomIds = (activeMetaLevel.room_ids as string[] | undefined) || [];
+      const corridorIds = (activeMetaLevel.corridor_ids as string[] | undefined) || [];
+      return roomIds.includes(eid) || corridorIds.includes(eid) || ent.parent_id === activeMetaLevel.level_id;
+    }
+    // Unassigned entities are not attributed to a level; never fabricate by dividing height
+    return false;
+  }
+
   public setLevelFilter(levelIndex: number | null) {
     this.activeLevelIndex = levelIndex;
+    if (this.isContextLost) return;
+    if (this.selectedEntityId && !this.isEntityOnActiveLevel(this.selectedEntityId)) {
+      this.selectEntity(null);
+    }
     this.updateMeshVisibilities();
   }
 
@@ -626,27 +731,7 @@ export class WorldSceneController {
         mesh.userData.entityType === "space";
       const mat = mesh.material as THREE.MeshLambertMaterial;
 
-      let matchesLevel = true;
-      if (this.activeLevelIndex !== null && this.world?.entities?.[eid]) {
-        const ent = this.world.entities[eid];
-        const entLevel =
-          ent.custom_properties?.level ?? ent.custom_properties?.floor_level;
-        if (entLevel !== undefined) {
-          matchesLevel = Number(entLevel) === this.activeLevelIndex;
-        } else {
-          // Check if canonical interior_space_graph contains this entity in the active level
-          const metaLevels = (this.world.metadata?.interior_space_graph as Record<string, unknown> | undefined)?.levels as Array<Record<string, unknown>> | undefined;
-          const activeMetaLevel = metaLevels?.[this.activeLevelIndex];
-          if (activeMetaLevel) {
-            const roomIds = (activeMetaLevel.room_ids as string[] | undefined) || [];
-            const corridorIds = (activeMetaLevel.corridor_ids as string[] | undefined) || [];
-            matchesLevel = roomIds.includes(eid) || corridorIds.includes(eid) || ent.parent_id === activeMetaLevel.level_id;
-          } else {
-            // Unassigned entities are not attributed to a level; never fabricate by dividing height
-            matchesLevel = false;
-          }
-        }
-      }
+      const matchesLevel = this.isEntityOnActiveLevel(eid);
 
       if (!this.layerVisibility.entities) {
         mesh.visible = false;
@@ -687,6 +772,7 @@ export class WorldSceneController {
   }
 
   public renderSpatialTopology(selectedEntityId: string | null) {
+    if (this.isContextLost) return;
     if (this.layers.topology) {
       this.scene.remove(this.layers.topology);
       this.layers.topology.traverse((child) => {
@@ -702,17 +788,10 @@ export class WorldSceneController {
       this.layers.topology = null;
     }
 
-    if (!this.layerVisibility.topology || !this.world || !selectedEntityId) return;
-
-    const targetEntity = this.world.entities?.[selectedEntityId];
-    const targetMesh = this.entityMeshes.get(selectedEntityId);
-    if (!targetEntity || !targetMesh) return;
+    if (!this.layerVisibility.topology || !this.world) return;
 
     const topologyGroup = new THREE.Group();
     topologyGroup.name = "SpatialTopologyGroup";
-
-    const sourcePos = targetMesh.position.clone();
-    const tType = targetEntity.type.toLowerCase();
 
     const addConnector = (from: THREE.Vector3, to: THREE.Vector3, colorHex: number) => {
       const lineGeo = new THREE.BufferGeometry().setFromPoints([from, to]);
@@ -735,6 +814,68 @@ export class WorldSceneController {
       marker.renderOrder = 996;
       topologyGroup.add(marker);
     };
+
+    if (!selectedEntityId) {
+      // Global topology network: render space graph edges between rooms, corridors, and doors
+      const spaceEntities = Object.values(this.world.entities || {}).filter(
+        (e) => e.type === "room" || e.type === "corridor" || e.type === "space"
+      );
+      for (const space of spaceEntities) {
+        const spaceMesh = this.entityMeshes.get(space.id);
+        if (!spaceMesh || !spaceMesh.visible) continue;
+        const sPos = spaceMesh.position.clone();
+
+        // Connected corridors
+        const connectedCorridors = Array.isArray(space.custom_properties?.connected_corridor_ids)
+          ? (space.custom_properties.connected_corridor_ids as string[])
+          : [];
+        for (const cid of connectedCorridors) {
+          const cMesh = this.entityMeshes.get(cid);
+          if (cMesh && cMesh.visible) {
+            addConnector(sPos, cMesh.position, 0x00e5ff);
+          }
+        }
+
+        // Adjacent rooms
+        const adjacentRooms = Array.isArray(space.custom_properties?.adjacent_room_ids)
+          ? (space.custom_properties.adjacent_room_ids as string[])
+          : [];
+        for (const arid of adjacentRooms) {
+          if (arid > space.id) {
+            const arMesh = this.entityMeshes.get(arid);
+            if (arMesh && arMesh.visible) {
+              addConnector(sPos, arMesh.position, 0x38bdf8);
+            }
+          }
+        }
+
+        // Doors connecting to this space
+        for (const [eid, ent] of Object.entries(this.world.entities || {})) {
+          if (ent.type === "door" || ent.type === "opening") {
+            const doorMesh = this.entityMeshes.get(eid);
+            if (!doorMesh || !doorMesh.visible) continue;
+            const isRel = (ent.relationships || []).some(
+              (r) => r.target_id === space.id || (r as { target_entity_id?: string }).target_entity_id === space.id
+            ) || ent.parent_id === space.id;
+            if (isRel) {
+              addConnector(sPos, doorMesh.position, 0x10b981);
+            }
+          }
+        }
+      }
+      if (topologyGroup.children.length > 0) {
+        this.layers.topology = topologyGroup;
+        this.scene.add(topologyGroup);
+      }
+      return;
+    }
+
+    const targetEntity = this.world.entities?.[selectedEntityId];
+    const targetMesh = this.entityMeshes.get(selectedEntityId);
+    if (!targetEntity || !targetMesh) return;
+
+    const sourcePos = targetMesh.position.clone();
+    const tType = targetEntity.type.toLowerCase();
 
     if (tType === "room" || tType === "space") {
       // Room relationships: walls, floor, ceiling, doors, windows, corridors, adjacent rooms, level
@@ -1082,6 +1223,10 @@ export class WorldSceneController {
 
   public selectEntity(id: string | null, updateCamera = false) {
     this.selectedEntityId = id;
+    if (this.isContextLost) {
+      this.onSelectCallback?.(id);
+      return;
+    }
 
     // Reset outline
     if (this.layers.selectionOutline) {
@@ -1120,7 +1265,29 @@ export class WorldSceneController {
     this.onSelectCallback?.(id);
   }
 
-  public flyToEntity(id: string) {
+  private animateCameraTo(endPos: THREE.Vector3, endTarget: THREE.Vector3, duration = 380) {
+    if (
+      !Number.isFinite(endPos.x) ||
+      !Number.isFinite(endPos.y) ||
+      !Number.isFinite(endPos.z) ||
+      !Number.isFinite(endTarget.x) ||
+      !Number.isFinite(endTarget.y) ||
+      !Number.isFinite(endTarget.z)
+    ) {
+      return;
+    }
+    this.cameraAnimation = {
+      startPos: this.camera.position.clone(),
+      endPos: endPos.clone(),
+      startTarget: this.controls.target.clone(),
+      endTarget: endTarget.clone(),
+      startTime: performance.now(),
+      duration,
+    };
+  }
+
+  public flyToEntity(id: string, animate = true) {
+    if (this.isContextLost) return;
     const mesh = this.entityMeshes.get(id);
     if (!mesh) return;
 
@@ -1129,12 +1296,21 @@ export class WorldSceneController {
     const dir = new THREE.Vector3(0.8, 0.55, 0.8).normalize();
     const d = Math.max(1.2, size * 1.45);
 
-    this.camera.position.copy(mesh.position).addScaledVector(dir, d);
-    this.controls.target.copy(mesh.position);
-    this.controls.update();
+    const endPos = mesh.position.clone().addScaledVector(dir, d);
+    const endTarget = mesh.position.clone();
+
+    if (animate) {
+      this.animateCameraTo(endPos, endTarget, 350);
+    } else {
+      if (!Number.isFinite(endPos.x) || !Number.isFinite(endTarget.x)) return;
+      this.camera.position.copy(endPos);
+      this.controls.target.copy(endTarget);
+      this.controls.update();
+    }
   }
 
-  public flyToCamera(evidenceId: string) {
+  public flyToCamera(evidenceId: string, animate = true) {
+    if (this.isContextLost) return;
     if (!this.camerasData || !this.camerasData.cameras) return;
     const cam = this.camerasData.cameras.find(
       (c) => (c.evidence_id || c.id) === evidenceId
@@ -1148,19 +1324,35 @@ export class WorldSceneController {
       cam.rotation_wxyz[0]
     );
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-    this.camera.position.set(p[0], p[1], p[2]);
-    this.controls.target.set(
+    const endPos = new THREE.Vector3(p[0], p[1], p[2]);
+    const endTarget = new THREE.Vector3(
       p[0] + forward.x * 2.5,
       p[1] + forward.y * 2.5,
       p[2] + forward.z * 2.5
     );
-    this.controls.update();
+
+    if (animate) {
+      this.animateCameraTo(endPos, endTarget, 380);
+    } else {
+      if (!Number.isFinite(endPos.x) || !Number.isFinite(endTarget.x)) return;
+      this.camera.position.copy(endPos);
+      this.controls.target.copy(endTarget);
+      this.controls.update();
+    }
   }
 
-  public flyToPosition(x: number, y: number, z: number) {
-    this.camera.position.set(x + 2.5, y + 2, z + 2.5);
-    this.controls.target.set(x, y, z);
-    this.controls.update();
+  public flyToPosition(x: number, y: number, z: number, animate = true) {
+    if (this.isContextLost) return;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+    const endPos = new THREE.Vector3(x + 2.5, y + 2, z + 2.5);
+    const endTarget = new THREE.Vector3(x, y, z);
+    if (animate) {
+      this.animateCameraTo(endPos, endTarget, 350);
+    } else {
+      this.camera.position.copy(endPos);
+      this.controls.target.copy(endTarget);
+      this.controls.update();
+    }
   }
 
   public getCameraPose(): { position: [number, number, number]; target: [number, number, number] } {
@@ -1170,22 +1362,33 @@ export class WorldSceneController {
     };
   }
 
-  public flyToBookmark(position: [number, number, number], target: [number, number, number]) {
-    this.camera.position.set(position[0], position[1], position[2]);
-    this.controls.target.set(target[0], target[1], target[2]);
-    this.controls.update();
+  public flyToBookmark(position: [number, number, number], target: [number, number, number], animate = true) {
+    if (this.isContextLost) return;
+    if (!Number.isFinite(position[0]) || !Number.isFinite(target[0])) return;
+    const endPos = new THREE.Vector3(position[0], position[1], position[2]);
+    const endTarget = new THREE.Vector3(target[0], target[1], target[2]);
+    if (animate) {
+      this.animateCameraTo(endPos, endTarget, 400);
+    } else {
+      this.camera.position.copy(endPos);
+      this.controls.target.copy(endTarget);
+      this.controls.update();
+    }
   }
 
+  public frameAll(animate = true) {
+    if (this.isContextLost) return;
+    let endPos: THREE.Vector3;
+    let endTarget: THREE.Vector3;
 
-  public frameAll() {
     if (this.pointsData && this.pointsData.length > 0) {
       const rb = robustPointsBounds(this.pointsData);
-      this.camera.position.set(
+      endPos = new THREE.Vector3(
         rb.center[0] + rb.extent * 1.2,
         rb.center[1] + rb.extent * 0.7,
         rb.center[2] + rb.extent * 1.2
       );
-      this.controls.target.set(rb.center[0], rb.center[1], rb.center[2]);
+      endTarget = new THREE.Vector3(rb.center[0], rb.center[1], rb.center[2]);
     } else if (this.entityMeshes.size > 0) {
       const box = new THREE.Box3();
       for (const mesh of this.entityMeshes.values()) {
@@ -1193,51 +1396,133 @@ export class WorldSceneController {
       }
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3()).length();
-      this.camera.position.set(
+      endPos = new THREE.Vector3(
         center.x + size * 0.9,
         center.y + size * 0.5,
         center.z + size * 0.9
       );
-      this.controls.target.copy(center);
+      endTarget = center;
     } else {
-      this.camera.position.set(4, 3, 6);
-      this.controls.target.set(0, 0, 0);
+      endPos = new THREE.Vector3(4, 3, 6);
+      endTarget = new THREE.Vector3(0, 0, 0);
     }
-    this.controls.update();
+
+    if (animate) {
+      this.animateCameraTo(endPos, endTarget, 400);
+    } else {
+      if (!Number.isFinite(endPos.x) || !Number.isFinite(endTarget.x)) return;
+      this.camera.position.copy(endPos);
+      this.controls.target.copy(endTarget);
+      this.controls.update();
+    }
   }
 
-  public setViewPreset(preset: ViewPreset) {
+  public setViewPreset(preset: ViewPreset, animate = true) {
+    if (this.isContextLost) return;
     const target = this.controls.target.clone();
     const d = this.camera.position.distanceTo(target) || 5;
+    let endPos: THREE.Vector3;
 
     switch (preset) {
       case "top":
-        this.camera.position.set(target.x, target.y + d, target.z + 0.0001);
+        endPos = new THREE.Vector3(target.x, target.y + d, target.z + 0.0001);
         break;
       case "front":
-        this.camera.position.set(target.x, target.y, target.z + d);
+        endPos = new THREE.Vector3(target.x, target.y, target.z + d);
         break;
       case "side":
-        this.camera.position.set(target.x + d, target.y, target.z);
+        endPos = new THREE.Vector3(target.x + d, target.y, target.z);
         break;
       case "isometric":
       default:
-        this.camera.position.set(
+        endPos = new THREE.Vector3(
           target.x + d * 0.7,
           target.y + d * 0.5,
           target.z + d * 0.7
         );
         break;
     }
-    this.controls.update();
+
+    if (animate) {
+      this.animateCameraTo(endPos, target, 350);
+    } else {
+      if (!Number.isFinite(endPos.x) || !Number.isFinite(target.x)) return;
+      this.camera.position.copy(endPos);
+      this.controls.target.copy(target);
+      this.controls.update();
+    }
   }
 
   private setupEvents() {
     const dom = this.renderer.domElement;
+    const { signal } = this.abortController;
+    let pointerDownPos = { x: 0, y: 0 };
 
-    // Handle clicks for 3D selection and measurement
+    // WebGL Context Loss & Restoration
+    dom.addEventListener("webglcontextlost", (event: Event) => {
+      // Standard WebGL requirement: event.preventDefault() instructs browser that application handles restoration
+      event.preventDefault();
+      if (this.isContextLost) return;
+      this.isContextLost = true;
+      if (this.animationFrameId !== null) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = null;
+      }
+      this.onContextLossChangeCallback?.(true);
+    }, { signal });
+
+    dom.addEventListener("webglcontextrestored", () => {
+      if (!this.isContextLost) return;
+      this.isContextLost = false;
+      this.onContextLossChangeCallback?.(false);
+      // Rebuild scene from canonical WorldIR / points / cameras / mesh data
+      if (this.world) {
+        this.rebuildScene();
+        // Restore active storey isolation if configured
+        if (this.activeLevelIndex !== null) {
+          this.setLevelFilter(this.activeLevelIndex);
+        }
+        // Restore selection if selected entity still exists
+        if (this.selectedEntityId && this.entityMeshes.has(this.selectedEntityId)) {
+          this.selectEntity(this.selectedEntityId);
+        } else if (this.selectedEntityId) {
+          this.selectEntity(null);
+        }
+      }
+      // Restart animation loop
+      this.startLoop();
+    }, { signal });
+
+    this.controls.addEventListener("start", () => {
+      if (this.isContextLost) return;
+      // User manual interaction takes precedence: cancel programmatic animation
+      this.cameraAnimation = null;
+    });
+
+    // OrbitControls does not fire 'start' on mouse wheel zoom, so cancel animation on wheel
+    dom.addEventListener("wheel", () => {
+      if (this.isContextLost) return;
+      this.cameraAnimation = null;
+    }, { signal, passive: true });
+
     dom.addEventListener("pointerdown", (ev) => {
+      if (this.isContextLost) return;
+      // Any pointer interaction cancels running animation
+      this.cameraAnimation = null;
       if (ev.button !== 0) return;
+      pointerDownPos = { x: ev.clientX, y: ev.clientY };
+    }, { signal });
+
+    // Handle clicks only on pointerup if pointer did not drag
+    dom.addEventListener("pointerup", (ev) => {
+      if (this.isContextLost) return;
+      if (ev.button !== 0) return;
+      const dragDist = Math.hypot(ev.clientX - pointerDownPos.x, ev.clientY - pointerDownPos.y);
+      if (dragDist > 4) {
+        // Orbit or pan action, ignore selection
+        return;
+      }
+
       const rect = dom.getBoundingClientRect();
       this.mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1266,10 +1551,16 @@ export class WorldSceneController {
         return;
       }
 
-      // Entity Selection Mode
-      const meshes = Array.from(this.entityMeshes.values()).filter(
-        (m) => m.visible
-      );
+      // Entity Selection Mode:
+      // Filter meshes to visible and respecting active storey isolation (dimmed meshes cannot be clicked)
+      const meshes = Array.from(this.entityMeshes.entries())
+        .filter(([eid, m]) => {
+          if (!m.visible) return false;
+          if (this.activeLevelIndex !== null && !this.isEntityOnActiveLevel(eid)) return false;
+          return true;
+        })
+        .map(([, m]) => m);
+
       const hits = this.raycaster.intersectObjects(meshes, false);
 
       if (hits.length > 0) {
@@ -1278,7 +1569,7 @@ export class WorldSceneController {
       } else {
         this.selectEntity(null);
       }
-    });
+    }, { signal });
 
     // Resize observer
     this.resizeObserver = new ResizeObserver(() => this.onResize());
@@ -1344,6 +1635,7 @@ export class WorldSceneController {
   }
 
   private onResize() {
+    if (this.isContextLost) return;
     const w = this.container.clientWidth || 800;
     const h = this.container.clientHeight || 600;
     this.renderer.setSize(w, h, false);
@@ -1352,29 +1644,111 @@ export class WorldSceneController {
   }
 
   private startLoop() {
+    if (this.isContextLost) return;
     const animate = () => {
+      if (this.isContextLost) return;
+      if (this.cameraAnimation) {
+        const now = performance.now();
+        const elapsed = (now - this.cameraAnimation.startTime) / this.cameraAnimation.duration;
+        if (elapsed >= 1) {
+          this.camera.position.copy(this.cameraAnimation.endPos);
+          this.controls.target.copy(this.cameraAnimation.endTarget);
+          this.cameraAnimation = null;
+        } else {
+          // Smooth cubic ease-in-out curve
+          const t = elapsed < 0.5 ? 4 * elapsed * elapsed * elapsed : 1 - Math.pow(-2 * elapsed + 2, 3) / 2;
+          this.camera.position.lerpVectors(this.cameraAnimation.startPos, this.cameraAnimation.endPos, t);
+          this.controls.target.lerpVectors(this.cameraAnimation.startTarget, this.cameraAnimation.endTarget, t);
+        }
+      }
+
       this.controls.update();
+
+      // Emit camera azimuth & elevation for Orientation Compass
+      if (this.onCameraChangeCallback) {
+        const dir = new THREE.Vector3();
+        this.camera.getWorldDirection(dir);
+        const azimuthRad = Math.atan2(dir.x, dir.z);
+        const azimuthDeg = Math.round(((azimuthRad * 180) / Math.PI + 360) % 360);
+        const elevationRad = Math.asin(Math.max(-1, Math.min(1, dir.y)));
+        const elevationDeg = Math.round((elevationRad * 180) / Math.PI);
+        if (azimuthDeg !== this.lastAzimuthDeg || elevationDeg !== this.lastElevationDeg) {
+          this.lastAzimuthDeg = azimuthDeg;
+          this.lastElevationDeg = elevationDeg;
+          this.onCameraChangeCallback({ azimuthDeg, elevationDeg });
+        }
+      }
+
       this.renderer.render(this.scene, this.camera);
       this.animationFrameId = requestAnimationFrame(animate);
     };
     this.animationFrameId = requestAnimationFrame(animate);
   }
 
-  public getStatistics() {
+  public getStatistics(): ViewportStatistics {
     const pts = this.pointsData ? this.pointsData.length / 3 : 0;
     const cams = this.camerasData ? (this.camerasData.cameras || []).length : 0;
     const ents = this.entityMeshes.size;
-    return { points: pts, cameras: cams, entities: ents };
+    return {
+      points: pts,
+      canonicalPoints: pts,
+      renderedPoints: this.renderedPointsCount > 0 ? this.renderedPointsCount : pts,
+      isLODSampled: this.renderedPointsCount > 0 && this.renderedPointsCount < pts,
+      cameras: cams,
+      entities: ents,
+      isContextLost: this.isContextLost,
+    };
+  }
+
+  public getContextLost(): boolean {
+    return this.isContextLost;
+  }
+
+  public getGpuResourceInfo() {
+    return {
+      geometries: this.renderer.info.memory.geometries,
+      textures: this.renderer.info.memory.textures,
+      programs: this.renderer.info.programs?.length ?? 0,
+      calls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      points: this.renderer.info.render.points,
+      lines: this.renderer.info.render.lines,
+    };
   }
 
   public dispose() {
+    this.abortController.abort();
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
     }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
+      this.resizeObserver = null;
     }
     this.clearSceneLayers();
+    if (this.gridHelper) {
+      this.scene.remove(this.gridHelper);
+      this.gridHelper.geometry.dispose();
+      if (Array.isArray(this.gridHelper.material)) {
+        this.gridHelper.material.forEach((m) => m.dispose());
+      } else {
+        this.gridHelper.material.dispose();
+      }
+    }
+    if (this.axesHelper) {
+      this.scene.remove(this.axesHelper);
+      this.axesHelper.geometry.dispose();
+      if (Array.isArray(this.axesHelper.material)) {
+        this.axesHelper.material.forEach((m) => m.dispose());
+      } else {
+        this.axesHelper.material.dispose();
+      }
+    }
+    this.clearMeasurement();
+    if (this.measurementGroup) {
+      this.scene.remove(this.measurementGroup);
+    }
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement) {

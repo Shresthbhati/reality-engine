@@ -59,6 +59,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
+  const [isolateSpaceId, setIsolateSpaceId] = useState<string | null>(null);
+  const [activeLevelIndex, setActiveLevelIndex] = useState<number | null>(null);
   
   // Spatial Query Filter State
   const [activeQuery, setActiveQuery] = useState<SpatialQueryFilter | null>(null);
@@ -257,6 +259,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     }
   }, [worldId]);
 
+  // Reset transient workspace selection & filters whenever active world changes
+  useEffect(() => {
+    setSelectedEntityId(null);
+    setSelectedEvidenceId(null);
+    setActiveQuery(null);
+  }, [worldId]);
+
   // Global Keyboard Shortcuts and Custom Event Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -275,8 +284,6 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         handleClearSelection();
       } else if (e.key.toLowerCase() === "f" && selectedEntityId) {
         handleFrameEntity(selectedEntityId);
-      } else if (e.key.toLowerCase() === "m") {
-        setViewMode(prev => (prev === "3d" ? "map" : "3d"));
       }
     };
 
@@ -347,7 +354,12 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     );
   }
 
-  const has3DContent = Boolean(worldIR && (Object.keys(worldIR.entities || {}).length > 0 || points));
+  const isWorldMatching = Boolean(worldIR && worldIR.id === worldId);
+  const activeWorldIR = isWorldMatching ? worldIR : null;
+  const activePoints = isWorldMatching ? points : null;
+  const activeCameras = isWorldMatching ? cameras : null;
+  const activeMesh = isWorldMatching ? mesh : null;
+  const has3DContent = Boolean(activeWorldIR && (Object.keys(activeWorldIR.entities || {}).length > 0 || activePoints));
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#08090b] text-[var(--text-primary)] select-none">
@@ -541,15 +553,16 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         <div className="flex-1 relative h-full min-w-0 bg-[#08090b] overflow-hidden">
           {viewMode === "3d" ? (
             <World3DViewport
-              world={worldIR}
-              points={points}
-              cameras={cameras}
-              mesh={mesh}
+              world={activeWorldIR}
+              points={activePoints}
+              cameras={activeCameras}
+              mesh={activeMesh}
               selectedEntityId={selectedEntityId}
               onSelectEntity={handleSelectEntity}
               highlightedEvidenceId={selectedEvidenceId}
               onSelectEvidence={setSelectedEvidenceId}
               queryMatchingIds={queryMatchingIds}
+              isLoading={isIrLoading}
               hasNoWorldData={!has3DContent}
               onMeasurementChange={setMeasurement}
               onOpenRoomConstruction={() => setConstructionModalOpen(true)}
@@ -610,6 +623,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <AdaptiveInspector
               world={worldIR}
               worldId={worldId}
+              activeVersion={currentVersionId ?? undefined}
               selectedEntityId={selectedEntityId}
               onSelectEntity={handleSelectEntity}
               onFrameEntity={handleFrameEntity}
@@ -664,6 +678,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         onReconstructionSuccess={() => {
           refetchIr();
           refetchVersions();
+          window.dispatchEvent(new CustomEvent("frame-all"));
         }}
       />
     </div>

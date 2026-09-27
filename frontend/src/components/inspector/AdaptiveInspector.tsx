@@ -37,6 +37,7 @@ import { TYPE_COLORS } from "@/lib/viewport/three-scene";
 interface AdaptiveInspectorProps {
   world: WorldIR | null;
   worldId?: string;
+  activeVersion?: string;
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
   onFrameEntity: (id: string) => void;
@@ -56,6 +57,7 @@ type InspectorTab = "all" | "geometry" | "evidence" | "observations" | "provenan
 export default function AdaptiveInspector({
   world,
   worldId = "current-world",
+  activeVersion,
   selectedEntityId,
   onSelectEntity,
   onFrameEntity,
@@ -171,6 +173,7 @@ export default function AdaptiveInspector({
             key={entity.id}
             world={world}
             worldId={worldId}
+            activeVersion={activeVersion}
             entity={entity}
             geometry={geometry}
             tab={tab}
@@ -189,6 +192,7 @@ export default function AdaptiveInspector({
           <WorldOverview
             world={world}
             worldId={worldId}
+            activeVersion={activeVersion}
             onOpenRoomConstruction={onOpenRoomConstruction}
             onExport={onExport}
           />
@@ -201,6 +205,7 @@ export default function AdaptiveInspector({
 function EntityDetails({
   world,
   worldId,
+  activeVersion,
   entity,
   geometry,
   tab,
@@ -217,6 +222,7 @@ function EntityDetails({
 }: {
   world: WorldIR | null;
   worldId: string;
+  activeVersion?: string;
   entity: Entity;
   geometry: Geometry | null;
   tab: InspectorTab;
@@ -309,6 +315,7 @@ function EntityDetails({
     version_id: string;
     parent_version_id?: string;
   } | null>(null);
+  const [commitError, setCommitError] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
 
   const childrenList = useMemo<Entity[]>(() => {
@@ -366,6 +373,7 @@ function EntityDetails({
   const handleSaveCorrection = async (overrideMode?: string) => {
     if (!onCommitCorrection) return;
     setSubmitting(true);
+    setCommitError(null);
     window.dispatchEvent(new CustomEvent("clear-correction-preview"));
     setIsPreviewing(false);
     try {
@@ -408,6 +416,7 @@ function EntityDetails({
       setIsEditing(false);
     } catch (e) {
       console.error("Commit failed", e);
+      setCommitError(e instanceof Error ? e.message : "Correction commit failed.");
     } finally {
       setSubmitting(false);
     }
@@ -438,6 +447,26 @@ function EntityDetails({
 
   return (
     <div className="space-y-4">
+      {/* Commit Failure Error Banner */}
+      {commitError && (
+        <div className="p-3 rounded-lg border border-[#e74c3c]/40 bg-[#281212] space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-[#e74c3c] font-semibold">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Correction Failed</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setCommitError(null)}
+              className="text-neutral-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+          <p className="text-[11px] text-neutral-300 font-mono">{commitError}</p>
+        </div>
+      )}
+
       {/* Post-Commit WorldStore Version Banner */}
       {committedVersionResult && (
         <div className="p-3 rounded-lg border border-[#2ecc71]/40 bg-[#12281a] space-y-2 text-xs">
@@ -585,7 +614,7 @@ function EntityDetails({
           <div className="flex justify-between items-center">
             <span className="text-neutral-400">WorldStore Version</span>
             <span className="font-mono text-[#00e5ff] text-[10px] truncate max-w-[160px]">
-              {provenanceLoading ? "…" : provenance?.version_id ?? "Not compiled"}
+              {provenanceLoading ? "…" : provenance?.version_id || activeVersion || "Not compiled"}
             </span>
           </div>
         </div>
@@ -1831,11 +1860,21 @@ function EntityDetails({
             className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
             style={{ borderColor: "var(--border)" }}
           >
-            <div className="flex justify-between">
-              <span className="text-neutral-400">Geometry ID</span>
-              <span className="font-mono text-white truncate max-w-[150px]">
-                {geometry?.id || "Unavailable"}
+            <div className="flex justify-between items-start">
+              <span className="text-neutral-400 shrink-0">
+                Geometry ID{entity.geometry_ids && entity.geometry_ids.length > 1 ? `s (${entity.geometry_ids.length})` : ""}
               </span>
+              <div className="flex flex-col items-end gap-0.5">
+                {entity.geometry_ids && entity.geometry_ids.length > 0 ? (
+                  entity.geometry_ids.map((gid) => (
+                    <span key={gid} className="font-mono text-white truncate max-w-[150px]">
+                      {gid}
+                    </span>
+                  ))
+                ) : (
+                  <span className="font-mono text-neutral-500">Unavailable</span>
+                )}
+              </div>
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-400">Dimensions (L × W × H)</span>
@@ -2187,11 +2226,13 @@ function EntityDetails({
 function WorldOverview({
   world,
   worldId,
+  activeVersion,
   onOpenRoomConstruction,
   onExport,
 }: {
   world: WorldIR | null;
   worldId: string;
+  activeVersion?: string;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
 }) {
@@ -2231,6 +2272,12 @@ function WorldOverview({
         <div className="text-xs text-neutral-400 mt-1">
           {world.name || "Canonical WorldIR"}
         </div>
+        {activeVersion && (
+          <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400 pt-2 mt-2 border-t border-neutral-800">
+            <span className="text-neutral-500 uppercase">WorldStore Version</span>
+            <span className="text-[#00e5ff] font-semibold">{activeVersion}</span>
+          </div>
+        )}
       </div>
 
       {/* Pipeline Stage Facts */}

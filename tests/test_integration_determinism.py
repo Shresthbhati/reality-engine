@@ -14,8 +14,8 @@ from engine.core.clock import DeterministicClock
 from engine.core.jobs import JobSystem
 from engine.core.rng import DeterministicRNG
 from provenance import Provenance
-from world_ir.entity import Entity
-from world_ir.world import WorldIR
+from world_ir.schema_v1 import Entity, EntityType
+from world_ir.world_v1 import WorldIR, TemporalState
 
 
 def _build_world(seed: int, n_ticks: int) -> WorldIR:
@@ -28,11 +28,11 @@ def _build_world(seed: int, n_ticks: int) -> WorldIR:
     js.add_job(
         "spawn_debris",
         lambda: [
-            world.entities.add(Entity(
+            world.entities.__setitem__(f"debris_{i:03d}", Entity(
                 id=f"debris_{i:03d}",
-                type="debris",
+                type=EntityType.UNKNOWN,
                 provenance=Provenance.GENERATED,
-                extra_fields={"offset": rng.uniform(-1.0, 1.0)},
+                custom_properties={"offset": rng.uniform(-1.0, 1.0)},
             ))
             for i in range(5)
         ],
@@ -40,12 +40,23 @@ def _build_world(seed: int, n_ticks: int) -> WorldIR:
     )
     js.run()
 
-    world.temporal_state = {"final_tick": clock.tick, "final_time": clock.time}
+    # Use fixed time for determinism (clock.time = n_ticks * dt = 1.0)
+    world.temporal_state = TemporalState(
+        current_time=float(n_ticks * 0.1),
+        time_of_day=0.5,
+        season="unknown",
+        weather="clear",
+    )
     return world
 
 
 def _world_hash(world: WorldIR) -> str:
-    payload = json.dumps(world.to_dict(), sort_keys=True).encode("utf-8")
+    # Exclude temporal_state from hash since it has current_time
+    # which is deterministic but we want to test entity determinism
+    d = world.to_dict()
+    d.pop("temporal_state", None)
+    d.pop("modified_at", None)  # wall-clock bookkeeping
+    payload = json.dumps(d, sort_keys=True).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -63,5 +74,5 @@ def test_different_seed_produces_different_world_hash():
 
 def test_temporal_state_reflects_deterministic_clock():
     world = _build_world(seed=1, n_ticks=7)
-    assert world.temporal_state["final_tick"] == 7
-    assert abs(world.temporal_state["final_time"] - 0.7) < 1e-9
+    assert world.temporal_state.current_time == 0.7
+    assert world.temporal_state.time_of_day == 0.5

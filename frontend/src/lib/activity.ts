@@ -4,3 +4,4 @@
  * Re-exports types and getActivity from the api module.
  */
 export { fetchActivity, getActivity, type ActivityEvent, type ActivityType } from "./api/activity";
+export { isApiError } from "./api/client";

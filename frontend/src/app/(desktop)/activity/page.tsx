@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import ActivityFeed from "@/components/ui/ActivityFeed";
-import { getActivity, type ActivityType, type ActivityEvent } from "@/lib/activity";
+import { getActivity, isApiError, type ActivityType, type ActivityEvent } from "@/lib/activity";
 
 const FILTERS: Array<{ id: ActivityType | "ALL"; label: string }> = [
   { id: "ALL", label: "All" },
@@ -17,10 +17,32 @@ const FILTERS: Array<{ id: ActivityType | "ALL"; label: string }> = [
 
 export default function ActivityPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("ALL");
-  const [events, setEvents] = useState<ActivityEvent[]>([]);
+  // `events === null` while loading or after a failure; an empty array is a
+  // real answer from the API meaning nothing has been recorded.
+  const [events, setEvents] = useState<ActivityEvent[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getActivity().then((rows) => setEvents(rows.filter((e) => filter === "ALL" || e.type === filter)));
+    let active = true;
+    setLoading(true);
+    getActivity()
+      .then((rows) => {
+        if (!active) return;
+        setEvents(rows.filter((e) => filter === "ALL" || e.type === filter));
+        setError(null);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setEvents(null);
+        setError(isApiError(err) ? err.describe() : (err as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [filter]);
 
   return (
@@ -43,7 +65,17 @@ export default function ActivityPage() {
         ))}
       </div>
       <div className="p-6 max-w-2xl">
-        <ActivityFeed events={events} />
+        {loading && events === null ? (
+          <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
+            Loading Activity…
+          </p>
+        ) : error ? (
+          <p className="text-sm" role="alert" style={{ color: "var(--error)" }}>
+            Activity could not be loaded. {error}
+          </p>
+        ) : (
+          <ActivityFeed events={events ?? []} />
+        )}
       </div>
     </div>
   );

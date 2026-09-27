@@ -596,11 +596,20 @@ class Entity:
     statement_state: Optional[StatementState] = None
 
     def to_dict(self) -> dict:
+        # Coerce type to EntityType enum if a raw string was passed at construction.
+        entity_type = self.type if isinstance(self.type, EntityType) else EntityType(self.type)
+        # Serialize Transform objects; pass None or plain dicts through as-is.
+        from world_ir.coordinates import Transform as _Transform
+        transform_out = (
+            self.transform.to_dict()
+            if isinstance(self.transform, _Transform)
+            else self.transform
+        )
         return {
             "id": self.id,
-            "type": self.type.value,
+            "type": entity_type.value,
             "name": self.name,
-            "transform": self.transform,
+            "transform": transform_out,
             "geometry_ids": list(self.geometry_ids),
             "material_ids": list(self.material_ids),
             "surface_ids": list(self.surface_ids),

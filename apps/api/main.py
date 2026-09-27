@@ -23,6 +23,7 @@ from apps.api.routes_procedural import procedural
 from apps.api.routes_query import query
 from apps.api.routes_sessions import health, sessions
 from apps.api.routes_worlds import worlds
+from reconstruction.proc import recover_orphaned_jobs
 
 app = FastAPI(title="Reality Engine API", version="0.1.0")
 app.add_middleware(
@@ -39,6 +40,17 @@ for router in (health, sessions, uploads, evidence, worlds, procedural, query, e
 @app.on_event("startup")
 async def _startup() -> None:
     await init_db()
+    # Recover any jobs that were orphaned by a previous worker crash
+    try:
+        from apps.api.db import get_sessionmaker
+        maker = get_sessionmaker()
+        async with maker() as db:
+            from reconstruction.proc import recover_orphaned_jobs
+            await recover_orphaned_jobs(db)
+    except Exception:
+        import logging
+        log = logging.getLogger("reality.api.startup")
+        log.exception("startup orphan recovery failed")
     app.state.worker = asyncio.create_task(jobrunner.worker_loop())
 
 

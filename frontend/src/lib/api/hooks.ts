@@ -32,6 +32,8 @@ export function useApi<T>(
 
   useEffect(() => {
     let cancelled = false;
+    setIsLoading(true);
+    setError(null);
     fetcher()
       .then((res) => {
         if (!cancelled) {

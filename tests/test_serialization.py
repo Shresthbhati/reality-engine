@@ -4,7 +4,7 @@ import pytest
 
 from provenance import Provenance
 from world_ir.coordinates import Frame, Transform
-from world_ir.entity import Entity, Relationship
+from world_ir.schema_v1 import Entity, EntityType, Relationship, RelationshipKind
 from world_ir.serialization import (
     IR_FILENAME,
     MANIFEST_FILENAME,
@@ -14,24 +14,26 @@ from world_ir.serialization import (
     load_world,
     save_world,
 )
-from world_ir.world import WorldIR
+from world_ir.world_v1 import WorldIR
 
 
 def _sample_world() -> WorldIR:
-    world = WorldIR(id="world_demo_building", version=3, coordinate_system=Frame.WORLD)
-    world.entities.add(Entity(
+    world = WorldIR(id="world_demo_building", version=3, coordinate_frame=Frame.WORLD)
+    building_entity = Entity(
         id="building_01",
-        type="building",
+        type=EntityType.BUILDING,
         transform=Transform.identity(Frame.WORLD, timestamp=0.0),
         provenance=Provenance.RECONSTRUCTED,
-    ))
-    world.entities.add(Entity(
+    )
+    world.entities[building_entity.id] = building_entity
+    window_entity = Entity(
         id="window_01",
-        type="window",
+        type=EntityType.WINDOW,
         provenance=Provenance.OBSERVED,
-        relationships=[Relationship(kind="attached_to", target_id="building_01")],
+        relationships=[Relationship(kind=RelationshipKind.ATTACHED_TO, target_id="building_01")],
         semantic_labels=["glass"],
-    ))
+    )
+    world.entities[window_entity.id] = window_entity
     return world
 
 

@@ -409,19 +409,22 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 evidence_id_by_name[dest_name] = item.id
 
             def _run(step: str, args: List[str]) -> None:
-                # Bounded subprocess lifecycle: a hung COLMAP step must
-                # fail explicitly instead of outliving its job. The
-                # API-level job timeout is the outer bound; this
+                # Bounded, OWNED subprocess lifecycle: a hung COLMAP step
+                # must fail explicitly instead of outliving its job, and a
+                # cancelled/timed-out job must not leave the child behind.
+                # The API-level job timeout is the outer bound; this
                 # per-process bound also protects direct (CLI) users.
-                # List-argv, no shell: timeout changes nothing about how
+                # List-argv, no shell: ownership changes nothing about how
                 # the command is constructed.
+                from reconstruction.proc import run_owned
+
                 try:
                     timeout_s = float(os.environ.get(
                         "COLMAP_SUBPROCESS_TIMEOUT_SECONDS", "3600"))
                 except ValueError:
                     timeout_s = 3600.0
                 try:
-                    proc = subprocess.run(
+                    proc = run_owned(
                         [self._colmap_binary, step, *args],
                         capture_output=True, env=env, text=True,
                         timeout=timeout_s,

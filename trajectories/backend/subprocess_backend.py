@@ -75,16 +75,19 @@ class SubprocessTrajectoryBackend(ITrajectoryBackend):
         command = self._render_command(command_template, request)
 
         request.workdir.mkdir(parents=True, exist_ok=True)
-        # Bounded subprocess lifecycle: a hung VIO binary must fail
-        # explicitly instead of outliving its job. List-argv, no shell:
-        # the bound changes nothing about command construction.
+        # Bounded, OWNED subprocess lifecycle: a hung VIO binary must fail
+        # explicitly instead of outliving its job, and a cancelled job
+        # must not leave the child behind. List-argv, no shell: ownership
+        # changes nothing about command construction.
+        from reconstruction.proc import run_owned
+
         try:
             timeout_s = float(os.environ.get(
                 "TRAJECTORY_SUBPROCESS_TIMEOUT_SECONDS", "3600"))
         except ValueError:
             timeout_s = 3600.0
         try:
-            proc = subprocess.run(
+            proc = run_owned(
                 command,
                 cwd=str(request.workdir),
                 capture_output=True,

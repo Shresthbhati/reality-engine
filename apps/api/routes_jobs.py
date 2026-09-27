@@ -68,12 +68,19 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
 @jobs.post("/{job_id}/cancel", status_code=200)
 async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Cancel a job. Queued jobs stop immediately (cancelled); running
-    jobs are flagged and stop at their next stage boundary, reported
-    with 202 while the worker winds down. Terminal jobs cannot be
-    cancelled (409)."""
+    jobs are flagged, their owned subprocess trees are terminated at
+    once, and they stop at the next stage boundary (202 while the worker
+    winds down). Repeat cancels of an already-cancelled job return the
+    same state (idempotent); other terminal jobs cannot be cancelled
+    (409). Never claims success before ownership is established: the
+    202 carries the live running state, not a completion."""
+    from reconstruction.proc import terminate_job_procs
+
     j = await db.get(Job, job_id)
     if j is None:
         raise HTTPException(404, "Job not found")
+    if j.status == "cancelled":
+        return {"id": j.id, "status": j.status, "cancel_requested": True}
     if j.status == "queued":
         j.status = "cancelled"
         j.completed_at = utcnow()
@@ -82,8 +89,14 @@ async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     if j.status == "running":
         j.cancel_requested = True
         await db.commit()
+        killed = terminate_job_procs(job_id)
         return JSONResponse(
-            {"id": j.id, "status": j.status, "cancel_requested": True},
+            {
+                "id": j.id,
+                "status": j.status,
+                "cancel_requested": True,
+                "processes_terminated": killed,
+            },
             status_code=202,
         )
     raise HTTPException(409, f"Job already {j.status}; only queued/running jobs can be cancelled")

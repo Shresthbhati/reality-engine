@@ -1442,6 +1442,71 @@ def test_cancel_running_job(client, tmp_path, monkeypatch):
     assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
 
 
+def test_timeout_with_pending_cancel_grades_cancelled(client, monkeypatch):
+    """Timeout and cancel racing: the operator's explicit cancel wins
+    over the timeout failure -- deterministic priority, never SUCCESS."""
+    import asyncio
+
+    import apps.api.db as db_mod
+    import apps.api.jobs as jobs_mod
+    from apps.api.models import Job
+
+    async def _hang(_db, _job):
+        await asyncio.sleep(60)
+
+    monkeypatch.setitem(jobs_mod._HANDLERS, "HANG_RACE", _hang)
+    monkeypatch.setenv("JOB_TIMEOUT_SECONDS", "1")
+
+    async def _scenario():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(Job(
+                id="job_race001", type="HANG_RACE",
+                entity_type="session", entity_id="ses_x",
+                status="queued", attempts=0, max_attempts=1,
+                cancel_requested=True,
+            ))
+            await db.commit()
+            job = await jobs_mod.process_next_job(db)
+            return job.status, job.error
+
+    status, error = asyncio.run(_scenario())
+    assert status == "cancelled", (status, error)
+    assert "timed out simultaneously" in (error or "").lower()
+
+
+def test_repeat_cancel_is_idempotent(client):
+    """Cancelling an already-cancelled job returns the same state
+    instead of an error; other terminal states still 409."""
+    import asyncio
+
+    import apps.api.db as db_mod
+    import apps.api.jobs as jobs_mod
+    from apps.api.models import Job
+    import unittest.mock as mock
+
+    async def _noop(_db):
+        return None
+
+    async def _seed():
+        maker = db_mod.get_sessionmaker()
+        async with maker() as db:
+            db.add(Job(
+                id="job_idem001", type="RECONSTRUCT_SESSION",
+                entity_type="session", entity_id="ses_x",
+                status="queued",
+            ))
+            await db.commit()
+
+    asyncio.run(_seed())
+    with mock.patch.object(jobs_mod, "process_next_job", _noop):
+        first = client.post("/api/jobs/job_idem001/cancel")
+        second = client.post("/api/jobs/job_idem001/cancel")
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["status"] == second.json()["status"] == "cancelled"
+
+
 def test_cancel_terminal_job_409(client):
     sid = client.post("/api/sessions", json={"name": "Cancel term"}).json()["id"]
     wid = client.post("/api/worlds", json={"name": "Cancel term world"}).json()["id"]

@@ -2,6 +2,44 @@
 
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
+
+## 2026-09-28 (1) -- Multi-storey plane support + real-data truth audit (P7-03)
+
+Branch fix/reconstruction-multistorey-plane-support, PR #128 (review-
+ready, CI 8/8 green, NOT merged -- sprint directive). Root cause
+measured: the compiler path consumed raw RANSAC at outdoor-sparse
+defaults (0.08 m / 8 inliers) while the assembler ran the interior
+scale (0.02/30) + sheet-split/merge; a diagonal candidate fused the
+canonical fixture's upper floor (812 pts) with the lower ceiling
+(703 pts) into one tilted 1565-inlier plane and the compiler promoted
+3 rooms / 1 fake storey. Fix: one shared detect->refine->classify
+stage (options on CompileOptions), support judged by MEASURED EXTENT
+(structural_plane_undersized: two largest extents < 1 m = not
+architecture), density-invariant ring test (interior occupied-cell
+share gated on pts/m2 -- area-fraction version demoted every real
+sparse floor), WorldIR gate reclassifies floor_height_m/elevation_m/
+sill_height_m/head_height_m as coordinate-like (negative = arbitrary
+frame origin, honest), assembler pins stable world identity
+(uuid main_branch_id broke byte-determinism).
+
+Verification: canonical two-storey 2 rooms/2 storeys both paths;
+10-case anti-cheat suite (A-J) incl. collapsed-reconstruction-refuses-
+everything and assembler byte-identical across runs; adversarial suite
+12/12 (30:43); real south_building compiler path 0 rooms -> 1 room
+9.30 m2 + 1 storey (0 validation issues); room42 + collapsed
+room_capture (1213-pt degenerate map) refuse honestly; WorldStore
+save/load/verify round-trip hash-identical; geometric stage 58.6k pts
+87 s vs old 285 s. Failure-semantics battery: failed-registration/
+empty/no-cameras/noise/unavailable-backend all refuse or return
+visibly-empty; lifecycle semantics 9/9.
+
+REAL-DATA PROVENANCE NOTE: datasets/real_room_capture and
+datasets/room_capture are SYNTHETIC/RENDERED captures (manifests say
+so); only south_building is real photographic SfM. COLMAP 4.2.0 CUDA
+binary now runs on this machine (exit 0); its room_capture mapping is
+PARTIAL (25/28 cameras, degenerate 1213-pt map) -- surfaced honestly,
+now promoted as nothing instead of fake floors.
+
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 

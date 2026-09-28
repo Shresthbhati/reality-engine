@@ -196,7 +196,16 @@ def assemble_interior_scene(
     oriented = orient_planes(split_planes, camera_positions, up=up)
     positions = positions_by_plane(result, oriented)
 
-    world = world if world is not None else WorldIR(id="world-interior")
+    # Stable identity: WorldIR's dataclass defaults mint a uuid4
+    # main_branch_id per instance, which makes two runs over the SAME
+    # points serialize differently -- a determinism defect the
+    # compiler path already fixed with the same convention (its
+    # `main_branch_id=f"branch-main-{stable_world_id}"`). The assembler
+    # carries the fix over: same points + seed -> byte-identical world.
+    world = world if world is not None else WorldIR(
+        id="world-interior",
+        main_branch_id="branch-main-world-interior",
+    )
     res = InteriorSceneResult(world=world)
 
     # Furniture-scale horizontal planes: the role assignment is purely
@@ -211,6 +220,7 @@ def assemble_interior_scene(
     from perception.architecture.classify import ArchitecturalElement
     from perception.architecture.room_graph import (
         floor_undersized_vs_floors,
+        structural_plane_undersized,
     )
 
     def _element(o: OrientedPlane) -> ArchitecturalElement:
@@ -229,16 +239,36 @@ def assemble_interior_scene(
         )
 
     floor_planes = [
-        o for o in oriented if o.role == "floor"
+        o for o in oriented if o.role in ("floor", "ceiling", "wall")
         and (positions.get(o.plane.plane_id) or o.plane.bounds_min)
     ]
     demoted_ids: set = set()
     for o in floor_planes:
+        # Sub-room-scale planes first, role-independent: a plane whose
+        # two largest extents are both < ~1 m cannot host a person --
+        # furniture, trim, or a fragment of a collapsed reconstruction
+        # (the measured room_capture case: a degenerate 1,213-pt
+        # COLMAP map whose 0.4x0.5 m sheets promoted as floors at 0.99
+        # confidence). Demoted regardless of reference floors, with
+        # the same honesty contract: recorded, never silent.
+        pts = positions.get(o.plane.plane_id) or []
+        if pts:
+            bmin = tuple(min(p[i] for p in pts) for i in range(3))
+            bmax = tuple(max(p[i] for p in pts) for i in range(3))
+            if structural_plane_undersized(bmin, bmax, up=up):
+                demoted_ids.add(o.plane.plane_id)
+                continue
         other_stubs = [
             _element(f) for f in floor_planes
             if f.plane.plane_id != o.plane.plane_id
+            and f.plane.plane_id not in demoted_ids
         ]
-        if floor_undersized_vs_floors(_element(o), other_stubs, up=up):
+        if o.role != "floor":
+            continue
+        if floor_undersized_vs_floors(
+            _element(o), other_stubs, up=up,
+            coverage_positions=positions.get(o.plane.plane_id, []),
+        ):
             demoted_ids.add(o.plane.plane_id)
     if demoted_ids:
         oriented = [

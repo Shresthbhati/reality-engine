@@ -22,6 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import ActivityEvent, Evidence, Job, Session, World, new_id, utcnow
 from evidence.session import EvidenceItem, EvidenceKind
+from reconstruction.proc import (
+    discard_job,
+    set_current_job,
+    terminate_job_procs,
+    recover_orphaned_jobs,
+    is_worker_alive,
+    register_worker,
+    unregister_worker,
+    get_dead_worker_jobs,
+)
 
 log = logging.getLogger("reality.api.jobs")
 
@@ -613,16 +623,6 @@ async def process_next_job(db: AsyncSession) -> Job | None:
 
     # Register this worker for crash detection
     register_worker(job.id)
-
-from reconstruction.proc import (
-    discard_job,
-    set_current_job,
-    terminate_job_procs,
-    recover_orphaned_jobs,
-    is_worker_alive,
-    register_worker,
-    unregister_worker,
-)
 
     handler = _HANDLERS.get(job.type)
     # Bind subprocess ownership to this job for the handler's duration

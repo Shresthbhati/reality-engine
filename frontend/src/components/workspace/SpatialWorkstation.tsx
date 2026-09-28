@@ -76,7 +76,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   // Resolve active world: prop -> first discovered world -> empty string
   const worldId = propWorldId || (worlds.length > 0 ? worlds[0].id : "");
 
-  const { data: worldIR, isLoading: isIrLoading, refetch: refetchIr } = useWorldIR(worldId || null);
+  const { data: worldIR, isLoading: isIrLoading, error: irError, refetch: refetchIr } = useWorldIR(worldId || null);
   const { data: pointsBuffer } = useWorldPoints(worldId || null);
   const { data: camerasPayload } = useWorldCameras(worldId || null);
   const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null);
@@ -632,11 +632,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onOpenDiff={handleOpenDiff}
               onOpenRoomConstruction={() => setConstructionModalOpen(true)}
               onExport={handleExport}
+              loadError={!worldIR && irError ? irError.message : null}
+              onRetryLoad={refetchIr}
             />
           )}
         </div>
       </div>
-      
+
       {/* Bottom Context Bar */}
       {bottomOpen && (
         <div className="h-auto flex-shrink-0 border-t border-[#1f222b] z-30">

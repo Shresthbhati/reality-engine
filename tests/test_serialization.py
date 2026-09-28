@@ -4,7 +4,7 @@ import pytest
 
 from provenance import Provenance
 from world_ir.coordinates import Frame, Transform
-from world_ir.entity import Entity, Relationship
+from world_ir.schema_v1 import Entity, EntityType, Relationship, RelationshipKind
 from world_ir.serialization import (
     IR_FILENAME,
     MANIFEST_FILENAME,
@@ -14,24 +14,26 @@ from world_ir.serialization import (
     load_world,
     save_world,
 )
-from world_ir.world import WorldIR
+from world_ir.world_v1 import WorldIR
 
 
 def _sample_world() -> WorldIR:
-    world = WorldIR(id="world_demo_building", version=3, coordinate_system=Frame.WORLD)
-    world.entities.add(Entity(
+    world = WorldIR(id="world_demo_building", version=3, coordinate_frame=Frame.WORLD)
+    building_entity = Entity(
         id="building_01",
-        type="building",
+        type=EntityType.BUILDING,
         transform=Transform.identity(Frame.WORLD, timestamp=0.0),
         provenance=Provenance.RECONSTRUCTED,
-    ))
-    world.entities.add(Entity(
+    )
+    world.entities[building_entity.id] = building_entity
+    window_entity = Entity(
         id="window_01",
-        type="window",
+        type=EntityType.WINDOW,
         provenance=Provenance.OBSERVED,
-        relationships=[Relationship(kind="attached_to", target_id="building_01")],
+        relationships=[Relationship(kind=RelationshipKind.ATTACHED_TO, target_id="building_01")],
         semantic_labels=["glass"],
-    ))
+    )
+    world.entities[window_entity.id] = window_entity
     return world
 
 
@@ -92,17 +94,20 @@ def test_load_rejects_id_mismatch_between_manifest_and_ir(tmp_path):
 # ===== Canonical V1 WorldIR round-trip (regression for the save/load P0) =====
 #
 # `save_world`/`load_world` used to be implemented only against the legacy
-# `world_ir.world.WorldIR` class above. A canonical `world_ir.world_v1.WorldIR`
+# `world_ir.world.WorldIR` class. A canonical `world_ir.world_v1.WorldIR`
 # (what WorldRuntime, the compiler, WorldStore, exporters and the SDK all
 # actually hold) would *save* successfully -- both classes expose to_dict()
 # -- but *loading* it back crashed: V1 serializes `entities` as an id-keyed
-# dict (legacy's loader iterates it as a list of entity dicts and blows up
-# on the first key) and writes the frame under `coordinate_frame` (legacy
-# reads `coordinate_system`, so it would have silently defaulted to
-# Frame.WORLD even if the crash hadn't happened first).
+# dict (the legacy loader iterated it as a list of entity dicts and blew up
+# on the first key) and wrote the frame under `coordinate_frame` (the legacy
+# loader read `coordinate_system`, so it would have silently defaulted to
+# Frame.WORLD even if the crash hadn't happened first). Fixed by switching
+# `save_world`/`load_world` to the canonical V1 class outright, with
+# `WorldIR.coordinate_system` kept as a read-only backward-compatible alias
+# property for `coordinate_frame` (see world_ir/world_v1.py).
 #
-# These tests fail against the pre-fix implementation (TypeError on load)
-# and pass against the corrected one.
+# This test fails against the pre-fix implementation (TypeError on load)
+# and passes against the corrected one.
 
 from provenance import Provenance as ProvenanceV1, Uncertainty
 from world_ir.schema_v1 import (
@@ -224,40 +229,3 @@ def test_v1_roundtrip_preserves_semantic_content(tmp_path):
     # Metadata and everything else, by full semantic equality
     assert restored.metadata == {"source": "test_serialization"}
     assert restored.to_dict() == world.to_dict()
-
-
-def test_v1_manifest_records_ir_kind(tmp_path):
-    world = _sample_world_v1()
-    package_dir = save_world(world, tmp_path / "world_v1_demo")
-    manifest = json.loads((package_dir / MANIFEST_FILENAME).read_text())
-    assert manifest["ir_kind"] == "v1"
-
-
-def test_legacy_package_without_ir_kind_still_loads_as_legacy(tmp_path):
-    """Packages written before this fix have no `ir_kind` manifest field.
-    They were legacy-only in practice (a V1 save+load never survived), so
-    the loader must default a missing `ir_kind` to legacy, not guess V1."""
-    world = _sample_world()
-    package_dir = save_world(world, tmp_path / "world_demo_building")
-    manifest_path = package_dir / MANIFEST_FILENAME
-    manifest = json.loads(manifest_path.read_text())
-    del manifest["ir_kind"]
-    manifest_path.write_text(json.dumps(manifest))
-
-    restored = load_world(package_dir)
-    assert type(restored) is type(world)
-    assert restored.to_dict() == world.to_dict()
-
-
-def test_load_rejects_manifest_ir_kind_mismatch(tmp_path):
-    """A manifest claiming 'legacy' while world.ir is actually V1 content
-    (or vice versa) is corruption, not something to silently resolve."""
-    world = _sample_world_v1()
-    package_dir = save_world(world, tmp_path / "world_v1_demo")
-    manifest_path = package_dir / MANIFEST_FILENAME
-    manifest = json.loads(manifest_path.read_text())
-    manifest["ir_kind"] = "legacy"
-    manifest_path.write_text(json.dumps(manifest))
-
-    with pytest.raises(WorldPackageError):
-        load_world(package_dir)

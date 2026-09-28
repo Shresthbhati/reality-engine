@@ -63,16 +63,13 @@ interface WorldNavPanelProps {
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
 }
 
-// Canonical Left-Panel Navigation Sections
+// Canonical Left-Panel Navigation Sections (Strict Priority 1 Order)
 export type NavSection =
-  | "hierarchy"
-  | "topology"
   | "worlds"
   | "sessions"
   | "evidence"
-  | "levels"
-  | "rooms"
-  | "corridors"
+  | "hierarchy"
+  | "topology"
   | "places"
   | "bookmarks"
   | "versions"
@@ -108,6 +105,7 @@ export default function WorldNavPanel({
   onOpenRoomConstruction,
 }: WorldNavPanelProps) {
   const [section, setSection] = useState<NavSection>("hierarchy");
+  const [hierarchyView, setHierarchyView] = useState<"tree" | "storeys" | "rooms" | "corridors">("tree");
   const [filterText, setFilterText] = useState(activeQuery?.search || "");
   const [typeFilter, setTypeFilter] = useState<string>(activeQuery?.type || "all");
   const [minConfFilter, setMinConfFilter] = useState<number>(activeQuery?.minConfidence || 0);
@@ -530,18 +528,6 @@ interface SpatialAnchor {
         style={{ borderColor: "var(--border-subtle)" }}
       >
         <NavTabButton
-          active={section === "hierarchy"}
-          onClick={() => setSection("hierarchy")}
-          icon={Network}
-          label="Hierarchy"
-        />
-        <NavTabButton
-          active={section === "topology"}
-          onClick={() => setSection("topology")}
-          icon={Workflow}
-          label="Topology"
-        />
-        <NavTabButton
           active={section === "worlds"}
           onClick={() => setSection("worlds")}
           icon={Globe}
@@ -563,25 +549,16 @@ interface SpatialAnchor {
           count={effectiveEvidence.length}
         />
         <NavTabButton
-          active={section === "levels"}
-          onClick={() => setSection("levels")}
-          icon={Layers}
-          label="Levels"
-          count={levelsList.length}
+          active={section === "hierarchy"}
+          onClick={() => setSection("hierarchy")}
+          icon={Network}
+          label="Hierarchy"
         />
         <NavTabButton
-          active={section === "rooms"}
-          onClick={() => setSection("rooms")}
-          icon={Building}
-          label="Rooms"
-          count={roomsList.length}
-        />
-        <NavTabButton
-          active={section === "corridors"}
-          onClick={() => setSection("corridors")}
+          active={section === "topology"}
+          onClick={() => setSection("topology")}
           icon={Workflow}
-          label="Corridors"
-          count={corridorsList.length}
+          label="Topology"
         />
         <NavTabButton
           active={section === "places"}
@@ -619,6 +596,55 @@ interface SpatialAnchor {
         {/* 0. HIERARCHY: BUILDING → LEVELS → ROOMS → CORRIDORS → ...   */}
         {/* ============================================================ */}
         {section === "hierarchy" && (
+          <div className="flex items-center px-3 py-1.5 border-b border-[#1f222b] bg-[#12141a] gap-1 shrink-0 text-[11px] overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setHierarchyView("tree")}
+              className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
+                hierarchyView === "tree"
+                  ? "bg-[#00e5ff]/20 text-[#00e5ff] font-medium border border-[#00e5ff]/30"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              Tree View
+            </button>
+            <button
+              type="button"
+              onClick={() => setHierarchyView("storeys")}
+              className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
+                hierarchyView === "storeys"
+                  ? "bg-[#00e5ff]/20 text-[#00e5ff] font-medium border border-[#00e5ff]/30"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              Storeys ({levelsList.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setHierarchyView("rooms")}
+              className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
+                hierarchyView === "rooms"
+                  ? "bg-[#00e5ff]/20 text-[#00e5ff] font-medium border border-[#00e5ff]/30"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              Rooms ({roomsList.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setHierarchyView("corridors")}
+              className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
+                hierarchyView === "corridors"
+                  ? "bg-[#00e5ff]/20 text-[#00e5ff] font-medium border border-[#00e5ff]/30"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              Corridors ({corridorsList.length})
+            </button>
+          </div>
+        )}
+
+        {section === "hierarchy" && hierarchyView === "tree" && (
           <HierarchyExplorer
             worldIR={worldIR}
             entitiesList={entitiesList}
@@ -694,7 +720,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {/* 2. LEVELS: STOREYS & ELEVATION SLICES                        */}
         {/* ============================================================ */}
-        {section === "levels" && (
+        {section === "hierarchy" && hierarchyView === "storeys" && (
           <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Storeys & Levels ({levelsList.length})</span>
@@ -837,7 +863,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {/* 3. ROOMS: RECONSTRUCTED ENCLOSED SPACES & BOUNDARIES         */}
         {/* ============================================================ */}
-        {section === "rooms" && (
+        {section === "hierarchy" && hierarchyView === "rooms" && (
           <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Reconstructed Rooms ({roomsList.length})</span>
@@ -996,7 +1022,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {/* 4. CORRIDORS: CIRCULATION ELEMENTS & INTERCONNECTS           */}
         {/* ============================================================ */}
-        {section === "corridors" && (
+        {section === "hierarchy" && hierarchyView === "corridors" && (
           <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Circulation Corridors ({corridorsList.length})</span>
@@ -1091,6 +1117,17 @@ interface SpatialAnchor {
               <span className="text-[#00e5ff] font-mono">Multi-View SfM</span>
             </div>
 
+            {onOpenRoomConstruction && (
+              <button
+                type="button"
+                onClick={onOpenRoomConstruction}
+                className="w-full py-1.5 px-3 rounded bg-[#00e5ff]/10 hover:bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/30 text-xs font-mono flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Workflow className="w-3.5 h-3.5" />
+                <span>Reconstruct World from Evidence</span>
+              </button>
+            )}
+
             {effectiveEvidence.length === 0 ? (
               <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 font-sans">
                 No calibrated camera evidence available.
@@ -1158,6 +1195,17 @@ interface SpatialAnchor {
               <span>Attached Sessions ({sessions.length})</span>
               <span className="text-[#00e5ff] font-mono">Capture Ingestion</span>
             </div>
+
+            {onOpenRoomConstruction && (
+              <button
+                type="button"
+                onClick={onOpenRoomConstruction}
+                className="w-full py-1.5 px-3 rounded bg-[#00e5ff]/10 hover:bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/30 text-xs font-mono flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Workflow className="w-3.5 h-3.5" />
+                <span>Reconstruct World from Session</span>
+              </button>
+            )}
 
             {sessions.length === 0 ? (
               <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-2 font-sans">

@@ -19,7 +19,7 @@ import type {
   WorldIR,
 } from "@/types/worldir";
 import type { SessionRow } from "@/lib/types";
-import { getActivity, type ActivityEvent } from "@/lib/activity";
+import { getActivity, isApiError, type ActivityEvent } from "@/lib/activity";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
 
 interface BottomContextBarProps {
@@ -50,6 +50,9 @@ export default function BottomContextBar({
   const [activeTab, setActiveTab] = useState<BottomTab>("context");
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  // A failed read leaves `activityError` set so the panel can say the log is
+  // unavailable instead of asserting that nothing has been recorded.
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   const meta = world?.metadata || {};
 
@@ -57,6 +60,7 @@ export default function BottomContextBar({
   useEffect(() => {
     let mounted = true;
     setActivityLoading(true);
+    setActivityError(null);
     getActivity()
       .then((events) => {
         if (mounted) {
@@ -64,8 +68,13 @@ export default function BottomContextBar({
           setActivityLoading(false);
         }
       })
-      .catch(() => {
-        if (mounted) setActivityLoading(false);
+      .catch((err) => {
+        if (!mounted) return;
+        setActivities([]);
+        setActivityError(
+          isApiError(err) ? err.message : (err as Error)?.message ?? "unknown error",
+        );
+        setActivityLoading(false);
       });
     return () => {
       mounted = false;
@@ -338,6 +347,12 @@ export default function BottomContextBar({
             <div className="space-y-1.5">
               {activityLoading ? (
                 <p className="text-neutral-500 text-xs font-mono">Loading activity log...</p>
+              ) : activityError ? (
+                // A failed read is not an empty log: say the log is unavailable
+                // rather than claiming nothing has been recorded.
+                <p className="text-[#f87171] text-xs font-mono" role="alert">
+                  Activity log unavailable: {activityError}
+                </p>
               ) : activities.length === 0 ? (
                 <p className="text-neutral-500 text-xs font-mono">
                   No activity events recorded for this world yet.

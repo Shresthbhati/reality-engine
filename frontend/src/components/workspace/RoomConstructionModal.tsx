@@ -510,26 +510,40 @@ export default function RoomConstructionModal({
               disabled={running}
               className="px-3.5 py-1.5 rounded text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
             >
-              Cancel
+              {outcome ? "Close" : "Cancel"}
             </button>
-            <button
-              type="button"
-              onClick={handleRunPipeline}
-              disabled={running}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              {running ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Executing...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Start Reconstruction</span>
-                </>
-              )}
-            </button>
+            {outcome ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onReconstructionSuccess?.();
+                  onClose();
+                }}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[#2ecc71] text-black hover:bg-[#40d47e] transition-colors cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Inspect Reconstructed World</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleRunPipeline}
+                disabled={running}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {running ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Executing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Start Reconstruction</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>

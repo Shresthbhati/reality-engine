@@ -20,6 +20,7 @@ import {
   type ViewportLayers,
   type ViewPreset,
   type MeasurementResult,
+  type ViewportStatistics,
 } from "@/lib/viewport/three-scene";
 import type {
   CamerasPayload,
@@ -75,9 +76,33 @@ export default function World3DViewport({
   const [gridVisible, setGridVisible] = useState(true);
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
-  const [stats, setStats] = useState({ points: 0, cameras: 0, entities: 0 });
+  const [isContextLost, setIsContextLost] = useState(false);
+  const [stats, setStats] = useState<ViewportStatistics>({
+    points: 0,
+    canonicalPoints: 0,
+    renderedPoints: 0,
+    isLODSampled: false,
+    cameras: 0,
+    entities: 0,
+    isContextLost: false,
+  });
   const [isolatedSpaceId, setIsolatedSpaceId] = useState<string | null>(null);
   const [activeLevel, setActiveLevel] = useState<number | null>(null);
+  const [cameraAngles, setCameraAngles] = useState<{ azimuthDeg: number; elevationDeg: number }>({
+    azimuthDeg: 45,
+    elevationDeg: 30,
+  });
+
+  const recon = world?.metadata?.reconstruction;
+  const reconStatus = recon?.registration_status?.toLowerCase();
+  const isReconFailed = reconStatus === "failed";
+  const isReconPartial =
+    reconStatus === "partial" ||
+    ((recon?.cameras_input ?? 0) > (recon?.cameras_registered ?? 0) &&
+      (recon?.cameras_registered ?? 0) > 0);
+  const isUnscaled =
+    world?.metadata?.scale?.state === "unscaled" ||
+    world?.metadata?.scale?.state === "nominal";
 
   // Initialize Three.js Controller
   useEffect(() => {
@@ -91,6 +116,12 @@ export default function World3DViewport({
       onMeasure: (res) => {
         setMeasurement(res);
         onMeasurementChange?.(res);
+      },
+      onCameraChange: (angles) => {
+        setCameraAngles(angles);
+      },
+      onContextLossChange: (lost) => {
+        setIsContextLost(lost);
       },
     });
 
@@ -334,7 +365,16 @@ export default function World3DViewport({
             <span className="font-semibold text-white tracking-wide">3D WORLDIR</span>
           </div>
           <span className="text-neutral-600">|</span>
-          <span>{stats.points.toLocaleString()} pts</span>
+          {stats.isLODSampled ? (
+            <span
+              className="text-[#38bdf8]"
+              title={`${stats.renderedPoints.toLocaleString()} rendered / ${stats.canonicalPoints.toLocaleString()} canonical points (LOD strided for interactive WebGL rendering)`}
+            >
+              {stats.renderedPoints.toLocaleString()} / {stats.canonicalPoints.toLocaleString()} pts (LOD)
+            </span>
+          ) : (
+            <span>{stats.points.toLocaleString()} pts</span>
+          )}
           <span>{stats.entities} entities</span>
           <span>{stats.cameras} cameras</span>
         </div>
@@ -391,6 +431,29 @@ export default function World3DViewport({
             </button>
           </div>
         )}
+        {/* Partial Reconstruction Alert */}
+        {isReconPartial && (
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[#f59e0b]/15 border border-[#f59e0b]/40 text-[#f59e0b] shadow-md pointer-events-auto"
+            role="status"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>
+              Partial Reconstruction: {recon?.cameras_registered ?? 0}/{recon?.cameras_input ?? 0} cams registered
+            </span>
+          </div>
+        )}
+
+        {/* Unconstrained Scale Indicator */}
+        {isUnscaled && !isReconFailed && (
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-neutral-900/80 border border-neutral-700 text-neutral-300 shadow-md"
+            title="Spatial model scale is unconstrained or nominal. Relative proportions are accurate, absolute dimensions carry scale variance."
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span>Scale Unconstrained</span>
+          </div>
+        )}
       </div>
 
       {/* Interactive Measurement HUD Card */}
@@ -404,7 +467,7 @@ export default function World3DViewport({
             <button
               type="button"
               onClick={handleClearMeasurement}
-              className="text-neutral-400 hover:text-white text-[10px] underline"
+              className="text-neutral-400 hover:text-white text-[10px] underline cursor-pointer"
             >
               Reset
             </button>
@@ -434,7 +497,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => toggleLayer("points")}
             title="Toggle Points [1]"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            aria-label="Toggle point cloud visibility"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               layers.points ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -446,7 +510,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => toggleLayer("entities")}
             title="Toggle Entities [2]"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            aria-label="Toggle entities visibility"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               layers.entities ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -457,8 +522,9 @@ export default function World3DViewport({
           <button
             type="button"
             onClick={() => toggleLayer("walls")}
-            title="Toggle Walls [W] (Peel back to see inside rooms)"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            title="Toggle Walls [W] (Peel back to inspect interior spaces)"
+            aria-label="Toggle walls visibility"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               layers.walls ? "text-[#f59e0b] bg-[rgba(245,158,11,0.15)]" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -470,7 +536,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => toggleLayer("topology")}
             title="Toggle 3D Spatial Topology Connections [T]"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            aria-label="Toggle spatial topology graph"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               layers.topology ? "text-[#00e5ff] bg-[rgba(0,229,255,0.15)]" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -482,7 +549,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => toggleLayer("cameras")}
             title="Toggle Cameras [3]"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            aria-label="Toggle camera frustums"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               layers.cameras ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -494,7 +562,8 @@ export default function World3DViewport({
             type="button"
             onClick={toggleGrid}
             title="Toggle ENU Ground Grid [G]"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            aria-label="Toggle ground grid"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               gridVisible ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -506,7 +575,8 @@ export default function World3DViewport({
             type="button"
             onClick={toggleMeasure}
             title="Interactive 3D Measurement [M]"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            aria-label="Toggle measurement mode"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               isMeasuring ? "text-[#00e5ff] bg-[rgba(0,229,255,0.2)] border border-[#00e5ff]/50" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -518,7 +588,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => toggleLayer("oversized")}
             title="Toggle Oversized Depth Noise [O]"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            aria-label="Toggle oversized noise"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               layers.oversized ? "text-[#f5a623] bg-[rgba(245,166,35,0.15)]" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -530,7 +601,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => toggleLayer("uncertainty")}
             title="Toggle Uncertainty Heatmap [U]"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors ${
+            aria-label="Toggle uncertainty heatmap"
+            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
               layers.uncertainty ? "text-[#2ecc71] bg-[rgba(46,204,113,0.15)]" : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -551,7 +623,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => handlePreset("isometric")}
             title="Isometric View"
-            className="p-1.5 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            aria-label="Isometric camera view"
+            className="p-1.5 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
           >
             <Compass className="w-3.5 h-3.5" />
           </button>
@@ -559,7 +632,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => handlePreset("top")}
             title="Top-down View"
-            className="px-1.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            aria-label="Top-down camera view"
+            className="px-1.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
           >
             TOP
           </button>
@@ -567,7 +641,8 @@ export default function World3DViewport({
             type="button"
             onClick={() => handlePreset("front")}
             title="Front View"
-            className="px-1.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            aria-label="Front camera view"
+            className="px-1.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
           >
             FRNT
           </button>
@@ -575,13 +650,38 @@ export default function World3DViewport({
             type="button"
             onClick={handleFrameAll}
             title="Frame Selection / All [F]"
-            className="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-[#00e5ff] hover:bg-[rgba(0,229,255,0.12)] transition-colors"
+            aria-label="Frame selection or entire world"
+            className="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-[#00e5ff] hover:bg-[rgba(0,229,255,0.12)] transition-colors cursor-pointer"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span>[F]</span>
           </button>
         </div>
       </div>
+
+      {/* WebGL Context Loss Banner Overlay */}
+      {isContextLost && (
+        <div
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/95 pointer-events-auto"
+          role="alert"
+          aria-live="assertive"
+        >
+          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-amber-950/40 border border-amber-500/40 text-amber-400 mb-4 shadow-inner">
+            <AlertTriangle className="w-7 h-7 text-amber-400 animate-pulse" />
+          </div>
+          <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
+            WebGL Context Lost
+          </h3>
+          <p className="text-xs text-neutral-400 max-w-lg mb-4 leading-relaxed">
+            The GPU graphics context was reclaimed or interrupted by the operating system.
+            Interaction is temporarily paused to preserve spatial data integrity.
+          </p>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-neutral-900 border border-neutral-800 text-xs font-mono text-neutral-300">
+            <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <span>Awaiting WebGL context restoration...</span>
+          </div>
+        </div>
+      )}
 
       {/* Loading Overlay */}
       {isLoading && (
@@ -592,8 +692,39 @@ export default function World3DViewport({
         </div>
       )}
 
+      {/* Explicit Failed Reconstruction State Overlay */}
+      {!isLoading && isReconFailed && (
+        <div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/92 pointer-events-auto"
+          role="alert"
+        >
+          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-red-950/40 border border-red-500/40 text-red-400 mb-4 shadow-inner">
+            <AlertTriangle className="w-7 h-7 text-red-400" />
+          </div>
+          <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
+            Spatial Reconstruction Failed
+          </h3>
+          <p className="text-xs text-neutral-400 max-w-lg mb-6 leading-relaxed">
+            The canonical reconstruction pipeline did not produce calibrated 3D geometry for this world.
+            {(recon as { note?: string } | undefined)?.note
+              ? ` Diagnostic reason: ${(recon as { note?: string }).note}`
+              : " Multi-view camera registration or feature matching failed to converge."}
+          </p>
+          {onOpenRoomConstruction && (
+            <button
+              type="button"
+              onClick={onOpenRoomConstruction}
+              className="flex items-center gap-2 px-4 py-2 rounded-md bg-red-500 hover:bg-red-400 text-black font-semibold text-xs transition-all cursor-pointer shadow-lg shadow-red-500/20"
+            >
+              <Workflow className="w-4 h-4" />
+              <span>Open Construction Pipeline</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Explicit Empty State when no world data exists (honest, never fake) */}
-      {!isLoading && (hasNoWorldData || (!world && stats.points === 0)) && (
+      {!isLoading && !isReconFailed && (hasNoWorldData || (!world && stats.points === 0)) && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/90 pointer-events-auto">
           <div className="w-14 h-14 rounded-full flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 mb-4 shadow-inner">
             <Box className="w-7 h-7 text-[#00e5ff]" />
@@ -623,6 +754,63 @@ export default function World3DViewport({
       {/* Bottom overlay: View navigation hint */}
       <div className="absolute bottom-3 left-3 z-10 pointer-events-none text-[11px] font-mono text-neutral-500">
         Left-click: Orbit · Right-click: Pan · Scroll: Zoom · Click entity to inspect · [M] Measure · [G] Grid
+      </div>
+
+      {/* Coordinate Orientation Compass & ENU Frame Gizmo */}
+      <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 pointer-events-auto">
+        {/* Uncertainty Heatmap Legend when active */}
+        {layers.uncertainty && (
+          <div className="px-2.5 py-1.5 rounded-md backdrop-blur-md bg-[#0e1013]/90 border border-neutral-800 text-[10px] font-mono text-neutral-300 flex items-center gap-2 shadow-lg">
+            <span className="text-neutral-400">Confidence:</span>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-[#e74c3c]" title="Low / Uncertain (0.0)" />
+              <span className="text-neutral-500">0%</span>
+              <div className="w-12 h-1.5 rounded-full bg-gradient-to-r from-[#e74c3c] via-[#f5a623] to-[#2ecc71]" />
+              <span className="text-neutral-500">100%</span>
+              <span className="w-2 h-2 rounded-full bg-[#2ecc71]" title="High / Confident (1.0)" />
+            </div>
+          </div>
+        )}
+
+        {/* Orientation Compass Widget */}
+        <div
+          className="p-1.5 rounded-lg backdrop-blur-md bg-[#0e1013]/90 border border-[#1f222b] shadow-xl flex items-center gap-2 text-[10px] font-mono select-none"
+          title="Metric ENU Coordinate Orientation. Click North to align view."
+        >
+          {/* Circular Compass Dial */}
+          <button
+            type="button"
+            onClick={() => handlePreset("top")}
+            aria-label="Re-align camera to True North"
+            title="Re-align camera to True North (Top-down)"
+            className="w-8 h-8 rounded-full border border-neutral-700 bg-[#151821] hover:border-[#00e5ff] relative flex items-center justify-center transition-all cursor-pointer group"
+          >
+            {/* North needle rotated by -cameraAngles.azimuthDeg */}
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-between p-1 transition-transform duration-100 ease-out"
+              style={{ transform: `rotate(${-cameraAngles.azimuthDeg}deg)` }}
+            >
+              <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[8px] border-b-[#e74c3c]" />
+              <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[8px] border-t-neutral-600" />
+            </div>
+            <span className="text-[8px] font-bold text-neutral-300 group-hover:text-[#00e5ff] z-10">
+              N
+            </span>
+          </button>
+
+          <div className="flex flex-col pr-1">
+            <div className="flex items-center gap-1.5 text-neutral-300">
+              <span className="font-semibold text-white">ENU Frame</span>
+              <span className="text-neutral-500">·</span>
+              <span className="text-[#00e5ff] font-mono">{cameraAngles.azimuthDeg}°</span>
+            </div>
+            <div className="text-[9px] text-neutral-400 flex items-center gap-1 mt-0.5">
+              <span className="text-[#e74c3c]" title="East (+X)">+X:E</span>
+              <span className="text-[#3b82f6]" title="North (+Z)">+Z:N</span>
+              <span className="text-[#2ecc71]" title="Up (+Y)">+Y:Up</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -159,6 +159,31 @@ def test_frontend_data_module_exposes_no_rows():
         assert literal.strip() == "[]", f"{name} still carries rows: {literal!r}"
 
 
+def test_activity_feed_does_not_render_an_outage_as_an_empty_log():
+    """`fetchActivity` must not swallow failures into an empty feed.
+
+    It used to `catch { return [] }`, which made an unreachable backend render
+    as "No activity recorded yet." -- asserting nothing had happened when the
+    operator simply could not read the log. The reader now propagates, and both
+    consumers keep a separate error state.
+    """
+    activity = FRONTEND_SRC / "lib" / "api" / "activity.ts"
+    code = _code(activity)
+    fn = code.split("export async function fetchActivity", 1)[-1]
+    assert "catch" not in fn, (
+        "fetchActivity must let failures propagate; a `catch` that returns [] "
+        "renders an API outage as an empty event log"
+    )
+
+    for relative in (
+        ("app", "(desktop)", "activity", "page.tsx"),
+        ("components", "context", "BottomContextBar.tsx"),
+    ):
+        code = _code(FRONTEND_SRC.joinpath(*relative))
+        assert "getActivity" in code
+        assert ".catch(" in code, f"{relative[-1]} must handle a failed activity read"
+
+
 def test_sessions_consumer_reads_the_items_envelope():
     """The client must consume the `{items}` contract the API actually serves.
 

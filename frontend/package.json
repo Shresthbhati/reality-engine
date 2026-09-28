@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:contract": "node tests/contract/sessions-proxy.contract.mjs"
+    "test:contract": "node --experimental-strip-types --test \"tests/contract/*.test.mts\" && node tests/contract/sessions-proxy.contract.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

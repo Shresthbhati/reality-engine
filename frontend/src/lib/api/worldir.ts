@@ -17,21 +17,25 @@ export async function fetchWorldIR(worldId: string): Promise<WorldIR | null> {
   }
 }
 
+/** Same "404 is the only real null" rule as fetchWorldIR above -- see its
+ * comment. A raw fetch(), not apiGet(), so the 404 check is a status code
+ * rather than an ApiError. */
 export async function fetchWorldPoints(worldId: string): Promise<ArrayBuffer | null> {
-  try {
-    const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/points`);
-    if (!res.ok) return null;
-    return await res.arrayBuffer();
-  } catch {
-    return null;
+  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/points`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? body?.error ?? `Failed to load points (HTTP ${res.status}).`);
   }
+  return await res.arrayBuffer();
 }
 
 export async function fetchWorldCameras(worldId: string): Promise<CamerasPayload | null> {
   try {
     return await apiGet<CamerasPayload>(`/api/worlds/${encodeURIComponent(worldId)}/cameras`);
-  } catch {
-    return null;
+  } catch (err) {
+    if (isApiError(err) && err.status === 404) return null;
+    throw err;
   }
 }
 
@@ -42,7 +46,8 @@ export async function fetchWorldCameras(worldId: string): Promise<CamerasPayload
 export async function fetchWorldReport(worldId: string): Promise<PipelineReport | null> {
   try {
     return await apiGet<PipelineReport>(`/api/worlds/${encodeURIComponent(worldId)}/report`);
-  } catch {
-    return null;
+  } catch (err) {
+    if (isApiError(err) && err.status === 404) return null;
+    throw err;
   }
 }

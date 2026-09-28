@@ -50,6 +50,12 @@ interface AdaptiveInspectorProps {
   onOpenDiff?: (base?: string, head?: string) => void;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
+  /** Set when `world` is null because the WorldIR fetch failed (e.g. a 404
+   * racing a just-succeeded reconstruction), not because none was ever
+   * compiled -- these must not render the same "not compiled yet" message,
+   * or a real reconstruction success looks silently erased. */
+  loadError?: string | null;
+  onRetryLoad?: () => void;
 }
 
 type InspectorTab = "all" | "geometry" | "evidence" | "observations" | "provenance" | "uncertainty";
@@ -66,6 +72,8 @@ export default function AdaptiveInspector({
   onOpenDiff,
   onOpenRoomConstruction,
   onExport,
+  loadError,
+  onRetryLoad,
 }: AdaptiveInspectorProps) {
   const [tab, setTab] = useState<InspectorTab>("all");
   const [isEditing, setIsEditing] = useState(false);
@@ -195,6 +203,8 @@ export default function AdaptiveInspector({
             activeVersion={activeVersion}
             onOpenRoomConstruction={onOpenRoomConstruction}
             onExport={onExport}
+            loadError={loadError}
+            onRetryLoad={onRetryLoad}
           />
         )}
       </div>
@@ -2229,13 +2239,34 @@ function WorldOverview({
   activeVersion,
   onOpenRoomConstruction,
   onExport,
+  loadError,
+  onRetryLoad,
 }: {
   world: WorldIR | null;
   worldId: string;
   activeVersion?: string;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
+  loadError?: string | null;
+  onRetryLoad?: () => void;
 }) {
+  if (!world && loadError) {
+    return (
+      <div className="p-4 text-center text-red-400 space-y-3">
+        <p>Couldn&apos;t load the compiled world: {loadError}</p>
+        {onRetryLoad && (
+          <button
+            type="button"
+            onClick={onRetryLoad}
+            className="px-3.5 py-1.5 rounded text-xs bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30 transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
+
   if (!world) {
     return (
       <div className="p-4 text-center text-neutral-500 space-y-3">

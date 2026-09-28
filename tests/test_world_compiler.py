@@ -58,8 +58,9 @@ class TestCompilerEndToEnd:
         # 7 planes: ceiling, floor, slab(as floor), 4 walls.
         assert diag.planes_total == 7
         assert diag.planes_by_role == {"ceiling": 1, "floor": 2, "wall": 4}
-        # All 7 structure entities + 1 room.
-        assert len(diag.entities_created) == 8
+        # All 7 structure entities + 1 room + the city-scale hierarchy
+        # containers this scene promotes into (1 storey + 1 building).
+        assert len(diag.entities_created) == 10
         assert diag.rooms_detected == 1
         room_entities = [e for e in world.entities.values() if e.type is EntityType.ROOM]
         assert len(room_entities) == 1
@@ -67,8 +68,19 @@ class TestCompilerEndToEnd:
 
     def test_every_input_plane_is_accounted_for(self):
         world, diag = _compiled_world()
-        # planes_total == promoted + unpromoted (nothing silently dropped).
-        assert diag.planes_total == len(diag.entities_created) - diag.rooms_detected + len(diag.planes_unpromoted)
+        # planes_total == promoted (as a WALL/FLOOR/CEILING entity) +
+        # unpromoted (nothing silently dropped). Counting plane-role types
+        # directly, rather than deriving it from len(entities_created), is
+        # what makes this robust to additional non-plane entities the
+        # compiler creates on top (ROOM, and the city-scale STOREY/BUILDING
+        # containers) -- those are correctly additive, not a sign a plane
+        # went missing, and the old len(entities_created)-based formula
+        # broke the moment STOREY/BUILDING entities were added.
+        promoted_plane_entities = sum(
+            1 for eid in diag.entities_created
+            if world.entities[eid].type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING)
+        )
+        assert diag.planes_total == promoted_plane_entities + len(diag.planes_unpromoted)
 
     def test_provenance_semantics_are_preserved(self):
         world, diag = _compiled_world()

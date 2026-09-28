@@ -98,6 +98,8 @@ export default function RoomConstructionModal({
   const [activeStage, setActiveStage] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ReconstructionOutcome | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   if (!isOpen) return null;
 
@@ -181,6 +183,7 @@ export default function RoomConstructionModal({
       if (!jobId) {
         throw new Error("API accepted the request but returned no job id to track.");
       }
+      setActiveJobId(jobId);
 
       let pollCount = 0;
       let lastStage: string | null = null;
@@ -247,8 +250,17 @@ export default function RoomConstructionModal({
         }
 
         if (job.status === "cancelled") {
+          // Returns directly (like succeeded/partial above) instead of
+          // throwing into the catch block below, which unconditionally
+          // stamps jobStatus "failed" -- that clobbered the correct
+          // "cancelled" status just set on the line above, so a job the
+          // operator explicitly cancelled was reported to the user as a
+          // failure.
           setJobStatus("cancelled");
-          throw new Error("Reconstruction job was cancelled.");
+          setRunning(false);
+          setActiveStage(null);
+          setError("Reconstruction was cancelled.");
+          return;
         }
 
         pollCount++;
@@ -269,6 +281,30 @@ export default function RoomConstructionModal({
       setRunning(false);
       setJobStatus("failed");
       setActiveStage(null);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!activeJobId) return;
+    setCancelling(true);
+    try {
+      // POST /api/jobs/{id}/cancel (apps/api/routes_jobs.py): 200 for an
+      // already-terminal/queued job, 202 while a running job winds down,
+      // 409 if some OTHER terminal state raced ahead of this request. The
+      // poll loop above is what actually observes job.status === "cancelled"
+      // and updates the UI -- this call only requests it.
+      const res = await fetch(`/api/jobs/${encodeURIComponent(activeJobId)}/cancel`, {
+        method: "POST",
+      });
+      if (!res.ok && res.status !== 409) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail ?? data?.error ?? `Cancel request failed (HTTP ${res.status}).`);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`Cancel request failed: ${message}`);
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -506,11 +542,11 @@ export default function RoomConstructionModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
-              disabled={running}
-              className="px-3.5 py-1.5 rounded text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
+              onClick={running ? handleCancel : onClose}
+              disabled={running && (cancelling || jobStatus === "cancelled")}
+              className="px-3.5 py-1.5 rounded text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {outcome ? "Close" : "Cancel"}
+              {running ? (cancelling ? "Cancelling…" : "Cancel") : outcome ? "Close" : "Cancel"}
             </button>
             {outcome ? (
               <button

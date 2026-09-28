@@ -1,11 +1,19 @@
 import type { CamerasPayload, PipelineReport, WorldIR } from "@/types/worldir";
-import { apiGet } from "./client";
+import { apiGet, isApiError } from "./client";
 
+/** Null means "no version compiled yet" (the backend's own 404 for that
+ * case) -- a real, honest, non-error state. Any OTHER failure (network
+ * unreachable, 5xx, a 404 racing a just-succeeded reconstruction before the
+ * world's current_version_id lands) must NOT be swallowed into the same
+ * null, or the UI can't tell "never reconstructed" from "failed to load" --
+ * which is how a reconstruction that just succeeded could look, to the
+ * user, like it never happened. */
 export async function fetchWorldIR(worldId: string): Promise<WorldIR | null> {
   try {
     return await apiGet<WorldIR>(`/api/worlds/${encodeURIComponent(worldId)}/worldir`);
-  } catch {
-    return null;
+  } catch (err) {
+    if (isApiError(err) && err.status === 404) return null;
+    throw err;
   }
 }
 

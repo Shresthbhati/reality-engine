@@ -36,7 +36,9 @@ from typing import TYPE_CHECKING, Dict, FrozenSet, Optional, Tuple
 
 from world_ir.schema_v1 import Entity, Geometry  # noqa: F401 (Geometry used in type hints below)
 from world_ir.spatial_tiles import SpatialTiles
-from worldstore.store import StoredVersion, WorldStore, WorldStoreError, _atomic_write_text
+from worldstore.store import (
+    StoredVersion, WorldStore, WorldStoreError, _atomic_write_text, _validate_version_id,
+)
 
 if TYPE_CHECKING:
     from world_ir.incremental import IncrementalUpdateResult
@@ -253,6 +255,7 @@ def build_tile_manifest(
 
 
 def _manifest_path(store: WorldStore, version_id: str) -> Path:
+    _validate_version_id(version_id)
     return _manifests_dir(store) / f"{version_id}.json"
 
 
@@ -281,6 +284,7 @@ def _deltas_dir(store: WorldStore) -> Path:
 
 
 def _delta_path(store: WorldStore, version_id: str) -> Path:
+    _validate_version_id(version_id)
     return _deltas_dir(store) / f"{version_id}.json"
 
 
@@ -732,17 +736,32 @@ def _serialize_residual_blob(world: "WorldIR", manifest: TileManifest) -> bytes:
     world state is never hand-re-derived, then narrows `entities`/
     `geometries` down to just the unlocalized set -- every tile-resident
     entity/geometry is already durably stored in its own tile artifact
-    and would be pure duplication here."""
+    and would be pure duplication here.
+
+    Every geometry both this function and `_serialize_tile_blob` collect
+    comes from some entity's `geometry_ids` -- a geometry no entity in
+    the whole world references has no tile and is not in the
+    unlocalized set either, so it would otherwise vanish from a
+    partitioned save with no error, even though the whole-world
+    `WorldStore.save_version()` path (`world.to_dict()` wholesale) keeps
+    it. This is the one bucket with no spatial placement requirement, so
+    fully-unreferenced geometries are always kept here regardless of
+    `manifest.unlocalized_entity_ids`.
+    """
     full = world.to_dict()
     unlocalized_ids = set(manifest.unlocalized_entity_ids)
     full["entities"] = {
         eid: world.entities[eid].to_dict() for eid in unlocalized_ids if eid in world.entities
     }
-    geometry_ids = sorted({
+    geometry_ids = {
         gid for eid in unlocalized_ids for gid in world.entities[eid].geometry_ids
         if gid in world.geometries
-    })
-    full["geometries"] = {gid: world.geometries[gid].to_dict() for gid in geometry_ids}
+    }
+    referenced_ids = {
+        gid for entity in world.entities.values() for gid in entity.geometry_ids
+    }
+    geometry_ids |= set(world.geometries) - referenced_ids
+    full["geometries"] = {gid: world.geometries[gid].to_dict() for gid in sorted(geometry_ids)}
     return json.dumps(full, sort_keys=True).encode("utf-8")
 
 
@@ -750,7 +769,10 @@ def _partitioned_record_path(store: WorldStore, version_id: str) -> Path:
     # SAME directory WorldStore._record() reads from -- list_versions()/
     # ancestors()/parents() work on partitioned versions with zero
     # changes, since they only need version_id/parent, which this
-    # record provides in the identical shape.
+    # record provides in the identical shape. Validated here too since
+    # this builds the path directly rather than going through
+    # WorldStore._record().
+    _validate_version_id(version_id)
     return store._versions_dir / f"{version_id}.json"
 
 

@@ -29,6 +29,7 @@ Design:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, List, Optional
@@ -36,10 +37,25 @@ from typing import Any, List, Optional
 from world_ir.world_v1 import WorldIR
 
 #: Entity fields compared field-by-field for a "modified" entity.
-#: `geometry_ids`/`material_ids` are compared as sorted tuples so a
-#: reordering with no membership change is not reported as a diff.
-_ENTITY_SCALAR_FIELDS = ("type", "name", "transform", "provenance", "confidence")
-_ENTITY_LIST_FIELDS = ("geometry_ids", "material_ids")
+#: `geometry_ids`/`material_ids`/`surface_ids`/`component_ids`/
+#: `semantic_labels` are compared as sorted tuples so a reordering with
+#: no membership change is not reported as a diff. `uncertainty` and
+#: `statement_state` are plain scalar-like fields -- `_equal` already
+#: compares `uncertainty` via its `to_dict()` (a dataclass, not
+#: sortable) and `statement_state` via plain enum/None equality.
+#: `relationships` is NOT listed here: it needs order-independent
+#: structural comparison (a list of `Relationship` objects, not plain
+#: values) and is handled by `_relationship_changes` below -- listing it
+#: as a scalar would compare list identity/order, which is exactly the
+#: silent-miss this module's docstring already promises not to have.
+_ENTITY_SCALAR_FIELDS = (
+    "type", "name", "transform", "provenance", "confidence",
+    "uncertainty", "statement_state",
+)
+_ENTITY_LIST_FIELDS = (
+    "geometry_ids", "material_ids", "surface_ids", "component_ids",
+    "semantic_labels",
+)
 
 #: Geometry fields compared field-by-field for a "modified" geometry.
 _GEOMETRY_FIELDS = ("type", "bounds_min", "bounds_max", "vertex_count", "triangle_count", "provenance", "confidence")
@@ -154,6 +170,31 @@ class WorldDiff:
         }
 
 
+def _relationship_sort_key(rel_dict: dict) -> tuple:
+    # Order-independent identity for a Relationship: same kind + target
+    # + confidence + provenance + metadata is the same edge regardless
+    # of list position. json.dumps(..., sort_keys=True) gives metadata
+    # (an arbitrary dict) a stable, comparable string form.
+    return (
+        rel_dict["kind"], rel_dict["target_id"], rel_dict["confidence"],
+        rel_dict["provenance"], json.dumps(rel_dict["metadata"], sort_keys=True),
+    )
+
+
+def _relationship_changes(old_entity, new_entity) -> List[FieldChange]:
+    # `relationships` holds `Relationship` dataclass instances, not plain
+    # values -- a sorted-tuple-of-values comparison (like the
+    # _ENTITY_LIST_FIELDS id lists) can't be used directly. Compared as
+    # an order-independent multiset of the relationships' own to_dict()
+    # so a reorder with no actual edge change is not reported as a diff,
+    # matching the id-list fields' semantics.
+    old_rels = sorted((r.to_dict() for r in old_entity.relationships), key=_relationship_sort_key)
+    new_rels = sorted((r.to_dict() for r in new_entity.relationships), key=_relationship_sort_key)
+    if old_rels != new_rels:
+        return [FieldChange(field="relationships", old=tuple(old_rels), new=tuple(new_rels))]
+    return []
+
+
 def _entity_field_changes(old_entity, new_entity) -> List[FieldChange]:
     changes: List[FieldChange] = []
     for name in _ENTITY_SCALAR_FIELDS:
@@ -166,6 +207,7 @@ def _entity_field_changes(old_entity, new_entity) -> List[FieldChange]:
         new_value = tuple(sorted(getattr(new_entity, name)))
         if old_value != new_value:
             changes.append(FieldChange(field=name, old=old_value, new=new_value))
+    changes.extend(_relationship_changes(old_entity, new_entity))
 
     old_props = old_entity.custom_properties or {}
     new_props = new_entity.custom_properties or {}

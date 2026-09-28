@@ -381,6 +381,34 @@ class TestEntityAddition:
         assert "new-lamp" in result.changed_entity_ids
         assert "new-lamp" not in base.entities  # base_world never gains it
 
+    def test_new_entitys_own_relationship_marks_the_existing_target_affected(self):
+        """Regression for the P1 gap: affected_closure used to walk only
+        base_world.entities, so a brand-new entity's own relationship to
+        an existing entity was invisible -- the existing entity never got
+        marked affected because the edge didn't exist in base_world yet,
+        only on the new entity being added."""
+        base = _base_world()
+        new_door = _entity(
+            "new-door", 1.0, 0.0, 0.0,
+            relationships=[Relationship(kind=RelationshipKind.PART_OF, target_id="room-1")],
+        )
+        result = apply_incremental_update(base, [new_door])
+        assert "room-1" in result.affected_entity_ids
+        # This function has no derivation logic -- room-1 itself must
+        # still be reused, not replaced, even though it's now affected.
+        assert result.new_world.entities["room-1"] is base.entities["room-1"]
+        assert "room-1" in result.reused_entity_ids
+
+    def test_unrelated_entities_are_unaffected_by_a_new_entity(self):
+        base = _base_world()
+        new_door = _entity(
+            "new-door", 1.0, 0.0, 0.0,
+            relationships=[Relationship(kind=RelationshipKind.PART_OF, target_id="room-1")],
+        )
+        result = apply_incremental_update(base, [new_door])
+        assert "far-tree" not in result.affected_entity_ids
+        assert result.new_world.entities["far-tree"] is base.entities["far-tree"]
+
 
 class TestGeometryExpansionCrossesTileBoundary:
     def test_expanded_geometry_invalidates_the_newly_covered_tile(self):

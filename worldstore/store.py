@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -39,6 +40,28 @@ if TYPE_CHECKING:
 
 class WorldStoreError(ValueError):
     """WorldStore operation refused."""
+
+
+#: Every version id this class has ever generated matches this shape
+#: (`f"v-{uuid.uuid4().hex[:12]}"`), and every explicit id used across the
+#: test suite is plain alnum/dash/underscore. `world_ir/artifact_store.py`'s
+#: `FileArtifactStore.digest_of` already validates its own path-building
+#: input (a content digest) against exactly this class of pattern before
+#: it reaches the filesystem, with the same rationale: `version_id` here
+#: is used directly in `self._versions_dir / f"{version_id}.json"`
+#: (`save_version`, `_record`, and everything reading through `_record` --
+#: `load_version`/`parents`/`ancestors`/`verify_version`), and an
+#: unvalidated `../../outside/secret` segment resolves outside the store
+#: root exactly like an unvalidated digest would.
+_VERSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def _validate_version_id(version_id: str) -> None:
+    if not _VERSION_ID_RE.match(version_id):
+        raise WorldStoreError(
+            f"invalid version id {version_id!r}: must match {_VERSION_ID_RE.pattern} "
+            "-- refused before touching the filesystem"
+        )
 
 
 class _SequenceLock:
@@ -160,6 +183,7 @@ class WorldStore:
         source_session_ids: list[str] | None = None,
     ) -> StoredVersion:
         vid = version_id or f"v-{uuid.uuid4().hex[:12]}"
+        _validate_version_id(vid)
         path = self._versions_dir / f"{vid}.json"
         if path.exists():
             raise WorldStoreError(
@@ -234,6 +258,7 @@ class WorldStore:
     # ---- read ----
 
     def _record(self, version_id: str) -> dict:
+        _validate_version_id(version_id)
         path = self._versions_dir / f"{version_id}.json"
         if not path.exists():
             raise WorldStoreError(f"unknown version: {version_id}")

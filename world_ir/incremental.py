@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Collection, FrozenSet, Iterable, Optional, Set, Tuple
+from typing import Collection, FrozenSet, Iterable, Mapping, Optional, Set, Tuple
 
-from world_ir.schema_v1 import Entity, Geometry, RelationshipKind
+from world_ir.schema_v1 import Entity, Geometry, Relationship, RelationshipKind
 from world_ir.spatial_tiles import SpatialTiles
 from world_ir.world_v1 import WorldIR
 
@@ -41,6 +41,61 @@ DEFAULT_PROPAGATING_KINDS: FrozenSet[RelationshipKind] = frozenset({
     RelationshipKind.SUPPORTS,
     RelationshipKind.RESTS_ON,
 })
+
+
+def _affected_closure_from_sources(
+    existence_ids: Collection[str],
+    relationship_sources: Iterable[Tuple[str, Iterable[Relationship]]],
+    changed_entity_ids: Iterable[str],
+    *,
+    relationship_kinds: Optional[Collection[RelationshipKind]] = None,
+    max_hops: Optional[int] = None,
+) -> Set[str]:
+    """Core BFS shared by `affected_closure` (one relationship source per
+    entity id: a stored WorldIR) and `apply_incremental_update` (TWO
+    sources per updated entity id -- see that function's docstring for
+    why an edge can come from either the old or the new version of an
+    entity). `relationship_sources` may list the same entity id more than
+    once; every relationship from every listing is linked (a union of
+    edges, never a replacement) -- so an update that changes or drops a
+    relationship still propagates via the edge that USED to be there,
+    same as one that adds a relationship propagates via the edge that
+    now exists.
+    """
+    kinds = set(relationship_kinds) if relationship_kinds is not None else set(DEFAULT_PROPAGATING_KINDS)
+    start = {eid for eid in changed_entity_ids if eid in existence_ids}
+
+    if max_hops == 0:
+        return start
+
+    # Build an undirected adjacency map lazily, restricted to `kinds`, so a
+    # single pass over all relationship sources suffices regardless of how
+    # large `start` is.
+    adjacency: dict[str, Set[str]] = {}
+
+    def _link(a: str, b: str) -> None:
+        adjacency.setdefault(a, set()).add(b)
+        adjacency.setdefault(b, set()).add(a)
+
+    for entity_id, relationships in relationship_sources:
+        for rel in relationships:
+            if rel.kind in kinds:
+                _link(entity_id, rel.target_id)
+
+    visited: Set[str] = set(start)
+    frontier = list(start)
+    hops = 0
+    while frontier and (max_hops is None or hops < max_hops):
+        next_frontier: list[str] = []
+        for entity_id in frontier:
+            for neighbor in adjacency.get(entity_id, ()):
+                if neighbor in existence_ids and neighbor not in visited:
+                    visited.add(neighbor)
+                    next_frontier.append(neighbor)
+        frontier = next_frontier
+        hops += 1
+
+    return visited
 
 
 def affected_closure(
@@ -61,40 +116,12 @@ def affected_closure(
     id from a stale diff naming an entity that no longer exists can't be
     "affected" in a live world.
     """
-    kinds = set(relationship_kinds) if relationship_kinds is not None else set(DEFAULT_PROPAGATING_KINDS)
-    start = {eid for eid in changed_entity_ids if eid in world.entities}
-
-    if max_hops == 0:
-        return start
-
-    # Build an undirected adjacency map lazily, restricted to `kinds`, so a
-    # single pass over all entities' relationship lists suffices regardless
-    # of how large `start` is.
-    adjacency: dict[str, Set[str]] = {}
-
-    def _link(a: str, b: str) -> None:
-        adjacency.setdefault(a, set()).add(b)
-        adjacency.setdefault(b, set()).add(a)
-
-    for entity_id, entity in world.entities.items():
-        for rel in entity.relationships:
-            if rel.kind in kinds:
-                _link(entity_id, rel.target_id)
-
-    visited: Set[str] = set(start)
-    frontier = list(start)
-    hops = 0
-    while frontier and (max_hops is None or hops < max_hops):
-        next_frontier: list[str] = []
-        for entity_id in frontier:
-            for neighbor in adjacency.get(entity_id, ()):
-                if neighbor in world.entities and neighbor not in visited:
-                    visited.add(neighbor)
-                    next_frontier.append(neighbor)
-        frontier = next_frontier
-        hops += 1
-
-    return visited
+    return _affected_closure_from_sources(
+        world.entities.keys(),
+        ((eid, e.relationships) for eid, e in world.entities.items()),
+        changed_entity_ids,
+        relationship_kinds=relationship_kinds, max_hops=max_hops,
+    )
 
 
 @dataclass(frozen=True)
@@ -220,8 +247,32 @@ def apply_incremental_update(
     }
     seed_ids = changed_entity_ids | geometry_owners | removed_entity_ids
 
-    affected_entity_ids = affected_closure(
-        base_world, seed_ids,
+    # The closure must see edges declared by `updated_entities` themselves,
+    # not just edges already present in `base_world`: a brand-new entity
+    # (not yet in base_world) that arrives PART_OF an existing room means
+    # that room is affected, even though base_world has no record of the
+    # edge yet -- only the entity being added does. Walking base_world
+    # alone (as this used to) makes that edge invisible, so a newly-added
+    # child never marks its container affected.
+    #
+    # Symmetrically, an UPDATED entity's OLD relationships (from
+    # base_world) must not be discarded in favor of only its new ones: if
+    # wall-1 used to be PART_OF room-1 and the caller supplies a new
+    # wall-1 that drops that relationship, room-1 must still be flagged
+    # affected -- something about its former child just changed, even
+    # though the edge itself no longer exists. So both the old and new
+    # relationship lists for every touched entity id feed the same
+    # closure as a UNION of edge sources (`_affected_closure_from_sources`
+    # links every edge from every listing, never replacing one entity id's
+    # edges with another's) -- an edge that existed in either state
+    # propagates, exactly like the diff-driven "something changed here"
+    # signal this function exists to compute.
+    relationship_sources = [(eid, e.relationships) for eid, e in base_world.entities.items()]
+    relationship_sources += [(e.id, e.relationships) for e in updated_entities]
+    existence_ids = set(base_world.entities) | changed_entity_ids
+
+    affected_entity_ids = _affected_closure_from_sources(
+        existence_ids, relationship_sources, seed_ids,
         relationship_kinds=relationship_kinds, max_hops=max_hops,
     ) - removed_entity_ids  # a removed entity is not "affected", it's gone
 

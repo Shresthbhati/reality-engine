@@ -4,8 +4,8 @@
     {
       "name": "reality-studio-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "-p", "3011"],
-      "port": 3011
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "-p", "3000"],
+      "port": 3000
     }
   ]
 }

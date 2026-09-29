@@ -94,6 +94,50 @@ function provenanceCounts(world: WorldIR | null | undefined) {
   return counts;
 }
 
+type Physical = NonNullable<NonNullable<WorldStatus["model"]>["physical"]>;
+
+/** What changed in the WORLD between versions (not how many entities the rebuild has). */
+function PhysicalChanges({ physical }: { physical: Physical }) {
+  const rows: [string, string[], string][] = [
+    ["Added", physical.added ?? [], "text-emerald-300"],
+    ["Extended", physical.extended ?? [], "text-emerald-300"],
+    ["Refined", physical.refined ?? [], "text-sky-300"],
+    ["Represented differently", physical.represented_differently ?? [], "text-neutral-400"],
+    ["Still uncertain", [...(physical.uncertain ?? []), ...(physical.not_reproduced ?? [])], "text-amber-300"],
+  ];
+  const open = physical.conflicts?.unresolved ?? 0;
+  const touched = (physical.regions ?? []).filter((r) => r.status !== "unchanged" || (r.new_evidence_count ?? 0) > 0);
+  return (
+    <div className="space-y-0.5" data-testid="physical-changes">
+      {physical.preserved ? (
+        <p className="text-[11px] text-neutral-300">
+          <strong className="text-neutral-200">Preserved:</strong> {physical.preserved} surface
+          {physical.preserved === 1 ? "" : "s"} unchanged
+        </p>
+      ) : null}
+      {rows
+        .filter(([, items]) => items.length > 0)
+        .map(([label, items, color]) => (
+          <p key={label} className={cn("text-[11px] leading-relaxed", color)}>
+            <strong>{label}:</strong> {items.join("; ")}
+          </p>
+        ))}
+      <p className={cn("text-[11px]", open ? "text-red-300" : "text-neutral-400")}>
+        <strong>Conflicts:</strong> {open ? `${open} unresolved` : "none"}
+      </p>
+      {touched.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {touched.map((r) => (
+            <li key={r.id} className="text-[10px] text-neutral-400">
+              • {r.summary}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export interface ReconstructionStatusBarProps {
   status: WorldStatus | null;
   error: Error | null;
@@ -295,6 +339,11 @@ export default function ReconstructionStatusBar({
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                 What changed in this version
               </h3>
+              {model.physical?.available && <PhysicalChanges physical={model.physical} />}
+              <details className="mt-1" open={!model.physical?.available}>
+                <summary className="cursor-pointer text-[10px] text-neutral-500">
+                  {model.physical?.available ? "Counts and details" : "Details"}
+                </summary>
               <ul className="mt-0.5 space-y-0.5">
                 {model.changes!.map((c) => (
                   <li key={c} className="text-[11px] leading-relaxed text-neutral-300">
@@ -307,6 +356,7 @@ export default function ReconstructionStatusBar({
                   </li>
                 ))}
               </ul>
+              </details>
             </div>
           )}
           {model && (model.conflicts ?? []).some((c) => c.status === "unresolved") && (

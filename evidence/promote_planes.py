@@ -324,6 +324,14 @@ def promote_plane_to_entity(
         confidence=oriented.uncertainty.confidence,
     )
 
+    # Which photographs actually observed this surface: the source evidence of the plane's own inlier
+    # points (not the world-wide list). Later versions use it to tell whether new evidence supports a
+    # change to this surface; an empty list means "no source ids on the points", never a guess.
+    inlier_ids = set(oriented.plane.inlier_ids)
+    entity.custom_properties["supporting_evidence_ids"] = sorted(
+        {eid for p in result.points if p.track_id in inlier_ids for eid in (p.source_evidence_ids or [])}
+    )
+
     # Wall thickness: a real measurement only when an opposite face exists.
     thickness: Tuple[str, Measurement] | None = None
     if oriented.role == "wall" and other_planes:

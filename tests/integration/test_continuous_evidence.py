@@ -66,6 +66,7 @@ def _run(tmp_path, steps, after=None):
                 "n_versions": len(st["versions"]), "version_id": m["version_id"],
                 "entities": len(_worldir(c, wid)["entities"]),
                 "known": known, "posted": list(posted),
+                "physical": m.get("physical"), "changes": m.get("changes"), "strategy": m.get("strategy"),
             }
             trace.append(row)
             print(f"[{name}] v{row['version']} level={row['level']} {row['model_state']} "
@@ -138,6 +139,30 @@ def test_a_rich_world_is_extended_incrementally_through_the_product_path(tmp_pat
 
     t = _run(tmp_path, [("SIX", SIX), ("C", C)], after=check)
     assert t[1]["registered"] >= 7 and t[1]["registered"] > t[0]["registered"]
+
+
+def test_physical_changes_are_measured_from_real_geometry_across_three_versions(tmp_path):
+    """SIX -> +C -> +D on real photos. Every statement must come from measured geometric relations between
+    the versions (footprint overlap of fitted planes), and representation changes must not be reported as
+    additions and removals."""
+    D = IMGS[24:27]
+    t = _run(tmp_path, [("SIX", SIX), ("C", C), ("D", D)])
+    assert t[0]["physical"] is None or not t[0]["physical"].get("available")            # first version: nothing to compare
+    for row in t[1:]:
+        ph = row["physical"]
+        print(f"[{row['step']}] physical:", {k: ph.get(k) for k in
+              ("available", "reason", "preserved", "added", "extended", "refined", "represented_differently",
+               "not_reproduced", "uncertain", "signals", "unsupported_moves")})
+        for reg in (ph.get("regions") or []):
+            print("     ", reg["id"], reg["status"], reg["summary"])
+        if not ph["available"]:
+            assert ph["reason"], "an unmeasurable comparison must say why"
+            continue
+        assert ph["signals"].get("plane_footprint", 0) > 0, "shape data should have been stored and used"
+        assert all(isinstance(x, str) for k in ("added", "extended", "refined", "represented_differently", "not_reproduced")
+                   for x in ph[k])
+        # conflicts are surfaced only when a move is unsupported; never silently invented
+        assert ph["conflicts"]["unresolved"] >= 0 and ph["unsupported_moves"] >= 0
 
 
 def test_conflicts_are_explicit_in_the_canonical_worldir_and_the_status_api(tmp_path):

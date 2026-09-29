@@ -504,7 +504,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     cand_snap = world_delta.snapshot(
         registered_ids=prog.registered_ids, input_ids=prog.input_ids, level=prog.level,
         model_state=prog.model_state, points=len(prog.points), camera_poses=prog.camera_poses,
-        world=world_ir,
+        world=world_ir, artifact_store=artifact_store,
     )
     delta = world_delta.compute_delta(world_delta.snapshot_from_report(head_report), cand_snap)
     # Explicit conflicts: prior ones are carried forward (never dropped silently), new
@@ -573,6 +573,9 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "entities": cand_snap["entities"],
         "conflicts": conflicts,
         "delta": delta,
+        # what changed in the WORLD (added / extended / refined / preserved / represented differently /
+        # not reproduced, per region), derived from the geometric relations; raw counts stay in "delta"
+        "physical": world_delta.physical_changes(delta, conflicts),
         "verdict": decision,
         "changes": changes,
         "evidence": {

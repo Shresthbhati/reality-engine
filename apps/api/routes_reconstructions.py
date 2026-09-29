@@ -326,6 +326,9 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "uncertainties": (report.get("verdict") or {}).get("uncertainties", []),
             # explicit conflicts (both hypotheses + provenance + history), never silently resolved
             "conflicts": report.get("conflicts", []),
+            # what changed in the WORLD, per region (added / extended / refined / preserved / represented
+            # differently / not reproduced); {"available": false, "reason": ...} when it could not be measured
+            "physical": report.get("physical"),
             # how the sparse model was produced: full | incremental | reused, with the measured
             # alternatives (what a full rebuild registered vs the incremental step) and whether the
             # coordinate frame was preserved. None for backends without a persistent COLMAP session.

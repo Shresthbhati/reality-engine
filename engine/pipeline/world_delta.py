@@ -56,6 +56,11 @@ ENTITY_PRESERVED_REL = 0.05
 STRUCTURAL = ("wall", "floor", "ceiling", "storey", "room", "corridor", "door", "window", "opening")
 _SKIP_TYPES = ("sensor", "unknown")
 MAX_ENTITIES_STORED = 400
+#: a report keeps at most this many sampled points in total; entities beyond it fall back to centre matching
+MAX_STORED_POINTS = 24000
+#: share of previously established structural surfaces that vanish: uncertainty above the first, regression above the second
+UNCERTAIN_REMOVED_FRACTION = 0.34
+REGRESSION_REMOVED_FRACTION = 0.60
 
 
 def structure_of(world) -> dict:
@@ -65,19 +70,37 @@ def structure_of(world) -> dict:
     return {"entity_types": dict(types), "provenance": dict(prov)}
 
 
-def entity_centres(world) -> List[dict]:
-    """Type, centre, provenance and confidence per entity, for later continuity checks.
-    Centre = geometry bounds centre when there is one, else the entity transform position."""
+def entity_records(world, artifact_store=None) -> List[dict]:
+    """Per entity, everything spatial_continuity can use: type, centre, bounds, provenance, confidence,
+    the photographs that observed it and (when its geometry payload can be read back) a sample of its
+    inlier points. Anything that is not available is simply absent -- never filled in."""
+    import struct
+
+    from world_ir.geometry_data import PointCloudData
+
+    from engine.pipeline.spatial_continuity import sample_points
+
     out: List[dict] = []
+    budget = MAX_STORED_POINTS          # total sampled points kept on one report
     for e in world.entities.values():
         if e.type.value in _SKIP_TYPES:
             continue
-        c = None
+        c = bounds = pts = None
         for gid in e.geometry_ids:
             g = world.geometries.get(gid)
-            if g is not None and g.bounds_min is not None and g.bounds_max is not None:
+            if g is None:
+                continue
+            if g.bounds_min is not None and g.bounds_max is not None:
+                bounds = [[g.bounds_min.x, g.bounds_min.y, g.bounds_min.z],
+                          [g.bounds_max.x, g.bounds_max.y, g.bounds_max.z]]
                 c = [(g.bounds_min.x + g.bounds_max.x) / 2, (g.bounds_min.y + g.bounds_max.y) / 2,
                      (g.bounds_min.z + g.bounds_max.z) / 2]
+            if artifact_store is not None and g.data_uri and pts is None and budget > 0:
+                try:
+                    pts = sample_points(PointCloudData.from_bytes(artifact_store.get(g.data_uri)).points)
+                except (KeyError, ValueError, OSError, struct.error):
+                    pts = None      # unreadable payload = no shape signal, never a guess
+            if c is not None:
                 break
         if c is None:
             pos = (e.transform or {}).get("position")
@@ -85,14 +108,26 @@ def entity_centres(world) -> List[dict]:
                 c = [float(pos.get("x", 0)), float(pos.get("y", 0)), float(pos.get("z", 0))]
         if c is None:
             continue
-        out.append({"id": e.id, "type": e.type.value, "center": [round(float(v), 5) for v in c],
-                    "provenance": getattr(e.provenance, "value", str(e.provenance)),
-                    "confidence": round(float(e.confidence), 4)})
+        rec = {"id": e.id, "type": e.type.value, "center": [round(float(v), 5) for v in c],
+               "provenance": getattr(e.provenance, "value", str(e.provenance)),
+               "confidence": round(float(e.confidence), 4)}
+        if bounds is not None:
+            rec["bounds"] = [[round(float(v), 4) for v in row] for row in bounds]
+        if pts:
+            rec["points"] = pts
+            budget -= len(pts)
+        support = e.custom_properties.get("supporting_evidence_ids")
+        if support is not None:
+            rec["evidence"] = list(support)
+        out.append(rec)
     return out[:MAX_ENTITIES_STORED]
 
 
+entity_centres = entity_records   # earlier name, same function (records are a superset)
+
+
 def snapshot(*, registered_ids: Sequence[str], input_ids: Sequence[str], level: int, model_state: str,
-             points: int, camera_poses: Sequence[tuple], world) -> dict:
+             points: int, camera_poses: Sequence[tuple], world, artifact_store=None) -> dict:
     """What is stored on the version report and later compared against."""
     cams = {}
     if level >= 1:  # level 0 poses are assumed / display layout, not registration
@@ -101,7 +136,7 @@ def snapshot(*, registered_ids: Sequence[str], input_ids: Sequence[str], level: 
     return {
         "registered_ids": list(registered_ids), "input_ids": list(input_ids), "level": level,
         "model_state": model_state, "points": points, "cameras": cams,
-        "entities": entity_centres(world) if level >= 1 else [], **structure_of(world),
+        "entities": entity_records(world, artifact_store) if level >= 1 else [], **structure_of(world),
     }
 
 
@@ -164,36 +199,30 @@ def camera_consistency(prev: Dict[str, list], cand: Dict[str, list]) -> Optional
             "per_camera": {k: round(float(x) / al["extent_c"], 4) for k, x in zip(al["common"], al["resid"])}}
 
 
-def entity_continuity(prev_entities: List[dict], cand_entities: List[dict], prev_cams, cand_cams) -> Optional[dict]:
-    """PRESERVED / REFINED / NEW / REMOVED by type + position, in the previous frame.
-    None when there is no camera alignment or an older version stored no entities."""
-    import numpy as np
+def entity_continuity(prev_entities: List[dict], cand_entities: List[dict], prev_cams, cand_cams,
+                      new_evidence_ids: Sequence[str] = ()) -> Optional[dict]:
+    """How the previous version's structure is carried by the candidate, in the PREVIOUS frame.
+
+    Geometry-aware (see spatial_continuity): footprint overlap of fitted planes where points were stored,
+    centre distance otherwise; splits, merges, extensions and reductions are told apart from real
+    additions and removals. None when there is no camera alignment or an older version stored no entities.
+    The legacy keys (preserved / refined ints, removed list, new int) are kept for existing consumers."""
+    from engine.pipeline import spatial_continuity
 
     al = _align(prev_cams, cand_cams) if prev_cams and cand_cams else None
     if al is None or not prev_entities or al["s"] <= 1e-12 or al["extent_p"] <= 1e-12:
         return None
-    tol, keep = ENTITY_MATCH_REL * al["extent_p"], ENTITY_PRESERVED_REL * al["extent_p"]
 
-    def to_prev(c):  # candidate frame -> previous frame
-        return al["R"].T @ (np.asarray(c, float) - al["mb"]) / al["s"] + al["ma"]
+    def to_prev(pts):  # candidate frame -> previous frame; rows are points
+        return ((pts - al["mb"]) @ al["R"]) / al["s"] + al["ma"]
 
-    cand_pts = [(e, to_prev(e["center"])) for e in cand_entities]
-    used: set = set()
-    out = {"preserved": 0, "refined": 0, "removed": [], "new": 0, "matched_by": "type + position after camera alignment"}
-    for pe in prev_entities:
-        best, bd = None, None
-        for i, (ce, cp) in enumerate(cand_pts):
-            if i in used or ce["type"] != pe["type"]:
-                continue
-            dist = float(np.linalg.norm(cp - np.asarray(pe["center"], float)))
-            if bd is None or dist < bd:
-                best, bd = i, dist
-        if best is not None and bd <= tol:
-            used.add(best)
-            out["preserved" if bd <= keep else "refined"] += 1
-        else:
-            out["removed"].append({"type": pe["type"], "provenance": pe.get("provenance")})
-    out["new"] = len(cand_pts) - len(used)
+    out = spatial_continuity.reconcile(prev_entities, cand_entities, ext_prev=al["extent_p"], to_prev=to_prev,
+                                       scale=al["s"], new_evidence_ids=new_evidence_ids)
+    c = out["counts"]
+    out.update(
+        preserved=c["preserved"], refined=c["refined"], new=c["new"], ext_prev=al["extent_p"],
+        removed=[{"type": r["type"], "provenance": r.get("provenance")} for r in out["relations"] if r["kind"] == "removed"],
+    )
     return out
 
 
@@ -206,7 +235,7 @@ def compute_delta(prev: Optional[dict], cand: dict) -> dict:
                          "still_waiting": sorted(set(cand["input_ids"]) - set(cand["registered_ids"]))},
             "level": {"before": None, "after": cand["level"]}, "points": {"before": None, "after": cand["points"]},
             "structure": {}, "camera_consistency": None, "entities": None, "moved_cameras": [],
-            "not_measurable": [],
+            "alignment": None, "not_measurable": [],
         }
     # Level 0 "registered" ids are the single view's assumed anchor pose, not a registration
     # against anything: only level >= 1 counts as placed, on BOTH sides of the comparison.
@@ -219,9 +248,11 @@ def compute_delta(prev: Optional[dict], cand: dict) -> dict:
     if cc is None:
         not_measurable.append(f"camera layout consistency (fewer than {MIN_COMMON_CAMERAS} shared "
                               "registered cameras, or the previous version stored none)")
+    new_input = sorted(set(cand["input_ids"]) - set(prev["input_ids"]))
     ents = None
     if prev.get("entities") and cand.get("entities") and cc is not None:
-        ents = entity_continuity(prev["entities"], cand["entities"], prev["cameras"], cand["cameras"])
+        ents = entity_continuity(prev["entities"], cand["entities"], prev["cameras"], cand["cameras"],
+                                 new_evidence_ids=new_input)
     if ents is None:
         not_measurable.append("entity continuity (needs a camera alignment and entity positions from both versions)")
     struct: Dict[str, dict] = {}
@@ -233,8 +264,11 @@ def compute_delta(prev: Optional[dict], cand: dict) -> dict:
             if a != b:
                 struct[t] = {"before": b, "after": a}
     moved: List[dict] = []
+    alignment = None
     if cc:
         al = _align(prev["cameras"], cand["cameras"])
+        # kept so conflict hypotheses can be carried from the previous frame into the candidate's frame
+        alignment = {"R": al["R"].tolist(), "s": al["s"], "ma": al["ma"].tolist(), "mb": al["mb"].tolist()}
         for i, k in enumerate(al["common"]):
             rel = cc["per_camera"][k]
             if rel > CAMERA_CONFLICT_REL:
@@ -249,7 +283,7 @@ def compute_delta(prev: Optional[dict], cand: dict) -> dict:
             "registered": sorted(cr), "gained": sorted(cr - pr), "lost": sorted(pr - cr),
             "kept": sorted(pr & cr),
             "still_waiting": sorted(set(cand["input_ids"]) - cr),
-            "new_input": sorted(set(cand["input_ids"]) - set(prev["input_ids"])),
+            "new_input": new_input,
         },
         "level": {"before": prev.get("level"), "after": cand.get("level")},
         "points": {"before": prev.get("points"), "after": cand.get("points")},
@@ -257,12 +291,13 @@ def compute_delta(prev: Optional[dict], cand: dict) -> dict:
         "camera_consistency": cc,
         "entities": ents,
         "moved_cameras": moved,
+        "alignment": alignment,
         "not_measurable": not_measurable,
     }
 
 
-def reconcile_conflicts(prev_conflicts: Optional[List[dict]], delta: dict, tag: str) -> List[dict]:
-    """Carry conflicts forward and update them from the delta. NEVER silently drops one:
+def _reconcile_camera_conflicts(prev_conflicts: Optional[List[dict]], delta: dict, tag: str) -> List[dict]:
+    """Camera-pose conflicts. Carry conflicts forward and update them from the delta. NEVER silently drops one:
     a conflict is only marked resolved when a later version measurably agrees, and the
     record (with its hypotheses and history) is kept."""
     out: List[dict] = []
@@ -306,6 +341,123 @@ def reconcile_conflicts(prev_conflicts: Optional[List[dict]], delta: dict, tag: 
     return out
 
 
+#: a candidate surface this close (x scene extent) to a conflict's current hypothesis is the same surface
+GEOMETRY_MATCH_REL = 0.05
+
+
+def _reconcile_geometry_conflicts(conflicts: List[dict], delta: dict, tag: str) -> List[dict]:
+    """Geometry conflicts: a surface that MOVED beyond tolerance while no new photograph supports the move
+    keeps BOTH positions (with the evidence and confidence each side really has) until a later version
+    confirms one. Resolution needs new supporting evidence; time passing is not evidence."""
+    import numpy as np
+
+    ents = delta.get("entities") or {}
+    rels = ents.get("relations", [])
+    ext = float(ents.get("ext_prev") or 0.0)
+    tol = GEOMETRY_MATCH_REL * ext
+    out: List[dict] = []
+    for c in conflicts:
+        if c.get("kind") != "geometry" or c.get("status") != "unresolved":
+            out.append(c)
+            continue
+        c = dict(c, history=list(c.get("history") or []), hypotheses=list(c.get("hypotheses") or []))
+        cur = np.asarray(c["hypotheses"][-1]["position"], float)
+        first = np.asarray(c["hypotheses"][0]["position"], float)
+        near = []
+        if ents and ext > 0 and not c.get("frame_lost"):
+            for r in rels:
+                if (r["type"] == c["subject_type"] and r["kind"] in ("preserved", "refined")
+                        and r.get("prev_center") is not None
+                        and float(np.linalg.norm(np.asarray(r["prev_center"], float) - cur)) <= tol):
+                    near.append(r)
+        if not near:
+            c["history"].append({"version": tag, "event": "still_unresolved",
+                                 "detail": "the surface could not be matched in this version (not measurable)"})
+        else:
+            r = min(near, key=lambda r: float(np.linalg.norm(np.asarray(r["prev_center"], float) - cur)))
+            support = r.get("supporting_new_evidence") or []
+            back = float(np.linalg.norm(np.asarray(r["cand_center"], float) - first))
+            stay = float(np.linalg.norm(np.asarray(r["cand_center"], float) - cur))
+            if r["kind"] == "preserved" and support:
+                c["status"], c["resolved_to"] = "resolved", c["hypotheses"][-1]["source"]
+                c["history"].append({"version": tag, "event": "resolved", "detail":
+                                     f"the adopted position was preserved and {len(support)} new photograph(s) support it"})
+            elif r["kind"] == "refined" and support and back <= tol and back < stay:
+                c["status"], c["resolved_to"] = "resolved", "previous_version"
+                c["history"].append({"version": tag, "event": "resolved", "detail":
+                                     "the surface returned to its earlier position, supported by new photographs"})
+            elif r["kind"] == "refined" and stay > tol:
+                c["hypotheses"].append({"source": tag, "position": r["cand_center"], "entity": r["cand"][0],
+                                        "confidence": r.get("cand_confidence"), "provenance": r.get("cand_evidence")})
+                c["history"].append({"version": tag, "event": "moved_again",
+                                     "detail": f"moved another {r['gap_rel']:.0%} of scene extent"})
+            else:
+                c["history"].append({"version": tag, "event": "still_unresolved",
+                                     "detail": "unchanged, and no new photograph supports either position yet"})
+        out.append(c)
+
+    open_now = [c for c in out if c.get("kind") == "geometry" and c.get("status") == "unresolved"]
+    for r in rels:
+        if not r.get("unsupported_move"):
+            continue
+        centre = np.asarray(r["prev_center"], float)
+        if any(c["subject_type"] == r["type"]
+               and float(np.linalg.norm(np.asarray(c["hypotheses"][-1]["position"], float) - centre)) <= tol
+               for c in open_now):
+            continue
+        out.append({
+            "id": f"conflict-geometry-{r['type']}-{len([c for c in out if c.get('kind') == 'geometry']) + 1}-{tag}",
+            "kind": "geometry", "subject_type": r["type"], "subject": f"{r['type']}:{r['prev'][0]}",
+            "status": "unresolved",
+            "summary": (f"A {r['type']} surface moved or tilted more than the matching tolerance "
+                        "and no new photograph supports the change; both positions are kept."),
+            "hypotheses": [
+                {"source": "previous_version", "position": r["prev_center"], "entity": r["prev"][0],
+                 "confidence": r.get("prev_confidence"), "provenance": r.get("prev_evidence")},
+                {"source": tag, "position": r["cand_center"], "entity": r["cand"][0],
+                 "confidence": r.get("cand_confidence"), "provenance": r.get("cand_evidence")},
+            ],
+            "displacement_rel": r["gap_rel"], "angle_deg": r.get("angle_deg"), "opened_in": tag,
+            "history": [{"version": tag, "event": "opened",
+                         "detail": f"offset {r['gap_rel']:.0%} of scene extent, tilt {r.get('angle_deg') or 0:.1f} deg"}],
+        })
+    return out
+
+
+def _carry_to_candidate_frame(conflicts: List[dict], delta: dict) -> List[dict]:
+    """Hypothesis positions are recorded in the frame of the version being replaced. The candidate has its
+    own frame, so every UNRESOLVED conflict's positions are mapped into it (similarity from the shared
+    cameras); without an alignment the conflict is kept and marked ``frame_lost`` rather than dropped."""
+    import numpy as np
+
+    al = delta.get("alignment")
+    out: List[dict] = []
+    for c in conflicts:
+        if c.get("status") != "unresolved" or not c.get("hypotheses"):
+            out.append(c)
+            continue
+        c = dict(c, hypotheses=[dict(h) for h in c["hypotheses"]])
+        if al is None:
+            c["frame_lost"] = True
+        else:
+            R, s = np.asarray(al["R"], float), float(al["s"])
+            ma, mb = np.asarray(al["ma"], float), np.asarray(al["mb"], float)
+            for h in c["hypotheses"]:
+                if h.get("position") is not None:
+                    h["position"] = [round(float(v), 5) for v in s * ((np.asarray(h["position"], float) - ma) @ R.T) + mb]
+            c.pop("frame_lost", None)
+        out.append(c)
+    return out
+
+
+def reconcile_conflicts(prev_conflicts: Optional[List[dict]], delta: dict, tag: str) -> List[dict]:
+    """All conflict kinds (camera pose, geometry): carried forward, opened, resolved -- never dropped.
+    The returned positions are expressed in the CANDIDATE's frame, ready to be the next version's 'previous'."""
+    conflicts = _reconcile_camera_conflicts(prev_conflicts, delta, tag)
+    conflicts = _reconcile_geometry_conflicts(conflicts, delta, tag)
+    return _carry_to_candidate_frame(conflicts, delta)
+
+
 def decide(delta: dict, conflicts: Optional[List[dict]] = None) -> dict:
     """ACCEPT / ACCEPT_WITH_UNCERTAINTY / REJECT, each reason citing a measured fact."""
     if delta.get("first_version"):
@@ -333,17 +485,92 @@ def decide(delta: dict, conflicts: Optional[List[dict]] = None) -> dict:
             unc.append(f"{t} count fell from {c['before']} to {c['after']}")
     ents = delta.get("entities")
     if ents:
-        removed_struct = [r for r in ents["removed"] if r["type"] in STRUCTURAL]
-        prev_struct = ents["preserved"] + ents["refined"] + len(removed_struct)
-        if prev_struct >= 3 and len(removed_struct) / prev_struct > 0.5:
-            unc.append(f"{len(removed_struct)} of {prev_struct} previously established structural elements "
-                       f"were not reproduced (matched by {ents['matched_by']})")
+        # Splits, merges, extensions and refinements are CHANGES OF REPRESENTATION and keep the structure;
+        # only surfaces nothing in the candidate overlaps ("removed") or that are only partly reproduced
+        # ("reduced") count against it.
+        prev_struct = sum(len(r["prev"]) for r in ents["relations"] if r["type"] in STRUCTURAL)
+        removed = sum(len(r["prev"]) for r in ents["relations"] if r["kind"] == "removed" and r["type"] in STRUCTURAL)
+        reduced = sum(len(r["prev"]) for r in ents["relations"] if r["kind"] == "reduced" and r["type"] in STRUCTURAL)
+        ambiguous = sum(1 for r in ents["relations"] if r["kind"] == "ambiguous" and r["type"] in STRUCTURAL)
+        if prev_struct >= 3 and removed / prev_struct >= REGRESSION_REMOVED_FRACTION and not gained:
+            reject.append(f"{removed} of {prev_struct} previously established structural surfaces are not "
+                          "reproduced and no additional photograph was placed to justify the loss "
+                          f"(matched by {ents['matched_by']})")
+        elif prev_struct >= 3 and removed / prev_struct >= UNCERTAIN_REMOVED_FRACTION:
+            unc.append(f"{removed} of {prev_struct} previously established structural surfaces are not "
+                       f"reproduced (matched by {ents['matched_by']})")
+        if reduced:
+            unc.append(f"{reduced} previously established surface(s) are only partly reproduced")
+        if ambiguous:
+            unc.append(f"{ambiguous} structural change(s) overlap in a pattern that cannot be classified as "
+                       "a split, merge or move")
     fresh = [c for c in (conflicts or []) if c.get("status") == "unresolved"
              and (c.get("history") or [{}])[-1].get("event") in ("opened", "moved_again")]
     if fresh:
         unc.append(f"{len(fresh)} photo position(s) now conflict with the previous version and stay unresolved")
     verdict = REJECT if reject else (ACCEPT_WITH_UNCERTAINTY if unc else ACCEPT)
     return {"verdict": verdict, "reasons": reject, "uncertainties": unc}
+
+
+def _phrase(types: List[str]) -> str:
+    """['wall', 'wall', 'floor'] -> '2 walls, 1 floor'."""
+    return ", ".join(f"{n} {t}{'' if n == 1 else 's'}" for t, n in sorted(Counter(types).items()))
+
+
+def physical_changes(delta: dict, conflicts: Optional[List[dict]] = None) -> dict:
+    """What changed in the WORLD (not in the reconstruction's bookkeeping), derived from the geometric
+    relations between the two versions. ``available`` is False, with the reason, when the relations
+    could not be measured -- the caller then falls back to plain counts and says so."""
+    ents = delta.get("entities")
+    if not ents:
+        return {"available": False,
+                "reason": "; ".join(delta.get("not_measurable") or []) or "no previous structure to compare"}
+    rels = ents["relations"]
+
+    def of(kind):
+        return [r for r in rels if r["kind"] == kind]
+
+    new_input = delta["evidence"].get("new_input") or []
+    out: dict = {"available": True, "signals": ents.get("signals", {})}
+    # items are noun phrases: the label ("Added", "Extended", ...) carries the verb
+    out["added"] = [_phrase([r["type"] for r in of("new")])] if of("new") else []
+    out["extended"] = [f"{_phrase([r['type'] for r in of('extended')])} (now reach further than before)"] if of("extended") else []
+    refined = of("refined")
+    supported = [r for r in refined if r.get("supporting_new_evidence")]
+    unsupported = [r for r in refined if r.get("unsupported_move")]
+    out["refined"] = []
+    if refined:
+        out["refined"].append(f"{_phrase([r['type'] for r in refined])} (position or orientation adjusted)")
+    if supported:
+        out["refined"].append(f"{len(supported)} of these backed by new photographs")
+    out["preserved"] = len(of("preserved"))
+    differently = [r for r in rels if r["kind"] in ("split", "merge", "regrouped")]
+
+    def _regroup_text(r):
+        if r["kind"] == "split":
+            return f"one {r['type']} is now {len(r['cand'])} fragments"
+        if r["kind"] == "merge":
+            return f"{len(r['prev'])} {r['type']}s are now one surface"
+        return f"{len(r['prev'])} {r['type']}s are now {len(r['cand'])} {r['type']}s covering the same area"
+
+    out["represented_differently"] = [_regroup_text(r) + " (same surface, different grouping)" for r in differently]
+    lost = of("removed") + of("reduced")
+    out["not_reproduced"] = [f"{_phrase([r['type'] for r in lost])} from the previous version"] if lost else []
+    out["uncertain"] = [r["explanation"] for r in of("ambiguous")]
+    out["unsupported_moves"] = len(unsupported)
+    open_c = [c for c in (conflicts or []) if c.get("status") == "unresolved"]
+    out["conflicts"] = {"unresolved": len(open_c), "kinds": dict(Counter(c.get("kind") for c in open_c))}
+    out["regions"] = []
+    for reg in ents["regions"]:
+        touched = reg.get("affected_by_new_evidence")
+        parts = [f"{n} {k}" for k, n in sorted(reg["relations"].items())]
+        out["regions"].append({
+            "id": reg["id"], "status": reg["status"], "types": reg["types"], "relations": reg["relations"],
+            "affected_by_new_evidence": touched, "new_evidence_count": len(touched) if touched is not None else None,
+            "summary": (f"{_phrase([t for t, n in reg['types'].items() for _ in range(n)])}: " + ", ".join(parts)
+                        + (f"; touched by {len(touched)} of {len(new_input)} new photo(s)" if touched else "")),
+        })
+    return out
 
 
 def describe_changes(delta: dict, structure: bool = True, conflicts: Optional[List[dict]] = None) -> List[str]:
@@ -366,11 +593,17 @@ def describe_changes(delta: dict, structure: bool = True, conflicts: Optional[Li
             out.append(f"{len(ev['kept'])} photo{s(len(ev['kept']))} stayed placed.")
         if ev["lost"]:
             out.append(f"{len(ev['lost'])} photo{s(len(ev['lost']))} could no longer be placed.")
-        ents = delta.get("entities") if structure else None
-        if ents:
-            out.append(f"{ents['preserved']} structural element{s(ents['preserved'])} preserved, "
-                       f"{ents['refined']} refined, {ents['new']} newly observed"
-                       + (f", {len(ents['removed'])} not reproduced." if ents["removed"] else "."))
+        phys = physical_changes(delta, conflicts) if structure else {"available": False}
+        if phys["available"]:
+            if phys["preserved"]:
+                out.append(f"Preserved: {phys['preserved']} surface{s(phys['preserved'])} unchanged.")
+            for label, key in (("Newly observed", "added"), ("Extended", "extended"), ("Refined", "refined"),
+                               ("Represented differently", "represented_differently"),
+                               ("Not reproduced", "not_reproduced"), ("Still uncertain", "uncertain")):
+                for line in phys[key]:
+                    out.append(f"{label}: {line}.")
+            if phys["unsupported_moves"]:
+                out.append(f"{phys['unsupported_moves']} surface move(s) are not supported by any new photograph.")
         else:
             for t, c in (delta["structure"].items() if structure else ()):
                 d = c["after"] - c["before"]

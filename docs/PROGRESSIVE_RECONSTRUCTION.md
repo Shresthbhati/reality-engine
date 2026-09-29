@@ -159,6 +159,64 @@ these small scenes is modest, because extracting the new photographs dominates (
 Earlier photographs are not re-extracted; **not measured**: whether the exhaustive matcher skips pairs it has
 already matched, so no scaling claim is made for large worlds.
 
+### Was persistent COLMAP state worth it? (`scripts/experiment_incremental_registration.py`)
+
+Same photographs, same backend, fresh rebuild (A) vs incremental (B); reprojection = COLMAP's mean track
+error; stability = frame-independent camera movement vs the previous version.
+
+| Step | Registered A / B | Points A / B | Reproj px A / B | Stability A / B | Seconds A / B |
+|---|---|---|---|---|---|
+| weak prior (3) + 3 | 6 / 6 (B fell back to full) | 1132 / 1126 | 0.295 / 0.295 | n/a | 11.4 / 9.8 |
+| rich prior (6) + 3 | 7 / 7 | 1408 / 1397 | 0.294 / 0.305 | 0.34% / 0.48% | 15.3 / 12.6 |
+| chain (9, 7 placed) + 3 | 11 / 11 (B chose full) | 3648 / 3639 | 0.276 / 0.276 | 0.68% / 0.64% | 22.8 / 18.4 |
+
+**Reading:** a fresh rebuild is *already* geometrically stable between versions (well under 1% of extent),
+so incremental registration is **not a quality win**: same registration and point counts, marginally worse
+reprojection error at the rich-prior step. What it does buy is (1) COLMAP's own coordinate frame preserved
+across versions (`frame: preserved`) and (2) ~18-20% less wall-clock on these 6-12 photo scenes. Cost: a
+persistent workspace per world and a commit/discard lifecycle. **Decision: keep it** (already built, never
+worse than a fresh rebuild because the full mapper is tried and wins when it registers more), but do not
+present it as a reconstruction-quality improvement. **Not measured:** worlds of 50+ photos, where the saved
+extraction time should matter more, and whether the exhaustive matcher skips already-matched pairs.
+
+## Spatial continuity (what physically changed between versions)
+
+`engine/pipeline/spatial_continuity.py` compares the *geometry* stored on each version report, because
+entity ids are re-derived on every rebuild and a rebuild can split, merge or regroup surfaces without the
+world changing. Per structural entity the report keeps: type, centre, bounds, up to 160 sampled inlier
+points, and the photographs that observed it (`supporting_evidence_ids`, from the plane's own inlier points).
+Old versions without points fall back to centre distance and say so (`signal: center_only`).
+
+Two surfaces are the same when types match, normals agree (< 20 deg), planes are within 10% of the scene
+extent, and their in-plane footprints (rasterised occupancy) overlap. Relations, each with its measured
+coverage and an explanation:
+
+| Relation | Meaning |
+|---|---|
+| preserved / refined | same surface; refined = moved or tilted beyond 3% of extent / 4 deg |
+| extended / reduced | candidate reaches beyond / reproduces only part of the previous surface |
+| split / merge | one -> several fragments (or the reverse) that jointly cover it |
+| regrouped | several <-> several where the *union* of each side covers the other's footprint (stacked or overlapping planes grouped differently) |
+| ambiguous | overlapping but not classifiable; reported, never forced |
+| removed / new | nothing overlaps it in the other version |
+
+A move is a **geometry conflict** only when supporting-evidence ids exist on both sides and no new photograph
+supports the moved candidate; otherwise it is a refinement (or "justification unknown"). Conflicts keep both
+positions with the entity confidences and photographs each side really has, are carried into each new
+version's coordinate frame, and resolve only when a later version preserves the surface *with new supporting
+evidence* (or returns it to its earlier position with such support). Regions are clusters of nearby relations
+carrying the union of supporting photographs and which *new* photographs touched them.
+
+Acceptance now reasons from these relations: splits, merges and regroupings are not losses; only removed
+or partly reproduced surfaces count. Losing >= 60% of established structure with no additional photograph
+placed is a REJECT; >= 34% (or any partly reproduced / unclassifiable surface, or a new conflict) is
+ACCEPT_WITH_UNCERTAINTY.
+
+**Measured on real photos** (SIX -> +C -> +D): the classification was identical for `MOVE_TOL_REL` in
+0.05-0.25; V1->V2 = 1 regrouped + 1 new, V2->V3 = 1 regrouped + 1 removed. Across separate runs the
+reconstruction itself varies (one run reported a new window where another reported a new wall), so
+opening/wall labels are not stable run to run.
+
 ## World-level acceptance (candidate vs HEAD)
 
 A rebuild from all evidence can be valid and still WORSE than the current version.

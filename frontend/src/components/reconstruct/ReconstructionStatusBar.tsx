@@ -210,6 +210,8 @@ export default function ReconstructionStatusBar({
             <span className="text-amber-300">Viewing {inspecting?.label}, an earlier version</span>
           ) : status.failure ? (
             failureCopy(status)
+          ) : status.last_run && !status.last_run.adopted ? (
+            <span className="text-amber-300">Kept your current model: the new photos did not improve it yet</span>
           ) : (
             topGuidance ?? (status.in_progress ? "Working…" : "")
           )}
@@ -287,6 +289,40 @@ export default function ReconstructionStatusBar({
             <p className="mt-1 text-[11px] text-neutral-400">
               {status.in_progress ? "The first model appears here as soon as it is ready." : "No model has been built yet."}
             </p>
+          )}
+          {model && (model.changes?.length ?? 0) > 0 && (
+            <div className="mt-2" data-testid="what-changed">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                What changed in this version
+              </h3>
+              <ul className="mt-0.5 space-y-0.5">
+                {model.changes!.map((c) => (
+                  <li key={c} className="text-[11px] leading-relaxed text-neutral-300">
+                    • {c}
+                  </li>
+                ))}
+                {(model.uncertainties ?? []).map((u) => (
+                  <li key={u} className="text-[11px] leading-relaxed text-amber-300">
+                    • Still uncertain: {u}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {status.last_run && !status.last_run.adopted && (
+            <div
+              role="status"
+              data-testid="candidate-not-adopted"
+              className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-200"
+            >
+              Your new photos are stored, but rebuilding with them did not improve this model, so the current
+              version is kept. They will be tried again as more evidence arrives.
+              <ul className="mt-1 space-y-0.5 text-amber-300/90">
+                {status.last_run.reasons.map((r) => (
+                  <li key={r}>• {r}</li>
+                ))}
+              </ul>
+            </div>
           )}
           {status.failure && (
             <div
@@ -417,7 +453,11 @@ export default function ReconstructionStatusBar({
               </span>
               <span className="text-neutral-400">
                 {e.contribution ? CONTRIBUTION_COPY[e.contribution] ?? e.contribution : "waiting for analysis"}
-                {e.registered === false ? " · not placed in the model" : ""}
+                {e.registration?.state === "waiting"
+                  ? ` · waiting for a photo that connects it (tried ${e.registration.attempts}×, kept)`
+                  : e.registered === false
+                    ? " · not placed in the model"
+                    : ""}
               </span>
             </li>
           ))}

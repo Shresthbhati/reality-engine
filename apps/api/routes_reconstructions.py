@@ -285,6 +285,9 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "registered": rec.get("registered"),
             "contribution": contrib.get("label"),
             "in_current_model": ev.id in set(ev_report.get("all_ids") or []),
+            # attempts / waiting|registered / ever registered: a photo that could not be
+            # placed is "waiting" and is retried on every rebuild, never discarded
+            "registration": (ev.metadata_json or {}).get("registration"),
         })
 
     failure = None
@@ -317,6 +320,16 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "scale": ((report.get("stages") or {}).get("scale") or {}),
             "images_used": len(ev_report.get("input_ids") or []),
             "images_registered": len(ev_report.get("registered_ids") or []),
+            # what this version changed relative to its predecessor (measured, see world_delta)
+            "changes": report.get("changes", []),
+            "verdict": (report.get("verdict") or {}).get("verdict"),
+            "uncertainties": (report.get("verdict") or {}).get("uncertainties", []),
+        },
+        # the newest run, including one whose candidate was NOT adopted (HEAD kept)
+        "last_run": None if job is None or not isinstance(job.payload, dict) or "adopted" not in job.payload else {
+            "adopted": job.payload.get("adopted"), "verdict": job.payload.get("verdict"),
+            "reasons": job.payload.get("reasons", []), "changes": job.payload.get("changes", []),
+            "kept_version_id": job.payload.get("kept_version_id"),
         },
         "evidence": evidence,
         "evidence_summary": {

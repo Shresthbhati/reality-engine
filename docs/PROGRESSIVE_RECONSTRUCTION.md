@@ -119,6 +119,104 @@ object-centric captures, viewing directions for interiors), frame-edge
 truncation of a detected surface (single view), missing floor/ceiling,
 redundant batches.
 
+## Incremental registration (COLMAP `image_registrator`)
+
+Each world owns a persistent COLMAP workspace (`reconstruction/colmap_session.py`, stored under
+`<WORLDSTORE_ROOT>/colmap-sessions/<world_id>/current`): the feature/match database, the images and the
+committed sparse model. A new version does **not** re-solve the scene when it does not have to:
+
+1. features are extracted for the **new photographs only** (`feature_extractor --image_list_path`)
+   and matched against everything already in the database;
+2. `image_registrator` places every not-yet-registered photograph (new ones **and** earlier ones that were
+   waiting) into the **previous sparse model**;
+3. `point_triangulator --clear_points 0` adds the structure the new photographs see while **keeping the
+   established points** (`image_registrator` alone adds none);
+4. `bundle_adjuster` refines, with intrinsics pinned when they are trusted.
+
+If photographs are still unregistered afterwards, a full `mapper` run on the same database is tried (no
+re-extraction or re-matching) and it replaces the incremental model **only if it registers strictly more
+photographs**. Everything is recorded in `report.stages.reconstruction.colmap_session` and returned as
+`model.strategy`: `mode` (`full | incremental | reused`), `reason`, `frame` (`preserved | re-solved`),
+`prior_images`, `new_images`, `incremental_registered` / `full_registered`, points, per-step seconds.
+
+The session advances only when the resulting version is **adopted and read back**
+(`ColmapSession.commit()`); a rejected, failed or cancelled run discards its staging copy, so it can never
+become the base of the next registration. The prior state is refused (full rebuild) when the pipeline
+settings changed, evidence was removed, the model is missing, or the previous result was a merge of several
+sub-models.
+
+**Measured (COLMAP 4.2.0, CPU, South Building):**
+
+| Prior | New | Result |
+|---|---|---|
+| 3 photos (67 points) | +3 | `image_registrator` registered **0**: too few 2D-3D matches. Full rebuild (6/6) wins; reported as such |
+| 6 photos (1132 points) | +3 | incremental **7 of 9** (full rebuild also 7), 1397 points vs 1400, established cameras moved **< 1%** of scene extent; `image_registrator` 0.17 s, `point_triangulator` 0.22 s |
+| 9 photos (7 placed) | +3 | full rebuild placed 11 vs 10 incrementally, so it was chosen; it starts a new gauge but the previously placed cameras moved 0.6% (frame-independent) |
+
+So incremental registration helps when the prior model is rich enough to give new photographs something to
+localise against; when it is not, the full rebuild is used and the report says why. The wall-clock gain on
+these small scenes is modest, because extracting the new photographs dominates (total 12-16 s per step).
+Earlier photographs are not re-extracted; **not measured**: whether the exhaustive matcher skips pairs it has
+already matched, so no scaling claim is made for large worlds.
+
+### Was persistent COLMAP state worth it? (`scripts/experiment_incremental_registration.py`)
+
+Same photographs, same backend, fresh rebuild (A) vs incremental (B); reprojection = COLMAP's mean track
+error; stability = frame-independent camera movement vs the previous version.
+
+| Step | Registered A / B | Points A / B | Reproj px A / B | Stability A / B | Seconds A / B |
+|---|---|---|---|---|---|
+| weak prior (3) + 3 | 6 / 6 (B fell back to full) | 1132 / 1126 | 0.295 / 0.295 | n/a | 11.4 / 9.8 |
+| rich prior (6) + 3 | 7 / 7 | 1408 / 1397 | 0.294 / 0.305 | 0.34% / 0.48% | 15.3 / 12.6 |
+| chain (9, 7 placed) + 3 | 11 / 11 (B chose full) | 3648 / 3639 | 0.276 / 0.276 | 0.68% / 0.64% | 22.8 / 18.4 |
+
+**Reading:** a fresh rebuild is *already* geometrically stable between versions (well under 1% of extent),
+so incremental registration is **not a quality win**: same registration and point counts, marginally worse
+reprojection error at the rich-prior step. What it does buy is (1) COLMAP's own coordinate frame preserved
+across versions (`frame: preserved`) and (2) ~18-20% less wall-clock on these 6-12 photo scenes. Cost: a
+persistent workspace per world and a commit/discard lifecycle. **Decision: keep it** (already built, never
+worse than a fresh rebuild because the full mapper is tried and wins when it registers more), but do not
+present it as a reconstruction-quality improvement. **Not measured:** worlds of 50+ photos, where the saved
+extraction time should matter more, and whether the exhaustive matcher skips already-matched pairs.
+
+## Spatial continuity (what physically changed between versions)
+
+`engine/pipeline/spatial_continuity.py` compares the *geometry* stored on each version report, because
+entity ids are re-derived on every rebuild and a rebuild can split, merge or regroup surfaces without the
+world changing. Per structural entity the report keeps: type, centre, bounds, up to 160 sampled inlier
+points, and the photographs that observed it (`supporting_evidence_ids`, from the plane's own inlier points).
+Old versions without points fall back to centre distance and say so (`signal: center_only`).
+
+Two surfaces are the same when types match, normals agree (< 20 deg), planes are within 10% of the scene
+extent, and their in-plane footprints (rasterised occupancy) overlap. Relations, each with its measured
+coverage and an explanation:
+
+| Relation | Meaning |
+|---|---|
+| preserved / refined | same surface; refined = moved or tilted beyond 3% of extent / 4 deg |
+| extended / reduced | candidate reaches beyond / reproduces only part of the previous surface |
+| split / merge | one -> several fragments (or the reverse) that jointly cover it |
+| regrouped | several <-> several where the *union* of each side covers the other's footprint (stacked or overlapping planes grouped differently) |
+| ambiguous | overlapping but not classifiable; reported, never forced |
+| removed / new | nothing overlaps it in the other version |
+
+A move is a **geometry conflict** only when supporting-evidence ids exist on both sides and no new photograph
+supports the moved candidate; otherwise it is a refinement (or "justification unknown"). Conflicts keep both
+positions with the entity confidences and photographs each side really has, are carried into each new
+version's coordinate frame, and resolve only when a later version preserves the surface *with new supporting
+evidence* (or returns it to its earlier position with such support). Regions are clusters of nearby relations
+carrying the union of supporting photographs and which *new* photographs touched them.
+
+Acceptance now reasons from these relations: splits, merges and regroupings are not losses; only removed
+or partly reproduced surfaces count. Losing >= 60% of established structure with no additional photograph
+placed is a REJECT; >= 34% (or any partly reproduced / unclassifiable surface, or a new conflict) is
+ACCEPT_WITH_UNCERTAINTY.
+
+**Measured on real photos** (SIX -> +C -> +D): the classification was identical for `MOVE_TOL_REL` in
+0.05-0.25; V1->V2 = 1 regrouped + 1 new, V2->V3 = 1 regrouped + 1 removed. Across separate runs the
+reconstruction itself varies (one run reported a new window where another reported a new wall), so
+opening/wall labels are not stable run to run.
+
 ## World-level acceptance (candidate vs HEAD)
 
 A rebuild from all evidence can be valid and still WORSE than the current version.
@@ -142,9 +240,11 @@ Each version's report stores `structure`, `cameras`, `delta`, `verdict`, `change
 (`registered|waiting`, attempts, ever_registered). Studio shows "What changed in this
 version" and a "kept your current model" notice.
 
-**What this is not:** the previous WorldIR does not seed COLMAP. Registration is still
-recomputed from all evidence; the previous version is used to judge and explain the
-result. True incremental registration into the old model remains CE-02.
+**Relation to incremental registration:** the previous version's COLMAP model is now the
+starting point for registration (see above); this acceptance step still judges the outcome, because a
+successful COLMAP run is not automatically a better world. What is still recomputed each time is
+everything **after** COLMAP: frame alignment, depth, perception, plane detection and compilation of the
+WorldIR; region-aware local refinement of those stages is not implemented.
 
 ## Versions and diff
 

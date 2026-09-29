@@ -145,22 +145,31 @@ def test_entity_continuity_is_measured_in_a_common_frame_not_by_id():
     # two walls + the floor unchanged; the third wall moved 2 units (> 20% of extent) so it is NOT
     # matched: it is reported removed, and its new position plus the extra wall count as new
     assert (res["preserved"], res["refined"], len(res["removed"]), res["new"]) == (3, 0, 1, 2)
-    assert res["removed"][0]["type"] == "wall" and res["matched_by"].startswith("type + position")
+    assert res["removed"][0]["type"] == "wall" and "centre distance" in res["matched_by"] and res["signals"] == {"center_only": 3}
 
 
 def test_entity_continuity_not_measurable_without_a_camera_alignment():
     assert wd.entity_continuity([_ent("wall", (0, 0, 0))], [_ent("wall", (0, 0, 0))], {}, {}) is None
 
 
-def test_removed_structure_is_a_flagged_uncertainty_never_silent():
+def _lost_walls_delta(extra_registered=()):
     cams = ring()
     prev = snap(list(cams), cams=cams, types={"wall": 4})
     prev["entities"] = [_ent("wall", (3, 0, 0)), _ent("wall", (0, 3, 0)), _ent("wall", (-3, 0, 0)), _ent("wall", (0, -3, 0))]
-    cand = snap(list(cams), cams=cams, types={"wall": 4})
+    cand = snap(list(cams) + list(extra_registered), cams=cams, types={"wall": 4})
     cand["entities"] = [_ent("wall", (3, 0, 0))]                               # 3 of 4 walls not reproduced
-    d = wd.compute_delta(prev, cand)
+    return wd.compute_delta(prev, cand)
+
+
+def test_established_structure_lost_with_nothing_to_justify_it_is_a_regression():
+    d = _lost_walls_delta()
     dec = wd.decide(d)
     assert d["entities"]["preserved"] == 1 and len(d["entities"]["removed"]) == 3
+    assert dec["verdict"] == wd.REJECT and "no additional photograph" in dec["reasons"][0]
+
+
+def test_the_same_loss_alongside_newly_placed_photos_is_uncertainty_not_rejection():
+    dec = wd.decide(_lost_walls_delta(extra_registered=["g"]))
     assert dec["verdict"] == wd.ACCEPT_WITH_UNCERTAINTY and any("not reproduced" in u for u in dec["uncertainties"])
 
 
@@ -199,3 +208,104 @@ def test_conflict_is_resolved_only_when_a_later_version_measurably_agrees_and_hi
     again = wd.reconcile_conflicts(opened, _moved_delta(), "v3")
     assert again[0]["status"] == "unresolved" and again[0]["hypotheses"][-1]["source"] == "v3"
     assert again[0]["history"][-1]["event"] == "moved_again"
+
+
+# ------------------------------------------------------ geometry-aware reconciliation, end to end
+import numpy as np                                                     # noqa: E402
+
+from tests.test_spatial_continuity import WALL, lattice, rec           # noqa: E402
+
+
+def _world(entities, registered=("a", "b", "c", "d", "e", "f"), extra_input=()):
+    cams = ring()
+    s = snap(list(registered), inputs=list(registered) + list(extra_input), cams=cams)
+    s["entities"] = entities
+    return s
+
+
+def test_split_is_not_a_loss_and_the_gate_accepts_it_as_a_representation_change():
+    a1, a2 = lattice(0, 3, 0, 2), lattice(3.05, 6, 0, 2)
+    o1, o2 = lattice(0, 3, 0, 2, origin=(0, 0, 8)), lattice(0, 3, 0, 2, origin=(0, 0, -8))   # two distinct walls
+    prev = _world([rec("w", "wall", WALL), rec("o1", "wall", o1), rec("o2", "wall", o2)])
+    cand = _world([rec("f1", "wall", a1), rec("f2", "wall", a2), rec("o1", "wall", o1), rec("o2", "wall", o2)])
+    d = wd.compute_delta(prev, cand)
+    assert d["entities"]["counts"]["split"] == 1 and d["entities"]["counts"]["removed"] == 0
+    assert wd.decide(d)["verdict"] == wd.ACCEPT
+    phys = wd.physical_changes(d)
+    assert phys["represented_differently"] == ["one wall is now 2 fragments (same surface, different grouping)"]
+    assert phys["added"] == [] and phys["not_reproduced"] == []
+
+
+def test_unsupported_move_opens_a_geometry_conflict_keeping_both_positions_with_real_provenance():
+    shifted = WALL + np.array([0, 0, 0.25])
+    prev = _world([rec("w", "wall", WALL, evidence=("a", "b"))])
+    cand = _world([rec("w2", "wall", shifted, evidence=("a", "b"))])          # same evidence, different place
+    d = wd.compute_delta(prev, cand)
+    conflicts = wd.reconcile_conflicts(None, d, "v2")
+    (c,) = [c for c in conflicts if c["kind"] == "geometry"]
+    assert c["status"] == "unresolved" and c["subject_type"] == "wall"
+    assert [h["source"] for h in c["hypotheses"]] == ["previous_version", "v2"]
+    assert c["hypotheses"][0]["provenance"] == ["a", "b"] and c["hypotheses"][0]["confidence"] == 0.8    # real values
+    dec = wd.decide(d, conflicts)
+    assert dec["verdict"] == wd.ACCEPT_WITH_UNCERTAINTY and any("conflict" in u for u in dec["uncertainties"])
+
+
+def test_a_move_backed_by_new_photographs_is_a_refinement_not_a_conflict():
+    shifted = WALL + np.array([0, 0, 0.25])
+    prev = _world([rec("w", "wall", WALL, evidence=("a", "b"))])
+    cand = _world([rec("w2", "wall", shifted, evidence=("a", "b", "g"))], registered=("a", "b", "c", "d", "e", "f", "g"))
+    d = wd.compute_delta(prev, cand)
+    assert not [c for c in wd.reconcile_conflicts(None, d, "v2") if c["kind"] == "geometry"]
+    phys = wd.physical_changes(d)
+    assert phys["unsupported_moves"] == 0 and any("backed by new photographs" in x for x in phys["refined"])
+
+
+def test_geometry_conflict_lifecycle_open_persist_then_resolve_with_history_and_provenance_kept():
+    shifted = WALL + np.array([0, 0, 0.25])
+    v1 = _world([rec("w", "wall", WALL, evidence=("a", "b"))])
+    v2 = _world([rec("w2", "wall", shifted, evidence=("a", "b"))])
+    c2 = wd.reconcile_conflicts(None, wd.compute_delta(v1, v2), "v2")             # V2: conflict introduced
+    assert [c["status"] for c in c2 if c["kind"] == "geometry"] == ["unresolved"]
+
+    v3_same = _world([rec("w3", "wall", shifted, evidence=("a", "b"))])            # V3: nothing new supports it
+    c3 = wd.reconcile_conflicts(c2, wd.compute_delta(v2, v3_same), "v3")
+    (g3,) = [c for c in c3 if c["kind"] == "geometry"]
+    assert g3["status"] == "unresolved" and g3["history"][-1]["event"] == "still_unresolved"
+
+    v4 = _world([rec("w4", "wall", shifted, evidence=("a", "b", "g"))], registered=("a", "b", "c", "d", "e", "f", "g"))
+    d4 = wd.compute_delta(v3_same, v4)                                             # V4: a new photograph sees it there
+    c4 = wd.reconcile_conflicts(c3, d4, "v4")
+    (g4,) = [c for c in c4 if c["kind"] == "geometry"]
+    assert g4["status"] == "resolved" and g4["resolved_to"] == "v2"
+    assert [h["event"] for h in g4["history"]] == ["opened", "still_unresolved", "resolved"]
+    assert len(g4["hypotheses"]) == 2 and g4["hypotheses"][0]["provenance"] == ["a", "b"]     # nothing erased
+    assert "resolved by this version" in " ".join(wd.describe_changes(d4, conflicts=c4))
+
+
+def test_conflicts_are_carried_into_the_newest_frame_and_never_dropped_when_the_frame_is_lost():
+    shifted = WALL + np.array([0, 0, 0.25])
+    d = wd.compute_delta(_world([rec("w", "wall", WALL, evidence=("a",))]), _world([rec("w2", "wall", shifted, evidence=("a",))]))
+    c = wd.reconcile_conflicts(None, d, "v2")
+    quiet = wd.compute_delta(snap(["a", "b", "c"]), snap(["a", "b", "c"]))       # no shared cameras -> no alignment
+    kept = wd.reconcile_conflicts(c, quiet, "v3")
+    assert [k["status"] for k in kept if k["kind"] == "geometry"] == ["unresolved"]
+    assert [k for k in kept if k["kind"] == "geometry"][0].get("frame_lost") is True
+
+
+def test_physical_summary_names_new_and_extended_surfaces_and_the_regions_new_photos_touched():
+    bigger = lattice(0, 12, 0, 2)
+    far = lattice(0, 4, 0, 2, origin=(0, 0, 9))
+    prev = _world([rec("w", "wall", WALL, evidence=("a",))], extra_input=())
+    cand = _world([rec("w2", "wall", bigger, evidence=("a", "g")), rec("n", "wall", far, evidence=("g",))],
+                  registered=("a", "b", "c", "d", "e", "f", "g"))
+    phys = wd.physical_changes(wd.compute_delta(prev, cand))
+    assert phys["extended"][0].startswith("1 wall")
+    assert phys["added"] == ["1 wall"]
+    touched = [r for r in phys["regions"] if r["affected_by_new_evidence"]]
+    assert touched and all(r["affected_by_new_evidence"] == ["g"] for r in touched)
+
+
+def test_physical_summary_reports_not_available_with_the_reason_instead_of_inventing_one():
+    d = wd.compute_delta(snap(["a", "b", "c"]), snap(["a", "b", "c", "d"]))
+    phys = wd.physical_changes(d)
+    assert phys["available"] is False and "entity continuity" in phys["reason"]

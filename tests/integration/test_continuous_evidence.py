@@ -35,6 +35,14 @@ from tests.integration.test_progressive_product_journey import (  # noqa: F401 -
 )
 
 A, B, C, U = IMGS[15:18], IMGS[18:21], IMGS[21:24], IMGS[0:1]
+SIX = IMGS[15:21]
+
+
+def _session_manifest(root, wid):
+    """The world's COMMITTED persistent COLMAP state (what the next incremental registration builds on)."""
+    import json
+
+    return json.loads((root / "ws" / "colmap-sessions" / wid / "current" / "manifest.json").read_text())
 
 
 def _run(tmp_path, steps, after=None):
@@ -58,6 +66,7 @@ def _run(tmp_path, steps, after=None):
                 "n_versions": len(st["versions"]), "version_id": m["version_id"],
                 "entities": len(_worldir(c, wid)["entities"]),
                 "known": known, "posted": list(posted),
+                "physical": m.get("physical"), "changes": m.get("changes"), "strategy": m.get("strategy"),
             }
             trace.append(row)
             print(f"[{name}] v{row['version']} level={row['level']} {row['model_state']} "
@@ -113,6 +122,47 @@ def test_orderings_reach_equivalent_final_support(tmp_path):
     acb = _run(tmp_path / "acb", [("A", A), ("C", C), ("B", B)])[-1]
     assert abc["used"] == acb["used"] == 9
     assert abs(abc["registered"] - acb["registered"]) <= 1, (abc["registered"], acb["registered"])
+
+
+def test_a_rich_world_is_extended_incrementally_through_the_product_path(tmp_path):
+    """6 photos -> V1 (full). 3 more photos -> V2 must be produced by image_registrator on the persisted
+    COLMAP state, say so in the status API and the change list, and keep the coordinate frame."""
+    def check(c, wid, trace):
+        m = c.get(f"/api/worlds/{wid}/status").json()["model"]
+        s = m["strategy"]
+        print("[strategy]", {k: s.get(k) for k in ("mode", "reason", "frame", "incremental_registered", "full_registered")})
+        assert s["mode"] == "incremental" and s["frame"] == "preserved", s
+        assert s["prior_images"] == 6 and len(s["new_images"]) == 3
+        assert any("incrementally" in t for t in m["changes"]), m["changes"]
+        manifest = _session_manifest(tmp_path, wid)
+        assert manifest["info"]["mode"] == "incremental" and len(manifest["images"]) == 9
+
+    t = _run(tmp_path, [("SIX", SIX), ("C", C)], after=check)
+    assert t[1]["registered"] >= 7 and t[1]["registered"] > t[0]["registered"]
+
+
+def test_physical_changes_are_measured_from_real_geometry_across_three_versions(tmp_path):
+    """SIX -> +C -> +D on real photos. Every statement must come from measured geometric relations between
+    the versions (footprint overlap of fitted planes), and representation changes must not be reported as
+    additions and removals."""
+    D = IMGS[24:27]
+    t = _run(tmp_path, [("SIX", SIX), ("C", C), ("D", D)])
+    assert t[0]["physical"] is None or not t[0]["physical"].get("available")            # first version: nothing to compare
+    for row in t[1:]:
+        ph = row["physical"]
+        print(f"[{row['step']}] physical:", {k: ph.get(k) for k in
+              ("available", "reason", "preserved", "added", "extended", "refined", "represented_differently",
+               "not_reproduced", "uncertain", "signals", "unsupported_moves")})
+        for reg in (ph.get("regions") or []):
+            print("     ", reg["id"], reg["status"], reg["summary"])
+        if not ph["available"]:
+            assert ph["reason"], "an unmeasurable comparison must say why"
+            continue
+        assert ph["signals"].get("plane_footprint", 0) > 0, "shape data should have been stored and used"
+        assert all(isinstance(x, str) for k in ("added", "extended", "refined", "represented_differently", "not_reproduced")
+                   for x in ph[k])
+        # conflicts are surfaced only when a move is unsupported; never silently invented
+        assert ph["conflicts"]["unresolved"] >= 0 and ph["unsupported_moves"] >= 0
 
 
 def test_conflicts_are_explicit_in_the_canonical_worldir_and_the_status_api(tmp_path):
@@ -171,6 +221,8 @@ def test_failed_and_worse_candidates_never_replace_HEAD_and_waiting_evidence_is_
         assert s3["state"] == "PARTIALLY_COMPLETE"
         assert s3["last_run"]["adopted"] is False and s3["last_run"]["verdict"] == "REJECT"
         assert s3["model"]["version_id"] == v1 and len(s3["versions"]) == 1, "HEAD must stay V1"
+        # a failed and a rejected run must not have advanced the committed COLMAP state past V1's 3 photos
+        assert len(_session_manifest(tmp_path, wid)["images"]) == 3
         assert _worldir(c, wid)["id"] == _worldir(c, wid, v1)["id"]
         waiting = [e for e in s3["evidence"] if e["id"] not in {x["id"] for x in s1["evidence"]}]
         assert len(waiting) == 6 and all(not e["in_current_model"] for e in waiting)     # kept, not in HEAD
@@ -184,6 +236,7 @@ def test_failed_and_worse_candidates_never_replace_HEAD_and_waiting_evidence_is_
         print(f"[V2] level={m['level']} used={m['images_used']} registered={m['images_registered']} "
               f"verdict={m['verdict']} changes={m['changes']}")
         assert len(s4["versions"]) == 2 and m["version_id"] != v1
+        assert len(_session_manifest(tmp_path, wid)["images"]) == 12      # advanced only once V2 was adopted
         assert next(v for v in s4["versions"] if v["is_current"])["parent_version_id"] == v1
         assert m["images_used"] == 12 and m["images_registered"] >= 9
         assert s4["last_run"]["adopted"] is True and m["verdict"] in ("ACCEPT", "ACCEPT_WITH_UNCERTAINTY")

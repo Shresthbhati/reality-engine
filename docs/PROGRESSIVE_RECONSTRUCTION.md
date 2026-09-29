@@ -119,6 +119,33 @@ object-centric captures, viewing directions for interiors), frame-edge
 truncation of a detected surface (single view), missing floor/ceiling,
 redundant batches.
 
+## World-level acceptance (candidate vs HEAD)
+
+A rebuild from all evidence can be valid and still WORSE than the current version.
+`engine/pipeline/world_delta.py` compares the candidate with HEAD before it may be
+committed, using only what is comparable across rebuilds: evidence ids (stable),
+camera layout after a similarity alignment (COLMAP's frame is arbitrary), and
+structure counts. Entities and absolute positions are NOT compared, because ids are
+re-derived and the frame differs on every rebuild.
+
+| Verdict | When | Effect |
+|---|---|---|
+| `ACCEPT` | nothing measurable regressed | new version, parent = HEAD |
+| `ACCEPT_WITH_UNCERTAINTY` | previously placed photos lost but offset by a larger gain; cameras moved > 25% of extent; a structural type at least halved | new version; reasons recorded as `degraded` + `model.uncertainties` |
+| `REJECT` | previously placed photos lost with no larger gain, or fallback to a lower level with no gain | **no version is committed**, HEAD stays authoritative, all photos are kept and marked `waiting` |
+
+Checks that need data an older version never stored are reported under
+`delta.not_measurable`, never passed silently. There is no scalar quality score.
+Each version's report stores `structure`, `cameras`, `delta`, `verdict`, `changes`;
+`GET /api/worlds/{id}/status` returns `model.changes`, `model.uncertainties`,
+`last_run` (including a rejected run) and per-photo `registration`
+(`registered|waiting`, attempts, ever_registered). Studio shows "What changed in this
+version" and a "kept your current model" notice.
+
+**What this is not:** the previous WorldIR does not seed COLMAP. Registration is still
+recomputed from all evidence; the previous version is used to judge and explain the
+result. True incremental registration into the old model remains CE-02.
+
 ## Versions and diff
 
 Every job that adopts a version appends to the WorldStore lineage; V1, V2, ...

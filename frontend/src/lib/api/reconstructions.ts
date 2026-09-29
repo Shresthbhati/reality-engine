@@ -51,6 +51,12 @@ export interface EvidenceStatus {
   /** first | new_view | redundant | disconnected | unknown | null (not analysed yet) */
   contribution: string | null;
   in_current_model: boolean;
+  /** placement history: "waiting" photos are kept and retried on every rebuild */
+  registration?: {
+    state: "registered" | "waiting";
+    attempts: number;
+    ever_registered: boolean;
+  } | null;
 }
 
 export interface GuidanceItem {
@@ -95,6 +101,18 @@ export interface WorldStatus {
     scale: { state?: string; meters_per_unit?: number | null };
     images_used: number;
     images_registered: number;
+    /** measured statements about what this version changed versus the previous one */
+    changes?: string[];
+    verdict?: "ACCEPT" | "ACCEPT_WITH_UNCERTAINTY" | null;
+    uncertainties?: string[];
+  } | null;
+  /** the newest run, including one whose result was NOT adopted (the current model was kept) */
+  last_run?: {
+    adopted: boolean;
+    verdict: string | null;
+    reasons: string[];
+    changes: string[];
+    kept_version_id: string | null;
   } | null;
   evidence: EvidenceStatus[];
   evidence_summary: {

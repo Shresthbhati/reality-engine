@@ -30,6 +30,7 @@ from apps.api.models import (
     new_id,
     utcnow,
 )
+from engine.pipeline import world_delta
 from engine.pipeline.progressive import (
     EvidenceInput,
     InsufficientEvidence,
@@ -142,6 +143,25 @@ async def _head_report(db: AsyncSession, world: World) -> dict:
         return {}
     row = await db.get(WorldVersion, world.current_version_id)
     return dict(row.report or {}) if row is not None else {}
+
+
+def _record_registration(evidence_rows, job_id: str, registered: set, adopted: bool) -> None:
+    """Per-photo registration history on the Evidence row: attempts, current state
+    (registered | waiting), whether it EVER registered, and the last attempts."""
+    for ev in evidence_rows:
+        meta = dict(ev.metadata_json or {})
+        reg = dict(meta.get("registration") or {})
+        hist = list(reg.get("history") or [])
+        is_reg = ev.id in registered
+        hist.append({"job": job_id, "registered": is_reg, "adopted": adopted})
+        reg.update(
+            attempts=int(reg.get("attempts", 0)) + 1,
+            state="registered" if is_reg else "waiting",
+            ever_registered=bool(reg.get("ever_registered")) or is_reg,
+            history=hist[-20:],
+        )
+        meta["registration"] = reg
+        ev.metadata_json = meta
 
 
 async def _contributing_session_ids(db: AsyncSession, world_id: str, trigger_session_id: str) -> list[str]:
@@ -323,7 +343,8 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         .order_by(Evidence.created_at.asc(), Evidence.id.asc())
     )
     evidence_rows = list(result.scalars().all())
-    prior_ids = list(((await _head_report(db, world)).get("evidence") or {}).get("all_ids") or [])
+    head_report = await _head_report(db, world)
+    prior_ids = list((head_report.get("evidence") or {}).get("all_ids") or [])
     resolved = []
     skipped_evidence = []
     for ev in evidence_rows:
@@ -456,6 +477,49 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     # stays intact.
     _assert_reconstruction_traced(world_ir)
 
+    # World-level acceptance. A valid candidate is not automatically a BETTER
+    # one: compare it with the current HEAD on frame-independent, measured
+    # invariants (which photos stay registered, how the registered cameras
+    # moved, structure counts) before it may replace the world's knowledge.
+    cand_snap = world_delta.snapshot(
+        registered_ids=prog.registered_ids, input_ids=prog.input_ids, level=prog.level,
+        model_state=prog.model_state, points=len(prog.points), camera_poses=prog.camera_poses,
+        world=world_ir,
+    )
+    delta = world_delta.compute_delta(world_delta.snapshot_from_report(head_report), cand_snap)
+    decision = world_delta.decide(delta)
+    adopt = decision["verdict"] != world_delta.REJECT
+    changes = world_delta.describe_changes(delta, structure=adopt)
+    # Every geometry-eligible photo records THIS attempt, adopted or not: a photo
+    # that could not be placed is "waiting", never discarded, and is retried on
+    # the next rebuild (a later photo may be the missing bridge).
+    _record_registration(
+        [ev for (ev, _), ei in zip(resolved, eval_inputs) if ei.facts.geometry_eligible],
+        job.id, set(prog.registered_ids), adopt,
+    )
+    if not adopt:
+        session.world_id = world.id
+        session.status = "complete"
+        session.processing_completed_at = utcnow()
+        included = {ev.session_id for ev, _ in resolved if ev.session_id} - {session.id}
+        if included:
+            others = await db.execute(
+                select(Session).where(Session.id.in_(included), Session.status == "processing")
+            )
+            for other in others.scalars().all():
+                other.status = "complete"
+                other.processing_completed_at = utcnow()
+        job.payload = {
+            "world_id": world.id, "version_id": None, "adopted": False, "validated": True,
+            "outcome": "partial", "verdict": decision["verdict"], "reasons": decision["reasons"],
+            "uncertainties": decision["uncertainties"], "changes": changes, "delta": delta,
+            "kept_version_id": world.current_version_id, "level": prog.level,
+            "level_name": prog.level_name, "model_state": prog.model_state,
+            "registration_status": prog.registration_status, "skipped_evidence": skipped_evidence,
+        }
+        await db.commit()
+        return "partial"
+
     job.stage = "committing_version"
     job.heartbeat_at = utcnow()
     await db.commit()
@@ -468,6 +532,11 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         "model_state": prog.model_state,
         "attempts": prog.attempts,
         "guidance": prog.guidance,
+        "structure": {"entity_types": cand_snap["entity_types"], "provenance": cand_snap["provenance"]},
+        "cameras": cand_snap["cameras"],
+        "delta": delta,
+        "verdict": decision,
+        "changes": changes,
         "evidence": {
             "all_ids": [ei.item.id for ei in eval_inputs],
             "input_ids": prog.input_ids,
@@ -551,6 +620,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     if skipped_evidence:
         degraded.append(f"{len(skipped_evidence)} skipped evidence item(s)")
     degraded.extend(_stage_facts_degraded(prog.stage_facts))
+    degraded.extend(f"changed with uncertainty: {u}" for u in decision["uncertainties"])
     for warning in validation.warnings:
         degraded.append(f"validation warning: {warning}")
     outcome = "partial" if degraded else "succeeded"
@@ -584,6 +654,8 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         "degraded": degraded,
         "validated": True,
         "adopted": True,
+        "verdict": decision["verdict"],
+        "changes": changes,
         "points": len(prog.points),
         "points_bytes": len(points_bytes),
         "cameras_registered": len(prog.registered_ids),

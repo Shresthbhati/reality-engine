@@ -331,9 +331,15 @@ def test_D2_hard_low_overlap_photos_fall_back_and_never_fake_success(tmp_path):
         assert m["level"] == 0 and m["model_state"] == "ROUGH"
         failed = [a for a in m["attempts"] if a["outcome"] == "failed"]
         assert failed and failed[0]["level"] == 2 and "colmap" in failed[0]["detail"].lower()
-        assert m["images_used"] == 6 and m["images_registered"] == 1
+        # N photographs never silently become 1: all six are used, none is claimed as registered
+        assert m["images_used"] == 6 and m["images_registered"] == 0
+        wir = _worldir(c, wid, m["version_id"])
+        ents = wir["entities"] if "entities" in wir else wir["world"]["entities"]
+        surfaces = [e for e in ents if e.endswith("-visible-surface")]
+        assert len(surfaces) == 6, surfaces                  # one hypothesis per photograph
         # the user is told, in plain language, what would help
-        assert any(g["kind"] == "engine_note" and "overlap" in g["message"] for g in st["guidance"])
+        assert any(g["kind"] == "engine_note" and "multi-view geometry" in g["message"] for g in st["guidance"])
+        assert any(g["kind"] == "add_overlap" and "6 photos" in g["message"] for g in st["guidance"])
         # and overlap is NOT shown as good when the engine could not use it
         overlap = next(q for q in st["evidence_summary"]["quality"] if q["name"] == "Overlap")
         assert overlap["level"] == "low" and "no usable image pair" in overlap["basis"]

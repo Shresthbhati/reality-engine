@@ -33,6 +33,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from engine.pipeline.openings import detect_opening_candidates
 from evidence.image_check import ImageFacts
 from evidence.session import EvidenceItem
 from provenance import Provenance, Uncertainty
@@ -55,11 +56,13 @@ ASSUMED_HFOV_DEG = 60.0
 #: share of the frame border that counts as "cut off by the frame edge".
 EDGE_BAND = 0.04
 
+#: openings are attempted (engine.pipeline.openings) but only as image-space CANDIDATES.
 NOT_ATTEMPTED = [
-    "windows/doors/openings: no image-space opening detector is wired into the single-image path",
-    "object detection and instance segmentation",
+    "object detection and instance segmentation (openings are rectangle candidates, not recognised objects)",
     "metric scale: monocular depth is relative",
 ]
+#: confidence ceiling for an opening candidate: a contrast rectangle is weaker evidence than a plane fit
+OPENING_CONFIDENCE_CEILING = 0.2
 UNOBSERVED = [
     "rear and side surfaces (out of view)",
     "surfaces hidden behind foreground objects",
@@ -90,6 +93,24 @@ def _intrinsics(width: int, height: int, facts: ImageFacts) -> Tuple[float, str]
     return f, f"ASSUMED {ASSUMED_HFOV_DEG:g} degree horizontal field of view (no EXIF focal length)"
 
 
+def _load_gray(item: EvidenceItem, w: int, h: int):
+    """The photograph as uint8 grey at the depth map's size, or None if not locally readable."""
+    try:
+        from urllib.parse import unquote, urlparse
+        from urllib.request import url2pathname
+
+        import cv2
+
+        u = urlparse(item.source_uri)
+        if u.scheme not in ("file", ""):
+            return None
+        path = url2pathname(unquote(u.path)) if u.scheme == "file" else item.source_uri
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        return None if img is None else cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+    except Exception:  # noqa: BLE001 -- an unreadable photo just means no opening search
+        return None
+
+
 def _estimate_depth(item: EvidenceItem, model: str):
     try:
         from perception.depth.midAS_backend import MiDaSDepthBackend
@@ -111,6 +132,7 @@ def bootstrap_single_image(
     seed: int = 42,
     target_points: int = 4000,
     depth_map=None,
+    tag: str = "",
 ) -> BootstrapResult:
     """Build the LEVEL 0 hypothesis for one photograph.
 
@@ -118,8 +140,12 @@ def bootstrap_single_image(
     it None so the real MiDaS backend runs. Raises BootstrapUnavailable if
     depth cannot be estimated -- the caller decides what an honest
     fallback looks like; nothing is fabricated here.
+
+    ``tag`` namespaces every entity/geometry id ("boot<tag>-...") so several
+    single-view hypotheses can live in one world without collisions.
     """
     import numpy as np
+    pre = f"boot{tag}"
 
     from evidence.promote_planes import (
         PlanePromotionError,
@@ -196,12 +222,13 @@ def bootstrap_single_image(
     promoted: List[str] = []
     unpromoted: List[dict] = []
     truncated = {"left": 0.0, "right": 0.0, "top": 0.0, "bottom": 0.0}
+    wall_pixels: Dict[str, List[Tuple[int, int]]] = {}
     n = 0
     for op in oriented:
         if op.role == "unknown":
             unpromoted.append({"plane_id": op.plane.plane_id, "note": op.uncertainty.note or "unclassified"})
             continue
-        eid = f"boot-plane-{n + 1:02d}"
+        eid = f"{pre}-plane-{n + 1:02d}"
         try:
             prom = promote_plane_to_entity(
                 op, result, world, eid, entity_name=f"Inferred {op.role} (single view)",
@@ -229,6 +256,8 @@ def bootstrap_single_image(
         }
         # frame-edge truncation, measured from the plane's own supporting pixels
         idxs = [index_of[t] for t in op.plane.inlier_ids]
+        if op.role == "wall":
+            wall_pixels[eid] = [pix[i] for i in idxs]
         for side, test in (
             ("left", lambda u, v: u < EDGE_BAND * w), ("right", lambda u, v: u > (1 - EDGE_BAND) * w),
             ("top", lambda u, v: v < EDGE_BAND * h), ("bottom", lambda u, v: v > (1 - EDGE_BAND) * h),
@@ -237,20 +266,110 @@ def bootstrap_single_image(
             truncated[side] = max(truncated[side], share)
         promoted.append(eid)
 
+    # ---- opening CANDIDATES on wall planes: image-space rectangles, never recognised objects ----
+    openings_facts: Dict[str, object] = {
+        "attempted": False, "candidates": 0, "ceiling": OPENING_CONFIDENCE_CEILING,
+        "method": "engine.pipeline.openings: contrast rectangles inside wall-plane pixels",
+    }
+    gray = _load_gray(item, w, h) if wall_pixels else None
+    if wall_pixels and gray is None:
+        openings_facts["reason"] = "photograph not readable from its source_uri"
+    elif not wall_pixels:
+        openings_facts["reason"] = "no wall plane was found to search for openings on"
+    else:
+        openings_facts["attempted"] = True
+        k = 0
+        for host_eid, wpix in wall_pixels.items():
+            for cand in detect_opening_candidates(gray, wpix, step):
+                k += 1
+                corners = []
+                for cu, cv_ in cand.quad_px:
+                    iu, iv = min(w - 1, max(0, int(round(cu)))), min(h - 1, max(0, int(round(cv_))))
+                    z = 1.0 / (INVERSE_DEPTH_OFFSET + float(depth[iv, iu]))
+                    corners.append(((iu - cx) / f * z, -(iv - cy) / f * z, z))
+                cxs, cys, czs = zip(*corners)
+                oid = f"{pre}-opening-{k:02d}"
+                og = Geometry(
+                    id=f"geom-{oid}", type=GeometryType.BOX, vertex_count=4,
+                    bounds_min=Vector3(min(cxs), min(cys), min(czs)),
+                    bounds_max=Vector3(max(cxs), max(cys), max(czs)),
+                    provenance=Provenance.ESTIMATED, confidence=OPENING_CONFIDENCE_CEILING, observations=[obs],
+                )
+                world.geometries[og.id] = og
+                world.entities[oid] = Entity(
+                    id=oid, type=EntityType.DOOR if cand.kind == "door" else EntityType.WINDOW,
+                    name=f"Opening candidate ({cand.kind}-like) on {host_eid}",
+                    transform={"position": {"x": sum(cxs) / 4, "y": sum(cys) / 4, "z": sum(czs) / 4}},
+                    geometry_ids=[og.id], provenance=Provenance.INFERRED,
+                    confidence=OPENING_CONFIDENCE_CEILING,
+                    uncertainty=Uncertainty(
+                        confidence=OPENING_CONFIDENCE_CEILING,
+                        note=(f"image-space rectangle on a single-view wall: contrast {cand.contrast:g}/255, "
+                              f"{cand.area_frac:.1%} of the wall; the {cand.kind} label is a shape/position "
+                              "heuristic, not recognition"),
+                    ),
+                    observations=[obs],
+                    custom_properties={"bootstrap": {
+                        "role": "opening_candidate", "source": "single_image", "host_entity_id": host_eid,
+                        "kind_basis": cand.kind_basis, "contrast": cand.contrast,
+                        "rectangularity": cand.rectangularity, "area_frac_of_wall": cand.area_frac,
+                        "image_quad_px": [[round(a, 1), round(b, 1)] for a, b in cand.quad_px],
+                        "extent": "axis-aligned box around 4 depth-estimated corners; relative units",
+                    }},
+                )
+        openings_facts["candidates"] = k
+
+    # ---- corridor direction: only when two distinct parallel walls and a floor were all found ----
+    corridor = None
+    walls_o = [o for o in oriented if o.role == "wall"]
+    floors_o = [o for o in oriented if o.role == "floor"]
+    if floors_o and len(walls_o) >= 2:
+        med_z = float(np.median([p[2] for p in pts]))
+        for i, a in enumerate(walls_o):
+            for b in walls_o[i + 1:]:
+                if abs(sum(x * y for x, y in zip(a.normal, b.normal))) < 0.85:
+                    continue
+                ca = np.mean([pts[index_of[t]] for t in a.plane.inlier_ids], axis=0)
+                cb = np.mean([pts[index_of[t]] for t in b.plane.inlier_ids], axis=0)
+                na = np.asarray(a.normal)
+                if abs(float(np.dot(cb - ca, na))) < 0.15 * med_z:
+                    continue          # same wall split in two, not two walls
+                # the camera (origin) must sit BETWEEN the walls, else this is one
+                # building face broken into parallel fragments, not a corridor
+                if float(np.dot(ca, na)) * float(np.dot(cb, na)) >= 0:
+                    continue
+                axis = np.cross(np.asarray(a.normal), np.asarray(floors_o[0].normal))
+                norm = float(np.linalg.norm(axis))
+                if norm < 1e-6:
+                    continue
+                axis = axis / norm
+                axis = axis if axis[2] >= 0 else -axis
+                corridor = {
+                    "axis": [round(float(c), 4) for c in axis],
+                    "wall_planes": [a.plane.plane_id, b.plane.plane_id],
+                    "floor_plane": floors_o[0].plane.plane_id,
+                    "basis": ("two distinct near-parallel walls on opposite sides of the camera plus a floor; "
+                              "axis = wall-normal x floor-normal"),
+                    "provenance": "INFERRED", "confidence": OPENING_CONFIDENCE_CEILING,
+                }
+                break
+            if corridor:
+                break
+
     # ---- the depth-estimated visible surface itself ----
     xs, ys, zs = zip(*pts)
     d_uri, d_hash = "", ""
     if artifact_store is not None:
         d_uri, d_hash = artifact_store.put(PointCloudData.from_positions(pts).to_bytes())
     vgeom = Geometry(
-        id="geom-boot-visible-surface", type=GeometryType.POINTCLOUD, vertex_count=len(pts),
+        id=f"geom-{pre}-visible-surface", type=GeometryType.POINTCLOUD, vertex_count=len(pts),
         data_uri=d_uri, data_hash=d_hash,
         bounds_min=Vector3(min(xs), min(ys), min(zs)), bounds_max=Vector3(max(xs), max(ys), max(zs)),
         provenance=Provenance.ESTIMATED, confidence=CONFIDENCE_CEILING, observations=[obs],
     )
     world.geometries[vgeom.id] = vgeom
-    world.entities["boot-visible-surface"] = Entity(
-        id="boot-visible-surface", type=EntityType.UNKNOWN,
+    world.entities[f"{pre}-visible-surface"] = Entity(
+        id=f"{pre}-visible-surface", type=EntityType.UNKNOWN,
         name="Visible surface (estimated from one photograph)",
         transform={"position": {"x": (min(xs) + max(xs)) / 2, "y": (min(ys) + max(ys)) / 2,
                                 "z": (min(zs) + max(zs)) / 2}},
@@ -276,16 +395,16 @@ def bootstrap_single_image(
         confidence=CONFIDENCE_CEILING,
         uncertainty=Uncertainty(confidence=CONFIDENCE_CEILING, note="assumed, not registered"),
     )
-    world.entities["boot-camera"] = Entity(
-        id="boot-camera", type=EntityType.SENSOR, name=f"Camera (assumed pose) for {item.id}",
+    world.entities[f"{pre}-camera"] = Entity(
+        id=f"{pre}-camera", type=EntityType.SENSOR, name=f"Camera (assumed pose) for {item.id}",
         transform={"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
         provenance=Provenance.ESTIMATED, confidence=CONFIDENCE_CEILING,
         uncertainty=Uncertainty(confidence=CONFIDENCE_CEILING, note=cam_obs.metadata["note"]),
         observations=[cam_obs],
     )
     # everything not seen is UNKNOWN, on the record
-    world.entities["boot-unobserved"] = Entity(
-        id="boot-unobserved", type=EntityType.UNKNOWN,
+    world.entities[f"{pre}-unobserved"] = Entity(
+        id=f"{pre}-unobserved", type=EntityType.UNKNOWN,
         name="Unobserved (not visible in the photograph)",
         provenance=Provenance.UNKNOWN, confidence=0.0,
         uncertainty=Uncertainty(confidence=0.0, note="; ".join(UNOBSERVED)),
@@ -301,6 +420,7 @@ def bootstrap_single_image(
         "intrinsics_basis": intrinsics_basis, "inverse_depth_offset": INVERSE_DEPTH_OFFSET,
         "confidence_ceiling": CONFIDENCE_CEILING, "gravity_assumption": "camera roughly level (+Y up)",
         "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
+        "openings": openings_facts, "corridor": corridor,
     }
     world.metadata["reconstruction"] = {
         "backend": "single_image_bootstrap", "registration_status": "partial",
@@ -314,8 +434,77 @@ def bootstrap_single_image(
         "plane_roles": sorted({o.role for o in oriented if o.role != "unknown"}),
         "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
         "depth_model": depth_model, "grid_step": step,
+        "openings": openings_facts, "corridor": corridor,
     }
     return BootstrapResult(
         world=world, points=tuple(pts),
         camera_poses=((item.id, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)),), facts=out_facts,
     )
+
+
+def fuse_single_views(results: List[Tuple[EvidenceItem, BootstrapResult]], *, gap: float = 0.25) -> BootstrapResult:
+    """Combine independent single-view hypotheses into ONE world, honestly.
+
+    This is the floor under multi-view reconstruction: when no image pair can
+    be registered, every usable photograph still contributes what it shows.
+    The hypotheses are NOT spatially related -- nothing measured how the
+    cameras sit relative to each other -- so each keeps its own frame. To keep
+    them from stacking at the origin they are laid out side by side along X,
+    and that layout is recorded as DISPLAY-ONLY (world.metadata["fusion"],
+    per-entity custom_properties["fusion"]); it carries no spatial claim.
+    Geometry artifacts stay in each image's own frame.
+    """
+    if not results:
+        raise BootstrapUnavailable("no single-view hypotheses to fuse")
+    world = WorldIR(id="bootstrap-pending", name="Fused single-view hypotheses",
+                    main_branch_id="branch-main-bootstrap")
+    points: List[Tuple[float, float, float]] = []
+    poses: List[tuple] = []
+    layout: Dict[str, List[float]] = {}
+    cursor = 0.0
+    sources: List[str] = []
+    for item, res in results:
+        xs = [p[0] for p in res.points]
+        width = (max(xs) - min(xs)) if xs else 1.0
+        dx = cursor - (min(xs) if xs else 0.0)
+        cursor += width * (1.0 + gap)
+        layout[item.id] = [round(dx, 4), 0.0, 0.0]
+        sources.append(item.id)
+        w = res.world
+        world.observations.update(w.observations)
+        world.geometries.update(w.geometries)
+        for eid, ent in w.entities.items():
+            pos = (ent.transform or {}).get("position")
+            if pos is not None:
+                pos["x"] = pos.get("x", 0.0) + dx
+            ent.custom_properties["fusion"] = {
+                "frame_of": item.id, "display_offset": [round(dx, 4), 0.0, 0.0],
+                "note": "display layout only; relative placement between photographs is UNKNOWN",
+            }
+            world.entities[eid] = ent
+        points.extend((x + dx, y, z) for x, y, z in res.points)
+        poses.extend((eid, (px + dx, py, pz), rot) for eid, (px, py, pz), rot in res.camera_poses)
+    world.metadata["scale"] = {
+        "state": "relative", "meters_per_unit": None,
+        "note": "independent single-image monocular depth: relative units, separate frames",
+    }
+    world.metadata["bootstrap"] = {
+        "level": 0, "source_evidence_ids": sources, "fused": True,
+        "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
+    }
+    world.metadata["fusion"] = {
+        "mode": "unregistered_single_views", "layout": "display_only", "display_offsets": layout,
+        "note": ("no multi-view registration was possible; each photograph is an independent "
+                 "single-view hypothesis, laid out side by side for display only"),
+    }
+    world.metadata["reconstruction"] = {
+        "backend": "single_image_bootstrap_fused", "registration_status": "partial",
+        "cameras_registered": 0, "cameras_input": len(results), "points": len(points),
+    }
+    facts = {
+        "level": 0, "fused_views": len(results), "points": len(points),
+        "per_view": {item.id: res.facts for item, res in results},
+        "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
+        "depth_model": results[0][1].facts.get("depth_model"),
+    }
+    return BootstrapResult(world=world, points=tuple(points), camera_poses=tuple(poses), facts=facts)

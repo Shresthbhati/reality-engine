@@ -291,3 +291,174 @@ def test_identical_camera_rotations_keep_the_dominant_plane_prior():
 
     _, rec = canonicalize_frame(_facade_result(pitch_deg=16.0, diverse=False), seed=42)
     assert rec.up_source == "dominant_plane"  # no orientation diversity => camera-up carries no evidence
+
+
+# ---- degenerate feature geometry must classify, never crash --------------------------------------
+def test_verified_pair_degenerate_inputs_are_classified_not_raised(monkeypatch):
+    import cv2
+    import numpy as np
+    from evidence import contribution as c
+
+    class KP:
+        def __init__(self, pt): self.pt = pt
+
+    class M:
+        def __init__(self, i, d, r):
+            self.queryIdx = self.trainIdx = i
+            self.distance = d
+
+    des = np.zeros((10, 4), np.float32)
+    # ten matches all landing on ONE image point: fundamental matrix is undefined
+    same = [KP((5.0, 5.0)) for _ in range(10)]
+    fa = (same, des, 100.0)
+    monkeypatch.setattr(cv2.BFMatcher, "knnMatch",
+                        lambda self, a, b, k=2: [[M(i, 0.1, 0), M(i, 1.0, 0)] for i in range(10)])
+    n, shift, status = c._verified_pair(fa, fa)
+    assert (n, shift, status) == (0, None, "DEGENERATE_GEOMETRY")
+
+    # OpenCV itself raising is also a classification
+    spread = [KP((float(i), float(i * i))) for i in range(10)]
+    monkeypatch.setattr(cv2, "findFundamentalMat",
+                        lambda *a, **k: (_ for _ in ()).throw(cv2.error("boom")))
+    n, shift, status = c._verified_pair((spread, des, 100.0), (spread, des, 100.0))
+    assert status == "DEGENERATE_GEOMETRY" and n == 0
+
+    # too few ratio-test survivors is INSUFFICIENT, distinct from DEGENERATE
+    monkeypatch.setattr(cv2.BFMatcher, "knnMatch", lambda self, a, b, k=2: [])
+    assert c._verified_pair(fa, fa)[2] == "INSUFFICIENT_MATCHES"
+
+
+# ---- multi-view failure must not collapse N photographs into 1 ------------------------------------
+def test_multiview_failure_keeps_every_usable_photo(tmp_path):
+    from engine.pipeline.progressive import EvidenceInput, run_progressive
+    from evidence.session import EvidenceItem, EvidenceKind
+    from perception.depth.interface import DepthMap
+
+    h, w = 60, 80
+    # a ground plane receding to a back wall: real plane structure for the RANSAC stage
+    vals = [[min(1.0, 0.15 + 0.8 * (r / h)) for _ in range(w)] for r in range(h)]
+    dm = DepthMap(evidence_id="x", width=w, height=h, values=vals)
+
+    inputs = []
+    for k in range(3):
+        p = _noise_photo(tmp_path / f"p{k}.jpg", seed=k)
+        item = EvidenceItem(id=f"ev-{k}", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+        inputs.append(EvidenceInput(item=item, facts=inspect_image(p), name=p.name, path=p))
+
+    def failing_slice(items, options):
+        raise RuntimeError("no initial image pair")
+
+    res = run_progressive(inputs, vs_options=None, vertical_slice_fn=failing_slice, bootstrap_depth_map=dm)
+
+    assert res.level == 0 and res.model_state == "ROUGH"
+    # every photograph appears in the world, each with its own visible surface and camera
+    assert {f"boot{k}-visible-surface" for k in (1, 2, 3)} <= set(res.world.entities)
+    assert {f"boot{k}-camera" for k in (1, 2, 3)} <= set(res.world.entities)
+    # the fusion is declared display-only and no image is claimed as registered
+    fusion = res.world.metadata["fusion"]
+    assert fusion["layout"] == "display_only" and set(fusion["display_offsets"]) == {"ev-0", "ev-1", "ev-2"}
+    assert res.registered_ids == [] and res.input_ids == ["ev-0", "ev-1", "ev-2"]
+    assert any("independent single-view" in d for d in res.degraded)
+    assert res.attempts[0]["outcome"] == "failed" and res.attempts[-1]["outcome"] == "succeeded"
+
+
+# ---- the legacy two-image SfM gate must stay behind the progressive engine ----------------------
+def test_only_known_modules_reach_the_two_image_orchestrator():
+    """apps/api must reach multi-view only through run_progressive; a direct import
+    of the orchestrator / vertical_slice from an API route would reintroduce the
+    2-image gate for one-photo uploads."""
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    for py in (root / "apps" / "api").glob("*.py"):
+        text = py.read_text(encoding="utf-8")
+        if py.name == "jobs.py":
+            # the worker may build vertical_slice OPTIONS for run_progressive, nothing else
+            assert "orchestrator" not in text.lower().replace("orchestrated", ""), py
+            continue
+        if re.search(r"^\s*(from|import)\s+reconstruction\.orchestrator", text, re.M):
+            offenders.append(py.name)
+    # routes_sessions.py only probes importability for /api/status (no reconstruction call)
+    assert offenders in ([], ["routes_sessions.py"]), offenders
+
+
+# ---- single image: openings are candidates found in pixels, and absence is a valid answer -----------
+def _wall_scene(tmp_path, with_openings: bool):
+    from evidence.session import EvidenceItem, EvidenceKind
+    from perception.depth.interface import DepthMap
+
+    w, h = 320, 240
+    rng = np.random.default_rng(3)
+    img = np.full((h, w, 3), 175, np.uint8) + rng.integers(0, 3, (h, w, 3), dtype=np.uint8)
+    if with_openings:
+        img[60:115, 100:165] = 55       # window-like: dark, not touching the bottom
+        img[125:h, 215:265] = 45        # door-like: dark, taller than wide, touching the bottom
+    p = tmp_path / ("wall_open.png" if with_openings else "wall_plain.png")
+    Image.fromarray(img).save(p)
+    # a vertical wall tilted about the vertical axis: z = c / (1 - m (u - cx) / f)
+    f = (w / 2) / math.tan(math.radians(30))
+    vals = [[(1 - 0.5 * (u - w / 2) / f) / 4.0 - 0.25 for u in range(w)] for _ in range(h)]  # d = 1/z - 0.25
+    dm = DepthMap(evidence_id="x", width=w, height=h, values=vals)
+    item = EvidenceItem(id="ev-wall", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+    return item, inspect_image(p), dm
+
+
+def test_single_view_wall_yields_opening_candidates_with_honest_confidence(tmp_path):
+    from engine.pipeline.single_image import OPENING_CONFIDENCE_CEILING, bootstrap_single_image
+
+    item, facts, dm = _wall_scene(tmp_path, with_openings=True)
+    res = bootstrap_single_image(item, facts, depth_map=dm)
+    ops = {e.id: e for e in res.world.entities.values()
+           if (e.custom_properties.get("bootstrap") or {}).get("role") == "opening_candidate"}
+    assert res.facts["openings"]["attempted"] and len(ops) >= 2, res.facts["openings"]
+    kinds = {e.type.value for e in ops.values()}
+    assert kinds == {"door", "window"}
+    for e in ops.values():
+        assert e.provenance == Provenance.INFERRED and e.confidence <= OPENING_CONFIDENCE_CEILING
+        assert "heuristic, not recognition" in e.uncertainty.note
+    # the unseen stays unknown: openings never replace the UNKNOWN entity
+    assert res.world.entities["boot-unobserved"].confidence == 0.0
+
+
+def test_plain_wall_has_no_opening_candidates(tmp_path):
+    from engine.pipeline.single_image import bootstrap_single_image
+
+    item, facts, dm = _wall_scene(tmp_path, with_openings=False)
+    res = bootstrap_single_image(item, facts, depth_map=dm)
+    assert res.facts["openings"]["attempted"] and res.facts["openings"]["candidates"] == 0
+    assert not [e for e in res.world.entities.values() if e.type.value in ("door", "window")]
+
+
+def test_corridor_axis_needs_camera_between_two_walls_and_is_absent_for_one_wall(tmp_path):
+    from engine.pipeline.single_image import bootstrap_single_image
+    from evidence.session import EvidenceItem, EvidenceKind
+    from perception.depth.interface import DepthMap
+
+    w, h = 320, 240
+    f = (w / 2) / math.tan(math.radians(30))
+    rows = []
+    for v in range(h):
+        row = []
+        for u in range(w):
+            a, b = (u - w / 2) / f, -(v - h / 2) / f
+            cands = [12.0]
+            if abs(a) > 1e-6:
+                cands.append(1.0 / abs(a))          # side walls at x = +-1
+            if abs(b) > 1e-6:
+                cands.append(1.0 / abs(b))          # floor / ceiling at y = -+1
+            row.append(1.0 / min(cands) - 0.25)     # d = 1/z - 0.25
+        rows.append(row)
+    dm = DepthMap(evidence_id="x", width=w, height=h, values=rows)
+    p = tmp_path / "corridor.png"
+    Image.fromarray(np.random.default_rng(5).integers(90, 100, (h, w, 3), dtype=np.uint8)).save(p)
+    item = EvidenceItem(id="ev-cor", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+    res = bootstrap_single_image(item, inspect_image(p), depth_map=dm)
+    assert {"wall", "floor"} <= set(res.facts["plane_roles"]), res.facts["plane_roles"]
+    cor = res.facts["corridor"]
+    assert cor is not None and cor["provenance"] == "INFERRED" and cor["confidence"] <= 0.2
+    assert abs(cor["axis"][2]) > 0.95           # runs along the viewing direction
+
+    # one tilted wall (no second wall around the camera) must NOT be read as a corridor
+    item2, facts2, dm2 = _wall_scene(tmp_path, with_openings=False)
+    assert bootstrap_single_image(item2, facts2, depth_map=dm2).facts["corridor"] is None

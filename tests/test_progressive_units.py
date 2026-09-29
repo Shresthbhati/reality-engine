@@ -462,3 +462,17 @@ def test_corridor_axis_needs_camera_between_two_walls_and_is_absent_for_one_wall
     # one tilted wall (no second wall around the camera) must NOT be read as a corridor
     item2, facts2, dm2 = _wall_scene(tmp_path, with_openings=False)
     assert bootstrap_single_image(item2, facts2, depth_map=dm2).facts["corridor"] is None
+
+
+@pytest.mark.skipif(not DATASET.exists(), reason="real photo dataset not present")
+def test_duplicate_is_redundant_even_if_opencv_cannot_fit_a_fundamental_matrix(monkeypatch):
+    """A zero-baseline pair makes F ill-posed; some OpenCV builds return no mask.
+    The duplicate must still be measured as the same viewpoint, not read as a new view."""
+    import cv2
+
+    monkeypatch.setattr(cv2, "findFundamentalMat", lambda *a, **k: (None, None))
+    imgs = sorted(DATASET.glob("*.JPG"))
+    rep = analyze_contribution([("a", imgs[15]), ("dup", imgs[15]), ("b", imgs[16])])
+    labels = {c.evidence_id: c.label for c in rep.per_image}
+    assert labels["dup"] == "redundant", labels
+    assert rep.summary()["redundant"] == 1

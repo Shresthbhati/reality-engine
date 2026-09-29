@@ -141,7 +141,7 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
     <div className={cn("w-full", className)}>
       <div
         role="group"
-        aria-label={refining ? "Add photos to this reconstruction" : "Create a reconstruction from photos"}
+        aria-label={refining ? "Add more evidence to this world" : "Create a reconstruction from photos"}
         onDragOver={(e) => {
           e.preventDefault();
           if (!busy) setDragging(true);

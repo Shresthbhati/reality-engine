@@ -127,6 +127,12 @@ def _verified_pair(fa, fb):
         return 0, None, "INSUFFICIENT_MATCHES"
     pa = np.float32([kpa[m.queryIdx].pt for m in good])
     pb = np.float32([kpb[m.trainIdx].pt for m in good])
+    # Same viewpoint: matches barely move. The fundamental matrix is ill-posed for a
+    # zero baseline (OpenCV builds differ on what they return), so measure the
+    # displacement directly instead of relying on RANSAC to survive it.
+    raw_shift = float(np.median(np.linalg.norm(pa - pb, axis=1)) / diag)
+    if len(good) >= MIN_VERIFIED_MATCHES and raw_shift < REDUNDANT_MEDIAN_SHIFT / 3:
+        return len(good), raw_shift, "OK"
     # >= 8 matches can still be one repeated point or all on a line: F is undefined there
     if np.unique(pa, axis=0).shape[0] < 8 or np.unique(pb, axis=0).shape[0] < 8:
         return 0, None, "DEGENERATE_GEOMETRY"

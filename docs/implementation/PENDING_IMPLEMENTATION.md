@@ -370,3 +370,12 @@ confidence instead of coercing it. Left as documented risk: `Observation` and
 deserialisation default; raw-sensor decode fidelity (depth frames) legitimately
 states 1.0 with its basis.
 
+
+## Continuous evidence — gaps against the "same world keeps evolving" principle (2026-09-29)
+
+| ID | Item | Status | Detail |
+|---|---|---|---|
+| CE-01 | Explicit evidence conflicts in WorldIR | MISSING | Two observations that disagree are not represented as `observation A / observation B / unresolved`. Today the rebuild simply lets COLMAP/RANSAC decide. Strict-xfail test `test_conflicting_evidence_is_explicit_not_silently_resolved` marks the gap; it will start failing (as XPASS) the day this lands, forcing the marker off. Needs a decision: where conflicts live (`Relationship` of type conflict vs `Provenance.CONFLICT` entity properties). |
+| CE-02 | Incremental integration into WorldIR(Vn) | DESIGN DECISION | Each version is rebuilt from the UNION of all evidence (`compile(A+B)` = V2), not by registering only the new evidence into the previous WorldIR. Consequence: nothing is lost and late bridges work (A -> C -> B), but entity ids are re-derived and the cost grows with total evidence. Alternative: incremental COLMAP registration + `world_ir/entity_reid.py`. Not chosen yet; needs measurement of rebuild cost at 100+ photos. |
+| CE-03 | Non-photo evidence in the same world | PARTIAL | Floor plans / renders / historical photos are classified and kept as context, but they do not yet constrain geometry (no layout prior, no era separation in the rebuild). |
+| CE-04 | Hidden geometry UNKNOWN -> OBSERVED transitions are not asserted | PARTIAL | The single-view path records an UNKNOWN entity; multi-view versions do not carry it forward, so a diff cannot show UNKNOWN turning into OBSERVED. |

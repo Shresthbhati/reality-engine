@@ -488,7 +488,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors cursor-pointer"
           >
             <ImagePlus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Add photos</span>
+            <span className="hidden sm:inline">Add evidence</span>
           </button>
 
           {/* Room Construction Launcher */}

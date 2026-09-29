@@ -337,7 +337,7 @@ export default function ReconstructionStatusBar({
               onClick={onAddPhotos}
               className="inline-flex items-center gap-1 rounded border border-[#00e5ff]/40 bg-[#00e5ff]/10 px-2 py-0.5 text-[11px] font-medium text-[#00e5ff] hover:bg-[#00e5ff]/20"
             >
-              <Plus className="h-3 w-3" aria-hidden /> Add photos
+              <Plus className="h-3 w-3" aria-hidden /> Add evidence
             </button>
           </div>
           <ul className="space-y-1" data-testid="guidance">

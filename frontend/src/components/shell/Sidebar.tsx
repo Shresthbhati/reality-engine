@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   Globe,
+  ImagePlus,
   Camera,
   ShieldCheck,
   Settings,
@@ -14,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const PRIMARY_NAV = [
+  { href: "/reconstruct", label: "Create reconstruction", icon: ImagePlus },
   { href: "/", label: "Home", icon: Home },
   { href: "/worlds", label: "Worlds", icon: Globe },
   { href: "/sessions", label: "Sessions", icon: Camera },

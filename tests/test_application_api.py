@@ -243,6 +243,22 @@ def test_activity_feed_real_events(client):
 # --------------------------------------------------------------------------
 
 
+def _valid_jpeg(seed: int = 0) -> bytes:
+    """A real, decodable JPEG. The job runner refuses to hand bytes that are
+    not images to any reconstruction stage, so tests that need evidence to
+    survive validation must upload actual images."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    rng = np.random.default_rng(seed)
+    small = rng.integers(0, 255, (30, 40, 3), dtype=np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(small).resize((320, 240)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
 def _upload_photo(client, sid, name, payload):
     r = client.post(
         f"/api/uploads?session_id={sid}",
@@ -327,31 +343,37 @@ def test_reconstruct_honest_failure_without_usable_images(client):
 
 
 def test_reconstruct_honest_failure_when_backend_unavailable(client, monkeypatch):
-    """When the vertical-slice pipeline import fails (optional dependency
-    missing), the job fails honestly naming the import error -- never a
-    silent fallback or fake result."""
+    """When EVERY reconstruction level is unavailable (multi-view import
+    fails AND the single-view depth model is missing), the job fails honestly
+    naming both causes and adopts no version -- never a fake result. (When
+    only multi-view is unavailable the product falls back to a rough
+    single-view model; see tests/integration/test_progressive_product_journey.py.)"""
     import apps.api.jobs as jobs_mod
+    from engine.pipeline.single_image import BootstrapUnavailable
 
     def _boom(*args, **kwargs):
         raise ImportError("engine.pipeline.vertical_slice unavailable (simulated)")
 
-    monkeypatch.setattr(
-        "engine.pipeline.vertical_slice.vertical_slice", _boom, raising=False
-    )
+    def _no_depth(*args, **kwargs):
+        raise BootstrapUnavailable("depth model unavailable (simulated)")
+
+    monkeypatch.setattr("engine.pipeline.vertical_slice.vertical_slice", _boom, raising=False)
+    monkeypatch.setattr("engine.pipeline.progressive.bootstrap_single_image", _no_depth)
 
     w = client.post("/api/worlds", json={"name": "No Backend World"}).json()
     sid = client.post("/api/sessions", json={"name": "No backend"}).json()["id"]
     assert client.post(f"/api/worlds/{w['id']}/attach/{sid}").status_code == 200
     for i in range(2):
-        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+        _upload_photo(client, sid, f"frame_{i}.jpg", _valid_jpeg(i))
 
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     job = _wait_job(client, r.json()["job_id"], timeout=90.0)
     assert job["status"] == "failed"
     err = (job.get("error") or "").lower()
-    # The injected import failure surfaces verbatim in the job's traceback
-    # -- an honest, specific error, never a silent fallback or fake result.
+    # both injected failures surface verbatim -- an honest, specific error
     assert "unavailable (simulated)" in err
+    assert "vertical_slice unavailable (simulated)" in err
+    assert client.get(f"/api/worlds/{w['id']}").json()["current_version_id"] is None
     del jobs_mod  # imported only to document the module under test
 
 
@@ -1111,12 +1133,32 @@ def test_reconstruct_duplicate_in_progress_409(client, tmp_path, monkeypatch):
     assert job["status"] in ("succeeded", "partial", "failed", "cancelled")
 
 
-def test_failed_job_exhausts_retries(client):
-    # test_reconstruct_honest_failure_without_usable_images leaves a job
-    # that fails deterministically: it must retry (attempts > 1) and end
-    # 'failed' -- never stuck 'running', never silently dropped.
+def test_failed_job_exhausts_retries(client, monkeypatch):
+    """A TRANSIENT failure retries up to max_attempts and ends 'failed' --
+    never stuck 'running', never silently dropped."""
+    import apps.api.jobs as jobs_mod
+
+    def _flaky(*args, **kwargs):
+        raise RuntimeError("transient backend hiccup (simulated)")
+
+    monkeypatch.setattr(jobs_mod, "run_progressive", _flaky)
     sid = client.post("/api/sessions", json={"name": "Retry"}).json()["id"]
     wid = client.post("/api/worlds", json={"name": "Retry world"}).json()["id"]
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
+    for i in range(2):
+        _upload_photo(client, sid, f"frame_{i}.jpg", _valid_jpeg(i))
+    r = client.post(f"/api/sessions/{sid}/reconstruct")
+    job = _wait_job(client, r.json()["job_id"], timeout=90.0)
+    assert job["status"] == "failed"
+    assert job["attempts"] == 3, job
+    assert "transient backend hiccup" in (job["error"] or "")
+
+
+def test_deterministic_failure_is_not_retried_and_says_what_is_missing(client):
+    """No photographic evidence can never succeed on a retry: it fails at
+    once (one attempt) and is classified NEEDS_MORE_EVIDENCE, not FAILED."""
+    sid = client.post("/api/sessions", json={"name": "Nothing usable"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Nothing usable world"}).json()["id"]
     assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
     client.post(
         f"/api/uploads?session_id={sid}",
@@ -1124,9 +1166,10 @@ def test_failed_job_exhausts_retries(client):
     )
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     job = _wait_job(client, r.json()["job_id"], timeout=90.0)
-    assert job["status"] == "failed"
-    assert job["attempts"] == 3, job
-    assert job["error"], "a failed job must carry its error explicitly"
+    assert job["status"] == "failed" and job["attempts"] == 1, job
+    assert job["payload"]["failure_kind"] == "insufficient_evidence"
+    status = client.get(f"/api/worlds/{wid}/status").json()
+    assert status["state"] == "NEEDS_MORE_EVIDENCE" and not status["has_model"]
 
 
 def test_reap_stale_running_job(client):

@@ -8,6 +8,9 @@ import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
+import PhotoDropZone from "@/components/reconstruct/PhotoDropZone";
+import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStatusBar";
+import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
 import QueryPanel from "@/components/workspace/QueryPanel";
 import ExportPanel from "@/components/workspace/ExportPanel";
 import WorldMap from "@/components/map/WorldMap";
@@ -19,6 +22,10 @@ import {
   useWorldPoints, 
   useWorldCameras,
   useWorldVersions,
+  useWorldStatus,
+  cancelReconstruction,
+  retryReconstruction,
+  type CreateReconstructionResult,
 } from "@/lib/api";
 import { commitWorldCorrection } from "@/lib/api/worlds";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
@@ -36,6 +43,8 @@ import {
   Search,
   Terminal,
   Download,
+  ImagePlus,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -66,7 +75,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [activeQuery, setActiveQuery] = useState<SpatialQueryFilter | null>(null);
 
   // API Hooks
-  const { data: rawWorlds } = useWorlds();
+  const { data: rawWorlds, isLoading: worldsLoading } = useWorlds();
   const worlds = useMemo(() => rawWorlds ?? [], [rawWorlds]);
   const { data: rawSessions } = useSessions();
   const allSessions = useMemo(() => rawSessions ?? [], [rawSessions]);
@@ -76,9 +85,18 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   // Resolve active world: prop -> first discovered world -> empty string
   const worldId = propWorldId || (worlds.length > 0 ? worlds[0].id : "");
 
-  const { data: worldIR, isLoading: isIrLoading, error: irError, refetch: refetchIr } = useWorldIR(worldId || null);
-  const { data: pointsBuffer } = useWorldPoints(worldId || null);
-  const { data: camerasPayload } = useWorldCameras(worldId || null);
+  // Version being inspected (null = the world's current version).
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [addPhotosOpen, setAddPhotosOpen] = useState(false);
+
+  // Live reconstruction status: polls while the engine works. Geometry is
+  // refetched whenever a NEW current version lands (modelVersionKey below).
+  const { status: reconStatus, error: statusError, refresh: refreshStatus } = useWorldStatus(worldId || null);
+  const modelVersionKey = reconStatus?.model?.version_id ?? null;
+
+  const { data: worldIR, isLoading: isIrLoading, error: irError, refetch: refetchIr } = useWorldIR(worldId || null, selectedVersionId, modelVersionKey);
+  const { data: pointsBuffer } = useWorldPoints(worldId || null, selectedVersionId, modelVersionKey);
+  const { data: camerasPayload } = useWorldCameras(worldId || null, selectedVersionId, modelVersionKey);
   const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null);
 
   // Derived 3D artifacts
@@ -223,6 +241,17 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     setDiffModalOpen(true);
   }, []);
 
+  // Photos were added: same world -> refresh in place; new world -> open it.
+  const handlePhotosCreated = useCallback((res: CreateReconstructionResult) => {
+    setAddPhotosOpen(false);
+    setSelectedVersionId(null);
+    if (res.world_id !== worldId) {
+      router.push(`/worlds/${res.world_id}`);
+    } else {
+      refreshStatus();
+    }
+  }, [router, worldId, refreshStatus]);
+
   // Export artifact handler
   const handleExport = useCallback(async (format: "worldir" | "ply" | "cameras" | "report") => {
     let url = "";
@@ -264,6 +293,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     setSelectedEntityId(null);
     setSelectedEvidenceId(null);
     setActiveQuery(null);
+    setSelectedVersionId(null);
+    setAddPhotosOpen(false);
   }, [worldId]);
 
   // Global Keyboard Shortcuts and Custom Event Listeners
@@ -342,8 +373,24 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     };
   }, [selectedEntityId, handleClearSelection, handleFrameEntity, handleExport]);
 
-  // Loading state
-  if (isIrLoading) {
+  // First-ever world: the only thing to do is to drop photos.
+  if (!propWorldId && !worldsLoading && worlds.length === 0) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center bg-[#08090b] p-6 text-[var(--text-primary)]">
+        <h1 className="mb-1 text-xl font-semibold text-white">Create a reconstruction</h1>
+        <p className="mb-6 max-w-lg text-center text-xs text-neutral-400">
+          Give Reality Engine photographs of a real place. It builds the best spatial model the
+          evidence supports, tells you what it is unsure about, and improves the same model as you add more.
+        </p>
+        <div className="w-full max-w-xl">
+          <PhotoDropZone onCreated={handlePhotosCreated} />
+        </div>
+      </div>
+    );
+  }
+
+  // Loading state (first load only; later refetches keep the Studio mounted)
+  if (isIrLoading && !worldIR) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#08090b] text-[var(--text-primary)] select-none">
         <div className="flex flex-col items-center gap-3">
@@ -382,7 +429,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               {String(worldIR?.coordinate_frame || worldIR?.coordinate_system || "frame unrecorded")}
             </span>
             <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/30 shrink-0">
-              {currentVersionId ?? "no version"}
+              {reconStatus?.versions.find((v) => v.id === (selectedVersionId ?? reconStatus.model?.version_id))?.label
+                ?? currentVersionId ?? "no version"}
             </span>
           </div>
         </div>
@@ -429,6 +477,18 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <kbd className="text-[10px] px-1 py-0.2 rounded bg-neutral-900 border border-neutral-700 text-neutral-400 font-mono-num">
               ⌘K
             </kbd>
+          </button>
+
+          {/* Primary action: add photographs to this world */}
+          <button
+            type="button"
+            onClick={() => setAddPhotosOpen(true)}
+            title="Add photographs to improve this model"
+            data-testid="add-photos"
+            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors cursor-pointer"
+          >
+            <ImagePlus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Add photos</span>
           </button>
 
           {/* Room Construction Launcher */}
@@ -597,6 +657,14 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             </div>
           )}
 
+          {!has3DContent && viewMode === "3d" && (
+            <NoGeometryExplanation
+              status={reconStatus}
+              worldId={worldId || null}
+              onCreated={handlePhotosCreated}
+            />
+          )}
+
           {queryPanelOpen && (
             <QueryPanel
               worldId={worldId}
@@ -638,6 +706,47 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           )}
         </div>
       </div>
+
+      {/* Reconstruction state, evidence quality, versions and guidance */}
+      <div className="flex-shrink-0 border-t border-[#1f222b] z-30">
+        <ReconstructionStatusBar
+          status={reconStatus}
+          error={statusError}
+          world={activeWorldIR}
+          selectedVersionId={selectedVersionId}
+          onSelectVersion={setSelectedVersionId}
+          onAddPhotos={() => setAddPhotosOpen(true)}
+          onCompareVersions={handleOpenDiff}
+          onCancel={(jobId) => {
+            void cancelReconstruction(jobId).then(refreshStatus, refreshStatus);
+          }}
+          onRetry={(sessionId) => {
+            void retryReconstruction(sessionId).then(refreshStatus, refreshStatus);
+          }}
+        />
+      </div>
+
+      {addPhotosOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Add photographs"
+        >
+          <div className="relative w-full max-w-lg rounded-xl border border-[#1f222b] bg-[#0c0d12] p-4">
+            <button
+              type="button"
+              onClick={() => setAddPhotosOpen(false)}
+              aria-label="Close"
+              className="absolute right-2 top-2 rounded p-1 text-neutral-400 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <h2 className="mb-3 text-sm font-semibold text-white">Add photographs to this model</h2>
+            <PhotoDropZone worldId={worldId || null} onCreated={handlePhotosCreated} />
+          </div>
+        </div>
+      )}
 
       {/* Bottom Context Bar */}
       {bottomOpen && (

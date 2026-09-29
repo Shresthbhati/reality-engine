@@ -228,12 +228,21 @@ def test_unregistrable_input_fails_without_output(client, tmp_path, monkeypatch)
     assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
 
 
-def test_single_photo_fails_honestly(client, tmp_path, monkeypatch):
+def test_single_photo_is_never_refused_for_its_count_and_never_faked(client, tmp_path, monkeypatch):
+    """One photograph is a valid input now (a rough single-view hypothesis),
+    so the old 'needs at least 2' refusal is gone. What must NOT change: when
+    no reconstruction level can be produced from the evidence (here the
+    placeholder bytes carry no pixels for the depth model), the job fails
+    honestly and adopts no version. The real one-photo success path is proven
+    with real MiDaS in tests/integration/test_progressive_product_journey.py."""
     sid, wid = _chain_setup(client, tmp_path, monkeypatch, n_photos=1)
     job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
-                    timeout=90.0)
+                    timeout=180.0)
     assert job["status"] == "failed"
-    assert "needs at least 2" in (job.get("error") or "").lower()
+    err = (job.get("error") or "").lower()
+    assert "needs at least 2" not in err
+    assert "no reconstruction level could be produced" in err
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is None
 
 
 def test_no_shell_subprocess_in_reconstruction():
@@ -328,9 +337,14 @@ def test_colmap_step_timeout_is_honest_error(tmp_path):
 
     import unittest.mock as _mock
 
-    with _mock.patch.object(_backend.subprocess, "run", _hang):
+    import reconstruction.proc as _proc
+
+    # The backend launches every COLMAP step through reconstruction.proc.run_owned
+    # (imported at call time), not subprocess.run -- patch the seam it really uses.
+    with _mock.patch.object(_proc, "run_owned", _hang):
         with pytest.raises(Exception, match="(?i)timeout|TIMEOUT"):
             ColmapReconstructionBackend().reconstruct(items)
+    del _backend
 
 
 def test_malformed_confidence_and_frame_are_errors():

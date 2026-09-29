@@ -692,9 +692,15 @@ def _validate_commit_changes(changes: dict) -> dict:
                     kind = RelationshipKind(kind_str)
                 except ValueError:
                     kind = RelationshipKind.CONNECTS
-                rel_conf = float(item.get("confidence", 1.0))
-                if not 0.0 <= rel_conf <= 1.0 or not math.isfinite(rel_conf):
-                    rel_conf = 1.0
+                # A human-stated correction with no confidence is the human's own
+                # assertion (1.0); an INVALID confidence is an error, never
+                # silently coerced into certainty.
+                try:
+                    rel_conf = float(item.get("confidence", 1.0))
+                except (TypeError, ValueError):
+                    raise HTTPException(422, "relationship confidence must be a number in [0, 1]")
+                if not math.isfinite(rel_conf) or not 0.0 <= rel_conf <= 1.0:
+                    raise HTTPException(422, "relationship confidence must be a number in [0, 1]")
                 rel_meta = item.get("metadata", {})
                 if not isinstance(rel_meta, dict):
                     rel_meta = {}

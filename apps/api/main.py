@@ -21,6 +21,7 @@ from apps.api.routes_misc import evidence, uploads
 from apps.api.routes_export import export
 from apps.api.routes_procedural import procedural
 from apps.api.routes_query import query
+from apps.api.routes_reconstructions import reconstructions, world_status
 from apps.api.routes_sessions import health, sessions
 from apps.api.routes_worlds import worlds
 from reconstruction.proc import recover_orphaned_jobs
@@ -33,7 +34,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (health, sessions, uploads, evidence, worlds, procedural, query, export, jobs, notifications, activity):
+for router in (health, sessions, uploads, evidence, reconstructions, world_status, worlds, procedural, query, export, jobs, notifications, activity):
     app.include_router(router)
 
 

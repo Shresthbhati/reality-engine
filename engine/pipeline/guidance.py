@@ -100,12 +100,22 @@ def build_guidance(
 
     # ---- single-view (bootstrap) advice, from what was measured in the frame ----
     if level == 0:
-        out.append({
-            "kind": "add_viewpoint",
-            "message": ("This is a rough single-view hypothesis. Add photos from a different position "
-                        "so the engine can measure real depth instead of estimating it."),
-            "basis": "one viewpoint: depth is a monocular estimate, scale is relative",
-        })
+        n_fused = int((bootstrap_facts or {}).get("fused_views") or 0)
+        if n_fused > 1:
+            out.append({
+                "kind": "add_overlap",
+                "message": (f"We built a rough model from each of your {n_fused} photos, but could not place "
+                            "them relative to each other. A photo that shows part of the same surface as a "
+                            "neighbouring photo lets the engine join them."),
+                "basis": "no photo pair could be registered; each photo is an independent single-view estimate",
+            })
+        else:
+            out.append({
+                "kind": "add_viewpoint",
+                "message": ("We built a rough spatial model from what is visible. Add photos from a different "
+                            "position so the engine can measure real depth instead of estimating it."),
+                "basis": "one viewpoint: depth is a monocular estimate, scale is relative",
+            })
         trunc = (bootstrap_facts or {}).get("edge_truncation") or {}
         for side in ("left", "right"):
             share = trunc.get(side, 0.0)
@@ -193,9 +203,9 @@ def build_guidance(
         if a.get("outcome") == "failed" and a.get("level", 0) >= 1:
             out.append({
                 "kind": "engine_note",
-                "message": ("These photos could not be combined into a 3D model. That usually means "
-                            "neighbouring photos overlap too little (aim for roughly 60-80% overlap "
-                            "between consecutive shots). Showing the strongest result that was possible."),
+                "message": ("We couldn't establish reliable multi-view geometry from these photos, usually "
+                            "because neighbouring photos share too little of the same scene. "
+                            "Showing the strongest result that was possible; your photos are kept."),
                 "basis": f"attempt at level {a['level']} ({a.get('name')}) failed: {a.get('detail', 'no detail')}"[:500],
             })
     if not out:

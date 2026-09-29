@@ -57,8 +57,12 @@ RECONSTRUCTED = "RECONSTRUCTED"
 #: Evidence kinds that can carry imagery usable for SfM.
 IMAGE_EVIDENCE_KINDS = (EvidenceKind.PHOTO, EvidenceKind.VIDEO)
 
-#: Minimum images for any SfM pipeline (spec: 20-50 photos per room, but a
-#: two-view geometry is the floor for the geometry itself).
+#: Minimum images for the SfM STAGE (two-view geometry is the physical floor).
+#: This is a property of multi-view reconstruction, NOT of the product: the
+#: product path (engine.pipeline.progressive.run_progressive, used by the API
+#: worker) only calls this stage when >= 2 photographs qualify and gives one
+#: photograph its own single-view level. Do not route product uploads here
+#: directly; tests/test_progressive_units.py pins which modules may import it.
 MIN_IMAGE_EVIDENCE = 2
 
 

@@ -32,7 +32,7 @@ from evidence.contribution import ContributionReport, analyze_contribution, qual
 from evidence.image_check import ImageFacts
 from evidence.session import EvidenceItem
 from engine.pipeline.guidance import build_guidance, coverage_degrees
-from engine.pipeline.single_image import BootstrapUnavailable, bootstrap_single_image
+from engine.pipeline.single_image import BootstrapUnavailable, bootstrap_single_image, fuse_single_views
 
 LEVEL_NAMES = {
     0: "single-image visual hypothesis",
@@ -179,30 +179,39 @@ def run_progressive(
                   "relationships": vs.compile.relationships_count}
         bootstrap_facts = None
     else:
-        best = eligible[0]
-        for cand in eligible:  # keep the world anchored on its earliest evidence
-            if cand.item.id in set(prior_ids):
-                best = cand
-                break
-        try:
-            boot = bootstrap_single_image(
-                best.item, best.facts, artifact_store=artifact_store,
-                depth_model=depth_model, depth_map=bootstrap_depth_map,
-            )
-        except BootstrapUnavailable as exc:
-            attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed", "detail": str(exc)})
+        # Multi-view registration did not (or could not) run. Every usable
+        # photograph still contributes: bootstrap each one and fuse the
+        # hypotheses into ONE world. N images never silently become 1.
+        prior = set(prior_ids)
+        ordered = sorted(eligible, key=lambda c: c.item.id not in prior)  # earliest evidence first (stable)
+        boots = []
+        for k, cand in enumerate(ordered):
+            try:
+                boots.append((cand, bootstrap_single_image(
+                    cand.item, cand.facts, artifact_store=artifact_store, depth_model=depth_model,
+                    depth_map=bootstrap_depth_map, tag="" if len(ordered) == 1 else f"{k + 1}",
+                )))
+            except BootstrapUnavailable as exc:
+                attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed",
+                                 "detail": f"{cand.name}: {exc}"})
+        if not boots:
             raise ReconstructionUnavailable(
                 "no reconstruction level could be produced: "
                 + "; ".join(f"L{a['level']} {a['outcome']}: {a['detail']}" for a in attempts)
-            ) from exc
+            )
+        boot = boots[0][1] if len(boots) == 1 else fuse_single_views([(c.item, r) for c, r in boots])
+        used = [c for c, _ in boots]
         attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "succeeded",
-                         "detail": f"single-view hypothesis from {best.name}"})
+                         "detail": (f"single-view hypothesis from {used[0].name}" if len(used) == 1 else
+                                    f"{len(used)} independent single-view hypotheses fused (unregistered)")})
         world, level = boot.world, 0
-        registered_ids = [best.item.id]
+        # only a lone image is anchored by its own assumed pose; fused views are unrelated frames
+        registered_ids = [used[0].item.id] if len(used) == 1 else []
         result_points, poses = boot.points, boot.camera_poses
         scale_state, mpu, registration = "relative", None, "partial"
+        fused = len(used) > 1
         stage_facts = {
-            "backend": "single_image_bootstrap",
+            "backend": "single_image_bootstrap_fused" if fused else "single_image_bootstrap",
             "depth": {"status": "ran", "model": depth_model, "note": "monocular relative depth"},
             "perception": {"status": "skipped", "note": "not run in the single-image path"},
             "mesh": {"status": "skipped", "note": "not run in the single-image path"},
@@ -210,12 +219,15 @@ def run_progressive(
         }
         counts = {"entities": len(world.entities), "measurements": 0, "relationships": 0}
         bootstrap_facts = boot.facts
-        degraded.append(
-            "single-view hypothesis: partial by construction (relative scale, hidden surfaces unknown)"
-            if len(eligible) == 1 else
-            f"multi-view reconstruction of {len(eligible)} images failed; showing a single-view "
-            f"hypothesis from {best.name}"
-        )
+        if len(eligible) == 1:
+            degraded.append("single-view hypothesis: partial by construction "
+                            "(relative scale, hidden surfaces unknown)")
+        else:
+            dropped = len(eligible) - len(used)
+            degraded.append(
+                f"multi-view reconstruction of {len(eligible)} images failed; {len(used)} photographs "
+                "kept as independent single-view hypotheses (their relative placement is unknown)"
+                + (f"; {dropped} could not be estimated" if dropped else ""))
 
     # REFINED needs topology/incremental refinement AND every image placed;
     # anything less honest stays PARTIAL. A rough (<= level 1) model is ROUGH.

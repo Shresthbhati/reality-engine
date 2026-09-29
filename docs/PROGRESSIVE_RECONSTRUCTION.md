@@ -37,6 +37,14 @@ the user never creates or attaches them:
 level and falls back. A COLMAP failure is a recorded `attempt`
 (`report.attempts`), never an empty world and never a success.
 
+**No silent N -> 1.** When multi-view registration fails for N >= 2 usable
+photographs, *every* photograph is bootstrapped and the hypotheses are fused
+into one world (`single_image.fuse_single_views`). Their relative placement was
+never measured, so each keeps its own frame; they are laid out side by side
+along X for display only, and that is recorded in `world.metadata["fusion"]`
+(`layout: "display_only"`) and on every entity (`custom_properties["fusion"]`).
+Fused views are level 0 / ROUGH, and none is reported as "registered".
+
 `model_state` shown to users: **ROUGH** (level <= 1), **PARTIAL** (real geometry,
 not everything placed or covered), **REFINED** (level >= 4 **and** every image
 placed). "A six-image model is not a complete digital twin" is enforced by the
@@ -55,8 +63,20 @@ wall/floor/ceiling classification -> WorldIR`.
 * Assumptions are recorded under `metadata["bootstrap"]`: inverse-depth offset,
   camera (EXIF 35 mm focal length or an ASSUMED 60 degree field of view),
   level-camera gravity assumption.
-* Not attempted (stated in the world): window/door/opening detection, object
-  detection, metric scale.
+* **Opening candidates** (`engine/pipeline/openings.py`): rectangles inside a
+  detected *wall* plane's own pixels whose intensity differs from the ring
+  around them (Canny -> 4-vertex convex contours -> rectangularity, size,
+  contrast tests). They become `door` / `window` entities with provenance
+  `INFERRED`, confidence <= 0.2 and the measured contrast, area share and the
+  door-vs-window rule in `custom_properties["bootstrap"]`. The label is a
+  position/shape heuristic (touches the bottom of the wall region and is taller
+  than wide => door-like), and the entity's uncertainty note says so. A plain
+  wall yields **zero** candidates. This is not object recognition.
+* **Corridor axis** (`metadata["bootstrap"]["corridor"]`): only when two
+  distinct near-parallel walls and a floor were all found; INFERRED, confidence
+  <= 0.2, with the plane ids it came from. Otherwise `null`.
+* Not attempted (stated in the world): object detection / instance
+  segmentation, metric scale.
 
 ## Evidence handling
 
@@ -69,12 +89,26 @@ wall/floor/ceiling classification -> WorldIR`.
   are kept as **context evidence** and the class survives into WorldIR
   (`metadata["evidence"]`) and the version report.
 * `evidence/contribution.py` — per image: `first`, `new_view`, `redundant`,
-  `disconnected`, from SIFT + RANSAC-verified matches (raw counts are kept).
+  `disconnected`, from SIFT + RANSAC-verified matches (raw counts are kept),
+  plus a `status` naming *why*: `NOVEL_VIEW`, `REDUNDANT`, `INSUFFICIENT_MATCHES`,
+  `DEGENERATE_GEOMETRY` (collinear/duplicate matches, singular fundamental
+  matrix, or an OpenCV error) or `NOT_MEASURABLE` (no features / OpenCV missing).
+  A bad pair is a classification, never an exception.
   Image count is never the contract: "4 new images added. 3 add a new
   viewpoint. 1 mostly repeats an existing view."
 * Quality bars (Coverage / Overlap / Spatial diversity) are coarse levels with
   a stated basis, or `unknown` ("not measured") — no invented percentages.
   When SfM fails, Overlap is downgraded to `low` regardless of feature matches.
+
+## The two-image SfM gate
+
+`reconstruction/orchestrator.py::MIN_IMAGE_EVIDENCE = 2` is a property of the
+multi-view *stage*, not of the product. `apps/api` reaches multi-view only
+through `run_progressive`, which calls it only for >= 2 eligible photographs and
+gives one photograph its own level. The remaining direct users of the
+orchestrator are the CLI (`reconstruct`), `reconstruction/batch.py` and
+`engine/studio/session.py`; they fail loudly by design and are isolated from the
+API by `test_only_known_modules_reach_the_two_image_orchestrator`.
 
 ## Guidance
 

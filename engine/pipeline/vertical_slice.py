@@ -132,6 +132,11 @@ class VerticalSliceOptions:
     #: Reconstruction backend override (tests inject a deterministic
     #: backend; production leaves None for the real COLMAP backend).
     reconstruction_backend: Optional[object] = None
+    #: Persistent per-world COLMAP workspace (reconstruction.colmap_session.ColmapSession).
+    #: When set, the real COLMAP backend registers new photographs into the previous sparse
+    #: model with image_registrator instead of re-solving the whole scene. The CALLER owns
+    #: commit()/discard(): the state only advances when the resulting version is adopted.
+    colmap_session: Optional[object] = None
 
 
 @dataclass(frozen=True)
@@ -210,7 +215,8 @@ def vertical_slice(
     else:
         from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
 
-        backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary)
+        backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary,
+                                              session=options.colmap_session)
     orchestrator = ReconstructionOrchestrator(backends=[backend])
     try:
         run = orchestrator.run(list(evidence_items))
@@ -353,6 +359,9 @@ def vertical_slice(
             "perception": perception_facts,
             "mesh": mesh_facts,
             "detail": detail_facts,
+            # how the sparse model was actually produced (full / incremental / reused, counts, timings);
+            # empty for backends without a persistent session
+            "colmap_session": dict(getattr(backend, "last_run_info", None) or {}) or None,
         },
     )
 

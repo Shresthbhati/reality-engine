@@ -105,6 +105,19 @@ export interface WorldStatus {
     changes?: string[];
     verdict?: "ACCEPT" | "ACCEPT_WITH_UNCERTAINTY" | null;
     uncertainties?: string[];
+    /** how the sparse model was produced (measured, not assumed); null without a persistent session */
+    strategy?: {
+      mode: "full" | "incremental" | "reused";
+      reason: string;
+      frame: "preserved" | "re-solved";
+      prior_images: number;
+      new_images: string[];
+      incremental_registered?: number | null;
+      full_registered?: number | null;
+      incremental_points?: number | null;
+      full_points?: number | null;
+      unregistered: string[];
+    } | null;
     /** competing estimates that are kept, with provenance, until later evidence settles them */
     conflicts?: {
       id: string;

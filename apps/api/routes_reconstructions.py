@@ -326,6 +326,10 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "uncertainties": (report.get("verdict") or {}).get("uncertainties", []),
             # explicit conflicts (both hypotheses + provenance + history), never silently resolved
             "conflicts": report.get("conflicts", []),
+            # how the sparse model was produced: full | incremental | reused, with the measured
+            # alternatives (what a full rebuild registered vs the incremental step) and whether the
+            # coordinate frame was preserved. None for backends without a persistent COLMAP session.
+            "strategy": ((report.get("stages") or {}).get("reconstruction") or {}).get("colmap_session"),
         },
         # the newest run, including one whose candidate was NOT adopted (HEAD kept)
         "last_run": None if job is None or not isinstance(job.payload, dict) or "adopted" not in job.payload else {

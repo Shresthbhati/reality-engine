@@ -119,6 +119,46 @@ object-centric captures, viewing directions for interiors), frame-edge
 truncation of a detected surface (single view), missing floor/ceiling,
 redundant batches.
 
+## Incremental registration (COLMAP `image_registrator`)
+
+Each world owns a persistent COLMAP workspace (`reconstruction/colmap_session.py`, stored under
+`<WORLDSTORE_ROOT>/colmap-sessions/<world_id>/current`): the feature/match database, the images and the
+committed sparse model. A new version does **not** re-solve the scene when it does not have to:
+
+1. features are extracted for the **new photographs only** (`feature_extractor --image_list_path`)
+   and matched against everything already in the database;
+2. `image_registrator` places every not-yet-registered photograph (new ones **and** earlier ones that were
+   waiting) into the **previous sparse model**;
+3. `point_triangulator --clear_points 0` adds the structure the new photographs see while **keeping the
+   established points** (`image_registrator` alone adds none);
+4. `bundle_adjuster` refines, with intrinsics pinned when they are trusted.
+
+If photographs are still unregistered afterwards, a full `mapper` run on the same database is tried (no
+re-extraction or re-matching) and it replaces the incremental model **only if it registers strictly more
+photographs**. Everything is recorded in `report.stages.reconstruction.colmap_session` and returned as
+`model.strategy`: `mode` (`full | incremental | reused`), `reason`, `frame` (`preserved | re-solved`),
+`prior_images`, `new_images`, `incremental_registered` / `full_registered`, points, per-step seconds.
+
+The session advances only when the resulting version is **adopted and read back**
+(`ColmapSession.commit()`); a rejected, failed or cancelled run discards its staging copy, so it can never
+become the base of the next registration. The prior state is refused (full rebuild) when the pipeline
+settings changed, evidence was removed, the model is missing, or the previous result was a merge of several
+sub-models.
+
+**Measured (COLMAP 4.2.0, CPU, South Building):**
+
+| Prior | New | Result |
+|---|---|---|
+| 3 photos (67 points) | +3 | `image_registrator` registered **0**: too few 2D-3D matches. Full rebuild (6/6) wins; reported as such |
+| 6 photos (1132 points) | +3 | incremental **7 of 9** (full rebuild also 7), 1397 points vs 1400, established cameras moved **< 1%** of scene extent; `image_registrator` 0.17 s, `point_triangulator` 0.22 s |
+| 9 photos (7 placed) | +3 | full rebuild placed 11 vs 10 incrementally, so it was chosen; it starts a new gauge but the previously placed cameras moved 0.6% (frame-independent) |
+
+So incremental registration helps when the prior model is rich enough to give new photographs something to
+localise against; when it is not, the full rebuild is used and the report says why. The wall-clock gain on
+these small scenes is modest, because extracting the new photographs dominates (total 12-16 s per step).
+Earlier photographs are not re-extracted; **not measured**: whether the exhaustive matcher skips pairs it has
+already matched, so no scaling claim is made for large worlds.
+
 ## World-level acceptance (candidate vs HEAD)
 
 A rebuild from all evidence can be valid and still WORSE than the current version.
@@ -142,9 +182,11 @@ Each version's report stores `structure`, `cameras`, `delta`, `verdict`, `change
 (`registered|waiting`, attempts, ever_registered). Studio shows "What changed in this
 version" and a "kept your current model" notice.
 
-**What this is not:** the previous WorldIR does not seed COLMAP. Registration is still
-recomputed from all evidence; the previous version is used to judge and explain the
-result. True incremental registration into the old model remains CE-02.
+**Relation to incremental registration:** the previous version's COLMAP model is now the
+starting point for registration (see above); this acceptance step still judges the outcome, because a
+successful COLMAP run is not automatically a better world. What is still recomputed each time is
+everything **after** COLMAP: frame alignment, depth, perception, plane detection and compilation of the
+WorldIR; region-aware local refinement of those stages is not implemented.
 
 ## Versions and diff
 

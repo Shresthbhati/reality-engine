@@ -31,6 +31,7 @@ from apps.api.models import (
     utcnow,
 )
 from engine.pipeline import world_delta
+from reconstruction.colmap_session import ColmapSession
 from engine.pipeline.progressive import (
     EvidenceInput,
     InsufficientEvidence,
@@ -270,6 +271,20 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
 
 
 async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
+    """Wrapper that owns the world's persistent COLMAP session lifecycle: whatever happens
+    inside, an exception leaves the COMMITTED COLMAP state untouched (staging is discarded),
+    so a failed or rejected run can never poison the next incremental registration."""
+    holder: dict = {}
+    try:
+        return await _run_reconstruct_session_inner(db, job, holder)
+    except BaseException:
+        session = holder.get("session")
+        if session is not None:
+            session.discard()
+        raise
+
+
+async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dict) -> str:
     """Run the real capture-to-WorldIR vertical slice for a session's
     photo evidence, then commit the result as a new WorldStore version.
 
@@ -419,7 +434,12 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
             detail_enabled=False,
         )
     else:
-        options = VerticalSliceOptions(artifact_store=artifact_store)
+        # One persistent COLMAP workspace per world: new photographs are REGISTERED into the
+        # previous sparse model (image_registrator) instead of re-solving the whole scene.
+        # Its state advances only when this run's version is adopted (commit below).
+        colmap_session = ColmapSession(worldstore_service.worldstore_root() / "colmap-sessions" / world.id)
+        holder["session"] = colmap_session
+        options = VerticalSliceOptions(artifact_store=artifact_store, colmap_session=colmap_session)
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
     prog = await asyncio.to_thread(
@@ -495,6 +515,14 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     changes = world_delta.describe_changes(delta, structure=adopt, conflicts=conflicts)
     if adopt:
         world_ir.metadata["conflicts"] = conflicts
+        # say plainly HOW the model was produced -- taken from what the backend recorded, not assumed
+        colmap_info = prog.stage_facts.get("colmap_session") or {}
+        if colmap_info.get("mode") == "incremental":
+            g = len(delta["evidence"]["gained"])
+            changes.insert(0, f"Extended the existing reconstruction incrementally: {g} photo"
+                              f"{'' if g == 1 else 's'} registered into it, established camera poses kept.")
+        elif colmap_info.get("mode") == "full" and colmap_info.get("prior_images"):
+            changes.insert(0, f"Rebuilt the reconstruction from scratch ({colmap_info.get('reason')}).")
     # Every geometry-eligible photo records THIS attempt, adopted or not: a photo
     # that could not be placed is "waiting", never discarded, and is retried on
     # the next rebuild (a later photo may be the missing bridge).
@@ -503,6 +531,9 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         job.id, set(prog.registered_ids), adopt,
     )
     if not adopt:
+        # the rejected candidate must not become the base of the next incremental registration
+        if holder.get("session") is not None:
+            holder["session"].discard()
         session.world_id = world.id
         session.status = "complete"
         session.processing_completed_at = utcnow()
@@ -560,6 +591,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
                 "cameras_input": len(prog.input_ids),
                 "registration_status": prog.registration_status,
                 "points": len(prog.points),
+                "colmap_session": prog.stage_facts.get("colmap_session"),
             },
             "scale": {"state": prog.scale_state, "meters_per_unit": prog.meters_per_unit},
             "depth": prog.stage_facts.get("depth"),
@@ -607,6 +639,20 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         raise RuntimeError(
             f"adopted version '{version_row.id}' failed read-back verification: {reasons}"
         )
+
+    # The version is adopted AND reads back cleanly: only now does this run's COLMAP state become
+    # the base for the next incremental registration. A failure to persist it is not a job
+    # failure (the next run simply falls back to a full reconstruction).
+    if holder.get("session") is not None:
+        try:
+            # Only when the adopted version was actually BUILT from this COLMAP run (the vertical slice
+            # reported it). A single-view fallback must not persist a COLMAP model it never used.
+            if prog.stage_facts.get("colmap_session"):
+                holder["session"].commit()
+            else:
+                holder["session"].discard()
+        except OSError:
+            holder["session"].discard()
 
     # Late cancellation: the flag may have landed while the version was
     # being committed. The adopted version stands (durable work is never

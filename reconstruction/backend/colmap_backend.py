@@ -284,8 +284,16 @@ def _subprocess_env(colmap_path: str) -> Dict[str, str]:
 class ColmapReconstructionBackend(IReconstructionBackend):
     def __init__(self, colmap_binary: str = "colmap", use_gpu: bool = False,
                  robust_sift: bool = True, guided_matching: bool = False,
-                 dense_mvs: bool = False, artifact_store=None):
+                 dense_mvs: bool = False, artifact_store=None, session=None):
         self._colmap_binary = colmap_binary
+        #: Optional reconstruction.colmap_session.ColmapSession. When set, the workspace
+        #: PERSISTS between runs and new photographs are registered into the previous sparse
+        #: model with `image_registrator` (see _reconstruct_in_session); when None the backend
+        #: behaves exactly as before (temporary workspace, full reconstruction every time).
+        self.session = session
+        #: what the last reconstruct() actually did (mode, counts, timings); {} for the
+        #: sessionless path. Surfaced in the version report -- never inferred.
+        self.last_run_info: Dict[str, object] = {}
         # Default False: the official Windows release used here is a
         # no-GPU build ("without GPU support" per its own version banner);
         # passing use_gpu=1 against it fails every step. A CUDA build
@@ -388,6 +396,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                     "complete"
                 )
 
+        if self.session is not None:
+            return self._reconstruct_in_session(image_evidence, env, gpu_flag)
+
         with tempfile.TemporaryDirectory(prefix="colmap_") as workspace:
             workspace = Path(workspace)
             image_dir = workspace / "images"
@@ -409,41 +420,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 evidence_id_by_name[dest_name] = item.id
 
             def _run(step: str, args: List[str]) -> None:
-                # Bounded, OWNED subprocess lifecycle: a hung COLMAP step
-                # must fail explicitly instead of outliving its job, and a
-                # cancelled/timed-out job must not leave the child behind.
-                # The API-level job timeout is the outer bound; this
-                # per-process bound also protects direct (CLI) users.
-                # List-argv, no shell: ownership changes nothing about how
-                # the command is constructed.
-                from reconstruction.proc import run_owned
-
-                try:
-                    timeout_s = float(os.environ.get(
-                        "COLMAP_SUBPROCESS_TIMEOUT_SECONDS", "3600"))
-                except ValueError:
-                    timeout_s = 3600.0
-                try:
-                    proc = run_owned(
-                        [self._colmap_binary, step, *args],
-                        capture_output=True, env=env, text=True,
-                        timeout=timeout_s,
-                    )
-                except subprocess.TimeoutExpired as exc:
-                    raise ReconstructionStepError(
-                        step,
-                        subprocess.CompletedProcess(
-                            args=[self._colmap_binary, step, *args],
-                            returncode=-1,
-                            stdout=exc.stdout or "",
-                            stderr=(exc.stderr or "")
-                            + f"\n[TIMEOUT after {timeout_s:.0f}s]",
-                        ),
-                        [self._colmap_binary, step, *args],
-                    ) from exc
-                if proc.returncode != 0:
-                    raise ReconstructionStepError(step, proc,
-                                                  [self._colmap_binary, step, *args])
+                self._run_step(step, args, env)
 
             db_path = workspace / "database.db"
             # Affine-shape SIFT is CPU-only in COLMAP: when robust SIFT
@@ -483,55 +460,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             # is collected, parsed, and merged through the canonical
             # registration machinery (refusals reported, never
             # identity-placed).
-            model_dirs = _collect_submodels(sparse_dir, None)
-            if not model_dirs:
-                proc = subprocess.CompletedProcess(
-                    args=[self._colmap_binary, "mapper"], returncode=0,
-                    stdout="", stderr="mapper produced no sub-model directories",
-                )
-                raise ReconstructionStepError("mapper", proc,
-                                              [self._colmap_binary, "mapper"])
-            for model_dir in model_dirs:
-                _run("model_converter",
-                     ["--input_path", str(model_dir), "--output_path", str(model_dir),
-                      "--output_type", "TXT"])
-
-            model_results = {}
-            for model_dir in model_dirs:
-                images_txt = (model_dir / "images.txt").read_text()
-                points3d_txt = (model_dir / "points3D.txt").read_text()
-
-                poses = _parse_images_txt(images_txt, evidence_id_by_name)
-                image_id_to_evidence_id = {}
-                for line in images_txt.splitlines():
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    parts = line.split()
-                    if len(parts) < 10:
-                        continue
-                    image_id_to_evidence_id[parts[0]] = evidence_id_by_name.get(parts[9], parts[9])
-                points = _parse_points3d_txt(points3d_txt, image_id_to_evidence_id)
-
-                status = "success" if len(poses) == len(image_evidence) else "partial"
-                if not points:
-                    status = "failed"
-                model_results[model_dir.name] = ReconstructionResult(
-                    points=points, camera_poses=poses, registration_status=status,
-                )
-
-            if len(model_results) == 1:
-                sparse_result = next(iter(model_results.values()))
-            else:
-                from reconstruction.merge import merge_submodel_results
-
-                # The most complete sub-model is the reference frame.
-                reference = max(
-                    sorted(model_results),
-                    key=lambda n: len(model_results[n].points),
-                )
-                sparse_result, _merge_report = merge_submodel_results(
-                    model_results, reference=reference)
+            sparse_result, _model_dirs, _reference = self._parse_sparse_dir(
+                sparse_dir, evidence_id_by_name, len(image_evidence), env)
 
             if not self.dense_mvs:
                 return sparse_result
@@ -540,6 +470,287 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 sparse_result=sparse_result,
                 evidence_id_by_name=evidence_id_by_name,
             )
+
+    # ------------------------------------------------------------------ shared steps
+    def _run_step(self, step: str, args: List[str], env: Dict[str, str]) -> None:
+        # Bounded, OWNED subprocess lifecycle: a hung COLMAP step
+        # must fail explicitly instead of outliving its job, and a
+        # cancelled/timed-out job must not leave the child behind.
+        # The API-level job timeout is the outer bound; this
+        # per-process bound also protects direct (CLI) users.
+        # List-argv, no shell: ownership changes nothing about how
+        # the command is constructed.
+        from reconstruction.proc import run_owned
+
+        try:
+            timeout_s = float(os.environ.get("COLMAP_SUBPROCESS_TIMEOUT_SECONDS", "3600"))
+        except ValueError:
+            timeout_s = 3600.0
+        try:
+            proc = run_owned(
+                [self._colmap_binary, step, *args],
+                capture_output=True, env=env, text=True, timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ReconstructionStepError(
+                step,
+                subprocess.CompletedProcess(
+                    args=[self._colmap_binary, step, *args], returncode=-1,
+                    stdout=exc.stdout or "",
+                    stderr=(exc.stderr or "") + f"\n[TIMEOUT after {timeout_s:.0f}s]",
+                ),
+                [self._colmap_binary, step, *args],
+            ) from exc
+        if proc.returncode != 0:
+            raise ReconstructionStepError(step, proc, [self._colmap_binary, step, *args])
+
+    def _parse_model_dir(self, model_dir: Path, evidence_id_by_name: Dict[str, str],
+                         n_input: int, env: Dict[str, str]) -> ReconstructionResult:
+        """One COLMAP model directory -> ReconstructionResult (converts binary -> TXT in place)."""
+        self._run_step("model_converter",
+                       ["--input_path", str(model_dir), "--output_path", str(model_dir),
+                        "--output_type", "TXT"], env)
+        images_txt = (model_dir / "images.txt").read_text()
+        points3d_txt = (model_dir / "points3D.txt").read_text()
+
+        poses = _parse_images_txt(images_txt, evidence_id_by_name)
+        image_id_to_evidence_id = {}
+        for line in images_txt.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 10:
+                continue
+            image_id_to_evidence_id[parts[0]] = evidence_id_by_name.get(parts[9], parts[9])
+        points = _parse_points3d_txt(points3d_txt, image_id_to_evidence_id)
+
+        status = "success" if len(poses) == n_input else "partial"
+        if not points:
+            status = "failed"
+        return ReconstructionResult(points=points, camera_poses=poses, registration_status=status)
+
+    def _parse_sparse_dir(self, sparse_dir: Path, evidence_id_by_name: Dict[str, str],
+                          n_input: int, env: Dict[str, str]):
+        """The mapper's output directory -> (merged ReconstructionResult, model dirs, reference name).
+
+        The mapper may split the capture into MULTIPLE sub-models (sparse/0, sparse/1, ...). Reading
+        only `0` silently dropped real registered cameras -- measured on the committed 32-photo
+        south-building subset: 22 cameras in `0` and 13 more in `1` under robust SIFT. Every
+        sub-model is collected, parsed, and merged through the canonical registration machinery
+        (refusals reported, never identity-placed)."""
+        model_dirs = _collect_submodels(sparse_dir, None)
+        if not model_dirs:
+            proc = subprocess.CompletedProcess(
+                args=[self._colmap_binary, "mapper"], returncode=0,
+                stdout="", stderr="mapper produced no sub-model directories",
+            )
+            raise ReconstructionStepError("mapper", proc, [self._colmap_binary, "mapper"])
+        model_results = {
+            d.name: self._parse_model_dir(d, evidence_id_by_name, n_input, env) for d in model_dirs
+        }
+        # The most complete sub-model is the reference frame.
+        reference = max(sorted(model_results), key=lambda n: len(model_results[n].points))
+        if len(model_results) == 1:
+            return next(iter(model_results.values())), model_dirs, reference
+        from reconstruction.merge import merge_submodel_results
+
+        merged, _merge_report = merge_submodel_results(model_results, reference=reference)
+        return merged, model_dirs, reference
+
+    # ------------------------------------------------------- incremental registration
+    def _reconstruct_in_session(self, image_evidence: List[EvidenceItem], env: Dict[str, str],
+                                gpu_flag: str) -> ReconstructionResult:
+        """Reconstruct inside the persistent per-world COLMAP session.
+
+        First run (or an unusable prior state): the normal full pipeline, kept on disk.
+        Later runs: features are extracted for the NEW photographs only, they are matched
+        against everything already in the database, and `colmap image_registrator` places
+        every not-yet-registered photograph (new ones AND earlier ones that were waiting)
+        into the PREVIOUS sparse model, followed by `bundle_adjuster`. Established camera
+        poses are kept as the starting point instead of being re-solved from scratch.
+
+        A full mapper run on the same database is only tried when photographs remain
+        unregistered after the incremental step (it costs no re-extraction/matching), and it
+        replaces the incremental model only if it registers strictly MORE photographs.
+        Everything done is recorded in ``last_run_info`` -- the caller never has to guess
+        which strategy produced a model.
+        """
+        import time
+
+        t_start = time.time()
+        timings: Dict[str, float] = {}
+
+        def timed(label, fn):
+            t0 = time.time()
+            try:
+                return fn()
+            finally:
+                timings[label] = round(time.time() - t0, 2)
+
+        trusted = _trusted_intrinsics(image_evidence)
+        signature = {"robust_sift": bool(self.robust_sift), "guided_matching": bool(self.guided_matching),
+                     "trusted_intrinsics": list(trusted) if trusted is not None else None}
+        by_name: Dict[str, Tuple[EvidenceItem, Path]] = {}
+        for item in image_evidence:
+            src = _uri_to_path(item.source_uri)
+            by_name[f"{item.id}{src.suffix or '.jpg'}"] = (item, src)
+        evidence_id_by_name = {n: it.id for n, (it, _) in by_name.items()}
+        n_input = len(image_evidence)
+
+        ws, prior = self.session.begin(signature, by_name)
+        image_dir = ws / "images"
+        image_dir.mkdir(exist_ok=True)
+        # "new" = not in the committed manifest. Deciding this from which files happen to exist on
+        # disk would silently skip an image copied by a run that crashed before extracting it.
+        known = set(prior["images"]) if prior else set()
+        new_names = [n for n in by_name if n not in known]
+        for n in new_names:
+            shutil.copy(by_name[n][1], image_dir / n)
+        db_path = ws / "database.db"
+        extractor_args: List[str] = []
+        if trusted is not None:
+            fx, fy, cx, cy = trusted
+            extractor_args = ["--ImageReader.camera_model", "PINHOLE",
+                              "--ImageReader.camera_params", f"{fx},{fy},{cx},{cy}"]
+        extractor_args += _sift_extraction_args(robust=self.robust_sift)
+        # Affine-shape SIFT is CPU-only in COLMAP (see reconstruct()).
+        cpu_or_gpu = "0" if self.robust_sift else gpu_flag
+        pinned = ["--Mapper.ba_refine_focal_length", "0", "--Mapper.ba_refine_extra_params", "0"] \
+            if trusted is not None else []
+
+        def run(step, args):
+            self._run_step(step, args, env)
+
+        def extract_and_match(only_new: bool):
+            args = ["--database_path", str(db_path), "--image_path", str(image_dir), *extractor_args,
+                    "--FeatureExtraction.use_gpu", cpu_or_gpu]
+            if only_new:
+                lst = ws / "new_images.txt"
+                lst.write_text("\n".join(new_names) + "\n")
+                args += ["--image_list_path", str(lst)]
+            run("feature_extractor", args)
+            run("exhaustive_matcher", ["--database_path", str(db_path), "--FeatureMatching.use_gpu", cpu_or_gpu,
+                                       *_sift_matching_args(guided=self.guided_matching)])
+
+        def full_mapper():
+            out = ws / "sparse_full"
+            shutil.rmtree(out, ignore_errors=True)
+            out.mkdir()
+            run("mapper", ["--database_path", str(db_path), "--image_path", str(image_dir),
+                           "--output_path", str(out), *pinned])
+            return self._parse_sparse_dir(out, evidence_id_by_name, n_input, env)
+
+        info: Dict[str, object] = {
+            "prior_images": len(prior["images"]) if prior else 0,
+            "new_images": [evidence_id_by_name[n] for n in new_names],
+            "prior_registered": len(prior["registered"]) if prior else 0,
+        }
+        chosen_dir: Path
+        incremental_ok = True
+        result: ReconstructionResult
+
+        if prior is None:
+            timed("extract_match", lambda: extract_and_match(only_new=False))
+            result, dirs, ref = timed("mapper", full_mapper)
+            chosen_dir = ws / "sparse_full" / ref
+            incremental_ok = len(dirs) == 1        # a merged multi-model result cannot be extended faithfully
+            info.update(mode="full", reason=("no usable prior COLMAP state" if self.session.committed_manifest() is None
+                                             else "prior state unusable (settings changed, evidence removed, or not extendable)"))
+        else:
+            if new_names:
+                timed("extract_match", lambda: extract_and_match(only_new=True))
+            prior_model = ws / prior["model_dir"]
+            pending = [n for n in by_name if n not in set(prior["registered"])]
+            if not pending:
+                # nothing new and nothing waiting: the committed model already covers every photograph
+                result = self._parse_model_dir(prior_model, evidence_id_by_name, n_input, env)
+                chosen_dir = prior_model
+                info.update(mode="reused", reason="no new or waiting photographs")
+            else:
+                inc_result = None
+                try:
+                    inc_root = ws / "inc"
+                    shutil.rmtree(inc_root, ignore_errors=True)
+                    (inc_root / "registered").mkdir(parents=True)
+                    (inc_root / "triangulated").mkdir()
+                    (inc_root / "adjusted").mkdir()
+                    timed("image_registrator", lambda: run("image_registrator", [
+                        "--database_path", str(db_path), "--input_path", str(prior_model),
+                        "--output_path", str(inc_root / "registered"), *pinned]))
+                    # image_registrator places cameras but adds no structure: triangulate the new
+                    # photographs' tracks while KEEPING the established points (--clear_points 0)
+                    timed("point_triangulator", lambda: run("point_triangulator", [
+                        "--database_path", str(db_path), "--image_path", str(image_dir),
+                        "--input_path", str(inc_root / "registered"),
+                        "--output_path", str(inc_root / "triangulated"), "--clear_points", "0"]))
+                    timed("bundle_adjuster", lambda: run("bundle_adjuster", [
+                        "--input_path", str(inc_root / "triangulated"), "--output_path", str(inc_root / "adjusted"),
+                        *(["--BundleAdjustment.refine_focal_length", "0", "--BundleAdjustment.refine_extra_params", "0"]
+                          if trusted is not None else [])]))
+                    inc_result = self._parse_model_dir(inc_root / "adjusted", evidence_id_by_name, n_input, env)
+                    if inc_result.registration_status == "failed":
+                        info["incremental_error"] = "incremental model has no points"
+                        inc_result = None
+                except ReconstructionStepError as exc:
+                    info["incremental_error"] = f"{exc.step}: {str(exc).splitlines()[0]}"
+                    inc_result = None
+
+                n_inc = len(inc_result.camera_poses) if inc_result is not None else None
+                info["incremental_registered"] = n_inc
+                info["incremental_points"] = len(inc_result.points) if inc_result is not None else None
+                need_full = inc_result is None or n_inc < n_input
+                full = None
+                if need_full:
+                    # cheap: features and matches are already in the database
+                    full = timed("mapper", full_mapper)
+                    info["full_registered"] = len(full[0].camera_poses)
+                    info["full_points"] = len(full[0].points)
+                if inc_result is not None and (full is None or len(full[0].camera_poses) <= n_inc):
+                    result, chosen_dir = inc_result, ws / "inc" / "adjusted"
+                    info.update(mode="incremental", reason=(
+                        "every photograph registered" if full is None else
+                        "a full rebuild registered no more photographs, so the established model was kept"))
+                else:
+                    result, dirs, ref = full
+                    chosen_dir = ws / "sparse_full" / ref
+                    incremental_ok = len(dirs) == 1
+                    info.update(mode="full", reason=(
+                        "incremental registration failed" if inc_result is None else
+                        f"a full rebuild registered more photographs ({len(result.camera_poses)} vs {n_inc})"))
+
+        # canonical layout: the chosen model becomes sparse/0 (dense continuation and the next run read it)
+        canonical = ws / "sparse" / "0"
+        if chosen_dir.resolve() != canonical.resolve():
+            staged = ws / "_chosen"
+            shutil.rmtree(staged, ignore_errors=True)
+            shutil.copytree(chosen_dir, staged)
+            shutil.rmtree(ws / "sparse", ignore_errors=True)
+            (ws / "sparse").mkdir()
+            os.replace(staged, canonical)
+        for scratch in ("inc", "sparse_full", "new_images.txt"):
+            p = ws / scratch
+            shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+
+        name_by_eid = {eid: n for n, eid in evidence_id_by_name.items()}
+        registered_names = sorted(name_by_eid[p.evidence_id] for p in result.camera_poses if p.evidence_id in name_by_eid)
+        # Incremental / reused runs keep COLMAP's coordinate frame; a full re-solve starts a new one
+        # (the geometry can still agree -- world_delta.camera_consistency measures that frame-independently).
+        info["frame"] = "preserved" if info.get("mode") in ("incremental", "reused") else "re-solved"
+        info["registered_total"] = len(registered_names)
+        info["unregistered"] = sorted(evidence_id_by_name[n] for n in by_name if n not in set(registered_names))
+        info["seconds"] = dict(timings, total=round(time.time() - t_start, 2))
+        self.session.write_manifest({
+            "signature": signature, "images": evidence_id_by_name, "registered": registered_names,
+            "model_dir": "sparse/0", "incremental_ok": incremental_ok, "info": info,
+        })
+        self.last_run_info = info
+        self.session.last_run_info = info
+
+        if not self.dense_mvs:
+            return result
+        return self._continue_dense(workspace=ws, image_dir=image_dir, sparse_result=result,
+                                    evidence_id_by_name=evidence_id_by_name)
 
     def _continue_dense(self, *, workspace: Path, image_dir: Path,
                         sparse_result: ReconstructionResult,

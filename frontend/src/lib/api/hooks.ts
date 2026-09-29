@@ -77,24 +77,25 @@ export function useEvidence(sessionId?: string | null) {
   }, [sessionId]);
 }
 
-export function useWorldIR(worldId: string | null) {
+/** `version` selects an earlier immutable version; omitted/null = the world's current one. */
+export function useWorldIR(worldId: string | null, version?: string | null, refreshKey?: string | null) {
   return useApi(
-    () => (worldId ? fetchWorldIR(worldId) : Promise.resolve(null)),
-    [worldId],
+    () => (worldId ? fetchWorldIR(worldId, version) : Promise.resolve(null)),
+    [worldId, version, refreshKey],
   );
 }
 
-export function useWorldPoints(worldId: string | null) {
+export function useWorldPoints(worldId: string | null, version?: string | null, refreshKey?: string | null) {
   return useApi(
-    () => (worldId ? fetchWorldPoints(worldId) : Promise.resolve(null)),
-    [worldId],
+    () => (worldId ? fetchWorldPoints(worldId, version) : Promise.resolve(null)),
+    [worldId, version, refreshKey],
   );
 }
 
-export function useWorldCameras(worldId: string | null) {
+export function useWorldCameras(worldId: string | null, version?: string | null, refreshKey?: string | null) {
   return useApi(
-    () => (worldId ? fetchWorldCameras(worldId) : Promise.resolve(null)),
-    [worldId],
+    () => (worldId ? fetchWorldCameras(worldId, version) : Promise.resolve(null)),
+    [worldId, version, refreshKey],
   );
 }
 

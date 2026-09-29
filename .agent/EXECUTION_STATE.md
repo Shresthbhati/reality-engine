@@ -3,6 +3,53 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-09-29 (1) -- Evidence-progressive one-action product path (PROD-01)
+
+Branch claude/reality-engine-e2e-455f35. Directive: DROP 1 PHOTO -> rough
+model; DROP 6 -> meaningful reconstruction; ADD MORE -> the SAME world
+improves; no World/Session/Job vocabulary in the way. Full design, defect
+table, dataset windows and rights: docs/PROGRESSIVE_RECONSTRUCTION.md.
+
+State found: apps/api/jobs.py did not import (mid-function import block);
+once fixed, EVERY real COLMAP run deadlocked (reconstruction/proc.py:
+run_owned polled poll() without draining pipes, and separately called
+register_worker() under a non-reentrant lock). Neither was visible to any
+prior test because none ran real COLMAP through the job runner.
+
+Built: engine/pipeline/single_image.py (MiDaS -> planes -> WorldIR, every
+entity INFERRED/ESTIMATED/UNKNOWN, confidence <= 0.35, scale relative),
+engine/pipeline/progressive.py (level ladder + fallback, union-of-evidence
+refinement), evidence/image_check.py (decode + classify before COLMAP),
+evidence/contribution.py (new_view/redundant/disconnected from SIFT+RANSAC),
+engine/pipeline/guidance.py (advice only from measurements),
+apps/api/routes_reconstructions.py (POST /api/reconstructions incl. video
+frame sampling; GET /api/worlds/{id}/status), apps/api/reconstruction_state.py,
+WorldDiff.categories(), frame prior from camera up-vectors, Studio status
+strip / version switching / drop zone / no-blank-viewport explanation, and a
+rewritten mobile capture flow.
+
+Verification (observed, not inferred):
+  * tests/integration/test_progressive_product_journey.py (real South
+    Building photos, real COLMAP 4.2.0 + MiDaS on CPU): one photo, six photos,
+    6->10->20 on one world with diff, bad evidence, hard low-overlap fallback,
+    engine crash, restart, video -- see docs/PROGRESSIVE_RECONSTRUCTION.md
+    for the run summary.
+  * tests/test_progressive_units.py + tests/test_proc_ownership.py +
+    tests/test_world_diff.py + tests/test_vertical_slice_modules.py: green.
+  * frontend: tsc --noEmit clean; `next build --webpack` exit 0 (Turbopack
+    rejects the node_modules junction used in this worktree -- environment,
+    not code); real-browser run: drop -> world -> rendered rough model ->
+    add photos -> V2 -> version switch -> diff modal -> mobile capture.
+  * found by the browser only: Studio never rendered point clouds (ASCII
+    PLY from the API vs binary-only loader) -- fixed.
+
+NOT verified / not done: real corridor and room datasets (none exist as real
+photos in the repo), dense Level 3, metric scale, opening (window/door)
+detection from one image, GPU paths, per-version evidence panel for old
+versions, stable entity ids across versions (V1->V2 diff shows identity
+churn when the model changes character), Observation/Relationship
+constructor confidence defaults (audited, documented, not changed).
+
 ## 2026-09-28 (1) -- Multi-storey plane support + real-data truth audit (P7-03)
 
 Branch fix/reconstruction-multistorey-plane-support, PR #128 (review-

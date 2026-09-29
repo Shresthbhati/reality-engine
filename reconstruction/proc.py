@@ -260,22 +260,32 @@ def run_owned(
             popen_kwargs.setdefault("start_new_session", True)
     proc = subprocess.Popen(cmd, **popen_kwargs)
     if owner is not None:
+        # (Job-level crash-detection registration is done once by
+        # set_current_job. Calling register_worker here, under _lock,
+        # self-deadlocked: _lock is a non-reentrant threading.Lock and
+        # register_worker takes it again.)
         with _lock:
             _owned.setdefault(owner, set()).add(proc)
-            # Register worker for crash detection
-            register_worker(owner)
     try:
-        # Update heartbeat periodically during long-running processes
-        proc._start_time = time.time()
-        last_heartbeat = time.time()
-        while proc.poll() is None:
-            if timeout is not None and time.time() - proc._start_time > timeout:
-                raise subprocess.TimeoutExpired(cmd, timeout)
-            if time.time() - last_heartbeat > 30:
-                worker_heartbeat(owner)
-            time.sleep(0.5)
-        
-        stdout, stderr = proc.communicate(timeout=timeout)
+        # Wait in short communicate() slices, NOT poll()+sleep: a child
+        # that writes more than the OS pipe buffer (~64 KB; COLMAP logs
+        # far more) to a captured stdout/stderr blocks forever on write
+        # while we spin on poll(), and never exits -- a deadlock measured
+        # on every real COLMAP run. communicate() drains the pipes while
+        # it waits; a slice that expires resumes where it left off.
+        started = time.time()
+        last_heartbeat = started
+        while True:
+            try:
+                stdout, stderr = proc.communicate(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                now = time.time()
+                if timeout is not None and now - started > timeout:
+                    raise subprocess.TimeoutExpired(cmd, timeout) from None
+                if owner is not None and now - last_heartbeat > 30:
+                    worker_heartbeat(owner)
+                    last_heartbeat = now
         return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
     except subprocess.TimeoutExpired:
         _kill_tree(proc)
@@ -292,4 +302,3 @@ def run_owned(
                     live.discard(proc)
                     if not live:
                         _owned.pop(owner, None)
-                unregister_worker(owner)

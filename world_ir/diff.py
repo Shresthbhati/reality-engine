@@ -160,11 +160,53 @@ class WorldDiff:
             "geometries_modified": sum(1 for d in self.geometry_diffs if d.kind is ChangeKind.MODIFIED),
         }
 
+    def categories(self) -> dict:
+        """What KIND of change happened, counted per category. A change
+        is attributed only to the category of the field that actually
+        differs: a confidence-only edit never counts as a geometry change.
+
+          identity     entity/geometry added or removed
+          geometry     geometry payload/bounds/counts changed, or an entity's geometry set
+          transform    entity placement changed
+          semantic     type / name / labels / material / surface / component membership
+          confidence   confidence value moved (entity or geometry)
+          uncertainty  the uncertainty record changed
+          provenance   provenance class changed
+          topology     relationship edges changed
+          properties   other custom_properties (measurements, traces)
+        """
+        cats = {k: 0 for k in (
+            "identity", "geometry", "transform", "semantic", "confidence",
+            "uncertainty", "provenance", "topology", "properties",
+        )}
+        entity_field_category = {
+            "transform": "transform", "confidence": "confidence", "uncertainty": "uncertainty",
+            "provenance": "provenance", "relationships": "topology", "geometry_ids": "geometry",
+            "type": "semantic", "name": "semantic", "semantic_labels": "semantic",
+            "statement_state": "semantic", "material_ids": "semantic", "surface_ids": "semantic",
+            "component_ids": "semantic",
+        }
+        for d in self.entity_diffs:
+            if d.kind is not ChangeKind.MODIFIED:
+                cats["identity"] += 1
+                continue
+            for c in d.changes:
+                cats[entity_field_category.get(c.field, "properties")] += 1
+        geometry_field_category = {"confidence": "confidence", "provenance": "provenance"}
+        for g in self.geometry_diffs:
+            if g.kind is not ChangeKind.MODIFIED:
+                cats["identity"] += 1
+                continue
+            for c in g.changes:
+                cats[geometry_field_category.get(c.field, "geometry")] += 1
+        return cats
+
     def to_dict(self) -> dict:
         return {
             "from_world_id": self.from_world_id,
             "to_world_id": self.to_world_id,
             "summary": self.summary(),
+            "categories": self.categories(),
             "entity_diffs": [d.to_dict() for d in self.entity_diffs],
             "geometry_diffs": [d.to_dict() for d in self.geometry_diffs],
         }

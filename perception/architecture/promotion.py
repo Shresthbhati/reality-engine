@@ -349,6 +349,15 @@ def promote_interior_graph_to_world(
     if building_graph is None:
         return created_ids
 
+    def _min_confidence(objs) -> float:
+        """A container is no more certain than its least certain member;
+        0.0 (unknown) when it has no members to lean on. Never 1.0 by default."""
+        vals = [float(o.confidence) for o in objs
+                if isinstance(getattr(o, "confidence", None), (int, float))]
+        return min(vals) if vals else 0.0
+
+    building_confidence = _min_confidence(rooms)
+
     # 1. Building entity
     bld_id = f"bld-{building_graph.building_id}"
     bmin = building_graph.envelope_bounds_min
@@ -371,7 +380,7 @@ def promote_interior_graph_to_world(
             "envelope_bounds_max": list(bmax),
         },
         provenance=Provenance.INFERRED,
-        confidence=1.0,
+        confidence=building_confidence,
     )
     world.entities[bld_id] = bld_entity
     created_ids["building"] = bld_id
@@ -401,7 +410,9 @@ def promote_interior_graph_to_world(
                 "storey_id": storey.storey_id,
             },
             provenance=Provenance.INFERRED,
-            confidence=1.0,
+            confidence=_min_confidence(
+                [r for r in rooms if getattr(r, "room_id", None) in set(storey.room_ids)]
+            ),
             relationships=[
                 Relationship(kind=RelationshipKind.PART_OF, target_id=bld_id)
             ],
@@ -532,11 +543,12 @@ def promote_interior_graph_to_world(
                     "sill_height_m": op_dict.get("sill_height_m", 0.0),
                     "host_wall_id": host_wall,
                     "connected_space_ids": [target_space_entity_id],
-                    "confidence": op_dict.get("confidence", 1.0),
+                    "confidence": op_dict.get("confidence", 0.0),
                 },
                 relationships=op_rels,
                 provenance=Provenance.INFERRED,
-                confidence=op_dict.get("confidence", 1.0),
+                # the detector did not state one => unknown, not certain
+                confidence=op_dict.get("confidence", 0.0),
             )
             world.entities[ent_op_id] = op_entity
             created_ids[ent_op_id] = ent_op_id

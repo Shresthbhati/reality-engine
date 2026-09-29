@@ -3,17 +3,25 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Camera, Image as ImageIcon, Video, Check, RotateCcw, AlertTriangle } from "lucide-react";
-import { getWorld, createSession, attachSessionToWorld, uploadEvidence, isApiError } from "@/lib/api";
-import type { WorldRow } from "@/lib/types";
+import { AlertTriangle, Camera, Check, Loader2, Lightbulb, RotateCcw } from "lucide-react";
+import { createReconstruction, isApiError, modelStateCopy, useWorldStatus } from "@/lib/api";
+
+/**
+ * Mobile capture: OPEN CAMERA -> CAPTURE -> SAVE -> ANALYZE -> BUILD ->
+ * SHOW STATE -> OFFER THE NEXT BEST CAPTURE.
+ *
+ * The user never names a session, picks a world, or attaches anything. The
+ * first photo creates the world (its id rides in `?world=`), later photos
+ * join the SAME world, and every photo is saved before the engine even
+ * starts. GPS is attached only when the device actually reports it.
+ */
 
 type GpsState =
   | { status: "loading" }
   | { status: "ready"; lat: number; lng: number; accuracyM: number }
   | { status: "unavailable"; reason: string };
 
-type CaptureMode = "photo" | "video";
-type FlowStep = "camera" | "preview" | "session" | "creating" | "done";
+type Step = "camera" | "preview" | "saving" | "result";
 
 export default function MobileCameraPage() {
   return (
@@ -28,70 +36,48 @@ function MobileCameraPageInner() {
   const searchParams = useSearchParams();
   const worldId = searchParams.get("world");
 
-  const [world, setWorld] = useState<WorldRow | null | "loading">(worldId ? "loading" : null);
-  useEffect(() => {
-    if (!worldId) return;
-    let cancelled = false;
-    setWorld("loading");
-    getWorld(worldId)
-      .then((r) => {
-        if (!cancelled) setWorld(r.row);
-      })
-      .catch(() => {
-        if (!cancelled) setWorld(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [worldId]);
-
-  const [mode, setMode] = useState<CaptureMode>("photo");
-  const [step, setStep] = useState<FlowStep>("camera");
-  // Initialize GPS state based on whether geolocation is available
-  const [gps, setGps] = useState<GpsState>(() => {
-    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
-      return { status: "unavailable", reason: "Not supported" };
-    }
-    return { status: "loading" };
-  });
+  const [step, setStep] = useState<Step>("camera");
+  const [gps, setGps] = useState<GpsState>(() =>
+    typeof navigator === "undefined" || !("geolocation" in navigator)
+      ? { status: "unavailable", reason: "Not supported" }
+      : { status: "loading" },
+  );
   const [captured, setCaptured] = useState<{ file: File; url: string; at: Date } | null>(null);
-  const [sessionName, setSessionName] = useState("");
-  const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
-
+  const [error, setError] = useState<string | null>(null);
+  const [shots, setShots] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const mountedRef = useRef(false);
 
-  // Real geolocation — no fabricated coordinates. Denied/unsupported states
-  // are shown honestly rather than silently defaulted.
+  // Real geolocation only. Denied/unsupported is shown, never defaulted.
   useEffect(() => {
-    mountedRef.current = true;
-    if (!("geolocation" in navigator)) {
-      return;
-    }
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
+    let live = true;
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (!mountedRef.current) return;
+      (pos) =>
+        live &&
         setGps({
           status: "ready",
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracyM: Math.round(pos.coords.accuracy),
-        });
-      },
-      (err) => {
-        if (!mountedRef.current) return;
-        setGps({ status: "unavailable", reason: err.code === err.PERMISSION_DENIED ? "Permission denied" : "Unavailable" });
-      },
+        }),
+      (err) =>
+        live &&
+        setGps({ status: "unavailable", reason: err.code === err.PERMISSION_DENIED ? "Permission denied" : "Unavailable" }),
       { enableHighAccuracy: true, timeout: 10000 },
     );
-    return () => { mountedRef.current = false; };
+    return () => {
+      live = false;
+    };
   }, []);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const { status } = useWorldStatus(step === "result" ? worldId : null);
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
     setCaptured({ file, url: URL.createObjectURL(file), at: new Date() });
+    setError(null);
     setStep("preview");
   };
 
@@ -99,179 +85,143 @@ function MobileCameraPageInner() {
     if (captured) URL.revokeObjectURL(captured.url);
     setCaptured(null);
     setStep("camera");
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const useCapture = () => {
-    setSessionName(`Capture — ${captured?.at.toLocaleDateString()}`);
-    setStep("session");
-  };
-
-  const createSessionAndUpload = async () => {
-    if (!captured || !sessionName.trim()) return;
-    setCreateError(null);
-    setStep("creating");
+  const save = async () => {
+    if (!captured) return;
+    setStep("saving");
+    setError(null);
     try {
-      const input = {
-        name: sessionName.trim(),
-        captured_at: captured.at.toISOString(),
-        location:
-          gps.status === "ready"
-            ? { latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracyM }
-            : undefined,
-      };
-      const session = await createSession(input);
-      if (world && world !== "loading") {
-        await attachSessionToWorld(world.id, session.id).catch(() => {
-          // Session is created regardless; the World link is best-effort here —
-          // the user can attach it from the Session detail screen if this fails.
-        });
-      }
-      await uploadEvidence(captured.file, session.id);
-      setCreatedSessionId(session.id);
-      setStep("done");
+      const res = await createReconstruction([captured.file], {
+        worldId,
+        latitude: gps.status === "ready" ? gps.lat : undefined,
+        longitude: gps.status === "ready" ? gps.lng : undefined,
+      });
+      setShots((n) => n + 1);
+      if (res.world_id !== worldId) router.replace(`/m/camera?world=${encodeURIComponent(res.world_id)}`);
+      URL.revokeObjectURL(captured.url);
+      setCaptured(null);
+      setStep("result");
     } catch (err) {
-      setCreateError(isApiError(err) ? err.describe() : "Failed to create Session.");
-      setStep("session");
+      const details = isApiError(err) ? (err.details as { message?: string } | null) : null;
+      setError(details?.message ?? (isApiError(err) ? err.describe() : "The photo could not be saved."));
+      setStep("preview");
     }
   };
 
-  if (step === "done") {
+  if (step === "result") {
+    const model = status?.model;
+    const copy = modelStateCopy(model?.model_state);
     return (
-      <div className="flex flex-col items-center justify-center gap-4 h-full p-6 text-center">
-        <div
-          className="w-12 h-12 rounded-full flex items-center justify-center"
-          style={{ background: "var(--success-subtle)", color: "var(--success)" }}
-        >
-          <Check className="w-6 h-6" />
+      <div className="flex h-full flex-col gap-4 p-5" data-testid="mobile-result">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+            style={{ background: "var(--success-subtle)", color: "var(--success)" }}
+          >
+            <Check className="h-5 w-5" aria-hidden />
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+              Photo saved{shots > 1 ? ` (${shots} this session)` : ""}
+            </p>
+            <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+              Your photos are kept even if the model cannot be built yet.
+            </p>
+          </div>
         </div>
-        <p className="text-sm" style={{ color: "var(--text-primary)" }}>
-          Session created and Evidence uploaded.
-        </p>
-        {createdSessionId && (
-          <Link
-            href={`/m/sessions/${createdSessionId}`}
-            className="text-sm font-medium"
-            style={{ color: "var(--accent)" }}
-          >
-            View Session →
-          </Link>
+
+        <div className="rounded-lg p-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2 text-sm font-medium" style={{ color: "var(--text-primary)" }} role="status">
+            {status?.in_progress || !status ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            {status ? status.state_label : "Starting…"}
+          </div>
+          {model && (
+            <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+              Current spatial reconstruction: <strong>{copy.label}</strong>. {copy.detail}{" "}
+              {model.images_registered} of {model.images_used} photos placed.
+            </p>
+          )}
+          {status?.failure && (
+            <p className="mt-2 flex items-start gap-1.5 text-xs" style={{ color: "var(--error)" }}>
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              {status.failure.message ?? "The engine could not finish."}
+            </p>
+          )}
+        </div>
+
+        {status && status.guidance.length > 0 && (
+          <div className="rounded-lg p-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+            <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+              <Lightbulb className="h-3.5 w-3.5" aria-hidden /> Best next photo
+            </p>
+            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {status.guidance[0].message}
+            </p>
+          </div>
         )}
-        <div className="flex gap-3 mt-2">
+
+        <div className="mt-auto flex flex-col gap-2">
           <button
             type="button"
-            onClick={() => router.push("/m")}
-            className="h-10 px-4 rounded-md text-sm font-medium"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+            onClick={() => setStep("camera")}
+            className="h-12 rounded-lg text-sm font-semibold"
+            style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
           >
-            Back to Home
+            Take another photo
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setCreatedSessionId(null);
-              retake();
-            }}
-            className="h-10 px-4 rounded-md text-sm font-medium"
-            style={{ background: "var(--accent-subtle)", border: "1px solid var(--accent-border)", color: "var(--accent)" }}
-          >
-            Capture Another
-          </button>
+          {worldId && (
+            <Link
+              href={`/m/worlds/${worldId}`}
+              className="flex h-11 items-center justify-center rounded-md text-sm font-medium"
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+            >
+              View model
+            </Link>
+          )}
         </div>
       </div>
     );
   }
 
-  if ((step === "session" || step === "creating") && captured) {
+  if ((step === "preview" || step === "saving") && captured) {
     return (
-      <div className="flex flex-col gap-5 p-4">
-        <h1 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-          New Session
-        </h1>
-
-        {/* eslint-disable-next-line @next/next/no-img-element -- dynamic camera capture, not a static asset */}
-        <img src={captured.url} alt="Captured preview" className="w-full h-40 object-cover rounded-lg" />
-
-        <Field label="Name">
-          <input
-            value={sessionName}
-            onChange={(e) => setSessionName(e.target.value)}
-            disabled={step === "creating"}
-            className="mobile-input"
-          />
-        </Field>
-
-        <Field label="Location" hint={gps.status === "ready" ? `±${gps.accuracyM}m` : undefined}>
-          <div className="mobile-input flex items-center" style={{ color: gps.status === "ready" ? "var(--text-primary)" : "var(--text-tertiary)" }}>
-            {gps.status === "ready" ? `${gps.lat.toFixed(4)}°, ${gps.lng.toFixed(4)}°` : "Unavailable"}
-          </div>
-        </Field>
-
-        <Field label="World">
-          <div className="mobile-input flex items-center" style={{ color: world && world !== "loading" ? "var(--text-primary)" : "var(--text-tertiary)" }}>
-            {world === "loading" ? "Loading…" : world ? world.name : "None — standalone Session"}
-          </div>
-        </Field>
-
-        {createError && (
-          <div className="flex items-start gap-2 text-xs" style={{ color: "var(--error)" }}>
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{createError}</span>
-          </div>
-        )}
-
-        <button
-          type="button"
-          disabled={!sessionName.trim() || step === "creating"}
-          onClick={createSessionAndUpload}
-          className="h-12 rounded-lg text-sm font-semibold disabled:opacity-40"
-          style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
-        >
-          {step === "creating" ? "Creating…" : "Create Session"}
-        </button>
-        <button
-          type="button"
-          disabled={step === "creating"}
-          onClick={retake}
-          className="h-11 rounded-md text-sm font-medium disabled:opacity-40"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-        >
-          Retake
-        </button>
-      </div>
-    );
-  }
-
-  if (step === "preview" && captured) {
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex-1 relative">
+      <div className="flex h-full flex-col">
+        <div className="relative flex-1">
           {/* eslint-disable-next-line @next/next/no-img-element -- dynamic camera capture, not a static asset */}
-          <img src={captured.url} alt="Captured preview" className="absolute inset-0 w-full h-full object-cover" />
+          <img src={captured.url} alt="Captured preview" className="absolute inset-0 h-full w-full object-cover" />
         </div>
-        <div className="shrink-0 p-4 flex flex-col gap-3" style={{ background: "var(--bg-surface)" }}>
-          <div className="flex items-center justify-between text-xs font-mono-num" style={{ color: "var(--text-tertiary)" }}>
+        <div className="shrink-0 space-y-3 p-4" style={{ background: "var(--bg-surface)" }}>
+          <div className="flex items-center justify-between font-mono-num text-xs" style={{ color: "var(--text-tertiary)" }}>
             <span>{captured.at.toLocaleString()}</span>
-            <span>{gps.status === "ready" ? `${gps.lat.toFixed(4)}°, ${gps.lng.toFixed(4)}°` : "No GPS lock"}</span>
+            <span>{gps.status === "ready" ? `${gps.lat.toFixed(4)}°, ${gps.lng.toFixed(4)}° (±${gps.accuracyM} m)` : "No GPS lock"}</span>
           </div>
+          {error && (
+            <div role="alert" className="flex items-start gap-2 text-xs" style={{ color: "var(--error)" }}>
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>{error}</span>
+            </div>
+          )}
           <div className="flex gap-3">
             <button
               type="button"
               onClick={retake}
-              className="flex-1 flex items-center justify-center gap-2 h-12 rounded-lg text-sm font-medium"
+              disabled={step === "saving"}
+              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-lg text-sm font-medium disabled:opacity-40"
               style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="h-4 w-4" aria-hidden />
               Retake
             </button>
             <button
               type="button"
-              onClick={useCapture}
-              className="flex-1 flex items-center justify-center gap-2 h-12 rounded-lg text-sm font-semibold"
+              onClick={save}
+              disabled={step === "saving"}
+              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-lg text-sm font-semibold disabled:opacity-60"
               style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
             >
-              <Check className="w-4 h-4" />
-              Use Capture
+              {step === "saving" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Check className="h-4 w-4" aria-hidden />}
+              {step === "saving" ? "Saving…" : "Use photo"}
             </button>
           </div>
         </div>
@@ -280,109 +230,38 @@ function MobileCameraPageInner() {
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "#000" }}>
-      {/* Camera surface — no live preview stream is wired (file-input capture
-          opens the OS camera directly); this is the pre-capture HUD. */}
-      <div className="flex-1 relative flex items-center justify-center">
-        <Camera className="w-10 h-10" style={{ color: "rgba(255,255,255,0.15)" }} />
-
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-          <span
-            className="text-xs font-mono-num px-2 h-6 flex items-center rounded"
-            style={{ background: "rgba(8,9,11,0.7)", color: "var(--text-secondary)" }}
-          >
-            {world === "loading" ? "Loading World…" : world ? world.name : "No World selected"}
-          </span>
-        </div>
-
+    <div className="flex h-full flex-col" style={{ background: "#000" }}>
+      <div className="relative flex flex-1 items-center justify-center">
+        <Camera className="h-10 w-10" style={{ color: "rgba(255,255,255,0.15)" }} aria-hidden />
+        <p className="absolute left-4 right-4 top-4 text-center text-xs" style={{ color: "rgba(255,255,255,0.6)" }}>
+          {worldId
+            ? "Adding to your model. Move to a new position for the next photo."
+            : "Take a photo of the place. One photo gives a rough model; more views improve it."}
+        </p>
         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-center gap-4">
-          <HudDot label="GPS" active={gps.status === "ready"} pending={gps.status === "loading"} />
-          <HudDot label="Track" active={false} />
-          <HudDot label="Quality" active={false} />
+          <span className="flex items-center gap-1.5 text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${gps.status === "loading" ? "animate-pulse" : ""}`}
+              style={{ background: gps.status === "ready" ? "var(--accent)" : gps.status === "loading" ? "var(--warning)" : "rgba(255,255,255,0.25)" }}
+            />
+            GPS {gps.status === "ready" ? "locked" : gps.status === "loading" ? "searching" : "off"}
+          </span>
         </div>
       </div>
 
-      <div className="shrink-0 p-5 flex items-center justify-center gap-8" style={{ background: "#000" }}>
-        <button
-          type="button"
-          onClick={() => setMode("photo")}
-          className="flex flex-col items-center gap-1 text-xs"
-          style={{ color: mode === "photo" ? "var(--accent)" : "rgba(255,255,255,0.4)" }}
-        >
-          <ImageIcon className="w-4 h-4" />
-          Photo
-        </button>
-
+      <div className="flex shrink-0 items-center justify-center p-5" style={{ background: "#000" }}>
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          aria-label={mode === "photo" ? "Capture photo" : "Capture video"}
-          className="w-16 h-16 rounded-full flex items-center justify-center"
+          aria-label="Capture photo"
+          className="flex h-16 w-16 items-center justify-center rounded-full"
           style={{ border: "3px solid var(--accent)" }}
         >
-          <span className="w-12 h-12 rounded-full" style={{ background: "var(--accent)" }} />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setMode("video")}
-          className="flex flex-col items-center gap-1 text-xs"
-          style={{ color: mode === "video" ? "var(--accent)" : "rgba(255,255,255,0.4)" }}
-        >
-          <Video className="w-4 h-4" />
-          Video
+          <span className="h-12 w-12 rounded-full" style={{ background: "var(--accent)" }} />
         </button>
       </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={mode === "photo" ? "image/*" : "video/*"}
-        capture="environment"
-        onChange={handleFile}
-        className="hidden"
-      />
-
-      <style jsx>{`
-        .mobile-input {
-          height: 40px;
-          padding: 0 12px;
-          border-radius: 8px;
-          background: var(--bg-elevated);
-          border: 1px solid var(--border);
-          font-size: 14px;
-          outline: none;
-          color: var(--text-primary);
-        }
-      `}</style>
+      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" />
     </div>
-  );
-}
-
-function HudDot({ label, active, pending }: { label: string; active: boolean; pending?: boolean }) {
-  const color = active ? "var(--accent)" : pending ? "var(--warning)" : "rgba(255,255,255,0.25)";
-  return (
-    <div className="flex items-center gap-1.5 text-xs" style={{ color: active ? "var(--text-primary)" : "rgba(255,255,255,0.4)" }}>
-      <span className={`w-1.5 h-1.5 rounded-full ${pending ? "animate-pulse" : ""}`} style={{ background: color }} />
-      {label}
-    </div>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {label}
-        </span>
-        {hint && (
-          <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-            {hint}
-          </span>
-        )}
-      </div>
-      {children}
-    </label>
   );
 }

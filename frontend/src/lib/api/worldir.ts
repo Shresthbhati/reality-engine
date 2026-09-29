@@ -1,5 +1,5 @@
 import type { CamerasPayload, PipelineReport, WorldIR } from "@/types/worldir";
-import { apiGet, isApiError } from "./client";
+import { apiGet, isApiError, withQuery } from "./client";
 
 /** Null means "no version compiled yet" (the backend's own 404 for that
  * case) -- a real, honest, non-error state. Any OTHER failure (network
@@ -8,9 +8,11 @@ import { apiGet, isApiError } from "./client";
  * null, or the UI can't tell "never reconstructed" from "failed to load" --
  * which is how a reconstruction that just succeeded could look, to the
  * user, like it never happened. */
-export async function fetchWorldIR(worldId: string): Promise<WorldIR | null> {
+export async function fetchWorldIR(worldId: string, version?: string | null): Promise<WorldIR | null> {
   try {
-    return await apiGet<WorldIR>(`/api/worlds/${encodeURIComponent(worldId)}/worldir`);
+    return await apiGet<WorldIR>(
+      withQuery(`/api/worlds/${encodeURIComponent(worldId)}/worldir`, { version }),
+    );
   } catch (err) {
     if (isApiError(err) && err.status === 404) return null;
     throw err;
@@ -20,8 +22,11 @@ export async function fetchWorldIR(worldId: string): Promise<WorldIR | null> {
 /** Same "404 is the only real null" rule as fetchWorldIR above -- see its
  * comment. A raw fetch(), not apiGet(), so the 404 check is a status code
  * rather than an ApiError. */
-export async function fetchWorldPoints(worldId: string): Promise<ArrayBuffer | null> {
-  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/points`);
+export async function fetchWorldPoints(
+  worldId: string,
+  version?: string | null,
+): Promise<ArrayBuffer | null> {
+  const res = await fetch(withQuery(`/api/worlds/${encodeURIComponent(worldId)}/points`, { version }));
   if (res.status === 404) return null;
   if (!res.ok) {
     const body = await res.json().catch(() => null);
@@ -30,9 +35,14 @@ export async function fetchWorldPoints(worldId: string): Promise<ArrayBuffer | n
   return await res.arrayBuffer();
 }
 
-export async function fetchWorldCameras(worldId: string): Promise<CamerasPayload | null> {
+export async function fetchWorldCameras(
+  worldId: string,
+  version?: string | null,
+): Promise<CamerasPayload | null> {
   try {
-    return await apiGet<CamerasPayload>(`/api/worlds/${encodeURIComponent(worldId)}/cameras`);
+    return await apiGet<CamerasPayload>(
+      withQuery(`/api/worlds/${encodeURIComponent(worldId)}/cameras`, { version }),
+    );
   } catch (err) {
     if (isApiError(err) && err.status === 404) return null;
     throw err;

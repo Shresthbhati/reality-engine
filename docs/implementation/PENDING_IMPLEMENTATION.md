@@ -339,3 +339,34 @@ client of WorldIR/WorldStore; it never becomes the reconstruction engine.
 **Status: MISSING (deliberately deferred).** Fluids (SPH/FLIP), thermal
 coupling, structural FEM, high-fidelity fire. Do not begin before the
 mapping spine and P4 persistence are complete.
+
+---
+
+# PROD — Evidence-progressive product path (2026-09-29)
+
+Design and evidence: [`../PROGRESSIVE_RECONSTRUCTION.md`](../PROGRESSIVE_RECONSTRUCTION.md).
+
+## PROD.1 — One-action reconstruction (photos -> world -> refine)
+
+**Status: PARTIAL (verified on one real dataset).** Implemented and executed
+with real COLMAP/MiDaS on the South Building photographs and in a real
+browser. Missing: a real corridor dataset and a real room dataset
+(UNVERIFIED), dense Level 3, metric scale, single-image opening detection,
+per-version evidence panel while inspecting an old version.
+
+## PROD.2 — Stable entity identity across versions
+
+**Status: MISSING.** V(n) is rebuilt from the union of evidence, so plane ids
+are re-derived; a diff between a single-view hypothesis and a multi-view model
+correctly reports remove+add, but a refinement of the same structure can also
+churn ids. Wire `world_ir/entity_reid.py` into the rebuild.
+
+## PROD.3 — Confidence defaults
+
+**Status: PARTIAL.** `Uncertainty` default is now 0.0 (unknown); building/storey/
+opening producers no longer default to 1.0; the commit route rejects invalid
+confidence instead of coercing it. Left as documented risk: `Observation` and
+`Relationship` constructor defaults (1.0 / OBSERVED) and `CausalRelation`
+deserialisation default; raw-sensor decode fidelity (depth frames) legitimately
+states 1.0 with its basis.
+

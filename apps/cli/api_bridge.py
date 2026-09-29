@@ -222,13 +222,10 @@ def cmd_points_path(version_id: str) -> int:
                 elif g.data_uri:
                     candidates.append(Path(g.data_uri))
 
-        candidates.extend([
-            store_root / "artifacts" / "points.ply",
-            store_root.parent / "points.ply",
-            store_root.parent / "pipeline_out" / "points.ply",
-            store_root.parent / "datasets" / "room_capture" / "pipeline_out" / "points.ply",
-        ])
-
+        # Only this version's own geometry payloads are candidates. A
+        # `points.ply` that merely sits near the store (or a bundled dataset
+        # such as datasets/room_capture) belongs to some other capture:
+        # returning it would present a fixture as this version's reality.
         for c in candidates:
             if c.exists() and c.is_file() and c.stat().st_size > 0:
                 _emit({

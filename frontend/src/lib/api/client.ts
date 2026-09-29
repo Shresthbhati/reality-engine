@@ -240,6 +240,25 @@ export function apiPostForm<T>(
   );
 }
 
+/** Multipart upload of MANY files under one field name plus text fields
+ * (the one-action reconstruction upload). Uploads can be large: 10 minutes. */
+export function apiPostFiles<T>(
+  path: string,
+  fileField: string,
+  files: File[],
+  fields: Record<string, string> = {},
+  options: RequestOptions = {},
+): Promise<T> {
+  const form = new FormData();
+  for (const f of files) form.append(fileField, f, f.name);
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  return perform<T>(
+    path,
+    { method: "POST", body: form, headers: { Accept: "application/json" } },
+    { timeoutMs: 600_000, ...options },
+  );
+}
+
 /** Query-string helper that drops null/undefined/empty values. */
 export function withQuery(
   path: string,

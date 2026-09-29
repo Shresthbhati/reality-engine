@@ -1738,3 +1738,32 @@ tasks:
       - benchmark runs recorded in docs/BENCHMARKS.md with raw numbers
       - "tests/test_benchmark_suite.py (7): descriptor validation,
         same-pipeline invariant, timing records, metric keys"
+
+  # ================= PRODUCT — EVIDENCE-PROGRESSIVE PATH ==============
+
+  - id: PROD-01
+    name: one-action evidence-progressive reconstruction (photos -> world -> better world)
+    status: PARTIAL
+    basis: >-
+      2026-09-29. POST /api/reconstructions + GET /api/worlds/{id}/status;
+      level ladder (single-image bootstrap -> COLMAP sparse -> topology ->
+      incremental) with recorded fallbacks; evidence classification and
+      contribution; guidance from measurements; Studio + mobile flows.
+      Real photographs, real COLMAP, real MiDaS, real browser -- see
+      docs/PROGRESSIVE_RECONSTRUCTION.md.
+    verification:
+      - "tests/integration/test_progressive_product_journey.py (slow, real
+        engines): one photo, six photos, 6->10->20 same world + diff, bad
+        evidence, hard low-overlap fallback, engine crash, restart, video"
+      - "tests/test_progressive_units.py, tests/test_proc_ownership.py
+        (pipe-deadlock regression), tests/test_world_diff.py"
+      - "frontend tsc --noEmit + next build --webpack + real-browser run"
+    remaining:
+      - "real corridor and room photo datasets (none in repo) -- UNVERIFIED"
+      - "dense Level 3 wiring; metric scale anchoring from user input"
+      - "opening (window/door) detection in the single-image path"
+      - "stable entity identity across versions (entity_reid) so V1->V2 diffs
+        report modification instead of remove+add"
+      - "Observation/Relationship constructor confidence defaults (1.0)
+        audited; producers fixed, defaults left for a dedicated pass"
+

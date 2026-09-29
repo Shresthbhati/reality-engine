@@ -105,6 +105,16 @@ export interface WorldStatus {
     changes?: string[];
     verdict?: "ACCEPT" | "ACCEPT_WITH_UNCERTAINTY" | null;
     uncertainties?: string[];
+    /** competing estimates that are kept, with provenance, until later evidence settles them */
+    conflicts?: {
+      id: string;
+      kind: string;
+      subject: string;
+      status: "unresolved" | "resolved";
+      summary: string;
+      hypotheses: { source: string; position: number[]; confidence: number | null; provenance: string[] }[];
+      history: { version: string; event: string; detail: string }[];
+    }[];
   } | null;
   /** the newest run, including one whose result was NOT adopted (the current model was kept) */
   last_run?: {

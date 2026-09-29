@@ -324,6 +324,8 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "changes": report.get("changes", []),
             "verdict": (report.get("verdict") or {}).get("verdict"),
             "uncertainties": (report.get("verdict") or {}).get("uncertainties", []),
+            # explicit conflicts (both hypotheses + provenance + history), never silently resolved
+            "conflicts": report.get("conflicts", []),
         },
         # the newest run, including one whose candidate was NOT adopted (HEAD kept)
         "last_run": None if job is None or not isinstance(job.payload, dict) or "adopted" not in job.payload else {

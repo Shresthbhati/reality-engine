@@ -309,6 +309,21 @@ export default function ReconstructionStatusBar({
               </ul>
             </div>
           )}
+          {model && (model.conflicts ?? []).some((c) => c.status === "unresolved") && (
+            <div className="mt-2" data-testid="conflicting-evidence">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-red-300">Conflicting evidence</h3>
+              <ul className="mt-0.5 space-y-0.5">
+                {model.conflicts!
+                  .filter((c) => c.status === "unresolved")
+                  .map((c) => (
+                    <li key={c.id} className="text-[11px] leading-relaxed text-neutral-300" title={c.summary}>
+                      • Two estimates for where one photo was taken disagree ({c.hypotheses.length} kept). More
+                      evidence can settle it.
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
           {status.last_run && !status.last_run.adopted && (
             <div
               role="status"

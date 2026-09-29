@@ -487,9 +487,14 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         world=world_ir,
     )
     delta = world_delta.compute_delta(world_delta.snapshot_from_report(head_report), cand_snap)
-    decision = world_delta.decide(delta)
+    # Explicit conflicts: prior ones are carried forward (never dropped silently), new
+    # ones open when a previously registered photo lands somewhere materially different.
+    conflicts = world_delta.reconcile_conflicts(head_report.get("conflicts"), delta, f"job:{job.id}")
+    decision = world_delta.decide(delta, conflicts)
     adopt = decision["verdict"] != world_delta.REJECT
-    changes = world_delta.describe_changes(delta, structure=adopt)
+    changes = world_delta.describe_changes(delta, structure=adopt, conflicts=conflicts)
+    if adopt:
+        world_ir.metadata["conflicts"] = conflicts
     # Every geometry-eligible photo records THIS attempt, adopted or not: a photo
     # that could not be placed is "waiting", never discarded, and is retried on
     # the next rebuild (a later photo may be the missing bridge).
@@ -534,6 +539,8 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         "guidance": prog.guidance,
         "structure": {"entity_types": cand_snap["entity_types"], "provenance": cand_snap["provenance"]},
         "cameras": cand_snap["cameras"],
+        "entities": cand_snap["entities"],
+        "conflicts": conflicts,
         "delta": delta,
         "verdict": decision,
         "changes": changes,

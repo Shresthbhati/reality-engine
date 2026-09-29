@@ -115,11 +115,17 @@ def test_orderings_reach_equivalent_final_support(tmp_path):
     assert abs(abc["registered"] - acb["registered"]) <= 1, (abc["registered"], acb["registered"])
 
 
-@pytest.mark.xfail(strict=True, reason="NOT IMPLEMENTED: conflicting evidence is not yet represented as "
-                                       "an explicit conflict in WorldIR (see PENDING_IMPLEMENTATION.md)")
-def test_conflicting_evidence_is_explicit_not_silently_resolved(tmp_path):
+def test_conflicts_are_explicit_in_the_canonical_worldir_and_the_status_api(tmp_path):
+    """Conflicts live in WorldIR metadata and the status API as an explicit list (possibly empty
+    when the photos agree). Their lifecycle (opened / kept / resolved) is proven in
+    tests/test_world_delta.py; real photos rarely disagree, so no conflict is manufactured here."""
     def check(c, wid, trace):
-        assert "conflicts" in _worldir(c, wid)["metadata"]
+        st = c.get(f"/api/worlds/{wid}/status").json()
+        wir = _worldir(c, wid)
+        assert isinstance(wir["metadata"]["conflicts"], list)
+        assert wir["metadata"]["conflicts"] == st["model"]["conflicts"]
+        for k in wir["metadata"]["conflicts"]:
+            assert k["status"] in ("unresolved", "resolved") and len(k["hypotheses"]) >= 2
 
     _run(tmp_path, [("A", A), ("B", B)], after=check)
 

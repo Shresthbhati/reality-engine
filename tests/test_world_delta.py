@@ -89,7 +89,9 @@ def test_missing_history_is_reported_not_measurable_never_silently_passed():
     prev = snap(["a", "b", "c"], cams={})
     prev["entity_types"] = None                     # an older version that never recorded structure
     d = wd.compute_delta(prev, snap(["a", "b", "c", "d"]))
-    assert len(d["not_measurable"]) == 2
+    assert len(d["not_measurable"]) == 3
+    assert any("entity continuity" in m for m in d["not_measurable"])
+    assert any("structure counts" in m for m in d["not_measurable"])
     assert wd.decide(d)["verdict"] == wd.ACCEPT
 
 
@@ -117,3 +119,83 @@ def test_single_view_anchor_is_not_a_registration_so_a_fused_candidate_is_not_a_
     # and level-1+ registration still counts
     d2 = wd.compute_delta(snap(["a", "b"], level=1), snap([], inputs=["a", "b", "c"], level=0))
     assert wd.decide(d2)["verdict"] == wd.REJECT
+
+
+# ------------------------------------------------------------------ entity continuity + conflicts
+
+
+def _place(cams_map, shift=(0.0, 0.0, 0.0), scale=1.0):
+    return {k: [scale * v[0] + shift[0], scale * v[1] + shift[1], scale * v[2] + shift[2]] for k, v in cams_map.items()}
+
+
+def _ent(t, c, prov="RECONSTRUCTED"):
+    return {"id": f"{t}-{c[0]}", "type": t, "center": list(c), "provenance": prov, "confidence": 0.8}
+
+
+def test_entity_continuity_is_measured_in_a_common_frame_not_by_id():
+    cams = ring()
+    walls = [_ent("wall", (3, 0, 0)), _ent("wall", (0, 3, 0)), _ent("wall", (-3, 0, 0)), _ent("floor", (0, 0, -1))]
+    # candidate lives in a different frame (scaled x2.5 and shifted) and re-derives every id
+    def mv(c):
+        return [2.5 * c[0] + 10, 2.5 * c[1] - 4, 2.5 * c[2] + 3]
+    cand_ents = [dict(e, id="new-" + e["id"], center=mv(e["center"])) for e in walls]
+    cand_ents[2] = dict(cand_ents[2], center=mv((-3, 2.0, 0)))                 # this wall genuinely moved
+    cand_ents.append(_ent("wall", tuple(mv((0, -3, 0)))))                     # and one wall is new
+    res = wd.entity_continuity(walls, cand_ents, cams, _place(cams, (10, -4, 3), 2.5))
+    # two walls + the floor unchanged; the third wall moved 2 units (> 20% of extent) so it is NOT
+    # matched: it is reported removed, and its new position plus the extra wall count as new
+    assert (res["preserved"], res["refined"], len(res["removed"]), res["new"]) == (3, 0, 1, 2)
+    assert res["removed"][0]["type"] == "wall" and res["matched_by"].startswith("type + position")
+
+
+def test_entity_continuity_not_measurable_without_a_camera_alignment():
+    assert wd.entity_continuity([_ent("wall", (0, 0, 0))], [_ent("wall", (0, 0, 0))], {}, {}) is None
+
+
+def test_removed_structure_is_a_flagged_uncertainty_never_silent():
+    cams = ring()
+    prev = snap(list(cams), cams=cams, types={"wall": 4})
+    prev["entities"] = [_ent("wall", (3, 0, 0)), _ent("wall", (0, 3, 0)), _ent("wall", (-3, 0, 0)), _ent("wall", (0, -3, 0))]
+    cand = snap(list(cams), cams=cams, types={"wall": 4})
+    cand["entities"] = [_ent("wall", (3, 0, 0))]                               # 3 of 4 walls not reproduced
+    d = wd.compute_delta(prev, cand)
+    dec = wd.decide(d)
+    assert d["entities"]["preserved"] == 1 and len(d["entities"]["removed"]) == 3
+    assert dec["verdict"] == wd.ACCEPT_WITH_UNCERTAINTY and any("not reproduced" in u for u in dec["uncertainties"])
+
+
+def _moved_delta(displaced=("e0",), amount=3.0):
+    cams = ring()
+    cand = {k: list(v) for k, v in cams.items()}
+    for k in displaced:
+        cand[k][0] += amount
+    return wd.compute_delta(snap(list(cams), cams=cams), snap(list(cams), cams=cand))
+
+
+def test_conflict_is_opened_with_both_hypotheses_and_provenance_then_preserved():
+    d = _moved_delta()
+    conflicts = wd.reconcile_conflicts(None, d, "v2")
+    assert len(conflicts) == 1 and conflicts[0]["status"] == "unresolved" and conflicts[0]["subject"] == "e0"
+    hyp = conflicts[0]["hypotheses"]
+    assert [h["source"] for h in hyp] == ["previous_version", "v2"] and hyp[0]["position"] != hyp[1]["position"]
+    assert all(h["provenance"] == ["e0"] and h["confidence"] is None for h in hyp)   # confidence NOT invented
+    assert wd.decide(d, conflicts)["verdict"] == wd.ACCEPT_WITH_UNCERTAINTY
+    # a later version that cannot see the camera at all must NOT drop the conflict
+    quiet = wd.compute_delta(snap(["a", "b", "c"]), snap(["a", "b", "c"]))
+    kept = wd.reconcile_conflicts(conflicts, quiet, "v3")
+    assert len(kept) == 1 and kept[0]["status"] == "unresolved"
+
+
+def test_conflict_is_resolved_only_when_a_later_version_measurably_agrees_and_history_is_kept():
+    opened = wd.reconcile_conflicts(None, _moved_delta(), "v2")
+    agree = _moved_delta(displaced=(), amount=0.0)                              # every camera consistent
+    resolved = wd.reconcile_conflicts(opened, agree, "v3")
+    assert resolved[0]["status"] == "resolved"
+    assert [h["event"] for h in resolved[0]["history"]] == ["opened", "resolved"]
+    assert len(resolved[0]["hypotheses"]) == 2                                  # provenance retained after resolution
+    text = " ".join(wd.describe_changes(agree, conflicts=resolved))
+    assert "earlier conflict resolved" in text
+    # moved AGAIN keeps the conflict open and records the new hypothesis
+    again = wd.reconcile_conflicts(opened, _moved_delta(), "v3")
+    assert again[0]["status"] == "unresolved" and again[0]["hypotheses"][-1]["source"] == "v3"
+    assert again[0]["history"][-1]["event"] == "moved_again"

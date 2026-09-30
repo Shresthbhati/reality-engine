@@ -120,8 +120,13 @@ def test_unrelated_photo_is_kept_flagged_and_harmless(tmp_path):
 def test_orderings_reach_equivalent_final_support(tmp_path):
     abc = _run(tmp_path / "abc", [("A", A), ("B", B), ("C", C)])[-1]
     acb = _run(tmp_path / "acb", [("A", A), ("C", C), ("B", B)])[-1]
-    assert abc["used"] == acb["used"] == 9
-    assert abs(abc["registered"] - acb["registered"]) <= 1, (abc["registered"], acb["registered"])
+    bac = _run(tmp_path / "bac", [("B", B), ("A", A), ("C", C)])[-1]
+    print("[orders] ABC", abc["registered"], "ACB", acb["registered"], "BAC", bac["registered"])
+    assert abc["used"] == acb["used"] == bac["used"] == 9
+    # reconstruction is not bit-reproducible across arrival orders, but the SUPPORT reached must be equivalent:
+    # no ordering may permanently lose a photograph that another ordering placed
+    regs = (abc["registered"], acb["registered"], bac["registered"])
+    assert max(regs) - min(regs) <= 1, regs
 
 
 def test_a_rich_world_is_extended_incrementally_through_the_product_path(tmp_path):

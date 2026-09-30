@@ -240,3 +240,59 @@ async def resync_versions(db: AsyncSession, world_id: str) -> None:
     for v in missing:
         db.add(_mirror_row(v))
     await db.commit()
+
+
+async def rollback_head(db: AsyncSession, world_id: str, target_version_id: str) -> WorldVersion:
+    """Move this World's HEAD back to an EARLIER, intact version.
+
+    Rollback model (explicit): history is never rewritten. Every version stays immutable; only the single
+    mutable HEAD pointer moves. Evidence is never removed -- photographs that only later versions used
+    simply stop being "in the current model" and are retried by the next reconstruction, which is a
+    candidate compared against the rolled-back HEAD and chains onto it (parent = target).
+
+    The persistent COLMAP state describes the version that was current BEFORE the rollback, not the
+    target, so it must not be the base of the next incremental registration: it is set aside (renamed,
+    never deleted) and the next reconstruction starts a fresh session.
+
+    Refused (ValueError) when the target is unknown, foreign, unreadable or fails hash verification;
+    ConcurrentModificationError when HEAD moved while rolling back.
+    """
+    world = await db.get(World, world_id)
+    if world is None:
+        raise ValueError(f"world {world_id} not found")
+    head = world.current_version_id
+    if head is None:
+        raise ValueError("world has no version to roll back from")
+    row = await db.get(WorldVersion, target_version_id)
+    if row is None or row.world_id != world_id:
+        raise ValueError(f"version '{target_version_id}' does not belong to world {world_id}")
+    if target_version_id == head:
+        return row
+    failures = get_store().verify_version(target_version_id)
+    if failures:
+        raise ValueError("target version failed integrity verification: "
+                         + "; ".join(f["reason"] for f in failures))
+    # Order matters for crash safety: set the COLMAP base aside FIRST. A crash between the two steps then
+    # leaves HEAD unchanged with no base (the next run merely rebuilds fully), never HEAD=target seeded by
+    # the state of the version that was rolled back from.
+    _set_aside_colmap_state(world_id)
+    moved = await db.execute(
+        update(World).where(World.id == world_id, World.current_version_id == head)
+        .values(current_version_id=target_version_id, updated_at=utcnow())
+    )
+    if moved.rowcount == 0:
+        current = await db.get(World, world_id)
+        raise ConcurrentModificationError(
+            expected_parent=head, current_head=current.current_version_id if current else None,
+            orphan_version_id=target_version_id)
+    await db.commit()
+    return row
+
+
+def _set_aside_colmap_state(world_id: str) -> None:
+    """Rename (never delete) the world's committed COLMAP state so it cannot seed the next run."""
+    import time
+
+    current = worldstore_root() / "colmap-sessions" / world_id / "current"
+    if current.exists():
+        current.rename(current.with_name(f"superseded-by-rollback-{int(time.time())}"))

@@ -137,6 +137,44 @@ class VerticalSliceOptions:
     #: model with image_registrator instead of re-solving the whole scene. The CALLER owns
     #: commit()/discard(): the state only advances when the resulting version is adopted.
     colmap_session: Optional[object] = None
+    #: The world's current HEAD as a world_delta snapshot (and its conflicts). With a colmap_session and
+    #: a HEAD, the backend judges its incremental and full candidates as WORLDS against it
+    #: (engine.pipeline.candidate_selection) instead of by registered-camera count.
+    head_snapshot: Optional[dict] = None
+    head_conflicts: Optional[list] = None
+
+
+def _candidate_snapshot(result, evidence_items, options) -> dict:
+    """A reconstruction candidate as the world snapshot the adoption gate compares: the same scale ->
+    frame -> WorldIR compile stages as the real path, without the optional depth/perception/mesh/dense
+    stages (identical for both candidates, so the comparison stays symmetric)."""
+    from engine.pipeline import world_delta
+    from reconstruction.frame import canonicalize_frame
+
+    scaled = None
+    for ref in options.measured_baselines:
+        try:
+            scaled = anchor_metric_scale(result, ref)
+            break
+        except ScaleAnchoringError:
+            continue
+    result = (scaled or unscaled(result)).result
+    result, _ = canonicalize_frame(result, seed=options.seed)
+    world, _ = compile_reconstruction_to_world(
+        result, CompileOptions(seed=options.seed, up=options.up, artifact_store=options.artifact_store))
+    registered = [p.evidence_id for p in result.camera_poses]
+    prior = (options.head_snapshot or {}).get("input_ids") or []
+    level = 2 if len(registered) >= 3 else 1
+    if level >= 2 and any(e.type.value in {"room", "storey", "corridor", "level"} for e in world.entities.values()):
+        level = 4
+    if prior and level >= 2:
+        level = 5
+    poses = [(p.evidence_id, tuple(float(v) for v in p.position), tuple(float(v) for v in p.rotation))
+             for p in result.camera_poses]
+    return world_delta.snapshot(
+        registered_ids=registered, input_ids=[e.id for e in evidence_items], level=level,
+        model_state="PARTIAL", points=len(result.points), camera_poses=poses, world=world,
+        artifact_store=options.artifact_store)
 
 
 @dataclass(frozen=True)
@@ -217,6 +255,12 @@ def vertical_slice(
 
         backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary,
                                               session=options.colmap_session)
+        if options.colmap_session is not None and options.head_snapshot is not None:
+            from engine.pipeline.candidate_selection import WorldArbiter
+
+            backend.candidate_arbiter = WorldArbiter(
+                options.head_snapshot, options.head_conflicts,
+                lambda res: _candidate_snapshot(res, evidence_items, options))
     orchestrator = ReconstructionOrchestrator(backends=[backend])
     try:
         run = orchestrator.run(list(evidence_items))

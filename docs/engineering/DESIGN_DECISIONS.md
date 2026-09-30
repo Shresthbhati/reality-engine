@@ -109,3 +109,17 @@ synthetic reconstruction backend so `reality compile` is E2E-testable
 offline. Production leaves it unset and always uses COLMAP; the CLI
 raises a clear error on a malformed spec rather than silently ignoring
 it.
+
+## Decision — Candidate selection by world evolution, rollback as a pointer move
+
+**Status: ACCEPTED**
+
+1. Incremental vs full COLMAP candidates are compared as WORLDS against HEAD with the same `world_delta`
+   machinery that gates adoption (`engine/pipeline/candidate_selection.py`), by an ordered, recorded
+   hierarchy - never by registered-camera count and never by a scalar score. Ties keep the incremental
+   candidate (coordinate-frame continuity). If both fail acceptance the adoption gate keeps HEAD.
+2. Rollback moves only the HEAD pointer. Versions stay immutable, evidence is never removed, the COLMAP
+   base is set aside (renamed) before the pointer moves, and the next version chains onto the rolled-back
+   HEAD (its evidence is the union of everything the world holds, so photos later versions used are retried).
+3. The COLMAP session is derived state that commits strictly after WorldStore adoption and read-back; a
+   crash leaves it at most one version behind, which converges. No cross-store journal is required for that.

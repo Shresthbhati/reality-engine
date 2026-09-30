@@ -294,6 +294,10 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         #: what the last reconstruct() actually did (mode, counts, timings); {} for the
         #: sessionless path. Surfaced in the version report -- never inferred.
         self.last_run_info: Dict[str, object] = {}
+        #: Optional engine.pipeline.candidate_selection.WorldArbiter (assess(result, tag) / choose(a, b)).
+        #: When set, incremental-vs-full is decided by how each candidate evolves the WORLD, not by how
+        #: many photographs it registered. None keeps the registration-count rule.
+        self.candidate_arbiter = None
         # Default False: the official Windows release used here is a
         # no-GPU build ("without GPU support" per its own version banner);
         # passing use_gpu=1 against it fails every step. A CUDA build
@@ -699,17 +703,41 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 n_inc = len(inc_result.camera_poses) if inc_result is not None else None
                 info["incremental_registered"] = n_inc
                 info["incremental_points"] = len(inc_result.points) if inc_result is not None else None
-                need_full = inc_result is None or n_inc < n_input
+                arbiter = self.candidate_arbiter
+                inc_assess = None
+                if arbiter is not None and inc_result is not None:
+                    try:
+                        inc_assess = arbiter.assess(inc_result, "incremental")
+                    except Exception as exc:  # noqa: BLE001 -- fall back to the registration-count rule, recorded
+                        info["arbiter_error"] = f"{type(exc).__name__}: {exc}"[:300]
+                        arbiter = None
+                # A full rebuild is worth its cost when photographs remain unplaced OR the incremental
+                # candidate is not a clean evolution of the world (a drifted / lossy model can place every photo).
+                need_full = (inc_result is None or n_inc < n_input
+                             or (inc_assess is not None and inc_assess["verdict"] != "ACCEPT"))
                 full = None
                 if need_full:
                     # cheap: features and matches are already in the database
                     full = timed("mapper", full_mapper)
                     info["full_registered"] = len(full[0].camera_poses)
                     info["full_points"] = len(full[0].points)
-                if inc_result is not None and (full is None or len(full[0].camera_poses) <= n_inc):
+                verdict = None
+                if arbiter is not None and inc_result is not None and full is not None:
+                    try:
+                        full_assess = arbiter.assess(full[0], "full")
+                        verdict = arbiter.choose(inc_assess, full_assess)
+                        info["arbitration"] = {"incremental": inc_assess, "full": full_assess, **verdict}
+                    except Exception as exc:  # noqa: BLE001
+                        info["arbiter_error"] = f"{type(exc).__name__}: {exc}"[:300]
+                if verdict is not None:
+                    use_incremental = verdict["choice"] == "incremental"
+                else:  # no world-level evaluation available: the historical registration-count rule
+                    use_incremental = inc_result is not None and (full is None or len(full[0].camera_poses) <= n_inc)
+                if use_incremental:
                     result, chosen_dir = inc_result, ws / "inc" / "adjusted"
                     info.update(mode="incremental", reason=(
                         "every photograph registered" if full is None else
+                        verdict["why"] if verdict is not None else
                         "a full rebuild registered no more photographs, so the established model was kept"))
                 else:
                     result, dirs, ref = full
@@ -717,6 +745,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                     incremental_ok = len(dirs) == 1
                     info.update(mode="full", reason=(
                         "incremental registration failed" if inc_result is None else
+                        verdict["why"] if verdict is not None else
                         f"a full rebuild registered more photographs ({len(result.camera_poses)} vs {n_inc})"))
 
         # canonical layout: the chosen model becomes sparse/0 (dense continuation and the next run read it)

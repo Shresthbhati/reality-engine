@@ -439,7 +439,11 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # Its state advances only when this run's version is adopted (commit below).
         colmap_session = ColmapSession(worldstore_service.worldstore_root() / "colmap-sessions" / world.id)
         holder["session"] = colmap_session
-        options = VerticalSliceOptions(artifact_store=artifact_store, colmap_session=colmap_session)
+        options = VerticalSliceOptions(
+            artifact_store=artifact_store, colmap_session=colmap_session,
+            # both COLMAP candidates are judged as worlds against the current HEAD, not by camera count
+            head_snapshot=world_delta.snapshot_from_report(head_report),
+            head_conflicts=head_report.get("conflicts"))
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
     prog = await asyncio.to_thread(
@@ -523,6 +527,10 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                               f"{'' if g == 1 else 's'} registered into it, established camera poses kept.")
         elif colmap_info.get("mode") == "full" and colmap_info.get("prior_images"):
             changes.insert(0, f"Rebuilt the reconstruction from scratch ({colmap_info.get('reason')}).")
+        arb = colmap_info.get("arbitration")
+        if arb:  # both candidates were judged as worlds: say which won and on what measured fact
+            changes.insert(1, f"Chose the {arb['choice']} reconstruction over the {'full' if arb['choice'] == 'incremental' else 'incremental'} "
+                              f"candidate: {arb['why']}.")
     # Every geometry-eligible photo records THIS attempt, adopted or not: a photo
     # that could not be placed is "waiting", never discarded, and is retried on
     # the next rebuild (a later photo may be the missing bridge).

@@ -296,3 +296,40 @@ def _set_aside_colmap_state(world_id: str) -> None:
     current = worldstore_root() / "colmap-sessions" / world_id / "current"
     if current.exists():
         current.rename(current.with_name(f"superseded-by-rollback-{int(time.time())}"))
+
+
+# ------------------------------------------------------------------------- user-supplied scale references
+
+
+def _scale_ref_path(world_id: str) -> Path:
+    return worldstore_root() / "scale-references" / f"{world_id}.json"
+
+
+def list_scale_references(world_id: str) -> list[dict]:
+    """The operator-measured distances recorded for this world (oldest first); [] when none."""
+    try:
+        data = json.loads(_scale_ref_path(world_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+
+
+def add_scale_reference(world_id: str, evidence_id_a: str, evidence_id_b: str, distance_m: float,
+                        method: str = "manual_measurement") -> dict:
+    """Record one measured distance between two capture positions. The same pair replaces its earlier entry
+    (a corrected measurement); every other reference is kept. Validation is the scale module's own
+    (two different ids, positive finite distance) -- this never invents or rounds a value."""
+    from reconstruction.scale import ScaleReference
+
+    ScaleReference(evidence_id_a, evidence_id_b, float(distance_m), method)      # raises ScaleAnchoringError
+    ref = {"evidence_id_a": evidence_id_a, "evidence_id_b": evidence_id_b, "distance_m": float(distance_m),
+           "method": method, "recorded_at": utcnow().isoformat()}
+    pair = frozenset((evidence_id_a, evidence_id_b))
+    refs = [r for r in list_scale_references(world_id)
+            if frozenset((r.get("evidence_id_a"), r.get("evidence_id_b"))) != pair] + [ref]
+    path = _scale_ref_path(world_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(refs, indent=1, sort_keys=True), encoding="utf-8")
+    os.replace(tmp, path)
+    return ref

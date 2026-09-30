@@ -318,6 +318,9 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "outcome": report.get("status"),
             "attempts": report.get("attempts", []),
             "scale": ((report.get("stages") or {}).get("scale") or {}),
+            # which entities kept their previous id (matched by measured spatial continuity) and which are only
+            # related (split / merge / ambiguous) -- identity is never forced
+            "identity": report.get("identity"),
             "images_used": len(ev_report.get("input_ids") or []),
             "images_registered": len(ev_report.get("registered_ids") or []),
             # what this version changed relative to its predecessor (measured, see world_delta)

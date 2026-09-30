@@ -354,3 +354,50 @@ def test_rollback_moves_head_only_keeps_history_and_evidence_and_the_next_versio
         assert len(st4["evidence"]) == 15 and (st4["last_run"] or {}).get("adopted") is True
         for v in (v1, v2, v3):
             assert _json.dumps(_worldir(c, wid, v), sort_keys=True) == before[v]
+
+
+# ------------------------------------------------------------------------------ user-supplied metric scale
+
+
+def test_a_user_measured_distance_metricizes_the_same_world_into_a_new_version_and_says_so(root):
+    """V1 is RELATIVE. The user supplies a measured distance between two of its photographs: the SAME world gets
+    a new version whose scale is metric, with the source on record. Invalid references change nothing."""
+    ids = _ids(root)
+    wid = ids["wid"]
+    with app_client(root) as c:
+        st1 = c.get(f"/api/worlds/{wid}/status").json()
+        assert st1["model"]["scale"]["state"] != "metric", "V1 must not claim meters"
+        registered = [e["id"] for e in st1["evidence"] if e["registered"]]
+        a, b = registered[0], registered[-1]
+        # A physically consistent "measurement": the separation of those two cameras in the world's own frame.
+        # (An arbitrary number such as 1.2 m would shrink a building to 0.4 m; the fixed-metre plane tolerances
+        # then find no walls and the adoption gate rightly rejects that candidate.)
+        import math
+        import sqlite3
+
+        con = sqlite3.connect(root / "app.db")
+        cams = json.loads(con.execute("select report from world_versions where id=?", (ids["v1"],)).fetchone()[0])["cameras"]
+        con.close()
+        sep = math.dist(cams[a], cams[b])
+        assert sep > 0.5, cams
+
+        # refused: same photo twice, a stranger, a non-distance -- and nothing was queued or stored
+        assert c.post(f"/api/worlds/{wid}/scale", json={"evidence_id_a": a, "evidence_id_b": a, "distance_m": 1.0}).status_code == 422
+        assert c.post(f"/api/worlds/{wid}/scale", json={"evidence_id_a": a, "evidence_id_b": "nope", "distance_m": 1.0}).status_code == 422
+        assert c.post(f"/api/worlds/{wid}/scale", json={"evidence_id_a": a, "evidence_id_b": b, "distance_m": -1.0}).status_code == 422
+        assert len(c.get(f"/api/worlds/{wid}/status").json()["versions"]) == 1
+
+        r = c.post(f"/api/worlds/{wid}/scale", json={"evidence_id_a": a, "evidence_id_b": b, "distance_m": sep,
+                                                     "method": "tape measure"})
+        assert r.status_code == 202, r.text
+        st2 = _settle(c, wid)
+        m = st2["model"]
+        print("[scale]", m["scale"], m["changes"][:2])
+        assert len(st2["versions"]) == 2 and m["version_id"] != ids["v1"], "metricizing must create a new version"
+        assert [v for v in st2["versions"] if v["is_current"]][0]["parent_version_id"] == ids["v1"]
+        assert m["scale"]["state"] == "metric" and m["scale"]["meters_per_unit"] > 0
+        assert m["scale"]["references"][0]["distance_m"] == pytest.approx(sep) and m["scale"]["references"][0]["method"] == "tape measure"
+        assert any("Scale changed" in t and "metric" in t for t in m["changes"]), m["changes"]
+        assert st2["model"]["images_used"] == 6 and len(st2["evidence"]) == 6          # same world, same evidence
+        assert _worldir(c, wid, ids["v1"])["entities"] and _worldir(c, wid)["entities"]
+        assert m["identity"] is not None                                                # identity decisions recorded

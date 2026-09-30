@@ -297,8 +297,9 @@ def bootstrap_single_image(
                 )
                 world.geometries[og.id] = og
                 world.entities[oid] = Entity(
-                    id=oid, type=EntityType.DOOR if cand.kind == "door" else EntityType.WINDOW,
-                    name=f"Opening candidate ({cand.kind}-like) on {host_eid}",
+                    id=oid, type={"door": EntityType.DOOR, "window": EntityType.WINDOW}.get(cand.kind, EntityType.OPENING),
+                    name=(f"Opening candidate ({cand.kind}-like) on {host_eid}" if cand.kind != "opening"
+                          else f"Opening candidate (kind unresolved) on {host_eid}"),
                     transform={"position": {"x": sum(cxs) / 4, "y": sum(cys) / 4, "z": sum(czs) / 4}},
                     geometry_ids=[og.id], provenance=Provenance.INFERRED,
                     confidence=OPENING_CONFIDENCE_CEILING,
@@ -312,6 +313,10 @@ def bootstrap_single_image(
                     custom_properties={"bootstrap": {
                         "role": "opening_candidate", "source": "single_image", "host_entity_id": host_eid,
                         "kind_basis": cand.kind_basis, "contrast": cand.contrast,
+                        "evidence_id": item.id, "resolved_kind": cand.kind != "opening",
+                        "dimensions": {"width_frac_of_wall": cand.wall_frac_w, "height_frac_of_wall": cand.wall_frac_h,
+                                       "units": "fraction of the host wall's extent in the image; metric size "
+                                                "is unknown in a single view (relative scale)"},
                         "rectangularity": cand.rectangularity, "area_frac_of_wall": cand.area_frac,
                         "image_quad_px": [[round(a, 1), round(b, 1)] for a, b in cand.quad_px],
                         "extent": "axis-aligned box around 4 depth-estimated corners; relative units",

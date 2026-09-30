@@ -281,6 +281,24 @@ def _subprocess_env(colmap_path: str) -> Dict[str, str]:
     return env
 
 
+#: Native COLMAP on Windows crashes (exit 0xC0000409, no message) once a file it opens exceeds MAX_PATH (260).
+#: The deepest paths under a workspace add ~90 characters (dense/<n>/stereo/depth_maps/<image>.geometric.bin).
+MAX_WORKSPACE_PATH_CHARS = 170
+
+
+class WorkspacePathTooLong(RuntimeError):
+    """The COLMAP workspace path would push COLMAP's own file paths past what Windows allows."""
+
+
+def _check_workspace_path(ws: Path) -> None:
+    """Fail EARLY with the real cause instead of a native crash whose only symptom is an exit code."""
+    if os.name == "nt" and len(str(Path(ws).resolve())) > MAX_WORKSPACE_PATH_CHARS:
+        raise WorkspacePathTooLong(
+            f"COLMAP workspace path is {len(str(Path(ws).resolve()))} characters (limit {MAX_WORKSPACE_PATH_CHARS}); "
+            "native COLMAP on Windows crashes silently beyond ~260 characters including file names. "
+            "Point WORLDSTORE_ROOT at a shorter directory.")
+
+
 class ColmapReconstructionBackend(IReconstructionBackend):
     def __init__(self, colmap_binary: str = "colmap", use_gpu: bool = False,
                  robust_sift: bool = True, guided_matching: bool = False,
@@ -603,6 +621,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         n_input = len(image_evidence)
 
         ws, prior = self.session.begin(signature, by_name)
+        _check_workspace_path(ws)
         image_dir = ws / "images"
         image_dir.mkdir(exist_ok=True)
         # "new" = not in the committed manifest. Deciding this from which files happen to exist on

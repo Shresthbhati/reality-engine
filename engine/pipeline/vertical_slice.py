@@ -142,6 +142,10 @@ class VerticalSliceOptions:
     #: (engine.pipeline.candidate_selection) instead of by registered-camera count.
     head_snapshot: Optional[dict] = None
     head_conflicts: Optional[list] = None
+    #: EXPERIMENTAL: escalate to dense MVS (Level 3) when the sparse model's MEASURED properties justify it
+    #: (engine.pipeline.dense_gate), using the persistent COLMAP session's own images and sparse model. Off by
+    #: default: it adds a GPU-heavy stage and its thresholds are not yet calibrated against real datasets.
+    dense_auto: bool = False
 
 
 def _candidate_snapshot(result, evidence_items, options) -> dict:
@@ -340,9 +344,18 @@ def vertical_slice(
 
     # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
     # Runs BEFORE fusion so dense points can participate in cross-source fusion
-    dense_mvs_facts = _dense_mvs_stage(
-        result, world, options, scale_state, meters_per_unit
-    )
+    dense_options, dense_gate_facts, dense_tmp = options, None, None
+    if options.dense_auto and not options.dense_mvs_enabled:
+        dense_options, dense_gate_facts, dense_tmp = _auto_dense_options(result, len(evidence_items), options)
+    try:
+        dense_mvs_facts = _dense_mvs_stage(
+            result, world, dense_options, scale_state, meters_per_unit
+        )
+    finally:
+        if dense_tmp is not None:
+            import shutil
+
+            shutil.rmtree(dense_tmp, ignore_errors=True)       # the fused cloud was ingested into the artifact store
 
     # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
     fusion_facts = _fusion_stage(result, world, options, scale_state)
@@ -403,11 +416,47 @@ def vertical_slice(
             "perception": perception_facts,
             "mesh": mesh_facts,
             "detail": detail_facts,
+            "dense_mvs": dense_mvs_facts,
+            "dense_gate": dense_gate_facts,
             # how the sparse model was actually produced (full / incremental / reused, counts, timings);
             # empty for backends without a persistent session
             "colmap_session": dict(getattr(backend, "last_run_info", None) or {}) or None,
         },
     )
+
+
+def _auto_dense_options(result, n_input: int, options):
+    """Decide from MEASURED sparse-model properties whether dense MVS is justified; if so, return options that
+    point the existing dense stage at the session workspace's own images and sparse model (a scratch directory
+    holds the dense output so the persistent COLMAP state never carries depth maps). Returns
+    (options, gate_facts, scratch_dir_or_None). Never guesses: without a usable session workspace the gate says so."""
+    import dataclasses
+    import tempfile
+    from pathlib import Path
+
+    from engine.pipeline.dense_gate import dense_readiness
+    from engine.pipeline.guidance import coverage_degrees
+
+    poses = [(p.evidence_id, tuple(float(v) for v in p.position), tuple(float(v) for v in p.rotation))
+             for p in result.camera_poses]
+    xs = sorted(float(p.position[0]) for p in result.points)
+    zs = sorted(float(p.position[2]) for p in result.points)
+    center = (xs[len(xs) // 2], zs[len(zs) // 2]) if xs else None
+    cov = coverage_degrees(poses, center) if (poses and center) else None
+    coverage = cov["degrees"] if cov else None
+    facts = dense_readiness(result, n_input, coverage)
+    session = options.colmap_session
+    ws = Path(session.staging) if session is not None and getattr(session, "staging", None) else None
+    model = ws / "sparse" / "0" if ws is not None else None
+    if not facts["escalate"]:
+        return options, dict(facts, decision="sparse only: dense not justified by the measured evidence"), None
+    if model is None or not (ws / "images").is_dir() or not model.is_dir():
+        facts.update(escalate=False, reasons=["no persistent COLMAP workspace with images and a sparse model"])
+        return options, dict(facts, decision="sparse only: dense inputs unavailable"), None
+    scratch = Path(tempfile.mkdtemp(prefix="re_dense_"))
+    return (dataclasses.replace(options, dense_mvs_enabled=True, dense_mvs_image_dir=ws / "images",
+                                dense_mvs_sparse_model_dir=model, dense_mvs_workspace=scratch),
+            dict(facts, decision="escalated to dense MVS: every measured criterion passed"), scratch)
 
 
 def _detail_stage(result, world, options):

@@ -189,3 +189,83 @@ def reidentify_entities(
             ))
 
     return ReIdentificationResult(matches=tuple(matches))
+
+
+# --------------------------------------------------------------------------------------------
+# Identity carried across VERSIONS of one world, from measured spatial continuity
+# --------------------------------------------------------------------------------------------
+
+#: relations (engine.pipeline.spatial_continuity) that mean "the same physical surface, one-to-one"
+_SAME_ENTITY = ("preserved", "refined")
+#: relations that are NOT the same entity but are related; their lineage is recorded, identity is never forced
+_LINEAGE = ("split", "merge", "regrouped", "extended", "reduced", "ambiguous")
+
+
+def identity_plan(relations: list, cand_world: WorldIR, prev_ids) -> Tuple[dict, list]:
+    """Which candidate entity IS which previous entity, from spatial-continuity relations.
+
+    Returns ``(mapping, lineage)``. ``mapping`` (candidate id -> previous id) holds ONLY one-to-one
+    preserved/refined relations of the same type whose previous id is not already taken by another
+    candidate entity; everything else keeps its own id. ``lineage`` records the related-but-not-identical
+    cases (split, merge, regrouped, extended, reduced, ambiguous) so they stay explicit -- ambiguity is
+    never resolved by guessing.
+    """
+    mapping: dict = {}
+    taken = set(cand_world.entities) - {c for r in relations for c in r.get("cand", [])}
+    for r in relations:
+        prev, cand = r.get("prev", []), r.get("cand", [])
+        if r.get("kind") not in _SAME_ENTITY or len(prev) != 1 or len(cand) != 1:
+            continue
+        p, c = prev[0], cand[0]
+        ent = cand_world.entities.get(c)
+        if ent is None or p not in prev_ids or p in mapping.values() or (p in taken and p != c):
+            continue
+        mapping[c] = p
+    lineage = [{"relation": r["kind"], "previous": list(r.get("prev", [])), "candidate": list(r.get("cand", [])),
+                "type": r.get("type")}
+               for r in relations if r.get("kind") in _LINEAGE]
+    return mapping, lineage
+
+
+def rekey_entities(world: WorldIR, mapping: dict) -> dict:
+    """Give candidate entities the ids of the previous entities they ARE, updating every reference
+    (entity table, relationships, transforms, temporal events, body states). Returns the applied mapping.
+    Pure id renaming: no content changes. Entities already holding the target id are never overwritten."""
+    applied = {c: p for c, p in mapping.items() if c in world.entities and (p not in world.entities or p == c)}
+    applied = {c: p for c, p in applied.items() if c != p}
+    if not applied:
+        return {}
+    world.entities = {applied.get(k, k): v for k, v in world.entities.items()}
+    for new_id, ent in world.entities.items():
+        ent.id = new_id
+        for rel in ent.relationships:
+            rel.target_id = applied.get(rel.target_id, rel.target_id)
+    world.transforms = {applied.get(k, k): v for k, v in world.transforms.items()}
+    for ev in world.temporal_events.values():
+        if getattr(ev, "entity_id", None):
+            ev.entity_id = applied.get(ev.entity_id, ev.entity_id)
+    body = getattr(world.temporal_state, "body_states", None)
+    if isinstance(body, dict):
+        world.temporal_state.body_states = {applied.get(k, k): v for k, v in body.items()}
+    return applied
+
+
+def carry_identity(prev_entity_ids, relations: list, cand_world: WorldIR) -> dict:
+    """Plan + apply (on the given world) + record provenance of every identity decision.
+
+    Returns ``{"carried": {cand_id: prev_id}, "lineage": [...]}``. Each carried entity gets
+    ``custom_properties["identity"]`` stating it was matched by spatial continuity (kind + previous id); each
+    related-but-distinct entity gets ``custom_properties["continuity"]`` naming the relation and the previous
+    entities it relates to."""
+    mapping, lineage = identity_plan(relations, cand_world, set(prev_entity_ids))
+    kind_of = {r["cand"][0]: r["kind"] for r in relations if len(r.get("cand", [])) == 1 and r["kind"] in _SAME_ENTITY}
+    for c, p in mapping.items():
+        cand_world.entities[c].custom_properties["identity"] = {
+            "carried_from": p, "by": "spatial_continuity", "relation": kind_of.get(c)}
+    for item in lineage:
+        for c in item["candidate"]:
+            ent = cand_world.entities.get(c)
+            if ent is not None:
+                ent.custom_properties["continuity"] = {"relation": item["relation"], "previous": item["previous"]}
+    applied = rekey_entities(cand_world, mapping)
+    return {"carried": applied, "lineage": lineage}

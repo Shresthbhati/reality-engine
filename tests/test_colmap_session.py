@@ -95,3 +95,26 @@ def test_staging_never_carries_the_committed_manifest_so_a_crashed_run_is_not_co
     ws, prior = s.begin(SIG, ["a", "b", "c"])
     assert prior is not None and not (ws / "manifest.json").exists()
     assert s.commit() is False and set(s.committed_manifest()["images"]) == {"a", "b"}
+
+
+def test_a_workspace_path_too_long_for_native_colmap_fails_early_with_the_real_cause(tmp_path):
+    import os
+
+    import pytest
+
+    from evidence.session import EvidenceItem, EvidenceKind
+    from reconstruction.backend.colmap_backend import (MAX_WORKSPACE_PATH_CHARS, ColmapReconstructionBackend,
+                                                       WorkspacePathTooLong, _check_workspace_path)
+
+    _check_workspace_path(tmp_path)                                    # a short path is fine on every platform
+    if os.name != "nt":
+        pytest.skip("the MAX_PATH crash is Windows-specific")
+    deep = tmp_path.joinpath(*["d" * 40] * (MAX_WORKSPACE_PATH_CHARS // 40 + 1))
+    with pytest.raises(WorkspacePathTooLong, match="WORLDSTORE_ROOT"):
+        _check_workspace_path(deep)
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"x")
+    items = [EvidenceItem(id=f"ev-{i}", kind=EvidenceKind.PHOTO, source_uri=img.as_uri()) for i in range(2)]
+    be = ColmapReconstructionBackend(session=ColmapSession(deep))
+    with pytest.raises(WorkspacePathTooLong):                         # raised before any COLMAP step runs
+        be.reconstruct(items)

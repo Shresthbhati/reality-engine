@@ -1201,3 +1201,17 @@ capabilities:
   limitations:
   - single-session dataset (cross-session registration measured in unit tests with
     the ring double)
+- name: dense_level3_judged_escalation
+  category: dense_geometry
+  backend: engine/pipeline/dense_gate.py + dense_judge.py + vertical_slice._dense_mvs_stage
+  inputs: [sparse model, registered photos, persistent COLMAP session]
+  outputs: [dense POINTCLOUD geometry + fusion input only when judged better than the sparse world]
+  maturity: IMPLEMENTED
+  verified: tests/test_dense_arbitration.py (cases A-F, 21 tests, stand-in COLMAP). Real-GPU product-path run NOT yet re-recorded.
+  limitations: [judge thresholds EXPERIMENTAL, enabled by default in the job runner (REALITY_DENSE_AUTO=0 opts out)]
+- name: citydb_v5_export
+  category: export
+  backend: exporters/citydb (wraps the official citydb-tool 'import cityjson')
+  maturity: IMPLEMENTED
+  verified: 12 fake-CLI contract tests. Real 3DCityDB runtime verification BLOCKED (no database / citydb binary here).
+  limitations: [CRS is the database's setting, the world is written in its local frame]

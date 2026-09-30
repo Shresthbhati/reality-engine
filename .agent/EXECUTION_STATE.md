@@ -3,6 +3,23 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-09-30 -- Closure sprint: ledger reconciled against code and tests (PR #140)
+
+Ledger after: DONE 37 / PARTIAL 2 (P7-05, PROD-01) / BLOCKED 4 (P1-03 hardware, P3-02 VIO backend, P7-03 real indoor
+data, P14-01 3DCityDB runtime) / MISSING 0. Each task's `reconciliation:` field carries the evidence.
+
+Changed: judged automatic dense Level 3 (dense_judge.py; found + fixed raw-frame dense points and dense points never
+reaching fusion); multi-storey root causes (room extent, per-plane observer camera side, disjoint-slab split);
+exporters/citydb; P9-01 v2 fields restored in canonical Entity/WorldIR (ledger said DONE with 4 failing tests);
+WorldIR main_branch_id derived from id; jobs no longer graded partial for a disabled dense stage; aiosqlite/API deps
+declared (CI had silently skipped API suites); platform-neutral fake COLMAP; detail calibration measured.
+
+Verified (observed): architecture cluster 224 passed; new suites green (dense 21, multistorey 12, citydb 12+1 skipped).
+Seven failures found at HEAD in a clean worktree were fixed. NOT verified at time of writing: full-suite total,
+slow real-COLMAP journeys with dense default-on, reliability journey.
+Datasets: REAL photos = datasets/south_building (32) and 4 indoor photos outside the repo (provenance unverified);
+REAL map data = city_osm; real_room_capture*, room_capture = SYNTHETIC. No real corridor/room dataset exists.
+
 ## 2026-09-29 (1) -- Evidence-progressive one-action product path (PROD-01)
 
 Branch claude/reality-engine-e2e-455f35. Directive: DROP 1 PHOTO -> rough

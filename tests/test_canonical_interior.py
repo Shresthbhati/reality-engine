@@ -70,8 +70,12 @@ _CAMS = [
 
 def _point(x: float, y: float, z: float, counter=[0]) -> ReconstructedPoint:
     counter[0] += 1
+    # Visibility is part of the evidence: floor-vs-ceiling is decided against the cameras that OBSERVED a sheet.
+    # Room 2 (x >= 3) is photographed from the upper level by ev-4; citing ev-1 (standing a level below) for its
+    # floor would claim that floor was seen from underneath.
     return ReconstructedPoint(
-        position=(x, y, z), track_id=f"pt-{counter[0]:05d}", source_evidence_ids=["ev-1"]
+        position=(x, y, z), track_id=f"pt-{counter[0]:05d}",
+        source_evidence_ids=["ev-4"] if x >= 3.0 else ["ev-1"],
     )
 
 

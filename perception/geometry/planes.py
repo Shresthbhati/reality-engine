@@ -81,6 +81,15 @@ SHEET_BAND_TOLERANCE_FRACTION = 0.25
 #: seams, not stacked sheets.
 HORIZONTAL_NORMAL_TILT_CANDIDATE_RAD = math.radians(30.0)
 
+#: Spatial-connectivity refinement (EXPERIMENTAL, uncalibrated against real data). Points of one horizontal plane
+#: are linked when they lie within LINK_SPACINGS of the plane's own median point spacing; two linked regions are the
+#: same slab when the void between them is at most BRIDGE_FRACTION of the smaller region's linear size (an
+#: occlusion band inside one slab), and distinct slabs otherwise. Above MAX_SUPPORT_COMPONENTS the support is too
+#: fragmented to judge and the plane is left alone.
+LINK_SPACINGS = 3.0
+BRIDGE_FRACTION = 0.75
+MAX_SUPPORT_COMPONENTS = 40
+
 
 @dataclass(frozen=True)
 class DetectedPlane:
@@ -400,6 +409,154 @@ def split_parallel_sheets(
     return out
 
 
+def _inplane_xy(points, normal):
+    """2D coordinates of ``points`` on the plane with unit ``normal`` (an arbitrary but deterministic basis)."""
+    import numpy as np
+
+    n = np.asarray(normal, dtype=float)
+    a = np.array([1.0, 0.0, 0.0]) if abs(n[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    u = np.cross(n, a)
+    u /= np.linalg.norm(u)
+    v = np.cross(n, u)
+    pts = np.asarray(points, dtype=float)
+    return np.stack([pts @ u, pts @ v], axis=1)
+
+
+def _support_components(xy, link: float):
+    """Label the points of one plane by spatial connectivity (8-connected occupied grid cells of size ``link``)."""
+    import numpy as np
+    from scipy import ndimage
+
+    cell = np.floor((xy - xy.min(axis=0)) / link).astype(int)
+    grid = np.zeros(tuple(cell.max(axis=0) + 1), dtype=bool)
+    grid[cell[:, 0], cell[:, 1]] = True
+    labels, _ = ndimage.label(grid, structure=np.ones((3, 3)))
+    return labels[cell[:, 0], cell[:, 1]]
+
+
+def _bridgeable(xy_a, xy_b, link: float) -> bool:
+    """True when the void between two point regions is small against the smaller region's own linear size."""
+    import numpy as np
+    from scipy.spatial import cKDTree
+
+    gap = float(cKDTree(xy_a).query(xy_b)[0].min())
+
+    def _size(xy):
+        cells = np.unique(np.floor((xy - xy.min(axis=0)) / link).astype(int), axis=0)
+        return math.sqrt(len(cells)) * link
+
+    return gap <= BRIDGE_FRACTION * min(_size(xy_a), _size(xy_b))
+
+
+def _plane_link(xy) -> float:
+    import numpy as np
+    from scipy.spatial import cKDTree
+
+    step = max(1, len(xy) // 5000)
+    d, _ = cKDTree(xy).query(xy[::step], k=2)
+    return LINK_SPACINGS * float(np.median(d[:, 1]))
+
+
+def split_disconnected_support(
+    planes: List[DetectedPlane],
+    positions_by_id: Dict[str, Tuple[float, float, float]],
+    up: Sequence[float],
+    min_inliers: int = MIN_INLIERS,
+) -> List[DetectedPlane]:
+    """Split a near-horizontal plane whose inliers are spatially DISCONNECTED slabs into one plane per slab.
+
+    RANSAC returns every point that satisfies the plane equation, wherever it is: two floor slabs at the same
+    elevation in two separate rooms, 6 m apart, come back as ONE plane spanning both (and the room / storey layers
+    then see one giant slab, or refuse it). Spatially distinct architectural surfaces must not be merged merely
+    because one plane model fits them. Connectivity is measured on the plane itself: points link within
+    LINK_SPACINGS of the plane's own point spacing, regions separated by a void no larger than BRIDGE_FRACTION of
+    the smaller region's size stay one slab (an occlusion band is not a wall between rooms), and regions below
+    ``min_inliers`` are not surfaces. Only near-horizontal planes are examined: they are what seeds rooms and
+    storeys, while a wall legitimately spans doorways and windows. An unjudgeable support (too fragmented, too
+    few points) is returned untouched.
+    """
+    import numpy as np
+
+    up_len = math.sqrt(sum(c * c for c in up))
+    if up_len == 0.0:
+        return list(planes)
+    up_unit = tuple(c / up_len for c in up)
+    out: List[DetectedPlane] = []
+    for plane in planes:
+        align = abs(sum(plane.normal[i] * up_unit[i] for i in range(3)))
+        if align < math.cos(HORIZONTAL_NORMAL_TILT_CANDIDATE_RAD) or plane.inlier_count < 2 * min_inliers:
+            out.append(plane)
+            continue
+        ids = list(plane.inlier_ids)
+        xy = _inplane_xy([positions_by_id[i] for i in ids], plane.normal)
+        link = _plane_link(xy)
+        if not link > 0.0:
+            out.append(plane)
+            continue
+        labels = _support_components(xy, link)
+        comps = [np.flatnonzero(labels == k) for k in np.unique(labels)]
+        comps = [c for c in comps if len(c) >= min_inliers]
+        if len(comps) < 2 or len(comps) > MAX_SUPPORT_COMPONENTS:
+            out.append(plane)
+            continue
+        # union components that are bridgeable (occlusion bands inside one slab), transitively
+        parent = list(range(len(comps)))
+
+        def _find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        for i in range(len(comps)):
+            for j in range(i + 1, len(comps)):
+                if _find(i) != _find(j) and _bridgeable(xy[comps[i]], xy[comps[j]], link):
+                    parent[_find(j)] = _find(i)
+        groups: Dict[int, List[int]] = {}
+        for i in range(len(comps)):
+            groups.setdefault(_find(i), []).append(i)
+        if len(groups) < 2:
+            out.append(plane)
+            continue
+        parts: List[DetectedPlane] = []
+        for members in groups.values():
+            idx = np.concatenate([comps[m] for m in members])
+            part_ids = sorted(ids[k] for k in idx)
+            try:
+                normal, d = _fit_plane_to_inliers([positions_by_id[i] for i in part_ids])
+            except ValueError:
+                parts = []
+                break
+            parts.append(DetectedPlane(
+                plane_id=plane.plane_id, normal=normal, d=d, inlier_ids=part_ids,
+                inlier_rms_distance_m=_rms_distance([positions_by_id[i] for i in part_ids], normal, d),
+                uncertainty=Uncertainty(
+                    confidence=min(1.0, len(part_ids) / (len(part_ids) + 10.0)),
+                    note=(f"split from spatially disconnected support: {len(groups)} slabs "
+                          f"({len(part_ids)} pts here), link {link:.3f}"),
+                ),
+            ))
+        out.extend(parts if parts else [plane])
+    return out
+
+
+def refine_planes(
+    planes: List[DetectedPlane],
+    positions_by_id: Dict[str, Tuple[float, float, float]],
+    up: Sequence[float],
+    distance_tolerance_m: float = PLANE_DISTANCE_TOLERANCE_M,
+    min_inliers: int = MIN_INLIERS,
+) -> List[DetectedPlane]:
+    """The one refinement chain every consumer runs after detection: parallel-sheet split -> disconnected-support
+    split -> coplanar fragment re-merge (spatially bridged only) -> canonical ids."""
+    sheets = split_parallel_sheets(planes, positions_by_id, up, distance_tolerance_m=distance_tolerance_m,
+                                   min_inliers=min_inliers)
+    slabs = split_disconnected_support(sheets, positions_by_id, up, min_inliers=min_inliers)
+    merged = merge_coplanar_fragments(slabs, positions_by_id, up, distance_tolerance_m=distance_tolerance_m,
+                                      min_inliers=min_inliers)
+    return canonicalize_plane_ids(merged)
+
+
 def canonicalize_plane_ids(
     planes: List[DetectedPlane],
 ) -> List[DetectedPlane]:
@@ -479,7 +636,19 @@ def merge_coplanar_fragments(
             return False
         # Elevation interleave: the union must be one band along up.
         merged = sorted(_up_of(pid) for pid in a.inlier_ids + b.inlier_ids)
-        return len(_offset_bands(merged, band_tol)) == 1
+        if len(_offset_bands(merged, band_tol)) != 1:
+            return False
+        # Spatial bridge (horizontal sheets only): coplanar is not CONNECTED. Two slabs in two rooms share a plane
+        # equation; only an occlusion band inside one slab makes them one surface.
+        if abs(sum(a.normal[i] * up_unit[i] for i in range(3))) >= math.cos(HORIZONTAL_NORMAL_TILT_CANDIDATE_RAD):
+            import numpy as np
+
+            xy_a = _inplane_xy([positions_by_id[i] for i in a.inlier_ids], a.normal)
+            xy_b = _inplane_xy([positions_by_id[i] for i in b.inlier_ids], a.normal)     # one shared basis
+            link = _plane_link(np.concatenate([xy_a, xy_b]))
+            if link > 0.0 and not _bridgeable(xy_a, xy_b, link):
+                return False
+        return True
 
     n = len(planes)
     group_of = list(range(n))

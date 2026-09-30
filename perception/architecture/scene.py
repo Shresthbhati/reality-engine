@@ -41,12 +41,11 @@ from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from perception.geometry.planes import (
-    canonicalize_plane_ids,
     detect_planes,
-    merge_coplanar_fragments,
-    split_parallel_sheets,
+    refine_planes,
 )
 from perception.geometry.orientation import classify_planes as orient_planes
+from perception.geometry.orientation import observer_positions_by_plane
 from perception.geometry.orientation import OrientedPlane
 from evidence.promote_planes import positions_by_plane, promote_plane_to_entity
 from perception.architecture.classify import PlaneInput
@@ -181,19 +180,14 @@ def assemble_interior_scene(
     # corrupts sill heights, room enclosures, and storey grouping. Split
     # any such plane along `up` before classification, then re-key ids.
     positions_by_id = {p.track_id: p.position for p in result.points}
-    split_planes = merge_coplanar_fragments(
-        split_parallel_sheets(
-            detection.planes, positions_by_id, up,
-            distance_tolerance_m=distance_tolerance_m,
-            min_inliers=min_inliers,
-        ),
-        positions_by_id, up,
+    split_planes = refine_planes(
+        detection.planes, positions_by_id, up,
         distance_tolerance_m=distance_tolerance_m,
         min_inliers=min_inliers,
     )
-    split_planes = canonicalize_plane_ids(split_planes)
     camera_positions = [p.position for p in result.camera_poses]
-    oriented = orient_planes(split_planes, camera_positions, up=up)
+    oriented = orient_planes(split_planes, camera_positions, up=up,
+                             observers=observer_positions_by_plane(split_planes, result))
     positions = positions_by_plane(result, oriented)
 
     # Stable identity: WorldIR's dataclass defaults mint a uuid4

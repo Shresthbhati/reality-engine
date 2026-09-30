@@ -252,7 +252,7 @@ def _floor_height(element: ArchitecturalElement, up: Sequence[float] = (0.0, 0.0
     return (element.bounds_min[up_idx] + element.bounds_max[up_idx]) / 2.0
 
 
-def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
+def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up, ceiling_cap: Optional[float] = None) -> Optional[
     Tuple[Tuple[float, float, float], Tuple[float, float, float]]
 ]:
     """The bounds enclosed by a room's boundary elements.
@@ -263,8 +263,14 @@ def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
     facade wall spanning two rooms drags the union across the whole
     building, and both rooms reported the building's footprint
     (observed: 24 m2 per room instead of 12). Walls bound the space;
-    the floor measures it. The z extent comes from the boundary box
-    (floor bottom .. ceiling top), so vertical structure is preserved.
+    the floor measures it. The z extent is the ROOM's own: floor bottom
+    .. ceiling top when a ceiling was measured, otherwise floor bottom ..
+    the walls' top capped at ``ceiling_cap`` (the next slab above the
+    floor, when one exists). A union over the wall AABBs is wrong for the
+    same reason vertically: the walls of stacked storeys are coplanar, so
+    one wall plane spans every storey and would give each stacked room the
+    whole building's height and the ground level's elevation (observed:
+    two stacked rooms both reported z 0..4.7 and collapsed into one storey).
 
     None when any participating element lacks bounds. With multiple
     floors (rare; a room is normally one floor), the floors' union
@@ -286,6 +292,12 @@ def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
         for ax in plan:
             lo[ax] = min(el.bounds_min[ax] for el in floors)
             hi[ax] = max(el.bounds_max[ax] for el in floors)
+        lo[up_idx] = min(el.bounds_min[up_idx] for el in floors)
+        ceilings = [el for el in elements if el.element_type == "ceiling"]
+        if ceilings:
+            hi[up_idx] = max(el.bounds_max[up_idx] for el in ceilings)
+        elif ceiling_cap is not None:
+            hi[up_idx] = max(lo[up_idx], min(hi[up_idx], ceiling_cap))
     return tuple(lo), tuple(hi)
 
 
@@ -856,9 +868,22 @@ def build_room_graph(
             for p in planes:
                 plane_inputs.setdefault(p.plane_id, p)
 
+    up_axis = _up_axis(up)
     enclosures: List[dict] = []
     for members in groups:
-        bounds = _enclosed_bounds(members, up)
+        # the next slab above this room's floor that overlaps it in plan and clears walking height caps a room
+        # whose own ceiling was never observed (the walls it shares with the storey above run right past it)
+        own = next(e for e in members if e.element_type == "floor")
+        own_h = _floor_height(own, up)
+        plan_ax = [i for i in range(3) if i != up_axis]
+        above = [
+            _floor_height(g, up) for g in floors
+            if g is not own and g.bounds_min is not None and own_h is not None
+            and (_floor_height(g, up) or -math.inf) - own_h >= MIN_WALKABLE_CLEAR_HEIGHT_M
+            and own.bounds_min[plan_ax[0]] <= g.bounds_max[plan_ax[0]] and g.bounds_min[plan_ax[0]] <= own.bounds_max[plan_ax[0]]
+            and own.bounds_min[plan_ax[1]] <= g.bounds_max[plan_ax[1]] and g.bounds_min[plan_ax[1]] <= own.bounds_max[plan_ax[1]]
+        ]
+        bounds = _enclosed_bounds(members, up, ceiling_cap=min(above) if above else None)
         if bounds is None:
             continue
         bmin, bmax = bounds

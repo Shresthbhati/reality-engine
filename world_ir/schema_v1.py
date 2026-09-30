@@ -571,6 +571,13 @@ class CausalRelation:
 
 # ===== Entity =====
 
+def _load_external_references(raw) -> tuple:
+    # lazy: v2_extensions imports this module
+    from .v2_extensions import ExternalReference
+
+    return tuple(ExternalReference.from_dict(r) for r in raw)
+
+
 @dataclass
 class Entity:
     """A world entity with full provenance tracking."""
@@ -596,6 +603,9 @@ class Entity:
     # serialized without this field must load with this as None, never a
     # fabricated guess. See world_ir/statement_state.py.
     statement_state: Optional[StatementState] = None
+    # WorldIR 2.0 (P9-01, additive): typed links to resources the world does not own (images, COLMAP models,
+    # reports). Empty = v1 behavior; serialized only when non-empty so v1 dicts stay byte-identical.
+    external_references: tuple = ()
 
     def to_dict(self) -> dict:
         # Coerce type to EntityType enum if a raw string was passed at construction.
@@ -607,7 +617,7 @@ class Entity:
             if isinstance(self.transform, _Transform)
             else self.transform
         )
-        return {
+        d = {
             "id": self.id,
             "type": entity_type.value,
             "name": self.name,
@@ -626,6 +636,9 @@ class Entity:
             "custom_properties": self.custom_properties,
             "statement_state": self.statement_state.value if self.statement_state else None,
         }
+        if self.external_references:
+            d["external_references"] = [ref.to_dict() for ref in self.external_references]
+        return d
 
     @staticmethod
     def from_dict(data: dict) -> "Entity":
@@ -648,4 +661,5 @@ class Entity:
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
             custom_properties=data.get("custom_properties", {}),
             statement_state=StatementState(raw_state) if raw_state else None,
+            external_references=_load_external_references(data.get("external_references", [])),
         )

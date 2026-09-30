@@ -365,7 +365,7 @@ def vertical_slice(
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
     # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
-    detail_facts = _detail_stage(result, world, options)
+    detail_facts = _detail_stage(result, world, options, scale_state)
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
@@ -468,7 +468,26 @@ def _auto_dense_options(result, n_input: int, options):
             dict(facts, decision="escalated to dense MVS: every measured criterion passed"), scratch)
 
 
-def _detail_stage(result, world, options):
+#: Detail voxel size for a world with NO metric anchor, as a fraction of the scene's bounding-box diagonal.
+#: Measured on the real South Building scene (docs/engineering/DETAIL_CALIBRATION.md): ROI count has a cliff
+#: between 2% and 4% of the extent, so 1.5% stays on the detail side of it. EXPERIMENTAL (one dataset).
+RELATIVE_DETAIL_VOXEL_FRACTION = 0.015
+
+
+def _detail_voxel(result, options, scale_state):
+    """(voxel_size, basis). An absolute size only means something in meters; in a relative-scale world it is
+    derived from the scene's own extent instead of silently assuming 1 unit = 1 m."""
+    if scale_state != "relative" or len(result.points) < 2:
+        return options.detail_voxel_size_m, "options.detail_voxel_size_m (metric / unspecified scale)"
+    lo, hi = _cloud_bounds(result.points)
+    diag = sum((h - l) ** 2 for l, h in zip(lo, hi)) ** 0.5
+    if not diag > 0:
+        return options.detail_voxel_size_m, "options.detail_voxel_size_m (degenerate extent)"
+    return (RELATIVE_DETAIL_VOXEL_FRACTION * diag,
+            f"{RELATIVE_DETAIL_VOXEL_FRACTION:.1%} of the scene extent (relative-scale world: model units, not meters)")
+
+
+def _detail_stage(result, world, options, scale_state=None):
     """Optional P7-06 detail chain: measured evidence quality -> detail
     discovery -> ROI work orders -> local refinement (tier-driven,
     honest refusals). Records its facts in world metadata under
@@ -521,11 +540,12 @@ def _detail_stage(result, world, options):
             "note": f"optional detail dependencies unavailable: {exc}",
         }
 
+    voxel, voxel_basis = _detail_voxel(result, options, scale_state)
     try:
         report = run_detail_pipeline(
             result,
             cameras,
-            voxel_size=options.detail_voxel_size_m,
+            voxel_size=voxel,
             up=options.up,
             build_world_ir=True,
             world=world,
@@ -542,6 +562,9 @@ def _detail_stage(result, world, options):
         "quality": report.quality.to_dict(),
         "summary": dict(report.summary),
         "n_candidates": len(report.candidates),
+        "voxel_size": voxel,
+        "voxel_basis": voxel_basis,
+        "budget_units": "model-unit mm/px: GSD level bands are NOT metric" if scale_state == "relative" else "metric",
         "rois": [r.to_dict() for r in report.rois],
         "outcomes": [o.to_dict() for o in report.outcomes],
         "note": (

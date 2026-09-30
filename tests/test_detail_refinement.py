@@ -261,6 +261,19 @@ class TestVerticalSliceStage:
         assert facts["summary"]["n_refined"] + facts["summary"]["n_refused"] \
             == facts["summary"]["n_rois"]
 
+    def test_relative_scale_world_derives_the_voxel_from_its_own_extent_and_says_units_are_not_metric(self):
+        from engine.pipeline.vertical_slice import _detail_stage, _cloud_bounds
+        from world_ir import WorldIR as _WorldIR
+
+        result, _, _ = self._result_and_cameras()
+        facts = _detail_stage(result, _WorldIR(), self._options(), "relative")
+        lo, hi = _cloud_bounds(result.points)
+        diag = sum((h - l) ** 2 for l, h in zip(lo, hi)) ** 0.5
+        assert facts["voxel_size"] == pytest.approx(0.015 * diag)
+        assert "scene extent" in facts["voxel_basis"] and "NOT metric" in facts["budget_units"]
+        metric = _detail_stage(result, _WorldIR(), self._options(), "metric")
+        assert metric["voxel_size"] == self._options().detail_voxel_size_m and metric["budget_units"] == "metric"
+
     def test_stage_disabled_is_a_visible_skip(self):
         from engine.pipeline.vertical_slice import _detail_stage
 

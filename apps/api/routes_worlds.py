@@ -1184,3 +1184,34 @@ async def query_world_spaces(
 
     return {"query": "all", "space_graph": graph_dict}
 
+
+
+class RollbackIn(BaseModel):
+    version_id: str
+
+
+@worlds.post("/{world_id}/rollback")
+async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Depends(get_db)) -> dict:
+    """Move HEAD back to an earlier version (history stays immutable; see worldstore_service.rollback_head)."""
+    from apps.api import worldstore_service as wss
+    from apps.api.models import Job, Session as _Session
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    sids = (await db.execute(select(_Session.id).where(_Session.world_id == world_id))).scalars().all()
+    busy = (await db.execute(
+        select(Job.id).where(Job.entity_type == "session", Job.entity_id.in_(sids),
+                             Job.status.in_(("queued", "running"))).limit(1)
+    )).scalars().first() if sids else None
+    if busy:
+        raise HTTPException(409, f"a reconstruction is in progress (job {busy}); wait for it before rolling back")
+    before = w.current_version_id
+    try:
+        row = await wss.rollback_head(db, world_id, body.version_id)
+    except wss.ConcurrentModificationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"world_id": world_id, "version_id": row.id, "previous_head": before,
+            "note": "history is unchanged; evidence is kept and will be retried by the next reconstruction"}

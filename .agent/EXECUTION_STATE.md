@@ -3,6 +3,25 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-09-30 -- Closure sprint: ledger reconciled against code and tests (PR #140)
+
+Ledger after: DONE 37 / PARTIAL 2 (P7-05, PROD-01) / BLOCKED 4 (P1-03 hardware, P3-02 VIO backend, P7-03 real indoor
+data, P14-01 3DCityDB runtime) / MISSING 0. Each task's `reconciliation:` field carries the evidence.
+
+Changed: judged automatic dense Level 3 (dense_judge.py; found + fixed raw-frame dense points and dense points never
+reaching fusion); multi-storey root causes (room extent, per-plane observer camera side, disjoint-slab split);
+exporters/citydb; P9-01 v2 fields restored in canonical Entity/WorldIR (ledger said DONE with 4 failing tests);
+WorldIR main_branch_id derived from id; jobs no longer graded partial for a disabled dense stage; aiosqlite/API deps
+declared (CI had silently skipped API suites); platform-neutral fake COLMAP; detail calibration measured.
+
+Verified (observed): architecture cluster 224 passed; new suites green (dense 21, multistorey 12, citydb 12+1 skipped).
+Seven failures found at HEAD in a clean worktree were fixed. NOT verified at time of writing: full-suite total,
+slow real-COLMAP journeys with dense default-on, reliability journey.
+
+UPDATE (same sprint, later): full non-slow suite 2737 passed / 1 failed / 28 skipped / 67 deselected(slow) -- the one failure (test_world_store_concurrency, transient Windows PermissionError on os.replace under load) fixed with a bounded retry in worldstore/store.py. Slow real-COLMAP: progressive_product_journey+continuous_evidence 15 passed / 1 failed (pre-existing at HEAD: arbiter tie-break picks 'full' over 'incremental'); reliability_journey 12 passed / 2 failed: a REAL defect (fault after version adoption failed the job and the retry adopted a duplicate version; apps/api/jobs.py now treats any post-adoption COLMAP-commit fault as a recorded degradation, test passes) and kill_after_s=30 (job finishes before the kill: timing precondition). Real dense run on South Building (CUDA): gate passed, dense ran 74.2x denser, judge EQUIVALENT (13% new surface) -> sparse kept; 16 photos: 6 registered, gate refused. Owner decisions applied afterwards: dense accepts >=10x density gain (re-run: Level 3, 84,104 dense points on the six photos); frame preservation outranks the new-understanding tie-break once a HEAD exists (rich-world journey + failure injection: 18 passed). Frontend typecheck/build NOT run (no node_modules in this worktree).
+Datasets: REAL photos = datasets/south_building (32) and 4 indoor photos outside the repo (provenance unverified);
+REAL map data = city_osm; real_room_capture*, room_capture = SYNTHETIC. No real corridor/room dataset exists.
+
 ## 2026-09-29 (1) -- Evidence-progressive one-action product path (PROD-01)
 
 Branch claude/reality-engine-e2e-455f35. Directive: DROP 1 PHOTO -> rough

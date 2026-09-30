@@ -137,7 +137,17 @@ def _atomic_write_text(path: Path, text: str) -> None:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, path)
+        # On Windows os.replace() raises a TRANSIENT PermissionError when another handle (a concurrent writer, an
+        # indexer or sync client such as OneDrive/Defender) briefly holds the target. Retry a bounded number of
+        # times; a persistent failure still raises -- this never swallows a real error or weakens atomicity.
+        for attempt in range(8):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if os.name != "nt" or attempt == 7:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
     finally:
         tmp.unlink(missing_ok=True)
 

@@ -92,6 +92,17 @@ def test_judge_calls_a_same_density_cloud_equivalent_and_an_unjudgeable_one_reje
     assert dj.judge_dense([], _surfaces(500, patches=False))["verdict"] == dj.REJECTED
 
 
+def test_pure_density_gain_counts_when_the_structure_is_retained_but_a_modest_one_does_not():
+    sparse = _surfaces(200, patches=False)                    # already samples every surface: ~no NEW surface
+    big = dj.judge_dense(sparse, _surfaces(3000, patches=False))            # x15 denser, same surfaces
+    assert big["verdict"] == dj.ACCEPTED and big["new_fraction"] < dj.MIN_NEW_FRACTION
+    assert "density gain alone" in big["why"]
+    modest = dj.judge_dense(sparse, _surfaces(900, patches=False))          # x4.5: not enough on its own
+    assert modest["verdict"] == dj.EQUIVALENT
+    wrong_frame = dj.judge_dense(sparse, _surfaces(3000, patches=False) @ _rot_z(90).T)
+    assert wrong_frame["verdict"] == dj.REJECTED                            # density never rescues a regression
+
+
 # ---- the product cases A..F -------------------------------------------------------------------------------
 
 def _ready(n_pts=600):

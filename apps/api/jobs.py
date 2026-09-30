@@ -728,6 +728,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     # The version is adopted AND reads back cleanly: only now does this run's COLMAP state become
     # the base for the next incremental registration. A failure to persist it is not a job
     # failure (the next run simply falls back to a full reconstruction).
+    colmap_commit_fault = None
     if holder.get("session") is not None:
         try:
             # Only when the adopted version was actually BUILT from this COLMAP run (the vertical slice
@@ -736,8 +737,16 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 holder["session"].commit()
             else:
                 holder["session"].discard()
-        except OSError:
-            holder["session"].discard()
+        except Exception as exc:  # noqa: BLE001 -- ANY fault after adoption: the version is already durable
+            # Letting it propagate would fail the job and the retry would adopt a DUPLICATE version from the same
+            # evidence. The adopted version stands; COLMAP's base is simply one version behind and the next run
+            # catches up (full rebuild). Recorded as a degradation, never hidden.
+            log.warning("job %s: COLMAP state commit failed after adoption: %s", job.id, exc)
+            colmap_commit_fault = f"{type(exc).__name__}: {exc}"
+            try:
+                holder["session"].discard()
+            except Exception:  # noqa: BLE001
+                pass
 
     # Late cancellation: the flag may have landed while the version was
     # being committed. The adopted version stands (durable work is never
@@ -758,6 +767,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     if skipped_evidence:
         degraded.append(f"{len(skipped_evidence)} skipped evidence item(s)")
     degraded.extend(_stage_facts_degraded(prog.stage_facts))
+    if colmap_commit_fault:
+        degraded.append(f"COLMAP state not persisted ({colmap_commit_fault}); the next run rebuilds from the evidence")
     degraded.extend(f"changed with uncertainty: {u}" for u in decision["uncertainties"])
     for warning in validation.warnings:
         degraded.append(f"validation warning: {warning}")

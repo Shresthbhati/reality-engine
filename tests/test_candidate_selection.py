@@ -102,3 +102,22 @@ def test_first_version_has_nothing_to_regress_against_and_falls_to_evidence_then
     a = cs.assess(None, _cand(extra=["g"]))
     b = cs.assess(None, _cand(extra=["g", "h"]))
     assert cs.choose(a, b)["choice"] == "full"
+
+
+def test_with_an_established_frame_one_more_new_entity_does_not_justify_a_full_resolve():
+    """Regression from the real rich-world journey: equal registration, nothing established lost, the full rebuild
+    has one more refined/extended/new entity. Frame preservation outranks that tie-break."""
+    base = {"verdict": wd.ACCEPT, "reasons": [], "uncertainties": [],
+            "measures": {"cameras_lost": 0, "structural_lost": 0, "open_conflicts": 0, "camera_drift": 0.0,
+                         "uncertainties": 0, "registered": 7, "new_understanding": 1, "first_version": False}}
+    full = {**base, "measures": {**base["measures"], "new_understanding": 2}}
+    out = cs.choose(base, full)
+    assert out["choice"] == "incremental" and out["deciding"] == "tie"
+
+
+def test_without_an_established_frame_new_understanding_still_decides():
+    base = {"verdict": wd.ACCEPT, "reasons": [], "uncertainties": [],
+            "measures": {"cameras_lost": 0, "structural_lost": 0, "open_conflicts": 0, "camera_drift": 0.0,
+                         "uncertainties": 0, "registered": 7, "new_understanding": 1, "first_version": True}}
+    full = {**base, "measures": {**base["measures"], "new_understanding": 2}}
+    assert cs.choose(base, full)["choice"] == "full"

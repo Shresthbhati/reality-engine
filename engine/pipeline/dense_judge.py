@@ -8,8 +8,10 @@ cloud is judged against the sparse structure before anything is written, with th
     1. judgeable      both clouds are large enough to compare; otherwise the dense cloud is REJECTED (unjustified)
     2. regression     the dense cloud must reproduce the established structure (``sparse_retained``) and stay inside
                       the scene the sparse model established (``outside``); otherwise REJECTED
-    3. improvement    it must be materially denser (``density_gain``) AND add surface the sparse model does not
-                      already sample (``new_fraction``); otherwise EQUIVALENT -- the coherent sparse world is kept
+    3. improvement    it must be materially denser (``density_gain`` >= 2) AND either add surface the sparse model
+                      does not already sample (``new_fraction``) or be DENSE ENOUGH on its own (``density_gain``
+                      >= 10 with the structure retained: resolution is what Level 3 exists to add); otherwise
+                      EQUIVALENT -- the coherent sparse world is kept
     4. otherwise      ACCEPTED
 
 Thresholds are EXPERIMENTAL starting points (scale-free: distances are measured in units of the sparse cloud's own
@@ -31,6 +33,8 @@ MAX_OUTSIDE = 0.25               # share of dense points allowed outside the (pa
 EXTENT_PAD = 0.25                # padding of the sparse extent, as a fraction of each axis span
 MIN_DENSITY_GAIN = 2.0           # dense/sparse point-count ratio needed to call it an improvement
 MIN_NEW_FRACTION = 0.25          # share of dense points on surface the sparse cloud does not sample
+PURE_DENSITY_GAIN = 10.0         # ...or a density gain this large with the structure retained (measured on real
+                                 # South Building: x74 with only 13% new surface -- more resolution, same surfaces)
 _SAMPLE = 5000                   # spacing is estimated on a deterministic subsample
 
 
@@ -75,10 +79,11 @@ def judge_dense(sparse_xyz: Sequence[Sequence[float]], dense_xyz: Sequence[Seque
         return dict(measures, verdict=REJECTED, deciding="regression",
                     why=f"{outside:.0%} of the dense points lie outside the established scene extent "
                         f"(allowed <= {MAX_OUTSIDE:.0%})")
-    if gain < MIN_DENSITY_GAIN or new_fraction < MIN_NEW_FRACTION:
+    if gain < MIN_DENSITY_GAIN or (new_fraction < MIN_NEW_FRACTION and gain < PURE_DENSITY_GAIN):
         return dict(measures, verdict=EQUIVALENT, deciding="improvement",
                     why=f"no material gain (density x{gain:.1f}, {new_fraction:.0%} new surface): "
                         "the existing coherent sparse world is kept")
     return dict(measures, verdict=ACCEPTED, deciding="improvement",
                 why=f"reproduces {retained:.0%} of the established structure and adds density x{gain:.1f} "
-                    f"with {new_fraction:.0%} new surface")
+                    f"with {new_fraction:.0%} new surface"
+                    + ("" if new_fraction >= MIN_NEW_FRACTION else " (accepted on density gain alone)"))

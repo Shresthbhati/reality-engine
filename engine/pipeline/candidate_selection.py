@@ -17,7 +17,8 @@ differ decides, and the deciding rule is recorded:
     4. camera stability    smaller drift of shared cameras (only when the difference exceeds a margin)
     5. uncertainty         fewer recorded uncertainties
     6. useful evidence     more photographs placed
-    7. new understanding   more surfaces refined / extended / new
+    7. new understanding   more surfaces refined / extended / new -- FIRST VERSIONS ONLY: with an established HEAD
+                           the coordinate frame outranks this rule (see _new_understanding)
     8. tie                 the incremental candidate (keeps the established coordinate frame and avoids a
                            needless replacement)
 
@@ -79,6 +80,16 @@ def _higher(key: str):
     return cmp
 
 
+def _new_understanding(a: dict, b: dict):
+    """More refined / extended / new surfaces wins -- but only when there is NO established coordinate frame to
+    lose. Once the world has a HEAD, preserving its frame outranks this tie-break: a full re-solve replaces the
+    frame every earlier version, scale reference and entity identity was expressed in, so a marginal gain in
+    understanding (by one entity) is not worth it. The incremental candidate then wins the final tie."""
+    if not a["measures"].get("first_version"):
+        return None
+    return _higher("new_understanding")(a, b)
+
+
 # (rule name, measure key, comparator)
 _HIERARCHY = (
     ("established photos lost", "cameras_lost", _lower("cameras_lost")),
@@ -87,7 +98,7 @@ _HIERARCHY = (
     ("camera stability", "camera_drift", _lower("camera_drift", CAMERA_DRIFT_MARGIN)),
     ("recorded uncertainty", "uncertainties", _lower("uncertainties")),
     ("useful evidence placed", "registered", _higher("registered")),
-    ("new understanding (refined / extended / new)", "new_understanding", _higher("new_understanding")),
+    ("new understanding (refined / extended / new)", "new_understanding", _new_understanding),
 )
 
 

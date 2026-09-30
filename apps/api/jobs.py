@@ -127,7 +127,7 @@ def _stage_facts_degraded(stage_facts: dict) -> list[str]:
     """Optional-stage outcomes that are neither clean runs nor honest
     config-skips: evidence of degradation for PARTIAL grading."""
     degraded = []
-    for stage in ("depth", "perception", "mesh"):
+    for stage in ("depth", "perception", "mesh", "dense_mvs"):
         facts = stage_facts.get(stage)
         if isinstance(facts, dict):
             status = facts.get("status")
@@ -206,6 +206,42 @@ mapping = {
     "DATASET": "DATASET",
 }
 
+
+
+def _carry_entity_identity(world_ir, prog, cand_snap, delta, conflicts, head_report, artifact_store):
+    """Entities that ARE the same physical surface as in the previous version keep their previous id, so a
+    diff reports MODIFIED instead of REMOVED + ADDED. Identity comes only from measured spatial continuity
+    (one-to-one preserved/refined, same type); splits/merges/ambiguities keep their own ids and record
+    lineage. Applied to a copy and re-validated: if anything is off the candidate is used unchanged.
+    Returns (world, snapshot, info) with the relation/conflict references remapped to the carried ids."""
+    import copy
+
+    from world_ir.entity_reid import carry_identity
+    from world_ir.validation import validate_world_ir
+
+    rels = ((delta.get("entities") or {}).get("relations")) or []
+    prev_entities = head_report.get("entities") or []
+    if not rels or not prev_entities:
+        return world_ir, cand_snap, None
+    try:
+        trial = copy.deepcopy(world_ir)
+        out = carry_identity({e["id"] for e in prev_entities}, rels, trial)
+        if not (out["carried"] or out["lineage"]) or not validate_world_ir(trial).is_valid():
+            return world_ir, cand_snap, {"carried": 0, "lineage": [], "note": "no identity carried"}
+    except Exception as exc:  # noqa: BLE001 -- identity is an enhancement; the candidate stands as it is
+        return world_ir, cand_snap, {"carried": 0, "lineage": [], "error": f"{type(exc).__name__}: {exc}"[:200]}
+    carried = out["carried"]
+    for r in rels:
+        r["cand"] = [carried.get(c, c) for c in r.get("cand", [])]
+    for c in conflicts:
+        for h in c.get("hypotheses") or []:
+            if h.get("entity") in carried:
+                h["entity"] = carried[h["entity"]]
+    snap = world_delta.snapshot(
+        registered_ids=prog.registered_ids, input_ids=prog.input_ids, level=prog.level,
+        model_state=prog.model_state, points=len(prog.points), camera_poses=prog.camera_poses,
+        world=trial, artifact_store=artifact_store)
+    return trial, snap, {"carried": len(carried), "ids": carried, "lineage": out["lineage"]}
 
 def enqueue_job(
     db: AsyncSession,
@@ -424,9 +460,21 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     job.heartbeat_at = utcnow()
     await db.commit()
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+    # Operator-measured distances between two of this world's photographs (POST /api/worlds/{id}/scale):
+    # the ONLY source of metric scale. Without one the world stays RELATIVE -- meters are never assumed.
+    from reconstruction.scale import ScaleAnchoringError, ScaleReference
+
+    baselines = []
+    for r in worldstore_service.list_scale_references(world.id):
+        try:
+            baselines.append(ScaleReference(r["evidence_id_a"], r["evidence_id_b"], float(r["distance_m"]),
+                                            r.get("method", "manual_measurement")))
+        except (KeyError, ValueError, ScaleAnchoringError):
+            continue            # a malformed stored reference is skipped, never guessed at
     if test_backend is not None:
         options = VerticalSliceOptions(
             artifact_store=artifact_store,
+            measured_baselines=tuple(baselines),
             reconstruction_backend=test_backend,
             depth_model=None,
             perception_model=None,
@@ -441,6 +489,9 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         holder["session"] = colmap_session
         options = VerticalSliceOptions(
             artifact_store=artifact_store, colmap_session=colmap_session,
+            measured_baselines=tuple(baselines),
+            # EXPERIMENTAL Level 3: dense MVS only when the measured sparse model justifies it (engine.pipeline.dense_gate)
+            dense_auto=os.environ.get("REALITY_DENSE_AUTO", "").strip() == "1",
             # both COLMAP candidates are judged as worlds against the current HEAD, not by camera count
             head_snapshot=world_delta.snapshot_from_report(head_report),
             head_conflicts=head_report.get("conflicts"))
@@ -517,7 +568,10 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     decision = world_delta.decide(delta, conflicts)
     adopt = decision["verdict"] != world_delta.REJECT
     changes = world_delta.describe_changes(delta, structure=adopt, conflicts=conflicts)
+    identity_info = None
     if adopt:
+        world_ir, cand_snap, identity_info = _carry_entity_identity(
+            world_ir, prog, cand_snap, delta, conflicts, head_report, artifact_store)
         world_ir.metadata["conflicts"] = conflicts
         # say plainly HOW the model was produced -- taken from what the backend recorded, not assumed
         colmap_info = prog.stage_facts.get("colmap_session") or {}
@@ -527,6 +581,17 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                               f"{'' if g == 1 else 's'} registered into it, established camera poses kept.")
         elif colmap_info.get("mode") == "full" and colmap_info.get("prior_images"):
             changes.insert(0, f"Rebuilt the reconstruction from scratch ({colmap_info.get('reason')}).")
+        prev_scale = ((head_report.get("stages") or {}).get("scale")) or {}
+        if prog.scale_state != prev_scale.get("state") or prog.meters_per_unit != prev_scale.get("meters_per_unit"):
+            if prog.scale_state == "metric" and prog.meters_per_unit:
+                refs_used = [f"{b.distance_m:g} m between two photographs ({b.method})" for b in baselines]
+                changes.insert(0, f"Scale changed from {prev_scale.get('state') or 'unknown'} to metric: "
+                                  f"{prog.meters_per_unit:.6g} m per model unit, anchored by "
+                                  f"{'; '.join(refs_used) or 'a measured reference'}. The same world, now in meters.")
+        if baselines and prog.scale_state != "metric":
+            changes.append("A measured scale reference was supplied but could not be applied ("
+                           f"{prog.stage_facts.get('scale_error_note') or 'its photographs are not registered'}); "
+                           "the world stays relative -- no scale was assumed.")
         arb = colmap_info.get("arbitration")
         if arb:  # both candidates were judged as worlds: say which won and on what measured fact
             changes.insert(1, f"Chose the {arb['choice']} reconstruction over the {'full' if arb['choice'] == 'incremental' else 'incremental'} "
@@ -580,6 +645,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "cameras": cand_snap["cameras"],
         "entities": cand_snap["entities"],
         "conflicts": conflicts,
+        "identity": identity_info,
         "delta": delta,
         # what changed in the WORLD (added / extended / refined / preserved / represented differently /
         # not reproduced, per region), derived from the geometric relations; raw counts stay in "delta"
@@ -604,7 +670,10 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 "points": len(prog.points),
                 "colmap_session": prog.stage_facts.get("colmap_session"),
             },
-            "scale": {"state": prog.scale_state, "meters_per_unit": prog.meters_per_unit},
+            "scale": {"state": prog.scale_state, "meters_per_unit": prog.meters_per_unit,
+                      "references": [{"evidence_id_a": b.evidence_id_a, "evidence_id_b": b.evidence_id_b,
+                                      "distance_m": b.distance_m, "method": b.method} for b in baselines],
+                      "note": prog.stage_facts.get("scale_error_note")},
             "depth": prog.stage_facts.get("depth"),
             "perception": prog.stage_facts.get("perception"),
             "mesh": prog.stage_facts.get("mesh"),

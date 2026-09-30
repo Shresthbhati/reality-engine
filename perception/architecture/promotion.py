@@ -81,6 +81,14 @@ _ARCH_CLASS_TO_ENTITY_TYPE: Dict[str, EntityType] = {
 }
 
 
+
+def _inferred_rel(kind, target_id, confidence):
+    """A topology relationship (part_of / contains / adjacent / connects) is INFERRED from the room, corridor,
+    opening or stair graph, never observed: it carries that element's own measured confidence and INFERRED
+    provenance instead of the Relationship default (observed, 1.0), which would present a graph inference as
+    a certain observation."""
+    return Relationship(kind=kind, target_id=target_id, confidence=float(confidence), provenance=Provenance.INFERRED)
+
 def _store_entity(world, entity) -> None:
     """Write an entity into world.entities, whichever container the
     caller supplied: an EntityRegistry (integrity-checked .add) or a
@@ -414,7 +422,7 @@ def promote_interior_graph_to_world(
                 [r for r in rooms if getattr(r, "room_id", None) in set(storey.room_ids)]
             ),
             relationships=[
-                Relationship(kind=RelationshipKind.PART_OF, target_id=bld_id)
+                _inferred_rel(RelationshipKind.PART_OF, bld_id, building_confidence)
             ],
         )
         world.entities[lvl_id] = lvl_entity
@@ -434,13 +442,13 @@ def promote_interior_graph_to_world(
         lvl_id = space_to_level.get(r.room_id)
         rels = []
         if lvl_id:
-            rels.append(Relationship(kind=RelationshipKind.PART_OF, target_id=lvl_id))
+            rels.append(_inferred_rel(RelationshipKind.PART_OF, lvl_id, getattr(r, "confidence", 0.5)))
         for be in r.boundary_element_ids:
             if be in world.entities:
-                rels.append(Relationship(kind=RelationshipKind.CONTAINS, target_id=be))
+                rels.append(_inferred_rel(RelationshipKind.CONTAINS, be, getattr(r, "confidence", 0.5)))
         for adj in r.adjacent_room_ids:
             adj_id = f"room-{adj}"
-            rels.append(Relationship(kind=RelationshipKind.ADJACENT_TO, target_id=adj_id))
+            rels.append(_inferred_rel(RelationshipKind.ADJACENT_TO, adj_id, getattr(r, "confidence", 0.5)))
 
         r_entity = Entity(
             id=rid,
@@ -482,11 +490,11 @@ def promote_interior_graph_to_world(
         lvl_id = space_to_level.get(getattr(c, "corridor_id", ""))
         c_rels = []
         if lvl_id:
-            c_rels.append(Relationship(kind=RelationshipKind.PART_OF, target_id=lvl_id))
+            c_rels.append(_inferred_rel(RelationshipKind.PART_OF, lvl_id, getattr(c, "confidence", 0.5)))
         for r_id in getattr(c, "connected_room_ids", ()):
             target_rid = f"room-{r_id}"
-            c_rels.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=target_rid))
-            c_rels.append(Relationship(kind=RelationshipKind.ADJACENT_TO, target_id=target_rid))
+            c_rels.append(_inferred_rel(RelationshipKind.CONNECTS, target_rid, getattr(c, "confidence", 0.5)))
+            c_rels.append(_inferred_rel(RelationshipKind.ADJACENT_TO, target_rid, getattr(c, "confidence", 0.5)))
 
         c_entity = Entity(
             id=cid,
@@ -528,9 +536,9 @@ def promote_interior_graph_to_world(
             host_wall = op_dict.get("wall_element_id")
             op_rels = []
             if host_wall and host_wall in world.entities:
-                op_rels.append(Relationship(kind=RelationshipKind.PART_OF, target_id=host_wall))
+                op_rels.append(_inferred_rel(RelationshipKind.PART_OF, host_wall, op_dict.get("confidence", 0.0)))
             if target_space_entity_id and target_space_entity_id in world.entities:
-                op_rels.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=target_space_entity_id))
+                op_rels.append(_inferred_rel(RelationshipKind.CONNECTS, target_space_entity_id, op_dict.get("confidence", 0.0)))
 
             op_entity = Entity(
                 id=ent_op_id,
@@ -570,7 +578,7 @@ def promote_interior_graph_to_world(
             if getattr(st, "stair_id", getattr(st, "id", "stair-001")) in s.stair_ids:
                 lvl_id = storey_to_level.get(s.storey_id)
                 if lvl_id:
-                    st_rels.append(Relationship(kind=RelationshipKind.CONNECTS, target_id=lvl_id))
+                    st_rels.append(_inferred_rel(RelationshipKind.CONNECTS, lvl_id, getattr(st, "confidence", 0.5)))
 
         st_entity = Entity(
             id=st_id,

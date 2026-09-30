@@ -476,3 +476,66 @@ def test_duplicate_is_redundant_even_if_opencv_cannot_fit_a_fundamental_matrix(m
     labels = {c.evidence_id: c.label for c in rep.per_image}
     assert labels["dup"] == "redundant", labels
     assert rep.summary()["redundant"] == 1
+
+
+# ---- single-image openings: detect only what the pixels support; ambiguous stays unresolved -------------------
+def _wall_with(tmp_path, paint):
+    """The same receding wall as _wall_scene, with caller-chosen dark rectangles painted on it."""
+    from evidence.session import EvidenceItem, EvidenceKind
+    from perception.depth.interface import DepthMap
+
+    w, h = 320, 240
+    rng = np.random.default_rng(3)
+    img = np.full((h, w, 3), 175, np.uint8) + rng.integers(0, 3, (h, w, 3), dtype=np.uint8)
+    paint(img)
+    p = tmp_path / "wall_custom.png"
+    Image.fromarray(img).save(p)
+    f = (w / 2) / math.tan(math.radians(30))
+    vals = [[(1 - 0.5 * (u - w / 2) / f) / 4.0 - 0.25 for u in range(w)] for _ in range(h)]
+    dm = DepthMap(evidence_id="x", width=w, height=h, values=vals)
+    item = EvidenceItem(id="ev-wall", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+    return item, inspect_image(p), dm
+
+
+def _openings(res):
+    return {e.id: e for e in res.world.entities.values()
+            if (e.custom_properties.get("bootstrap") or {}).get("role") == "opening_candidate"}
+
+
+def test_visible_doorway_and_enclosed_window_carry_evidence_dimensions_and_resolved_kinds(tmp_path):
+    from engine.pipeline.single_image import bootstrap_single_image
+
+    item, facts, dm = _wall_scene(tmp_path, with_openings=True)
+    ops = _openings(bootstrap_single_image(item, facts, depth_map=dm))
+    assert {e.type.value for e in ops.values()} == {"door", "window"}
+    for e in ops.values():
+        b = e.custom_properties["bootstrap"]
+        assert b["evidence_id"] == "ev-wall" and b["resolved_kind"] is True and b["kind_basis"]
+        dim = b["dimensions"]
+        assert 0.0 < dim["width_frac_of_wall"] < 1.0 and 0.0 < dim["height_frac_of_wall"] <= 1.0
+        assert "metric size is unknown" in dim["units"]          # relative scale: never claimed as metres
+
+
+def test_ambiguous_opening_is_a_generic_opening_not_a_guessed_door_or_window(tmp_path):
+    from engine.pipeline.single_image import bootstrap_single_image
+
+    def paint(img):                                       # dark, touches the bottom, but wider than tall: not door-shaped
+        img[190:240, 100:230] = 50
+
+    item, facts, dm = _wall_with(tmp_path, paint)
+    ops = _openings(bootstrap_single_image(item, facts, depth_map=dm))
+    assert ops, "the rectangle is real evidence of a void and must not vanish"
+    for e in ops.values():
+        assert e.type.value == "opening" and e.custom_properties["bootstrap"]["resolved_kind"] is False
+        assert "cannot be determined from one view" in e.custom_properties["bootstrap"]["kind_basis"]
+
+
+def test_rectangle_cut_off_by_the_wall_region_edge_is_refused_as_incomplete_wall(tmp_path):
+    from engine.pipeline.single_image import bootstrap_single_image
+
+    def paint(img):                                       # runs into the wall's left edge: missing data, not an opening edge
+        img[60:130, 0:55] = 55
+
+    item, facts, dm = _wall_with(tmp_path, paint)
+    res = bootstrap_single_image(item, facts, depth_map=dm)
+    assert res.facts["openings"]["attempted"] and not _openings(res)

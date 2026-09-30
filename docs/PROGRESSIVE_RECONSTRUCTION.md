@@ -29,7 +29,7 @@ the user never creates or attaches them:
 | 0 | single-image visual hypothesis | `engine/pipeline/single_image.py` |
 | 1 | multi-image rough (2 cameras registered) | COLMAP via `vertical_slice` |
 | 2 | sparse photogrammetric (>= 3 registered) | COLMAP via `vertical_slice` |
-| 3 | dense reconstruction | **not wired** (dense MVS exists but is off by default) |
+| 3 | dense reconstruction | dense MVS fused points, reached through the measured gate below (`REALITY_DENSE_AUTO=1`, EXPERIMENTAL, off by default) |
 | 4 | semantic / topological refinement | compiler produced rooms / storeys / corridors |
 | 5 | incremental evidence refinement | built on top of an earlier version's evidence |
 
@@ -245,6 +245,55 @@ starting point for registration (see above); this acceptance step still judges t
 successful COLMAP run is not automatically a better world. What is still recomputed each time is
 everything **after** COLMAP: frame alignment, depth, perception, plane detection and compilation of the
 WorldIR; region-aware local refinement of those stages is not implemented.
+
+## Level 3 (dense): an evidence-driven gate, never a photo count
+
+`engine/pipeline/dense_gate.py::dense_readiness` measures the sparse model against four criteria and reports each
+with the number that decided it: registration (>= 80% of supplied photographs placed), geometric support (median
+structure point seen by >= 3 cameras), coverage (cameras span >= 15 degrees around the scene) and structure
+(>= 300 sparse points). Three photographs can qualify and twenty can fail (`tests/test_dense_gate.py`). The
+thresholds are **EXPERIMENTAL** -- uncalibrated starting points -- and the gate is **off by default**
+(`VerticalSliceOptions.dense_auto`, enabled by `REALITY_DENSE_AUTO=1`). When the gate passes, the existing dense stage
+runs against the persistent COLMAP session's own images and sparse model, writing into a scratch directory so the
+session never carries depth maps. Level 3 is granted only when that stage ran and added points; a refused or failed
+dense run keeps the sparse level and is recorded as a level-3 `attempt`. Not measured by the gate (so never claimed):
+GSD adequacy, per-camera confidence, depth availability.
+
+## Metric scale from the user
+
+`POST /api/worlds/{id}/scale {evidence_id_a, evidence_id_b, distance_m, method}` records a measured distance between
+two of the world's photographs (`<worldstore>/scale-references/<world>.json`, validated by `reconstruction.scale`) and
+queues a reconstruction of the SAME world that applies it through the existing scale anchoring. Meters are never
+assumed: without a reference the world stays RELATIVE; with one, the new version states the scale source, the
+meters-per-unit and the ratio spread, and the change list says "Scale changed from relative to metric ...". A
+reference whose photographs cannot be placed leaves the world relative and says why. An implausible measurement is
+not hidden: an arbitrary 1.2 m between two photographs ~10 model units apart shrinks the building to 0.4 m, the
+fixed-metre plane tolerances then find no walls, and the adoption gate rejects the candidate (observed).
+
+## Stable entity identity across versions
+
+`world_ir/entity_reid.py::carry_identity` gives a candidate entity the previous entity's id only for a ONE-TO-ONE
+`preserved`/`refined` spatial-continuity relation of the same type (measured footprint overlap of fitted planes),
+applied to a copy and re-validated before use. A refined wall therefore diffs as MODIFIED, not REMOVED + ADDED.
+Splits, merges, regroupings, extensions, reductions and ambiguous overlaps keep their own ids and record lineage in
+`custom_properties["continuity"]`; ambiguity is never forced. Decisions are on the version report (`identity`) and in
+the status API. Tests: `tests/test_identity_carry.py`.
+
+## Single-image openings
+
+The opening candidates on a single-view wall are pixel-space rectangles (`engine/pipeline/openings.py`); the 3D
+coverage detectors in `perception/architecture/` have nothing to find in one dense monocular view and need metric
+size. A candidate is a DOOR only when it reaches the bottom of the wall region and is taller than wide; a WINDOW only
+when enclosed by the wall on all four sides; a rectangle reaching the wall region's top or side is refused as an
+incomplete wall; anything else is a generic OPENING with `resolved_kind: false`. Every candidate records its evidence
+id and its size as a fraction of the wall (relative scale; never metres).
+
+## Confidence defaults
+
+`Observation`, `Relationship` and `CausalRelation` no longer default to `confidence=1.0` (and `Relationship` no longer
+to `OBSERVED` provenance): an unstated value now reads "not measured" (0.5, UNKNOWN), matching the rest of the
+schema. Legacy records without a confidence load as 0.5. The 10 topology relationships built by
+`perception/architecture/promotion.py` are INFERRED and carry their source element's confidence.
 
 ## Versions and diff
 

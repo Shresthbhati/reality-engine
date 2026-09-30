@@ -34,6 +34,7 @@ MIN_CONTRAST = 18.0          # |mean inside - mean ring|, 0..255 grey levels
 BOTTOM_TOUCH_FRAC = 0.06     # of the wall bbox height
 DOOR_MIN_ASPECT_H_OVER_W = 1.3
 MAX_CANDIDATES = 12
+EDGE_TOUCH_FRAC = 0.03       # of the wall bbox: a rectangle this close to the wall's top/side is cut off by it
 
 
 @dataclass(frozen=True)
@@ -44,8 +45,10 @@ class OpeningCandidate:
     area_frac: float
     rectangularity: float
     touches_bottom: bool
-    kind: str                                  # "door" | "window"
+    kind: str                                  # "door" | "window" | "opening" (unresolved: not door- or window-shaped)
     kind_basis: str
+    wall_frac_w: float = 0.0                   # width / height as a fraction of the host wall region's pixel
+    wall_frac_h: float = 0.0                   # extent -- the only size a single view can state honestly
 
 
 def _iou(a, b) -> float:
@@ -84,7 +87,9 @@ def detect_opening_candidates(
     if area < 400 or xs.size == 0:
         return []
     wy0, wy1 = int(ys.min()), int(ys.max())
+    wx0, wx1 = int(xs.min()), int(xs.max())
     wall_h = max(1, wy1 - wy0)
+    wall_w = max(1, wx1 - wx0)
 
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.dilate(cv2.Canny(blur, 40, 120), np.ones((3, 3), np.uint8))
@@ -124,10 +129,22 @@ def detect_opening_candidates(
             continue
         touches = (y + bh) >= wy1 - BOTTOM_TOUCH_FRAC * wall_h
         tall = bh / max(1, bw) >= DOOR_MIN_ASPECT_H_OVER_W
-        kind = "door" if (touches and tall) else "window"
-        basis = (f"touches the bottom of the wall region and is {bh / max(1, bw):.1f}x taller than wide"
-                 if kind == "door" else
-                 "does not meet the door-like rule (bottom contact and taller than wide)")
+        cut_top = y <= wy0 + EDGE_TOUCH_FRAC * wall_h
+        cut_side = x <= wx0 + EDGE_TOUCH_FRAC * wall_w or (x + bw) >= wx1 - EDGE_TOUCH_FRAC * wall_w
+        if touches and tall:
+            kind = "door"
+            basis = f"touches the bottom of the wall region and is {bh / max(1, bw):.1f}x taller than wide"
+        elif cut_top or cut_side:
+            # An edge-bounded opening needs wall on every side it claims. A rectangle running into the wall
+            # region's top or side is cut off by missing data (the wall is incomplete there): no candidate.
+            continue
+        elif not touches:
+            kind = "window"
+            basis = "enclosed by the wall region on all four sides, with no contact with its bottom"
+        else:
+            kind = "opening"
+            basis = ("touches the bottom of the wall region but is not door-shaped: an opening whose kind "
+                     "cannot be determined from one view")
         def _back(px, py):
             return (float(min(w0 - 1, max(0, px - pad_px))), float(min(h0 - 1, max(0, py - pad_px))))
 
@@ -136,6 +153,7 @@ def detect_opening_candidates(
             bbox_px=(max(0, x - pad_px), max(0, y - pad_px), min(w0, x + bw - pad_px), min(h0, y + bh - pad_px)), contrast=round(contrast, 1),
             area_frac=round(pa / area, 4), rectangularity=round(rect_ratio, 3),
             touches_bottom=bool(touches), kind=kind, kind_basis=basis,
+            wall_frac_w=round(bw / wall_w, 3), wall_frac_h=round(bh / wall_h, 3),
         ))
 
     found.sort(key=lambda o: o.contrast * o.area_frac, reverse=True)

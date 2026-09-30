@@ -1215,3 +1215,53 @@ async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Dep
         raise HTTPException(422, str(exc)) from exc
     return {"world_id": world_id, "version_id": row.id, "previous_head": before,
             "note": "history is unchanged; evidence is kept and will be retried by the next reconstruction"}
+
+
+class ScaleIn(BaseModel):
+    evidence_id_a: str
+    evidence_id_b: str
+    distance_m: float
+    method: str = "manual_measurement"
+
+
+@worlds.post("/{world_id}/scale", status_code=202)
+async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depends(get_db)) -> dict:
+    """Anchor the world's scale to a distance the user measured between two of its photographs.
+
+    Never assumes meters: the reference (two evidence ids + measured metres + method) is recorded, and a
+    reconstruction of the SAME world is queued that applies it through the existing scale anchoring. The
+    result is a new version of the same world whose report states the scale source and ratio spread; if the
+    two photographs cannot be placed, the world stays RELATIVE and the report says why."""
+    from apps.api import jobs as jobrunner
+    from apps.api import worldstore_service as wss
+    from apps.api.models import Job, Session as _Session
+    from reconstruction.scale import ScaleAnchoringError
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    sessions = (await db.execute(
+        select(_Session).where(_Session.world_id == world_id).order_by(_Session.created_at.desc()))).scalars().all()
+    known = set()
+    if sessions:
+        known = set((await db.execute(
+            select(Evidence.id).where(Evidence.session_id.in_([s.id for s in sessions]), Evidence.type == "photo")
+        )).scalars().all())
+    for eid in (body.evidence_id_a, body.evidence_id_b):
+        if eid not in known:
+            raise HTTPException(422, f"evidence '{eid}' is not a photograph of this world")
+    busy = (await db.execute(
+        select(Job.id).where(Job.entity_type == "session", Job.entity_id.in_([s.id for s in sessions]),
+                             Job.status.in_(("queued", "running"))).limit(1)
+    )).scalars().first()
+    if busy:
+        raise HTTPException(409, f"a reconstruction is in progress (job {busy}); apply the scale when it finishes")
+    try:
+        ref = wss.add_scale_reference(world_id, body.evidence_id_a, body.evidence_id_b, body.distance_m, body.method)
+    except ScaleAnchoringError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", sessions[0].id)
+    await db.commit()
+    return {"world_id": world_id, "job_id": job.id, "reference": ref,
+            "note": "the same world will be re-evaluated with this measured distance; a new version is created "
+                    "only if the authoritative geometry changes"}

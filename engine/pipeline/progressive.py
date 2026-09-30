@@ -165,6 +165,22 @@ def run_progressive(
         # 9 of 10 registered is a bigger model than 6 of 6, not a rougher one).
         # Unregistered images are recorded as degradation, never hidden.
         level = 2 if len(registered_ids) >= 3 else 1
+        # LEVEL 3 = dense geometry actually contributed points. It is reached only through the evidence-driven gate
+        # (engine.pipeline.dense_gate) and only when the dense stage RAN and added points; a refused or failed dense
+        # run leaves the honest sparse level and is recorded, never papered over.
+        gate_facts = (vs.stage_facts or {}).get("dense_gate")
+        dense = (vs.stage_facts or {}).get("dense_mvs") or {}
+        if gate_facts is not None:
+            ran = dense.get("status") == "ran" and dense.get("dense_points_added", 0) > 0
+            attempts.append({
+                "level": 3, "name": LEVEL_NAMES[3],
+                "outcome": "succeeded" if ran else ("skipped" if not gate_facts.get("escalate") else "failed"),
+                "detail": (f"{dense.get('dense_points_added', 0)} dense points fused" if ran else
+                           "; ".join(gate_facts.get("reasons") or []) if not gate_facts.get("escalate") else
+                           str(dense.get("note") or dense.get("status") or "dense stage did not run"))[:400],
+            })
+            if ran and level >= 2:
+                level = 3
         if vs.registration_status != "success":
             degraded.append(f"registration {vs.registration_status!r}: "
                             f"{vs.cameras_registered}/{vs.cameras_input} cameras")

@@ -172,9 +172,13 @@ def run_progressive(
         dense = (vs.stage_facts or {}).get("dense_mvs") or {}
         if gate_facts is not None:
             ran = dense.get("status") == "ran" and dense.get("dense_points_added", 0) > 0
+            # a dense candidate that ran but did not earn its place is not a failure of the pipeline: the sparse
+            # world stays, and the record says whether dense contradicted it (rejected) or added nothing (equivalent)
+            judged = dense.get("status") if dense.get("status") in ("rejected", "equivalent") else None
             attempts.append({
                 "level": 3, "name": LEVEL_NAMES[3],
-                "outcome": "succeeded" if ran else ("skipped" if not gate_facts.get("escalate") else "failed"),
+                "outcome": ("succeeded" if ran else judged if judged else
+                            "skipped" if not gate_facts.get("escalate") else "failed"),
                 "detail": (f"{dense.get('dense_points_added', 0)} dense points fused" if ran else
                            "; ".join(gate_facts.get("reasons") or []) if not gate_facts.get("escalate") else
                            str(dense.get("note") or dense.get("status") or "dense stage did not run"))[:400],

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import pytest
 
-from world_ir.schema_v1 import Entity, Relationship
+from world_ir.schema_v1 import Entity, Relationship, RelationshipKind
 from provenance import Provenance
 from world_ir.schema_v1 import TemporalEvent, TemporalEventType
 from world_ir.v2_extensions import (
@@ -187,11 +187,12 @@ class TestWorldIntegration:
         world.entities[entity_a.id] = entity_a
         entity_b = Entity(id="b", type="room")
         world.entities[entity_b.id] = entity_b
+        # canonical schema kind: a WorldIR round-trip must survive RelationshipKind validation
         wall_entity = Entity(
             id="wall", type="wall",
             relationships=[
-                Relationship(kind="adjoins", target_id="a"),
-                Relationship(kind="adjoins", target_id="b"),
+                Relationship(kind=RelationshipKind.ADJACENT_TO, target_id="a"),
+                Relationship(kind=RelationshipKind.ADJACENT_TO, target_id="b"),
             ])
         world.entities[wall_entity.id] = wall_entity
         world.temporal_history = TemporalHistory.from_events([

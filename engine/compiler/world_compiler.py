@@ -67,12 +67,11 @@ from evidence.promote_rooms import (
 from perception.geometry.orientation import (
     OrientationError,
     classify_planes,
+    observer_positions_by_plane,
 )
 from perception.geometry.planes import (
-    canonicalize_plane_ids,
     detect_planes,
-    merge_coplanar_fragments,
-    split_parallel_sheets,
+    refine_planes,
 )
 from provenance import Provenance
 from world_ir import WorldIR
@@ -281,19 +280,14 @@ def compile_reconstruction_to_world(
         min_inliers=options.min_inliers,
     )
     positions_by_id = {p.track_id: p.position for p in result.points}
-    refined_planes = merge_coplanar_fragments(
-        split_parallel_sheets(
-            detection.planes, positions_by_id, options.up,
-            distance_tolerance_m=options.distance_tolerance_m,
-            min_inliers=options.min_inliers,
-        ),
-        positions_by_id, options.up,
+    refined_planes = refine_planes(
+        detection.planes, positions_by_id, options.up,
         distance_tolerance_m=options.distance_tolerance_m,
         min_inliers=options.min_inliers,
     )
-    refined_planes = canonicalize_plane_ids(refined_planes)
     try:
-        oriented = classify_planes(refined_planes, camera_positions, options.up)
+        oriented = classify_planes(refined_planes, camera_positions, options.up,
+                                   observers=observer_positions_by_plane(refined_planes, result))
     except OrientationError as exc:
         raise CompileInputError(f"plane classification failed: {exc}") from exc
 

@@ -41,6 +41,7 @@ def ingest_fused_ply(
     artifact_store: Optional[ArtifactStore],
     source_evidence_ids: Sequence[str],
     scale_factor: float = 1.0,
+    rotation: Optional[Sequence[Sequence[float]]] = None,
 ) -> "object":
     """Parse fused.ply, encode canonically, persist, and return the
     WorldIR Geometry (POINTCLOUD) referencing the artifact.
@@ -73,21 +74,23 @@ def ingest_fused_ply(
     if not points:
         raise DenseOutputError("fused.ply carries zero points -- nothing to ingest")
 
-    cloud = PointCloudData.from_positions(
-        [
-            (
-                p.position[0] * scale_factor,
-                p.position[1] * scale_factor,
-                p.position[2] * scale_factor,
-            )
-            for p in points
-        ]
-    )
+    # scale first, then the world's canonical-frame rotation (the order the sparse cloud went through);
+    # fused.ply itself is in COLMAP's raw frame
+    R = None if rotation is None else [[float(v) for v in row] for row in rotation]
+
+    def _place(pos):
+        x, y, z = (pos[0] * scale_factor, pos[1] * scale_factor, pos[2] * scale_factor)
+        if R is None:
+            return (x, y, z)
+        return tuple(R[i][0] * x + R[i][1] * y + R[i][2] * z for i in range(3))
+
+    placed = [_place(p.position) for p in points]
+    cloud = PointCloudData.from_positions(placed)
     data_uri, data_hash = artifact_store.put(cloud.to_bytes())
 
-    xs = [p.position[0] * scale_factor for p in points]
-    ys = [p.position[1] * scale_factor for p in points]
-    zs = [p.position[2] * scale_factor for p in points]
+    xs = [q[0] for q in placed]
+    ys = [q[1] for q in placed]
+    zs = [q[2] for q in placed]
 
     from provenance import Provenance
     from world_ir import Geometry, GeometryType, Observation, Vector3
@@ -111,6 +114,7 @@ def ingest_fused_ply(
                 "n_source_images": len(source_evidence_ids),
                 "source_evidence_ids": list(source_evidence_ids),
                 "scale_factor": scale_factor,
+                "frame_rotation_applied": R is not None,
                 "scale_note": (
                     "positions multiplied by scale_factor from the "
                     "pipeline's measured metric anchor; 1.0 means the "

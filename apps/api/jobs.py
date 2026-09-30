@@ -31,6 +31,7 @@ from apps.api.models import (
     utcnow,
 )
 from engine.pipeline import world_delta
+from engine.pipeline.dense_gate import dense_auto_enabled
 from reconstruction.colmap_session import ColmapSession
 from engine.pipeline.progressive import (
     EvidenceInput,
@@ -131,7 +132,9 @@ def _stage_facts_degraded(stage_facts: dict) -> list[str]:
         facts = stage_facts.get(stage)
         if isinstance(facts, dict):
             status = facts.get("status")
-            if status is not None and status not in ("ran", "skipped"):
+            # "disabled" (stage not attempted) and a dense candidate judged "rejected"/"equivalent" are honest
+            # decisions about an optional stage, not damage -- grading them degraded made every normal run "partial"
+            if status is not None and status not in ("ran", "skipped", "disabled", "rejected", "equivalent"):
                 degraded.append(f"{stage} stage status {status!r}")
     return degraded
 
@@ -490,8 +493,10 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         options = VerticalSliceOptions(
             artifact_store=artifact_store, colmap_session=colmap_session,
             measured_baselines=tuple(baselines),
-            # EXPERIMENTAL Level 3: dense MVS only when the measured sparse model justifies it (engine.pipeline.dense_gate)
-            dense_auto=os.environ.get("REALITY_DENSE_AUTO", "").strip() == "1",
+            # Level 3 is part of the normal path: dense MVS is attempted only when the measured sparse model justifies
+            # it (engine.pipeline.dense_gate), and the result is kept only if it is judged better than the sparse
+            # world (engine.pipeline.dense_judge). REALITY_DENSE_AUTO=0 opts out.
+            dense_auto=dense_auto_enabled(),
             # both COLMAP candidates are judged as worlds against the current HEAD, not by camera count
             head_snapshot=world_delta.snapshot_from_report(head_report),
             head_conflicts=head_report.get("conflicts"))

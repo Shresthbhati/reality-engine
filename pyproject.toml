@@ -15,7 +15,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0"]
+# The application API service (apps/api) and every test that drives it. Mirrors apps/api/requirements.txt; kept
+# here so `pip install -e ".[dev]"` (what CI runs) installs it -- without aiosqlite the API / reliability suites
+# are skipped wholesale by pytest.importorskip("aiosqlite"), which is a silent loss of coverage, not a pass.
+api = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.20.0",
+    "python-multipart",
+    "httpx",
+]
+dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]"]
 perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0"]
 # colmap is a C++ binary (colmap/colmap), not a Python package.
 # The CLI expects `colmap` on PATH. No PyPI package exists.

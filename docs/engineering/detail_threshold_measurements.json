@@ -1,0 +1,159 @@
+{
+ "dataset": "south_building sparse (committed, real)",
+ "points": 49608,
+ "cameras": 32,
+ "extent_model_units": 67.919,
+ "scale": "COLMAP arbitrary (not metric)",
+ "base": {
+  "voxel_frac_of_extent": 0.04,
+  "curvature": 0.1,
+  "planarity": 0.95
+ },
+ "runs": [
+  {
+   "voxel_frac_of_extent": 0.04,
+   "voxel_model_units": 2.7168,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 26,
+   "rois": 1,
+   "refined": 1,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.006483,
+   "roi_size_points_median": 35824,
+   "seconds": {
+    "discovery": 0.79,
+    "roi": 13.39,
+    "refine": 21.14
+   },
+   "roi_cell_overlap_with_base": 1.0
+  },
+  {
+   "voxel_frac_of_extent": 0.01,
+   "voxel_model_units": 0.6792,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 139,
+   "rois": 14,
+   "refined": 14,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.000671,
+   "roi_size_points_median": 37,
+   "seconds": {
+    "discovery": 2.14,
+    "roi": 5.64,
+    "refine": 37.88
+   },
+   "roi_cell_overlap_with_base": null
+  },
+  {
+   "voxel_frac_of_extent": 0.02,
+   "voxel_model_units": 1.3584,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 62,
+   "rois": 8,
+   "refined": 8,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.001044,
+   "roi_size_points_median": 43,
+   "seconds": {
+    "discovery": 0.8,
+    "roi": 5.62,
+    "refine": 27.59
+   },
+   "roi_cell_overlap_with_base": null
+  },
+  {
+   "voxel_frac_of_extent": 0.08,
+   "voxel_model_units": 5.4335,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 13,
+   "rois": 1,
+   "refined": 1,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.006647,
+   "roi_size_points_median": 43852,
+   "seconds": {
+    "discovery": 0.44,
+    "roi": 23.26,
+    "refine": 44.9
+   },
+   "roi_cell_overlap_with_base": null
+  },
+  {
+   "voxel_frac_of_extent": 0.04,
+   "voxel_model_units": 2.7168,
+   "curvature": 0.05,
+   "planarity": 0.95,
+   "candidates": 26,
+   "rois": 1,
+   "refined": 1,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.006779,
+   "roi_size_points_median": 49492,
+   "seconds": {
+    "discovery": 0.51,
+    "roi": 58.62,
+    "refine": 49.63
+   },
+   "roi_cell_overlap_with_base": 0.68
+  },
+  {
+   "voxel_frac_of_extent": 0.04,
+   "voxel_model_units": 2.7168,
+   "curvature": 0.2,
+   "planarity": 0.95,
+   "candidates": 26,
+   "rois": 4,
+   "refined": 4,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.000658,
+   "roi_size_points_median": 22,
+   "seconds": {
+    "discovery": 0.52,
+    "roi": 12.91,
+    "refine": 56.66
+   },
+   "roi_cell_overlap_with_base": 0.647
+  },
+  {
+   "voxel_frac_of_extent": 0.04,
+   "voxel_model_units": 2.7168,
+   "curvature": 0.1,
+   "planarity": 0.9,
+   "candidates": 26,
+   "rois": 1,
+   "refined": 1,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.006622,
+   "roi_size_points_median": 41547,
+   "seconds": {
+    "discovery": 0.44,
+    "roi": 20.37,
+    "refine": 24.37
+   },
+   "roi_cell_overlap_with_base": 0.773
+  },
+  {
+   "voxel_frac_of_extent": 0.04,
+   "voxel_model_units": 2.7168,
+   "curvature": 0.1,
+   "planarity": 0.98,
+   "candidates": 26,
+   "rois": 1,
+   "refined": 1,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.005954,
+   "roi_size_points_median": 17241,
+   "seconds": {
+    "discovery": 0.44,
+    "roi": 2.93,
+    "refine": 15.49
+   },
+   "roi_cell_overlap_with_base": 0.706
+  }
+ ],
+ "note": "no ground truth: false positives / missed details are not scored; see module docstring"
+}

@@ -25,6 +25,7 @@ from .schema_v1 import (
     TemporalEvent, CausalRelation, Observation
 )
 from .coordinates import Frame, Transform
+from .v2_extensions import TemporalHistory, TopologyGraph
 
 
 @dataclass
@@ -194,7 +195,9 @@ class WorldIR:
     causal_relations: list[CausalRelation] = field(default_factory=list)
 
     # Branching and Scenarios
-    main_branch_id: str = field(default_factory=lambda: f"branch-main-{uuid4()}")
+    # Empty = derived from the world's own id in __post_init__. A fresh uuid4 per instance made two worlds built from
+    # the same inputs differ in a field no input controls, so every deterministic producer had to pin it by hand.
+    main_branch_id: str = ""
     branches: dict[str, Branch] = field(default_factory=dict)
     scenarios: dict[str, Scenario] = field(default_factory=dict)
 
@@ -217,8 +220,27 @@ class WorldIR:
     environment: dict = field(default_factory=dict)   # e.g. weather, lighting
     physics: dict = field(default_factory=dict)        # e.g. gravity, material props
 
+    # WorldIR 2.0 (P9-01, additive): the world's ordered event log. Empty history is omitted on serialization and a
+    # world without the key loads with an empty history -- never a fabricated one.
+    temporal_history: TemporalHistory = field(default_factory=TemporalHistory)
+
+    def __post_init__(self) -> None:
+        if not self.main_branch_id:
+            self.main_branch_id = f"branch-main-{self.id}"
+
+    def topology(self) -> TopologyGraph:
+        """Containment + connectivity DERIVED from the current entity relationships on demand -- never stored, so
+        never stale. Dangling relationship targets are visible on the graph (reported_dangling), not healed."""
+        return TopologyGraph.from_registry(list(self.entities.values()))
+
     def to_dict(self) -> dict:
         """Serialize to deterministically-ordered JSON-compatible dict."""
+        d = self._to_dict_v1()
+        if self.temporal_history.events:
+            d["temporal_history"] = self.temporal_history.to_dict()
+        return d
+
+    def _to_dict_v1(self) -> dict:
         return {
             "schema_version": 1,
             "id": self.id,
@@ -304,7 +326,7 @@ class WorldIR:
             causal_relations=[
                 CausalRelation.from_dict(c) for c in data.get("causal_relations", [])
             ],
-            main_branch_id=data.get("main_branch_id", f"branch-main-{uuid4()}"),
+            main_branch_id=data.get("main_branch_id", ""),
             branches={
                 k: Branch.from_dict(v) for k, v in data.get("branches", {}).items()
             },
@@ -324,6 +346,7 @@ class WorldIR:
             metadata=data.get("metadata", {}),
             environment=data.get("environment", {}),
             physics=data.get("physics", {}),
+            temporal_history=TemporalHistory.from_dict(data.get("temporal_history", [])),
         )
 
     def to_json(self, indent: int = 2) -> str:

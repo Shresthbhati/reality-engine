@@ -78,6 +78,7 @@ def test_auto_options_point_the_dense_stage_at_the_session_workspace_and_use_scr
     (ws / "sparse" / "0").mkdir(parents=True)
     res, n = _result(6)
     _measured_coverage(monkeypatch, res)
+    monkeypatch.setattr("reconstruction.dense_pipeline.dense_mvs_available", lambda binary: True)
     opts = VerticalSliceOptions(colmap_session=SimpleNamespace(staging=ws), dense_auto=True)
     out, facts, scratch = _auto_dense_options(res, n, opts)
     try:

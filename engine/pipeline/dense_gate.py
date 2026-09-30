@@ -19,14 +19,25 @@ COLMAP's own dense capability is probed separately by the dense stage, which ref
 
 from __future__ import annotations
 
+import os
 from statistics import median
-from typing import Dict, Optional
+from typing import Dict, Mapping, Optional
 
 #: EXPERIMENTAL thresholds -- see module docstring.
 MIN_REGISTERED_FRACTION = 0.8
 MIN_MEDIAN_TRACK_LENGTH = 3
 MIN_COVERAGE_DEG = 15.0
 MIN_STRUCTURE_POINTS = 300
+
+
+def dense_auto_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
+    """Is evidence-driven dense escalation part of the normal product path? Yes, unless an operator opts OUT.
+
+    The decision itself is never the switch's: with it on, dense still runs only when ``dense_readiness`` passes on
+    the measured sparse model, COLMAP proves dense-capable, and the resulting cloud is judged against the sparse
+    world (engine.pipeline.dense_judge). ``REALITY_DENSE_AUTO=0`` (or false/off/no) disables the attempt entirely."""
+    env = os.environ if env is None else env
+    return env.get("REALITY_DENSE_AUTO", "").strip().lower() not in ("0", "false", "off", "no")
 
 
 def dense_readiness(result, n_input: int, coverage_deg: Optional[float] = None) -> Dict[str, object]:

@@ -29,7 +29,7 @@ the user never creates or attaches them:
 | 0 | single-image visual hypothesis | `engine/pipeline/single_image.py` |
 | 1 | multi-image rough (2 cameras registered) | COLMAP via `vertical_slice` |
 | 2 | sparse photogrammetric (>= 3 registered) | COLMAP via `vertical_slice` |
-| 3 | dense reconstruction | dense MVS fused points, reached through the measured gate below (`REALITY_DENSE_AUTO=1`, EXPERIMENTAL, off by default) |
+| 3 | dense reconstruction | dense MVS fused points, attempted automatically when the measured gate below passes and kept only if the dense cloud is judged better than the sparse world (thresholds EXPERIMENTAL; `REALITY_DENSE_AUTO=0` opts out) |
 | 4 | semantic / topological refinement | compiler produced rooms / storeys / corridors |
 | 5 | incremental evidence refinement | built on top of an earlier version's evidence |
 
@@ -252,12 +252,30 @@ WorldIR; region-aware local refinement of those stages is not implemented.
 with the number that decided it: registration (>= 80% of supplied photographs placed), geometric support (median
 structure point seen by >= 3 cameras), coverage (cameras span >= 15 degrees around the scene) and structure
 (>= 300 sparse points). Three photographs can qualify and twenty can fail (`tests/test_dense_gate.py`). The
-thresholds are **EXPERIMENTAL** -- uncalibrated starting points -- and the gate is **off by default**
-(`VerticalSliceOptions.dense_auto`, enabled by `REALITY_DENSE_AUTO=1`). When the gate passes, the existing dense stage
-runs against the persistent COLMAP session's own images and sparse model, writing into a scratch directory so the
-session never carries depth maps. Level 3 is granted only when that stage ran and added points; a refused or failed
-dense run keeps the sparse level and is recorded as a level-3 `attempt`. Not measured by the gate (so never claimed):
-GSD adequacy, per-camera confidence, depth availability.
+thresholds are **EXPERIMENTAL** -- uncalibrated starting points.
+
+**Product path.** The job runner enables the gate by default (`engine.pipeline.dense_gate.dense_auto_enabled()`;
+`REALITY_DENSE_AUTO=0|false|off|no` opts out) -- escalation is decided by the measurements above, never by a switch
+or a photo count. Compute availability is part of the decision: COLMAP must prove dense-capable
+(`patch_match_stereo` in its own help) or the record says `sparse only: dense compute unavailable`. When the gate
+passes, the dense stage runs against the persistent COLMAP session's own images and sparse model, writing into a
+scratch directory so the session never carries depth maps.
+
+**Dense is a judged candidate, never an unconditional addition** (`engine/pipeline/dense_judge.py`). Before anything
+is written, the fused cloud -- put in the world's frame (scale, then the canonical-frame rotation; fused.ply is in
+COLMAP's raw frame) -- is compared with the sparse structure by ordered rules, the deciding rule recorded:
+judgeable (both clouds large enough) -> regression (the dense cloud must still reproduce >= 60% of the sparse
+structure and stay inside the established scene extent) -> improvement (materially denser AND adds surface the sparse
+model does not sample). Outcomes: `ran` (accepted: geometry + fusion input added, Level 3 granted), `rejected`
+(contradicts the sparse world), `equivalent` (adds nothing: the coherent sparse world is kept). A failed dense run
+(`failed`) also leaves the sparse world untouched. None of the four degrades the job's grade -- dense is an optional
+refinement, not a dependency; every one is recorded as a level-3 `attempt` with its reason. An operator who forces
+dense (`dense_mvs_enabled=True`) bypasses the judge and says so. Tests: `tests/test_dense_arbitration.py` (cases A-F).
+Not measured by the gate (so never claimed): GSD adequacy, per-camera confidence, depth availability.
+
+Two latent defects were found and fixed while wiring this: dense points were added in COLMAP's raw frame while the
+sparse cloud had already been rotated into the canonical frame, and the code that appended dense points to the
+fusion input assigned to a frozen dataclass inside a bare `except`, so dense points never reached fusion.
 
 ## Metric scale from the user
 

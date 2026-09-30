@@ -110,17 +110,12 @@ def _room_box(c, x0, x1, y0, y1, z0, z1):
 def _detect_refine(result):
     """The shared detect -> refine (split + merge) stage, as both
     pipelines now run it at the interior scale."""
-    from perception.geometry.planes import (
-        canonicalize_plane_ids, detect_planes,
-        merge_coplanar_fragments, split_parallel_sheets,
-    )
+    from perception.geometry.planes import detect_planes, refine_planes
     positions = {p.track_id: p.position for p in result.points}
     det = detect_planes(result, seed=42, distance_tolerance_m=0.02,
                         min_inliers=30)
-    refined = canonicalize_plane_ids(merge_coplanar_fragments(
-        split_parallel_sheets(det.planes, positions, UP,
-                              distance_tolerance_m=0.02, min_inliers=30),
-        positions, UP, distance_tolerance_m=0.02, min_inliers=30))
+    refined = refine_planes(det.planes, positions, UP,
+                            distance_tolerance_m=0.02, min_inliers=30)
     return refined, positions
 
 

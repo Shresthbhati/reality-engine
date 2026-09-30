@@ -10,6 +10,8 @@ compare against a stored expected hash.
 import hashlib
 import json
 
+import pytest
+
 from engine.core.clock import DeterministicClock
 from engine.core.jobs import JobSystem
 from engine.core.rng import DeterministicRNG
@@ -74,5 +76,5 @@ def test_different_seed_produces_different_world_hash():
 
 def test_temporal_state_reflects_deterministic_clock():
     world = _build_world(seed=1, n_ticks=7)
-    assert world.temporal_state.current_time == 0.7
+    assert world.temporal_state.current_time == pytest.approx(0.7)   # 7 * 0.1 is 0.7000000000000001 in binary floats
     assert world.temporal_state.time_of_day == 0.5

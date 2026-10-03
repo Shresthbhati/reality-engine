@@ -45,7 +45,13 @@ from engine.scene_graph.spatial_index import SpatialIndex
 from exporters.blender.exporter import export_to_blender_script_with_report
 from exporters.citygml.exporter import export_to_citygml_with_report
 from exporters.cityjson.exporter import export_to_cityjson_with_report
+from exporters.gis.exporter import export_to_geojson_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
+from exporters.godot.exporter import export_to_tscn_with_report
+from exporters.habitat.exporter import export_to_habitat_with_report
+from exporters.ros.exporter import export_to_sdf_with_report
+from exporters.sumo.exporter import export_to_sumo_with_report
+from exporters.unreal.exporter import export_to_unreal_script_with_report
 from exporters.usd.exporter import export_to_usda_with_report
 from world_ir.artifact_store import ArtifactStore, MemoryArtifactStore
 from world_ir.diff import WorldDiff, diff_worlds
@@ -95,7 +101,18 @@ _EXPORTERS = {
     "blender": export_to_blender_script_with_report,
     "cityjson": _export_cityjson,
     "citygml": _export_citygml,
+    # box-based world compilers (exporters/boxes.py). Structure-validated by tests; none has been loaded into its
+    # target runtime on the build machine (see each module docstring).
+    "geojson": export_to_geojson_with_report,   # GIS footprints, local metres unless an origin is supplied
+    "sdf": export_to_sdf_with_report,           # ROS / Gazebo world
+    "tscn": export_to_tscn_with_report,         # Godot 4 scene
+    "unreal": export_to_unreal_script_with_report,  # Unreal Editor Python script
+    "sumo": export_to_sumo_with_report,         # JSON {filename: text}: netconvert node + edge files
+    "habitat": export_to_habitat_with_report,   # JSON {filename: text}: stage bundle
 }
+
+#: formats whose content is a JSON object {filename: text} that must be written as FILES, not as one document
+BUNDLE_FORMATS = frozenset({"sumo", "habitat"})
 
 
 class UnsupportedExportFormatError(ValueError):
@@ -142,7 +159,7 @@ def scene_graph(world: WorldIR) -> SceneGraph:
 
 def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] = None):
     """WorldIR -> (content, ExportReport) for `format` in {"gltf", "usda",
-    "blender", "cityjson", "citygml"}. Raises
+    "blender", "cityjson", "citygml", "geojson", "sdf", "tscn", "unreal", "sumo", "habitat"}. Raises
     UnsupportedExportFormatError for anything else -- the SDK never
     silently no-ops on an unknown format.
 

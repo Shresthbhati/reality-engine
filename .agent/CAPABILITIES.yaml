@@ -1234,3 +1234,14 @@ capabilities:
   category: product
   backend: engine/pipeline/world_delta.is_unchanged + apps/api/jobs.py
   maturity: IMPLEMENTED - found by a real kill at the version_persisted boundary (a rerun minted a duplicate version from identical evidence)
+- name: box_world_compilers
+  category: export
+  backend: exporters/boxes.py + exporters/{gis,ros,godot,unreal,sumo,habitat}
+  outputs: GeoJSON footprints, Gazebo SDF 1.9 world, Godot 4 .tscn, Unreal Editor Python script, SUMO netconvert node/edge files, Habitat stage bundle
+  maturity: >-
+    IMPLEMENTED; structure verified by tests/test_box_exporters.py (23, Unreal script executed against a fake
+    module, axis conventions mutation-checked). Loading into Gazebo / Godot / Unreal / netconvert / habitat-sim is
+    BLOCKED - none exists on the build machine.
+  limitations:
+  - box/plane geometry only, no rotation, no materials; SUMO exports ROAD/STREET only and invents no speeds or lanes
+  - GIS is local metres unless an origin_lonlat is supplied (then a small-area approximation assuming x=east, y=north)

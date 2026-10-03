@@ -1615,7 +1615,7 @@ tasks:
 
   - id: P16-01
     name: downstream world compilers
-    status: PARTIAL
+    status: BLOCKED
     basis: >-
       glTF/Blender/USD exporters exist and are tested. Completed
       2026-09-18: CityJSON 1.1 writer (exporters/cityjson/exporter.py
@@ -1642,10 +1642,12 @@ tasks:
         classes, parsed back via ifcopenshell"
       - "tests/test_citygml_exporter.py: CityGML 2.0 writer (see
         P14-01 completion note)"
-    reconciliation: "Reconciled 2026-10-02: downgraded DONE -> PARTIAL. The scope names 11 targets; writers exist and are tested for Blender, USD, glTF, IFC, CityGML and CityJSON (plus a citydb exporter under P14-01); there is NO writer for GIS (GeoJSON exists only as an IMPORT path), ROS, Habitat, SUMO, Unreal or Godot, so DONE overstated it."
+    reconciliation: "Reconciled 2026-10-02/03: the 2026-10-02 audit downgraded DONE -> PARTIAL because GIS, ROS, Habitat, SUMO, Unreal and Godot had no writer. They now exist (exporters/boxes.py shared input; exporters/gis GeoJSON footprints, exporters/ros Gazebo SDF world, exporters/godot .tscn, exporters/unreal editor Python script, exporters/sumo netconvert node+edge files, exporters/habitat stage bundle; registered in sdk/reality.py and the CLI). 23 tests (tests/test_box_exporters.py): well-formedness, real positions/extents, per-target axis conventions (Godot Y-up, Unreal left-handed cm, GeoJSON local metres unless an origin is given), determinism, skip reasons, CLI; the Unreal script is EXECUTED against a fake unreal module; the axis tests fail under a sign mutation. BLOCKED: no Gazebo, Godot, Unreal, SUMO netconvert or habitat-sim exists on the build machine, so acceptance of the files by their target runtimes is UNVERIFIED. Nothing is invented: no materials, speeds, lane counts, navmeshes or georeference."
     open: >-
-      REMAINING ENGINEERING: GIS export, ROS, Habitat, SUMO, Unreal and Godot writers (none exist). 3DCityDB (database export) is
-      tracked under P14-01.
+      EXTERNAL VERIFICATION: load each export in its real runtime (Gazebo, Godot 4, Unreal Editor, SUMO netconvert,
+      habitat-sim). Known simplifications: box/plane geometry only (point clouds and meshes are not exported by the
+      new writers, except through Habitat's glTF), no rotation, SUMO exports roads only, GIS is local metres unless the
+      caller supplies an origin. 3DCityDB (database export) is tracked under P14-01.
 
   # ================= PHASE 17 — WORLD SIMULATION =====================
 

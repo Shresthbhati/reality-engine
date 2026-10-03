@@ -560,6 +560,18 @@ def cmd_export(args: argparse.Namespace) -> int:
     except reality.UnsupportedExportFormatError as exc:
         _eprint(str(exc))
         return 1
+    if args.format in reality.BUNDLE_FORMATS:
+        # a bundle is several files: --output names the DIRECTORY they are written into
+        out_dir = Path(args.output)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for name, body in json.loads(content).items():
+            (out_dir / name).write_text(body, encoding="utf-8")
+        print(f"exported {args.format} -> {out_dir}/ ({len(json.loads(content))} files, "
+              f"{len(report.entities_exported)} entities, {len(report.entities_skipped)} skipped, "
+              f"hash={report.content_hash[:12]})")
+        for entity_id, reason in zip(report.entities_skipped, report.skip_reasons):
+            _eprint(f"  skipped {entity_id}: {reason}")
+        return 0
     if isinstance(content, dict):
         text = json.dumps(content, indent=2, sort_keys=True)
     else:
@@ -932,7 +944,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_export.add_argument("world")
     p_export.add_argument("--format", required=True,
-                          choices=["gltf", "usda", "blender", "cityjson", "citygml"])
+                          choices=["gltf", "usda", "blender", "cityjson", "citygml",
+                                   "geojson", "sdf", "tscn", "unreal", "sumo", "habitat"])
     p_export.add_argument("-o", "--output", required=True)
     p_export.set_defaults(func=cmd_export)
 

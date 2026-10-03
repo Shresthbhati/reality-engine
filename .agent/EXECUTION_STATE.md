@@ -22,6 +22,12 @@ robust-extent voxel; the old bbox "extent" was 10x inflated); (5) .gitignore `_*
 Next priorities: per-version evidence panel (PROD-01); GIS/ROS/Habitat/SUMO/Unreal/Godot writers (P16-01); real corridor/room
 photo datasets and further calibration data (need external data); retention policy for quarantined versions.
 
+## 2026-10-03 -- P16-01 export writers
+
+GIS (GeoJSON), ROS (Gazebo SDF), Godot (.tscn), Unreal (editor Python), SUMO (nod/edg XML), Habitat (stage bundle) implemented on
+a shared box collector; 23 tests green. P16-01 PARTIAL -> BLOCKED (target runtimes unavailable). Ledger: DONE 36 / PARTIAL 1 /
+BLOCKED 6 / MISSING 0.
+
 ## 2026-09-30 -- Closure sprint: ledger reconciled against code and tests (PR #140)
 
 Ledger after: DONE 37 / PARTIAL 2 (P7-05, PROD-01) / BLOCKED 4 (P1-03 hardware, P3-02 VIO backend, P7-03 real indoor

@@ -42,6 +42,7 @@ from reconstruction.backend.interface import (
 
 __all__ = [
     "FrameCanonicalization",
+    "canonicalize_like_head",
     "FrameCanonicalizationError",
     "canonicalize_frame",
 ]
@@ -182,6 +183,87 @@ def _rotation_from_to(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     return np.eye(3) + K + K @ K * (1.0 / (1.0 + c))
 
 
+def _rotate_result(result: ReconstructionResult, R: np.ndarray) -> ReconstructionResult:
+    """Apply one proper rotation to every point and camera pose (positions and orientations)."""
+    rotated_points = [
+        ReconstructedPoint(
+            position=tuple(R @ np.array(p.position)),
+            track_id=p.track_id,
+            source_evidence_ids=p.source_evidence_ids,
+            uncertainty=p.uncertainty,
+        )
+        for p in sorted(result.points, key=lambda p: p.track_id)
+    ]
+    rotated_poses = [
+        ReconstructedCameraPose(
+            evidence_id=p.evidence_id,
+            position=tuple(R @ np.array(p.position)),
+            rotation=_rotmat_to_qvec(R @ _qvec_to_rotmat(p.rotation)),
+            uncertainty=p.uncertainty,
+        )
+        for p in sorted(result.camera_poses, key=lambda p: p.evidence_id)
+    ]
+    return ReconstructionResult(
+        points=rotated_points,
+        camera_poses=rotated_poses,
+        registration_status=result.registration_status,
+    )
+
+
+#: A candidate shares HEAD's raw (pre-canonical) frame when, after HEAD's canonical rotation is applied, its cameras
+#: sit where HEAD's cameras sit: mean displacement of the shared cameras below this fraction of their extent.
+#: (Measured on real incremental registration: bundle adjustment moves established cameras by ~0.1-0.6 % of the
+#: extent; a full re-solve lands in an arbitrary frame, tens of percent away.)
+INHERIT_FRAME_MAX_DISPLACEMENT = 0.05
+#: fewer shared cameras than this cannot demonstrate that two reconstructions share a frame
+INHERIT_FRAME_MIN_COMMON = 3
+
+
+def canonicalize_like_head(
+    result: ReconstructionResult,
+    seed: int,
+    head_rotation: Optional[Tuple[Tuple[float, float, float], ...]],
+    head_cameras: Optional[dict],
+) -> Tuple[ReconstructionResult, FrameCanonicalization]:
+    """Canonicalize ``result``, REUSING HEAD's recorded canonical rotation when the candidate demonstrably shares
+    HEAD's raw frame.
+
+    Why: ``canonicalize_frame`` re-estimates 'up' from each candidate's own cameras and dominant plane, so two
+    successive versions of one world -- even when COLMAP's own frame was preserved by incremental registration --
+    land in canonical frames that differ by whatever the up estimate moved (measured on real photographs: 7.6 and
+    9.9 degrees about the vertical between V1->V2->V3). The world's visible frame must not wander. A candidate that
+    is in a DIFFERENT raw frame (a full re-solve) cannot reuse the rotation and is canonicalized on its own.
+
+    Reuse requires evidence, not trust: apply HEAD's rotation, then require >= INHERIT_FRAME_MIN_COMMON shared
+    cameras to land within INHERIT_FRAME_MAX_DISPLACEMENT of HEAD's positions. Otherwise (no HEAD frame recorded,
+    too few shared cameras, cameras elsewhere) estimate as before."""
+    if head_rotation is not None and head_cameras and result.camera_poses:
+        try:
+            R = np.array(head_rotation, dtype=float)
+            if R.shape == (3, 3) and np.allclose(R @ R.T, np.eye(3), atol=1e-6) and np.isclose(np.linalg.det(R), 1.0, atol=1e-6):
+                common = [p for p in result.camera_poses if p.evidence_id in head_cameras]
+                if len(common) >= INHERIT_FRAME_MIN_COMMON:
+                    mine = np.array([R @ np.array(p.position) for p in common], dtype=float)
+                    theirs = np.array([head_cameras[p.evidence_id] for p in common], dtype=float)
+                    extent = float(np.sqrt(((theirs - theirs.mean(0)) ** 2).sum(1).mean()))
+                    if extent > 1e-12:
+                        shift = float(np.linalg.norm(mine - theirs, axis=1).mean()) / extent
+                        if shift <= INHERIT_FRAME_MAX_DISPLACEMENT:
+                            record = FrameCanonicalization(
+                                rotation=tuple(tuple(float(v) for v in row) for row in R),
+                                up_source="inherited_from_head",
+                                source_plane_id="",
+                                source_inliers=0,
+                                note=(f"frame inherited from the current version: {len(common)} shared cameras land "
+                                      f"within {shift:.1%} of their established positions after its canonical "
+                                      "rotation, so this candidate is in the same frame; up was NOT re-estimated"),
+                            )
+                            return _rotate_result(result, R), record
+        except (TypeError, ValueError):
+            pass                                   # a malformed stored frame is never trusted: fall through
+    return canonicalize_frame(result, seed)
+
+
 def canonicalize_frame(
     result: ReconstructionResult,
     seed: int,
@@ -256,30 +338,7 @@ def canonicalize_frame(
     if not np.isclose(np.linalg.det(R), 1.0, atol=1e-9):
         raise FrameCanonicalizationError("computed rotation is not proper")
 
-    rotated_points = [
-        ReconstructedPoint(
-            position=tuple(R @ np.array(p.position)),
-            track_id=p.track_id,
-            source_evidence_ids=p.source_evidence_ids,
-            uncertainty=p.uncertainty,
-        )
-        for p in sorted(result.points, key=lambda p: p.track_id)
-    ]
-    rotated_poses = [
-        ReconstructedCameraPose(
-            evidence_id=p.evidence_id,
-            position=tuple(R @ np.array(p.position)),
-            rotation=_rotmat_to_qvec(R @ _qvec_to_rotmat(p.rotation)),
-            uncertainty=p.uncertainty,
-        )
-        for p in sorted(result.camera_poses, key=lambda p: p.evidence_id)
-    ]
-
-    rotated = ReconstructionResult(
-        points=rotated_points,
-        camera_poses=rotated_poses,
-        registration_status=result.registration_status,
-    )
+    rotated = _rotate_result(result, R)
     record = FrameCanonicalization(
         rotation=tuple(tuple(float(v) for v in row) for row in R),
         up_source=up_source,

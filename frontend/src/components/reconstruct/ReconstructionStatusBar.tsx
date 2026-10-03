@@ -16,9 +16,10 @@ import type {
   QualityBar,
   QualityLevel,
   ReconstructionState,
+  VersionRelation,
   WorldStatus,
 } from "@/lib/api";
-import { modelStateCopy } from "@/lib/api";
+import { changeCategoryCounts, describeBuild, evidenceInVersion, modelStateCopy, versionEvidenceSummary } from "@/lib/api";
 import type { WorldIR } from "@/types/worldir";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +45,14 @@ const CONTRIBUTION_COPY: Record<string, string> = {
   disconnected: "shares nothing verifiable with the rest",
   unknown: "not analysed",
 };
+
+const VERSION_RELATION_COPY: Record<VersionRelation, (label: string) => string> = {
+  placed: (v) => `Part of ${v} and placed in it`,
+  waiting: (v) => `Part of ${v} but not placed in it (kept, waiting for a photo that connects it)`,
+  added_later: (v) => `Added after ${v}: not part of it`,
+  unknown: (v) => `${v} did not record which photos it used`,
+};
+
 
 function QualityRow({ bar }: { bar: QualityBar }) {
   const filled = LEVEL_SEGMENTS[bar.level];
@@ -96,6 +105,31 @@ function provenanceCounts(world: WorldIR | null | undefined) {
 
 type Physical = NonNullable<NonNullable<WorldStatus["model"]>["physical"]>;
 
+/** How this version was built and why it was accepted: only what the engine reported, never a guess. */
+function BuildSummary({ model, title }: { model: NonNullable<WorldStatus["model"]>; title: string }) {
+  const b = describeBuild(model);
+  const rows: [string, string | null][] = [
+    ["Built by", b.method],
+    ["Why", b.why],
+    ["Frame", b.frame],
+    ["Candidates", b.comparison],
+    ["Decision", b.decision],
+    ["Surface", b.dense],
+  ];
+  const shown = rows.filter(([, v]) => v);
+  if (shown.length === 0) return null;
+  return (
+    <dl className="mt-2 space-y-0.5 text-[11px]" data-testid="how-built">
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{title}</dt>
+      {shown.map(([k, v]) => (
+        <dd key={k} data-testid={`how-built-${k.toLowerCase()}`} className="leading-relaxed text-neutral-300">
+          <strong className="text-neutral-200">{k}:</strong> {v}
+        </dd>
+      ))}
+    </dl>
+  );
+}
+
 /** What changed in the WORLD between versions (not how many entities the rebuild has). */
 function PhysicalChanges({ physical }: { physical: Physical }) {
   const rows: [string, string[], string][] = [
@@ -109,6 +143,21 @@ function PhysicalChanges({ physical }: { physical: Physical }) {
   const touched = (physical.regions ?? []).filter((r) => r.status !== "unchanged" || (r.new_evidence_count ?? 0) > 0);
   return (
     <div className="space-y-0.5" data-testid="physical-changes">
+      <ul className="flex flex-wrap gap-1" data-testid="change-counts" aria-label="Changes by kind">
+        {changeCategoryCounts(physical.counts).map(({ kind, label, count }) => (
+          <li
+            key={kind}
+            data-testid={`change-count-${kind}`}
+            data-count={count}
+            className={cn(
+              "rounded border px-1.5 py-0 text-[10px]",
+              count > 0 ? "border-[#2a2f3a] text-neutral-200" : "border-[#1f222b] text-neutral-600",
+            )}
+          >
+            {label} {count}
+          </li>
+        ))}
+      </ul>
       {physical.preserved ? (
         <p className="text-[11px] text-neutral-300">
           <strong className="text-neutral-200">Preserved:</strong> {physical.preserved} surface
@@ -344,6 +393,14 @@ export default function ReconstructionStatusBar({
                 <span className="text-amber-300">Inferred {counts.inferred}</span>
                 <span className="text-neutral-400">Unknown {counts.unknown}</span>
               </p>
+              <BuildSummary
+                model={model}
+                title={
+                  viewingOld
+                    ? `How ${status.versions.find((v) => v.is_current)?.label ?? "the current version"} (the current version) was built`
+                    : "How this version was built"
+                }
+              />
             </>
           ) : (
             <p className="mt-1 text-[11px] text-neutral-400">
@@ -353,7 +410,9 @@ export default function ReconstructionStatusBar({
           {model && (model.changes?.length ?? 0) > 0 && (
             <div className="mt-2" data-testid="what-changed">
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                What changed in this version
+                {viewingOld
+                  ? `What changed in ${status.versions.find((v) => v.is_current)?.label ?? "the current version"} (the current version)`
+                  : "What changed in this version"}
               </h3>
               {model.physical?.available && <PhysicalChanges physical={model.physical} />}
               <details className="mt-1" open={!model.physical?.available}>
@@ -522,6 +581,12 @@ export default function ReconstructionStatusBar({
       )}
 
       {showEvidence && (
+        <>
+        {viewingOld && inspecting && (
+          <p className="border-t border-[#1f222b] px-3 py-1 text-[11px] text-amber-300" data-testid="evidence-version-summary">
+            {versionEvidenceSummary(status.evidence, inspecting)}
+          </p>
+        )}
         <ul className="max-h-40 divide-y divide-[#1f222b] overflow-y-auto border-t border-[#1f222b] text-[11px]">
           {status.evidence.map((e: EvidenceStatus) => (
             <li key={e.id} className="flex items-center gap-3 px-3 py-1">
@@ -532,6 +597,11 @@ export default function ReconstructionStatusBar({
                 {e.evidence_class ?? "not analysed"}
                 {e.used_for_geometry === false ? " · context only" : ""}
               </span>
+              {viewingOld && inspecting ? (
+                <span className="text-neutral-400" data-testid={`evidence-in-${inspecting.label}`}>
+                  {VERSION_RELATION_COPY[evidenceInVersion(e.id, inspecting)](inspecting.label)}
+                </span>
+              ) : (
               <span className="text-neutral-400">
                 {e.contribution ? CONTRIBUTION_COPY[e.contribution] ?? e.contribution : "waiting for analysis"}
                 {e.registration?.state === "waiting"
@@ -540,9 +610,11 @@ export default function ReconstructionStatusBar({
                     ? " · not placed in the model"
                     : ""}
               </span>
+              )}
             </li>
           ))}
         </ul>
+        </>
       )}
       </div>
       )}

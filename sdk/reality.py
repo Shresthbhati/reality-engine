@@ -45,7 +45,14 @@ from engine.scene_graph.spatial_index import SpatialIndex
 from exporters.blender.exporter import export_to_blender_script_with_report
 from exporters.citygml.exporter import export_to_citygml_with_report
 from exporters.cityjson.exporter import export_to_cityjson_with_report
+from exporters.gis.exporter import export_to_geojson_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
+from exporters.godot.exporter import export_to_tscn_with_report
+from exporters.habitat.exporter import export_to_habitat_with_report
+from exporters.report import ExportReport, content_hash
+from exporters.ros.exporter import export_to_sdf_with_report
+from exporters.sumo.exporter import export_to_sumo_with_report
+from exporters.unreal.exporter import export_to_unreal_script_with_report
 from exporters.usd.exporter import export_to_usda_with_report
 from world_ir.artifact_store import ArtifactStore, MemoryArtifactStore
 from world_ir.diff import WorldDiff, diff_worlds
@@ -81,21 +88,49 @@ def _export_citygml(world, artifact_store=None):
     return export_to_citygml_with_report(world)
 
 
-#: format name -> the exporter's _with_report function. Every entry here
-#: is a real, tested exporter (exporters/gltf, exporters/usd,
-#: exporters/blender, exporters/cityjson, exporters/citygml) -- adding
-#: an entry means the format is actually implemented, never a
-#: placeholder. (The IFC bridge, exporters/ifc_bridge.py, stays outside
-#: this table: it writes to a file path and returns a different report
-#: shape, so shoehorning it into (content, ExportReport) would be a
-#: dishonest adapter.)
+def _export_ifc(world, artifact_store=None):
+    """IFC4 through the IfcOpenShell bridge. The bridge writes a FILE, so this adapter writes to a temporary one and
+    returns its bytes. ``ImportError`` (IfcOpenShell missing) and ``IFCBridgeError`` (nothing exportable) propagate:
+    an empty or absent IFC is never presented as an export. ``artifact_store`` is ignored (bounds-only, like IFC's
+    extruded boxes)."""
+    import tempfile
+    from pathlib import Path
+
+    from exporters.ifc_bridge import export_world_to_ifc
+
+    with tempfile.TemporaryDirectory(prefix="re_ifc_") as tmp:
+        path = Path(tmp) / "world.ifc"
+        report = export_world_to_ifc(world, path)
+        data = path.read_bytes()
+    skipped = report.get("skipped", {})
+    return data, ExportReport(
+        format="ifc", world_id=world.id, world_version=world.version,
+        entities_exported=tuple(report.get("written", ())), entities_skipped=tuple(skipped),
+        skip_reasons=tuple(skipped.values()), content_hash=content_hash(data))
+
+
+#: format name -> the exporter's _with_report function. Every entry here is a real, tested exporter -- adding an
+#: entry means the format is actually implemented, never a placeholder. IFC is the one adapter: the IfcOpenShell
+#: bridge writes a file, so ``_export_ifc`` round-trips it through a temporary one.
 _EXPORTERS = {
     "gltf": export_to_gltf_with_report,
     "usda": export_to_usda_with_report,
     "blender": export_to_blender_script_with_report,
     "cityjson": _export_cityjson,
     "citygml": _export_citygml,
+    "ifc": _export_ifc,   # needs IfcOpenShell: ImportError if absent, IFCBridgeError if nothing is exportable
+    # box-based world compilers (exporters/boxes.py). Structure-validated by tests; none has been loaded into its
+    # target runtime on the build machine (see each module docstring).
+    "geojson": export_to_geojson_with_report,   # GIS footprints, local metres unless an origin is supplied
+    "sdf": export_to_sdf_with_report,           # ROS / Gazebo world
+    "tscn": export_to_tscn_with_report,         # Godot 4 scene
+    "unreal": export_to_unreal_script_with_report,  # Unreal Editor Python script
+    "sumo": export_to_sumo_with_report,         # JSON {filename: text}: netconvert node + edge files
+    "habitat": export_to_habitat_with_report,   # JSON {filename: text}: stage bundle
 }
+
+#: formats whose content is a JSON object {filename: text} that must be written as FILES, not as one document
+BUNDLE_FORMATS = frozenset({"sumo", "habitat"})
 
 
 class UnsupportedExportFormatError(ValueError):
@@ -142,7 +177,7 @@ def scene_graph(world: WorldIR) -> SceneGraph:
 
 def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] = None):
     """WorldIR -> (content, ExportReport) for `format` in {"gltf", "usda",
-    "blender", "cityjson", "citygml"}. Raises
+    "blender", "cityjson", "citygml", "ifc", "geojson", "sdf", "tscn", "unreal", "sumo", "habitat"}. Raises
     UnsupportedExportFormatError for anything else -- the SDK never
     silently no-ops on an unknown format.
 

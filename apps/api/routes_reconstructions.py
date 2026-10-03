@@ -245,6 +245,11 @@ def _rows_to_versions(rows: list[WorldVersion], head_id: str | None) -> list[dic
             "created_at": v.created_at.isoformat() if v.created_at else None,
             "level": rep.get("level"), "model_state": rep.get("model_state"),
             "images_used": len((rep.get("evidence") or {}).get("input_ids") or []),
+            # what THIS version was built from and which photographs it placed (None = the version predates the
+            # record). The evidence panel uses it when an earlier version is being inspected: the current
+            # model's per-photo facts must not be shown as if they described the old one.
+            "evidence_ids": ((rep.get("evidence") or {}).get("all_ids")),
+            "registered_ids": ((rep.get("evidence") or {}).get("registered_ids")),
         })
     return out
 

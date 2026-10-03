@@ -29,6 +29,11 @@ _MEDIA_TYPES = {
     "blender": "application/x-python",
     "cityjson": "application/json",
     "citygml": "application/xml",
+    "ifc": "application/x-step",
+    "geojson": "application/geo+json",
+    "sdf": "application/xml",
+    "tscn": "text/plain",
+    "unreal": "application/x-python",
 }
 
 
@@ -51,6 +56,10 @@ async def export_world(
     try:
         content, report = reality.export(world, body.format, artifact_store=artifact_store)
     except reality.UnsupportedExportFormatError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ImportError as exc:      # an optional exporter dependency (IFC: IfcOpenShell) is not installed here
+        raise HTTPException(501, f"{body.format} export is unavailable on this server: {exc}") from exc
+    except ValueError as exc:       # nothing exportable (an empty IFC is not an export)
         raise HTTPException(422, str(exc)) from exc
 
     if isinstance(content, dict):

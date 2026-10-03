@@ -531,6 +531,24 @@ async def world_cameras(
                 })
             if image_size is None and isinstance(meta.get("image_size"), (list, tuple)):
                 image_size = [int(v) for v in meta["image_size"]]
+    if not cameras and row.cameras_artifact_uri:
+        # A COLMAP-reconstructed world keeps its registered poses in the version's cameras artifact (written by the
+        # job at adoption), not on entity observations (only the single-image bootstrap puts a pose there). Without
+        # this the Studio's camera layer was empty for every real reconstruction.
+        from apps.api.storage import resolve_artifact
+
+        path = resolve_artifact(row.cameras_artifact_uri)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8")) if path is not None else {}
+        except (OSError, ValueError):
+            payload = {}
+        for cam in payload.get("cameras") or []:
+            if isinstance(cam, dict) and "position_m" in cam:
+                cameras.append({"evidence_id": cam.get("evidence_id"),
+                                "position_m": [float(c) for c in cam["position_m"]],
+                                "rotation_wxyz": [float(c) for c in cam.get("rotation_wxyz", [1.0, 0.0, 0.0, 0.0])]})
+        if image_size is None and isinstance(payload.get("image_size"), (list, tuple)):
+            image_size = [int(v) for v in payload["image_size"]]
     return {
         "frame": "world (meters, +Y up after frame canonicalization)",
         "rotation_convention": "camera-to-world quaternion (w, x, y, z)",

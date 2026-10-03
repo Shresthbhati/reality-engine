@@ -110,6 +110,52 @@ def find_citydb_tool(explicit: Optional[str] = None, env: Optional[Mapping[str, 
 Runner = Callable[..., "subprocess.CompletedProcess"]
 
 
+AVAILABLE = "AVAILABLE"
+UNAVAILABLE = "UNAVAILABLE"
+FAILED = "FAILED"
+
+
+@dataclass(frozen=True)
+class CityDbProbe:
+    """Can the ``citydb`` command-line tool run on this machine? Three answers, never a guess:
+
+    AVAILABLE    the tool was found and ``citydb --version`` ran and printed a version;
+    UNAVAILABLE  the tool is not installed (not found via argument, ``CITYDB_TOOL`` or PATH);
+    FAILED       the tool is present but did not run (non-zero exit, timeout, could not start).
+
+    AVAILABLE says nothing about the DATABASE: PostgreSQL/PostGIS reachability and the 3DCityDB schema are only known
+    when an export is attempted. It is therefore not 'real 3DCityDB verification' -- that stays external."""
+
+    status: str
+    tool: Optional[str] = None
+    version: Optional[str] = None
+    detail: str = ""
+
+    def to_dict(self) -> dict:
+        return dict(self.__dict__)
+
+
+def probe_citydb(tool: Optional[str] = None, env: Optional[Mapping[str, str]] = None, runner: Runner = subprocess.run,
+                 timeout_s: float = 30.0) -> CityDbProbe:
+    """Probe only: finds the tool and asks it for its version. Never contacts a database and never raises."""
+    env = dict(os.environ if env is None else env)
+    exe = find_citydb_tool(tool, env)
+    if exe is None:
+        return CityDbProbe(UNAVAILABLE, detail="the 3DCityDB `citydb` command-line tool was not found (pass tool=..., "
+                                                "set CITYDB_TOOL, or put `citydb` on PATH)")
+    try:
+        out = runner([exe, "--version"], capture_output=True, text=True, timeout=timeout_s, env=env, shell=False)
+    except subprocess.TimeoutExpired:
+        return CityDbProbe(FAILED, tool=exe, detail=f"`citydb --version` did not finish within {timeout_s:g}s")
+    except OSError as exc:
+        return CityDbProbe(FAILED, tool=exe, detail=f"could not start the citydb tool: {exc}")
+    text = (out.stdout or out.stderr or "").strip()
+    if out.returncode != 0 or not text:
+        return CityDbProbe(FAILED, tool=exe, detail=f"`citydb --version` exited {out.returncode}: {_tail(text, 300)}")
+    return CityDbProbe(AVAILABLE, tool=exe, version=text.splitlines()[0],
+                       detail="the CLI runs; the database behind it was not contacted")
+
+
 def _tool_version(tool: str, env: Mapping[str, str], runner: Runner) -> Optional[str]:
     try:
         out = runner([tool, "--version"], capture_output=True, text=True, timeout=60, env=dict(env), shell=False)

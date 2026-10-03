@@ -50,3 +50,37 @@ Reading (nothing here is a ground-truth claim):
   data requirement, not an engineering gap.
 * The L2/L1 coverage rule for relative worlds, `RELATIVE_VOXEL_FRACTION`, and the frame-preservation tolerances in the
   candidate arbiter are provisional by the same standard.
+
+## Classification of every threshold (2026-10-03)
+
+Four words, used strictly. **MEASURED**: a value read off data in this repo, with the script and output named.
+**EMPIRICAL**: chosen from observation or convention, not derived from anything. **PROVISIONAL**: calibrated on one
+dataset, expected to move with more. **UNIVERSAL**: holds across datasets, cameras and scales -- *nothing in this table
+is universal*; no threshold has been checked on more than one real dataset.
+
+| threshold | value | class | basis |
+|---|---|---|---|
+| robust scene extent | 1st-99th percentile box diagonal | MEASURED (method) | South Building: 6.32 vs 67.9 for the bounding box; `tests/test_detail_scale.py` shows it ignores outliers a box swallows, on a rendered room of known size |
+| `RELATIVE_VOXEL_FRACTION` | 0.16 of robust extent | PROVISIONAL | chosen for continuity with the old 1.0-unit voxel on one scene (0.158 of 6.32); ROI count falls smoothly, no optimum found |
+| `METRIC_DEFAULT_VOXEL_M` | 1.0 m | EMPIRICAL | the documented absolute default for a metric world; never calibrated |
+| `MIN_POINTS_FOR_EXTENT` | 50 | EMPIRICAL | below this a percentile box is statistical noise; not measured |
+| curvature threshold | 0.1 | EMPIRICAL | measured sensitivity is mild (0.05/0.1 differ by one ROI) but the value was never optimised |
+| planarity threshold | 0.95 | EMPIRICAL | measured sensitivity is NOT mild (0.98 keeps 6 of 10 ROIs) -- the value is a convention |
+| GSD -> level bands | metric worlds only | PROVISIONAL | thresholds from the metric path's original tuning; withheld entirely for a relative scale |
+| L2 / L1 coverage rule (relative) | every observed point >= 2 views -> L2, else L1 | EMPIRICAL | a conservative cap: relative worlds can never reach L4 |
+| frame-preservation tolerances | 1.0 deg / 1 % scale / 1 % translation | PROVISIONAL | one dataset (South Building); the 2-extra-photos margin likewise |
+| indoor chain's plane tolerance | 2 cm / 30 inliers | EMPIRICAL | fixes the depth noise the interior chain absorbs: `tests/test_synthetic_indoor.py` measures phantom openings at sigma ~1.6 cm |
+
+## Synthetic calibration fixtures -- what they prove and what they do not
+
+`synthetic/` (rendered scenes with ground truth; see `synthetic/README.md`) supplies fixtures the real dataset cannot:
+a scene whose true extent, scale and structure are KNOWN. They are used for **properties**, never for values:
+
+* *invariance* -- the relative-scale chain gives the same answer whatever the arbitrary unit (exact, by rescaling);
+* *the robust extent against a known truth* -- a rendered 5 x 4 x 2.6 m room with sensor noise and injected outliers:
+  the percentile box recovers the true diagonal within a stated tolerance where the bounding box does not;
+* *regimes* -- the interior chain's noise envelope (clean vs noisy sensor) is a measured, pinned boundary.
+
+They do **not** calibrate a threshold: a synthetic scene has whatever noise and texture its generator gives it, so a
+number tuned on it would be tuned to the generator. Every VALUE above stays PROVISIONAL or EMPIRICAL until a second real
+dataset exists -- an external data requirement (P7-05 stays BLOCKED on it; the engineering side is finished).

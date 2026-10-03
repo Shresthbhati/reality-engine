@@ -1234,3 +1234,97 @@ capabilities:
   category: product
   backend: engine/pipeline/world_delta.is_unchanged + apps/api/jobs.py
   maturity: IMPLEMENTED - found by a real kill at the version_persisted boundary (a rerun minted a duplicate version from identical evidence)
+- name: box_world_compilers
+  category: export
+  scope: OPTIONAL_DEFERRED (P16-02; not required for the working prototype)
+  backend: exporters/boxes.py + exporters/{gis,ros,godot,unreal,sumo,habitat}
+  outputs: GeoJSON footprints, Gazebo SDF 1.9 world, Godot 4 .tscn, Unreal Editor Python script, SUMO netconvert node/edge files, Habitat stage bundle
+  maturity: >-
+    IMPLEMENTED; structure verified by tests/test_box_exporters.py (23, Unreal script executed against a fake
+    module, axis conventions mutation-checked). Loading into Gazebo / Godot / Unreal / netconvert / habitat-sim is
+    BLOCKED - none exists on the build machine.
+  limitations:
+  - box/plane geometry only, no rotation, no materials; SUMO exports ROAD/STREET only and invents no speeds or lanes
+  - GIS is local metres unless an origin_lonlat is supplied (then a small-area approximation assuming x=east, y=north)
+- name: "synthetic_data_pack"
+  category: "verification"
+  backend: "synthetic/ (scene.py ray-caster, rgbd.py sensor model + capture writer, vio.py trajectory/IMU/clock generator + stand-in executable, indoor.py rooms/storeys/stairs/ramps with ground truth)"
+  outputs: "RGB-D captures (16-bit depth, intrinsics, declared/undeclared scale, noise/holes/glass/invalid pixels), VIO sequences (IMU, clock offset/skew, dropped frames), indoor scenes with ground truth"
+  maturity: "IMPLEMENTED; tests/test_synthetic_rgbd.py (13), tests/test_synthetic_vio.py (20), tests/test_synthetic_indoor.py (20: 15 guarantees and envelope checks + 5 strict-xfail pinned known limits)"
+  notes: "deterministic and seeded; labelled SYNTHETIC RGB-D / VIO PIPELINE / INDOOR VERIFIED in every manifest; verifies the CONTRACT around a sensor or backend, never the sensor or a VIO algorithm"
+  limitations:
+  - "the VIO 'binary' is a stand-in that perturbs ground truth; planar scenes only (no curved surfaces, no photometric realism)"
+  - "the interior chain's 2 cm plane tolerance fixes the depth noise it absorbs (clean vs noisy sensor regimes are pinned)"
+- name: "verification_status_model"
+  category: "product"
+  backend: "engine/core/verification.py + apps/api/routes_system.py (GET /api/system/verification) + `reality verification [--runtime]`"
+  maturity: "IMPLEMENTED; tests/test_verification_status.py (17) -- rules, ledger agreement, API, CLI, 3DCityDB probe"
+  notes: "IMPLEMENTED < SYNTHETICALLY VERIFIED < REAL-WORLD VERIFIED, EXTERNAL VERIFICATION PENDING listed beside; a synthetic result can never be worded as real"
+- name: "trajectory_worldir_attachment"
+  category: "localization"
+  backend: "trajectories/worldir.attach_trajectory + world_ir/frame_graph.FrameGraph.load_from_trajectory (fixed: it raised AttributeError on every real Trajectory)"
+  maturity: "IMPLEMENTED; SYNTHETICALLY VERIFIED (tests/test_synthetic_vio.py, tests/test_frame_graph.py)"
+  notes: "records poses, clock/sync state and drift (unknown stays unknown) as an Observation; a gauge-fixed VIO frame is recorded registered_into_world=False, never silently equated with the world frame"
+- name: "ifc_export_adapter"
+  category: "export"
+  backend: "sdk/reality._export_ifc (IfcOpenShell bridge round-tripped through a temp file) + apps/api/routes_export.py + CLI --format ifc"
+  maturity: "IMPLEMENTED; tests/test_core_exports.py, tests/test_export_route.py"
+  notes: "501 when IfcOpenShell is missing, 422 when nothing is exportable -- never an empty file"
+- name: "citydb_availability_probe"
+  category: "export"
+  backend: "exporters/citydb.probe_citydb"
+  maturity: "IMPLEMENTED; tests/test_verification_status.py"
+  notes: "AVAILABLE / UNAVAILABLE / FAILED, probe-only (the database is never contacted); AVAILABLE is not real 3DCityDB verification"
+
+# Verification status model (engine/core/verification.py is the source; tests/test_verification_status.py fails if
+# this block drifts from it). Levels: IMPLEMENTED < SYNTHETICALLY VERIFIED < REAL-WORLD VERIFIED; items after ' -- ' are
+# EXTERNAL VERIFICATION PENDING (need a device, a built backend, a database server or a real dataset not available here).
+verification:
+  sparse_reconstruction:
+    level: "REAL-WORLD VERIFIED"
+    status: "REAL-WORLD VERIFIED (South Building) -- INDOOR ROOM / CORRIDOR PHOTO SET NOT AVAILABLE"
+    scope: core
+  progressive_world:
+    level: "REAL-WORLD VERIFIED"
+    status: "REAL-WORLD VERIFIED (South Building) -- INDOOR ROOM / CORRIDOR PHOTO SET NOT AVAILABLE"
+    scope: core
+  candidate_arbitration:
+    level: "REAL-WORLD VERIFIED"
+    status: "REAL-WORLD VERIFIED (South Building candidates)"
+    scope: core
+  failure_safety:
+    level: "REAL-WORLD VERIFIED"
+    status: "REAL-WORLD VERIFIED (real engine, 8 killed stages)"
+    scope: core
+  dense_reconstruction:
+    level: "REAL-WORLD VERIFIED"
+    status: "REAL-WORLD VERIFIED (South Building, CUDA)"
+    scope: core
+  detail_budget:
+    level: "SYNTHETICALLY VERIFIED"
+    status: "SYNTHETICALLY VERIFIED (thresholds measured on one real dataset) -- CALIBRATION ON MORE THAN ONE REAL DATASET PENDING"
+    scope: core
+  rgbd:
+    level: "SYNTHETICALLY VERIFIED"
+    status: "SYNTHETIC RGB-D VERIFIED -- PHYSICAL DEVICE VERIFICATION PENDING"
+    scope: core
+  vio:
+    level: "SYNTHETICALLY VERIFIED"
+    status: "SYNTHETIC VIO PIPELINE VERIFIED -- REAL BACKEND / HARDWARE VERIFICATION PENDING"
+    scope: core
+  indoor_architecture:
+    level: "SYNTHETICALLY VERIFIED"
+    status: "SYNTHETIC INDOOR VERIFIED -- REAL INDOOR DATASET VERIFICATION PENDING"
+    scope: core
+  export_core:
+    level: "REAL-WORLD VERIFIED"
+    status: "REAL-WORLD VERIFIED (a world reconstructed from real photographs, parsed back with independent readers) -- OPENING THE FILES IN BLENDER / USD / BIM VIEWERS NOT VERIFIED"
+    scope: core
+  export_ecosystem:
+    level: "SYNTHETICALLY VERIFIED"
+    status: "SYNTHETICALLY VERIFIED (structure and axis conventions only) -- TARGET RUNTIME ACCEPTANCE (Gazebo, Godot, Unreal, SUMO, habitat-sim) PENDING"
+    scope: optional
+  citydb:
+    level: "SYNTHETICALLY VERIFIED"
+    status: "SYNTHETICALLY VERIFIED (contract tests against a FAKE citydb CLI) -- REAL 3DCITYDB (PostgreSQL/PostGIS) VERIFICATION PENDING"
+    scope: core

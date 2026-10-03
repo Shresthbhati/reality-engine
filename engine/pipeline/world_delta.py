@@ -545,6 +545,9 @@ def physical_changes(delta: dict, conflicts: Optional[List[dict]] = None) -> dic
 
     new_input = delta["evidence"].get("new_input") or []
     out: dict = {"available": True, "signals": ents.get("signals", {})}
+    # how many relations of EACH kind (preserved / refined / extended / reduced / split / merge / regrouped / ambiguous /
+    # removed / new): the Studio shows all ten, so a category with none reads 0 rather than being absent
+    out["counts"] = dict(ents.get("counts") or {})
     # items are noun phrases: the label ("Added", "Extended", ...) carries the verb
     out["added"] = [_phrase([r["type"] for r in of("new")])] if of("new") else []
     out["extended"] = [f"{_phrase([r['type'] for r in of('extended')])} (now reach further than before)"] if of("extended") else []

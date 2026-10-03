@@ -234,6 +234,10 @@ def test_split_is_not_a_loss_and_the_gate_accepts_it_as_a_representation_change(
     phys = wd.physical_changes(d)
     assert phys["represented_differently"] == ["one wall is now 2 fragments (same surface, different grouping)"]
     assert phys["added"] == [] and phys["not_reproduced"] == []
+    # the status carries ALL ten relation categories, so the Studio can show each one (zero included)
+    assert list(phys["counts"]) == ["preserved", "refined", "extended", "reduced", "split", "merge", "regrouped",
+                                    "ambiguous", "removed", "new"]
+    assert phys["counts"]["split"] == 1 and phys["counts"]["preserved"] == 2 and phys["counts"]["removed"] == 0
 
 
 def test_unsupported_move_opens_a_geometry_conflict_keeping_both_positions_with_real_provenance():

@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, apiPostFiles } from "./client";
+import type { ChangeKind } from "./reconstruction-decision";
 
 export type ReconstructionState =
   | "CAPTURING"
@@ -24,6 +25,15 @@ export type ReconstructionState =
   | "NEEDS_MORE_EVIDENCE"
   | "FAILED"
   | "CANCELLED";
+
+/** How far one candidate's coordinate frame is from the current version's (measured from the camera alignment). */
+export interface ArbitrationCandidate {
+  verdict?: string;
+  measures?: {
+    frame_changed?: boolean | null;
+    frame_shift?: { rotation_deg: number | null; scale_change: number; translation_rel: number | null; changed: boolean | null } | null;
+  };
+}
 
 export type ModelState = "ROUGH" | "PARTIAL" | "REFINED";
 export type QualityLevel = "none" | "low" | "moderate" | "good" | "unknown";
@@ -81,6 +91,9 @@ export interface VersionStatus {
   level: number | null;
   model_state: ModelState | null;
   images_used: number;
+  /** every photograph this version was built from / the ones it placed; null when the version predates the record */
+  evidence_ids?: string[] | null;
+  registered_ids?: string[] | null;
 }
 
 export interface WorldStatus {
@@ -115,6 +128,8 @@ export interface WorldStatus {
       extended?: string[];
       refined?: string[];
       preserved?: number;
+      /** relations of each kind between this version and the previous one (all ten, zero included) */
+      counts?: Partial<Record<ChangeKind, number>>;
       represented_differently?: string[];
       not_reproduced?: string[];
       uncertain?: string[];
@@ -140,6 +155,15 @@ export interface WorldStatus {
       incremental_points?: number | null;
       full_points?: number | null;
       unregistered: string[];
+      /** when both candidates were built and judged as worlds: which won and on what measured fact */
+      arbitration?: {
+        choice: "incremental" | "full";
+        deciding: string;
+        why: string;
+        /** each candidate's measured facts (only the frame shift is read by the Studio) */
+        incremental?: ArbitrationCandidate;
+        full?: ArbitrationCandidate;
+      } | null;
     } | null;
     /** competing estimates that are kept, with provenance, until later evidence settles them */
     conflicts?: {

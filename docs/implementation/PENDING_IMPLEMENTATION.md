@@ -352,8 +352,8 @@ Design and evidence: [`../PROGRESSIVE_RECONSTRUCTION.md`](../PROGRESSIVE_RECONST
 with real COLMAP/MiDaS on the South Building photographs and in a real
 browser. Since 2026-09-29: judged automatic dense Level 3, user-measured metric scale, single-image openings,
 stable entity identity, frame-preserving candidate arbitration and the adoption protocol (see DESIGN_DECISIONS) are
-implemented and tested. Remaining: a real corridor and a real room photograph dataset (none exist: UNVERIFIED),
-per-version evidence panel while inspecting an old version.
+implemented and tested. Remaining: a real corridor and a real room photograph dataset (none exist: UNVERIFIED) and the PROD.3
+confidence-defaults audit. The per-version evidence panel landed 2026-10-03.
 
 ## PROD.2 — Stable entity identity across versions
 
@@ -385,3 +385,22 @@ states 1.0 with its basis.
 | CE-09 | Failure injection / restart / corruption / concurrency | PARTIALLY VERIFIED | Real COLMAP: crash before/after each of feature_extractor, matcher, image_registrator, point_triangulator, bundle_adjuster, mapper; crash before commit, after commit; 5 corruption cases (missing model/db, bad manifest, truncated model file, stale staging, removed evidence): `current/` byte-identical after every failure. Product path: crash in WorldIR compile / world_delta / decide / validation / conflict reconcile / WorldStore commit; fault after commit and read-back failure (HEAD valid, versions coherent, world converges); real process-tree kill mid-job (state A or B, never mixed); racing uploads. NOT covered: reconstruction-parse failure, subprocess timeout, disk-full, kill exactly between WorldStore commit and COLMAP commit is now covered by the stage-synchronised kill tests (8 boundaries), stale-candidate rebase with two parallel jobs from one HEAD, corrupted WorldStore artifact. |
 | CE-10 | Rollback of HEAD | IMPLEMENTED (pointer model); VERIFIED on real photos | `POST /api/worlds/{id}/rollback` -> `worldstore_service.rollback_head`: only the HEAD pointer moves, versions stay immutable, evidence is kept and shows as outside the current model, the COLMAP base is renamed `superseded-by-rollback-*` (set aside BEFORE the pointer moves, so a crash cannot leave HEAD seeded by the wrong state), the next version chains onto the rolled-back HEAD. Consequence: after a rollback the next run is a full rebuild (no per-version COLMAP snapshots). |
 | CE-11 | Cross-store recovery journal | NOT IMPLEMENTED (decision) -- WorldStore<->DB boundary now has an adoption-intent protocol, see DESIGN_DECISIONS | The COLMAP session is DERIVED state, validated on every run against the evidence set and pipeline signature, and it commits strictly after WorldStore adoption + read-back. The only reachable cross-store disagreement is "COLMAP one version behind", which converges on the next run (`test_crash_after_worldstore_adoption_...`); "COLMAP ahead of WorldStore" is unreachable by ordering. A fault after adoption is now a recorded degradation, not a FAILED job (the retry used to adopt a duplicate version). Revisit if the COLMAP state ever becomes authoritative. |
+
+
+## Prototype-completion sprint (2026-10-03) -- scope, verification levels, what is pinned and what is external
+
+The prototype is judged by the core loop (evidence -> world -> more evidence -> same world -> version -> export). See
+DESIGN_DECISIONS "The working prototype is judged by the core loop". Verification levels per capability:
+`reality verification [--runtime]`, `GET /api/system/verification`.
+
+| ID | Item | Status | Detail |
+|---|---|---|---|
+| PT-01 | Core exports glTF, USD(A), IFC, CityGML, CityJSON, Blender | DONE (REAL-WORLD VERIFIED: a world reconstructed from real photographs, all six parsed back with independent readers) | `tests/test_core_exports.py`, `tests/test_export_route.py`. IFC is now served by the SDK/API/CLI (was a file-only bridge). External: opening the files in Blender / a USD viewer / a BIM tool. |
+| PT-02 | Ecosystem exports GIS, ROS, Habitat, SUMO, Unreal, Godot (P16-02) | OPTIONAL_DEFERRED | Writers exist and are structure-tested (`tests/test_box_exporters.py`); not required for the prototype; target-runtime acceptance is external. |
+| PT-03 | Synthetic RGB-D (P1-03) | SYNTHETIC RGB-D VERIFIED -- PHYSICAL DEVICE VERIFICATION PENDING | `synthetic/rgbd.py`, `tests/test_synthetic_rgbd.py`. |
+| PT-04 | Synthetic VIO (P3-02) | SYNTHETIC VIO PIPELINE VERIFIED -- REAL BACKEND / HARDWARE VERIFICATION PENDING | `synthetic/vio.py`, `tests/test_synthetic_vio.py`; fixed `FrameGraph.load_from_trajectory`; new `trajectories/worldir.py`. |
+| PT-05 | Synthetic indoor architecture (P7-03) | SYNTHETIC INDOOR VERIFIED -- REAL INDOOR DATASET VERIFICATION PENDING | `synthetic/indoor.py`, `tests/test_synthetic_indoor.py`. |
+| PT-06 | Known limits found by PT-05 (strict xfail, not hidden) | OPEN ENGINEERING | rooms joined by doorways over one floor merge into one room; stairs not wired into interior assembly; `detect_stairs` refuses an unsegmented flight or one with unobserved treads; phantom openings under realistic depth noise (sigma ~1.6 cm at 5 m); mesh validation (`reconstruction/meshing/validation.py`) is too slow on ~50k-point clouds (a 16-view synthetic capture spent minutes there). |
+| PT-07 | 3DCityDB availability AVAILABLE / UNAVAILABLE / FAILED (P14-01) | DONE (probe); real database verification EXTERNAL | `exporters/citydb.probe_citydb`. |
+| PT-08 | Studio shows the ten change categories and how a version was built | DONE | `ReconstructionStatusBar` (`change-counts`, `how-built`); `frontend/src/lib/api/reconstruction-decision.ts`; contract tests. |
+| PT-09 | Canonical demo journey | DONE | `scripts/demo_journey.py`, `tests/integration/test_demo_journey.py`; measured metrics recorded, nothing hard-coded. |

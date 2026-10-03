@@ -1761,6 +1761,6 @@ tasks:
         (pipe-deadlock regression), tests/test_world_diff.py"
       - "frontend tsc --noEmit + next build --webpack + real-browser run"
     remaining:
-      - "ENGINEERING: per-version evidence panel while inspecting an old version (per the PROD.1 registry entry; not re-checked this sprint)"
+      - "ENGINEERING: audit the Observation/Relationship constructor confidence defaults (1.0); producers are fixed, the defaults were left for a dedicated pass (PROD.3)"
       - "EXTERNAL DATA (UNVERIFIED): no real corridor or real room photograph dataset exists in the repo; the 4 indoor photos outside it have unverified provenance and were not used"
-      - "Observation/Relationship constructor confidence defaults (1.0) audited; producers fixed, defaults left for a dedicated pass (PROD.3)"
+    done_2026_10_03: "per-version evidence panel: the status API carries each version's evidence_ids / registered_ids (the version's own record, null for versions that predate it); the Studio shows, for an inspected earlier version, each photo as placed / waiting / added after it plus a one-line summary, and relabels the changes block as the CURRENT version's. Verified in the real browser against a two-version world (V1: 3 photos used, 3 placed, 1 added since); 5 contract tests (frontend/tests/contract/version-evidence.test.mts) + tests/test_reconstruction_reliability.py::test_status_versions_carry_what_each_version_was_built_from."

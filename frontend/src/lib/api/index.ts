@@ -17,6 +17,7 @@ export * from "./platform";
 export * from "./unsupported";
 export * from "./worldir";
 export * from "./reconstructions";
+export * from "./version-evidence";
 export * from "./hooks";
 
 /**

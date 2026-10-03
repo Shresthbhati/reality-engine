@@ -352,8 +352,8 @@ Design and evidence: [`../PROGRESSIVE_RECONSTRUCTION.md`](../PROGRESSIVE_RECONST
 with real COLMAP/MiDaS on the South Building photographs and in a real
 browser. Since 2026-09-29: judged automatic dense Level 3, user-measured metric scale, single-image openings,
 stable entity identity, frame-preserving candidate arbitration and the adoption protocol (see DESIGN_DECISIONS) are
-implemented and tested. Remaining: a real corridor and a real room photograph dataset (none exist: UNVERIFIED),
-per-version evidence panel while inspecting an old version.
+implemented and tested. Remaining: a real corridor and a real room photograph dataset (none exist: UNVERIFIED) and the PROD.3
+confidence-defaults audit. The per-version evidence panel landed 2026-10-03.
 
 ## PROD.2 — Stable entity identity across versions
 

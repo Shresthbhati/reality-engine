@@ -734,3 +734,25 @@ def test_persisted_version_reloads_in_new_process(client, tmp_path, monkeypatch)
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
     assert "verified ok" in proc.stdout
+
+
+def test_status_versions_carry_what_each_version_was_built_from(client, tmp_path, monkeypatch):
+    """The per-version evidence panel: V1 used 3 photos, V2 used those 3 plus the new one -- each version's own
+    record, not the current model's."""
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    first = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert first["status"] == "succeeded", first.get("error")
+    r = client.post(f"/api/uploads?session_id={sid}",
+                    files={"file": ("frame_03.jpg", b"jpeg-" + b"3" * 8, "image/jpeg")})
+    assert r.status_code == 201, r.text
+    second = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert second["status"] == "succeeded", second.get("error")
+
+    st = client.get(f"/api/worlds/{wid}/status").json()
+    v1, v2 = sorted(st["versions"], key=lambda v: v["number"])
+    assert len(v1["evidence_ids"]) == 3 and len(v2["evidence_ids"]) == 4
+    assert set(v1["evidence_ids"]) < set(v2["evidence_ids"]), "V2 is built from V1's evidence plus the new photo"
+    for v in (v1, v2):
+        assert set(v["registered_ids"]) <= set(v["evidence_ids"]), "a version cannot place a photo it did not use"
+    new = (set(v2["evidence_ids"]) - set(v1["evidence_ids"])).pop()
+    assert new in {e["id"] for e in st["evidence"]}, "the photo added after V1 is known to the world"

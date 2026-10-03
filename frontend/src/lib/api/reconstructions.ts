@@ -81,6 +81,9 @@ export interface VersionStatus {
   level: number | null;
   model_state: ModelState | null;
   images_used: number;
+  /** every photograph this version was built from / the ones it placed; null when the version predates the record */
+  evidence_ids?: string[] | null;
+  registered_ids?: string[] | null;
 }
 
 export interface WorldStatus {

@@ -22,6 +22,12 @@ robust-extent voxel; the old bbox "extent" was 10x inflated); (5) .gitignore `_*
 Next priorities: per-version evidence panel (PROD-01); GIS/ROS/Habitat/SUMO/Unreal/Godot writers (P16-01); real corridor/room
 photo datasets and further calibration data (need external data); retention policy for quarantined versions.
 
+## 2026-10-03 -- Per-version evidence panel
+
+Status API: versions[].evidence_ids/registered_ids. Studio: an inspected earlier version shows each photo as placed / waiting /
+added after it, with a summary; the changes block is labelled as the current version's. Browser-verified; ledger unchanged
+(PROD-01 PARTIAL: PROD.3 confidence-defaults audit + external corridor/room data remain).
+
 ## 2026-10-03 -- P16-01 export writers
 
 GIS (GeoJSON), ROS (Gazebo SDF), Godot (.tscn), Unreal (editor Python), SUMO (nod/edg XML), Habitat (stage bundle) implemented on

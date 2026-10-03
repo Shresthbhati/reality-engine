@@ -52,6 +52,20 @@ async def _startup() -> None:
         import logging
         log = logging.getLogger("reality.api.startup")
         log.exception("startup orphan recovery failed")
+    # A previous process may have died between writing a WorldStore version and adopting it: quarantine such
+    # orphans BEFORE the worker starts, so a retry can never duplicate them. Never blocks startup.
+    try:
+        from apps.api import worldstore_service
+        from apps.api.db import get_sessionmaker
+
+        async with get_sessionmaker()() as db:
+            report = await worldstore_service.reconcile_adoptions(db)
+        if report["errors"]:
+            import logging
+            logging.getLogger("reality.api.startup").error("adoption recovery incomplete: %s", report["errors"])
+    except Exception:
+        import logging
+        logging.getLogger("reality.api.startup").exception("startup adoption recovery failed")
     app.state.worker = asyncio.create_task(jobrunner.worker_loop())
 
 

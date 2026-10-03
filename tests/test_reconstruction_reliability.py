@@ -158,6 +158,8 @@ def test_refinement_chains_and_failed_refinement_preserves_head(
                        timeout=90.0)
     assert repeat["status"] == "succeeded", repeat.get("error")
     assert repeat["payload"]["version_id"] == v2
+    assert repeat["payload"].get("unchanged") is True and repeat["payload"]["adopted"] is False
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 2, "an unchanged rerun minted a version"
     assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] == v2
     # Lineage is a chain, and the superseded version stays readable.
     assert client.get(f"/api/worlds/{wid}/worldir?version={v1}").status_code == 200

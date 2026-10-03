@@ -251,3 +251,60 @@ def test_failed_and_worse_candidates_never_replace_HEAD_and_waiting_evidence_is_
         assert any(e["registration"]["attempts"] >= 2 and e["registration"]["ever_registered"] for e in retried)
         for v in s4["versions"]:                                           # nothing was destroyed
             assert _worldir(c, wid, v["id"])["entities"]
+
+
+# ---------------------------------------------------------------- evidence ORDER: geometric equivalence (H)
+
+#: Documented tolerances for "the same evidence in a different order gives a materially equivalent world".
+#: COLMAP is not bit-reproducible across arrival orders, so equality is wrong; these bound what "equivalent" means.
+#: Provisional: set from the observed values printed by this test on real South Building photographs.
+ORDER_MAX_CAMERA_RESIDUAL_REL = 0.01      # observed 0.0006 (ABC vs BAC, 7 shared cameras); 16x margin
+ORDER_MAX_REGISTERED_DIFF = 1             # photographs placed by one ordering but not the other
+
+
+def _final_report(root, wid):
+    import json
+    import sqlite3
+
+    con = sqlite3.connect(root / "app.db")
+    try:
+        row = con.execute("select w.current_version_id, v.report from worlds w join world_versions v "
+                          "on v.id = w.current_version_id where w.id=?", (wid,)).fetchone()
+    finally:
+        con.close()
+    return json.loads(row[1])
+
+
+def test_orderings_reach_geometrically_equivalent_worlds_within_documented_tolerance(tmp_path):
+    from engine.pipeline import world_delta as wd
+
+    reports = {}
+    for name, steps in {"abc": [("A", A), ("B", B), ("C", C)], "bac": [("B", B), ("A", A), ("C", C)]}.items():
+        root = tmp_path / name
+        wids = []
+        _run(root, steps, after=lambda c, wid, trace, w=wids: w.append(wid))
+        reports[name] = _final_report(root, wids[0])
+    def by_name(report):
+        """Two separate worlds give the same photograph different evidence ids: compare by file name."""
+        snap = wd.snapshot_from_report(report)
+        name = {r["evidence_id"]: r["name"] for r in report["evidence"]["records"]}
+        snap["cameras"] = {name[k]: v for k, v in snap["cameras"].items()}
+        for key in ("registered_ids", "input_ids"):
+            snap[key] = [name[i] for i in snap[key]]
+        return snap
+
+    a, b = by_name(reports["abc"]), by_name(reports["bac"])
+    cc = wd.camera_consistency(a["cameras"], b["cameras"])
+    assert cc is not None, "orderings share too few registered cameras to compare"
+    diff = len(set(a["registered_ids"]) ^ set(b["registered_ids"]))
+    print(f"[order] common={cc['common']} camera residual={cc['relative']} registered symmetric diff={diff} "
+          f"types abc={a['entity_types']} bac={b['entity_types']}")
+    assert cc["relative"] <= ORDER_MAX_CAMERA_RESIDUAL_REL
+    assert diff <= ORDER_MAX_REGISTERED_DIFF
+    # neither world is a regression of the other: each is an acceptable evolution of the other
+    for prev, cand in ((a, b), (b, a)):
+        verdict = wd.decide(wd.compute_delta(prev, cand))
+        assert verdict["verdict"] != wd.REJECT, verdict
+    # same evidence, every entity still traces to posted evidence (provenance intact)
+    posted = set(a["input_ids"])
+    assert posted == set(b["input_ids"]) and len(posted) == 9

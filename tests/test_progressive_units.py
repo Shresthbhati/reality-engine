@@ -539,3 +539,14 @@ def test_rectangle_cut_off_by_the_wall_region_edge_is_refused_as_incomplete_wall
     item, facts, dm = _wall_with(tmp_path, paint)
     res = bootstrap_single_image(item, facts, depth_map=dm)
     assert res.facts["openings"]["attempted"] and not _openings(res)
+
+
+def test_status_reports_dense_vs_sparse_from_the_recorded_level_3_attempt_and_always_says_why():
+    from apps.api.routes_reconstructions import _dense_state
+
+    ok = _dense_state([{"level": 2, "outcome": "succeeded", "detail": ""},
+                       {"level": 3, "outcome": "succeeded", "detail": "84104 dense points fused"}])
+    assert ok == {"state": "dense", "detail": "84104 dense points fused"}
+    refused = _dense_state([{"level": 3, "outcome": "skipped", "detail": "only 38% of photos registered"}])
+    assert refused["state"] == "sparse" and "38%" in refused["detail"] and "skipped" in refused["detail"]
+    assert _dense_state([])["state"] == "sparse" and "not attempted" in _dense_state([])["detail"]

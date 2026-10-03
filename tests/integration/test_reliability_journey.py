@@ -130,19 +130,28 @@ def test_crash_after_worldstore_adoption_but_before_colmap_commit_does_not_diver
         assert len(_session_manifest(root, ids["wid"])["images"]) == 12, "COLMAP base failed to catch up"
 
 
-class _Server:
-    """The real API + worker in its own process, so it can be really killed (TerminateProcess)."""
+class _StageServer:
+    """The real API + worker in its own process, frozen at a named pipeline boundary (tests/integration/
+    stage_server.py) so it can be killed (TerminateProcess, COLMAP children included) EXACTLY there."""
 
-    def __init__(self, root, port):
+    def __init__(self, root, *, stage=None, marker=None):
         import os
+        import socket
         import subprocess
         import sys
 
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
         env = dict(os.environ, DATABASE_URL=f"sqlite+aiosqlite:///{(root / 'app.db').as_posix()}",
                    STORAGE_ROOT=str(root / "artifacts"), WORLDSTORE_ROOT=str(root / "ws"),
-                   JOB_STALE_AFTER_SECONDS="30", PYTHONPATH=os.getcwd())
+                   JOB_STALE_AFTER_SECONDS="30", PYTHONPATH=os.getcwd(), RE_PORT=str(port))
+        env.pop("RE_STAGE", None)
+        if stage:
+            env.update(RE_STAGE=stage, RE_MARKER=str(marker))
+        self.stage, self.marker = stage, marker
         self.url = f"http://127.0.0.1:{port}"
-        self.proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "apps.api.main:app", "--port", str(port)],
+        self.proc = subprocess.Popen([sys.executable, "-m", "tests.integration.stage_server"],
                                      env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import httpx
 
@@ -154,6 +163,29 @@ class _Server:
             except Exception:
                 time.sleep(1)
         raise AssertionError("server did not start")
+
+    def wait_for_stage(self, wid, timeout=900):
+        """Block until the process reports it reached ``self.stage``. FAILS (never passes silently) if the process
+        dies, the job ends, or the time runs out before the boundary was reached."""
+        end = time.time() + timeout
+        while time.time() < end:
+            if self.marker.exists():
+                got = json.loads(self.marker.read_text())
+                assert got["stage"] == self.stage, f"froze at {got['stage']!r}, expected {self.stage!r}"
+                return got
+            assert self.proc.poll() is None, f"server died before reaching {self.stage!r}"
+            import httpx
+
+            try:
+                st = self.http.get(f"/api/worlds/{wid}/status", timeout=5).json()
+            except httpx.TimeoutException:
+                # A boundary inside the event loop freezes the whole server the instant it is reached: an
+                # unanswered request is the signal to look at the marker again, not a failure.
+                continue
+            assert st["in_progress"], (f"the job ended without ever reaching the {self.stage!r} boundary -- "
+                                       f"the test would prove nothing: state={st['state']} last_run={st.get('last_run')}")
+            time.sleep(0.5)
+        raise AssertionError(f"boundary {self.stage!r} was never reached within {timeout}s")
 
     def kill(self):
         import subprocess
@@ -180,47 +212,93 @@ class _Server:
         raise AssertionError("never settled")
 
 
-@pytest.mark.parametrize("kill_after_s", [8, 30])
-def test_the_whole_process_killed_mid_reconstruction_then_restarted_keeps_V1_and_the_world_continues(root, kill_after_s):
-    """A hard kill (process tree, COLMAP children included) while a rebuild is in flight."""
+def _store_files(root):
+    """What the WorldStore itself holds (independent of the DB): (lineage, quarantined, pending intents)."""
+    ws = root / "ws"
+    lineage = sorted(p.stem for p in (ws / "versions").glob("v-*.json"))
+    quarantined = sorted(p.stem for p in (ws / "quarantine").glob("v-*.json")) if (ws / "quarantine").is_dir() else []
+    intents = sorted(p.stem for p in (ws / "adoption-intents").glob("v-*.json")) if (ws / "adoption-intents").is_dir() else []
+    return lineage, quarantined, intents
+
+
+#: stage -> (adopted before the kill?, COLMAP images committed at the kill)
+_BOUNDARIES = {
+    "evidence_staged": (False, 6), "colmap_staged": (False, 6), "worldir_created": (False, 6),
+    "candidate_evaluated": (False, 6), "before_adoption": (False, 6), "during_adoption": (False, 6),
+    "version_persisted": (True, 6), "colmap_current_updated": (True, 9),
+}
+
+
+@pytest.mark.parametrize("stage", list(_BOUNDARIES))
+def test_a_process_killed_at_each_pipeline_boundary_recovers_consistently_and_the_retry_is_safe(root, stage):
+    """Deterministic: the server freezes AT the boundary and reports it; only then is the process tree killed.
+
+    Before adoption  -> HEAD, the WorldStore lineage and the committed COLMAP base are exactly V1's; nothing orphaned.
+    During adoption  -> the WorldStore already holds V2 but the DB does not: recovery quarantines it (the lineage
+                        never holds a version the DB did not adopt); HEAD is V1.
+    After adoption   -> HEAD is a valid, readable V2 that the WorldStore also holds; the COLMAP base is at most one
+                        version behind and catches up.
+    Always           -> no evidence lost, one lineage, and the stranded job's retry adds NOTHING beyond the single
+                        version the evidence justifies (no duplicate, no corrupt provenance)."""
+    adopted_before_kill, colmap_images = _BOUNDARIES[stage]
     ids = _ids(root)
-    srv = _Server(root, 8765)
+    wid, v1 = ids["wid"], ids["v1"]
+    marker = root.parent / f"stage-{stage}.json"
+
+    srv = _StageServer(root, stage=stage, marker=marker)
     try:
-        srv.post(C, ids["wid"])
-        time.sleep(kill_after_s)
-        mid = srv.status(ids["wid"])
-        print(f"[kill at {kill_after_s}s] in_progress={mid['in_progress']} state={mid['state']}")
-        assert mid["in_progress"], "the job finished before the kill; the test would prove nothing"
+        srv.post(C, wid)
+        reached = srv.wait_for_stage(wid)                      # raises if the intended boundary was never reached
+        print(f"[{stage}] frozen at pid {reached['pid']}; killing")
     finally:
         srv.kill()
+    assert marker.exists() and json.loads(marker.read_text())["stage"] == stage
 
-    srv2 = _Server(root, 8766)
+    # ---- the instant after the crash, before any recovery has run: what is on disk?
+    lineage, quarantined, intents = _store_files(root)
+    if stage == "during_adoption":
+        assert len(lineage) == 2 and len(intents) == 1, "the orphan must be on disk (and recorded) before recovery"
+    elif adopted_before_kill:
+        assert len(lineage) == 2
+    else:
+        assert lineage == [v1] and not intents, "nothing may have been written to the WorldStore yet"
+
+    srv2 = _StageServer(root)                                  # restart: startup recovery runs before the worker
     try:
-        st = srv2.status(ids["wid"])
-        # Exactly one of two states -- never a mixed one:
-        #   A: the kill landed before adoption   -> HEAD is V1, COLMAP base untouched (6 photos)
-        #   B: the kill landed after adoption    -> HEAD is a valid V2; the COLMAP base may lag one version (6)
-        #      or have caught up (9), but never claims photos the authoritative World does not have
+        st = srv2.status(wid)
+        lineage, quarantined, intents = _store_files(root)
+        assert not intents, "recovery must resolve every adoption intent"
         n_versions = len(st["versions"])
-        assert n_versions in (1, 2), st["versions"]
-        if n_versions == 1:
-            assert st["model"]["version_id"] == ids["v1"], "HEAD changed without a new version"
-        else:
-            assert st["model"]["version_id"] != ids["v1"]
-        assert srv2.http.get(f"/api/worlds/{ids['wid']}/worldir",
-                             params={"version": st["model"]["version_id"]}).json()["entities"], "HEAD unreadable"
-        assert len(_session_manifest(root, ids["wid"])["images"]) in ((6,) if n_versions == 1 else (6, 9)),             "COLMAP state disagrees with the authoritative World"
-        print(f"[state after restart] {'A: V1 still HEAD' if n_versions == 1 else 'B: V2 adopted before the kill'}")
         assert len(st["evidence"]) == 9, "the upload was lost"
-        st = srv2.settle(ids["wid"], timeout=1500)                 # the stranded job is reaped and resumed
-        print("[after restart]", st["state"], len(st["versions"]), st["model"]["images_used"])
-        assert st["model"]["images_used"] == 9 and len(st["versions"]) in (1, 2)
-        for v in st["versions"]:
-            assert srv2.http.get(f"/api/worlds/{ids['wid']}/worldir", params={"version": v["id"]}).json()["entities"]
-        srv2.post(D, ids["wid"])                                    # and the same world keeps improving
-        st = srv2.settle(ids["wid"], timeout=1500)
+        listed = srv2.http.get(f"/api/worlds/{wid}/versions").json()["items"]
+        assert sorted(v["id"] for v in listed) == lineage, "the listing and the WorldStore lineage disagree"
+        if adopted_before_kill:
+            assert n_versions == 2 and st["model"]["version_id"] != v1 and not quarantined
+            assert st["model"]["version_id"] in lineage
+        else:
+            assert n_versions == 1 and st["model"]["version_id"] == v1, "HEAD moved without an adoption"
+            assert lineage == [v1], "the lineage holds a version the DB never adopted"
+            assert len(quarantined) == (1 if stage == "during_adoption" else 0)
+        assert srv2.http.get(f"/api/worlds/{wid}/worldir",
+                             params={"version": st["model"]["version_id"]}).json()["entities"], "HEAD unreadable"
+        assert len(_session_manifest(root, wid)["images"]) == colmap_images, "COLMAP base disagrees with the adoption state"
+
+        st = srv2.settle(wid, timeout=1500)                    # the stranded job is reaped and run again
+        print(f"[{stage}] after restart: state={st['state']} versions={len(st['versions'])} used={st['model']['images_used']}")
+        assert st["model"]["images_used"] == 9
+        assert len(st["versions"]) == 2, f"exactly one version beyond V1, got {[v['label'] for v in st['versions']]}"
+        lineage, quarantined, intents = _store_files(root)
+        assert len(lineage) == 2 and not intents
+        assert sorted(v["id"] for v in st["versions"]) == lineage
         nums = [v["number"] for v in st["versions"]]
-        assert nums == list(range(1, len(nums) + 1)) and st["model"]["images_used"] == 12
+        assert nums == [1, 2] and [v for v in st["versions"] if v["is_current"]][0]["parent_version_id"] == v1
+        for v in st["versions"]:
+            assert srv2.http.get(f"/api/worlds/{wid}/worldir", params={"version": v["id"]}).json()["entities"]
+        assert len(_session_manifest(root, wid)["images"]) == 9, "COLMAP base failed to catch up"
+
+        srv2.post(D, wid)                                       # and the same world keeps improving
+        st = srv2.settle(wid, timeout=1500)
+        assert [v["number"] for v in st["versions"]] == [1, 2, 3] and st["model"]["images_used"] == 12
     finally:
         srv2.kill()
 

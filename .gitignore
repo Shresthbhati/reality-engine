@@ -28,6 +28,8 @@ data/
 
 # Scratch, build and logs
 _*
+# ...but never package markers: `_*` silently kept exporters/citydb/__init__.py out of the repo
+!__init__.py
 *.log
 *.err
 .antigravity/

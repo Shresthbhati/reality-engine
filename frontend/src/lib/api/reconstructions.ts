@@ -98,6 +98,8 @@ export interface WorldStatus {
     model_state: ModelState | null;
     outcome: string | null;
     attempts: { level: number; name: string; outcome: string; detail: string }[];
+    /** sparse vs dense, with the reason dense is absent */
+    dense?: { state: "dense" | "sparse"; detail: string };
     scale: { state?: string; meters_per_unit?: number | null };
     images_used: number;
     images_registered: number;
@@ -157,6 +159,8 @@ export interface WorldStatus {
     reasons: string[];
     changes: string[];
     kept_version_id: string | null;
+    /** the rerun found nothing new: the current version already reflects all the evidence */
+    unchanged?: boolean;
   } | null;
   evidence: EvidenceStatus[];
   evidence_summary: {

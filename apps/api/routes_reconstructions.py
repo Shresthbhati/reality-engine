@@ -226,6 +226,15 @@ async def create_reconstruction(
     }
 
 
+def _dense_state(attempts: list) -> dict:
+    d = next((a for a in attempts if a.get("level") == 3), None)
+    if d is not None and d.get("outcome") == "succeeded":
+        return {"state": "dense", "detail": d.get("detail") or ""}
+    why = (f"dense reconstruction {d.get('outcome')}: {d.get('detail')}" if d is not None
+           else "dense reconstruction was not attempted for this version")
+    return {"state": "sparse", "detail": why}
+
+
 def _rows_to_versions(rows: list[WorldVersion], head_id: str | None) -> list[dict]:
     out = []
     for n, v in enumerate(sorted(rows, key=lambda r: (r.created_at, r.id)), start=1):
@@ -317,6 +326,9 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "model_state": report.get("model_state"),
             "outcome": report.get("status"),
             "attempts": report.get("attempts", []),
+            # sparse vs dense, from the recorded level-3 attempt (the level number alone cannot say: refined
+            # worlds report level 4/5). "sparse" always carries WHY dense is absent.
+            "dense": _dense_state(report.get("attempts") or []),
             "scale": ((report.get("stages") or {}).get("scale") or {}),
             # which entities kept their previous id (matched by measured spatial continuity) and which are only
             # related (split / merge / ambiguous) -- identity is never forced
@@ -342,6 +354,7 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "adopted": job.payload.get("adopted"), "verdict": job.payload.get("verdict"),
             "reasons": job.payload.get("reasons", []), "changes": job.payload.get("changes", []),
             "kept_version_id": job.payload.get("kept_version_id"),
+            "unchanged": bool(job.payload.get("unchanged")),
         },
         "evidence": evidence,
         "evidence_summary": {

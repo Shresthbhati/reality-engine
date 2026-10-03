@@ -341,6 +341,33 @@ class WorldStore:
             records.append(StoredVersion(**self._record(vid)))
         return records
 
+    # ---- quarantine ----
+
+    def quarantine_version(self, version_id: str) -> None:
+        """Take a version that was written but NEVER adopted out of the lineage.
+
+        Nothing is deleted (the record moves to ``quarantine/``, the content-addressed artifact stays), so no
+        observed reality is lost; the version simply stops being history that ``list_versions`` reports and that a
+        retry could chain onto or duplicate. Idempotent for an already-quarantined id; unknown ids raise."""
+        _validate_version_id(version_id)
+        src = self._versions_dir / f"{version_id}.json"
+        dst_dir = self._root / "quarantine"
+        dst = dst_dir / f"{version_id}.json"
+        with _SequenceLock(self._root):
+            if not src.exists():
+                if dst.exists():
+                    return
+                raise WorldStoreError(f"unknown version: {version_id}")
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(src, dst)
+            seq_path = self._root / "sequence.json"
+            order = [v for v in self._read_sequence(seq_path) if v != version_id]
+            _atomic_write_text(seq_path, json.dumps(order))
+
+    def quarantined_versions(self) -> list[str]:
+        qdir = self._root / "quarantine"
+        return sorted(p.stem for p in qdir.glob("v-*.json")) if qdir.is_dir() else []
+
     # ---- integrity ----
 
     def verify_version(self, version_id: str) -> list[dict]:

@@ -1,0 +1,180 @@
+{
+ "dataset": "south_building sparse (committed, real)",
+ "points": 49608,
+ "cameras": 32,
+ "extent_definition": "robust",
+ "extent_model_units": 6.3202,
+ "bbox_diagonal_model_units": 67.919,
+ "robust_extent_model_units": 6.3202,
+ "scale": "COLMAP arbitrary (not metric)",
+ "base": {
+  "voxel_frac_of_extent": 0.16,
+  "curvature": 0.1,
+  "planarity": 0.95
+ },
+ "runs": [
+  {
+   "voxel_frac_of_extent": 0.16,
+   "voxel_model_units": 1.0112,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 81,
+   "rois": 10,
+   "refined": 10,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.01402,
+   "roi_size_points_median": 59,
+   "seconds": {
+    "discovery": 1.04,
+    "roi": 14.88,
+    "refine": 54.87
+   },
+   "roi_cell_overlap_with_base": 1.0
+  },
+  {
+   "voxel_frac_of_extent": 0.05,
+   "voxel_model_units": 0.316,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 373,
+   "rois": 40,
+   "refined": 40,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.002187,
+   "roi_size_points_median": 43,
+   "seconds": {
+    "discovery": 9.25,
+    "roi": 1.92,
+    "refine": 74.07
+   },
+   "roi_cell_overlap_with_base": null
+  },
+  {
+   "voxel_frac_of_extent": 0.1,
+   "voxel_model_units": 0.632,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 155,
+   "rois": 20,
+   "refined": 20,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.004231,
+   "roi_size_points_median": 30,
+   "seconds": {
+    "discovery": 2.18,
+    "roi": 4.44,
+    "refine": 38.98
+   },
+   "roi_cell_overlap_with_base": null
+  },
+  {
+   "voxel_frac_of_extent": 0.25,
+   "voxel_model_units": 1.58,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 49,
+   "rois": 4,
+   "refined": 4,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.006494,
+   "roi_size_points_median": 19,
+   "seconds": {
+    "discovery": 0.77,
+    "roi": 8.61,
+    "refine": 28.63
+   },
+   "roi_cell_overlap_with_base": null
+  },
+  {
+   "voxel_frac_of_extent": 0.4,
+   "voxel_model_units": 2.5281,
+   "curvature": 0.1,
+   "planarity": 0.95,
+   "candidates": 26,
+   "rois": 2,
+   "refined": 2,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.038772,
+   "roi_size_points_median": 16950,
+   "seconds": {
+    "discovery": 0.41,
+    "roi": 15.26,
+    "refine": 37.2
+   },
+   "roi_cell_overlap_with_base": null
+  },
+  {
+   "voxel_frac_of_extent": 0.16,
+   "voxel_model_units": 1.0112,
+   "curvature": 0.05,
+   "planarity": 0.95,
+   "candidates": 81,
+   "rois": 11,
+   "refined": 11,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.018427,
+   "roi_size_points_median": 41,
+   "seconds": {
+    "discovery": 2.23,
+    "roi": 9.78,
+    "refine": 61.3
+   },
+   "roi_cell_overlap_with_base": 0.701
+  },
+  {
+   "voxel_frac_of_extent": 0.16,
+   "voxel_model_units": 1.0112,
+   "curvature": 0.2,
+   "planarity": 0.95,
+   "candidates": 81,
+   "rois": 8,
+   "refined": 8,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.007927,
+   "roi_size_points_median": 44,
+   "seconds": {
+    "discovery": 1.96,
+    "roi": 6.47,
+    "refine": 42.14
+   },
+   "roi_cell_overlap_with_base": 0.681
+  },
+  {
+   "voxel_frac_of_extent": 0.16,
+   "voxel_model_units": 1.0112,
+   "curvature": 0.1,
+   "planarity": 0.9,
+   "candidates": 81,
+   "rois": 11,
+   "refined": 11,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.016684,
+   "roi_size_points_median": 109,
+   "seconds": {
+    "discovery": 0.66,
+    "roi": 8.29,
+    "refine": 49.46
+   },
+   "roi_cell_overlap_with_base": 0.681
+  },
+  {
+   "voxel_frac_of_extent": 0.16,
+   "voxel_model_units": 1.0112,
+   "curvature": 0.1,
+   "planarity": 0.98,
+   "candidates": 81,
+   "rois": 6,
+   "refined": 6,
+   "refused": 0,
+   "rms_median_frac_of_extent": 0.014558,
+   "roi_size_points_median": 57,
+   "seconds": {
+    "discovery": 1.3,
+    "roi": 5.81,
+    "refine": 21.38
+   },
+   "roi_cell_overlap_with_base": 0.553
+  }
+ ],
+ "note": "no ground truth: false positives / missed details are not scored; see module docstring"
+}

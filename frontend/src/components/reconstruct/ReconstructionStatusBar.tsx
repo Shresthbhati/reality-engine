@@ -222,6 +222,20 @@ export default function ReconstructionStatusBar({
             {copy.label} · {model.images_registered}/{model.images_used} photos placed
           </span>
         )}
+        {model?.dense && (
+          <span
+            data-testid="dense-state"
+            title={model.dense.detail}
+            className={cn(
+              "shrink-0 rounded border px-1.5 py-0 text-[10px] font-medium",
+              model.dense.state === "dense"
+                ? "border-emerald-500/40 text-emerald-300"
+                : "border-[#2a2f3a] text-neutral-400",
+            )}
+          >
+            {model.dense.state === "dense" ? "Dense" : "Sparse"}
+          </span>
+        )}
         {status.versions.length > 0 && (
           <span className="flex shrink-0 items-center gap-1" aria-label="Versions">
             {[...status.versions]
@@ -254,6 +268,8 @@ export default function ReconstructionStatusBar({
             <span className="text-amber-300">Viewing {inspecting?.label}, an earlier version</span>
           ) : status.failure ? (
             failureCopy(status)
+          ) : status.last_run?.unchanged ? (
+            <span className="text-neutral-300">Already up to date: this model reflects all your photos</span>
           ) : status.last_run && !status.last_run.adopted ? (
             <span className="text-amber-300">Kept your current model: the new photos did not improve it yet</span>
           ) : (

@@ -148,3 +148,32 @@ mirror row.
 5. Retention: quarantined versions are kept indefinitely; a pruning policy is not decided.
 
 Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an orphan is "reconciled into the listing".
+
+## Decision — The working prototype is judged by the core loop; verification has four honest levels
+
+**Status: ACCEPTED (2026-10-03, prototype-completion sprint)**
+
+1. **Prototype scope.** The prototype is judged by `evidence -> world -> more evidence -> same world -> better world ->
+   version -> export`, not by an ecosystem-integration checklist. Its export story is glTF, USD(A), IFC, CityGML,
+   CityJSON and Blender (P16-01, DONE). The GIS / ROS / Habitat / SUMO / Unreal / Godot writers (P16-02) exist and are
+   structure-tested, but are `OPTIONAL_DEFERRED`: no further work until a user of one of those ecosystems needs it, and
+   nothing claims they load. Ledger states are exactly DONE / PARTIAL / BLOCKED / OPTIONAL_DEFERRED.
+2. **Verification levels** (`engine/core/verification.py`; API `/api/system/verification`; CLI `reality verification`;
+   `.agent/CAPABILITIES.yaml` is checked against the registry by a test): IMPLEMENTED < SYNTHETICALLY VERIFIED <
+   REAL-WORLD VERIFIED, with EXTERNAL VERIFICATION PENDING items listed beside a capability. A capability below
+   REAL-WORLD may not name real data; a synthetic one must be worded as synthetic; every one cites evidence files that
+   exist. RGB-D, VIO, indoor architecture and 3DCityDB are synthetically verified with their real counterparts pending.
+3. **Synthetic data policy** (`synthetic/`): deterministic, seeded, with the ground truth it was built from, labelled in
+   every manifest it writes. It verifies the CONTRACT around a sensor or backend (formats, scales, invalid pixels, clock
+   offsets, dropped frames, occlusion) -- never the sensor, never a VIO algorithm, never a real building. The VIO
+   "binary" is a stand-in that perturbs ground truth; it exists to run the real subprocess adapters.
+4. **Known limits are pinned, not hidden.** Where a synthetic fixture measured the engine WRONG (rooms joined by doorways
+   merge; phantom openings under realistic depth noise; stairs not wired into assembly; the stair detector refuses an
+   unsegmented flight or one with unobserved treads) the test is a strict `xfail` carrying the measured numbers: it flips
+   to a failure the day the engine improves, forcing the pin and the ledger to be updated.
+5. **Trajectories reach a world as an observation record**, not a registration: `trajectories.worldir.attach_trajectory`
+   keeps the poses, clock/sync state and drift (unknown stays unknown) and records `registered_into_world: False` for a
+   gauge-fixed frame. A VIO "world" frame is session-local until registration anchors it.
+6. **3DCityDB availability is three-valued** (`probe_citydb`: AVAILABLE / UNAVAILABLE / FAILED) and probe-only: AVAILABLE
+   means the `citydb` CLI runs, never that a database was reached. Contract tests against a fake CLI are not real
+   3DCityDB verification; that stays external.

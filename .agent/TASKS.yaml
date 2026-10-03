@@ -5,7 +5,7 @@ RATIFIED: 2026-09-15
 
 # THE work queue (constitution Article II/VI). Order is priority:
 # consume top-down; do not reorder; finish one, start the next.
-# Statuses: NOW | NEXT | PARTIAL | MISSING | BLOCKED | DONE (with evidence).
+# Statuses: NOW | NEXT | PARTIAL | MISSING | BLOCKED | OPTIONAL_DEFERRED | DONE (with evidence).
 # Every DONE needs the named verification to have actually run
 # (constitution Article IV).
 
@@ -182,6 +182,14 @@ tasks:
   - id: P1-03
     name: depth integration completion
     status: BLOCKED
+    verification_level: "SYNTHETIC RGB-D VERIFIED -- PHYSICAL DEVICE VERIFICATION PENDING"
+    synthetic_verification: >-
+      2026-10-03: tests/test_synthetic_rgbd.py (13) -- a rendered RGB-D capture (RGB + 16-bit depth + intrinsics +
+      declared scale, with range-dependent noise, dropout holes, glass, flying pixels, range limits, invalid pixels) goes
+      through the REAL parser, sidecar stage, metric-scale gate and vertical-slice world compile: every valid sampled
+      pixel is unprojected (count equals the sensor's valid count), points land on the true surfaces (median < 2 cm),
+      relative scale / undeclared depth scale are refused honestly, the result is deterministic. This is a verification
+      of the CONTRACT, not of a device: the task stays BLOCKED on physical RGB-D hardware.
     reconciliation: "Reconciled 2026-09-30: software path IMPLEMENTED and verified (16-bit PNG, EXR, scale, invalid depth, unprojection, WorldIR, scale-coherence gate; depth cluster green). Physical RGB-D device E2E is BLOCKED by hardware availability; no device exists in this environment and none is emulated."
     basis: >
       DepthFrame + 16-bit PNG parser + manifest scale resolution +
@@ -398,6 +406,17 @@ tasks:
   - id: P3-02
     name: VIO/localization backend federation
     status: BLOCKED
+    verification_level: "SYNTHETIC VIO PIPELINE VERIFIED -- REAL BACKEND / HARDWARE VERIFICATION PENDING"
+    synthetic_verification: >-
+      2026-10-03: tests/test_synthetic_vio.py (20) -- an analytic trajectory with a physically consistent IMU (ideal IMU
+      dead-reckons back to the path; EuRoC-class noise drifts), a sensor clock with offset and skew, dropped frames and an
+      IMU dropout, fed through the REAL subprocess adapters (a stand-in executable on PATH), selection and fallback
+      (first backend crashes -> next succeeds; all crash -> a run error naming each; none installed -> unavailable),
+      clock normalisation (global stamps recovered within 2 ns, originals kept), diagnostics (ATE matches the injected
+      drift only after the gauge frame is anchored), FrameGraph and WorldIR (new: trajectories/worldir.attach_trajectory;
+      unknown drift stays unknown; an unanchored frame is recorded as NOT registered). Found and fixed a real defect:
+      FrameGraph.load_from_trajectory raised AttributeError on every real Trajectory. The stand-in perturbs ground
+      truth: nothing is claimed about ORB-SLAM3 / OpenVINS / Basalt. BLOCKED on a built backend + EuRoC MH_01.
     reconciliation: "Reconciled 2026-09-30: architecture, ORB-SLAM3/OpenVINS/Basalt adapters, selection, TUM parsing, diagnostics and clock-sync IMPLEMENTED and tested with fake trajectories. Real backend execution BLOCKED: no built backend on this machine (only OpenVINS source, needs ROS/Linux), Docker engine not running, no public dataset downloaded. Needs: a built backend + EuRoC MH_01."
     problem: >
       Per-session SfM poses exist; no continuous trajectory, no VIO
@@ -791,6 +810,16 @@ tasks:
   - id: P7-03
     name: architectural perception
     status: BLOCKED
+    verification_level: "SYNTHETIC INDOOR VERIFIED -- REAL INDOOR DATASET VERIFICATION PENDING"
+    synthetic_verification: >-
+      2026-10-03: tests/test_synthetic_indoor.py (20: 15 guarantees and envelope checks + 5 strict-xfail pinned known limits) -- rendered rooms, corridor, doors, windows,
+      stairs, ramp, three storeys, clutter, occlusion and partial observation with ground truth, through the real
+      architecture chain. Guarantees (clean sensor): floor/ceiling at the true elevations, room extents within 5 cm,
+      area within 3 %, every door and window measured once at the right size, table/pillar/ramp never promoted as
+      structure, three disconnected slabs stay three storeys. Measured known limits (strict xfail): rooms joined by
+      doorways over one floor merge into ONE room; stairs are not wired into assembly; the stair detector refuses an
+      unsegmented flight or one with unobserved treads; under realistic depth noise (sigma ~1.6 cm at 5 m) the opening
+      scanner reports phantom openings. Blocked on a real room/corridor photo dataset.
     reconciliation: "Reconciled 2026-09-30: multi-storey segmentation fixed at the geometry layer (room extent from own floor/ceiling instead of coplanar-wall union; floor/ceiling side from the cameras that observed each plane; spatially disconnected horizontal slabs split instead of merged) with a 12-case matrix (tests/test_multistorey_matrix.py: 3 storeys, uneven heights, partial/missing floor, ramp, noise, disjoint slabs) plus the 224-test architecture cluster, all green. Verification blocked on DATA: no real indoor room/corridor photo dataset in the repo (real_room_capture* and room_capture are synthetic/rendered). Known limit: real outdoor South Building still yields one low-confidence (0.06) partial room; outdoor concepts (facades, roads, terrain) remain unclassified by design."
     basis: >
       Geometry-only classifier landed:
@@ -1021,6 +1050,8 @@ tasks:
   - id: P7-05
     name: detail budget (adaptive-compute consumer)
     status: BLOCKED
+    verification_level: "SYNTHETICALLY VERIFIED -- CALIBRATION ON MORE THAN ONE REAL DATASET PENDING"
+    engineering_side: "FINISHED (2026-10-03): scale-aware budget, relative-scale voxel from the robust extent, honest GSD, documented classification of every threshold as measured / empirical / provisional (none universal), synthetic fixtures for invariance and the robust extent against a known truth. What is blocked is DATA, not engineering."
     reconciliation: "Reconciled 2026-10-02: engineering COMPLETE; universal calibration is BLOCKED on external data. Implemented: the quality report and budget are scale-aware (a non-metric world gets NO mm GSD, NO fine/medium/coarse tier and NO GSD level band -- gsd_basis 'unavailable', level from multi-view coverage only, never L4); the voxel is derived from the ROBUST scene extent (1st-99th percentile diagonal) for relative scale and stays 1.0 m for metric; the vertical slice always passes the world's real scale state (an unstated scale is treated as NOT metric). 15 tests (tests/test_detail_scale.py) incl. exact invariance of the whole chain under the arbitrary unit. Calibration (docs/engineering/DETAIL_CALIBRATION.md): the 2026-09-30 table used a bounding-box extent 10x too large; re-measured on the one real dataset (South Building, robust extent 6.32): ROI count falls smoothly with voxel size (no cliff/plateau), planarity is NOT insensitive; 0.16 chosen for continuity, not optimality. Thresholds are EMPIRICAL initial values from ONE scene. BLOCKED: universal calibration needs further real datasets (indoor, other cameras and scales), none exist in the repo and none were downloaded without permission."
     basis: >-
       perception/quality/detail_budget.py — the first consumer of the
@@ -1507,6 +1538,12 @@ tasks:
   - id: P14-01
     name: city world compiler
     status: BLOCKED
+    verification_level: "SYNTHETICALLY VERIFIED (contract tests against a FAKE citydb CLI) -- REAL 3DCITYDB VERIFICATION PENDING"
+    availability_reporting: >-
+      2026-10-03: exporters/citydb.probe_citydb reports AVAILABLE / UNAVAILABLE / FAILED (probe-only: AVAILABLE means the
+      CLI runs; the database is never contacted), exposed in /api/system/verification and `reality verification
+      --runtime`. On this machine: UNAVAILABLE. A passing fake-CLI test is contract evidence, never real 3DCityDB
+      verification (PostgreSQL/PostGIS + citydb-tool v5 are external).
     reconciliation: "Reconciled 2026-09-30: OSM/GeoJSON/CityJSON/CityGML/streaming/CLI IMPLEMENTED. 3DCityDB: exporters/citydb wraps the official 'citydb import cityjson' (idempotent --import-mode=delete, password via env only, read-back verify, honest unavailable/failed statuses); 12 fake-CLI contract tests pass. Real-database verification BLOCKED: needs a 3DCityDB v5 (PostgreSQL/PostGIS) + citydb-tool; the env-gated TestRealDatabase is skipped. Satellite/aerial/LiDAR ingestion remains unimplemented."
     basis: >-
       City compiler core landed 2026-09-18
@@ -1614,40 +1651,53 @@ tasks:
   # ================= PHASE 16 — WORLD COMPILERS ======================
 
   - id: P16-01
-    name: downstream world compilers
-    status: BLOCKED
+    name: downstream world compilers -- the CORE prototype exports (glTF, USD, IFC, CityGML, CityJSON, Blender)
+    status: DONE
+    scope_decision: >-
+      2026-10-03 audit. The working prototype is judged by the core Reality Engine loop (evidence -> world -> more
+      evidence -> same world -> version -> export), and its export story is these six formats. They are the exports
+      a Studio user is offered (POST /api/worlds/{id}/export, `reality export`). The ecosystem targets the original task
+      named (GIS, ROS, Habitat, SUMO, Unreal, Godot) are NOT required for the prototype: they moved to P16-02.
     basis: >-
-      glTF/Blender/USD exporters exist and are tested. Completed
-      2026-09-18: CityJSON 1.1 writer (exporters/cityjson/exporter.py
-      -- real CityJSON 1.1 structure: "type": "CityJSON",
-      "version": "1.1", transform quantization with integer vertices,
-      CityObjects with semantic types and measured attributes;
-      metadata records entity count and export provenance) and the
-      IFC4 bridge (exporters/ifc_bridge.py via IfcOpenShell 0.8.x --
-      IfcProject -> IfcSite -> IfcBuilding -> IfcBuildingStorey
-      spatial hierarchy, one semantic IFC class per WorldIR
-      architectural entity, license recorded in the module
-      docstring). Remaining targets (ROS/Habitat/SUMO/Unreal/Godot)
-      are follow-through compilers, tracked as open items below --
-      the compiler PATTERN and adapter boundary are proven across
-      five targets.
-    scope: >
-      WorldIR -> {Blender, USD, glTF, IFC, CityGML, GIS, ROS, Habitat,
-      SUMO, Unreal, Godot} as adapters.
+      glTF 2.0, USDA, Blender script, CityJSON 1.1, CityGML 2.0 and IFC4 (IfcOpenShell) all exist. IFC was a bridge that
+      wrote a file and was not reachable from the SDK/API/CLI; 2026-10-03 it is registered as a real adapter in
+      sdk.reality._EXPORTERS (temp file round trip), so all six are served by the same route (sdk.reality._export_ifc; apps/api/routes_export.py answers 501 when
+      IfcOpenShell is missing and 422 when nothing is exportable, never an empty file).
     verification:
-      - per-compiler roundtrip or golden-file test
-      - "tests/test_cityjson_exporter.py (9): spec structure,
-        quantization, semantics, orphan skipping, metadata"
-      - "tests/test_ifc_bridge.py: spatial hierarchy, semantic
-        classes, parsed back via ifcopenshell"
-      - "tests/test_citygml_exporter.py: CityGML 2.0 writer (see
-        P14-01 completion note)"
-    reconciliation: "Reconciled 2026-10-02/03: the 2026-10-02 audit downgraded DONE -> PARTIAL because GIS, ROS, Habitat, SUMO, Unreal and Godot had no writer. They now exist (exporters/boxes.py shared input; exporters/gis GeoJSON footprints, exporters/ros Gazebo SDF world, exporters/godot .tscn, exporters/unreal editor Python script, exporters/sumo netconvert node+edge files, exporters/habitat stage bundle; registered in sdk/reality.py and the CLI). 23 tests (tests/test_box_exporters.py): well-formedness, real positions/extents, per-target axis conventions (Godot Y-up, Unreal left-handed cm, GeoJSON local metres unless an origin is given), determinism, skip reasons, CLI; the Unreal script is EXECUTED against a fake unreal module; the axis tests fail under a sign mutation. BLOCKED: no Gazebo, Godot, Unreal, SUMO netconvert or habitat-sim exists on the build machine, so acceptance of the files by their target runtimes is UNVERIFIED. Nothing is invented: no materials, speeds, lane counts, navmeshes or georeference."
+      - "tests/test_core_exports.py (17): every entity exported or reported skipped; the SAME entity set in all six; each
+        output parsed back with an independent reader (json / XML / IfcOpenShell / ast): glTF node translations, USDA prim
+        positions, CityJSON objects + declared types, CityGML members, IFC classes (IfcWall / IfcSlab); determinism;
+        entities without geometry reported, never exported. A glTF translation mutation is caught."
+      - "tests/test_export_route.py (9): POST export -> download -> bytes hash to the exported artifact, per format; IFC
+        is a real IFC file; unknown format 422; IFC without IfcOpenShell 501 (never an empty file)."
+      - "plus the per-format suites: test_gltf_exporter, test_usd_exporter, test_blender_exporter,
+        test_cityjson_exporter, test_citygml_exporter, test_ifc_bridge."
     open: >-
-      EXTERNAL VERIFICATION: load each export in its real runtime (Gazebo, Godot 4, Unreal Editor, SUMO netconvert,
-      habitat-sim). Known simplifications: box/plane geometry only (point clouds and meshes are not exported by the
-      new writers, except through Habitat's glTF), no rotation, SUMO exports roads only, GIS is local metres unless the
-      caller supplies an origin. 3DCityDB (database export) is tracked under P14-01.
+      EXTERNAL VERIFICATION PENDING: opening the exported files in Blender, a USD viewer and a BIM tool (none installed
+      on the build machine). The demo journey (scripts/demo_journey.py) exports a world reconstructed from real photos
+      through all six. Known limit: procedurally generated worlds carry no entity transform, so the transform-based
+      exporters report every entity skipped for them (reported, not silent); reconstructed worlds export fully.
+
+  - id: P16-02
+    name: downstream world compilers -- optional ecosystem targets (GIS, ROS, Habitat, SUMO, Unreal, Godot)
+    status: OPTIONAL_DEFERRED
+    scope_decision: >-
+      2026-10-03 audit: NOT required for the working prototype and moved to the post-prototype roadmap (P2). The writers
+      DO exist (built 2026-10-03, not placeholders) but only their file structure and axis conventions are verified; no
+      target runtime was available, so nothing here is claimed to load. Further work on them is deferred until a user of
+      one of those ecosystems needs it.
+    basis: >-
+      exporters/boxes.py (shared box collector) + exporters/gis GeoJSON footprints, exporters/ros Gazebo SDF 1.9 world,
+      exporters/godot .tscn (Y-up), exporters/unreal editor Python script (left-handed, cm), exporters/sumo netconvert
+      node+edge files (roads only), exporters/habitat stage bundle. Registered in sdk/reality.py and the CLI.
+    verification:
+      - "tests/test_box_exporters.py (23): well-formedness, real positions/extents, per-target axis conventions
+        (mutation-checked), determinism, skip reasons, CLI; the Unreal script is EXECUTED against a fake unreal module."
+    open: >-
+      EXTERNAL VERIFICATION PENDING: load each export in its real runtime (Gazebo, Godot 4, Unreal Editor, SUMO
+      netconvert, habitat-sim). Known simplifications: box/plane geometry only, no rotation, no materials, SUMO roads
+      only, GIS local metres unless the caller supplies an origin. 3DCityDB (a database target) is P14-01.
+    dependencies: [P16-01]
 
   # ================= PHASE 17 — WORLD SIMULATION =====================
 
@@ -1764,3 +1814,25 @@ tasks:
       - "ENGINEERING: audit the Observation/Relationship constructor confidence defaults (1.0); producers are fixed, the defaults were left for a dedicated pass (PROD.3)"
       - "EXTERNAL DATA (UNVERIFIED): no real corridor or real room photograph dataset exists in the repo; the 4 indoor photos outside it have unverified provenance and were not used"
     done_2026_10_03: "per-version evidence panel: the status API carries each version's evidence_ids / registered_ids (the version's own record, null for versions that predate it); the Studio shows, for an inspected earlier version, each photo as placed / waiting / added after it plus a one-line summary, and relabels the changes block as the CURRENT version's. Verified in the real browser against a two-version world (V1: 3 photos used, 3 placed, 1 added since); 5 contract tests (frontend/tests/contract/version-evidence.test.mts) + tests/test_reconstruction_reliability.py::test_status_versions_carry_what_each_version_was_built_from."
+    done_2026_10_03_prototype: >-
+      Prototype-completion sprint. (1) Canonical demo journey scripts/demo_journey.py + tests/integration/test_demo_journey.py:
+      real South Building photos -> 6 -> +4 -> +10 photos = V1 -> V2 -> V3 in ONE world through the real app and real COLMAP,
+      what-changed with all ten categories, previous version byte-identical, export in six formats parsed back; measured
+      numbers recorded to demo_metrics.json, nothing hard-coded. (2) The journey FOUND a real defect and it is fixed: each
+      candidate re-estimated 'up' on its own, so successive versions of one world differed by 7.6 and 9.9 degrees about the
+      vertical although COLMAP's frame was preserved (the status said 'frame kept'); reconstruction.frame.canonicalize_like_head
+      now reuses HEAD's canonical rotation when the candidate demonstrably shares HEAD's raw frame (tests/test_frame_inheritance.py,
+      9; re-run on real photos: the incremental candidate's measured shift is 0.9 degrees and the frame-preservation rule decides).
+      (3) Second defect: GET /api/worlds/{id}/cameras returned no cameras for any COLMAP-reconstructed world (poses live in the
+      version's cameras artifact) -- the Studio camera layer was empty; fixed (tests/test_world_cameras_route.py). (4) Studio shows
+      the ten change categories (zeros included) and a 'how this version was built' block (method, why, measured frame, candidates,
+      decision, surface) from reported facts only; browser-verified on the demo world.
+    remaining_judgement: >-
+      FRAME_CHANGE_MIN_EXTRA_PHOTOS = 2 (PROVISIONAL) let the full re-solve replace the frame at V3 (13 placed vs 9: rotated
+      39.6 deg, rescaled 26.6 %, shifted 85 % of the scene). That is the designed trade-off and the Studio now says so, but whether
+      four more placed photos justify a 40-degree frame change is an owner decision; it is not made here.
+
+      OPEN TEST FAILURE caused by the same rule: tests/integration/test_continuous_evidence.py::test_A_then_C_then_B_the_late_bridge_registers_what_was_waiting
+      now ends with 6 placed photos (expects >= 7). Reproducible; passes when frame inheritance is disabled. With the frame measured
+      correctly, a one-photo gain no longer justifies replacing the frame (margin is 2), so the bridge photo waits. Either the margin or
+      the test's expectation must change; that is the owner's call, so neither was touched.

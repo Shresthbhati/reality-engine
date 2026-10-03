@@ -503,3 +503,31 @@ def test_frame_graph_all_frames_in_enum():
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])
+
+def test_frame_graph_loads_a_REAL_trajectory_not_only_a_duck_typed_one():
+    """Regression: load_from_trajectory read ``pose.source_frame``/``.matrix`` (a duck-typed Transform) and so raised
+    AttributeError on every real ``trajectories.Trajectory`` (poses are ``RigidTransform``: from_frame/to_frame,
+    rotation Quat, translation Vec3). Found by the synthetic VIO pipeline test."""
+    from engine.math import Quat, Vec3
+    from reconstruction.calibration.transforms import RigidTransform
+    from trajectories.trajectory import FrameSource, Trajectory, TrajectoryFrame
+    import pytest
+
+    from world_ir.frame_graph import FrameGraphInvalidTransformError
+
+    pose = RigidTransform(from_frame="body", to_frame="session-local", rotation=Quat(1, 0, 0, 0),
+                          translation=Vec3(1.0, 2.0, 3.0))
+    traj = Trajectory(frames=(TrajectoryFrame(10, pose), TrajectoryFrame(20, pose)), frame_source=FrameSource.VIO)
+    graph = FrameGraph()
+    graph.load_from_trajectory(traj)
+    (edge,) = graph.edges()
+    assert (edge.transform.source_frame, edge.transform.target_frame) == (Frame.SENSOR, Frame.SESSION_LOCAL)
+    assert edge.transform.matrix[0][3] == 1.0 and edge.transform.matrix[2][3] == 3.0
+    assert (edge.valid_from_ns, edge.valid_to_ns, edge.provenance) == (10, 20, "trajectory:vio")
+
+    odd = Trajectory(frames=(TrajectoryFrame(1, RigidTransform(from_frame="rig", to_frame="map")),))
+    with pytest.raises(FrameGraphInvalidTransformError, match="rig"):
+        FrameGraph().load_from_trajectory(odd)                      # a frame name is never guessed
+    mapped = FrameGraph()
+    mapped.load_from_trajectory(odd, frame_map={"rig": Frame.CAMERA})
+    assert mapped.edges()[0].transform.source_frame == Frame.CAMERA

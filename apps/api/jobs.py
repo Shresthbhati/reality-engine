@@ -499,7 +499,9 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             dense_auto=dense_auto_enabled(),
             # both COLMAP candidates are judged as worlds against the current HEAD, not by camera count
             head_snapshot=world_delta.snapshot_from_report(head_report),
-            head_conflicts=head_report.get("conflicts"))
+            head_conflicts=head_report.get("conflicts"),
+            # the HEAD's canonical rotation: an incremental candidate (same raw COLMAP frame) reuses it
+            head_frame=head_report.get("frame"))
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
     prog = await asyncio.to_thread(
@@ -688,6 +690,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "structure": {"entity_types": cand_snap["entity_types"], "provenance": cand_snap["provenance"]},
         "cameras": cand_snap["cameras"],
         "entities": cand_snap["entities"],
+        "frame": (world_ir.metadata or {}).get("frame"),
         "conflicts": conflicts,
         "identity": identity_info,
         "delta": delta,

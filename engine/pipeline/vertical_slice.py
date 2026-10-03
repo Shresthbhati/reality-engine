@@ -144,6 +144,10 @@ class VerticalSliceOptions:
     #: (engine.pipeline.candidate_selection) instead of by registered-camera count.
     head_snapshot: Optional[dict] = None
     head_conflicts: Optional[list] = None
+    #: HEAD's recorded canonical-frame record (``world.metadata["frame"]``: rotation raw -> canonical). A candidate that
+    #: demonstrably shares HEAD's raw frame reuses it instead of re-estimating 'up' (reconstruction.frame.canonicalize_like_head),
+    #: so the world's visible frame does not wander between versions.
+    head_frame: Optional[dict] = None
     #: Escalate to dense MVS (Level 3) when the sparse model's MEASURED properties justify it
     #: (engine.pipeline.dense_gate), using the persistent COLMAP session's own images and sparse model; the dense
     #: cloud is then JUDGED against the sparse world and kept only if better (engine.pipeline.dense_judge). The
@@ -152,12 +156,19 @@ class VerticalSliceOptions:
     dense_auto: bool = False
 
 
+def _canonicalize(result, options):
+    """Stage 2.5 for both the arbiter's candidate snapshots and the final run: one rule, so they cannot disagree."""
+    from reconstruction.frame import canonicalize_like_head
+
+    return canonicalize_like_head(
+        result, options.seed, (options.head_frame or {}).get("rotation"), (options.head_snapshot or {}).get("cameras"))
+
+
 def _candidate_snapshot(result, evidence_items, options) -> dict:
     """A reconstruction candidate as the world snapshot the adoption gate compares: the same scale ->
     frame -> WorldIR compile stages as the real path, without the optional depth/perception/mesh/dense
     stages (identical for both candidates, so the comparison stays symmetric)."""
     from engine.pipeline import world_delta
-    from reconstruction.frame import canonicalize_frame
 
     scaled = None
     for ref in options.measured_baselines:
@@ -167,7 +178,7 @@ def _candidate_snapshot(result, evidence_items, options) -> dict:
         except ScaleAnchoringError:
             continue
     result = (scaled or unscaled(result)).result
-    result, _ = canonicalize_frame(result, seed=options.seed)
+    result, _ = _canonicalize(result, options)
     world, _ = compile_reconstruction_to_world(
         result, CompileOptions(seed=options.seed, up=options.up, artifact_store=options.artifact_store))
     registered = [p.evidence_id for p in result.camera_poses]
@@ -319,10 +330,10 @@ def vertical_slice(
             scale_note = scale_note + " | " + scale_error
 
     # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) ----
-    from reconstruction.frame import FrameCanonicalizationError, canonicalize_frame
+    from reconstruction.frame import FrameCanonicalizationError
 
     try:
-        result, frame_record = canonicalize_frame(result, seed=options.seed)
+        result, frame_record = _canonicalize(result, options)
     except FrameCanonicalizationError as exc:
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
 

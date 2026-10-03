@@ -444,6 +444,29 @@ def cmd_compile(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verification(args: argparse.Namespace) -> int:
+    """Print the verification registry (what is verified, against what, and what is still pending) and, with
+    --runtime, whether this machine can run each dependency right now."""
+    from engine.core import verification
+
+    rep = verification.report()
+    runtime = [a.to_dict() for a in verification.runtime_availability()] if args.runtime else None
+    if args.json:
+        print(json.dumps({**rep, **({"runtime": runtime} if runtime is not None else {})}, indent=2))
+        return 0
+    for c in rep["capabilities"]:
+        tag = "" if c["scope"] == "core" else f"  [{c['scope'].upper()}]"
+        print(f"{c['id']:<24} {c['level']:<24} {c['status_line']}{tag}")
+    print()
+    print(rep["tally"])
+    if runtime is not None:
+        print()
+        print("runtime availability on this machine:")
+        for a in runtime:
+            print(f"  {a['status']:<12} {a['name']}" + (f"  ({a['detail']})" if a["detail"] and a["status"] != "AVAILABLE" else ""))
+    return 0
+
+
 def cmd_city_compile(args: argparse.Namespace) -> int:
     """OSM/GeoJSON files -> canonical evidence -> CityFeatures -> WorldIR.
 
@@ -559,6 +582,9 @@ def cmd_export(args: argparse.Namespace) -> int:
         content, report = reality.export(world, args.format, artifact_store=artifact_store)
     except reality.UnsupportedExportFormatError as exc:
         _eprint(str(exc))
+        return 1
+    except (ImportError, ValueError) as exc:   # IFC: IfcOpenShell missing / nothing exportable -- never an empty file
+        _eprint(f"cannot export {args.format}: {exc}")
         return 1
     if args.format in reality.BUNDLE_FORMATS:
         # a bundle is several files: --output names the DIRECTORY they are written into
@@ -904,6 +930,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_compile.add_argument("--no-mesh", action="store_true", help="skip surface reconstruction")
     p_compile.set_defaults(func=cmd_compile)
 
+    p_verification = sub.add_parser(
+        "verification",
+        help="what is IMPLEMENTED / SYNTHETICALLY VERIFIED / REAL-WORLD VERIFIED, and what is externally pending",
+    )
+    p_verification.add_argument("--runtime", action="store_true", help="also probe what this machine can run now")
+    p_verification.add_argument("--json", action="store_true", help="machine-readable output")
+    p_verification.set_defaults(func=cmd_verification)
+
     p_city_compile = sub.add_parser(
         "city-compile",
         help="OSM/GeoJSON files -> CityFeatures -> compiled WorldIR (no photo capture required)",
@@ -944,7 +978,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_export.add_argument("world")
     p_export.add_argument("--format", required=True,
-                          choices=["gltf", "usda", "blender", "cityjson", "citygml",
+                          choices=["gltf", "usda", "blender", "cityjson", "citygml", "ifc",
                                    "geojson", "sdf", "tscn", "unreal", "sumo", "habitat"])
     p_export.add_argument("-o", "--output", required=True)
     p_export.set_defaults(func=cmd_export)

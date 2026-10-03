@@ -11,6 +11,7 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "pillow>=10.0",
+    "opencv-python-headless>=4.8",   # photo quality/contribution measurement, opening detection: imported by core evidence + pipeline code
     "tomli>=2.0; python_version<'3.11'",
 ]
 
@@ -29,7 +30,11 @@ api = [
 # IFC export (exporters/ifc_bridge.py) needs IfcOpenShell; without it the API answers 501 for format=ifc. Declared so a clean
 # `pip install -e ".[dev]"` exercises the IFC tests instead of silently skipping them.
 export = ["ifcopenshell>=0.8"]
-dev = ["pytest>=7.0", "pyyaml>=6.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]", "reality-engine[export]"]
+# EXR depth-map import (evidence/depth_exr.py, RGB-D captures). Without it EXR depth is refused explicitly, never guessed.
+rgbd = ["OpenEXR>=3.2"]
+# Video-frame tracking backend (perception/instances/track_backend.py); OPTIONAL: its tests skip visibly without it.
+tracking = ["imageio>=2.30"]
+dev = ["pytest>=7.0", "pyyaml>=6.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]", "reality-engine[export]", "reality-engine[rgbd]"]
 perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0"]
 # colmap is a C++ binary (colmap/colmap), not a Python package.
 # The CLI expects `colmap` on PATH. No PyPI package exists.

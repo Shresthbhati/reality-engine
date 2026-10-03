@@ -94,6 +94,12 @@ export interface VersionStatus {
   /** every photograph this version was built from / the ones it placed; null when the version predates the record */
   evidence_ids?: string[] | null;
   registered_ids?: string[] | null;
+  /** what this version changed versus its parent, and how it was built (its own report); null/absent when not recorded */
+  changes?: string[] | null;
+  change_counts?: Partial<Record<ChangeKind, number>> | null;
+  strategy?: NonNullable<NonNullable<WorldStatus["model"]>["strategy"]> | null;
+  verdict?: "ACCEPT" | "ACCEPT_WITH_UNCERTAINTY" | null;
+  dense?: { state: "dense" | "sparse"; detail: string } | null;
 }
 
 export interface WorldStatus {

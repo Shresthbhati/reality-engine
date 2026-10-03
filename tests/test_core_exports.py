@@ -1,4 +1,4 @@
-"""The six core prototype exports -- glTF, USD(A), IFC, CityGML, CityJSON, Blender -- verified against ONE WorldIR.
+"""The seven prototype exports -- glTF, USD(A), IFC, CityGML, CityJSON, Blender, GIS (GeoJSON) -- verified against ONE WorldIR.
 
 Each export is parsed back with an independent reader (json / XML / IfcOpenShell / ast), not string-searched, and
 checked against the world: every entity is either exported or reported skipped (nothing silently dropped), the
@@ -20,7 +20,7 @@ import pytest
 from sdk import reality
 from tests.test_export_pipeline_e2e import _promoted_world
 
-CORE = ("gltf", "usda", "blender", "cityjson", "citygml", "ifc")
+CORE = ("gltf", "usda", "blender", "cityjson", "citygml", "ifc", "geojson")
 
 
 @pytest.fixture(scope="module")
@@ -95,6 +95,34 @@ def test_citygml_is_well_formed_with_one_member_per_entity(exports):
     assert set(report.entities_exported) <= ids
 
 
+def test_geojson_is_a_feature_collection_with_a_footprint_per_entity(world, exports):
+    gj, report = exports["geojson"]
+    gj = json.loads(gj) if isinstance(gj, str) else gj
+    assert gj["type"] == "FeatureCollection"
+    assert {f["id"] for f in gj["features"]} == set(report.entities_exported)
+    for f in gj["features"]:
+        ring = f["geometry"]["coordinates"][0]
+        assert f["geometry"]["type"] == "Polygon" and ring[0] == ring[-1] and len(ring) >= 4, f["id"]
+        assert f["properties"]["height_m"] > 0
+
+
+def test_provenance_travels_where_the_format_can_carry_it(world, exports):
+    """cityjson, citygml and geojson carry each entity's provenance and type; the other formats (glTF, USD, Blender,
+    IFC) carry geometry and identity only -- stated here so nobody assumes otherwise."""
+    gj = exports["geojson"][0]
+    gj = json.loads(gj) if isinstance(gj, str) else gj
+    for f in gj["features"]:
+        e = world.entities[f["id"]]
+        assert f["properties"]["worldir_provenance"] == e.provenance.value
+        assert f["properties"]["worldir_type"] == e.type.value
+    cj = exports["cityjson"][0]
+    for eid, obj in cj["CityObjects"].items():
+        assert obj["attributes"]["worldir_provenance"] == world.entities[eid].provenance.value
+    text = exports["citygml"][0]
+    for e in world.entities.values():
+        assert e.provenance.value in text
+
+
 def test_ifc_parses_with_ifcopenshell_and_keeps_semantic_classes(world, exports, tmp_path):
     import ifcopenshell
 
@@ -118,7 +146,7 @@ def test_export_is_deterministic(world, fmt):
     assert json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
 
 
-@pytest.mark.parametrize("fmt", ("gltf", "citygml", "ifc"))
+@pytest.mark.parametrize("fmt", CORE)
 def test_an_entity_without_geometry_is_reported_not_exported(world, fmt):
     from copy import deepcopy
 

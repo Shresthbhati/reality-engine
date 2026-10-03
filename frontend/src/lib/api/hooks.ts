@@ -106,7 +106,8 @@ export function useWorldReport(worldId: string | null) {
   );
 }
 
-export function useWorldVersions(worldId: string | null) {
+/** `refreshKey` (the current model version id) refetches the lineage when a new version lands while the page is open. */
+export function useWorldVersions(worldId: string | null, refreshKey?: string | null) {
   return useApi(async () => {
     if (!worldId) return [] as WorldVersionRow[];
     const dtos = await listWorldVersions(worldId);
@@ -119,5 +120,5 @@ export function useWorldVersions(worldId: string | null) {
       changeSummary: `${v.changed_entity_ids?.length ?? 0} entities changed`,
       isCurrent: v.is_current ?? false,
     })) satisfies WorldVersionRow[];
-  }, [worldId]);
+  }, [worldId, refreshKey]);
 }

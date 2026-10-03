@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from tests.test_export_pipeline_e2e import _promoted_world
 
-CORE = ("gltf", "usda", "blender", "cityjson", "citygml", "ifc")
+CORE = ("gltf", "usda", "blender", "cityjson", "citygml", "ifc", "geojson")
 
 
 @pytest.fixture()

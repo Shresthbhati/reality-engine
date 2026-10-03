@@ -1,5 +1,7 @@
 # Reality Engine
 
+**New here? Start with [`QUICKSTART.md`](QUICKSTART.md)** (install, start, add photos, refine the same world, export). Developers: [`docs/DEVELOPER_ARCHITECTURE.md`](docs/DEVELOPER_ARCHITECTURE.md). What is verified, and against what: `reality verification`.
+
 > **ARCHIVED README — superseded 2026-09-23.** This README references
 > the obsolete "V10" specification and incorrectly describes the project
 > state. Physics, destruction, fire, and disaster simulation were moved

@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 /**
  * Reality Studio Real Browser Runtime & Performance Evidence Harness
  * Connects directly to Google Chrome via Chrome DevTools Protocol (CDP)
@@ -14,7 +16,7 @@ console.log("   REALITY STUDIO — REAL BROWSER (CHROME/WEBGL) RUNTIME HARNESS")
 console.log("===============================================================================\n");
 
 const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const PROFILE_DIR = 'C:\\Users\\shres\\.temp-chrome-benchmark-profile';
+const PROFILE_DIR = path.join(os.tmpdir(), 'temp-chrome-benchmark-profile');
 const PORT = 9222;
 
 if (!fs.existsSync(PROFILE_DIR)) {

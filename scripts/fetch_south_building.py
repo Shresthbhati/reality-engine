@@ -159,7 +159,7 @@ def _regenerate_from(extracted_root: Path) -> None:
 def regenerate() -> int:
     """Locate an original extraction on disk or download one."""
     candidates = [
-        Path("C:/Users/shres/OneDrive/Desktop/codes/reality-engine/_datasets_dl/south-building-extract/south-building"),
+        Path(__file__).resolve().parents[1] / "_datasets_dl" / "south-building-extract" / "south-building",
     ]
     for cand in candidates:
         if (cand / "images").is_dir():

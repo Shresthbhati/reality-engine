@@ -250,6 +250,13 @@ def _rows_to_versions(rows: list[WorldVersion], head_id: str | None) -> list[dic
             # model's per-photo facts must not be shown as if they described the old one.
             "evidence_ids": ((rep.get("evidence") or {}).get("all_ids")),
             "registered_ids": ((rep.get("evidence") or {}).get("registered_ids")),
+            # how THIS version was built and what it changed versus its parent (all from its own report), so an
+            # earlier version can be understood without the current version's facts standing in for it
+            "changes": rep.get("changes"),
+            "change_counts": (rep.get("physical") or {}).get("counts") if (rep.get("physical") or {}).get("available") else None,
+            "strategy": (((rep.get("stages") or {}).get("reconstruction") or {}).get("colmap_session")),
+            "verdict": ((rep.get("verdict") or {}).get("verdict") if isinstance(rep.get("verdict"), dict) else rep.get("verdict")),
+            "dense": _dense_state(rep.get("attempts") or []),
         })
     return out
 

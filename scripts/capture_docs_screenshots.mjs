@@ -4,9 +4,10 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
 const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const PROFILE_DIR = "C:\\Users\\shres\\.temp-chrome-docs-profile";
+const PROFILE_DIR = path.join(os.tmpdir(), 'temp-chrome-docs-profile');
 const PORT = 9225; // use unique port
 const TARGET_URL = "http://localhost:3005/worlds/wld_37ed7b447247";
 const OUT_DIR = path.resolve("docs/screenshots");

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -27,10 +28,21 @@ def database_url() -> str:
     return os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/app.db")
 
 
+def _ensure_sqlite_dir(url: str) -> None:
+    """A clean machine has no ./data: SQLite cannot create the file's directory, so the default URL made the API refuse to
+    start. Create the parent directory of a file-backed sqlite URL (``:memory:`` and server databases are untouched)."""
+    prefix = "sqlite+aiosqlite:///"
+    if url.startswith(prefix):
+        path = url[len(prefix):].split("?", 1)[0]
+        if path and path != ":memory:":
+            Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+
+
 def get_engine() -> AsyncEngine:
     global _engine, _sessionmaker
     if _engine is None:
         url = database_url()
+        _ensure_sqlite_dir(url)
         _engine = create_async_engine(url, echo=False, future=True)
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine

@@ -97,7 +97,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const { data: worldIR, isLoading: isIrLoading, error: irError, refetch: refetchIr } = useWorldIR(worldId || null, selectedVersionId, modelVersionKey);
   const { data: pointsBuffer } = useWorldPoints(worldId || null, selectedVersionId, modelVersionKey);
   const { data: camerasPayload } = useWorldCameras(worldId || null, selectedVersionId, modelVersionKey);
-  const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null);
+  const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null, modelVersionKey);
 
   // Derived 3D artifacts
   const points = useMemo(() => {

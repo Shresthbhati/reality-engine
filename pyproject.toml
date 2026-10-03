@@ -11,6 +11,7 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "pillow>=10.0",
+    "opencv-python-headless>=4.8",   # photo quality/contribution measurement, opening detection: imported by core evidence + pipeline code
     "tomli>=2.0; python_version<'3.11'",
 ]
 
@@ -21,12 +22,19 @@ dependencies = [
 api = [
     "fastapi",
     "uvicorn",
-    "sqlalchemy>=2.0",
+    "sqlalchemy[asyncio]>=2.0",   # [asyncio] pulls in greenlet, which the async engine needs
     "aiosqlite>=0.20.0",
     "python-multipart",
     "httpx",
 ]
-dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]"]
+# IFC export (exporters/ifc_bridge.py) needs IfcOpenShell; without it the API answers 501 for format=ifc. Declared so a clean
+# `pip install -e ".[dev]"` exercises the IFC tests instead of silently skipping them.
+export = ["ifcopenshell>=0.8"]
+# EXR depth-map import (evidence/depth_exr.py, RGB-D captures). Without it EXR depth is refused explicitly, never guessed.
+rgbd = ["OpenEXR>=3.2"]
+# Video-frame tracking backend (perception/instances/track_backend.py); OPTIONAL: its tests skip visibly without it.
+tracking = ["imageio>=2.30"]
+dev = ["pytest>=7.0", "pyyaml>=6.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]", "reality-engine[export]", "reality-engine[rgbd]"]
 perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0"]
 # colmap is a C++ binary (colmap/colmap), not a Python package.
 # The CLI expects `colmap` on PATH. No PyPI package exists.
@@ -45,6 +53,8 @@ include = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
+    "canonical_interior: canonical two-storey interior fixture tests",
+    "golden_loop: golden evidence-to-world loop tests",
     "slow: long-running test (real-model downloads, GPU); deselect with -m 'not slow'",
     "e2e: end-to-end vertical slice test",
     "integration: integration test across real modules",

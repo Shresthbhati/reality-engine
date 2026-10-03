@@ -249,6 +249,9 @@ export default function ReconstructionStatusBar({
     ? status.versions.find((v) => v.id === selectedVersionId) ?? null
     : status.versions.find((v) => v.is_current) ?? null;
   const viewingOld = Boolean(inspecting && !inspecting.is_current);
+  // An older version explains itself from its own report, not the current version's.
+  const own = viewingOld && inspecting ? inspecting : null;
+  const prevLabel = own ? status.versions.find((v) => v.id === own.parent_version_id)?.label ?? null : null;
   const expanded = expandedPref ?? !status.has_model;
   const topGuidance = status.guidance[0]?.message ?? null;
 
@@ -394,12 +397,8 @@ export default function ReconstructionStatusBar({
                 <span className="text-neutral-400">Unknown {counts.unknown}</span>
               </p>
               <BuildSummary
-                model={model}
-                title={
-                  viewingOld
-                    ? `How ${status.versions.find((v) => v.is_current)?.label ?? "the current version"} (the current version) was built`
-                    : "How this version was built"
-                }
+                model={own?.strategy ? { ...model, strategy: own.strategy, verdict: own.verdict ?? null, dense: own.dense ?? undefined } : model}
+                title={viewingOld ? `How ${own?.label ?? "this version"} was built` : "How this version was built"}
               />
             </>
           ) : (
@@ -407,7 +406,43 @@ export default function ReconstructionStatusBar({
               {status.in_progress ? "The first model appears here as soon as it is ready." : "No model has been built yet."}
             </p>
           )}
-          {model && (model.changes?.length ?? 0) > 0 && (
+          {own && (own.changes?.length ?? 0) > 0 ? (
+            <div className="mt-2" data-testid="what-changed">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                What changed in {own.label}
+                {prevLabel ? ` (versus ${prevLabel})` : ""}
+              </h3>
+              {own.change_counts && (
+                <ul className="mt-1 flex flex-wrap gap-1" data-testid="change-counts" aria-label="Changes by kind">
+                  {changeCategoryCounts(own.change_counts).map(({ kind, label, count }) => (
+                    <li
+                      key={kind}
+                      data-testid={`change-count-${kind}`}
+                      data-count={count}
+                      className={cn(
+                        "rounded border px-1.5 py-0 text-[10px]",
+                        count > 0 ? "border-[#2a2f3a] text-neutral-200" : "border-[#1f222b] text-neutral-600",
+                      )}
+                    >
+                      {label} {count}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <ul className="mt-0.5 space-y-0.5">
+                {own.changes!.map((c) => (
+                  <li key={c} className="text-[11px] leading-relaxed text-neutral-300">
+                    • {c}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : viewingOld ? (
+            <p className="mt-2 text-[11px] text-neutral-500" data-testid="what-changed-unrecorded">
+              {own?.parent_version_id ? "This version did not record what it changed." : "This is the first version: nothing to compare with."}
+            </p>
+          ) : null}
+          {!viewingOld && model && (model.changes?.length ?? 0) > 0 && (
             <div className="mt-2" data-testid="what-changed">
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                 {viewingOld

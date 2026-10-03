@@ -5,7 +5,7 @@
     STEP 3   add 10 more photos             -> V3 (same world)
     STEP 4   inspect "What changed" (V1 -> V2 -> V3), the ten change categories
     STEP 5   inspect the previous version   (V1 is byte-identical to what it was; what it was built from)
-    STEP 6   export the current world       (glTF, USDA, IFC, CityGML, CityJSON, Blender)
+    STEP 6   export the current world       (glTF, USDA, IFC, CityGML, CityJSON, Blender, GeoJSON)
 
 It drives the same HTTP routes the Studio calls (in-process FastAPI TestClient over a fresh database and WorldStore),
 with real COLMAP and the real depth/perception stages -- nothing is mocked. Every number in the output is MEASURED in
@@ -41,7 +41,7 @@ DEFAULT_DATASET = ROOT / "datasets" / "south_building" / "images"
 #: (see tests/integration/test_progressive_product_journey.py): SIX strongly overlap; ADD_4 continues the walk;
 #: ADD_10 is weakly linked to SIX (12-40 matches).
 WINDOWS = {"six": (15, 21), "add4": (21, 25), "add10": (5, 15)}
-CORE_FORMATS = ("gltf", "usda", "ifc", "citygml", "cityjson", "blender")
+CORE_FORMATS = ("gltf", "usda", "ifc", "citygml", "cityjson", "blender", "geojson")
 CHANGE_KINDS = ("preserved", "refined", "extended", "reduced", "split", "merge", "regrouped", "ambiguous", "removed",
                 "new")
 
@@ -276,6 +276,11 @@ def _parse_back(exports: Path) -> dict:
         res["blender"] = True
     except Exception:  # noqa: BLE001
         res["blender"] = False
+    try:
+        gj = json.loads((exports / "world.geojson").read_text(encoding="utf-8"))
+        res["geojson"] = gj["type"] == "FeatureCollection" and bool(gj["features"])
+    except Exception:  # noqa: BLE001
+        res["geojson"] = False
     try:
         import ifcopenshell
 

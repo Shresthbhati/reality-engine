@@ -73,7 +73,7 @@ more evidence arrives. If the new photos do not improve the world, your current 
 
 ## 8. Export
 
-Use **Export** and pick a format: glTF, USD (USDA), IFC, CityGML, CityJSON or a Blender script. Or from a terminal:
+Use **Export** and pick a format: glTF, USD (USDA), IFC, CityGML, CityJSON, a Blender script or GIS footprints (GeoJSON). Or from a terminal:
 
 ```bash
 curl -X POST http://localhost:8100/api/worlds/<world-id>/export -H "Content-Type: application/json" -d '{"format":"gltf"}'
@@ -96,3 +96,20 @@ python scripts/demo_journey.py --out demo_out --keep   # 6 -> +4 -> +10 photos =
 ```
 
 It prints every measured number and writes `demo_out/demo_metrics.json`.
+
+## Known limitations
+
+This is a prototype, not a certified product. What has and has not been proven:
+
+* **Verified on real photos:** the photos -> V1 -> V2 -> V3 journey, version history, what-changed, and export, on the real
+  South Building sample.
+* **Synthetic only:** RGB-D (software pipeline verified; physical device not verified), VIO (synthetic trajectories verified;
+  no real VIO backend verified) and indoor/multi-storey architecture (synthetic buildings; no broader real indoor dataset).
+* **Detail levels** follow measured scale where the world has one; worlds without metric scale never show metric detail.
+  Universal threshold calibration needs more real datasets.
+* **3DCityDB export** needs your own PostgreSQL/PostGIS/3DCityDB v5 and `citydb-tool`; without them it reports `UNAVAILABLE`.
+  A real deployment has not been verified.
+* **Exports** are verified as generated and re-parsed files. Opening them in Blender, Unreal, Godot, ROS, Habitat or SUMO
+  has not been verified (ROS, Habitat, SUMO, Unreal and Godot writers are deferred).
+* **Depth and object recognition** need `pip install -e ".[perception]"`; without it those stages are skipped and say so.
+* `reality verification` prints the exact status of every capability on your machine.

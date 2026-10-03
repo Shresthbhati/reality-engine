@@ -362,12 +362,12 @@ confidence-defaults audit. The per-version evidence panel landed 2026-10-03.
 
 ## PROD.3 — Confidence defaults
 
-**Status: PARTIAL.** `Uncertainty` default is now 0.0 (unknown); building/storey/
-opening producers no longer default to 1.0; the commit route rejects invalid
-confidence instead of coercing it. Left as documented risk: `Observation` and
-`Relationship` constructor defaults (1.0 / OBSERVED) and `CausalRelation`
-deserialisation default; raw-sensor decode fidelity (depth frames) legitimately
-states 1.0 with its basis.
+**Status: IMPLEMENTED.** `Uncertainty` default is 0.0 (unknown); `Observation`, `Relationship`, `CausalRelation`
+constructor AND `from_dict` defaults are 0.5 / `Provenance.UNKNOWN` ("not measured"), never 1.0 / OBSERVED; building/storey/
+opening producers pass measured values; the commit route rejects invalid confidence instead of coercing it.
+`tests/test_confidence_defaults.py` pins the defaults and statically checks that every producer in the repo states its
+confidence explicitly. Raw-sensor decode fidelity (depth frames) legitimately states 1.0 with its basis.
+(The previous "left as documented risk" note was stale: the audit on 2026-10-03 found the defaults already corrected.)
 
 
 ## Continuous evidence — gaps against the "same world keeps evolving" principle (2026-09-29)

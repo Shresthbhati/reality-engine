@@ -142,9 +142,10 @@ def _weakest(budgets: List[DetailBudget]) -> DetailBudget:
         compute_tier=worst.compute_tier,
         max_gsd_mm_per_px=min(gsds) if gsds else None,
         coverage_capped=any(b.coverage_capped for b in budgets),
-        basis="unsupported" if all(
-            b.basis == "unsupported" for b in budgets
-        ) else "measured",
+        basis=("unsupported" if all(b.basis == "unsupported" for b in budgets)
+               else "relative_scale" if any(b.basis == "relative_scale" for b in budgets)
+               else "measured"),
+        gsd_basis="unavailable" if any(b.gsd_basis == "unavailable" for b in budgets) else "metric",
     )
 
 

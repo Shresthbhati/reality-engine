@@ -22,7 +22,7 @@ def _detail_world():
     from tests.test_evidence_quality import _result
 
     world = _empty_world()
-    facts = _detail_stage(_result(_shell(0.0, 0.0), _report_cameras()), world, _slice_options())
+    facts = _detail_stage(_result(_shell(0.0, 0.0), _report_cameras()), world, _slice_options(), "metric")
     assert facts["status"] == "ran" and world.entities and world.geometries
     return world
 

@@ -123,3 +123,28 @@ it.
    HEAD (its evidence is the union of everything the world holds, so photos later versions used are retried).
 3. The COLMAP session is derived state that commits strictly after WorldStore adoption and read-back; a
    crash leaves it at most one version behind, which converges. No cross-store journal is required for that.
+
+## Decision — Adoption protocol (WorldStore <-> DB) and coordinate-frame preservation
+
+**Status: ACCEPTED (2026-10-02, final sprint)**
+
+Found by probing the real code: a crash between `WorldStore.save_version` and the DB commit left an orphan version that
+`resync_versions` later mirrored as a PHANTOM version, and a retry then minted a second one; and an in-process fault after
+the HEAD `UPDATE` was persisted by the job runner's own failure-bookkeeping commit, leaving HEAD naming a version with no
+mirror row.
+
+1. Adoption order is: intent file (`adoption-intents/`) -> WorldStore version -> read-back verification (BEFORE the
+   pointer moves; the DB never names a version the store cannot reconstruct) -> DB HEAD + mirror row in ONE transaction
+   -> intent cleared. Both writers (`commit_version`, the entity-correction route) use it.
+2. A version written but never adopted is QUARANTINED (`quarantine/`; record moved, artifact kept, nothing deleted):
+   immediately on an in-process fault, or by `reconcile_adoptions` at startup after a hard kill. `resync_versions` never
+   mirrors a version with a pending intent. Versions with no intent (CLI writers) remain legitimate history.
+3. A failed adoption undoes its own pending HEAD move/row inside the caller's transaction (no rollback: that would expire
+   the caller's loaded objects).
+4. Candidate arbitration: with an established HEAD, a candidate that keeps HEAD's coordinate frame beats one that
+   re-expresses the world in a new frame unless the latter places >= `FRAME_CHANGE_MIN_EXTRA_PHOTOS` (2) more photographs.
+   The frame shift is measured from the similarity `world_delta` already fits (geometry rules are blind to it by design).
+   Tolerances are PROVISIONAL.
+5. Retention: quarantined versions are kept indefinitely; a pruning policy is not decided.
+
+Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an orphan is "reconciled into the listing".

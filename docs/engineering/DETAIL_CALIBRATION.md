@@ -1,38 +1,52 @@
 # Detail-threshold calibration (P7-05) -- what was measured, what was decided, what is still unknown
 
-Data: the one real photographic dataset in the repo (`datasets/south_building`, 32 photographs, 49,608 sparse points,
-COLMAP's arbitrary scale). Script: `scripts/measure_detail_thresholds.py`; raw output:
-`docs/engineering/detail_threshold_measurements.json` (run 2026-09-30, one-factor-at-a-time around the defaults).
+Data: the ONE real photographic dataset in the repo (`datasets/south_building`, 32 photographs, 49,608 sparse points,
+COLMAP's arbitrary scale). Script: `scripts/measure_detail_thresholds.py`; raw outputs in `docs/engineering/`.
 There is no ground truth for "which details exist", so false positives and missed details are NOT scored.
 
-## Measured
+## Correction to the 2026-09-30 measurement
 
-| factor (others at default) | values | ROIs | refined / refused | reading |
+The first run expressed voxel size as a fraction of the **bounding-box diagonal (67.9 units)**. That box is dominated by
+a few far-flung tracks: the 1st-99th percentile diagonal of the same points is **6.3 units** (10x smaller). Its
+"1-2% of extent" band was really 11-22% of the real footprint, and its "cliff between 2% and 4%" must not be read as a
+property of the scene. `detail_threshold_measurements.json` is kept as the historical record
+(`--extent bbox`); the product now uses the robust extent (`perception/detail/voxel.py`).
+
+## Measured (2026-10-02, robust extent 6.320 units, others at default; `detail_threshold_measurements_robust_extent.json`)
+
+| factor | values | ROIs | refined / refused | median plane residual (fraction of extent) |
 |---|---|---|---|---|
-| voxel size (fraction of scene extent) | 0.01 / 0.02 / 0.04 / 0.08 | 14 / 8 / 1 / 1 | all refined, 0 refused | **cliff** between 0.02 and 0.04 |
-| curvature threshold | 0.05 / 0.1 / 0.2 | 1 / 1 / 4 | all refined | 0.05 = 0.1 (plateau); 0.2 is a different regime |
-| planarity threshold | 0.90 / 0.95 / 0.98 | 1 / 1 / 1 | all refined | **plateau** -- insensitive on this scene |
+| voxel (fraction of robust extent) | 0.05 / 0.10 / 0.16 / 0.25 / 0.40 | 40 / 20 / 10 / 4 / 2 | all refined, 0 refused | 0.0022 / 0.0042 / 0.0140 / 0.0065 / 0.0388 |
+| curvature threshold | 0.05 / 0.1 / 0.2 | 11 / 10 / 8 | all refined | 0.018 / 0.014 / 0.008 |
+| planarity threshold | 0.90 / 0.95 / 0.98 | 11 / 10 / 6 | all refined | 0.017 / 0.014 / 0.015 |
 
-Refinement never refused on this data (0 refusals in 8 runs), and the median plane residual was 0.07%-0.7% of the scene
-extent, tighter for smaller voxels. The evidence-quality report measured GSD 1.58 "mm/px" and tier `fine` -- but the
-model is not metric, so that number is in model-unit-millimetres and the GSD->level bands (L4 <= 5, L2 <= 25, L1 <= 100
-mm/px) are **not meaningful without a metric anchor**.
+Reading (nothing here is a ground-truth claim):
+* ROI count falls smoothly with voxel size (roughly with its inverse square): **there is no plateau or cliff in robust
+  units**; the voxel is a resolution/compute trade-off, not a tuned constant. Residuals of finer voxels are smaller partly
+  because their patches are smaller, so a lower residual is not evidence of better detail. Refinement never refused.
+* Planarity is NOT insensitive here (0.98 keeps 6 of 10 ROIs); the earlier "plateau" does not survive the unit fix.
+* Curvature 0.05 / 0.1 differ by one ROI: mild sensitivity.
+* The measured GSD figure (1.58) is model-unit-millimetres. It is meaningless without a metric anchor.
 
-## Decisions
+## Decisions (now implemented)
 
-1. **Voxel size must be scene-relative, not 1.0 "metre".** The absolute default (1.0) silently assumes a metric world.
-   On this scene (extent 67.9 units) 1.0 is 1.5% of the extent -- the dense-ROI regime -- while on a 3 m room it would be
-   a third of the scene. Recommended band when scale is unknown: 1-2% of the scene extent; the cliff above 2% means a
-   coarser voxel silently loses detail. (Not yet wired: `detail_voxel_size_m` stays an absolute option; deriving it from
-   the measured extent is the recorded follow-up.)
-2. **Curvature 0.1 and planarity 0.95 stay** as the initial thresholds: 0.1 sits on a plateau with 0.05; planarity
-   shows no sensitivity here. These are *empirical initial thresholds*, not calibrated constants.
-3. **GSD bands apply only to metric worlds.** For a relative-scale world the level mapping should be withheld
-   (unsupported budget), not computed from model-unit millimetres. Recorded as a follow-up; today the stage does not
-   check `scale_state`.
+1. **Voxel size.** Explicit size wins. Metric world: 1.0 m (the documented absolute default, unchanged). Relative or
+   unknown scale: `RELATIVE_VOXEL_FRACTION` = **0.16 of the robust scene extent** (1st-99th percentile box diagonal).
+   0.16 is chosen for CONTINUITY with the previous behaviour on this dataset (1.0 unit = 0.158 of 6.32), not because it
+   was found optimal. If the extent cannot be measured (< 50 points) the stage refuses rather than assume a metre.
+2. **GSD bands are metric-only.** With a non-metric scale the report withholds `gsd_mm_per_px`, the fine/medium/coarse
+   tier (`scale_unavailable`) and the GSD->level bands; the budget has `gsd_basis="unavailable"` and its level comes from
+   multi-view coverage alone (L2 if every observed point has >= 2 views, else L1) -- never L4, never a millimetre figure.
+   The scale-free sampling measure (`gsd_model_units_per_px`) is still reported. Capture feedback tells the operator one
+   measured distance enables metric levels. Consequence: in a relative world refinement runs the `standard` tier (plane
+   backend) only; cylinder/sphere escalation needs a metric anchor.
+3. **Curvature 0.1 / planarity 0.95** stay as *empirical initial thresholds*.
 
-## Explicitly not established
+## What remains provisional
 
-Universal calibration needs more real datasets (different camera, scale, surface types, indoor scenes). With one
-dataset the thresholds are **empirical initial thresholds; additional real datasets required for universal
-calibration.** Nothing here validates them beyond South Building.
+* Every threshold above is calibrated on ONE scene (South Building), one camera, outdoor facade. The 4 indoor photographs
+  mentioned elsewhere have unverified provenance and were not used; no other real dataset is in the repo and none was
+  downloaded. **Universal calibration needs further real datasets (indoor, other cameras and scales)** -- an external
+  data requirement, not an engineering gap.
+* The L2/L1 coverage rule for relative worlds, `RELATIVE_VOXEL_FRACTION`, and the frame-preservation tolerances in the
+  candidate arbiter are provisional by the same standard.

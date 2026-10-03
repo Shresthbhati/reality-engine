@@ -34,6 +34,15 @@ Documented GSD-level mapping (mm/px -> multi-scale level L0..L4):
 Coverage caps: min observed view count >= 2 required to hold the
 GSD-derived level; with < 2 the level is capped at L2; with 0
 observed points the level is L0 with basis "unsupported".
+
+The bands above are METRIC statements. When the world's scale is not
+metric (a relative reconstruction: arbitrary model units, no measured
+reference) they are WITHHELD -- the budget has ``gsd_basis ==
+"unavailable"``, ``max_gsd_mm_per_px`` is None, and the level comes from
+multi-view support alone: L2 when every observed point has >= 2 views,
+L1 otherwise. No fine (L4) claim and no millimetre figure is ever made
+for an unanchored world. (The L2/L1 split is provisional: coverage rule,
+not calibrated on more than one dataset.)
 Compute tiers derive from the justified level: L4 -> "full", L3 ->
 "high", L2 -> "standard", L1 -> "light", L0 -> "survey" (or "none"
 when nothing is observed). These tiers are inputs to ROI/adaptive
@@ -85,7 +94,10 @@ class DetailBudget:
     compute_tier: str     # "none"|"survey"|"light"|"standard"|"high"|"full"
     max_gsd_mm_per_px: Optional[float]
     coverage_capped: bool
-    basis: str            # "measured" | "unsupported"
+    basis: str            # "measured" | "relative_scale" | "unsupported"
+    #: Where the millimetre-GSD level came from: "metric" (the bands were applied) or "unavailable" (the world's
+    #: scale is not metric, so the metric GSD classification is withheld rather than invented).
+    gsd_basis: str = "metric"
 
     def to_dict(self) -> dict:
         return {
@@ -94,6 +106,7 @@ class DetailBudget:
             "max_gsd_mm_per_px": self.max_gsd_mm_per_px,
             "coverage_capped": self.coverage_capped,
             "basis": self.basis,
+            "gsd_basis": self.gsd_basis,
         }
 
 
@@ -121,6 +134,16 @@ def detail_budget_for(report: EvidenceQualityReport) -> DetailBudget:
     Raises ValueError for a report that claims observed points but
     carries no measured GSD (impossible from `assess_evidence_quality`;
     means the assessor contract was bypassed)."""
+    if report.scale_state != "metric":
+        if not report.view_counts:
+            return DetailBudget(
+                justified_level="L0", compute_tier="none", max_gsd_mm_per_px=None,
+                coverage_capped=False, basis="unsupported", gsd_basis="unavailable")
+        min_views = min(report.view_counts.values())
+        level = "L2" if min_views >= _MIN_VIEWS_FOR_LEVEL else "L1"
+        return DetailBudget(
+            justified_level=level, compute_tier=_COMPUTE_TIER_BY_LEVEL[level], max_gsd_mm_per_px=None,
+            coverage_capped=level != "L2", basis="relative_scale", gsd_basis="unavailable")
     if report.gsd_mm_per_px is None:
         if report.view_counts:
             # Observed points exist but no measured GSD: the assessor

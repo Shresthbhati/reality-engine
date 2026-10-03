@@ -764,13 +764,15 @@ def test_commit_failed_db_write_rolls_back(client, tmp_path, monkeypatch):
     assert "not adopted" in r.json()["detail"].lower()
     monkeypatch.undo()  # outage over: verify the crash anatomy
     monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
-    # The version file exists on disk (orphan) while HEAD never moved.
-    # Recovery reconciles the orphan into the listing (visible, never
-    # HEAD): nothing false was ever served, nothing durable was lost.
+    # The version written before the outage was never adopted. Adoption protocol (worldstore_service): it is
+    # QUARANTINED -- out of the lineage, never listed as a phantom version, nothing deleted -- so the WorldStore
+    # never holds a version the DB did not adopt (tests/test_adoption_transaction.py covers the full matrix).
     from worldstore.store import WorldStore
 
-    on_disk = {v.version_id for v in WorldStore(tmp_path / "ws").list_versions()}
-    assert len(on_disk) == 2  # base + orphan
+    store = WorldStore(tmp_path / "ws")
+    on_disk = {v.version_id for v in store.list_versions()}
+    assert on_disk == {v0}
+    assert len(store.quarantined_versions()) == 1                    # nothing durable was lost
     head, _ = _head_and_count(client, wid)
     assert head == v0
     items = client.get(f"/api/worlds/{wid}/versions").json()["items"]

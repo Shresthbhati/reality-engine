@@ -4,8 +4,12 @@ Usage:  python scripts/measure_detail_thresholds.py [--out docs/engineering/deta
 
 What this can and cannot establish (stated so the numbers are not over-read):
   * The data is a real, committed COLMAP sparse model (32 photographs of a building, ~50k points) in COLMAP's own
-    arbitrary scale, so every spatial threshold is expressed as a FRACTION OF THE SCENE EXTENT (the bounding-box
-    diagonal) and converted to model units per run. Nothing here is a metric claim.
+    arbitrary scale, so every spatial threshold is expressed as a FRACTION OF THE SCENE EXTENT and converted to model
+    units per run. Nothing here is a metric claim.
+  * ``--extent robust`` (default) uses perception.detail.voxel.robust_scene_extent -- the diagonal of the 1st-99th
+    percentile box, the same definition the product's voxel rule uses. ``--extent bbox`` reproduces the 2026-09-30
+    run, whose bounding-box diagonal (67.9) turned out to be ~10x the real footprint (6.3): see
+    docs/engineering/DETAIL_CALIBRATION.md.
   * There is no ground truth for "which details exist", so "false positive" and "missed detail" cannot be scored.
     What IS measured: how many cells/ROIs each setting produces, how many refine vs refuse, the measured residuals
     of what refines, runtime, and STABILITY -- the overlap of the ROI cell sets between neighbouring settings. A
@@ -91,23 +95,36 @@ def jaccard(a, b) -> float:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(REPO / "docs" / "engineering" / "detail_threshold_measurements.json"))
+    ap.add_argument("--extent", choices=("robust", "bbox"), default="robust")
+    ap.add_argument("--out", default=None)
     args = ap.parse_args()
+    if args.out is None:
+        name = "detail_threshold_measurements_robust_extent.json" if args.extent == "robust"             else "detail_threshold_measurements.json"
+        args.out = str(REPO / "docs" / "engineering" / name)
 
     from perception.quality.assessment import assess_evidence_quality
 
     result = load_real_scene()
     cams = cameras_for(result)
-    extent = extent_of(result.points)
+    from perception.detail.voxel import robust_scene_extent
+
+    bbox = extent_of(result.points)
+    robust = robust_scene_extent(result.points)
+    extent = robust if args.extent == "robust" else bbox
     quality = assess_evidence_quality(result, cams)
-    print(f"real scene: {len(result.points)} points, {len(result.camera_poses)} cameras, extent {extent:.3f} model units")
+    print(f"real scene: {len(result.points)} points, {len(result.camera_poses)} cameras, extent[{args.extent}] "
+          f"{extent:.3f} model units (bbox diagonal {bbox:.3f}, robust {robust:.3f})")
     print(f"quality: tier={quality.detail_tier} gsd={quality.gsd_mm_per_px} (model-unit scale: not metric)")
 
-    voxel_fracs = [0.01, 0.02, 0.04, 0.08]
+    if args.extent == "robust":
+        voxel_fracs = [0.05, 0.10, 0.16, 0.25, 0.40]
+        base = (0.16, 0.1, 0.95)
+    else:
+        voxel_fracs = [0.01, 0.02, 0.04, 0.08]
+        base = (0.04, 0.1, 0.95)
     curvatures = [0.05, 0.1, 0.2]
     planarities = [0.9, 0.95, 0.98]
     # one-factor-at-a-time around the shipped defaults (a full grid would hide which factor moves the result)
-    base = (0.04, 0.1, 0.95)
     plan = [base] + [(v, base[1], base[2]) for v in voxel_fracs if v != base[0]] \
         + [(base[0], c, base[2]) for c in curvatures if c != base[1]] \
         + [(base[0], base[1], p) for p in planarities if p != base[2]]
@@ -124,7 +141,9 @@ def main() -> None:
         row["roi_cell_overlap_with_base"] = jaccard(base_cells, row["_cells"]) if same_grid else None
         row.pop("_cells")
     out = {"dataset": "south_building sparse (committed, real)", "points": len(result.points),
-           "cameras": len(result.camera_poses), "extent_model_units": round(extent, 4),
+           "cameras": len(result.camera_poses), "extent_definition": args.extent,
+           "extent_model_units": round(extent, 4), "bbox_diagonal_model_units": round(bbox, 4),
+           "robust_extent_model_units": round(robust, 4),
            "scale": "COLMAP arbitrary (not metric)",
            "base": {"voxel_frac_of_extent": base[0], "curvature": base[1], "planarity": base[2]}, "runs": rows,
            "note": "no ground truth: false positives / missed details are not scored; see module docstring"}

@@ -549,8 +549,11 @@ capabilities:
   fallback: deterministic backend injection (REALITY_TEST_BACKEND) for offline tests
 - name: world_store
   category: persistence
-  backend: 'worldstore.store: filesystem-backed versioned store (WorldStore)'
-  maturity: IMPLEMENTED
+  backend: 'worldstore.store: filesystem-backed versioned store (WorldStore); adoption protocol in apps/api/worldstore_service.py'
+  maturity: >-
+    IMPLEMENTED; adoption boundary VERIFIED 2026-10-02 (intent -> store -> read-back verify -> DB HEAD+mirror in
+    one transaction; orphans quarantined, never mirrored as phantoms; startup recovery). tests/test_adoption_transaction.py
+    (11) + 8 real stage-synchronised process kills in tests/integration/test_reliability_journey.py
   notes: Content-addressed ArtifactStore underneath; save_world persists an immutable
     snapshot + metadata (parents, message); load_world restores any version; versions()/parents()/ancestors()
     expose the DAG; list() preserves save order. Observed reality is recoverable across
@@ -910,12 +913,15 @@ capabilities:
     observed-points-without-GSD reports refuse (bypass detection); empty/coverage-failed
     scenes -> honest zero-allocation unsupported budget
   runtime: O(1)
-  maturity: PARTIAL (10 tests in tests/test_detail_budget.py; wired into recommend_capture
-    as scene_budget -- tests/test_capture_feedback_wiring.py)
+  maturity: >-
+    IMPLEMENTED (engineering complete 2026-10-02; universal calibration BLOCKED on external data).
+    Scale-aware - the GSD bands are METRIC statements: a non-metric world gets gsd_basis "unavailable", no
+    mm figure, level from multi-view coverage only (L2 / L1, never L4). Tests - tests/test_detail_budget.py,
+    tests/test_detail_scale.py (15, incl. invariance under the arbitrary unit), tests/test_capture_feedback_wiring.py
   limitations:
-  - per-region budgets require spatial partitioning of the scene (currently scene-level
-    derivation only)
-  - GSD-level thresholds untuned against real datasets
+  - thresholds, RELATIVE_VOXEL_FRACTION (0.16 of the robust scene extent) and the L2/L1 coverage rule are EMPIRICAL,
+    calibrated on ONE real scene (docs/engineering/DETAIL_CALIBRATION.md); universal calibration needs more real data
+  - relative worlds run the plane backend only (standard tier); cylinder/sphere escalation needs a metric anchor
 - name: cross_view_depth_consistency
   category: reconstruction
   backend: 'reconstruction/consistency.py: check_depth_consistency (in-house, deterministic,
@@ -1207,7 +1213,10 @@ capabilities:
   inputs: [sparse model, registered photos, persistent COLMAP session]
   outputs: [dense POINTCLOUD geometry + fusion input only when judged better than the sparse world]
   maturity: IMPLEMENTED
-  verified: tests/test_dense_arbitration.py (cases A-F, 21 tests, stand-in COLMAP). Real-GPU product-path run NOT yet re-recorded.
+  verified: >-
+    tests/test_dense_arbitration.py (cases A-F, 21 tests, stand-in COLMAP). Real-GPU product-path run recorded
+    2026-09-30/10-01 (RTX 4050) - 6 South Building photos reach Level 3 with 84,104 fused points; 16 photos are
+    refused by the gate (6 of 16 registered).
   limitations: [judge thresholds EXPERIMENTAL, enabled by default in the job runner (REALITY_DENSE_AUTO=0 opts out)]
 - name: citydb_v5_export
   category: export
@@ -1215,3 +1224,13 @@ capabilities:
   maturity: IMPLEMENTED
   verified: 12 fake-CLI contract tests. Real 3DCityDB runtime verification BLOCKED (no database / citydb binary here).
   limitations: [CRS is the database's setting, the world is written in its local frame]
+- name: world_candidate_arbitration
+  category: reconstruction
+  backend: engine/pipeline/candidate_selection.py (WorldArbiter; ordered hierarchy, no scalar score)
+  maturity: IMPLEMENTED - unit-tested at the WorldArbiter boundary (tests/test_candidate_selection.py, 19) and exercised on real COLMAP candidates
+  notes: includes coordinate-frame preservation (frame_shift measured from world_delta's similarity, a frame-changing candidate must place >= 2 more photos to win)
+  limitations: [frame tolerances and the 2-photo margin are PROVISIONAL (one dataset); candidates are compared on the sparse-compiled world]
+- name: unchanged_rerun_detection
+  category: product
+  backend: engine/pipeline/world_delta.is_unchanged + apps/api/jobs.py
+  maturity: IMPLEMENTED - found by a real kill at the version_persisted boundary (a rerun minted a duplicate version from identical evidence)

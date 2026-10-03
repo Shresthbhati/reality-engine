@@ -128,7 +128,9 @@ class VerticalSliceOptions:
     #: inputs cannot be measured (no cameras) or dependencies are
     #: unavailable.
     detail_enabled: bool = True
-    detail_voxel_size_m: float = 1.0
+    #: None (default) derives the voxel from the world's scale: a metre when the scale is metric, a fraction of the
+    #: robust scene extent when it is relative (perception.detail.voxel). A number is used as given.
+    detail_voxel_size_m: Optional[float] = None
     #: Reconstruction backend override (tests inject a deterministic
     #: backend; production leaves None for the real COLMAP backend).
     reconstruction_backend: Optional[object] = None
@@ -365,7 +367,7 @@ def vertical_slice(
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
     # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
-    detail_facts = _detail_stage(result, world, options)
+    detail_facts = _detail_stage(result, world, options, scale_state)
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
@@ -468,7 +470,7 @@ def _auto_dense_options(result, n_input: int, options):
             dict(facts, decision="escalated to dense MVS: every measured criterion passed"), scratch)
 
 
-def _detail_stage(result, world, options):
+def _detail_stage(result, world, options, scale_state: str = "unknown"):
     """Optional P7-06 detail chain: measured evidence quality -> detail
     discovery -> ROI work orders -> local refinement (tier-driven,
     honest refusals). Records its facts in world metadata under
@@ -529,6 +531,7 @@ def _detail_stage(result, world, options):
             up=options.up,
             build_world_ir=True,
             world=world,
+            scale_state=scale_state,
         )
     except ValueError as exc:
         # Assessor/budget contract refusals are honest, visible skips.

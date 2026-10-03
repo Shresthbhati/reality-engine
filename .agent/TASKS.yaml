@@ -750,11 +750,10 @@ tasks:
       - "DONE 2026-09-17: ITrackBackend implementation (perception/instances/track_backend.py) wired into perception stage (engine/pipeline/vertical_slice.py)"
       - "7 tests in tests/test_track_backend.py covering basic linking, different-label separation, empty results, no-depth skip, confidence propagation, image loading"
       - "Appearance + epipolar gates active in merge_hypotheses and track backend"
-    open: >
-      TEMPORAL consistency is not implemented
-      (P7-02's subject); thresholds untuned against real data; color
-      histograms cannot separate same-color same-shape objects
-      (documented limitation).
+    limitations: >
+      Reconciled 2026-10-02: temporal consistency is P7-02's subject (DONE there), not this task. Documented
+      limitations only: thresholds untuned against real data; color histograms cannot separate same-color same-shape
+      objects.
 
   - id: P7-02
     name: temporal tracking
@@ -1002,13 +1001,13 @@ tasks:
     verification:
       - tests/test_evidence_quality.py: 18 tests (measured GSD known answers, tier bands, overclaim + unprojectable reporting, recommendation rules, refusal on missing intrinsics)
       - full suite at branch head: 1826 passed / 1 skipped / 0 failed
-    open: >
-      PARTIAL, not DONE: remaining directive-section-11 inputs not
-      yet measured (view angle, focus/motion blur, texture
-      richness, depth confidence, occlusion reasoning beyond
-      projection bounds); scene_budget consumer landed (P7-05)
-      but per-region spatial budgets still open; thresholds
-      untuned against real datasets.
+    limitations: >
+      Reconciled 2026-10-02 (the earlier "PARTIAL, not DONE" prose contradicted the DONE status and the scope
+      above, which is fully delivered: GSD, view count, tier, coverage, recommendations, budget inputs, view-angle
+      diversity). Quality inputs beyond this task's scope are NOT measured: focus/motion blur, texture richness,
+      depth confidence, occlusion reasoning beyond projection bounds. The scene_budget consumer and per-region
+      budgets are delivered under P7-05 / P7-06. GSD/tier are metric-only: with a non-metric scale they are withheld
+      (scale_state, 2026-10-02). Thresholds are empirical (one dataset), see P7-05.
     completion: >-
       2026-09-18: measured per-point view-angle diversity landed
       (assessment._view_angle_diversity): deterministic stride
@@ -1021,8 +1020,8 @@ tasks:
       tests/test_evidence_quality.py: 23 tests total.
   - id: P7-05
     name: detail budget (adaptive-compute consumer)
-    status: PARTIAL
-    reconciliation: "Reconciled 2026-09-30: thresholds measured on the one real dataset (docs/engineering/DETAIL_CALIBRATION.md, detail_threshold_measurements.json): planarity plateau, voxel size and curvature cliffs. Empirical initial thresholds; additional real datasets required for universal calibration. Open code follow-ups: derive voxel size from scene extent when scale is relative; withhold GSD level bands when scale is not metric."
+    status: BLOCKED
+    reconciliation: "Reconciled 2026-10-02: engineering COMPLETE; universal calibration is BLOCKED on external data. Implemented: the quality report and budget are scale-aware (a non-metric world gets NO mm GSD, NO fine/medium/coarse tier and NO GSD level band -- gsd_basis 'unavailable', level from multi-view coverage only, never L4); the voxel is derived from the ROBUST scene extent (1st-99th percentile diagonal) for relative scale and stays 1.0 m for metric; the vertical slice always passes the world's real scale state (an unstated scale is treated as NOT metric). 15 tests (tests/test_detail_scale.py) incl. exact invariance of the whole chain under the arbitrary unit. Calibration (docs/engineering/DETAIL_CALIBRATION.md): the 2026-09-30 table used a bounding-box extent 10x too large; re-measured on the one real dataset (South Building, robust extent 6.32): ROI count falls smoothly with voxel size (no cliff/plateau), planarity is NOT insensitive; 0.16 chosen for continuity, not optimality. Thresholds are EMPIRICAL initial values from ONE scene. BLOCKED: universal calibration needs further real datasets (indoor, other cameras and scales), none exist in the repo and none were downloaded without permission."
     basis: >-
       perception/quality/detail_budget.py — the first consumer of the
       measured evidence-quality report (universal-perception directive
@@ -1129,17 +1128,11 @@ tasks:
       - tests/test_detail_refinement.py: 19 tests (measured plane/sphere residuals + degenerate refusals, refine-on-resolvable-evidence, refusal naming missing ids, tier=none never fits, high-tier escalation counters, determinism + non-mutation, all-refused honesty, apply_outcomes transitions + unknown-id tolerance, end-to-end pipeline driver incl. empty scene, vertical-slice stage 3.8 ran/skipped/intrinsics-gate)
       - tests/test_detail_worldir.py: 9 tests (refined outcome -> entity+geometry with linkage and measured confidence, geometry typed by winning backend + lod_level from budget, provenance observation answers what produced this incl. DERIVED statement state, refused ROI records fact not geometry, determinism + validate-clean, mixed refined/refused, pipeline build_world_ir flag incl. off-path, vertical-slice stage integrates into the real world)
       - eigensolver validated against numpy.linalg.eigvalsh (200-trial, 1e-9)
-    open: >-
-      PARTIAL, not DONE: STALE ITEMS RECONCILED 2026-09-22 --
-      per-cell GSD budgets CLOSED 2026-09-21 (see P7-05: assessor
-      records per-point GSD; discovery._cell_budget medians the cell's
-      own measurements) and the adaptive subdivision planner CLOSED
-      2026-09-22 (P7-05-ADAPTIVE-SUBDIVISION DONE:
-      perception/detail/subdivision.py, 9 tests incl. real
-      south-building points). Remaining: thresholds (voxel size,
-      curvature, GSD bands) untuned against real datasets (deferral
-      documented at each threshold); detail statements are not yet
-      persisted by a WorldStore consumer (P11 scope).
+    limitations: >-
+      Reconciled 2026-10-02: NOTHING in this task is open. Per-cell GSD budgets (2026-09-21), the adaptive
+      subdivision planner (P7-05-ADAPTIVE-SUBDIVISION) and WorldStore persistence of detail statements
+      (tests/test_detail_worldstore.py) are all delivered. The only caveat is that thresholds are empirical, calibrated
+      on one real dataset -- tracked under P7-05, not here.
     real_data_verification: >-
       2026-09-17, room_capture_mvs fused.ply (294,345 points, real CUDA
       COLMAP MVS output), metricized via anchor_metric_scale against the
@@ -1487,12 +1480,11 @@ tasks:
         randomized worlds and chunk_size choices"
       - "benchmarks/spatial_index_bench.py: real measured grid-vs-brute
         timing at n up to 50,000"
-    open: >
-      R-tree-class indexing for large chunk counts, chunk-based mesh
-      compilation + boundary welding, and WorldIR partitioning metadata
-      remain MISSING (correctly deferred -- see P13-02 and
-      LARGE_WORLD.md items 2-4, which require real mesh-stitching logic
-      not improvised here).
+    limitations: >
+      Reconciled 2026-10-02: WorldIR partitioning metadata IS implemented (worldstore/tiles.py
+      save_version_partitioned / save_version_partitioned_delta, tests/test_partitioned_persistence.py) and paging is
+      P13-02. NOT implemented, and outside this task's "where appropriate" scope: R-tree-class indexing for very large
+      chunk counts, and chunk-based mesh compilation with boundary welding (needs real mesh-stitching logic).
 
   - id: P13-02
     name: LOD + streaming + artifact paging
@@ -1623,7 +1615,7 @@ tasks:
 
   - id: P16-01
     name: downstream world compilers
-    status: DONE
+    status: PARTIAL
     basis: >-
       glTF/Blender/USD exporters exist and are tested. Completed
       2026-09-18: CityJSON 1.1 writer (exporters/cityjson/exporter.py
@@ -1650,9 +1642,10 @@ tasks:
         classes, parsed back via ifcopenshell"
       - "tests/test_citygml_exporter.py: CityGML 2.0 writer (see
         P14-01 completion note)"
+    reconciliation: "Reconciled 2026-10-02: downgraded DONE -> PARTIAL. The scope names 11 targets; writers exist and are tested for Blender, USD, glTF, IFC, CityGML and CityJSON (plus a citydb exporter under P14-01); there is NO writer for GIS (GeoJSON exists only as an IMPORT path), ROS, Habitat, SUMO, Unreal or Godot, so DONE overstated it."
     open: >-
-      ROS/Habitat/SUMO/Unreal/Godot writers remain as follow-through
-      adapters; 3DCityDB (database export) tracked under P14-01.
+      REMAINING ENGINEERING: GIS export, ROS, Habitat, SUMO, Unreal and Godot writers (none exist). 3DCityDB (database export) is
+      tracked under P14-01.
 
   # ================= PHASE 17 — WORLD SIMULATION =====================
 
@@ -1750,7 +1743,7 @@ tasks:
   - id: PROD-01
     name: one-action evidence-progressive reconstruction (photos -> world -> better world)
     status: PARTIAL
-    reconciliation: "Reconciled 2026-09-30: metric scale (ScaleReference + API + reliability test), single-image openings (engine/pipeline/openings.py), stable entity identity (world_ir/entity_reid.py), conservative confidence defaults (0.5 = not measured) and judged automatic dense Level 3 (engine/pipeline/dense_judge.py, tests/test_dense_arbitration.py) are all IMPLEMENTED and unit-tested -- the 'remaining' list below is stale except for real-data evidence. Slow real-COLMAP journeys re-run 2026-09-30/10-01 on real South Building photos with dense default-on: progressive_product_journey + continuous_evidence 15 passed / 1 failed; reliability_journey 12 passed / 2 failed, of which one real defect (a fault after version adoption failed the job and the retry adopted a duplicate version) is FIXED in apps/api/jobs.py and its test passes. Still failing: (1) continuous_evidence::test_a_rich_world_is_extended_incrementally -- PRE-EXISTING at HEAD: the arbiter picks 'full' over 'incremental' when registration ties and the full rebuild has one more refined/extended/new entity, losing frame preservation (DECIDED (owner): frame preservation outranks that tie-break once a HEAD exists -- fixed in candidate_selection._new_understanding; test now passes, 18 passed with the failure-injection suite); (2) reliability_journey kill_after_s=30: the job now finishes before the kill, so the test refuses to prove anything (timing precondition, not a product defect). REAL DENSE RUN (RTX 4050, COLMAP 4.2.0 CUDA, 6 South Building photos through the product path): gate passed, dense ran for real (74.2x denser), judge ruled EQUIVALENT (13% new surface < 25% threshold) so the sparse world was kept; with 16 photos only 6 registered (38% < 80%) so the gate correctly refused dense. DECIDED (owner): pure density gain (>=10x, structure retained) counts as an improvement; re-run: Level 3 reached with 84,104 fused dense points on the same six photos, 16-photo case still refused by the gate. No real corridor/room photo dataset exists; frontend typecheck/build not run (no node_modules in this worktree)."
+    reconciliation: "Reconciled 2026-10-02 (final sprint). VERIFIED on real South Building photos, real COLMAP 4.2.0 (CUDA) and MiDaS: tests/integration full directory 136 tests -- 135 passed first run + the 1 failure (a test-harness bug in the new ordering test, fixed and re-run green) / 14 skipped, all in test_system_runtime_proof (gitignored SYNTHETIC room fixtures not generated locally: 13 + 1). Scenario evidence: (A) 6->10->20 photos keep one world, chained immutable versions, geometry diff; (B/C) arbitration through WorldArbiter -- more cameras never wins against lost surfaces or drifted cameras, either way round; (D) a candidate that re-expresses HEAD's coordinate frame loses unless it places >= 2 more photos (candidate_selection.frame_shift, provisional tolerances); (E/F) 8 stage-synchronised real kills (evidence_staged, colmap_staged, worldir_created, candidate_evaluated, before_adoption, during_adoption, version_persisted, colmap_current_updated) -- the test FAILS if the stage is never reached; before adoption HEAD, lineage and the COLMAP base stay V1's, during adoption the orphan is quarantined, after adoption HEAD is a valid readable V2; (G) retry is safe -- found and fixed two real defects: an orphan version became a phantom + duplicate (adoption intent + quarantine + verify-before-adopt, apps/api/worldstore_service.py) and a job killed just after adoption minted a duplicate V3 from identical evidence (world_delta.is_unchanged); (H) evidence order ABC vs BAC: same 7 entity types, 0 registered-photo difference, shared cameras agree to 0.0006 of scene extent (tolerance 0.01). Dense Level 3 reached on real photos (84,104 fused points, owner-decided density rule); the 16-photo case is refused by the gate. Frontend: tsc 0, next build 0, contract test 0; the Studio now shows sparse/dense with the reason and an 'already up to date' state. Weak test removed: reliability_journey kill_after_s=30 (timing race) replaced by the stage-synchronised boundaries."
     basis: >-
       2026-09-29. POST /api/reconstructions + GET /api/worlds/{id}/status;
       level ladder (single-image bootstrap -> COLMAP sparse -> topology ->
@@ -1766,11 +1759,6 @@ tasks:
         (pipe-deadlock regression), tests/test_world_diff.py"
       - "frontend tsc --noEmit + next build --webpack + real-browser run"
     remaining:
-      - "real corridor and room photo datasets (none in repo) -- UNVERIFIED"
-      - "dense Level 3 wiring; metric scale anchoring from user input"
-      - "opening (window/door) detection in the single-image path"
-      - "stable entity identity across versions (entity_reid) so V1->V2 diffs
-        report modification instead of remove+add"
-      - "Observation/Relationship constructor confidence defaults (1.0)
-        audited; producers fixed, defaults left for a dedicated pass"
-
+      - "ENGINEERING: per-version evidence panel while inspecting an old version (per the PROD.1 registry entry; not re-checked this sprint)"
+      - "EXTERNAL DATA (UNVERIFIED): no real corridor or real room photograph dataset exists in the repo; the 4 indoor photos outside it have unverified provenance and were not used"
+      - "Observation/Relationship constructor confidence defaults (1.0) audited; producers fixed, defaults left for a dedicated pass (PROD.3)"

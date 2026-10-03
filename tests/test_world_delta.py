@@ -309,3 +309,15 @@ def test_physical_summary_reports_not_available_with_the_reason_instead_of_inven
     d = wd.compute_delta(snap(["a", "b", "c"]), snap(["a", "b", "c", "d"]))
     phys = wd.physical_changes(d)
     assert phys["available"] is False and "entity continuity" in phys["reason"]
+
+
+def test_an_identical_rerun_is_unchanged_but_anything_new_is_not():
+    prev = snap(["a", "b", "c", "d"], level=2)
+    same = snap(["a", "b", "c", "d"], level=2)
+    assert wd.is_unchanged(prev, same, wd.compute_delta(prev, same))
+    for cand in (snap(["a", "b", "c", "d", "e"], level=2),                       # a newly placed photo
+                 snap(["a", "b", "c"], inputs=["a", "b", "c", "d"], level=2),       # a photo lost
+                 snap(["a", "b", "c", "d"], inputs=["a", "b", "c", "d", "x"], level=2),  # new waiting evidence
+                 snap(["a", "b", "c", "d"], level=3)):                              # a higher level (e.g. dense)
+        assert not wd.is_unchanged(prev, cand, wd.compute_delta(prev, cand))
+    assert not wd.is_unchanged(None, same, wd.compute_delta(None, same))            # first version is never "unchanged"

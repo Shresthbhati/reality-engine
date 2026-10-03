@@ -458,6 +458,19 @@ def reconcile_conflicts(prev_conflicts: Optional[List[dict]], delta: dict, tag: 
     return _carry_to_candidate_frame(conflicts, delta)
 
 
+def is_unchanged(prev: Optional[dict], cand: dict, delta: dict) -> bool:
+    """True when the candidate adds NOTHING to HEAD: the same evidence, the same photographs placed, nothing lost,
+    the same reconstruction level. Re-running a job whose version was already adopted (a worker killed just after
+    adoption) lands here; minting a version for it would be a meaningless duplicate. A new scale reference, a new
+    photograph, a newly placed photograph or a higher level all make the candidate genuinely different."""
+    if prev is None or delta.get("first_version"):
+        return False
+    ev = delta["evidence"]
+    return (not ev.get("new_input") and not ev["gained"] and not ev["lost"]
+            and set(prev["input_ids"]) == set(cand["input_ids"])
+            and prev.get("level") == cand.get("level"))
+
+
 def decide(delta: dict, conflicts: Optional[List[dict]] = None) -> dict:
     """ACCEPT / ACCEPT_WITH_UNCERTAINTY / REJECT, each reason citing a measured fact."""
     if delta.get("first_version"):

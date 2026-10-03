@@ -248,6 +248,7 @@ def _cell_budget(
         view_counts=cell_views,
         unprojectable_point_ids=(),
         overclaim_count=0,
+        scale_state=report.scale_state,
     ))
 
 

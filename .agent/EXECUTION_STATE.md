@@ -3,6 +3,25 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-10-02/03 -- Final engineering/verification sprint (worktree reality-engine-final-sprint-2b170d)
+
+Ledger after: DONE 36 / PARTIAL 2 (PROD-01, P16-01) / BLOCKED 5 (P1-03 hardware, P3-02 VIO backend, P7-03 real indoor
+data, P7-05 universal calibration data, P14-01 3DCityDB runtime) / MISSING 0. P16-01 was downgraded DONE->PARTIAL (GIS export,
+ROS, Habitat, SUMO, Unreal, Godot writers do not exist); P7-05 moved PARTIAL->BLOCKED (engineering complete, data-blocked).
+
+Verified (observed): full non-slow suite 2776 passed / 0 failed / 28 skipped / 74 deselected; tests/integration (real COLMAP +
+MiDaS, South Building) 135 passed + 1 harness bug fixed and re-run green / 14 skipped (13+1 gitignored synthetic fixtures); 8 real
+stage-synchronised process kills pass; ordering ABC vs BAC equivalent (camera residual 0.0006); compileall 0; frontend tsc 0 /
+build 0 / contract test 0 / lint 10 errors (pre-existing, files untouched).
+
+Found and fixed (real defects): (1) orphan WorldStore version -> phantom + duplicate; HEAD move leaked via caller commit
+(adoption intent/quarantine/verify-before-adopt); (2) a job killed after adoption minted a duplicate version (is_unchanged);
+(3) frame-blind arbitration (frame_shift rule); (4) detail stage assumed arbitrary units are metres (scale-aware budget +
+robust-extent voxel; the old bbox "extent" was 10x inflated); (5) .gitignore `_*` kept exporters/citydb/__init__.py out of the repo.
+
+Next priorities: per-version evidence panel (PROD-01); GIS/ROS/Habitat/SUMO/Unreal/Godot writers (P16-01); real corridor/room
+photo datasets and further calibration data (need external data); retention policy for quarantined versions.
+
 ## 2026-09-30 -- Closure sprint: ledger reconciled against code and tests (PR #140)
 
 Ledger after: DONE 37 / PARTIAL 2 (P7-05, PROD-01) / BLOCKED 4 (P1-03 hardware, P3-02 VIO backend, P7-03 real indoor

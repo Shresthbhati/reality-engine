@@ -601,6 +601,45 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         if arb:  # both candidates were judged as worlds: say which won and on what measured fact
             changes.insert(1, f"Chose the {arb['choice']} reconstruction over the {'full' if arb['choice'] == 'incremental' else 'incremental'} "
                               f"candidate: {arb['why']}.")
+    prev_scale0 = ((head_report.get("stages") or {}).get("scale")) or {}
+    unchanged = (adopt and world.current_version_id is not None
+                 and world_delta.is_unchanged(world_delta.snapshot_from_report(head_report), cand_snap, delta)
+                 and prog.scale_state == prev_scale0.get("state")
+                 and prog.meters_per_unit == prev_scale0.get("meters_per_unit"))
+    if unchanged:
+        # Nothing new to say about this world (typically: the job was killed right after adopting its version and
+        # ran again). No version is minted; the adopted one stands. The COLMAP base catches up only when this run
+        # kept HEAD's coordinate frame -- a re-solved frame must never become the base of later incremental runs.
+        colmap_info = prog.stage_facts.get("colmap_session") or {}
+        if holder.get("session") is not None:
+            try:
+                if colmap_info and colmap_info.get("frame") == "preserved":
+                    holder["session"].commit()
+                else:
+                    holder["session"].discard()
+            except Exception:  # noqa: BLE001 -- derived state; the next run rebuilds it
+                log.warning("job %s: COLMAP state not advanced on an unchanged run", job.id)
+        _record_registration(
+            [ev for (ev, _), ei in zip(resolved, eval_inputs) if ei.facts.geometry_eligible],
+            job.id, set(prog.registered_ids), True,
+        )
+        session.world_id = world.id
+        session.status = "complete"
+        session.processing_completed_at = utcnow()
+        for other in (await db.execute(select(Session).where(
+                Session.id.in_({ev.session_id for ev, _ in resolved if ev.session_id} - {session.id}),
+                Session.status == "processing"))).scalars().all():
+            other.status = "complete"
+            other.processing_completed_at = utcnow()
+        job.payload = {
+            "world_id": world.id, "version_id": world.current_version_id, "adopted": False, "unchanged": True,
+            "validated": True, "outcome": "succeeded", "verdict": decision["verdict"],
+            "changes": ["No change: this evidence is already fully reflected in the current version."],
+            "level": prog.level, "level_name": prog.level_name, "model_state": prog.model_state,
+            "registration_status": prog.registration_status, "skipped_evidence": skipped_evidence,
+        }
+        await db.commit()
+        return "succeeded"
     # Every geometry-eligible photo records THIS attempt, adopted or not: a photo
     # that could not be placed is "waiting", never discarded, and is retried on
     # the next rebuild (a later photo may be the missing bridge).

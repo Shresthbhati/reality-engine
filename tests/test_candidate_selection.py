@@ -5,6 +5,8 @@ Model-free: snapshots are plain dicts run through the same world_delta machinery
 
 from __future__ import annotations
 
+import pytest
+
 from engine.pipeline import candidate_selection as cs
 from engine.pipeline import world_delta as wd
 from tests.test_world_delta import _ent, ring, snap
@@ -121,3 +123,114 @@ def test_without_an_established_frame_new_understanding_still_decides():
                          "uncertainties": 0, "registered": 7, "new_understanding": 1, "first_version": True}}
     full = {**base, "measures": {**base["measures"], "new_understanding": 2}}
     assert cs.choose(base, full)["choice"] == "full"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# The ARBITRATION BOUNDARY: the object the COLMAP backend actually consults (WorldArbiter.assess/choose on whatever
+# its to_snapshot returns for a reconstruction result), not the helpers it is built from.
+# ----------------------------------------------------------------------------------------------------------------
+
+import math  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+
+class _Result:
+    """Stands in for a ReconstructionResult: the arbiter only ever hands it to ``to_snapshot``."""
+
+    def __init__(self, snapshot):
+        self.snapshot = snapshot
+
+
+def _arbiter(prev=None):
+    return cs.WorldArbiter(prev if prev is not None else _prev(), None, lambda res: res.snapshot)
+
+
+def _arbitrate(inc_snapshot, full_snapshot, prev=None):
+    arb = _arbiter(prev)
+    return arb.choose(arb.assess(_Result(inc_snapshot), "incremental"), arb.assess(_Result(full_snapshot), "full"))
+
+
+def _in_new_frame(snapshot, *, deg=90.0, scale=2.5, shift=(10.0, -4.0, 3.0)):
+    """The SAME world expressed in another coordinate frame (what a COLMAP full re-solve produces)."""
+    th = math.radians(deg)
+    rot = np.array([[math.cos(th), -math.sin(th), 0], [math.sin(th), math.cos(th), 0], [0, 0, 1]])
+
+    def mv(p):
+        return (scale * rot @ np.asarray(p, float) + np.asarray(shift)).tolist()
+
+    out = dict(snapshot)
+    out["cameras"] = {k: mv(v) for k, v in snapshot["cameras"].items()}
+    out["entities"] = [dict(e, center=mv(e["center"])) for e in snapshot["entities"]]
+    return out
+
+
+def test_the_arbiter_incremental_candidate_that_registers_more_cameras_but_loses_the_world_is_rejected():  # B
+    inc = _cand(extra=["g", "h"], walls=WALLS[:1])               # 8 placed, three established walls not reproduced
+    full = _cand(extra=["g"])                                    # 7 placed, every wall preserved
+    out = _arbitrate(inc, full)
+    assert out["choice"] == "full" and out["deciding"] == "established surfaces lost"
+    arb = _arbiter()
+    assert arb.assess(_Result(inc), "i")["measures"]["registered"] > arb.assess(_Result(full), "f")["measures"]["registered"]
+
+
+def test_the_arbiter_full_candidate_that_registers_more_cameras_but_loses_continuity_is_rejected():  # C
+    drifted = {k: list(v) for k, v in CAMS.items()}
+    drifted["e0"][0] += 3.0                                      # an established camera jumped in the full re-solve
+    inc = _cand(extra=["g"])                                     # stable, 7 placed
+    full = _cand(extra=["g", "h", "i"], cams=drifted)            # 9 placed but the established world moved
+    out = _arbitrate(inc, full)
+    assert out["choice"] == "incremental" and out["deciding"] in ("established surfaces lost", "unsupported moves / conflicts", "camera stability")
+    # and the other side of the same coin: it is continuity, not "incremental is always preferred"
+    clean_full = _cand(extra=["g", "h", "i"])
+    assert _arbitrate(inc, clean_full)["choice"] == "full"
+
+
+def test_the_frame_shift_of_an_identical_frame_is_zero_and_of_a_moved_frame_is_measured():
+    arb = _arbiter()
+    same = arb.assess(_Result(_cand(extra=["g"])), "x")["measures"]
+    assert same["frame_changed"] is False and same["frame_shift"]["rotation_deg"] < 1e-3
+    moved = arb.assess(_Result(_in_new_frame(_cand(extra=["g"]))), "x")["measures"]
+    fs = moved["frame_shift"]
+    assert moved["frame_changed"] is True
+    assert fs["rotation_deg"] == pytest.approx(90.0, abs=0.1) and fs["scale_change"] == pytest.approx(math.log(2.5), abs=1e-3)
+    # the geometry check itself is blind to this by design: nothing was lost, nothing drifted
+    assert moved["cameras_lost"] == 0 and moved["structural_lost"] == 0 and (moved["camera_drift"] or 0) < 1e-3
+
+
+def test_comparable_geometry_in_a_needlessly_new_frame_keeps_the_established_frame():  # D
+    """HEAD exists. The full re-solve is the same world (nothing lost or drifted) with ONE more photo placed, but it
+    re-expresses everything in a new coordinate frame. Before the frame rule 'useful evidence placed' made it win."""
+    inc = _cand(extra=["g"])                                     # 7 placed, HEAD's frame
+    full = _in_new_frame(_cand(extra=["g", "h"]))                # 8 placed, new frame
+    out = _arbitrate(inc, full)
+    assert out["choice"] == "incremental" and out["deciding"] == "coordinate frame preserved", out
+    # symmetric: the roles do not matter, the frame-preserving candidate wins either way round
+    arb = _arbiter()
+    swapped = arb.choose(arb.assess(_Result(full), "incremental"), arb.assess(_Result(inc), "full"))
+    assert swapped["choice"] == "full" and swapped["deciding"] == "coordinate frame preserved"
+
+
+def test_a_material_gain_in_evidence_justifies_replacing_the_frame_and_says_so():
+    inc = _cand(extra=["g"])                                     # 7 placed
+    full = _in_new_frame(_cand(extra=["g", "h", "i"]))           # 9 placed (+2 == FRAME_CHANGE_MIN_EXTRA_PHOTOS)
+    out = _arbitrate(inc, full)
+    assert out["choice"] == "full" and out["deciding"] == "useful evidence placed"
+    assert "coordinate frame is replaced" in out["why"]
+
+
+def test_a_new_frame_never_outranks_established_geometry_in_either_direction():
+    lossy_new_frame = _in_new_frame(_cand(extra=["g", "h"], walls=WALLS[:1]))
+    assert _arbitrate(_cand(extra=["g"]), lossy_new_frame)["deciding"] == "established surfaces lost"
+    good_new_frame = _in_new_frame(_cand(extra=["g"]))
+    lossy_kept_frame = _cand(extra=["g", "h"], walls=WALLS[:1])
+    out = _arbitrate(lossy_kept_frame, good_new_frame)               # the frame-preserving one lost walls
+    assert out["choice"] == "full" and out["deciding"] == "established surfaces lost"
+
+
+def test_frame_preservation_does_not_apply_without_an_established_frame_to_lose():
+    arb = cs.WorldArbiter(None, None, lambda res: res.snapshot)
+    a = arb.assess(_Result(_cand(extra=["g"])), "i")
+    b = arb.assess(_Result(_in_new_frame(_cand(extra=["g", "h"]))), "f")
+    assert a["measures"]["frame_changed"] is None and b["measures"]["frame_changed"] is None
+    assert cs.choose(a, b)["choice"] == "full"                       # first version: evidence placed decides

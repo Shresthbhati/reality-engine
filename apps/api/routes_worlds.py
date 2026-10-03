@@ -909,9 +909,13 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         store_path.mkdir(parents=True, exist_ok=True)
     store = WorldStore(str(store_path))
 
+    from apps.api import worldstore_service as _wss
+
+    adoption_id = _wss.begin_adoption(w.id, effective_parent)
     try:
-        stored = store.save_version(worldir, parent=effective_parent)
+        stored = store.save_version(worldir, parent=effective_parent, version_id=adoption_id)
     except WorldStoreError as exc:
+        _wss.abandon_adoption(adoption_id)
         msg = str(exc)
         if "unknown version" in msg:
             raise HTTPException(404, msg)
@@ -935,6 +939,7 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
     )
     if head_update.rowcount == 0:
         current = (await db.get(World, w.id)).current_version_id
+        _wss.abandon_adoption(adoption_id)
         raise HTTPException(
             409,
             f"HEAD moved during commit (now '{current}'); "
@@ -969,12 +974,13 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
     try:
         await db.commit()
     except Exception as exc:
-        # The version file may already exist on disk (harmless orphan,
-        # never adopted, visible to resync) -- but HEAD never moved and
-        # no mirror row exists, so report explicitly instead of a bare 500.
+        # HEAD never moved and no mirror row exists: the version just written is quarantined (never adopted,
+        # never a phantom in the version list), and the failure is reported explicitly instead of a bare 500.
+        _wss.abandon_adoption(adoption_id)
         raise HTTPException(
             503, f"database unavailable; commit not adopted: {exc}"
         )
+    _wss.finish_adoption(adoption_id)
 
     return {
         "version_id": stored.version_id,

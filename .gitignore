@@ -40,3 +40,6 @@ dist/
 tmpcheck.py
 security_audit_report.json
 .audit_*.txt
+
+# stray COLMAP database written to the cwd by ad-hoc colmap runs
+/db.db

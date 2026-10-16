@@ -627,6 +627,40 @@ class CommitRequest(BaseModel):
     commit_message: str | None = None
 
 
+def _assert_all_finite(value, field: str) -> None:
+    """A literal NaN/Infinity in a stored world is not valid JSON: the browser's JSON.parse rejects the whole
+    /worldir response. Python's json accepts the tokens on the way in, so every number is checked here."""
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise HTTPException(422, f"field '{field}' contains a non-finite number (NaN/Infinity)")
+    elif isinstance(value, dict):
+        for v in value.values():
+            _assert_all_finite(v, field)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _assert_all_finite(v, field)
+
+
+def _validate_transform(value: dict) -> dict:
+    """{position: {x,y,z}, rotation: {w,x,y,z}} -- finite real numbers, a unit quaternion, nothing else."""
+    if set(value) != {"position", "rotation"}:
+        raise HTTPException(422, "field 'transform' must be exactly {position: {x,y,z}, rotation: {w,x,y,z}}")
+    out: dict = {}
+    for part, axes in (("position", "xyz"), ("rotation", "wxyz")):
+        sub = value[part]
+        if not isinstance(sub, dict) or set(sub) != set(axes):
+            raise HTTPException(422, f"transform.{part} must have exactly the numeric keys {list(axes)}")
+        for a in axes:
+            v = sub[a]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise HTTPException(422, f"transform.{part}.{a} must be a finite number")
+        out[part] = {a: float(sub[a]) for a in axes}
+    norm = math.sqrt(sum(out["rotation"][a] ** 2 for a in "wxyz"))
+    if abs(norm - 1.0) > 1e-3:
+        raise HTTPException(422, f"transform.rotation must be a unit quaternion (norm {norm:.4g})")
+    return out
+
+
 def _validate_commit_changes(changes: dict) -> dict:
     """Validate a correction payload. Returns sanitized {field: value};
     raises 422/413 naming the offending field -- never silently drops."""
@@ -652,6 +686,7 @@ def _validate_commit_changes(changes: dict) -> dict:
             raise HTTPException(
                 413, f"field '{key}' exceeds {_MAX_COMMIT_VALUE_BYTES} bytes"
             )
+        _assert_all_finite(value, key)
         if key == "name":
             if not isinstance(value, str) or not value or len(value) > 300:
                 raise HTTPException(
@@ -690,7 +725,7 @@ def _validate_commit_changes(changes: dict) -> dict:
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):
                 raise HTTPException(422, f"field '{key}' must be an object")
-            validated[key] = dict(value)
+            validated[key] = _validate_transform(value) if key == "transform" else dict(value)
         elif key == "relationships":
             if not isinstance(value, list) or len(value) > 100:
                 raise HTTPException(
@@ -784,7 +819,15 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         elif key == "semantic_labels":
             entity.semantic_labels = value
         elif key == "custom_properties":
-            entity.custom_properties = value
+            # `reconstruction` is the pipeline's own build trace (session, backend, level): a correction may add or
+            # change anything else, but it may not erase or rewrite the provenance of what the engine built.
+            new_props = dict(value)
+            trace = (entity.custom_properties or {}).get("reconstruction")
+            if trace is not None:
+                if "reconstruction" in new_props and new_props["reconstruction"] != trace:
+                    raise HTTPException(422, "custom_properties.reconstruction is pipeline-owned and cannot be rewritten")
+                new_props["reconstruction"] = trace
+            entity.custom_properties = new_props
         elif key == "transform":
             entity.transform = value
         elif key == "relationships":

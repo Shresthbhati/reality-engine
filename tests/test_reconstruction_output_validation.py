@@ -76,3 +76,25 @@ def test_a_non_finite_point_is_refused_not_compiled():
     pts[0] = ReconstructedPoint(position=(math.inf, 0.0, 0.0), track_id="bad", source_evidence_ids=["ev-0"])
     with pytest.raises(VerticalSliceError, match="non-finite"):
         _run(points=pts)
+
+
+def test_only_registered_photos_are_published_as_cameras():
+    """A level-0 fusion lays unrelated single-view hypotheses out side by side for display; their 'poses' are not
+    registrations and must not be served from /cameras as if COLMAP had placed those photographs."""
+    from types import SimpleNamespace
+
+    from apps.api.jobs import _registered_camera_poses
+
+    poses = (
+        ("ev-a", (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)),
+        ("ev-b", (4.5, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)),
+        ("ev-c", (9.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)),
+    )
+    fused = SimpleNamespace(camera_poses=poses, registered_ids=[])
+    assert _registered_camera_poses(fused) == []
+    multiview = SimpleNamespace(camera_poses=poses, registered_ids=["ev-a", "ev-b", "ev-c"])
+    assert _registered_camera_poses(multiview) == list(poses)
+    lone = SimpleNamespace(camera_poses=poses[:1], registered_ids=["ev-a"])
+    assert [p[0] for p in _registered_camera_poses(lone)] == ["ev-a"]
+    partial = SimpleNamespace(camera_poses=poses, registered_ids=["ev-b"])
+    assert [p[0] for p in _registered_camera_poses(partial)] == ["ev-b"]

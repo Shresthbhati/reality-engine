@@ -735,7 +735,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
 
     points_bytes = await asyncio.to_thread(_render_points_ply, prog.points)
     cameras_bytes = await asyncio.to_thread(
-        _render_cameras_json, prog.camera_poses, prog.scale_state, options.image_size
+        _render_cameras_json, _registered_camera_poses(prog), prog.scale_state, options.image_size
     )
 
     base_head = world.current_version_id
@@ -891,6 +891,14 @@ def _render_points_ply(points) -> bytes:
     for p in points:
         body += struct.pack("<3f", float(p[0]), float(p[1]), float(p[2]))
     return header + bytes(body)
+
+
+def _registered_camera_poses(prog) -> list:
+    """Camera poses of photographs that were actually REGISTERED. A level-0 fusion lays unrelated single-view
+    hypotheses side by side purely for display ('relative placement between photographs is UNKNOWN'); serving those
+    as cameras told the Studio COLMAP had placed photographs it never registered."""
+    registered = set(prog.registered_ids)
+    return [p for p in prog.camera_poses if p[0] in registered]
 
 
 def _render_cameras_json(camera_poses, scale_state: str, image_size) -> bytes:

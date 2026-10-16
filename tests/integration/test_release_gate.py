@@ -263,7 +263,8 @@ def test_release_gate_real_photos_to_corrected_v2_and_honest_failure(tmp_path, m
         # ---- 13. malformed reconstruction output can never become a version, and HEAD stays V2
         monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.integration.test_release_gate:_NanPoseBackend")
         extra = _post(c, [IMGS[21]], world_id=wid)
-        bad_job, bad_seen = _watch_job(c, extra["job_id"], timeout=600.0)
+        # the refused multi-view run falls back to single-image depth (MiDaS) over every photo: ~10-25 min on CPU
+        bad_job, bad_seen = _watch_job(c, extra["job_id"], timeout=2400.0)
         monkeypatch.delenv("REALITY_TEST_BACKEND")
         assert bad_job["status"] != "succeeded" or bad_job["payload"].get("adopted") is False, (bad_job, bad_seen)
         assert c.get(f"/api/worlds/{wid}").json()["current_version_id"] == v2

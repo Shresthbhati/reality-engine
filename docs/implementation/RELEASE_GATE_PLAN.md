@@ -175,8 +175,29 @@ Each track works in its own worktree and branch. Only the integration owner merg
 
 ---
 
-## Appendix A: API contract baseline (filled in during Phase 3)
+## Appendix A: API contract baseline (filled in during Phase 3, 2026-10-16)
+
+Shapes are observed from a live in-process run (`REALITY_TEST_BACKEND` seam), error codes from the handlers. All routes are under `/api`.
 
 | Route | Request | 2xx shape | Error codes | Frontend caller | Mismatch |
 |---|---|---|---|---|---|
-| | | | | | |
+| `POST /uploads` | multipart `file`; `?session_id=` | 201 `{upload_id, evidence_id, job_id, checksum}` (checksum = sha256 of the original bytes) | 400 empty; 413 over `UPLOAD_MAX_BYTES` (default 1 GiB) | `lib/api` `UploadResult` | none |
+| `POST /reconstructions` | multipart `files[]`; form `world_id?, name?, evidence_class?, latitude?, longitude?` | 202 `{world_id, session_id, job_id, evidence[], rejected[], coalesced, created_world}` | 422 no files / bad class / lat-lon pair / no usable photo (body has `rejected[]`); 413 >300 files or oversize; 404 unknown `world_id` | `lib/api/reconstructions.ts` | none found |
+| `POST /sessions/{id}/reconstruct` | none | 200 `{job_id, type, status}` | 404; 409 already in progress | `lib/api/sessions.ts` | none |
+| `GET /jobs/{id}` | none | `{id, type, status, stage, attempts, error, worker_id, cancel_requested, entity_type, entity_id, payload{world_id, version_id, registration_status, level, model_state, outcome, degraded[], validated, adopted, verdict, changes[], points, cameras_registered, skipped_evidence[]}}` | 404 | `JobDto` | none (`created_at/started_at/completed_at` optional in UI) |
+| `POST /jobs/{id}/cancel` | none | 200/202 | 404; 409 already terminal | jobs client | none |
+| `GET /worlds/{id}` | none | `{id, name, description, status, latitude, longitude, current_version_id, session_count, created_at}` | 404 | `WorldDto` | none |
+| `GET /worlds/{id}/status` | none | `{world_id, state, state_label, in_progress, job, has_model, model{...}, last_run, evidence[], evidence_summary, guidance[], versions[], failure}` | 404 | `lib/api/reconstructions.ts` | none found |
+| `GET /worlds/{id}/versions` | none | `{items:[{id, world_id, parent_version_id, artifact_uri, artifact_hash, source_session_ids, changed_entity_ids, created_at, is_current}]}` newest first | 404 | `WorldVersionDto` | none |
+| `GET /worlds/{id}/worldir` | `?version=` | full `WorldIR.to_dict()` (adds `environment`, `physics`; entities carry `custom_properties`, `relationships`, `uncertainty`) | 404; 409 artifact unreadable | `WorldIRDto`, `types/worldir.ts` | UI DTO omits `environment`/`physics` (UI never reads them: harmless) |
+| `GET /worlds/{id}/points` | `?version=` | PLY stream (`application/octet-stream`) | 404 no renderable points (honest empty); 409 | viewport | none |
+| `GET /worlds/{id}/cameras` | `?version=` | `{frame, rotation_convention, image_size, version_id, cameras:[{evidence_id, position_m[3], rotation_wxyz[4]}]}` | 404 | `types/worldir.ts` `CamerasPayload` | **FIXED**: `lib/api/types.ts` held a second `CamerasPayload` (`entity_id`, `{x,y,z}`) that the API never sent; `getWorldCameras` now returns the real type and the wrong DTO is deleted |
+| `POST /worlds/{id}/commit` | `{entity_id, changes{}, parent_version_id?, commit_message?}` | 200 `{version_id, world_id, entity_id, changed_fields[], duplicate}` | 404 world/entity/version; 409 stale parent or HEAD moved; 413/422 invalid change (confidence out of [0,1], non-finite, bad relationship, unknown id); 503 DB failure. HEAD never moves on failure | `commitWorldCorrection` | **FIXED**: `CommitResponse` omitted `duplicate`. Handoff (Phase 6): `SpatialWorkstation` still shows a duplicate retry like a new version; surface `duplicate` honestly |
+| `GET /worlds/{id}/diff` | **`?base=<version>&head=<version>`** (not from/to); default head = HEAD, base = its parent | `{from_world_id, to_world_id, summary{entities_*, geometries_*}, categories{...}, entity_diffs[{entity_id, kind, changes[{field, old, new}]}], geometry_diffs[]}` | 404 no HEAD / no base / version missing | `getWorldDiff` | UI `WorldDiffDto` omits `geometries_*` and `categories` (extra fields only). **Phase 4 must call with `base`/`head`** |
+| `POST /worlds/{id}/rollback` | `{version_id}` (required) | 200 `{world_id, version_id, previous_head, note}`: moves HEAD back, history unchanged, no new version | 404; 409 reconstruction in progress or concurrent change; 422 unknown version | rollback caller | none |
+| `GET /evidence/{id}` | none | `{id, name, type, session_id, processing_state, mime_type, size, checksum, created_at, processed_at, metadata{verified, image_facts{width, height, evidence_class, exif{make, model, ...}, gps, geometry_eligible}, registration{...}}, location}` | 404 | `EvidenceDto` | none |
+
+### Phase 3 lifecycle and security results
+- Upload bytes are stored content-addressed (`sha256://`), unchanged: `tests/test_upload_integrity_contract.py` (5 passed). Filenames are sanitised to a basename and never form a path, so traversal cannot leave `STORAGE_ROOT`. Size limit answers 413, file-count limit (300) answers 413, EXIF make/model and the original filename are retrievable.
+- Not enforced (recorded, not changed): `/uploads` has no content-type allowlist (unknown types are classified `dataset`; only `/reconstructions` rejects non-photo input) and no per-session count limit. Decision for the owner if untrusted users are expected.
+- Job cancel: existing tests (`test_cancel_queued_job`, `test_cancelled_run_adopts_nothing`, `test_repeat_cancel_is_idempotent`, `test_cancel_terminal_job_409`) cover terminal state and no version.

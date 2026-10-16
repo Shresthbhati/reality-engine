@@ -371,25 +371,35 @@ function EntityDetails({
 
   // Real, entity-specific trace-to-evidence -- refetched whenever the
   // selected entity (or world) changes.
-  const [provenance, setProvenance] = useState<EntityProvenance | null | undefined>(undefined);
-  const [provenanceError, setProvenanceError] = useState<string | null>(null);
+  // The result is keyed by the entity it belongs to, so a trace for a previous selection is never shown for the current
+  // one, and state is only ever set from the async callbacks (never synchronously inside the effect).
+  const provenanceKey = `${worldId}:${entity.id}`;
+  const [provenanceResult, setProvenanceResult] = useState<{
+    key: string;
+    data: EntityProvenance | null;
+    error: string | null;
+  } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    setProvenance(undefined);
-    setProvenanceError(null);
     fetchEntityProvenance(worldId, entity.id)
-      .then((p) => {
-        if (!cancelled) setProvenance(p);
+      .then((data) => {
+        if (!cancelled) setProvenanceResult({ key: provenanceKey, data, error: null });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setProvenanceError(err instanceof Error ? err.message : "Provenance could not be loaded.");
-        setProvenance(null);
+        setProvenanceResult({
+          key: provenanceKey,
+          data: null,
+          error: err instanceof Error ? err.message : "Provenance could not be loaded.",
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [worldId, entity.id]);
+  }, [worldId, entity.id, provenanceKey]);
+  const currentProvenance = provenanceResult?.key === provenanceKey ? provenanceResult : null;
+  const provenance: EntityProvenance | null | undefined = currentProvenance ? currentProvenance.data : undefined;
+  const provenanceError = currentProvenance?.error ?? null;
   const provenanceLoading = provenance === undefined;
 
   const handleSaveCorrection = async (overrideMode?: string) => {

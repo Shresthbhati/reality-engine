@@ -756,3 +756,37 @@ def test_status_versions_carry_what_each_version_was_built_from(client, tmp_path
         assert set(v["registered_ids"]) <= set(v["evidence_ids"]), "a version cannot place a photo it did not use"
     new = (set(v2["evidence_ids"]) - set(v1["evidence_ids"])).pop()
     assert new in {e["id"] for e in st["evidence"]}, "the photo added after V1 is known to the world"
+
+
+class _NanPoseBackend:
+    """A backend that 'finishes' with a non-finite camera pose: process success is not output validity."""
+
+    def reconstruct(self, evidence):
+        import dataclasses
+        import math
+
+        from tests.test_cli_compile import _TwoViewBackend
+
+        res = _TwoViewBackend().reconstruct(evidence)
+        bad = dataclasses.replace(res.camera_poses[0], position=(math.nan, 0.0, 0.0))
+        return dataclasses.replace(res, camera_poses=[bad, *res.camera_poses[1:]])
+
+
+def test_malformed_reconstruction_output_fails_the_job_and_leaves_head_untouched(client, tmp_path, monkeypatch):
+    """Release gate Phase 2: NaN pose output -> job FAILED with the reason, no new version, HEAD unchanged."""
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    first = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert first["status"] == "succeeded", first.get("error")
+    v1 = first["payload"]["version_id"]
+
+    monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.test_reconstruction_reliability:_NanPoseBackend")
+    r = client.post(
+        f"/api/uploads?session_id={sid}",
+        files={"file": ("frame_09.jpg", b"jpeg-" + b"9" * 8, "image/jpeg")},
+    )
+    assert r.status_code == 201, r.text
+    bad = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert bad["status"] == "failed", bad
+    assert "non-finite camera pose" in (bad.get("error") or ""), bad.get("error")
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] == v1
+    assert [v["id"] for v in client.get(f"/api/worlds/{wid}/versions").json()["items"]] == [v1]

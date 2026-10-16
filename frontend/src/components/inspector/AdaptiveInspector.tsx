@@ -1399,9 +1399,18 @@ function EntityDetails({
 
       {/* 1. ROOM INSPECTOR: Explicit Room Architecture, Boundaries, Openings & Metrics */}
       {(entity.type === "room" || entity.id.startsWith("room")) && (() => {
+        // Lengths are metres only when the world's scale was anchored to a measured reference; otherwise they are
+        // relative model units and must not be printed as metres.
+        const metricScale = world?.metadata?.scale?.state === "metric";
+        const lenUnit = metricScale ? "m" : "units";
+        const areaUnit = metricScale ? "m²" : "units²";
         const area = (entity.custom_properties?.floor_area_m2 as number) || (extentDimensions ? extentDimensions.x * extentDimensions.z : null);
-        const dims = extentDimensions ? `${extentDimensions.x.toFixed(2)} × ${extentDimensions.z.toFixed(2)} × ${extentDimensions.y.toFixed(2)} m` : "—";
+        const dims = extentDimensions ? `${extentDimensions.x.toFixed(2)} × ${extentDimensions.z.toFixed(2)} × ${extentDimensions.y.toFixed(2)} ${lenUnit}` : "—";
         const height = (entity.custom_properties?.height_m as number) || (extentDimensions ? extentDimensions.y : null);
+        const roomStatus = typeof entity.custom_properties?.status === "string" ? (entity.custom_properties.status as string) : null;
+        const roomNotes: string[] = Array.isArray(entity.custom_properties?.notes)
+          ? (entity.custom_properties.notes as unknown[]).filter((n): n is string => typeof n === "string")
+          : [];
 
         const levelId = (entity.parent_id?.startsWith("storey") || entity.parent_id?.startsWith("level"))
           ? entity.parent_id
@@ -1461,15 +1470,22 @@ function EntityDetails({
                 <span>Room Inspector</span>
               </span>
               <span className="font-mono text-[10px] text-neutral-300">
-                {area ? `${area.toFixed(2)} m²` : "—"}
+                {area ? `${area.toFixed(2)} ${areaUnit}` : "—"}
               </span>
             </div>
+
+            {roomStatus === "partial" && (
+              <p className="text-[10px] text-amber-300 bg-amber-400/10 border border-amber-400/30 rounded px-2 py-1" role="status">
+                Partial room: the capture does not fully enclose it.
+                {roomNotes.length > 0 ? ` ${roomNotes.join("; ")}.` : ""}
+              </p>
+            )}
 
             {/* Core Metrics Grid */}
             <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[#0e1013]/60 p-2 rounded border border-neutral-800">
               <div>
                 <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Room Area</span>
-                <span className="text-white font-semibold">{area ? `${area.toFixed(2)} m²` : "—"}</span>
+                <span className="text-white font-semibold">{area ? `${area.toFixed(2)} ${areaUnit}` : "—"}</span>
               </div>
               <div>
                 <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Dimensions (L×W×H)</span>
@@ -1477,7 +1493,7 @@ function EntityDetails({
               </div>
               <div>
                 <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Clear Height</span>
-                <span className="text-white font-semibold">{height ? `${Number(height).toFixed(2)} m` : "—"}</span>
+                <span className="text-white font-semibold">{height ? `${Number(height).toFixed(2)} ${lenUnit}` : "—"}</span>
               </div>
               <div>
                 <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Storey / Level</span>
@@ -1550,7 +1566,11 @@ function EntityDetails({
                   </button>
                 ) : (
                   <span className="text-neutral-500 italic">
-                    {entity.custom_properties?.ceiling_evidence ? "Measured" : "Procedural Extrusion"}
+                    {entity.custom_properties?.ceiling_evidence === "measured"
+                      ? "Measured"
+                      : entity.custom_properties?.ceiling_evidence === "missing"
+                        ? "Not observed in the capture"
+                        : "Procedural Extrusion"}
                   </span>
                 )}
               </div>

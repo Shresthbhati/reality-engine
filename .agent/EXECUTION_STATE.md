@@ -1707,3 +1707,14 @@ executed for real, and produces canonical persisted artifacts.
   COLUMN_BEAM_DETECTORS_READY.md.
 - Remaining declared-but-unwired: windows, roofs. Untouched:
   tests/test_reconstruction_batch.py runtime flake (other agent's).
+
+## 2026-10-16 Release gate (docs/implementation/RELEASE_GATE_PLAN.md) -- Phase 1
+- Branch claude/gate-p1-geometries. world.geometries regression: NOT REPRODUCED (no symptom in repo).
+  Evidence: 4 plan test files 24 passed; `-m "not slow" -k geometr` 165 passed / 3 skipped; real COLMAP via API SIX then
+  ADD_4 on one world: V1 5 ent / 6 geom / 0 dangling / 85016 pts; V2 (parent V1) 11 ent / 10 geom / 0 dangling / 121822 pts;
+  V1 digest unchanged after V2; restart -> identical V2 digest; test_B 1 passed (102 s). User asked for the symptom.
+- REAL env defect found + fixed: httpx 0.28.1 + starlette 0.35.1 -> TestClient TypeError ('app'), ~100 API tests error.
+  Fix commit d2dfacc: httpx>=0.27,<0.28 in pyproject.toml + apps/api/requirements.txt. Before: bare TestClient raises
+  TypeError; after (declared spec installed): returns {'ok': 1}.
+- Non-slow baseline (httpx<0.28): main run 2815 passed / 2 failed / 102 errors (all 'Client.__init__ app' on the unpinned run);
+  re-run of the 11 affected files with the pin: 151 passed, 0 failed. => 0 failures, 28 skipped.

@@ -1838,3 +1838,14 @@ tasks:
       gain, so the incremental build wins and the rest stay waiting (kept, retried). The test now asserts that invariant (frame kept
       => re-solve gain < FRAME_CHANGE_MIN_EXTRA_PHOTOS; frame changed => gain >= it) instead of a raw count. The margin itself stays
       PROVISIONAL (owner decision on 2 vs a larger value).
+  - id: GATE-01
+    name: release gate - real photos -> persisted world -> correction -> V2 diff (docs/implementation/RELEASE_GATE_PLAN.md)
+    status: PARTIAL
+    basis: "Phase 1 of 6 done 2026-10-16 (branch claude/gate-p1-geometries): world.geometries regression NOT REPRODUCED; httpx pin d2dfacc fixes the real TestClient breakage. Phases 2-6 pending."
+    verification:
+      - "pytest 4 plan files -> 24 passed; -k geometr non-slow -> 165 passed, 3 skipped"
+      - "real COLMAP via API: V1 6 geoms / V2 10 geoms, 0 dangling refs, digests identical after restart; test_B 1 passed"
+      - "non-slow baseline with httpx<0.28: 0 failed (2815 passed + 151 re-run of affected files), 28 skipped"
+    remaining:
+      - "Phase 1 reopens if the user supplies the original geometries symptom"
+      - "Phases 2-6: output validation, contract baseline, test_release_gate.py (x2), integration, Studio walkthrough"

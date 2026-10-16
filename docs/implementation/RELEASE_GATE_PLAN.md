@@ -201,3 +201,70 @@ Shapes are observed from a live in-process run (`REALITY_TEST_BACKEND` seam), er
 - Upload bytes are stored content-addressed (`sha256://`), unchanged: `tests/test_upload_integrity_contract.py` (5 passed). Filenames are sanitised to a basename and never form a path, so traversal cannot leave `STORAGE_ROOT`. Size limit answers 413, file-count limit (300) answers 413, EXIF make/model and the original filename are retrievable.
 - Not enforced (recorded, not changed): `/uploads` has no content-type allowlist (unknown types are classified `dataset`; only `/reconstructions` rejects non-photo input) and no per-session count limit. Decision for the owner if untrusted users are expected.
 - Job cancel: existing tests (`test_cancel_queued_job`, `test_cancelled_run_adopts_nothing`, `test_repeat_cancel_is_idempotent`, `test_cancel_terminal_job_409`) cover terminal state and no version.
+
+
+## Appendix B: Reconstruction job and world state transitions (as implemented and exercised by the gate)
+
+Source: `apps/api/jobs.py` (grading), `apps/api/reconstruction_state.py` (`derive_state`), `engine/pipeline/progressive.py`
+(the level ladder), `engine/pipeline/world_delta.py` (`decide`).
+
+**Job status:** `queued` -> `running` (stages `resolving_evidence`, `analyzing_evidence`, `building_rough_model` | `reconstructing` | `refining`,
+`committing_version`) -> exactly one of `succeeded | partial | failed | cancelled`.
+
+| Outcome | Exact condition | Version created? | World state shown |
+|---|---|---|---|
+| `succeeded` | Clean end to end: registration `success`, level >= 2, no skipped evidence, no degraded optional stage, no validation warning, no "changed with uncertainty" note. Also: an identical rerun (`unchanged`) | yes (or none for `unchanged`; HEAD stands) | `READY_TO_INSPECT` |
+| `partial`, adopted | A real valid version with recorded degradation: level <= 1 (a rough model is partial by construction), partial registration, skipped evidence, a degraded stage, or an uncertainty note | yes, labelled (`model_state` ROUGH/PARTIAL, `degraded[]` lists why) | `PARTIALLY_COMPLETE` |
+| `partial`, not adopted | The candidate was valid but `world_delta.decide` returned REJECT against HEAD (photos lost with no net gain; level fell with no photo gained; structure not reproduced). `payload.adopted=false`, `kept_version_id` names HEAD | no; HEAD is untouched | `PARTIALLY_COMPLETE` (the Studio now says "not adopted") |
+| `failed` | Insufficient evidence, no usable level, WorldIR failed validation, untraced entity, read-back verification failed, timeout, crash | no | `FAILED` / `NEEDS_MORE_EVIDENCE` |
+| `cancelled` | Operator cancel before adoption. Late cancel (after adoption): the version stands, `adopted_before_cancel` is recorded, the job still grades `cancelled` | only in the late case | `CANCELLED` |
+
+**Malformed multi-view output** (fewer than 2 registered cameras, empty cloud, NaN/Inf pose or point): `vertical_slice` raises, the ladder records
+`L2 failed` with the reason, and the next level is tried. On a fresh world the single-image fallback yields an adopted, labelled `partial`/ROUGH
+version (never `succeeded`). On a world that already has a HEAD the fallback is arbitrated against it and REJECTed (verified by the gate).
+
+**Precondition for arbitration (fixed in this release):** the HEAD report is the nearest ancestor's report, because a correction commit has none of its own.
+
+**Cameras (fixed in this release):** `/cameras` serves only photographs the version recorded as registered.
+
+**Rollback** moves HEAD to an earlier version; it creates no version and rewrites no history.
+
+
+## Appendix C: Results (2026-10-16). Final tree: branch `claude/gate-p4-release-gate`
+
+Environment: Windows 11, Python 3.14.7, COLMAP (CUDA build) at `C:\Users\shres\tools\colmap-extracted\bin\colmap`, MiDaS from the local torch hub cache,
+dataset `datasets/south_building` (128 real 1024px photographs; gate uses indices `[15:21]` SIX and `[0:6]` HARD plus one more). `httpx 0.27.2` via PYTHONPATH
+because the installed httpx 0.28.1 breaks starlette 0.35.1's TestClient (the repo now pins `httpx>=0.27,<0.28`).
+
+| Gate / suite | Command | Result |
+|---|---|---|
+| Release gate run 1 | `python -m pytest -q tests/integration/test_release_gate.py` (commit 994af9c, clean tree) | **3 passed**, exit 0, 8m05s |
+| Release gate run 2 (consecutive, alone) | same command and commit | **3 passed**, exit 0, 7m54s |
+| Earlier gate attempts (not counted) | commit c0f3837 / b2074cb | FAILED: found the defects listed below; fixed before the counted runs |
+| Backend, non-slow, full | `python -m pytest tests -q -m "not slow"` | **2976 passed, 28 skipped, 5 xfailed, 0 failed**, exit 0, 39m39s (baseline 2776 / 0 / 28) |
+| Slow journeys | `pytest tests/integration/test_progressive_product_journey.py tests/integration/test_reliability_journey.py -m slow` | 27 passed, 1 failed (test_H: stale rejection-message assertion), 1h57m; test_H then re-run alone: **1 passed**, exit 0 |
+| Frontend | `npx tsc --noEmit` / `npm run test:contract` / `npm run build` / `npm run lint` | exit 0 / 17 of 17 / exit 0 / 10 errors + 40 warnings (the known baseline) |
+| System runtime proof | `tests/integration/test_system_runtime_proof.py` | **NOT RUN**: skips with an explicit reason; its gitignored fixtures (`datasets/real_room_capture*`, `datasets/room_capture/pipeline_out`) are absent. Regenerate with `scripts/generate_room_dataset.py` |
+
+Real reconstruction (SIX window, real COLMAP): 6 of 6 photographs registered, 1,132 sparse points, mean reprojection error 0.295 px, 101 s wall time
+(clean machine); the served `/points` cloud held 85,782 points including dense. Same input twice: identical registered count, point counts within the 5% tolerance
+(measured spread 0.9%).
+
+### Defects found by the gate or its audits, and fixed (each with a regression test that failed first)
+1. Correction commits carried no reconstruction report, so a degraded fallback was accepted over a corrected HEAD and `/status` reported 0 registered photos. `worldstore_service.nearest_report`.
+2. Malformed backend output (1 camera, NaN/Inf pose or point) compiled into a world. `reconstruction.validation.validate_reconstruction_output` in `vertical_slice`.
+3. Correction commits accepted a NaN/garbage `transform` (stored `NaN` is invalid JSON for the browser) and could erase the pipeline-owned `reconstruction` trace.
+4. `/cameras` served cameras for photographs that never registered (level-0 fusion display layout).
+5. Uploads were not vetted by content or capped per session; artifacts had no `nosniff`.
+6. Frontend: wrong `/cameras` DTO; `CommitResponse` lacked `duplicate`; the Studio showed a duplicate retry as a new version; provenance failures rendered as "no evidence"; list proxies turned a broken 200 body into an empty list; the job poll swallowed a lost API forever; a rejected rebuild was announced as adopted.
+7. Environment: httpx 0.28 broke every TestClient test.
+
+### Remaining risks and blockers (not fixed)
+- **No authentication, authorization or rate limiting anywhere in the API** (CORS defaults to `localhost:3000`). Blocker for any multi-user or public deployment.
+- The `world.geometries` regression the user reported **could not be reproduced**; no symptom was supplied. Entity-to-geometry references, persistence round-trips, restart and the viewport's bounds contract all verified on real data.
+- The malformed-output fallback over many photos runs single-image depth (MiDaS) on CPU for 10 to 25 minutes before the rebuild is rejected.
+- `/uploads` per-session cap defaults to 2000 files and unknown types are refused unless `UPLOAD_ALLOW_ANY_TYPE=1`; limits are conservative defaults, not tuned.
+- `frontend/tests/contract/sessions-route.test.mts` passes without running its tests; the real assertions live in `tests/test_frontend_sessions_proxy_contract.py`.
+- `AdaptiveInspector.tsx` was changed after the counted gate runs (frontend only; verified by `tsc`, build, lint and contract tests, not by a browser walkthrough).
+- Phase 6 (a real browser walkthrough of the Studio) was **not performed**.
+- Git-ignored test byproducts exist in the worktree (`data/`, `MagicMock/`, `.ruff_cache/`); not removed.

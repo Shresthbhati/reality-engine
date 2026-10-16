@@ -1728,3 +1728,11 @@ executed for real, and produces canonical persisted artifacts.
 - Regression: 261 passed / 14 skipped over reconstruction, vertical-slice, cli, application_api, golden_loop and tests/integration (non-slow).
 - Real run, SIX window [15:21], real COLMAP: submitted 6 / registered 6, level 3, sparse points 1132 (COLMAP model_analyzer), served /points 85,782
   (sparse + dense), mean reprojection error 0.295 px, wall 101 s (clean machine). test_B + test_D + test_D2 (slow): 3 passed in 1146 s (contended run).
+
+## 2026-10-16 Release gate -- final verification (branch claude/gate-p4-release-gate)
+- Gate `pytest -q tests/integration/test_release_gate.py` passed TWICE consecutively on 994af9c: 3 passed / exit 0 / 8m05s and 3 passed / exit 0 / 7m54s, clean tree, nothing overlapping.
+- Non-slow backend: 2976 passed, 28 skipped, 5 xfailed, 0 failed (39m39s). Slow journeys: 28 of 28 passed (27 + test_H re-run after its stale assertion was updated).
+- Frontend: tsc 0, contract 17/17, build 0, lint 10 errors (baseline).
+- NOT RUN: tests/integration/test_system_runtime_proof.py (gitignored fixtures absent); Phase 6 browser walkthrough.
+- Fixes: nearest_report (corrected HEAD), output validation, transform/finite/trace validation, registered-only cameras, upload vetting + per-session cap, Studio truthfulness fixes, httpx pin.
+- Open: no authn/authz/rate limiting; world.geometries symptom not reproduced; see docs/implementation/RELEASE_GATE_PLAN.md Appendix C.

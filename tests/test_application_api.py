@@ -209,7 +209,7 @@ def test_evidence_delete_removes_record_and_keeps_artifact(client):
     """
     up = client.post(
         "/api/uploads",
-        files={"file": ("frame.jpg", b"jpeg-bytes-for-delete-test", "image/jpeg")},
+        files={"file": ("frame.jpg", b"\xff\xd8\xff\xe0jpeg-bytes-for-delete-test", "image/jpeg")},
     ).json()
     evidence_id = up["evidence_id"]
 
@@ -260,6 +260,9 @@ def _valid_jpeg(seed: int = 0) -> bytes:
 
 
 def _upload_photo(client, sid, name, payload):
+    # upload vetting refuses non-JPEG bytes labelled image/jpeg: placeholder bodies get a real JPEG signature
+    if not payload.startswith(b"\xff\xd8\xff"):
+        payload = b"\xff\xd8\xff\xe0" + payload
     r = client.post(
         f"/api/uploads?session_id={sid}",
         files={"file": (name, payload, "image/jpeg")},

@@ -145,8 +145,9 @@ async def _head_report(db: AsyncSession, world: World) -> dict:
     which images are new."""
     if not world.current_version_id:
         return {}
-    row = await db.get(WorldVersion, world.current_version_id)
-    return dict(row.report or {}) if row is not None else {}
+    from apps.api import worldstore_service
+
+    return await worldstore_service.nearest_report(db, world.current_version_id)
 
 
 def _record_registration(evidence_rows, job_id: str, registered: set, adopted: bool) -> None:

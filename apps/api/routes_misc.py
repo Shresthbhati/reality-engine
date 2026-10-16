@@ -73,6 +73,15 @@ def _max_upload_bytes() -> int:
     return value if value > 0 else default
 
 
+def _max_files_per_session() -> int:
+    default = 2000
+    try:
+        value = int(os.environ.get("UPLOAD_MAX_FILES_PER_SESSION", str(default)))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 async def _read_bounded_upload(file) -> bytes:
     """Read an upload without loading an unbounded body into memory: one
     byte past the limit is enough to refuse with 413."""
@@ -92,10 +101,62 @@ async def _read_bounded_upload(file) -> bytes:
     return b"".join(chunks)
 
 
+_VIDEO_EXT = (".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm")
+_HEIC_BRANDS = (b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1")
+#: Content that is never evidence: executables, scripts and markup. Refused for every non-image/video upload so a
+#: renamed binary or an HTML/SVG page cannot sit in the store under a data-file name.
+_ACTIVE_CONTENT_PREFIXES = (b"MZ", b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe", b"#!")
+_MARKUP_PREFIXES = (b"<!doctype", b"<html", b"<svg", b"<script", b"<?php")
+
+
+def _sniff_media(data: bytes) -> str | None:
+    """'photo' / 'video' from the file's own magic bytes, or None. Declared MIME and extension are never trusted for
+    these two kinds: they are what the reconstruction engine decodes."""
+    head = data[:16]
+    if head[:3] == b"\xff\xd8\xff" or head[:8] == b"\x89PNG\r\n\x1a\n" or head[:4] in (b"II*\x00", b"MM\x00*"):
+        return "photo"
+    if head[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "photo"
+    if data[4:8] == b"ftyp":
+        return "photo" if data[8:12] in _HEIC_BRANDS else "video"
+    if head[:4] == b"\x1aE\xdf\xa3" or (head[:4] == b"RIFF" and data[8:12] == b"AVI "):
+        return "video"
+    return None
+
+
+def _upload_allow_any_type() -> bool:
+    return os.environ.get("UPLOAD_ALLOW_ANY_TYPE", "").strip().lower() in ("1", "true", "yes")
+
+
+def vet_upload(filename: str, mime: str | None, data: bytes) -> str:
+    """The evidence kind for this upload, or raise ValueError(reason).
+
+    Bytes win over labels: a JPEG sent as application/octet-stream is a photo; an HTML page sent as image/jpeg is
+    refused. Unknown types are refused unless UPLOAD_ALLOW_ANY_TYPE=1. The offline reconstruction test seam
+    (REALITY_TEST_BACKEND, 'pixels not inspected') keeps its placeholder photographs."""
+    declared = _classify(filename, mime)
+    sniffed = _sniff_media(data)
+    if sniffed:
+        if declared in ("photo", "video") and declared != sniffed:
+            raise ValueError(f"content is a {sniffed} but the file is declared as a {declared}")
+        return sniffed
+    if declared in ("photo", "video"):
+        if os.environ.get("REALITY_TEST_BACKEND", "").strip():
+            return declared
+        raise ValueError(f"not a valid {declared}: the bytes are not a supported {declared} format")
+    if declared == "dataset" and not _upload_allow_any_type():
+        raise ValueError("unsupported file type (accepted: photos, videos, point clouds, GNSS tracks, sensor logs)")
+    if data[:8].startswith(_ACTIVE_CONTENT_PREFIXES) or data[:64].lstrip().lower().startswith(_MARKUP_PREFIXES):
+        raise ValueError("file content is not evidence data (executable, script or markup)")
+    return declared
+
+
 def _classify(filename: str, mime: str | None) -> str:
     name = (filename or "").lower()
     if mime in _TYPE_BY_MIME:
         return _TYPE_BY_MIME[mime]
+    if name.endswith(_VIDEO_EXT):
+        return "video"
     if name.endswith((".las", ".laz", ".ply", ".pcd", ".e57")):
         return "point_cloud"
     if name.endswith((".gpx", ".nmea")):
@@ -114,6 +175,19 @@ async def create_upload(
     data = await _read_bounded_upload(file)
     if not data:
         raise HTTPException(400, "Empty upload")
+    try:
+        kind = vet_upload(_safe_filename(file.filename), file.content_type, data)
+    except ValueError as exc:
+        raise HTTPException(415, str(exc)) from exc
+    if session_id:
+        limit = _max_files_per_session()
+        stored = (await db.execute(
+            select(func.count()).select_from(Upload).where(Upload.session_id == session_id)
+        )).scalar_one()
+        if stored >= limit:
+            raise HTTPException(
+                413, f"session already holds {stored} uploads (limit {limit}); raise UPLOAD_MAX_FILES_PER_SESSION"
+            )
     digest, _path = store_bytes(data)
     up = Upload(
         id=new_id("upl"),
@@ -131,7 +205,7 @@ async def create_upload(
     ev = Evidence(
         id=new_id("ev"),
         name=up.filename,
-        type=_classify(up.filename, up.mime_type),
+        type=kind,
         session_id=session_id,
         upload_id=up.id,
         processing_state="uploaded",
@@ -229,4 +303,5 @@ async def evidence_artifact(evidence_id: str, db: AsyncSession = Depends(get_db)
         # Re-sanitize: rows written before filename hygiene may hold raw
         # client bytes (paths, quotes, CRLF) that must never reach headers.
         filename=_safe_filename(ev.name),
+        headers={"X-Content-Type-Options": "nosniff"},
     )

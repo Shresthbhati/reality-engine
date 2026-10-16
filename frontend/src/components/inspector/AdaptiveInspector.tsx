@@ -372,11 +372,20 @@ function EntityDetails({
   // Real, entity-specific trace-to-evidence -- refetched whenever the
   // selected entity (or world) changes.
   const [provenance, setProvenance] = useState<EntityProvenance | null | undefined>(undefined);
+  const [provenanceError, setProvenanceError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchEntityProvenance(worldId, entity.id).then((p) => {
-      if (!cancelled) setProvenance(p);
-    });
+    setProvenance(undefined);
+    setProvenanceError(null);
+    fetchEntityProvenance(worldId, entity.id)
+      .then((p) => {
+        if (!cancelled) setProvenance(p);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setProvenanceError(err instanceof Error ? err.message : "Provenance could not be loaded.");
+        setProvenance(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -2032,6 +2041,10 @@ function EntityDetails({
           <div className="space-y-2">
             {provenanceLoading ? (
               <p className="text-neutral-500 italic p-2">Tracing evidence…</p>
+            ) : provenanceError ? (
+              <p className="text-[#e74c3c] p-2" role="alert">
+                Evidence could not be loaded: {provenanceError}
+              </p>
             ) : !provenance || provenance.evidence.length === 0 ? (
               <p className="text-neutral-500 italic p-2">
                 {provenance?.reason || "No evidence linked to this entity or its capture session."}

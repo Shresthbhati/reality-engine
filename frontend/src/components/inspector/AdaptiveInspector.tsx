@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { fetchEntityProvenance, type EntityProvenance } from "@/lib/api/provenance";
+import { commitOutcome } from "@/lib/api/commit-outcome";
 import {
   Box,
   Compass,
@@ -46,7 +47,7 @@ interface AdaptiveInspectorProps {
     entityId: string,
     changes: Record<string, unknown>,
     commitMessage: string
-  ) => Promise<{ version_id: string; parent_version_id?: string; world_id?: string } | void>;
+  ) => Promise<{ version_id: string; parent_version_id?: string; world_id?: string; duplicate?: boolean } | void>;
   onOpenDiff?: (base?: string, head?: string) => void;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
@@ -244,7 +245,7 @@ function EntityDetails({
     entityId: string,
     changes: Record<string, unknown>,
     commitMessage: string
-  ) => Promise<{ version_id: string; parent_version_id?: string; world_id?: string } | void>;
+  ) => Promise<{ version_id: string; parent_version_id?: string; world_id?: string; duplicate?: boolean } | void>;
   onOpenDiff?: (base?: string, head?: string) => void;
   isEditing: boolean;
   setIsEditing: (v: boolean) => void;
@@ -324,6 +325,8 @@ function EntityDetails({
   const [committedVersionResult, setCommittedVersionResult] = useState<{
     version_id: string;
     parent_version_id?: string;
+    /** the server answered a byte-identical retry with the current version: nothing new was persisted */
+    duplicate?: boolean;
   } | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -416,13 +419,18 @@ function EntityDetails({
       }
 
       const res = await onCommitCorrection(entity.id, payload, commitMessage);
+      let created = true;
       if (res && typeof res === "object" && "version_id" in res) {
+        const outcome = commitOutcome(res);
+        created = outcome.kind === "created";
         setCommittedVersionResult({
-          version_id: res.version_id,
-          parent_version_id: (res as { parent_version_id?: string }).parent_version_id,
+          version_id: outcome.versionId,
+          parent_version_id: outcome.kind === "created" ? outcome.parentVersionId : undefined,
+          duplicate: outcome.kind === "duplicate",
         });
       }
-      setCommittedSuccess(true);
+      // a duplicate retry persisted nothing: it must not look like a fresh commit
+      setCommittedSuccess(created);
       setIsEditing(false);
     } catch (e) {
       console.error("Commit failed", e);
@@ -479,11 +487,21 @@ function EntityDetails({
 
       {/* Post-Commit WorldStore Version Banner */}
       {committedVersionResult && (
-        <div className="p-3 rounded-lg border border-[#2ecc71]/40 bg-[#12281a] space-y-2 text-xs">
+        <div className={`p-3 rounded-lg border space-y-2 text-xs ${
+          committedVersionResult.duplicate
+            ? "border-[#f5a623]/40 bg-[#281f12]"
+            : "border-[#2ecc71]/40 bg-[#12281a]"
+        }`}>
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[#2ecc71] font-semibold">
-              <Check className="w-3.5 h-3.5" />
-              <span>WorldStore Snapshot Committed</span>
+            <span className={`flex items-center gap-1.5 font-semibold ${
+              committedVersionResult.duplicate ? "text-[#f5a623]" : "text-[#2ecc71]"
+            }`}>
+              {committedVersionResult.duplicate ? <AlertTriangle className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+              <span>
+                {committedVersionResult.duplicate
+                  ? "No change: identical to the current version"
+                  : "WorldStore Snapshot Committed"}
+              </span>
             </span>
             <button
               type="button"
@@ -497,12 +515,12 @@ function EntityDetails({
             </button>
           </div>
           <div className="text-[11px] font-mono text-neutral-300 space-y-0.5">
-            <div>Version: <span className="text-[#00e5ff] font-semibold">{committedVersionResult.version_id}</span></div>
-            {committedVersionResult.parent_version_id && (
+            <div>{committedVersionResult.duplicate ? "Current version" : "Version"}: <span className="text-[#00e5ff] font-semibold">{committedVersionResult.version_id}</span></div>
+            {!committedVersionResult.duplicate && committedVersionResult.parent_version_id && (
               <div className="text-[10px] text-neutral-400">Parent: {committedVersionResult.parent_version_id}</div>
             )}
           </div>
-          {onOpenDiff && (
+          {onOpenDiff && !committedVersionResult.duplicate && (
             <button
               type="button"
               onClick={() => onOpenDiff(committedVersionResult.parent_version_id, committedVersionResult.version_id)}

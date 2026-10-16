@@ -1846,6 +1846,7 @@ tasks:
       - "pytest 4 plan files -> 24 passed; -k geometr non-slow -> 165 passed, 3 skipped"
       - "real COLMAP via API: V1 6 geoms / V2 10 geoms, 0 dangling refs, digests identical after restart; test_B 1 passed"
       - "non-slow baseline with httpx<0.28: 0 failed (2815 passed + 151 re-run of affected files), 28 skipped"
+      - "Phase 2: validate_reconstruction_output (<2 cameras, NaN/Inf pose/point) wired into vertical_slice; 7 new tests + 1 API test; SIX window real COLMAP 6/6 registered, 1132 sparse pts, 0.295 px, 101 s; test_B/D/D2 passed"
     remaining:
       - "Phase 1 reopens if the user supplies the original geometries symptom"
       - "Phases 2-6: output validation, contract baseline, test_release_gate.py (x2), integration, Studio walkthrough"

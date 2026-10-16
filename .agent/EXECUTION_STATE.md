@@ -1718,3 +1718,13 @@ executed for real, and produces canonical persisted artifacts.
   TypeError; after (declared spec installed): returns {'ok': 1}.
 - Non-slow baseline (httpx<0.28): main run 2815 passed / 2 failed / 102 errors (all 'Client.__init__ app' on the unpinned run);
   re-run of the 11 affected files with the pin: 151 passed, 0 failed. => 0 failures, 28 skipped.
+
+## 2026-10-16 Release gate -- Phase 2 (branch claude/gate-p2-recon-validation)
+- Gap reproduced: vertical_slice() compiled a world from backend output with 1 registered camera, a NaN camera position,
+  an Inf rotation or an Inf point (0 cameras / empty cloud were already refused). Fix: reconstruction.validation.validate_reconstruction_output
+  called in engine/pipeline/vertical_slice.py right after the backend result; raises VerticalSliceError -> ladder records a failed L2 attempt.
+- Tests: tests/test_reconstruction_output_validation.py 7 passed (4 failed before fix); tests/test_reconstruction_reliability.py
+  ::test_malformed_reconstruction_output_fails_the_job_and_leaves_head_untouched passed (job 'succeeded' without fix, 'failed' with it; HEAD and version list unchanged).
+- Regression: 261 passed / 14 skipped over reconstruction, vertical-slice, cli, application_api, golden_loop and tests/integration (non-slow).
+- Real run, SIX window [15:21], real COLMAP: submitted 6 / registered 6, level 3, sparse points 1132 (COLMAP model_analyzer), served /points 85,782
+  (sparse + dense), mean reprojection error 0.295 px, wall 101 s (clean machine). test_B + test_D + test_D2 (slow): 3 passed in 1146 s (contended run).

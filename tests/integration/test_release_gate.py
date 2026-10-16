@@ -129,6 +129,17 @@ def _assert_canonical(world: dict, evidence_ids: set[str]) -> None:
             assert trace and trace["session_id"], f"{eid} has no reconstruction trace"
     for gid, g in world["geometries"].items():
         assert g["provenance"], gid
+    # what the Studio viewport needs to draw an entity: its first geometry carries finite {x,y,z} bounds
+    # (frontend/src/lib/viewport/three-scene.ts skips an entity otherwise, silently)
+    drawable = 0
+    for eid, e in world["entities"].items():
+        if not e["geometry_ids"]:
+            continue                                                  # containers (building, storey) and sensors
+        g = world["geometries"][e["geometry_ids"][0]]
+        for key in ("bounds_min", "bounds_max"):
+            assert isinstance(g[key], dict) and all(math.isfinite(g[key][a]) for a in "xyz"), (eid, key, g[key])
+        drawable += 1
+    assert drawable >= 1, "no entity can be drawn: the world has no renderable geometry"
     assert world["coordinate_frame"] and world["metadata"]["frame"]["up_source"], "no coordinate frame record"
     used = {u["evidence_id"] for u in world["metadata"]["evidence"]["used"]}
     assert used <= evidence_ids and used, "world cites evidence that was never uploaded"

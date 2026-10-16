@@ -98,3 +98,21 @@ def test_only_registered_photos_are_published_as_cameras():
     assert [p[0] for p in _registered_camera_poses(lone)] == ["ev-a"]
     partial = SimpleNamespace(camera_poses=poses, registered_ids=["ev-b"])
     assert [p[0] for p in _registered_camera_poses(partial)] == ["ev-b"]
+
+
+def test_cameras_route_filters_to_the_photographs_the_version_registered():
+    """A level-0 fusion keeps per-entity camera_pose observations that are display layout, not registrations. The
+    version's own evidence record says which photographs registered; /cameras may serve only those."""
+    from types import SimpleNamespace
+
+    from apps.api.routes_worlds import _keep_registered_cameras
+
+    cams = [{"evidence_id": f"ev-{i}", "position_m": [float(i), 0, 0], "rotation_wxyz": [1, 0, 0, 0]} for i in range(3)]
+    fused = SimpleNamespace(metadata={"evidence": {"used": [{"evidence_id": f"ev-{i}", "registered": False} for i in range(3)]}})
+    assert _keep_registered_cameras(cams, fused) == []
+    two = SimpleNamespace(metadata={"evidence": {"used": [
+        {"evidence_id": "ev-0", "registered": True}, {"evidence_id": "ev-1", "registered": False},
+        {"evidence_id": "ev-2", "registered": True}]}})
+    assert [c["evidence_id"] for c in _keep_registered_cameras(cams, two)] == ["ev-0", "ev-2"]
+    # worlds that carry no evidence record (compiled outside the job runner) are served unchanged, not emptied
+    assert _keep_registered_cameras(cams, SimpleNamespace(metadata={})) == cams

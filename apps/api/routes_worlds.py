@@ -502,6 +502,17 @@ def _decode_point_payload(raw: bytes) -> list[tuple[float, float, float]]:
     return out
 
 
+def _keep_registered_cameras(cameras: list, world) -> list:
+    """Only photographs the version registered. The job records per photograph whether it registered
+    (metadata.evidence.used[].registered); a level-0 fusion's per-entity camera poses are display layout and carry no
+    registration. Worlds with no such record are returned unchanged rather than emptied."""
+    used = ((getattr(world, "metadata", None) or {}).get("evidence") or {}).get("used")
+    if not used:
+        return cameras
+    registered = {u.get("evidence_id") for u in used if u.get("registered")}
+    return [c for c in cameras if c.get("evidence_id") in registered]
+
+
 @worlds.get("/{world_id}/cameras")
 async def world_cameras(
     world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
@@ -549,6 +560,7 @@ async def world_cameras(
                                 "rotation_wxyz": [float(c) for c in cam.get("rotation_wxyz", [1.0, 0.0, 0.0, 0.0])]})
         if image_size is None and isinstance(payload.get("image_size"), (list, tuple)):
             image_size = [int(v) for v in payload["image_size"]]
+    cameras = _keep_registered_cameras(cameras, world)
     return {
         "frame": "world (meters, +Y up after frame canonicalization)",
         "rotation_convention": "camera-to-world quaternion (w, x, y, z)",

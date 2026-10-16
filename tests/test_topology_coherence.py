@@ -604,3 +604,29 @@ class TestDeterminismAndHonesty:
 
         reg = get_default_registry()
         assert reg.has("corridor")
+
+
+def test_promoted_room_keeps_its_measured_status_and_gaps():
+    """A promoted room must say what the evidence supports. The RoomGraph measures `status`, `boundary_completeness`,
+    `ceiling_evidence` and `notes` (a room whose capture missed a wall is 'partial'); dropping them at promotion made a
+    room with 0 of 4 floor edges bounded persist as if it were a complete room (found on a real exterior capture)."""
+    from perception.architecture.topology import promote_building_topology
+
+    planes = _two_storey_planes()
+    rooms = build_room_graph(_two_storey_elements(), up=UP, planes=planes)
+    building = build_building_graph(rooms, up=UP)
+    world = _world_with_parts(_two_storey_world_planes())
+    result = promote_building_topology(building, rooms, world)
+    assert result.room_ids
+    by_id = {room.room_id: room for room in rooms}
+    for rid in result.room_ids:
+        props = world.entities.get(rid).custom_properties
+        for key in ("status", "boundary_completeness", "ceiling_evidence", "notes"):
+            assert key in props, f"{rid} lost '{key}' at promotion"
+    # the values are the room's own measurements, not defaults
+    room0 = rooms[0]
+    props0 = world.entities.get(result.room_ids[0]).custom_properties
+    assert props0["status"] == room0.status
+    assert props0["boundary_completeness"] == room0.boundary_completeness
+    assert props0["ceiling_evidence"] == room0.ceiling_evidence
+    assert props0["notes"] == list(room0.notes)

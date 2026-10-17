@@ -431,7 +431,11 @@ export class WorldSceneController {
         if (size.some((s) => !isFinite(s))) continue;
 
         const extent = Math.max(size[0], size[1], size[2]);
-        const isOversized = this.robustExtent > 0 && extent > 4 * this.robustExtent;
+        // The oversized filter targets depth-noise outliers relative to a
+        // point cloud; with no cloud (procedural worlds) there is no scale
+        // to judge against, so nothing is "oversized" (a 20 m city block is real).
+        const hasCloud = Boolean(this.pointsData && this.pointsData.length > 0);
+        const isOversized = hasCloud && this.robustExtent > 0 && extent > 4 * this.robustExtent;
         const outlierScale = isOversized ? 0.25 : 1.0;
 
         const baseColor = TYPE_COLORS[e.type.toLowerCase()] || TYPE_COLORS.default;

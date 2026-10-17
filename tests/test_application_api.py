@@ -1004,6 +1004,39 @@ def test_create_room_rejects_nan(client, tmp_path, monkeypatch):
     assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
 
 
+def test_create_corridor_connects_room_and_city(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body()).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/corridors", json={
+        "name": "Hall", "length": 8.0, "connects": ["Study-room"], "origin": [4.0, 0.0, 0.0]})
+    assert r.status_code == 201, r.text
+    assert r.json()["corridor_entity_id"] == "Hall-corridor"
+    r = client.post(f"/api/worlds/{wid}/cities", json={
+        "name": "Town", "blocks_x": 2, "blocks_y": 2, "origin": [40.0, 0.0, 0.0]})
+    assert r.status_code == 201, r.text
+    entities = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    assert {"Study-room", "Hall-corridor", "Town-city", "Town-b1-1-building"} <= set(entities)
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 3
+
+
+def test_create_corridor_and_city_reject_bad_input(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    bad = [
+        ("corridors", {"name": "c", "length": 0}),
+        ("corridors", {"name": "c", "length": 5, "axis": "z"}),
+        ("corridors", {"name": "c", "length": 5, "connects": ["missing-room"]}),
+        ("corridors", {"name": " ", "length": 5}),
+        ("cities", {"name": "t", "blocks_x": 0}),
+        ("cities", {"name": "t", "blocks_x": 11, "blocks_y": 10}),
+        ("cities", {"name": "t", "min_height": 10, "max_height": 5}),
+    ]
+    for path, payload in bad:
+        r = client.post(f"/api/worlds/{wid}/{path}", json=payload)
+        assert r.status_code in (413, 422), (path, payload, r.status_code, r.text[:200])
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+    assert client.post("/api/worlds/nope/cities", json={"name": "t"}).status_code == 404
+
+
 def test_create_room_duplicate_submit(client, tmp_path, monkeypatch):
     wid = _room_world(client, tmp_path, monkeypatch)
     first = client.post(f"/api/worlds/{wid}/rooms", json=_room_body())

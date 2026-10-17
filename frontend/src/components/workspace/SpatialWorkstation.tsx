@@ -8,6 +8,7 @@ import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
+import BuildModal from "@/components/workspace/BuildModal";
 import PhotoDropZone from "@/components/reconstruct/PhotoDropZone";
 import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStatusBar";
 import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
@@ -44,6 +45,7 @@ import {
   Terminal,
   Download,
   ImagePlus,
+  Hammer,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -64,6 +66,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [viewMode, setViewMode] = useState<"3d" | "map">("3d");
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [constructionModalOpen, setConstructionModalOpen] = useState(false);
+  const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
@@ -491,6 +494,18 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <span className="hidden sm:inline">Add evidence</span>
           </button>
 
+          {/* Procedural Build Launcher (rooms, corridors, cities) */}
+          <button
+            type="button"
+            onClick={() => setBuildModalOpen(true)}
+            title="Build a room, corridor or city"
+            data-testid="open-build"
+            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[#1f222b] transition-colors cursor-pointer"
+          >
+            <Hammer className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <span className="hidden sm:inline">Build</span>
+          </button>
+
           {/* Room Construction Launcher */}
           <button
             type="button"
@@ -775,6 +790,21 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         onSelectEntity={(eid) => {
           handleSelectEntity(eid);
           handleFrameEntity(eid);
+        }}
+      />
+
+      <BuildModal
+        worldId={worldId}
+        rooms={Object.values(worldIR?.entities ?? {})
+          .filter((e) => e.type === "room")
+          .map((e) => ({ id: e.id, name: e.name || e.id }))}
+        isOpen={buildModalOpen}
+        onClose={() => setBuildModalOpen(false)}
+        onCreated={() => {
+          // Frame only once the new version's WorldIR has actually loaded.
+          Promise.all([refetchIr(), refetchVersions()]).then(() =>
+            window.dispatchEvent(new CustomEvent("frame-all")),
+          );
         }}
       />
 

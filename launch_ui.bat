@@ -1,47 +1,77 @@
 @echo off
-setlocal EnableDelayedExpansion
-title Reality Engine Workstation Launcher
+setlocal
+title Reality Engine Launcher
 color 0B
+cd /d "%~dp0"
 
 echo ================================================================
 echo           REALITY ENGINE - SPATIAL WORKSTATION
 echo ================================================================
 echo.
-echo Launching Reality Engine Professional UI...
-echo.
-
-cd /d "%~dp0frontend"
 
 where node >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] Node.js is not found in PATH!
-    echo Please install Node.js 18+ to run Reality Engine.
+if errorlevel 1 (
+    echo [ERROR] Node.js is not found in PATH. Install Node.js 20+ and retry.
     pause
     exit /b 1
 )
 
-if not exist "node_modules\" (
-    echo [INFO] Installing dependencies, first-time setup...
+set "PY=python"
+if exist ".venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
+
+"%PY%" -c "import fastapi, uvicorn, sqlalchemy" >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] The engine's Python packages are missing for "%PY%".
+    echo         In this folder run:
+    echo             python -m venv .venv
+    echo             .venv\Scripts\activate
+    echo             pip install -e ".[dev]"
+    pause
+    exit /b 1
+)
+
+if not exist "frontend\node_modules\" (
+    echo [INFO] First-time setup: installing UI dependencies...
+    pushd frontend
     call npm install
+    popd
 )
 
-echo [INFO] Opening default browser to http://localhost:3000...
-start http://localhost:3000
-
-:: Check if port 3000 is already running
-netstat -ano | findstr ":3000" | findstr "LISTENING" >nul 2>nul
-if %ERRORLEVEL% equ 0 (
-    echo.
-    echo [INFO] Reality Engine server is already running and active on port 3000.
-    echo [INFO] The UI has been opened in your browser.
-    echo.
-    echo Press any key to close this launcher window...
-    pause >nul
-    exit /b 0
+:: Each server is started only if it is not already answering.
+call :up http://localhost:8100/api/health 1
+if errorlevel 1 (
+    echo [INFO] Starting engine API on http://localhost:8100 ...
+    start "Reality Engine API" /min cmd /k ""%PY%" -m uvicorn apps.api.main:app --port 8100"
+)
+call :up http://localhost:3000 1
+if errorlevel 1 (
+    echo [INFO] Starting Studio UI on http://localhost:3000 ...
+    start "Reality Engine UI" /min cmd /k "cd /d "%~dp0frontend" && npm run dev"
 )
 
-echo [INFO] Starting Reality Engine dev server on http://localhost:3000...
+echo [INFO] Waiting for the engine...
+call :up http://localhost:8100/api/health 60
+if errorlevel 1 (
+    echo [ERROR] The API did not come up on port 8100. Open the "Reality Engine API" window to see why.
+    pause
+    exit /b 1
+)
+echo [INFO] Waiting for the UI (first start compiles, can take a minute)...
+call :up http://localhost:3000 120
+if errorlevel 1 (
+    echo [ERROR] The UI did not come up on port 3000. Open the "Reality Engine UI" window to see why.
+    pause
+    exit /b 1
+)
+
+echo [OK] Opening http://localhost:3000
+start "" http://localhost:3000
 echo.
-echo  - Press Ctrl+C in this terminal window to stop
-echo.
-call npm run dev
+echo Reality Engine is running. Close the "Reality Engine API" and "Reality Engine UI" windows to stop it.
+timeout /t 5 >nul
+exit /b 0
+
+:: :up <url> <seconds>  -> errorlevel 0 once the URL answers, 1 on timeout
+:up
+powershell -NoProfile -Command "$end=(Get-Date).AddSeconds(%2); do { try { Invoke-WebRequest '%1' -UseBasicParsing -TimeoutSec 2 | Out-Null; exit 0 } catch { Start-Sleep -Milliseconds 700 } } while ((Get-Date) -lt $end); exit 1"
+exit /b %errorlevel%

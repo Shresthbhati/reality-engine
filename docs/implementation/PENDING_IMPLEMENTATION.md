@@ -5,7 +5,7 @@
 > that these features exist. Every entry names the evidence required to
 > advance its status; a status may only move when that evidence exists.
 
-Last reconciled: 2026-09-14 (mapping campaign; PRs #11, #12, #14, #16 merged; #17/#18 by concurrent agents; #19 open).
+Last reconciled: 2026-10-17 for the P0-P8 status lines (against `.agent/TASKS.yaml`; the P0.x entries and the PROD/CE/PT tables were not re-audited). Earlier reconciliation: 2026-09-14.
 
 Detailed per-subsystem specifications live in [`docs/future/`](../future/).
 Architecture rationale lives in [`../engineering/DESIGN_DECISIONS.md`](../engineering/DESIGN_DECISIONS.md).
@@ -99,7 +99,9 @@ Remaining (P2): appearance embeddings, epipolar verification.
 
 ## P0.11 — Dense multi-view geometry
 
-**Status: PARTIAL** — dense geometry currently comes from metricized
+**Status: DONE (ledger P6-01, P6-02; `tests/test_dense_*`, `tests/test_evidence_fusion.py`; real CUDA COLMAP dense on South Building per PROD-01).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry.
+
+(Original, superseded:) dense geometry came from metricized
 mono-depth (per-view MiDaS + SfM alignment), NOT true multi-view stereo.
 COLMAP's `patch_match_stereo` is BLOCKED: the available binary is
 CPU-only (4.2.0, no CUDA). Remaining: dense MVS backend (CUDA COLMAP,
@@ -142,11 +144,23 @@ confidence, bounds. Compilation fails loudly.
 
 ## P0.18 — Real end-to-end acceptance test
 
-**Status: PARTIAL** — full chain runs and is verified on the room
-dataset (25/28 cameras, metric, 121k points, 103 entities, validated
-WorldIR, mesh, glTF). Remaining: the acceptance test is manual/detached,
-not a committed automated test (COLMAP + models + ~30 min make it
-opt-in). Needs a marked real-data acceptance test.
+**Status: PARTIAL (automated spine; mesh leg unverified on committed data)** —
+`tests/integration/test_acceptance_p018.py` (slow, integration; skips with a
+reason when COLMAP/MiDaS or `datasets/south_building` are absent) drives the
+real `reality compile` CLI on a 10-view window of the committed real-photo
+South Building set. Evidence 2026-10-17: `pytest tests/integration/test_acceptance_p018.py`
+-> 2 passed in 137 s (real COLMAP 9/10 cameras, 29,963 points; real MiDaS
+depth 10 maps / 9 metricized). Asserted: CLI exit 0, SfM backend + >=6/10
+cameras + >=1000 points, entities compiled, `reality validate` passes,
+points.ply / cameras.json / glTF written, scale declared RELATIVE with
+mesh+depth honestly refused when unanchored, and (anchored) METRIC scale +
+depth ran + dense points. Caveats: South Building has no tape measurement, so
+the metric run uses a test-declared nominal 1.0 m baseline (not real-world
+accuracy); the **mesh stage is not covered** — CPU Poisson meshing had not
+finished after 40+ minutes on this data (hang/perf finding, needs
+investigation); original 25/28-camera room-capture run remains manual.
+Next: diagnose the mesh-stage slowness, add a real measured baseline dataset,
+then promote to VERIFIED.
 
 ## P0.19 — Real viewer
 
@@ -168,7 +182,7 @@ success on failure, deterministic offline tests via
 
 ## P1.4 — Depth sidecar ingestion (RGB-D)
 
-**Status: PARTIAL → spec in [`../future/sensor-ingestion/DEPTH_INGESTION.md`](../future/sensor-ingestion/DEPTH_INGESTION.md)**
+**Status: BLOCKED (hardware) — software path IMPLEMENTED (ledger P1-03; `tests/test_synthetic_rgbd.py`); no physical RGB-D device.** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/sensor-ingestion/DEPTH_INGESTION.md`](../future/sensor-ingestion/DEPTH_INGESTION.md)
 Depth sidecar discovery exists; normalized ingestion does not.
 **Decision 001 (ACCEPTED): 16-bit PNG first** — see
 [`../engineering/DESIGN_DECISIONS.md`](../engineering/DESIGN_DECISIONS.md).
@@ -186,7 +200,7 @@ per-sample provenance, sync hooks.
 
 ## P1.6 — Timestamp synchronization
 
-**Status: MISSING → spec in [`../future/synchronization/TIME_SYNCHRONIZATION.md`](../future/synchronization/TIME_SYNCHRONIZATION.md)**
+**Status: DONE (ledger P2-01; `tests/test_clock.py`, `tests/test_clocks.py`).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/synchronization/TIME_SYNCHRONIZATION.md`](../future/synchronization/TIME_SYNCHRONIZATION.md)
 Model: `t_global = a·t_sensor + b`, every sample retains original +
 normalized timestamp, clock id, offset/drift, uncertainty, method.
 Evidence to advance: `ClockModel`/`TimeAlignment` with diagnostics,
@@ -194,21 +208,21 @@ offset + drift tests, cross-stream test.
 
 ## P1.8 — VIO / trajectory
 
-**Status: MISSING → spec in [`../future/vio/VIO_TRAJECTORY.md`](../future/vio/VIO_TRAJECTORY.md)**
+**Status: BLOCKED (no built backend) — adapters/selection/diagnostics IMPLEMENTED (ledger P3-01 DONE, P3-02 BLOCKED, P3-03 DONE; `tests/test_synthetic_vio.py`).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/vio/VIO_TRAJECTORY.md`](../future/vio/VIO_TRAJECTORY.md)
 Backend abstraction (`TrajectoryBackend`) wrapping a mature system
 (ORB-SLAM3 / OpenVINS / Basalt). Never vendor from scratch. Evidence:
 trajectory continuity + reprojection residual + drift diagnostics.
 
 ## P1.10 — Cross-source registration
 
-**Status: MISSING → spec in [`../future/registration/CROSS_SOURCE_REGISTRATION.md`](../future/registration/CROSS_SOURCE_REGISTRATION.md)**
+**Status: DONE (ledger P4-01; `tests/test_registration.py`, `tests/test_landmark_registration.py`).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/registration/CROSS_SOURCE_REGISTRATION.md`](../future/registration/CROSS_SOURCE_REGISTRATION.md)
 Known-extrinsics → GNSS prior → coarse alignment → point-to-plane ICP →
 robust optimization → covariance → accept/reject. Never mark successful
 without measurable residual + valid correspondence set.
 
 ## P1.11 — Dense MVS + depth fusion
 
-**Status: PARTIAL** (mono-depth path exists; true MVS blocked on CUDA)
+**Status: DONE (ledger P6-01/P6-02; CUDA blocker resolved 2026-09-15).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry.
 → spec in [`../future/dense-reconstruction/`](../future/dense-reconstruction/DENSE_MVS.md).
 Fusion: inverse-variance weighting, robust estimators for outlier-heavy
 data; diagnostics: confidence, consistency, density, holes.
@@ -224,14 +238,14 @@ dense-MVS integration.
 
 ## P2.14 — Multi-view object identity
 
-**Status: PARTIAL → spec in [`../future/perception/MULTI_VIEW_IDENTITY.md`](../future/perception/MULTI_VIEW_IDENTITY.md)**
+**Status: DONE (ledger P7-01; `tests/test_multiview_identity_appearance.py`, `tests/test_track_backend.py`).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/perception/MULTI_VIEW_IDENTITY.md`](../future/perception/MULTI_VIEW_IDENTITY.md)
 Current merging is label + geometric proximity — an honest heuristic,
 never presented as a learned embedding. Evidence to advance: embedding
 backend behind an interface, epipolar verification, identity benchmark.
 
 ## P2.15 — Tracking / temporal identity
 
-**Status: PARTIAL.** The 3D observation-level identity-lifecycle layer
+**Status: DONE (ledger P7-02; 2D box association / camera-motion compensation items below are not ledger scope).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. The 3D observation-level identity-lifecycle layer
 is implemented and tested: `perception/tracking/temporal.py` —
 time-ordered `TimedObservation` chains per label into `TrackRecord`s
 (track_id, observation history, measured path/duration/implied speed),
@@ -247,7 +261,7 @@ compensation, ID-switch/fragmentation diagnostics. Canonical ledger:
 
 ## P2.16 — Structural perception (doors/windows/stairs)
 
-**Status: MISSING.** Doors/windows currently exist only as
+**Status: BLOCKED on real indoor data (ledger P7-03; synthetic-verified, `tests/test_synthetic_indoor.py`; open limits PT-06 below).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Originally: doors/windows existed only as
 room-boundary-derived openings. Evidence: geometry + segmentation backed
 structural hypotheses with provenance.
 
@@ -263,7 +277,7 @@ visual evidence.
 
 ## P3.18 — Uncertainty propagation
 
-**Status: PARTIAL → spec in [`../future/uncertainty/UNCERTAINTY_PROPAGATION.md`](../future/uncertainty/UNCERTAINTY_PROPAGATION.md)**
+**Status: DONE (ledger P10-02; `tests/test_uncertainty_propagation.py`).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/uncertainty/UNCERTAINTY_PROPAGATION.md`](../future/uncertainty/UNCERTAINTY_PROPAGATION.md)
 Schema fields exist (per-point/per-pose Uncertainty); propagation does
 not. First-order: `Σ_y = J Σ_x Jᵀ`. Critical rule: confidence ≠
 uncertainty — both represented independently. Evidence: covariance
@@ -271,7 +285,7 @@ propagation through lift → merge → measurement with tests.
 
 ## P3.19 — Provenance graph
 
-**Status: PARTIAL → spec in [`../future/provenance/PROVENANCE_GRAPH.md`](../future/provenance/PROVENANCE_GRAPH.md)**
+**Status: DONE (ledger P10-01; `tests/test_provenance_graph.py`).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/provenance/PROVENANCE_GRAPH.md`](../future/provenance/PROVENANCE_GRAPH.md)
 Every entity carries evidence ids and provenance enum, but the chain
 (entity → observation → artifact → frame → source) is not a queryable
 graph. Evidence: lineage query API + round-trip test from entity back to
@@ -283,23 +297,23 @@ source record.
 
 ## P4.20 — WorldStore
 
-**Status: MISSING → spec in [`../future/worldstore/WORLDSTORE.md`](../future/worldstore/WORLDSTORE.md)**
+**Status: DONE (ledger P11-01; `worldstore/store.py`, `tests/test_world_store*.py`).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/worldstore/WORLDSTORE.md`](../future/worldstore/WORLDSTORE.md)
 SQLite first; PostgreSQL later. Binary data lives in ArtifactStore,
 never in relational rows. Requires: world versions, entity history,
 immutable evidence, transactions.
 
 ## P4.21 — Incremental compilation
 
-**Status: MISSING → [`../future/worldstore/INCREMENTAL_COMPILATION.md`](../future/worldstore/INCREMENTAL_COMPILATION.md)**
+**Status: DONE (ledger P12-01; `tests/test_incremental_world_e2e.py`, `tests/test_true_localized_incremental_acceptance.py`); remaining incremental gaps are tracked as CE-02 below.** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/worldstore/INCREMENTAL_COMPILATION.md`](../future/worldstore/INCREMENTAL_COMPILATION.md)
 Dependency graph + invalidations + regional recompilation + versioning.
 
 ---
 
 # P6 — REALITY STUDIO
 
-**Status: FOUNDATION** — browser viewer (see P0.19). Missing: source/
+**Status: IMPLEMENTED** (no standalone ledger task; PROD-01 reconciliation 2026-10-02: tsc 0, next build 0, contract tests; `tests/test_reality_studio_primary_journey.py`). Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Still missing: uncertainty visualization, simulation controls. (Original: browser viewer only, missing source/
 evidence browsers, uncertainty + provenance visualization, timeline,
-diff/branch views, simulation controls. Architectural rule: Studio is a
+diff/branch views, simulation controls.) Architectural rule: Studio is a
 client of WorldIR/WorldStore; it never becomes the reconstruction engine.
 
 ---
@@ -316,15 +330,15 @@ client of WorldIR/WorldStore; it never becomes the reconstruction engine.
 
 ## P7.27 — Large world
 
-**Status: MISSING** → [`../future/large-world/LARGE_WORLD.md`](../future/large-world/LARGE_WORLD.md). Spatial cells, octree/LOD, artifact paging, streaming indexes.
+**Status: DONE (ledger P13-01, P13-02; `tests/test_spatial_tiling.py`, `tests/test_worldstore_tiles.py`).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Spec: [`../future/large-world/LARGE_WORLD.md`](../future/large-world/LARGE_WORLD.md). Spatial cells, octree/LOD, artifact paging, streaming indexes.
 
 ## P7.28 — Packaging
 
-**Status: PARTIAL.** CLI entry point exists; wheel contents + clean-venv install not verified. Evidence: build + install + import + CLI in a clean environment.
+**Status: IMPLEMENTED (`tests/test_packaging_smoke.py`; clean-venv run found and fixed missing deps, commit dc35a79).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Originally: CLI entry point existed; wheel contents + clean-venv install not verified. Evidence: build + install + import + CLI in a clean environment.
 
 ## P7.29 — CI
 
-**Status: MISSING.** No GitHub workflows exist. Evidence: unit CI, deterministic CLI E2E CI, marked real-model tests separated (weights/network never required for green), packaging smoke test.
+**Status: IMPLEMENTED (`.github/workflows/ci.yml` present; not executed in this review).** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Originally: no GitHub workflows existed. Evidence: unit CI, deterministic CLI E2E CI, marked real-model tests separated (weights/network never required for green), packaging smoke test.
 
 ---
 
@@ -332,7 +346,7 @@ client of WorldIR/WorldStore; it never becomes the reconstruction engine.
 
 ## P8.30 — Physics → WorldIR / reverse updates
 
-**Status: PARTIAL.** Rigid bodies, collision, contact solver, destruction/fire/wind foundations exist. Missing: CCD, joints, physics→WorldIR state write-back with provenance (simulated state must stay distinguishable from observed).
+**Status: DONE as generic world simulation (ledger P17-01; `tests/test_simulation_loop.py`); physics engines moved to `reality-engine-child` 2026-09-18.** Reconciled 2026-10-17 against `.agent/TASKS.yaml`; the older text below this line is the original backlog entry. Original text: rigid bodies, collision, contact solver, destruction/fire/wind foundations existed. Missing: CCD, joints, physics→WorldIR state write-back with provenance (simulated state must stay distinguishable from observed).
 
 ## P8.31 — Advanced simulation
 
@@ -382,7 +396,7 @@ confidence explicitly. Raw-sensor decode fidelity (depth frames) legitimately st
 | CE-06 | Spatial continuity between versions | IMPLEMENTED (heuristic), VERIFIED on real photos | `spatial_continuity.py`: footprint overlap of fitted planes; preserved / refined / extended / reduced / split / merge / regrouped / ambiguous / removed / new; regions with the new photographs that touched them. Heuristic: thresholds (20 deg, 10% of extent, 60% coverage) are not calibrated against ground truth; only planar structure has shape data (openings/boxes fall back to centre distance); segmentation instability makes labels vary run to run; regions are spatial clusters, not semantic parts (no "front facade" naming). |
 | CE-07 | Persistent COLMAP state (`image_registrator`) | IMPLEMENTED, measured | See PROGRESSIVE_RECONSTRUCTION.md. Preserves COLMAP's frame and saves ~18-20% runtime on 6-12 photo scenes; **no quality gain** over a fresh rebuild. Larger worlds not measured. |
 | CE-08 | Incremental-vs-full COLMAP candidate arbitration by WORLD quality | IMPLEMENTED; VERIFIED (unit + real COLMAP + product path) | `engine/pipeline/candidate_selection.py`: both candidates become world snapshots and go through `world_delta.compute_delta/reconcile_conflicts/decide` against HEAD; an ordered hierarchy (validity, acceptance, established photos lost, established surfaces lost, unsupported moves/conflicts, camera stability (margin 0.02), uncertainty, photos placed, refined/extended/new surfaces, tie -> incremental) decides and records WHY. No scalar score. A full rebuild is also tried when the incremental candidate is not a clean ACCEPT, not only when photos are unplaced. Limits: candidates are compared on the sparse-compiled world (no depth/perception/mesh), the margins are tolerances not calibrated constants, every non-ACCEPT incremental costs one extra mapper run. Tests: `tests/test_candidate_selection.py` (cases A-F), `tests/integration/test_colmap_failure_injection.py`, live decision text in `tests/integration/test_reliability_journey.py`. |
-| CE-09 | Failure injection / restart / corruption / concurrency | PARTIALLY VERIFIED | Real COLMAP: crash before/after each of feature_extractor, matcher, image_registrator, point_triangulator, bundle_adjuster, mapper; crash before commit, after commit; 5 corruption cases (missing model/db, bad manifest, truncated model file, stale staging, removed evidence): `current/` byte-identical after every failure. Product path: crash in WorldIR compile / world_delta / decide / validation / conflict reconcile / WorldStore commit; fault after commit and read-back failure (HEAD valid, versions coherent, world converges); real process-tree kill mid-job (state A or B, never mixed); racing uploads. NOT covered: reconstruction-parse failure, subprocess timeout, disk-full, kill exactly between WorldStore commit and COLMAP commit is now covered by the stage-synchronised kill tests (8 boundaries), stale-candidate rebase with two parallel jobs from one HEAD, corrupted WorldStore artifact. |
+| CE-09 | Failure injection / restart / corruption / concurrency | PARTIALLY VERIFIED | Real COLMAP: crash before/after each of feature_extractor, matcher, image_registrator, point_triangulator, bundle_adjuster, mapper; crash before commit, after commit; 5 corruption cases (missing model/db, bad manifest, truncated model file, stale staging, removed evidence): `current/` byte-identical after every failure. Product path: crash in WorldIR compile / world_delta / decide / validation / conflict reconcile / WorldStore commit; fault after commit and read-back failure (HEAD valid, versions coherent, world converges); real process-tree kill mid-job (state A or B, never mixed); racing uploads. Kill exactly between WorldStore commit and COLMAP commit is covered by the stage-synchronised kill tests (8 boundaries). Fast fault-injection tests (no real COLMAP, `tests/test_failure_modes_colmap.py`, `tests/test_failure_modes_worldstore.py`) now cover: subprocess timeout at every step (typed `TIMED OUT` error, incremental chain falls back to full), reconstruction-parse failure (typed `model_parse` error; incremental falls back), disk-full (ENOSPC on image copy, manifest write, artifact write; retry converges), fault/kill inside `ColmapSession.commit`, corrupted WorldStore artifact (HEAD / ancestor / shared blob), and two parallel jobs from one HEAD (one adopts, loser quarantined and rebases onto the winner, duplicate retry deduplicated). Defects fixed by these tests: torn artifact blob poisoned retries (`FileArtifactStore.put` now atomic + re-verifies existing blob); `ColmapSession.commit` could lose `current/` between its two renames (now self-heals); malformed COLMAP output raised raw ValueError (now typed `model_parse`). Still NOT covered: reconstruction-parse/timeout through the real API job path with real COLMAP. |
 | CE-10 | Rollback of HEAD | IMPLEMENTED (pointer model); VERIFIED on real photos | `POST /api/worlds/{id}/rollback` -> `worldstore_service.rollback_head`: only the HEAD pointer moves, versions stay immutable, evidence is kept and shows as outside the current model, the COLMAP base is renamed `superseded-by-rollback-*` (set aside BEFORE the pointer moves, so a crash cannot leave HEAD seeded by the wrong state), the next version chains onto the rolled-back HEAD. Consequence: after a rollback the next run is a full rebuild (no per-version COLMAP snapshots). |
 | CE-11 | Cross-store recovery journal | NOT IMPLEMENTED (decision) -- WorldStore<->DB boundary now has an adoption-intent protocol, see DESIGN_DECISIONS | The COLMAP session is DERIVED state, validated on every run against the evidence set and pipeline signature, and it commits strictly after WorldStore adoption + read-back. The only reachable cross-store disagreement is "COLMAP one version behind", which converges on the next run (`test_crash_after_worldstore_adoption_...`); "COLMAP ahead of WorldStore" is unreachable by ordering. A fault after adoption is now a recorded degradation, not a FAILED job (the retry used to adopt a duplicate version). Revisit if the COLMAP state ever becomes authoritative. |
 

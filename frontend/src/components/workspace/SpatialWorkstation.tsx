@@ -292,13 +292,15 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   }, [worldId]);
 
   // Reset transient workspace selection & filters whenever active world changes
-  useEffect(() => {
+  const [resetForWorldId, setResetForWorldId] = useState(worldId);
+  if (resetForWorldId !== worldId) {
+    setResetForWorldId(worldId);
     setSelectedEntityId(null);
     setSelectedEvidenceId(null);
     setActiveQuery(null);
     setSelectedVersionId(null);
     setAddPhotosOpen(false);
-  }, [worldId]);
+  }
 
   // Global Keyboard Shortcuts and Custom Event Listeners
   useEffect(() => {

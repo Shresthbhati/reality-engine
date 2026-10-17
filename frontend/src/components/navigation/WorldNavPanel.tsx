@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useSyncExternalStore } from "react";
 import {
   Globe,
   Camera,
@@ -83,6 +83,36 @@ export interface ViewportBookmark {
   createdAt: string;
 }
 
+// Bookmarks live in localStorage (an external store). `memory` keeps a write visible this session even if
+// localStorage refuses it (quota/private mode), as the previous in-component state did.
+const bookmarkListeners = new Set<() => void>();
+const bookmarkMemory = new Map<string, string>();
+
+function subscribeBookmarks(listener: () => void) {
+  bookmarkListeners.add(listener);
+  return () => {
+    bookmarkListeners.delete(listener);
+  };
+}
+
+function readBookmarks(key: string): string | null {
+  const inMemory = bookmarkMemory.get(key);
+  if (inMemory !== undefined) return inMemory;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeBookmarks(key: string, json: string) {
+  bookmarkMemory.set(key, json);
+  try {
+    localStorage.setItem(key, json);
+  } catch {}
+  bookmarkListeners.forEach((l) => l());
+}
+
 export default function WorldNavPanel({
   worlds,
   activeWorldId,
@@ -112,20 +142,20 @@ export default function WorldNavPanel({
   const [activeLevelFilter, setActiveLevelFilter] = useState<number | null>(null);
 
   // Viewport bookmarks state persisted to localStorage
-  const [bookmarks, setBookmarks] = useState<ViewportBookmark[]>([]);
-
-  useEffect(() => {
+  const bookmarksKey = `reality_engine_bookmarks_${activeWorldId}`;
+  const savedBookmarks = useSyncExternalStore(
+    subscribeBookmarks,
+    () => readBookmarks(bookmarksKey),
+    () => null,
+  );
+  const bookmarks = useMemo<ViewportBookmark[]>(() => {
     try {
-      const saved = localStorage.getItem(`reality_engine_bookmarks_${activeWorldId}`);
-      if (saved) {
-        setBookmarks(JSON.parse(saved));
-      } else {
-        setBookmarks([]);
-      }
+      return savedBookmarks ? JSON.parse(savedBookmarks) : [];
     } catch {
-      setBookmarks([]);
+      return [];
     }
-  }, [activeWorldId]);
+  }, [savedBookmarks]);
+  const setBookmarks = (next: ViewportBookmark[]) => writeBookmarks(bookmarksKey, JSON.stringify(next));
 
   const handleAddBookmark = () => {
     const handlePose = (ev: Event) => {
@@ -142,9 +172,6 @@ export default function WorldNavPanel({
         };
         const updated = [...bookmarks, newBm];
         setBookmarks(updated);
-        try {
-          localStorage.setItem(`reality_engine_bookmarks_${activeWorldId}`, JSON.stringify(updated));
-        } catch {}
       }
     };
     window.addEventListener("viewport-camera-pose-response", handlePose);
@@ -154,9 +181,6 @@ export default function WorldNavPanel({
   const handleDeleteBookmark = (bmId: string) => {
     const updated = bookmarks.filter((b) => b.id !== bmId);
     setBookmarks(updated);
-    try {
-      localStorage.setItem(`reality_engine_bookmarks_${activeWorldId}`, JSON.stringify(updated));
-    } catch {}
   };
 
   const handleFlyToBookmark = (bm: ViewportBookmark) => {
@@ -1761,10 +1785,11 @@ function HierarchyExplorer({
     );
   };
 
-  // Auto-expand tree branch to reveal selected entity
-  useEffect(() => {
-    if (!selectedEntityId) return;
-    setExpanded((prev) => {
+  // Auto-expand tree branch to reveal selected entity (adjusted during render when the selection/entities change)
+  const [expandedFor, setExpandedFor] = useState<{ id: string | null; list: Entity[] } | null>(null);
+  if (!expandedFor || expandedFor.id !== selectedEntityId || expandedFor.list !== entitiesList) {
+    setExpandedFor({ id: selectedEntityId, list: entitiesList });
+    if (selectedEntityId) setExpanded((prev) => {
       const next: Record<string, boolean> = { ...prev, building: true };
       for (const lvl of levels) {
         next[`lvl-${lvl.id}`] = true;
@@ -1797,7 +1822,7 @@ function HierarchyExplorer({
       }
       return next;
     });
-  }, [selectedEntityId, entitiesList]);
+  }
 
   // Level element queries
   const getLevelRooms = (lvl: { id: string; roomIds?: string[] }) => {
@@ -2466,15 +2491,19 @@ export function BuildingTopologyInspector({
   onFrameEntity: (id: string) => void;
 }) {
   const [graphData, setGraphData] = useState<SpaceGraphData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(worldIR?.id));
+
+  // A new world id restarts the read: reset status during render, not in the effect.
+  const [loadedFor, setLoadedFor] = useState(worldIR?.id);
+  if (loadedFor !== worldIR?.id) {
+    setLoadedFor(worldIR?.id);
+    if (!worldIR?.id) setGraphData(null);
+    setLoading(Boolean(worldIR?.id));
+  }
 
   useEffect(() => {
-    if (!worldIR?.id) {
-      setGraphData(null);
-      return;
-    }
+    if (!worldIR?.id) return;
     let isCancelled = false;
-    setLoading(true);
 
     fetch(`/api/worlds/${encodeURIComponent(worldIR.id)}/space-graph`)
       .then((res) => (res.ok ? res.json() : null))

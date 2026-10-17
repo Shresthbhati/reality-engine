@@ -67,8 +67,10 @@ Sources: `docs/KNOWN_LIMITATIONS.md`, `docs/implementation/PENDING_IMPLEMENTATIO
 - Studio: no uncertainty visualization; frontend lint had 10 pre-existing errors (2026-10-03).
 - Environment: SAM torch-hub cache failure (1 failing perception test when included); no open3d/trimesh/skimage by
   design; gitignored synthetic room fixtures absent locally (14 integration skips).
-- Carried from archived audits (added 2026-10-17): two WorldIR classes still exported (`WorldIRLegacy`), `apps/api` has
-  no authentication, room inference traces convex rings only. See `docs/KNOWN_LIMITATIONS.md`.
+- Carried from archived audits (added 2026-10-17): `WorldIRLegacy` removed from `world_ir/__init__`; `apps/api`
+  now has bearer-token auth (`REALITY_API_TOKEN`, loopback-only when unset, fails closed on 0.0.0.0); ring tracing
+  handles non-convex (L/U/T) rooms via a validated DFS trace. All three resolved this session (see
+  "Session 2026-10-17" below).
 - No ledger task: material perception (P2.17), advanced simulation (P8.31).
 
 ## Contradictions found while writing this page
@@ -77,16 +79,66 @@ Sources: `docs/KNOWN_LIMITATIONS.md`, `docs/implementation/PENDING_IMPLEMENTATIO
   sprint; `.agent/TASKS.yaml` now has P16-01 DONE and P16-02 OPTIONAL_DEFERRED. The YAML is authoritative.
 - `PENDING_IMPLEMENTATION.md` P1.5 and P0.x entries and the PROD/CE tables were not re-audited on 2026-10-17.
 
+## Session 2026-10-17 (this worktree, branch claude/project-improvement-3b3fb3)
+
+Committed in 9 logical groups (all on this worktree; `.codex/` and `AGENTS.md` left untracked — user asked before
+committing them):
+
+1. Cleanup: removed .obsidian/.kilo/.freebuff/.serena state dirs + ad-hoc scratch files; anchored their ignores in
+   .gitignore.
+2. Docs: archived 8 audits under docs/archive/audits/; rewrote EXECUTION_STATE.md (1709 -> 92 lines); aligned
+   IMPLEMENTATION_STATUS.md / PENDING_IMPLEMENTATION.md / ROADMAP.md statuses with code+tests.
+3. Engine fixes+tests: colmap_backend (timeout labeling, typed model-parse error), colmap_session (heal committed
+   model across kill-between-swap), artifact_store (atomic write + never-trust-a-corrupt-blob), worldstore +
+   cli `store prune` retention; tests/test_failure_modes_*.py, tests/test_worldstore_retention.py.
+4. Features: evidence/promote_rooms.py non-convex ring tracing; removed WorldIRLegacy export; tests/test_room_ring_tracing.py.
+5. API auth: apps/api/auth.py (REALITY_API_TOKEN bearer, loopback-only when unset, missing peer address = local),
+   apps/api/main.py middleware wiring, tests/test_api_auth.py, httpx<0.28 pin in pyproject.toml.
+6. Frontend: shared lib/api/backend.ts backendFetch used by all 19 proxy routes; AdaptiveInspector uncertainty
+   panel (confidence bar role=meter + "Low confidence" chip < 0.5); lint/type fixes.
+7. CI: .github/workflows/ci.yml (nightly-only slow job; frontend lint/typecheck/build job).
+8. Acceptance test: tests/integration/test_acceptance_p018.py (real South Building photos, real COLMAP/MiDaS,
+   --no-mesh on anchored run, skip-if-not-available).
+9. README: README.md + QUICKSTART.md rewritten to current state, QUICKSTART documents the API token.
+
+Verification actually run this session (real runs, not inferred):
+- tests/test_api_auth.py: 5 passed (token path incl. 200 with token / 401 without; health & preflight open; token never logged).
+- Live HTTP check against uvicorn with REALITY_API_TOKEN=secret123: GET /api/health 200 (no token); protected 401 no token / wrong token / 200 correct token.
+- Live HTTP check against Next.js proxy on :3000: /api/worlds 200, /api/sessions 200 (token forwarded server-side).
+- tests/test_space_graph_api.py: 1 passed.
+- tests/test_interior_adversarial.py::test_l_shaped_corridor: 1 passed (slow, 91.6s).
+- tests/test_confidence_defaults.py, tests/test_room_ring_tracing.py, tests/test_worldstore_retention.py,
+  tests/test_failure_modes_colmap.py, tests/test_failure_modes_worldstore.py: 41 passed.
+- NOT run: test_interior_scene_e2e (timed out >120s even without slow marker), the full slow suite, and
+  test_interior_adversarial as a whole (all 12 slow-marked). Full non-slow suite not re-recorded here.
+
+Mesh stage (section 3): reconstruction/meshing/surface.py runs COLMAP `poisson_mesher` with a hard 1800s timeout
+and raises MeshingError on timeout — it is SLOW, not hung. On South Building (~246k dense points, CPU) it had not
+finished after 40+ min, so the acceptance test uses --no-mesh and the mesh criterion stays UNVERIFIED on South
+Building (verified on the room capture per backlog P0.18). No decimation/GPU fix added (would change mesh quality;
+the stage fails safely instead of hanging). Limit documented in the acceptance test and in KNOWN_LIMITATIONS.
+
+Environment drift (section 4): global Python has httpx 0.27.2 (project pins httpx<0.28). skillspector requires
+httpx>=0.28.0 and is broken by the global downgrade. Options: (a) move this project into a venv so httpx<0.28 is
+isolated and global stays >=0.28 for skillspector, or (b) leave global as-is (project works, skillspector broken).
+Pending user decision.
+
+Ledger conflict (section 5): RESOLVED in favor of code. Commit f698f49 pinned Observation/Relationship/CausalRelation
+constructor+from_dict defaults to 0.5 / Provenance.UNKNOWN (never 1.0/OBSERVED); tests/test_confidence_defaults.py
+asserts this and that no producer omits confidence; PENDING_IMPLEMENTATION.md PROD.3 confirms. TASKS.yaml's PROD-01
+"remaining" item was stale — updated to mark the confidence-defaults audit DONE (evidence: commit f698f49 +
+test_confidence_defaults.py); the external-corridor/room-data item remains EXTERNAL DATA (UNVERIFIED).
+
 ## Exact next priorities (ledger order; none needs a new product decision)
 
-1. PROD-01 remainder (engineering): audit `Observation`/`Relationship` confidence defaults and pin with tests.
-2. PT-06 known limits: doorway room-merge, stairs into interior assembly, depth-noise phantom openings, slow mesh
+1. PT-06 known limits: doorway room-merge, stairs into interior assembly, depth-noise phantom openings, slow mesh
    validation (each has a strict xfail to flip).
-3. WorldIR consolidation (remove or migrate `world_ir/world.py`); API authentication before any non-local deployment.
-4. Re-run the full non-slow suite and `tests/integration` on HEAD and record dated counts here.
-5. External-data blockers (P7-03, P7-05, P1-03, P3-02, P14-01): need real corridor/room photos, more calibration scenes,
+2. WorldIR consolidation (remove or migrate `world_ir/world.py`). (API authentication done this session.)
+3. Re-run the full non-slow suite and `tests/integration` on HEAD and record dated counts here.
+4. External-data blockers (P7-03, P7-05, P1-03, P3-02, P14-01): need real corridor/room photos, more calibration scenes,
    an RGB-D device, a built VIO backend + EuRoC MH_01, a 3DCityDB. Do not start without the data.
-6. CE-02 rebuild-cost measurement at 100+ photos. (Quarantine retention DONE: `WorldStore.prune_quarantine` + `store prune`, tests/test_worldstore_retention.py; not auto-scheduled.)
+5. CE-02 rebuild-cost measurement at 100+ photos. (Quarantine retention DONE: `WorldStore.prune_quarantine` + `store prune`, tests/test_worldstore_retention.py; not auto-scheduled.)
+6. Environment drift: venv vs global httpx — pending user decision (see "Session 2026-10-17").
 
 Rules: never mark work complete without execution evidence; update this file and `.agent/TASKS.yaml` at the end of
 every session; put sprint detail in a new file under `docs/archive/execution-history/`, not here.

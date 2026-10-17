@@ -250,7 +250,7 @@ def write_capture(directory, frames: Sequence[RgbdFrame], *, name: str = "synthe
         Image.fromarray(f.rgb, "RGB").save(root / "images" / f"{stem}.jpg", quality=95)
         raw = np.where(np.isfinite(f.depth_measured), np.rint(np.nan_to_num(f.depth_measured) / unit), 0)
         raw = np.clip(raw, 0, 65535).astype("<u2")
-        Image.fromarray(raw, mode="I;16").save(root / "depth" / f"{stem}.png")
+        Image.fromarray(raw).save(root / "depth" / f"{stem}.png")
         entries.append({"file": f"{stem}.jpg"})
         poses[stem] = f.pose.to_dict()
         truth[stem] = f.depth_true

@@ -186,7 +186,7 @@ class TestCompileWithDepthSidecars:
             # invalid pixel per frame.
             arr = np.full((self.H, self.W), 2000, dtype="<u2")
             arr[0, 0] = 0
-            Image.fromarray(arr, mode="I;16").save(d / "depth" / f"img_{i:03d}.png")
+            Image.fromarray(arr).save(d / "depth" / f"img_{i:03d}.png")
         manifest = {
             "dataset": "rgbd_test",
             "images": [{"file": f"img_{i:03d}.jpg"} for i in range(3)],
@@ -279,7 +279,7 @@ class TestCompileWithDepthSidecars:
         # Rewrite depth frames at half resolution.
         for i in range(3):
             arr = np.full((self.H // 2, self.W // 2), 2000, dtype="<u2")
-            Image.fromarray(arr, mode="I;16").save(d / "depth" / f"img_{i:03d}.png")
+            Image.fromarray(arr).save(d / "depth" / f"img_{i:03d}.png")
 
         report = self._compile(d, tmp_path, "out-dim")
 

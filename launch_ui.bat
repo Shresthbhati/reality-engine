@@ -16,8 +16,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
+for /f %%v in ('node -p "process.versions.node.split('.')[0]"') do set "NODEMAJOR=%%v"
+if %NODEMAJOR% LSS 20 (
+    echo [ERROR] Node.js %NODEMAJOR% found; Node.js 20 or newer is required. Install it from https://nodejs.org and retry.
+    pause
+    exit /b 1
+)
+
 set "PY=python"
 if exist ".venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
+
+"%PY%" -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Python 3.10 or newer was not found ("%PY%"). Install it from https://www.python.org and retry.
+    pause
+    exit /b 1
+)
 
 "%PY%" -c "import fastapi, uvicorn, sqlalchemy" >nul 2>nul
 if errorlevel 1 (

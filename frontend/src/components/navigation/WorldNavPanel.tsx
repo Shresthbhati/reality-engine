@@ -514,19 +514,19 @@ interface SpatialAnchor {
 
   return (
     <nav
-      className="w-full h-full flex flex-col overflow-hidden bg-[#0e1013] select-none"
+      className="w-full h-full flex flex-col overflow-hidden bg-[var(--bg-surface)] select-none"
       style={{ borderColor: "var(--border)" }}
     >
       {/* World Selector Header */}
       <div
-        className="p-3 border-b shrink-0 flex flex-col gap-1.5 bg-[#12141a]"
+        className="p-3 border-b shrink-0 flex flex-col gap-1.5 bg-[var(--bg-surface)]"
         style={{ borderColor: "var(--border)" }}
       >
         <div className="flex items-center justify-between">
           <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
             Spatial World
           </label>
-          <span className="text-[10px] font-mono text-[#00e5ff] px-1.5 py-0.2 rounded bg-[#00e5ff]/10 border border-[#00e5ff]/20">
+          <span className="text-[10px] font-mono text-[var(--accent)] px-1.5 py-0.2 rounded bg-[var(--accent)]/10 border border-[var(--accent)]/20">
             {String(worldIR?.coordinate_frame || worldIR?.coordinate_system || "metric_enu")}
           </span>
         </div>
@@ -534,10 +534,10 @@ interface SpatialAnchor {
           <select
             value={activeWorldId}
             onChange={(e) => onSelectWorld(e.target.value)}
-            className="w-full h-8 pl-2.5 pr-7 rounded bg-[#181b24] border border-[#232734] text-xs text-white font-medium appearance-none focus:border-[#00e5ff] focus:outline-none cursor-pointer truncate"
+            className="w-full h-8 pl-2.5 pr-7 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-xs text-white font-medium appearance-none focus:border-[var(--accent)] focus:outline-none cursor-pointer truncate"
           >
             {worlds.map((w) => (
-              <option key={w.id} value={w.id} className="bg-[#181b24] text-white">
+              <option key={w.id} value={w.id} className="bg-[var(--bg-elevated)] text-white">
                 {w.name}
               </option>
             ))}
@@ -548,7 +548,7 @@ interface SpatialAnchor {
 
       {/* Primary Left Nav Tabs */}
       <div
-        className="flex items-center px-2 py-1.5 border-b gap-1 shrink-0 overflow-x-auto text-xs bg-[#101217]"
+        className="flex items-center px-2 py-1.5 border-b gap-1 shrink-0 overflow-x-auto text-xs bg-[var(--bg-surface)]"
         style={{ borderColor: "var(--border-subtle)" }}
       >
         <NavTabButton
@@ -620,13 +620,13 @@ interface SpatialAnchor {
         {/* 0. HIERARCHY: BUILDING → LEVELS → ROOMS → CORRIDORS → ...   */}
         {/* ============================================================ */}
         {section === "hierarchy" && (
-          <div className="flex items-center px-3 py-1.5 border-b border-[#1f222b] bg-[#12141a] gap-1 shrink-0 text-[11px] overflow-x-auto">
+          <div className="flex items-center px-3 py-1.5 border-b border-[var(--border)] bg-[var(--bg-surface)] gap-1 shrink-0 text-[11px] overflow-x-auto">
             <button
               type="button"
               onClick={() => setHierarchyView("tree")}
               className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 hierarchyView === "tree"
-                  ? "bg-[#00e5ff]/20 text-[#00e5ff] font-medium border border-[#00e5ff]/30"
+                  ? "bg-[var(--accent)]/20 text-[var(--accent)] font-medium border border-[var(--accent)]/30"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
@@ -637,7 +637,7 @@ interface SpatialAnchor {
               onClick={() => setHierarchyView("storeys")}
               className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 hierarchyView === "storeys"
-                  ? "bg-[#00e5ff]/20 text-[#00e5ff] font-medium border border-[#00e5ff]/30"
+                  ? "bg-[var(--accent)]/20 text-[var(--accent)] font-medium border border-[var(--accent)]/30"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
@@ -648,7 +648,7 @@ interface SpatialAnchor {
               onClick={() => setHierarchyView("rooms")}
               className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 hierarchyView === "rooms"
-                  ? "bg-[#00e5ff]/20 text-[#00e5ff] font-medium border border-[#00e5ff]/30"
+                  ? "bg-[var(--accent)]/20 text-[var(--accent)] font-medium border border-[var(--accent)]/30"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
@@ -659,7 +659,7 @@ interface SpatialAnchor {
               onClick={() => setHierarchyView("corridors")}
               className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 hierarchyView === "corridors"
-                  ? "bg-[#00e5ff]/20 text-[#00e5ff] font-medium border border-[#00e5ff]/30"
+                  ? "bg-[var(--accent)]/20 text-[var(--accent)] font-medium border border-[var(--accent)]/30"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
@@ -698,7 +698,7 @@ interface SpatialAnchor {
           <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Spatial Worlds ({worlds.length})</span>
-              <span className="text-[#00e5ff]">WorldIR</span>
+              <span className="text-[var(--accent)]">WorldIR</span>
             </div>
 
             <div className="space-y-1.5">
@@ -710,19 +710,19 @@ interface SpatialAnchor {
                     onClick={() => onSelectWorld(w.id)}
                     className={`p-2.5 rounded-lg border transition-colors cursor-pointer space-y-1.5 ${
                       isActive
-                        ? "bg-[#182030] border-[#00e5ff] shadow-sm"
-                        : "bg-[#14161f] border-[#1f222b] hover:border-neutral-700"
+                        ? "bg-[var(--bg-elevated)] border-[var(--accent)] shadow-sm"
+                        : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <Globe className="w-3.5 h-3.5 text-[#00e5ff] shrink-0" />
+                        <Globe className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
                         <span className="font-semibold text-white truncate text-xs">
                           {w.name}
                         </span>
                       </div>
                       {isActive && (
-                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40">
+                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40">
                           ACTIVE
                         </span>
                       )}
@@ -774,8 +774,8 @@ interface SpatialAnchor {
                     key={lvl.id}
                     className={`p-2.5 rounded-lg border space-y-2 ${
                       isFiltered
-                        ? "bg-[#182030] border-[#38bdf8]"
-                        : "bg-[#14161f] border-[#1f222b]"
+                        ? "bg-[var(--bg-elevated)] border-[#38bdf8]"
+                        : "bg-[var(--bg-elevated)] border-[var(--border)]"
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -832,7 +832,7 @@ interface SpatialAnchor {
                             }}
                             className={`flex items-center justify-between p-1.5 rounded transition-colors cursor-pointer ${
                               isSelected
-                                ? "bg-[#182030] text-[#00e5ff]"
+                                ? "bg-[var(--bg-elevated)] text-[var(--accent)]"
                                 : "hover:bg-neutral-800/60 text-neutral-300"
                             }`}
                           >
@@ -851,7 +851,7 @@ interface SpatialAnchor {
                                   <ChevronRight className="w-3 h-3" />
                                 )}
                               </button>
-                              <Building className="w-3.5 h-3.5 text-[#35d07f] shrink-0" />
+                              <Building className="w-3.5 h-3.5 text-[var(--success)] shrink-0" />
                               <span className="truncate">{space.name || space.id}</span>
                             </div>
                             <span className="text-[10px] text-neutral-500 font-mono">
@@ -895,7 +895,7 @@ interface SpatialAnchor {
                 <button
                   type="button"
                   onClick={onOpenRoomConstruction}
-                  className="text-[#00e5ff] hover:underline flex items-center gap-1 font-mono lowercase"
+                  className="text-[var(--accent)] hover:underline flex items-center gap-1 font-mono lowercase"
                 >
                   <Workflow className="w-3 h-3" />
                   <span>reconstruct</span>
@@ -925,8 +925,8 @@ interface SpatialAnchor {
                       }}
                       className={`p-2.5 rounded-lg border transition-all cursor-pointer space-y-2 ${
                         isSelected
-                          ? "bg-[#182030] border-[#00e5ff] shadow-md shadow-[#00e5ff]/10"
-                          : "bg-[#14161f] border-[#1f222b] hover:border-neutral-700"
+                          ? "bg-[var(--bg-elevated)] border-[var(--accent)] shadow-md shadow-[var(--accent)]/10"
+                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -936,7 +936,7 @@ interface SpatialAnchor {
                             {room.name || room.id}
                           </span>
                         </div>
-                        <span className="text-[10px] font-mono text-[#00e5ff] px-1.5 py-0.5 rounded bg-[#00e5ff]/10">
+                        <span className="text-[10px] font-mono text-[var(--accent)] px-1.5 py-0.5 rounded bg-[var(--accent)]/10">
                           {dims ? `${dims.area.toFixed(1)} m²` : "Room"}
                         </span>
                       </div>
@@ -1034,7 +1034,7 @@ interface SpatialAnchor {
                     )}
                   </div>
                 ) : (
-                  <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 font-sans">
+                  <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 font-sans">
                     No room volumes or wall boundaries reconstructed yet.
                   </div>
                 )}
@@ -1070,8 +1070,8 @@ interface SpatialAnchor {
                       }}
                       className={`p-2.5 rounded-lg border transition-all cursor-pointer space-y-2 ${
                         isSelected
-                          ? "bg-[#182030] border-[#00e5ff]"
-                          : "bg-[#14161f] border-[#1f222b] hover:border-neutral-700"
+                          ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
+                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -1118,7 +1118,7 @@ interface SpatialAnchor {
                 })}
               </div>
             ) : (
-              <div className="p-3 rounded-lg border border-neutral-800 bg-[#12141a] text-xs font-sans space-y-1.5">
+              <div className="p-3 rounded-lg border border-neutral-800 bg-[var(--bg-surface)] text-xs font-sans space-y-1.5">
                 <div className="text-neutral-300 font-semibold flex items-center gap-1.5">
                   <Workflow className="w-3.5 h-3.5 text-neutral-500" />
                   <span>No Circulation Corridors Segmented</span>
@@ -1138,14 +1138,14 @@ interface SpatialAnchor {
           <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Calibrated Viewpoints ({effectiveEvidence.length})</span>
-              <span className="text-[#00e5ff] font-mono">Multi-View SfM</span>
+              <span className="text-[var(--accent)] font-mono">Multi-View SfM</span>
             </div>
 
             {onOpenRoomConstruction && (
               <button
                 type="button"
                 onClick={onOpenRoomConstruction}
-                className="w-full py-1.5 px-3 rounded bg-[#00e5ff]/10 hover:bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/30 text-xs font-mono flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full py-1.5 px-3 rounded bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/30 text-xs font-mono flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Workflow className="w-3.5 h-3.5" />
                 <span>Reconstruct World from Evidence</span>
@@ -1153,7 +1153,7 @@ interface SpatialAnchor {
             )}
 
             {effectiveEvidence.length === 0 ? (
-              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 font-sans">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 font-sans">
                 No calibrated camera evidence available.
               </div>
             ) : (
@@ -1166,12 +1166,12 @@ interface SpatialAnchor {
                       onClick={() => onSelectEvidence?.(isSelected ? null : ev.id)}
                       className={`group p-2 rounded border transition-colors cursor-pointer flex items-center justify-between ${
                         isSelected
-                          ? "bg-[#182030] border-[#00e5ff]"
-                          : "bg-[#14161f] border-[#1f222b] hover:border-neutral-700"
+                          ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
+                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <Camera className="w-3.5 h-3.5 text-[#00e5ff] shrink-0" />
+                        <Camera className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
                         <div className="min-w-0">
                           <div className="font-mono text-xs font-medium text-neutral-200 truncate group-hover:text-white">
                             {ev.name}
@@ -1181,7 +1181,7 @@ interface SpatialAnchor {
                             {ev.residual && (
                               <>
                                 <span>·</span>
-                                <span className="text-[#35d07f]">{ev.residual}</span>
+                                <span className="text-[var(--success)]">{ev.residual}</span>
                               </>
                             )}
                           </div>
@@ -1198,7 +1198,7 @@ interface SpatialAnchor {
                           );
                         }}
                         title="Frame Camera Viewpoint"
-                        className="p-1 rounded text-neutral-400 hover:text-[#00e5ff] hover:bg-neutral-800 transition-colors"
+                        className="p-1 rounded text-neutral-400 hover:text-[var(--accent)] hover:bg-neutral-800 transition-colors"
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
@@ -1217,14 +1217,14 @@ interface SpatialAnchor {
           <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Attached Sessions ({sessions.length})</span>
-              <span className="text-[#00e5ff] font-mono">Capture Ingestion</span>
+              <span className="text-[var(--accent)] font-mono">Capture Ingestion</span>
             </div>
 
             {onOpenRoomConstruction && (
               <button
                 type="button"
                 onClick={onOpenRoomConstruction}
-                className="w-full py-1.5 px-3 rounded bg-[#00e5ff]/10 hover:bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/30 text-xs font-mono flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full py-1.5 px-3 rounded bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/30 text-xs font-mono flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Workflow className="w-3.5 h-3.5" />
                 <span>Reconstruct World from Session</span>
@@ -1232,7 +1232,7 @@ interface SpatialAnchor {
             )}
 
             {sessions.length === 0 ? (
-              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-2 font-sans">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-2 font-sans">
                 <p>No capture sessions attached to this World yet.</p>
                 <p className="text-[11px] text-neutral-500">
                   Attach an existing session or start a new mobile capture.
@@ -1244,10 +1244,10 @@ interface SpatialAnchor {
                   <div
                     key={s.id}
                     onClick={() => onSelectSession?.(s.id)}
-                    className="p-2.5 rounded border border-[#1f222b] bg-[#14161f] hover:border-neutral-700 transition-colors cursor-pointer space-y-1"
+                    className="p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] hover:border-neutral-700 transition-colors cursor-pointer space-y-1"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-xs text-white hover:text-[#00e5ff]">
+                      <span className="font-semibold text-xs text-white hover:text-[var(--accent)]">
                         {s.name}
                       </span>
                       <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-neutral-800 text-neutral-300">
@@ -1272,11 +1272,11 @@ interface SpatialAnchor {
           <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>Spatial Anchors ({effectivePlaces.length})</span>
-              <span className="text-[#00e5ff] font-mono">ENU Coordinate Frame</span>
+              <span className="text-[var(--accent)] font-mono">ENU Coordinate Frame</span>
             </div>
 
             {effectivePlaces.length === 0 ? (
-              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-1.5 font-sans">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-1.5 font-sans">
                 <p className="font-medium text-white">No spatial anchors registered</p>
                 <p className="text-[11px] text-neutral-500">
                   Spatial anchors/places can be added to anchor POIs or coordinate pins within this ENU frame.
@@ -1296,11 +1296,11 @@ interface SpatialAnchor {
                         })
                       );
                     }}
-                    className="p-2.5 rounded border border-[#1f222b] bg-[#14161f] hover:border-[#00e5ff]/50 transition-colors cursor-pointer space-y-1"
+                    className="p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--accent)]/50 transition-colors cursor-pointer space-y-1"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-white font-medium">
-                        <MapPin className="w-3.5 h-3.5 text-[#00e5ff]" />
+                        <MapPin className="w-3.5 h-3.5 text-[var(--accent)]" />
                         <span>{pl.name}</span>
                       </div>
                       <Crosshair className="w-3 h-3 text-neutral-500 hover:text-white" />
@@ -1326,7 +1326,7 @@ interface SpatialAnchor {
               <button
                 type="button"
                 onClick={handleAddBookmark}
-                className="text-[#00e5ff] hover:underline flex items-center gap-1 font-mono cursor-pointer"
+                className="text-[var(--accent)] hover:underline flex items-center gap-1 font-mono cursor-pointer"
               >
                 <Plus className="w-3 h-3" />
                 <span>Bookmark View</span>
@@ -1334,7 +1334,7 @@ interface SpatialAnchor {
             </div>
 
             {bookmarks.length === 0 ? (
-              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-2 font-sans">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-2 font-sans">
                 <p className="font-medium text-white">No spatial bookmarks saved</p>
                 <p className="text-[11px] text-neutral-500">
                   Frame any vantage point in the 3D viewport and bookmark it to quickly return to key viewpoints or inspection angles.
@@ -1342,7 +1342,7 @@ interface SpatialAnchor {
                 <button
                   type="button"
                   onClick={handleAddBookmark}
-                  className="px-3 py-1.5 rounded bg-[#00e5ff]/10 hover:bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/30 text-xs font-mono inline-flex items-center gap-1.5 cursor-pointer mx-auto"
+                  className="px-3 py-1.5 rounded bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/30 text-xs font-mono inline-flex items-center gap-1.5 cursor-pointer mx-auto"
                 >
                   <Bookmark className="w-3.5 h-3.5" />
                   <span>Bookmark Current View</span>
@@ -1354,11 +1354,11 @@ interface SpatialAnchor {
                   <div
                     key={bm.id}
                     onClick={() => handleFlyToBookmark(bm)}
-                    className="p-2.5 rounded border border-[#1f222b] bg-[#14161f] hover:border-[#00e5ff]/50 transition-colors cursor-pointer space-y-1"
+                    className="p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--accent)]/50 transition-colors cursor-pointer space-y-1"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-white font-medium">
-                        <Bookmark className="w-3.5 h-3.5 text-[#00e5ff]" />
+                        <Bookmark className="w-3.5 h-3.5 text-[var(--accent)]" />
                         <span>{bm.name}</span>
                       </div>
                       <div className="flex items-center gap-1">
@@ -1369,7 +1369,7 @@ interface SpatialAnchor {
                             handleFlyToBookmark(bm);
                           }}
                           title="Fly to camera pose"
-                          className="p-1 text-neutral-400 hover:text-[#00e5ff] cursor-pointer"
+                          className="p-1 text-neutral-400 hover:text-[var(--accent)] cursor-pointer"
                         >
                           <Crosshair className="w-3 h-3" />
                         </button>
@@ -1404,14 +1404,14 @@ interface SpatialAnchor {
           <div className="p-3 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
               <span>WorldStore Lineage</span>
-              <span className="text-[#00e5ff] font-mono">Immutable Snapshots</span>
+              <span className="text-[var(--accent)] font-mono">Immutable Snapshots</span>
             </div>
 
             {onCompareVersions && versions.length > 0 && versions[0]?.parentVersionId && (
               <button
                 type="button"
                 onClick={() => onCompareVersions(versions[0].parentVersionId ?? undefined, versions[0].id)}
-                className="w-full py-1.5 rounded font-medium text-xs bg-[#182030] hover:bg-[#1f2b42] text-[#00e5ff] border border-[#00e5ff]/30 transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                className="w-full py-1.5 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--border)] text-[var(--accent)] border border-[var(--accent)]/30 transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-sans"
               >
                 <GitBranch className="w-3.5 h-3.5" />
                 <span>Compare HEAD vs Parent</span>
@@ -1419,7 +1419,7 @@ interface SpatialAnchor {
             )}
 
             {versions.length === 0 ? (
-              <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-1.5 font-sans">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-1.5 font-sans">
                 <p className="font-medium text-white">No version snapshots recorded yet</p>
                 <p className="text-[11px] text-neutral-500">
                   Reconstruction or correction commit required to create an initial WorldStore version snapshot.
@@ -1430,13 +1430,13 @@ interface SpatialAnchor {
                 {versions.map((v) => (
                   <div
                     key={v.id}
-                    className="p-2.5 rounded border border-[#1f222b] bg-[#14161f] space-y-1"
+                    className="p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] space-y-1"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span
                           className={`w-2 h-2 rounded-full ${
-                            v.isCurrent ? "bg-[#00e5ff] animate-pulse" : "bg-neutral-600"
+                            v.isCurrent ? "bg-[var(--accent)] animate-pulse" : "bg-neutral-600"
                           }`}
                         />
                         <span className="font-mono text-xs font-semibold text-white truncate">
@@ -1444,7 +1444,7 @@ interface SpatialAnchor {
                         </span>
                       </div>
                       {v.isCurrent && (
-                        <span className="text-[9px] font-mono uppercase px-1 py-0.2 rounded bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40">
+                        <span className="text-[9px] font-mono uppercase px-1 py-0.2 rounded bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40">
                           HEAD
                         </span>
                       )}
@@ -1458,7 +1458,7 @@ interface SpatialAnchor {
                         <button
                           type="button"
                           onClick={() => onCompareVersions(v.parentVersionId ?? undefined, v.id)}
-                          className="text-[#00e5ff] hover:underline font-sans shrink-0 cursor-pointer"
+                          className="text-[var(--accent)] hover:underline font-sans shrink-0 cursor-pointer"
                         >
                           vs parent
                         </button>
@@ -1496,7 +1496,7 @@ interface SpatialAnchor {
                 value={filterText}
                 onChange={(e) => handleApplyQuery(undefined, undefined, e.target.value)}
                 placeholder="Query ID, semantic label, type..."
-                className="w-full h-8 pl-8 pr-2.5 rounded bg-[#181b24] border border-[#232734] text-xs text-white placeholder-neutral-500 focus:border-[#00e5ff] focus:outline-none font-mono"
+                className="w-full h-8 pl-8 pr-2.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-xs text-white placeholder-neutral-500 focus:border-[var(--accent)] focus:outline-none font-mono"
               />
               <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5 pointer-events-none" />
             </div>
@@ -1514,14 +1514,14 @@ interface SpatialAnchor {
                 step="0.05"
                 value={minConfFilter}
                 onChange={(e) => handleApplyQuery(undefined, parseFloat(e.target.value), undefined)}
-                className="w-full accent-[#00e5ff] cursor-pointer"
+                className="w-full accent-[var(--accent)] cursor-pointer"
               />
             </div>
 
             {/* Matching Result Count */}
-            <div className="pt-2 border-t border-[#1f222b] text-[11px] font-mono text-neutral-400 flex justify-between">
+            <div className="pt-2 border-t border-[var(--border)] text-[11px] font-mono text-neutral-400 flex justify-between">
               <span>Matching Entities:</span>
-              <span className="text-[#00e5ff] font-semibold">{filteredEntities.length}</span>
+              <span className="text-[var(--accent)] font-semibold">{filteredEntities.length}</span>
             </div>
 
             {/* Filtered Entity Results */}
@@ -1530,7 +1530,7 @@ interface SpatialAnchor {
                 <div
                   key={e.id}
                   onClick={() => onSelectEntity(e.id)}
-                  className="p-1.5 rounded bg-[#14161f] border border-[#1f222b] hover:border-neutral-700 transition-colors flex items-center justify-between text-xs cursor-pointer"
+                  className="p-1.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)] hover:border-neutral-700 transition-colors flex items-center justify-between text-xs cursor-pointer"
                 >
                   <span className="font-mono text-neutral-200 truncate">{e.id}</span>
                   <span className="text-[10px] font-mono text-neutral-400">
@@ -1570,8 +1570,8 @@ function HierarchyElementRow({
       onClick={onSelect}
       className={`group p-1.5 rounded border transition-colors cursor-pointer flex items-center justify-between text-[11px] font-mono ${
         isSelected
-          ? "bg-[#182030] border-[#00e5ff]"
-          : "bg-[#14161f] border-[#1f222b] hover:border-neutral-700"
+          ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
+          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
       }`}
     >
       <div className="flex items-center gap-1.5 min-w-0">
@@ -1595,7 +1595,7 @@ function HierarchyElementRow({
             onFrame();
           }}
           title="Frame Entity [F]"
-          className="p-0.5 text-neutral-400 hover:text-[#00e5ff] rounded"
+          className="p-0.5 text-neutral-400 hover:text-[var(--accent)] rounded"
         >
           <Maximize2 className="w-3 h-3" />
         </button>
@@ -1623,7 +1623,7 @@ function NavTabButton({
       onClick={onClick}
       className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors shrink-0 cursor-pointer ${
         active
-          ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)] font-semibold border border-[#00e5ff]/30"
+          ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)] font-semibold border border-[var(--accent)]/30"
           : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"
       }`}
     >
@@ -1632,7 +1632,7 @@ function NavTabButton({
       {count !== undefined && (
         <span
           className={`text-[10px] px-1 py-0.2 rounded font-mono ${
-            active ? "bg-[#00e5ff]/20 text-[#00e5ff]" : "bg-neutral-800 text-neutral-400"
+            active ? "bg-[var(--accent)]/20 text-[var(--accent)]" : "bg-neutral-800 text-neutral-400"
           }`}
         >
           {count}
@@ -1882,7 +1882,7 @@ function HierarchyExplorer({
 
   if (entitiesList.length === 0) {
     return (
-      <div className="p-4 rounded-md border border-[#1f222b] bg-[#12141a] text-center text-xs text-neutral-400 space-y-2 font-sans m-3">
+      <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-2 font-sans m-3">
         <p className="text-white font-medium">No spatial entities registered</p>
         <p className="text-[11px] text-neutral-500">
           Ingest imagery or execute room reconstruction to populate the canonical spatial hierarchy.
@@ -1905,7 +1905,7 @@ function HierarchyExplorer({
         key={room.id}
         className={`rounded border transition-colors ${
           isSelected
-            ? "border-[#00e5ff] bg-[#00e5ff]/10"
+            ? "border-[var(--accent)] bg-[var(--accent)]/10"
             : "border-[#3b82f6]/20 bg-[#3b82f6]/5"
         }`}
       >
@@ -1950,7 +1950,7 @@ function HierarchyExplorer({
                 onFrameEntity(room.id);
               }}
               title="Frame Room [F]"
-              className="p-0.5 text-neutral-400 hover:text-[#00e5ff]"
+              className="p-0.5 text-neutral-400 hover:text-[var(--accent)]"
             >
               <Maximize2 className="w-2.5 h-2.5" />
             </button>
@@ -1975,8 +1975,8 @@ function HierarchyExplorer({
                       }}
                       className={`px-1 py-0.2 rounded border font-mono truncate max-w-[100px] cursor-pointer ${
                         selectedEntityId === w.id
-                          ? "bg-[#f59e0b] text-black border-[#f59e0b]"
-                          : "bg-[#f59e0b]/15 text-[#f59e0b] border-[#f59e0b]/30 hover:bg-[#f59e0b]/25"
+                          ? "bg-[var(--warning)] text-black border-[var(--warning)]"
+                          : "bg-[var(--warning)]/15 text-[var(--warning)] border-[var(--warning)]/30 hover:bg-[var(--warning)]/25"
                       }`}
                     >
                       {w.id}
@@ -2056,7 +2056,7 @@ function HierarchyExplorer({
         key={corridor.id}
         className={`rounded border transition-colors ${
           isSelected
-            ? "border-[#00e5ff] bg-[#00e5ff]/10"
+            ? "border-[var(--accent)] bg-[var(--accent)]/10"
             : "border-[#06b6d4]/20 bg-[#06b6d4]/5"
         }`}
       >
@@ -2096,7 +2096,7 @@ function HierarchyExplorer({
                 onFrameEntity(corridor.id);
               }}
               title="Frame Corridor [F]"
-              className="p-0.5 text-neutral-400 hover:text-[#00e5ff]"
+              className="p-0.5 text-neutral-400 hover:text-[var(--accent)]"
             >
               <Maximize2 className="w-2.5 h-2.5" />
             </button>
@@ -2140,7 +2140,7 @@ function HierarchyExplorer({
         }}
         className={`flex items-center justify-between p-1 rounded border transition-colors cursor-pointer ${
           isSelected
-            ? "border-[#00e5ff] bg-[#00e5ff]/10"
+            ? "border-[var(--accent)] bg-[var(--accent)]/10"
             : "border-[#a855f7]/20 bg-[#a855f7]/5 hover:bg-[#a855f7]/10"
         }`}
       >
@@ -2157,7 +2157,7 @@ function HierarchyExplorer({
             onFrameEntity(stair.id);
           }}
           title="Frame Stair [F]"
-          className="p-0.5 text-neutral-400 hover:text-[#00e5ff]"
+          className="p-0.5 text-neutral-400 hover:text-[var(--accent)]"
         >
           <Maximize2 className="w-2.5 h-2.5" />
         </button>
@@ -2169,7 +2169,7 @@ function HierarchyExplorer({
     <div className="p-3 space-y-3 font-mono text-xs select-none">
       <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
         <span className="flex items-center gap-1.5">
-          <Network className="w-3.5 h-3.5 text-[#00e5ff]" />
+          <Network className="w-3.5 h-3.5 text-[var(--accent)]" />
           <span>World Hierarchy</span>
         </span>
         <span className="text-neutral-500 font-mono">
@@ -2179,7 +2179,7 @@ function HierarchyExplorer({
 
       <div className="space-y-1 text-[11px]">
         {/* ROOT: BUILDING */}
-        <div className="rounded-lg border border-[#f59e0b]/40 bg-[#f59e0b]/5 overflow-hidden">
+        <div className="rounded-lg border border-[var(--warning)]/40 bg-[var(--warning)]/5 overflow-hidden">
           <div
             onClick={() => {
               if (buildingEntity) {
@@ -2187,7 +2187,7 @@ function HierarchyExplorer({
                 onFrameEntity(buildingEntity.id);
               }
             }}
-            className="flex items-center justify-between p-2 hover:bg-[#f59e0b]/10 cursor-pointer transition-colors"
+            className="flex items-center justify-between p-2 hover:bg-[var(--warning)]/10 cursor-pointer transition-colors"
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <button
@@ -2204,14 +2204,14 @@ function HierarchyExplorer({
                   <ChevronRight className="w-3.5 h-3.5" />
                 )}
               </button>
-              <Building className="w-3.5 h-3.5 text-[#f59e0b] shrink-0" />
+              <Building className="w-3.5 h-3.5 text-[var(--warning)] shrink-0" />
               <span className="font-semibold text-white truncate">
                 {buildingEntity?.name || worldIR?.name || "Building Envelope"}
               </span>
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              <span className="text-[10px] text-[#f59e0b] px-1 rounded bg-[#f59e0b]/20">
+              <span className="text-[10px] text-[var(--warning)] px-1 rounded bg-[var(--warning)]/20">
                 {levels.length} Level{levels.length === 1 ? "" : "s"}
               </span>
               {buildingEntity && (
@@ -2232,7 +2232,7 @@ function HierarchyExplorer({
 
           {/* BUILDING CHILDREN: LEVELS OR DIRECT SPACES */}
           {expanded.building && (
-            <div className="pl-4 pr-2 pb-2 space-y-2 border-t border-[#f59e0b]/20 pt-2">
+            <div className="pl-4 pr-2 pb-2 space-y-2 border-t border-[var(--warning)]/20 pt-2">
               {levels.length === 0 ? (
                 <div className="space-y-2">
                   <div className="p-2 rounded bg-neutral-900/60 border border-neutral-800 text-[10px] text-neutral-400">
@@ -2283,7 +2283,7 @@ function HierarchyExplorer({
                   return (
                     <div
                       key={lvl.id}
-                      className="rounded border border-[#8b5cf6]/30 bg-[#8b5cf6]/5 overflow-hidden"
+                      className="rounded border border-[var(--purple)]/30 bg-[var(--purple)]/5 overflow-hidden"
                     >
                       {/* LEVEL HEADER */}
                       <div
@@ -2293,7 +2293,7 @@ function HierarchyExplorer({
                             onFrameEntity(lvl.entity.id);
                           }
                         }}
-                        className="flex items-center justify-between p-1.5 hover:bg-[#8b5cf6]/10 cursor-pointer transition-colors"
+                        className="flex items-center justify-between p-1.5 hover:bg-[var(--purple)]/10 cursor-pointer transition-colors"
                       >
                         <div className="flex items-center gap-1.5 min-w-0">
                           <button
@@ -2310,7 +2310,7 @@ function HierarchyExplorer({
                               <ChevronRight className="w-3 h-3" />
                             )}
                           </button>
-                          <Layers className="w-3.5 h-3.5 text-[#8b5cf6] shrink-0" />
+                          <Layers className="w-3.5 h-3.5 text-[var(--purple)] shrink-0" />
                           <span className="font-semibold text-neutral-200 truncate">
                             {lvl.name}
                           </span>
@@ -2338,7 +2338,7 @@ function HierarchyExplorer({
 
                       {/* LEVEL CHILDREN: ROOMS, CORRIDORS, STAIRS */}
                       {isLvlExpanded && (
-                        <div className="pl-3 pr-1.5 pb-1.5 pt-1 space-y-2 border-t border-[#8b5cf6]/20">
+                        <div className="pl-3 pr-1.5 pb-1.5 pt-1 space-y-2 border-t border-[var(--purple)]/20">
                           {/* 1. ROOMS OF THIS LEVEL */}
                           {lvlRooms.length > 0 && (
                             <div className="space-y-1">
@@ -2622,16 +2622,16 @@ export function BuildingTopologyInspector({
   return (
     <div className="p-3 space-y-4 font-mono text-xs select-none">
       {/* Top Banner */}
-      <div className="flex items-center justify-between border-b border-[#00e5ff]/20 pb-2">
+      <div className="flex items-center justify-between border-b border-[var(--accent)]/20 pb-2">
         <div className="flex items-center gap-1.5">
-          <Workflow className="w-4 h-4 text-[#00e5ff]" />
+          <Workflow className="w-4 h-4 text-[var(--accent)]" />
           <span className="font-semibold text-white uppercase tracking-wider text-[11px]">
             Spatial Topology
           </span>
         </div>
         <div className="flex items-center gap-2">
           {loading && <span className="text-[10px] text-neutral-500 animate-pulse">Syncing...</span>}
-          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/30">
+          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">
             Graph View
           </span>
         </div>
@@ -2659,13 +2659,13 @@ export function BuildingTopologyInspector({
 
       {/* 1. ACTIVE SELECTION RELATIONSHIP FOCUS */}
       {selectedEntity && selectedRelations ? (
-        <div className="rounded-lg border border-[#00e5ff]/40 bg-[#00e5ff]/5 p-2.5 space-y-2">
-          <div className="flex items-center justify-between border-b border-[#00e5ff]/20 pb-1.5">
-            <span className="text-[10px] font-semibold text-[#00e5ff] uppercase tracking-wider flex items-center gap-1">
-              <Crosshair className="w-3 h-3 text-[#00e5ff]" />
+        <div className="rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/5 p-2.5 space-y-2">
+          <div className="flex items-center justify-between border-b border-[var(--accent)]/20 pb-1.5">
+            <span className="text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wider flex items-center gap-1">
+              <Crosshair className="w-3 h-3 text-[var(--accent)]" />
               Topology Context: {selectedEntity.name || selectedEntity.id}
             </span>
-            <span className="text-[9px] uppercase px-1 rounded bg-[#00e5ff]/20 text-[#00e5ff]">
+            <span className="text-[9px] uppercase px-1 rounded bg-[var(--accent)]/20 text-[var(--accent)]">
               {selectedEntity.type}
             </span>
           </div>
@@ -2762,7 +2762,7 @@ export function BuildingTopologyInspector({
                           onSelectEntity(lvlId);
                           onFrameEntity(lvlId);
                         }}
-                        className="px-1.5 py-0.5 rounded border border-[#8b5cf6]/40 bg-[#8b5cf6]/15 text-[#8b5cf6] hover:bg-[#8b5cf6]/25 cursor-pointer font-semibold"
+                        className="px-1.5 py-0.5 rounded border border-[var(--purple)]/40 bg-[var(--purple)]/15 text-[var(--purple)] hover:bg-[var(--purple)]/25 cursor-pointer font-semibold"
                       >
                         {lvlId}
                       </button>
@@ -2777,7 +2777,7 @@ export function BuildingTopologyInspector({
 
           {/* General Inbound & Outbound Relationships */}
           {selectedRelations.directTargetIds.length > 0 && (
-            <div className="pt-1.5 border-t border-[#00e5ff]/10">
+            <div className="pt-1.5 border-t border-[var(--accent)]/10">
               <span className="text-neutral-500 uppercase text-[9px] block mb-1">
                 Linked Entities ({selectedRelations.directTargetIds.length})
               </span>
@@ -2829,8 +2829,8 @@ export function BuildingTopologyInspector({
                 }}
                 className={`p-2 rounded border transition-colors cursor-pointer space-y-1 ${
                   isSelected
-                    ? "bg-[#182030] border-[#00e5ff]"
-                    : "bg-[#14161f] border-neutral-800 hover:border-neutral-700"
+                    ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
+                    : "bg-[var(--bg-elevated)] border-neutral-800 hover:border-neutral-700"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -2912,8 +2912,8 @@ export function BuildingTopologyInspector({
                 }}
                 className={`p-2 rounded border transition-colors cursor-pointer space-y-1 ${
                   isSelected
-                    ? "bg-[#182030] border-[#00e5ff]"
-                    : "bg-[#14161f] border-neutral-800 hover:border-neutral-700"
+                    ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
+                    : "bg-[var(--bg-elevated)] border-neutral-800 hover:border-neutral-700"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -2974,8 +2974,8 @@ export function BuildingTopologyInspector({
                 }}
                 className={`p-2 rounded border transition-colors cursor-pointer space-y-1.5 ${
                   isSelected
-                    ? "bg-[#182030] border-[#00e5ff]"
-                    : "bg-[#14161f] border-neutral-800 hover:border-neutral-700"
+                    ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
+                    : "bg-[var(--bg-elevated)] border-neutral-800 hover:border-neutral-700"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -3009,7 +3009,7 @@ export function BuildingTopologyInspector({
                             onSelectEntity(lvl);
                             onFrameEntity(lvl);
                           }}
-                          className="px-1.5 py-0.5 rounded border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 text-[#8b5cf6] text-[9px] hover:bg-[#8b5cf6]/20 cursor-pointer"
+                          className="px-1.5 py-0.5 rounded border border-[var(--purple)]/30 bg-[var(--purple)]/10 text-[var(--purple)] text-[9px] hover:bg-[var(--purple)]/20 cursor-pointer"
                         >
                           {lvl}
                         </button>

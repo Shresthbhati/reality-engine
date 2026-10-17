@@ -73,19 +73,19 @@ export default function VersionDiffModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl max-h-[85vh] rounded-lg flex flex-col overflow-hidden bg-[#0e1013] border border-[#1f222b] shadow-2xl"
+        className="w-full max-w-3xl max-h-[85vh] rounded-lg flex flex-col overflow-hidden bg-[var(--bg-surface)] border border-[var(--border)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 h-14 border-b border-[#1f222b] bg-[#12141a]">
+        <div className="flex items-center justify-between px-5 h-14 border-b border-[var(--border)] bg-[var(--bg-surface)]">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-md flex items-center justify-center bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/20">
+            <div className="w-8 h-8 rounded-md flex items-center justify-center bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
               <GitCompare className="w-4 h-4" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-white">WorldStore Version Comparison</h3>
               <p className="text-[11px] font-mono text-neutral-400">
-                Comparing <span className="text-[#00e5ff]">{baseVersion || "—"}</span> → <span className="text-[#2ecc71]">{headVersion || "HEAD (Current Version)"}</span>
+                Comparing <span className="text-[var(--accent)]">{baseVersion || "—"}</span> → <span className="text-[var(--success)]">{headVersion || "HEAD (Current Version)"}</span>
               </p>
             </div>
           </div>
@@ -102,12 +102,12 @@ export default function VersionDiffModal({
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-3">
-              <div className="w-6 h-6 border-2 border-[#00e5ff] border-t-transparent rounded-full animate-spin" />
+              <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
               <p className="text-neutral-400 font-mono text-xs">Computing WorldStore geometric & semantic delta...</p>
             </div>
           ) : error ? (
-            <div className="py-12 px-6 rounded-lg border border-[#1f222b] bg-[#12141a] text-center space-y-3">
-              <div className="w-10 h-10 rounded-full bg-[#1c202a] text-neutral-400 mx-auto flex items-center justify-center border border-neutral-700/50">
+            <div className="py-12 px-6 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] text-center space-y-3">
+              <div className="w-10 h-10 rounded-full bg-[var(--bg-elevated)] text-neutral-400 mx-auto flex items-center justify-center border border-neutral-700/50">
                 <GitCompare className="w-5 h-5 text-neutral-400" />
               </div>
               <div className="space-y-1">
@@ -121,27 +121,27 @@ export default function VersionDiffModal({
             <>
               {/* Summary Stats -- from the real WorldDiff.summary() */}
               <div className="grid grid-cols-4 gap-3">
-                <div className="p-3 rounded-lg bg-[#151821] border border-[#1f222b]">
+                <div className="p-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)]">
                   <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Modified Entities</span>
-                  <span className="text-lg font-mono font-bold text-[#00e5ff] mt-0.5 block">
+                  <span className="text-lg font-mono font-bold text-[var(--accent)] mt-0.5 block">
                     {diff.summary?.entities_modified ?? 0}
                   </span>
                 </div>
-                <div className="p-3 rounded-lg bg-[#151821] border border-[#1f222b]">
+                <div className="p-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)]">
                   <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Added Entities</span>
-                  <span className="text-lg font-mono font-bold text-[#2ecc71] mt-0.5 block">
+                  <span className="text-lg font-mono font-bold text-[var(--success)] mt-0.5 block">
                     {diff.summary?.entities_added ?? 0}
                   </span>
                 </div>
-                <div className="p-3 rounded-lg bg-[#151821] border border-[#1f222b]">
+                <div className="p-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)]">
                   <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Removed Entities</span>
                   <span className="text-lg font-mono font-bold text-neutral-400 mt-0.5 block">
                     {diff.summary?.entities_removed ?? 0}
                   </span>
                 </div>
-                <div className="p-3 rounded-lg bg-[#151821] border border-[#1f222b]">
+                <div className="p-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)]">
                   <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Geometry Changes</span>
-                  <span className="text-lg font-mono font-bold text-[#2ecc71] mt-0.5 block">
+                  <span className="text-lg font-mono font-bold text-[var(--success)] mt-0.5 block">
                     {diff.geometry_diffs?.length ?? 0}
                   </span>
                 </div>
@@ -160,7 +160,7 @@ export default function VersionDiffModal({
                   (diff.entity_diffs || []).map((d: EntityDiffDto) => (
                     <div
                       key={d.entity_id}
-                      className="p-4 rounded-lg bg-[#151821] border border-[#1f222b] space-y-3"
+                      className="p-4 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] space-y-3"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -168,10 +168,10 @@ export default function VersionDiffModal({
                           <span
                             className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
                               d.kind === "added"
-                                ? "text-[#2ecc71] bg-[#2ecc71]/10"
+                                ? "text-[var(--success)] bg-[var(--success)]/10"
                                 : d.kind === "removed"
                                 ? "text-neutral-400 bg-neutral-700/30"
-                                : "text-[#00e5ff] bg-[#00e5ff]/10"
+                                : "text-[var(--accent)] bg-[var(--accent)]/10"
                             }`}
                           >
                             {d.kind.toUpperCase()}
@@ -184,7 +184,7 @@ export default function VersionDiffModal({
                               onSelectEntity(d.entity_id);
                               onClose();
                             }}
-                            className="px-2.5 py-1 rounded text-xs font-medium text-[#00e5ff] hover:bg-[#00e5ff]/10 transition-colors"
+                            className="px-2.5 py-1 rounded text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors"
                           >
                             Inspect in 3D →
                           </button>
@@ -192,14 +192,14 @@ export default function VersionDiffModal({
                       </div>
 
                       {d.changes.length > 0 && (
-                        <div className="rounded bg-[#0e1013] border border-[#1f222b]/60 text-[11px] divide-y divide-neutral-800">
+                        <div className="rounded bg-[var(--bg-surface)] border border-[var(--border)]/60 text-[11px] divide-y divide-neutral-800">
                           {d.changes.map((c) => (
                             <div key={c.field} className="grid grid-cols-3 gap-2 p-2.5">
                               <span className="text-neutral-500 font-mono">{c.field}</span>
                               <span className="font-mono text-neutral-400 truncate" title={String(c.old)}>
                                 {c.old === null || c.old === undefined ? "—" : String(c.old)}
                               </span>
-                              <span className="font-mono text-[#00e5ff] truncate" title={String(c.new)}>
+                              <span className="font-mono text-[var(--accent)] truncate" title={String(c.new)}>
                                 {c.new === null || c.new === undefined ? "—" : String(c.new)}
                               </span>
                             </div>
@@ -215,7 +215,7 @@ export default function VersionDiffModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 h-12 border-t border-[#1f222b] bg-[#12141a] text-xs">
+        <div className="flex items-center justify-between px-5 h-12 border-t border-[var(--border)] bg-[var(--bg-surface)] text-xs">
           <span className="font-mono text-neutral-500">WorldStore Version Lineage Engine</span>
           <button
             type="button"

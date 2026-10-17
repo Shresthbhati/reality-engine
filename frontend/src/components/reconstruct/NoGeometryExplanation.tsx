@@ -22,14 +22,14 @@ export default function NoGeometryExplanation({
 }) {
   const hasEvidence = (status?.evidence_summary.count ?? 0) > 0;
 
-  let icon = <Box className="h-7 w-7 text-[#00e5ff]" aria-hidden />;
+  let icon = <Box className="h-7 w-7 text-[var(--accent)]" aria-hidden />;
   let title = "No model yet";
   let body: React.ReactNode =
     "Drop one or more photographs to build a spatial model. One photo gives a rough model; more views improve it.";
   let showDrop = true;
 
   if (status?.in_progress) {
-    icon = <Loader2 className="h-7 w-7 animate-spin text-[#00e5ff]" aria-hidden />;
+    icon = <Loader2 className="h-7 w-7 animate-spin text-[var(--accent)]" aria-hidden />;
     title = status.state_label;
     body = "Your photos are being analysed. The first model appears here as soon as it is ready.";
     showDrop = false;
@@ -44,7 +44,7 @@ export default function NoGeometryExplanation({
 
   return (
     <div
-      className="absolute inset-0 z-[15] flex flex-col items-center justify-center bg-[#08090b]/95 p-6 text-center"
+      className="absolute inset-0 z-[15] flex flex-col items-center justify-center bg-[var(--bg-base)]/95 p-6 text-center"
       data-testid="no-geometry-explanation"
       role="status"
     >

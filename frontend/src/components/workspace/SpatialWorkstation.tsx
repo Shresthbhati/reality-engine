@@ -656,7 +656,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
                   pitch={40}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-[#0b0c10]">
+                <div className="w-full h-full flex items-center justify-center bg-[var(--bg-base)]">
                   <p className="text-xs text-neutral-400 max-w-sm text-center leading-relaxed">
                     This World has no recorded geographic origin, so no map anchor exists.
                     Reconstruction coordinates are metric-local until a capture carries GNSS.

@@ -89,10 +89,10 @@ export default function BuildModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Build">
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-[#1f222b] bg-[#0c0e13] p-4 flex flex-col gap-3 shadow-2xl">
+      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-4 flex flex-col gap-3 shadow-2xl">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
-            <Hammer className="w-4 h-4 text-[#00e5ff]" /> Build
+            <Hammer className="w-4 h-4 text-[var(--accent)]" /> Build
           </h3>
           <button type="button" onClick={onClose} aria-label="Close" className="cursor-pointer">
             <X className="w-4 h-4 text-neutral-400" />
@@ -109,8 +109,8 @@ export default function BuildModal({
               onClick={() => pick(k)}
               className={`flex-1 h-8 rounded text-xs font-medium capitalize border cursor-pointer ${
                 kind === k
-                  ? "bg-[#00e5ff] text-black border-[#00e5ff]"
-                  : "bg-[#151821] text-neutral-300 border-[#1f222b] hover:text-white"
+                  ? "bg-[var(--primary)] text-white border-[var(--primary)]"
+                  : "bg-[var(--bg-elevated)] text-neutral-300 border-[var(--border)] hover:text-white"
               }`}
             >
               {k}
@@ -154,7 +154,7 @@ export default function BuildModal({
                       aria-pressed={on}
                       onClick={() => setConnects(on ? connects.filter((c) => c !== r.id) : [...connects, r.id])}
                       className={`px-2 h-6 rounded text-[11px] border cursor-pointer ${
-                        on ? "border-[#00e5ff] text-[#00e5ff]" : "border-[#1f222b] text-neutral-400"
+                        on ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--border)] text-neutral-400"
                       }`}
                     >
                       {r.name}
@@ -191,7 +191,7 @@ export default function BuildModal({
           type="button"
           onClick={submit}
           disabled={submitting || !name.trim()}
-          className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] disabled:opacity-40 cursor-pointer"
+          className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
         >
           {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {submitting ? "Building…" : `Build ${kind}`}
@@ -202,7 +202,7 @@ export default function BuildModal({
 }
 
 const inputCls =
-  "w-full bg-transparent outline-none text-sm px-2 h-8 rounded border border-[#1f222b] text-white";
+  "w-full bg-transparent outline-none text-sm px-2 h-8 rounded border border-[var(--border)] text-white";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

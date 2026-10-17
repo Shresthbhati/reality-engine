@@ -314,13 +314,13 @@ export default function RoomConstructionModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl max-h-[90vh] rounded-lg flex flex-col overflow-hidden bg-[#0e1013] border border-[#1f222b] shadow-2xl"
+        className="w-full max-w-2xl max-h-[90vh] rounded-lg flex flex-col overflow-hidden bg-[var(--bg-surface)] border border-[var(--border)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 h-14 border-b border-[#1f222b] bg-[#12141a]">
+        <div className="flex items-center justify-between px-5 h-14 border-b border-[var(--border)] bg-[var(--bg-surface)]">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-md flex items-center justify-center bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/20">
+            <div className="w-8 h-8 rounded-md flex items-center justify-center bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
               <Workflow className="w-4 h-4" />
             </div>
             <div>
@@ -330,11 +330,11 @@ export default function RoomConstructionModal({
                   <span
                     className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
                       jobStatus === "succeeded"
-                        ? "bg-[#2ecc71]/20 text-[#2ecc71] border-[#2ecc71]/40"
+                        ? "bg-[var(--success)]/20 text-[var(--success)] border-[var(--success)]/40"
                         : jobStatus === "partial"
-                        ? "bg-[#e6a23c]/20 text-[#e6a23c] border-[#e6a23c]/40"
+                        ? "bg-[var(--warning)]/20 text-[var(--warning)] border-[var(--warning)]/40"
                         : jobStatus === "running"
-                        ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40 animate-pulse"
+                        ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40 animate-pulse"
                         : jobStatus === "queued"
                         ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
                         : jobStatus === "failed"
@@ -347,7 +347,7 @@ export default function RoomConstructionModal({
                 )}
               </div>
               <p className="text-[11px] font-mono text-neutral-400">
-                Spatial World: <span className="text-[#00e5ff]">{worldId}</span>
+                Spatial World: <span className="text-[var(--accent)]">{worldId}</span>
               </p>
             </div>
           </div>
@@ -364,7 +364,7 @@ export default function RoomConstructionModal({
         <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 text-xs">
           {/* Evidence source. The reconstruction job is per-Session, so this
               is the only input that actually changes what runs. */}
-          <div className="p-3 rounded-lg border border-[#1f222b] bg-[#14161f]">
+          <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]">
             <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
               Capture Session
             </label>
@@ -372,7 +372,7 @@ export default function RoomConstructionModal({
               value={sessionId ?? ""}
               onChange={(e) => onSelectSession?.(e.target.value || null)}
               disabled={running || sessions.length === 0}
-              className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none"
+              className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none"
             >
               {sessions.length === 0 && (
                 <option value="">No sessions attached to this world</option>
@@ -412,25 +412,25 @@ export default function RoomConstructionModal({
                     key={s.id}
                     className={`p-2.5 rounded-lg border transition-colors flex items-start gap-3 ${
                       isActive
-                        ? "bg-[#182030] border-[#00e5ff]"
+                        ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
                         : isDone
-                        ? "bg-[#14161f] border-[#2ecc71]/40"
-                        : "bg-[#14161f] border-[#1f222b]"
+                        ? "bg-[var(--bg-elevated)] border-[var(--success)]/40"
+                        : "bg-[var(--bg-elevated)] border-[var(--border)]"
                     }`}
                   >
                     <div
                       className={`p-1.5 rounded shrink-0 mt-0.5 ${
                         isActive
-                          ? "bg-[#00e5ff]/20 text-[#00e5ff]"
+                          ? "bg-[var(--accent)]/20 text-[var(--accent)]"
                           : isDone
-                          ? "bg-[#2ecc71]/20 text-[#2ecc71]"
+                          ? "bg-[var(--success)]/20 text-[var(--success)]"
                           : "bg-neutral-800 text-neutral-400"
                       }`}
                     >
                       {isActive ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-[#00e5ff]" />
+                        <Loader2 className="w-4 h-4 animate-spin text-[var(--accent)]" />
                       ) : isDone ? (
-                        <CheckCircle2 className="w-4 h-4 text-[#2ecc71]" />
+                        <CheckCircle2 className="w-4 h-4 text-[var(--success)]" />
                       ) : (
                         <Icon className="w-4 h-4" />
                       )}
@@ -442,9 +442,9 @@ export default function RoomConstructionModal({
                         <span
                           className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
                             isActive
-                              ? "bg-[#00e5ff]/20 text-[#00e5ff]"
+                              ? "bg-[var(--accent)]/20 text-[var(--accent)]"
                               : isPast || isFinished
-                              ? "bg-[#2ecc71]/20 text-[#2ecc71]"
+                              ? "bg-[var(--success)]/20 text-[var(--success)]"
                               : "bg-neutral-800 text-neutral-500"
                           }`}
                         >
@@ -465,7 +465,7 @@ export default function RoomConstructionModal({
 
           {/* Honest Error Status */}
           {error && (
-            <div className="p-3 rounded-lg border border-[#e74c3c]/50 bg-[#2a1315] text-[#ff6b6b] flex items-start gap-2.5">
+            <div className="p-3 rounded-lg border border-[var(--error)]/50 bg-[var(--error-subtle)] text-[var(--error)] flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <div className="font-semibold text-xs">Reconstruction did not complete</div>
@@ -481,8 +481,8 @@ export default function RoomConstructionModal({
             <div
               className={`p-3 rounded-lg border flex items-start gap-2.5 ${
                 outcome.status === "succeeded"
-                  ? "border-[#2ecc71]/50 bg-[#12281a] text-[#2ecc71]"
-                  : "border-[#e6a23c]/50 bg-[#2a2413] text-[#e6a23c]"
+                  ? "border-[var(--success)]/50 bg-[var(--success-subtle)] text-[var(--success)]"
+                  : "border-[var(--warning)]/50 bg-[var(--warning-subtle)] text-[var(--warning)]"
               }`}
             >
               {outcome.status === "succeeded" ? (
@@ -512,17 +512,17 @@ export default function RoomConstructionModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 h-14 border-t border-[#1f222b] bg-[#12141a]">
+        <div className="flex items-center justify-between px-5 h-14 border-t border-[var(--border)] bg-[var(--bg-surface)]">
           <div className="flex items-center gap-2 font-mono text-[11px]">
             <span className="text-neutral-500">Status:</span>
             <span
               className={`font-semibold uppercase ${
                 jobStatus === "succeeded"
-                  ? "text-[#2ecc71]"
+                  ? "text-[var(--success)]"
                   : jobStatus === "partial"
-                  ? "text-[#e6a23c]"
+                  ? "text-[var(--warning)]"
                   : jobStatus === "running"
-                  ? "text-[#00e5ff]"
+                  ? "text-[var(--accent)]"
                   : jobStatus === "queued"
                   ? "text-amber-400"
                   : jobStatus === "failed"
@@ -555,7 +555,7 @@ export default function RoomConstructionModal({
                   onReconstructionSuccess?.();
                   onClose();
                 }}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[#2ecc71] text-black hover:bg-[#40d47e] transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[var(--success)] text-black hover:bg-[var(--success)] transition-colors cursor-pointer"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Inspect Reconstructed World</span>
@@ -565,7 +565,7 @@ export default function RoomConstructionModal({
                 type="button"
                 onClick={handleRunPipeline}
                 disabled={running}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {running ? (
                   <>

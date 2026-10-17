@@ -11,6 +11,7 @@ import type {
 } from "@/types/worldir";
 import { pointsBounds, robustPointsBounds } from "./loaders";
 import { isOversizedEntity } from "./oversized";
+import { shouldAutoFrame } from "./autoframe";
 
 export interface ViewportLayers {
   points: boolean;
@@ -112,6 +113,7 @@ export class WorldSceneController {
 
   // Data cache
   private world: WorldIR | null = null;
+  private framedWorldId: string | null = null;
   private pointsData: Float32Array | null = null;
   private camerasData: CamerasPayload | null = null;
   private meshData: { positions: Float32Array; indices: Uint32Array } | null = null;
@@ -495,6 +497,13 @@ export class WorldSceneController {
 
       this.scene.add(this.layers.entities);
       this.updateMeshVisibilities();
+
+      // Procedural worlds have no cloud to seed the camera; frame once per world so a large scene is on-screen.
+      const hasCloud = Boolean(this.pointsData && this.pointsData.length > 0);
+      if (shouldAutoFrame(hasCloud, this.entityMeshes.size, this.framedWorldId, this.world.id)) {
+        this.framedWorldId = this.world.id;
+        this.frameAll(false);
+      }
     }
 
     // 3. Build Camera Frustums

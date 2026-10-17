@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api import jobs as jobrunner
 from apps.api.db import dispose_db, init_db
+from apps.api.routes_intent import estimate_router as intent_estimate, intent_router
 from apps.api.routes_jobs import activity, jobs, notifications
 from apps.api.routes_misc import evidence, uploads
 from apps.api.routes_export import export
@@ -35,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (health, sessions, uploads, evidence, reconstructions, world_status, worlds, procedural, query, export, jobs, notifications, activity, system):
+for router in (health, sessions, uploads, evidence, reconstructions, world_status, worlds, procedural, query, export, jobs, notifications, activity, system, intent_router, intent_estimate):
     app.include_router(router)
 
 

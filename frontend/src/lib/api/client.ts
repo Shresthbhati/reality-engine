@@ -221,6 +221,18 @@ export function apiPatch<T>(path: string, body?: unknown, options: RequestOption
   );
 }
 
+export function apiPut<T>(path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
+  return perform<T>(
+    path,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body ?? {}),
+    },
+    options,
+  );
+}
+
 export function apiDelete<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return perform<T>(path, { method: "DELETE", headers: { Accept: "application/json" } }, options);
 }

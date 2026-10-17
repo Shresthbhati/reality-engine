@@ -177,3 +177,14 @@ Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an 
 6. **3DCityDB availability is three-valued** (`probe_citydb`: AVAILABLE / UNAVAILABLE / FAILED) and probe-only: AVAILABLE
    means the `citydb` CLI runs, never that a database was reached. Contract tests against a fake CLI are not real
    3DCityDB verification; that stays external.
+
+## Decision — Axis convention
+
+**Status: ACCEPTED**
+
+Right-handed, Y-up is the canonical world frame (`ARCHITECTURE.md`, `docs/MODULE_OWNERSHIP.md`,
+`reconstruction/frame.py`, the viewport's `three-scene.ts`). The procedural grammars
+(`procedural/room_grammar.py`, `urban_grammar.py`) author Z-up in grammar-local axes (x east, y north, z up; specs and
+`origin` stay local) and convert once, in `_entity`, with the rotation (x, y, z) -> (x, z, -y), so height is world +Y and
+local +y is world -Z. **Latent inconsistency, not fixed here:** `exporters/boxes.py` states "WorldIR is Z-up", which
+contradicts this decision; reconcile it separately (exporters were deliberately left untouched).

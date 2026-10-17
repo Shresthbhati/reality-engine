@@ -25,7 +25,7 @@ api = [
     "sqlalchemy[asyncio]>=2.0",   # [asyncio] pulls in greenlet, which the async engine needs
     "aiosqlite>=0.20.0",
     "python-multipart",
-    "httpx",
+    "httpx<0.28",
 ]
 # IFC export (exporters/ifc_bridge.py) needs IfcOpenShell; without it the API answers 501 for format=ifc. Declared so a clean
 # `pip install -e ".[dev]"` exercises the IFC tests instead of silently skipping them.

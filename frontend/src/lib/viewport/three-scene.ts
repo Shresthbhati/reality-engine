@@ -10,6 +10,7 @@ import type {
   WorldIR,
 } from "@/types/worldir";
 import { pointsBounds, robustPointsBounds } from "./loaders";
+import { isOversizedEntity } from "./oversized";
 
 export interface ViewportLayers {
   points: boolean;
@@ -435,7 +436,7 @@ export class WorldSceneController {
         // point cloud; with no cloud (procedural worlds) there is no scale
         // to judge against, so nothing is "oversized" (a 20 m city block is real).
         const hasCloud = Boolean(this.pointsData && this.pointsData.length > 0);
-        const isOversized = hasCloud && this.robustExtent > 0 && extent > 4 * this.robustExtent;
+        const isOversized = isOversizedEntity(extent, hasCloud, this.robustExtent);
         const outlierScale = isOversized ? 0.25 : 1.0;
 
         const baseColor = TYPE_COLORS[e.type.toLowerCase()] || TYPE_COLORS.default;

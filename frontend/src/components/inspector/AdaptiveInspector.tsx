@@ -58,7 +58,10 @@ interface AdaptiveInspectorProps {
   onRetryLoad?: () => void;
 }
 
-type InspectorTab = "all" | "geometry" | "evidence" | "observations" | "provenance" | "uncertainty";
+/** Entities with recorded confidence below this are flagged in the inspector. */
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
+type InspectorTab ="all" | "geometry" | "evidence" | "observations" | "provenance" | "uncertainty";
 
 export default function AdaptiveInspector({
   world,
@@ -530,11 +533,22 @@ function EntityDetails({
               {entity.name || entity.id}
             </span>
           </div>
-          <span
-            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${derivationBadge.color}`}
-          >
-            {derivationBadge.label}
-          </span>
+          <div className="flex items-center gap-1 shrink-0">
+            {conf !== null && conf < LOW_CONFIDENCE_THRESHOLD && (
+              <span
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded border text-[#f5a623] bg-[#f5a623]/10 border-[#f5a623]/40 flex items-center gap-1"
+                title={`Recorded confidence ${(conf * 100).toFixed(0)}% is below ${LOW_CONFIDENCE_THRESHOLD * 100}%`}
+              >
+                <AlertTriangle className="w-3 h-3" />
+                Low confidence
+              </span>
+            )}
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${derivationBadge.color}`}
+            >
+              {derivationBadge.label}
+            </span>
+          </div>
         </div>
 
         {/* Identity & Classification */}
@@ -2193,6 +2207,41 @@ function EntityDetails({
                 {conf !== null ? `${conf.toFixed(3)} (${(conf * 100).toFixed(1)}%)` : "Not recorded"}
               </span>
             </div>
+            {conf !== null && (
+              <div
+                role="meter"
+                aria-label="Entity confidence"
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={conf}
+                className="h-1.5 rounded bg-neutral-800 overflow-hidden"
+              >
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${Math.min(1, Math.max(0, conf)) * 100}%`,
+                    background: conf < LOW_CONFIDENCE_THRESHOLD ? "#f5a623" : "#35d07f",
+                  }}
+                />
+              </div>
+            )}
+            {conf !== null && conf < LOW_CONFIDENCE_THRESHOLD && (
+              <div className="text-[10px] text-[#f5a623] flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Low confidence (below {LOW_CONFIDENCE_THRESHOLD * 100}%) - treat as unverified.
+              </div>
+            )}
+            {typeof entity.uncertainty?.confidence === "number" && entity.uncertainty.confidence !== conf && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Uncertainty Record</span>
+                <span className="font-mono text-white">
+                  {(entity.uncertainty.confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+            {typeof entity.uncertainty?.note === "string" && entity.uncertainty.note && (
+              <div className="text-[10px] text-neutral-400">Note: {entity.uncertainty.note}</div>
+            )}
             {typeof (entity.custom_properties?.inlier_fraction ?? entity.custom_properties?.inlier_ratio) === "number" && (
               <div className="flex justify-between">
                 <span className="text-neutral-400">Inlier Fraction</span>

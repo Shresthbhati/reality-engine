@@ -49,7 +49,7 @@ export default function BottomContextBar({
   const [collapsed, setCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomTab>("context");
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
-  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityLoading, setActivityLoading] = useState(true);
   // A failed read leaves `activityError` set so the panel can say the log is
   // unavailable instead of asserting that nothing has been recorded.
   const [activityError, setActivityError] = useState<string | null>(null);
@@ -57,10 +57,15 @@ export default function BottomContextBar({
   const meta = world?.metadata || {};
 
   // Fetch real activity events
-  useEffect(() => {
-    let mounted = true;
+  const [activityWorld, setActivityWorld] = useState(world);
+  if (activityWorld !== world) {
+    setActivityWorld(world);
     setActivityLoading(true);
     setActivityError(null);
+  }
+
+  useEffect(() => {
+    let mounted = true;
     getActivity()
       .then((events) => {
         if (mounted) {

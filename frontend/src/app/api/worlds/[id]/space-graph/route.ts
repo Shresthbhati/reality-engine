@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
+import { BACKEND_URL, backendFetch } from "@/lib/api/backend";
 
 export async function GET(
   request: NextRequest,
@@ -15,7 +15,7 @@ export async function GET(
     if (versionId) {
       url.searchParams.set("version_id", versionId);
     }
-    const response = await fetch(url.toString(), {
+    const response = await backendFetch(url.toString(), {
       signal: AbortSignal.timeout(3000),
     });
 

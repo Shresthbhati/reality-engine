@@ -55,8 +55,8 @@ export default function CreateWorldPage() {
       }
 
       router.push(`/worlds/${result.id}`);
-    } catch (err: any) {
-      setError(err?.message || "Failed to create world");
+    } catch (err) {
+      setError((err instanceof Error && err.message) || "Failed to create world");
       setSubmitting(false);
     }
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useSyncExternalStore } from "react";
 import {
   Globe,
   Camera,
@@ -33,6 +33,16 @@ import type {
   WorldVersionRow,
 } from "@/lib/types";
 import { TYPE_COLORS } from "@/lib/viewport/three-scene";
+
+const BOOKMARKS_EVENT = "reality-engine-bookmarks-changed";
+function subscribeBookmarks(cb: () => void) {
+  window.addEventListener(BOOKMARKS_EVENT, cb);
+  window.addEventListener("storage", cb);
+  return () => {
+    window.removeEventListener(BOOKMARKS_EVENT, cb);
+    window.removeEventListener("storage", cb);
+  };
+}
 
 export interface SpatialQueryFilter {
   type?: string;
@@ -111,21 +121,34 @@ export default function WorldNavPanel({
   const [minConfFilter, setMinConfFilter] = useState<number>(activeQuery?.minConfidence || 0);
   const [activeLevelFilter, setActiveLevelFilter] = useState<number | null>(null);
 
-  // Viewport bookmarks state persisted to localStorage
-  const [bookmarks, setBookmarks] = useState<ViewportBookmark[]>([]);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(`reality_engine_bookmarks_${activeWorldId}`);
-      if (saved) {
-        setBookmarks(JSON.parse(saved));
-      } else {
-        setBookmarks([]);
+  // Viewport bookmarks persisted to localStorage; read via an external-store
+  // subscription so there is no setState-in-effect and SSR renders empty.
+  const bookmarksKey = `reality_engine_bookmarks_${activeWorldId}`;
+  const bookmarksRaw = useSyncExternalStore(
+    subscribeBookmarks,
+    () => {
+      try {
+        return localStorage.getItem(bookmarksKey);
+      } catch {
+        return null;
       }
+    },
+    () => null,
+  );
+  const bookmarks = useMemo<ViewportBookmark[]>(() => {
+    try {
+      return bookmarksRaw ? JSON.parse(bookmarksRaw) : [];
     } catch {
-      setBookmarks([]);
+      return [];
     }
-  }, [activeWorldId]);
+  }, [bookmarksRaw]);
+
+  const saveBookmarks = (updated: ViewportBookmark[]) => {
+    try {
+      localStorage.setItem(bookmarksKey, JSON.stringify(updated));
+      window.dispatchEvent(new Event(BOOKMARKS_EVENT));
+    } catch {}
+  };
 
   const handleAddBookmark = () => {
     const handlePose = (ev: Event) => {
@@ -140,11 +163,7 @@ export default function WorldNavPanel({
           target,
           createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         };
-        const updated = [...bookmarks, newBm];
-        setBookmarks(updated);
-        try {
-          localStorage.setItem(`reality_engine_bookmarks_${activeWorldId}`, JSON.stringify(updated));
-        } catch {}
+        saveBookmarks([...bookmarks, newBm]);
       }
     };
     window.addEventListener("viewport-camera-pose-response", handlePose);
@@ -152,11 +171,7 @@ export default function WorldNavPanel({
   };
 
   const handleDeleteBookmark = (bmId: string) => {
-    const updated = bookmarks.filter((b) => b.id !== bmId);
-    setBookmarks(updated);
-    try {
-      localStorage.setItem(`reality_engine_bookmarks_${activeWorldId}`, JSON.stringify(updated));
-    } catch {}
+    saveBookmarks(bookmarks.filter((b) => b.id !== bmId));
   };
 
   const handleFlyToBookmark = (bm: ViewportBookmark) => {
@@ -1762,8 +1777,16 @@ function HierarchyExplorer({
   };
 
   // Auto-expand tree branch to reveal selected entity
-  useEffect(() => {
-    if (!selectedEntityId) return;
+  const [expandDeps, setExpandDeps] = useState<{ sel: string | null; ents: unknown }>({
+    sel: null,
+    ents: null,
+  });
+  if (expandDeps.sel !== selectedEntityId || expandDeps.ents !== entitiesList) {
+    setExpandDeps({ sel: selectedEntityId, ents: entitiesList });
+    if (selectedEntityId) expandToSelected();
+  }
+
+  function expandToSelected() {
     setExpanded((prev) => {
       const next: Record<string, boolean> = { ...prev, building: true };
       for (const lvl of levels) {
@@ -1797,7 +1820,7 @@ function HierarchyExplorer({
       }
       return next;
     });
-  }, [selectedEntityId, entitiesList]);
+  }
 
   // Level element queries
   const getLevelRooms = (lvl: { id: string; roomIds?: string[] }) => {
@@ -2465,35 +2488,29 @@ export function BuildingTopologyInspector({
   onSelectEntity: (id: string | null) => void;
   onFrameEntity: (id: string) => void;
 }) {
-  const [graphData, setGraphData] = useState<SpaceGraphData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [graphState, setGraphState] = useState<{ id: string; data: SpaceGraphData | null } | null>(null);
+  const graphWorldId = worldIR?.id;
+  const graphSettled = graphState?.id === graphWorldId;
+  const graphData = graphSettled && graphState ? graphState.data : null;
+  const loading = !!graphWorldId && !graphSettled;
 
   useEffect(() => {
-    if (!worldIR?.id) {
-      setGraphData(null);
-      return;
-    }
+    if (!graphWorldId) return;
     let isCancelled = false;
-    setLoading(true);
 
-    fetch(`/api/worlds/${encodeURIComponent(worldIR.id)}/space-graph`)
+    fetch(`/api/worlds/${encodeURIComponent(graphWorldId)}/space-graph`)
       .then((res) => (res.ok ? res.json() : null))
+      .then((data) => (data && data.nodes ? (data as SpaceGraphData) : null))
+      // On failure fall back to local derivation from entitiesList
+      .catch(() => null)
       .then((data) => {
-        if (!isCancelled && data && data.nodes) {
-          setGraphData(data as SpaceGraphData);
-        }
-      })
-      .catch(() => {
-        // Fallback to local derivation from entitiesList
-      })
-      .finally(() => {
-        if (!isCancelled) setLoading(false);
+        if (!isCancelled) setGraphState({ id: graphWorldId, data });
       });
 
     return () => {
       isCancelled = true;
     };
-  }, [worldIR?.id]);
+  }, [graphWorldId]);
 
   // Fallback / enhanced derivation from entitiesList
   const derivedData = useMemo(() => {

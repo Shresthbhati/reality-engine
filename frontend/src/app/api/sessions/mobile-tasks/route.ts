@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
+import { BACKEND_URL, backendFetch } from "@/lib/api/backend";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const response = await fetch(`${BACKEND_URL}/api/sessions/mobile-tasks`, {
+    const response = await backendFetch(`${BACKEND_URL}/api/sessions/mobile-tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bundle_path, output_path, max_tasks, overwrite }),

@@ -23,6 +23,13 @@ export function apiBaseUrl(): string {
   return base.replace(/\/+$/, "");
 }
 
+/** Optional bearer token (`NEXT_PUBLIC_API_TOKEN`) for an API started with REALITY_API_TOKEN. NEXT_PUBLIC_ values are
+ *  visible to the browser, so this suits a local/trusted setup only. */
+function authHeaders(): Record<string, string> {
+  const token = process.env.NEXT_PUBLIC_API_TOKEN?.trim();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export type ApiErrorCode =
   | "network_unreachable"
   | "timeout"
@@ -141,7 +148,7 @@ async function perform<T>(path: string, init: RequestInit, options: RequestOptio
 
   let res: Response;
   try {
-    res = await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
+    res = await fetch(url, { ...init, headers: { ...authHeaders(), ...(init.headers as Record<string, string> | undefined) }, signal: controller.signal, cache: "no-store" });
   } catch (err) {
     const aborted = (err as Error).name === "AbortError";
     throw new ApiError({

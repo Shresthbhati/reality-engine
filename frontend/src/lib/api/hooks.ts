@@ -30,10 +30,18 @@ export function useApi<T>(
     setTrigger((t) => t + 1);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  // Reset loading/error while rendering when deps change (React-recommended
+  // alternative to setState inside the effect body).
+  const depSig = [...deps, trigger];
+  const [prevSig, setPrevSig] = useState(depSig);
+  if (prevSig.length !== depSig.length || depSig.some((d, i) => !Object.is(d, prevSig[i]))) {
+    setPrevSig(depSig);
     setIsLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     fetcher()
       .then((res) => {
         if (!cancelled) {

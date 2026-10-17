@@ -381,7 +381,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   // First-ever world: the only thing to do is to drop photos.
   if (!propWorldId && !worldsLoading && worlds.length === 0) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center bg-[#08090b] p-6 text-[var(--text-primary)]">
+      <div className="flex h-full w-full flex-col items-center justify-center bg-[var(--bg-base)] p-6 text-[var(--text-primary)]">
         <h1 className="mb-1 text-xl font-semibold text-white">Create a reconstruction</h1>
         <p className="mb-6 max-w-lg text-center text-xs text-neutral-400">
           Give Reality Engine photographs of a real place. It builds the best spatial model the
@@ -397,9 +397,9 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   // Loading state (first load only; later refetches keep the Studio mounted)
   if (isIrLoading && !worldIR) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[#08090b] text-[var(--text-primary)] select-none">
+      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-base)] text-[var(--text-primary)] select-none">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-7 w-7 animate-spin text-[#00e5ff]" />
+          <Loader2 className="h-7 w-7 animate-spin text-[var(--accent)]" />
           <p className="text-xs font-mono text-neutral-400">Consuming canonical WorldIR stream...</p>
         </div>
       </div>
@@ -414,13 +414,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const has3DContent = Boolean(activeWorldIR && (Object.keys(activeWorldIR.entities || {}).length > 0 || activePoints));
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#08090b] text-[var(--text-primary)] select-none">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)] select-none">
       {/* Sleek Persistent Studio Header */}
-      <header className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-[#1f222b] bg-[#0c0d12] z-30">
+      <header className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-[var(--border)] bg-[var(--bg-surface)] z-30">
         {/* Left: Studio Identity & Active World Info */}
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-[#00e5ff] animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
             <span className="text-xs font-semibold text-white tracking-wide">Reality Studio</span>
           </div>
 
@@ -433,7 +433,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 shrink-0">
               {String(worldIR?.coordinate_frame || worldIR?.coordinate_system || "frame unrecorded")}
             </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/30 shrink-0">
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30 shrink-0">
               {reconStatus?.versions.find((v) => v.id === (selectedVersionId ?? reconStatus.model?.version_id))?.label
                 ?? currentVersionId ?? "no version"}
             </span>
@@ -441,13 +441,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         </div>
 
         {/* Center: Viewport Mode Switcher Pill */}
-        <div className="flex items-center p-0.5 rounded-md bg-[#151821] border border-[#1f222b]">
+        <div className="flex items-center p-0.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)]">
           <button
             type="button"
             onClick={() => setViewMode("3d")}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
               viewMode === "3d"
-                ? "bg-[#00e5ff] text-black font-semibold shadow-sm"
+                ? "bg-[var(--accent)] text-black font-semibold shadow-sm"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -459,7 +459,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             onClick={() => setViewMode("map")}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
               viewMode === "map"
-                ? "bg-[#00e5ff] text-black font-semibold shadow-sm"
+                ? "bg-[var(--accent)] text-black font-semibold shadow-sm"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -475,9 +475,9 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             type="button"
             onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true }))}
             title="Command Palette (⌘K)"
-            className="flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white bg-[#151821] hover:bg-neutral-800 border border-[#1f222b] transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white bg-[var(--bg-elevated)] hover:bg-neutral-800 border border-[var(--border)] transition-colors cursor-pointer"
           >
-            <Search className="w-3 h-3 text-[#00e5ff]" />
+            <Search className="w-3 h-3 text-[var(--accent)]" />
             <span className="hidden sm:inline">Commands</span>
             <kbd className="text-[10px] px-1 py-0.2 rounded bg-neutral-900 border border-neutral-700 text-neutral-400 font-mono-num">
               ⌘K
@@ -490,7 +490,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             onClick={() => setAddPhotosOpen(true)}
             title="Add photographs to improve this model"
             data-testid="add-photos"
-            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-semibold bg-[#00e5ff] text-black hover:bg-[#33ebff] transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-semibold bg-[var(--accent)] text-black hover:bg-[var(--accent)] transition-colors cursor-pointer"
           >
             <ImagePlus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Add evidence</span>
@@ -502,9 +502,9 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             onClick={() => setBuildModalOpen(true)}
             title="Build a room, corridor or city"
             data-testid="open-build"
-            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[#1f222b] transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
           >
-            <Hammer className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Hammer className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span className="hidden sm:inline">Build</span>
           </button>
 
@@ -513,9 +513,9 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             type="button"
             onClick={() => setConstructionModalOpen(true)}
             title="Room Construction Pipeline"
-            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[#1f222b] transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
           >
-            <Workflow className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Workflow className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span className="hidden sm:inline">Construction</span>
           </button>
 
@@ -526,11 +526,11 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             title="Spatial Query"
             className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
               queryPanelOpen
-                ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40"
-                : "bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[#1f222b]"
+                ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40"
+                : "bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[var(--border)]"
             }`}
           >
-            <Search className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Search className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span className="hidden sm:inline">Query</span>
           </button>
 
@@ -541,22 +541,22 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             title="Export World"
             className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
               exportPanelOpen
-                ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40"
-                : "bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[#1f222b]"
+                ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40"
+                : "bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[var(--border)]"
             }`}
           >
-            <Download className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Download className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span className="hidden sm:inline">Export</span>
           </button>
 
           {/* Quick Layout Toggles */}
-          <div className="flex items-center p-0.5 rounded bg-[#151821] border border-[#1f222b]">
+          <div className="flex items-center p-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)]">
             <button
               type="button"
               onClick={() => setNavOpen(v => !v)}
               title={navOpen ? "Collapse Navigation Panel [ [ ]" : "Expand Navigation Panel [ [ ]"}
               className={`p-1 rounded transition-colors ${
-                navOpen ? "text-[#00e5ff] bg-neutral-800" : "text-neutral-400 hover:text-white"
+                navOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
               }`}
             >
               {navOpen ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />}
@@ -566,7 +566,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onClick={() => setBottomOpen(v => !v)}
               title={bottomOpen ? "Collapse Bottom Telemetry [ \\ ]" : "Expand Bottom Telemetry [ \\ ]"}
               className={`p-1 rounded transition-colors ${
-                bottomOpen ? "text-[#00e5ff] bg-neutral-800" : "text-neutral-400 hover:text-white"
+                bottomOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
               }`}
             >
               <Terminal className="w-3.5 h-3.5" />
@@ -576,7 +576,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onClick={() => setInspectorOpen(v => !v)}
               title={inspectorOpen ? "Collapse Inspector [ ] ]" : "Expand Inspector [ ] ]"}
               className={`p-1 rounded transition-colors ${
-                inspectorOpen ? "text-[#00e5ff] bg-neutral-800" : "text-neutral-400 hover:text-white"
+                inspectorOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
               }`}
             >
               {inspectorOpen ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
@@ -590,7 +590,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         {/* Left Nav Panel */}
         <div 
           className={cn(
-            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-r border-[#1f222b] z-20",
+            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-r border-[var(--border)] z-20",
             navOpen ? "w-[280px]" : "w-0 overflow-hidden border-r-0"
           )}
         >
@@ -627,7 +627,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         </div>
         
         {/* Center Viewport */}
-        <div className="flex-1 relative h-full min-w-0 bg-[#08090b] overflow-hidden">
+        <div className="flex-1 relative h-full min-w-0 bg-[var(--bg-base)] overflow-hidden">
           {viewMode === "3d" ? (
             <World3DViewport
               world={activeWorldIR}
@@ -664,7 +664,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
                 </div>
               )}
               {currentWorldRow?.lat != null && currentWorldRow?.lng != null && (
-                <div className="absolute bottom-4 left-4 z-10 px-3 py-2 rounded-md bg-[#0e1013]/90 border border-[#1f222b] text-xs text-neutral-300 backdrop-blur-md font-mono">
+                <div className="absolute bottom-4 left-4 z-10 px-3 py-2 rounded-md bg-[var(--bg-surface)]/90 border border-[var(--border)] text-xs text-neutral-300 backdrop-blur-md font-mono">
                   <div className="text-white font-semibold">World origin</div>
                   <div className="text-neutral-400 text-[11px] mt-0.5">
                     {currentWorldRow.location ?? "coordinates unavailable"}
@@ -700,7 +700,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         {/* Right Adaptive Inspector */}
         <div 
           className={cn(
-            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-l border-[#1f222b] z-20",
+            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-l border-[var(--border)] z-20",
             inspectorOpen ? "w-[340px]" : "w-0 overflow-hidden border-l-0"
           )}
         >
@@ -725,7 +725,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       </div>
 
       {/* Reconstruction state, evidence quality, versions and guidance */}
-      <div className="flex-shrink-0 border-t border-[#1f222b] z-30">
+      <div className="flex-shrink-0 border-t border-[var(--border)] z-30">
         <ReconstructionStatusBar
           status={reconStatus}
           error={statusError}
@@ -750,7 +750,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           aria-modal="true"
           aria-label="Add photographs"
         >
-          <div className="relative w-full max-w-lg rounded-xl border border-[#1f222b] bg-[#0c0d12] p-4">
+          <div className="relative w-full max-w-lg rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
             <button
               type="button"
               onClick={() => setAddPhotosOpen(false)}
@@ -767,7 +767,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
 
       {/* Bottom Context Bar */}
       {bottomOpen && (
-        <div className="h-auto flex-shrink-0 border-t border-[#1f222b] z-30">
+        <div className="h-auto flex-shrink-0 border-t border-[var(--border)] z-30">
           <BottomContextBar
             world={worldIR}
             selectedEntity={selectedEntity}

@@ -4,24 +4,32 @@
    Every value here is used somewhere. Delete a token when it stops
    being referenced; don't leave dead tokens for "later".            */
 :root {
-  --bg-base: #08090b;
-  --bg-surface: #0e1013;
-  --bg-elevated: #151821;
-  --bg-hover: rgba(255, 255, 255, 0.04);
+  /* Navy palette sampled from the reference designs (docs/screenshots/parity/B0-gap-audit.md).
+     Contrast on --bg-base: primary 17:1, secondary 7.6:1, tertiary 4.9:1 (all >= WCAG AA). */
+  --bg-base: #050b16;
+  --bg-surface: #0a1424;
+  --bg-elevated: #0f1c30;
+  --bg-hover: rgba(143, 163, 191, 0.08);
 
-  --border: #1f222b;
-  --border-subtle: #171921;
+  --border: #1a3050;
+  --border-subtle: #12233a;
 
-  --text-primary: #f0f1f6;
-  --text-secondary: #9296a6;
-  --text-tertiary: #5b6070;
+  --text-primary: #eaf2ff;
+  --text-secondary: #8fa3bf;
+  --text-tertiary: #6f85a5;
 
-  --accent: #00e5ff;
-  --accent-subtle: rgba(0, 229, 255, 0.12);
-  --accent-border: rgba(0, 229, 255, 0.35);
+  --accent: #22b8ff;
+  --accent-subtle: rgba(34, 184, 255, 0.12);
+  --accent-border: rgba(34, 184, 255, 0.4);
 
-  --success: #2ecc71;
-  --success-subtle: rgba(46, 204, 113, 0.12);
+  /* Bright blue for primary buttons (white text on it is 5.2:1). */
+  --primary: #2563eb;
+  --primary-hover: #1d4fd8;
+  --purple: #8b5cf6;
+  --purple-subtle: rgba(139, 92, 246, 0.14);
+
+  --success: #22c55e;
+  --success-subtle: rgba(34, 197, 94, 0.12);
   --warning: #f5a623;
   --warning-subtle: rgba(245, 166, 35, 0.12);
   --error: #e74c3c;

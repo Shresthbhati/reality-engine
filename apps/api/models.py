@@ -199,6 +199,21 @@ class Job(Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class WorldIntent(Base):
+    """What the user said they are trying to construct (scale + wanted capabilities). Advisory: it records
+    intent and drives the honest resource estimate; it does not change what the pipeline does."""
+
+    __tablename__ = "world_intents"
+
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), primary_key=True)
+    scale: Mapped[str] = mapped_column(String(32))
+    capabilities: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 

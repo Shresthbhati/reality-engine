@@ -77,7 +77,15 @@ def test_city_is_deterministic_and_seed_changes_heights():
 def test_city_buildings_stay_off_streets():
     w = generate_city(CityGrammarSpec("t", 2, 2, lot_size=20, street_width=8))
     g = w.geometries["geom-t-b0-0-floor"]
-    assert g.bounds_min.x == pytest.approx(8) and g.bounds_min.y == pytest.approx(8)
+    # Local footprint starts at (8, 8); world z = -local y, so z spans [-28, -8].
+    assert g.bounds_min.x == pytest.approx(8) and g.bounds_max.z == pytest.approx(-8)
+
+
+def test_city_street_slab_is_thin_along_y_not_z():
+    w = generate_city(CityGrammarSpec("t", 2, 2, lot_size=20, street_width=8))
+    g = w.geometries["geom-t-street-x0"]
+    assert g.bounds_max.y - g.bounds_min.y == pytest.approx(0.2)
+    assert g.bounds_max.z - g.bounds_min.z == pytest.approx(8)
 
 
 @pytest.mark.parametrize("bad", [dict(blocks_x=0), dict(blocks_x=11, blocks_y=10),

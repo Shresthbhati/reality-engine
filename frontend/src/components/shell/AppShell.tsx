@@ -2,14 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { useWorlds } from "@/lib/api";
+import { worldIdFromPath } from "@/lib/shell/shell-logic";
 import TopBar from "./TopBar";
 import Sidebar from "./Sidebar";
+import StatusFooter from "./StatusFooter";
 import CommandPalette from "./CommandPalette";
 
+/**
+ * One shell for every desktop route (including the 3D workspace at
+ * /worlds/[id]): top bar, left icon rail, content area, status footer.
+ * The workspace keeps its own toolbar as a sub-toolbar inside the content area.
+ */
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const { data: worlds, error: worldsError } = useWorlds();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -34,30 +42,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Persistent spatial operating environment for spatial studio routes:
-  // Roots (`/`) and World workspaces (`/worlds/[id]`) occupy full viewport without dashboard letterboxing.
-  const isSpatialStudio =
-    pathname === "/" ||
-    (pathname.startsWith("/worlds/") && pathname !== "/worlds/new");
-
-  if (isSpatialStudio) {
-    return (
-      <div className="flex h-screen w-screen overflow-hidden bg-[#08090b]">
-        <main className="flex-1 min-w-0 h-full overflow-hidden relative">
-          {children}
-        </main>
-        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      </div>
-    );
-  }
+  const currentWorldId = worldIdFromPath(pathname);
+  const worldName = currentWorldId ? (worlds?.find((w) => w.id === currentWorldId)?.name ?? null) : null;
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden">
-      <TopBar onOpenSearch={() => setPaletteOpen(true)} />
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ background: "var(--bg-base)" }}>
+      <TopBar
+        onOpenSearch={() => setPaletteOpen(true)}
+        worlds={worlds}
+        worldsError={worldsError ? worldsError.message : null}
+        currentWorldId={currentWorldId}
+      />
       <div className="flex flex-1 min-h-0">
-        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
-        <main className="flex-1 min-w-0 h-full overflow-hidden">{children}</main>
+        <Sidebar />
+        <main className="flex-1 min-w-0 h-full overflow-hidden relative">{children}</main>
       </div>
+      <StatusFooter worldName={worldName} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );

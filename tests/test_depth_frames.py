@@ -33,9 +33,9 @@ from provenance import Provenance
 
 def _write_depth_png(path, rows, mode="I;16"):
     arr = np.array(rows, dtype="<u2")
-    # Pillow emits a deprecation warning for mode="I;16" here; I;16
+    # Pillow 13 rejects an explicit mode here; the <u2 dtype maps to I;16
     # PNGs are exactly what real depth devices emit and what we parse.
-    Image.fromarray(arr, mode=mode).save(path)
+    Image.fromarray(arr).save(path)
 
 
 MM_ROWS = [[1000, 2000, 3000, 0], [1500, 2500, 3500, 500], [0, 0, 4000, 4500]]

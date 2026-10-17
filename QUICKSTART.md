@@ -30,7 +30,11 @@ reality verification --runtime    # colmap / ifcopenshell / torch: AVAILABLE or 
 
 ## 2. Start
 
-Two terminals:
+**Windows, one click:** double-click `launch_ui.bat`. It checks Node 20+, Python 3.10+ and the Python packages (and tells
+you exactly what to install if one is missing), starts the engine API and the Studio in two minimised windows, waits until
+both answer, then opens <http://localhost:3000>. Close those two windows to stop.
+
+Or by hand, in two terminals:
 
 ```bash
 uvicorn apps.api.main:app --port 8100              # the engine (reconstruction runs inside it; no other service)

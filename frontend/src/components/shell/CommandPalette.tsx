@@ -25,6 +25,7 @@ import {
   Sliders,
   PanelLeft,
   PanelRight,
+  type LucideIcon,
 } from "lucide-react";
 import { searchAll, type SearchResult, type SearchResultType } from "@/lib/search";
 
@@ -40,7 +41,7 @@ const TYPE_LABEL: Record<SearchResultType, string> = {
 interface Command {
   label: string;
   href?: string;
-  icon: any;
+  icon: LucideIcon;
   action?: () => void;
   category?: string;
 }
@@ -266,7 +267,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const flatList = query.trim() === "" ? dynamicCommands : results;
 
   const go = useCallback(
-    (target: string | Command) => {
+    (target: string | { href?: string; action?: () => void }) => {
       onClose();
       if (typeof target === "string") {
         router.push(target);
@@ -302,7 +303,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         const item = flatList[highlightedIndex];
         if (item) {
           e.preventDefault();
-          go(item as any);
+          go(item);
         }
       }
     };

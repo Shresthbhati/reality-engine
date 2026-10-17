@@ -30,10 +30,17 @@ export function useApi<T>(
     setTrigger((t) => t + 1);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  // A change in deps/trigger restarts the read: reset status during render, not in the effect.
+  const key = [...deps, trigger];
+  const [loadedKey, setLoadedKey] = useState(key);
+  if (key.length !== loadedKey.length || key.some((k, i) => !Object.is(k, loadedKey[i]))) {
+    setLoadedKey(key);
     setIsLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     fetcher()
       .then((res) => {
         if (!cancelled) {

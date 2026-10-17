@@ -30,3 +30,41 @@ export interface RoomCreatedResult {
 export function createRoom(worldId: string, body: RoomIn): Promise<RoomCreatedResult> {
   return apiPost<RoomCreatedResult>(`/api/worlds/${encodeURIComponent(worldId)}/rooms`, body);
 }
+
+export interface CorridorIn {
+  name: string;
+  length: number;
+  width?: number;
+  height?: number;
+  axis?: "x" | "y";
+  /** Existing room entity ids (e.g. "hall-room") this corridor connects. */
+  connects?: string[];
+  origin?: [number, number, number];
+}
+
+export interface CityIn {
+  name: string;
+  blocks_x?: number;
+  blocks_y?: number;
+  lot_size?: number;
+  street_width?: number;
+  min_height?: number;
+  max_height?: number;
+  seed?: number;
+  origin?: [number, number, number];
+}
+
+export interface ProceduralCreatedResult {
+  version_id: string;
+  entity_ids_added: string[];
+}
+
+/** POST /api/worlds/{id}/corridors -- procedural/urban_grammar.generate_corridor. */
+export function createCorridor(worldId: string, body: CorridorIn): Promise<ProceduralCreatedResult> {
+  return apiPost<ProceduralCreatedResult>(`/api/worlds/${encodeURIComponent(worldId)}/corridors`, body);
+}
+
+/** POST /api/worlds/{id}/cities -- procedural/urban_grammar.generate_city. */
+export function createCity(worldId: string, body: CityIn): Promise<ProceduralCreatedResult> {
+  return apiPost<ProceduralCreatedResult>(`/api/worlds/${encodeURIComponent(worldId)}/cities`, body);
+}

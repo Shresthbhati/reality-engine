@@ -18,6 +18,12 @@ from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.models import ActivityEvent, World, new_id
 from procedural.room_grammar import RoomGrammarSpec, WallOpening, generate_room
+from procedural.urban_grammar import (
+    CityGrammarSpec,
+    CorridorGrammarSpec,
+    generate_city,
+    generate_corridor,
+)
 from world_ir.world_v1 import WorldIR
 
 procedural = APIRouter(prefix="/api/worlds/{world_id}", tags=["procedural"])
@@ -91,10 +97,100 @@ async def create_room(
         raise HTTPException(404, "World not found")
 
     spec = _spec_from_body(body)
+    result = await _generate_and_commit(
+        db, w, world_id, "room", spec.name,
+        lambda current: generate_room(spec, world=current, origin=body.origin),
+    )
+    return {**result, "room_entity_id": f"{spec.name}-room"}
+
+
+class CorridorIn(BaseModel):
+    name: str
+    length: float
+    width: float = 2.0
+    height: float = 2.6
+    axis: str = "x"
+    connects: list[str] = []
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+class CityIn(BaseModel):
+    name: str
+    blocks_x: int = 3
+    blocks_y: int = 3
+    lot_size: float = 20.0
+    street_width: float = 8.0
+    min_height: float = 6.0
+    max_height: float = 30.0
+    seed: int = 0
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+def _check_name_and_numbers(body: BaseModel) -> None:
+    import math
+
+    if not body.name or not body.name.strip() or len(body.name) > 200:
+        raise HTTPException(422, "name must be 1-200 characters")
+    for key, value in body.model_dump().items():
+        for v in value if isinstance(value, tuple) else [value]:
+            if isinstance(v, float) and not math.isfinite(v):
+                raise HTTPException(422, f"{key} must be finite (no NaN/infinity)")
+
+
+@procedural.post("/corridors", status_code=201)
+async def create_corridor(
+    world_id: str, body: CorridorIn, db: AsyncSession = Depends(get_db)
+) -> dict:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    _check_name_and_numbers(body)
+    if len(body.connects) > 50:
+        raise HTTPException(413, "too many connected rooms (at most 50)")
+    try:
+        spec = CorridorGrammarSpec(
+            name=body.name, length=body.length, width=body.width,
+            height=body.height, axis=body.axis, connects=body.connects,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    result = await _generate_and_commit(
+        db, w, world_id, "corridor", spec.name,
+        lambda current: generate_corridor(spec, world=current, origin=body.origin),
+    )
+    return {**result, "corridor_entity_id": f"{spec.name}-corridor"}
+
+
+@procedural.post("/cities", status_code=201)
+async def create_city(
+    world_id: str, body: CityIn, db: AsyncSession = Depends(get_db)
+) -> dict:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    _check_name_and_numbers(body)
+    try:
+        spec = CityGrammarSpec(
+            name=body.name, blocks_x=body.blocks_x, blocks_y=body.blocks_y,
+            lot_size=body.lot_size, street_width=body.street_width,
+            min_height=body.min_height, max_height=body.max_height, seed=body.seed,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    result = await _generate_and_commit(
+        db, w, world_id, "city", spec.name,
+        lambda current: generate_city(spec, world=current, origin=body.origin),
+    )
+    return {**result, "city_entity_id": f"{spec.name}-city"}
+
+
+async def _generate_and_commit(db, w, world_id, kind, name, generate) -> dict:
+    """Run a grammar against the world's current WorldIR and commit the
+    result as a new WorldStore version (the one write path)."""
     current = await worldstore_service.get_current_worldir(db, world_id)
     before_ids = set(current.entities) if current is not None else set()
     try:
-        world: WorldIR = generate_room(spec, world=current, origin=body.origin)
+        world: WorldIR = generate(current)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -115,16 +211,11 @@ async def create_room(
     db.add(
         ActivityEvent(
             id=new_id("act"),
-            type="room.created",
+            type=f"{kind}.created",
             entity_type="world",
             entity_id=world_id,
-            summary=f"Room '{spec.name}' created",
+            summary=f"{kind.capitalize()} '{name}' created",
         )
     )
     await db.commit()
-
-    return {
-        "version_id": version.id,
-        "room_entity_id": f"{spec.name}-room",
-        "entity_ids_added": added_ids,
-    }
+    return {"version_id": version.id, "entity_ids_added": added_ids}

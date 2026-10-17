@@ -390,9 +390,12 @@ Product vision: [`../product/VISION.md`](../product/VISION.md). Creation outputs
 # P6b — STUDIO PARITY WITH THE REFERENCE DESIGNS (registered 2026-10-18)
 
 Reference images: `C:\Users\shres\Downloads\reference` (~125 screens). Decision (2026-10-18, owner): match them **as exactly
-as possible, new design tokens allowed**. Status: **MISSING until the B0 gap audit is recorded** in
-`docs/screenshots/parity/`. Slices: shell, World Intent wizard, asset inspector, measurement with uncertainty, map/plot view,
-pipeline view, mobile capture (plan Phase B).
+as possible, new design tokens allowed**. Status: **PARTIAL (2026-10-18)**. Gap audit recorded in
+`docs/screenshots/parity/B0-gap-audit.md`. Done and browser-verified: navy tokens, unified shell (top mode bar, icon rail,
+status footer), Home dashboard, World Intent wizard with an honest resource profile (`POST /api/intent/estimate`,
+`world_intents` table), palette sweep, auto-frame of cloud-less worlds. Remaining slices: asset inspector / evidence-quality
+firewall, measurement with uncertainty, map/plot view, pipeline graph view, mobile capture, Playwright smoke tests over all
+routes (plan Phase B).
 
 ## Continuous evidence — gaps against the "same world keeps evolving" principle (2026-09-29)
 

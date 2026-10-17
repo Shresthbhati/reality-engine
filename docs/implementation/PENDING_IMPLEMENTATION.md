@@ -370,6 +370,30 @@ confidence explicitly. Raw-sensor decode fidelity (depth frames) legitimately st
 (The previous "left as documented risk" note was stale: the audit on 2026-10-03 found the defaults already corrected.)
 
 
+# P9 — WORLD FACTORY (additive to the roadmap, registered 2026-10-18)
+
+Plan: [`../superpowers/plans/2026-10-18-world-factory-and-studio-master-plan.md`](../superpowers/plans/2026-10-18-world-factory-and-studio-master-plan.md).
+Product vision: [`../product/VISION.md`](../product/VISION.md). Creation outputs are always `StatementState.PROCEDURAL` /
+`Provenance.GENERATED`; they never masquerade as observed geometry.
+
+| ID | Item | Status | Detail |
+|---|---|---|---|
+| P9.1 | Room builder | PARTIAL | `procedural/room_grammar.py`, `POST /api/worlds/{id}/rooms`, Studio **Build** dialog (`BuildModal.tsx`). Missing: openings UI, parameter edit + scoped regeneration, templates. |
+| P9.2 | Corridor builder | PARTIAL (new 2026-10-18) | `procedural/urban_grammar.generate_corridor`, `POST .../corridors`, Build dialog; `tests/test_procedural_urban_grammar.py`, `tests/test_application_api.py`; browser-verified. Straight, axis-aligned only; no door cut into joined rooms. |
+| P9.3 | City / district builder | PARTIAL (new 2026-10-18) | `generate_city` (grid of lots + streets, seeded heights, max 100 lots), `POST .../cities`. No roads/parcels/building families/LOD/streaming; viewport renders streets rotated (axis convention, plan task B1). |
+| P9.4 | Apartment layout (spatial program -> adjacency graph -> plan) | MISSING | Plan Phase C3. |
+| P9.5 | Building factory (floors, stairs, facade rules) | MISSING | Plan Phase C4. |
+| P9.6 | Scoped regeneration with dependency tracking | MISSING | Plan Phase C1; prerequisite for P9.4+. |
+| P9.7 | Completion mode (reconstructed shell + labelled generated proposals) | MISSING | Plan Phase D. |
+| P9.8 | Game-ready export profile (collision, LOD, validation) | MISSING | Plan Phase C6; writers (Godot/Unreal) exist under `exporters/`, target-runtime acceptance is external. |
+
+# P6b — STUDIO PARITY WITH THE REFERENCE DESIGNS (registered 2026-10-18)
+
+Reference images: `C:\Users\shres\Downloads\reference` (~125 screens). Decision (2026-10-18, owner): match them **as exactly
+as possible, new design tokens allowed**. Status: **MISSING until the B0 gap audit is recorded** in
+`docs/screenshots/parity/`. Slices: shell, World Intent wizard, asset inspector, measurement with uncertainty, map/plot view,
+pipeline view, mobile capture (plan Phase B).
+
 ## Continuous evidence — gaps against the "same world keeps evolving" principle (2026-09-29)
 
 | ID | Item | Status | Detail |

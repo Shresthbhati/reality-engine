@@ -192,7 +192,7 @@ def hub_brief(seed, hall_aspect):
         name="hub", footprint=(10.0, 8.0), seed=seed, entrance="hall",
         rooms=[r("living", "living", 16, 28), r("kitchen", "kitchen", 8, 14),
                r("bed1", "bedroom", 10, 16), r("bed2", "bedroom", 9, 14),
-               r("bath", "bathroom", 4, 7), r("hall", "hallway", 5, 12, aspect_max=hall_aspect)],
+               r("bath", "bathroom", 4, 7), r("hall", "hallway", 5, 12, **({} if hall_aspect is None else {"aspect_max": hall_aspect}))],
         adjacency=[("hall", "living", "required"), ("hall", "bed1", "required"),
                    ("hall", "bed2", "required"), ("hall", "bath", "required"),
                    ("living", "kitchen", "required")])
@@ -223,3 +223,24 @@ def test_hub_brief_with_default_hall_aspect_stays_honestly_infeasible():
     res = solve_layout(hub_brief(0, 2.0))
     assert not res.ok and res.plans == []
     assert any("'hall'" in v and "aspect_max" in v for v in res.violations), res.violations
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_hub_brief_without_explicit_aspect_uses_hallway_default(seed):
+    spec = hub_brief(seed, None)
+    assert {r.id: r.aspect_max for r in spec.rooms}["hall"] == 4.0
+    t0 = time.perf_counter()
+    res = solve_layout(spec)
+    assert time.perf_counter() - t0 < 2.0
+    assert res.ok, res.violations
+    assert all(len(p.satisfied) == 5 for p in res.plans)
+
+
+def test_aspect_defaults_by_kind_and_explicit_wins():
+    spec = hub_brief(0, None)
+    asp = {r.id: r.aspect_max for r in spec.rooms}
+    assert asp["hall"] == 4.0
+    assert all(v == 2.0 for k, v in asp.items() if k != "hall")
+    assert {r.id: r.aspect_max for r in hub_brief(0, 2.0).rooms}["hall"] == 2.0
+    again = ApartmentSpec.from_dict(spec.to_dict())          # stored spec round-trips
+    assert {r.id: r.aspect_max for r in again.rooms} == asp

@@ -1828,7 +1828,7 @@ def _hub_body(hall_aspect, name="hubflat", seed=3):
             {"id": "bed2", "kind": "bedroom", "min_area": 9, "max_area": 14},
             {"id": "bath", "kind": "bathroom", "min_area": 4, "max_area": 7},
             {"id": "hall", "kind": "hallway", "min_area": 5, "max_area": 12,
-             "aspect_max": hall_aspect},
+             **({} if hall_aspect is None else {"aspect_max": hall_aspect})},
         ],
         "adjacency": [["hall", "living", "required"], ["hall", "bed1", "required"],
                       ["hall", "bed2", "required"], ["hall", "bath", "required"],
@@ -1849,3 +1849,15 @@ def test_apartment_hub_brief_solve_then_commit(client, tmp_path, monkeypatch):
     r2 = client.post(f"/api/worlds/{wid}/apartments/solve", json=_hub_body(2.0, name="hub2"))
     assert r2.status_code == 200 and r2.json()["ok"] is False
     assert any("aspect_max" in v for v in r2.json()["violations"])
+
+
+def test_apartment_hub_brief_without_aspect_max_solves_and_commits(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    for seed in range(8):
+        r = client.post(f"/api/worlds/{wid}/apartments/solve", json=_hub_body(None, seed=seed))
+        assert r.status_code == 200 and r.json()["ok"] is True, (seed, r.text[:300])
+    c = client.post(f"/api/worlds/{wid}/apartments", json={**_hub_body(None), "plan_index": 0})
+    assert c.status_code == 201, c.text
+    gen = client.get(f"/api/worlds/{wid}/generated").json()
+    hall = [x for x in gen[0]["params"]["rooms"] if x["id"] == "hall"][0]
+    assert hall["aspect_max"] == 4.0

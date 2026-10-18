@@ -280,7 +280,7 @@ class ApartmentRoomIn(BaseModel):
     kind: str
     min_area: float
     max_area: float
-    aspect_max: float = 2.0
+    aspect_max: Optional[float] = None   # None -> solver's per-kind default
 
 
 class ApartmentIn(BaseModel):

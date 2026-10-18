@@ -28,6 +28,10 @@ bedroom, kitchen, office on the exterior).
 If no candidate meets every hard constraint the result is ok=False with
 the unmet REQUIRED pairs named -- never a distorted plan.
 
+Default aspect_max (used only when the caller supplies none; an explicit
+value always wins): hallway = 4.0 (a corridor is legitimately long), every
+other kind = 2.0.
+
 Grid: all dimensions are integer multiples of 0.1 m (GRID); internally
 the solver works in integer decimetres so adjacency tests are exact.
 Footprint derivation (when omitted): area = min(1.15 * sum(min_area),
@@ -59,6 +63,8 @@ _DAYLIGHT = {"living", "bedroom", "kitchen", "office"}
 RANDOM_TRIALS = 20000
 CLIMB_STARTS = 6
 CLIMB_STEPS = 90
+DEFAULT_ASPECT = {"hallway": 4.0}   # default aspect_max by kind when not supplied
+DEFAULT_ASPECT_OTHER = 2.0
 DERIVED_ASPECT = 1.5
 DERIVED_SLACK = 1.15
 
@@ -76,13 +82,15 @@ class RoomReq:
     kind: str
     min_area: float
     max_area: float
-    aspect_max: float = 2.0
+    aspect_max: Optional[float] = None   # None -> DEFAULT_ASPECT by kind
 
     def __post_init__(self):
         if not isinstance(self.id, str) or not self.id.strip() or len(self.id) > 100:
             raise ValueError("room id must be a non-empty string of at most 100 chars")
         if self.kind not in KINDS:
             raise ValueError(f"room {self.id!r}: unknown kind {self.kind!r} (one of {KINDS})")
+        if self.aspect_max is None:
+            self.aspect_max = DEFAULT_ASPECT.get(self.kind, DEFAULT_ASPECT_OTHER)
         for label in ("min_area", "max_area", "aspect_max"):
             if not _finite(getattr(self, label)):
                 raise ValueError(f"room {self.id!r}: {label} must be a finite number")

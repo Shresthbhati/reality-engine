@@ -120,11 +120,15 @@ def _wall_pieces(irects: Dict[str, tuple]) -> List[tuple]:
 
 def generate_apartment(spec: ApartmentSpec, plan, world: Optional[WorldIR] = None,
                        origin: Tuple[float, float, float] = (0.0, 0.0, 0.0),
-                       height: float = DEFAULT_HEIGHT) -> WorldIR:
+                       height: float = DEFAULT_HEIGHT, entrance_door: bool = True,
+                       skip_wall=None) -> WorldIR:
     """Build the apartment into `world` (a fresh WorldIR when omitted).
 
     `plan` is a layout_solver.Plan or a {room_id: (x, y, w, d)} dict; it is
     re-validated against the spec (ValueError when it does not hold).
+    `entrance_door=False` omits the exterior entrance door and `skip_wall`
+    (callable (bmin, bmax) -> bool, local axes) omits the wall pieces it
+    rejects; the building grammar uses both to supply its own shell.
     """
     rects = plan.rects if isinstance(plan, Plan) else {k: tuple(v) for k, v in plan.items()}
     problems = validate_plan(spec, rects)
@@ -169,6 +173,8 @@ def generate_apartment(spec: ApartmentSpec, plan, world: Optional[WorldIR] = Non
     for piece in pieces:
         orient, line, lo, hi, _f, _s = piece
         bmin, bmax = band(piece, lo, hi, 0.0, height)
+        if skip_wall is not None and skip_wall(bmin, bmax):
+            continue
         add_box(f"{apt}-wall-{orient}{line}-{lo}-{hi}", EntityType.WALL,
                 f"{apt} wall {orient}{line} [{lo / 10:g}..{hi / 10:g}]", bmin, bmax)
 
@@ -206,8 +212,9 @@ def generate_apartment(spec: ApartmentSpec, plan, world: Optional[WorldIR] = Non
     if not exterior:       # validate_plan guarantees one; defend the invariant
         raise ValueError(f"entrance room {spec.entrance!r} has no exterior wall for a door")
     entrance_piece = max(exterior, key=lambda p: (p[3] - p[2], p[0] == "v", -p[1], -p[2]))
-    cut_door(f"{apt}-door-entrance", entrance_piece, (spec.entrance,),
-             f"{apt} entrance door")
+    if entrance_door:
+        cut_door(f"{apt}-door-entrance", entrance_piece, (spec.entrance,),
+                 f"{apt} entrance door")
 
     # 4. reachability: link any room without a door path with a CORRIDOR
     links: List[str] = []

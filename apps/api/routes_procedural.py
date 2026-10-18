@@ -21,7 +21,7 @@ from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.models import ActivityEvent, World, new_id
 from procedural.room_grammar import RoomGrammarSpec, WallOpening
-from procedural import layout_solver, spec_store
+from procedural import building_grammar, layout_solver, spec_store
 from procedural.urban_grammar import CityGrammarSpec, CorridorGrammarSpec
 from world_ir.world_v1 import WorldIR
 
@@ -340,6 +340,14 @@ async def create_apartment(
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    gspec = await run_in_threadpool(_apartment_gspec, body)
+    result = await _create(db, w, world_id, gspec)
+    return {**result, "apartment_entity_id": gspec.entity_id}
+
+
+def _apartment_gspec(body: ApartmentCommitIn) -> spec_store.GeneratedSpec:
+    """Validate + solve (when no valid rects were posted) into a stored spec.
+    Sync and CPU-bound: callers run it in a threadpool where it matters."""
     spec = _apartment_spec(body)
     if body.rects is not None:
         problems = layout_solver.validate_plan(spec, body.rects)
@@ -351,7 +359,7 @@ async def create_apartment(
         index = body.plan_index or 0
         if not 0 <= index < 10:
             raise HTTPException(422, "plan_index must be in 0..9")
-        result = await run_in_threadpool(layout_solver.solve_layout, spec, index + 1)
+        result = layout_solver.solve_layout(spec, index + 1)
         if not result.ok:
             raise HTTPException(422, "no valid apartment layout: "
                                      + "; ".join(result.violations))
@@ -363,17 +371,121 @@ async def create_apartment(
     params.pop("name")
     params["rects"] = {k: [float(v) for v in r] for k, r in rects.items()}
     params["plan_index"] = index
-    gspec = spec_store.GeneratedSpec("apartment", spec.name, params=params, seed=spec.seed,
-                                     origin=list(body.origin))
+    return spec_store.GeneratedSpec("apartment", spec.name, params=params, seed=spec.seed,
+                                    origin=list(body.origin))
+
+
+# ---------------------------------------------------------------------------
+# Buildings (C4): storeys + facade + stairs + roof over one stored floor layout
+# ---------------------------------------------------------------------------
+
+
+class FloorLayoutIn(BaseModel):
+    """ApartmentSpec fields minus name/footprint (the footprint is derived from
+    the building minus its stairs core). `rects` is the solved plan; omit it."""
+    rooms: list[ApartmentRoomIn]
+    entrance: str
+    adjacency: list[tuple[str, str, str]] = []
+    seed: int = 0
+    rects: Optional[dict[str, tuple[float, float, float, float]]] = None
+
+
+class BuildingCoreIn(BaseModel):
+    stairs: bool = True
+    side: str = "east"
+
+
+class BuildingFacadeIn(BaseModel):
+    bay: float = 3.0
+    window_w: float = 1.5
+    window_h: float = 1.2
+    sill: float = 0.9
+    entrance: bool = True
+
+
+class BuildingIn(BaseModel):
+    name: str
+    footprint: tuple[float, float]
+    storeys: int = 1
+    storey_heights: Optional[list[float]] = None
+    floor_layout: Optional[FloorLayoutIn] = None
+    plan_index: int = 0
+    core: BuildingCoreIn = BuildingCoreIn()
+    facade: BuildingFacadeIn = BuildingFacadeIn()
+    roof: bool = True
+    seed: int = 0
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+def _building_spec(body: BuildingIn) -> spec_store.GeneratedSpec:
+    """Validate everything (422) and solve the floor layout ONCE; the solved
+    rects are stored so every later regeneration reuses the same plan."""
+    _check_name_and_numbers(body)
+    if body.storey_heights is not None and len(body.storey_heights) > building_grammar.MAX_STOREYS:
+        raise HTTPException(422, f"storey_heights is limited to {building_grammar.MAX_STOREYS}")
+    layout = None
+    if body.floor_layout is not None:
+        layout = body.floor_layout.model_dump()
+        layout["adjacency"] = [list(a) for a in layout["adjacency"]]
+        if layout["rects"] is None:
+            layout.pop("rects")
+        else:
+            layout["rects"] = {k: [float(v) for v in r] for k, r in layout["rects"].items()}
+    try:
+        b = building_grammar.BuildingSpec(
+            name=body.name, footprint=body.footprint, storeys=body.storeys,
+            storey_heights=body.storey_heights, floor_layout=layout,
+            plan_index=body.plan_index, core=body.core.model_dump(),
+            facade=body.facade.model_dump(), roof=body.roof, seed=body.seed)
+        plan = building_grammar.floor_plan(b)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    params = b.to_params()
+    if plan is not None:
+        params["floor_layout"] = {
+            **{k: v for k, v in layout.items() if k != "rects"},
+            "rects": {k: [float(v) for v in r] for k, r in plan.rects.items()}}
+    return spec_store.GeneratedSpec("building", body.name, params=params, seed=body.seed,
+                                    origin=list(body.origin))
+
+
+@procedural.post("/buildings", status_code=201)
+async def create_building(
+    world_id: str, body: BuildingIn, db: AsyncSession = Depends(get_db)
+) -> dict:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    gspec = await run_in_threadpool(_building_spec, body)
     result = await _create(db, w, world_id, gspec)
-    return {**result, "apartment_entity_id": gspec.entity_id}
+    return {**result, "building_entity_id": gspec.entity_id}
 
 
 _BUILDERS = {
     "room": (RoomIn, _room_spec),
     "corridor": (CorridorIn, _corridor_spec),
     "city": (CityIn, _city_spec),
+    "apartment": (ApartmentCommitIn, _apartment_gspec),
+    "building": (BuildingIn, _building_spec),
 }
+
+
+def _fix_apartment_patch(fields: dict, edits: dict) -> None:
+    # stored rects belong to the stored brief: any structural edit re-solves
+    if set(edits) - {"origin"}:
+        fields.pop("rects", None)
+
+
+def _fix_building_patch(fields: dict, edits: dict) -> None:
+    heights = fields.get("storey_heights")
+    if "storeys" in edits and "storey_heights" not in edits and heights:
+        n = edits["storeys"]
+        fields["storey_heights"] = (heights + [heights[-1]] * max(n, 0))[:n]
+    if "plan_index" in edits and fields.get("floor_layout"):
+        fields["floor_layout"] = {k: v for k, v in fields["floor_layout"].items() if k != "rects"}
+
+
+_PATCH_FIX = {"apartment": _fix_apartment_patch, "building": _fix_building_patch}
 
 
 def _name_in_use(world: Optional[WorldIR], name: str, kind: str = "") -> bool:
@@ -381,9 +493,9 @@ def _name_in_use(world: Optional[WorldIR], name: str, kind: str = "") -> bool:
         return False
     taken = {s.name for s in spec_store.load_specs(world).values()}
     legacy = {f"{name}-room", f"{name}-corridor", f"{name}-city", f"{name}-floor",
-              f"{name}-apartment"}
-    if kind == "apartment":
-        # an apartment namespaces every id as "{name}-..."; refuse any collision
+              f"{name}-apartment", f"{name}-building"}
+    if kind in ("apartment", "building"):
+        # these namespace every id as "{name}-..."; refuse any collision
         if any(eid.startswith(f"{name}-") for eid in world.entities):
             return True
     return name in taken or bool(legacy & set(world.entities))
@@ -452,6 +564,30 @@ class CityPatch(_Patch):
     origin: Optional[tuple[float, float, float]] = None
 
 
+class ApartmentPatch(_Patch):
+    rooms: Optional[list[ApartmentRoomIn]] = None
+    entrance: Optional[str] = None
+    footprint: Optional[tuple[float, float]] = None
+    adjacency: Optional[list[tuple[str, str, str]]] = None
+    seed: Optional[int] = None
+    plan_index: Optional[int] = None
+    rects: Optional[dict[str, tuple[float, float, float, float]]] = None
+    origin: Optional[tuple[float, float, float]] = None
+
+
+class BuildingPatch(_Patch):
+    footprint: Optional[tuple[float, float]] = None
+    storeys: Optional[int] = None
+    storey_heights: Optional[list[float]] = None
+    floor_layout: Optional[FloorLayoutIn] = None
+    plan_index: Optional[int] = None
+    core: Optional[BuildingCoreIn] = None
+    facade: Optional[BuildingFacadeIn] = None
+    roof: Optional[bool] = None
+    seed: Optional[int] = None
+    origin: Optional[tuple[float, float, float]] = None
+
+
 def _find_spec(current: Optional[WorldIR], kind: str, name: str):
     sid = f"{name}-{kind}"
     specs = spec_store.load_specs(current) if current is not None else {}
@@ -481,6 +617,8 @@ def _edit_route(path: str, kind: str, patch_model):
                 fields["connects"] = [c for c in old.params.get("connects", [])
                                       if c != old.attach["to"]]
             edits = patch.model_dump(exclude_unset=True)
+            if kind in _PATCH_FIX:
+                _PATCH_FIX[kind](fields, edits)
             try:
                 new = build(body_cls(name=name, **{**fields, **edits}))
             except ValidationError as exc:
@@ -540,6 +678,8 @@ def _delete_route(path: str, kind: str):
 
 for _path, _kind, _patch in (("rooms", "room", RoomPatch),
                              ("corridors", "corridor", CorridorPatch),
-                             ("cities", "city", CityPatch)):
+                             ("cities", "city", CityPatch),
+                             ("apartments", "apartment", ApartmentPatch),
+                             ("buildings", "building", BuildingPatch)):
     _edit_route(_path, _kind, _patch)
     _delete_route(_path, _kind)

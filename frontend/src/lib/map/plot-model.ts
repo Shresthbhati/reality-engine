@@ -120,6 +120,12 @@ export function resolveUnitContext(world: WorldIR | null | undefined): UnitConte
   if (finite(scale?.meters_per_unit) && scale.meters_per_unit > 0) {
     return { unit: "m", factor: scale.meters_per_unit, reason: `Scaled by ${scale.meters_per_unit} m per model unit${scale.method ? ` (${scale.method})` : ""}.` };
   }
+  // Same rule as the measurement tool (lib/viewport/measure-model.ts): a world whose every
+  // entity is GENERATED (procedural rooms/cities) is authored in metres by construction.
+  const entities = Object.values(world?.entities ?? {});
+  if (entities.length > 0 && entities.every((e) => e.provenance === "GENERATED")) {
+    return { unit: "m", factor: 1, reason: "Authored geometry: procedural worlds are built in metres, so these sizes are exact." };
+  }
   return { unit: "model units", factor: 1, reason: "No metric scale is recorded for this world." };
 }
 

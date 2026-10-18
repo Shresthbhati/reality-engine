@@ -69,3 +69,13 @@ test("unit rule: metres only with a positive scale that is not unscaled/nominal"
   assert.equal(formatAreaValue(8, m), "2.00 m²");
   assert.equal(formatAreaValue(8, resolveUnitContext(world([]))), "8.00 model units²");
 });
+
+test("an all-GENERATED (procedural) world is authored in metres, matching the measurement tool", () => {
+  const gen = { entities: { a: { id: "a", provenance: "GENERATED" }, b: { id: "b", provenance: "GENERATED" } } } as never;
+  const ctx = resolveUnitContext(gen);
+  assert.equal(ctx.unit, "m");
+  assert.equal(ctx.factor, 1);
+  // one reconstructed entity breaks the guarantee -> never relabelled as metres
+  const mixed = { entities: { a: { id: "a", provenance: "GENERATED" }, b: { id: "b", provenance: "RECONSTRUCTED" } } } as never;
+  assert.equal(resolveUnitContext(mixed).unit, "model units");
+});

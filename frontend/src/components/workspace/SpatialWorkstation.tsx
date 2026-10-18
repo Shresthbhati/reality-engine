@@ -778,6 +778,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             onClearSelection={handleClearSelection}
             measurement={measurement}
             activeVersion={currentVersionId ?? undefined}
+            worldId={worldId || undefined}
           />
         </div>
       )}

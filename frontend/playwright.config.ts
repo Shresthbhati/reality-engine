@@ -2,9 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
 
-// No bundled browsers are downloaded: tests drive an installed Chromium-family browser.
+// Locally no bundled browsers are downloaded: tests drive an installed Chromium-family browser.
 // Default Microsoft Edge; override with PLAYWRIGHT_CHANNEL=chrome.
-const channel = process.env.PLAYWRIGHT_CHANNEL || "msedge";
+// In CI (CI=1) there is no Edge: use Playwright's bundled chromium (npx playwright install --with-deps chromium).
+const channel = process.env.CI ? undefined : process.env.PLAYWRIGHT_CHANNEL || "msedge";
 
 const root = path.resolve(__dirname, "..");
 // Everything the API writes lives under test-results/e2e so the suite never touches ./data.
@@ -53,7 +54,8 @@ export default defineConfig({
       },
     },
     {
-      command: "npm run dev",
+      // CI serves the production build (a cold `next dev` compiles each route on first hit: slow/flaky there).
+      command: process.env.CI ? "npm run start" : "npm run dev",
       cwd: __dirname,
       url: "http://localhost:3000",
       reuseExistingServer: !process.env.CI,

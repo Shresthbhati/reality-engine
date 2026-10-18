@@ -10,6 +10,7 @@ import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
 import BuildModal from "@/components/workspace/BuildModal";
 import GeneratedPanel from "@/components/workspace/GeneratedPanel";
+import CompleteInteriorPanel from "@/components/workspace/CompleteInteriorPanel";
 import PhotoDropZone from "@/components/reconstruct/PhotoDropZone";
 import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStatusBar";
 import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
@@ -510,6 +511,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           </button>
 
           <GeneratedPanel
+            worldId={worldId}
+            onChanged={() => {
+              Promise.all([refetchIr(), refetchVersions()]);
+            }}
+          />
+
+          <CompleteInteriorPanel
             worldId={worldId}
             onChanged={() => {
               Promise.all([refetchIr(), refetchVersions()]);

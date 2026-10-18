@@ -12,6 +12,7 @@ import {
 import { isApiError } from "@/lib/api/client";
 import ApartmentBuilder from "@/components/workspace/ApartmentBuilder";
 import BuildingBuilder from "@/components/workspace/BuildingBuilder";
+import DistrictBuilder from "@/components/workspace/DistrictBuilder";
 import OpeningsEditor from "@/components/workspace/OpeningsEditor";
 import {
   duplicateNameMessage,
@@ -20,7 +21,7 @@ import {
   type OpeningDraft,
 } from "@/lib/procedural/generated-model";
 
-type Kind = "room" | "corridor" | "city" | "apartment" | "building";
+type Kind = "room" | "corridor" | "city" | "apartment" | "building" | "district";
 
 export interface BuildRoomOption {
   id: string;
@@ -96,7 +97,7 @@ export default function BuildModal({
 
   function pick(next: Kind) {
     setKind(next);
-    setName({ room: "room-1", corridor: "corridor-1", city: "city-1", apartment: "apartment-1", building: "building-1" }[next]);
+    setName({ room: "room-1", corridor: "corridor-1", city: "city-1", apartment: "apartment-1", building: "building-1", district: "district-1" }[next]);
     setError(null);
   }
 
@@ -144,7 +145,7 @@ export default function BuildModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Build">
-      <div className={`w-full ${kind === "apartment" || kind === "building" ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-4 flex flex-col gap-3 shadow-2xl`}>
+      <div className={`w-full ${kind === "apartment" || kind === "building" || kind === "district" ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-4 flex flex-col gap-3 shadow-2xl`}>
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
             <Hammer className="w-4 h-4 text-[var(--accent)]" /> Build
@@ -155,7 +156,7 @@ export default function BuildModal({
         </div>
 
         <div className="flex gap-1" role="tablist">
-          {(["room", "corridor", "city", "apartment", "building"] as Kind[]).map((k) => (
+          {(["room", "corridor", "city", "apartment", "building", "district"] as Kind[]).map((k) => (
             <button
               key={k}
               type="button"
@@ -177,6 +178,8 @@ export default function BuildModal({
           <ApartmentBuilder worldId={worldId} onCreated={onCreated} onClose={onClose} />
         ) : kind === "building" ? (
           <BuildingBuilder worldId={worldId} onCreated={onCreated} onClose={onClose} />
+        ) : kind === "district" ? (
+          <DistrictBuilder worldId={worldId} onCreated={onCreated} onClose={onClose} />
         ) : (
         <>
         <Field label="Name">

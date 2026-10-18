@@ -5,6 +5,8 @@
  * The backend stays authoritative; this only gives early inline messages.
  */
 
+import { districtSummary } from "./district-model.ts";
+
 export type Wall ="north" | "south" | "east" | "west";
 export const WALLS: Wall[] = ["north", "south", "east", "west"];
 
@@ -59,7 +61,7 @@ function round(n: number): number {
 /** What the Generated list item looks like (GET /api/worlds/{id}/generated). */
 export interface GeneratedItem {
   entity_id: string;
-  kind: "room" | "corridor" | "city" | "apartment" | "building";
+  kind: "room" | "corridor" | "city" | "apartment" | "building" | "district";
   name: string;
   params: Record<string, unknown>;
   origin: [number, number, number];
@@ -215,6 +217,7 @@ export function summarize(item: GeneratedItem): string {
     const n = num(p.storeys, 1);
     return `${n} storey${n === 1 ? "" : "s"}, ${num(fp[0], 0)} x ${num(fp[1], 0)} m`;
   }
+  if (item.kind === "district") return districtSummary(p);
   if (item.kind === "apartment") return apartmentSummary(p);
   if (item.kind === "room") return `${num(p.width, 0)} x ${num(p.depth, 0)} x ${num(p.height, 0)} m`;
   if (item.kind === "corridor") return `${num(p.length, 0)} m long, ${num(p.width, 0)} m wide, along ${p.axis === "y" ? "y" : "x"}`;

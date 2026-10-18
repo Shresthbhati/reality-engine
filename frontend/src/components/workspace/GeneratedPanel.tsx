@@ -32,6 +32,12 @@ import {
   type GeneratedItem,
   type RoomForm,
 } from "@/lib/procedural/generated-model";
+import {
+  districtEditFrom,
+  districtPatch,
+  validateDistrictEdit,
+  type DistrictEditForm,
+} from "@/lib/procedural/district-model";
 import OpeningsEditor from "@/components/workspace/OpeningsEditor";
 
 const inputCls =
@@ -176,6 +182,7 @@ function EditForm({
   const [corridor, setCorridor] = useState<CorridorForm>(() => corridorFormFrom(item));
   const [city, setCity] = useState<CityForm>(() => cityFormFrom(item));
   const [building, setBuilding] = useState<BuildingForm>(() => buildingForm(item));
+  const [district, setDistrict] = useState<DistrictEditForm>(() => districtEditFrom(item.params));
   const apt0 = apartmentEditFrom(item);
   const [apt, setApt] = useState<ApartmentEditForm>(apt0);
   const [busy, setBusy] = useState(false);
@@ -196,7 +203,13 @@ function EditForm({
   const numbersOk = nums.every(Number.isFinite);
   const openingsBad = kind === "room" && hasOpeningErrors(validateOpenings(room.openings, room));
   const problems =
-    kind === "building" ? validateBuildingForm(building) : kind === "apartment" ? validateApartmentEdit(apt) : [];
+    kind === "building"
+      ? validateBuildingForm(building)
+      : kind === "apartment"
+        ? validateApartmentEdit(apt)
+        : kind === "district"
+          ? validateDistrictEdit(district)
+          : [];
   const aptChanges = apartmentPatch(apt0, apt);
   const noChange = kind === "apartment" && Object.keys(aptChanges).length === 0;
   const canSave = numbersOk && !openingsBad && problems.length === 0 && !noChange && !busy;
@@ -204,6 +217,7 @@ function EditForm({
   function patch(): Record<string, unknown> {
     if (kind === "building") return buildingPatch(building);
     if (kind === "apartment") return aptChanges;
+    if (kind === "district") return districtPatch(district);
     if (kind === "room") {
       return {
         width: room.width, depth: room.depth, height: room.height, seed: room.seed,
@@ -348,6 +362,23 @@ function EditForm({
               />
             ))}
           </div>
+        </fieldset>
+      )}
+
+      {kind === "district" && (
+        <fieldset className="flex flex-col gap-2" data-testid="district-edit">
+          <legend className="text-xs text-neutral-400 mb-1 flex items-center gap-2">
+            Seed and detail policy
+            <span className="text-[10px] font-semibold text-[var(--warning)] border border-[var(--warning)] rounded px-1">GENERATED</span>
+          </legend>
+          <div className="grid grid-cols-3 gap-2">
+            <N label="Seed" value={district.seed} step={1} onChange={(v) => setDistrict({ ...district, seed: v })} />
+            <N label="Fully detailed buildings (empty = all)" value={district.maxFull} step={1} onChange={(v) => setDistrict({ ...district, maxFull: v })} />
+            <N label="Full detail within (m, empty = no limit)" value={district.fullWithin} step={1} onChange={(v) => setDistrict({ ...district, fullWithin: v })} />
+          </div>
+          <p className="text-[11px] text-neutral-500">
+            Buildings beyond the policy become one box each (footprint only). Layout, sizes and families are fixed here: delete and rebuild to change them.
+          </p>
         </fieldset>
       )}
 

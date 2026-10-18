@@ -176,3 +176,55 @@ test("Building tab: a server 422 is shown verbatim, never as an empty state", as
   await expect(dialog.getByRole("alert")).toContainText("footprint sides must be greater than 4 m");
   await expect(dialog).toBeVisible();
 });
+
+test("District tab: create against the live API -> appears in Generated -> edit detail policy -> delete", async ({ page, request }) => {
+  const name = `Town${Date.now()}`;
+  type Item = { kind: string; name: string; params: { detail: { max_full: number | null } } };
+  const generated = async () =>
+    (await (await request.get(`${API_URL}/api/worlds/${worldId}/generated`)).json()) as Item[];
+
+  await page.goto(WORLD);
+  await page.getByTestId("open-build").click();
+  const dialog = page.getByRole("dialog", { name: "Build" });
+  await dialog.getByRole("tab", { name: "district" }).click();
+  await expect(dialog.getByTestId("district-provenance")).toHaveText("GENERATED");
+  await dialog.getByLabel("District name").fill(name);
+  await dialog.getByLabel("Parcels east-west").fill("2");
+  await dialog.getByLabel("Parcels north-south").fill("2");
+  await dialog.getByLabel("Fully detailed buildings").fill("1");
+  await expect(dialog.getByTestId("district-note")).toContainText("4 parcels");
+  await expect(dialog.getByTestId("district-note")).toContainText("6 named streets");
+  await dialog.getByRole("button", { name: "Build district" }).click();
+  await expect(dialog).toBeHidden();
+
+  await expect.poll(async () => (await generated()).some((g) => g.kind === "district" && g.name === name)).toBe(true);
+
+  await page.getByTestId("open-generated").click();
+  const panel = page.getByRole("dialog", { name: "Generated" });
+  const row = panel.getByTestId("generated-list").getByRole("button", { name: new RegExp(name) });
+  await expect(row).toContainText("district");
+  await expect(row).toContainText("grid, 2 x 2 parcels, lot 24 x 24 m");
+  await row.click();
+  const edit = panel.getByTestId("generated-edit");
+  await edit.getByLabel("Fully detailed buildings (empty = all)").fill("2");
+  await edit.getByRole("button", { name: "Save changes" }).click();
+  await expect(panel.getByTestId("generated-result")).toHaveText(/\d+ changed - \d+ unchanged - \d+ removed/);
+  await expect.poll(async () => (await generated()).find((g) => g.name === name)?.params.detail.max_full).toBe(2);
+
+  await edit.getByRole("button", { name: "Delete", exact: true }).click();
+  await edit.getByRole("button", { name: "Confirm delete" }).click();
+  await expect.poll(async () => (await generated()).some((g) => g.name === name)).toBe(false);
+});
+
+test("District tab: a server 422 is shown verbatim, never as an empty state", async ({ page }) => {
+  await page.goto(WORLD);
+  await page.getByTestId("open-build").click();
+  const dialog = page.getByRole("dialog", { name: "Build" });
+  await dialog.getByRole("tab", { name: "district" }).click();
+  await dialog.getByLabel("District name").fill(`Bad${Date.now()}`);
+  // Passes the client's early checks (lot 8-200 m) but the 3 m setbacks leave a 2 m building footprint.
+  await dialog.getByLabel("Lot size (m)").fill("8");
+  await dialog.getByRole("button", { name: "Build district" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("footprint sides must be greater than 4 m");
+  await expect(dialog).toBeVisible();
+});

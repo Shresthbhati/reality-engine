@@ -62,6 +62,10 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
         # Stage outputs (e.g. a reconstruction's world/version ids) so
         # terminal jobs carry their real result, not just a status.
         "payload": j.payload,
+        # recorded timestamps (None until the job reaches that point) -- the pipeline view shows these, never invented durations
+        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "started_at": j.started_at.isoformat() if j.started_at else None,
+        "completed_at": j.completed_at.isoformat() if j.completed_at else None,
     }
 
 

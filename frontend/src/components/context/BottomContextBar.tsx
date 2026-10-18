@@ -22,6 +22,7 @@ import type { SessionRow } from "@/lib/types";
 import { getActivity, isApiError, type ActivityEvent } from "@/lib/activity";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
 import { resolveUnitContext } from "@/lib/viewport/measure-model";
+import PipelineGraph from "@/components/pipeline/PipelineGraph";
 
 interface BottomContextBarProps {
   world: WorldIR | null;
@@ -34,6 +35,8 @@ interface BottomContextBarProps {
    * has no committed version. There is no default: "v1.0.0" used to be
    * printed here for worlds whose lineage was empty. */
   activeVersion?: string;
+  /** the world whose reconstruction pipeline the Processing State tab shows */
+  worldId?: string;
 }
 
 type BottomTab = "context" | "timeline" | "processing" | "activity";
@@ -46,6 +49,7 @@ export default function BottomContextBar({
   onClearSelection,
   measurement,
   activeVersion,
+  worldId,
 }: BottomContextBarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<BottomTab>("context");
@@ -323,34 +327,12 @@ export default function BottomContextBar({
             </div>
           )}
 
-          {activeTab === "processing" && (
-            <div className="grid grid-cols-4 gap-4 h-full">
-              <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)]">
-                <div className="text-[10px] text-neutral-400 uppercase">Engine Status</div>
-                <div className="text-[var(--success)] font-semibold text-xs mt-0.5 font-mono">
-                  {world ? "COMPILED · PERSISTENT" : "STANDBY"}
-                </div>
-              </div>
-              <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)]">
-                <div className="text-[10px] text-neutral-400 uppercase">Reconstruction Backend</div>
-                <div className="text-white font-semibold text-xs mt-0.5 font-mono">
-                  {meta.reconstruction?.backend || "Unavailable"}
-                </div>
-              </div>
-              <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)]">
-                <div className="text-[10px] text-neutral-400 uppercase">Scale Anchor</div>
-                <div className="text-[var(--accent)] font-semibold text-xs mt-0.5 font-mono">
-                  {meta.scale?.state || "Unavailable"}
-                </div>
-              </div>
-              <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)]">
-                <div className="text-[10px] text-neutral-400 uppercase">Depth Model</div>
-                <div className="text-white font-semibold text-xs mt-0.5 font-mono">
-                  {meta.depth?.model || "Unavailable"}
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === "processing" &&
+            (worldId ? (
+              <PipelineGraph worldId={worldId} compact />
+            ) : (
+              <p className="text-neutral-500 text-xs font-mono">No world selected.</p>
+            ))}
 
           {activeTab === "activity" && (
             <div className="space-y-1.5">

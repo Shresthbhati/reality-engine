@@ -274,3 +274,24 @@ class ActivityEvent(Base):
     summary: Mapped[str] = mapped_column(String(500))
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CompletionProposal(Base):
+    """A GENERATED interior proposal for a world's reconstructed shell. It is a proposal only: it lives in this
+    table and changes nothing in the world until accepted (then it is committed through the procedural write path)."""
+
+    __tablename__ = "completion_proposals"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    base_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="proposed")  # proposed | accepted | rejected
+    alt_index: Mapped[int] = mapped_column(Integer, default=0)
+    seed: Mapped[int] = mapped_column(Integer, default=0)
+    spec: Mapped[dict] = mapped_column(JSON)       # procedural.spec_store.GeneratedSpec as a dict
+    summary: Mapped[dict] = mapped_column(JSON)    # footprint + unit + program, for listing without regenerating
+    accepted_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

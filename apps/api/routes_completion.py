@@ -158,8 +158,18 @@ def _solve(body: ProposalIn, prog: dict, fp: dict) -> list[dict]:
     return out
 
 
+def _plan_out(r: CompletionProposal) -> Optional[dict]:
+    """Proposed room rectangles [x, y, w, d] (grammar-local, origin = shell corner) from the stored spec.
+    Doors are not stored by the solver, so none are returned."""
+    p = (r.spec or {}).get("params") or {}
+    if not p.get("rects"):
+        return None
+    return {"rects": p["rects"], "kinds": {x["id"]: x["kind"] for x in p.get("rooms", [])},
+            "footprint": list(p["footprint"]) if p.get("footprint") else None, "provenance": "GENERATED"}
+
+
 def _row_out(r: CompletionProposal) -> dict:
-    return {"id": r.id, "world_id": r.world_id, "status": r.status, "alt_index": r.alt_index, "seed": r.seed,
+    return {"id": r.id, "plan": _plan_out(r), "world_id": r.world_id, "status": r.status, "alt_index": r.alt_index, "seed": r.seed,
             "base_version_id": r.base_version_id, "accepted_version_id": r.accepted_version_id,
             "summary": r.summary, "label": "GENERATED proposal -- not observed, not reconstructed",
             "created_at": r.created_at.isoformat() if r.created_at else None}

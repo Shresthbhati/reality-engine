@@ -173,3 +173,32 @@ def test_404_and_stale_shell_409(client):
 
     asyncio.run(grow())
     assert client.post(f"/api/worlds/{wid}/completion/proposals/{pid}/accept").status_code == 409
+
+
+def test_proposals_carry_non_overlapping_rects_within_footprint(client):
+    wid = _seed(client, _shell())
+    props = _propose(client, wid, alternatives=3).json()["proposals"]
+    assert props
+    for p in props:
+        plan = p["plan"]
+        assert plan["provenance"] == "GENERATED"
+        fw, fd = plan["footprint"]
+        assert fw <= 6.0 and fd <= 5.0
+        rects = plan["rects"]
+        assert set(rects) == set(plan["kinds"]) and len(rects) >= 3
+        eps = 1e-6
+        for x, y, w, d in rects.values():
+            assert w > 0 and d > 0 and x >= -eps and y >= -eps and x + w <= fw + eps and y + d <= fd + eps
+        items = list(rects.values())
+        for i, (ax, ay, aw, ad) in enumerate(items):
+            for bx, by, bw, bd in items[i + 1:]:
+                assert ax + aw <= bx + eps or bx + bw <= ax + eps or ay + ad <= by + eps or by + bd <= ay + eps
+    listed = client.get(f"/api/worlds/{wid}/completion/proposals").json()
+    assert [x["plan"] for x in listed] == [p["plan"] for p in props]
+
+
+def test_plan_rects_deterministic_by_seed(client):
+    a, b = _seed(client, _shell()), _seed(client, _shell())
+    pa = _propose(client, a, seed=11, alternatives=2).json()["proposals"]
+    pb = _propose(client, b, seed=11, alternatives=2).json()["proposals"]
+    assert [p["plan"] for p in pa] == [p["plan"] for p in pb]

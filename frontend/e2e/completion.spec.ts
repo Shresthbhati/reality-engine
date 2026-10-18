@@ -56,6 +56,11 @@ test("propose -> labelled diff -> accept as GENERATED; name clash 409 verbatim; 
   await expect(cards.first().getByTestId("complete-badge")).toHaveText("PROPOSED");
   await expect(cards.first()).toContainText("axis-aligned bounding box");
   await expect(cards.first()).toContainText("model units");
+  // Real floor plan: studio program = living, kitchen, bath (plus any hallway the solver adds).
+  const plan = cards.first().getByTestId("complete-plan");
+  await expect(plan).toBeVisible();
+  expect(await plan.getByTestId("complete-plan-room").count()).toBeGreaterThanOrEqual(3);
+  await expect(cards.first()).toContainText("GENERATED rooms");
 
   const diff = dialog.getByTestId("complete-diff");
   await expect(diff.getByTestId("complete-diff-counts")).toContainText(/^\d+ added, 0 changed, 0 removed$/);

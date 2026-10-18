@@ -11,6 +11,7 @@ import {
   addedAllGenerated,
   diffSummary,
   footprintLine,
+  proposalPlanSvg,
   provenanceText,
   sortProposals,
   statusBadge,
@@ -106,4 +107,22 @@ test("proposals: pending first, newest batch first, then alternative order", () 
     row("new1", "proposed", "2026-02-01T10:00:00.900", 1), row("new0", "proposed", "2026-02-01T10:00:00.100", 0),
   ]).map((r) => r.id);
   assert.deepEqual(out, ["new0", "new1", "old0", "done"]);
+});
+
+test("proposalPlanSvg scales rooms and the shell outline together; null without rects", () => {
+  const row = {
+    id: "p", status: "proposed", alt_index: 0, seed: 0, summary: { footprint: { width: 6, depth: 5 }, unit: "m" },
+    plan: {
+      rects: { living: [0, 0, 4, 5], bath: [4, 0, 2, 5] },
+      kinds: { living: "living", bath: "bathroom" }, footprint: [6, 5], provenance: "GENERATED",
+    },
+  } as unknown as CompletionProposalRow;
+  const svg = proposalPlanSvg(row, 120)!;
+  assert.equal(svg.rooms.length, 2);
+  assert.equal(svg.width, 120);
+  assert.equal(svg.shell.w, 120);
+  assert.equal(svg.shell.h, 100);
+  assert.equal(svg.rooms[0].w, 80);
+  assert.equal(proposalPlanSvg({ ...row, plan: null } as CompletionProposalRow), null);
+  assert.equal(proposalPlanSvg({ ...row, plan: { ...row.plan!, rects: {} } } as CompletionProposalRow), null);
 });

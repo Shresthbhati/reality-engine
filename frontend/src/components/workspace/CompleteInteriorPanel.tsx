@@ -19,6 +19,7 @@ import {
   diffSummary,
   footprintLine,
   programLine,
+  proposalPlanSvg,
   provenanceText,
   sortProposals,
   statusBadge,
@@ -209,6 +210,7 @@ export default function CompleteInteriorPanel({ worldId, onChanged }: { worldId:
                     const on = selected === p.id;
                     const fp = p.summary.footprint;
                     const longest = Math.max(fp.width, fp.depth, 0.001);
+                    const plan = proposalPlanSvg(p, 220);
                     return (
                       <button
                         key={p.id}
@@ -220,14 +222,38 @@ export default function CompleteInteriorPanel({ worldId, onChanged }: { worldId:
                           on ? "border-[var(--accent)] bg-[var(--accent-subtle)]" : "border-[var(--border)] hover:bg-[var(--bg-hover)]"
                         }`}
                       >
-                        <svg viewBox="0 0 120 80" className="w-full h-auto" role="img" aria-label={`Footprint of alternative ${p.alt_index + 1}`}>
-                          {/* To-scale shell footprint only: the API does not return the proposed room rectangles before acceptance. */}
-                          <rect
-                            x={4} y={4} width={(fp.width / longest) * 110} height={(fp.depth / longest) * 70}
-                            fill="none" stroke="var(--warning)" strokeWidth={1.5} strokeDasharray="4 3"
-                          />
-                          <text x={60} y={42} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">shell footprint</text>
-                        </svg>
+                        {plan ? (
+                          <svg
+                            viewBox={`0 0 ${plan.width} ${Math.max(plan.height, plan.shell.h)}`} className="w-full h-auto"
+                            role="img" aria-label={`Proposed floor plan of alternative ${p.alt_index + 1}`} data-testid="complete-plan"
+                          >
+                            {plan.rooms.map((r) => (
+                              <g key={r.id} data-testid="complete-plan-room">
+                                <rect
+                                  x={r.x} y={r.y} width={r.w} height={r.h}
+                                  fill={r.circulation ? "var(--purple-subtle)" : "var(--bg-elevated)"}
+                                  stroke="var(--accent-border)" strokeWidth={1}
+                                />
+                                <text x={r.cx} y={r.cy} textAnchor="middle" dominantBaseline="middle" fontSize={r.tiny ? 7 : 9} fill="var(--text-primary)">
+                                  {r.id}
+                                </text>
+                              </g>
+                            ))}
+                            <rect
+                              x={0} y={0} width={plan.shell.w} height={plan.shell.h}
+                              fill="none" stroke="var(--warning)" strokeWidth={1.5} strokeDasharray="4 3"
+                            />
+                          </svg>
+                        ) : (
+                          <svg viewBox="0 0 120 80" className="w-full h-auto" role="img" aria-label={`Footprint of alternative ${p.alt_index + 1}`}>
+                            <rect
+                              x={4} y={4} width={(fp.width / longest) * 110} height={(fp.depth / longest) * 70}
+                              fill="none" stroke="var(--warning)" strokeWidth={1.5} strokeDasharray="4 3"
+                            />
+                            <text x={60} y={42} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">shell footprint</text>
+                          </svg>
+                        )}
+                        <span className="text-[10px] text-[var(--text-secondary)]">GENERATED rooms (dashed = shell footprint)</span>
                         <span className="text-[11px] font-semibold text-[var(--warning)]" data-testid="complete-badge">{statusBadge(p.status)}</span>
                         <span className="text-[11px] text-[var(--text-primary)]">{p.summary.name} - alternative {p.alt_index + 1}, seed {p.seed}</span>
                         <span className="text-[11px] text-[var(--text-secondary)]">{footprintLine(fp, p.summary.unit)}</span>

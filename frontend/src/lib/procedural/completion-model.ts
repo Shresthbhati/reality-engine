@@ -5,9 +5,11 @@
  * Everything proposed is GENERATED: never observed, never reconstructed.
  */
 import {
+  planToSvg,
   toRequestBody,
   validateApartment,
   type AdjacencyDraft,
+  type PlanSvg,
   type RoomRow,
 } from "./apartment-model.ts";
 
@@ -91,8 +93,17 @@ export interface ProposalSummary {
 
 export type ProposalStatus = "proposed" | "accepted" | "rejected";
 
+/** Proposed room rectangles [x, y, w, d] from the solver, GENERATED. No door positions are returned. */
+export interface ProposalPlan {
+  rects: Record<string, [number, number, number, number]>;
+  kinds: Record<string, string>;
+  footprint: [number, number] | null;
+  provenance: string;
+}
+
 export interface CompletionProposalRow {
   id: string;
+  plan?: ProposalPlan | null;
   world_id: string;
   status: ProposalStatus | string;
   alt_index: number;
@@ -174,4 +185,21 @@ export function sortProposals(rows: CompletionProposalRow[]): CompletionProposal
     rank(a.status) - rank(b.status) ||
     (b.created_at ?? "").slice(0, 19).localeCompare((a.created_at ?? "").slice(0, 19)) ||
     a.alt_index - b.alt_index);
+}
+
+export interface ProposalPlanSvg extends PlanSvg {
+  /** Shell footprint outline, drawn at the same scale as the rooms. */
+  shell: { w: number; h: number };
+}
+
+/** To-scale SVG model of a proposal's rooms with the shell outline; null when the API sent no rectangles. */
+export function proposalPlanSvg(p: CompletionProposalRow, viewWidth = 220): ProposalPlanSvg | null {
+  const plan = p.plan;
+  if (!plan || Object.keys(plan.rects).length === 0) return null;
+  const fp = p.summary.footprint;
+  const svg = planToSvg(
+    { rects: plan.rects, score: 0, satisfied: [], unsatisfied: [] }, plan.kinds, [fp.width, fp.depth], viewWidth);
+  const maxX = Math.max(fp.width, ...Object.values(plan.rects).map((r) => r[0] + r[2]));
+  const k = viewWidth / maxX;
+  return { ...svg, shell: { w: fp.width * k, h: fp.depth * k } };
 }

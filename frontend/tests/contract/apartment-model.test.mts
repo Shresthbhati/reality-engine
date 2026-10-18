@@ -7,8 +7,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  APARTMENT_TEMPLATES,
   adjacencySummary,
   effectiveEntrance,
+  templateAdjacency,
   nextRoomId,
   planToSvg,
   templateRows,
@@ -46,6 +48,27 @@ test("entrance defaults to the hallway and survives only while it exists", () =>
   assert.equal(nextRoomId(rows, "office"), "office");
   const withBed = [...rows, { id: "bedroom", kind: "bedroom" as const, min_area: 9, max_area: 12 }];
   assert.equal(nextRoomId(withBed, "bedroom"), "bedroom-3"); // -1 and -2 already taken
+});
+
+test("every template prefills required adjacency over its own rooms only; entrance is the hallway", () => {
+  for (const t of APARTMENT_TEMPLATES) {
+    const rows = templateRows(t.key);
+    const ids = new Set(rows.map((r) => r.id));
+    const adj = templateAdjacency(rows);
+    assert.ok(adj.length >= 3, t.key);
+    for (const a of adj) {
+      assert.ok(ids.has(a.a) && ids.has(a.b), `${t.key}: ${a.a}-${a.b}`);
+      assert.equal(a.level, "required");
+    }
+    const kindOf = (id: string) => rows.find((r) => r.id === id)!.kind;
+    for (const r of rows.filter((x) => ["bedroom", "bathroom", "living"].includes(x.kind))) {
+      assert.ok(adj.some((a) => a.a === "hallway" && a.b === r.id), `${t.key}: hallway-${r.id}`);
+    }
+    assert.ok(adj.some((a) => kindOf(a.a) === "living" && kindOf(a.b) === "kitchen"));
+    assert.equal(effectiveEntrance(rows, ""), "hallway");
+    assert.deepEqual(validateApartment({ name: "x", rows, entrance: "hallway", footprint: null, adjacency: adj, seed: 0 }), []);
+  }
+  assert.equal(templateAdjacency(templateRows("2-bedroom")).length, 5);
 });
 
 test("a template draft is valid", () => assert.deepEqual(validateApartment(draft()), []));

@@ -105,6 +105,11 @@ test("Apartment tab: 2-bedroom template -> Find layouts -> Build creates a build
   await dialog.getByRole("button", { name: "Find layouts" }).click();
   await expect(dialog.getByTestId("apartment-plan").first()).toBeVisible({ timeout: 60_000 });
   await expect(dialog.getByRole("alert")).toHaveCount(0);
+  const chosen = dialog.getByTestId("apartment-plan").and(dialog.locator('[aria-pressed="true"]'));
+  const summary = (await chosen.innerText()).match(/(\d+) of (\d+) required adjacencies met/);
+  expect(summary, "chosen plan card shows the adjacency summary").not.toBeNull();
+  expect(Number(summary![2])).toBeGreaterThanOrEqual(4);
+  expect(summary![1]).toBe(summary![2]);
   await dialog.getByRole("button", { name: "Build apartment" }).click();
   await expect(dialog).toBeHidden();
 

@@ -11,6 +11,8 @@ import type {
 } from "@/types/worldir";
 import { pointsBounds, robustPointsBounds } from "./loaders";
 import { isOversizedEntity } from "./oversized";
+import { shouldAutoFrame } from "./autoframe";
+import type { MeasureKind, Vec3 } from "./measure-model";
 
 export interface ViewportLayers {
   points: boolean;
@@ -30,6 +32,14 @@ export interface MeasurementResult {
   p2: [number, number, number];
   distance: number;
   delta: [number, number, number];
+}
+
+/** A saved measurement drawn as a labelled 3D annotation. */
+export interface SavedMeasurementOverlay {
+  id: string;
+  kind: MeasureKind;
+  points: Vec3[];
+  label: string;
 }
 
 export interface ViewportStatistics {
@@ -112,6 +122,7 @@ export class WorldSceneController {
 
   // Data cache
   private world: WorldIR | null = null;
+  private framedWorldId: string | null = null;
   private pointsData: Float32Array | null = null;
   private camerasData: CamerasPayload | null = null;
   private meshData: { positions: Float32Array; indices: Uint32Array } | null = null;
@@ -148,9 +159,16 @@ export class WorldSceneController {
   private gridHelper: THREE.GridHelper | null = null;
   private axesHelper: THREE.AxesHelper | null = null;
   private isMeasurementMode = false;
-  private measureP1: THREE.Vector3 | null = null;
-  private measureP2: THREE.Vector3 | null = null;
+  private measureTool: MeasureKind = "distance";
+  private measureSnap = true;
+  private measurePts: THREE.Vector3[] = [];
+  private measureDone = false;
+  private onMeasurePointsCallback?: (s: { tool: MeasureKind; points: Vec3[]; done: boolean } | null) => void;
   private measurementGroup: THREE.Group | null = null;
+  private annotationGroup: THREE.Group | null = null;
+  private annotationsVisible = true;
+  private savedMeasurements: SavedMeasurementOverlay[] = [];
+  private selectedMeasurementId: string | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -172,6 +190,8 @@ export class WorldSceneController {
     // Measurement group
     this.measurementGroup = new THREE.Group();
     this.scene.add(this.measurementGroup);
+    this.annotationGroup = new THREE.Group();
+    this.scene.add(this.annotationGroup);
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
@@ -239,24 +259,196 @@ export class WorldSceneController {
     }
   }
 
+  public setMeasureTool(tool: MeasureKind) {
+    if (tool === this.measureTool) return;
+    this.measureTool = tool;
+    this.clearMeasurement();
+  }
+
+  public setMeasureSnap(on: boolean) {
+    this.measureSnap = on;
+  }
+
+  public setMeasurePointsCallback(cb?: (s: { tool: MeasureKind; points: Vec3[]; done: boolean } | null) => void) {
+    this.onMeasurePointsCallback = cb;
+  }
+
+  private disposeGroupChildren(group: THREE.Group | null) {
+    if (!group) return;
+    while (group.children.length > 0) {
+      const obj = group.children[0];
+      group.remove(obj);
+      if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Sprite) {
+        if (!(obj instanceof THREE.Sprite)) obj.geometry.dispose();
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach((m) => {
+          (m as THREE.SpriteMaterial).map?.dispose();
+          m.dispose();
+        });
+      }
+    }
+  }
+
   public clearMeasurement() {
-    this.measureP1 = null;
-    this.measureP2 = null;
-    if (this.measurementGroup) {
-      while (this.measurementGroup.children.length > 0) {
-        const obj = this.measurementGroup.children[0];
-        this.measurementGroup.remove(obj);
-        if (obj instanceof THREE.Mesh || obj instanceof THREE.Line) {
-          obj.geometry.dispose();
-          if (Array.isArray(obj.material)) {
-            obj.material.forEach((m) => m.dispose());
-          } else {
-            obj.material.dispose();
-          }
+    this.measurePts = [];
+    this.measureDone = false;
+    this.disposeGroupChildren(this.measurementGroup);
+    this.onMeasureCallback?.(null);
+    this.onMeasurePointsCallback?.(null);
+  }
+
+  /** Close the area polygon (needs >= 3 points). */
+  public finishMeasurement() {
+    if (this.measureTool === "area" && this.measurePts.length >= 3 && !this.measureDone) {
+      this.measureDone = true;
+      this.redrawMeasurement();
+    }
+  }
+
+  /** Remove the last picked point of an unfinished measurement. */
+  public undoMeasurementPoint() {
+    if (this.measureDone || this.measurePts.length === 0) return;
+    this.measurePts.pop();
+    this.redrawMeasurement();
+  }
+
+  public setAnnotationsVisible(visible: boolean) {
+    this.annotationsVisible = visible;
+    if (this.annotationGroup) this.annotationGroup.visible = visible;
+  }
+
+  /** Draw saved measurements as labelled 3D annotations (line/polygon + label sprite). */
+  public setSavedMeasurements(items: SavedMeasurementOverlay[], selectedId: string | null) {
+    this.savedMeasurements = items;
+    this.selectedMeasurementId = selectedId;
+    const group = this.annotationGroup;
+    if (!group) return;
+    this.disposeGroupChildren(group);
+    group.visible = this.annotationsVisible;
+    for (const it of items) {
+      const selected = it.id === selectedId;
+      const color = selected ? 0xffd166 : 0x35d07f;
+      const pts = it.points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+      const geo = new THREE.BufferGeometry().setFromPoints(it.kind === "area" ? [...pts, pts[0]] : pts);
+      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, depthTest: false }));
+      line.renderOrder = 990;
+      group.add(line);
+      const c = new THREE.Vector3();
+      pts.forEach((p) => c.add(p));
+      c.multiplyScalar(1 / pts.length);
+      group.add(this.makeLabelSprite(it.label, c, selected));
+    }
+  }
+
+  private makeLabelSprite(text: string, at: THREE.Vector3, selected: boolean): THREE.Sprite {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 112;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "rgba(8,14,26,0.88)";
+      ctx.fillRect(0, 0, 512, 112);
+      ctx.strokeStyle = selected ? "#ffd166" : "#35d07f";
+      ctx.lineWidth = 6;
+      ctx.strokeRect(3, 3, 506, 106);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 44px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, 256, 58, 490);
+    }
+    const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, sizeAttenuation: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(at);
+    sprite.scale.set(0.3, 0.3 * (112 / 512), 1);
+    sprite.renderOrder = 1000;
+    return sprite;
+  }
+
+  public focusMeasurement(id: string) {
+    const it = this.savedMeasurements.find((m) => m.id === id);
+    if (!it || it.points.length === 0) return;
+    const n = it.points.length;
+    this.flyToPosition(
+      it.points.reduce((s, p) => s + p[0], 0) / n,
+      it.points.reduce((s, p) => s + p[1], 0) / n,
+      it.points.reduce((s, p) => s + p[2], 0) / n,
+    );
+  }
+
+  /** Snap a picked point to the nearest corner, else edge, of a visible entity's axis-aligned bounding box. */
+  private snapToEntityBoxes(hit: THREE.Vector3): THREE.Vector3 {
+    const thresh = Math.max(0.05, this.camera.position.distanceTo(hit) * 0.03);
+    let best: THREE.Vector3 | null = null;
+    let bestD = thresh;
+    let bestIsCorner = false;
+    const box = new THREE.Box3();
+    const tmp = new THREE.Vector3();
+    const line = new THREE.Line3();
+    for (const mesh of this.entityMeshes.values()) {
+      if (!mesh.visible) continue;
+      box.setFromObject(mesh);
+      if (box.isEmpty()) continue;
+      const { min, max } = box;
+      const corners: THREE.Vector3[] = [];
+      for (let i = 0; i < 8; i++) {
+        corners.push(new THREE.Vector3(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z));
+      }
+      for (const c of corners) {
+        const d = c.distanceTo(hit);
+        if (d < bestD) { best = c; bestD = d; bestIsCorner = true; }
+      }
+      if (bestIsCorner) continue;
+      for (let i = 0; i < 8; i++) {
+        for (let b = 0; b < 3; b++) {
+          const j = i ^ (1 << b);
+          if (j < i) continue;
+          line.set(corners[i], corners[j]);
+          line.closestPointToPoint(hit, true, tmp);
+          const d = tmp.distanceTo(hit);
+          if (d < bestD) { best = tmp.clone(); bestD = d; }
         }
       }
     }
-    this.onMeasureCallback?.(null);
+    return best ?? hit;
+  }
+
+  private redrawMeasurement() {
+    const group = this.measurementGroup;
+    if (!group) return;
+    this.disposeGroupChildren(group);
+    const pts = this.measurePts;
+    pts.forEach((p, i) => {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.06, 16, 16),
+        new THREE.MeshBasicMaterial({ color: i === 0 ? 0x00e5ff : 0x35d07f, depthTest: false }),
+      );
+      m.position.copy(p);
+      m.renderOrder = 999;
+      group.add(m);
+    });
+    if (pts.length >= 2) {
+      const loop = this.measureTool === "area" && this.measureDone;
+      const geo = new THREE.BufferGeometry().setFromPoints(loop ? [...pts, pts[0]] : pts);
+      const line = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: 0x00e5ff, dashSize: 0.1, gapSize: 0.05, depthTest: false }));
+      line.computeLineDistances();
+      line.renderOrder = 998;
+      group.add(line);
+    }
+    const triples = pts.map((p) => [p.x, p.y, p.z] as Vec3);
+    const need = this.measureTool === "area" ? 3 : 2;
+    const complete = this.measureTool === "area" ? this.measureDone : pts.length >= 2;
+    this.onMeasurePointsCallback?.(triples.length ? { tool: this.measureTool, points: triples, done: complete && triples.length >= need } : null);
+    if (this.measureTool !== "area" && pts.length >= 1) {
+      // Legacy two-point result (bottom bar). distance 0 until the second point is placed.
+      const a = pts[0], b = pts[1] ?? pts[0];
+      this.onMeasureCallback?.({
+        p1: [a.x, a.y, a.z],
+        p2: [b.x, b.y, b.z],
+        distance: pts.length >= 2 ? a.distanceTo(b) : 0,
+        delta: [b.x - a.x, b.y - a.y, b.z - a.z],
+      });
+    }
   }
 
   public loadWorldData(
@@ -495,6 +687,13 @@ export class WorldSceneController {
 
       this.scene.add(this.layers.entities);
       this.updateMeshVisibilities();
+
+      // Procedural worlds have no cloud to seed the camera; frame once per world so a large scene is on-screen.
+      const hasCloud = Boolean(this.pointsData && this.pointsData.length > 0);
+      if (shouldAutoFrame(hasCloud, this.entityMeshes.size, this.framedWorldId, this.world.id)) {
+        this.framedWorldId = this.world.id;
+        this.frameAll(false);
+      }
     }
 
     // 3. Build Camera Frustums
@@ -1537,20 +1736,36 @@ export class WorldSceneController {
       // Interactive Measurement Mode
       if (this.isMeasurementMode) {
         let pt: THREE.Vector3 | null = null;
-        const meshes = Array.from(this.entityMeshes.values()).filter((m) => m.visible);
-        const hits = this.raycaster.intersectObjects(meshes, false);
-        if (hits.length > 0) {
-          pt = hits[0].point;
+        const areaPlaneY = this.measureTool === "area" && this.measurePts.length > 0 && !this.measureDone
+          ? this.measurePts[0].y
+          : null;
+        if (areaPlaneY !== null) {
+          // Area polygons live on the horizontal plane through the first corner, so they are planar by construction.
+          const onPlane = new THREE.Vector3();
+          if (this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -areaPlaneY), onPlane)) {
+            pt = onPlane;
+          }
         } else {
-          const groundPoint = new THREE.Vector3();
-          const hitGround = this.raycaster.ray.intersectPlane(
-            new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
-            groundPoint
-          );
-          if (hitGround) pt = groundPoint;
+          const meshes = Array.from(this.entityMeshes.values()).filter((m) => m.visible);
+          const hits = this.raycaster.intersectObjects(meshes, false);
+          if (hits.length > 0) {
+            pt = hits[0].point.clone();
+          } else {
+            const groundPoint = new THREE.Vector3();
+            const hitGround = this.raycaster.ray.intersectPlane(
+              new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+              groundPoint
+            );
+            if (hitGround) pt = groundPoint;
+          }
         }
 
         if (pt) {
+          if (this.measureSnap) {
+            const snapped = this.snapToEntityBoxes(pt);
+            // keep the area on its plane: snap only in-plane
+            pt = areaPlaneY !== null ? new THREE.Vector3(snapped.x, areaPlaneY, snapped.z) : snapped;
+          }
           this.handleMeasurementPoint(pt);
         }
         return;
@@ -1583,60 +1798,11 @@ export class WorldSceneController {
 
   private handleMeasurementPoint(pt: THREE.Vector3) {
     if (!this.measurementGroup) return;
-
-    if (!this.measureP1) {
-      this.measureP1 = pt.clone();
-      const marker1 = new THREE.Mesh(
-        new THREE.SphereGeometry(0.06, 16, 16),
-        new THREE.MeshBasicMaterial({ color: 0x00e5ff, depthTest: false })
-      );
-      marker1.position.copy(pt);
-      marker1.renderOrder = 999;
-      this.measurementGroup.add(marker1);
-      this.onMeasureCallback?.({
-        p1: [pt.x, pt.y, pt.z],
-        p2: [pt.x, pt.y, pt.z],
-        distance: 0,
-        delta: [0, 0, 0],
-      });
-    } else if (!this.measureP2) {
-      this.measureP2 = pt.clone();
-      const marker2 = new THREE.Mesh(
-        new THREE.SphereGeometry(0.06, 16, 16),
-        new THREE.MeshBasicMaterial({ color: 0x35d07f, depthTest: false })
-      );
-      marker2.position.copy(pt);
-      marker2.renderOrder = 999;
-      this.measurementGroup.add(marker2);
-
-      const lineGeo = new THREE.BufferGeometry().setFromPoints([this.measureP1, this.measureP2]);
-      const lineMat = new THREE.LineDashedMaterial({
-        color: 0x00e5ff,
-        dashSize: 0.1,
-        gapSize: 0.05,
-        depthTest: false,
-      });
-      const line = new THREE.Line(lineGeo, lineMat);
-      line.computeLineDistances();
-      line.renderOrder = 998;
-      this.measurementGroup.add(line);
-
-      const d = this.measureP1.distanceTo(this.measureP2);
-      const delta: [number, number, number] = [
-        this.measureP2.x - this.measureP1.x,
-        this.measureP2.y - this.measureP1.y,
-        this.measureP2.z - this.measureP1.z,
-      ];
-      this.onMeasureCallback?.({
-        p1: [this.measureP1.x, this.measureP1.y, this.measureP1.z],
-        p2: [this.measureP2.x, this.measureP2.y, this.measureP2.z],
-        distance: d,
-        delta,
-      });
-    } else {
+    if (this.measureDone || (this.measureTool !== "area" && this.measurePts.length >= 2)) {
       this.clearMeasurement();
-      this.handleMeasurementPoint(pt);
     }
+    this.measurePts.push(pt.clone());
+    this.redrawMeasurement();
   }
 
   private onResize() {
@@ -1754,6 +1920,8 @@ export class WorldSceneController {
     if (this.measurementGroup) {
       this.scene.remove(this.measurementGroup);
     }
+    this.disposeGroupChildren(this.annotationGroup);
+    if (this.annotationGroup) this.scene.remove(this.annotationGroup);
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement) {

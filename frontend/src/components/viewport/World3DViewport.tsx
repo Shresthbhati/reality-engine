@@ -26,6 +26,7 @@ import type {
   CamerasPayload,
   WorldIR,
 } from "@/types/worldir";
+import MeasurementPanel from "./MeasurementPanel";
 
 interface World3DViewportProps {
   world: WorldIR | null;
@@ -42,6 +43,8 @@ interface World3DViewportProps {
   hasNoWorldData?: boolean;
   onMeasurementChange?: (measurement: MeasurementResult | null) => void;
   onOpenRoomConstruction?: () => void;
+  /** Needed to save/list measurements; without it measuring still works but cannot persist. */
+  worldId?: string | null;
 }
 
 export default function World3DViewport({
@@ -58,9 +61,11 @@ export default function World3DViewport({
   hasNoWorldData = false,
   onMeasurementChange,
   onOpenRoomConstruction,
+  worldId,
 }: World3DViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<WorldSceneController | null>(null);
+  const getController = useCallback(() => controllerRef.current, []);
 
   const [layers, setLayers] = useState<ViewportLayers>({
     points: true,
@@ -75,7 +80,6 @@ export default function World3DViewport({
 
   const [gridVisible, setGridVisible] = useState(true);
   const [isMeasuring, setIsMeasuring] = useState(false);
-  const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   const [isContextLost, setIsContextLost] = useState(false);
   const [stats, setStats] = useState<ViewportStatistics>({
     points: 0,
@@ -114,7 +118,6 @@ export default function World3DViewport({
     controller.setCallbacks({
       onSelect: (id) => onSelectEntity(id),
       onMeasure: (res) => {
-        setMeasurement(res);
         onMeasurementChange?.(res);
       },
       onCameraChange: (angles) => {
@@ -267,17 +270,10 @@ export default function World3DViewport({
       const next = !prev;
       controllerRef.current?.setMeasurementMode(next);
       if (!next) {
-        setMeasurement(null);
         onMeasurementChange?.(null);
       }
       return next;
     });
-  }, [onMeasurementChange]);
-
-  const handleClearMeasurement = useCallback(() => {
-    controllerRef.current?.clearMeasurement();
-    setMeasurement(null);
-    onMeasurementChange?.(null);
   }, [onMeasurementChange]);
 
   const handlePreset = useCallback((preset: ViewPreset) => {
@@ -341,7 +337,7 @@ export default function World3DViewport({
   }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, isMeasuring, isolatedSpaceId, onSelectEntity]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none bg-[#08090b]">
+    <div className="relative w-full h-full overflow-hidden select-none bg-[var(--bg-base)]">
       {/* 3D Canvas Mount Point */}
       <div
         ref={containerRef}
@@ -355,13 +351,13 @@ export default function World3DViewport({
         <div
           className="flex items-center gap-3 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono-num"
           style={{
-            background: "rgba(14, 16, 19, 0.78)",
+            background: "rgba(10,20,36, 0.78)",
             border: "1px solid var(--border)",
             color: "var(--text-secondary)",
           }}
         >
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#00e5ff] animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
             <span className="font-semibold text-white tracking-wide">3D WORLDIR</span>
           </div>
           <span className="text-neutral-600">|</span>
@@ -380,8 +376,8 @@ export default function World3DViewport({
         </div>
 
         {queryMatchingIds !== null && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[#00e5ff]/15 border border-[#00e5ff]/40 text-[#00e5ff] shadow-md">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#00e5ff] animate-ping" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[var(--accent)]/15 border border-[var(--accent)]/40 text-[var(--accent)] shadow-md">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-ping" />
             <span>Query: {queryMatchingIds.size} matching</span>
           </div>
         )}
@@ -419,9 +415,9 @@ export default function World3DViewport({
         )}
 
         {isMeasuring && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[#00e5ff]/20 border border-[#00e5ff] text-[#00e5ff] shadow-lg pointer-events-auto">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[var(--accent)]/20 border border-[var(--accent)] text-[var(--accent)] shadow-lg pointer-events-auto">
             <Ruler className="w-3.5 h-3.5" />
-            <span>Measuring 3D Distance (click 2 points)</span>
+            <span>Measuring: pick points in the viewport</span>
             <button
               type="button"
               onClick={toggleMeasure}
@@ -434,7 +430,7 @@ export default function World3DViewport({
         {/* Partial Reconstruction Alert */}
         {isReconPartial && (
           <div
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[#f59e0b]/15 border border-[#f59e0b]/40 text-[#f59e0b] shadow-md pointer-events-auto"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[var(--warning)]/15 border border-[var(--warning)]/40 text-[var(--warning)] shadow-md pointer-events-auto"
             role="status"
           >
             <AlertTriangle className="w-3.5 h-3.5" />
@@ -457,30 +453,13 @@ export default function World3DViewport({
       </div>
 
       {/* Interactive Measurement HUD Card */}
-      {isMeasuring && measurement && measurement.distance > 0 && (
-        <div
-          className="absolute top-14 left-3 z-10 p-3 rounded-lg backdrop-blur-md text-xs font-mono border border-[#00e5ff]/40 bg-[#0e1013]/90 text-white space-y-1.5 shadow-2xl pointer-events-auto"
-          style={{ minWidth: "220px" }}
-        >
-          <div className="flex items-center justify-between text-[#00e5ff] font-semibold text-[11px] uppercase tracking-wider">
-            <span>Spatial Measurement</span>
-            <button
-              type="button"
-              onClick={handleClearMeasurement}
-              className="text-neutral-400 hover:text-white text-[10px] underline cursor-pointer"
-            >
-              Reset
-            </button>
-          </div>
-          <div className="text-lg font-bold text-white">
-            {measurement.distance.toFixed(3)} <span className="text-xs text-[#00e5ff]">m</span>
-          </div>
-          <div className="text-[11px] text-neutral-400 space-y-0.5 pt-1 border-t border-neutral-800">
-            <div>ΔX: {measurement.delta[0].toFixed(3)} m</div>
-            <div>ΔY: {measurement.delta[1].toFixed(3)} m</div>
-            <div>ΔZ: {measurement.delta[2].toFixed(3)} m</div>
-          </div>
-        </div>
+      {isMeasuring && (
+        <MeasurementPanel
+          worldId={worldId ?? null}
+          world={world}
+          getController={getController}
+          onClose={toggleMeasure}
+        />
       )}
 
       {/* Floating Viewport HUD: Top Right Toolbar Controls */}
@@ -489,7 +468,7 @@ export default function World3DViewport({
         <div
           className="flex items-center gap-1 p-1 rounded-md backdrop-blur-md"
           style={{
-            background: "rgba(14, 16, 19, 0.85)",
+            background: "rgba(10,20,36, 0.85)",
             border: "1px solid var(--border)",
           }}
         >
@@ -499,7 +478,7 @@ export default function World3DViewport({
             title="Toggle Points [1]"
             aria-label="Toggle point cloud visibility"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.points ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
+              layers.points ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
             }`}
           >
             <Eye className="w-3.5 h-3.5" />
@@ -512,7 +491,7 @@ export default function World3DViewport({
             title="Toggle Entities [2]"
             aria-label="Toggle entities visibility"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.entities ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
+              layers.entities ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
             }`}
           >
             <Box className="w-3.5 h-3.5" />
@@ -525,7 +504,7 @@ export default function World3DViewport({
             title="Toggle Walls [W] (Peel back to inspect interior spaces)"
             aria-label="Toggle walls visibility"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.walls ? "text-[#f59e0b] bg-[rgba(245,158,11,0.15)]" : "text-neutral-400 hover:text-white"
+              layers.walls ? "text-[var(--warning)] bg-[rgba(245,166,35,0.15)]" : "text-neutral-400 hover:text-white"
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -538,7 +517,7 @@ export default function World3DViewport({
             title="Toggle 3D Spatial Topology Connections [T]"
             aria-label="Toggle spatial topology graph"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.topology ? "text-[#00e5ff] bg-[rgba(0,229,255,0.15)]" : "text-neutral-400 hover:text-white"
+              layers.topology ? "text-[var(--accent)] bg-[rgba(34,184,255,0.15)]" : "text-neutral-400 hover:text-white"
             }`}
           >
             <Workflow className="w-3.5 h-3.5" />
@@ -551,7 +530,7 @@ export default function World3DViewport({
             title="Toggle Cameras [3]"
             aria-label="Toggle camera frustums"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.cameras ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
+              layers.cameras ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
             }`}
           >
             <Camera className="w-3.5 h-3.5" />
@@ -564,7 +543,7 @@ export default function World3DViewport({
             title="Toggle ENU Ground Grid [G]"
             aria-label="Toggle ground grid"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              gridVisible ? "text-[#00e5ff] bg-[rgba(0,229,255,0.12)]" : "text-neutral-400 hover:text-white"
+              gridVisible ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
             }`}
           >
             <Grid className="w-3.5 h-3.5" />
@@ -577,7 +556,7 @@ export default function World3DViewport({
             title="Interactive 3D Measurement [M]"
             aria-label="Toggle measurement mode"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              isMeasuring ? "text-[#00e5ff] bg-[rgba(0,229,255,0.2)] border border-[#00e5ff]/50" : "text-neutral-400 hover:text-white"
+              isMeasuring ? "text-[var(--accent)] bg-[rgba(34,184,255,0.2)] border border-[var(--accent)]/50" : "text-neutral-400 hover:text-white"
             }`}
           >
             <Ruler className="w-3.5 h-3.5" />
@@ -590,7 +569,7 @@ export default function World3DViewport({
             title="Toggle Oversized Depth Noise [O]"
             aria-label="Toggle oversized noise"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.oversized ? "text-[#f5a623] bg-[rgba(245,166,35,0.15)]" : "text-neutral-400 hover:text-white"
+              layers.oversized ? "text-[var(--warning)] bg-[rgba(245,166,35,0.15)]" : "text-neutral-400 hover:text-white"
             }`}
           >
             <AlertTriangle className="w-3.5 h-3.5" />
@@ -603,7 +582,7 @@ export default function World3DViewport({
             title="Toggle Uncertainty Heatmap [U]"
             aria-label="Toggle uncertainty heatmap"
             className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.uncertainty ? "text-[#2ecc71] bg-[rgba(46,204,113,0.15)]" : "text-neutral-400 hover:text-white"
+              layers.uncertainty ? "text-[var(--success)] bg-[rgba(34,197,94,0.15)]" : "text-neutral-400 hover:text-white"
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
@@ -615,7 +594,7 @@ export default function World3DViewport({
         <div
           className="flex items-center gap-1 p-1 rounded-md backdrop-blur-md"
           style={{
-            background: "rgba(14, 16, 19, 0.85)",
+            background: "rgba(10,20,36, 0.85)",
             border: "1px solid var(--border)",
           }}
         >
@@ -651,7 +630,7 @@ export default function World3DViewport({
             onClick={handleFrameAll}
             title="Frame Selection / All [F]"
             aria-label="Frame selection or entire world"
-            className="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-[#00e5ff] hover:bg-[rgba(0,229,255,0.12)] transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-[var(--accent)] hover:bg-[rgba(34,184,255,0.12)] transition-colors cursor-pointer"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span>[F]</span>
@@ -662,7 +641,7 @@ export default function World3DViewport({
       {/* WebGL Context Loss Banner Overlay */}
       {isContextLost && (
         <div
-          className="absolute inset-0 z-30 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/95 pointer-events-auto"
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/95 pointer-events-auto"
           role="alert"
           aria-live="assertive"
         >
@@ -685,8 +664,8 @@ export default function World3DViewport({
 
       {/* Loading Overlay */}
       {isLoading && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#08090b]/80 backdrop-blur-sm">
-          <div className="w-10 h-10 border-2 border-[#00e5ff] border-t-transparent rounded-full animate-spin mb-4" />
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[var(--bg-base)]/80 backdrop-blur-sm">
+          <div className="w-10 h-10 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mb-4" />
           <p className="text-sm font-medium text-white">{loadingMessage}</p>
           <span className="text-xs text-neutral-500 mt-1 font-mono">Consuming canonical WorldIR stream</span>
         </div>
@@ -695,7 +674,7 @@ export default function World3DViewport({
       {/* Explicit Failed Reconstruction State Overlay */}
       {!isLoading && isReconFailed && (
         <div
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/92 pointer-events-auto"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/92 pointer-events-auto"
           role="alert"
         >
           <div className="w-14 h-14 rounded-full flex items-center justify-center bg-red-950/40 border border-red-500/40 text-red-400 mb-4 shadow-inner">
@@ -725,9 +704,9 @@ export default function World3DViewport({
 
       {/* Explicit Empty State when no world data exists (honest, never fake) */}
       {!isLoading && !isReconFailed && (hasNoWorldData || (!world && stats.points === 0)) && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/90 pointer-events-auto">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/90 pointer-events-auto">
           <div className="w-14 h-14 rounded-full flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 mb-4 shadow-inner">
-            <Box className="w-7 h-7 text-[#00e5ff]" />
+            <Box className="w-7 h-7 text-[var(--accent)]" />
           </div>
           <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
             No 3D Reconstructed World Available
@@ -741,7 +720,7 @@ export default function World3DViewport({
               <button
                 type="button"
                 onClick={onOpenRoomConstruction}
-                className="flex items-center gap-2 px-4 py-2 rounded-md bg-[#00e5ff] text-black font-semibold text-xs hover:bg-[#33ebff] transition-all cursor-pointer shadow-lg shadow-[#00e5ff]/20"
+                className="flex items-center gap-2 px-4 py-2 rounded-md bg-[var(--primary)] text-white font-semibold text-xs hover:bg-[var(--primary-hover)] transition-all cursor-pointer shadow-lg shadow-[var(--primary)]/20"
               >
                 <Layers className="w-4 h-4" />
                 <span>Construct Space / Compile IR</span>
@@ -760,21 +739,21 @@ export default function World3DViewport({
       <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 pointer-events-auto">
         {/* Uncertainty Heatmap Legend when active */}
         {layers.uncertainty && (
-          <div className="px-2.5 py-1.5 rounded-md backdrop-blur-md bg-[#0e1013]/90 border border-neutral-800 text-[10px] font-mono text-neutral-300 flex items-center gap-2 shadow-lg">
+          <div className="px-2.5 py-1.5 rounded-md backdrop-blur-md bg-[var(--bg-surface)]/90 border border-neutral-800 text-[10px] font-mono text-neutral-300 flex items-center gap-2 shadow-lg">
             <span className="text-neutral-400">Confidence:</span>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-[#e74c3c]" title="Low / Uncertain (0.0)" />
+              <span className="w-2 h-2 rounded-full bg-[var(--error)]" title="Low / Uncertain (0.0)" />
               <span className="text-neutral-500">0%</span>
-              <div className="w-12 h-1.5 rounded-full bg-gradient-to-r from-[#e74c3c] via-[#f5a623] to-[#2ecc71]" />
+              <div className="w-12 h-1.5 rounded-full bg-gradient-to-r from-[var(--error)] via-[var(--warning)] to-[var(--success)]" />
               <span className="text-neutral-500">100%</span>
-              <span className="w-2 h-2 rounded-full bg-[#2ecc71]" title="High / Confident (1.0)" />
+              <span className="w-2 h-2 rounded-full bg-[var(--success)]" title="High / Confident (1.0)" />
             </div>
           </div>
         )}
 
         {/* Orientation Compass Widget */}
         <div
-          className="p-1.5 rounded-lg backdrop-blur-md bg-[#0e1013]/90 border border-[#1f222b] shadow-xl flex items-center gap-2 text-[10px] font-mono select-none"
+          className="p-1.5 rounded-lg backdrop-blur-md bg-[var(--bg-surface)]/90 border border-[var(--border)] shadow-xl flex items-center gap-2 text-[10px] font-mono select-none"
           title="Metric ENU Coordinate Orientation. Click North to align view."
         >
           {/* Circular Compass Dial */}
@@ -783,17 +762,17 @@ export default function World3DViewport({
             onClick={() => handlePreset("top")}
             aria-label="Re-align camera to True North"
             title="Re-align camera to True North (Top-down)"
-            className="w-8 h-8 rounded-full border border-neutral-700 bg-[#151821] hover:border-[#00e5ff] relative flex items-center justify-center transition-all cursor-pointer group"
+            className="w-8 h-8 rounded-full border border-neutral-700 bg-[var(--bg-elevated)] hover:border-[var(--accent)] relative flex items-center justify-center transition-all cursor-pointer group"
           >
             {/* North needle rotated by -cameraAngles.azimuthDeg */}
             <div
               className="absolute inset-0 flex flex-col items-center justify-between p-1 transition-transform duration-100 ease-out"
               style={{ transform: `rotate(${-cameraAngles.azimuthDeg}deg)` }}
             >
-              <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[8px] border-b-[#e74c3c]" />
+              <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[8px] border-b-[var(--error)]" />
               <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[8px] border-t-neutral-600" />
             </div>
-            <span className="text-[8px] font-bold text-neutral-300 group-hover:text-[#00e5ff] z-10">
+            <span className="text-[8px] font-bold text-neutral-300 group-hover:text-[var(--accent)] z-10">
               N
             </span>
           </button>
@@ -802,12 +781,12 @@ export default function World3DViewport({
             <div className="flex items-center gap-1.5 text-neutral-300">
               <span className="font-semibold text-white">ENU Frame</span>
               <span className="text-neutral-500">·</span>
-              <span className="text-[#00e5ff] font-mono">{cameraAngles.azimuthDeg}°</span>
+              <span className="text-[var(--accent)] font-mono">{cameraAngles.azimuthDeg}°</span>
             </div>
             <div className="text-[9px] text-neutral-400 flex items-center gap-1 mt-0.5">
-              <span className="text-[#e74c3c]" title="East (+X)">+X:E</span>
+              <span className="text-[var(--error)]" title="East (+X)">+X:E</span>
               <span className="text-[#3b82f6]" title="North (+Z)">+Z:N</span>
-              <span className="text-[#2ecc71]" title="Up (+Y)">+Y:Up</span>
+              <span className="text-[var(--success)]" title="Up (+Y)">+Y:Up</span>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { apiPost } from "./client";
 
-export type ExportFormat = "gltf" | "usda" | "ifc" | "blender" | "cityjson" | "citygml" | "geojson";
+export type ExportFormat = "gltf" | "usda" | "ifc" | "blender" | "cityjson" | "citygml" | "geojson" | "godot";
 
 export interface ExportResult {
   version_id: string;

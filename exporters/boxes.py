@@ -39,17 +39,21 @@ class PlacedBox:
         return tuple(c + s / 2.0 for c, s in zip(self.center, self.size))
 
 
-def collect_boxes(world) -> Tuple[List[PlacedBox], List[str], List[str]]:
-    """(boxes, skipped ids, skip reasons) in the world's entity order -- deterministic."""
+def collect_boxes(world, require_position: bool = True) -> Tuple[List[PlacedBox], List[str], List[str]]:
+    """(boxes, skipped ids, skip reasons) in the world's entity order -- deterministic.
+
+    ``require_position=False`` accepts transform-less entities whose bounds are already world-space (every
+    procedural-grammar entity): the bounds are real, so the placement offset is the identity, not a guess."""
     boxes: List[PlacedBox] = []
     skipped: List[str] = []
     reasons: List[str] = []
     for entity in world.entities.values():
         pos = (entity.transform or {}).get("position") if isinstance(entity.transform, dict) else None
-        if not pos:
+        if not pos and require_position:
             skipped.append(entity.id)
             reasons.append("no transform position")
             continue
+        pos = pos or {"x": 0.0, "y": 0.0, "z": 0.0}
         geom = next((world.geometries[g] for g in entity.geometry_ids
                      if g in world.geometries and world.geometries[g].type in _EXPORTABLE), None)
         if geom is None:

@@ -25,10 +25,10 @@ import { cn } from "@/lib/utils";
 
 const STATE_STYLE: Record<ReconstructionState, string> = {
   CAPTURING: "border-neutral-600 text-neutral-300",
-  ANALYZING: "border-[#00e5ff]/50 text-[#00e5ff]",
-  BUILDING_ROUGH_MODEL: "border-[#00e5ff]/50 text-[#00e5ff]",
-  RECONSTRUCTING: "border-[#00e5ff]/50 text-[#00e5ff]",
-  REFINING: "border-[#00e5ff]/50 text-[#00e5ff]",
+  ANALYZING: "border-[var(--accent)]/50 text-[var(--accent)]",
+  BUILDING_ROUGH_MODEL: "border-[var(--accent)]/50 text-[var(--accent)]",
+  RECONSTRUCTING: "border-[var(--accent)]/50 text-[var(--accent)]",
+  REFINING: "border-[var(--accent)]/50 text-[var(--accent)]",
   PARTIALLY_COMPLETE: "border-amber-400/60 text-amber-300",
   READY_TO_INSPECT: "border-emerald-400/60 text-emerald-300",
   NEEDS_MORE_EVIDENCE: "border-amber-400/60 text-amber-300",
@@ -70,7 +70,7 @@ function QualityRow({ bar }: { bar: QualityBar }) {
             key={i}
             className={cn(
               "h-2 w-6 rounded-sm",
-              unknown ? "bg-neutral-800" : i < filled ? "bg-[#00e5ff]" : "bg-neutral-800",
+              unknown ? "bg-neutral-800" : i < filled ? "bg-[var(--accent)]" : "bg-neutral-800",
             )}
           />
         ))}
@@ -151,7 +151,7 @@ function PhysicalChanges({ physical }: { physical: Physical }) {
             data-count={count}
             className={cn(
               "rounded border px-1.5 py-0 text-[10px]",
-              count > 0 ? "border-[#2a2f3a] text-neutral-200" : "border-[#1f222b] text-neutral-600",
+              count > 0 ? "border-[var(--border)] text-neutral-200" : "border-[var(--border)] text-neutral-600",
             )}
           >
             {label} {count}
@@ -256,7 +256,7 @@ export default function ReconstructionStatusBar({
   const topGuidance = status.guidance[0]?.message ?? null;
 
   return (
-    <section aria-label="Reconstruction status" className="bg-[#0c0d12] text-neutral-200">
+    <section aria-label="Reconstruction status" className="bg-[var(--bg-base)] text-neutral-200">
       {/* one-line strip: always visible */}
       <div className="flex h-9 items-center gap-2 px-3 text-[11px]">
         <span
@@ -282,7 +282,7 @@ export default function ReconstructionStatusBar({
               "shrink-0 rounded border px-1.5 py-0 text-[10px] font-medium",
               model.dense.state === "dense"
                 ? "border-emerald-500/40 text-emerald-300"
-                : "border-[#2a2f3a] text-neutral-400",
+                : "border-[var(--border)] text-neutral-400",
             )}
           >
             {model.dense.state === "dense" ? "Dense" : "Sparse"}
@@ -305,8 +305,8 @@ export default function ReconstructionStatusBar({
                     className={cn(
                       "rounded border px-1.5 py-0 text-[10px] font-medium",
                       active
-                        ? "border-[#00e5ff] bg-[#00e5ff]/15 text-[#00e5ff]"
-                        : "border-[#2a2f3a] text-neutral-300 hover:bg-neutral-800",
+                        ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                        : "border-[var(--border)] text-neutral-300 hover:bg-neutral-800",
                     )}
                   >
                     {v.label}
@@ -333,7 +333,7 @@ export default function ReconstructionStatusBar({
             type="button"
             onClick={() => onRetry(status.job!.session_id)}
             data-testid="retry-reconstruction"
-            className="shrink-0 rounded border border-[#00e5ff]/40 px-2 py-0 text-[10px] font-medium text-[#00e5ff] hover:bg-[#00e5ff]/10"
+            className="shrink-0 rounded border border-[var(--accent)]/40 px-2 py-0 text-[10px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10"
           >
             Try again
           </button>
@@ -360,7 +360,7 @@ export default function ReconstructionStatusBar({
       </div>
 
       {expanded && (
-      <div className="max-h-[42vh] overflow-y-auto border-t border-[#1f222b]">
+      <div className="max-h-[42vh] overflow-y-auto border-t border-[var(--border)]">
       <div className="flex flex-col gap-3 px-3 py-2.5 md:flex-row md:items-start md:gap-6">
         {/* state + model honesty */}
         <div className="min-w-0 md:w-[30%]">
@@ -421,7 +421,7 @@ export default function ReconstructionStatusBar({
                       data-count={count}
                       className={cn(
                         "rounded border px-1.5 py-0 text-[10px]",
-                        count > 0 ? "border-[#2a2f3a] text-neutral-200" : "border-[#1f222b] text-neutral-600",
+                        count > 0 ? "border-[var(--border)] text-neutral-200" : "border-[var(--border)] text-neutral-600",
                       )}
                     >
                       {label} {count}
@@ -546,7 +546,7 @@ export default function ReconstructionStatusBar({
             <button
               type="button"
               onClick={onAddPhotos}
-              className="inline-flex items-center gap-1 rounded border border-[#00e5ff]/40 bg-[#00e5ff]/10 px-2 py-0.5 text-[11px] font-medium text-[#00e5ff] hover:bg-[#00e5ff]/20"
+              className="inline-flex items-center gap-1 rounded border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20"
             >
               <Plus className="h-3 w-3" aria-hidden /> Add evidence
             </button>
@@ -568,7 +568,7 @@ export default function ReconstructionStatusBar({
 
       {/* versions */}
       {status.versions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-[#1f222b] px-3 py-1.5">
+        <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] px-3 py-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Versions</span>
           {[...status.versions]
             .sort((a, b) => a.number - b.number)
@@ -586,8 +586,8 @@ export default function ReconstructionStatusBar({
                   className={cn(
                     "rounded-md border px-2 py-0.5 text-[11px] font-medium",
                     active
-                      ? "border-[#00e5ff] bg-[#00e5ff]/15 text-[#00e5ff]"
-                      : "border-[#2a2f3a] text-neutral-300 hover:bg-neutral-800",
+                      ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                      : "border-[var(--border)] text-neutral-300 hover:bg-neutral-800",
                   )}
                 >
                   {v.label}
@@ -618,11 +618,11 @@ export default function ReconstructionStatusBar({
       {showEvidence && (
         <>
         {viewingOld && inspecting && (
-          <p className="border-t border-[#1f222b] px-3 py-1 text-[11px] text-amber-300" data-testid="evidence-version-summary">
+          <p className="border-t border-[var(--border)] px-3 py-1 text-[11px] text-amber-300" data-testid="evidence-version-summary">
             {versionEvidenceSummary(status.evidence, inspecting)}
           </p>
         )}
-        <ul className="max-h-40 divide-y divide-[#1f222b] overflow-y-auto border-t border-[#1f222b] text-[11px]">
+        <ul className="max-h-40 divide-y divide-[var(--border)] overflow-y-auto border-t border-[var(--border)] text-[11px]">
           {status.evidence.map((e: EvidenceStatus) => (
             <li key={e.id} className="flex items-center gap-3 px-3 py-1">
               <span className="w-48 shrink-0 truncate text-neutral-200" title={e.name}>

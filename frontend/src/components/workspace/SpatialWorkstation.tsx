@@ -14,7 +14,7 @@ import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStat
 import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
 import QueryPanel from "@/components/workspace/QueryPanel";
 import ExportPanel from "@/components/workspace/ExportPanel";
-import WorldMap from "@/components/map/WorldMap";
+import MapPlotView from "@/components/map/MapPlotView";
 import { 
   useWorlds, 
   useSessions, 
@@ -646,33 +646,21 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onOpenRoomConstruction={() => setConstructionModalOpen(true)}
             />
           ) : (
-            <div className="w-full h-full relative">
-              {/* The map centres on the world's real origin; a world with no
-                  recorded coordinates gets an honest notice, not the
-                  hard-coded San Francisco anchor this panel used to print. */}
-              {currentWorldRow?.lat != null && currentWorldRow?.lng != null ? (
-                <WorldMap
-                  center={[currentWorldRow.lng, currentWorldRow.lat]}
-                  zoom={14}
-                  pitch={40}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-[var(--bg-base)]">
-                  <p className="text-xs text-neutral-400 max-w-sm text-center leading-relaxed">
-                    This World has no recorded geographic origin, so no map anchor exists.
-                    Reconstruction coordinates are metric-local until a capture carries GNSS.
-                  </p>
-                </div>
-              )}
-              {currentWorldRow?.lat != null && currentWorldRow?.lng != null && (
-                <div className="absolute bottom-4 left-4 z-10 px-3 py-2 rounded-md bg-[var(--bg-surface)]/90 border border-[var(--border)] text-xs text-neutral-300 backdrop-blur-md font-mono">
-                  <div className="text-white font-semibold">World origin</div>
-                  <div className="text-neutral-400 text-[11px] mt-0.5">
-                    {currentWorldRow.location ?? "coordinates unavailable"}
-                  </div>
-                </div>
-              )}
-            </div>
+            <MapPlotView
+              worldId={worldId}
+              worldName={currentWorldRow?.name}
+              world={activeWorldIR}
+              cameras={activeCameras}
+              worldLat={currentWorldRow?.lat ?? null}
+              worldLng={currentWorldRow?.lng ?? null}
+              sessions={sessions}
+              evidence={evidence}
+              selectedEntityId={selectedEntityId}
+              onSelectEntity={handleSelectEntity}
+              selectedEvidenceId={selectedEvidenceId}
+              onSelectEvidence={setSelectedEvidenceId}
+              onOpen3D={() => setViewMode("3d")}
+            />
           )}
 
           {!has3DContent && viewMode === "3d" && (

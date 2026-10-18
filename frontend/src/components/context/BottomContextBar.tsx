@@ -21,6 +21,7 @@ import type {
 import type { SessionRow } from "@/lib/types";
 import { getActivity, isApiError, type ActivityEvent } from "@/lib/activity";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
+import { resolveUnitContext } from "@/lib/viewport/measure-model";
 
 interface BottomContextBarProps {
   world: WorldIR | null;
@@ -55,6 +56,7 @@ export default function BottomContextBar({
   const [activityError, setActivityError] = useState<string | null>(null);
 
   const meta = world?.metadata || {};
+  const unitCtx = resolveUnitContext(world);
 
   // A new world restarts the activity read: reset the status during render, not in the effect.
   const [loadedFor, setLoadedFor] = useState(world);
@@ -170,11 +172,12 @@ export default function BottomContextBar({
         {measurement && measurement.distance > 0 && (
           <div className="flex items-center gap-2 px-2.5 py-0.5 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/40 text-[var(--accent)] font-mono text-[11px]">
             <Ruler className="w-3 h-3" />
-            <span>Distance: <strong>{measurement.distance.toFixed(3)} m</strong></span>
+            <span>Distance: <strong>{measurement.distance.toFixed(3)} {unitCtx.lengthUnit}</strong></span>
             <span className="text-neutral-500">|</span>
-            <span>ΔX: {measurement.delta[0].toFixed(2)}m</span>
-            <span>ΔY: {measurement.delta[1].toFixed(2)}m</span>
-            <span>ΔZ: {measurement.delta[2].toFixed(2)}m</span>
+            <span>ΔX: {measurement.delta[0].toFixed(2)}</span>
+            <span>ΔY: {measurement.delta[1].toFixed(2)}</span>
+            <span>ΔZ: {measurement.delta[2].toFixed(2)}</span>
+            {unitCtx.badge && <span className="text-amber-300">({unitCtx.badge})</span>}
           </div>
         )}
 

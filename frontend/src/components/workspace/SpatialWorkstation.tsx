@@ -642,6 +642,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               isLoading={isIrLoading}
               hasNoWorldData={!has3DContent}
               onMeasurementChange={setMeasurement}
+              worldId={worldId || null}
               onOpenRoomConstruction={() => setConstructionModalOpen(true)}
             />
           ) : (

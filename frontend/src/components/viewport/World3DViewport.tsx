@@ -26,6 +26,7 @@ import type {
   CamerasPayload,
   WorldIR,
 } from "@/types/worldir";
+import MeasurementPanel from "./MeasurementPanel";
 
 interface World3DViewportProps {
   world: WorldIR | null;
@@ -42,6 +43,8 @@ interface World3DViewportProps {
   hasNoWorldData?: boolean;
   onMeasurementChange?: (measurement: MeasurementResult | null) => void;
   onOpenRoomConstruction?: () => void;
+  /** Needed to save/list measurements; without it measuring still works but cannot persist. */
+  worldId?: string | null;
 }
 
 export default function World3DViewport({
@@ -58,9 +61,11 @@ export default function World3DViewport({
   hasNoWorldData = false,
   onMeasurementChange,
   onOpenRoomConstruction,
+  worldId,
 }: World3DViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<WorldSceneController | null>(null);
+  const getController = useCallback(() => controllerRef.current, []);
 
   const [layers, setLayers] = useState<ViewportLayers>({
     points: true,
@@ -75,7 +80,6 @@ export default function World3DViewport({
 
   const [gridVisible, setGridVisible] = useState(true);
   const [isMeasuring, setIsMeasuring] = useState(false);
-  const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   const [isContextLost, setIsContextLost] = useState(false);
   const [stats, setStats] = useState<ViewportStatistics>({
     points: 0,
@@ -114,7 +118,6 @@ export default function World3DViewport({
     controller.setCallbacks({
       onSelect: (id) => onSelectEntity(id),
       onMeasure: (res) => {
-        setMeasurement(res);
         onMeasurementChange?.(res);
       },
       onCameraChange: (angles) => {
@@ -267,17 +270,10 @@ export default function World3DViewport({
       const next = !prev;
       controllerRef.current?.setMeasurementMode(next);
       if (!next) {
-        setMeasurement(null);
         onMeasurementChange?.(null);
       }
       return next;
     });
-  }, [onMeasurementChange]);
-
-  const handleClearMeasurement = useCallback(() => {
-    controllerRef.current?.clearMeasurement();
-    setMeasurement(null);
-    onMeasurementChange?.(null);
   }, [onMeasurementChange]);
 
   const handlePreset = useCallback((preset: ViewPreset) => {
@@ -421,7 +417,7 @@ export default function World3DViewport({
         {isMeasuring && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[var(--accent)]/20 border border-[var(--accent)] text-[var(--accent)] shadow-lg pointer-events-auto">
             <Ruler className="w-3.5 h-3.5" />
-            <span>Measuring 3D Distance (click 2 points)</span>
+            <span>Measuring: pick points in the viewport</span>
             <button
               type="button"
               onClick={toggleMeasure}
@@ -457,30 +453,13 @@ export default function World3DViewport({
       </div>
 
       {/* Interactive Measurement HUD Card */}
-      {isMeasuring && measurement && measurement.distance > 0 && (
-        <div
-          className="absolute top-14 left-3 z-10 p-3 rounded-lg backdrop-blur-md text-xs font-mono border border-[var(--accent)]/40 bg-[var(--bg-surface)]/90 text-white space-y-1.5 shadow-2xl pointer-events-auto"
-          style={{ minWidth: "220px" }}
-        >
-          <div className="flex items-center justify-between text-[var(--accent)] font-semibold text-[11px] uppercase tracking-wider">
-            <span>Spatial Measurement</span>
-            <button
-              type="button"
-              onClick={handleClearMeasurement}
-              className="text-neutral-400 hover:text-white text-[10px] underline cursor-pointer"
-            >
-              Reset
-            </button>
-          </div>
-          <div className="text-lg font-bold text-white">
-            {measurement.distance.toFixed(3)} <span className="text-xs text-[var(--accent)]">m</span>
-          </div>
-          <div className="text-[11px] text-neutral-400 space-y-0.5 pt-1 border-t border-neutral-800">
-            <div>ΔX: {measurement.delta[0].toFixed(3)} m</div>
-            <div>ΔY: {measurement.delta[1].toFixed(3)} m</div>
-            <div>ΔZ: {measurement.delta[2].toFixed(3)} m</div>
-          </div>
-        </div>
+      {isMeasuring && (
+        <MeasurementPanel
+          worldId={worldId ?? null}
+          world={world}
+          getController={getController}
+          onClose={toggleMeasure}
+        />
       )}
 
       {/* Floating Viewport HUD: Top Right Toolbar Controls */}

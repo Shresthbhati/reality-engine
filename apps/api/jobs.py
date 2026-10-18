@@ -310,6 +310,49 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
     return "succeeded"
 
 
+def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
+    """Group this world's photographs by verified correspondence (reconstruction.scene_identity).
+
+    Returns the grouping facts plus ``excluded`` {evidence_id: reason} for photographs of OTHER verified scene
+    groups. The world keeps its established group (stable id) when it is still present, else the largest. Images
+    with no verified link are NOT excluded here -- COLMAP's own verification decides them. If the gate itself
+    cannot run (no OpenCV, unreadable image) that is recorded as ``state: unavailable`` and nothing is excluded.
+    """
+    from apps.api import worldstore_service
+    from reconstruction.scene_identity import SceneRegistry, SiftPairVerifier, group_images
+
+    try:
+        ids = [ei.item.id for ei in eval_inputs if ei.facts.geometry_eligible]
+        grouping = group_images(ids, SiftPairVerifier({ei.item.id: ei.path for ei in eval_inputs}),
+                                declared_sessions=sessions_of)
+        registry = SceneRegistry(worldstore_service.worldstore_root() / "scene-groups")
+        groups = registry.record_grouping(world_id, grouping)
+        last = registry.load(world_id).get("last_valid")
+        primary = next((g for g in groups if last and g.group_id == last["group_id"]), groups[0] if groups else None)
+        excluded = {m: (f"belongs to a different scene group ({g.group_id}); no verified correspondence links it "
+                        f"to this world's scene ({primary.group_id})")
+                    for g in groups if g is not primary for m in g.members}
+        return {"state": "ok", "primary_group_id": primary.group_id if primary else None,
+                "groups": [{"group_id": g.group_id, "members": g.members} for g in groups],
+                "unlinked": grouping.unlinked, "uncertain_links": grouping.uncertain_links,
+                "declared_conflicts": grouping.declared_conflicts, "verified_pairs": grouping.verified_pairs,
+                "excluded": excluded}
+    except Exception as exc:  # noqa: BLE001 -- the gate is advisory infrastructure; its failure is recorded, not hidden
+        log.warning("scene gate unavailable for world %s: %s", world_id, exc)
+        return {"state": "unavailable", "error": f"{type(exc).__name__}: {exc}", "excluded": {}}
+
+
+def _commit_scene_result(world_id: str, scene_info: dict, n_input: int, registered_ids, n_points: int,
+                         version_id: str) -> None:
+    """Record the adopted reconstruction as the world's last valid one (stable identity across restarts)."""
+    from apps.api import worldstore_service
+    from reconstruction.scene_identity import SceneRegistry, diagnose_counts
+
+    diag = diagnose_counts(n_input, registered_ids, n_points)
+    SceneRegistry(worldstore_service.worldstore_root() / "scene-groups").commit_reconstruction(
+        world_id, scene_info["primary_group_id"], diag, version_id, list(registered_ids))
+
+
 async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     """Wrapper that owns the world's persistent COLMAP session lifecycle: whatever happens
     inside, an exception leaves the COMMITTED COLMAP state untouched (staging is discarded),
@@ -459,6 +502,19 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     items = [ei.item for ei in eval_inputs if ei.facts.geometry_eligible]
     await db.commit()
 
+    # Scene identity gate: only photographs linked by VERIFIED correspondences may share one reconstruction.
+    # Other verified groups (a different place) stay out of this world and are reported, never merged.
+    scene_info = None
+    if test_backend is None and len(items) >= 2:
+        sessions_of = {}
+        for ev, _ in resolved:
+            sessions_of.setdefault(ev.session_id or "none", []).append(ev.id)
+        scene_info = await asyncio.to_thread(_scene_gate, world.id, eval_inputs, sessions_of)
+    scene_excluded = (scene_info or {}).get("excluded") or {}
+    run_inputs = [ei for ei in eval_inputs if ei.item.id not in scene_excluded]
+    for eid, why in scene_excluded.items():
+        skipped_evidence.append({"evidence_id": eid, "reason": why})
+
     await _throw_if_cancelled(db, job)
     # user-facing stage: what the engine is actually about to do
     job.stage = ("building_rough_model" if len(items) <= 1
@@ -509,7 +565,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     # the strongest lower level otherwise (never an empty world).
     prog = await asyncio.to_thread(
         lambda: run_progressive(
-            eval_inputs, vs_options=options, prior_ids=prior_ids, artifact_store=artifact_store,
+            run_inputs, vs_options=options, prior_ids=prior_ids, artifact_store=artifact_store,
             depth_model=(getattr(options, "depth_model", None) or "DPT_Hybrid"),
         )
     )
@@ -522,7 +578,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     evidence_records = [
         {"evidence_id": ei.item.id, "name": ei.name, "sha256": ei.item.sha256,
          "evidence_class": ei.facts.evidence_class, "class_basis": ei.facts.class_basis,
-         "used_for_geometry": ei.facts.geometry_eligible,
+         "used_for_geometry": ei.facts.geometry_eligible and ei.item.id not in scene_excluded,
+         "scene_excluded": scene_excluded.get(ei.item.id),
          "registered": ei.item.id in set(prog.registered_ids)}
         for ei in eval_inputs
     ]
@@ -642,6 +699,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             "changes": ["No change: this evidence is already fully reflected in the current version."],
             "level": prog.level, "level_name": prog.level_name, "model_state": prog.model_state,
             "registration_status": prog.registration_status, "skipped_evidence": skipped_evidence,
+            "scene_identity": scene_info,
         }
         await db.commit()
         return "succeeded"
@@ -674,6 +732,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             "kept_version_id": world.current_version_id, "level": prog.level,
             "level_name": prog.level_name, "model_state": prog.model_state,
             "registration_status": prog.registration_status, "skipped_evidence": skipped_evidence,
+            "scene_identity": scene_info,
         }
         await db.commit()
         return "partial"
@@ -685,6 +744,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "status": "SUCCESS" if (prog.level >= 2 and prog.registration_status == "success") else "PARTIAL_SUCCESS",
         "session_id": session.id,
         "images_ingested": len(items),
+        "scene_identity": scene_info,
         "level": prog.level,
         "level_name": prog.level_name,
         "model_state": prog.model_state,
@@ -773,6 +833,14 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     # The version is adopted AND reads back cleanly: only now does this run's COLMAP state become
     # the base for the next incremental registration. A failure to persist it is not a job
     # failure (the next run simply falls back to a full reconstruction).
+    if scene_info and scene_info.get("state") == "ok" and scene_info.get("primary_group_id"):
+        try:
+            await asyncio.to_thread(
+                _commit_scene_result, world.id, scene_info,
+                sum(1 for ei in run_inputs if ei.facts.geometry_eligible), prog.registered_ids,
+                len(prog.points), version_row.id)
+        except Exception as exc:  # noqa: BLE001 -- identity bookkeeping must not undo an adopted, verified version
+            log.warning("job %s: scene registry commit failed: %s", job.id, exc)
     colmap_commit_fault = None
     if holder.get("session") is not None:
         try:
@@ -855,6 +923,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "cameras_registered": len(prog.registered_ids),
         "cameras_bytes": len(cameras_bytes),
         "skipped_evidence": skipped_evidence,
+        "scene_identity": scene_info,
     }
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)

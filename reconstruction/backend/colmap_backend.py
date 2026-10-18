@@ -550,7 +550,22 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         status = "success" if len(poses) == n_input else "partial"
         if not points:
             status = "failed"
-        return ReconstructionResult(points=points, camera_poses=poses, registration_status=status)
+        errors, track_lens = [], []
+        for line in points3d_txt.splitlines():
+            parts = line.split()
+            if len(parts) >= 9 and not line.startswith("#"):
+                errors.append(float(parts[7]))
+                track_lens.append((len(parts) - 8) // 2)
+        stats = {
+            "name": model_dir.name,
+            "n_input": n_input,
+            "registered_images": len(poses),
+            "points": len(points),
+            "mean_reprojection_error_px": float(np.mean(errors)) if errors else None,
+            "mean_track_length": float(np.mean(track_lens)) if track_lens else None,
+        }
+        return ReconstructionResult(points=points, camera_poses=poses, registration_status=status,
+                                    registration_stats=stats)
 
     def _parse_sparse_dir(self, sparse_dir: Path, evidence_id_by_name: Dict[str, str],
                           n_input: int, env: Dict[str, str]):
@@ -575,10 +590,25 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         reference = max(sorted(model_results), key=lambda n: len(model_results[n].points))
         if len(model_results) == 1:
             return next(iter(model_results.values())), model_dirs, reference
+        from dataclasses import replace
+
         from reconstruction.merge import merge_submodel_results
 
         merged, _merge_report = merge_submodel_results(model_results, reference=reference)
-        return merged, model_dirs, reference
+        comps = [model_results[n].registration_stats for n in sorted(model_results)]
+        merged_ids = {p.evidence_id for p in merged.camera_poses}
+        errs = [(c["mean_reprojection_error_px"], c["points"]) for c in comps
+                if c["mean_reprojection_error_px"] is not None]
+        npts = sum(w for _, w in errs)
+        stats = {
+            "n_input": n_input,
+            "registered_images": len(merged_ids),
+            "points": len(merged.points),
+            "mean_reprojection_error_px": (sum(e * w for e, w in errs) / npts) if npts else None,
+            "mean_track_length": None,
+            "components": comps,
+        }
+        return replace(merged, registration_stats=stats), model_dirs, reference
 
     # ------------------------------------------------------- incremental registration
     def _reconstruct_in_session(self, image_evidence: List[EvidenceItem], env: Dict[str, str],

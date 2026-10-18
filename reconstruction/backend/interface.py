@@ -62,6 +62,12 @@ class ReconstructionResult:
     #: sparse-only success, so this field's presence is proof of a
     #: completed, parsed dense chain.
     dense_report: Optional[dict] = None
+    #: Measured registration facts, set only by backends that can observe them
+    #: (ColmapReconstructionBackend): ``n_input``, ``registered_images``,
+    #: ``points``, ``mean_reprojection_error_px``, ``mean_track_length`` and
+    #: ``components`` (one entry per mapper sub-model, same keys + ``name``).
+    #: None = the backend measured nothing; consumers must not infer values.
+    registration_stats: Optional[dict] = None
 
 
 class IReconstructionBackend(ABC):

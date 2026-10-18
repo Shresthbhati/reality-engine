@@ -393,9 +393,13 @@ Reference images: `C:\Users\shres\Downloads\reference` (~125 screens). Decision 
 as possible, new design tokens allowed**. Status: **PARTIAL (2026-10-18)**. Gap audit recorded in
 `docs/screenshots/parity/B0-gap-audit.md`. Done and browser-verified: navy tokens, unified shell (top mode bar, icon rail,
 status footer), Home dashboard, World Intent wizard with an honest resource profile (`POST /api/intent/estimate`,
-`world_intents` table), palette sweep, auto-frame of cloud-less worlds. Remaining slices: asset inspector / evidence-quality
-firewall, measurement with uncertainty, map/plot view, pipeline graph view, mobile capture, Playwright smoke tests over all
-routes (plan Phase B).
+`world_intents` table), palette sweep, auto-frame of cloud-less worlds, Evidence Quality Firewall + asset inspector (measured
+checks only; a Rejected decision is enforced in reconstruction input), measurement mode (distance/height/area/elevation,
+server-recomputed values, unit honesty: model units when scale is unknown, "exact" only for authored geometry; volume / road
+width / footprint disabled). Remaining slices: map/plot view, pipeline graph view, mobile capture, Playwright smoke tests over
+all routes, remaining neutral-grey sweep (plan Phase B). Known gaps vs references: no analysis overlay (no stored feature
+locations), no metric uncertainty sigma for reconstructed worlds, similar-frames strip, firewall steps header and statistics
+tabs.
 
 ## Continuous evidence — gaps against the "same world keeps evolving" principle (2026-09-29)
 

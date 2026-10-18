@@ -5,7 +5,7 @@
  * The backend stays authoritative; this only gives early inline messages.
  */
 
-export type Wall = "north" | "south" | "east" | "west";
+export type Wall ="north" | "south" | "east" | "west";
 export const WALLS: Wall[] = ["north", "south", "east", "west"];
 
 export interface OpeningDraft {
@@ -59,12 +59,19 @@ function round(n: number): number {
 /** What the Generated list item looks like (GET /api/worlds/{id}/generated). */
 export interface GeneratedItem {
   entity_id: string;
-  kind: "room" | "corridor" | "city";
+  kind: "room" | "corridor" | "city" | "apartment";
   name: string;
   params: Record<string, unknown>;
   origin: [number, number, number];
   attach: { to: string; side: string } | null;
   depends_on: string[];
+}
+
+/** Kinds that have PUT/DELETE routes. Apartments are read-only (no edit/delete route yet). */
+export type EditableItem = GeneratedItem & { kind: "room" | "corridor" | "city" };
+
+export function isEditable(item: GeneratedItem): item is EditableItem {
+  return item.kind !== "apartment";
 }
 
 function num(v: unknown, fallback: number): number {
@@ -129,9 +136,21 @@ export function resultLine(r: { changed: number; unchanged: number; removed: num
   return `${r.changed} changed - ${r.unchanged} unchanged - ${r.removed} removed`;
 }
 
+/** "6 rooms, 10 x 8 m" from stored apartment params (extent = bounding box of the stored rects). */
+export function apartmentSummary(params: Record<string, unknown>): string {
+  const rooms = Array.isArray(params.rooms) ? params.rooms.length : 0;
+  const rects = (params.rects ?? {}) as Record<string, number[]>;
+  const vals = Object.values(rects).filter((r) => Array.isArray(r) && r.length === 4);
+  const round = (n: number) => Math.round(n * 10) / 10;
+  const w = Math.max(0, ...vals.map((r) => num(r[0], 0) + num(r[2], 0)));
+  const d = Math.max(0, ...vals.map((r) => num(r[1], 0) + num(r[3], 0)));
+  return `${rooms} room${rooms === 1 ? "" : "s"}, ${round(w)} x ${round(d)} m`;
+}
+
 /** One-line key params for the list. */
 export function summarize(item: GeneratedItem): string {
   const p = item.params;
+  if (item.kind === "apartment") return apartmentSummary(p);
   if (item.kind === "room") return `${num(p.width, 0)} x ${num(p.depth, 0)} x ${num(p.height, 0)} m`;
   if (item.kind === "corridor") return `${num(p.length, 0)} m long, ${num(p.width, 0)} m wide, along ${p.axis === "y" ? "y" : "x"}`;
   return `${num(p.blocks_x, 0)} x ${num(p.blocks_y, 0)} blocks, lot ${num(p.lot_size, 0)} m`;

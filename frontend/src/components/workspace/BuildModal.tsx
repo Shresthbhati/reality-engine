@@ -10,6 +10,7 @@ import {
   type RoomTemplate,
 } from "@/lib/api/procedural";
 import { isApiError } from "@/lib/api/client";
+import ApartmentBuilder from "@/components/workspace/ApartmentBuilder";
 import OpeningsEditor from "@/components/workspace/OpeningsEditor";
 import {
   duplicateNameMessage,
@@ -18,7 +19,7 @@ import {
   type OpeningDraft,
 } from "@/lib/procedural/generated-model";
 
-type Kind = "room" | "corridor" | "city";
+type Kind = "room" | "corridor" | "city" | "apartment";
 
 export interface BuildRoomOption {
   id: string;
@@ -94,7 +95,7 @@ export default function BuildModal({
 
   function pick(next: Kind) {
     setKind(next);
-    setName({ room: "room-1", corridor: "corridor-1", city: "city-1" }[next]);
+    setName({ room: "room-1", corridor: "corridor-1", city: "city-1", apartment: "apartment-1" }[next]);
     setError(null);
   }
 
@@ -142,7 +143,7 @@ export default function BuildModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Build">
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-4 flex flex-col gap-3 shadow-2xl">
+      <div className={`w-full ${kind === "apartment" ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-4 flex flex-col gap-3 shadow-2xl`}>
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
             <Hammer className="w-4 h-4 text-[var(--accent)]" /> Build
@@ -153,7 +154,7 @@ export default function BuildModal({
         </div>
 
         <div className="flex gap-1" role="tablist">
-          {(["room", "corridor", "city"] as Kind[]).map((k) => (
+          {(["room", "corridor", "city", "apartment"] as Kind[]).map((k) => (
             <button
               key={k}
               type="button"
@@ -171,6 +172,10 @@ export default function BuildModal({
           ))}
         </div>
 
+        {kind === "apartment" ? (
+          <ApartmentBuilder worldId={worldId} onCreated={onCreated} onClose={onClose} />
+        ) : (
+        <>
         <Field label="Name">
           <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
         </Field>
@@ -305,6 +310,8 @@ export default function BuildModal({
           {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {submitting ? "Building…" : `Build ${kind}`}
         </button>
+        </>
+        )}
       </div>
     </div>
   );

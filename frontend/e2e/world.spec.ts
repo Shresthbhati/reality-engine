@@ -93,3 +93,29 @@ test("Geospatial Map tab says the local frame is not georeferenced", async ({ pa
   await page.getByRole("button", { name: "Geospatial Map" }).click();
   await expect(page.getByText(/not georeferenced/i).first()).toBeVisible();
 });
+
+test("Apartment tab: 2-bedroom template -> Find layouts -> Build creates a building and rooms", async ({ page, request }) => {
+  const name = `Flat${Date.now()}`;
+  await page.goto(WORLD);
+  await page.getByTestId("open-build").click();
+  const dialog = page.getByRole("dialog", { name: "Build" });
+  await dialog.getByRole("tab", { name: "apartment" }).click();
+  await dialog.getByLabel("Apartment name").fill(name);
+  await dialog.getByLabel("Apartment template").selectOption({ label: "2-bedroom" });
+  await dialog.getByRole("button", { name: "Find layouts" }).click();
+  await expect(dialog.getByTestId("apartment-plan").first()).toBeVisible({ timeout: 60_000 });
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Build apartment" }).click();
+  await expect(dialog).toBeHidden();
+
+  await expect
+    .poll(async () => {
+      const wir = (await (await request.get(`${API_URL}/api/worlds/${worldId}/worldir`)).json()) as {
+        entities: Record<string, { type: string }>;
+      };
+      const mine = Object.entries(wir.entities).filter(([id]) => id.startsWith(`${name}-`));
+      const count = (t: string) => mine.filter(([, e]) => e.type === t).length;
+      return { building: count("building") >= 1, rooms: count("room") >= 5 };
+    })
+    .toEqual({ building: true, rooms: true });
+});

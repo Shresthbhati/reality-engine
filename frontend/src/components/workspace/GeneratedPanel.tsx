@@ -9,6 +9,7 @@ import {
   corridorFormFrom,
   dependencyLines,
   hasOpeningErrors,
+  isEditable,
   parseDependents,
   resultLine,
   roomFormFrom,
@@ -16,6 +17,7 @@ import {
   validateOpenings,
   type CityForm,
   type CorridorForm,
+  type EditableItem,
   type GeneratedItem,
   type RoomForm,
 } from "@/lib/procedural/generated-model";
@@ -122,7 +124,19 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
               </ul>
             )}
 
-            {current && (
+            {current && !isEditable(current) && (
+              <div className="rounded border border-[var(--border)] bg-[var(--bg-surface)] p-3 flex flex-col gap-1.5" data-testid="generated-readonly">
+                <h4 className="text-xs font-semibold text-white">
+                  {current.kind} <span className="text-[var(--accent)]">{current.name}</span>
+                </h4>
+                <p className="text-xs text-neutral-300">{summarize(current)}</p>
+                <p className="text-[11px] text-neutral-500">
+                  Edit by rebuilding: apartments cannot be edited or deleted here yet (no server route for it).
+                </p>
+              </div>
+            )}
+
+            {current && isEditable(current) && (
               <EditForm
                 key={current.entity_id}
                 worldId={worldId}
@@ -152,7 +166,7 @@ function EditForm({
   onDeleted,
 }: {
   worldId: string;
-  item: GeneratedItem;
+  item: EditableItem;
   onSaved: () => Promise<void>;
   onDeleted: () => Promise<void>;
 }) {

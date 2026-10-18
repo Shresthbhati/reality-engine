@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPost, apiPut } from "./client";
 import type { GeneratedItem } from "@/lib/procedural/generated-model";
+import type { ApartmentBody, ApartmentPlan } from "@/lib/procedural/apartment-model";
 
 export interface WallOpeningIn {
   wall: "north" | "south" | "east" | "west";
@@ -70,6 +71,40 @@ export function createCorridor(worldId: string, body: CorridorIn): Promise<Proce
 /** POST /api/worlds/{id}/cities -- procedural/urban_grammar.generate_city. */
 export function createCity(worldId: string, body: CityIn): Promise<ProceduralCreatedResult> {
   return apiPost<ProceduralCreatedResult>(`/api/worlds/${encodeURIComponent(worldId)}/cities`, body);
+}
+
+export interface ApartmentSolveResult {
+  ok: boolean;
+  plans: ApartmentPlan[];
+  /** Server text, shown verbatim when ok is false. */
+  violations: string[];
+  seed: number;
+  footprint: [number, number] | null;
+}
+
+/** POST /api/worlds/{id}/apartments/solve -- read-only candidate layouts. */
+export function solveApartment(worldId: string, body: ApartmentBody): Promise<ApartmentSolveResult> {
+  return apiPost<ApartmentSolveResult>(`/api/worlds/${encodeURIComponent(worldId)}/apartments/solve`, {
+    ...body,
+    max_alternatives: 3,
+  });
+}
+
+export interface ApartmentCreatedResult extends ProceduralCreatedResult {
+  apartment_entity_id: string;
+}
+
+/** POST /api/worlds/{id}/apartments -- the server re-solves and commits plan `planIndex`.
+ * 409 (duplicate name) / 422 text is carried by the thrown ApiError. */
+export function createApartment(
+  worldId: string,
+  body: ApartmentBody,
+  planIndex: number,
+): Promise<ApartmentCreatedResult> {
+  return apiPost<ApartmentCreatedResult>(`/api/worlds/${encodeURIComponent(worldId)}/apartments`, {
+    ...body,
+    plan_index: planIndex,
+  });
 }
 
 export type GeneratedKind = "room" | "corridor" | "city";

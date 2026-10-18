@@ -383,7 +383,7 @@ Product vision: [`../product/VISION.md`](../product/VISION.md). Creation outputs
 | P9.3 | City / district builder | PARTIAL (new 2026-10-18) | `generate_city` (grid of lots + streets, seeded heights, max 100 lots), `POST .../cities`. No roads/parcels/building families/LOD/streaming; viewport renders streets rotated (axis convention, plan task B1). |
 | P9.4 | Apartment layout (spatial program -> adjacency graph -> plan) | MISSING | Plan Phase C3. |
 | P9.5 | Building factory (floors, stairs, facade rules) | MISSING | Plan Phase C4. |
-| P9.6 | Scoped regeneration with dependency tracking | MISSING | Plan Phase C1; prerequisite for P9.4+. |
+| P9.6 | Scoped regeneration with dependency tracking | PARTIAL (2026-10-18) | `procedural/spec_store.py` (specs stamped on entities, `regenerate`, attach dependents), `GET /generated`, `PUT`/`DELETE /{rooms,corridors,cities}/{name}`, duplicate POST -> 409. Verified live: widening room A 4->7 m moved its attached corridor (x 4-10 -> 7-13) and left room B byte-identical; delete with dependents -> 409, cascade removes both. 167 backend tests pass. Missing: UI to edit (plan C2), city PUT/DELETE dedicated tests, legacy pre-spec worlds cannot be edited (409 by design). |
 | P9.7 | Completion mode (reconstructed shell + labelled generated proposals) | MISSING | Plan Phase D. |
 | P9.8 | Game-ready export profile (collision, LOD, validation) | MISSING | Plan Phase C6; writers (Godot/Unreal) exist under `exporters/`, target-runtime acceptance is external. |
 

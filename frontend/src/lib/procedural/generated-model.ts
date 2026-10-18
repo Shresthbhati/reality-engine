@@ -59,19 +59,12 @@ function round(n: number): number {
 /** What the Generated list item looks like (GET /api/worlds/{id}/generated). */
 export interface GeneratedItem {
   entity_id: string;
-  kind: "room" | "corridor" | "city" | "apartment";
+  kind: "room" | "corridor" | "city" | "apartment" | "building";
   name: string;
   params: Record<string, unknown>;
   origin: [number, number, number];
   attach: { to: string; side: string } | null;
   depends_on: string[];
-}
-
-/** Kinds that have PUT/DELETE routes. Apartments are read-only (no edit/delete route yet). */
-export type EditableItem = GeneratedItem & { kind: "room" | "corridor" | "city" };
-
-export function isEditable(item: GeneratedItem): item is EditableItem {
-  return item.kind !== "apartment";
 }
 
 function num(v: unknown, fallback: number): number {
@@ -147,9 +140,81 @@ export function apartmentSummary(params: Record<string, unknown>): string {
   return `${rooms} room${rooms === 1 ? "" : "s"}, ${round(w)} x ${round(d)} m`;
 }
 
+export const MAX_UI_STOREYS = 12;
+export const H_MIN = 2.4;
+export const H_MAX = 6;
+export const DEFAULT_STOREY_HEIGHT = 3;
+
+export interface BuildingForm {
+  storeys: number;
+  /** One height per storey (m); stored null means every storey is the 3 m default. */
+  heights: number[];
+}
+
+export function buildingForm(item: GeneratedItem): BuildingForm {
+  const p = item.params;
+  const storeys = num(p.storeys, 1);
+  const raw = Array.isArray(p.storey_heights) ? (p.storey_heights as unknown[]) : [];
+  return { storeys, heights: Array.from({ length: storeys }, (_, i) => num(raw[i], DEFAULT_STOREY_HEIGHT)) };
+}
+
+/** Resize like the server does when only `storeys` changes: pad with the last height / truncate. */
+export function resizeHeights(heights: number[], storeys: number): number[] {
+  if (!Number.isInteger(storeys) || storeys < 1) return heights;
+  const last = heights[heights.length - 1] ?? DEFAULT_STOREY_HEIGHT;
+  return Array.from({ length: storeys }, (_, i) => heights[i] ?? last);
+}
+
+/** Inline messages for a building edit ([] = fine). */
+export function validateBuildingForm(f: BuildingForm): string[] {
+  const out: string[] = [];
+  if (!Number.isInteger(f.storeys) || f.storeys < 1 || f.storeys > MAX_UI_STOREYS) {
+    out.push(`Storeys must be a whole number from 1 to ${MAX_UI_STOREYS}.`);
+  }
+  if (f.heights.some((h) => !Number.isFinite(h) || h < H_MIN || h > H_MAX)) {
+    out.push(`Each storey height must be between ${H_MIN} and ${H_MAX} m.`);
+  }
+  return out;
+}
+
+export function buildingPatch(f: BuildingForm): Record<string, unknown> {
+  return { storeys: f.storeys, storey_heights: f.heights };
+}
+
+export interface ApartmentEditForm {
+  seed: number;
+  plan_index: number;
+}
+
+export function apartmentEditFrom(item: GeneratedItem): ApartmentEditForm {
+  return { seed: num(item.params.seed, 0), plan_index: num(item.params.plan_index, 0) };
+}
+
+/** Only changed fields: any structural edit makes the server re-solve the layout. */
+export function apartmentPatch(before: ApartmentEditForm, after: ApartmentEditForm): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (after.seed !== before.seed) out.seed = after.seed;
+  if (after.plan_index !== before.plan_index) out.plan_index = after.plan_index;
+  return out;
+}
+
+export function validateApartmentEdit(f: ApartmentEditForm): string[] {
+  const out: string[] = [];
+  if (!Number.isInteger(f.seed)) out.push("Seed must be a whole number.");
+  if (!Number.isInteger(f.plan_index) || f.plan_index < 0 || f.plan_index > 9) {
+    out.push("Plan index must be a whole number from 0 to 9.");
+  }
+  return out;
+}
+
 /** One-line key params for the list. */
 export function summarize(item: GeneratedItem): string {
   const p = item.params;
+  if (item.kind === "building") {
+    const fp = Array.isArray(p.footprint) ? (p.footprint as unknown[]) : [];
+    const n = num(p.storeys, 1);
+    return `${n} storey${n === 1 ? "" : "s"}, ${num(fp[0], 0)} x ${num(fp[1], 0)} m`;
+  }
   if (item.kind === "apartment") return apartmentSummary(p);
   if (item.kind === "room") return `${num(p.width, 0)} x ${num(p.depth, 0)} x ${num(p.height, 0)} m`;
   if (item.kind === "corridor") return `${num(p.length, 0)} m long, ${num(p.width, 0)} m wide, along ${p.axis === "y" ? "y" : "x"}`;

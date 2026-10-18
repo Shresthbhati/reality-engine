@@ -124,3 +124,55 @@ test("Apartment tab: 2-bedroom template -> Find layouts -> Build creates a build
     })
     .toEqual({ building: true, rooms: true });
 });
+
+test("Building tab: create against the live API -> appears in Generated -> edit storeys -> delete", async ({ page, request }) => {
+  const name = `Tower${Date.now()}`;
+  type Item = { kind: string; name: string; params: { storeys: number } };
+  const generated = async () =>
+    (await (await request.get(`${API_URL}/api/worlds/${worldId}/generated`)).json()) as Item[];
+
+  await page.goto(WORLD);
+  await page.getByTestId("open-build").click();
+  const dialog = page.getByRole("dialog", { name: "Build" });
+  await dialog.getByRole("tab", { name: "building" }).click();
+  await expect(dialog.getByTestId("building-provenance")).toHaveText("GENERATED");
+  await dialog.getByLabel("Building name").fill(name);
+  await dialog.getByLabel("Footprint width (m)").fill("12");
+  await dialog.getByLabel("Footprint depth (m)").fill("10");
+  await dialog.getByLabel("Storeys", { exact: true }).fill("2");
+  await dialog.getByRole("button", { name: "Build building" }).click();
+  await expect(dialog).toBeHidden();
+
+  await expect.poll(async () => (await generated()).some((g) => g.kind === "building" && g.name === name)).toBe(true);
+
+  await page.getByTestId("open-generated").click();
+  const panel = page.getByRole("dialog", { name: "Generated" });
+  const row = panel.getByTestId("generated-list").getByRole("button", { name: new RegExp(name) });
+  await expect(row).toContainText("building");
+  await expect(row).toContainText("2 storeys, 12 x 10 m");
+  await row.click();
+  const edit = panel.getByTestId("generated-edit");
+  await edit.getByLabel("Storeys (1-12)").fill("3");
+  await expect(edit.getByTestId("building-heights").getByRole("spinbutton")).toHaveCount(3);
+  await edit.getByRole("button", { name: "Save changes" }).click();
+  await expect(panel.getByTestId("generated-result")).toHaveText(/\d+ changed - \d+ unchanged - \d+ removed/);
+  await expect.poll(async () => (await generated()).find((g) => g.name === name)?.params.storeys).toBe(3);
+
+  await edit.getByRole("button", { name: "Delete", exact: true }).click();
+  await edit.getByRole("button", { name: "Confirm delete" }).click();
+  await expect.poll(async () => (await generated()).some((g) => g.name === name)).toBe(false);
+});
+
+test("Building tab: a server 422 is shown verbatim, never as an empty state", async ({ page }) => {
+  await page.goto(WORLD);
+  await page.getByTestId("open-build").click();
+  const dialog = page.getByRole("dialog", { name: "Build" });
+  await dialog.getByRole("tab", { name: "building" }).click();
+  await dialog.getByLabel("Building name").fill(`Squat${Date.now()}`);
+  // Passes the client's early checks (0 < side <= 100) but is below the grammar's 4 m minimum.
+  await dialog.getByLabel("Footprint width (m)").fill("3");
+  await dialog.getByLabel("Footprint depth (m)").fill("3");
+  await dialog.getByRole("button", { name: "Build building" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("footprint sides must be greater than 4 m");
+  await expect(dialog).toBeVisible();
+});

@@ -47,7 +47,7 @@ const row = (id: string, kind: ApartmentKind, min_area: number, max_area: number
   id, kind, min_area, max_area,
 });
 
-/** Template rows (solver-checked as feasible with an auto footprint). Rows only: no adjacency. */
+/** Template rows (solver-checked as feasible, with templateAdjacency, on an auto footprint). */
 export const APARTMENT_TEMPLATES: ApartmentTemplate[] = [
   {
     key: "studio",
@@ -65,10 +65,11 @@ export const APARTMENT_TEMPLATES: ApartmentTemplate[] = [
   {
     key: "3-bedroom",
     label: "3-bedroom",
-    rows: [row("living", "living", 20, 28), row("kitchen", "kitchen", 9, 13),
-      row("bedroom-1", "bedroom", 12, 16), row("bedroom-2", "bedroom", 10, 14),
-      row("bedroom-3", "bedroom", 9, 12), row("bathroom", "bathroom", 4, 6),
-      row("bathroom-2", "bathroom", 3, 5), row("hallway", "hallway", 5, 9)],
+    // Areas are generous because every room must touch the hallway (solver-checked).
+    rows: [row("living", "living", 22, 32), row("kitchen", "kitchen", 10, 15),
+      row("bedroom-1", "bedroom", 12, 18), row("bedroom-2", "bedroom", 11, 16),
+      row("bedroom-3", "bedroom", 10, 14), row("bathroom", "bathroom", 5, 8),
+      row("bathroom-2", "bathroom", 4, 6), row("hallway", "hallway", 12, 20)],
   },
 ];
 
@@ -76,6 +77,21 @@ export const APARTMENT_TEMPLATES: ApartmentTemplate[] = [
 export function templateRows(key: string): RoomRow[] {
   const t = APARTMENT_TEMPLATES.find((c) => c.key === key);
   return t ? t.rows.map((r) => ({ ...r })) : [];
+}
+
+/** Sensible default adjacency: the hallway touches every bedroom, bathroom and living room; living touches the kitchen (all required). */
+export function templateAdjacency(rows: RoomRow[]): AdjacencyDraft[] {
+  const hall = rows.find((r) => r.kind === "hallway");
+  const out: AdjacencyDraft[] = [];
+  if (hall) {
+    for (const r of rows) {
+      if (["bedroom", "bathroom", "living"].includes(r.kind)) out.push({ a: hall.id, b: r.id, level: "required" });
+    }
+  }
+  const living = rows.find((r) => r.kind === "living");
+  const kitchen = rows.find((r) => r.kind === "kitchen");
+  if (living && kitchen) out.push({ a: living.id, b: kitchen.id, level: "required" });
+  return out;
 }
 
 /** The entrance to use: the chosen one if it still exists, else the hallway, else the first row. */

@@ -11,6 +11,7 @@ import {
   effectiveEntrance,
   nextRoomId,
   planToSvg,
+  templateAdjacency,
   templateRows,
   toRequestBody,
   validateApartment,
@@ -125,7 +126,7 @@ export default function ApartmentBuilder({
         <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Apartment name" className={inputCls} />
       </Field>
 
-      <Field label="Start from a template (fills the room list only)">
+      <Field label="Start from a template (fills rooms and adjacency; edit freely)">
         <select
           value=""
           aria-label="Apartment template"
@@ -133,6 +134,7 @@ export default function ApartmentBuilder({
             const next = templateRows(e.target.value);
             if (next.length === 0) return;
             setRows(next);
+            setAdjacency(templateAdjacency(next));
             setEntrance("");
             setSolved(null);
           }}

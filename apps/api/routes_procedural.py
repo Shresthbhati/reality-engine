@@ -178,29 +178,36 @@ async def create_city(
 async def _generate_and_commit(db, w, world_id, kind, name, generate, verb="created") -> dict:
     """Run a grammar against the world's current WorldIR and commit the
     result as a new WorldStore version (the one write path)."""
-    current = await worldstore_service.get_current_worldir(db, world_id)
-    before_ids = set(current.entities) if current is not None else set()
-    try:
-        world: WorldIR = generate(current)
-    except spec_store.UnknownSpec as exc:
-        raise HTTPException(404, f"no generated object {exc}") from exc
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
+    # Generation is a pure function of the current HEAD, so when another
+    # writer moves HEAD between our read and adopt we reload and re-run;
+    # bounded so a genuinely hot world still ends in an honest 409.
+    for attempt in range(5):
+        await db.refresh(w)
+        current = await worldstore_service.get_current_worldir(db, world_id)
+        before_ids = set(current.entities) if current is not None else set()
+        try:
+            world: WorldIR = generate(current)
+        except spec_store.UnknownSpec as exc:
+            raise HTTPException(404, f"no generated object {exc}") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
-    added_ids = [eid for eid in world.entities if eid not in before_ids]
+        added_ids = [eid for eid in world.entities if eid not in before_ids]
 
-    base_head = w.current_version_id
-    try:
-        version = await worldstore_service.commit_version(
-            db,
-            world_id=world_id,
-            world=world,
-            parent=base_head,
-            source_session_ids=[],
-            expect_parent=base_head,
-        )
-    except worldstore_service.ConcurrentModificationError as exc:
-        raise HTTPException(409, str(exc)) from exc
+        base_head = w.current_version_id
+        try:
+            version = await worldstore_service.commit_version(
+                db,
+                world_id=world_id,
+                world=world,
+                parent=base_head,
+                source_session_ids=[],
+                expect_parent=base_head,
+            )
+            break
+        except worldstore_service.ConcurrentModificationError as exc:
+            if attempt == 4:
+                raise HTTPException(409, str(exc)) from exc
     db.add(
         ActivityEvent(
             id=new_id("act"),

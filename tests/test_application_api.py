@@ -2075,3 +2075,23 @@ def test_district_create_duplicate_409_put_and_cascade_delete(client, tmp_path, 
     ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
     assert not any(e.startswith(("dist-", "Link-")) for e in ents)
     assert client.delete(f"/api/worlds/{wid}/districts/dist").status_code == 404
+
+
+def test_procedural_commit_retries_when_head_moves(client, tmp_path, monkeypatch):
+    """A concurrent writer moving HEAD mid-commit must not fail the request."""
+    from apps.api import worldstore_service as svc
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    real = svc.commit_version
+    calls = {"n": 0}
+
+    async def flaky(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise svc.ConcurrentModificationError(expected_parent="x", current_head="y", orphan_version_id="z")
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(svc, "commit_version", flaky)
+    r = client.post(f"/api/worlds/{wid}/rooms", json=_room_body())
+    assert r.status_code == 201, r.text
+    assert calls["n"] == 2

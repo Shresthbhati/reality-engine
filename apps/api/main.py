@@ -18,6 +18,7 @@ from apps.api import jobs as jobrunner
 from apps.api.db import dispose_db, init_db
 from apps.api.routes_intent import estimate_router as intent_estimate, intent_router
 from apps.api.routes_jobs import activity, jobs, notifications
+from apps.api.routes_evidence_quality import quality
 from apps.api.routes_misc import evidence, uploads
 from apps.api.routes_export import export
 from apps.api.routes_procedural import procedural
@@ -36,7 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (health, sessions, uploads, evidence, reconstructions, world_status, worlds, procedural, query, export, jobs, notifications, activity, system, intent_router, intent_estimate):
+# `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, worlds, procedural, query, export, jobs, notifications, activity, system, intent_router, intent_estimate):
     app.include_router(router)
 
 

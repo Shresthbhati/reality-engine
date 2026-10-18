@@ -166,6 +166,21 @@ class Evidence(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+class EvidenceDecision(Base):
+    """The operator's Evidence Quality Firewall decision for one evidence item.
+
+    One row per evidence item (PK = evidence_id). Only ``rejected`` changes
+    behaviour: rejected evidence is excluded from reconstruction input. The other
+    decisions are recorded for the operator and are advisory."""
+
+    __tablename__ = "evidence_decisions"
+
+    evidence_id: Mapped[str] = mapped_column(ForeignKey("evidence.id"), primary_key=True)
+    decision: Mapped[str] = mapped_column(String(32))  # accepted|accepted_with_warning|needs_review|rejected
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Job(Base):
     """Durable application job.
 

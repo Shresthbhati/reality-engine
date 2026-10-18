@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.models import (
     ActivityEvent,
     Evidence,
+    EvidenceDecision,
     Job,
     Session,
     World,
@@ -394,6 +395,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         select(Evidence)
         .join(Session, Evidence.session_id == Session.id)
         .where(or_(Session.world_id == world.id, Session.id == session.id), Evidence.type == "photo")
+        # Evidence Quality Firewall: an operator-REJECTED photo is not reconstruction input
+        .where(Evidence.id.not_in(select(EvidenceDecision.evidence_id).where(EvidenceDecision.decision == "rejected")))
         .order_by(Evidence.created_at.asc(), Evidence.id.asc())
     )
     evidence_rows = list(result.scalars().all())

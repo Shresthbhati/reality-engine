@@ -19,7 +19,8 @@ import {
   type ApartmentDraft,
   type ApartmentPlan,
 } from "../../src/lib/procedural/apartment-model.ts";
-import { apartmentSummary, isEditable, summarize } from "../../src/lib/procedural/generated-model.ts";
+import { apartmentSummary, buildingForm, buildingPatch, summarize } from "../../src/lib/procedural/generated-model.ts";
+import { validateBuilding } from "../../src/lib/procedural/building-model.ts";
 
 function draft(over: Partial<ApartmentDraft> = {}): ApartmentDraft {
   const rows = templateRows("2-bedroom");
@@ -153,7 +154,7 @@ test("adjacency summary counts required adjacencies from the spec against the pl
   assert.equal(adjacencySummary(plan, []), "0 of 0 required adjacencies met");
 });
 
-test("stored apartments summarize as 'N rooms, W x D m' and are read-only", () => {
+test("stored apartments summarize as 'N rooms, W x D m' and buildings summarize storeys", () => {
   const params = {
     rooms: [{}, {}, {}, {}, {}, {}],
     rects: { a: [0, 0, 6, 8], b: [6, 0, 4, 8] },
@@ -161,7 +162,14 @@ test("stored apartments summarize as 'N rooms, W x D m' and are read-only", () =
   assert.equal(apartmentSummary(params), "6 rooms, 10 x 8 m");
   const item = { entity_id: "f-apartment", kind: "apartment" as const, name: "f", params, origin: [0, 0, 0] as [number, number, number], attach: null, depends_on: [] };
   assert.equal(summarize(item), "6 rooms, 10 x 8 m");
-  assert.equal(isEditable(item), false);
-  assert.equal(isEditable({ ...item, kind: "room" }), true);
+  const b = { ...item, kind: "building" as const, name: "tower", params: { footprint: [12, 10], storeys: 3, storey_heights: null } };
+  assert.equal(summarize(b), "3 storeys, 12 x 10 m");
+  const f = buildingForm(b);
+  assert.deepEqual(f.heights, [3, 3, 3]);
+  assert.deepEqual(buildingPatch({ ...f, storeys: 5, heights: [3, 3, 3, 3, 3] }), { storeys: 5, storey_heights: [3, 3, 3, 3, 3] });
+  assert.deepEqual(
+    validateBuilding({ name: "t", width: 10, depth: 8, storeys: 13, height: 3, rows: [], entrance: "", adjacency: [], seed: 0 }),
+    ["Storeys must be a whole number from 1 to 12."],
+  );
   assert.equal(apartmentSummary({ rooms: [{}] }), "1 room, 0 x 0 m");
 });

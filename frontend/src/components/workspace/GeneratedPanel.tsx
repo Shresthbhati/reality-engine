@@ -1,23 +1,34 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { createPortal } from "react-dom";
 import { Layers, Loader2, Trash2, X } from "lucide-react";
 import { isApiError } from "@/lib/api/client";
 import { deleteGenerated, listGenerated, updateGenerated, type GeneratedKind } from "@/lib/api/procedural";
 import {
+  H_MAX,
+  H_MIN,
+  MAX_UI_STOREYS,
+  apartmentEditFrom,
+  apartmentPatch,
+  buildingForm,
+  buildingPatch,
   cityFormFrom,
   corridorFormFrom,
   dependencyLines,
   hasOpeningErrors,
-  isEditable,
   parseDependents,
+  resizeHeights,
   resultLine,
   roomFormFrom,
   summarize,
+  validateApartmentEdit,
+  validateBuildingForm,
   validateOpenings,
+  type ApartmentEditForm,
+  type BuildingForm,
   type CityForm,
   type CorridorForm,
-  type EditableItem,
   type GeneratedItem,
   type RoomForm,
 } from "@/lib/procedural/generated-model";
@@ -57,7 +68,7 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
           setOpen(true);
           void load();
         }}
-        title="Edit or delete generated rooms, corridors and cities"
+        title="Edit or delete generated rooms, corridors, cities, apartments and buildings"
         data-testid="open-generated"
         className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
       >
@@ -65,7 +76,8 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
         <span className="hidden sm:inline">Generated</span>
       </button>
 
-      {open && (
+      {/* Portaled: the toolbar is a z-30 stacking context, which would paint the status footer over a tall dialog. */}
+      {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Generated">
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-4 flex flex-col gap-3 shadow-2xl">
             <div className="flex items-center justify-between">
@@ -89,7 +101,7 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
             )}
             {items && items.length === 0 && (
               <p className="text-xs text-neutral-400" data-testid="generated-empty">
-                Nothing generated in this world yet. Use Build to add a room, corridor or city.
+                Nothing generated in this world yet. Use Build to add a room, corridor, city, apartment or building.
               </p>
             )}
 
@@ -110,12 +122,12 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
                         }`}
                       >
                         <div className="flex items-center gap-2 text-sm text-white">
-                          <span className="text-[10px] uppercase tracking-wide text-[var(--accent)] w-14">{it.kind}</span>
+                          <span className="text-[10px] uppercase tracking-wide text-[var(--accent)] w-[4.5rem]">{it.kind}</span>
                           <span className="font-medium">{it.name}</span>
                           <span className="text-xs text-neutral-400 ml-auto">{summarize(it)}</span>
                         </div>
                         {lines.map((l) => (
-                          <div key={l} className="text-[11px] text-neutral-500 pl-16">{l}</div>
+                          <div key={l} className="text-[11px] text-neutral-500 pl-[5.25rem]">{l}</div>
                         ))}
                       </button>
                     </li>
@@ -124,19 +136,7 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
               </ul>
             )}
 
-            {current && !isEditable(current) && (
-              <div className="rounded border border-[var(--border)] bg-[var(--bg-surface)] p-3 flex flex-col gap-1.5" data-testid="generated-readonly">
-                <h4 className="text-xs font-semibold text-white">
-                  {current.kind} <span className="text-[var(--accent)]">{current.name}</span>
-                </h4>
-                <p className="text-xs text-neutral-300">{summarize(current)}</p>
-                <p className="text-[11px] text-neutral-500">
-                  Edit by rebuilding: apartments cannot be edited or deleted here yet (no server route for it).
-                </p>
-              </div>
-            )}
-
-            {current && isEditable(current) && (
+            {current && (
               <EditForm
                 key={current.entity_id}
                 worldId={worldId}
@@ -153,7 +153,8 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
               />
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
@@ -166,7 +167,7 @@ function EditForm({
   onDeleted,
 }: {
   worldId: string;
-  item: EditableItem;
+  item: GeneratedItem;
   onSaved: () => Promise<void>;
   onDeleted: () => Promise<void>;
 }) {
@@ -174,6 +175,9 @@ function EditForm({
   const [room, setRoom] = useState<RoomForm>(() => roomFormFrom(item));
   const [corridor, setCorridor] = useState<CorridorForm>(() => corridorFormFrom(item));
   const [city, setCity] = useState<CityForm>(() => cityFormFrom(item));
+  const [building, setBuilding] = useState<BuildingForm>(() => buildingForm(item));
+  const apt0 = apartmentEditFrom(item);
+  const [apt, setApt] = useState<ApartmentEditForm>(apt0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -186,12 +190,20 @@ function EditForm({
       ? [room.width, room.depth, room.height, room.seed, room.x, room.y]
       : kind === "corridor"
         ? [corridor.length, corridor.width, corridor.height, corridor.x, corridor.y]
-        : Object.values(city);
+        : kind === "city"
+          ? Object.values(city)
+          : [];
   const numbersOk = nums.every(Number.isFinite);
   const openingsBad = kind === "room" && hasOpeningErrors(validateOpenings(room.openings, room));
-  const canSave = numbersOk && !openingsBad && !busy;
+  const problems =
+    kind === "building" ? validateBuildingForm(building) : kind === "apartment" ? validateApartmentEdit(apt) : [];
+  const aptChanges = apartmentPatch(apt0, apt);
+  const noChange = kind === "apartment" && Object.keys(aptChanges).length === 0;
+  const canSave = numbersOk && !openingsBad && problems.length === 0 && !noChange && !busy;
 
   function patch(): Record<string, unknown> {
+    if (kind === "building") return buildingPatch(building);
+    if (kind === "apartment") return aptChanges;
     if (kind === "room") {
       return {
         width: room.width, depth: room.depth, height: room.height, seed: room.seed,
@@ -315,6 +327,44 @@ function EditForm({
           <N label="Position x (m)" value={city.x} onChange={(v) => setCity({ ...city, x: v })} />
           <N label="Position y (m)" value={city.y} onChange={(v) => setCity({ ...city, y: v })} />
         </div>
+      )}
+
+      {kind === "building" && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-xs text-neutral-400 mb-1">Storeys and storey heights (metres)</legend>
+          <N
+            label={`Storeys (1-${MAX_UI_STOREYS})`}
+            value={building.storeys}
+            step={1}
+            onChange={(v) => setBuilding({ storeys: v, heights: resizeHeights(building.heights, v) })}
+          />
+          <div className="grid grid-cols-3 gap-2" data-testid="building-heights">
+            {building.heights.map((h, i) => (
+              <N
+                key={i}
+                label={`Storey ${i + 1} height (m, ${H_MIN}-${H_MAX})`}
+                value={h}
+                onChange={(v) => setBuilding({ ...building, heights: building.heights.map((x, j) => (j === i ? v : x)) })}
+              />
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {kind === "apartment" && (
+        <div className="grid grid-cols-2 gap-2">
+          <N label="Seed" value={apt.seed} step={1} onChange={(v) => setApt({ ...apt, seed: v })} />
+          <N label="Plan index (0-9)" value={apt.plan_index} step={1} onChange={(v) => setApt({ ...apt, plan_index: v })} />
+          <p className="col-span-2 text-[11px] text-neutral-500">
+            Changing either re-solves the layout from the stored brief. Rooms and adjacency are fixed here: delete and rebuild to change them.
+          </p>
+        </div>
+      )}
+
+      {problems.length > 0 && (
+        <ul className="text-xs text-[var(--warning)] list-disc pl-4" data-testid="generated-problems">
+          {problems.map((p) => <li key={p}>{p}</li>)}
+        </ul>
       )}
 
       {error && <p role="alert" className="text-xs text-[var(--error)]">{error}</p>}

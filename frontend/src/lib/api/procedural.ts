@@ -1,6 +1,7 @@
 import { apiDelete, apiGet, apiPost, apiPut } from "./client";
 import type { GeneratedItem } from "@/lib/procedural/generated-model";
 import type { ApartmentBody, ApartmentPlan } from "@/lib/procedural/apartment-model";
+import type { BuildingBody } from "@/lib/procedural/building-model";
 
 export interface WallOpeningIn {
   wall: "north" | "south" | "east" | "west";
@@ -107,9 +108,21 @@ export function createApartment(
   });
 }
 
-export type GeneratedKind = "room" | "corridor" | "city";
+export interface BuildingCreatedResult extends ProceduralCreatedResult {
+  building_entity_id: string;
+}
 
-const KIND_PATH: Record<GeneratedKind, string> = { room: "rooms", corridor: "corridors", city: "cities" };
+/** POST /api/worlds/{id}/buildings -- the server validates, solves the optional floor layout and commits.
+ * 409 (duplicate name) / 422 text is carried by the thrown ApiError. */
+export function createBuilding(worldId: string, body: BuildingBody): Promise<BuildingCreatedResult> {
+  return apiPost<BuildingCreatedResult>(`/api/worlds/${encodeURIComponent(worldId)}/buildings`, body);
+}
+
+export type GeneratedKind = "room" | "corridor" | "city" | "apartment" | "building";
+
+const KIND_PATH: Record<GeneratedKind, string> = {
+  room: "rooms", corridor: "corridors", city: "cities", apartment: "apartments", building: "buildings",
+};
 
 function objectPath(worldId: string, kind: GeneratedKind, name: string): string {
   return `/api/worlds/${encodeURIComponent(worldId)}/${KIND_PATH[kind]}/${encodeURIComponent(name)}`;

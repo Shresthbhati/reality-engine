@@ -84,6 +84,26 @@ class WorldVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class WorldMeasurement(Base):
+    """A saved viewport measurement. `value` is always recomputed server-side from
+    `points` (world_ir.measure); `unit` is derived from `scale_state`, so a world
+    whose scale is unknown can never be stored as metres. `uncertainty` is NULL
+    unless the data supplied one -- never a guess."""
+
+    __tablename__ = "world_measurements"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    points: Mapped[list] = mapped_column(JSON)
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(16))
+    uncertainty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    method: Mapped[str] = mapped_column(String(200))
+    scale_state: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Session(Base):
     """A capture Session. First-class: may exist without a World."""
 

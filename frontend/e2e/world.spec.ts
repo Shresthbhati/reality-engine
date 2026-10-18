@@ -29,6 +29,56 @@ test("Build dialog creates a room that lands in the WorldIR", async ({ page, req
     .toContain("Annex-room");
 });
 
+test("Generated panel: widening a built room changes only that room's floor extent", async ({ page, request }) => {
+  type Geom = { bounds_min: { x: number }; bounds_max: { x: number } };
+  type Wir = {
+    entities: Record<string, { geometry_ids: string[]; custom_properties?: Record<string, unknown> }>;
+    geometries: Record<string, Geom>;
+  };
+  const getWir = async () => (await (await request.get(`${API_URL}/api/worlds/${worldId}/worldir`)).json()) as Wir;
+  const name = `Resize${Date.now()}`;
+  const id = `${name}-room`;
+
+  await page.goto(WORLD);
+  await page.getByTestId("open-build").click();
+  const build = page.getByRole("dialog", { name: "Build" });
+  await build.getByRole("tab", { name: "room" }).click();
+  await build.locator("input").first().fill(name);
+  await build.getByLabel("Width (m)").fill("4");
+  await build.getByRole("button", { name: "Build room" }).click();
+  await expect(build).toBeHidden();
+
+  await expect.poll(async () => id in (await getWir()).entities).toBe(true);
+  const before = await getWir();
+  const floorX = (w: Wir) => {
+    const g = w.geometries[w.entities[`${name}-floor`].geometry_ids[0]];
+    return g.bounds_max.x - g.bounds_min.x;
+  };
+  const owned = (w: Wir) => new Set(Object.keys(w.entities).filter((e) => w.entities[e].custom_properties?.generated_by === id));
+  const rest = (w: Wir) => {
+    const own = owned(w);
+    const ownGeoms = new Set([...own].flatMap((e) => w.entities[e].geometry_ids));
+    return JSON.stringify({
+      entities: Object.fromEntries(Object.entries(w.entities).filter(([e]) => !own.has(e))),
+      geometries: Object.fromEntries(Object.entries(w.geometries).filter(([g]) => !ownGeoms.has(g))),
+    });
+  };
+  const xBefore = floorX(before);
+
+  await page.getByTestId("open-generated").click();
+  const panel = page.getByRole("dialog", { name: "Generated" });
+  await panel.getByTestId("generated-list").getByRole("button", { name: new RegExp(name) }).click();
+  const edit = panel.getByTestId("generated-edit");
+  await edit.getByLabel("Width (m)").fill("6");
+  await edit.getByRole("button", { name: "Save changes" }).click();
+  await expect(panel.getByTestId("generated-result")).toHaveText(/\d+ changed - \d+ unchanged - \d+ removed/);
+
+  await expect.poll(async () => floorX(await getWir())).not.toBe(xBefore);
+  const after = await getWir();
+  expect(floorX(after)).toBeCloseTo(xBefore + 2, 3);
+  expect(rest(after)).toBe(rest(before));
+});
+
 test("Measure panel opens: Distance enabled, Volume disabled", async ({ page }) => {
   await page.goto(WORLD);
   await page.getByRole("button", { name: "Toggle measurement mode" }).click();

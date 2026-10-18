@@ -1,9 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Hammer, X, Loader2 } from "lucide-react";
-import { createCity, createCorridor, createRoom } from "@/lib/api/procedural";
+import {
+  createCity,
+  createCorridor,
+  createRoom,
+  listRoomTemplates,
+  type RoomTemplate,
+} from "@/lib/api/procedural";
 import { isApiError } from "@/lib/api/client";
+import OpeningsEditor from "@/components/workspace/OpeningsEditor";
+import {
+  duplicateNameMessage,
+  hasOpeningErrors,
+  validateOpenings,
+  type OpeningDraft,
+} from "@/lib/procedural/generated-model";
 
 type Kind = "room" | "corridor" | "city";
 
@@ -52,6 +65,30 @@ export default function BuildModal({
   const [minHeight, setMinHeight] = useState(6);
   const [maxHeight, setMaxHeight] = useState(30);
   const [seed, setSeed] = useState(0);
+  // room openings + templates (default dimensions only; they just fill the fields)
+  const [openings, setOpenings] = useState<OpeningDraft[]>([]);
+  const [templates, setTemplates] = useState<RoomTemplate[]>([]);
+  const [templatesNote, setTemplatesNote] = useState<string | null>(null);
+  // corridor attach (preferred) vs manual position (Advanced)
+  const [attachTo, setAttachTo] = useState("");
+  const [attachSide, setAttachSide] = useState<"east" | "west" | "north" | "south">("east");
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let live = true;
+    listRoomTemplates()
+      .then((r) => {
+        if (!live) return;
+        setTemplates(r.templates);
+        setTemplatesNote(r.label);
+      })
+      .catch(() => {
+        if (live) setTemplatesNote("Templates unavailable (API did not answer); enter sizes by hand.");
+      });
+    return () => {
+      live = false;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -61,16 +98,28 @@ export default function BuildModal({
     setError(null);
   }
 
+  function applyTemplate(tplName: string) {
+    const t = templates.find((c) => c.name === tplName);
+    if (!t) return;
+    setWidth(t.width);
+    setDepth(t.depth);
+    setHeight(t.height);
+  }
+
+  const openingErrors = kind === "room" && hasOpeningErrors(validateOpenings(openings, { width, depth }));
+  const attached = kind === "corridor" && attachTo !== "";
+
   async function submit() {
     setSubmitting(true);
     setError(null);
     const origin: [number, number, number] = [x, y, 0];
     try {
       if (kind === "room") {
-        await createRoom(worldId, { name, width, depth, height, origin });
+        await createRoom(worldId, { name, width, depth, height, origin, openings });
       } else if (kind === "corridor") {
         await createCorridor(worldId, {
-          name, length, width: corridorWidth, height, axis, connects, origin,
+          name, length, width: corridorWidth, height, axis, connects,
+          ...(attached ? { attach: { to: attachTo, side: attachSide } } : { origin }),
         });
       } else {
         await createCity(worldId, {
@@ -81,7 +130,11 @@ export default function BuildModal({
       onCreated();
       onClose();
     } catch (err) {
-      setError(isApiError(err) ? err.describe() : `Failed to create ${kind}.`);
+      if (isApiError(err) && err.status === 409 && /already exists/i.test(err.message)) {
+        setError(`${duplicateNameMessage(kind, name)} (${err.message})`);
+      } else {
+        setError(isApiError(err) ? err.describe() : `Failed to create ${kind}.`);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -123,11 +176,31 @@ export default function BuildModal({
         </Field>
 
         {kind === "room" && (
-          <div className="grid grid-cols-3 gap-2">
-            <Num label="Width (m)" value={width} onChange={setWidth} />
-            <Num label="Depth (m)" value={depth} onChange={setDepth} />
-            <Num label="Height (m)" value={height} onChange={setHeight} />
-          </div>
+          <>
+            <Field label="Template (default sizes only - edit freely)">
+              <select
+                value=""
+                onChange={(e) => applyTemplate(e.target.value)}
+                aria-label="Room template"
+                disabled={templates.length === 0}
+                className={inputCls}
+              >
+                <option value="">{templates.length ? "Choose a template…" : "No templates available"}</option>
+                {templates.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.name} ({t.width} x {t.depth} x {t.height} m)
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {templatesNote && <p className="text-[10px] text-neutral-500 -mt-2">{templatesNote}</p>}
+            <div className="grid grid-cols-3 gap-2">
+              <Num label="Width (m)" value={width} onChange={setWidth} />
+              <Num label="Depth (m)" value={depth} onChange={setDepth} />
+              <Num label="Height (m)" value={height} onChange={setHeight} />
+            </div>
+            <OpeningsEditor openings={openings} room={{ width, depth }} onChange={setOpenings} />
+          </>
         )}
 
         {kind === "corridor" && (
@@ -142,6 +215,32 @@ export default function BuildModal({
                 <option value="x">East-West (x)</option>
                 <option value="y">North-South (y)</option>
               </select>
+            </Field>
+            <Field label="Attach to room (position follows it when resized)">
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={attachTo}
+                  onChange={(e) => setAttachTo(e.target.value)}
+                  aria-label="Attach to room"
+                  className={inputCls}
+                >
+                  <option value="">Not attached (set position)</option>
+                  {rooms.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={attachSide}
+                  onChange={(e) => setAttachSide(e.target.value as typeof attachSide)}
+                  aria-label="Attach side"
+                  disabled={!attached}
+                  className={inputCls}
+                >
+                  {["east", "west", "north", "south"].map((s) => (
+                    <option key={s} value={s}>{s} side</option>
+                  ))}
+                </select>
+              </div>
             </Field>
             <Field label={rooms.length ? "Connects rooms" : "Connects rooms (no rooms yet)"}>
               <div className="flex flex-wrap gap-1.5">
@@ -180,17 +279,27 @@ export default function BuildModal({
           </>
         )}
 
-        <div className="grid grid-cols-2 gap-2">
-          <Num label="Position x (m)" value={x} onChange={setX} />
-          <Num label="Position y (m)" value={y} onChange={setY} />
-        </div>
+        {kind === "corridor" ? (
+          <details className="text-xs text-neutral-400" open={!attached}>
+            <summary className="cursor-pointer">Advanced: manual position{attached ? " (ignored while attached)" : ""}</summary>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <Num label="Position x (m)" value={x} onChange={setX} />
+              <Num label="Position y (m)" value={y} onChange={setY} />
+            </div>
+          </details>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <Num label="Position x (m)" value={x} onChange={setX} />
+            <Num label="Position y (m)" value={y} onChange={setY} />
+          </div>
+        )}
 
         {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
 
         <button
           type="button"
           onClick={submit}
-          disabled={submitting || !name.trim()}
+          disabled={submitting || !name.trim() || openingErrors}
           className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
         >
           {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

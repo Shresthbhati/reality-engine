@@ -9,6 +9,7 @@ import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
 import BuildModal from "@/components/workspace/BuildModal";
+import GeneratedPanel from "@/components/workspace/GeneratedPanel";
 import PhotoDropZone from "@/components/reconstruct/PhotoDropZone";
 import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStatusBar";
 import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
@@ -507,6 +508,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <Hammer className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span className="hidden sm:inline">Build</span>
           </button>
+
+          <GeneratedPanel
+            worldId={worldId}
+            onChanged={() => {
+              Promise.all([refetchIr(), refetchVersions()]);
+            }}
+          />
 
           {/* Room Construction Launcher */}
           <button

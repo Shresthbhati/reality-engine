@@ -25,6 +25,18 @@ from procedural.urban_grammar import CityGrammarSpec, CorridorGrammarSpec
 from world_ir.world_v1 import WorldIR
 
 procedural = APIRouter(prefix="/api/worlds/{world_id}", tags=["procedural"])
+templates_router = APIRouter(prefix="/api/procedural", tags=["procedural"])
+
+
+@templates_router.get("/templates")
+async def list_room_templates() -> dict:
+    """Default room dimensions (data only; the UI just fills form fields)."""
+    from procedural.templates import ROOM_TEMPLATES
+
+    return {
+        "label": "Default dimensions only; edit before building.",
+        "templates": [{"name": n, **dims} for n, dims in ROOM_TEMPLATES.items()],
+    }
 
 
 class OpeningIn(BaseModel):

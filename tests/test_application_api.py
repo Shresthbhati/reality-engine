@@ -1703,3 +1703,116 @@ def test_put_rejects_nan_inf_negative_and_unknown_fields(client, tmp_path, monke
                    json={"attach": {"to": "Hall-corridor", "side": "east"}})
     assert r.status_code == 422
     assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == n
+
+
+# --------------------------------------------------------------------------
+# Apartments (C3): solve without committing, then commit a chosen plan
+# --------------------------------------------------------------------------
+
+
+def _apartment_body(name="flat", **over):
+    body = {
+        "name": name, "footprint": [10.0, 8.0], "entrance": "hall", "seed": 1,
+        "rooms": [
+            {"id": "living", "kind": "living", "min_area": 18, "max_area": 30},
+            {"id": "kitchen", "kind": "kitchen", "min_area": 8, "max_area": 14},
+            {"id": "bedroom_1", "kind": "bedroom", "min_area": 12, "max_area": 18},
+            {"id": "bedroom_2", "kind": "bedroom", "min_area": 10, "max_area": 16},
+            {"id": "bath_1", "kind": "bathroom", "min_area": 4, "max_area": 7},
+            {"id": "bath_2", "kind": "bathroom", "min_area": 4, "max_area": 7},
+            {"id": "hall", "kind": "hallway", "min_area": 6, "max_area": 12, "aspect_max": 3.5},
+            {"id": "balcony", "kind": "balcony", "min_area": 4, "max_area": 8, "aspect_max": 3.0},
+        ],
+        "adjacency": [["living", "kitchen", "required"], ["living", "hall", "required"],
+                      ["hall", "bedroom_1", "required"], ["bedroom_1", "bath_1", "preferred"],
+                      ["hall", "bath_2", "preferred"], ["living", "balcony", "preferred"]],
+    }
+    body.update(over)
+    return body
+
+
+def test_apartment_solve_returns_plans_and_commits_nothing(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/apartments/solve", json=_apartment_body())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and 1 <= len(body["plans"]) <= 3 and body["violations"] == []
+    assert set(body["plans"][0]["rects"]) >= {"living", "hall", "balcony"}
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+    assert client.post("/api/worlds/nope/apartments/solve", json=_apartment_body()).status_code == 404
+
+
+def test_apartment_solve_infeasible_is_200_with_violations(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    body = {"name": "tight", "footprint": [5.0, 5.0], "entrance": "b1", "adjacency": [],
+            "rooms": [{"id": f"b{i}", "kind": "bedroom", "min_area": 20, "max_area": 30}
+                      for i in (1, 2, 3)]}
+    r = client.post(f"/api/worlds/{wid}/apartments/solve", json=body)
+    assert r.status_code == 200
+    assert r.json()["ok"] is False and r.json()["plans"] == [] and r.json()["violations"]
+
+
+def test_apartment_commit_lands_rooms_and_doors_and_409_on_duplicate(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body(plan_index=0))
+    assert r.status_code == 201, r.text
+    assert r.json()["apartment_entity_id"] == "flat-apartment"
+    ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    for rid in ("living", "kitchen", "bedroom_2", "hall", "balcony"):
+        assert f"flat-{rid}-room" in ents
+    doors = [e for e in ents.values() if e["type"] == "door"]
+    assert any(d["id"] == "flat-door-entrance" for d in doors) and len(doors) >= 4
+    gen = client.get(f"/api/worlds/{wid}/generated").json()
+    assert [g["kind"] for g in gen] == ["apartment"]
+    n = len(client.get(f"/api/worlds/{wid}/versions").json()["items"])
+    dup = client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body(plan_index=1))
+    assert dup.status_code == 409, dup.text
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == n
+
+
+def test_apartment_commit_revalidates_posted_rects(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    plan = client.post(f"/api/worlds/{wid}/apartments/solve", json=_apartment_body()).json()["plans"][0]
+    bad = dict(plan["rects"])
+    x, y, w, d = bad["living"]
+    bad["living"] = [x, y, w + 1.0, d]
+    r = client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body(rects=bad))
+    assert r.status_code == 422, r.text
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+    ok = client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body(rects=plan["rects"]))
+    assert ok.status_code == 201, ok.text
+
+
+def test_apartment_rejects_bad_input(client, tmp_path, monkeypatch):
+    import json as _json
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    base = _apartment_body()
+    many = [{"id": f"r{i}", "kind": "storage", "min_area": 1, "max_area": 2} for i in range(21)]
+    cases = {
+        "unknown adjacency id": dict(base, adjacency=[["living", "ghost", "required"]]),
+        "bad level": dict(base, adjacency=[["living", "kitchen", "maybe"]]),
+        "unknown entrance": dict(base, entrance="nowhere"),
+        "21 rooms": dict(base, rooms=many, adjacency=[], entrance="r0"),
+        "zero area": dict(base, rooms=[dict(base["rooms"][0], min_area=0)] + base["rooms"][1:]),
+        "max<min": dict(base, rooms=[dict(base["rooms"][0], max_area=1)] + base["rooms"][1:]),
+        "negative footprint": dict(base, footprint=[-1.0, 5.0]),
+        "bad kind": dict(base, rooms=[dict(base["rooms"][0], kind="dungeon")] + base["rooms"][1:]),
+        "blank name": dict(base, name="  "),
+        "plan_index out of range": dict(base, plan_index=99),
+    }
+    for label, payload in cases.items():
+        for path in ("apartments", "apartments/solve"):
+            if label == "plan_index out of range" and path.endswith("solve"):
+                continue
+            r = client.post(f"/api/worlds/{wid}/{path}", json=payload)
+            assert r.status_code == 422, (label, path, r.status_code, r.text[:200])
+    for raw in (_json.dumps(base).replace('"min_area": 18', '"min_area": NaN'),
+                _json.dumps(base).replace("10.0, 8.0", "NaN, 8.0")):
+        for path in ("apartments", "apartments/solve"):
+            r = client.post(f"/api/worlds/{wid}/{path}", content=raw.encode(),
+                            headers={"Content-Type": "application/json"})
+            assert r.status_code == 422, (path, raw[:60], r.status_code)
+    infeasible = dict(base, footprint=[3.0, 3.0])
+    assert client.post(f"/api/worlds/{wid}/apartments", json=infeasible).status_code == 422
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []

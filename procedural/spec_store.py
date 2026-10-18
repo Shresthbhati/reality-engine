@@ -17,6 +17,8 @@ import json
 from dataclasses import asdict, dataclass, replace
 from typing import Optional
 
+from procedural.apartment_grammar import DEFAULT_HEIGHT, generate_apartment, plan_from_params
+from procedural.layout_solver import ApartmentSpec
 from procedural.room_grammar import RoomGrammarSpec, WallOpening, generate_room
 from procedural.urban_grammar import (
     CityGrammarSpec,
@@ -30,6 +32,7 @@ GENERATORS = {
     "room": "room_grammar@1",
     "corridor": "corridor_grammar@1",
     "city": "city_grammar@1",
+    "apartment": "apartment_grammar@1",
 }
 SIDES = ("east", "west", "north", "south")
 
@@ -173,6 +176,12 @@ def generate(world: Optional[WorldIR], spec: GeneratedSpec) -> WorldIR:
                                 p.get("height", 2.6), p.get("axis", "x"),
                                 list(p.get("connects", []))),
             world=world, origin=origin)
+    elif spec.kind == "apartment":
+        # params = ApartmentSpec fields (+ optional "rects" / "plan_index" / "height").
+        # Stale rects (footprint or room list edited) are re-solved deterministically.
+        a_spec = ApartmentSpec.from_dict({"name": spec.name, **p})
+        out = generate_apartment(a_spec, plan_from_params(a_spec, p), world=world,
+                                 origin=origin, height=p.get("height", DEFAULT_HEIGHT))
     else:
         out = generate_city(
             CityGrammarSpec(spec.name, p["blocks_x"], p["blocks_y"], p["lot_size"],

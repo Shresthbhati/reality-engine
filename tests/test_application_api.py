@@ -1994,3 +1994,49 @@ def test_apartment_put_and_delete(client, tmp_path, monkeypatch):
     assert d.status_code == 200 and d.json()["removed"] > 0
     ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
     assert not any(e.startswith("flat-") for e in ents)
+
+
+# --------------------------------------------------------------------------
+# Districts (C5)
+# --------------------------------------------------------------------------
+
+
+def _district_body(name="dist", **over):
+    body = {"name": name, "blocks_x": 3, "blocks_y": 2, "seed": 5, "detail": {"max_full": 1}}
+    body.update(over)
+    return body
+
+
+def test_district_create_duplicate_409_put_and_cascade_delete(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/districts", json=_district_body())
+    assert r.status_code == 201, r.text
+    assert r.json()["district_entity_id"] == "dist-district"
+    gen = [g for g in client.get(f"/api/worlds/{wid}/generated").json() if g["kind"] == "district"]
+    assert gen[0]["params"]["layout"] == "grid" and len(gen[0]["params"]["families"]) == 3
+    # identical resubmit is idempotent; different params under the same name -> 409
+    assert client.post(f"/api/worlds/{wid}/districts", json=_district_body()).status_code == 201
+    assert client.post(f"/api/worlds/{wid}/districts",
+                       json=_district_body(blocks_x=4)).status_code == 409
+    for bad in (_district_body(layout="ring"), _district_body(blocks_x=0),
+                _district_body(parcels={"9,9": {"family": 0}})):
+        assert client.post(f"/api/worlds/{wid}/districts", json={**bad, "name": "x"}).status_code == 422
+    # edit one parcel: only that parcel's entities (+ the district spec) change
+    p = client.put(f"/api/worlds/{wid}/districts/dist",
+                   json={"parcels": {"1,1": {"detail": "full"}}})
+    assert p.status_code == 200, p.text
+    changed = set(p.json()["entity_ids_changed"]) - {"dist-district"}
+    assert changed and all(e.startswith("dist-p1-1-") for e in changed), changed
+    assert p.json()["unchanged"] > p.json()["changed"]
+    # dependents block delete; cascade removes both
+    c = client.post(f"/api/worlds/{wid}/corridors", json={
+        "name": "Link", "length": 4.0, "connects": ["dist-district"], "origin": [-20.0, 0.0, 0.0]})
+    assert c.status_code == 201, c.text
+    blocked = client.delete(f"/api/worlds/{wid}/districts/dist")
+    assert blocked.status_code == 409, blocked.text
+    ok = client.delete(f"/api/worlds/{wid}/districts/dist?cascade=true")
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["cascaded"] == ["Link"]
+    ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    assert not any(e.startswith(("dist-", "Link-")) for e in ents)
+    assert client.delete(f"/api/worlds/{wid}/districts/dist").status_code == 404

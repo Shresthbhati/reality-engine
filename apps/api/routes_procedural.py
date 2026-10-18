@@ -21,7 +21,7 @@ from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.models import ActivityEvent, World, new_id
 from procedural.room_grammar import RoomGrammarSpec, WallOpening
-from procedural import building_grammar, layout_solver, spec_store
+from procedural import building_grammar, district_grammar, layout_solver, spec_store
 from procedural.urban_grammar import CityGrammarSpec, CorridorGrammarSpec
 from world_ir.world_v1 import WorldIR
 
@@ -461,12 +461,85 @@ async def create_building(
     return {**result, "building_entity_id": gspec.entity_id}
 
 
+# ---------------------------------------------------------------------------
+# Districts (C5): named streets + parcels + building families + detail policy
+# ---------------------------------------------------------------------------
+
+
+class DistrictFamilyIn(BaseModel):
+    name: Optional[str] = None
+    storeys: int = 3
+    storey_height: float = 3.0
+    facade: dict[str, float | bool] = {}
+    stairs: bool = True
+
+
+class DistrictDetailIn(BaseModel):
+    max_full: Optional[int] = district_grammar.DEFAULT_MAX_FULL
+    full_within: Optional[float] = None
+    focus: Optional[tuple[float, float]] = None
+
+
+class ParcelOverrideIn(BaseModel):
+    family: Optional[int] = None
+    detail: Optional[str] = None
+
+
+class DistrictIn(BaseModel):
+    name: str
+    layout: str = "grid"
+    blocks_x: int = 4
+    blocks_y: int = 4
+    lot_w: float = 24.0
+    lot_d: float = 24.0
+    street_width: float = 8.0
+    setback: float = 3.0
+    cross_every: int = 4
+    families: Optional[list[DistrictFamilyIn]] = None   # None -> 3 seeded defaults, stored
+    detail: DistrictDetailIn = DistrictDetailIn()
+    parcels: dict[str, ParcelOverrideIn] = {}
+    seed: int = 0
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+def _district_spec(body: DistrictIn) -> spec_store.GeneratedSpec:
+    _check_name_and_numbers(body)
+    try:
+        d = district_grammar.DistrictSpec(
+            name=body.name, layout=body.layout, blocks_x=body.blocks_x,
+            blocks_y=body.blocks_y, lot_w=body.lot_w, lot_d=body.lot_d,
+            street_width=body.street_width, setback=body.setback,
+            cross_every=body.cross_every,
+            families=([f.model_dump(exclude_none=True) for f in body.families]
+                      if body.families is not None else None),
+            detail=body.detail.model_dump(),
+            parcels={k: v.model_dump(exclude_none=True) for k, v in body.parcels.items()},
+            seed=body.seed)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return spec_store.GeneratedSpec("district", body.name, params=d.to_params(),
+                                    seed=body.seed, origin=list(body.origin))
+
+
+@procedural.post("/districts", status_code=201)
+async def create_district(
+    world_id: str, body: DistrictIn, db: AsyncSession = Depends(get_db)
+) -> dict:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    gspec = await run_in_threadpool(_district_spec, body)
+    result = await _create(db, w, world_id, gspec)
+    return {**result, "district_entity_id": gspec.entity_id}
+
+
 _BUILDERS = {
     "room": (RoomIn, _room_spec),
     "corridor": (CorridorIn, _corridor_spec),
     "city": (CityIn, _city_spec),
     "apartment": (ApartmentCommitIn, _apartment_gspec),
     "building": (BuildingIn, _building_spec),
+    "district": (DistrictIn, _district_spec),
 }
 
 
@@ -485,7 +558,14 @@ def _fix_building_patch(fields: dict, edits: dict) -> None:
         fields["floor_layout"] = {k: v for k, v in fields["floor_layout"].items() if k != "rects"}
 
 
-_PATCH_FIX = {"apartment": _fix_apartment_patch, "building": _fix_building_patch}
+def _fix_district_patch(fields: dict, edits: dict) -> None:
+    # a patched `parcels` replaces the whole override map (null/{} clears it)
+    if edits.get("parcels") is None and "parcels" in edits:
+        edits["parcels"] = {}
+
+
+_PATCH_FIX = {"apartment": _fix_apartment_patch, "building": _fix_building_patch,
+              "district": _fix_district_patch}
 
 
 def _name_in_use(world: Optional[WorldIR], name: str, kind: str = "") -> bool:
@@ -588,6 +668,22 @@ class BuildingPatch(_Patch):
     origin: Optional[tuple[float, float, float]] = None
 
 
+class DistrictPatch(_Patch):
+    layout: Optional[str] = None
+    blocks_x: Optional[int] = None
+    blocks_y: Optional[int] = None
+    lot_w: Optional[float] = None
+    lot_d: Optional[float] = None
+    street_width: Optional[float] = None
+    setback: Optional[float] = None
+    cross_every: Optional[int] = None
+    families: Optional[list[DistrictFamilyIn]] = None
+    detail: Optional[DistrictDetailIn] = None
+    parcels: Optional[dict[str, ParcelOverrideIn]] = None
+    seed: Optional[int] = None
+    origin: Optional[tuple[float, float, float]] = None
+
+
 def _find_spec(current: Optional[WorldIR], kind: str, name: str):
     sid = f"{name}-{kind}"
     specs = spec_store.load_specs(current) if current is not None else {}
@@ -680,6 +776,7 @@ for _path, _kind, _patch in (("rooms", "room", RoomPatch),
                              ("corridors", "corridor", CorridorPatch),
                              ("cities", "city", CityPatch),
                              ("apartments", "apartment", ApartmentPatch),
-                             ("buildings", "building", BuildingPatch)):
+                             ("buildings", "building", BuildingPatch),
+                             ("districts", "district", DistrictPatch)):
     _edit_route(_path, _kind, _patch)
     _delete_route(_path, _kind)

@@ -19,6 +19,7 @@ from typing import Optional
 
 from procedural.apartment_grammar import DEFAULT_HEIGHT, generate_apartment, plan_from_params
 from procedural.building_grammar import BuildingSpec, generate_building
+from procedural.district_grammar import DistrictSpec, generate_district
 from procedural.layout_solver import ApartmentSpec
 from procedural.room_grammar import RoomGrammarSpec, WallOpening, generate_room
 from procedural.urban_grammar import (
@@ -35,6 +36,7 @@ GENERATORS = {
     "city": "city_grammar@1",
     "apartment": "apartment_grammar@1",
     "building": "building_grammar@1",
+    "district": "district_grammar@1",
 }
 SIDES = ("east", "west", "north", "south")
 
@@ -186,6 +188,9 @@ def generate(world: Optional[WorldIR], spec: GeneratedSpec) -> WorldIR:
                                  origin=origin, height=p.get("height", DEFAULT_HEIGHT))
     elif spec.kind == "building":
         out = generate_building(BuildingSpec.from_params(spec.name, p), world=world,
+                                origin=origin)
+    elif spec.kind == "district":
+        out = generate_district(DistrictSpec.from_params(spec.name, p), world=world,
                                 origin=origin)
     else:
         out = generate_city(

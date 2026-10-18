@@ -1994,3 +1994,40 @@ def test_apartment_put_and_delete(client, tmp_path, monkeypatch):
     assert d.status_code == 200 and d.json()["removed"] > 0
     ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
     assert not any(e.startswith("flat-") for e in ents)
+
+
+# --------------------------------------------------------------------------
+# Godot export profile through the API
+# --------------------------------------------------------------------------
+
+
+def test_export_godot_profile_bundle(client, tmp_path, monkeypatch):
+    import base64
+    import json
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body()).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/export", json={"format": "godot"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["bundle"] is True and body["entities_exported"]
+    assert body["files"] == ["manifest.json", "scene.tscn", "world.glb"]
+
+    dl = client.get(body["download_url"])
+    assert dl.status_code == 200 and dl.headers["content-type"].startswith("application/json")
+    bundle = dl.json()
+    assert set(bundle) == {"world.glb", "manifest.json", "scene.tscn"}
+    assert bundle["world.glb"]["encoding"] == "base64"
+    assert base64.b64decode(bundle["world.glb"]["content"])[:4] == b"glTF"
+    manifest = json.loads(bundle["manifest.json"]["content"])
+    # procedural rooms are GENERATED: metres is justified; scale is only claimed when the unit is metres
+    assert manifest["unit"] == "metre" and manifest["scale_to_metres"] == 1.0 and manifest["unit_basis"]
+    assert bundle["scene.tscn"]["encoding"] == "utf-8" and "world.glb" in bundle["scene.tscn"]["content"]
+
+
+def test_export_unknown_format_or_profile_is_clean_422(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body()).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/export", json={"format": "unity"})
+    assert r.status_code == 422
+    assert "unity" in r.json()["detail"] and "godot" in r.json()["detail"]

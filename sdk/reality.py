@@ -49,6 +49,7 @@ from exporters.gis.exporter import export_to_geojson_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
 from exporters.godot.exporter import export_to_tscn_with_report
 from exporters.habitat.exporter import export_to_habitat_with_report
+from exporters.profiles import PROFILES, UnknownProfileError, export_profile as _export_profile
 from exporters.report import ExportReport, content_hash
 from exporters.ros.exporter import export_to_sdf_with_report
 from exporters.sumo.exporter import export_to_sumo_with_report
@@ -195,3 +196,13 @@ def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] 
             f"unsupported export format {format!r}; supported: {sorted(_EXPORTERS)}"
         )
     return exporter_fn(world, artifact_store)
+
+
+#: game-ready profile names (multi-file bundles, content is ``{filename: bytes}``); see exporters/profiles.py
+EXPORT_PROFILES = frozenset(PROFILES)
+
+
+def export_profile(world: WorldIR, name: str, artifact_store: Optional[ArtifactStore] = None):
+    """WorldIR -> ({filename: bytes}, ExportReport) for a game-ready profile (currently "godot": world.glb +
+    manifest.json + scene.tscn). Raises UnknownProfileError (a ValueError) for any other name."""
+    return _export_profile(world, name, artifact_store)

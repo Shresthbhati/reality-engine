@@ -1598,3 +1598,108 @@ def test_cancel_terminal_job_409(client):
     assert terminal["status"] == "failed"
     r = client.post(f"/api/jobs/{job_id}/cancel")
     assert r.status_code == 409, r.text
+
+
+# --- C1: stored specs + scoped regeneration ---------------------------------
+
+def _entities(client, wid):
+    return client.get(f"/api/worlds/{wid}/worldir").json()
+
+
+def _two_rooms_hall(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body("A")).status_code == 201
+    assert client.post(f"/api/worlds/{wid}/rooms",
+                       json=dict(_room_body("B"), origin=[30.0, 0.0, 0.0])).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/corridors", json={
+        "name": "Hall", "length": 6.0, "attach": {"to": "A-room", "side": "east"}})
+    assert r.status_code == 201, r.text
+    return wid
+
+
+def test_put_room_is_scoped_and_attached_corridor_follows(client, tmp_path, monkeypatch):
+    import json as _json
+
+    wid = _two_rooms_hall(client, tmp_path, monkeypatch)
+    gen = client.get(f"/api/worlds/{wid}/generated").json()
+    hall = next(g for g in gen if g["entity_id"] == "Hall-corridor")
+    assert hall["attach"] == {"to": "A-room", "side": "east"}
+    assert hall["depends_on"] == ["A-room"]
+    before = _entities(client, wid)
+    r = client.put(f"/api/worlds/{wid}/rooms/A", json={"width": 9.0})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["changed"] > 0 and body["unchanged"] > 0 and body["removed"] == 0
+    assert "A-floor" in body["entity_ids_changed"] and "Hall-floor" in body["entity_ids_changed"]
+    after = _entities(client, wid)
+    b_ids = [e for e, v in before["entities"].items()
+             if v["custom_properties"].get("generated_by") == "B-room"]
+    assert b_ids
+    for eid in b_ids:  # (a) B byte-identical
+        assert _json.dumps(before["entities"][eid], sort_keys=True) == \
+            _json.dumps(after["entities"][eid], sort_keys=True)
+    # (b) corridor x-min == A's new x-max
+    a_max = after["geometries"]["geom-A-floor"]["bounds_max"]["x"]
+    assert a_max == 9.0
+    assert after["geometries"]["geom-Hall-floor"]["bounds_min"]["x"] == a_max
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 4
+
+
+def test_put_unchanged_is_deterministic_and_dedups(client, tmp_path, monkeypatch):
+    wid = _two_rooms_hall(client, tmp_path, monkeypatch)
+    head = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    r = client.put(f"/api/worlds/{wid}/rooms/A", json={"width": 4.0})  # unchanged
+    assert r.status_code == 200 and r.json()["changed"] == 0
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    assert len(items) == len(head)
+    assert r.json()["version_id"] == next(i for i in items if i["is_current"])["id"]
+
+
+def test_duplicate_name_post_is_409(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body("A")).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/rooms", json=_room_body("A", width=7.0))
+    assert r.status_code == 409, r.text
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 1
+
+
+def test_delete_blocked_by_dependents_then_cascade(client, tmp_path, monkeypatch):
+    wid = _two_rooms_hall(client, tmp_path, monkeypatch)
+    r = client.delete(f"/api/worlds/{wid}/rooms/A")
+    assert r.status_code == 409 and "Hall" in r.text
+    assert "A-room" in _entities(client, wid)["entities"]
+    r = client.delete(f"/api/worlds/{wid}/rooms/A?cascade=true")
+    assert r.status_code == 200, r.text
+    ents = _entities(client, wid)
+    assert not {"A-room", "A-floor", "Hall-corridor", "Hall-floor"} & set(ents["entities"])
+    assert "geom-A-floor" not in ents["geometries"] and "B-room" in ents["entities"]
+    assert client.delete(f"/api/worlds/{wid}/rooms/Nope").status_code == 404
+
+
+def test_put_legacy_room_without_spec_is_409_not_crash(client, tmp_path, monkeypatch):
+    from procedural import spec_store
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body("Old")).status_code == 201
+    # Simulate a world created before specs were stored.
+    monkeypatch.setattr(spec_store, "load_specs", lambda world: {})
+    r = client.put(f"/api/worlds/{wid}/rooms/Old", json={"width": 5.0})
+    assert r.status_code == 409 and "before specs were stored" in r.text
+    assert client.put(f"/api/worlds/{wid}/rooms/Missing", json={"width": 5.0}).status_code == 404
+    assert client.delete(f"/api/worlds/{wid}/rooms/Old").status_code == 409
+
+
+def test_put_rejects_nan_inf_negative_and_unknown_fields(client, tmp_path, monkeypatch):
+    wid = _two_rooms_hall(client, tmp_path, monkeypatch)
+    n = len(client.get(f"/api/worlds/{wid}/versions").json()["items"])
+    for raw in ('{"width": NaN}', '{"depth": Infinity}', '{"height": -1}',
+                '{"width": 0}', '{"bogus": 1}'):
+        r = client.put(f"/api/worlds/{wid}/rooms/A", content=raw.encode(),
+                       headers={"Content-Type": "application/json"})
+        assert r.status_code == 422, (raw, r.status_code, r.text[:200])
+    r = client.put(f"/api/worlds/{wid}/corridors/Hall", json={"length": -3})
+    assert r.status_code == 422
+    r = client.put(f"/api/worlds/{wid}/corridors/Hall",
+                   json={"attach": {"to": "Hall-corridor", "side": "east"}})
+    assert r.status_code == 422
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == n

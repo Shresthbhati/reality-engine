@@ -134,6 +134,17 @@ def test_sdk_export_rejects_unknown_format_explicitly():
         reality.export(world, "fbx")
 
 
+def test_sdk_export_profile_godot_and_unknown():
+    from procedural.room_grammar import RoomGrammarSpec, generate_room
+
+    world = generate_room(RoomGrammarSpec("r", 4, 5, 2.8))
+    files, report = reality.export_profile(world, "godot")
+    assert set(files) == {"world.glb", "manifest.json", "scene.tscn"} and files["world.glb"][:4] == b"glTF"
+    assert report.format == "godot"
+    with pytest.raises(ValueError, match="unknown export profile"):
+        reality.export_profile(world, "nope")
+
+
 def test_sdk_compile_raises_typed_error_on_empty_evidence():
     empty = ReconstructionResult(points=[], camera_poses=[], registration_status="success")
     with pytest.raises(reality.CompileInputError):

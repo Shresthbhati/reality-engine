@@ -15,12 +15,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.models import ActivityEvent, World, new_id
 from procedural.room_grammar import RoomGrammarSpec, WallOpening
-from procedural import spec_store
+from procedural import layout_solver, spec_store
 from procedural.urban_grammar import CityGrammarSpec, CorridorGrammarSpec
 from world_ir.world_v1 import WorldIR
 
@@ -257,6 +258,105 @@ def _city_spec(body: CityIn) -> spec_store.GeneratedSpec:
         seed=body.seed, origin=list(body.origin))
 
 
+# ---------------------------------------------------------------------------
+# Apartments (C3): constraint-solved room layouts
+# ---------------------------------------------------------------------------
+
+
+class ApartmentRoomIn(BaseModel):
+    id: str
+    kind: str
+    min_area: float
+    max_area: float
+    aspect_max: float = 2.0
+
+
+class ApartmentIn(BaseModel):
+    name: str
+    rooms: list[ApartmentRoomIn]
+    entrance: str
+    footprint: Optional[tuple[float, float]] = None
+    adjacency: list[tuple[str, str, str]] = []
+    seed: int = 0
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+class ApartmentSolveIn(ApartmentIn):
+    max_alternatives: int = 3
+
+
+class ApartmentCommitIn(ApartmentIn):
+    """Pick a plan by index (re-solved server-side) or post its rects."""
+    plan_index: Optional[int] = None
+    rects: Optional[dict[str, tuple[float, float, float, float]]] = None
+
+
+def _apartment_spec(body: ApartmentIn) -> layout_solver.ApartmentSpec:
+    import math
+
+    if any(not math.isfinite(v) for v in body.origin):
+        raise HTTPException(422, "origin must be finite (no NaN/infinity)")
+    try:
+        return layout_solver.ApartmentSpec(
+            name=body.name, rooms=[r.model_dump() for r in body.rooms],
+            entrance=body.entrance, footprint=body.footprint,
+            adjacency=[tuple(a) for a in body.adjacency], seed=body.seed)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@procedural.post("/apartments/solve")
+async def solve_apartment(
+    world_id: str, body: ApartmentSolveIn, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Candidate layouts for a spec. Read-only: nothing is committed."""
+    if await db.get(World, world_id) is None:
+        raise HTTPException(404, "World not found")
+    spec = _apartment_spec(body)
+    try:
+        result = await run_in_threadpool(
+            layout_solver.solve_layout, spec, body.max_alternatives)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return result.to_dict()
+
+
+@procedural.post("/apartments", status_code=201)
+async def create_apartment(
+    world_id: str, body: ApartmentCommitIn, db: AsyncSession = Depends(get_db)
+) -> dict:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    spec = _apartment_spec(body)
+    if body.rects is not None:
+        problems = layout_solver.validate_plan(spec, body.rects)
+        if problems:
+            raise HTTPException(422, "plan does not satisfy the apartment spec: "
+                                     + "; ".join(problems))
+        rects, index = body.rects, body.plan_index or 0
+    else:
+        index = body.plan_index or 0
+        if not 0 <= index < 10:
+            raise HTTPException(422, "plan_index must be in 0..9")
+        result = await run_in_threadpool(layout_solver.solve_layout, spec, index + 1)
+        if not result.ok:
+            raise HTTPException(422, "no valid apartment layout: "
+                                     + "; ".join(result.violations))
+        if index >= len(result.plans):
+            raise HTTPException(422, f"plan_index {index} out of range: the solver found "
+                                     f"{len(result.plans)} distinct plan(s)")
+        rects = result.plans[index].rects
+    params = spec.to_dict()
+    params.pop("name")
+    params["rects"] = {k: [float(v) for v in r] for k, r in rects.items()}
+    params["plan_index"] = index
+    gspec = spec_store.GeneratedSpec("apartment", spec.name, params=params, seed=spec.seed,
+                                     origin=list(body.origin))
+    result = await _create(db, w, world_id, gspec)
+    return {**result, "apartment_entity_id": gspec.entity_id}
+
+
 _BUILDERS = {
     "room": (RoomIn, _room_spec),
     "corridor": (CorridorIn, _corridor_spec),
@@ -264,11 +364,16 @@ _BUILDERS = {
 }
 
 
-def _name_in_use(world: Optional[WorldIR], name: str) -> bool:
+def _name_in_use(world: Optional[WorldIR], name: str, kind: str = "") -> bool:
     if world is None:
         return False
     taken = {s.name for s in spec_store.load_specs(world).values()}
-    legacy = {f"{name}-room", f"{name}-corridor", f"{name}-city", f"{name}-floor"}
+    legacy = {f"{name}-room", f"{name}-corridor", f"{name}-city", f"{name}-floor",
+              f"{name}-apartment"}
+    if kind == "apartment":
+        # an apartment namespaces every id as "{name}-..."; refuse any collision
+        if any(eid.startswith(f"{name}-") for eid in world.entities):
+            return True
     return name in taken or bool(legacy & set(world.entities))
 
 
@@ -278,7 +383,7 @@ async def _create(db, w, world_id, spec: spec_store.GeneratedSpec) -> dict:
         if (old is not None and old.kind == spec.kind and old.params == spec.params
                 and old.attach == spec.attach and (spec.attach or old.origin == spec.origin)):
             return current  # byte-identical resubmit: idempotent, commit dedups
-        if _name_in_use(current, spec.name):
+        if _name_in_use(current, spec.name, spec.kind):
             raise HTTPException(
                 409, f"a generated object named {spec.name!r} already exists; "
                      "PUT to edit it or DELETE it first")

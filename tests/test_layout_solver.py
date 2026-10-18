@@ -181,3 +181,45 @@ def test_spec_validation_numbers_and_counts():
     with pytest.raises(ValueError):
         ApartmentSpec(name="x", rooms=dup, entrance="r")
     assert math.isfinite(solve_layout(two_bed_spec()).plans[0].score)
+
+
+# ---- hub-style brief (coordinator's live case) ------------------------------
+
+def hub_brief(seed, hall_aspect):
+    def r(i, k, a, b, **kw):
+        return dict(id=i, kind=k, min_area=a, max_area=b, **kw)
+    return ApartmentSpec(
+        name="hub", footprint=(10.0, 8.0), seed=seed, entrance="hall",
+        rooms=[r("living", "living", 16, 28), r("kitchen", "kitchen", 8, 14),
+               r("bed1", "bedroom", 10, 16), r("bed2", "bedroom", 9, 14),
+               r("bath", "bathroom", 4, 7), r("hall", "hallway", 5, 12, aspect_max=hall_aspect)],
+        adjacency=[("hall", "living", "required"), ("hall", "bed1", "required"),
+                   ("hall", "bed2", "required"), ("hall", "bath", "required"),
+                   ("living", "kitchen", "required")])
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_hub_brief_solves_for_every_seed_fast(seed):
+    spec = hub_brief(seed, 3.0)
+    t0 = time.perf_counter()
+    res = solve_layout(spec)
+    assert time.perf_counter() - t0 < 2.0
+    assert res.ok, res.violations
+    for plan in res.plans:
+        assert validate_plan(spec, plan.rects) == []
+        assert len(plan.satisfied) == 5 and plan.unsatisfied == []
+
+
+def test_spine_candidates_exist_for_hallway_briefs_and_are_deterministic():
+    from procedural.layout_solver import _Ctx, _spine_trees
+    import random
+    ctx = _Ctx(hub_brief(0, 3.0), 100, 80)
+    a = _spine_trees(ctx, random.Random(0))
+    b = _spine_trees(ctx, random.Random(0))
+    assert a and a == b
+
+
+def test_hub_brief_with_default_hall_aspect_stays_honestly_infeasible():
+    res = solve_layout(hub_brief(0, 2.0))
+    assert not res.ok and res.plans == []
+    assert any("'hall'" in v and "aspect_max" in v for v in res.violations), res.violations

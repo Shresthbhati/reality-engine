@@ -1816,3 +1816,36 @@ def test_apartment_rejects_bad_input(client, tmp_path, monkeypatch):
     infeasible = dict(base, footprint=[3.0, 3.0])
     assert client.post(f"/api/worlds/{wid}/apartments", json=infeasible).status_code == 422
     assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+
+
+def _hub_body(hall_aspect, name="hubflat", seed=3):
+    return {
+        "name": name, "footprint": [10.0, 8.0], "entrance": "hall", "seed": seed,
+        "rooms": [
+            {"id": "living", "kind": "living", "min_area": 16, "max_area": 28},
+            {"id": "kitchen", "kind": "kitchen", "min_area": 8, "max_area": 14},
+            {"id": "bed1", "kind": "bedroom", "min_area": 10, "max_area": 16},
+            {"id": "bed2", "kind": "bedroom", "min_area": 9, "max_area": 14},
+            {"id": "bath", "kind": "bathroom", "min_area": 4, "max_area": 7},
+            {"id": "hall", "kind": "hallway", "min_area": 5, "max_area": 12,
+             "aspect_max": hall_aspect},
+        ],
+        "adjacency": [["hall", "living", "required"], ["hall", "bed1", "required"],
+                      ["hall", "bed2", "required"], ["hall", "bath", "required"],
+                      ["living", "kitchen", "required"]],
+    }
+
+
+def test_apartment_hub_brief_solve_then_commit(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/apartments/solve", json=_hub_body(3.0))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["plans"]
+    assert len(body["plans"][0]["satisfied"]) == 5 and body["plans"][0]["unsatisfied"] == []
+    c = client.post(f"/api/worlds/{wid}/apartments", json={**_hub_body(3.0), "plan_index": 0})
+    assert c.status_code == 201, c.text
+    # default hall aspect_max (2.0): honest ok=False naming the pair and the cause
+    r2 = client.post(f"/api/worlds/{wid}/apartments/solve", json=_hub_body(2.0, name="hub2"))
+    assert r2.status_code == 200 and r2.json()["ok"] is False
+    assert any("aspect_max" in v for v in r2.json()["violations"])

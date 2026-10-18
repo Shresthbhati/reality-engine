@@ -318,7 +318,9 @@ def _layout(ctx: _Ctx, tree, perm: list) -> Optional[List[_IRect]]:
         r1, r2 = sum(rng_[i] for i in L), sum(rng_[i] for i in R)
         share = 0.5 if r1 + r2 == 0 else r1 / (r1 + r2)
         target = mn1 + (A - mn1 - mn2) * share
-        along_w = (w >= d) != flip            # True: vertical cut splitting the width
+        # flip: bool (False = cut across the longer side) or a forced 'v'/'h'
+        # (spine candidates); True: vertical cut splitting the width
+        along_w = (flip == "v") if isinstance(flip, str) else ((w >= d) != flip)
         length, other = (w, d) if along_w else (d, w)
         lmin = max(math.ceil(lo / other), MIN_SIDE_DM)
         lmax = min(math.floor(hi / other), length - MIN_SIDE_DM)
@@ -388,6 +390,12 @@ def _search(ctx: _Ctx, seed: int):
             best_partial[0] = (req_met, obj, rects)
         return key
 
+    ident = list(range(n))
+    for tree in _spine_trees(ctx, rng):
+        key = consider(tree, ident)
+        if key is not None:
+            states.append((key, -1, tree, list(ident)))
+
     for t in range(RANDOM_TRIALS):
         tree = _random_tree(list(range(n)), rng)
         perm = list(range(n))
@@ -416,6 +424,104 @@ def _search(ctx: _Ctx, seed: int):
     return full, best_partial[0]
 
 
+def _stack(rooms: list, cut: str):
+    """Rooms laid end to end with forced `cut` ('h' stacks, 'v' side by side)."""
+    return rooms[0] if len(rooms) == 1 else (cut, rooms[0], _stack(rooms[1:], cut))
+
+
+def _spine_trees(ctx: _Ctx, rng: random.Random) -> list:
+    """Structured seeds for hub-style briefs: a hallway-kind room as a
+    full-length strip (either direction; centred or on one side) with the
+    other rooms stacked in the one or two columns beside it. Rooms that must
+    touch each other stay consecutive in a column; groups go to a side by
+    area balance. Only seeds: every one still passes the normal hard checks."""
+    n = ctx.n
+    hall = next((i for i, r in enumerate(ctx.spec.rooms) if r.kind == "hallway"), None)
+    if hall is None or n < 3:
+        return []
+    others = [i for i in range(n) if i != hall]
+    link = {i: set() for i in others}
+    for a, b, lvl in ctx.adj:
+        if lvl == "required" and hall not in (a, b):
+            link[a].add(b)
+            link[b].add(a)
+    groups, seen = [], set()
+    for i in others:
+        if i in seen:
+            continue
+        comp, stack = [], [i]
+        while stack:
+            c = stack.pop()
+            if c not in seen:
+                seen.add(c)
+                comp.append(c)
+                stack.extend(sorted(link[c], reverse=True))
+        # path order: start at an endpoint, walk along required links
+        start = min(comp, key=lambda c: (len(link[c]), c))
+        order, vis = [], set()
+        stack = [start]
+        while stack:
+            c = stack.pop()
+            if c not in vis:
+                vis.add(c)
+                order.append(c)
+                stack.extend(sorted(link[c] - vis, reverse=True))
+        groups.append(order)
+    size = [sum((ctx.mins[i] + ctx.maxs[i]) / 2 for i in g) for g in groups]
+    g = len(groups)
+    masks = (range(1 << g) if g <= 10 else [(1 << g) - 1])
+    ranked = sorted(masks, key=lambda m: (abs(sum(s if m >> k & 1 else -s
+                                                  for k, s in enumerate(size))), m))[:4]
+    trees = []
+    for strip, cross in (("v", "h"), ("h", "v")):
+        def column(gs: list, cross=cross):
+            return _stack([r for grp in gs for r in grp], cross)
+
+        for mask in ranked:
+            left = [groups[k] for k in range(g) if mask >> k & 1]
+            right = [groups[k] for k in range(g) if not mask >> k & 1]
+            for _variant in range(3):
+                if _variant:
+                    rng.shuffle(left)
+                    rng.shuffle(right)
+                if left and right:
+                    trees.append((strip, column(left), (strip, hall, column(right))))
+                elif left or right:
+                    col = column(left or right)
+                    trees.append((strip, hall, col))
+                    trees.append((strip, col, hall))
+        # "head" hall: a compact hall at one end of the middle column, with
+        # side columns on both flanks (for halls whose aspect_max forbids a
+        # full-length strip). Groups are dealt into left / middle / right.
+        if 1 <= g <= 7:
+            weight = lambda gs: sum(size[k] for k in gs)
+            deals = []
+            for code in range(3 ** g):
+                buckets, c = ([], [], []), code
+                for k in range(g):
+                    buckets[c % 3].append(k)
+                    c //= 3
+                if not buckets[1]:
+                    continue
+                w = [weight(b) for b in buckets]
+                deals.append((max(w) - min(x for x, b in zip(w, buckets) if b), code, buckets))
+            deals.sort(key=lambda d: (d[0], d[1]))
+            for _imb, _code, (a, m, b) in deals[:6]:
+                mid = [r for k in m for r in groups[k]]
+                for hall_first in (True, False):
+                    middle = (_stack([hall] + mid, cross) if hall_first
+                              else _stack(mid + [hall], cross))
+                    parts = [column([groups[k] for k in a])] if a else []
+                    parts.append(middle)
+                    if b:
+                        parts.append(column([groups[k] for k in b]))
+                    tree = parts[-1]
+                    for p in reversed(parts[:-1]):
+                        tree = (strip, p, tree)
+                    trees.append(tree)
+    return trees
+
+
 def _toggle(node, which: int):
     """Flip the cut orientation of the `which`-th internal node (pre-order)."""
     counter = [which]
@@ -426,7 +532,7 @@ def _toggle(node, which: int):
         flip, l, r = nd
         if counter[0] == 0:
             counter[0] -= 1
-            return (not flip, l, r)
+            return (("h" if flip == "v" else "v") if isinstance(flip, str) else not flip, l, r)
         counter[0] -= 1
         l2 = rec(l)
         return (flip, l2, rec(r))
@@ -465,6 +571,16 @@ def _analytic_violations(spec: ApartmentSpec, W: int, D: int) -> List[str]:
     return out
 
 
+def _aspect_hint(spec: ApartmentSpec, pair: tuple) -> str:
+    """Hub rooms (hallway) with a tight aspect_max cannot become the long strip
+    that touches many neighbours; say so instead of leaving the user guessing."""
+    tight = [r.id for r in spec.rooms
+             if r.id in pair and r.kind == "hallway" and r.aspect_max < 3.0]
+    return (f"; hallway {tight[0]!r} has aspect_max {spec.rooms[[r.id for r in spec.rooms].index(tight[0])].aspect_max:g}"
+            " which forbids a long corridor shape -- raise it (e.g. 4-6) if it must touch many rooms"
+            if tight else "")
+
+
 def solve_layout(spec: ApartmentSpec, max_alternatives: int = 3) -> LayoutResult:
     if not isinstance(max_alternatives, int) or isinstance(max_alternatives, bool) \
             or not 1 <= max_alternatives <= 10:
@@ -495,6 +611,7 @@ def solve_layout(spec: ApartmentSpec, max_alternatives: int = 3) -> LayoutResult
     violations = [
         f"required adjacency '{a}'-'{b}' could not be satisfied (>= 0.9 m shared wall) "
         f"in any layout found (best attempt met {partial[0]} of {n_req} required)"
+        + _aspect_hint(spec, (a, b))
         for a, b, _lvl in plan.unsatisfied_required]
     return LayoutResult(False, [], violations, spec.seed, fp)
 

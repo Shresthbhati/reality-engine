@@ -18,6 +18,7 @@ import {
 import {
   WorldSceneController,
   type ViewportLayers,
+  type RenderMode,
   type ViewPreset,
   type MeasurementResult,
   type ViewportStatistics,
@@ -76,7 +77,10 @@ export default function World3DViewport({
     uncertainty: false,
     walls: true,
     topology: true,
+    shell: true,
   });
+  const [renderMode, setRenderModeState] = useState<RenderMode>("solid");
+  const [hasShell, setHasShell] = useState(false);
 
   const [gridVisible, setGridVisible] = useState(true);
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -142,6 +146,8 @@ export default function World3DViewport({
     if (world) {
       controller.loadWorldData(world, points, cameras, mesh);
       setStats(controller.getStatistics());
+      setHasShell(controller.hasShell());
+      setRenderModeState(controller.getRenderMode());
     }
   }, [world, points, cameras, mesh]);
 
@@ -464,6 +470,34 @@ export default function World3DViewport({
 
       {/* Floating Viewport HUD: Top Right Toolbar Controls */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 pointer-events-auto">
+        {/* Render mode: coloured surfaces / wireframe / both (only when a measured room shell exists) */}
+        {hasShell && (
+          <div
+            role="group"
+            aria-label="Room render mode"
+            className="flex items-center gap-1 p-1 rounded-md backdrop-blur-md"
+            style={{ background: "rgba(10,20,36, 0.85)", border: "1px solid var(--border)" }}
+          >
+            {([["solid", "Coloured"], ["wireframe", "Wireframe"], ["both", "Both"]] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                data-testid={`render-mode-${mode}`}
+                aria-pressed={renderMode === mode}
+                onClick={() => {
+                  setRenderModeState(mode);
+                  controllerRef.current?.setRenderMode(mode);
+                }}
+                className={`px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
+                  renderMode === mode ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Layer Visibility Toggles */}
         <div
           className="flex items-center gap-1 p-1 rounded-md backdrop-blur-md"

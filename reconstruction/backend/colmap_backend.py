@@ -194,6 +194,7 @@ def _parse_points3d_txt(text: str, image_id_to_evidence_id: Dict[str, str]) -> L
             track_id=point_id,
             source_evidence_ids=source_evidence_ids,
             uncertainty=Uncertainty(confidence=_confidence_from_reprojection_error(error)),
+            color=(int(parts[4]), int(parts[5]), int(parts[6])),
         ))
     return points
 

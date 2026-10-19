@@ -102,6 +102,8 @@ class InteriorSceneResult:
     #: why the storey layer was skipped (absence = it ran)
     storeys_skipped: str = ""
     validation_issues: List[str] = field(default_factory=list)
+    #: room_semantics.refine_interior_semantics accounting (footprints, ceiling layers, furniture)
+    semantics: Dict = field(default_factory=dict)
 
     def summary_text(self) -> str:
         lines = [
@@ -416,6 +418,13 @@ def assemble_interior_scene(
                 "room boundary entities not all promoted -- room/storey "
                 "layer skipped (recorded, not guessed)"
             )
+
+    # ---- stage 7: true footprint, ceiling layers, furniture, colour (room_semantics) ----
+    from perception.architecture.room_semantics import refine_interior_semantics
+    try:
+        res.semantics = refine_interior_semantics(world, result, oriented, positions, up)
+    except Exception as exc:  # noqa: BLE001 -- recorded, the structural world stands
+        res.semantics = {"warnings": [f"room semantics failed: {type(exc).__name__}: {exc}"]}
 
     # ---- validation ----
     report = validate_world_ir(world)

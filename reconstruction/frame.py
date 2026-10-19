@@ -191,6 +191,7 @@ def _rotate_result(result: ReconstructionResult, R: np.ndarray) -> Reconstructio
             track_id=p.track_id,
             source_evidence_ids=p.source_evidence_ids,
             uncertainty=p.uncertainty,
+            color=p.color,
         )
         for p in sorted(result.points, key=lambda p: p.track_id)
     ]

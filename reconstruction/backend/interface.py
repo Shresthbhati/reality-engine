@@ -24,6 +24,8 @@ class ReconstructedPoint:
     track_id: str
     source_evidence_ids: List[str]
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
+    #: Observed RGB (0-255) the backend measured for this point (COLMAP points3D.txt); None = none recorded.
+    color: Optional[tuple] = None
 
 
 @dataclass(frozen=True)

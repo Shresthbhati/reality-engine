@@ -622,12 +622,23 @@ def compile_reconstruction_to_world(
                     bounds_min=Vector3(c_bmin[0], c_bmin[1], c_bmin[2]),
                     bounds_max=Vector3(c_bmax[0], c_bmax[1], c_bmax[2]),
                 )
+                c_props = c.to_dict()
+                # A corridor can be detected over planes that were never promoted (demoted as undersized or left
+                # unclassified). Referencing them would leave dangling boundary ids the validator rightly rejects, so
+                # only promoted boundaries are listed; the rest are recorded, not hidden.
+                missing_boundary = [b for b in c_props.get("boundary_element_ids", []) if b not in world.entities]
+                if missing_boundary:
+                    c_props["boundary_element_ids"] = [b for b in c_props["boundary_element_ids"] if b in world.entities]
+                    c_props["unpromoted_boundary_element_ids"] = missing_boundary
+                    interior_warnings.append(
+                        f"corridor {cid}: {len(missing_boundary)} boundary plane(s) were not promoted and are not "
+                        f"listed as its boundary: {missing_boundary}")
                 c_ent = Entity(
                     id=cid,
                     type=EntityType.CORRIDOR,
                     name=f"Corridor {c.corridor_id.rsplit('-', 1)[-1]}",
                     geometry_ids=[c_geom_id],
-                    custom_properties=c.to_dict(),
+                    custom_properties=c_props,
                     provenance=Provenance.INFERRED,
                     confidence=c.confidence,
                 )
@@ -730,6 +741,15 @@ def compile_reconstruction_to_world(
 
         space_graph = InteriorSpaceGraph.from_building(bld_graph, rg_rooms, corridors, detected_stairs)
         world.metadata["interior_space_graph"] = space_graph.to_dict()
+
+    # ---- true footprint, ceiling layers, furniture, colour (room_semantics) ----
+    try:
+        from perception.architecture.room_semantics import refine_interior_semantics
+        sem = refine_interior_semantics(world, result, oriented, positions, options.up,
+                                        structure_prefix=options.structure_prefix)
+        interior_warnings.extend(f"room semantics: {w}" for w in sem.get("warnings", []))
+    except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
+        interior_warnings.append(f"room semantics: {type(exc).__name__}: {exc}")
 
     # ---- provenance stamping on the world itself ----
     # The world as a whole is derived from reconstruction; its

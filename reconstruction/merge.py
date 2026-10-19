@@ -87,6 +87,7 @@ def _apply_transform_to_result(
             track_id=point.track_id,
             source_evidence_ids=point.source_evidence_ids,
             uncertainty=point.uncertainty,
+            color=point.color,
         ))
 
     return ReconstructionResult(

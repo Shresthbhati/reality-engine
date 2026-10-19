@@ -436,3 +436,10 @@ DESIGN_DECISIONS "The working prototype is judged by the core loop". Verificatio
 | PT-07 | 3DCityDB availability AVAILABLE / UNAVAILABLE / FAILED (P14-01) | DONE (probe); real database verification EXTERNAL | `exporters/citydb.probe_citydb`. |
 | PT-08 | Studio shows the ten change categories and how a version was built | DONE | `ReconstructionStatusBar` (`change-counts`, `how-built`); `frontend/src/lib/api/reconstruction-decision.ts`; contract tests. |
 | PT-09 | Canonical demo journey | DONE | `scripts/demo_journey.py`, `tests/integration/test_demo_journey.py`; measured metrics recorded, nothing hard-coded. |
+
+## P0.12 — Multi-view scene identity and unified reconstruction — EXPERIMENTAL
+Verified-correspondence scene grouping, registration diagnostics with explicit outcomes, bounded measured self-correction
+and a persistent scene registry are implemented and integrated into the reconstruct job (`reconstruction/scene_identity.py`,
+`apps/api/jobs.py`). Verified on synthetic shared-scene imagery with real COLMAP. Open: real-photo threshold calibration,
+retrieval index beyond ~65 images, per-stage retry, separate-world creation for extra groups (product decision).
+Spec/evidence: `docs/implementation/SCENE_IDENTITY.md`.

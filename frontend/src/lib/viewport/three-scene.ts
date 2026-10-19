@@ -11,6 +11,7 @@ import type {
 } from "@/types/worldir";
 import { pointsBounds, robustPointsBounds } from "./loaders";
 import { isOversizedEntity } from "./oversized";
+import { buildRoomShellParts, type ShellKind, type ShellPart } from "./room-shell-model";
 import { shouldAutoFrame } from "./autoframe";
 import type { MeasureKind, Vec3 } from "./measure-model";
 
@@ -23,7 +24,11 @@ export interface ViewportLayers {
   uncertainty: boolean;
   walls: boolean;
   topology: boolean;
+  /** the real room shell (floor, walls with window openings, ceiling layers, furniture) built from measured WorldIR */
+  shell: boolean;
 }
+
+export type RenderMode = "solid" | "wireframe" | "both";
 
 export type ViewPreset = "isometric" | "top" | "front" | "side";
 
@@ -104,7 +109,13 @@ export class WorldSceneController {
     mesh: null as THREE.Mesh | null,
     selectionOutline: null as THREE.LineSegments | null,
     topology: null as THREE.Group | null,
+    shell: null as THREE.Group | null,
   };
+
+  private shellParts: ShellPart[] = [];
+  private shellSolid: THREE.Object3D[] = [];
+  private shellWire: THREE.Object3D[] = [];
+  private renderMode: RenderMode = "solid";
 
   private entityMeshes = new Map<string, THREE.Mesh>();
   private selectedEntityId: string | null = null;
@@ -136,6 +147,7 @@ export class WorldSceneController {
     uncertainty: false,
     walls: true,
     topology: true,
+    shell: true,
   };
 
   private onSelectCallback?: (id: string | null) => void;
@@ -496,6 +508,18 @@ export class WorldSceneController {
       this.entityMeshes.clear();
       this.layers.entities = null;
     }
+    if (this.layers.shell) {
+      this.scene.remove(this.layers.shell);
+      this.layers.shell.traverse((child) => {
+        if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+          child.geometry.dispose();
+          (child.material as THREE.Material).dispose();
+        }
+      });
+      this.layers.shell = null;
+      this.shellSolid = [];
+      this.shellWire = [];
+    }
     if (this.layers.cameras) {
       this.scene.remove(this.layers.cameras);
       this.layers.cameras.traverse((child) => {
@@ -604,6 +628,10 @@ export class WorldSceneController {
       this.renderedPointsCount = 0;
     }
 
+    // 1.5 Real room shell from measured interior semantics (replaces the faint per-entity boxes where it applies)
+    this.shellParts = buildRoomShellParts(this.world);
+    this.buildShell();
+
     // 2. Build Entities
     if (this.world && this.world.entities) {
       this.layers.entities = new THREE.Group();
@@ -664,6 +692,7 @@ export class WorldSceneController {
           (mn[2] + mx[2]) / 2
         );
         mesh.userData = {
+          coveredByShell: this.isCoveredByShell(e),
           entityId: e.id,
           entityType: e.type.toLowerCase(),
           confidence: conf,
@@ -798,6 +827,65 @@ export class WorldSceneController {
     }
   }
 
+  private isCoveredByShell(e: { type: string; semantic_labels?: string[] }): boolean {
+    if (!this.shellParts.length) return false;
+    return ["room", "wall", "floor", "ceiling", "window"].includes(e.type) ||
+      (e.semantic_labels ?? []).includes("furniture_candidate");
+  }
+
+  private buildShell() {
+    this.shellSolid = [];
+    this.shellWire = [];
+    if (!this.shellParts.length) return;
+    const group = new THREE.Group();
+    const WIRE: Record<ShellKind, number> = {
+      floor: 0x9ad1ff, wall: 0x7fd6ff, ceiling: 0xcfe9ff, false_ceiling: 0xfff0b3, ceiling_step: 0xffd27f,
+      window_glass: 0x66ccff, window_frame: 0xffffff, furniture: 0xffb36b,
+    };
+    for (const part of this.shellParts) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(part.positions, 3));
+      geo.setIndex(part.indices);
+      geo.computeVertexNormals();
+      const color = new THREE.Color(part.color[0] / 255, part.color[1] / 255, part.color[2] / 255).convertSRGBToLinear();
+      const solid = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+        color, side: THREE.DoubleSide, transparent: part.opacity < 1, opacity: part.opacity,
+        depthWrite: part.opacity >= 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      }));
+      solid.userData = { entityId: part.entityId, shellKind: part.kind };
+      const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), new THREE.LineBasicMaterial({
+        color: WIRE[part.kind], transparent: part.kind === "window_glass", opacity: part.kind === "window_glass" ? 0.8 : 1,
+      }));
+      wire.userData = { entityId: part.entityId, shellKind: part.kind };
+      group.add(solid, wire);
+      this.shellSolid.push(solid);
+      this.shellWire.push(wire);
+    }
+    group.visible = this.layerVisibility.shell;
+    this.layers.shell = group;
+    this.scene.add(group);
+    this.applyRenderMode();
+  }
+
+  private applyRenderMode() {
+    // solid = coloured surfaces only; wireframe = edges only; both = surfaces with edge overlay
+    this.shellSolid.forEach((o) => { o.visible = this.renderMode !== "wireframe"; });
+    this.shellWire.forEach((o) => { o.visible = this.renderMode !== "solid"; });
+  }
+
+  public setRenderMode(mode: RenderMode) {
+    this.renderMode = mode;
+    this.applyRenderMode();
+  }
+
+  public getRenderMode(): RenderMode {
+    return this.renderMode;
+  }
+
+  public hasShell(): boolean {
+    return this.shellParts.length > 0;
+  }
+
   public setLayerVisibility(layers: Partial<ViewportLayers>) {
     this.layerVisibility = { ...this.layerVisibility, ...layers };
 
@@ -809,6 +897,9 @@ export class WorldSceneController {
     }
     this.updateMeshVisibilities();
 
+    if (this.layers.shell) {
+      this.layers.shell.visible = this.layerVisibility.shell;
+    }
     if (this.layers.cameras) {
       this.layers.cameras.visible = this.layerVisibility.cameras;
     }
@@ -936,6 +1027,14 @@ export class WorldSceneController {
       const mat = mesh.material as THREE.MeshLambertMaterial;
 
       const matchesLevel = this.isEntityOnActiveLevel(eid);
+
+      if (mesh.userData.coveredByShell && this.layers.shell) {
+        // the shell draws this entity; keep the box only as an invisible picking proxy
+        mesh.visible = true;
+        mat.visible = false;
+        mesh.children.forEach((c) => { c.visible = false; });
+        continue;
+      }
 
       if (!this.layerVisibility.entities) {
         mesh.visible = false;

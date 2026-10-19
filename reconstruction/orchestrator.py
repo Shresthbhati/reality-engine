@@ -438,6 +438,7 @@ class ReconstructionOrchestrator:
                 track_id=p.track_id,
                 source_evidence_ids=list(p.source_evidence_ids),
                 uncertainty=_stamp(p.uncertainty),
+                color=p.color,
             )
             for p in result.points
         ]

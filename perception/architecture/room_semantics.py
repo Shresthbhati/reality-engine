@@ -256,17 +256,19 @@ def refine_interior_semantics(world, result, oriented, positions: Dict[str, list
                 ent.custom_properties["mean_color_rgb"] = col
 
     rooms = [e for e in world.entities.values() if e.type == EntityType.ROOM]
+    anchor_created = False
     if not rooms:
         # The structural chain can lose its room (e.g. topology promotion drops it when a boundary plane was never
         # promoted). The cloud still describes one space, so the semantics pass creates the room itself, from the
         # promoted wall/floor/ceiling entities, and says so.
+        # Only added to the world once the measurements succeed AND there is enclosure evidence (see below): an
+        # exterior scene must never be given a room.
         boundary = sorted(e.id for e in world.entities.values() if e.type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING))
         room = Entity(id="room-001", name="room 001", type=EntityType.ROOM, provenance=Provenance.INFERRED, confidence=0.5,
                       custom_properties={"boundary_element_ids": boundary,
                                          "created_by": "room_semantics: the structural chain produced no room entity"})
-        world.entities[room.id] = room
         rooms = [room]
-        report["warnings"].append("structural chain produced no room; room entity created from the point cloud")
+        anchor_created = True
     anchor = max(rooms, key=lambda r: float((r.custom_properties.get("floor_area_m2") or 0.0)))
     wall_planes = [(o.plane.plane_id, np.asarray(positions.get(o.plane.plane_id, []), float).reshape(-1, 3))
                    for o in oriented if o.role == "wall" and f"{structure_prefix}-{o.plane.plane_id}" in world.entities]
@@ -274,12 +276,12 @@ def refine_interior_semantics(world, result, oriented, positions: Dict[str, list
     # ---- floor height + footprint (floor-band points of the whole cloud) ----
     floor_h = _floor_height(HZ)
     if floor_h is None:
-        report["warnings"].append("no dominant floor height peak; interior not refined")
+        report["skipped"] = "not refined: no dominant floor height peak"   # nothing to refine (e.g. an exterior scene); not an error
         return done()
     band = np.abs(HZ - floor_h) < 0.06
     F = AB[band]
     if len(F) < 100:
-        report["warnings"].append(f"only {len(F)} floor-band points; interior not refined")
+        report["skipped"] = "not refined: too few floor-band points"   # nothing to refine (e.g. an exterior scene); not an error
         return done()
     cell = _cell_size(F)
     raster = _Raster(AB[(HZ - floor_h) < 3.5], cell)
@@ -294,7 +296,7 @@ def refine_interior_semantics(world, result, oriented, positions: Dict[str, list
     occ = raster.occupancy(np.vstack(occ_pts), close_m=0.4)
     n, lab, stats, _ = cv2.connectedComponentsWithStats(occ, connectivity=8)
     if n < 2:
-        report["warnings"].append("floor occupancy empty")
+        report["skipped"] = "not refined: floor occupancy empty"   # nothing to refine (e.g. an exterior scene); not an error
         return done()
     big = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
     comp = (lab == big).astype(np.uint8) * 255
@@ -408,6 +410,14 @@ def refine_interior_semantics(world, result, oriented, positions: Dict[str, list
             h = round(layers[0]["height"], 4)
         edge_heights.append(h)
     cp["footprint_edge_heights_m"] = edge_heights
+    if anchor_created:
+        n_walls = sum(1 for e in world.entities.values() if e.type == EntityType.WALL)
+        if not layers or n_walls < 3:
+            report["skipped"] = ("no room created: no enclosure evidence (needs a measured ceiling and >= 3 promoted walls); "
+                                 f"ceiling layers {len(layers)}, walls {n_walls}")
+            return done()
+        world.entities[anchor.id] = anchor
+        report["warnings"].append("structural chain produced no room; room entity created from the point cloud")
     top = max([h for h in edge_heights if h] + [l["height"] for l in layers] + [2.0])
     wxyz = np.asarray(cp["footprint_polygon_xyz_m"], float)
     lo = np.minimum(wxyz.min(axis=0), wxyz.min(axis=0) - 0.0)

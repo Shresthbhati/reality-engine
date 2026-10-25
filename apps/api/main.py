@@ -42,7 +42,11 @@ app.add_middleware(
 )
 
 # `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
+<<<<<<< HEAD
 for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, worlds, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, proposals_router):
+=======
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, worlds, procedural, templates_router, proposals_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant):
+>>>>>>> origin/main
     app.include_router(router)
 
 

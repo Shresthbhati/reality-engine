@@ -219,6 +219,10 @@ class WorldIR:
     # or mutated by WorldIR code).
     environment: dict = field(default_factory=dict)   # e.g. weather, lighting
     physics: dict = field(default_factory=dict)        # e.g. gravity, material props
+    # WorldIR 2.0 (P9-01, additive): the world's ordered event log. v1 worlds
+    # serialize without this key (empty history is omitted) and load with an
+    # empty history -- never a fabricated one.
+    temporal_history: TemporalHistory = field(default_factory=TemporalHistory)
 
     # WorldIR 2.0 (P9-01, additive): the world's ordered event log. Empty history is omitted on serialization and a
     # world without the key loads with an empty history -- never a fabricated one.
@@ -289,6 +293,9 @@ class WorldIR:
             "environment": self.environment,
             "physics": self.physics,
         }
+        if self.temporal_history.events:
+            d["temporal_history"] = self.temporal_history.to_dict()
+        return d
 
     @staticmethod
     def from_dict(data: dict) -> "WorldIR":
@@ -368,6 +375,11 @@ class WorldIR:
     def coordinate_system(self) -> Frame:
         """Backward-compatible alias for coordinate_frame (old world.py name)."""
         return self.coordinate_frame
+
+    def topology(self) -> TopologyGraph:
+        """Containment + connectivity DERIVED from the current entity
+        relationships -- computed on demand, never stale, never stored."""
+        return TopologyGraph.from_registry(list(self.entities.values()))
 
     def validate(self) -> list[str]:
         """Validate world consistency and return list of issues."""

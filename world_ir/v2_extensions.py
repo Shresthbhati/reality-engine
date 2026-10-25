@@ -38,8 +38,9 @@ PART_OF_KINDS = frozenset({"part_of"})
 
 #: Relationship kinds interpreted as connectivity seams: an entity
 #: (typically a wall/door/floor) adjoining two or more spaces makes
-#: those spaces neighbors.
-ADJACENCY_KINDS = frozenset({"adjoins", "connects"})
+#: those spaces neighbors. "adjacent_to" is the canonical schema_v1.RelationshipKind value (what the engine
+#: actually promotes); "adjoins" is the legacy spelling, still accepted for registries built with raw strings.
+ADJACENCY_KINDS = frozenset({"adjoins", "adjacent_to", "connects"})
 
 #: Accepted checksum shapes: "<algorithm>:<hex>" per the repo's
 #: artifact-store convention.

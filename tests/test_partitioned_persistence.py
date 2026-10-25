@@ -60,6 +60,27 @@ def test_partitioned_round_trip_preserves_unlocalized_entities(tmp_path):
     assert set(reloaded.entities) == set(world.entities)
 
 
+def test_partitioned_round_trip_preserves_geometry_no_entity_references(tmp_path):
+    """Regression: both `_serialize_tile_blob` (per-tile) and
+    `_serialize_residual_blob` (unlocalized entities) used to derive
+    their geometry set purely from some entity's `geometry_ids` -- a
+    geometry in `world.geometries` that no entity anywhere references
+    had no tile and wasn't in the unlocalized set either, so it was
+    silently dropped on save, even though `WorldStore.save_version()`
+    (the whole-world path) preserves it via `world.to_dict()` wholesale."""
+    from world_ir.schema_v1 import Geometry, GeometryType
+
+    store = WorldStore(tmp_path / "store")
+    world = _grid_world()
+    world.geometries["orphan-geom"] = Geometry(id="orphan-geom", type=GeometryType.MESH, vertex_count=9)
+    stored = save_version_partitioned(store, world, parent=None, tile_size=10.0)
+
+    reloaded = load_version_partitioned(store, stored.version_id)
+
+    assert "orphan-geom" in reloaded.geometries
+    assert reloaded.geometries["orphan-geom"].to_dict() == world.geometries["orphan-geom"].to_dict()
+
+
 def test_whole_world_versions_remain_readable_alongside_partitioned_ones(tmp_path):
     store = WorldStore(tmp_path / "store")
     world = _grid_world()

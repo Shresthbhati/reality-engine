@@ -17,10 +17,38 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.models import ActivityEvent, Evidence, Job, Session, World, new_id, utcnow
+from apps.api.models import (
+    ActivityEvent,
+    Evidence,
+    EvidenceDecision,
+    Job,
+    Session,
+    World,
+    WorldVersion,
+    new_id,
+    utcnow,
+)
+from engine.pipeline import world_delta
+from engine.pipeline.dense_gate import dense_auto_enabled
+from reconstruction.colmap_session import ColmapSession
+from engine.pipeline.progressive import (
+    EvidenceInput,
+    InsufficientEvidence,
+    run_progressive,
+)
+from evidence.image_check import ImageFacts, inspect_image
+from reconstruction.proc import (
+    discard_job,
+    get_dead_worker_jobs,
+    recover_orphaned_jobs,
+    register_worker,
+    set_current_job,
+    terminate_job_procs,
+    unregister_worker,
+)
 from evidence.session import EvidenceItem, EvidenceKind
 
 log = logging.getLogger("reality.api.jobs")
@@ -101,17 +129,55 @@ def _stage_facts_degraded(stage_facts: dict) -> list[str]:
     """Optional-stage outcomes that are neither clean runs nor honest
     config-skips: evidence of degradation for PARTIAL grading."""
     degraded = []
-    for stage in ("depth", "perception", "mesh"):
+    for stage in ("depth", "perception", "mesh", "dense_mvs"):
         facts = stage_facts.get(stage)
         if isinstance(facts, dict):
             status = facts.get("status")
-            if status is not None and status not in ("ran", "skipped"):
+            # "disabled" (stage not attempted) and a dense candidate judged "rejected"/"equivalent" are honest
+            # decisions about an optional stage, not damage -- grading them degraded made every normal run "partial"
+            if status is not None and status not in ("ran", "skipped", "disabled", "rejected", "equivalent"):
                 degraded.append(f"{stage} stage status {status!r}")
     return degraded
 
 
+async def _head_report(db: AsyncSession, world: World) -> dict:
+    """Report of the world's current version ({} when none): carries the
+    evidence ids the current model was built from, so a refinement can tell
+    which images are new."""
+    if not world.current_version_id:
+        return {}
+    row = await db.get(WorldVersion, world.current_version_id)
+    return dict(row.report or {}) if row is not None else {}
+
+
+def _record_registration(evidence_rows, job_id: str, registered: set, adopted: bool) -> None:
+    """Per-photo registration history on the Evidence row: attempts, current state
+    (registered | waiting), whether it EVER registered, and the last attempts."""
+    for ev in evidence_rows:
+        meta = dict(ev.metadata_json or {})
+        reg = dict(meta.get("registration") or {})
+        hist = list(reg.get("history") or [])
+        is_reg = ev.id in registered
+        hist.append({"job": job_id, "registered": is_reg, "adopted": adopted})
+        reg.update(
+            attempts=int(reg.get("attempts", 0)) + 1,
+            state="registered" if is_reg else "waiting",
+            ever_registered=bool(reg.get("ever_registered")) or is_reg,
+            history=hist[-20:],
+        )
+        meta["registration"] = reg
+        ev.metadata_json = meta
+
+
+async def _contributing_session_ids(db: AsyncSession, world_id: str, trigger_session_id: str) -> list[str]:
+    res = await db.execute(select(Session.id).where(Session.world_id == world_id))
+    ids = sorted(set(res.scalars().all()) | {trigger_session_id})
+    return ids
+
+
 def _stamp_reconstruction_provenance(world, *, session_id: str, backend: str | None,
-                                     options, images_ingested: int) -> None:
+                                     options, images_ingested: int,
+                                     extra: dict | None = None) -> None:
     """Stamp every reconstructed entity with its build provenance
     (session, backend, pipeline configuration). setdefault: never
     overwrite an existing stamp, so retries stay idempotent. Stored in
@@ -126,6 +192,7 @@ def _stamp_reconstruction_provenance(world, *, session_id: str, backend: str | N
         "mesh_enabled": getattr(options, "mesh_enabled", None),
         "detail_enabled": getattr(options, "detail_enabled", None),
         "images_ingested": images_ingested,
+        **(extra or {}),
     }
     for entity in world.entities.values():
         props = getattr(entity, "custom_properties", None)
@@ -143,6 +210,42 @@ mapping = {
     "DATASET": "DATASET",
 }
 
+
+
+def _carry_entity_identity(world_ir, prog, cand_snap, delta, conflicts, head_report, artifact_store):
+    """Entities that ARE the same physical surface as in the previous version keep their previous id, so a
+    diff reports MODIFIED instead of REMOVED + ADDED. Identity comes only from measured spatial continuity
+    (one-to-one preserved/refined, same type); splits/merges/ambiguities keep their own ids and record
+    lineage. Applied to a copy and re-validated: if anything is off the candidate is used unchanged.
+    Returns (world, snapshot, info) with the relation/conflict references remapped to the carried ids."""
+    import copy
+
+    from world_ir.entity_reid import carry_identity
+    from world_ir.validation import validate_world_ir
+
+    rels = ((delta.get("entities") or {}).get("relations")) or []
+    prev_entities = head_report.get("entities") or []
+    if not rels or not prev_entities:
+        return world_ir, cand_snap, None
+    try:
+        trial = copy.deepcopy(world_ir)
+        out = carry_identity({e["id"] for e in prev_entities}, rels, trial)
+        if not (out["carried"] or out["lineage"]) or not validate_world_ir(trial).is_valid():
+            return world_ir, cand_snap, {"carried": 0, "lineage": [], "note": "no identity carried"}
+    except Exception as exc:  # noqa: BLE001 -- identity is an enhancement; the candidate stands as it is
+        return world_ir, cand_snap, {"carried": 0, "lineage": [], "error": f"{type(exc).__name__}: {exc}"[:200]}
+    carried = out["carried"]
+    for r in rels:
+        r["cand"] = [carried.get(c, c) for c in r.get("cand", [])]
+    for c in conflicts:
+        for h in c.get("hypotheses") or []:
+            if h.get("entity") in carried:
+                h["entity"] = carried[h["entity"]]
+    snap = world_delta.snapshot(
+        registered_ids=prog.registered_ids, input_ids=prog.input_ids, level=prog.level,
+        model_state=prog.model_state, points=len(prog.points), camera_poses=prog.camera_poses,
+        world=trial, artifact_store=artifact_store)
+    return trial, snap, {"carried": len(carried), "ids": carried, "lineage": out["lineage"]}
 
 def enqueue_job(
     db: AsyncSession,
@@ -207,7 +310,64 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
     return "succeeded"
 
 
+def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
+    """Group this world's photographs by verified correspondence (reconstruction.scene_identity).
+
+    Returns the grouping facts plus ``excluded`` {evidence_id: reason} for photographs of OTHER verified scene
+    groups. The world keeps its established group (stable id) when it is still present, else the largest. Images
+    with no verified link are NOT excluded here -- COLMAP's own verification decides them. If the gate itself
+    cannot run (no OpenCV, unreadable image) that is recorded as ``state: unavailable`` and nothing is excluded.
+    """
+    from apps.api import worldstore_service
+    from reconstruction.scene_identity import SceneRegistry, SiftPairVerifier, group_images
+
+    try:
+        ids = [ei.item.id for ei in eval_inputs if ei.facts.geometry_eligible]
+        grouping = group_images(ids, SiftPairVerifier({ei.item.id: ei.path for ei in eval_inputs}),
+                                declared_sessions=sessions_of)
+        registry = SceneRegistry(worldstore_service.worldstore_root() / "scene-groups")
+        groups = registry.record_grouping(world_id, grouping)
+        last = registry.load(world_id).get("last_valid")
+        primary = next((g for g in groups if last and g.group_id == last["group_id"]), groups[0] if groups else None)
+        excluded = {m: (f"belongs to a different scene group ({g.group_id}); no verified correspondence links it "
+                        f"to this world's scene ({primary.group_id})")
+                    for g in groups if g is not primary for m in g.members}
+        return {"state": "ok", "primary_group_id": primary.group_id if primary else None,
+                "groups": [{"group_id": g.group_id, "members": g.members} for g in groups],
+                "unlinked": grouping.unlinked, "uncertain_links": grouping.uncertain_links,
+                "declared_conflicts": grouping.declared_conflicts, "verified_pairs": grouping.verified_pairs,
+                "excluded": excluded}
+    except Exception as exc:  # noqa: BLE001 -- the gate is advisory infrastructure; its failure is recorded, not hidden
+        log.warning("scene gate unavailable for world %s: %s", world_id, exc)
+        return {"state": "unavailable", "error": f"{type(exc).__name__}: {exc}", "excluded": {}}
+
+
+def _commit_scene_result(world_id: str, scene_info: dict, n_input: int, registered_ids, n_points: int,
+                         version_id: str) -> None:
+    """Record the adopted reconstruction as the world's last valid one (stable identity across restarts)."""
+    from apps.api import worldstore_service
+    from reconstruction.scene_identity import SceneRegistry, diagnose_counts
+
+    diag = diagnose_counts(n_input, registered_ids, n_points)
+    SceneRegistry(worldstore_service.worldstore_root() / "scene-groups").commit_reconstruction(
+        world_id, scene_info["primary_group_id"], diag, version_id, list(registered_ids))
+
+
 async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
+    """Wrapper that owns the world's persistent COLMAP session lifecycle: whatever happens
+    inside, an exception leaves the COMMITTED COLMAP state untouched (staging is discarded),
+    so a failed or rejected run can never poison the next incremental registration."""
+    holder: dict = {}
+    try:
+        return await _run_reconstruct_session_inner(db, job, holder)
+    except BaseException:
+        session = holder.get("session")
+        if session is not None:
+            session.discard()
+        raise
+
+
+async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dict) -> str:
     """Run the real capture-to-WorldIR vertical slice for a session's
     photo evidence, then commit the result as a new WorldStore version.
 
@@ -271,11 +431,21 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     job.stage = "resolving_evidence"
     job.heartbeat_at = utcnow()
     await db.commit()
+    # Progressive refinement: the model is built from ALL photo evidence of
+    # every session attached to this world (compile(A+B) IS the definition
+    # of V2), never just the newest session's batch.
     result = await db.execute(
-        select(Evidence).where(Evidence.session_id == session.id, Evidence.type == "photo")
+        select(Evidence)
+        .join(Session, Evidence.session_id == Session.id)
+        .where(or_(Session.world_id == world.id, Session.id == session.id), Evidence.type == "photo")
+        # Evidence Quality Firewall: an operator-REJECTED photo is not reconstruction input
+        .where(Evidence.id.not_in(select(EvidenceDecision.evidence_id).where(EvidenceDecision.decision == "rejected")))
+        .order_by(Evidence.created_at.asc(), Evidence.id.asc())
     )
     evidence_rows = list(result.scalars().all())
-    items = []
+    head_report = await _head_report(db, world)
+    prior_ids = list((head_report.get("evidence") or {}).get("all_ids") or [])
+    resolved = []
     skipped_evidence = []
     for ev in evidence_rows:
         if not ev.artifact_uri:
@@ -288,28 +458,85 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
                 "reason": f"artifact_uri {ev.artifact_uri!r} not resolvable in content store",
             })
             continue
-        items.append(
-            EvidenceItem(
-                id=ev.id,
-                kind=EvidenceKind.PHOTO,
-                source_uri=path.resolve().as_uri(),
-                sha256=ev.checksum,
-            )
-        )
-    if len(items) < 2:
-        raise RuntimeError(
-            f"Session has {len(items)} usable photo evidence item(s) with stored "
-            "artifacts; the reconstruction pipeline needs at least 2."
+        resolved.append((ev, path))
+    if not resolved:
+        raise InsufficientEvidence(
+            "World has 0 usable photo evidence item(s) with stored artifacts; "
+            "at least 1 is required."
         )
 
+    # Validate + classify every image BEFORE any expensive stage: bytes that
+    # are not images must never reach COLMAP (measured: 3 garbage "photos"
+    # wedged the pipeline for >90 s), and non-photographic material is kept
+    # out of observed geometry.
     await _throw_if_cancelled(db, job)
-    job.stage = "reconstructing"
+    job.stage = "analyzing_evidence"
+    job.heartbeat_at = utcnow()
+    await db.commit()
+    if test_backend is not None:
+        # The offline deterministic-backend seam never reads pixels (its
+        # placeholder "photos" are the point of the seam), so there is nothing
+        # to decode. Say so on the record rather than pretending it was checked.
+        facts_list = [
+            ImageFacts(
+                ok=True, evidence_class="photograph_unverified",
+                class_basis="REALITY_TEST_BACKEND seam: pixels not inspected",
+            )
+            for _ in resolved
+        ]
+    else:
+        facts_list = await asyncio.to_thread(
+            lambda: [inspect_image(p, (ev.metadata_json or {}).get("declared_evidence_class"))
+                     for ev, p in resolved]
+        )
+    eval_inputs = []
+    for (ev, path), facts in zip(resolved, facts_list):
+        meta = dict(ev.metadata_json or {})
+        meta["image_facts"] = facts.to_dict()
+        ev.metadata_json = meta
+        eval_inputs.append(EvidenceInput(
+            item=EvidenceItem(id=ev.id, kind=EvidenceKind.PHOTO,
+                              source_uri=path.resolve().as_uri(), sha256=ev.checksum),
+            facts=facts, name=ev.name, path=path,
+        ))
+    items = [ei.item for ei in eval_inputs if ei.facts.geometry_eligible]
+    await db.commit()
+
+    # Scene identity gate: only photographs linked by VERIFIED correspondences may share one reconstruction.
+    # Other verified groups (a different place) stay out of this world and are reported, never merged.
+    scene_info = None
+    if test_backend is None and len(items) >= 2:
+        sessions_of = {}
+        for ev, _ in resolved:
+            sessions_of.setdefault(ev.session_id or "none", []).append(ev.id)
+        scene_info = await asyncio.to_thread(_scene_gate, world.id, eval_inputs, sessions_of)
+    scene_excluded = (scene_info or {}).get("excluded") or {}
+    run_inputs = [ei for ei in eval_inputs if ei.item.id not in scene_excluded]
+    for eid, why in scene_excluded.items():
+        skipped_evidence.append({"evidence_id": eid, "reason": why})
+
+    await _throw_if_cancelled(db, job)
+    # user-facing stage: what the engine is actually about to do
+    job.stage = ("building_rough_model" if len(items) <= 1
+                 else "refining" if prior_ids else "reconstructing")
     job.heartbeat_at = utcnow()
     await db.commit()
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+    # Operator-measured distances between two of this world's photographs (POST /api/worlds/{id}/scale):
+    # the ONLY source of metric scale. Without one the world stays RELATIVE -- meters are never assumed.
+    from reconstruction.scale import ScaleAnchoringError, ScaleReference
+
+    baselines = []
+    for r in worldstore_service.list_scale_references(world.id):
+        try:
+            baselines.append(ScaleReference(r["evidence_id_a"], r["evidence_id_b"], float(r["distance_m"]),
+                                            r.get("method", "manual_measurement")))
+        except (KeyError, ValueError, ScaleAnchoringError):
+            continue            # a malformed stored reference is skipped, never guessed at
     if test_backend is not None:
         options = VerticalSliceOptions(
             artifact_store=artifact_store,
+            measured_baselines=tuple(baselines),
             reconstruction_backend=test_backend,
             depth_model=None,
             perception_model=None,
@@ -317,23 +544,62 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
             detail_enabled=False,
         )
     else:
-        options = VerticalSliceOptions(artifact_store=artifact_store)
-    try:
-        vs_result = await asyncio.to_thread(vertical_slice, items, options)
-    except VerticalSliceError as exc:
-        raise RuntimeError(f"Reconstruction failed: {exc}") from exc
+        # One persistent COLMAP workspace per world: new photographs are REGISTERED into the
+        # previous sparse model (image_registrator) instead of re-solving the whole scene.
+        # Its state advances only when this run's version is adopted (commit below).
+        colmap_session = ColmapSession(worldstore_service.worldstore_root() / "colmap-sessions" / world.id)
+        holder["session"] = colmap_session
+        options = VerticalSliceOptions(
+            artifact_store=artifact_store, colmap_session=colmap_session,
+            measured_baselines=tuple(baselines),
+            # Level 3 is part of the normal path: dense MVS is attempted only when the measured sparse model justifies
+            # it (engine.pipeline.dense_gate), and the result is kept only if it is judged better than the sparse
+            # world (engine.pipeline.dense_judge). REALITY_DENSE_AUTO=0 opts out.
+            dense_auto=dense_auto_enabled(),
+            # both COLMAP candidates are judged as worlds against the current HEAD, not by camera count
+            head_snapshot=world_delta.snapshot_from_report(head_report),
+            head_conflicts=head_report.get("conflicts"),
+            # the HEAD's canonical rotation: an incremental candidate (same raw COLMAP frame) reuses it
+            head_frame=head_report.get("frame"))
+    # The ladder: multi-view reconstruction when the evidence supports it,
+    # the strongest lower level otherwise (never an empty world).
+    prog = await asyncio.to_thread(
+        lambda: run_progressive(
+            run_inputs, vs_options=options, prior_ids=prior_ids, artifact_store=artifact_store,
+            depth_model=(getattr(options, "depth_model", None) or "DPT_Hybrid"),
+        )
+    )
+    world_ir = prog.world
 
     await _throw_if_cancelled(db, job)
+
+    # Evidence classification survives into provenance: which images fed
+    # geometry (and their class) versus which were kept as context only.
+    evidence_records = [
+        {"evidence_id": ei.item.id, "name": ei.name, "sha256": ei.item.sha256,
+         "evidence_class": ei.facts.evidence_class, "class_basis": ei.facts.class_basis,
+         "used_for_geometry": ei.facts.geometry_eligible and ei.item.id not in scene_excluded,
+         "scene_excluded": scene_excluded.get(ei.item.id),
+         "registered": ei.item.id in set(prog.registered_ids)}
+        for ei in eval_inputs
+    ]
+    world_ir.metadata["evidence"] = {"used": evidence_records, "excluded": prog.excluded}
+    world_ir.metadata["progressive"] = {
+        "level": prog.level, "level_name": prog.level_name, "model_state": prog.model_state,
+        "attempts": prog.attempts,
+    }
 
     # Provenance + determinism record: stamp every reconstructed entity
     # with the session, backend, and pipeline configuration it was built
     # from, before anything is validated or persisted.
     _stamp_reconstruction_provenance(
-        vs_result.world,
+        world_ir,
         session_id=session.id,
-        backend=vs_result.stage_facts.get("backend"),
+        backend=prog.stage_facts.get("backend"),
         options=options,
         images_ingested=len(items),
+        extra={"level": prog.level, "model_state": prog.model_state,
+               "source_evidence_ids": list(prog.input_ids)},
     )
 
     # Validation gate: an invalid WorldIR is never persisted or adopted.
@@ -341,7 +607,7 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     # destroy valid earlier results.
     from world_ir.validation import validate_world_ir
 
-    validation = validate_world_ir(vs_result.world)
+    validation = validate_world_ir(world_ir)
     if not validation.is_valid():
         detail = "; ".join(validation.messages()[:5])
         raise RuntimeError(f"reconstructed WorldIR failed validation: {detail}")
@@ -351,38 +617,187 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     # missing trace here means stamping itself failed -- persisting
     # would create permanently untraceable state. Fail instead; HEAD
     # stays intact.
-    _assert_reconstruction_traced(vs_result.world)
+    _assert_reconstruction_traced(world_ir)
+
+    # World-level acceptance. A valid candidate is not automatically a BETTER
+    # one: compare it with the current HEAD on frame-independent, measured
+    # invariants (which photos stay registered, how the registered cameras
+    # moved, structure counts) before it may replace the world's knowledge.
+    cand_snap = world_delta.snapshot(
+        registered_ids=prog.registered_ids, input_ids=prog.input_ids, level=prog.level,
+        model_state=prog.model_state, points=len(prog.points), camera_poses=prog.camera_poses,
+        world=world_ir, artifact_store=artifact_store,
+    )
+    delta = world_delta.compute_delta(world_delta.snapshot_from_report(head_report), cand_snap)
+    # Explicit conflicts: prior ones are carried forward (never dropped silently), new
+    # ones open when a previously registered photo lands somewhere materially different.
+    conflicts = world_delta.reconcile_conflicts(head_report.get("conflicts"), delta, f"job:{job.id}")
+    decision = world_delta.decide(delta, conflicts)
+    adopt = decision["verdict"] != world_delta.REJECT
+    changes = world_delta.describe_changes(delta, structure=adopt, conflicts=conflicts)
+    identity_info = None
+    if adopt:
+        world_ir, cand_snap, identity_info = _carry_entity_identity(
+            world_ir, prog, cand_snap, delta, conflicts, head_report, artifact_store)
+        world_ir.metadata["conflicts"] = conflicts
+        # say plainly HOW the model was produced -- taken from what the backend recorded, not assumed
+        colmap_info = prog.stage_facts.get("colmap_session") or {}
+        if colmap_info.get("mode") == "incremental":
+            g = len(delta["evidence"]["gained"])
+            changes.insert(0, f"Extended the existing reconstruction incrementally: {g} photo"
+                              f"{'' if g == 1 else 's'} registered into it, established camera poses kept.")
+        elif colmap_info.get("mode") == "full" and colmap_info.get("prior_images"):
+            changes.insert(0, f"Rebuilt the reconstruction from scratch ({colmap_info.get('reason')}).")
+        prev_scale = ((head_report.get("stages") or {}).get("scale")) or {}
+        if prog.scale_state != prev_scale.get("state") or prog.meters_per_unit != prev_scale.get("meters_per_unit"):
+            if prog.scale_state == "metric" and prog.meters_per_unit:
+                refs_used = [f"{b.distance_m:g} m between two photographs ({b.method})" for b in baselines]
+                changes.insert(0, f"Scale changed from {prev_scale.get('state') or 'unknown'} to metric: "
+                                  f"{prog.meters_per_unit:.6g} m per model unit, anchored by "
+                                  f"{'; '.join(refs_used) or 'a measured reference'}. The same world, now in meters.")
+        if baselines and prog.scale_state != "metric":
+            changes.append("A measured scale reference was supplied but could not be applied ("
+                           f"{prog.stage_facts.get('scale_error_note') or 'its photographs are not registered'}); "
+                           "the world stays relative -- no scale was assumed.")
+        arb = colmap_info.get("arbitration")
+        if arb:  # both candidates were judged as worlds: say which won and on what measured fact
+            changes.insert(1, f"Chose the {arb['choice']} reconstruction over the {'full' if arb['choice'] == 'incremental' else 'incremental'} "
+                              f"candidate: {arb['why']}.")
+    prev_scale0 = ((head_report.get("stages") or {}).get("scale")) or {}
+    unchanged = (adopt and world.current_version_id is not None
+                 and world_delta.is_unchanged(world_delta.snapshot_from_report(head_report), cand_snap, delta)
+                 and prog.scale_state == prev_scale0.get("state")
+                 and prog.meters_per_unit == prev_scale0.get("meters_per_unit"))
+    if unchanged:
+        # Nothing new to say about this world (typically: the job was killed right after adopting its version and
+        # ran again). No version is minted; the adopted one stands. The COLMAP base catches up only when this run
+        # kept HEAD's coordinate frame -- a re-solved frame must never become the base of later incremental runs.
+        colmap_info = prog.stage_facts.get("colmap_session") or {}
+        if holder.get("session") is not None:
+            try:
+                if colmap_info and colmap_info.get("frame") == "preserved":
+                    holder["session"].commit()
+                else:
+                    holder["session"].discard()
+            except Exception:  # noqa: BLE001 -- derived state; the next run rebuilds it
+                log.warning("job %s: COLMAP state not advanced on an unchanged run", job.id)
+        _record_registration(
+            [ev for (ev, _), ei in zip(resolved, eval_inputs) if ei.facts.geometry_eligible],
+            job.id, set(prog.registered_ids), True,
+        )
+        session.world_id = world.id
+        session.status = "complete"
+        session.processing_completed_at = utcnow()
+        for other in (await db.execute(select(Session).where(
+                Session.id.in_({ev.session_id for ev, _ in resolved if ev.session_id} - {session.id}),
+                Session.status == "processing"))).scalars().all():
+            other.status = "complete"
+            other.processing_completed_at = utcnow()
+        job.payload = {
+            "world_id": world.id, "version_id": world.current_version_id, "adopted": False, "unchanged": True,
+            "validated": True, "outcome": "succeeded", "verdict": decision["verdict"],
+            "changes": ["No change: this evidence is already fully reflected in the current version."],
+            "level": prog.level, "level_name": prog.level_name, "model_state": prog.model_state,
+            "registration_status": prog.registration_status, "skipped_evidence": skipped_evidence,
+            "scene_identity": scene_info,
+        }
+        await db.commit()
+        return "succeeded"
+    # Every geometry-eligible photo records THIS attempt, adopted or not: a photo
+    # that could not be placed is "waiting", never discarded, and is retried on
+    # the next rebuild (a later photo may be the missing bridge).
+    _record_registration(
+        [ev for (ev, _), ei in zip(resolved, eval_inputs) if ei.facts.geometry_eligible],
+        job.id, set(prog.registered_ids), adopt,
+    )
+    if not adopt:
+        # the rejected candidate must not become the base of the next incremental registration
+        if holder.get("session") is not None:
+            holder["session"].discard()
+        session.world_id = world.id
+        session.status = "complete"
+        session.processing_completed_at = utcnow()
+        included = {ev.session_id for ev, _ in resolved if ev.session_id} - {session.id}
+        if included:
+            others = await db.execute(
+                select(Session).where(Session.id.in_(included), Session.status == "processing")
+            )
+            for other in others.scalars().all():
+                other.status = "complete"
+                other.processing_completed_at = utcnow()
+        job.payload = {
+            "world_id": world.id, "version_id": None, "adopted": False, "validated": True,
+            "outcome": "partial", "verdict": decision["verdict"], "reasons": decision["reasons"],
+            "uncertainties": decision["uncertainties"], "changes": changes, "delta": delta,
+            "kept_version_id": world.current_version_id, "level": prog.level,
+            "level_name": prog.level_name, "model_state": prog.model_state,
+            "registration_status": prog.registration_status, "skipped_evidence": skipped_evidence,
+            "scene_identity": scene_info,
+        }
+        await db.commit()
+        return "partial"
 
     job.stage = "committing_version"
     job.heartbeat_at = utcnow()
     await db.commit()
     report = {
-        "status": "SUCCESS" if vs_result.registration_status == "success" else "PARTIAL_SUCCESS",
+        "status": "SUCCESS" if (prog.level >= 2 and prog.registration_status == "success") else "PARTIAL_SUCCESS",
         "session_id": session.id,
         "images_ingested": len(items),
+        "scene_identity": scene_info,
+        "level": prog.level,
+        "level_name": prog.level_name,
+        "model_state": prog.model_state,
+        "attempts": prog.attempts,
+        "guidance": prog.guidance,
+        "structure": {"entity_types": cand_snap["entity_types"], "provenance": cand_snap["provenance"]},
+        "cameras": cand_snap["cameras"],
+        "entities": cand_snap["entities"],
+        "frame": (world_ir.metadata or {}).get("frame"),
+        "conflicts": conflicts,
+        "identity": identity_info,
+        "delta": delta,
+        # what changed in the WORLD (added / extended / refined / preserved / represented differently /
+        # not reproduced, per region), derived from the geometric relations; raw counts stay in "delta"
+        "physical": world_delta.physical_changes(delta, conflicts),
+        "verdict": decision,
+        "changes": changes,
+        "evidence": {
+            "all_ids": [ei.item.id for ei in eval_inputs],
+            "input_ids": prog.input_ids,
+            "registered_ids": prog.registered_ids,
+            "records": evidence_records,
+            "excluded": prog.excluded,
+            "contribution": prog.contribution.to_dict(),
+            "quality": prog.quality,
+        },
         "stages": {
             "reconstruction": {
-                "backend": vs_result.stage_facts.get("backend"),
-                "cameras_registered": vs_result.cameras_registered,
-                "cameras_input": vs_result.cameras_input,
-                "registration_status": vs_result.registration_status,
-                "points": vs_result.points_total,
+                "backend": prog.stage_facts.get("backend"),
+                "cameras_registered": len(prog.registered_ids),
+                "cameras_input": len(prog.input_ids),
+                "registration_status": prog.registration_status,
+                "points": len(prog.points),
+                "colmap_session": prog.stage_facts.get("colmap_session"),
             },
-            "scale": {"state": vs_result.scale_state, "meters_per_unit": vs_result.meters_per_unit},
-            "depth": vs_result.stage_facts.get("depth"),
-            "perception": vs_result.stage_facts.get("perception"),
-            "mesh": vs_result.stage_facts.get("mesh"),
+            "scale": {"state": prog.scale_state, "meters_per_unit": prog.meters_per_unit,
+                      "references": [{"evidence_id_a": b.evidence_id_a, "evidence_id_b": b.evidence_id_b,
+                                      "distance_m": b.distance_m, "method": b.method} for b in baselines],
+                      "note": prog.stage_facts.get("scale_error_note")},
+            "depth": prog.stage_facts.get("depth"),
+            "perception": prog.stage_facts.get("perception"),
+            "mesh": prog.stage_facts.get("mesh"),
             "compile": {
-                "entities": len(vs_result.world.entities),
-                "measurements": vs_result.compile.measurements_count,
-                "relationships": vs_result.compile.relationships_count,
+                "entities": prog.counts.get("entities", len(world_ir.entities)),
+                "measurements": prog.counts.get("measurements", 0),
+                "relationships": prog.counts.get("relationships", 0),
             },
         },
     }
 
-    points_bytes = await asyncio.to_thread(_render_points_ply, vs_result.points)
+    points_bytes = await asyncio.to_thread(_render_points_ply, prog.points)
     cameras_bytes = await asyncio.to_thread(
-        _render_cameras_json, vs_result.camera_poses, vs_result.scale_state, options.image_size
+        _render_cameras_json, prog.camera_poses, prog.scale_state, options.image_size
     )
 
     base_head = world.current_version_id
@@ -391,9 +806,9 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
         version_row = await worldstore_service.commit_version(
             db,
             world_id=world.id,
-            world=vs_result.world,
+            world=world_ir,
             parent=base_head,
-            source_session_ids=[session.id],
+            source_session_ids=await _contributing_session_ids(db, world.id, session.id),
             points=points_bytes,
             cameras=cameras_bytes,
             report=report,
@@ -415,6 +830,37 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
             f"adopted version '{version_row.id}' failed read-back verification: {reasons}"
         )
 
+    # The version is adopted AND reads back cleanly: only now does this run's COLMAP state become
+    # the base for the next incremental registration. A failure to persist it is not a job
+    # failure (the next run simply falls back to a full reconstruction).
+    if scene_info and scene_info.get("state") == "ok" and scene_info.get("primary_group_id"):
+        try:
+            await asyncio.to_thread(
+                _commit_scene_result, world.id, scene_info,
+                sum(1 for ei in run_inputs if ei.facts.geometry_eligible), prog.registered_ids,
+                len(prog.points), version_row.id)
+        except Exception as exc:  # noqa: BLE001 -- identity bookkeeping must not undo an adopted, verified version
+            log.warning("job %s: scene registry commit failed: %s", job.id, exc)
+    colmap_commit_fault = None
+    if holder.get("session") is not None:
+        try:
+            # Only when the adopted version was actually BUILT from this COLMAP run (the vertical slice
+            # reported it). A single-view fallback must not persist a COLMAP model it never used.
+            if prog.stage_facts.get("colmap_session"):
+                holder["session"].commit()
+            else:
+                holder["session"].discard()
+        except Exception as exc:  # noqa: BLE001 -- ANY fault after adoption: the version is already durable
+            # Letting it propagate would fail the job and the retry would adopt a DUPLICATE version from the same
+            # evidence. The adopted version stands; COLMAP's base is simply one version behind and the next run
+            # catches up (full rebuild). Recorded as a degradation, never hidden.
+            log.warning("job %s: COLMAP state commit failed after adoption: %s", job.id, exc)
+            colmap_commit_fault = f"{type(exc).__name__}: {exc}"
+            try:
+                holder["session"].discard()
+            except Exception:  # noqa: BLE001
+                pass
+
     # Late cancellation: the flag may have landed while the version was
     # being committed. The adopted version stands (durable work is never
     # un-written), but the job grades CANCELLED -- never SUCCEEDED --
@@ -428,12 +874,15 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     # a real adopted version with the degradation reasons on record.
     # Failed validation or missing output never reach here (raised above),
     # and a timeout can never become either (it raises before grading).
-    degraded = []
-    if vs_result.registration_status != "success":
-        degraded.append(f"registration {vs_result.registration_status!r}")
+    # A rough (level <= 1) model is partial by construction: it can never
+    # grade as a clean success.
+    degraded = list(prog.degraded)
     if skipped_evidence:
         degraded.append(f"{len(skipped_evidence)} skipped evidence item(s)")
-    degraded.extend(_stage_facts_degraded(vs_result.stage_facts))
+    degraded.extend(_stage_facts_degraded(prog.stage_facts))
+    if colmap_commit_fault:
+        degraded.append(f"COLMAP state not persisted ({colmap_commit_fault}); the next run rebuilds from the evidence")
+    degraded.extend(f"changed with uncertainty: {u}" for u in decision["uncertainties"])
     for warning in validation.warnings:
         degraded.append(f"validation warning: {warning}")
     outcome = "partial" if degraded else "succeeded"
@@ -445,19 +894,36 @@ async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
     session.world_id = world.id
     session.status = "complete"
     session.processing_completed_at = utcnow()
+    # Every other session whose evidence went into this rebuild (a coalesced
+    # upload rides on this job) is finished too -- and ONLY those: a session
+    # created while this job ran was not part of the union.
+    included = {ev.session_id for ev, _ in resolved if ev.session_id} - {session.id}
+    if included:
+        others = await db.execute(
+            select(Session).where(Session.id.in_(included), Session.status == "processing")
+        )
+        for other in others.scalars().all():
+            other.status = "complete"
+            other.processing_completed_at = utcnow()
     job.payload = {
         "world_id": world.id,
         "version_id": version_row.id,
-        "registration_status": vs_result.registration_status,
+        "registration_status": prog.registration_status,
+        "level": prog.level,
+        "level_name": prog.level_name,
+        "model_state": prog.model_state,
         "outcome": outcome,
         "degraded": degraded,
         "validated": True,
         "adopted": True,
-        "points": len(vs_result.points),
+        "verdict": decision["verdict"],
+        "changes": changes,
+        "points": len(prog.points),
         "points_bytes": len(points_bytes),
-        "cameras_registered": vs_result.cameras_registered,
+        "cameras_registered": len(prog.registered_ids),
         "cameras_bytes": len(cameras_bytes),
         "skipped_evidence": skipped_evidence,
+        "scene_identity": scene_info,
     }
     await db.commit()
     _notify_world_version(db, job, world, version_row.id)
@@ -567,7 +1033,6 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     Also checks for dead workers and recovers their jobs.
     """
     from datetime import timedelta
-    from reconstruction.proc import get_dead_worker_jobs
 
     cutoff = utcnow() - timedelta(seconds=_stale_after_seconds())
     result = await db.execute(
@@ -670,11 +1135,16 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         job.status = JOB_CANCELLED
         job.error = f"cancelled by operator: {exc}"
         job.completed_at = utcnow()
-    except Exception:
+    except Exception as exc:
         log.exception("job %s failed", job.id)
         import traceback
 
         job.error = traceback.format_exc()[-2000:]
+        # Failure classification for the user-facing state (NEEDS MORE
+        # EVIDENCE vs FAILED): carried on the payload, never inferred from text.
+        kind = getattr(exc, "failure_kind", None)
+        if kind:
+            job.payload = {**(job.payload or {}), "failure_kind": kind}
         # A failure that arrives with a pending cancel request grades as
         # CANCELLED (operator intent wins); otherwise failed/retry.
         # Refresh only the flag: nothing else pending here is disturbed,
@@ -689,7 +1159,9 @@ async def process_next_job(db: AsyncSession) -> Job | None:
             job.status = JOB_CANCELLED
             job.error = f"cancelled by operator: {job.error}"
             job.completed_at = utcnow()
-        elif job.attempts >= job.max_attempts:
+        elif job.attempts >= job.max_attempts or getattr(exc, "retryable", True) is False:
+            # deterministic failures (no usable evidence, every level failed)
+            # cannot succeed on a retry: fail now, don't loop the queue
             job.status = JOB_FAILED
             job.completed_at = utcnow()
         else:

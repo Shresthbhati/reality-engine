@@ -531,6 +531,24 @@ async def world_cameras(
                 })
             if image_size is None and isinstance(meta.get("image_size"), (list, tuple)):
                 image_size = [int(v) for v in meta["image_size"]]
+    if not cameras and row.cameras_artifact_uri:
+        # A COLMAP-reconstructed world keeps its registered poses in the version's cameras artifact (written by the
+        # job at adoption), not on entity observations (only the single-image bootstrap puts a pose there). Without
+        # this the Studio's camera layer was empty for every real reconstruction.
+        from apps.api.storage import resolve_artifact
+
+        path = resolve_artifact(row.cameras_artifact_uri)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8")) if path is not None else {}
+        except (OSError, ValueError):
+            payload = {}
+        for cam in payload.get("cameras") or []:
+            if isinstance(cam, dict) and "position_m" in cam:
+                cameras.append({"evidence_id": cam.get("evidence_id"),
+                                "position_m": [float(c) for c in cam["position_m"]],
+                                "rotation_wxyz": [float(c) for c in cam.get("rotation_wxyz", [1.0, 0.0, 0.0, 0.0])]})
+        if image_size is None and isinstance(payload.get("image_size"), (list, tuple)):
+            image_size = [int(v) for v in payload["image_size"]]
     return {
         "frame": "world (meters, +Y up after frame canonicalization)",
         "rotation_convention": "camera-to-world quaternion (w, x, y, z)",
@@ -692,9 +710,15 @@ def _validate_commit_changes(changes: dict) -> dict:
                     kind = RelationshipKind(kind_str)
                 except ValueError:
                     kind = RelationshipKind.CONNECTS
-                rel_conf = float(item.get("confidence", 1.0))
-                if not 0.0 <= rel_conf <= 1.0 or not math.isfinite(rel_conf):
-                    rel_conf = 1.0
+                # A human-stated correction with no confidence is the human's own
+                # assertion (1.0); an INVALID confidence is an error, never
+                # silently coerced into certainty.
+                try:
+                    rel_conf = float(item.get("confidence", 1.0))
+                except (TypeError, ValueError):
+                    raise HTTPException(422, "relationship confidence must be a number in [0, 1]")
+                if not math.isfinite(rel_conf) or not 0.0 <= rel_conf <= 1.0:
+                    raise HTTPException(422, "relationship confidence must be a number in [0, 1]")
                 rel_meta = item.get("metadata", {})
                 if not isinstance(rel_meta, dict):
                     rel_meta = {}
@@ -903,9 +927,13 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         store_path.mkdir(parents=True, exist_ok=True)
     store = WorldStore(str(store_path))
 
+    from apps.api import worldstore_service as _wss
+
+    adoption_id = _wss.begin_adoption(w.id, effective_parent)
     try:
-        stored = store.save_version(worldir, parent=effective_parent)
+        stored = store.save_version(worldir, parent=effective_parent, version_id=adoption_id)
     except WorldStoreError as exc:
+        _wss.abandon_adoption(adoption_id)
         msg = str(exc)
         if "unknown version" in msg:
             raise HTTPException(404, msg)
@@ -929,6 +957,7 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
     )
     if head_update.rowcount == 0:
         current = (await db.get(World, w.id)).current_version_id
+        _wss.abandon_adoption(adoption_id)
         raise HTTPException(
             409,
             f"HEAD moved during commit (now '{current}'); "
@@ -963,12 +992,13 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
     try:
         await db.commit()
     except Exception as exc:
-        # The version file may already exist on disk (harmless orphan,
-        # never adopted, visible to resync) -- but HEAD never moved and
-        # no mirror row exists, so report explicitly instead of a bare 500.
+        # HEAD never moved and no mirror row exists: the version just written is quarantined (never adopted,
+        # never a phantom in the version list), and the failure is reported explicitly instead of a bare 500.
+        _wss.abandon_adoption(adoption_id)
         raise HTTPException(
             503, f"database unavailable; commit not adopted: {exc}"
         )
+    _wss.finish_adoption(adoption_id)
 
     return {
         "version_id": stored.version_id,
@@ -1178,3 +1208,84 @@ async def query_world_spaces(
 
     return {"query": "all", "space_graph": graph_dict}
 
+
+
+class RollbackIn(BaseModel):
+    version_id: str
+
+
+@worlds.post("/{world_id}/rollback")
+async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Depends(get_db)) -> dict:
+    """Move HEAD back to an earlier version (history stays immutable; see worldstore_service.rollback_head)."""
+    from apps.api import worldstore_service as wss
+    from apps.api.models import Job, Session as _Session
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    sids = (await db.execute(select(_Session.id).where(_Session.world_id == world_id))).scalars().all()
+    busy = (await db.execute(
+        select(Job.id).where(Job.entity_type == "session", Job.entity_id.in_(sids),
+                             Job.status.in_(("queued", "running"))).limit(1)
+    )).scalars().first() if sids else None
+    if busy:
+        raise HTTPException(409, f"a reconstruction is in progress (job {busy}); wait for it before rolling back")
+    before = w.current_version_id
+    try:
+        row = await wss.rollback_head(db, world_id, body.version_id)
+    except wss.ConcurrentModificationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"world_id": world_id, "version_id": row.id, "previous_head": before,
+            "note": "history is unchanged; evidence is kept and will be retried by the next reconstruction"}
+
+
+class ScaleIn(BaseModel):
+    evidence_id_a: str
+    evidence_id_b: str
+    distance_m: float
+    method: str = "manual_measurement"
+
+
+@worlds.post("/{world_id}/scale", status_code=202)
+async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depends(get_db)) -> dict:
+    """Anchor the world's scale to a distance the user measured between two of its photographs.
+
+    Never assumes meters: the reference (two evidence ids + measured metres + method) is recorded, and a
+    reconstruction of the SAME world is queued that applies it through the existing scale anchoring. The
+    result is a new version of the same world whose report states the scale source and ratio spread; if the
+    two photographs cannot be placed, the world stays RELATIVE and the report says why."""
+    from apps.api import jobs as jobrunner
+    from apps.api import worldstore_service as wss
+    from apps.api.models import Job, Session as _Session
+    from reconstruction.scale import ScaleAnchoringError
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    sessions = (await db.execute(
+        select(_Session).where(_Session.world_id == world_id).order_by(_Session.created_at.desc()))).scalars().all()
+    known = set()
+    if sessions:
+        known = set((await db.execute(
+            select(Evidence.id).where(Evidence.session_id.in_([s.id for s in sessions]), Evidence.type == "photo")
+        )).scalars().all())
+    for eid in (body.evidence_id_a, body.evidence_id_b):
+        if eid not in known:
+            raise HTTPException(422, f"evidence '{eid}' is not a photograph of this world")
+    busy = (await db.execute(
+        select(Job.id).where(Job.entity_type == "session", Job.entity_id.in_([s.id for s in sessions]),
+                             Job.status.in_(("queued", "running"))).limit(1)
+    )).scalars().first()
+    if busy:
+        raise HTTPException(409, f"a reconstruction is in progress (job {busy}); apply the scale when it finishes")
+    try:
+        ref = wss.add_scale_reference(world_id, body.evidence_id_a, body.evidence_id_b, body.distance_m, body.method)
+    except ScaleAnchoringError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", sessions[0].id)
+    await db.commit()
+    return {"world_id": world_id, "job_id": job.id, "reference": ref,
+            "note": "the same world will be re-evaluated with this measured distance; a new version is created "
+                    "only if the authoritative geometry changes"}

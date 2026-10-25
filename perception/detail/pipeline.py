@@ -95,11 +95,12 @@ def run_detail_pipeline(
     result: ReconstructionResult,
     cameras: Sequence,
     point_lookup: Optional[Callable[[str], Optional[Tuple[float, float, float]]]] = None,
-    voxel_size: float = 1.0,
+    voxel_size: Optional[float] = 1.0,
     up: Tuple[float, float, float] = (0.0, 0.0, 1.0),
     build_world_ir: bool = False,
     world=None,
     include_structure: bool = False,
+    scale_state: str = "metric",
 ) -> DetailPipelineReport:
     """Execute the detail chain over one reconstruction result.
 
@@ -115,8 +116,17 @@ def run_detail_pipeline(
     real room capture proved oriented planar structure is invisible
     to the curvature gate by construction, so a driver without this
     pass-through dead-ends a room's walls.
+
+    `scale_state` is what the units of `result` are ("metric" = metres, see assess_evidence_quality). With a
+    non-metric scale the millimetre GSD level bands are withheld (scale-aware budgets) and `voxel_size=None` derives
+    the voxel from the robust scene extent (perception.detail.voxel) instead of assuming a metre. The default
+    `voxel_size=1.0` is the explicit absolute size, unchanged for existing callers.
     """
-    quality = assess_evidence_quality(result, cameras)
+    from perception.detail.voxel import derive_voxel_size
+
+    choice = derive_voxel_size(result.points, scale_state, explicit=voxel_size)
+    voxel_size = choice.size
+    quality = assess_evidence_quality(result, cameras, scale_state=scale_state)
 
     # Detail discovery needs the reconstruction's points; the assessor
     # produced an honest empty report for an empty scene -- discovery
@@ -138,6 +148,8 @@ def run_detail_pipeline(
         "n_refined": sum(1 for r in rois if r.status == "refined"),
         "n_refused": sum(1 for r in rois if r.status == "refused"),
         "n_entities": 0,
+        "voxel": choice.to_dict(),
+        "scale_state": scale_state,
     }
 
     integration = None

@@ -184,3 +184,20 @@ def test_timeout_kills_and_reaps():
     assert outcome == ["timeout"]
     assert owned_pids("j-timeout") == []
     assert not _alive(pids[0]), "timed-out child still alive"
+
+
+def test_large_captured_output_does_not_deadlock():
+    """Regression: a child writing far more than the OS pipe buffer to a
+    captured stdout/stderr used to block on write while run_owned spun on
+    poll(), so it never exited (measured: every real COLMAP run hung with
+    ~0 CPU). It must finish, return all output, and keep its exit code."""
+    code = (
+        "import sys\n"
+        "sys.stdout.write('o' * 1_000_000)\n"
+        "sys.stderr.write('e' * 1_000_000)\n"
+        "sys.exit(3)\n"
+    )
+    result = run_owned([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 3
+    assert len(result.stdout) == 1_000_000
+    assert len(result.stderr) == 1_000_000

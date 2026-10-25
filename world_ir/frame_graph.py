@@ -135,6 +135,29 @@ class FrameGraphDiagnostics:
         return "Frame graph issues: " + "; ".join(parts)
 
 
+#: Names a trajectory backend may use for its frames -> the graph's ``Frame``. Deliberately small and documented; an
+#: unlisted name must be mapped by the caller (``frame_map``), never guessed.
+_TRAJECTORY_FRAME_ALIASES: Dict[str, Frame] = {
+    "body": Frame.SENSOR, "imu": Frame.SENSOR, "sensor": Frame.SENSOR,
+    "camera": Frame.CAMERA, "cam": Frame.CAMERA,
+    "world": Frame.WORLD,
+    "map": Frame.SESSION_LOCAL, "odom": Frame.SESSION_LOCAL, "session-local": Frame.SESSION_LOCAL,
+}
+
+
+def _trajectory_frame(name: str, frame_map: Optional[Dict[str, Frame]]) -> Frame:
+    if frame_map and name in frame_map:
+        return Frame(frame_map[name])
+    if name in _TRAJECTORY_FRAME_ALIASES:
+        return _TRAJECTORY_FRAME_ALIASES[name]
+    try:
+        return Frame(name)
+    except ValueError:
+        raise FrameGraphInvalidTransformError(
+            f"trajectory frame {name!r} is not a known Frame ({[f.value for f in Frame]}) or alias "
+            f"({sorted(_TRAJECTORY_FRAME_ALIASES)}); pass frame_map={{{name!r}: Frame.<...>}}") from None
+
+
 class FrameGraph:
     """Frame graph with safety checks and path resolution.
     
@@ -467,26 +490,48 @@ class FrameGraph:
             )
             self.add_edge(edge)
     
-    def load_from_trajectory(self, trajectory, provenance_prefix: str = "trajectory") -> None:
+    def load_from_trajectory(self, trajectory, provenance_prefix: str = "trajectory",
+                             frame_map: Optional[Dict[str, Frame]] = None) -> None:
         """Load frame transforms from a Trajectory.
-        
+
         A trajectory defines the body_frame -> world_frame relationship over time.
         This adds a representative transform (first frame) as a graph edge.
+
+        A real ``trajectories.Trajectory`` names its frames with free-form strings (the VIO adapters default to
+        "body" and "world"); the graph's frames are the ``Frame`` enum. ``frame_map`` (name -> Frame) overrides the
+        documented aliases (``_TRAJECTORY_FRAME_ALIASES``); a name that is neither a ``Frame`` value nor an alias
+        raises ``FrameGraphInvalidTransformError`` naming it -- a frame is never guessed. A VIO "world" is a
+        gauge-fixed session frame, so map it to ``Frame.SESSION_LOCAL`` unless registration has anchored it.
         """
         if not trajectory.frames:
             return
-        
+
         first_frame = trajectory.frames[0]
-        transform = first_frame.pose
-        
+        pose = first_frame.pose
+        if hasattr(pose, "from_frame"):                       # a real RigidTransform (rotation Quat + translation Vec3)
+            from reconstruction.calibration.camera import quat_to_matrix
+
+            r = quat_to_matrix(pose.rotation.normalized())
+            t = pose.translation
+            matrix = ((r[0][0], r[0][1], r[0][2], t.x), (r[1][0], r[1][1], r[1][2], t.y),
+                      (r[2][0], r[2][1], r[2][2], t.z), (0.0, 0.0, 0.0, 1.0))
+            transform = Transform(
+                source_frame=_trajectory_frame(pose.from_frame, frame_map),
+                target_frame=_trajectory_frame(pose.to_frame, frame_map),
+                matrix=matrix,
+                timestamp=first_frame.timestamp_ns / 1e9,
+            )
+        else:                                                 # duck-typed Transform (legacy callers / fixtures)
+            transform = Transform(
+                source_frame=Frame(pose.source_frame),
+                target_frame=Frame(pose.target_frame),
+                matrix=pose.matrix,
+                timestamp=pose.timestamp,
+                uncertainty=pose.uncertainty,
+            )
+
         edge = FrameGraphEdge(
-            transform=Transform(
-                source_frame=Frame(transform.source_frame),
-                target_frame=Frame(transform.target_frame),
-                matrix=transform.matrix,
-                timestamp=transform.timestamp,
-                uncertainty=transform.uncertainty,
-            ),
+            transform=transform,
             provenance=f"{provenance_prefix}:{trajectory.frame_source.value}",
             valid_from_ns=trajectory.start_ns,
             valid_to_ns=trajectory.end_ns,

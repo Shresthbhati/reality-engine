@@ -102,3 +102,19 @@ from core (P0-02/P18-01 — platform/application boundary).
 **Still unstarted per TASKS.yaml:**
 Causal graph, branching/counterfactual engine, AI copilot,
 natural-language query.
+
+## Evidence-progressive product path (2026-09-29)
+
+Details and evidence: [PROGRESSIVE_RECONSTRUCTION.md](PROGRESSIVE_RECONSTRUCTION.md).
+
+| Area | Limitation | Upgrade path |
+|---|---|---|
+| Single-image bootstrap | Relative scale only; assumed camera when EXIF has no focal length; assumes a roughly level camera; confidence capped at 0.35. Opening detection is image-space rectangle *candidates* only (conf <= 0.2): measured on one South Building facade photo it found 2 of ~15 visible windows plus 1 fragment after the size filter, i.e. **low recall**, multi-pane windows are mostly missed, and a wall hidden behind foliage yields nothing. Corridor axis needs two walls on opposite sides of the camera plus a floor; it was **only verified on a constructed corridor**, no real corridor photograph exists in the repo. Role labels (floor/ceiling) on an *exterior* photo come from the level-camera assumption and are hypotheses | Learned window/door segmentation; a real corridor dataset; accept a user-supplied scale reference |
+| Multi-view | Only the sparse COLMAP path is wired (Level 2); dense (Level 3) exists but is off by default; wide-baseline sets legitimately fail and fall back to Level 0 (every usable photo is kept as its own single-view hypothesis and laid out side by side for display only; their relative placement is unknown) | Enable dense MVS behind an explicit operator/GPU decision |
+| Frame prior | Camera-up gravity prior assumes people hold cameras roughly upright and that orientations are diverse; sideways/rolled captures can mislead it (guarded by coherence + diversity thresholds) | Use EXIF/IMU gravity when present |
+| Versions | V(n) is rebuilt from the union of evidence, so entity ids are re-derived; diffs can show remove+add for a refined structure | Wire `world_ir/entity_reid.py` into the rebuild |
+| Studio | The status panel describes the *current* model while an older version is inspected | Serve the selected version's report/evidence |
+| Datasets | The only real photographic golden dataset is South Building (an exterior); no real corridor or room dataset exists in the repo | Capture and document real corridor/room sets with rights |
+| Video | Frames are sampled uniformly in time (24 max); no blur/overlap-aware selection | Use the contribution measure to pick frames |
+| Confidence defaults | `Observation` / `Relationship` constructors still default to 1.0; depth-frame decode fidelity states 1.0 with its basis | Dedicated pass over constructor defaults |
+

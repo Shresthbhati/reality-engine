@@ -252,7 +252,7 @@ class TestVerticalSliceStage:
         from world_ir import WorldIR as _WorldIR
 
         world = _WorldIR()
-        facts = _detail_stage(result, world, self._options())
+        facts = _detail_stage(result, world, self._options(), "metric")
         assert facts["status"] == "ran"
         assert facts["summary"]["n_refined"] >= 1
         assert "detail" in world.metadata
@@ -287,7 +287,7 @@ class TestVerticalSliceStage:
                 'image_size', 'detail_enabled', 'detail_voxel_size_m')},
             'intrinsics': None,
         })
-        facts = _detail_stage(result, world, opts)
+        facts = _detail_stage(result, world, opts, "metric")
         assert facts["status"] == "skipped"
         assert "intrinsics" in facts["note"].lower()
         assert "detail" not in world.metadata

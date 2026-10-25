@@ -25,9 +25,13 @@ class Uncertainty:
     expected to carry high confidence, GENERATED/UNKNOWN low or zero --
     callers that need this contract enforced should use
     Provenanced.validate().
+
+    The DEFAULT is 0.0 (unknown), never 1.0: a value whose producer did
+    not state how sure it is must not read as certain. Callers that have
+    actually measured or fixed a confidence pass it explicitly.
     """
 
-    confidence: float = 1.0
+    confidence: float = 0.0
     note: Optional[str] = None
 
     def __post_init__(self):
@@ -42,7 +46,7 @@ class Uncertainty:
 
     @staticmethod
     def from_dict(data: dict) -> "Uncertainty":
-        return Uncertainty(confidence=data.get("confidence", 1.0), note=data.get("note"))
+        return Uncertainty(confidence=data.get("confidence", 0.0), note=data.get("note"))
 
 
 @dataclass(frozen=True)

@@ -28,6 +28,8 @@ data/
 
 # Scratch, build and logs
 _*
+# ...but never package markers: `_*` silently kept exporters/citydb/__init__.py out of the repo
+!__init__.py
 *.log
 *.err
 .antigravity/
@@ -38,3 +40,6 @@ dist/
 tmpcheck.py
 security_audit_report.json
 .audit_*.txt
+
+# stray COLMAP database written to the cwd by ad-hoc colmap runs
+/db.db

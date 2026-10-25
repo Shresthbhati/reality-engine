@@ -2,9 +2,12 @@
 
 import copy
 
-from provenance import Provenance
+from provenance import Provenance, Uncertainty
 from world_ir.diff import ChangeKind, diff_worlds
-from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Vector3
+from world_ir.schema_v1 import (
+    Entity, EntityType, Geometry, GeometryType, Relationship,
+    RelationshipKind, Vector3,
+)
 from world_ir.world_v1 import WorldIR
 
 
@@ -182,3 +185,72 @@ def test_deterministic_repeated_runs_produce_identical_result():
     r1 = diff_worlds(a, b).to_dict()
     r2 = diff_worlds(a, b).to_dict()
     assert r1 == r2
+
+
+# ===== Previously-invisible entity fields (regression for the P1 diff gap) =====
+#
+# diff_worlds used to compare only `type`/`name`/`transform`/`provenance`/
+# `confidence`/`geometry_ids`/`material_ids`. An entity whose ONLY change
+# was its uncertainty, semantic_labels, or relationships produced an empty
+# diff -- not misclassified, invisible. WorldStore.save_version's
+# changed_entity_ids comes straight from diff_worlds, so this silently
+# hid real content changes from version records.
+
+def test_uncertainty_only_change_is_detected():
+    before = Entity(id="ent-1", uncertainty=Uncertainty(confidence=0.9))
+    after = Entity(id="ent-1", uncertainty=Uncertainty(confidence=0.1, note="degraded"))
+
+    result = diff_worlds(_world_with([before]), _world_with([after]))
+    assert not result.is_empty()
+    fields = {c.field for c in result.entity_diffs[0].changes}
+    assert fields == {"uncertainty"}
+
+
+def test_semantic_labels_only_change_is_detected():
+    before = Entity(id="ent-1", semantic_labels=["x"])
+    after = Entity(id="ent-1", semantic_labels=["y", "z"])
+
+    result = diff_worlds(_world_with([before]), _world_with([after]))
+    assert not result.is_empty()
+    fields = {c.field for c in result.entity_diffs[0].changes}
+    assert fields == {"semantic_labels"}
+
+
+def test_relationship_only_change_is_detected():
+    before = Entity(id="ent-1", relationships=[])
+    after = Entity(id="ent-1", relationships=[
+        Relationship(kind=RelationshipKind.PART_OF, target_id="other")
+    ])
+
+    result = diff_worlds(_world_with([before]), _world_with([after]))
+    assert not result.is_empty()
+    fields = {c.field for c in result.entity_diffs[0].changes}
+    assert fields == {"relationships"}
+
+
+def test_relationship_reordering_alone_is_not_a_diff():
+    r1 = Relationship(kind=RelationshipKind.PART_OF, target_id="x")
+    r2 = Relationship(kind=RelationshipKind.ATTACHED_TO, target_id="y")
+    before = Entity(id="ent-1", relationships=[r1, r2])
+    after = Entity(id="ent-1", relationships=[
+        Relationship(kind=RelationshipKind.ATTACHED_TO, target_id="y"),
+        Relationship(kind=RelationshipKind.PART_OF, target_id="x"),
+    ])
+
+    assert diff_worlds(_world_with([before]), _world_with([after])).is_empty()
+
+
+def test_confidence_provenance_transform_stay_minimal_single_field_diffs():
+    """Guards against the fix over-widening detection: unrelated fields
+    must not start appearing alongside a single real change."""
+    base = dict(provenance=Provenance.OBSERVED, confidence=0.5)
+
+    before = Entity(id="ent-1", **base)
+    after = Entity(id="ent-1", **{**base, "confidence": 0.9})
+    fields = {c.field for c in diff_worlds(_world_with([before]), _world_with([after])).entity_diffs[0].changes}
+    assert fields == {"confidence"}
+
+    before = Entity(id="ent-1", **base)
+    after = Entity(id="ent-1", **{**base, "provenance": Provenance.RECONSTRUCTED})
+    fields = {c.field for c in diff_worlds(_world_with([before]), _world_with([after])).entity_diffs[0].changes}
+    assert fields == {"provenance"}

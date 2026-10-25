@@ -1,7 +1,7 @@
 # Application API service (FastAPI) — install on top of base requirements
 fastapi
 uvicorn
-sqlalchemy>=2.0
+sqlalchemy[asyncio]>=2.0
 # Async SQLite driver backing the async engine used by apps/api/db.py
 aiosqlite>=0.20.0
 python-multipart

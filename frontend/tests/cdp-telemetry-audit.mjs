@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 /**
  * Detailed Chrome DevTools Protocol Telemetry & Error Audit
  */
@@ -6,7 +8,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 
 const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const PROFILE_DIR = 'C:\\Users\\shres\\.temp-chrome-telemetry-profile';
+const PROFILE_DIR = path.join(os.tmpdir(), 'temp-chrome-telemetry-profile');
 const PORT = 9223;
 
 if (!fs.existsSync(PROFILE_DIR)) {

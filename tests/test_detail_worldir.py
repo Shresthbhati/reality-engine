@@ -301,7 +301,7 @@ class TestVerticalSliceWiring:
         from world_ir import WorldIR
 
         world = WorldIR()
-        facts = _detail_stage(result, world, _slice_options())
+        facts = _detail_stage(result, world, _slice_options(), "metric")
         assert facts["status"] == "ran"
         assert facts["summary"]["n_entities"] >= 1
         # The world now carries the detail statements.

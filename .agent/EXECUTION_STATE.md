@@ -2,6 +2,141 @@
 
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
+
+## 2026-10-02/03 -- Final engineering/verification sprint (worktree reality-engine-final-sprint-2b170d)
+
+Ledger after: DONE 36 / PARTIAL 2 (PROD-01, P16-01) / BLOCKED 5 (P1-03 hardware, P3-02 VIO backend, P7-03 real indoor
+data, P7-05 universal calibration data, P14-01 3DCityDB runtime) / MISSING 0. P16-01 was downgraded DONE->PARTIAL (GIS export,
+ROS, Habitat, SUMO, Unreal, Godot writers do not exist); P7-05 moved PARTIAL->BLOCKED (engineering complete, data-blocked).
+
+Verified (observed): full non-slow suite 2776 passed / 0 failed / 28 skipped / 74 deselected; tests/integration (real COLMAP +
+MiDaS, South Building) 135 passed + 1 harness bug fixed and re-run green / 14 skipped (13+1 gitignored synthetic fixtures); 8 real
+stage-synchronised process kills pass; ordering ABC vs BAC equivalent (camera residual 0.0006); compileall 0; frontend tsc 0 /
+build 0 / contract test 0 / lint 10 errors (pre-existing, files untouched).
+
+Found and fixed (real defects): (1) orphan WorldStore version -> phantom + duplicate; HEAD move leaked via caller commit
+(adoption intent/quarantine/verify-before-adopt); (2) a job killed after adoption minted a duplicate version (is_unchanged);
+(3) frame-blind arbitration (frame_shift rule); (4) detail stage assumed arbitrary units are metres (scale-aware budget +
+robust-extent voxel; the old bbox "extent" was 10x inflated); (5) .gitignore `_*` kept exporters/citydb/__init__.py out of the repo.
+
+Next priorities: per-version evidence panel (PROD-01); GIS/ROS/Habitat/SUMO/Unreal/Godot writers (P16-01); real corridor/room
+photo datasets and further calibration data (need external data); retention policy for quarantined versions.
+
+## 2026-10-03 -- Per-version evidence panel
+
+Status API: versions[].evidence_ids/registered_ids. Studio: an inspected earlier version shows each photo as placed / waiting /
+added after it, with a summary; the changes block is labelled as the current version's. Browser-verified; ledger unchanged
+(PROD-01 PARTIAL: PROD.3 confidence-defaults audit + external corridor/room data remain).
+
+## 2026-10-03 -- P16-01 export writers
+
+GIS (GeoJSON), ROS (Gazebo SDF), Godot (.tscn), Unreal (editor Python), SUMO (nod/edg XML), Habitat (stage bundle) implemented on
+a shared box collector; 23 tests green. P16-01 PARTIAL -> BLOCKED (target runtimes unavailable). Ledger: DONE 36 / PARTIAL 1 /
+BLOCKED 6 / MISSING 0.
+
+## 2026-09-30 -- Closure sprint: ledger reconciled against code and tests (PR #140)
+
+Ledger after: DONE 37 / PARTIAL 2 (P7-05, PROD-01) / BLOCKED 4 (P1-03 hardware, P3-02 VIO backend, P7-03 real indoor
+data, P14-01 3DCityDB runtime) / MISSING 0. Each task's `reconciliation:` field carries the evidence.
+
+Changed: judged automatic dense Level 3 (dense_judge.py; found + fixed raw-frame dense points and dense points never
+reaching fusion); multi-storey root causes (room extent, per-plane observer camera side, disjoint-slab split);
+exporters/citydb; P9-01 v2 fields restored in canonical Entity/WorldIR (ledger said DONE with 4 failing tests);
+WorldIR main_branch_id derived from id; jobs no longer graded partial for a disabled dense stage; aiosqlite/API deps
+declared (CI had silently skipped API suites); platform-neutral fake COLMAP; detail calibration measured.
+
+Verified (observed): architecture cluster 224 passed; new suites green (dense 21, multistorey 12, citydb 12+1 skipped).
+Seven failures found at HEAD in a clean worktree were fixed. NOT verified at time of writing: full-suite total,
+slow real-COLMAP journeys with dense default-on, reliability journey.
+
+UPDATE (same sprint, later): full non-slow suite 2737 passed / 1 failed / 28 skipped / 67 deselected(slow) -- the one failure (test_world_store_concurrency, transient Windows PermissionError on os.replace under load) fixed with a bounded retry in worldstore/store.py. Slow real-COLMAP: progressive_product_journey+continuous_evidence 15 passed / 1 failed (pre-existing at HEAD: arbiter tie-break picks 'full' over 'incremental'); reliability_journey 12 passed / 2 failed: a REAL defect (fault after version adoption failed the job and the retry adopted a duplicate version; apps/api/jobs.py now treats any post-adoption COLMAP-commit fault as a recorded degradation, test passes) and kill_after_s=30 (job finishes before the kill: timing precondition). Real dense run on South Building (CUDA): gate passed, dense ran 74.2x denser, judge EQUIVALENT (13% new surface) -> sparse kept; 16 photos: 6 registered, gate refused. Owner decisions applied afterwards: dense accepts >=10x density gain (re-run: Level 3, 84,104 dense points on the six photos); frame preservation outranks the new-understanding tie-break once a HEAD exists (rich-world journey + failure injection: 18 passed). Frontend typecheck/build NOT run (no node_modules in this worktree).
+Datasets: REAL photos = datasets/south_building (32) and 4 indoor photos outside the repo (provenance unverified);
+REAL map data = city_osm; real_room_capture*, room_capture = SYNTHETIC. No real corridor/room dataset exists.
+
+## 2026-09-29 (1) -- Evidence-progressive one-action product path (PROD-01)
+
+Branch claude/reality-engine-e2e-455f35. Directive: DROP 1 PHOTO -> rough
+model; DROP 6 -> meaningful reconstruction; ADD MORE -> the SAME world
+improves; no World/Session/Job vocabulary in the way. Full design, defect
+table, dataset windows and rights: docs/PROGRESSIVE_RECONSTRUCTION.md.
+
+State found: apps/api/jobs.py did not import (mid-function import block);
+once fixed, EVERY real COLMAP run deadlocked (reconstruction/proc.py:
+run_owned polled poll() without draining pipes, and separately called
+register_worker() under a non-reentrant lock). Neither was visible to any
+prior test because none ran real COLMAP through the job runner.
+
+Built: engine/pipeline/single_image.py (MiDaS -> planes -> WorldIR, every
+entity INFERRED/ESTIMATED/UNKNOWN, confidence <= 0.35, scale relative),
+engine/pipeline/progressive.py (level ladder + fallback, union-of-evidence
+refinement), evidence/image_check.py (decode + classify before COLMAP),
+evidence/contribution.py (new_view/redundant/disconnected from SIFT+RANSAC),
+engine/pipeline/guidance.py (advice only from measurements),
+apps/api/routes_reconstructions.py (POST /api/reconstructions incl. video
+frame sampling; GET /api/worlds/{id}/status), apps/api/reconstruction_state.py,
+WorldDiff.categories(), frame prior from camera up-vectors, Studio status
+strip / version switching / drop zone / no-blank-viewport explanation, and a
+rewritten mobile capture flow.
+
+Verification (observed, not inferred):
+  * tests/integration/test_progressive_product_journey.py (real South
+    Building photos, real COLMAP 4.2.0 + MiDaS on CPU): one photo, six photos,
+    6->10->20 on one world with diff, bad evidence, hard low-overlap fallback,
+    engine crash, restart, video -- see docs/PROGRESSIVE_RECONSTRUCTION.md
+    for the run summary.
+  * tests/test_progressive_units.py + tests/test_proc_ownership.py +
+    tests/test_world_diff.py + tests/test_vertical_slice_modules.py: green.
+  * frontend: tsc --noEmit clean; `next build --webpack` exit 0 (Turbopack
+    rejects the node_modules junction used in this worktree -- environment,
+    not code); real-browser run: drop -> world -> rendered rough model ->
+    add photos -> V2 -> version switch -> diff modal -> mobile capture.
+  * found by the browser only: Studio never rendered point clouds (ASCII
+    PLY from the API vs binary-only loader) -- fixed.
+
+NOT verified / not done: real corridor and room datasets (none exist as real
+photos in the repo), dense Level 3, metric scale, opening (window/door)
+detection from one image, GPU paths, per-version evidence panel for old
+versions, stable entity ids across versions (V1->V2 diff shows identity
+churn when the model changes character), Observation/Relationship
+constructor confidence defaults (audited, documented, not changed).
+
+## 2026-09-28 (1) -- Multi-storey plane support + real-data truth audit (P7-03)
+
+Branch fix/reconstruction-multistorey-plane-support, PR #128 (review-
+ready, CI 8/8 green, NOT merged -- sprint directive). Root cause
+measured: the compiler path consumed raw RANSAC at outdoor-sparse
+defaults (0.08 m / 8 inliers) while the assembler ran the interior
+scale (0.02/30) + sheet-split/merge; a diagonal candidate fused the
+canonical fixture's upper floor (812 pts) with the lower ceiling
+(703 pts) into one tilted 1565-inlier plane and the compiler promoted
+3 rooms / 1 fake storey. Fix: one shared detect->refine->classify
+stage (options on CompileOptions), support judged by MEASURED EXTENT
+(structural_plane_undersized: two largest extents < 1 m = not
+architecture), density-invariant ring test (interior occupied-cell
+share gated on pts/m2 -- area-fraction version demoted every real
+sparse floor), WorldIR gate reclassifies floor_height_m/elevation_m/
+sill_height_m/head_height_m as coordinate-like (negative = arbitrary
+frame origin, honest), assembler pins stable world identity
+(uuid main_branch_id broke byte-determinism).
+
+Verification: canonical two-storey 2 rooms/2 storeys both paths;
+10-case anti-cheat suite (A-J) incl. collapsed-reconstruction-refuses-
+everything and assembler byte-identical across runs; adversarial suite
+12/12 (30:43); real south_building compiler path 0 rooms -> 1 room
+9.30 m2 + 1 storey (0 validation issues); room42 + collapsed
+room_capture (1213-pt degenerate map) refuse honestly; WorldStore
+save/load/verify round-trip hash-identical; geometric stage 58.6k pts
+87 s vs old 285 s. Failure-semantics battery: failed-registration/
+empty/no-cameras/noise/unavailable-backend all refuse or return
+visibly-empty; lifecycle semantics 9/9.
+
+REAL-DATA PROVENANCE NOTE: datasets/real_room_capture and
+datasets/room_capture are SYNTHETIC/RENDERED captures (manifests say
+so); only south_building is real photographic SfM. COLMAP 4.2.0 CUDA
+binary now runs on this machine (exit 0); its room_capture mapping is
+PARTIAL (25/28 cameras, degenerate 1213-pt map) -- surfaced honestly,
+now promoted as nothing instead of fake floors.
+
 **Queue:** `.agent/TASKS.yaml` (RE-2026-CORE-V1) — this file records
 where execution actually stands, nothing else defines that.
 

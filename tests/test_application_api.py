@@ -243,6 +243,22 @@ def test_activity_feed_real_events(client):
 # --------------------------------------------------------------------------
 
 
+def _valid_jpeg(seed: int = 0) -> bytes:
+    """A real, decodable JPEG. The job runner refuses to hand bytes that are
+    not images to any reconstruction stage, so tests that need evidence to
+    survive validation must upload actual images."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    rng = np.random.default_rng(seed)
+    small = rng.integers(0, 255, (30, 40, 3), dtype=np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(small).resize((320, 240)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
 def _upload_photo(client, sid, name, payload):
     r = client.post(
         f"/api/uploads?session_id={sid}",
@@ -327,31 +343,37 @@ def test_reconstruct_honest_failure_without_usable_images(client):
 
 
 def test_reconstruct_honest_failure_when_backend_unavailable(client, monkeypatch):
-    """When the vertical-slice pipeline import fails (optional dependency
-    missing), the job fails honestly naming the import error -- never a
-    silent fallback or fake result."""
+    """When EVERY reconstruction level is unavailable (multi-view import
+    fails AND the single-view depth model is missing), the job fails honestly
+    naming both causes and adopts no version -- never a fake result. (When
+    only multi-view is unavailable the product falls back to a rough
+    single-view model; see tests/integration/test_progressive_product_journey.py.)"""
     import apps.api.jobs as jobs_mod
+    from engine.pipeline.single_image import BootstrapUnavailable
 
     def _boom(*args, **kwargs):
         raise ImportError("engine.pipeline.vertical_slice unavailable (simulated)")
 
-    monkeypatch.setattr(
-        "engine.pipeline.vertical_slice.vertical_slice", _boom, raising=False
-    )
+    def _no_depth(*args, **kwargs):
+        raise BootstrapUnavailable("depth model unavailable (simulated)")
+
+    monkeypatch.setattr("engine.pipeline.vertical_slice.vertical_slice", _boom, raising=False)
+    monkeypatch.setattr("engine.pipeline.progressive.bootstrap_single_image", _no_depth)
 
     w = client.post("/api/worlds", json={"name": "No Backend World"}).json()
     sid = client.post("/api/sessions", json={"name": "No backend"}).json()["id"]
     assert client.post(f"/api/worlds/{w['id']}/attach/{sid}").status_code == 200
     for i in range(2):
-        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+        _upload_photo(client, sid, f"frame_{i}.jpg", _valid_jpeg(i))
 
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     job = _wait_job(client, r.json()["job_id"], timeout=90.0)
     assert job["status"] == "failed"
     err = (job.get("error") or "").lower()
-    # The injected import failure surfaces verbatim in the job's traceback
-    # -- an honest, specific error, never a silent fallback or fake result.
+    # both injected failures surface verbatim -- an honest, specific error
     assert "unavailable (simulated)" in err
+    assert "vertical_slice unavailable (simulated)" in err
+    assert client.get(f"/api/worlds/{w['id']}").json()["current_version_id"] is None
     del jobs_mod  # imported only to document the module under test
 
 
@@ -742,13 +764,15 @@ def test_commit_failed_db_write_rolls_back(client, tmp_path, monkeypatch):
     assert "not adopted" in r.json()["detail"].lower()
     monkeypatch.undo()  # outage over: verify the crash anatomy
     monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
-    # The version file exists on disk (orphan) while HEAD never moved.
-    # Recovery reconciles the orphan into the listing (visible, never
-    # HEAD): nothing false was ever served, nothing durable was lost.
+    # The version written before the outage was never adopted. Adoption protocol (worldstore_service): it is
+    # QUARANTINED -- out of the lineage, never listed as a phantom version, nothing deleted -- so the WorldStore
+    # never holds a version the DB did not adopt (tests/test_adoption_transaction.py covers the full matrix).
     from worldstore.store import WorldStore
 
-    on_disk = {v.version_id for v in WorldStore(tmp_path / "ws").list_versions()}
-    assert len(on_disk) == 2  # base + orphan
+    store = WorldStore(tmp_path / "ws")
+    on_disk = {v.version_id for v in store.list_versions()}
+    assert on_disk == {v0}
+    assert len(store.quarantined_versions()) == 1                    # nothing durable was lost
     head, _ = _head_and_count(client, wid)
     assert head == v0
     items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
@@ -980,6 +1004,39 @@ def test_create_room_rejects_nan(client, tmp_path, monkeypatch):
     assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
 
 
+def test_create_corridor_connects_room_and_city(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body()).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/corridors", json={
+        "name": "Hall", "length": 8.0, "connects": ["Study-room"], "origin": [4.0, 0.0, 0.0]})
+    assert r.status_code == 201, r.text
+    assert r.json()["corridor_entity_id"] == "Hall-corridor"
+    r = client.post(f"/api/worlds/{wid}/cities", json={
+        "name": "Town", "blocks_x": 2, "blocks_y": 2, "origin": [40.0, 0.0, 0.0]})
+    assert r.status_code == 201, r.text
+    entities = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    assert {"Study-room", "Hall-corridor", "Town-city", "Town-b1-1-building"} <= set(entities)
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 3
+
+
+def test_create_corridor_and_city_reject_bad_input(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    bad = [
+        ("corridors", {"name": "c", "length": 0}),
+        ("corridors", {"name": "c", "length": 5, "axis": "z"}),
+        ("corridors", {"name": "c", "length": 5, "connects": ["missing-room"]}),
+        ("corridors", {"name": " ", "length": 5}),
+        ("cities", {"name": "t", "blocks_x": 0}),
+        ("cities", {"name": "t", "blocks_x": 11, "blocks_y": 10}),
+        ("cities", {"name": "t", "min_height": 10, "max_height": 5}),
+    ]
+    for path, payload in bad:
+        r = client.post(f"/api/worlds/{wid}/{path}", json=payload)
+        assert r.status_code in (413, 422), (path, payload, r.status_code, r.text[:200])
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+    assert client.post("/api/worlds/nope/cities", json={"name": "t"}).status_code == 404
+
+
 def test_create_room_duplicate_submit(client, tmp_path, monkeypatch):
     wid = _room_world(client, tmp_path, monkeypatch)
     first = client.post(f"/api/worlds/{wid}/rooms", json=_room_body())
@@ -1111,12 +1168,32 @@ def test_reconstruct_duplicate_in_progress_409(client, tmp_path, monkeypatch):
     assert job["status"] in ("succeeded", "partial", "failed", "cancelled")
 
 
-def test_failed_job_exhausts_retries(client):
-    # test_reconstruct_honest_failure_without_usable_images leaves a job
-    # that fails deterministically: it must retry (attempts > 1) and end
-    # 'failed' -- never stuck 'running', never silently dropped.
+def test_failed_job_exhausts_retries(client, monkeypatch):
+    """A TRANSIENT failure retries up to max_attempts and ends 'failed' --
+    never stuck 'running', never silently dropped."""
+    import apps.api.jobs as jobs_mod
+
+    def _flaky(*args, **kwargs):
+        raise RuntimeError("transient backend hiccup (simulated)")
+
+    monkeypatch.setattr(jobs_mod, "run_progressive", _flaky)
     sid = client.post("/api/sessions", json={"name": "Retry"}).json()["id"]
     wid = client.post("/api/worlds", json={"name": "Retry world"}).json()["id"]
+    assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
+    for i in range(2):
+        _upload_photo(client, sid, f"frame_{i}.jpg", _valid_jpeg(i))
+    r = client.post(f"/api/sessions/{sid}/reconstruct")
+    job = _wait_job(client, r.json()["job_id"], timeout=90.0)
+    assert job["status"] == "failed"
+    assert job["attempts"] == 3, job
+    assert "transient backend hiccup" in (job["error"] or "")
+
+
+def test_deterministic_failure_is_not_retried_and_says_what_is_missing(client):
+    """No photographic evidence can never succeed on a retry: it fails at
+    once (one attempt) and is classified NEEDS_MORE_EVIDENCE, not FAILED."""
+    sid = client.post("/api/sessions", json={"name": "Nothing usable"}).json()["id"]
+    wid = client.post("/api/worlds", json={"name": "Nothing usable world"}).json()["id"]
     assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
     client.post(
         f"/api/uploads?session_id={sid}",
@@ -1124,9 +1201,10 @@ def test_failed_job_exhausts_retries(client):
     )
     r = client.post(f"/api/sessions/{sid}/reconstruct")
     job = _wait_job(client, r.json()["job_id"], timeout=90.0)
-    assert job["status"] == "failed"
-    assert job["attempts"] == 3, job
-    assert job["error"], "a failed job must carry its error explicitly"
+    assert job["status"] == "failed" and job["attempts"] == 1, job
+    assert job["payload"]["failure_kind"] == "insufficient_evidence"
+    status = client.get(f"/api/worlds/{wid}/status").json()
+    assert status["state"] == "NEEDS_MORE_EVIDENCE" and not status["has_model"]
 
 
 def test_reap_stale_running_job(client):
@@ -1520,3 +1598,500 @@ def test_cancel_terminal_job_409(client):
     assert terminal["status"] == "failed"
     r = client.post(f"/api/jobs/{job_id}/cancel")
     assert r.status_code == 409, r.text
+
+
+# --- C1: stored specs + scoped regeneration ---------------------------------
+
+def _entities(client, wid):
+    return client.get(f"/api/worlds/{wid}/worldir").json()
+
+
+def _two_rooms_hall(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body("A")).status_code == 201
+    assert client.post(f"/api/worlds/{wid}/rooms",
+                       json=dict(_room_body("B"), origin=[30.0, 0.0, 0.0])).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/corridors", json={
+        "name": "Hall", "length": 6.0, "attach": {"to": "A-room", "side": "east"}})
+    assert r.status_code == 201, r.text
+    return wid
+
+
+def test_put_room_is_scoped_and_attached_corridor_follows(client, tmp_path, monkeypatch):
+    import json as _json
+
+    wid = _two_rooms_hall(client, tmp_path, monkeypatch)
+    gen = client.get(f"/api/worlds/{wid}/generated").json()
+    hall = next(g for g in gen if g["entity_id"] == "Hall-corridor")
+    assert hall["attach"] == {"to": "A-room", "side": "east"}
+    assert hall["depends_on"] == ["A-room"]
+    before = _entities(client, wid)
+    r = client.put(f"/api/worlds/{wid}/rooms/A", json={"width": 9.0})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["changed"] > 0 and body["unchanged"] > 0 and body["removed"] == 0
+    assert "A-floor" in body["entity_ids_changed"] and "Hall-floor" in body["entity_ids_changed"]
+    after = _entities(client, wid)
+    b_ids = [e for e, v in before["entities"].items()
+             if v["custom_properties"].get("generated_by") == "B-room"]
+    assert b_ids
+    for eid in b_ids:  # (a) B byte-identical
+        assert _json.dumps(before["entities"][eid], sort_keys=True) == \
+            _json.dumps(after["entities"][eid], sort_keys=True)
+    # (b) corridor x-min == A's new x-max
+    a_max = after["geometries"]["geom-A-floor"]["bounds_max"]["x"]
+    assert a_max == 9.0
+    assert after["geometries"]["geom-Hall-floor"]["bounds_min"]["x"] == a_max
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 4
+
+
+def test_put_unchanged_is_deterministic_and_dedups(client, tmp_path, monkeypatch):
+    wid = _two_rooms_hall(client, tmp_path, monkeypatch)
+    head = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    r = client.put(f"/api/worlds/{wid}/rooms/A", json={"width": 4.0})  # unchanged
+    assert r.status_code == 200 and r.json()["changed"] == 0
+    items = client.get(f"/api/worlds/{wid}/versions").json()["items"]
+    assert len(items) == len(head)
+    assert r.json()["version_id"] == next(i for i in items if i["is_current"])["id"]
+
+
+def test_duplicate_name_post_is_409(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body("A")).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/rooms", json=_room_body("A", width=7.0))
+    assert r.status_code == 409, r.text
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 1
+
+
+def test_delete_blocked_by_dependents_then_cascade(client, tmp_path, monkeypatch):
+    wid = _two_rooms_hall(client, tmp_path, monkeypatch)
+    r = client.delete(f"/api/worlds/{wid}/rooms/A")
+    assert r.status_code == 409 and "Hall" in r.text
+    assert "A-room" in _entities(client, wid)["entities"]
+    r = client.delete(f"/api/worlds/{wid}/rooms/A?cascade=true")
+    assert r.status_code == 200, r.text
+    ents = _entities(client, wid)
+    assert not {"A-room", "A-floor", "Hall-corridor", "Hall-floor"} & set(ents["entities"])
+    assert "geom-A-floor" not in ents["geometries"] and "B-room" in ents["entities"]
+    assert client.delete(f"/api/worlds/{wid}/rooms/Nope").status_code == 404
+
+
+def test_put_legacy_room_without_spec_is_409_not_crash(client, tmp_path, monkeypatch):
+    from procedural import spec_store
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body("Old")).status_code == 201
+    # Simulate a world created before specs were stored.
+    monkeypatch.setattr(spec_store, "load_specs", lambda world: {})
+    r = client.put(f"/api/worlds/{wid}/rooms/Old", json={"width": 5.0})
+    assert r.status_code == 409 and "before specs were stored" in r.text
+    assert client.put(f"/api/worlds/{wid}/rooms/Missing", json={"width": 5.0}).status_code == 404
+    assert client.delete(f"/api/worlds/{wid}/rooms/Old").status_code == 409
+
+
+def test_put_rejects_nan_inf_negative_and_unknown_fields(client, tmp_path, monkeypatch):
+    wid = _two_rooms_hall(client, tmp_path, monkeypatch)
+    n = len(client.get(f"/api/worlds/{wid}/versions").json()["items"])
+    for raw in ('{"width": NaN}', '{"depth": Infinity}', '{"height": -1}',
+                '{"width": 0}', '{"bogus": 1}'):
+        r = client.put(f"/api/worlds/{wid}/rooms/A", content=raw.encode(),
+                       headers={"Content-Type": "application/json"})
+        assert r.status_code == 422, (raw, r.status_code, r.text[:200])
+    r = client.put(f"/api/worlds/{wid}/corridors/Hall", json={"length": -3})
+    assert r.status_code == 422
+    r = client.put(f"/api/worlds/{wid}/corridors/Hall",
+                   json={"attach": {"to": "Hall-corridor", "side": "east"}})
+    assert r.status_code == 422
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == n
+
+
+# --------------------------------------------------------------------------
+# Apartments (C3): solve without committing, then commit a chosen plan
+# --------------------------------------------------------------------------
+
+
+def _apartment_body(name="flat", **over):
+    body = {
+        "name": name, "footprint": [10.0, 8.0], "entrance": "hall", "seed": 1,
+        "rooms": [
+            {"id": "living", "kind": "living", "min_area": 18, "max_area": 30},
+            {"id": "kitchen", "kind": "kitchen", "min_area": 8, "max_area": 14},
+            {"id": "bedroom_1", "kind": "bedroom", "min_area": 12, "max_area": 18},
+            {"id": "bedroom_2", "kind": "bedroom", "min_area": 10, "max_area": 16},
+            {"id": "bath_1", "kind": "bathroom", "min_area": 4, "max_area": 7},
+            {"id": "bath_2", "kind": "bathroom", "min_area": 4, "max_area": 7},
+            {"id": "hall", "kind": "hallway", "min_area": 6, "max_area": 12, "aspect_max": 3.5},
+            {"id": "balcony", "kind": "balcony", "min_area": 4, "max_area": 8, "aspect_max": 3.0},
+        ],
+        "adjacency": [["living", "kitchen", "required"], ["living", "hall", "required"],
+                      ["hall", "bedroom_1", "required"], ["bedroom_1", "bath_1", "preferred"],
+                      ["hall", "bath_2", "preferred"], ["living", "balcony", "preferred"]],
+    }
+    body.update(over)
+    return body
+
+
+def test_apartment_solve_returns_plans_and_commits_nothing(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/apartments/solve", json=_apartment_body())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and 1 <= len(body["plans"]) <= 3 and body["violations"] == []
+    assert set(body["plans"][0]["rects"]) >= {"living", "hall", "balcony"}
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+    assert client.post("/api/worlds/nope/apartments/solve", json=_apartment_body()).status_code == 404
+
+
+def test_apartment_solve_infeasible_is_200_with_violations(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    body = {"name": "tight", "footprint": [5.0, 5.0], "entrance": "b1", "adjacency": [],
+            "rooms": [{"id": f"b{i}", "kind": "bedroom", "min_area": 20, "max_area": 30}
+                      for i in (1, 2, 3)]}
+    r = client.post(f"/api/worlds/{wid}/apartments/solve", json=body)
+    assert r.status_code == 200
+    assert r.json()["ok"] is False and r.json()["plans"] == [] and r.json()["violations"]
+
+
+def test_apartment_commit_lands_rooms_and_doors_and_409_on_duplicate(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body(plan_index=0))
+    assert r.status_code == 201, r.text
+    assert r.json()["apartment_entity_id"] == "flat-apartment"
+    ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    for rid in ("living", "kitchen", "bedroom_2", "hall", "balcony"):
+        assert f"flat-{rid}-room" in ents
+    doors = [e for e in ents.values() if e["type"] == "door"]
+    assert any(d["id"] == "flat-door-entrance" for d in doors) and len(doors) >= 4
+    gen = client.get(f"/api/worlds/{wid}/generated").json()
+    assert [g["kind"] for g in gen] == ["apartment"]
+    n = len(client.get(f"/api/worlds/{wid}/versions").json()["items"])
+    dup = client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body(plan_index=1))
+    assert dup.status_code == 409, dup.text
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == n
+
+
+def test_apartment_commit_revalidates_posted_rects(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    plan = client.post(f"/api/worlds/{wid}/apartments/solve", json=_apartment_body()).json()["plans"][0]
+    bad = dict(plan["rects"])
+    x, y, w, d = bad["living"]
+    bad["living"] = [x, y, w + 1.0, d]
+    r = client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body(rects=bad))
+    assert r.status_code == 422, r.text
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+    ok = client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body(rects=plan["rects"]))
+    assert ok.status_code == 201, ok.text
+
+
+def test_apartment_rejects_bad_input(client, tmp_path, monkeypatch):
+    import json as _json
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    base = _apartment_body()
+    many = [{"id": f"r{i}", "kind": "storage", "min_area": 1, "max_area": 2} for i in range(21)]
+    cases = {
+        "unknown adjacency id": dict(base, adjacency=[["living", "ghost", "required"]]),
+        "bad level": dict(base, adjacency=[["living", "kitchen", "maybe"]]),
+        "unknown entrance": dict(base, entrance="nowhere"),
+        "21 rooms": dict(base, rooms=many, adjacency=[], entrance="r0"),
+        "zero area": dict(base, rooms=[dict(base["rooms"][0], min_area=0)] + base["rooms"][1:]),
+        "max<min": dict(base, rooms=[dict(base["rooms"][0], max_area=1)] + base["rooms"][1:]),
+        "negative footprint": dict(base, footprint=[-1.0, 5.0]),
+        "bad kind": dict(base, rooms=[dict(base["rooms"][0], kind="dungeon")] + base["rooms"][1:]),
+        "blank name": dict(base, name="  "),
+        "plan_index out of range": dict(base, plan_index=99),
+    }
+    for label, payload in cases.items():
+        for path in ("apartments", "apartments/solve"):
+            if label == "plan_index out of range" and path.endswith("solve"):
+                continue
+            r = client.post(f"/api/worlds/{wid}/{path}", json=payload)
+            assert r.status_code == 422, (label, path, r.status_code, r.text[:200])
+    for raw in (_json.dumps(base).replace('"min_area": 18', '"min_area": NaN'),
+                _json.dumps(base).replace("10.0, 8.0", "NaN, 8.0")):
+        for path in ("apartments", "apartments/solve"):
+            r = client.post(f"/api/worlds/{wid}/{path}", content=raw.encode(),
+                            headers={"Content-Type": "application/json"})
+            assert r.status_code == 422, (path, raw[:60], r.status_code)
+    infeasible = dict(base, footprint=[3.0, 3.0])
+    assert client.post(f"/api/worlds/{wid}/apartments", json=infeasible).status_code == 422
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+
+
+def _hub_body(hall_aspect, name="hubflat", seed=3):
+    return {
+        "name": name, "footprint": [10.0, 8.0], "entrance": "hall", "seed": seed,
+        "rooms": [
+            {"id": "living", "kind": "living", "min_area": 16, "max_area": 28},
+            {"id": "kitchen", "kind": "kitchen", "min_area": 8, "max_area": 14},
+            {"id": "bed1", "kind": "bedroom", "min_area": 10, "max_area": 16},
+            {"id": "bed2", "kind": "bedroom", "min_area": 9, "max_area": 14},
+            {"id": "bath", "kind": "bathroom", "min_area": 4, "max_area": 7},
+            {"id": "hall", "kind": "hallway", "min_area": 5, "max_area": 12,
+             **({} if hall_aspect is None else {"aspect_max": hall_aspect})},
+        ],
+        "adjacency": [["hall", "living", "required"], ["hall", "bed1", "required"],
+                      ["hall", "bed2", "required"], ["hall", "bath", "required"],
+                      ["living", "kitchen", "required"]],
+    }
+
+
+def test_apartment_hub_brief_solve_then_commit(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/apartments/solve", json=_hub_body(3.0))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["plans"]
+    assert len(body["plans"][0]["satisfied"]) == 5 and body["plans"][0]["unsatisfied"] == []
+    c = client.post(f"/api/worlds/{wid}/apartments", json={**_hub_body(3.0), "plan_index": 0})
+    assert c.status_code == 201, c.text
+    # default hall aspect_max (2.0): honest ok=False naming the pair and the cause
+    r2 = client.post(f"/api/worlds/{wid}/apartments/solve", json=_hub_body(2.0, name="hub2"))
+    assert r2.status_code == 200 and r2.json()["ok"] is False
+    assert any("aspect_max" in v for v in r2.json()["violations"])
+
+
+def test_apartment_hub_brief_without_aspect_max_solves_and_commits(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    for seed in range(8):
+        r = client.post(f"/api/worlds/{wid}/apartments/solve", json=_hub_body(None, seed=seed))
+        assert r.status_code == 200 and r.json()["ok"] is True, (seed, r.text[:300])
+    c = client.post(f"/api/worlds/{wid}/apartments", json={**_hub_body(None), "plan_index": 0})
+    assert c.status_code == 201, c.text
+    gen = client.get(f"/api/worlds/{wid}/generated").json()
+    hall = [x for x in gen[0]["params"]["rooms"] if x["id"] == "hall"][0]
+    assert hall["aspect_max"] == 4.0
+
+
+# --------------------------------------------------------------------------
+# Buildings (C4) + editable apartments
+# --------------------------------------------------------------------------
+
+
+def _building_body(name="tower", **over):
+    body = {"name": name, "footprint": [12.0, 10.0], "storeys": 3,
+            "storey_heights": [3.0, 3.0, 3.0]}
+    body.update(over)
+    return body
+
+
+def _floor_layout():
+    return {
+        "rooms": [
+            {"id": "living", "kind": "living", "min_area": 25, "max_area": 40},
+            {"id": "kitchen", "kind": "kitchen", "min_area": 10, "max_area": 16},
+            {"id": "bedroom_1", "kind": "bedroom", "min_area": 14, "max_area": 22},
+            {"id": "bedroom_2", "kind": "bedroom", "min_area": 12, "max_area": 18},
+            {"id": "bath", "kind": "bathroom", "min_area": 4, "max_area": 8},
+            {"id": "hall", "kind": "hallway", "min_area": 6, "max_area": 14, "aspect_max": 3.5},
+        ],
+        "adjacency": [["living", "kitchen", "required"], ["living", "hall", "required"],
+                      ["hall", "bedroom_1", "required"], ["hall", "bedroom_2", "preferred"],
+                      ["hall", "bath", "preferred"]],
+        "entrance": "hall", "seed": 1,
+    }
+
+
+def test_create_building_with_floor_layout_201_then_duplicate_409(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/buildings", json=_building_body(floor_layout=_floor_layout()))
+    assert r.status_code == 201, r.text
+    assert r.json()["building_entity_id"] == "tower-building"
+    ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    assert {"tower-building", "tower-s0", "tower-s2", "tower-stairs-0", "tower-stairs-1",
+            "tower-roof", "tower-entrance", "tower-s1-living-room"} <= set(ents)
+    gen = client.get(f"/api/worlds/{wid}/generated").json()
+    assert gen[0]["kind"] == "building" and gen[0]["params"]["floor_layout"]["rects"]
+    same = client.post(f"/api/worlds/{wid}/buildings", json=_building_body(floor_layout=_floor_layout()))
+    assert same.status_code == 201 and same.json()["version_id"] == r.json()["version_id"]
+    dup = client.post(f"/api/worlds/{wid}/buildings", json=_building_body(storeys=2, storey_heights=[3, 3]))
+    assert dup.status_code == 409, dup.text
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body(name="tower")).status_code == 409
+
+
+def test_create_building_rejects_bad_input(client, tmp_path, monkeypatch):
+    import json as _json
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    bad = [
+        _building_body(storeys=31, storey_heights=None),
+        _building_body(storeys=0, storey_heights=None),
+        _building_body(core={"side": "up"}),
+        _building_body(footprint=[4.0, 12.0]),
+        _building_body(footprint=[12.0, 3.0]),
+        _building_body(storey_heights=[3.0, 3.0]),
+        _building_body(storey_heights=[3.0, 3.0, 9.0]),
+        _building_body(storey_heights=[3.0, 1.0, 3.0]),
+        _building_body(facade={"bay": 20.0}),
+        _building_body(facade={"sill": 1.5, "window_h": 1.5}),
+        _building_body(name="  "),
+        _building_body(footprint=[5.0, 5.0], storeys=2, storey_heights=None),   # stairs do not fit
+    ]
+    for payload in bad:
+        r = client.post(f"/api/worlds/{wid}/buildings", json=payload)
+        assert r.status_code == 422, (payload, r.status_code, r.text[:200])
+    raw = _json.dumps(_building_body()).replace("12.0", "NaN").encode()
+    r = client.post(f"/api/worlds/{wid}/buildings", content=raw,
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 422
+    assert client.post("/api/worlds/nope/buildings", json=_building_body()).status_code == 404
+    assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
+
+
+def test_put_building_storey_heights_changes_only_upper_storeys(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/buildings", json=_building_body()).status_code == 201
+    r = client.put(f"/api/worlds/{wid}/buildings/tower", json={"storey_heights": [3.0, 3.0, 4.2]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["unchanged"] > 0 and body["changed"] > 0
+    for eid in body["entity_ids_changed"]:
+        assert eid.startswith(("tower-s2", "tower-roof", "tower-building")), eid
+    # adding a storey without heights extends the stored list
+    r = client.put(f"/api/worlds/{wid}/buildings/tower", json={"storeys": 4})
+    assert r.status_code == 200, r.text
+    ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    assert "tower-s3" in ents and "tower-stairs-2" in ents
+    for k in (0, 1):
+        assert not any(e.startswith(f"tower-s{k}-") or e == f"tower-s{k}"
+                       for e in r.json()["entity_ids_changed"])
+    # invalid edits are 422 and commit nothing
+    n = len(client.get(f"/api/worlds/{wid}/versions").json()["items"])
+    for edit in ({"storeys": 99}, {"core": {"side": "up"}}, {"bogus": 1}, {"storey_heights": [1.0]}):
+        assert client.put(f"/api/worlds/{wid}/buildings/tower", json=edit).status_code == 422, edit
+    assert client.put(f"/api/worlds/{wid}/buildings/ghost", json={"roof": False}).status_code == 404
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == n
+
+
+def test_delete_building_cascade(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/buildings", json=_building_body()).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/corridors", json={
+        "name": "Link", "length": 4.0, "connects": ["tower-building"], "origin": [20.0, 0.0, 0.0]})
+    assert r.status_code == 201, r.text
+    blocked = client.delete(f"/api/worlds/{wid}/buildings/tower")
+    assert blocked.status_code == 409, blocked.text
+    ok = client.delete(f"/api/worlds/{wid}/buildings/tower?cascade=true")
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["cascaded"] == ["Link"]
+    ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    assert not any(e.startswith(("tower-", "Link-")) for e in ents)
+    assert client.delete(f"/api/worlds/{wid}/buildings/tower").status_code == 404
+
+
+def test_apartment_put_and_delete(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/apartments", json=_apartment_body()).status_code == 201
+    r = client.put(f"/api/worlds/{wid}/apartments/flat", json={"origin": [30.0, 0.0, 0.0]})
+    assert r.status_code == 200, r.text
+    assert r.json()["changed"] > 0 and r.json()["removed"] == 0
+    r = client.put(f"/api/worlds/{wid}/apartments/flat", json={"plan_index": 1})
+    assert r.status_code == 200, r.text
+    gen = client.get(f"/api/worlds/{wid}/generated").json()
+    assert gen[0]["params"]["plan_index"] == 1 and gen[0]["origin"] == [30.0, 0.0, 0.0]
+    assert client.put(f"/api/worlds/{wid}/apartments/flat", json={"entrance": "nowhere"}).status_code == 422
+    d = client.delete(f"/api/worlds/{wid}/apartments/flat")
+    assert d.status_code == 200 and d.json()["removed"] > 0
+    ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    assert not any(e.startswith("flat-") for e in ents)
+
+
+# --------------------------------------------------------------------------
+# Godot export profile through the API
+# --------------------------------------------------------------------------
+
+
+def test_export_godot_profile_bundle(client, tmp_path, monkeypatch):
+    import base64
+    import json
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body()).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/export", json={"format": "godot"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["bundle"] is True and body["entities_exported"]
+    assert body["files"] == ["manifest.json", "scene.tscn", "world.glb"]
+
+    dl = client.get(body["download_url"])
+    assert dl.status_code == 200 and dl.headers["content-type"].startswith("application/json")
+    bundle = dl.json()
+    assert set(bundle) == {"world.glb", "manifest.json", "scene.tscn"}
+    assert bundle["world.glb"]["encoding"] == "base64"
+    assert base64.b64decode(bundle["world.glb"]["content"])[:4] == b"glTF"
+    manifest = json.loads(bundle["manifest.json"]["content"])
+    # procedural rooms are GENERATED: metres is justified; scale is only claimed when the unit is metres
+    assert manifest["unit"] == "metre" and manifest["scale_to_metres"] == 1.0 and manifest["unit_basis"]
+    assert bundle["scene.tscn"]["encoding"] == "utf-8" and "world.glb" in bundle["scene.tscn"]["content"]
+
+
+def test_export_unknown_format_or_profile_is_clean_422(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    assert client.post(f"/api/worlds/{wid}/rooms", json=_room_body()).status_code == 201
+    r = client.post(f"/api/worlds/{wid}/export", json={"format": "unity"})
+    assert r.status_code == 422
+    assert "unity" in r.json()["detail"] and "godot" in r.json()["detail"]
+
+# Districts (C5)
+# --------------------------------------------------------------------------
+
+
+def _district_body(name="dist", **over):
+    body = {"name": name, "blocks_x": 3, "blocks_y": 2, "seed": 5, "detail": {"max_full": 1}}
+    body.update(over)
+    return body
+
+
+def test_district_create_duplicate_409_put_and_cascade_delete(client, tmp_path, monkeypatch):
+    wid = _room_world(client, tmp_path, monkeypatch)
+    r = client.post(f"/api/worlds/{wid}/districts", json=_district_body())
+    assert r.status_code == 201, r.text
+    assert r.json()["district_entity_id"] == "dist-district"
+    gen = [g for g in client.get(f"/api/worlds/{wid}/generated").json() if g["kind"] == "district"]
+    assert gen[0]["params"]["layout"] == "grid" and len(gen[0]["params"]["families"]) == 3
+    # identical resubmit is idempotent; different params under the same name -> 409
+    assert client.post(f"/api/worlds/{wid}/districts", json=_district_body()).status_code == 201
+    assert client.post(f"/api/worlds/{wid}/districts",
+                       json=_district_body(blocks_x=4)).status_code == 409
+    for bad in (_district_body(layout="ring"), _district_body(blocks_x=0),
+                _district_body(parcels={"9,9": {"family": 0}})):
+        assert client.post(f"/api/worlds/{wid}/districts", json={**bad, "name": "x"}).status_code == 422
+    # edit one parcel: only that parcel's entities (+ the district spec) change
+    p = client.put(f"/api/worlds/{wid}/districts/dist",
+                   json={"parcels": {"1,1": {"detail": "full"}}})
+    assert p.status_code == 200, p.text
+    changed = set(p.json()["entity_ids_changed"]) - {"dist-district"}
+    assert changed and all(e.startswith("dist-p1-1-") for e in changed), changed
+    assert p.json()["unchanged"] > p.json()["changed"]
+    # dependents block delete; cascade removes both
+    c = client.post(f"/api/worlds/{wid}/corridors", json={
+        "name": "Link", "length": 4.0, "connects": ["dist-district"], "origin": [-20.0, 0.0, 0.0]})
+    assert c.status_code == 201, c.text
+    blocked = client.delete(f"/api/worlds/{wid}/districts/dist")
+    assert blocked.status_code == 409, blocked.text
+    ok = client.delete(f"/api/worlds/{wid}/districts/dist?cascade=true")
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["cascaded"] == ["Link"]
+    ents = client.get(f"/api/worlds/{wid}/worldir").json()["entities"]
+    assert not any(e.startswith(("dist-", "Link-")) for e in ents)
+    assert client.delete(f"/api/worlds/{wid}/districts/dist").status_code == 404
+
+
+def test_procedural_commit_retries_when_head_moves(client, tmp_path, monkeypatch):
+    """A concurrent writer moving HEAD mid-commit must not fail the request."""
+    from apps.api import worldstore_service as svc
+
+    wid = _room_world(client, tmp_path, monkeypatch)
+    real = svc.commit_version
+    calls = {"n": 0}
+
+    async def flaky(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise svc.ConcurrentModificationError(expected_parent="x", current_head="y", orphan_version_id="z")
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(svc, "commit_version", flaky)
+    r = client.post(f"/api/worlds/{wid}/rooms", json=_room_body())
+    assert r.status_code == 201, r.text
+    assert calls["n"] == 2

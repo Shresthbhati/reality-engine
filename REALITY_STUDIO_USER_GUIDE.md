@@ -125,16 +125,16 @@ Reality Studio is organized into an ergonomic 3-column workstation:
 
 ### Visual Tour of Current UI
 
-![Initial Workspace View](file:///c:/Users/shres/OneDrive/Desktop/codes/reality-engine/docs/screenshots/01_workspace_initial.png)
+![Initial Workspace View](docs/screenshots/01_workspace_initial.png)
 *Figure 1: Initial Reality Studio workstation displaying the honest empty state when a world has not yet been compiled.*
 
-![Hierarchy and Storeys](file:///c:/Users/shres/OneDrive/Desktop/codes/reality-engine/docs/screenshots/02_hierarchy_storeys.png)
+![Hierarchy and Storeys](docs/screenshots/02_hierarchy_storeys.png)
 *Figure 2: Hierarchy panel allowing single-click storey isolation and structural inspection.*
 
-![Adaptive Entity Inspector](file:///c:/Users/shres/OneDrive/Desktop/codes/reality-engine/docs/screenshots/03_adaptive_inspector.png)
+![Adaptive Entity Inspector](docs/screenshots/03_adaptive_inspector.png)
 *Figure 3: Adaptive Inspector showing physical dimensions, centroid position, and confidence metrics.*
 
-![Measurement Tool](file:///c:/Users/shres/OneDrive/Desktop/codes/reality-engine/docs/screenshots/04_measurement_tool.png)
+![Measurement Tool](docs/screenshots/04_measurement_tool.png)
 *Figure 4: Precision 3D distance ruler displaying Euclidean distance and axis-aligned deltas.*
 
 ---
@@ -277,7 +277,7 @@ A **Session** (`/sessions/[id]`) bundles field capture assets from a site visit:
 
 # Part 9 — Room Construction Pipeline
 
-![Room Construction Pipeline Modal](file:///c:/Users/shres/OneDrive/Desktop/codes/reality-engine/docs/screenshots/06_room_construction.png)
+![Room Construction Pipeline Modal](docs/screenshots/06_room_construction.png)
 *Figure 5: Room Construction Pipeline modal detailing the 7 canonical reconstruction stages.*
 
 ### The 7 Canonical Pipeline Stages
@@ -313,7 +313,7 @@ When algorithmic reconstruction misclassifies an entity:
 
 # Part 12 — Version Comparison & Diff Engine
 
-![Version Diff Modal](file:///c:/Users/shres/OneDrive/Desktop/codes/reality-engine/docs/screenshots/07_version_diff.png)
+![Version Diff Modal](docs/screenshots/07_version_diff.png)
 *Figure 6: Version comparison modal displaying added, modified, and removed entities.*
 
 * **Added (Green):** New entities detected or added.
@@ -325,7 +325,7 @@ When algorithmic reconstruction misclassifies an entity:
 
 # Part 13 — Spatial Query Engine
 
-![Spatial Query Panel](file:///c:/Users/shres/OneDrive/Desktop/codes/reality-engine/docs/screenshots/05_spatial_query.png)
+![Spatial Query Panel](docs/screenshots/05_spatial_query.png)
 *Figure 7: Spatial query panel filtering entities by keyword, type, and confidence.*
 
 * **Text Search:** Match IDs, names, or semantic labels.
@@ -354,7 +354,7 @@ Topology models physical and functional space relationships:
 
 # Part 16 — Canonical Export & CAD/BIM Interoperability
 
-![Export Panel Modal](file:///c:/Users/shres/OneDrive/Desktop/codes/reality-engine/docs/screenshots/08_export_panel.png)
+![Export Panel Modal](docs/screenshots/08_export_panel.png)
 *Figure 8: Canonical export modal with one-click downloads for WorldIR, PLY, Cameras, and Reports.*
 
 ### The 4 Canonical Export Formats

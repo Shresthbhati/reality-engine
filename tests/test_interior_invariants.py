@@ -160,14 +160,22 @@ class TestCanonicalCompileEndToEnd:
         world, diag = compile_reconstruction_to_world(result, options)
         rooms = [e for e in world.entities.values() if e.type == EntityType.ROOM]
         assert len(rooms) == diag.rooms_detected
-        # This fixture's RoomGraph groups the corridor-adjacent space
-        # differently from the evidence-side wall-ring tracer; that
-        # disagreement must surface as a visible, named refusal, not a
-        # silently-dropped fact.
-        assert any(
+        # The two detectors either AGREE or their disagreement is a visible, named refusal -- never a silently
+        # dropped fact. (This fixture once made the RoomGraph group the corridor-adjacent space differently from
+        # the wall-ring tracer, which is what the warning was written for; since the multi-storey plane-support fix
+        # they agree, so there is nothing left to name.) Agreement means every promoted room is contained by a storey.
+        named = any(
             "room-graph grouping" in w and "not promoted as separate entities" in w
             for w in diag.interior_warnings
         )
+        in_a_storey = {
+            r.target_id
+            for e in world.entities.values() if e.type == EntityType.STOREY
+            for r in e.relationships if r.kind == RelationshipKind.CONTAINS
+        }
+        assert named or {r.id for r in rooms} <= in_a_storey, (
+            "detectors disagree silently: rooms outside any storey and no named warning",
+            [r.id for r in rooms], sorted(in_a_storey), diag.interior_warnings)
 
     def test_worldstore_roundtrip_preserves_topology(self, tmp_path: Path):
         result = _canonical_interior_scene()
@@ -443,11 +451,16 @@ class TestRealBuildingGoldenLoop:
         assert stats["point_count"] > 40000
         assert stats["entities_total"] > 0
         assert stats["validation_errors"] == 0
-        # This real dataset is a courtyard, not an enclosed interior:
-        # zero rooms/corridors/openings/windows/stairs/storeys is the
-        # honest, correct count here (see TestRealCaptureProof), not a
-        # gap in this test.
-        assert stats["rooms"] == 0
+        # This real dataset is a courtyard, not an enclosed interior. Partial enclosures are promoted with their
+        # MEASURED fractional confidence (never dropped, never presented as a confident room), so the honest
+        # contract for this scene is: no corridors / stairs / windows, and any room that does come out is a weak,
+        # low-confidence one -- a confident room here would be a hallucination. (The earlier contract was "zero
+        # rooms"; partial-room promotion with measured provenance superseded it.)
+        assert stats["corridors"] == 0 and stats["stairs"] == 0 and stats["windows"] == 0
+        assert stats["rooms"] <= 1
+        for e in world.entities.values():
+            if e.type == EntityType.ROOM:
+                assert e.confidence < 0.3, (e.id, e.confidence)
         assert stats["walls"] > 0  # the one architectural type this real scene does produce
 
         # ---- CORRECTION GOLDEN LOOP, continuing this same real world ----

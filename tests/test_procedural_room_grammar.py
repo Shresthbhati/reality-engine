@@ -55,6 +55,7 @@ class TestRoomGeneration:
             assert geom.bounds_min is not None
             assert geom.bounds_max is not None
             assert geom.bounds_max.x > geom.bounds_min.x
+            assert geom.bounds_max.y > geom.bounds_min.y
             assert geom.bounds_max.z > geom.bounds_min.z
 
     def test_procedural_provenance_everywhere(self):
@@ -93,9 +94,9 @@ class TestRoomGeneration:
         door_geom = world.geometries[doors[0].geometry_ids[0]]
         # The door's measured bounds: 0.9 wide, 2.1 high, at bottom 0.
         dx = door_geom.bounds_max.x - door_geom.bounds_min.x
-        dz = door_geom.bounds_max.z - door_geom.bounds_min.z
+        dy = door_geom.bounds_max.y - door_geom.bounds_min.y
         assert dx == pytest.approx(0.9)
-        assert dz == pytest.approx(2.1)
+        assert dy == pytest.approx(2.1)
 
 
 class TestFloorLayout:
@@ -132,3 +133,31 @@ class TestFloorLayout:
         from world_ir.world_v1 import WorldIR
         restored = WorldIR.from_dict(d)
         assert len(restored.entities) == len(world.entities)
+
+
+class TestYUpFrame:
+    """Grammars author Z-up locally but emit the project's Y-up frame."""
+
+    def test_room_height_is_world_y_footprint_is_x_and_neg_z(self):
+        world = generate_room(RoomGrammarSpec("r", 4.0, 3.0, 2.4))
+        b = lambda eid: world.geometries[f"geom-{eid}"]
+        t = 0.2
+        ceil, floor = b("r-ceiling"), b("r-floor")
+        assert ceil.bounds_min.y == pytest.approx(2.4)
+        assert ceil.bounds_max.y == pytest.approx(2.4 + t)
+        assert floor.bounds_min.y == pytest.approx(-t)
+        assert floor.bounds_max.y == pytest.approx(0.0)
+        # Footprint: x in [0, 4], local y in [0, 3] -> world z in [-3, 0].
+        assert (floor.bounds_min.x, floor.bounds_max.x) == pytest.approx((0.0, 4.0))
+        assert (floor.bounds_min.z, floor.bounds_max.z) == pytest.approx((-3.0, 0.0))
+        for side in ("north", "south", "east", "west"):
+            w = b(f"r-wall-{side}")
+            assert w.bounds_min.y == pytest.approx(0.0)
+            assert w.bounds_max.y == pytest.approx(2.4)
+
+    def test_generate_room_is_byte_identical_twice(self):
+        spec = RoomGrammarSpec("r", 4.0, 3.0, 2.4, openings=[
+            WallOpening("south", "door", 0.5, 0.9, 0.0, 2.1)])
+        a = json.dumps(generate_room(spec).to_dict(), sort_keys=True)
+        b = json.dumps(generate_room(spec).to_dict(), sort_keys=True)
+        assert a == b

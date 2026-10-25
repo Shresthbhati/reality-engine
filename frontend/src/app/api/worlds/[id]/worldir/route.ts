@@ -19,11 +19,12 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  void request;
+  const version = new URL(request.url).searchParams.get("version");
+  const query = version ? `?version=${encodeURIComponent(version)}` : "";
 
   try {
     const response = await fetch(
-      `${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/worldir`,
+      `${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/worldir${query}`,
       {
         headers: { Accept: "application/json" },
         signal: AbortSignal.timeout(30000),

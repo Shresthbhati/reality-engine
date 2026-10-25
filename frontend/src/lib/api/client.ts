@@ -221,6 +221,18 @@ export function apiPatch<T>(path: string, body?: unknown, options: RequestOption
   );
 }
 
+export function apiPut<T>(path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
+  return perform<T>(
+    path,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body ?? {}),
+    },
+    options,
+  );
+}
+
 export function apiDelete<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return perform<T>(path, { method: "DELETE", headers: { Accept: "application/json" } }, options);
 }
@@ -237,6 +249,25 @@ export function apiPostForm<T>(
     path,
     { method: "POST", body: form, headers: { Accept: "application/json" } },
     { timeoutMs: 120_000, ...options },
+  );
+}
+
+/** Multipart upload of MANY files under one field name plus text fields
+ * (the one-action reconstruction upload). Uploads can be large: 10 minutes. */
+export function apiPostFiles<T>(
+  path: string,
+  fileField: string,
+  files: File[],
+  fields: Record<string, string> = {},
+  options: RequestOptions = {},
+): Promise<T> {
+  const form = new FormData();
+  for (const f of files) form.append(fileField, f, f.name);
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  return perform<T>(
+    path,
+    { method: "POST", body: form, headers: { Accept: "application/json" } },
+    { timeoutMs: 600_000, ...options },
   );
 }
 

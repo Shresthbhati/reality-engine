@@ -109,3 +109,82 @@ synthetic reconstruction backend so `reality compile` is E2E-testable
 offline. Production leaves it unset and always uses COLMAP; the CLI
 raises a clear error on a malformed spec rather than silently ignoring
 it.
+
+## Decision — Candidate selection by world evolution, rollback as a pointer move
+
+**Status: ACCEPTED**
+
+1. Incremental vs full COLMAP candidates are compared as WORLDS against HEAD with the same `world_delta`
+   machinery that gates adoption (`engine/pipeline/candidate_selection.py`), by an ordered, recorded
+   hierarchy - never by registered-camera count and never by a scalar score. Ties keep the incremental
+   candidate (coordinate-frame continuity). If both fail acceptance the adoption gate keeps HEAD.
+2. Rollback moves only the HEAD pointer. Versions stay immutable, evidence is never removed, the COLMAP
+   base is set aside (renamed) before the pointer moves, and the next version chains onto the rolled-back
+   HEAD (its evidence is the union of everything the world holds, so photos later versions used are retried).
+3. The COLMAP session is derived state that commits strictly after WorldStore adoption and read-back; a
+   crash leaves it at most one version behind, which converges. No cross-store journal is required for that.
+
+## Decision — Adoption protocol (WorldStore <-> DB) and coordinate-frame preservation
+
+**Status: ACCEPTED (2026-10-02, final sprint)**
+
+Found by probing the real code: a crash between `WorldStore.save_version` and the DB commit left an orphan version that
+`resync_versions` later mirrored as a PHANTOM version, and a retry then minted a second one; and an in-process fault after
+the HEAD `UPDATE` was persisted by the job runner's own failure-bookkeeping commit, leaving HEAD naming a version with no
+mirror row.
+
+1. Adoption order is: intent file (`adoption-intents/`) -> WorldStore version -> read-back verification (BEFORE the
+   pointer moves; the DB never names a version the store cannot reconstruct) -> DB HEAD + mirror row in ONE transaction
+   -> intent cleared. Both writers (`commit_version`, the entity-correction route) use it.
+2. A version written but never adopted is QUARANTINED (`quarantine/`; record moved, artifact kept, nothing deleted):
+   immediately on an in-process fault, or by `reconcile_adoptions` at startup after a hard kill. `resync_versions` never
+   mirrors a version with a pending intent. Versions with no intent (CLI writers) remain legitimate history.
+3. A failed adoption undoes its own pending HEAD move/row inside the caller's transaction (no rollback: that would expire
+   the caller's loaded objects).
+4. Candidate arbitration: with an established HEAD, a candidate that keeps HEAD's coordinate frame beats one that
+   re-expresses the world in a new frame unless the latter places >= `FRAME_CHANGE_MIN_EXTRA_PHOTOS` (2) more photographs.
+   The frame shift is measured from the similarity `world_delta` already fits (geometry rules are blind to it by design).
+   Tolerances are PROVISIONAL.
+5. Retention: quarantined versions are kept indefinitely; a pruning policy is not decided.
+
+Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an orphan is "reconciled into the listing".
+
+## Decision — The working prototype is judged by the core loop; verification has four honest levels
+
+**Status: ACCEPTED (2026-10-03, prototype-completion sprint)**
+
+1. **Prototype scope.** The prototype is judged by `evidence -> world -> more evidence -> same world -> better world ->
+   version -> export`, not by an ecosystem-integration checklist. Its export story is glTF, USD(A), IFC, CityGML,
+   CityJSON and Blender (P16-01, DONE). The GIS / ROS / Habitat / SUMO / Unreal / Godot writers (P16-02) exist and are
+   structure-tested, but are `OPTIONAL_DEFERRED`: no further work until a user of one of those ecosystems needs it, and
+   nothing claims they load. Ledger states are exactly DONE / PARTIAL / BLOCKED / OPTIONAL_DEFERRED.
+2. **Verification levels** (`engine/core/verification.py`; API `/api/system/verification`; CLI `reality verification`;
+   `.agent/CAPABILITIES.yaml` is checked against the registry by a test): IMPLEMENTED < SYNTHETICALLY VERIFIED <
+   REAL-WORLD VERIFIED, with EXTERNAL VERIFICATION PENDING items listed beside a capability. A capability below
+   REAL-WORLD may not name real data; a synthetic one must be worded as synthetic; every one cites evidence files that
+   exist. RGB-D, VIO, indoor architecture and 3DCityDB are synthetically verified with their real counterparts pending.
+3. **Synthetic data policy** (`synthetic/`): deterministic, seeded, with the ground truth it was built from, labelled in
+   every manifest it writes. It verifies the CONTRACT around a sensor or backend (formats, scales, invalid pixels, clock
+   offsets, dropped frames, occlusion) -- never the sensor, never a VIO algorithm, never a real building. The VIO
+   "binary" is a stand-in that perturbs ground truth; it exists to run the real subprocess adapters.
+4. **Known limits are pinned, not hidden.** Where a synthetic fixture measured the engine WRONG (rooms joined by doorways
+   merge; phantom openings under realistic depth noise; stairs not wired into assembly; the stair detector refuses an
+   unsegmented flight or one with unobserved treads) the test is a strict `xfail` carrying the measured numbers: it flips
+   to a failure the day the engine improves, forcing the pin and the ledger to be updated.
+5. **Trajectories reach a world as an observation record**, not a registration: `trajectories.worldir.attach_trajectory`
+   keeps the poses, clock/sync state and drift (unknown stays unknown) and records `registered_into_world: False` for a
+   gauge-fixed frame. A VIO "world" frame is session-local until registration anchors it.
+6. **3DCityDB availability is three-valued** (`probe_citydb`: AVAILABLE / UNAVAILABLE / FAILED) and probe-only: AVAILABLE
+   means the `citydb` CLI runs, never that a database was reached. Contract tests against a fake CLI are not real
+   3DCityDB verification; that stays external.
+
+## Decision — Axis convention
+
+**Status: ACCEPTED**
+
+Right-handed, Y-up is the canonical world frame (`ARCHITECTURE.md`, `docs/MODULE_OWNERSHIP.md`,
+`reconstruction/frame.py`, the viewport's `three-scene.ts`). The procedural grammars
+(`procedural/room_grammar.py`, `urban_grammar.py`) author Z-up in grammar-local axes (x east, y north, z up; specs and
+`origin` stay local) and convert once, in `_entity`, with the rotation (x, y, z) -> (x, z, -y), so height is world +Y and
+local +y is world -Z. **Latent inconsistency, not fixed here:** `exporters/boxes.py` states "WorldIR is Z-up", which
+contradicts this decision; reconcile it separately (exporters were deliberately left untouched).

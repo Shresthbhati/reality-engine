@@ -234,7 +234,7 @@ class Observation:
     data_uri: str = ""  # Reference to raw data (file:// or remote URL)
     data_hash: str = ""  # SHA256 of data for integrity
     metadata: dict = field(default_factory=dict)  # Sensor-specific (focal length, etc.)
-    confidence: float = 1.0  # 0.0-1.0
+    confidence: float = 0.5  # 0.0-1.0; 0.5 = "not measured" -- producers must pass the measured value
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
 
     def to_dict(self) -> dict:
@@ -260,7 +260,7 @@ class Observation:
             data_uri=data.get("data_uri", ""),
             data_hash=data.get("data_hash", ""),
             metadata=data.get("metadata", {}),
-            confidence=data.get("confidence", 1.0),
+            confidence=data.get("confidence", 0.5),
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
         )
 
@@ -454,8 +454,10 @@ class Relationship:
     """Entity relationship with provenance."""
     kind: RelationshipKind
     target_id: str
-    confidence: float = 1.0
-    provenance: Provenance = Provenance.OBSERVED
+    # An unstated confidence/provenance must never read as "observed with certainty": the defaults say
+    # "not measured, unknown origin". Producers pass the measured confidence and the true provenance.
+    confidence: float = 0.5
+    provenance: Provenance = Provenance.UNKNOWN
     metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -472,8 +474,8 @@ class Relationship:
         return Relationship(
             kind=RelationshipKind(data.get("kind", RelationshipKind.UNKNOWN.value)),
             target_id=data["target_id"],
-            confidence=data.get("confidence", 1.0),
-            provenance=Provenance(data.get("provenance", Provenance.OBSERVED.value)),
+            confidence=data.get("confidence", 0.5),
+            provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             metadata=data.get("metadata", {}),
         )
 
@@ -545,7 +547,7 @@ class CausalRelation:
     cause_id: str = ""
     effect_id: str = ""
     relationship_type: str = ""  # e.g., "triggers", "enables", "prevents"
-    confidence: float = 1.0
+    confidence: float = 0.5
     provenance: Provenance = Provenance.INFERRED
 
     def to_dict(self) -> dict:
@@ -563,12 +565,19 @@ class CausalRelation:
             cause_id=data.get("cause_id", ""),
             effect_id=data.get("effect_id", ""),
             relationship_type=data.get("relationship_type", ""),
-            confidence=data.get("confidence", 1.0),
+            confidence=data.get("confidence", 0.5),
             provenance=Provenance(data.get("provenance", Provenance.INFERRED.value)),
         )
 
 
 # ===== Entity =====
+
+def _load_external_references(raw) -> tuple:
+    # lazy: v2_extensions imports this module
+    from .v2_extensions import ExternalReference
+
+    return tuple(ExternalReference.from_dict(r) for r in raw)
+
 
 @dataclass
 class Entity:
@@ -595,10 +604,9 @@ class Entity:
     # serialized without this field must load with this as None, never a
     # fabricated guess. See world_ir/statement_state.py.
     statement_state: Optional[StatementState] = None
-    # WorldIR 2.0 (P9-01): typed links to resources OUTSIDE the world.
-    # Additive; defaults to empty; serialized only when non-empty so v1
-    # dicts stay byte-identical.
-    external_references: tuple = field(default_factory=tuple)
+    # WorldIR 2.0 (P9-01, additive): typed links to resources the world does not own (images, COLMAP models,
+    # reports). Empty = v1 behavior; serialized only when non-empty so v1 dicts stay byte-identical.
+    external_references: tuple = ()
 
     def to_dict(self) -> dict:
         # Coerce type to EntityType enum if a raw string was passed at construction.
@@ -630,10 +638,7 @@ class Entity:
             "statement_state": self.statement_state.value if self.statement_state else None,
         }
         if self.external_references:
-            d["external_references"] = [
-                (r.to_dict() if hasattr(r, "to_dict") else r)
-                for r in self.external_references
-            ]
+            d["external_references"] = [ref.to_dict() for ref in self.external_references]
         return d
 
     @staticmethod
@@ -661,9 +666,5 @@ class Entity:
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
             custom_properties=data.get("custom_properties", {}),
             statement_state=StatementState(raw_state) if raw_state else None,
-            external_references=(
-                tuple(_ExternalReference.from_dict(r) for r in (data.get("external_references") or []))
-                if _ExternalReference is not None
-                else tuple(data.get("external_references") or [])
-            ),
+            external_references=_load_external_references(data.get("external_references", [])),
         )

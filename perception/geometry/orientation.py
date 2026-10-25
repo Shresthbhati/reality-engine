@@ -72,6 +72,7 @@ def classify_plane(
     plane: DetectedPlane,
     camera_positions: Sequence[Tuple[float, float, float]],
     up: Optional[Tuple[float, float, float]] = None,
+    observer_positions: Optional[Sequence[Tuple[float, float, float]]] = None,
 ) -> OrientedPlane:
     """Classify one plane against camera positions and an up vector.
 
@@ -97,10 +98,14 @@ def classify_plane(
     raw_normal = (plane.normal[0] / n_len, plane.normal[1] / n_len, plane.normal[2] / n_len)
     raw_d = plane.d / n_len  # keep n . p + d = 0 the same zero-set after normalizing
 
+    # Which side of the plane were the cameras on? The cameras that OBSERVED it, when that is known: the mean over
+    # every camera is only right when all cameras share one storey. In a stacked capture the mean sits between the
+    # levels, so a slab's underside (a ceiling) and its top (a floor) would swap roles.
+    side_cams = list(observer_positions) if observer_positions else list(camera_positions)
     camera_side = (
-        sum(c[0] for c in camera_positions) / len(camera_positions),
-        sum(c[1] for c in camera_positions) / len(camera_positions),
-        sum(c[2] for c in camera_positions) / len(camera_positions),
+        sum(c[0] for c in side_cams) / len(side_cams),
+        sum(c[1] for c in side_cams) / len(side_cams),
+        sum(c[2] for c in side_cams) / len(side_cams),
     )
 
     if up is None:
@@ -167,13 +172,31 @@ def classify_plane(
     )
 
 
+def observer_positions_by_plane(planes, result) -> dict:
+    """plane_id -> positions of the registered cameras that observed the plane's inlier points (points carry the
+    evidence ids that produced them). A plane with no known observing pose is absent: callers fall back to the
+    global camera mean, never to a guess."""
+    pose_of = {c.evidence_id: c.position for c in result.camera_poses}
+    seen_by = {p.track_id: p.source_evidence_ids for p in result.points}
+    out = {}
+    for pl in planes:
+        ids = {e for tid in pl.inlier_ids for e in (seen_by.get(tid) or ())}
+        pos = [pose_of[e] for e in sorted(ids) if e in pose_of]
+        if pos:
+            out[pl.plane_id] = pos
+    return out
+
+
 def classify_planes(
     planes: List[DetectedPlane],
     camera_positions: Sequence[Tuple[float, float, float]],
     up: Optional[Tuple[float, float, float]] = None,
+    observers: Optional[dict] = None,
 ) -> List[OrientedPlane]:
-    """Classify every plane; deterministic (input order preserved)."""
-    return [classify_plane(p, camera_positions, up) for p in planes]
+    """Classify every plane; deterministic (input order preserved). ``observers`` (plane_id -> observing camera
+    positions, see observer_positions_by_plane) makes floor/ceiling per-plane instead of global."""
+    observers = observers or {}
+    return [classify_plane(p, camera_positions, up, observers.get(p.plane_id)) for p in planes]
 
 
 def _as_unit(v: Tuple[float, float, float]) -> Tuple[float, float, float]:

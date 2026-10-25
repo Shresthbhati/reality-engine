@@ -252,7 +252,7 @@ def _floor_height(element: ArchitecturalElement, up: Sequence[float] = (0.0, 0.0
     return (element.bounds_min[up_idx] + element.bounds_max[up_idx]) / 2.0
 
 
-def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
+def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up, ceiling_cap: Optional[float] = None) -> Optional[
     Tuple[Tuple[float, float, float], Tuple[float, float, float]]
 ]:
     """The bounds enclosed by a room's boundary elements.
@@ -263,8 +263,14 @@ def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
     facade wall spanning two rooms drags the union across the whole
     building, and both rooms reported the building's footprint
     (observed: 24 m2 per room instead of 12). Walls bound the space;
-    the floor measures it. The z extent comes from the boundary box
-    (floor bottom .. ceiling top), so vertical structure is preserved.
+    the floor measures it. The z extent is the ROOM's own: floor bottom
+    .. ceiling top when a ceiling was measured, otherwise floor bottom ..
+    the walls' top capped at ``ceiling_cap`` (the next slab above the
+    floor, when one exists). A union over the wall AABBs is wrong for the
+    same reason vertically: the walls of stacked storeys are coplanar, so
+    one wall plane spans every storey and would give each stacked room the
+    whole building's height and the ground level's elevation (observed:
+    two stacked rooms both reported z 0..4.7 and collapsed into one storey).
 
     None when any participating element lacks bounds. With multiple
     floors (rare; a room is normally one floor), the floors' union
@@ -286,6 +292,12 @@ def _enclosed_bounds(elements: Sequence[ArchitecturalElement], up) -> Optional[
         for ax in plan:
             lo[ax] = min(el.bounds_min[ax] for el in floors)
             hi[ax] = max(el.bounds_max[ax] for el in floors)
+        lo[up_idx] = min(el.bounds_min[up_idx] for el in floors)
+        ceilings = [el for el in elements if el.element_type == "ceiling"]
+        if ceilings:
+            hi[up_idx] = max(el.bounds_max[up_idx] for el in ceilings)
+        elif ceiling_cap is not None:
+            hi[up_idx] = max(lo[up_idx], min(hi[up_idx], ceiling_cap))
     return tuple(lo), tuple(hi)
 
 
@@ -392,6 +404,7 @@ def floor_undersized_vs_floors(
     floors: Sequence[ArchitecturalElement],
     up: Sequence[float] = (0.0, 0.0, 1.0),
     fraction: float = FURNITURE_SCALE_FLOOR_FRACTION,
+    coverage_positions: Optional[Sequence[Sequence[float]]] = None,
 ) -> bool:
     """True when a horizontal element spans less than `fraction` of the
     plan area of the storey's real floors -- furniture scale (table
@@ -402,13 +415,33 @@ def floor_undersized_vs_floors(
     the geometry is measured, the semantic role is not. Callers must
     not promote it as storey structure (a table promoted as a floor
     fabricates a storey 1.2 m above the real one) nor let it seed
-    rooms. False when no reference floors exist (nothing to compare
-    against: keep the classification; downstream refusal paths still
-    guard every use).
+    rooms. A HOLLOW RING (perimeter trim rows whose bbox spans the
+    plan while its points occupy a fraction of it) is demoted
+    regardless of any reference floor: hollowness is measured directly
+    via plan_support_coverage, so bbox-spanning rings cannot hide
+    behind a large reference floor's bbox.
+    False when no reference floors exist (nothing to compare against:
+    keep the classification; downstream refusal paths still guard
+    every use).
     """
-    if not floors:
-        return False
     if element.bounds_min is None or element.bounds_max is None:
+        return False
+    # Hollow-ring check first: independent of reference floors, so a
+    # trim ring cannot borrow scale from a real floor's bbox. Requires
+    # the plane's own inlier positions (callers that cannot supply
+    # them keep the bbox-only comparison below). Ring = the plane is
+    # DENSE enough for its emptiness to mean shape, and fewer than
+    # RING_MAX_INTERIOR_CELL_SHARE of its occupied plan cells lie in
+    # the central half of its bbox (a solid sheet keeps ~25% whatever
+    # its sampling density -- measured on real sparse SfM floors).
+    if coverage_positions:
+        _, interior_share, density = plan_support_coverage(
+            coverage_positions,
+            element.bounds_min, element.bounds_max, up)
+        if (density >= RING_MIN_DENSITY_PTS_PER_M2
+                and interior_share < RING_MAX_INTERIOR_CELL_SHARE):
+            return True
+    if not floors:
         return False
     refs = [
         plan_area(f.bounds_min, f.bounds_max, up) for f in floors
@@ -419,6 +452,139 @@ def floor_undersized_vs_floors(
         return False
     return plan_area(element.bounds_min, element.bounds_max, up) \
         < fraction * ref
+
+
+#: Ring-shape test, DENSITY-INVARIANT: a horizontal plane is a HOLLOW
+#: RING when fewer than this share of its OCCUPIED plan-grid cells lie
+#: in the central half of its own bounding box. Shares, not areas:
+#: a uniformly sampled sheet keeps ~25% of its occupied cells in the
+#: interior whatever its point density (a real sparse SfM floor
+#: measured at 2-6% area occupancy but ~25% interior share), while a
+#: perimeter ring -- wall-base trim rows, furniture-foot rows, the
+#: fused L-ring measured on the wall-rows-near-floor case -- keeps
+#: essentially none. Measuring occupied-cell SHARES is what makes the
+#: test valid on both dense grids and sparse dust; an area-occupancy
+#: test (occupied area / bbox area) misread every real sparse floor
+#: as a ring (measured: south_building floors at cov 0.02-0.06
+#: demoted, rooms lost).
+RING_MAX_INTERIOR_CELL_SHARE = 0.10
+
+#: The ring verdict also requires the plane DENSE enough that its
+#: emptiness means shape rather than sampling: below this measured
+#: density the interior cells may simply not have been visited yet.
+#: Measured placements: the sparsest REAL floor that must survive
+#: unjudged sits at ~4 pts/m2 (south_building plane-031); the
+#: sparsest real floor JUDGED by shape sits at ~16 pts/m2 and passes
+#: on interior share 0.38 (south_building plane-017); the sparsest
+#: ring that must be demoted sits at ~16 pts/m2 with interior share
+#: 0.00 (the wall-rows fixture). The gate must fall below 16 so shape
+#: decides at the density where rings and floors actually meet.
+RING_MIN_DENSITY_PTS_PER_M2 = 15.0
+
+#: Occupancy-grid cell size for plan support coverage (meters). One
+#: decimeter: an order below room scale, an order above point noise,
+#: so occupancy reflects surface presence rather than sampling density.
+PLAN_COVERAGE_CELL_M = 0.1
+
+#: A floor/ceiling sheet of a REAL interior spans at least this much
+#: plan extent in one horizontal axis: a walking surface is
+#: human-scale (a closet is ~1 m; a room is metres). A horizontal
+#: plane smaller than this in BOTH plan axes is furniture, trim, or --
+#: the measured real-capture case -- a sheet of a COLLAPSED
+#: reconstruction: COLMAP registered the cameras but the sparse map
+#: degenerated to a ~0.5 m shell, and per-plane tilt classification
+#: still called its fragments "floor" at 0.99 confidence (dataset
+#: room_capture: 1,213 pts spanning 0.4x0.5 m promoted as 2-3 floors
+#: where the true room is 5x4 m). Demoting sub-room-scale horizontal
+#: sheets keeps a ran-but-degenerate reconstruction from posing as
+#: recovered structure. Human-scale, not dataset-tuned -- documented
+#: deferral like every threshold here.
+MIN_INTERIOR_SHEET_EXTENT_M = 1.0
+
+
+def plan_support_coverage(
+    positions: Sequence[Sequence[float]],
+    bounds_min: Optional[Sequence[float]],
+    bounds_max: Optional[Sequence[float]],
+    up: Sequence[float] = (0.0, 0.0, 1.0),
+    cell: float = PLAN_COVERAGE_CELL_M,
+) -> float:
+    """Measured plan-support facts for a horizontal plane's inliers:
+    (area_occupancy, interior_cell_share, density_pts_per_m2).
+
+    - area_occupancy: fraction of the plan bbox area that occupied
+      grid cells cover (density-DEPENDENT: a sparse dust sheet scores
+      low even when perfectly solid).
+    - interior_cell_share: share of OCCUPIED cells inside the central
+      half of the bbox (density-INVARIANT shape signal: a solid sheet
+      keeps ~25% whatever its sampling, a perimeter ring ~0).
+    - density_pts_per_m2: inliers per square meter of bbox area --
+      whether the emptiness above means shape or merely sampling.
+
+    Returns (1.0, 1.0, inf) when extents or positions are missing
+    (nothing measurable to judge; downstream refusal paths still
+    guard every use) -- coverage can only DEMOTE, never promote.
+    """
+    if (not positions or bounds_min is None or bounds_max is None):
+        return (1.0, 1.0, float("inf"))
+    up_idx = _up_axis(up)
+    plan_axes = [i for i in range(3) if i != up_idx]
+    ax0, ax1 = plan_axes[0], plan_axes[1]
+    ex = bounds_max[ax0] - bounds_min[ax0]
+    ey = bounds_max[ax1] - bounds_min[ax1]
+    if ex <= 0.0 or ey <= 0.0:
+        return (1.0, 1.0, float("inf"))
+    occupied: set = set()
+    interior = 0
+    cx0, cx1 = 0.25 * ex, 0.75 * ex
+    cy0, cy1 = 0.25 * ey, 0.75 * ey
+    for p in positions:
+        u = p[ax0] - bounds_min[ax0]
+        v = p[ax1] - bounds_min[ax1]
+        key = (int(u / cell), int(v / cell))
+        if key in occupied:
+            continue
+        occupied.add(key)
+        if cx0 <= u <= cx1 and cy0 <= v <= cy1:
+            interior += 1
+    area = ex * ey
+    area_occupancy = (len(occupied) * cell * cell) / area
+    interior_share = interior / len(occupied) if occupied else 1.0
+    density = len(positions) / area
+    return (area_occupancy, interior_share, density)
+
+
+def structural_plane_undersized(
+    bounds_min: Optional[Sequence[float]],
+    bounds_max: Optional[Sequence[float]],
+    up: Sequence[float] = (0.0, 0.0, 1.0),
+    min_extent: float = MIN_INTERIOR_SHEET_EXTENT_M,
+) -> bool:
+    """True when a structural plane's TWO LARGEST extents both span
+    less than `min_extent` -- sub-room-scale: furniture, trim, or a
+    fragment of a collapsed reconstruction, never architecture.
+
+    Role-independent by construction: a floor/ceiling sheet is human-
+    scale in PLAN (its two largest extents are the plan axes); a wall
+    is human-scale in RUN or HEIGHT (its two largest extents are those
+    -- the thin axis is smallest by definition). A real wall spans at
+    least ~1 m of run or height (a closet door is ~1 m tall); a real
+    floor spans at least ~1 m of plan (a closet). A measured plane
+    failing BOTH -- measured on dataset room_capture: 0.4x0.5 m sheets
+    of a collapsed 1,213-pt COLMAP map promoted as floors and walls at
+    0.96-0.99 confidence -- cannot host a person and must not be
+    promoted as structure.
+    False when extents are missing (nothing measurable to judge;
+    downstream refusal paths still guard every use).
+    """
+    if bounds_min is None or bounds_max is None:
+        return False
+    extents = sorted(
+        (bounds_max[i] - bounds_min[i] for i in range(3)), reverse=True
+    )
+    if extents[1] <= 0.0:
+        return False
+    return extents[1] < min_extent
 
 
 def _group_enclosures(
@@ -702,9 +868,22 @@ def build_room_graph(
             for p in planes:
                 plane_inputs.setdefault(p.plane_id, p)
 
+    up_axis = _up_axis(up)
     enclosures: List[dict] = []
     for members in groups:
-        bounds = _enclosed_bounds(members, up)
+        # the next slab above this room's floor that overlaps it in plan and clears walking height caps a room
+        # whose own ceiling was never observed (the walls it shares with the storey above run right past it)
+        own = next(e for e in members if e.element_type == "floor")
+        own_h = _floor_height(own, up)
+        plan_ax = [i for i in range(3) if i != up_axis]
+        above = [
+            _floor_height(g, up) for g in floors
+            if g is not own and g.bounds_min is not None and own_h is not None
+            and (_floor_height(g, up) or -math.inf) - own_h >= MIN_WALKABLE_CLEAR_HEIGHT_M
+            and own.bounds_min[plan_ax[0]] <= g.bounds_max[plan_ax[0]] and g.bounds_min[plan_ax[0]] <= own.bounds_max[plan_ax[0]]
+            and own.bounds_min[plan_ax[1]] <= g.bounds_max[plan_ax[1]] and g.bounds_min[plan_ax[1]] <= own.bounds_max[plan_ax[1]]
+        ]
+        bounds = _enclosed_bounds(members, up, ceiling_cap=min(above) if above else None)
         if bounds is None:
             continue
         bmin, bmax = bounds

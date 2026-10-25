@@ -20,6 +20,15 @@ Constraints hold BY CONSTRUCTION (not validated after the fact):
     wall between adjacent rooms (one wall entity per boundary line
     segment), which is what keeps the room graph's adjacency honest.
 
+Axis convention: grammar-local Z-up authoring, emitted in the project's
+Y-up frame. Specs, `origin` and all authoring math use grammar-local axes
+(x east, y north, z up). `_entity` is the one place bounds are created
+and converts local -> world with the proper rotation (x, y, z) ->
+(x, z, -y): height lands on world +Y, local +y (axis north) = -Z world,
+the floor footprint spans world x and -z. Right-handedness is preserved.
+NOTE: the existing wall NAMES keep their legacy local meaning (the
+"north" wall sits on the local -y edge), so it ends up on world +Z.
+
 Determinism: no randomness anywhere. The `seed` field exists so specs
 stay forward-compatible with stochastic grammars; the current grammar
 is fully derived from the spec's geometry.
@@ -95,11 +104,15 @@ def _entity(entity_id: str, etype: EntityType, name: str,
             bmax: Tuple[float, float, float],
             geometry_owner: Dict[str, Geometry]) -> Entity:
     geom_id = f"geom-{entity_id}"
+    # The single local->world conversion: (x, y, z) -> (x, z, -y).
+    # For an axis-aligned box: min = (xmin, zmin, -ymax), max = (xmax, zmax, -ymin).
+    wmin = (bmin[0], bmin[2], -bmax[1])
+    wmax = (bmax[0], bmax[2], -bmin[1])
     geometry_owner[geom_id] = Geometry(
         id=geom_id,
         type=GeometryType.BOX,
-        bounds_min=Vector3(*bmin),
-        bounds_max=Vector3(*bmax),
+        bounds_min=Vector3(*wmin),
+        bounds_max=Vector3(*wmax),
         provenance=_PROCEDURAL_PROVENANCE,
     )
     return Entity(

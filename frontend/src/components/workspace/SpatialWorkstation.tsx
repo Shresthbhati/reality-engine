@@ -8,9 +8,15 @@ import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
+import BuildModal from "@/components/workspace/BuildModal";
+import GeneratedPanel from "@/components/workspace/GeneratedPanel";
+import CompleteInteriorPanel from "@/components/workspace/CompleteInteriorPanel";
+import PhotoDropZone from "@/components/reconstruct/PhotoDropZone";
+import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStatusBar";
+import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
 import QueryPanel from "@/components/workspace/QueryPanel";
 import ExportPanel from "@/components/workspace/ExportPanel";
-import WorldMap from "@/components/map/WorldMap";
+import MapPlotView from "@/components/map/MapPlotView";
 import { 
   useWorlds, 
   useSessions, 
@@ -19,6 +25,10 @@ import {
   useWorldPoints, 
   useWorldCameras,
   useWorldVersions,
+  useWorldStatus,
+  cancelReconstruction,
+  retryReconstruction,
+  type CreateReconstructionResult,
 } from "@/lib/api";
 import { commitWorldCorrection } from "@/lib/api/worlds";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
@@ -36,6 +46,9 @@ import {
   Search,
   Terminal,
   Download,
+  ImagePlus,
+  Hammer,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +68,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [viewMode, setViewMode] = useState<"3d" | "map">("3d");
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [constructionModalOpen, setConstructionModalOpen] = useState(false);
+  const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
@@ -66,7 +80,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [activeQuery, setActiveQuery] = useState<SpatialQueryFilter | null>(null);
 
   // API Hooks
-  const { data: rawWorlds } = useWorlds();
+  const { data: rawWorlds, isLoading: worldsLoading } = useWorlds();
   const worlds = useMemo(() => rawWorlds ?? [], [rawWorlds]);
   const { data: rawSessions } = useSessions();
   const allSessions = useMemo(() => rawSessions ?? [], [rawSessions]);
@@ -76,10 +90,19 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   // Resolve active world: prop -> first discovered world -> empty string
   const worldId = propWorldId || (worlds.length > 0 ? worlds[0].id : "");
 
-  const { data: worldIR, isLoading: isIrLoading, refetch: refetchIr } = useWorldIR(worldId || null);
-  const { data: pointsBuffer } = useWorldPoints(worldId || null);
-  const { data: camerasPayload } = useWorldCameras(worldId || null);
-  const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null);
+  // Version being inspected (null = the world's current version).
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [addPhotosOpen, setAddPhotosOpen] = useState(false);
+
+  // Live reconstruction status: polls while the engine works. Geometry is
+  // refetched whenever a NEW current version lands (modelVersionKey below).
+  const { status: reconStatus, error: statusError, refresh: refreshStatus } = useWorldStatus(worldId || null);
+  const modelVersionKey = reconStatus?.model?.version_id ?? null;
+
+  const { data: worldIR, isLoading: isIrLoading, error: irError, refetch: refetchIr } = useWorldIR(worldId || null, selectedVersionId, modelVersionKey);
+  const { data: pointsBuffer } = useWorldPoints(worldId || null, selectedVersionId, modelVersionKey);
+  const { data: camerasPayload } = useWorldCameras(worldId || null, selectedVersionId, modelVersionKey);
+  const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null, modelVersionKey);
 
   // Derived 3D artifacts
   const points = useMemo(() => {
@@ -223,6 +246,17 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     setDiffModalOpen(true);
   }, []);
 
+  // Photos were added: same world -> refresh in place; new world -> open it.
+  const handlePhotosCreated = useCallback((res: CreateReconstructionResult) => {
+    setAddPhotosOpen(false);
+    setSelectedVersionId(null);
+    if (res.world_id !== worldId) {
+      router.push(`/worlds/${res.world_id}`);
+    } else {
+      refreshStatus();
+    }
+  }, [router, worldId, refreshStatus]);
+
   // Export artifact handler
   const handleExport = useCallback(async (format: "worldir" | "ply" | "cameras" | "report") => {
     let url = "";
@@ -260,11 +294,15 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   }, [worldId]);
 
   // Reset transient workspace selection & filters whenever active world changes
-  useEffect(() => {
+  const [resetForWorldId, setResetForWorldId] = useState(worldId);
+  if (resetForWorldId !== worldId) {
+    setResetForWorldId(worldId);
     setSelectedEntityId(null);
     setSelectedEvidenceId(null);
     setActiveQuery(null);
-  }, [worldId]);
+    setSelectedVersionId(null);
+    setAddPhotosOpen(false);
+  }
 
   // Global Keyboard Shortcuts and Custom Event Listeners
   useEffect(() => {
@@ -342,12 +380,28 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     };
   }, [selectedEntityId, handleClearSelection, handleFrameEntity, handleExport]);
 
-  // Loading state
-  if (isIrLoading) {
+  // First-ever world: the only thing to do is to drop photos.
+  if (!propWorldId && !worldsLoading && worlds.length === 0) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[#08090b] text-[var(--text-primary)] select-none">
+      <div className="flex h-full w-full flex-col items-center justify-center bg-[var(--bg-base)] p-6 text-[var(--text-primary)]">
+        <h1 className="mb-1 text-xl font-semibold text-white">Create a reconstruction</h1>
+        <p className="mb-6 max-w-lg text-center text-xs text-neutral-400">
+          Give Reality Engine photographs of a real place. It builds the best spatial model the
+          evidence supports, tells you what it is unsure about, and improves the same model as you add more.
+        </p>
+        <div className="w-full max-w-xl">
+          <PhotoDropZone onCreated={handlePhotosCreated} />
+        </div>
+      </div>
+    );
+  }
+
+  // Loading state (first load only; later refetches keep the Studio mounted)
+  if (isIrLoading && !worldIR) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-base)] text-[var(--text-primary)] select-none">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-7 w-7 animate-spin text-[#00e5ff]" />
+          <Loader2 className="h-7 w-7 animate-spin text-[var(--accent)]" />
           <p className="text-xs font-mono text-neutral-400">Consuming canonical WorldIR stream...</p>
         </div>
       </div>
@@ -362,13 +416,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const has3DContent = Boolean(activeWorldIR && (Object.keys(activeWorldIR.entities || {}).length > 0 || activePoints));
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#08090b] text-[var(--text-primary)] select-none">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)] select-none">
       {/* Sleek Persistent Studio Header */}
-      <header className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-[#1f222b] bg-[#0c0d12] z-30">
+      <header className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-[var(--border)] bg-[var(--bg-surface)] z-30">
         {/* Left: Studio Identity & Active World Info */}
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-[#00e5ff] animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
             <span className="text-xs font-semibold text-white tracking-wide">Reality Studio</span>
           </div>
 
@@ -381,20 +435,21 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 shrink-0">
               {String(worldIR?.coordinate_frame || worldIR?.coordinate_system || "frame unrecorded")}
             </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/30 shrink-0">
-              {currentVersionId ?? "no version"}
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30 shrink-0">
+              {reconStatus?.versions.find((v) => v.id === (selectedVersionId ?? reconStatus.model?.version_id))?.label
+                ?? currentVersionId ?? "no version"}
             </span>
           </div>
         </div>
 
         {/* Center: Viewport Mode Switcher Pill */}
-        <div className="flex items-center p-0.5 rounded-md bg-[#151821] border border-[#1f222b]">
+        <div className="flex items-center p-0.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)]">
           <button
             type="button"
             onClick={() => setViewMode("3d")}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
               viewMode === "3d"
-                ? "bg-[#00e5ff] text-black font-semibold shadow-sm"
+                ? "bg-[var(--accent)] text-black font-semibold shadow-sm"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -406,7 +461,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             onClick={() => setViewMode("map")}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
               viewMode === "map"
-                ? "bg-[#00e5ff] text-black font-semibold shadow-sm"
+                ? "bg-[var(--accent)] text-black font-semibold shadow-sm"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -422,23 +477,61 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             type="button"
             onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true }))}
             title="Command Palette (⌘K)"
-            className="flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white bg-[#151821] hover:bg-neutral-800 border border-[#1f222b] transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white bg-[var(--bg-elevated)] hover:bg-neutral-800 border border-[var(--border)] transition-colors cursor-pointer"
           >
-            <Search className="w-3 h-3 text-[#00e5ff]" />
+            <Search className="w-3 h-3 text-[var(--accent)]" />
             <span className="hidden sm:inline">Commands</span>
             <kbd className="text-[10px] px-1 py-0.2 rounded bg-neutral-900 border border-neutral-700 text-neutral-400 font-mono-num">
               ⌘K
             </kbd>
           </button>
 
+          {/* Primary action: add photographs to this world */}
+          <button
+            type="button"
+            onClick={() => setAddPhotosOpen(true)}
+            title="Add photographs to improve this model"
+            data-testid="add-photos"
+            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-semibold bg-[var(--accent)] text-black hover:bg-[var(--accent)] transition-colors cursor-pointer"
+          >
+            <ImagePlus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Add evidence</span>
+          </button>
+
+          {/* Procedural Build Launcher (rooms, corridors, cities) */}
+          <button
+            type="button"
+            onClick={() => setBuildModalOpen(true)}
+            title="Build a room, corridor or city"
+            data-testid="open-build"
+            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
+          >
+            <Hammer className="w-3.5 h-3.5 text-[var(--accent)]" />
+            <span className="hidden sm:inline">Build</span>
+          </button>
+
+          <GeneratedPanel
+            worldId={worldId}
+            onChanged={() => {
+              Promise.all([refetchIr(), refetchVersions()]);
+            }}
+          />
+
+          <CompleteInteriorPanel
+            worldId={worldId}
+            onChanged={() => {
+              Promise.all([refetchIr(), refetchVersions()]);
+            }}
+          />
+
           {/* Room Construction Launcher */}
           <button
             type="button"
             onClick={() => setConstructionModalOpen(true)}
             title="Room Construction Pipeline"
-            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[#1f222b] transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
           >
-            <Workflow className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Workflow className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span className="hidden sm:inline">Construction</span>
           </button>
 
@@ -449,11 +542,11 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             title="Spatial Query"
             className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
               queryPanelOpen
-                ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40"
-                : "bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[#1f222b]"
+                ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40"
+                : "bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[var(--border)]"
             }`}
           >
-            <Search className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Search className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span className="hidden sm:inline">Query</span>
           </button>
 
@@ -464,22 +557,22 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             title="Export World"
             className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
               exportPanelOpen
-                ? "bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40"
-                : "bg-[#151821] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[#1f222b]"
+                ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40"
+                : "bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[var(--border)]"
             }`}
           >
-            <Download className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Download className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span className="hidden sm:inline">Export</span>
           </button>
 
           {/* Quick Layout Toggles */}
-          <div className="flex items-center p-0.5 rounded bg-[#151821] border border-[#1f222b]">
+          <div className="flex items-center p-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)]">
             <button
               type="button"
               onClick={() => setNavOpen(v => !v)}
               title={navOpen ? "Collapse Navigation Panel [ [ ]" : "Expand Navigation Panel [ [ ]"}
               className={`p-1 rounded transition-colors ${
-                navOpen ? "text-[#00e5ff] bg-neutral-800" : "text-neutral-400 hover:text-white"
+                navOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
               }`}
             >
               {navOpen ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />}
@@ -489,7 +582,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onClick={() => setBottomOpen(v => !v)}
               title={bottomOpen ? "Collapse Bottom Telemetry [ \\ ]" : "Expand Bottom Telemetry [ \\ ]"}
               className={`p-1 rounded transition-colors ${
-                bottomOpen ? "text-[#00e5ff] bg-neutral-800" : "text-neutral-400 hover:text-white"
+                bottomOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
               }`}
             >
               <Terminal className="w-3.5 h-3.5" />
@@ -499,7 +592,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onClick={() => setInspectorOpen(v => !v)}
               title={inspectorOpen ? "Collapse Inspector [ ] ]" : "Expand Inspector [ ] ]"}
               className={`p-1 rounded transition-colors ${
-                inspectorOpen ? "text-[#00e5ff] bg-neutral-800" : "text-neutral-400 hover:text-white"
+                inspectorOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
               }`}
             >
               {inspectorOpen ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
@@ -513,7 +606,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         {/* Left Nav Panel */}
         <div 
           className={cn(
-            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-r border-[#1f222b] z-20",
+            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-r border-[var(--border)] z-20",
             navOpen ? "w-[280px]" : "w-0 overflow-hidden border-r-0"
           )}
         >
@@ -550,7 +643,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         </div>
         
         {/* Center Viewport */}
-        <div className="flex-1 relative h-full min-w-0 bg-[#08090b] overflow-hidden">
+        <div className="flex-1 relative h-full min-w-0 bg-[var(--bg-base)] overflow-hidden">
           {viewMode === "3d" ? (
             <World3DViewport
               world={activeWorldIR}
@@ -565,36 +658,33 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               isLoading={isIrLoading}
               hasNoWorldData={!has3DContent}
               onMeasurementChange={setMeasurement}
+              worldId={worldId || null}
               onOpenRoomConstruction={() => setConstructionModalOpen(true)}
             />
           ) : (
-            <div className="w-full h-full relative">
-              {/* The map centres on the world's real origin; a world with no
-                  recorded coordinates gets an honest notice, not the
-                  hard-coded San Francisco anchor this panel used to print. */}
-              {currentWorldRow?.lat != null && currentWorldRow?.lng != null ? (
-                <WorldMap
-                  center={[currentWorldRow.lng, currentWorldRow.lat]}
-                  zoom={14}
-                  pitch={40}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-[#0b0c10]">
-                  <p className="text-xs text-neutral-400 max-w-sm text-center leading-relaxed">
-                    This World has no recorded geographic origin, so no map anchor exists.
-                    Reconstruction coordinates are metric-local until a capture carries GNSS.
-                  </p>
-                </div>
-              )}
-              {currentWorldRow?.lat != null && currentWorldRow?.lng != null && (
-                <div className="absolute bottom-4 left-4 z-10 px-3 py-2 rounded-md bg-[#0e1013]/90 border border-[#1f222b] text-xs text-neutral-300 backdrop-blur-md font-mono">
-                  <div className="text-white font-semibold">World origin</div>
-                  <div className="text-neutral-400 text-[11px] mt-0.5">
-                    {currentWorldRow.location ?? "coordinates unavailable"}
-                  </div>
-                </div>
-              )}
-            </div>
+            <MapPlotView
+              worldId={worldId}
+              worldName={currentWorldRow?.name}
+              world={activeWorldIR}
+              cameras={activeCameras}
+              worldLat={currentWorldRow?.lat ?? null}
+              worldLng={currentWorldRow?.lng ?? null}
+              sessions={sessions}
+              evidence={evidence}
+              selectedEntityId={selectedEntityId}
+              onSelectEntity={handleSelectEntity}
+              selectedEvidenceId={selectedEvidenceId}
+              onSelectEvidence={setSelectedEvidenceId}
+              onOpen3D={() => setViewMode("3d")}
+            />
+          )}
+
+          {!has3DContent && viewMode === "3d" && (
+            <NoGeometryExplanation
+              status={reconStatus}
+              worldId={worldId || null}
+              onCreated={handlePhotosCreated}
+            />
           )}
 
           {queryPanelOpen && (
@@ -615,7 +705,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         {/* Right Adaptive Inspector */}
         <div 
           className={cn(
-            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-l border-[#1f222b] z-20",
+            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-l border-[var(--border)] z-20",
             inspectorOpen ? "w-[340px]" : "w-0 overflow-hidden border-l-0"
           )}
         >
@@ -632,14 +722,57 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onOpenDiff={handleOpenDiff}
               onOpenRoomConstruction={() => setConstructionModalOpen(true)}
               onExport={handleExport}
+              loadError={!worldIR && irError ? irError.message : null}
+              onRetryLoad={refetchIr}
             />
           )}
         </div>
       </div>
-      
+
+      {/* Reconstruction state, evidence quality, versions and guidance */}
+      <div className="flex-shrink-0 border-t border-[var(--border)] z-30">
+        <ReconstructionStatusBar
+          status={reconStatus}
+          error={statusError}
+          world={activeWorldIR}
+          selectedVersionId={selectedVersionId}
+          onSelectVersion={setSelectedVersionId}
+          onAddPhotos={() => setAddPhotosOpen(true)}
+          onCompareVersions={handleOpenDiff}
+          onCancel={(jobId) => {
+            void cancelReconstruction(jobId).then(refreshStatus, refreshStatus);
+          }}
+          onRetry={(sessionId) => {
+            void retryReconstruction(sessionId).then(refreshStatus, refreshStatus);
+          }}
+        />
+      </div>
+
+      {addPhotosOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Add photographs"
+        >
+          <div className="relative w-full max-w-lg rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
+            <button
+              type="button"
+              onClick={() => setAddPhotosOpen(false)}
+              aria-label="Close"
+              className="absolute right-2 top-2 rounded p-1 text-neutral-400 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <h2 className="mb-3 text-sm font-semibold text-white">Add photographs to this model</h2>
+            <PhotoDropZone worldId={worldId || null} onCreated={handlePhotosCreated} />
+          </div>
+        </div>
+      )}
+
       {/* Bottom Context Bar */}
       {bottomOpen && (
-        <div className="h-auto flex-shrink-0 border-t border-[#1f222b] z-30">
+        <div className="h-auto flex-shrink-0 border-t border-[var(--border)] z-30">
           <BottomContextBar
             world={worldIR}
             selectedEntity={selectedEntity}
@@ -650,6 +783,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             onClearSelection={handleClearSelection}
             measurement={measurement}
             activeVersion={currentVersionId ?? undefined}
+            worldId={worldId || undefined}
           />
         </div>
       )}
@@ -664,6 +798,21 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         onSelectEntity={(eid) => {
           handleSelectEntity(eid);
           handleFrameEntity(eid);
+        }}
+      />
+
+      <BuildModal
+        worldId={worldId}
+        rooms={Object.values(worldIR?.entities ?? {})
+          .filter((e) => e.type === "room")
+          .map((e) => ({ id: e.id, name: e.name || e.id }))}
+        isOpen={buildModalOpen}
+        onClose={() => setBuildModalOpen(false)}
+        onCreated={() => {
+          // Frame only once the new version's WorldIR has actually loaded.
+          Promise.all([refetchIr(), refetchVersions()]).then(() =>
+            window.dispatchEvent(new CustomEvent("frame-all")),
+          );
         }}
       />
 

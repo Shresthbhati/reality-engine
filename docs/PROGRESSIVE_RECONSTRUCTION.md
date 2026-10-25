@@ -1,0 +1,385 @@
+# Progressive reconstruction — the one-action product path
+
+Status: **PARTIALLY VERIFIED** (see "What is verified" / "What is not").
+
+Contract: a person gives Reality Engine one or more photographs of a real
+place. The engine immediately builds the best spatial representation the
+evidence honestly supports. More evidence improves **the same persistent
+world**. Nothing is fabricated; unknowns stay unknown.
+
+## The user-facing model
+
+```
+PHOTOS -> EVIDENCE -> RECONSTRUCTION -> WORLD -> REFINE -> INSPECT -> EXPORT
+```
+
+World / Session / Job / Version still exist (advanced routes are unchanged) but
+the user never creates or attaches them:
+
+| Action | Route | Effect |
+|---|---|---|
+| Drop photos (no world) | `POST /api/reconstructions` | creates World + Session, stores evidence, queues the job |
+| Drop more photos | `POST /api/reconstructions` with `world_id` | joins the **same** World; the job rebuilds it from the union of all its evidence |
+| Read everything the UI shows | `GET /api/worlds/{id}/status` | state, model honesty, evidence quality, guidance, versions, failure |
+
+## Levels (cumulative capabilities achieved, never claimed)
+
+| Level | Name | Produced by |
+|---|---|---|
+| 0 | single-image visual hypothesis | `engine/pipeline/single_image.py` |
+| 1 | multi-image rough (2 cameras registered) | COLMAP via `vertical_slice` |
+| 2 | sparse photogrammetric (>= 3 registered) | COLMAP via `vertical_slice` |
+| 3 | dense reconstruction | dense MVS fused points, attempted automatically when the measured gate below passes and kept only if the dense cloud is judged better than the sparse world (thresholds EXPERIMENTAL; `REALITY_DENSE_AUTO=0` opts out) |
+| 4 | semantic / topological refinement | compiler produced rooms / storeys / corridors |
+| 5 | incremental evidence refinement | built on top of an earlier version's evidence |
+
+`engine/pipeline/progressive.py::run_progressive` tries the highest available
+level and falls back. A COLMAP failure is a recorded `attempt`
+(`report.attempts`), never an empty world and never a success.
+
+**No silent N -> 1.** When multi-view registration fails for N >= 2 usable
+photographs, *every* photograph is bootstrapped and the hypotheses are fused
+into one world (`single_image.fuse_single_views`). Their relative placement was
+never measured, so each keeps its own frame; they are laid out side by side
+along X for display only, and that is recorded in `world.metadata["fusion"]`
+(`layout: "display_only"`) and on every entity (`custom_properties["fusion"]`).
+Fused views are level 0 / ROUGH, and none is reported as "registered".
+
+`model_state` shown to users: **ROUGH** (level <= 1), **PARTIAL** (real geometry,
+not everything placed or covered), **REFINED** (level >= 4 **and** every image
+placed). "A six-image model is not a complete digital twin" is enforced by the
+grading, not just by wording.
+
+## Single-image bootstrap (Level 0)
+
+`image -> MiDaS relative depth -> visible-surface points -> RANSAC planes ->
+wall/floor/ceiling classification -> WorldIR`.
+
+* Every entity is `INFERRED` / `ESTIMATED` / `UNKNOWN`, with confidence capped
+  at 0.35 (`CONFIDENCE_CEILING`) regardless of how clean a fit looks.
+* Scale state is `relative`. No metric dimensions.
+* An explicit `boot-unobserved` entity (provenance `UNKNOWN`, confidence 0)
+  records rear/side/hidden surfaces. Nothing hidden is invented.
+* Assumptions are recorded under `metadata["bootstrap"]`: inverse-depth offset,
+  camera (EXIF 35 mm focal length or an ASSUMED 60 degree field of view),
+  level-camera gravity assumption.
+* **Opening candidates** (`engine/pipeline/openings.py`): rectangles inside a
+  detected *wall* plane's own pixels whose intensity differs from the ring
+  around them (Canny -> 4-vertex convex contours -> rectangularity, size,
+  contrast tests). They become `door` / `window` entities with provenance
+  `INFERRED`, confidence <= 0.2 and the measured contrast, area share and the
+  door-vs-window rule in `custom_properties["bootstrap"]`. The label is a
+  position/shape heuristic (touches the bottom of the wall region and is taller
+  than wide => door-like), and the entity's uncertainty note says so. A plain
+  wall yields **zero** candidates. This is not object recognition.
+* **Corridor axis** (`metadata["bootstrap"]["corridor"]`): only when two
+  distinct near-parallel walls and a floor were all found; INFERRED, confidence
+  <= 0.2, with the plane ids it came from. Otherwise `null`.
+* Not attempted (stated in the world): object detection / instance
+  segmentation, metric scale.
+
+## Evidence handling
+
+* `evidence/image_check.py` — decode + classify **before** any expensive stage.
+  Bytes that are not images never reach COLMAP (measured: 3 fake "photos" hung
+  the old pipeline for > 90 s). Classes: `photograph` (camera EXIF),
+  `photograph_unverified` (decodes, natural statistics, no EXIF), `flat_graphic`
+  (plans/infographics-like), or an uploader-declared `floor_plan` / `render` /
+  `infographic` / `historical_photo`. Only the first two feed geometry; the rest
+  are kept as **context evidence** and the class survives into WorldIR
+  (`metadata["evidence"]`) and the version report.
+* `evidence/contribution.py` — per image: `first`, `new_view`, `redundant`,
+  `disconnected`, from SIFT + RANSAC-verified matches (raw counts are kept),
+  plus a `status` naming *why*: `NOVEL_VIEW`, `REDUNDANT`, `INSUFFICIENT_MATCHES`,
+  `DEGENERATE_GEOMETRY` (collinear/duplicate matches, singular fundamental
+  matrix, or an OpenCV error) or `NOT_MEASURABLE` (no features / OpenCV missing).
+  A bad pair is a classification, never an exception.
+  Image count is never the contract: "4 new images added. 3 add a new
+  viewpoint. 1 mostly repeats an existing view."
+* Quality bars (Coverage / Overlap / Spatial diversity) are coarse levels with
+  a stated basis, or `unknown` ("not measured") — no invented percentages.
+  When SfM fails, Overlap is downgraded to `low` regardless of feature matches.
+
+## The two-image SfM gate
+
+`reconstruction/orchestrator.py::MIN_IMAGE_EVIDENCE = 2` is a property of the
+multi-view *stage*, not of the product. `apps/api` reaches multi-view only
+through `run_progressive`, which calls it only for >= 2 eligible photographs and
+gives one photograph its own level. The remaining direct users of the
+orchestrator are the CLI (`reconstruct`), `reconstruction/batch.py` and
+`engine/studio/session.py`; they fail loudly by design and are isolated from the
+API by `test_only_known_modules_reach_the_two_image_orchestrator`.
+
+## Guidance
+
+`engine/pipeline/guidance.py` — every item is `{kind, message, basis}` and fires
+only on something measured: unplaced images (named), one-sided capture
+(`coverage_degrees`: bearing of camera positions around the scene for
+object-centric captures, viewing directions for interiors), frame-edge
+truncation of a detected surface (single view), missing floor/ceiling,
+redundant batches.
+
+## Incremental registration (COLMAP `image_registrator`)
+
+Each world owns a persistent COLMAP workspace (`reconstruction/colmap_session.py`, stored under
+`<WORLDSTORE_ROOT>/colmap-sessions/<world_id>/current`): the feature/match database, the images and the
+committed sparse model. A new version does **not** re-solve the scene when it does not have to:
+
+1. features are extracted for the **new photographs only** (`feature_extractor --image_list_path`)
+   and matched against everything already in the database;
+2. `image_registrator` places every not-yet-registered photograph (new ones **and** earlier ones that were
+   waiting) into the **previous sparse model**;
+3. `point_triangulator --clear_points 0` adds the structure the new photographs see while **keeping the
+   established points** (`image_registrator` alone adds none);
+4. `bundle_adjuster` refines, with intrinsics pinned when they are trusted.
+
+If photographs are still unregistered afterwards, a full `mapper` run on the same database is tried (no
+re-extraction or re-matching) and it replaces the incremental model **only if it registers strictly more
+photographs**. Everything is recorded in `report.stages.reconstruction.colmap_session` and returned as
+`model.strategy`: `mode` (`full | incremental | reused`), `reason`, `frame` (`preserved | re-solved`),
+`prior_images`, `new_images`, `incremental_registered` / `full_registered`, points, per-step seconds.
+
+The session advances only when the resulting version is **adopted and read back**
+(`ColmapSession.commit()`); a rejected, failed or cancelled run discards its staging copy, so it can never
+become the base of the next registration. The prior state is refused (full rebuild) when the pipeline
+settings changed, evidence was removed, the model is missing, or the previous result was a merge of several
+sub-models.
+
+**Measured (COLMAP 4.2.0, CPU, South Building):**
+
+| Prior | New | Result |
+|---|---|---|
+| 3 photos (67 points) | +3 | `image_registrator` registered **0**: too few 2D-3D matches. Full rebuild (6/6) wins; reported as such |
+| 6 photos (1132 points) | +3 | incremental **7 of 9** (full rebuild also 7), 1397 points vs 1400, established cameras moved **< 1%** of scene extent; `image_registrator` 0.17 s, `point_triangulator` 0.22 s |
+| 9 photos (7 placed) | +3 | full rebuild placed 11 vs 10 incrementally, so it was chosen; it starts a new gauge but the previously placed cameras moved 0.6% (frame-independent) |
+
+So incremental registration helps when the prior model is rich enough to give new photographs something to
+localise against; when it is not, the full rebuild is used and the report says why. The wall-clock gain on
+these small scenes is modest, because extracting the new photographs dominates (total 12-16 s per step).
+Earlier photographs are not re-extracted; **not measured**: whether the exhaustive matcher skips pairs it has
+already matched, so no scaling claim is made for large worlds.
+
+### Was persistent COLMAP state worth it? (`scripts/experiment_incremental_registration.py`)
+
+Same photographs, same backend, fresh rebuild (A) vs incremental (B); reprojection = COLMAP's mean track
+error; stability = frame-independent camera movement vs the previous version.
+
+| Step | Registered A / B | Points A / B | Reproj px A / B | Stability A / B | Seconds A / B |
+|---|---|---|---|---|---|
+| weak prior (3) + 3 | 6 / 6 (B fell back to full) | 1132 / 1126 | 0.295 / 0.295 | n/a | 11.4 / 9.8 |
+| rich prior (6) + 3 | 7 / 7 | 1408 / 1397 | 0.294 / 0.305 | 0.34% / 0.48% | 15.3 / 12.6 |
+| chain (9, 7 placed) + 3 | 11 / 11 (B chose full) | 3648 / 3639 | 0.276 / 0.276 | 0.68% / 0.64% | 22.8 / 18.4 |
+
+**Reading:** a fresh rebuild is *already* geometrically stable between versions (well under 1% of extent),
+so incremental registration is **not a quality win**: same registration and point counts, marginally worse
+reprojection error at the rich-prior step. What it does buy is (1) COLMAP's own coordinate frame preserved
+across versions (`frame: preserved`) and (2) ~18-20% less wall-clock on these 6-12 photo scenes. Cost: a
+persistent workspace per world and a commit/discard lifecycle. **Decision: keep it** (already built, never
+worse than a fresh rebuild because the full mapper is tried and wins when it registers more), but do not
+present it as a reconstruction-quality improvement. **Not measured:** worlds of 50+ photos, where the saved
+extraction time should matter more, and whether the exhaustive matcher skips already-matched pairs.
+
+## Spatial continuity (what physically changed between versions)
+
+`engine/pipeline/spatial_continuity.py` compares the *geometry* stored on each version report, because
+entity ids are re-derived on every rebuild and a rebuild can split, merge or regroup surfaces without the
+world changing. Per structural entity the report keeps: type, centre, bounds, up to 160 sampled inlier
+points, and the photographs that observed it (`supporting_evidence_ids`, from the plane's own inlier points).
+Old versions without points fall back to centre distance and say so (`signal: center_only`).
+
+Two surfaces are the same when types match, normals agree (< 20 deg), planes are within 10% of the scene
+extent, and their in-plane footprints (rasterised occupancy) overlap. Relations, each with its measured
+coverage and an explanation:
+
+| Relation | Meaning |
+|---|---|
+| preserved / refined | same surface; refined = moved or tilted beyond 3% of extent / 4 deg |
+| extended / reduced | candidate reaches beyond / reproduces only part of the previous surface |
+| split / merge | one -> several fragments (or the reverse) that jointly cover it |
+| regrouped | several <-> several where the *union* of each side covers the other's footprint (stacked or overlapping planes grouped differently) |
+| ambiguous | overlapping but not classifiable; reported, never forced |
+| removed / new | nothing overlaps it in the other version |
+
+A move is a **geometry conflict** only when supporting-evidence ids exist on both sides and no new photograph
+supports the moved candidate; otherwise it is a refinement (or "justification unknown"). Conflicts keep both
+positions with the entity confidences and photographs each side really has, are carried into each new
+version's coordinate frame, and resolve only when a later version preserves the surface *with new supporting
+evidence* (or returns it to its earlier position with such support). Regions are clusters of nearby relations
+carrying the union of supporting photographs and which *new* photographs touched them.
+
+Acceptance now reasons from these relations: splits, merges and regroupings are not losses; only removed
+or partly reproduced surfaces count. Losing >= 60% of established structure with no additional photograph
+placed is a REJECT; >= 34% (or any partly reproduced / unclassifiable surface, or a new conflict) is
+ACCEPT_WITH_UNCERTAINTY.
+
+**Measured on real photos** (SIX -> +C -> +D): the classification was identical for `MOVE_TOL_REL` in
+0.05-0.25; V1->V2 = 1 regrouped + 1 new, V2->V3 = 1 regrouped + 1 removed. Across separate runs the
+reconstruction itself varies (one run reported a new window where another reported a new wall), so
+opening/wall labels are not stable run to run.
+
+## World-level acceptance (candidate vs HEAD)
+
+A rebuild from all evidence can be valid and still WORSE than the current version.
+`engine/pipeline/world_delta.py` compares the candidate with HEAD before it may be
+committed, using only what is comparable across rebuilds: evidence ids (stable),
+camera layout after a similarity alignment (COLMAP's frame is arbitrary), and
+structure counts. Entities and absolute positions are NOT compared, because ids are
+re-derived and the frame differs on every rebuild.
+
+| Verdict | When | Effect |
+|---|---|---|
+| `ACCEPT` | nothing measurable regressed | new version, parent = HEAD |
+| `ACCEPT_WITH_UNCERTAINTY` | previously placed photos lost but offset by a larger gain; cameras moved > 25% of extent; a structural type at least halved | new version; reasons recorded as `degraded` + `model.uncertainties` |
+| `REJECT` | previously placed photos lost with no larger gain, or fallback to a lower level with no gain | **no version is committed**, HEAD stays authoritative, all photos are kept and marked `waiting` |
+
+Checks that need data an older version never stored are reported under
+`delta.not_measurable`, never passed silently. There is no scalar quality score.
+Each version's report stores `structure`, `cameras`, `delta`, `verdict`, `changes`;
+`GET /api/worlds/{id}/status` returns `model.changes`, `model.uncertainties`,
+`last_run` (including a rejected run) and per-photo `registration`
+(`registered|waiting`, attempts, ever_registered). Studio shows "What changed in this
+version" and a "kept your current model" notice.
+
+**Relation to incremental registration:** the previous version's COLMAP model is now the
+starting point for registration (see above); this acceptance step still judges the outcome, because a
+successful COLMAP run is not automatically a better world. What is still recomputed each time is
+everything **after** COLMAP: frame alignment, depth, perception, plane detection and compilation of the
+WorldIR; region-aware local refinement of those stages is not implemented.
+
+## Level 3 (dense): an evidence-driven gate, never a photo count
+
+`engine/pipeline/dense_gate.py::dense_readiness` measures the sparse model against four criteria and reports each
+with the number that decided it: registration (>= 80% of supplied photographs placed), geometric support (median
+structure point seen by >= 3 cameras), coverage (cameras span >= 15 degrees around the scene) and structure
+(>= 300 sparse points). Three photographs can qualify and twenty can fail (`tests/test_dense_gate.py`). The
+thresholds are **EXPERIMENTAL** -- uncalibrated starting points.
+
+**Product path.** The job runner enables the gate by default (`engine.pipeline.dense_gate.dense_auto_enabled()`;
+`REALITY_DENSE_AUTO=0|false|off|no` opts out) -- escalation is decided by the measurements above, never by a switch
+or a photo count. Compute availability is part of the decision: COLMAP must prove dense-capable
+(`patch_match_stereo` in its own help) or the record says `sparse only: dense compute unavailable`. When the gate
+passes, the dense stage runs against the persistent COLMAP session's own images and sparse model, writing into a
+scratch directory so the session never carries depth maps.
+
+**Dense is a judged candidate, never an unconditional addition** (`engine/pipeline/dense_judge.py`). Before anything
+is written, the fused cloud -- put in the world's frame (scale, then the canonical-frame rotation; fused.ply is in
+COLMAP's raw frame) -- is compared with the sparse structure by ordered rules, the deciding rule recorded:
+judgeable (both clouds large enough) -> regression (the dense cloud must still reproduce >= 60% of the sparse
+structure and stay inside the established scene extent) -> improvement (materially denser AND adds surface the sparse
+model does not sample). Outcomes: `ran` (accepted: geometry + fusion input added, Level 3 granted), `rejected`
+(contradicts the sparse world), `equivalent` (adds nothing: the coherent sparse world is kept). A failed dense run
+(`failed`) also leaves the sparse world untouched. None of the four degrades the job's grade -- dense is an optional
+refinement, not a dependency; every one is recorded as a level-3 `attempt` with its reason. An operator who forces
+dense (`dense_mvs_enabled=True`) bypasses the judge and says so. Tests: `tests/test_dense_arbitration.py` (cases A-F).
+Not measured by the gate (so never claimed): GSD adequacy, per-camera confidence, depth availability.
+
+Two latent defects were found and fixed while wiring this: dense points were added in COLMAP's raw frame while the
+sparse cloud had already been rotated into the canonical frame, and the code that appended dense points to the
+fusion input assigned to a frozen dataclass inside a bare `except`, so dense points never reached fusion.
+
+## Metric scale from the user
+
+`POST /api/worlds/{id}/scale {evidence_id_a, evidence_id_b, distance_m, method}` records a measured distance between
+two of the world's photographs (`<worldstore>/scale-references/<world>.json`, validated by `reconstruction.scale`) and
+queues a reconstruction of the SAME world that applies it through the existing scale anchoring. Meters are never
+assumed: without a reference the world stays RELATIVE; with one, the new version states the scale source, the
+meters-per-unit and the ratio spread, and the change list says "Scale changed from relative to metric ...". A
+reference whose photographs cannot be placed leaves the world relative and says why. An implausible measurement is
+not hidden: an arbitrary 1.2 m between two photographs ~10 model units apart shrinks the building to 0.4 m, the
+fixed-metre plane tolerances then find no walls, and the adoption gate rejects the candidate (observed).
+
+## Stable entity identity across versions
+
+`world_ir/entity_reid.py::carry_identity` gives a candidate entity the previous entity's id only for a ONE-TO-ONE
+`preserved`/`refined` spatial-continuity relation of the same type (measured footprint overlap of fitted planes),
+applied to a copy and re-validated before use. A refined wall therefore diffs as MODIFIED, not REMOVED + ADDED.
+Splits, merges, regroupings, extensions, reductions and ambiguous overlaps keep their own ids and record lineage in
+`custom_properties["continuity"]`; ambiguity is never forced. Decisions are on the version report (`identity`) and in
+the status API. Tests: `tests/test_identity_carry.py`.
+
+## Single-image openings
+
+The opening candidates on a single-view wall are pixel-space rectangles (`engine/pipeline/openings.py`); the 3D
+coverage detectors in `perception/architecture/` have nothing to find in one dense monocular view and need metric
+size. A candidate is a DOOR only when it reaches the bottom of the wall region and is taller than wide; a WINDOW only
+when enclosed by the wall on all four sides; a rectangle reaching the wall region's top or side is refused as an
+incomplete wall; anything else is a generic OPENING with `resolved_kind: false`. Every candidate records its evidence
+id and its size as a fraction of the wall (relative scale; never metres).
+
+## Confidence defaults
+
+`Observation`, `Relationship` and `CausalRelation` no longer default to `confidence=1.0` (and `Relationship` no longer
+to `OBSERVED` provenance): an unstated value now reads "not measured" (0.5, UNKNOWN), matching the rest of the
+schema. Legacy records without a confidence load as 0.5. The 10 topology relationships built by
+`perception/architecture/promotion.py` are INFERRED and carry their source element's confidence.
+
+## Versions and diff
+
+Every job that adopts a version appends to the WorldStore lineage; V1, V2, ...
+are numbered by lineage. Earlier versions are immutable and can be inspected
+(`?version=`). `WorldDiff.categories()` counts changes per kind — identity,
+geometry, transform, semantic, confidence, uncertainty, provenance, topology,
+properties — attributing each change only to the field that actually differed
+(a confidence-only edit is never a geometry change).
+
+## Defects found by running the real thing (and fixed)
+
+| # | Defect | Effect | Fix |
+|---|---|---|---|
+| 1 | `apps/api/jobs.py` import block pasted mid-function | API did not import | imports moved to module top |
+| 2 | `reconstruction/proc.py::run_owned` polled `poll()` without draining pipes | **every** real COLMAP run deadlocked (colmap.exe alive 16 min, 38 s CPU) | `communicate(timeout=...)` slices; regression test with 2 MB of output |
+| 3 | `run_owned` called `register_worker()` while holding the non-reentrant `_lock` | any job-owned subprocess self-deadlocked | removed the redundant nested registration (job-level registration is done by `set_current_job`) |
+| 4 | frame canonicalization assumed the dominant plane is the floor | a building facade became the ground; model on its side | second prior: mean camera up-vector, plus wall snapping for pitched cameras; guarded by orientation-diversity + coherence + disagreement thresholds |
+| 5 | Studio `parsePly` accepted only binary PLY, `/points` emits ASCII | **point clouds never rendered** in the Studio | loader accepts ASCII + unaligned binary |
+| 6 | Next proxies dropped `?version=` | version switching impossible | forwarded |
+| 7 | `Uncertainty.confidence` defaulted to 1.0 | unstated uncertainty read as certain | default 0.0; identity transform states its exactness explicitly |
+| 8 | building/storey entities `INFERRED` at confidence 1.0; opening default 1.0; commit route coerced invalid confidence to 1.0 | fabricated certainty | derived from members / 0.0 / 422 |
+| 9 | `apps/cli/api_bridge.py` fell back to `datasets/room_capture/.../points.ply` | a fixture could be served as a version's reality | removed |
+
+## Golden datasets and rights
+
+Only one **real photographic** dataset exists in the repository:
+
+* `datasets/south_building/` — 32 photographs (1024 px derivative of the public
+  COLMAP "South Building" example set, UNC Chapel Hill; provided by Christopher
+  Zach per the COLMAP datasets page; source URL and SHA-256s in `MANIFEST.json`).
+  Public research data distributed by the COLMAP authors.
+
+Windows into it (indices in name-sorted order, chosen from the measured
+pairwise SIFT/RANSAC matrix, not by eye):
+
+| Name | Images | Measured behaviour (real COLMAP 4.2.0, CPU) |
+|---|---|---|
+| ONE_PHOTO | `[6]` | level 0 rough model in ~14 s |
+| SIX | `[15:21]` | 6/6 cameras registered, ~1,130 points, 6 wall planes |
+| ADD_4 | `[21:25]` | V2: 9 of 10 registered |
+| ADD_10 | `[5:15]` | V3: 13 of 20 registered |
+| HARD | `[0:6]` | wide-baseline; real COLMAP finds **no initial pair** -> honest fallback to level 0 |
+
+**Not available (UNVERIFIED):** a real *corridor* dataset and a real *room*
+dataset. The `room_capture` datasets named in older notes are synthetic /
+rendered, are not committed, and are not used by any claim here.
+
+## Commands
+
+```bash
+# fast, model-free proofs
+python -m pytest tests/test_progressive_units.py tests/test_proc_ownership.py tests/test_world_diff.py
+
+# the real-photo journeys (real COLMAP + real MiDaS; ~6.5 minutes on CPU)
+python -m pytest tests/integration/test_progressive_product_journey.py -v
+```
+
+## What is verified / what is not
+
+Verified by execution: everything the golden suite asserts (one photo, six
+photos, 6 -> 10 -> 20 on one world, bad evidence, hard case, engine crash,
+restart), the model-free unit tests, the frontend type-check and production
+build, and a real-browser run of: drop -> world created -> rough model
+rendered -> add photos -> V2 -> version switch -> diff -> mobile capture flow.
+
+Not verified / not done: video ingestion (no frame-extraction path), dense
+Level 3, metric scale (needs a measured reference), window/door detection from
+one image, per-version evidence panel while viewing an old version (the
+status panel describes the *current* model), real corridor and room datasets,
+GPU paths, a multi-user/production deployment.

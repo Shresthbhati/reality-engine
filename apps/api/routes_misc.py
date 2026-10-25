@@ -15,6 +15,7 @@ from apps.api.db import get_db
 from apps.api.models import (
     ActivityEvent,
     Evidence,
+    EvidenceDecision,
     Job,
     Location,
     Notification,
@@ -197,6 +198,9 @@ async def delete_evidence(evidence_id: str, db: AsyncSession = Depends(get_db)) 
     if ev is None:
         raise HTTPException(404, "Evidence not found")
     name, session_id, upload_id = ev.name, ev.session_id, ev.upload_id
+    decision = await db.get(EvidenceDecision, evidence_id)
+    if decision is not None:
+        await db.delete(decision)
     await db.delete(ev)
     if upload_id:
         up = await db.get(Upload, upload_id)

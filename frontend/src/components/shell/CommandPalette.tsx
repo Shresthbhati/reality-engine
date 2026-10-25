@@ -25,6 +25,7 @@ import {
   Sliders,
   PanelLeft,
   PanelRight,
+  type LucideIcon,
 } from "lucide-react";
 import { searchAll, type SearchResult, type SearchResultType } from "@/lib/search";
 
@@ -40,7 +41,7 @@ const TYPE_LABEL: Record<SearchResultType, string> = {
 interface Command {
   label: string;
   href?: string;
-  icon: any;
+  icon: LucideIcon;
   action?: () => void;
   category?: string;
 }
@@ -167,7 +168,8 @@ const COMMANDS: Command[] = [
     action: () => window.dispatchEvent(new CustomEvent("trigger-export", { detail: { format: "report" } })),
   },
   // Worlds & Navigation
-  { label: "Open Spatial Studio", href: "/", icon: Globe },
+  { label: "Open Home", href: "/", icon: Globe },
+  { label: "Open Worlds", href: "/worlds", icon: Globe },
   { label: "Create Capture Session", href: "/sessions/new", icon: Camera },
   { label: "Create Spatial World", href: "/worlds/new", icon: Globe },
   { label: "Attach Evidence", href: "/evidence", icon: ShieldCheck },
@@ -266,7 +268,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const flatList = query.trim() === "" ? dynamicCommands : results;
 
   const go = useCallback(
-    (target: string | Command) => {
+    (target: string | { href?: string; action?: () => void }) => {
       onClose();
       if (typeof target === "string") {
         router.push(target);
@@ -302,7 +304,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         const item = flatList[highlightedIndex];
         if (item) {
           e.preventDefault();
-          go(item as any);
+          go(item);
         }
       }
     };

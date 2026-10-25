@@ -136,3 +136,55 @@ class TestWorldStorePersistence:
         store2 = WorldStore(root)
         reloaded = [v for v in store2.list_versions() if v.version_id == v1.version_id][0]
         assert reloaded.source_session_ids == ["session-1", "session-2"]
+
+
+class TestVersionIdPathTraversal:
+    """Regression: `version_id` used to flow straight into
+    `self._versions_dir / f"{version_id}.json"` with no validation, on
+    both the read side (`_record`, and everything reading through it --
+    `load_version`/`parents`/`ancestors`/`verify_version`) and the write
+    side (`save_version`'s caller-supplied `version_id`). A `version_id`
+    containing `../` segments could read (or, on the write side, create)
+    a file outside the store root -- confirmed by direct exploit before
+    this fix: reading a JSON file planted outside the store succeeded
+    and returned its contents. `world_ir/artifact_store.py`'s
+    `FileArtifactStore.digest_of` already validates its own
+    path-building input the same way; `WorldStore` previously did not.
+    """
+
+    def test_traversal_version_id_is_rejected_on_read(self, root, tmp_path):
+        import json
+        import os
+        from worldstore.store import WorldStore, WorldStoreError
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        secret = outside / "secret.json"
+        secret.write_text(json.dumps({"planted": "should never be read"}))
+
+        store = WorldStore(root)
+        rel = os.path.relpath(str(secret), start=str(root / "versions"))
+        traversal_id = rel[:-len(".json")]
+
+        with pytest.raises(WorldStoreError, match="invalid version id"):
+            store.load_version(traversal_id)
+        with pytest.raises(WorldStoreError, match="invalid version id"):
+            store._record(traversal_id)
+
+    def test_traversal_version_id_is_rejected_on_write(self, root):
+        from worldstore.store import WorldStore, WorldStoreError
+
+        store = WorldStore(root)
+        with pytest.raises(WorldStoreError, match="invalid version id"):
+            store.save_version(_world_with_entity(), parent=None, version_id="../../escaped")
+        # No file was created outside the store's versions directory.
+        assert not (root.parent / "escaped.json").exists()
+
+    def test_legitimate_version_ids_still_work(self, root):
+        from worldstore.store import WorldStore
+
+        store = WorldStore(root)
+        for vid in ("v-1", "v1", "v_2", "v-canonical-compiled"):
+            v = store.save_version(_world_with_entity(), parent=None, version_id=vid)
+            assert v.version_id == vid
+            assert store.load_version(vid) is not None

@@ -50,6 +50,12 @@ interface AdaptiveInspectorProps {
   onOpenDiff?: (base?: string, head?: string) => void;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
+  /** Set when `world` is null because the WorldIR fetch failed (e.g. a 404
+   * racing a just-succeeded reconstruction), not because none was ever
+   * compiled -- these must not render the same "not compiled yet" message,
+   * or a real reconstruction success looks silently erased. */
+  loadError?: string | null;
+  onRetryLoad?: () => void;
 }
 
 type InspectorTab = "all" | "geometry" | "evidence" | "observations" | "provenance" | "uncertainty";
@@ -66,6 +72,8 @@ export default function AdaptiveInspector({
   onOpenDiff,
   onOpenRoomConstruction,
   onExport,
+  loadError,
+  onRetryLoad,
 }: AdaptiveInspectorProps) {
   const [tab, setTab] = useState<InspectorTab>("all");
   const [isEditing, setIsEditing] = useState(false);
@@ -83,12 +91,12 @@ export default function AdaptiveInspector({
 
   return (
     <aside
-      className="w-full h-full flex flex-col overflow-hidden bg-[#0e1013] select-none"
+      className="w-full h-full flex flex-col overflow-hidden bg-[var(--bg-surface)] select-none"
       style={{ borderColor: "var(--border)" }}
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-4 h-12 border-b shrink-0 bg-[#12141a]"
+        className="flex items-center justify-between px-4 h-12 border-b shrink-0 bg-[var(--bg-surface)]"
         style={{ borderColor: "var(--border)" }}
       >
         <div className="flex items-center gap-2 min-w-0">
@@ -99,9 +107,9 @@ export default function AdaptiveInspector({
             <span
               className="text-[10px] font-mono px-1.5 py-0.5 rounded truncate"
               style={{
-                background: "rgba(0, 229, 255, 0.12)",
-                color: "#00e5ff",
-                border: "1px solid rgba(0, 229, 255, 0.3)",
+                background: "rgba(34,184,255, 0.12)",
+                color: "var(--accent)",
+                border: "1px solid rgba(34,184,255, 0.3)",
               }}
             >
               {entity.type}
@@ -115,7 +123,7 @@ export default function AdaptiveInspector({
               type="button"
               onClick={() => onFrameEntity(entity.id)}
               title="Frame Entity in Viewport [F]"
-              className="p-1 rounded text-neutral-400 hover:text-[#00e5ff] hover:bg-neutral-800 transition-colors cursor-pointer"
+              className="p-1 rounded text-neutral-400 hover:text-[var(--accent)] hover:bg-neutral-800 transition-colors cursor-pointer"
             >
               <Maximize2 className="w-3.5 h-3.5" />
             </button>
@@ -137,7 +145,7 @@ export default function AdaptiveInspector({
       {/* Tabs */}
       {entity && (
         <div
-          className="flex items-center px-3 gap-1 h-9 border-b shrink-0 overflow-x-auto text-xs bg-[#101217]"
+          className="flex items-center px-3 gap-1 h-9 border-b shrink-0 overflow-x-auto text-xs bg-[var(--bg-surface)]"
           style={{ borderColor: "var(--border-subtle)" }}
         >
           {(
@@ -156,7 +164,7 @@ export default function AdaptiveInspector({
               onClick={() => setTab(t.id)}
               className={`px-2 py-1 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 tab === t.id
-                  ? "text-[#00e5ff] font-medium bg-[rgba(0,229,255,0.12)]"
+                  ? "text-[var(--accent)] font-medium bg-[rgba(34,184,255,0.12)]"
                   : "text-neutral-400 hover:text-neutral-200"
               }`}
             >
@@ -195,6 +203,8 @@ export default function AdaptiveInspector({
             activeVersion={activeVersion}
             onOpenRoomConstruction={onOpenRoomConstruction}
             onExport={onExport}
+            loadError={loadError}
+            onRetryLoad={onRetryLoad}
           />
         )}
       </div>
@@ -438,20 +448,20 @@ function EntityDetails({
   const derivationBadge = !entity.provenance
     ? { label: "Derivation Not Recorded", color: "text-neutral-400 bg-neutral-800/40 border-neutral-600/40" }
     : entity.provenance === "OBSERVED"
-    ? { label: "Directly Observed", color: "text-[#35d07f] bg-[#35d07f]/10 border-[#35d07f]/30" }
+    ? { label: "Directly Observed", color: "text-[var(--success)] bg-[var(--success)]/10 border-[var(--success)]/30" }
     : entity.provenance === "PROCEDURAL"
     ? { label: "Procedurally Extruded", color: "text-[#b28dff] bg-[#b28dff]/10 border-[#b28dff]/30" }
     : entity.provenance === "RECONSTRUCTED"
-    ? { label: "Reconstructed", color: "text-[#00e5ff] bg-[#00e5ff]/10 border-[#00e5ff]/30" }
-    : { label: `Inferred (${entity.provenance})`, color: "text-[#00e5ff] bg-[#00e5ff]/10 border-[#00e5ff]/30" };
+    ? { label: "Reconstructed", color: "text-[var(--accent)] bg-[var(--accent)]/10 border-[var(--accent)]/30" }
+    : { label: `Inferred (${entity.provenance})`, color: "text-[var(--accent)] bg-[var(--accent)]/10 border-[var(--accent)]/30" };
 
   return (
     <div className="space-y-4">
       {/* Commit Failure Error Banner */}
       {commitError && (
-        <div className="p-3 rounded-lg border border-[#e74c3c]/40 bg-[#281212] space-y-2 text-xs">
+        <div className="p-3 rounded-lg border border-[var(--error)]/40 bg-[var(--error-subtle)] space-y-2 text-xs">
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[#e74c3c] font-semibold">
+            <span className="flex items-center gap-1.5 text-[var(--error)] font-semibold">
               <AlertTriangle className="w-3.5 h-3.5" />
               <span>Correction Failed</span>
             </span>
@@ -469,9 +479,9 @@ function EntityDetails({
 
       {/* Post-Commit WorldStore Version Banner */}
       {committedVersionResult && (
-        <div className="p-3 rounded-lg border border-[#2ecc71]/40 bg-[#12281a] space-y-2 text-xs">
+        <div className="p-3 rounded-lg border border-[var(--success)]/40 bg-[var(--success-subtle)] space-y-2 text-xs">
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[#2ecc71] font-semibold">
+            <span className="flex items-center gap-1.5 text-[var(--success)] font-semibold">
               <Check className="w-3.5 h-3.5" />
               <span>WorldStore Snapshot Committed</span>
             </span>
@@ -487,7 +497,7 @@ function EntityDetails({
             </button>
           </div>
           <div className="text-[11px] font-mono text-neutral-300 space-y-0.5">
-            <div>Version: <span className="text-[#00e5ff] font-semibold">{committedVersionResult.version_id}</span></div>
+            <div>Version: <span className="text-[var(--accent)] font-semibold">{committedVersionResult.version_id}</span></div>
             {committedVersionResult.parent_version_id && (
               <div className="text-[10px] text-neutral-400">Parent: {committedVersionResult.parent_version_id}</div>
             )}
@@ -496,7 +506,7 @@ function EntityDetails({
             <button
               type="button"
               onClick={() => onOpenDiff(committedVersionResult.parent_version_id, committedVersionResult.version_id)}
-              className="w-full py-1.5 rounded bg-[#00e5ff]/20 hover:bg-[#00e5ff]/30 text-[#00e5ff] border border-[#00e5ff]/40 text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer font-medium"
+              className="w-full py-1.5 rounded bg-[var(--accent)]/20 hover:bg-[var(--accent)]/30 text-[var(--accent)] border border-[var(--accent)]/40 text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer font-medium"
             >
               <GitBranch className="w-3.5 h-3.5" />
               <span>Inspect Lineage Diff</span>
@@ -507,7 +517,7 @@ function EntityDetails({
 
       {/* Title Card */}
       <div
-        className="p-3 rounded-lg border bg-[#151821] space-y-3"
+        className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-3"
         style={{ borderColor: "var(--border)" }}
       >
         <div className="flex items-start justify-between gap-2">
@@ -536,7 +546,7 @@ function EntityDetails({
           <div className="flex justify-between items-center">
             <span className="text-neutral-400">Semantic Class</span>
             <div className="flex items-center gap-1">
-              <span className="font-mono text-[#00e5ff] capitalize font-medium">{entity.type}</span>
+              <span className="font-mono text-[var(--accent)] capitalize font-medium">{entity.type}</span>
               {Boolean(entity.custom_properties?.subtype) && (
                 <span className="text-[10px] font-mono text-neutral-400">
                   ({String(entity.custom_properties?.subtype)})
@@ -561,7 +571,7 @@ function EntityDetails({
                   onSelectEntity(entity.parent_id!);
                   onFrameEntity?.(entity.parent_id!);
                 }}
-                className="font-mono text-[#00e5ff] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[170px]"
+                className="font-mono text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[170px]"
                 title={`Frame parent: ${entity.parent_id}`}
               >
                 <Link2 className="w-3 h-3 shrink-0" />
@@ -587,7 +597,7 @@ function EntityDetails({
                       onSelectEntity(ch.id);
                       onFrameEntity?.(ch.id);
                     }}
-                    className="text-[9px] px-1 py-0.2 rounded bg-neutral-800 hover:bg-[#00e5ff]/20 text-neutral-300 hover:text-[#00e5ff] font-mono border border-neutral-700 cursor-pointer truncate max-w-[85px]"
+                    className="text-[9px] px-1 py-0.2 rounded bg-neutral-800 hover:bg-[var(--accent)]/20 text-neutral-300 hover:text-[var(--accent)] font-mono border border-neutral-700 cursor-pointer truncate max-w-[85px]"
                     title={`Frame child: ${ch.id}`}
                   >
                     {ch.name || ch.id}
@@ -613,7 +623,7 @@ function EntityDetails({
           {/* WorldStore Version */}
           <div className="flex justify-between items-center">
             <span className="text-neutral-400">WorldStore Version</span>
-            <span className="font-mono text-[#00e5ff] text-[10px] truncate max-w-[160px]">
+            <span className="font-mono text-[var(--accent)] text-[10px] truncate max-w-[160px]">
               {provenanceLoading ? "…" : provenance?.version_id || activeVersion || "Not compiled"}
             </span>
           </div>
@@ -635,7 +645,7 @@ function EntityDetails({
                 className="h-full rounded-full transition-all duration-300"
                 style={{
                   width: `${Math.max(5, conf * 100)}%`,
-                  background: conf > 0.7 ? "#2ecc71" : conf > 0.4 ? "#f5a623" : "#e74c3c",
+                  background: conf > 0.7 ? "var(--success)" : conf > 0.4 ? "var(--warning)" : "var(--error)",
                 }}
               />
             </div>
@@ -664,7 +674,7 @@ function EntityDetails({
           </div>
           <div className="flex justify-between items-center">
             <span className="text-neutral-400">Bounding Volume</span>
-            <span className="font-mono text-[#00e5ff]">
+            <span className="font-mono text-[var(--accent)]">
               {extentDimensions ? `${extentDimensions.volume.toFixed(2)} m³` : "Unavailable"}
             </span>
           </div>
@@ -677,7 +687,7 @@ function EntityDetails({
             onClick={() => onFrame()}
             className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white transition-colors text-[11px] font-medium cursor-pointer"
           >
-            <Maximize2 className="w-3 h-3 text-[#00e5ff]" />
+            <Maximize2 className="w-3 h-3 text-[var(--accent)]" />
             <span>Frame [F]</span>
           </button>
 
@@ -692,11 +702,11 @@ function EntityDetails({
             }}
             className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded transition-colors text-[11px] font-medium cursor-pointer ${
               isEditing
-                ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40"
+                ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40"
                 : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white"
             }`}
           >
-            <Edit3 className="w-3 h-3 text-[#ffb84d]" />
+            <Edit3 className="w-3 h-3 text-[var(--warning)]" />
             <span>{isEditing ? "Editing..." : "Correct"}</span>
           </button>
         </div>
@@ -704,9 +714,9 @@ function EntityDetails({
 
       {/* Review / Architectural Correction Panel */}
       {isEditing && (
-        <div className="p-3 rounded-lg border border-[#00e5ff]/40 bg-[#121622] space-y-3">
+        <div className="p-3 rounded-lg border border-[var(--accent)]/40 bg-[var(--bg-surface)] space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#00e5ff] flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5" />
               <span>Architectural Correction (WorldStore CAS)</span>
             </span>
@@ -734,7 +744,7 @@ function EntityDetails({
                   onClick={() => setCorrectionTab("boundary")}
                   className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
                     correctionTab === "boundary"
-                      ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 font-semibold"
+                      ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
                       : "text-neutral-400 hover:text-white"
                   }`}
                 >
@@ -745,7 +755,7 @@ function EntityDetails({
                   onClick={() => setCorrectionTab("classification")}
                   className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
                     correctionTab === "classification"
-                      ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 font-semibold"
+                      ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
                       : "text-neutral-400 hover:text-white"
                   }`}
                 >
@@ -761,7 +771,7 @@ function EntityDetails({
                   onClick={() => setCorrectionTab("connected_rooms")}
                   className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
                     correctionTab === "connected_rooms"
-                      ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 font-semibold"
+                      ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
                       : "text-neutral-400 hover:text-white"
                   }`}
                 >
@@ -772,7 +782,7 @@ function EntityDetails({
                   onClick={() => setCorrectionTab("classification")}
                   className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
                     correctionTab === "classification"
-                      ? "bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 font-semibold"
+                      ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
                       : "text-neutral-400 hover:text-white"
                   }`}
                 >
@@ -785,7 +795,7 @@ function EntityDetails({
               <button
                 type="button"
                 onClick={() => setCorrectionTab("opening")}
-                className="px-2 py-0.5 rounded font-mono bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 font-semibold"
+                className="px-2 py-0.5 rounded font-mono bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
               >
                 Opening Classification
               </button>
@@ -795,7 +805,7 @@ function EntityDetails({
               <button
                 type="button"
                 onClick={() => setCorrectionTab("stair_levels")}
-                className="px-2 py-0.5 rounded font-mono bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 font-semibold"
+                className="px-2 py-0.5 rounded font-mono bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
               >
                 Connected Levels ({editedConnectedLevelIds.length})
               </button>
@@ -813,7 +823,7 @@ function EntityDetails({
                 <button
                   type="button"
                   onClick={() => setCorrectionTab("classification")}
-                  className="px-2 py-0.5 rounded font-mono bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 font-semibold"
+                  className="px-2 py-0.5 rounded font-mono bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
                 >
                   Classification
                 </button>
@@ -834,7 +844,7 @@ function EntityDetails({
                     {editedBoundaryIds.map((wId) => (
                       <span
                         key={wId}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/40 text-[10px] font-mono"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--warning)]/20 text-[var(--warning)] border border-[var(--warning)]/40 text-[10px] font-mono"
                       >
                         <span>{wId}</span>
                         <button
@@ -853,7 +863,7 @@ function EntityDetails({
                   <select
                     value={selectedWallToAdd}
                     onChange={(e) => setSelectedWallToAdd(e.target.value)}
-                    className="flex-1 h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none cursor-pointer"
+                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none cursor-pointer"
                   >
                     <option value="">Select wall from WorldIR to add...</option>
                     {Object.entries(world?.entities || {})
@@ -873,7 +883,7 @@ function EntityDetails({
                         setSelectedWallToAdd("");
                       }
                     }}
-                    className="px-2.5 h-7 rounded bg-neutral-800 hover:bg-neutral-700 text-[#00e5ff] border border-neutral-700 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                    className="px-2.5 h-7 rounded bg-neutral-800 hover:bg-neutral-700 text-[var(--accent)] border border-neutral-700 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
                   >
                     <Plus className="w-3 h-3" />
                     <span>Add</span>
@@ -897,7 +907,7 @@ function EntityDetails({
                     {editedConnectedRoomIds.map((rId) => (
                       <span
                         key={rId}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 text-[10px] font-mono"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 text-[10px] font-mono"
                       >
                         <span>{rId}</span>
                         <button
@@ -916,7 +926,7 @@ function EntityDetails({
                   <select
                     value={selectedRoomToAdd}
                     onChange={(e) => setSelectedRoomToAdd(e.target.value)}
-                    className="flex-1 h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none cursor-pointer"
+                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none cursor-pointer"
                   >
                     <option value="">Select room to connect...</option>
                     {Object.entries(world?.entities || {})
@@ -936,7 +946,7 @@ function EntityDetails({
                         setSelectedRoomToAdd("");
                       }
                     }}
-                    className="px-2.5 h-7 rounded bg-neutral-800 hover:bg-neutral-700 text-[#00e5ff] border border-neutral-700 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                    className="px-2.5 h-7 rounded bg-neutral-800 hover:bg-neutral-700 text-[var(--accent)] border border-neutral-700 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
                   >
                     <Plus className="w-3 h-3" />
                     <span>Add</span>
@@ -957,7 +967,7 @@ function EntityDetails({
                   className={`py-2 rounded border text-xs font-mono font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
                     editedType === "door"
                       ? "bg-[#10b981]/20 border-[#10b981] text-[#10b981]"
-                      : "bg-[#0e1013] border-neutral-700 text-neutral-400 hover:text-white"
+                      : "bg-[var(--bg-surface)] border-neutral-700 text-neutral-400 hover:text-white"
                   }`}
                 >
                   <Building className="w-3.5 h-3.5" />
@@ -969,7 +979,7 @@ function EntityDetails({
                   className={`py-2 rounded border text-xs font-mono font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
                     editedType === "window"
                       ? "bg-[#06b6d4]/20 border-[#06b6d4] text-[#06b6d4]"
-                      : "bg-[#0e1013] border-neutral-700 text-neutral-400 hover:text-white"
+                      : "bg-[var(--bg-surface)] border-neutral-700 text-neutral-400 hover:text-white"
                   }`}
                 >
                   <Box className="w-3.5 h-3.5" />
@@ -1012,7 +1022,7 @@ function EntityDetails({
                   <select
                     value={selectedLevelToAdd}
                     onChange={(e) => setSelectedLevelToAdd(e.target.value)}
-                    className="flex-1 h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none cursor-pointer"
+                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none cursor-pointer"
                   >
                     <option value="">Select storey/level to connect...</option>
                     {Object.entries(world?.entities || {})
@@ -1054,7 +1064,7 @@ function EntityDetails({
                 <select
                   value={editedType}
                   onChange={(e) => setEditedType(e.target.value)}
-                  className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white focus:border-[#00e5ff] focus:outline-none cursor-pointer"
+                  className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none cursor-pointer"
                 >
                   <option value="room">Room (Enclosed Space)</option>
                   <option value="corridor">Corridor (Circulation Space)</option>
@@ -1078,7 +1088,7 @@ function EntityDetails({
                   value={editedLabels}
                   onChange={(e) => setEditedLabels(e.target.value)}
                   placeholder="e.g. office, meeting_room, primary_corridor"
-                  className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[#00e5ff] focus:outline-none font-mono"
+                  className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[var(--accent)] focus:outline-none font-mono"
                 />
               </div>
             </div>
@@ -1088,7 +1098,7 @@ function EntityDetails({
           <div className="space-y-1 pt-1 border-t border-neutral-800">
             <div className="flex justify-between text-[10px] text-neutral-400 uppercase tracking-wider">
               <span>Adjusted Confidence</span>
-              <span className="font-mono text-[#00e5ff]">
+              <span className="font-mono text-[var(--accent)]">
                 {confidenceIsValid ? `${(parsedConfidence * 100).toFixed(0)}%` : "unchanged"}
               </span>
             </div>
@@ -1099,7 +1109,7 @@ function EntityDetails({
               step="0.05"
               value={confidenceIsValid ? String(parsedConfidence) : conf ?? "0.5"}
               onChange={(e) => setEditedConfidence(e.target.value)}
-              className="w-full accent-[#00e5ff] cursor-pointer"
+              className="w-full accent-[var(--accent)] cursor-pointer"
             />
             <p className="text-[10px] text-neutral-500">
               {conf === null
@@ -1115,7 +1125,7 @@ function EntityDetails({
               value={commitMessage}
               onChange={(e) => setCommitMessage(e.target.value)}
               placeholder="e.g. Correct boundary wall assignment and connectivity"
-              className="w-full h-7 px-2 rounded bg-[#0e1013] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[#00e5ff] focus:outline-none font-mono"
+              className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[var(--accent)] focus:outline-none font-mono"
             />
           </div>
 
@@ -1139,8 +1149,8 @@ function EntityDetails({
               onClick={() => handleSaveCorrection()}
               className={`flex-1 py-1.5 rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                 committedSuccess
-                  ? "bg-[#2ecc71] text-black"
-                  : "bg-[#00e5ff] hover:bg-[#33ebff] text-black"
+                  ? "bg-[var(--success)] text-black"
+                  : "bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white"
               }`}
             >
               {submitting ? (
@@ -1160,8 +1170,8 @@ function EntityDetails({
 
       {/* Building Envelope & Overview */}
       {(entity.type === "building" || entity.id.startsWith("building")) && (
-        <div className="p-3 rounded-lg border border-[#f59e0b]/40 bg-[#f59e0b]/10 space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-[#f59e0b] uppercase tracking-wide">
+        <div className="p-3 rounded-lg border border-[var(--warning)]/40 bg-[var(--warning)]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--warning)] uppercase tracking-wide">
             <span className="flex items-center gap-1.5">
               <Building className="w-3.5 h-3.5" />
               <span>Building Envelope</span>
@@ -1183,7 +1193,7 @@ function EntityDetails({
           </div>
 
           {Array.isArray(entity.custom_properties?.storey_ids) && (entity.custom_properties.storey_ids as string[]).length > 0 && (
-            <div className="pt-1.5 border-t border-[#f59e0b]/20 space-y-1">
+            <div className="pt-1.5 border-t border-[var(--warning)]/20 space-y-1">
               <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Building Storeys / Levels</span>
               <div className="flex flex-wrap gap-1">
                 {(entity.custom_properties.storey_ids as string[]).map((sId) => (
@@ -1191,7 +1201,7 @@ function EntityDetails({
                     key={sId}
                     type="button"
                     onClick={() => onSelectEntity(sId)}
-                    className="px-2 py-0.5 rounded bg-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/30 text-[10px] font-mono cursor-pointer border border-[#f59e0b]/30"
+                    className="px-2 py-0.5 rounded bg-[var(--warning)]/20 text-[var(--warning)] hover:bg-[var(--warning)]/30 text-[10px] font-mono cursor-pointer border border-[var(--warning)]/30"
                   >
                     {sId}
                   </button>
@@ -1204,8 +1214,8 @@ function EntityDetails({
 
       {/* Storey / Level Details */}
       {(entity.type === "storey" || entity.type === "level" || entity.id.startsWith("storey")) && (
-        <div className="p-3 rounded-lg border border-[#8b5cf6]/40 bg-[#8b5cf6]/10 space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-[#8b5cf6] uppercase tracking-wide">
+        <div className="p-3 rounded-lg border border-[var(--purple)]/40 bg-[var(--purple)]/10 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--purple)] uppercase tracking-wide">
             <span className="flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5" />
               <span>Building Storey / Level</span>
@@ -1419,7 +1429,7 @@ function EntityDetails({
             </div>
 
             {/* Core Metrics Grid */}
-            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[#0e1013]/60 p-2 rounded border border-neutral-800">
+            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[var(--bg-surface)]/60 p-2 rounded border border-neutral-800">
               <div>
                 <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Room Area</span>
                 <span className="text-white font-semibold">{area ? `${area.toFixed(2)} m²` : "—"}</span>
@@ -1438,7 +1448,7 @@ function EntityDetails({
                   <button
                     type="button"
                     onClick={() => onSelectEntity(levelId)}
-                    className="text-[#8b5cf6] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[120px]"
+                    className="text-[var(--purple)] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[120px]"
                   >
                     <Layers className="w-3 h-3 shrink-0" />
                     <span className="truncate">{levelId}</span>
@@ -1463,7 +1473,7 @@ function EntityDetails({
                       key={wId}
                       type="button"
                       onClick={() => onSelectEntity(wId)}
-                      className="px-2 py-0.5 rounded bg-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/30 text-[10px] font-mono cursor-pointer border border-[#f59e0b]/30 flex items-center gap-1"
+                      className="px-2 py-0.5 rounded bg-[var(--warning)]/20 text-[var(--warning)] hover:bg-[var(--warning)]/30 text-[10px] font-mono cursor-pointer border border-[var(--warning)]/30 flex items-center gap-1"
                     >
                       <Box className="w-2.5 h-2.5" />
                       <span>{wId}</span>
@@ -1565,7 +1575,7 @@ function EntityDetails({
                       key={sId}
                       type="button"
                       onClick={() => onSelectEntity(sId)}
-                      className="px-2 py-0.5 rounded bg-[#00e5ff]/20 text-[#00e5ff] hover:bg-[#00e5ff]/30 text-[10px] font-mono cursor-pointer border border-[#00e5ff]/30 flex items-center gap-1"
+                      className="px-2 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent)]/30 text-[10px] font-mono cursor-pointer border border-[var(--accent)]/30 flex items-center gap-1"
                     >
                       <Workflow className="w-2.5 h-2.5" />
                       <span>{sId}</span>
@@ -1576,7 +1586,7 @@ function EntityDetails({
             </div>
 
             {/* Uncertainty Model */}
-            <div className="p-2 rounded bg-[#0e1013]/60 border border-neutral-800 text-[10px] font-mono space-y-1">
+            <div className="p-2 rounded bg-[var(--bg-surface)]/60 border border-neutral-800 text-[10px] font-mono space-y-1">
               <div className="flex justify-between items-center">
                 <span className="text-neutral-500 uppercase">Boundary Completeness:</span>
                 <span className="text-white">
@@ -1585,7 +1595,7 @@ function EntityDetails({
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-neutral-500 uppercase">Certainty Score:</span>
-                <span className="text-[#00e5ff] font-semibold">
+                <span className="text-[var(--accent)] font-semibold">
                   {conf !== null ? conf.toFixed(3) : "Not available"}
                 </span>
               </div>
@@ -1647,7 +1657,7 @@ function EntityDetails({
             </div>
 
             {/* Metrics Grid */}
-            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[#0e1013]/60 p-2 rounded border border-neutral-800">
+            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[var(--bg-surface)]/60 p-2 rounded border border-neutral-800">
               <div>
                 <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Length</span>
                 <span className="text-white font-semibold">{length ? `${length.toFixed(2)} m` : "—"}</span>
@@ -1666,7 +1676,7 @@ function EntityDetails({
                   <button
                     type="button"
                     onClick={() => onSelectEntity(levelId)}
-                    className="text-[#8b5cf6] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[120px]"
+                    className="text-[var(--purple)] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[120px]"
                   >
                     <Layers className="w-3 h-3 shrink-0" />
                     <span className="truncate">{levelId}</span>
@@ -1789,7 +1799,7 @@ function EntityDetails({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[#0e1013]/60 p-2 rounded border border-neutral-800">
+            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[var(--bg-surface)]/60 p-2 rounded border border-neutral-800">
               <div>
                 <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Total Rise</span>
                 <span className="text-white font-semibold">{rise ? `${rise.toFixed(2)} m` : "—"}</span>
@@ -1853,11 +1863,11 @@ function EntityDetails({
       {(tab === "all" || tab === "geometry") && (
         <div className="space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-            <Box className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Box className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span>Geometry & Bounds</span>
           </h4>
           <div
-            className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
+            className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex justify-between items-start">
@@ -1907,7 +1917,7 @@ function EntityDetails({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-              <Workflow className="w-3.5 h-3.5 text-[#00e5ff]" />
+              <Workflow className="w-3.5 h-3.5 text-[var(--accent)]" />
               <span>Spatial Topology Graph</span>
             </h4>
             <span className="text-[10px] text-neutral-500 font-mono">
@@ -1916,7 +1926,7 @@ function EntityDetails({
           </div>
 
           <div
-            className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
+            className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
             style={{ borderColor: "var(--border)" }}
           >
             {relationships.length === 0 ? (
@@ -1932,7 +1942,7 @@ function EntityDetails({
                     <div
                       key={idx}
                       onClick={() => targetId && onSelectEntity(targetId)}
-                      className="group p-1.5 rounded bg-[#101217] border border-[#1f222b] hover:border-[#00e5ff] transition-colors flex items-center justify-between font-mono cursor-pointer"
+                      className="group p-1.5 rounded bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] transition-colors flex items-center justify-between font-mono cursor-pointer"
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 uppercase font-semibold">
@@ -1944,7 +1954,7 @@ function EntityDetails({
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-neutral-500 shrink-0">
                         {targetEnt && <span className="capitalize">{targetEnt.type}</span>}
-                        <Maximize2 className="w-3 h-3 text-neutral-500 group-hover:text-[#00e5ff]" />
+                        <Maximize2 className="w-3 h-3 text-neutral-500 group-hover:text-[var(--accent)]" />
                       </div>
                     </div>
                   );
@@ -1956,20 +1966,20 @@ function EntityDetails({
       )}
 
       {/* Canonical Provenance Pipeline: ENTITY → EVIDENCE → SESSION → RECONSTRUCTION */}
-      <div className="p-3 rounded-lg border border-[#1f222b] bg-[#151821] space-y-2.5">
+      <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] space-y-2.5">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 flex items-center justify-between">
           <span>Provenance Pipeline</span>
-          <span className="font-mono text-[#00e5ff] text-[9px]">REAL DATA CHAIN</span>
+          <span className="font-mono text-[var(--accent)] text-[9px]">REAL DATA CHAIN</span>
         </div>
         <div className="flex items-center justify-between text-[10px] font-mono">
           <div className="flex flex-col items-center gap-1 text-center">
-            <span className="w-2 h-2 rounded-full bg-[#00e5ff]" />
+            <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />
             <span className="text-white font-semibold">ENTITY</span>
             <span className="text-neutral-500 max-w-[65px] truncate">{entity.id}</span>
           </div>
           <span className="text-neutral-600">→</span>
           <div className="flex flex-col items-center gap-1 text-center">
-            <span className="w-2 h-2 rounded-full bg-[#35d07f]" />
+            <span className="w-2 h-2 rounded-full bg-[var(--success)]" />
             <span className="text-white font-semibold">EVIDENCE</span>
             <span className="text-neutral-500 max-w-[65px] truncate">
               {provenance?.evidence[0]?.evidence_name || (provenance?.trace_level === "none" ? "None" : "—")}
@@ -1985,7 +1995,7 @@ function EntityDetails({
           </div>
           <span className="text-neutral-600">→</span>
           <div className="flex flex-col items-center gap-1 text-center">
-            <span className="w-2 h-2 rounded-full bg-[#f5a623]" />
+            <span className="w-2 h-2 rounded-full bg-[var(--warning)]" />
             <span className="text-white font-semibold">RECON</span>
             <span className="text-neutral-500 max-w-[65px] truncate">
               {String(world?.metadata?.reconstruction?.backend ?? "unrecorded")}
@@ -1998,7 +2008,7 @@ function EntityDetails({
       {(tab === "all" || tab === "evidence") && (
         <div className="space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-            <Camera className="w-3.5 h-3.5 text-[#35d07f]" />
+            <Camera className="w-3.5 h-3.5 text-[var(--success)]" />
             <span>Source Evidence</span>
           </h4>
           <div className="space-y-2">
@@ -2021,13 +2031,13 @@ function EntityDetails({
                   return (
                     <div
                       key={ev.evidence_id}
-                      className="p-2.5 rounded-lg border border-[#1f222b] bg-[#151821] text-[11px] space-y-2"
+                      className="p-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] text-[11px] space-y-2"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-mono font-semibold text-white truncate">
                           {ev.evidence_name}
                         </span>
-                        <span className="font-mono text-[10px] text-[#35d07f] px-1 rounded bg-[#35d07f]/10 shrink-0">
+                        <span className="font-mono text-[10px] text-[var(--success)] px-1 rounded bg-[var(--success)]/10 shrink-0">
                           {ev.evidence_type}
                         </span>
                       </div>
@@ -2036,7 +2046,7 @@ function EntityDetails({
                         <a
                           href={`/evidence/${ev.evidence_id}`}
                           onClick={() => onTraceEvidence?.(ev.evidence_id)}
-                          className="text-[10px] text-[#00e5ff] hover:underline flex items-center gap-1 cursor-pointer"
+                          className="text-[10px] text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <Maximize2 className="w-3 h-3" />
                           <span>Open Evidence</span>
@@ -2081,7 +2091,7 @@ function EntityDetails({
       {(tab === "all" || tab === "observations") && (
         <div className="space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-            <FileSearch className="w-3.5 h-3.5 text-[#ffb84d]" />
+            <FileSearch className="w-3.5 h-3.5 text-[var(--warning)]" />
             <span>Observations ({observations.length})</span>
           </h4>
           {observations.length === 0 ? (
@@ -2090,11 +2100,11 @@ function EntityDetails({
             observations.map((obs) => (
               <div
                 key={obs.id}
-                className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
+                className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
                 style={{ borderColor: "var(--border)" }}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono font-medium text-[#00e5ff]">
+                  <span className="font-mono font-medium text-[var(--accent)]">
                     {obs.sensor_type}
                   </span>
                   {obs.confidence != null && (
@@ -2129,11 +2139,11 @@ function EntityDetails({
       {(tab === "all" || tab === "provenance") && (
         <div className="space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5 text-[#35d07f]" />
+            <Shield className="w-3.5 h-3.5 text-[var(--success)]" />
             <span>Provenance & Lineage</span>
           </h4>
           <div
-            className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
+            className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex justify-between">
@@ -2150,7 +2160,7 @@ function EntityDetails({
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-neutral-400 shrink-0">WorldStore Version</span>
-              <span className="text-[#00e5ff] font-mono break-all text-right">
+              <span className="text-[var(--accent)] font-mono break-all text-right">
                 {provenanceLoading ? "…" : provenance?.version_id ?? "Not compiled"}
               </span>
             </div>
@@ -2170,11 +2180,11 @@ function EntityDetails({
       {(tab === "all" || tab === "uncertainty") && (
         <div className="space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-[#f5a623]" />
+            <Sparkles className="w-3.5 h-3.5 text-[var(--warning)]" />
             <span>Uncertainty Model</span>
           </h4>
           <div
-            className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
+            className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex justify-between">
@@ -2229,13 +2239,34 @@ function WorldOverview({
   activeVersion,
   onOpenRoomConstruction,
   onExport,
+  loadError,
+  onRetryLoad,
 }: {
   world: WorldIR | null;
   worldId: string;
   activeVersion?: string;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
+  loadError?: string | null;
+  onRetryLoad?: () => void;
 }) {
+  if (!world && loadError) {
+    return (
+      <div className="p-4 text-center text-red-400 space-y-3">
+        <p>Couldn&apos;t load the compiled world: {loadError}</p>
+        {onRetryLoad && (
+          <button
+            type="button"
+            onClick={onRetryLoad}
+            className="px-3.5 py-1.5 rounded text-xs bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30 transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
+
   if (!world) {
     return (
       <div className="p-4 text-center text-neutral-500 space-y-3">
@@ -2244,7 +2275,7 @@ function WorldOverview({
           <button
             type="button"
             onClick={onOpenRoomConstruction}
-            className="px-3.5 py-1.5 rounded text-xs bg-[#00e5ff] text-black font-medium hover:bg-[#33ebff] transition-colors cursor-pointer"
+            className="px-3.5 py-1.5 rounded text-xs bg-[var(--primary)] text-white font-medium hover:bg-[var(--primary-hover)] transition-colors cursor-pointer"
           >
             Open Room Construction
           </button>
@@ -2260,7 +2291,7 @@ function WorldOverview({
     <div className="space-y-4">
       {/* World Card */}
       <div
-        className="p-3 rounded-lg border bg-[#151821]"
+        className="p-3 rounded-lg border bg-[var(--bg-elevated)]"
         style={{ borderColor: "var(--border)" }}
       >
         <div className="text-[11px] uppercase tracking-wider text-neutral-400">
@@ -2275,7 +2306,7 @@ function WorldOverview({
         {activeVersion && (
           <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400 pt-2 mt-2 border-t border-neutral-800">
             <span className="text-neutral-500 uppercase">WorldStore Version</span>
-            <span className="text-[#00e5ff] font-semibold">{activeVersion}</span>
+            <span className="text-[var(--accent)] font-semibold">{activeVersion}</span>
           </div>
         )}
       </div>
@@ -2283,11 +2314,11 @@ function WorldOverview({
       {/* Pipeline Stage Facts */}
       <div className="space-y-2">
         <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-          <Activity className="w-3.5 h-3.5 text-[#00e5ff]" />
+          <Activity className="w-3.5 h-3.5 text-[var(--accent)]" />
           <span>Stage Facts & Diagnostics</span>
         </h4>
         <div
-          className="p-3 rounded-lg border bg-[#151821] space-y-2.5 text-[11px]"
+          className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2.5 text-[11px]"
           style={{ borderColor: "var(--border)" }}
         >
           <div className="flex justify-between">
@@ -2298,7 +2329,7 @@ function WorldOverview({
           </div>
           <div className="flex justify-between">
             <span className="text-neutral-400">Registration Status</span>
-            <span className="font-mono text-[#2ecc71]">
+            <span className="font-mono text-[var(--success)]">
               {meta.reconstruction?.registration_status || "Unavailable"}
             </span>
           </div>
@@ -2320,16 +2351,16 @@ function WorldOverview({
       {/* Metric Scale State */}
       <div className="space-y-2">
         <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-          <Compass className="w-3.5 h-3.5 text-[#35d07f]" />
+          <Compass className="w-3.5 h-3.5 text-[var(--success)]" />
           <span>Metric Scale Calibration</span>
         </h4>
         <div
-          className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
+          className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
           style={{ borderColor: "var(--border)" }}
         >
           <div className="flex justify-between">
             <span className="text-neutral-400">Scale State</span>
-            <span className="font-mono font-medium text-[#00e5ff]">
+            <span className="font-mono font-medium text-[var(--accent)]">
               {meta.scale?.state || "Unavailable"}
             </span>
           </div>
@@ -2347,7 +2378,7 @@ function WorldOverview({
             <span>Monocular Depth Fusion</span>
           </h4>
           <div
-            className="p-3 rounded-lg border bg-[#151821] space-y-2 text-[11px]"
+            className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex justify-between">
@@ -2377,9 +2408,9 @@ function WorldOverview({
           <button
             type="button"
             onClick={onOpenRoomConstruction}
-            className="w-full py-2 rounded font-medium text-xs bg-[#151821] hover:bg-[#1a1f2c] border border-[#1f222b] text-neutral-200 hover:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            className="w-full py-2 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border)] text-neutral-200 hover:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <Workflow className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <Workflow className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span>Room Construction Workflow</span>
           </button>
         )}
@@ -2388,9 +2419,9 @@ function WorldOverview({
           <button
             type="button"
             onClick={() => onExport("worldir")}
-            className="w-full py-2 rounded font-medium text-xs bg-[#151821] hover:bg-[#1a1f2c] border border-[#1f222b] text-neutral-200 hover:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            className="w-full py-2 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border)] text-neutral-200 hover:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5 text-[#35d07f]" />
+            <Download className="w-3.5 h-3.5 text-[var(--success)]" />
             <span>Export WorldIR (JSON)</span>
           </button>
         )}

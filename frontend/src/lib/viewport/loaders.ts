@@ -3,25 +3,100 @@
  * Consumes authoritative binary float32 PLY point clouds and meshes.
  */
 
+const PLY_SIZES: Record<string, number> = {
+  float: 4, float32: 4, double: 8, float64: 8,
+  uchar: 1, uint8: 1, char: 1, int8: 1,
+  ushort: 2, uint16: 2, short: 2, int16: 2,
+  uint: 4, uint32: 4, int: 4, int32: 4,
+};
+
+/**
+ * Vertex positions from a PLY point cloud.
+ *
+ * Accepts `binary_little_endian` (the SfM/pipeline artifacts) AND `ascii`
+ * (what the world API's `/points` stream currently emits -- the loader used
+ * to reject it, so no world's points ever rendered). Position columns are
+ * found by property NAME (x, y, z), so extra per-vertex properties are fine.
+ * The result is always a fresh, aligned Float32Array, except for the
+ * aligned x/y/z-only binary layout which stays zero-copy.
+ */
 export function parsePly(bytes: Uint8Array): Float32Array {
-  // Minimal binary_little_endian float32 xyz reader produced by SfM
-  const head = new TextDecoder().decode(bytes.subarray(0, 2048));
+  const head = new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.length, 8192)));
   const marker = "end_header\n";
   const idx = head.indexOf(marker);
   if (idx < 0) throw new Error("PLY: end_header not found");
   const header = head.slice(0, idx);
-  if (!/format binary_little_endian 1\.0/.test(header)) {
-    throw new Error("PLY: only binary_little_endian supported");
-  }
+  const isBinary = /format binary_little_endian 1\.0/.test(header);
+  const isAscii = /format ascii 1\.0/.test(header);
+  if (!isBinary && !isAscii) throw new Error("PLY: only ascii and binary_little_endian are supported");
   const m = header.match(/element vertex (\d+)/);
   if (!m) throw new Error("PLY: vertex count not found");
   const n = parseInt(m[1], 10);
-  const data = new Float32Array(
-    bytes.buffer,
-    bytes.byteOffset + idx + marker.length,
-    n * 3
-  );
-  return data;
+  const bodyStart = idx + marker.length; // header is ASCII: char index === byte index
+
+  // vertex properties, in file order
+  const props: { name: string; type: string }[] = [];
+  let inVertex = false;
+  for (const line of header.split("\n")) {
+    const parts = line.trim().split(/\s+/);
+    if (parts[0] === "element") inVertex = parts[1] === "vertex";
+    else if (inVertex && parts[0] === "property" && parts[1] !== "list") {
+      props.push({ type: parts[1], name: parts[2] });
+    }
+  }
+  const ix = props.findIndex((q) => q.name === "x");
+  const iy = props.findIndex((q) => q.name === "y");
+  const iz = props.findIndex((q) => q.name === "z");
+  if (ix < 0 || iy < 0 || iz < 0) throw new Error("PLY: vertex x/y/z properties not found");
+
+  if (isAscii) {
+    const text = new TextDecoder().decode(bytes.subarray(bodyStart));
+    const out = new Float32Array(n * 3);
+    let pos = 0;
+    let count = 0;
+    while (count < n && pos < text.length) {
+      let eol = text.indexOf("\n", pos);
+      if (eol < 0) eol = text.length;
+      const cols = text.slice(pos, eol).trim().split(/\s+/);
+      pos = eol + 1;
+      if (cols.length <= Math.max(ix, iy, iz)) continue; // blank/short line
+      out[count * 3] = parseFloat(cols[ix]);
+      out[count * 3 + 1] = parseFloat(cols[iy]);
+      out[count * 3 + 2] = parseFloat(cols[iz]);
+      count += 1;
+    }
+    if (count < n) throw new Error(`PLY: expected ${n} vertices, found ${count}`);
+    return out;
+  }
+
+  // binary_little_endian
+  const offsets: number[] = [];
+  let stride = 0;
+  for (const q of props) {
+    const size = PLY_SIZES[q.type];
+    if (!size) throw new Error(`PLY: unsupported vertex property type ${q.type}`);
+    offsets.push(stride);
+    stride += size;
+  }
+  const abs = bytes.byteOffset + bodyStart;
+  const xyzOnlyFloat32 =
+    props.length === 3 && ix === 0 && iy === 1 && iz === 2 &&
+    props.every((q) => PLY_SIZES[q.type] === 4 && q.type.startsWith("float"));
+  if (xyzOnlyFloat32 && abs % 4 === 0) {
+    return new Float32Array(bytes.buffer, abs, n * 3); // zero-copy
+  }
+  if (bytes.byteLength < bodyStart + n * stride) throw new Error("PLY: truncated vertex data");
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const read = (off: number, type: string) =>
+    PLY_SIZES[type] === 8 ? dv.getFloat64(off, true) : dv.getFloat32(off, true);
+  const out = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const base = bodyStart + i * stride;
+    out[i * 3] = read(base + offsets[ix], props[ix].type);
+    out[i * 3 + 1] = read(base + offsets[iy], props[iy].type);
+    out[i * 3 + 2] = read(base + offsets[iz], props[iz].type);
+  }
+  return out;
 }
 
 export function parseMeshPly(

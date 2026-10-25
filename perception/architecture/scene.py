@@ -41,12 +41,11 @@ from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from perception.geometry.planes import (
-    canonicalize_plane_ids,
     detect_planes,
-    merge_coplanar_fragments,
-    split_parallel_sheets,
+    refine_planes,
 )
 from perception.geometry.orientation import classify_planes as orient_planes
+from perception.geometry.orientation import observer_positions_by_plane
 from perception.geometry.orientation import OrientedPlane
 from evidence.promote_planes import positions_by_plane, promote_plane_to_entity
 from perception.architecture.classify import PlaneInput
@@ -103,6 +102,8 @@ class InteriorSceneResult:
     #: why the storey layer was skipped (absence = it ran)
     storeys_skipped: str = ""
     validation_issues: List[str] = field(default_factory=list)
+    #: room_semantics.refine_interior_semantics accounting (footprints, ceiling layers, furniture)
+    semantics: Dict = field(default_factory=dict)
 
     def summary_text(self) -> str:
         lines = [
@@ -181,22 +182,26 @@ def assemble_interior_scene(
     # corrupts sill heights, room enclosures, and storey grouping. Split
     # any such plane along `up` before classification, then re-key ids.
     positions_by_id = {p.track_id: p.position for p in result.points}
-    split_planes = merge_coplanar_fragments(
-        split_parallel_sheets(
-            detection.planes, positions_by_id, up,
-            distance_tolerance_m=distance_tolerance_m,
-            min_inliers=min_inliers,
-        ),
-        positions_by_id, up,
+    split_planes = refine_planes(
+        detection.planes, positions_by_id, up,
         distance_tolerance_m=distance_tolerance_m,
         min_inliers=min_inliers,
     )
-    split_planes = canonicalize_plane_ids(split_planes)
     camera_positions = [p.position for p in result.camera_poses]
-    oriented = orient_planes(split_planes, camera_positions, up=up)
+    oriented = orient_planes(split_planes, camera_positions, up=up,
+                             observers=observer_positions_by_plane(split_planes, result))
     positions = positions_by_plane(result, oriented)
 
-    world = world if world is not None else WorldIR(id="world-interior")
+    # Stable identity: WorldIR's dataclass defaults mint a uuid4
+    # main_branch_id per instance, which makes two runs over the SAME
+    # points serialize differently -- a determinism defect the
+    # compiler path already fixed with the same convention (its
+    # `main_branch_id=f"branch-main-{stable_world_id}"`). The assembler
+    # carries the fix over: same points + seed -> byte-identical world.
+    world = world if world is not None else WorldIR(
+        id="world-interior",
+        main_branch_id="branch-main-world-interior",
+    )
     res = InteriorSceneResult(world=world)
 
     # Furniture-scale horizontal planes: the role assignment is purely
@@ -211,6 +216,7 @@ def assemble_interior_scene(
     from perception.architecture.classify import ArchitecturalElement
     from perception.architecture.room_graph import (
         floor_undersized_vs_floors,
+        structural_plane_undersized,
     )
 
     def _element(o: OrientedPlane) -> ArchitecturalElement:
@@ -229,16 +235,36 @@ def assemble_interior_scene(
         )
 
     floor_planes = [
-        o for o in oriented if o.role == "floor"
+        o for o in oriented if o.role in ("floor", "ceiling", "wall")
         and (positions.get(o.plane.plane_id) or o.plane.bounds_min)
     ]
     demoted_ids: set = set()
     for o in floor_planes:
+        # Sub-room-scale planes first, role-independent: a plane whose
+        # two largest extents are both < ~1 m cannot host a person --
+        # furniture, trim, or a fragment of a collapsed reconstruction
+        # (the measured room_capture case: a degenerate 1,213-pt
+        # COLMAP map whose 0.4x0.5 m sheets promoted as floors at 0.99
+        # confidence). Demoted regardless of reference floors, with
+        # the same honesty contract: recorded, never silent.
+        pts = positions.get(o.plane.plane_id) or []
+        if pts:
+            bmin = tuple(min(p[i] for p in pts) for i in range(3))
+            bmax = tuple(max(p[i] for p in pts) for i in range(3))
+            if structural_plane_undersized(bmin, bmax, up=up):
+                demoted_ids.add(o.plane.plane_id)
+                continue
         other_stubs = [
             _element(f) for f in floor_planes
             if f.plane.plane_id != o.plane.plane_id
+            and f.plane.plane_id not in demoted_ids
         ]
-        if floor_undersized_vs_floors(_element(o), other_stubs, up=up):
+        if o.role != "floor":
+            continue
+        if floor_undersized_vs_floors(
+            _element(o), other_stubs, up=up,
+            coverage_positions=positions.get(o.plane.plane_id, []),
+        ):
             demoted_ids.add(o.plane.plane_id)
     if demoted_ids:
         oriented = [
@@ -392,6 +418,13 @@ def assemble_interior_scene(
                 "room boundary entities not all promoted -- room/storey "
                 "layer skipped (recorded, not guessed)"
             )
+
+    # ---- stage 7: true footprint, ceiling layers, furniture, colour (room_semantics) ----
+    from perception.architecture.room_semantics import refine_interior_semantics
+    try:
+        res.semantics = refine_interior_semantics(world, result, oriented, positions, up)
+    except Exception as exc:  # noqa: BLE001 -- recorded, the structural world stands
+        res.semantics = {"warnings": [f"room semantics failed: {type(exc).__name__}: {exc}"]}
 
     # ---- validation ----
     report = validate_world_ir(world)

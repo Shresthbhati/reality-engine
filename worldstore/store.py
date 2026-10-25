@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -39,6 +40,28 @@ if TYPE_CHECKING:
 
 class WorldStoreError(ValueError):
     """WorldStore operation refused."""
+
+
+#: Every version id this class has ever generated matches this shape
+#: (`f"v-{uuid.uuid4().hex[:12]}"`), and every explicit id used across the
+#: test suite is plain alnum/dash/underscore. `world_ir/artifact_store.py`'s
+#: `FileArtifactStore.digest_of` already validates its own path-building
+#: input (a content digest) against exactly this class of pattern before
+#: it reaches the filesystem, with the same rationale: `version_id` here
+#: is used directly in `self._versions_dir / f"{version_id}.json"`
+#: (`save_version`, `_record`, and everything reading through `_record` --
+#: `load_version`/`parents`/`ancestors`/`verify_version`), and an
+#: unvalidated `../../outside/secret` segment resolves outside the store
+#: root exactly like an unvalidated digest would.
+_VERSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def _validate_version_id(version_id: str) -> None:
+    if not _VERSION_ID_RE.match(version_id):
+        raise WorldStoreError(
+            f"invalid version id {version_id!r}: must match {_VERSION_ID_RE.pattern} "
+            "-- refused before touching the filesystem"
+        )
 
 
 class _SequenceLock:
@@ -114,7 +137,17 @@ def _atomic_write_text(path: Path, text: str) -> None:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, path)
+        # On Windows os.replace() raises a TRANSIENT PermissionError when another handle (a concurrent writer, an
+        # indexer or sync client such as OneDrive/Defender) briefly holds the target. Retry a bounded number of
+        # times; a persistent failure still raises -- this never swallows a real error or weakens atomicity.
+        for attempt in range(8):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if os.name != "nt" or attempt == 7:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -160,6 +193,7 @@ class WorldStore:
         source_session_ids: list[str] | None = None,
     ) -> StoredVersion:
         vid = version_id or f"v-{uuid.uuid4().hex[:12]}"
+        _validate_version_id(vid)
         path = self._versions_dir / f"{vid}.json"
         if path.exists():
             raise WorldStoreError(
@@ -234,6 +268,7 @@ class WorldStore:
     # ---- read ----
 
     def _record(self, version_id: str) -> dict:
+        _validate_version_id(version_id)
         path = self._versions_dir / f"{version_id}.json"
         if not path.exists():
             raise WorldStoreError(f"unknown version: {version_id}")
@@ -305,6 +340,33 @@ class WorldStore:
             seen.add(vid)
             records.append(StoredVersion(**self._record(vid)))
         return records
+
+    # ---- quarantine ----
+
+    def quarantine_version(self, version_id: str) -> None:
+        """Take a version that was written but NEVER adopted out of the lineage.
+
+        Nothing is deleted (the record moves to ``quarantine/``, the content-addressed artifact stays), so no
+        observed reality is lost; the version simply stops being history that ``list_versions`` reports and that a
+        retry could chain onto or duplicate. Idempotent for an already-quarantined id; unknown ids raise."""
+        _validate_version_id(version_id)
+        src = self._versions_dir / f"{version_id}.json"
+        dst_dir = self._root / "quarantine"
+        dst = dst_dir / f"{version_id}.json"
+        with _SequenceLock(self._root):
+            if not src.exists():
+                if dst.exists():
+                    return
+                raise WorldStoreError(f"unknown version: {version_id}")
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(src, dst)
+            seq_path = self._root / "sequence.json"
+            order = [v for v in self._read_sequence(seq_path) if v != version_id]
+            _atomic_write_text(seq_path, json.dumps(order))
+
+    def quarantined_versions(self) -> list[str]:
+        qdir = self._root / "quarantine"
+        return sorted(p.stem for p in qdir.glob("v-*.json")) if qdir.is_dir() else []
 
     # ---- integrity ----
 

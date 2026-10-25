@@ -135,22 +135,36 @@ _FAKE_COLMAP_PY = textwrap.dedent("""\
 
 
 def _install_fake_colmap(tmp_path, *, fail_step=None, no_dense=False):
-    """Install the fake COLMAP (a .bat shim + python script, configured
-    via env vars set inside the shim so parallel tests stay isolated)
-    and return (binary_path, step_log_path)."""
+    """Install the fake COLMAP (a platform-native executable shim + python script, configured via env vars set
+    inside the shim so parallel tests stay isolated) and return (binary_path, step_log_path).
+
+    The shim is a .bat on Windows and an executable /bin/sh script elsewhere: the production code runs the binary
+    with shell=False, so it must be directly executable on the platform under test. It invokes the interpreter
+    running the tests (sys.executable), not whatever `python` happens to be on PATH."""
+    import os
+    import stat
+    import sys
+
     script = tmp_path / "fake_colmap.py"
     script.write_text(_FAKE_COLMAP_PY)
     log = tmp_path / "steps.log"
     log.write_text("")
-    shim = tmp_path / "colmap-fake.bat"
-    lines = ["@echo off"]
+    env = {"FAKE_LOG": str(log)}
     if fail_step:
-        lines.append(f"set FAKE_FAIL_STEP={fail_step}")
+        env["FAKE_FAIL_STEP"] = fail_step
     if no_dense:
-        lines.append("set FAKE_NO_DENSE=1")
-    lines.append(f'set FAKE_LOG={log}')
-    lines.append(f'@python "{script}" %*')
-    shim.write_text("\r\n".join(lines) + "\r\n")
+        env["FAKE_NO_DENSE"] = "1"
+    if os.name == "nt":
+        shim = tmp_path / "colmap-fake.bat"
+        lines = ["@echo off"] + [f"set {k}={v}" for k, v in env.items()]
+        lines.append(f'@"{sys.executable}" "{script}" %*')
+        shim.write_text("\r\n".join(lines) + "\r\n")
+    else:
+        shim = tmp_path / "colmap-fake"
+        lines = ["#!/bin/sh"] + [f"export {k}='{v}'" for k, v in env.items()]
+        lines.append(f'exec "{sys.executable}" "{script}" "$@"')
+        shim.write_text("\n".join(lines) + "\n")
+        shim.chmod(shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return str(shim), log
 
 

@@ -26,6 +26,8 @@ Why each architectural choice was made lives in
 | P6 | Reality Studio | Full client over WorldStore/WorldIR: evidence/provenance browsing, timeline, diff, measurement | FOUNDATION |
 | P7.25–P7.29 | Domains + infra | GIS, robotics, large-world, packaging verification, CI | PARTIAL/MISSING |
 | P8.30–P8.31 | Simulation | Physics → WorldIR write-back, advanced simulation | PARTIAL/deferred |
+| P6b | Studio parity | Studio matches the reference designs (`C:\Users\shres\Downloads\reference`): shell, intent wizard, asset inspector, measurement + uncertainty, map, pipeline view, mobile capture | MISSING until B0 audit — runs alongside P6 |
+| P9 | World Factory | Procedural rooms → apartments → buildings → districts → cities with scoped regeneration, labelled `GENERATED`; completion mode; game-export profile | PARTIAL (room, corridor, grid city) — see [plan](../superpowers/plans/2026-10-18-world-factory-and-studio-master-plan.md) |
 
 ## Rules
 

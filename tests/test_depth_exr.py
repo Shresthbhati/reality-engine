@@ -110,7 +110,7 @@ class TestExrParsing:
         p2 = tmp_path / "b.png"
         _write_exr(p1, [[1.0, 2.0]])
         from PIL import Image
-        Image.fromarray(np.array([[1000, 2000]], dtype="<u2"), mode="I;16").save(str(p2))
+        Image.fromarray(np.array([[1000, 2000]], dtype="<u2")).save(str(p2))
         frames = parse_depth_frames([str(p1), str(p2)], depth_scale=0.001)
         assert len(frames) == 2
         assert {f.depth_dtype for f in frames} == {"float32", "uint16"}

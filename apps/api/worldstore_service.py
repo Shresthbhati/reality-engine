@@ -12,21 +12,35 @@ this process).
 World.current_version_id is the one mutable "HEAD" pointer per world --
 WorldStore itself has no such concept, only a DAG via parents/ancestors.
 It only ever moves through `commit_version`.
+
+Adoption protocol (two systems that cannot commit atomically):
+
+    intent file -> WorldStore version -> read-back verification -> DB (HEAD + mirror row, ONE transaction)
+    -> intent cleared
+
+A version that was written but never adopted (the process died, or any step failed) is an ORPHAN. It is moved to
+the store's ``quarantine/`` -- immediately on an in-process fault, or by `reconcile_adoptions` at startup after a
+hard kill -- so it is never mirrored as a phantom version and a retry never duplicates it. Versions written by
+anything that does not use this protocol (the CLI) have no intent and stay legitimate history.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
+import uuid
 from pathlib import Path
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import World, WorldVersion, utcnow
 from apps.api.storage import store_bytes
 from world_ir.world_v1 import WorldIR
-from worldstore.store import WorldStore
+from worldstore.store import WorldStore, _atomic_write_text
+
+log = logging.getLogger(__name__)
 
 
 class ConcurrentModificationError(RuntimeError):
@@ -46,6 +60,10 @@ class ConcurrentModificationError(RuntimeError):
             f"now '{current_head}'); version '{orphan_version_id}' was "
             "saved but not adopted -- reload HEAD and retry"
         )
+
+
+class AdoptionVerificationError(RuntimeError):
+    """The version just written does not read back with clean hashes: it is never adopted."""
 
 
 def _canonical_bytes(world: WorldIR) -> bytes:
@@ -90,6 +108,79 @@ def _mirror_row(stored, *, report: dict | None = None,
         points_artifact_uri=points_artifact_uri,
         cameras_artifact_uri=cameras_artifact_uri,
     )
+
+
+def _intent_dir() -> Path:
+    return worldstore_root() / "adoption-intents"
+
+
+def _adoption_hook(stage: str) -> None:
+    """Fault-injection seam: called at each adoption boundary ("intent", "stored", "verified", "committed").
+    A no-op in production; tests replace it to kill the adoption at an exact stage."""
+
+
+def begin_adoption(world_id: str, parent: str | None) -> str:
+    """Allocate the version id and record the intent BEFORE anything is written to the WorldStore."""
+    vid = f"v-{uuid.uuid4().hex[:12]}"
+    d = _intent_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    _atomic_write_text(d / f"{vid}.json", json.dumps(
+        {"world_id": world_id, "version_id": vid, "parent": parent, "created_at": utcnow().isoformat()}))
+    _adoption_hook("intent")
+    return vid
+
+
+def finish_adoption(vid: str) -> None:
+    (_intent_dir() / f"{vid}.json").unlink(missing_ok=True)
+
+
+def abandon_adoption(vid: str) -> None:
+    """The adoption failed in-process: the version (if it was written) never became history."""
+    try:
+        get_store().quarantine_version(vid)
+    except ValueError:                      # never written (the failure came first): nothing to quarantine
+        pass
+    except Exception:                       # noqa: BLE001 -- the intent stays; startup recovery retries the quarantine
+        log.exception("could not quarantine abandoned version %s now", vid)
+        return
+    finish_adoption(vid)
+
+
+async def reconcile_adoptions(db: AsyncSession) -> dict:
+    """Resolve every adoption intent a dead process left behind (run at startup, before the worker starts).
+
+    * the DB mirrors the version  -> it WAS adopted; only the stale intent is cleared
+    * the DB has no such version  -> it never was; the orphan is quarantined (not deleted)
+    Idempotent. Per-intent failures are reported, never raised, and leave that intent for the next run."""
+    out: dict = {"quarantined": [], "cleared": [], "errors": []}
+    d = _intent_dir()
+    if not d.is_dir():
+        return out
+    store = get_store()
+    for path in sorted(d.glob("v-*.json")):
+        vid = path.stem
+        try:
+            if await db.get(WorldVersion, vid) is not None:
+                path.unlink(missing_ok=True)
+                out["cleared"].append(vid)
+                continue
+            try:
+                store.quarantine_version(vid)
+                out["quarantined"].append(vid)
+            except ValueError:               # the version was never written
+                pass
+            path.unlink(missing_ok=True)
+        except Exception as exc:             # noqa: BLE001
+            out["errors"].append({"version": vid, "error": f"{type(exc).__name__}: {exc}"})
+    if out["quarantined"]:
+        log.warning("quarantined %d orphaned (never adopted) version(s): %s", len(out["quarantined"]),
+                    out["quarantined"])
+    return out
+
+
+def _pending_intents() -> set[str]:
+    d = _intent_dir()
+    return {p.stem for p in d.glob("v-*.json")} if d.is_dir() else set()
 
 
 async def commit_version(
@@ -150,45 +241,81 @@ async def commit_version(
                 return row
             # Mirror missing or diverged: fall through and save (safe).
 
-    stored = store.save_version(
-        world, parent=parent, source_session_ids=source_session_ids
-    )
-
-    points_uri = None
-    if points is not None:
-        digest, _ = store_bytes(points)
-        points_uri = f"sha256://{digest}"
-    cameras_uri = None
-    if cameras is not None:
-        digest, _ = store_bytes(cameras)
-        cameras_uri = f"sha256://{digest}"
-
-    if expect_parent is not None:
-        head_predicate = World.current_version_id == expect_parent
-    else:
-        # No base claimed (first version racing another first version):
-        # adopt only onto an empty HEAD.
-        head_predicate = World.current_version_id.is_(None)
-    adopted = await db.execute(
-        update(World)
-        .where(World.id == world_id, head_predicate)
-        .values(current_version_id=stored.version_id, updated_at=utcnow())
-    )
-    if adopted.rowcount == 0:
-        current = await db.get(World, world_id)
-        raise ConcurrentModificationError(
-            expected_parent=expect_parent,
-            current_head=current.current_version_id if current else None,
-            orphan_version_id=stored.version_id,
+    vid = begin_adoption(world_id, parent)
+    head_moved = False
+    row: WorldVersion | None = None
+    try:
+        stored = store.save_version(
+            world, parent=parent, version_id=vid, source_session_ids=source_session_ids
         )
+        _adoption_hook("stored")
+        # The DB may only ever name a version the store can reconstruct: prove it BEFORE the pointer moves.
+        failures = store.verify_version(vid)
+        if failures:
+            raise AdoptionVerificationError(
+                f"version '{vid}' failed read-back verification: " + "; ".join(f["reason"] for f in failures))
+        _adoption_hook("verified")
 
-    row = _mirror_row(
-        stored, report=report,
-        points_artifact_uri=points_uri, cameras_artifact_uri=cameras_uri,
-    )
-    db.add(row)
+        points_uri = None
+        if points is not None:
+            digest, _ = store_bytes(points)
+            points_uri = f"sha256://{digest}"
+        cameras_uri = None
+        if cameras is not None:
+            digest, _ = store_bytes(cameras)
+            cameras_uri = f"sha256://{digest}"
 
-    await db.commit()
+        if expect_parent is not None:
+            head_predicate = World.current_version_id == expect_parent
+        else:
+            # No base claimed (first version racing another first version):
+            # adopt only onto an empty HEAD.
+            head_predicate = World.current_version_id.is_(None)
+        adopted = await db.execute(
+            update(World)
+            .where(World.id == world_id, head_predicate)
+            .values(current_version_id=stored.version_id, updated_at=utcnow())
+        )
+        if adopted.rowcount == 0:
+            current = await db.get(World, world_id)
+            raise ConcurrentModificationError(
+                expected_parent=expect_parent,
+                current_head=current.current_version_id if current else None,
+                orphan_version_id=stored.version_id,
+            )
+        head_moved = True
+
+        row = _mirror_row(
+            stored, report=report,
+            points_artifact_uri=points_uri, cameras_artifact_uri=cameras_uri,
+        )
+        db.add(row)
+        await db.commit()
+    except Exception:
+        # The HEAD move is still PENDING in the caller's open transaction, and the caller (the job runner) will
+        # commit its own failure bookkeeping on this very session: undo the move first, or that commit would
+        # persist an adoption that never completed. (No rollback: it would expire the caller's loaded objects.)
+        if head_moved:
+            try:
+                if row is not None:
+                    # still only pending in the session -> just forget it; already flushed (any statement
+                    # autoflushes) -> delete it inside the same transaction
+                    if row in db.new:
+                        db.expunge(row)
+                    else:
+                        await db.execute(delete(WorldVersion).where(WorldVersion.id == vid))
+                        if row in db:
+                            db.expunge(row)
+                await db.execute(
+                    update(World).where(World.id == world_id, World.current_version_id == vid)
+                    .values(current_version_id=expect_parent)
+                )
+            except Exception:  # noqa: BLE001 -- the transaction is already dead: nothing pending can persist
+                log.warning("could not undo the pending HEAD move for %s (transaction already failed)", vid)
+        abandon_adoption(vid)
+        raise
+    _adoption_hook("committed")
+    finish_adoption(vid)
     await db.refresh(row)
     return row
 
@@ -234,9 +361,103 @@ async def resync_versions(db: AsyncSession, world_id: str) -> None:
             )
         ).scalars().all()
     )
-    missing = [v for v in stored if v.version_id not in existing_ids]
+    pending = _pending_intents()      # in flight, or orphaned until recovery -- never a phantom version
+    missing = [v for v in stored if v.version_id not in existing_ids and v.version_id not in pending]
     if not missing:
         return
     for v in missing:
         db.add(_mirror_row(v))
     await db.commit()
+
+
+async def rollback_head(db: AsyncSession, world_id: str, target_version_id: str) -> WorldVersion:
+    """Move this World's HEAD back to an EARLIER, intact version.
+
+    Rollback model (explicit): history is never rewritten. Every version stays immutable; only the single
+    mutable HEAD pointer moves. Evidence is never removed -- photographs that only later versions used
+    simply stop being "in the current model" and are retried by the next reconstruction, which is a
+    candidate compared against the rolled-back HEAD and chains onto it (parent = target).
+
+    The persistent COLMAP state describes the version that was current BEFORE the rollback, not the
+    target, so it must not be the base of the next incremental registration: it is set aside (renamed,
+    never deleted) and the next reconstruction starts a fresh session.
+
+    Refused (ValueError) when the target is unknown, foreign, unreadable or fails hash verification;
+    ConcurrentModificationError when HEAD moved while rolling back.
+    """
+    world = await db.get(World, world_id)
+    if world is None:
+        raise ValueError(f"world {world_id} not found")
+    head = world.current_version_id
+    if head is None:
+        raise ValueError("world has no version to roll back from")
+    row = await db.get(WorldVersion, target_version_id)
+    if row is None or row.world_id != world_id:
+        raise ValueError(f"version '{target_version_id}' does not belong to world {world_id}")
+    if target_version_id == head:
+        return row
+    failures = get_store().verify_version(target_version_id)
+    if failures:
+        raise ValueError("target version failed integrity verification: "
+                         + "; ".join(f["reason"] for f in failures))
+    # Order matters for crash safety: set the COLMAP base aside FIRST. A crash between the two steps then
+    # leaves HEAD unchanged with no base (the next run merely rebuilds fully), never HEAD=target seeded by
+    # the state of the version that was rolled back from.
+    _set_aside_colmap_state(world_id)
+    moved = await db.execute(
+        update(World).where(World.id == world_id, World.current_version_id == head)
+        .values(current_version_id=target_version_id, updated_at=utcnow())
+    )
+    if moved.rowcount == 0:
+        current = await db.get(World, world_id)
+        raise ConcurrentModificationError(
+            expected_parent=head, current_head=current.current_version_id if current else None,
+            orphan_version_id=target_version_id)
+    await db.commit()
+    return row
+
+
+def _set_aside_colmap_state(world_id: str) -> None:
+    """Rename (never delete) the world's committed COLMAP state so it cannot seed the next run."""
+    import time
+
+    current = worldstore_root() / "colmap-sessions" / world_id / "current"
+    if current.exists():
+        current.rename(current.with_name(f"superseded-by-rollback-{int(time.time())}"))
+
+
+# ------------------------------------------------------------------------- user-supplied scale references
+
+
+def _scale_ref_path(world_id: str) -> Path:
+    return worldstore_root() / "scale-references" / f"{world_id}.json"
+
+
+def list_scale_references(world_id: str) -> list[dict]:
+    """The operator-measured distances recorded for this world (oldest first); [] when none."""
+    try:
+        data = json.loads(_scale_ref_path(world_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+
+
+def add_scale_reference(world_id: str, evidence_id_a: str, evidence_id_b: str, distance_m: float,
+                        method: str = "manual_measurement") -> dict:
+    """Record one measured distance between two capture positions. The same pair replaces its earlier entry
+    (a corrected measurement); every other reference is kept. Validation is the scale module's own
+    (two different ids, positive finite distance) -- this never invents or rounds a value."""
+    from reconstruction.scale import ScaleReference
+
+    ScaleReference(evidence_id_a, evidence_id_b, float(distance_m), method)      # raises ScaleAnchoringError
+    ref = {"evidence_id_a": evidence_id_a, "evidence_id_b": evidence_id_b, "distance_m": float(distance_m),
+           "method": method, "recorded_at": utcnow().isoformat()}
+    pair = frozenset((evidence_id_a, evidence_id_b))
+    refs = [r for r in list_scale_references(world_id)
+            if frozenset((r.get("evidence_id_a"), r.get("evidence_id_b"))) != pair] + [ref]
+    path = _scale_ref_path(world_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(refs, indent=1, sort_keys=True), encoding="utf-8")
+    os.replace(tmp, path)
+    return ref

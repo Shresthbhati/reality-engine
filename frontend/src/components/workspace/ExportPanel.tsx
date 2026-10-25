@@ -9,9 +9,12 @@ import { apiBaseUrl } from "@/lib/api/client";
 const FORMATS: { value: ExportFormat; label: string }[] = [
   { value: "gltf", label: "glTF (.gltf)" },
   { value: "usda", label: "USD ASCII (.usda)" },
+  { value: "ifc", label: "IFC (.ifc)" },
   { value: "blender", label: "Blender script (.py)" },
   { value: "cityjson", label: "CityJSON" },
   { value: "citygml", label: "CityGML" },
+  { value: "geojson", label: "GIS footprints (GeoJSON)" },
+  { value: "godot", label: "Godot bundle (JSON: glb + tscn + manifest)" },
 ];
 
 /** Real export via sdk.reality.export() (apps/api/routes_export.py) --

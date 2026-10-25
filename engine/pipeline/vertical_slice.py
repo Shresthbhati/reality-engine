@@ -128,10 +128,72 @@ class VerticalSliceOptions:
     #: inputs cannot be measured (no cameras) or dependencies are
     #: unavailable.
     detail_enabled: bool = True
-    detail_voxel_size_m: float = 1.0
+    #: None (default) derives the voxel from the world's scale: a metre when the scale is metric, a fraction of the
+    #: robust scene extent when it is relative (perception.detail.voxel). A number is used as given.
+    detail_voxel_size_m: Optional[float] = None
     #: Reconstruction backend override (tests inject a deterministic
     #: backend; production leaves None for the real COLMAP backend).
     reconstruction_backend: Optional[object] = None
+    #: Persistent per-world COLMAP workspace (reconstruction.colmap_session.ColmapSession).
+    #: When set, the real COLMAP backend registers new photographs into the previous sparse
+    #: model with image_registrator instead of re-solving the whole scene. The CALLER owns
+    #: commit()/discard(): the state only advances when the resulting version is adopted.
+    colmap_session: Optional[object] = None
+    #: The world's current HEAD as a world_delta snapshot (and its conflicts). With a colmap_session and
+    #: a HEAD, the backend judges its incremental and full candidates as WORLDS against it
+    #: (engine.pipeline.candidate_selection) instead of by registered-camera count.
+    head_snapshot: Optional[dict] = None
+    head_conflicts: Optional[list] = None
+    #: HEAD's recorded canonical-frame record (``world.metadata["frame"]``: rotation raw -> canonical). A candidate that
+    #: demonstrably shares HEAD's raw frame reuses it instead of re-estimating 'up' (reconstruction.frame.canonicalize_like_head),
+    #: so the world's visible frame does not wander between versions.
+    head_frame: Optional[dict] = None
+    #: Escalate to dense MVS (Level 3) when the sparse model's MEASURED properties justify it
+    #: (engine.pipeline.dense_gate), using the persistent COLMAP session's own images and sparse model; the dense
+    #: cloud is then JUDGED against the sparse world and kept only if better (engine.pipeline.dense_judge). The
+    #: library default stays off (a GPU-heavy stage a bare caller must ask for); the job runner turns it on through
+    #: dense_gate.dense_auto_enabled(), so the product path escalates on evidence. Thresholds are EXPERIMENTAL.
+    dense_auto: bool = False
+
+
+def _canonicalize(result, options):
+    """Stage 2.5 for both the arbiter's candidate snapshots and the final run: one rule, so they cannot disagree."""
+    from reconstruction.frame import canonicalize_like_head
+
+    return canonicalize_like_head(
+        result, options.seed, (options.head_frame or {}).get("rotation"), (options.head_snapshot or {}).get("cameras"))
+
+
+def _candidate_snapshot(result, evidence_items, options) -> dict:
+    """A reconstruction candidate as the world snapshot the adoption gate compares: the same scale ->
+    frame -> WorldIR compile stages as the real path, without the optional depth/perception/mesh/dense
+    stages (identical for both candidates, so the comparison stays symmetric)."""
+    from engine.pipeline import world_delta
+
+    scaled = None
+    for ref in options.measured_baselines:
+        try:
+            scaled = anchor_metric_scale(result, ref)
+            break
+        except ScaleAnchoringError:
+            continue
+    result = (scaled or unscaled(result)).result
+    result, _ = _canonicalize(result, options)
+    world, _ = compile_reconstruction_to_world(
+        result, CompileOptions(seed=options.seed, up=options.up, artifact_store=options.artifact_store))
+    registered = [p.evidence_id for p in result.camera_poses]
+    prior = (options.head_snapshot or {}).get("input_ids") or []
+    level = 2 if len(registered) >= 3 else 1
+    if level >= 2 and any(e.type.value in {"room", "storey", "corridor", "level"} for e in world.entities.values()):
+        level = 4
+    if prior and level >= 2:
+        level = 5
+    poses = [(p.evidence_id, tuple(float(v) for v in p.position), tuple(float(v) for v in p.rotation))
+             for p in result.camera_poses]
+    return world_delta.snapshot(
+        registered_ids=registered, input_ids=[e.id for e in evidence_items], level=level,
+        model_state="PARTIAL", points=len(result.points), camera_poses=poses, world=world,
+        artifact_store=options.artifact_store)
 
 
 @dataclass(frozen=True)
@@ -210,7 +272,14 @@ def vertical_slice(
     else:
         from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
 
-        backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary)
+        backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary,
+                                              session=options.colmap_session)
+        if options.colmap_session is not None and options.head_snapshot is not None:
+            from engine.pipeline.candidate_selection import WorldArbiter
+
+            backend.candidate_arbiter = WorldArbiter(
+                options.head_snapshot, options.head_conflicts,
+                lambda res: _candidate_snapshot(res, evidence_items, options))
     orchestrator = ReconstructionOrchestrator(backends=[backend])
     try:
         run = orchestrator.run(list(evidence_items))
@@ -261,10 +330,10 @@ def vertical_slice(
             scale_note = scale_note + " | " + scale_error
 
     # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) ----
-    from reconstruction.frame import FrameCanonicalizationError, canonicalize_frame
+    from reconstruction.frame import FrameCanonicalizationError
 
     try:
-        result, frame_record = canonicalize_frame(result, seed=options.seed)
+        result, frame_record = _canonicalize(result, options)
     except FrameCanonicalizationError as exc:
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
 
@@ -290,15 +359,26 @@ def vertical_slice(
 
     # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
     # Runs BEFORE fusion so dense points can participate in cross-source fusion
-    dense_mvs_facts = _dense_mvs_stage(
-        result, world, options, scale_state, meters_per_unit
-    )
+    dense_options, dense_gate_facts, dense_tmp = options, None, None
+    if options.dense_auto and not options.dense_mvs_enabled:
+        dense_options, dense_gate_facts, dense_tmp = _auto_dense_options(result, len(evidence_items), options)
+    try:
+        dense_mvs_facts = _dense_mvs_stage(
+            result, world, dense_options, scale_state, meters_per_unit,
+            frame_rotation=frame_record.rotation,
+            judge=dense_gate_facts is not None,          # an AUTOMATIC dense candidate must earn its place
+        )
+    finally:
+        if dense_tmp is not None:
+            import shutil
+
+            shutil.rmtree(dense_tmp, ignore_errors=True)       # the fused cloud was ingested into the artifact store
 
     # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
     # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
-    detail_facts = _detail_stage(result, world, options)
+    detail_facts = _detail_stage(result, world, options, scale_state)
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
@@ -353,11 +433,55 @@ def vertical_slice(
             "perception": perception_facts,
             "mesh": mesh_facts,
             "detail": detail_facts,
+            "dense_mvs": dense_mvs_facts,
+            "dense_gate": dense_gate_facts,
+            # how the sparse model was actually produced (full / incremental / reused, counts, timings);
+            # empty for backends without a persistent session
+            "colmap_session": dict(getattr(backend, "last_run_info", None) or {}) or None,
         },
     )
 
 
-def _detail_stage(result, world, options):
+def _auto_dense_options(result, n_input: int, options):
+    """Decide from MEASURED sparse-model properties whether dense MVS is justified; if so, return options that
+    point the existing dense stage at the session workspace's own images and sparse model (a scratch directory
+    holds the dense output so the persistent COLMAP state never carries depth maps). Returns
+    (options, gate_facts, scratch_dir_or_None). Never guesses: without a usable session workspace the gate says so."""
+    import dataclasses
+    import tempfile
+    from pathlib import Path
+
+    from engine.pipeline.dense_gate import dense_readiness
+    from engine.pipeline.guidance import coverage_degrees
+
+    poses = [(p.evidence_id, tuple(float(v) for v in p.position), tuple(float(v) for v in p.rotation))
+             for p in result.camera_poses]
+    xs = sorted(float(p.position[0]) for p in result.points)
+    zs = sorted(float(p.position[2]) for p in result.points)
+    center = (xs[len(xs) // 2], zs[len(zs) // 2]) if xs else None
+    cov = coverage_degrees(poses, center) if (poses and center) else None
+    coverage = cov["degrees"] if cov else None
+    facts = dense_readiness(result, n_input, coverage)
+    session = options.colmap_session
+    ws = Path(session.staging) if session is not None and getattr(session, "staging", None) else None
+    model = ws / "sparse" / "0" if ws is not None else None
+    if not facts["escalate"]:
+        return options, dict(facts, decision="sparse only: dense not justified by the measured evidence"), None
+    if model is None or not (ws / "images").is_dir() or not model.is_dir():
+        facts.update(escalate=False, reasons=["no persistent COLMAP workspace with images and a sparse model"])
+        return options, dict(facts, decision="sparse only: dense inputs unavailable"), None
+    from reconstruction.dense_pipeline import dense_mvs_available
+
+    if not dense_mvs_available(options.colmap_binary):
+        facts.update(escalate=False, reasons=["dense compute unavailable: COLMAP lacks patch_match_stereo"])
+        return options, dict(facts, decision="sparse only: dense compute unavailable"), None
+    scratch = Path(tempfile.mkdtemp(prefix="re_dense_"))
+    return (dataclasses.replace(options, dense_mvs_enabled=True, dense_mvs_image_dir=ws / "images",
+                                dense_mvs_sparse_model_dir=model, dense_mvs_workspace=scratch),
+            dict(facts, decision="escalated to dense MVS: every measured criterion passed"), scratch)
+
+
+def _detail_stage(result, world, options, scale_state: str = "unknown"):
     """Optional P7-06 detail chain: measured evidence quality -> detail
     discovery -> ROI work orders -> local refinement (tier-driven,
     honest refusals). Records its facts in world metadata under
@@ -418,6 +542,7 @@ def _detail_stage(result, world, options):
             up=options.up,
             build_world_ir=True,
             world=world,
+            scale_state=scale_state,
         )
     except ValueError as exc:
         # Assessor/budget contract refusals are honest, visible skips.
@@ -769,7 +894,8 @@ def _fusion_stage(result, world, options, scale_state: str):
     }
 
 
-def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
+def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit,
+                     frame_rotation=None, judge: bool = False):
     """Stage 3.65 (P6-01): COLMAP dense MVS as a first-class stage.
 
     The sparse model that stage 1 just produced is fed to COLMAP's dense
@@ -797,6 +923,14 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
     The dense points are ALSO parsed into ReconstructedPoint objects and
     appended to result.points with track_id prefix "dense_mvs:" so they
     can participate in cross-source fusion (stage 3.7).
+
+    Frame: fused.ply is in COLMAP's raw SfM frame, while ``result`` has already been scaled and rotated into the
+    canonical frame; ``frame_rotation`` puts the dense cloud through the same transform (scale, then rotation).
+
+    ``judge=True`` (the automatic, evidence-gated path) makes the dense cloud a CANDIDATE: it is judged against the
+    sparse structure (engine.pipeline.dense_judge) BEFORE anything is written, and a rejected or equivalent cloud
+    leaves the world and ``result`` exactly as the sparse pipeline produced them. An explicit operator opt-in
+    (``dense_mvs_enabled=True``) is not judged.
     """
     if not options.dense_mvs_enabled:
         return {
@@ -876,6 +1010,17 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
             "preserved and recorded, never claimed as meters"
         )
 
+    judged = None
+    if judge:
+        try:
+            judged = _judge_dense_candidate(result, run.fused_ply_path, source_evidence_ids, scale_factor,
+                                            frame_rotation)
+        except Exception as exc:  # noqa: BLE001 -- an unjudgeable candidate is not a justified one
+            return {"status": "failed", "note": f"dense candidate could not be judged: {type(exc).__name__}: {exc}"}
+        if judged["verdict"] != "accepted":
+            return {"status": judged["verdict"], "judge": judged, "note": judged["why"],
+                    "n_fused_points": run.n_fused_points}
+
     try:
         with open(run.fused_ply_path, "rb") as fh:
             fused_bytes = fh.read()
@@ -884,6 +1029,7 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
             artifact_store=options.artifact_store,
             source_evidence_ids=source_evidence_ids,
             scale_factor=scale_factor,
+            rotation=frame_rotation,
         )
     except (OSError, ValueError) as exc:
         return {
@@ -901,8 +1047,7 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
             source_evidence_ids=source_evidence_ids,
         )
         # Prefix track_ids to identify dense MVS points in fusion
-        for i, p in enumerate(dense_points):
-            p.track_id = f"dense_mvs:{i}"
+        dense_points = _place_points(dense_points, scale_factor, frame_rotation, track_prefix="dense_mvs:")
         result.points.extend(dense_points)
     except Exception:
         # Parsing failure is logged but doesn't fail the stage - geometry is still ingested
@@ -932,7 +1077,36 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit):
         "artifact_sha256": geometry.data_hash,
         "geometry_id": geometry.id,
         "dense_points_added": len(dense_points) if 'dense_points' in locals() else 0,
+        "judge": judged,
     }
+
+
+def _place_points(points, scale_factor: float, rotation, track_prefix: Optional[str] = None):
+    """Copy ``points`` (COLMAP raw frame) into the world frame: scale, then the canonical-frame rotation.
+    ReconstructedPoint is frozen, so re-identifying (``track_prefix``) happens on the copy."""
+    import numpy as np
+
+    if not points:
+        return list(points)
+    xyz = np.asarray([p.position for p in points], dtype=float) * float(scale_factor)
+    if rotation is not None:
+        xyz = xyz @ np.asarray(rotation, dtype=float).T
+    return [dataclasses.replace(p, position=tuple(float(v) for v in q),
+                                **({"track_id": f"{track_prefix}{i}"} if track_prefix else {}))
+            for i, (p, q) in enumerate(zip(points, xyz))]
+
+
+def _judge_dense_candidate(result, fused_ply_path, source_evidence_ids, scale_factor: float, rotation):
+    """Judge the fused cloud on disk against the sparse SfM structure in ``result`` (same frame and scale)."""
+    from engine.pipeline.dense_judge import judge_dense
+    from reconstruction.backend.dense_output import parse_fused_ply
+
+    with open(fused_ply_path, "rb") as fh:
+        dense = _place_points(parse_fused_ply(fh.read(), source_evidence_ids=list(source_evidence_ids)),
+                              scale_factor, rotation)
+    sparse = [p.position for p in result.points
+              if not (p.track_id or "").startswith(("depth-", "dense_mvs:"))]
+    return judge_dense(sparse, [p.position for p in dense])
 
 
 def _cloud_bounds(points):

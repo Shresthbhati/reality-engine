@@ -30,10 +30,17 @@ export function useApi<T>(
     setTrigger((t) => t + 1);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  // A change in deps/trigger restarts the read: reset status during render, not in the effect.
+  const key = [...deps, trigger];
+  const [loadedKey, setLoadedKey] = useState(key);
+  if (key.length !== loadedKey.length || key.some((k, i) => !Object.is(k, loadedKey[i]))) {
+    setLoadedKey(key);
     setIsLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     fetcher()
       .then((res) => {
         if (!cancelled) {
@@ -77,24 +84,25 @@ export function useEvidence(sessionId?: string | null) {
   }, [sessionId]);
 }
 
-export function useWorldIR(worldId: string | null) {
+/** `version` selects an earlier immutable version; omitted/null = the world's current one. */
+export function useWorldIR(worldId: string | null, version?: string | null, refreshKey?: string | null) {
   return useApi(
-    () => (worldId ? fetchWorldIR(worldId) : Promise.resolve(null)),
-    [worldId],
+    () => (worldId ? fetchWorldIR(worldId, version) : Promise.resolve(null)),
+    [worldId, version, refreshKey],
   );
 }
 
-export function useWorldPoints(worldId: string | null) {
+export function useWorldPoints(worldId: string | null, version?: string | null, refreshKey?: string | null) {
   return useApi(
-    () => (worldId ? fetchWorldPoints(worldId) : Promise.resolve(null)),
-    [worldId],
+    () => (worldId ? fetchWorldPoints(worldId, version) : Promise.resolve(null)),
+    [worldId, version, refreshKey],
   );
 }
 
-export function useWorldCameras(worldId: string | null) {
+export function useWorldCameras(worldId: string | null, version?: string | null, refreshKey?: string | null) {
   return useApi(
-    () => (worldId ? fetchWorldCameras(worldId) : Promise.resolve(null)),
-    [worldId],
+    () => (worldId ? fetchWorldCameras(worldId, version) : Promise.resolve(null)),
+    [worldId, version, refreshKey],
   );
 }
 
@@ -105,7 +113,8 @@ export function useWorldReport(worldId: string | null) {
   );
 }
 
-export function useWorldVersions(worldId: string | null) {
+/** `refreshKey` (the current model version id) refetches the lineage when a new version lands while the page is open. */
+export function useWorldVersions(worldId: string | null, refreshKey?: string | null) {
   return useApi(async () => {
     if (!worldId) return [] as WorldVersionRow[];
     const dtos = await listWorldVersions(worldId);
@@ -118,5 +127,5 @@ export function useWorldVersions(worldId: string | null) {
       changeSummary: `${v.changed_entity_ids?.length ?? 0} entities changed`,
       isCurrent: v.is_current ?? false,
     })) satisfies WorldVersionRow[];
-  }, [worldId]);
+  }, [worldId, refreshKey]);
 }

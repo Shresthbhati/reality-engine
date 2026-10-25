@@ -339,3 +339,107 @@ client of WorldIR/WorldStore; it never becomes the reconstruction engine.
 **Status: MISSING (deliberately deferred).** Fluids (SPH/FLIP), thermal
 coupling, structural FEM, high-fidelity fire. Do not begin before the
 mapping spine and P4 persistence are complete.
+
+---
+
+# PROD — Evidence-progressive product path (2026-09-29)
+
+Design and evidence: [`../PROGRESSIVE_RECONSTRUCTION.md`](../PROGRESSIVE_RECONSTRUCTION.md).
+
+## PROD.1 — One-action reconstruction (photos -> world -> refine)
+
+**Status: PARTIAL (verified on one real dataset; updated 2026-10-02).** Implemented and executed
+with real COLMAP/MiDaS on the South Building photographs and in a real
+browser. Since 2026-09-29: judged automatic dense Level 3, user-measured metric scale, single-image openings,
+stable entity identity, frame-preserving candidate arbitration and the adoption protocol (see DESIGN_DECISIONS) are
+implemented and tested. Remaining: a real corridor and a real room photograph dataset (none exist: UNVERIFIED) and the PROD.3
+confidence-defaults audit. The per-version evidence panel landed 2026-10-03.
+
+## PROD.2 — Stable entity identity across versions
+
+**Status: IMPLEMENTED (heuristic).** `world_ir/entity_reid.py` is wired into the rebuild
+(`apps/api/jobs.py::_carry_entity_identity`, tests/test_entity_reid.py); identity decisions are recorded on the version.
+
+## PROD.3 — Confidence defaults
+
+**Status: IMPLEMENTED.** `Uncertainty` default is 0.0 (unknown); `Observation`, `Relationship`, `CausalRelation`
+constructor AND `from_dict` defaults are 0.5 / `Provenance.UNKNOWN` ("not measured"), never 1.0 / OBSERVED; building/storey/
+opening producers pass measured values; the commit route rejects invalid confidence instead of coercing it.
+`tests/test_confidence_defaults.py` pins the defaults and statically checks that every producer in the repo states its
+confidence explicitly. Raw-sensor decode fidelity (depth frames) legitimately states 1.0 with its basis.
+(The previous "left as documented risk" note was stale: the audit on 2026-10-03 found the defaults already corrected.)
+
+
+# P9 — WORLD FACTORY (additive to the roadmap, registered 2026-10-18)
+
+Plan: [`../superpowers/plans/2026-10-18-world-factory-and-studio-master-plan.md`](../superpowers/plans/2026-10-18-world-factory-and-studio-master-plan.md).
+Product vision: [`../product/VISION.md`](../product/VISION.md). Creation outputs are always `StatementState.PROCEDURAL` /
+`Provenance.GENERATED`; they never masquerade as observed geometry.
+
+| ID | Item | Status | Detail |
+|---|---|---|---|
+| P9.1 | Room builder | PARTIAL | `procedural/room_grammar.py`, `POST /api/worlds/{id}/rooms`, Studio **Build** dialog (`BuildModal.tsx`). Missing: openings UI, parameter edit + scoped regeneration, templates. |
+| P9.2 | Corridor builder | PARTIAL (new 2026-10-18) | `procedural/urban_grammar.generate_corridor`, `POST .../corridors`, Build dialog; `tests/test_procedural_urban_grammar.py`, `tests/test_application_api.py`; browser-verified. Straight, axis-aligned only; no door cut into joined rooms. |
+| P9.3 | City / district builder | PARTIAL (C5, 2026-10-18; API only, no UI) | `generate_city` unchanged (grid of lots, max 100). NEW `procedural/district_grammar.py` + kind `district`: grid or spine layout with named STREET entities, one PLOT per parcel, seeded building families (default 3, drawn from the seed and STORED in params), per-parcel family from `Random(seed:i:j)` (independent of other parcels), per-parcel overrides, detail policy `full` (real `generate_building`) vs `footprint_only` (one box, summed storey height) by distance/count cap (default max_full=25). `POST/PUT/DELETE /worlds/{id}/districts` (409 duplicate/dependents, `?cascade=true`, PUT reports changed/unchanged). Tests: `tests/test_district_grammar.py`, `test_application_api.py::test_district_*` (determinism, one-parcel edit leaves others byte-identical, in-place footprint->full upgrade, 409, cascade). MEASURED (docs/BENCHMARKS.md): 500 buildings = 1,048 entities in 32 ms footprint_only; 3,623 entities in 65 ms at default cap; 63,317 entities / 67 MB JSON in 753 ms all-full; API POST 119 ms / 467 ms. NOT done: parks, arterials/non-grid road graph, `shell`/`accessible_interior`/`hero` detail tiers, separate `road_network.py`, viewport LOD/instancing and browser frame time (so NO 'district scale' rendering claim), Build-dialog UI, parcels override edit replaces the whole map, `regenerate` re-runs the whole district (5.0 s for all-full 500). Viewport still renders streets rotated (axis convention, plan task B1). |
+| P9.4 | Apartment layout (spatial program -> adjacency graph -> plan) | PARTIAL (2026-10-18; API only, no UI) | `procedural/layout_solver.py` (deterministic guillotine/BSP search + spine seeds, hard area/aspect/adjacency constraints, up to 3 alternatives, honest `ok=False` with named violations; hallway default aspect_max 4.0), `procedural/apartment_grammar.py` (rooms, shared walls once, doors at satisfied adjacencies + entrance, corridor link only when a room has no door path), `POST /apartments/solve` and `/apartments`. Verified live: a 6-room brief (hall touching 4 rooms) solves with 3 plans in ~0.3 s solver time and commits 6 rooms / 6 doors / 19 walls; infeasible brief returns "rooms need at least 60 m2 but footprint 5x5 offers 25 m2". Limits: rectangular footprint and guillotine layouts only; search is bounded (ok=False is not a proof of infeasibility); doors are boxes in the wall plane, walls not carved; single storey; no PUT route or UI yet. |
+| P9.5 | Building factory (floors, stairs, facade rules) | PARTIAL | C4 grammar + /buildings routes live-verified: 3-storey tower = 3 STOREY, 2 STAIRS, 1 ROOF, 32 WINDOW, 16 DOOR (128 entities); raising top storey 3.0->4.5 m changed 19 entities, 0 of 81 lower-storey entities changed. Remaining: Build-dialog Building tab, Generated-panel edit for buildings/apartments. |
+| P9.6 | Scoped regeneration with dependency tracking | PARTIAL (2026-10-18) | `procedural/spec_store.py` (specs stamped on entities, `regenerate`, attach dependents), `GET /generated`, `PUT`/`DELETE /{rooms,corridors,cities}/{name}`, duplicate POST -> 409. Verified live: widening room A 4->7 m moved its attached corridor (x 4-10 -> 7-13) and left room B byte-identical; delete with dependents -> 409, cascade removes both. 167 backend tests pass. Missing: UI to edit (plan C2), city PUT/DELETE dedicated tests, legacy pre-spec worlds cannot be edited (409 by design). |
+| P9.7 | Completion mode (reconstructed shell + labelled generated proposals) | PARTIAL (Phase D backend slice, 2026-10-18; API only, no UI) | `apps/api/routes_completion.py` + table `completion_proposals` (create_all). `POST /worlds/{id}/completion/proposals` (1-3 seeded alternatives from a template or user room program, solved by `layout_solver` inside the axis-aligned bbox of non-generated RECONSTRUCTED/OBSERVED floor/wall/room entities), `GET` list, `GET .../{pid}/diff` (added/changed/removed + provenance counts), `POST .../accept` (via `_generate_and_commit`; entities stay GENERATED, stamped `completion_proposal`; 409 if shell changed or name taken), `POST .../reject`. 422 when no usable measured shell. Units `model_units` unless the world has a metric/authored measurement. Tests: `tests/test_completion_mode.py`. NOT done: UI, non-rectangular/rotated shells (bbox approximation), multi-storey, aligning to reconstructed openings, furniture, re-proposal on stale, any real-data validation (Phase E). Plan: `docs/superpowers/plans/2026-10-18-phase-d-completion.md`. |
+| P9.8 | Game-ready export profile (collision, LOD, validation) | PARTIAL | C6 Godot profile `exporters/profiles.py` -> `exporters/godot/profile.py` (GLB with per-entity nodes, `-col` collision hints, manifest.json with kinds/provenance/skips/units, scene.tscn); round-trip tested in `tests/test_godot_profile.py`. NOT done: LOD proxy, City/District/Building/Room hierarchy, opening in Godot (external, UNVERIFIED). SDK `reality.export_profile` and API `POST /api/worlds/{id}/export {"format":"godot"}` are registered (one JSON document, each file `{encoding, content}`, GLB base64) and tested in `tests/test_application_api.py`. |
+| P9.9 | Assistant tool layer (Phase F first slice) | PARTIAL (2026-10-18; backend only, NO LLM wiring, no UI) | `assistant/tools.py` (pure, deterministic read tools: list_entities, get_entity, find_by_name, measure via `world_ir/measure.py`, explain_provenance, search) and `apps/api/routes_assistant.py` + table `assistant_plans` (create_all). `GET /api/assistant/tools` (JSON-schema style), `POST /worlds/{id}/assistant/call`, `POST /worlds/{id}/assistant/confirm`. `propose_edit` accepts only `update_generated` (PUT semantics) and `delete_generated` (dependents check, optional cascade); rename/anything else -> 422; it stores a plan with preview counts and never commits. Confirm runs through `_generate_and_commit`; plan bound to the HEAD it previewed against, 409 + stale if HEAD moved, expired (30 min) or replayed. explain_provenance states `Not recorded`/`Unknown` for absent evidence/confidence (the 0.5 entity default is not presented as a confidence). Tests: `tests/test_assistant_tools.py` (17 pass). NOT done: any model/LLM wiring or tool-call loop, semantic (embedding) search, capture guidance, self-correction loop, UI (Studio AI tab still disabled), propose for non-generated (reconstructed) entities, evidence-record lookup beyond ids already on the entity; confirm re-runs the edit on whatever HEAD exists at commit time (the stale check precedes it, a HEAD move in that gap is handled by the existing retry, not re-flagged). |
+
+# P6b — STUDIO PARITY WITH THE REFERENCE DESIGNS (registered 2026-10-18)
+
+Reference images: `C:\Users\shres\Downloads\reference` (~125 screens). Decision (2026-10-18, owner): match them **as exactly
+as possible, new design tokens allowed**. Status: **PARTIAL (2026-10-18)**. Gap audit recorded in
+`docs/screenshots/parity/B0-gap-audit.md`. Done and browser-verified: navy tokens, unified shell (top mode bar, icon rail,
+status footer), Home dashboard, World Intent wizard with an honest resource profile (`POST /api/intent/estimate`,
+`world_intents` table), palette sweep, auto-frame of cloud-less worlds, Evidence Quality Firewall + asset inspector (measured
+checks only; a Rejected decision is enforced in reconstruction input), measurement mode (distance/height/area/elevation,
+server-recomputed values, unit honesty: model units when scale is unknown, "exact" only for authored geometry; volume / road
+width / footprint disabled). Remaining slices: map/plot view, pipeline graph view, mobile capture, Playwright smoke tests over
+all routes, remaining neutral-grey sweep (plan Phase B). Known gaps vs references: no analysis overlay (no stored feature
+locations), no metric uncertainty sigma for reconstructed worlds, similar-frames strip, firewall steps header and statistics
+tabs.
+
+## Continuous evidence — gaps against the "same world keeps evolving" principle (2026-09-29)
+
+| ID | Item | Status | Detail |
+|---|---|---|---|
+| CE-01 | Explicit evidence conflicts in WorldIR | PARTIAL: camera-pose and planar-geometry conflicts IMPLEMENTED | Both hypotheses are kept with provenance and history in `WorldIR.metadata["conflicts"]`, carried into each new frame, resolved only by new supporting evidence (unit-tested lifecycle). NOT implemented: topology conflicts (room/storey structure), semantic conflicts (door exists vs not), opening/box-geometry conflicts, and any conflict between *photographs* as such (the pipeline has no per-observation contradiction test). Conflicts live in report + WorldIR metadata, not as `Relationship` objects. |
+| CE-02 | Incremental integration into WorldIR(Vn) | PARTIAL: COLMAP registration is incremental (`image_registrator`, IMPLEMENTED, see PROGRESSIVE_RECONSTRUCTION.md); everything after COLMAP (frame alignment, depth, perception, planes, compile) is still recomputed for the whole world, and there is no region-aware local refinement | Each version is rebuilt from the UNION of all evidence (`compile(A+B)` = V2), not by registering only the new evidence into the previous WorldIR. Consequence: nothing is lost and late bridges work (A -> C -> B), but entity ids are re-derived and the cost grows with total evidence. Alternative: incremental COLMAP registration + `world_ir/entity_reid.py`. Not chosen yet; needs measurement of rebuild cost at 100+ photos. |
+| CE-03 | Non-photo evidence in the same world | PARTIAL | Floor plans / renders / historical photos are classified and kept as context, but they do not yet constrain geometry (no layout prior, no era separation in the rebuild). |
+| CE-04 | Hidden geometry UNKNOWN -> OBSERVED transitions are not asserted | PARTIAL | The single-view path records an UNKNOWN entity; multi-view versions do not carry it forward, so a diff cannot show UNKNOWN turning into OBSERVED. |
+| CE-05 | Candidate-vs-HEAD acceptance | IMPLEMENTED, VERIFIED on real photos | `world_delta.py`; V1 kept through a crashed rebuild and a worse (single-view fallback) rebuild, waiting photos placed on the next healthy rebuild (`test_failed_and_worse_candidates_never_replace_HEAD_...`). Entity-level regression is now judged from geometry (see CE-06). |
+| CE-06 | Spatial continuity between versions | IMPLEMENTED (heuristic), VERIFIED on real photos | `spatial_continuity.py`: footprint overlap of fitted planes; preserved / refined / extended / reduced / split / merge / regrouped / ambiguous / removed / new; regions with the new photographs that touched them. Heuristic: thresholds (20 deg, 10% of extent, 60% coverage) are not calibrated against ground truth; only planar structure has shape data (openings/boxes fall back to centre distance); segmentation instability makes labels vary run to run; regions are spatial clusters, not semantic parts (no "front facade" naming). |
+| CE-07 | Persistent COLMAP state (`image_registrator`) | IMPLEMENTED, measured | See PROGRESSIVE_RECONSTRUCTION.md. Preserves COLMAP's frame and saves ~18-20% runtime on 6-12 photo scenes; **no quality gain** over a fresh rebuild. Larger worlds not measured. |
+| CE-08 | Incremental-vs-full COLMAP candidate arbitration by WORLD quality | IMPLEMENTED; VERIFIED (unit + real COLMAP + product path) | `engine/pipeline/candidate_selection.py`: both candidates become world snapshots and go through `world_delta.compute_delta/reconcile_conflicts/decide` against HEAD; an ordered hierarchy (validity, acceptance, established photos lost, established surfaces lost, unsupported moves/conflicts, camera stability (margin 0.02), uncertainty, photos placed, refined/extended/new surfaces, tie -> incremental) decides and records WHY. No scalar score. A full rebuild is also tried when the incremental candidate is not a clean ACCEPT, not only when photos are unplaced. Limits: candidates are compared on the sparse-compiled world (no depth/perception/mesh), the margins are tolerances not calibrated constants, every non-ACCEPT incremental costs one extra mapper run. Tests: `tests/test_candidate_selection.py` (cases A-F), `tests/integration/test_colmap_failure_injection.py`, live decision text in `tests/integration/test_reliability_journey.py`. |
+| CE-09 | Failure injection / restart / corruption / concurrency | PARTIALLY VERIFIED | Real COLMAP: crash before/after each of feature_extractor, matcher, image_registrator, point_triangulator, bundle_adjuster, mapper; crash before commit, after commit; 5 corruption cases (missing model/db, bad manifest, truncated model file, stale staging, removed evidence): `current/` byte-identical after every failure. Product path: crash in WorldIR compile / world_delta / decide / validation / conflict reconcile / WorldStore commit; fault after commit and read-back failure (HEAD valid, versions coherent, world converges); real process-tree kill mid-job (state A or B, never mixed); racing uploads. NOT covered: reconstruction-parse failure, subprocess timeout, disk-full, kill exactly between WorldStore commit and COLMAP commit is now covered by the stage-synchronised kill tests (8 boundaries), stale-candidate rebase with two parallel jobs from one HEAD, corrupted WorldStore artifact. |
+| CE-10 | Rollback of HEAD | IMPLEMENTED (pointer model); VERIFIED on real photos | `POST /api/worlds/{id}/rollback` -> `worldstore_service.rollback_head`: only the HEAD pointer moves, versions stay immutable, evidence is kept and shows as outside the current model, the COLMAP base is renamed `superseded-by-rollback-*` (set aside BEFORE the pointer moves, so a crash cannot leave HEAD seeded by the wrong state), the next version chains onto the rolled-back HEAD. Consequence: after a rollback the next run is a full rebuild (no per-version COLMAP snapshots). |
+| CE-11 | Cross-store recovery journal | NOT IMPLEMENTED (decision) -- WorldStore<->DB boundary now has an adoption-intent protocol, see DESIGN_DECISIONS | The COLMAP session is DERIVED state, validated on every run against the evidence set and pipeline signature, and it commits strictly after WorldStore adoption + read-back. The only reachable cross-store disagreement is "COLMAP one version behind", which converges on the next run (`test_crash_after_worldstore_adoption_...`); "COLMAP ahead of WorldStore" is unreachable by ordering. A fault after adoption is now a recorded degradation, not a FAILED job (the retry used to adopt a duplicate version). Revisit if the COLMAP state ever becomes authoritative. |
+
+
+## Prototype-completion sprint (2026-10-03) -- scope, verification levels, what is pinned and what is external
+
+The prototype is judged by the core loop (evidence -> world -> more evidence -> same world -> version -> export). See
+DESIGN_DECISIONS "The working prototype is judged by the core loop". Verification levels per capability:
+`reality verification [--runtime]`, `GET /api/system/verification`.
+
+| ID | Item | Status | Detail |
+|---|---|---|---|
+| PT-01 | Core exports glTF, USD(A), IFC, CityGML, CityJSON, Blender | DONE (REAL-WORLD VERIFIED: a world reconstructed from real photographs, all six parsed back with independent readers) | `tests/test_core_exports.py`, `tests/test_export_route.py`. IFC is now served by the SDK/API/CLI (was a file-only bridge). External: opening the files in Blender / a USD viewer / a BIM tool. |
+| PT-02 | Ecosystem exports GIS, ROS, Habitat, SUMO, Unreal, Godot (P16-02) | OPTIONAL_DEFERRED | Writers exist and are structure-tested (`tests/test_box_exporters.py`); not required for the prototype; target-runtime acceptance is external. |
+| PT-03 | Synthetic RGB-D (P1-03) | SYNTHETIC RGB-D VERIFIED -- PHYSICAL DEVICE VERIFICATION PENDING | `synthetic/rgbd.py`, `tests/test_synthetic_rgbd.py`. |
+| PT-04 | Synthetic VIO (P3-02) | SYNTHETIC VIO PIPELINE VERIFIED -- REAL BACKEND / HARDWARE VERIFICATION PENDING | `synthetic/vio.py`, `tests/test_synthetic_vio.py`; fixed `FrameGraph.load_from_trajectory`; new `trajectories/worldir.py`. |
+| PT-05 | Synthetic indoor architecture (P7-03) | SYNTHETIC INDOOR VERIFIED -- REAL INDOOR DATASET VERIFICATION PENDING | `synthetic/indoor.py`, `tests/test_synthetic_indoor.py`. |
+| PT-06 | Known limits found by PT-05 (strict xfail, not hidden) | OPEN ENGINEERING | rooms joined by doorways over one floor merge into one room; stairs not wired into interior assembly; `detect_stairs` refuses an unsegmented flight or one with unobserved treads; phantom openings under realistic depth noise (sigma ~1.6 cm at 5 m); mesh validation (`reconstruction/meshing/validation.py`) is too slow on ~50k-point clouds (a 16-view synthetic capture spent minutes there). |
+| PT-07 | 3DCityDB availability AVAILABLE / UNAVAILABLE / FAILED (P14-01) | DONE (probe); real database verification EXTERNAL | `exporters/citydb.probe_citydb`. |
+| PT-08 | Studio shows the ten change categories and how a version was built | DONE | `ReconstructionStatusBar` (`change-counts`, `how-built`); `frontend/src/lib/api/reconstruction-decision.ts`; contract tests. |
+| PT-09 | Canonical demo journey | DONE | `scripts/demo_journey.py`, `tests/integration/test_demo_journey.py`; measured metrics recorded, nothing hard-coded. |
+
+## P0.12 — Multi-view scene identity and unified reconstruction — EXPERIMENTAL
+Verified-correspondence scene grouping, registration diagnostics with explicit outcomes, bounded measured self-correction
+and a persistent scene registry are implemented and integrated into the reconstruct job (`reconstruction/scene_identity.py`,
+`apps/api/jobs.py`). Verified on synthetic shared-scene imagery with real COLMAP. Open: real-photo threshold calibration,
+retrieval index beyond ~65 images, per-stage retry, separate-world creation for extra groups (product decision).
+Spec/evidence: `docs/implementation/SCENE_IDENTITY.md`.

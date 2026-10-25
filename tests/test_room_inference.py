@@ -30,7 +30,7 @@ from evidence.promote_rooms import (
 )
 from perception.geometry.orientation import classify_planes
 from perception.geometry.planes import detect_planes
-from provenance import Provenance
+from provenance import Provenance, Uncertainty
 from reconstruction.backend.interface import ReconstructedPoint, ReconstructionResult
 from world_ir import GeometryType, RelationshipKind, WorldIR
 from world_ir.artifact_store import MemoryArtifactStore
@@ -40,7 +40,9 @@ from world_ir.geometry_data import PointCloudData
 def _point(x, y, z, counter=[0]) -> ReconstructedPoint:
     counter[0] += 1
     return ReconstructedPoint(
-        position=(x, y, z), track_id=f"pt-{counter[0]:05d}", source_evidence_ids=["ev-1"]
+        position=(x, y, z), track_id=f"pt-{counter[0]:05d}", source_evidence_ids=["ev-1"],
+        # exact by construction (a hand-built grid); stated, not defaulted
+        uncertainty=Uncertainty(confidence=1.0, note="synthetic exact grid point"),
     )
 
 

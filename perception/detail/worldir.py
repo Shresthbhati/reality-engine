@@ -174,6 +174,8 @@ def integrate_detail_outcomes(
                 "discovery": roi.provenance.get("discovery", ""),
                 "compute_tier": roi.budget.compute_tier,
                 "justified_level": roi.budget.justified_level,
+                "budget_basis": roi.budget.basis,
+                "gsd_basis": roi.budget.gsd_basis,
                 "quality": ref.quality,
                 "fits_attempted": outcome.fits_attempted,
                 "fits_succeeded": outcome.fits_succeeded,

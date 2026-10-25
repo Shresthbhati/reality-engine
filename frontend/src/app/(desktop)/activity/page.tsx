@@ -25,7 +25,6 @@ export default function ActivityPage() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     getActivity()
       .then((rows) => {
         if (!active) return;
@@ -53,7 +52,11 @@ export default function ActivityPage() {
           <button
             key={f.id}
             type="button"
-            onClick={() => setFilter(f.id)}
+            onClick={() => {
+              if (f.id === filter) return;
+              setLoading(true);
+              setFilter(f.id);
+            }}
             className="px-2.5 h-7 rounded text-sm font-medium transition-colors"
             style={{
               color: filter === f.id ? "var(--accent)" : "var(--text-secondary)",

@@ -12,10 +12,14 @@ export * from "./adapters";
 export * from "./sessions";
 export * from "./worlds";
 export * from "./evidence";
+export * from "./evidence-quality";
 export * from "./analysis";
 export * from "./platform";
 export * from "./unsupported";
 export * from "./worldir";
+export * from "./reconstructions";
+export * from "./version-evidence";
+export * from "./reconstruction-decision";
 export * from "./hooks";
 
 /**

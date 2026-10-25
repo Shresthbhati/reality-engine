@@ -87,7 +87,10 @@ class Transform:
 
     @staticmethod
     def identity(frame: Frame, timestamp: Optional[float] = None) -> "Transform":
-        return Transform(source_frame=frame, target_frame=frame, matrix=IDENTITY_MATRIX, timestamp=timestamp)
+        # exact BY DEFINITION -- the one transform whose certainty is earned, not defaulted
+        return Transform(source_frame=frame, target_frame=frame, matrix=IDENTITY_MATRIX,
+                         timestamp=timestamp,
+                         uncertainty=Uncertainty(confidence=1.0, note="identity: exact by definition"))
 
     def apply(self, point: tuple[float, float, float]) -> tuple[float, float, float]:
         return apply_point(self.matrix, point)

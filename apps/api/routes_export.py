@@ -29,12 +29,34 @@ _MEDIA_TYPES = {
     "blender": "application/x-python",
     "cityjson": "application/json",
     "citygml": "application/xml",
+    "ifc": "application/x-step",
+    "geojson": "application/geo+json",
+    "sdf": "application/xml",
+    "tscn": "text/plain",
+    "unreal": "application/x-python",
 }
+# profile bundles (multi-file, may hold binary) are stored as one JSON document; see _bundle_json
+_MEDIA_TYPES.update({name: "application/json" for name in reality.EXPORT_PROFILES})
 
 
 class ExportRequest(BaseModel):
     format: str
     version: str | None = None
+
+
+def _bundle_json(files: dict) -> dict:
+    """{filename: bytes} -> JSON-safe {filename: {"encoding", "content"}}. Same one-JSON-document bundle shape as the
+    sumo/habitat formats, except a file is wrapped so binary (the GLB) survives: text stays utf-8, anything else is
+    base64 (decode with base64.b64decode)."""
+    import base64
+
+    out = {}
+    for name, data in files.items():
+        try:
+            out[name] = {"encoding": "utf-8", "content": data.decode("utf-8")}
+        except UnicodeDecodeError:
+            out[name] = {"encoding": "base64", "content": base64.b64encode(data).decode("ascii")}
+    return out
 
 
 @export.post("")
@@ -49,8 +71,16 @@ async def export_world(
 
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
     try:
-        content, report = reality.export(world, body.format, artifact_store=artifact_store)
+        if body.format in reality.EXPORT_PROFILES:
+            files, report = reality.export_profile(world, body.format, artifact_store=artifact_store)
+            content = _bundle_json(files)
+        else:
+            content, report = reality.export(world, body.format, artifact_store=artifact_store)
     except reality.UnsupportedExportFormatError as exc:
+        raise HTTPException(422, f"{exc}; profiles: {sorted(reality.EXPORT_PROFILES)}") from exc
+    except ImportError as exc:      # an optional exporter dependency (IFC: IfcOpenShell) is not installed here
+        raise HTTPException(501, f"{body.format} export is unavailable on this server: {exc}") from exc
+    except ValueError as exc:       # nothing exportable (an empty IFC is not an export)
         raise HTTPException(422, str(exc)) from exc
 
     if isinstance(content, dict):
@@ -66,6 +96,8 @@ async def export_world(
     return {
         "version_id": row.id,
         "format": body.format,
+        "bundle": body.format in reality.EXPORT_PROFILES,
+        "files": sorted(content) if body.format in reality.EXPORT_PROFILES else None,
         "artifact_uri": f"sha256://{digest}",
         "download_url": f"/api/worlds/{world_id}/export/{digest}/download?format={body.format}",
         "content_hash": report.content_hash,

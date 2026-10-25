@@ -158,6 +158,8 @@ def test_refinement_chains_and_failed_refinement_preserves_head(
                        timeout=90.0)
     assert repeat["status"] == "succeeded", repeat.get("error")
     assert repeat["payload"]["version_id"] == v2
+    assert repeat["payload"].get("unchanged") is True and repeat["payload"]["adopted"] is False
+    assert len(client.get(f"/api/worlds/{wid}/versions").json()["items"]) == 2, "an unchanged rerun minted a version"
     assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] == v2
     # Lineage is a chain, and the superseded version stays readable.
     assert client.get(f"/api/worlds/{wid}/worldir?version={v1}").status_code == 200
@@ -228,12 +230,21 @@ def test_unregistrable_input_fails_without_output(client, tmp_path, monkeypatch)
     assert client.get(f"/api/worlds/{wid}/versions").json()["items"] == []
 
 
-def test_single_photo_fails_honestly(client, tmp_path, monkeypatch):
+def test_single_photo_is_never_refused_for_its_count_and_never_faked(client, tmp_path, monkeypatch):
+    """One photograph is a valid input now (a rough single-view hypothesis),
+    so the old 'needs at least 2' refusal is gone. What must NOT change: when
+    no reconstruction level can be produced from the evidence (here the
+    placeholder bytes carry no pixels for the depth model), the job fails
+    honestly and adopts no version. The real one-photo success path is proven
+    with real MiDaS in tests/integration/test_progressive_product_journey.py."""
     sid, wid = _chain_setup(client, tmp_path, monkeypatch, n_photos=1)
     job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
-                    timeout=90.0)
+                    timeout=180.0)
     assert job["status"] == "failed"
-    assert "needs at least 2" in (job.get("error") or "").lower()
+    err = (job.get("error") or "").lower()
+    assert "needs at least 2" not in err
+    assert "no reconstruction level could be produced" in err
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] is None
 
 
 def test_no_shell_subprocess_in_reconstruction():
@@ -328,9 +339,14 @@ def test_colmap_step_timeout_is_honest_error(tmp_path):
 
     import unittest.mock as _mock
 
-    with _mock.patch.object(_backend.subprocess, "run", _hang):
+    import reconstruction.proc as _proc
+
+    # The backend launches every COLMAP step through reconstruction.proc.run_owned
+    # (imported at call time), not subprocess.run -- patch the seam it really uses.
+    with _mock.patch.object(_proc, "run_owned", _hang):
         with pytest.raises(Exception, match="(?i)timeout|TIMEOUT"):
             ColmapReconstructionBackend().reconstruct(items)
+    del _backend
 
 
 def test_malformed_confidence_and_frame_are_errors():
@@ -718,3 +734,25 @@ def test_persisted_version_reloads_in_new_process(client, tmp_path, monkeypatch)
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
     assert "verified ok" in proc.stdout
+
+
+def test_status_versions_carry_what_each_version_was_built_from(client, tmp_path, monkeypatch):
+    """The per-version evidence panel: V1 used 3 photos, V2 used those 3 plus the new one -- each version's own
+    record, not the current model's."""
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    first = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert first["status"] == "succeeded", first.get("error")
+    r = client.post(f"/api/uploads?session_id={sid}",
+                    files={"file": ("frame_03.jpg", b"jpeg-" + b"3" * 8, "image/jpeg")})
+    assert r.status_code == 201, r.text
+    second = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert second["status"] == "succeeded", second.get("error")
+
+    st = client.get(f"/api/worlds/{wid}/status").json()
+    v1, v2 = sorted(st["versions"], key=lambda v: v["number"])
+    assert len(v1["evidence_ids"]) == 3 and len(v2["evidence_ids"]) == 4
+    assert set(v1["evidence_ids"]) < set(v2["evidence_ids"]), "V2 is built from V1's evidence plus the new photo"
+    for v in (v1, v2):
+        assert set(v["registered_ids"]) <= set(v["evidence_ids"]), "a version cannot place a photo it did not use"
+    new = (set(v2["evidence_ids"]) - set(v1["evidence_ids"])).pop()
+    assert new in {e["id"] for e in st["evidence"]}, "the photo added after V1 is known to the world"

@@ -16,13 +16,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api import jobs as jobrunner
 from apps.api.db import dispose_db, init_db
+from apps.api.routes_assistant import assistant, assistant_tools
+from apps.api.routes_completion import completion
+from apps.api.routes_intent import estimate_router as intent_estimate, intent_router
 from apps.api.routes_jobs import activity, jobs, notifications
+from apps.api.routes_evidence_quality import quality
+from apps.api.routes_measurements import measurements
 from apps.api.routes_misc import evidence, uploads
 from apps.api.routes_export import export
-from apps.api.routes_procedural import procedural
+from apps.api.routes_procedural import procedural, templates_router
 from apps.api.routes_proposals import router as proposals_router
 from apps.api.routes_query import query
+from apps.api.routes_reconstructions import reconstructions, world_status
 from apps.api.routes_sessions import health, sessions
+from apps.api.routes_system import system
 from apps.api.routes_worlds import worlds
 from reconstruction.proc import recover_orphaned_jobs
 
@@ -34,7 +41,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (health, sessions, uploads, evidence, worlds, procedural, query, export, jobs, notifications, activity, proposals_router):
+# `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, worlds, procedural, templates_router, proposals_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant):
     app.include_router(router)
 
 
@@ -52,6 +60,20 @@ async def _startup() -> None:
         import logging
         log = logging.getLogger("reality.api.startup")
         log.exception("startup orphan recovery failed")
+    # A previous process may have died between writing a WorldStore version and adopting it: quarantine such
+    # orphans BEFORE the worker starts, so a retry can never duplicate them. Never blocks startup.
+    try:
+        from apps.api import worldstore_service
+        from apps.api.db import get_sessionmaker
+
+        async with get_sessionmaker()() as db:
+            report = await worldstore_service.reconcile_adoptions(db)
+        if report["errors"]:
+            import logging
+            logging.getLogger("reality.api.startup").error("adoption recovery incomplete: %s", report["errors"])
+    except Exception:
+        import logging
+        logging.getLogger("reality.api.startup").exception("startup adoption recovery failed")
     app.state.worker = asyncio.create_task(jobrunner.worker_loop())
 
 

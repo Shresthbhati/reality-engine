@@ -104,6 +104,14 @@ class EvidenceQualityReport:
     #: sampling rather than the scene median. Unprojectable points are
     #: absent (no camera observed them -- no GSD exists).
     per_point_gsd_mm: Dict[str, float] = None  # type: ignore[assignment]
+    #: The scale the measurement was made in: "metric" (a measured reference anchors model units to metres) or
+    #: anything else ("relative" / "unknown": the unit is arbitrary). Millimetre GSD, the fine/medium/coarse tiers
+    #: and the GSD->level bands are METRIC statements: with any other scale they are withheld (``gsd_mm_per_px``
+    #: is None, ``detail_tier`` is "scale_unavailable") and only the scale-free sampling measure below is reported.
+    scale_state: str = "metric"
+    #: Median ground-sample distance in the reconstruction's OWN units per pixel (distance / focal length). Only
+    #: reported when the scale is not metric; comparable within one world, never convertible to millimetres.
+    gsd_model_units_per_px: Optional[float] = None
 
     def __post_init__(self) -> None:
         if self.per_point_gsd_mm is None:
@@ -120,6 +128,8 @@ class EvidenceQualityReport:
             "view_angle_diversity_deg": self.view_angle_diversity_deg,
             "view_angle_diversity_n": self.view_angle_diversity_n,
             "per_point_gsd_mm": dict(self.per_point_gsd_mm),
+            "scale_state": self.scale_state,
+            "gsd_model_units_per_px": self.gsd_model_units_per_px,
         }
 
 
@@ -140,8 +150,14 @@ def assess_evidence_quality(
     cameras: Sequence[PinholeCamera],
     thresholds: Optional[dict] = None,
     min_views_for_fine: Optional[int] = None,
+    scale_state: str = "metric",
 ) -> EvidenceQualityReport:
     """Measure the detail capability of the evidence behind `result`.
+
+    `scale_state` declares what the units of `result` are: "metric" means they ARE metres (a measured reference
+    anchored them); anything else means they are arbitrary reconstruction units. The default keeps the historical
+    contract for callers whose scenes are metric by construction; every product path passes the world's real scale
+    state, so a relative world never gets millimetre GSD, a fine/medium/coarse tier or a GSD level band.
 
     `cameras` must be the calibrated camera models corresponding to
     `result.camera_poses` (same order), built via
@@ -228,16 +244,27 @@ def assess_evidence_quality(
     diversity_deg, diversity_n = _view_angle_diversity(
         result, cameras, obs_by_point
     )
+    metric = scale_state == "metric"
+    if metric:
+        gsd_out, tier, per_point_out, units_gsd = (
+            gsd, _detail_tier(gsd, min_views, thresholds), per_point_gsd_by_id, None)
+    else:
+        # distance / focal is in model units per pixel (the x1000 above is only "millimetres" when the unit is a metre)
+        gsd_out, per_point_out = None, {}
+        units_gsd = (gsd / 1000.0) if gsd is not None else None
+        tier = "scale_unavailable" if gsd is not None else "unsupported"
     return EvidenceQualityReport(
-        gsd_mm_per_px=gsd,
-        detail_tier=_detail_tier(gsd, min_views, thresholds),
+        gsd_mm_per_px=gsd_out,
+        detail_tier=tier,
         observed_fraction=observed_fraction,
         view_counts=view_counts,
         unprojectable_point_ids=tuple(sorted(unprojectable)),
         overclaim_count=overclaims,
-        per_point_gsd_mm=per_point_gsd_by_id,
+        per_point_gsd_mm=per_point_out,
         view_angle_diversity_deg=diversity_deg,
         view_angle_diversity_n=diversity_n,
+        scale_state=scale_state,
+        gsd_model_units_per_px=units_gsd,
     )
 
 
@@ -359,6 +386,12 @@ def recommend_capture(report: EvidenceQualityReport) -> Dict[str, object]:
             return recs
         # Points exist but none observed: fall through -- the coverage
         # rule below reports it as the coverage failure it is.
+    if report.scale_state != "metric" and report.gsd_model_units_per_px is not None:
+        prose.append(
+            "The world's scale is not metric, so ground-sample distance (mm/px) and metric detail levels cannot be "
+            "stated. Supply one measured distance between two photographs to enable them."
+        )
+        recs["scale_unavailable"] = prose[-1]
     if (report.gsd_mm_per_px is not None
             and report.gsd_mm_per_px > DETAIL_TIER_THRESHOLDS["medium_gsd_mm"]):
         prose.append(

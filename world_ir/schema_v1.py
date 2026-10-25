@@ -113,6 +113,7 @@ class RelationshipKind(str, Enum):
     PART_OF = "part_of"  # Structural containment (window part_of building)
     ATTACHED_TO = "attached_to"  # Mechanical attachment
     ADJACENT_TO = "adjacent_to"  # Spatial proximity
+    ADJOINS = "adjoins"  # Topology adjacency seam (v2)
     COLLIDES_WITH = "collides_with"  # Contact (physics)
     CONTAINS = "contains"  # Conceptual containment
     OVERLAPS = "overlaps"  # Spatial overlap
@@ -459,7 +460,7 @@ class Relationship:
 
     def to_dict(self) -> dict:
         return {
-            "kind": self.kind.value,
+            "kind": self.kind.value if hasattr(self.kind, "value") else self.kind,
             "target_id": self.target_id,
             "confidence": self.confidence,
             "provenance": self.provenance.value,
@@ -594,6 +595,10 @@ class Entity:
     # serialized without this field must load with this as None, never a
     # fabricated guess. See world_ir/statement_state.py.
     statement_state: Optional[StatementState] = None
+    # WorldIR 2.0 (P9-01): typed links to resources OUTSIDE the world.
+    # Additive; defaults to empty; serialized only when non-empty so v1
+    # dicts stay byte-identical.
+    external_references: tuple = field(default_factory=tuple)
 
     def to_dict(self) -> dict:
         # Coerce type to EntityType enum if a raw string was passed at construction.
@@ -605,7 +610,7 @@ class Entity:
             if isinstance(self.transform, _Transform)
             else self.transform
         )
-        return {
+        d = {
             "id": self.id,
             "type": entity_type.value,
             "name": self.name,
@@ -624,10 +629,20 @@ class Entity:
             "custom_properties": self.custom_properties,
             "statement_state": self.statement_state.value if self.statement_state else None,
         }
+        if self.external_references:
+            d["external_references"] = [
+                (r.to_dict() if hasattr(r, "to_dict") else r)
+                for r in self.external_references
+            ]
+        return d
 
     @staticmethod
     def from_dict(data: dict) -> "Entity":
         raw_state = data.get("statement_state")
+        try:
+            from .v2_extensions import ExternalReference as _ExternalReference
+        except Exception:  # pragma: no cover - defensive
+            _ExternalReference = None
         return Entity(
             id=data.get("id", f"ent-{uuid4()}"),
             type=EntityType(data.get("type", EntityType.UNKNOWN.value)),
@@ -646,4 +661,9 @@ class Entity:
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
             custom_properties=data.get("custom_properties", {}),
             statement_state=StatementState(raw_state) if raw_state else None,
+            external_references=(
+                tuple(_ExternalReference.from_dict(r) for r in (data.get("external_references") or []))
+                if _ExternalReference is not None
+                else tuple(data.get("external_references") or [])
+            ),
         )

@@ -20,6 +20,7 @@ from apps.api.routes_jobs import activity, jobs, notifications
 from apps.api.routes_misc import evidence, uploads
 from apps.api.routes_export import export
 from apps.api.routes_procedural import procedural
+from apps.api.routes_proposals import router as proposals_router
 from apps.api.routes_query import query
 from apps.api.routes_sessions import health, sessions
 from apps.api.routes_worlds import worlds
@@ -33,7 +34,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (health, sessions, uploads, evidence, worlds, procedural, query, export, jobs, notifications, activity):
+for router in (health, sessions, uploads, evidence, worlds, procedural, query, export, jobs, notifications, activity, proposals_router):
     app.include_router(router)
 
 

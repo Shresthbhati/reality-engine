@@ -93,7 +93,7 @@ class EntityDiff:
     def to_dict(self) -> dict:
         return {
             "entity_id": self.entity_id,
-            "kind": self.kind.value,
+            "kind": self.kind.value if hasattr(self.kind, "value") else self.kind,
             "changes": [c.to_dict() for c in self.changes],
         }
 
@@ -107,7 +107,7 @@ class GeometryDiff:
     def to_dict(self) -> dict:
         return {
             "geometry_id": self.geometry_id,
-            "kind": self.kind.value,
+            "kind": self.kind.value if hasattr(self.kind, "value") else self.kind,
             "changes": [c.to_dict() for c in self.changes],
         }
 

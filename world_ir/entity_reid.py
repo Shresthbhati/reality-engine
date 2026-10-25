@@ -84,7 +84,7 @@ class EntityMatch:
         return {
             "before_entity_id": self.before_entity_id,
             "after_entity_id": self.after_entity_id,
-            "kind": self.kind.value,
+            "kind": self.kind.value if hasattr(self.kind, "value") else self.kind,
             "distance_m": self.distance_m,
             "reason": self.reason,
         }

@@ -325,6 +325,7 @@ def register_icp(
     min_overlap: float = 0.5,
     inlier_multiplier: float = 3.0,
     max_rmse_scale: float = 5.0,
+    max_rmse_fraction_of_diagonal: float = 0.05,
     initial_rotation: Optional[np.ndarray] = None,
     initial_translation: Optional[np.ndarray] = None,
 ) -> RegistrationResult:
@@ -422,6 +423,36 @@ def register_icp(
                 residual_stats=residual_stats,
             )
 
+    # Scale-relative gate: rmse as a fraction of the target cloud's
+    # bounding-box diagonal. Catches wrong alignments on sparse clouds
+    # where point spacing is large (the spacing gate above is too lenient).
+    if n_target >= 2:
+        diag = float(np.linalg.norm(tgt.max(axis=0) - tgt.min(axis=0)))
+        if diag > 0 and rmse > max_rmse_fraction_of_diagonal * diag:
+            return RegistrationResult(
+                transform=None, method="icp", status="blocked",
+                reason=f"rmse={rmse:.4g} exceeds {max_rmse_fraction_of_diagonal:.0%} of the "
+                       f"target's bounding-box diagonal ({diag:.4g}) -- not a real correspondence",
+                rmse=rmse, inlier_fraction=inlier_fraction, iterations=iterations,
+                source_points=n_source, target_points=n_target,
+                residual_stats=residual_stats,
+            )
+
+    # Scale-relative gate: rmse as a fraction of the target cloud's
+    # bounding-box diagonal. Catches wrong alignments on sparse clouds
+    # where point spacing is large (the spacing gate above is too lenient).
+    if n_target >= 2:
+        diag = float(np.linalg.norm(tgt.max(axis=0) - tgt.min(axis=0)))
+        if diag > 0 and rmse > max_rmse_fraction_of_diagonal * diag:
+            return RegistrationResult(
+                transform=None, method="icp", status="blocked",
+                reason=f"rmse={rmse:.4g} exceeds {max_rmse_fraction_of_diagonal:.0%} of the "
+                       f"target's bounding-box diagonal ({diag:.4g}) -- not a real correspondence",
+                rmse=rmse, inlier_fraction=inlier_fraction, iterations=iterations,
+                source_points=n_source, target_points=n_target,
+                residual_stats=residual_stats,
+            )
+
     transform = RigidTransform(
         from_frame=from_frame, to_frame=to_frame,
         rotation=_matrix_to_quat(r), translation=Vec3(*t),
@@ -454,6 +485,7 @@ def register_icp_point_to_plane(
     min_overlap: float = 0.5,
     inlier_multiplier: float = 3.0,
     max_rmse_scale: float = 5.0,
+    max_rmse_fraction_of_diagonal: float = 0.05,
     initial_rotation: Optional[np.ndarray] = None,
     initial_translation: Optional[np.ndarray] = None,
 ) -> RegistrationResult:

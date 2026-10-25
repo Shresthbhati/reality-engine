@@ -99,9 +99,11 @@ class TestICPLocalMinimum:
         source = _apply(Quat.identity(), true_offset, target)
 
         result = register_icp(source, target, from_frame="B", to_frame="A")
-        assert result.status == "accepted"  # converges, just to the wrong answer
-        recovered_translation = result.transform.translation
-        assert (recovered_translation - true_offset).length() > 0.1
+        # Hardened gate: a large-offset, non-overlapping cloud is now refused
+        # (rmse dwarfs the scene scale) instead of being accepted as a
+        # misleading local minimum.
+        assert result.status == "blocked"
+        assert result.transform is None
 
     def test_high_inlier_fraction_on_exact_match(self):
         target = _cube_points(8)

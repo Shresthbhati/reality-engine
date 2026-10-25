@@ -151,7 +151,7 @@ class CompileOptions:
     #: When True, promoted stair candidates are added directly to world.entities and linked to storeys.
     promote_stairs: bool = True
     #: When True, promoted building envelope and storey entities are added directly to world.entities.
-    promote_building: bool = True
+    promote_building: bool = False
 
 
 @dataclass(frozen=True)

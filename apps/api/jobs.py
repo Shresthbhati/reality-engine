@@ -1076,6 +1076,16 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     job.heartbeat_at = utcnow()
     await db.commit()
 
+    from reconstruction.proc import (
+        discard_job,
+        set_current_job,
+        terminate_job_procs,
+        recover_orphaned_jobs,
+        is_worker_alive,
+        register_worker,
+        unregister_worker,
+    )
+
     # Register this worker for crash detection
     register_worker(job.id)
 

@@ -60,6 +60,10 @@ dir /al /b frontend 2>nul | findstr /x /c:"node_modules" >nul && if defined MAIN
 set "REALITY_BACKEND_URL=%API_URL%"
 set "CORS_ORIGINS=%UI_URL%"
 
+:: Always restart: a server left over from another checkout/old build would otherwise be reused and show the wrong app.
+echo [INFO] Clearing any old servers on ports %API_PORT% / %UI_PORT% ...
+call :killports
+
 call :needstart "Engine API" %API_PORT% %API_URL%/api/health && (
     echo [INFO] Starting Engine API on port %API_PORT% ...
     start "Reality Engine API" /min cmd /c ""%PY%" -m uvicorn apps.api.main:app --port %API_PORT% >> "%~dp0logs\api.log" 2>&1"
@@ -85,9 +89,14 @@ exit /b 0
 echo Stopping Reality Engine...
 taskkill /FI "WINDOWTITLE eq Reality Engine API*" /T /F >nul 2>nul
 taskkill /FI "WINDOWTITLE eq Reality Engine UI*" /T /F >nul 2>nul
-:: Catch anything still listening (e.g. servers started outside this launcher).
-powershell -NoProfile -Command "foreach($p in %API_PORT%,%UI_PORT%){ Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }"
+call :killports
 echo Stopped.
+exit /b 0
+
+:killports
+:: Kill whatever listens on the API/UI ports (and its process tree, e.g. the next dev parent).
+powershell -NoProfile -Command "foreach($p in %API_PORT%,%UI_PORT%){ Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | ForEach-Object { taskkill /PID $_.OwningProcess /T /F *> $null } }"
+ping -n 3 127.0.0.1 >nul
 exit /b 0
 
 :: ---- helpers ----------------------------------------------------------------

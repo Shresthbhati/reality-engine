@@ -4,9 +4,9 @@ title Reality Engine Launcher
 cd /d "%~dp0"
 
 :: Usage:  launch_ui.bat [stop] [--no-browser]
-::   Env overrides: API_PORT (default 8100), UI_PORT (default 3000)
+::   Env overrides: API_PORT (default 8100), UI_PORT (default 3100)
 if not defined API_PORT set "API_PORT=8100"
-if not defined UI_PORT set "UI_PORT=3000"
+if not defined UI_PORT set "UI_PORT=3100"
 set "API_URL=http://localhost:%API_PORT%"
 set "UI_URL=http://localhost:%UI_PORT%"
 set "OPEN=1"

@@ -11,5 +11,6 @@
         "E2B_API_KEY": "{{E2B_API_KEY}}"
       }
     }
-  }
+  },
+  "snapshot": false
 }

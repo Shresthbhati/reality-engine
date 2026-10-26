@@ -1,4 +1,6 @@
 @echo off
-:: Double-click to start the whole app (API + UI) and open it in the browser.
-:: Pass "stop" to shut it down, or "--no-browser" to skip opening the page.
+:: Reality Engine: double-click to start the full product (API + Home dashboard UI) and open it in the browser.
+::   start.bat            start and open http://localhost:3000
+::   start.bat stop       shut both servers down
+::   start.bat --no-browser
 call "%~dp0launch_ui.bat" %*

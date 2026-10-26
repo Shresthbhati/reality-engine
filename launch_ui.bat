@@ -16,7 +16,7 @@ for %%a in (%*) do (
 )
 
 echo ================================================================
-echo           REALITY ENGINE - SPATIAL WORKSTATION
+echo           REALITY ENGINE - Home, Sessions, Worlds, Evidence, Reports
 echo ================================================================
 echo.
 

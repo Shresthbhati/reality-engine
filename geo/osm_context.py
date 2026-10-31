@@ -163,6 +163,9 @@ def osm_to_world(elements: list[dict], lat: float, lon: float, name: str, *, rad
     world = WorldIR(name=name)
     world.global_provenance = Provenance.INFERRED
     world.metadata["compiled_from"] = {"source": SOURCE, "up": [0, 1, 0]}
+    # the local tangent-plane projection is in metres; sizes taken from tags/defaults stay ESTIMATED (caps every state)
+    world.metadata["scale"] = {"state": "metric", "method": "geographic projection (OpenStreetMap)",
+                               "dimension_state": "ESTIMATED"}
     world.metadata["geo"] = {
         "anchor_lat": lat, "anchor_lon": lon, "radius_m": radius_m, "source": SOURCE, "licence": "ODbL",
         "attribution": ATTRIBUTION,

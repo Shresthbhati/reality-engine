@@ -22,6 +22,7 @@ export * from "./scale";
 export * from "./version-evidence";
 export * from "./reconstruction-decision";
 export * from "./sites";
+export * from "./geo";
 export * from "./hooks";
 
 /**

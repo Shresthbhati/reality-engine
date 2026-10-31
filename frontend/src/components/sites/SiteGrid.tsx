@@ -20,6 +20,7 @@ import {
   type ViewTransform,
   type Vec2,
 } from "@/lib/sites/site-grid-model";
+import { isMapContextPlacement as isMap } from "@/lib/sites/compose-model";
 
 interface Props {
   gridCellM: number;
@@ -227,7 +228,7 @@ export default function SiteGrid({ gridCellM, placements, overlaps, selectedId, 
                   height={d}
                   rx={3}
                   strokeWidth={selected ? 2.5 : 1.5}
-                  strokeDasharray={r.isFallback ? "6 4" : undefined}
+                  strokeDasharray={r.isFallback || isMap(p) ? "6 4" : undefined}
                   style={{
                     stroke,
                     fill: overlapped ? "var(--warning-subtle)" : selected ? "var(--accent-subtle)" : "var(--bg-elevated)",
@@ -249,10 +250,16 @@ export default function SiteGrid({ gridCellM, placements, overlaps, selectedId, 
               >
                 {p.label}
               </text>
-              {r.isFallback && (
+              {isMap(p) ? (
                 <text x={c.x} y={c.y + 18} textAnchor="middle" fontSize={10} pointerEvents="none" style={{ fill: "var(--text-tertiary)" }}>
-                  size unknown
+                  Map data
                 </text>
+              ) : (
+                r.isFallback && (
+                  <text x={c.x} y={c.y + 18} textAnchor="middle" fontSize={10} pointerEvents="none" style={{ fill: "var(--text-tertiary)" }}>
+                    size unknown
+                  </text>
+                )
               )}
             </g>
           );

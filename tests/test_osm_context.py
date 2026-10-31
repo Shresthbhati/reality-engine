@@ -138,3 +138,11 @@ def test_world_roundtrips_through_to_dict():
     w = _world()
     again = WorldIR.from_dict(json.loads(json.dumps(w.to_dict())))
     assert len(again.entities) == len(w.entities)
+
+
+def test_map_world_declares_metric_scale_with_estimated_dimensions():
+    from world_ir.measure import effective_state, scale_state_of
+    w = _world()
+    assert scale_state_of(w.metadata) == "metric"
+    # sizes come from tags and defaults, so no dimension of a map world can be called MEASURED
+    assert effective_state("MEASURED", "metric", w.metadata["scale"]["dimension_state"]) == "ESTIMATED"

@@ -6,6 +6,7 @@
  * tied to a room lands in "Unassigned" rather than being guessed into one.
  */
 import type { Entity, WorldIR } from "@/types/worldir";
+import { OUTDOOR_GROUP_LABEL, OUTDOOR_GROUP_ORDER, outdoorDisplayName, outdoorGroupOf, type OutdoorGroup } from "../viewport/outdoor-model.ts";
 
 export type SceneKind =
   | "building"
@@ -36,6 +37,23 @@ export interface SceneNode {
   /** Every entity id at or below this node (drives the eye toggle). */
   leafIds: string[];
   children: SceneNode[];
+  /** Set only when the entity is map-imported or generated (not captured); absent otherwise. */
+  badge?: OriginBadge;
+}
+
+export type EntityOrigin = "captured" | "imported" | "generated";
+export type OriginBadge = "Imported from map" | "Generated (not captured)";
+export const ORIGIN_BADGE: Record<Exclude<EntityOrigin, "captured">, OriginBadge> = {
+  imported: "Imported from map",
+  generated: "Generated (not captured)",
+};
+
+/** Where an entity came from. Generated wins over imported; everything else counts as captured. */
+export function entityOrigin(e: Entity): EntityOrigin {
+  const p = (e.custom_properties ?? {}) as Record<string, unknown>;
+  if (p.generated_by) return "generated";
+  if (p.imported === true || p.source === "OpenStreetMap") return "imported";
+  return "captured";
 }
 
 type Rec = Record<string, unknown>;
@@ -125,7 +143,11 @@ export function buildSceneTree(world: WorldIR | null | undefined): SceneNode[] {
 }
 
 export function buildSceneTreeDetailed(world: WorldIR | null | undefined): BuildSceneTreeResult {
-  const entities = Object.values(world?.entities ?? {}).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const all = Object.values(world?.entities ?? {}).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // map-imported / generated outdoor entities get their own typed groups and never compete for the building/room roles
+  const outdoor = all.filter((e) => outdoorGroupOf(e) !== null);
+  const outdoorIds = new Set(outdoor.map((e) => e.id));
+  const entities = all.filter((e) => !outdoorIds.has(e.id));
   const byId = new Map(entities.map((e) => [e.id, e]));
   const kindOf = new Map(entities.map((e) => [e.id, classifyEntity(e)]));
   const ofKind = (k: SceneKind) => entities.filter((e) => kindOf.get(e.id) === k);
@@ -296,6 +318,29 @@ export function buildSceneTreeDetailed(world: WorldIR | null | undefined): Build
       tree = [...tree, withLeafIds({ key: "unassigned", kind: "unassigned", label: "Unassigned", entityId: null, leafIds: [], children: nodes })];
     }
   }
+  // Outdoor groups: Buildings, Roads & paths, Rail & metro, Bridges, Street furniture, Trees, Other map features
+  const perKind = new Map<string, number>();
+  for (const g of OUTDOOR_GROUP_ORDER) {
+    const members = outdoor.filter((e) => outdoorGroupOf(e) === g);
+    if (members.length === 0) continue;
+    const children = members.map((e): SceneNode => {
+      const kind = (cp(e).kind ?? cp(e).road_kind ?? cp(e).connector_kind ?? e.type ?? "") as string;
+      const n = (perKind.get(kind) ?? 0) + 1;
+      perKind.set(kind, n);
+      const leafNode: SceneNode = { key: `e:${e.id}`, kind: g === "buildings" ? "building" : "other", label: outdoorDisplayName(e, n), hint: e.id, entityId: e.id, leafIds: [e.id], children: [] };
+      byEntity.set(e.id, leafNode);
+      return leafNode;
+    });
+    tree.push({ key: `g:outdoor:${g satisfies OutdoorGroup}`, kind: "group", label: `${OUTDOOR_GROUP_LABEL[g]} (${members.length})`, entityId: null, count: members.length, leafIds: children.flatMap((c) => c.leafIds), children });
+  }
+  const originOf = new Map(all.map((e) => [e.id, e]));
+  const stamp = (n: SceneNode) => {
+    const e = n.entityId ? originOf.get(n.entityId) : undefined;
+    const o = e ? entityOrigin(e) : "captured";
+    if (o !== "captured") n.badge = ORIGIN_BADGE[o];
+    n.children.forEach(stamp);
+  };
+  tree.forEach(stamp);
   return { tree, byEntity };
 }
 

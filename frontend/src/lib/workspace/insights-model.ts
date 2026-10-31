@@ -3,7 +3,7 @@
  * and "nothing needs attention" is only claimed when a diagnostics block was actually present.
  */
 import type { Entity, WorldIR } from "@/types/worldir";
-import { classifyEntity } from "./scene-tree-model.ts";
+import { classifyEntity, entityOrigin } from "./scene-tree-model.ts";
 
 export type InsightTone = "info" | "warning";
 
@@ -89,6 +89,27 @@ export function buildInsights(world: WorldIR | null | undefined): InsightsModel 
   if (windows.length) cards.push({ id: "windows", tone: "info", label: `${plural(windows.length, "window")} detected`, entityIds: windows });
   if (doors.length) cards.push({ id: "doors", tone: "info", label: `${plural(doors.length, "door")} detected`, entityIds: doors });
   if (furniture.length) cards.push({ id: "furniture", tone: "info", label: `${plural(furniture.length, "furniture item")} detected`, entityIds: furniture });
+
+  const imported = entities.filter((e) => entityOrigin(e) === "imported").map((e) => e.id);
+  const generated = entities.filter((e) => entityOrigin(e) === "generated").map((e) => e.id);
+  if (imported.length) {
+    cards.push({
+      id: "imported-from-map",
+      tone: "info",
+      label: `${plural(imported.length, "object")} imported from OpenStreetMap - approximate`,
+      detail: "Positions and heights come from map data, not from your photos.",
+      entityIds: imported,
+    });
+  }
+  if (generated.length) {
+    cards.push({
+      id: "generated-placeholders",
+      tone: "warning",
+      label: `${plural(generated.length, "generated placeholder")} - capture this area to replace ${generated.length === 1 ? "it" : "them"}`,
+      detail: "These shapes were imagined to join captured areas; they are not reconstructions.",
+      entityIds: generated,
+    });
+  }
 
   // Wall colour: a room's wall_color_rgb, else the first wall estimate that exists.
   const walls = entities.filter((e) => classifyEntity(e) === "wall");

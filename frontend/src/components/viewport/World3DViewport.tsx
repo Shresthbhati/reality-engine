@@ -49,6 +49,7 @@ import type {
   WorldIR,
 } from "@/types/worldir";
 import { legendFor } from "@/lib/viewport/room-shell-model";
+import { outdoorSummary } from "@/lib/viewport/outdoor-model";
 import {
   VIEW_MODES,
   axisGizmo,
@@ -159,6 +160,9 @@ export default function World3DViewport({
   const [cutawayState, setCutawayState] = useState(true);
   const cutaway = cutawayProp ?? cutawayState;
   const [hasShell, setHasShell] = useState(false);
+  const [outdoorInfo, setOutdoorInfo] = useState<{ summary: string; total: number; imported: number; generated: number; skipped: number } | null>(null);
+  // the view modes apply to the room shell AND to map-imported / generated outdoor parts
+  const hasModes = hasShell || outdoorInfo !== null;
   const [tool, setTool] = useState<PointerTool>("select");
   const [ortho, setOrtho] = useState(false);
   const [showDims, setShowDims] = useState(true);
@@ -191,7 +195,8 @@ export default function World3DViewport({
     world?.metadata?.scale?.state === "unscaled" ||
     world?.metadata?.scale?.state === "nominal";
   // Metres are only claimed (scale bar, dimension labels) when the world states a metric or authored scale.
-  const metersKnown = resolveUnitContext(world).basis !== "unknown";
+  // Map-imported worlds (metadata.geo) are metric by construction: OSM coordinates are metres from the anchor.
+  const metersKnown = resolveUnitContext(world).basis !== "unknown" || Boolean((world?.metadata as { geo?: unknown } | undefined)?.geo);
 
   // Initialize Three.js Controller (once; callbacks go through refs)
   useEffect(() => {
@@ -242,6 +247,12 @@ export default function World3DViewport({
       controller.loadWorldData(world, points, cameras, mesh);
       setStats(controller.getStatistics());
       setHasShell(controller.hasShell());
+      if (controller.hasOutdoor()) {
+        const o = controller.getOutdoorSummary();
+        setOutdoorInfo({ summary: outdoorSummary(o.parts), total: o.parts.length, imported: o.imported, generated: o.generated, skipped: o.skipped });
+      } else {
+        setOutdoorInfo(null);
+      }
     }
   }, [world, points, cameras, mesh]);
 
@@ -484,7 +495,7 @@ export default function World3DViewport({
   // Scale bar + axis gizmo (derived from the camera the controller reports)
   const scale = useMemo(() => (camInfo && metersKnown ? niceScale(camInfo.metersPerPx, 110) : null), [camInfo, metersKnown]);
   const axes = useMemo(() => (camInfo ? axisGizmo(camInfo.right, camInfo.up) : null), [camInfo]);
-  const legend = hasShell ? legendFor(viewModeToRender(mode)) : [];
+  const legend = hasModes ? legendFor(viewModeToRender(mode)).filter((item) => hasShell || !item.hatch) : [];
 
   return (
     <div className="flex h-full w-full select-none flex-col overflow-hidden bg-[var(--bg-base)]">
@@ -494,23 +505,23 @@ export default function World3DViewport({
           role="group"
           aria-label="Viewport mode"
           data-testid="render-mode-group"
-          title={hasShell ? undefined : NO_SHELL_REASON}
+          title={hasModes ? undefined : NO_SHELL_REASON}
           className="flex items-center gap-1 rounded-lg p-1"
           style={PANEL}
         >
           {VIEW_MODES.map(({ id, label }) => {
-            const selected = hasShell && mode === id;
+            const selected = hasModes && mode === id;
             return (
               <button
                 key={id}
                 type="button"
                 data-testid={`render-mode-${id}`}
                 aria-pressed={selected}
-                disabled={!hasShell}
+                disabled={!hasModes}
                 onClick={() => changeMode(id)}
                 className="h-8 min-w-[104px] rounded-md px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed cursor-pointer"
                 style={{
-                  color: !hasShell ? "var(--text-tertiary)" : selected ? "var(--accent)" : "var(--text-secondary)",
+                  color: !hasModes ? "var(--text-tertiary)" : selected ? "var(--accent)" : "var(--text-secondary)",
                   background: selected ? "var(--accent-subtle)" : "transparent",
                   border: `1px solid ${selected ? "var(--accent-border)" : "transparent"}`,
                 }}
@@ -550,6 +561,26 @@ export default function World3DViewport({
             <span>{stats.entities} entities</span>
             <span>{stats.cameras} cameras</span>
           </div>
+
+          {outdoorInfo && (
+            <div
+              className="flex flex-col gap-0.5 px-3 py-1.5 rounded-md text-xs font-mono-num"
+              style={{ ...PANEL, color: "var(--text-secondary)" }}
+              data-testid="outdoor-hud"
+              title="Massing proxies from map data: footprints are real map outlines, heights and furniture sizes are defaults unless tagged."
+            >
+              <span>{outdoorInfo.summary}</span>
+              {outdoorInfo.imported > 0 && (
+                <span className="text-[10px] text-[var(--text-tertiary)]">approximate - imported from OpenStreetMap (c) OpenStreetMap contributors</span>
+              )}
+              {outdoorInfo.generated > 0 && (
+                <span className="text-[10px] text-[var(--text-tertiary)]">{outdoorInfo.generated} generated (not captured), drawn translucent</span>
+              )}
+              {outdoorInfo.skipped > 0 && (
+                <span className="text-[10px] text-[var(--warning)]">{outdoorInfo.skipped} without geometry not drawn</span>
+              )}
+            </div>
+          )}
 
           {queryMatchingIds !== null && (
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-mono bg-[var(--accent-subtle)] border border-[var(--accent-border)] text-[var(--accent)]">
@@ -779,13 +810,13 @@ export default function World3DViewport({
         </div>
 
         {/* Bottom left: legend / honest no-shell notice */}
-        {!hasNoWorldData && (!hasShell || legend.length > 0) && (
+        {!hasNoWorldData && (!hasModes || legend.length > 0) && (
           <div
             className="absolute bottom-3 left-3 z-10 max-w-[240px] rounded-md px-2.5 py-2 text-[11px] leading-snug pointer-events-none"
             style={PANEL}
             data-testid="render-mode-legend"
           >
-            {!hasShell ? (
+            {!hasModes ? (
               <span className="text-[var(--warning)]">{NO_SHELL_REASON}</span>
             ) : (
               <ul className="space-y-1">

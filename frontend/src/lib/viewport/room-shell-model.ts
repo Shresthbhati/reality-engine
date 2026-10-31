@@ -359,7 +359,10 @@ function annotate(world: WorldIR, raw: RawPart[]): ShellPart[] {
     const provenance = typeof e?.provenance === "string" ? e.provenance : null;
     const unobserved = provenance !== null && UNOBSERVED.has(provenance.toUpperCase());
     const texture = textureFor(world, p);
-    return { ...p, confidence: c, provenance, confidenceState: unobserved ? "unobserved" : c === null ? "unknown" : "scored", ...(texture ? { texture } : {}) };
+    // Not-captured entities read as such: generated = translucent, map-imported = slightly muted.
+    const cpr = (e?.custom_properties ?? {}) as Props;
+    const origin = cpr.generated_by ? 0.45 : cpr.imported === true || cpr.source === "OpenStreetMap" ? 0.7 : 1;
+    return { ...p, opacity: Math.min(p.opacity, origin), confidence: c, provenance, confidenceState: unobserved ? "unobserved" : c === null ? "unknown" : "scored", ...(texture ? { texture } : {}) };
   });
 }
 

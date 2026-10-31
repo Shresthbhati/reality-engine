@@ -126,6 +126,11 @@ export default function SceneTree({ tree, selectedEntityId, hiddenIds, onSelect,
             <Icon className={cn("h-3.5 w-3.5 shrink-0", selected ? "text-[var(--accent)]" : "text-[var(--text-tertiary)]")} />
             <span className="max-w-[75%] shrink-0 truncate">{node.label}</span>
             {node.hint && <span className="truncate font-mono text-[10px] text-[var(--text-tertiary)]">{node.hint}</span>}
+            {node.badge && (
+              <span data-testid={`scene-badge-${node.entityId}`} className="shrink-0 rounded border border-dashed border-[var(--border)] px-1 text-[9px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                {node.badge}
+              </span>
+            )}
           </button>
           <button
             type="button"

@@ -11,9 +11,10 @@ import type {
 } from "@/types/worldir";
 import { pointsBounds, robustPointsBounds } from "./loaders";
 import { isOversizedEntity } from "./oversized";
-import { atlasUrl, buildRoomShellParts, partMaterial, DEFAULT_CONF_PALETTE, type ConfidencePalette, type ShellKind, type ShellPart, type ShellRenderMode } from "./room-shell-model";
+import { atlasUrl, buildRoomShellParts, confidenceRamp, partMaterial, DEFAULT_CONF_PALETTE, type ConfidencePalette, type ShellKind, type ShellPart, type ShellRenderMode } from "./room-shell-model";
 import { centroid, cutawayHides, dollyForFov, nearestCenter, parseHexColor, upAxisOf, ORTHO_FOV, PERSPECTIVE_FOV } from "./view-model";
 import { shouldAutoFrame } from "./autoframe";
+import { buildOutdoor, derivePalette, meshBounds, partMesh, type OutdoorPart, type OutdoorResult } from "./outdoor-model";
 import type { MeasureKind, Vec3 } from "./measure-model";
 
 export interface ViewportLayers {
@@ -118,6 +119,26 @@ function readPalette(): ScenePalette {
 }
 const hex = (c: RGB) => (c[0] << 16) | (c[1] << 8) | c[2];
 
+/** One merged mesh + edge set for outdoor parts that share an opacity tier (imported map data is slightly muted, generated is translucent). */
+interface OutdoorBatch {
+  tier: "normal" | "imported" | "generated";
+  solid: THREE.Mesh;
+  wire: THREE.LineSegments;
+  /** global part indexes, and per local part: index range, wire-float range, vertex range */
+  partIdx: number[];
+  idxStart: number[]; idxCount: number[];
+  wStart: number[]; wCount: number[];
+  vStart: number[]; vCount: number[];
+  fullIndex: Uint32Array;
+  wirePos: Float32Array;
+  wireCol: Float32Array;
+  realistic: Float32Array;
+  confidence: Float32Array;
+  /** after the hidden-entity pass: cumulative triangle ends and the global part each active range belongs to (picking) */
+  activeTriEnd: number[];
+  activePart: number[];
+}
+
 export type PointerTool = "select" | "pan" | "orbit";
 export interface CameraInfo {
   azimuthDeg: number;
@@ -149,6 +170,14 @@ export class WorldSceneController {
     shell: null as THREE.Group | null,
   };
 
+  private outdoor: OutdoorResult = { up: "y", parts: [], diagnostics: { drawn: 0, skipped: [], byGroup: { buildings: 0, roads: 0, rail: 0, bridges: 0, furniture: 0, trees: 0, other: 0 }, byKind: {} } };
+  private outdoorGroup: THREE.Group | null = null;
+  private outdoorBatches: OutdoorBatch[] = [];
+  private outdoorBoxes = new Map<string, THREE.Box3>();
+  private outdoorBox: THREE.Box3 | null = null;
+  private outdoorOutline: THREE.LineSegments | null = null;
+  private distanceCap = 200;
+  private gridCustom = false;
   private shellParts: ShellPart[] = [];
   /** atlas uri -> loaded texture, "loading", or "failed" (a failed atlas falls back to the flat/striped material) */
   private atlasCache = new Map<string, THREE.Texture | "loading" | "failed">();
@@ -579,6 +608,7 @@ export class WorldSceneController {
       this.shellSolid = [];
       this.shellWire = [];
     }
+    this.clearOutdoorLayer();
     if (this.layers.cameras) {
       this.root.remove(this.layers.cameras);
       this.layers.cameras.traverse((child) => {
@@ -692,6 +722,7 @@ export class WorldSceneController {
     this.atlasCache.clear();
     this.shellParts = buildRoomShellParts(this.world);
     this.buildShell();
+    this.buildOutdoorLayer();
 
     // 2. Build Entities
     if (this.world && this.world.entities) {
@@ -780,7 +811,7 @@ export class WorldSceneController {
 
       // Procedural worlds have no cloud to seed the camera; frame once per world so a large scene is on-screen.
       const hasCloud = Boolean(this.pointsData && this.pointsData.length > 0);
-      if (shouldAutoFrame(hasCloud, this.entityMeshes.size, this.framedWorldId, this.world.id)) {
+      if (shouldAutoFrame(hasCloud, this.entityMeshes.size + this.outdoor.parts.length, this.framedWorldId, this.world.id)) {
         this.framedWorldId = this.world.id;
         this.frameAll(false);
       }
@@ -993,6 +1024,264 @@ export class WorldSceneController {
     return mat;
   }
 
+  // ---- outdoor layer (map-imported / generated buildings, roads, rail, bridges, street furniture, trees) ----------
+
+  private clearOutdoorLayer() {
+    if (this.outdoorOutline) {
+      this.root.remove(this.outdoorOutline);
+      this.outdoorOutline.geometry.dispose();
+      (this.outdoorOutline.material as THREE.Material).dispose();
+      this.outdoorOutline = null;
+    }
+    if (this.outdoorGroup) {
+      this.root.remove(this.outdoorGroup);
+      this.outdoorGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+          child.geometry.dispose();
+          (child.material as THREE.Material).dispose();
+        }
+      });
+      this.outdoorGroup = null;
+    }
+    this.outdoorBatches = [];
+    this.outdoorBoxes.clear();
+    this.outdoorBox = null;
+    this.outdoor = { up: "y", parts: [], diagnostics: { drawn: 0, skipped: [], byGroup: { buildings: 0, roads: 0, rail: 0, bridges: 0, furniture: 0, trees: 0, other: 0 }, byKind: {} } };
+    if (this.gridCustom) {
+      this.setGridExtent(20, 20, 0, 0);
+      this.gridCustom = false;
+    }
+    this.distanceCap = 200;
+    this.controls.maxDistance = 200 * this.fovScale();
+  }
+
+  private setGridExtent(size: number, divisions: number, cx: number, cz: number) {
+    const visible = this.gridHelper ? this.gridHelper.visible : true;
+    if (this.gridHelper) {
+      this.scene.remove(this.gridHelper);
+      this.gridHelper.geometry.dispose();
+      (this.gridHelper.material as THREE.Material).dispose();
+    }
+    this.gridHelper = new THREE.GridHelper(size, divisions, hex(this.palette.gridMajor), hex(this.palette.gridMinor));
+    this.gridHelper.position.set(cx, -0.01, cz);
+    this.gridHelper.visible = visible;
+    this.scene.add(this.gridHelper);
+  }
+
+  private wireColorFor(part: OutdoorPart): RGB {
+    const p = this.palette;
+    return part.group === "furniture" || part.group === "trees" || part.group === "rail" ? p.accent
+      : part.group === "roads" ? p.textSecondary : p.text;
+  }
+
+  private buildOutdoorLayer() {
+    const pal = this.palette;
+    this.outdoor = buildOutdoor(this.world, derivePalette({
+      bg: pal.bg, gridMajor: pal.gridMajor, text: pal.text, textSecondary: pal.textSecondary, accent: pal.accent, high: pal.conf.high,
+    }));
+    const parts = this.outdoor.parts;
+    if (!parts.length) return;
+    const up = this.outdoor.up;
+    const srgb = (c: RGB): RGB => { const k = new THREE.Color(c[0] / 255, c[1] / 255, c[2] / 255).convertSRGBToLinear(); return [k.r, k.g, k.b]; };
+    const group = new THREE.Group();
+    const tiers = ["normal", "imported", "generated"] as const;
+    const world = new THREE.Box3();
+    for (const tier of tiers) {
+      const idxs = parts.map((_, i) => i).filter((i) => {
+        const q = parts[i];
+        const t = q.generated ? "generated" : q.imported ? "imported" : "normal";
+        return t === tier;
+      });
+      if (!idxs.length) continue;
+      const pos: number[] = [], index: number[] = [], wpos: number[] = [], wcol: number[] = [], col: number[] = [], ccol: number[] = [];
+      const b: OutdoorBatch = {
+        tier, solid: null as never, wire: null as never, partIdx: [], idxStart: [], idxCount: [], wStart: [], wCount: [], vStart: [], vCount: [],
+        fullIndex: new Uint32Array(0), wirePos: new Float32Array(0), wireCol: new Float32Array(0), realistic: new Float32Array(0), confidence: new Float32Array(0),
+        activeTriEnd: [], activePart: [],
+      };
+      for (const gi of idxs) {
+        const part = parts[gi];
+        const m = partMesh(part, up);
+        if (!m.indices.length) continue;
+        const vOff = pos.length / 3;
+        const bb = meshBounds(m.positions);
+        if (bb) {
+          const box = new THREE.Box3(new THREE.Vector3(...bb.min), new THREE.Vector3(...bb.max));
+          this.outdoorBoxes.set(part.entityId, box);
+          world.union(box);
+        }
+        b.partIdx.push(gi);
+        b.vStart.push(vOff); b.vCount.push(m.positions.length / 3);
+        b.idxStart.push(index.length); b.idxCount.push(m.indices.length);
+        for (const v of m.positions) pos.push(v);
+        for (const i of m.indices) index.push(i + vOff);
+        const real = srgb(part.color);
+        const conf = srgb(part.confidence === null ? pal.conf.unknown : confidenceRamp(part.confidence, pal.conf));
+        for (let v = 0; v < m.positions.length / 3; v++) { col.push(...real); ccol.push(...conf); }
+        // edges only (same warm-light line style as the room wireframe)
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(m.positions, 3));
+        g.setIndex(m.indices);
+        const edges = new THREE.EdgesGeometry(g, 25);
+        const e = edges.getAttribute("position").array as Float32Array;
+        const wc = srgb(this.wireColorFor(part));
+        b.wStart.push(wpos.length); b.wCount.push(e.length);
+        for (let k = 0; k < e.length; k++) wpos.push(e[k]);
+        for (let k = 0; k < e.length / 3; k++) wcol.push(...wc);
+        g.dispose(); edges.dispose();
+      }
+      if (!b.partIdx.length) continue;
+      b.fullIndex = Uint32Array.from(index);
+      b.wirePos = Float32Array.from(wpos);
+      b.wireCol = Float32Array.from(wcol);
+      b.realistic = Float32Array.from(col);
+      b.confidence = Float32Array.from(ccol);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(pos), 3));
+      geo.setAttribute("color", new THREE.BufferAttribute(Float32Array.from(col), 3));
+      geo.setIndex(new THREE.BufferAttribute(Uint32Array.from(index), 1));
+      geo.computeVertexNormals();
+      const opacity = tier === "normal" ? 1 : tier === "imported" ? 0.85 : 0.5;
+      b.solid = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+        vertexColors: true, side: THREE.DoubleSide, transparent: opacity < 1, opacity, depthWrite: tier !== "generated",
+        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      }));
+      b.solid.frustumCulled = false;
+      const wgeo = new THREE.BufferGeometry();
+      wgeo.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(wpos), 3));
+      wgeo.setAttribute("color", new THREE.BufferAttribute(Float32Array.from(wcol), 3));
+      b.wire = new THREE.LineSegments(wgeo, tier === "generated"
+        ? new THREE.LineDashedMaterial({ vertexColors: true, dashSize: 1.2, gapSize: 0.8, transparent: true })
+        : new THREE.LineBasicMaterial({ vertexColors: true, transparent: true }));
+      b.wire.frustumCulled = false;
+      group.add(b.solid, b.wire);
+      this.outdoorBatches.push(b);
+    }
+    group.visible = this.layerVisibility.shell;
+    this.outdoorGroup = group;
+    this.root.add(group);
+    this.root.updateMatrixWorld(true);
+    this.outdoorBox = world.isEmpty() ? null : this.robustOutdoorBox(world.clone().applyMatrix4(this.root.matrixWorld));
+    this.applyOutdoorVisibility();
+    this.applyOutdoorMode();
+    if (this.outdoorBox) {
+      const sz = this.outdoorBox.getSize(new THREE.Vector3());
+      const c = this.outdoorBox.getCenter(new THREE.Vector3());
+      const ext = Math.max(sz.x, sz.z, 1);
+      const step = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].find((s) => ext / s <= 14) ?? 1000;
+      const size = Math.ceil((ext * 1.3) / step) * step;
+      this.setGridExtent(size, Math.round(size / step), Math.round(c.x / step) * step, Math.round(c.z / step) * step);
+      this.gridCustom = true;
+      this.distanceCap = Math.max(200, Math.max(ext, sz.y) * 3);
+      this.controls.maxDistance = this.distanceCap * this.fovScale();
+    }
+  }
+
+  /** Framing box: 2nd-98th percentile of part centres, so one road that runs 800 m past the cluster does not shrink the view. */
+  private robustOutdoorBox(full: THREE.Box3): THREE.Box3 {
+    if (this.outdoorBoxes.size < 12) return full;
+    const c = new THREE.Vector3();
+    const xs: number[] = [], zs: number[] = [];
+    for (const b of this.outdoorBoxes.values()) {
+      b.clone().applyMatrix4(this.root.matrixWorld).getCenter(c);
+      xs.push(c.x); zs.push(c.z);
+    }
+    const q = (a: number[], t: number) => { a.sort((u, v) => u - v); return a[Math.min(a.length - 1, Math.max(0, Math.round(t * (a.length - 1))))]; };
+    const box = new THREE.Box3(new THREE.Vector3(q(xs, 0.02), full.min.y, q(zs, 0.02)), new THREE.Vector3(q(xs, 0.98), full.max.y, q(zs, 0.98)));
+    const pad = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.1 + 5;
+    box.min.x -= pad; box.max.x += pad; box.min.z -= pad; box.max.z += pad;
+    return box.intersect(full);
+  }
+
+  /** Keep the depth range proportional to the viewing distance so a 600 m neighbourhood does not z-fight at the far end. */
+  private fitDepthRange() {
+    const d = this.camera.position.distanceTo(this.controls.target);
+    const near = Math.max(0.05, d * 0.004);
+    const far = Math.max(5000 * this.fovScale(), d * 40);
+    if (Math.abs(near - this.camera.near) > this.camera.near * 0.02 || far !== this.camera.far) {
+      this.camera.near = near;
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  /** Mode colours + selection tint + outline. Realistic = kind colours; Confidence = green/red/grey; Wireframe = edges only. */
+  private applyOutdoorMode() {
+    if (!this.outdoorBatches.length) return;
+    const accent = (() => { const k = new THREE.Color(this.palette.accent[0] / 255, this.palette.accent[1] / 255, this.palette.accent[2] / 255).convertSRGBToLinear(); return [k.r, k.g, k.b]; })();
+    for (const b of this.outdoorBatches) {
+      const attr = b.solid.geometry.getAttribute("color") as THREE.BufferAttribute;
+      attr.array.set(this.renderMode === "confidence" ? b.confidence : b.realistic);
+      b.partIdx.forEach((gi, li) => {
+        if (this.outdoor.parts[gi].entityId !== this.selectedEntityId) return;
+        for (let v = b.vStart[li]; v < b.vStart[li] + b.vCount[li]; v++) { attr.array[3 * v] = accent[0]; attr.array[3 * v + 1] = accent[1]; attr.array[3 * v + 2] = accent[2]; }
+      });
+      attr.needsUpdate = true;
+      b.solid.visible = this.renderMode !== "wireframe";
+      b.wire.visible = this.renderMode !== "solid";
+      (b.wire.material as THREE.Material).opacity = this.renderMode === "confidence" ? 0.4 : 1;
+    }
+    if (this.outdoorOutline) {
+      this.root.remove(this.outdoorOutline);
+      this.outdoorOutline.geometry.dispose();
+      (this.outdoorOutline.material as THREE.Material).dispose();
+      this.outdoorOutline = null;
+    }
+    const sel = this.selectedEntityId;
+    if (!sel) return;
+    for (const b of this.outdoorBatches) {
+      const li = b.partIdx.findIndex((gi) => this.outdoor.parts[gi].entityId === sel);
+      if (li < 0) continue;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(b.wirePos.slice(b.wStart[li], b.wStart[li] + b.wCount[li]), 3));
+      this.outdoorOutline = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: hex(this.palette.accent), depthTest: false, transparent: true }));
+      this.outdoorOutline.renderOrder = 5;
+      this.outdoorOutline.frustumCulled = false;
+      this.root.add(this.outdoorOutline);
+      break;
+    }
+  }
+
+  /** Re-pack the index / edge buffers without the hidden entities (buffers are preallocated; only the draw range changes). */
+  private applyOutdoorVisibility() {
+    for (const b of this.outdoorBatches) {
+      const idx = b.solid.geometry.getIndex() as THREE.BufferAttribute;
+      const wp = b.wire.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const wc = b.wire.geometry.getAttribute("color") as THREE.BufferAttribute;
+      let io = 0, wo = 0;
+      b.activeTriEnd = []; b.activePart = [];
+      b.partIdx.forEach((gi, li) => {
+        if (this.hiddenEntityIds.has(this.outdoor.parts[gi].entityId)) return;
+        (idx.array as Uint32Array).set(b.fullIndex.subarray(b.idxStart[li], b.idxStart[li] + b.idxCount[li]), io);
+        io += b.idxCount[li];
+        b.activeTriEnd.push(io / 3);
+        b.activePart.push(gi);
+        (wp.array as Float32Array).set(b.wirePos.subarray(b.wStart[li], b.wStart[li] + b.wCount[li]), wo);
+        (wc.array as Float32Array).set(b.wireCol.subarray(b.wStart[li], b.wStart[li] + b.wCount[li]), wo);
+        wo += b.wCount[li];
+      });
+      idx.needsUpdate = true; wp.needsUpdate = true; wc.needsUpdate = true;
+      b.solid.geometry.setDrawRange(0, io);
+      b.wire.geometry.setDrawRange(0, wo / 3);
+      if (b.tier === "generated") b.wire.computeLineDistances();
+    }
+  }
+
+  private pickOutdoor(): { id: string; distance: number } | null {
+    if (!this.outdoorGroup?.visible) return null;
+    let best: { id: string; distance: number } | null = null;
+    for (const b of this.outdoorBatches) {
+      const hit = this.raycaster.intersectObject(b.solid, false)[0];
+      if (!hit || hit.faceIndex == null) continue;
+      let lo = 0, hi = b.activeTriEnd.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (b.activeTriEnd[mid] > hit.faceIndex) hi = mid; else lo = mid + 1; }
+      const gi = b.activePart[lo];
+      if (gi === undefined || (best && best.distance <= hit.distance)) continue;
+      best = { id: this.outdoor.parts[gi].entityId, distance: hit.distance };
+    }
+    return best;
+  }
+
   private applyRenderMode() {
     // solid = coloured; wireframe = edges only; both = coloured + edges; confidence = confidence-coloured + faint edges
     this.shellSolid.forEach((o, i) => {
@@ -1002,6 +1291,7 @@ export class WorldSceneController {
     });
     this.refreshShellVisibility();
     this.refreshDimensions();
+    this.applyOutdoorMode();
   }
 
   /** Mode visibility x explicit hides x cutaway (a selected entity is always revealed, even a cut-away wall). */
@@ -1034,6 +1324,7 @@ export class WorldSceneController {
 
   public setHiddenEntities(ids: Set<string> | null) {
     this.hiddenEntityIds = new Set(ids ?? []);
+    this.applyOutdoorVisibility();
     this.refreshShellVisibility();
     this.updateMeshVisibilities();
   }
@@ -1138,7 +1429,7 @@ export class WorldSceneController {
     this.camera.fov = to;
     this.camera.far = 5000 * k;
     this.controls.minDistance = 0.2 * k;
-    this.controls.maxDistance = 200 * k;
+    this.controls.maxDistance = this.distanceCap * k;
     this.camera.position.copy(target).add(dir);
     this.camera.updateProjectionMatrix();
     this.controls.update();
@@ -1187,6 +1478,16 @@ export class WorldSceneController {
     return this.shellParts.length > 0;
   }
 
+  /** True when map-imported / generated outdoor parts (buildings, roads, furniture ...) are drawn. */
+  public hasOutdoor(): boolean {
+    return this.outdoor.parts.length > 0;
+  }
+
+  public getOutdoorSummary(): { parts: OutdoorPart[]; skipped: number; imported: number; generated: number } {
+    const parts = this.outdoor.parts;
+    return { parts, skipped: this.outdoor.diagnostics.skipped.length, imported: parts.filter((q) => q.imported).length, generated: parts.filter((q) => q.generated).length };
+  }
+
   public setLayerVisibility(layers: Partial<ViewportLayers>) {
     this.layerVisibility = { ...this.layerVisibility, ...layers };
 
@@ -1201,6 +1502,7 @@ export class WorldSceneController {
     if (this.layers.shell) {
       this.layers.shell.visible = this.layerVisibility.shell;
     }
+    if (this.outdoorGroup) this.outdoorGroup.visible = this.layerVisibility.shell;
     if (this.layers.cameras) {
       this.layers.cameras.visible = this.layerVisibility.cameras;
     }
@@ -1870,6 +2172,8 @@ export class WorldSceneController {
       }
     }
 
+    this.applyOutdoorMode(); // recolours the selected outdoor part and redraws its outline
+    if (updateCamera && id && !this.entityMeshes.has(id)) this.flyToEntity(id);
     this.renderSpatialTopology(id);
     this.refreshShellVisibility(); // a selected (cut-away) wall is revealed
     this.onSelectCallback?.(id);
@@ -1901,14 +2205,15 @@ export class WorldSceneController {
   public flyToEntity(id: string, animate = true) {
     if (this.isContextLost) return;
     const mesh = this.entityMeshes.get(id);
-    if (!mesh) return;
+    const outdoorBox = this.outdoorBoxes.get(id);
+    if (!mesh && !outdoorBox) return;
 
-    const box = new THREE.Box3().setFromObject(mesh);
+    const box = mesh ? new THREE.Box3().setFromObject(mesh) : outdoorBox!.clone().applyMatrix4(this.root.matrixWorld);
     const size = box.getSize(new THREE.Vector3()).length();
     const dir = new THREE.Vector3(0.8, 0.55, 0.8).normalize();
     const d = Math.max(1.2, size * 1.45);
 
-    const meshPos = mesh.getWorldPosition(new THREE.Vector3());
+    const meshPos = mesh ? mesh.getWorldPosition(new THREE.Vector3()) : box.getCenter(new THREE.Vector3());
     const endPos = meshPos.clone().addScaledVector(dir, d);
     const endTarget = meshPos.clone();
 
@@ -1994,17 +2299,19 @@ export class WorldSceneController {
       const rb = robustPointsBounds(this.pointsData);
       endTarget = this.root.localToWorld(new THREE.Vector3(rb.center[0], rb.center[1], rb.center[2]));
       endPos = endTarget.clone().addScalar(rb.extent * 1.0);
-    } else if (this.entityMeshes.size > 0) {
+    } else if (this.entityMeshes.size > 0 || this.outdoorBox) {
       const box = new THREE.Box3();
       for (const mesh of this.entityMeshes.values()) {
         box.expandByObject(mesh);
       }
+      if (this.outdoorBox) box.union(this.outdoorBox);
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3()).length();
+      const k = this.outdoorBox ? 0.62 : 0.8; // neighbourhoods are wide and flat: pull in closer for an isometric overview
       endPos = new THREE.Vector3(
-        center.x + size * 0.8,
-        center.y + size * 0.8,
-        center.z + size * 0.8
+        center.x + size * k,
+        center.y + size * k,
+        center.z + size * k
       );
       endTarget = center;
     } else {
@@ -2088,7 +2395,7 @@ export class WorldSceneController {
           this.setLevelFilter(this.activeLevelIndex);
         }
         // Restore selection if selected entity still exists
-        if (this.selectedEntityId && this.entityMeshes.has(this.selectedEntityId)) {
+        if (this.selectedEntityId && (this.entityMeshes.has(this.selectedEntityId) || this.outdoorBoxes.has(this.selectedEntityId))) {
           this.selectEntity(this.selectedEntityId);
         } else if (this.selectedEntityId) {
           this.selectEntity(null);
@@ -2149,7 +2456,7 @@ export class WorldSceneController {
             pt = onPlane;
           }
         } else {
-          const meshes = Array.from(this.entityMeshes.values()).filter((m) => m.visible);
+          const meshes = [...Array.from(this.entityMeshes.values()).filter((m) => m.visible), ...this.outdoorBatches.map((b) => b.solid)];
           const hits = this.raycaster.intersectObjects(meshes, false);
           if (hits.length > 0) {
             pt = hits[0].point.clone();
@@ -2187,8 +2494,11 @@ export class WorldSceneController {
         .map(([, m]) => m);
 
       const hits = this.raycaster.intersectObjects(meshes, false);
+      const outdoorHit = this.pickOutdoor();
 
-      if (hits.length > 0) {
+      if (outdoorHit && (hits.length === 0 || outdoorHit.distance < hits[0].distance)) {
+        this.selectEntity(outdoorHit.id);
+      } else if (hits.length > 0) {
         const entityId = hits[0].object.userData.entityId as string;
         this.selectEntity(entityId);
       } else {
@@ -2240,6 +2550,7 @@ export class WorldSceneController {
       }
 
       this.controls.update();
+      if (this.outdoor.parts.length > 0) this.fitDepthRange();
 
       // Emit camera azimuth & elevation for Orientation Compass
       if (this.onCameraChangeCallback) {
@@ -2272,7 +2583,7 @@ export class WorldSceneController {
   public getStatistics(): ViewportStatistics {
     const pts = this.pointsData ? this.pointsData.length / 3 : 0;
     const cams = this.camerasData ? (this.camerasData.cameras || []).length : 0;
-    const ents = this.entityMeshes.size;
+    const ents = this.entityMeshes.size + this.outdoor.parts.length;
     return {
       points: pts,
       canonicalPoints: pts,

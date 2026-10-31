@@ -7,6 +7,9 @@ import { ArrowLeft, Plus, Trash2, TriangleAlert } from "lucide-react";
 import SiteGrid from "@/components/sites/SiteGrid";
 import AddWorldDialog from "@/components/sites/AddWorldDialog";
 import PlacementInspector from "@/components/sites/PlacementInspector";
+import ComposeWorldDialog from "@/components/sites/ComposeWorldDialog";
+import AnchorMapPanel from "@/components/sites/AnchorMapPanel";
+import { MAP_CONTEXT_LABEL } from "@/lib/sites/compose-model";
 import {
   addPlacement,
   deleteSite,
@@ -38,6 +41,7 @@ export default function SiteComposerPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [composing, setComposing] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [snap, setSnap] = useState(true);
   const [opError, setOpError] = useState<string | null>(null);
@@ -147,6 +151,9 @@ export default function SiteComposerPage() {
           <button type="button" onClick={() => setConfirm({ kind: "site" })} aria-label="Delete site" title="Delete site" className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-[var(--error-subtle)]" style={{ color: "var(--error)" }}>
             <Trash2 className="w-4 h-4" />
           </button>
+          <button type="button" onClick={() => setComposing(true)} className="text-sm font-medium px-3 h-8 rounded-md border hover:bg-[var(--bg-hover)]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+            Compose world
+          </button>
           <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-sm font-medium px-3 h-8 rounded-md" style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}>
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             Add world
@@ -213,8 +220,20 @@ export default function SiteComposerPage() {
               <p className="text-xs mt-3" style={{ color: "var(--text-tertiary)" }}>Select a placement on the grid to move, rotate, scale, rename or remove it.</p>
             </div>
           )}
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+            <AnchorMapPanel
+              site={site}
+              onAddMapWorld={async (worldId) => {
+                const created = await addPlacement(id, { world_id: worldId, label: MAP_CONTEXT_LABEL, cell_x: 0, cell_z: 0 });
+                setLocal(await getSite(id));
+                setSelectedId(created.id);
+              }}
+            />
+          </div>
         </aside>
       </div>
+
+      {composing && <ComposeWorldDialog siteId={id} siteName={site.name} placements={site.placements} onClose={() => setComposing(false)} />}
 
       {adding && (
         <AddWorldDialog

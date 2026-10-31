@@ -3,9 +3,10 @@
  * top-down metric grid. Not geo-registration - the server stores exactly what
  * the user placed and reports overlaps it computed.
  */
-import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./client";
 import { useApi } from "./hooks";
 import type { Placement } from "@/lib/sites/site-grid-model";
+import type { Anchor, ComposeInput, ComposeKind, MaybeAnchor } from "@/lib/sites/compose-model";
 
 export type { Placement } from "@/lib/sites/site-grid-model";
 
@@ -23,6 +24,18 @@ export interface Site {
   created_at: string | null;
   placements: Placement[];
   overlaps: [string, string][];
+  /** Geographic anchor; null when never set. */
+  anchor?: Anchor | null;
+}
+
+export interface ComposeResult {
+  world_id: string;
+  version_id: string;
+  kind: ComposeKind;
+  source_count: number;
+  entity_count: number;
+  generated_count: number;
+  warnings: string[];
 }
 
 export interface CreatePlacementInput {
@@ -69,6 +82,19 @@ export function updatePlacement(siteId: string, placementId: string, patch: Upda
 
 export function removePlacement(siteId: string, placementId: string): Promise<void> {
   return apiDelete<void>(`/api/sites/${enc(siteId)}/placements/${enc(placementId)}`);
+}
+
+export function saveAnchor(siteId: string, anchor: Anchor): Promise<Anchor> {
+  return apiPut<Anchor>(`/api/sites/${enc(siteId)}/anchor`, anchor);
+}
+
+export function getAnchor(siteId: string): Promise<MaybeAnchor> {
+  return apiGet<MaybeAnchor>(`/api/sites/${enc(siteId)}/anchor`);
+}
+
+/** Creates a new version of the composed world (re-composing the same site is allowed). */
+export function composeSite(siteId: string, input: ComposeInput): Promise<ComposeResult> {
+  return apiPost<ComposeResult>(`/api/sites/${enc(siteId)}/compose`, input, { timeoutMs: 120_000 });
 }
 
 export function useSites() {

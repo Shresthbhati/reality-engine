@@ -119,7 +119,11 @@ export interface WorldStatus {
     attempts: { level: number; name: string; outcome: string; detail: string }[];
     /** sparse vs dense, with the reason dense is absent */
     dense?: { state: "dense" | "sparse"; detail: string };
-    scale: { state?: string; meters_per_unit?: number | null };
+    scale: { state?: string; meters_per_unit?: number | null; scale_basis?: string | null; dimension_state?: string | null };
+    /** opt-in CPU plane-sweep dense geometry: disabled | skipped | ran | refused, with the reason */
+    plane_sweep?: { status: string; note?: string; reason?: string; [k: string]: unknown } | null;
+    /** device-depth metric scale estimate (or why it was refused); null when no device depth exists */
+    device_depth_scale?: { [k: string]: unknown } | null;
     images_used: number;
     images_registered: number;
     /** measured statements about what this version changed versus the previous one */
@@ -207,7 +211,11 @@ export interface WorldStatus {
 /** Drop photos into the engine. No worldId => a new world; with worldId => refine that world. */
 export function createReconstruction(
   files: File[],
-  opts: { worldId?: string | null; evidenceClass?: string | null; latitude?: number; longitude?: number } = {},
+  opts: {
+    worldId?: string | null; evidenceClass?: string | null; latitude?: number; longitude?: number;
+    /** opt in to the CPU plane-sweep dense stage (off by default) and tune it */
+    denseCpu?: boolean; planeSweepMaxViews?: number; planeSweepStride?: number; planeSweepPlanes?: number;
+  } = {},
 ): Promise<CreateReconstructionResult> {
   const fields: Record<string, string> = {};
   if (opts.worldId) fields.world_id = opts.worldId;
@@ -216,6 +224,10 @@ export function createReconstruction(
     fields.latitude = String(opts.latitude);
     fields.longitude = String(opts.longitude);
   }
+  if (opts.denseCpu) fields.dense_cpu = "true";
+  if (opts.planeSweepMaxViews !== undefined) fields.plane_sweep_max_views = String(opts.planeSweepMaxViews);
+  if (opts.planeSweepStride !== undefined) fields.plane_sweep_stride = String(opts.planeSweepStride);
+  if (opts.planeSweepPlanes !== undefined) fields.plane_sweep_planes = String(opts.planeSweepPlanes);
   return apiPostFiles<CreateReconstructionResult>("/api/reconstructions", "files", files, fields);
 }
 

@@ -92,7 +92,7 @@ export default function ExportPanel({
       </button>
 
       {error && (
-        <p className="text-xs" style={{ color: "var(--error, #e57373)" }}>
+        <p className="text-xs" style={{ color: "var(--error)" }}>
           {error}
         </p>
       )}

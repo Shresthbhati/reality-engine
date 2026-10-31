@@ -1,33 +1,71 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+/**
+ * World3DViewport: the dark architectural-studio 3D viewport (mode tabs above, tool column right, toolbar bottom).
+ *
+ * Props (all optional ones are backwards compatible; omit them and the viewport manages that state itself):
+ *  - mode / onModeChange: "realistic" | "wireframe" | "confidence". Controlled when `mode` is given, otherwise the
+ *    choice is internal and remembered in localStorage (failures ignored).
+ *  - cutaway / onCutawayChange: dollhouse cutaway (ceiling + camera-facing walls hidden). Default ON. A selected
+ *    entity is always revealed, so choosing a cut-away wall from the hierarchy shows it.
+ *  - hiddenEntityIds: Set<string> of entity ids to hide (shell parts and bounding boxes), e.g. hierarchy eye toggles.
+ *  - onSelectEntity / selectedEntityId / queryMatchingIds / onMeasurementChange / worldId: unchanged.
+ */
+
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Maximize2,
   Eye,
   Camera,
   Box,
   AlertTriangle,
-  Compass,
   Sparkles,
   Ruler,
   Grid,
   X,
   Layers,
   Workflow,
+  MousePointer2,
+  Hand,
+  Orbit,
+  ZoomIn,
+  ZoomOut,
+  Crosshair,
+  Scissors,
+  Download,
+  MoveHorizontal,
 } from "lucide-react";
 import {
   WorldSceneController,
   type ViewportLayers,
-  type RenderMode,
   type ViewPreset,
   type MeasurementResult,
   type ViewportStatistics,
+  type PointerTool,
+  type CameraInfo,
 } from "@/lib/viewport/three-scene";
 import type {
   CamerasPayload,
   WorldIR,
 } from "@/types/worldir";
+import { legendFor } from "@/lib/viewport/room-shell-model";
+import {
+  VIEW_MODES,
+  axisGizmo,
+  formatMeters,
+  loadStoredMode,
+  niceScale,
+  storeMode,
+  viewModeToRender,
+  type ViewMode,
+} from "@/lib/viewport/view-model";
+import { resolveUnitContext } from "@/lib/viewport/measure-model";
 import MeasurementPanel from "./MeasurementPanel";
+
+const NO_SHELL_REASON =
+  "No reconstructed room shell yet (no measured footprint). Only legacy bounding boxes can be drawn, so the view modes are unavailable.";
+
+const PANEL = { background: "var(--bg-surface)", border: "1px solid var(--border)" } as const;
 
 interface World3DViewportProps {
   world: WorldIR | null;
@@ -46,6 +84,33 @@ interface World3DViewportProps {
   onOpenRoomConstruction?: () => void;
   /** Needed to save/list measurements; without it measuring still works but cannot persist. */
   worldId?: string | null;
+  mode?: ViewMode;
+  onModeChange?: (mode: ViewMode) => void;
+  hiddenEntityIds?: Set<string>;
+  cutaway?: boolean;
+  onCutawayChange?: (on: boolean) => void;
+}
+
+function IconButton({
+  label, active = false, disabled = false, onClick, children,
+}: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-8 w-8 items-center justify-center rounded transition-colors disabled:cursor-not-allowed disabled:opacity-35 cursor-pointer"
+      style={{
+        color: active ? "var(--accent)" : "var(--text-secondary)",
+        background: active ? "var(--accent-subtle)" : "transparent",
+      }}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function World3DViewport({
@@ -63,10 +128,20 @@ export default function World3DViewport({
   onMeasurementChange,
   onOpenRoomConstruction,
   worldId,
+  mode: modeProp,
+  onModeChange,
+  hiddenEntityIds,
+  cutaway: cutawayProp,
+  onCutawayChange,
 }: World3DViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<WorldSceneController | null>(null);
   const getController = useCallback(() => controllerRef.current, []);
+  // Latest callbacks, so the controller is created once and never torn down by an unstable parent callback.
+  const onSelectRef = useRef(onSelectEntity);
+  const onMeasureRef = useRef(onMeasurementChange);
+  onSelectRef.current = onSelectEntity;
+  onMeasureRef.current = onMeasurementChange;
 
   const [layers, setLayers] = useState<ViewportLayers>({
     points: true,
@@ -79,8 +154,15 @@ export default function World3DViewport({
     topology: true,
     shell: true,
   });
-  const [renderMode, setRenderModeState] = useState<RenderMode>("solid");
+  const [modeState, setModeState] = useState<ViewMode>("realistic");
+  const mode = modeProp ?? modeState;
+  const [cutawayState, setCutawayState] = useState(true);
+  const cutaway = cutawayProp ?? cutawayState;
   const [hasShell, setHasShell] = useState(false);
+  const [tool, setTool] = useState<PointerTool>("select");
+  const [ortho, setOrtho] = useState(false);
+  const [showDims, setShowDims] = useState(true);
+  const [layersOpen, setLayersOpen] = useState(false);
 
   const [gridVisible, setGridVisible] = useState(true);
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -96,10 +178,7 @@ export default function World3DViewport({
   });
   const [isolatedSpaceId, setIsolatedSpaceId] = useState<string | null>(null);
   const [activeLevel, setActiveLevel] = useState<number | null>(null);
-  const [cameraAngles, setCameraAngles] = useState<{ azimuthDeg: number; elevationDeg: number }>({
-    azimuthDeg: 45,
-    elevationDeg: 30,
-  });
+  const [camInfo, setCamInfo] = useState<CameraInfo | null>(null);
 
   const recon = world?.metadata?.reconstruction;
   const reconStatus = recon?.registration_status?.toLowerCase();
@@ -111,8 +190,10 @@ export default function World3DViewport({
   const isUnscaled =
     world?.metadata?.scale?.state === "unscaled" ||
     world?.metadata?.scale?.state === "nominal";
+  // Metres are only claimed (scale bar, dimension labels) when the world states a metric or authored scale.
+  const metersKnown = resolveUnitContext(world).basis !== "unknown";
 
-  // Initialize Three.js Controller
+  // Initialize Three.js Controller (once; callbacks go through refs)
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -120,13 +201,11 @@ export default function World3DViewport({
     controllerRef.current = controller;
 
     controller.setCallbacks({
-      onSelect: (id) => onSelectEntity(id),
+      onSelect: (id) => onSelectRef.current(id),
       onMeasure: (res) => {
-        onMeasurementChange?.(res);
+        onMeasureRef.current?.(res);
       },
-      onCameraChange: (angles) => {
-        setCameraAngles(angles);
-      },
+      onCameraChange: setCamInfo,
       onContextLossChange: (lost) => {
         setIsContextLost(lost);
       },
@@ -136,7 +215,23 @@ export default function World3DViewport({
       controller.dispose();
       controllerRef.current = null;
     };
-  }, [onSelectEntity, onMeasurementChange]);
+  }, []);
+
+  // Remember the chosen mode (storage failures are swallowed inside view-model)
+  useEffect(() => {
+    if (modeProp === undefined) setModeState(loadStoredMode());
+  }, [modeProp]);
+
+  const changeMode = useCallback((next: ViewMode) => {
+    setModeState(next);
+    storeMode(next);
+    onModeChange?.(next);
+  }, [onModeChange]);
+
+  const changeCutaway = useCallback((on: boolean) => {
+    setCutawayState(on);
+    onCutawayChange?.(on);
+  }, [onCutawayChange]);
 
   // Sync data into scene
   useEffect(() => {
@@ -147,9 +242,25 @@ export default function World3DViewport({
       controller.loadWorldData(world, points, cameras, mesh);
       setStats(controller.getStatistics());
       setHasShell(controller.hasShell());
-      setRenderModeState(controller.getRenderMode());
     }
   }, [world, points, cameras, mesh]);
+
+  // View mode / cutaway / hidden entities (re-applied after every data load so a rebuilt shell keeps them)
+  useEffect(() => {
+    controllerRef.current?.setRenderMode(viewModeToRender(mode));
+  }, [mode, world, points, cameras, mesh]);
+
+  useEffect(() => {
+    controllerRef.current?.setCutaway(cutaway);
+  }, [cutaway, world, points, cameras, mesh]);
+
+  useEffect(() => {
+    controllerRef.current?.setHiddenEntities(hiddenEntityIds ?? null);
+  }, [hiddenEntityIds, world, points, cameras, mesh]);
+
+  useEffect(() => {
+    controllerRef.current?.setShowDimensions(showDims && metersKnown);
+  }, [showDims, metersKnown, world, points, cameras, mesh]);
 
   // Sync spatial query filtering
   useEffect(() => {
@@ -286,6 +397,12 @@ export default function World3DViewport({
     controllerRef.current?.setViewPreset(preset);
   }, []);
 
+  const handleFit = useCallback(() => controllerRef.current?.frameAll(), []);
+
+  const handleFocus = useCallback(() => {
+    if (selectedEntityId) controllerRef.current?.flyToEntity(selectedEntityId);
+  }, [selectedEntityId]);
+
   const handleFrameAll = useCallback(() => {
     if (selectedEntityId) {
       controllerRef.current?.flyToEntity(selectedEntityId);
@@ -294,13 +411,33 @@ export default function World3DViewport({
     }
   }, [selectedEntityId]);
 
+  const pickTool = useCallback((next: PointerTool) => {
+    setTool(next);
+    controllerRef.current?.setPointerTool(next);
+  }, []);
+
+  const changeProjection = useCallback((nextOrtho: boolean) => {
+    setOrtho(nextOrtho);
+    controllerRef.current?.setOrthographic(nextOrtho);
+  }, []);
+
+  const handleScreenshot = useCallback(() => {
+    const url = controllerRef.current?.captureImage();
+    if (!url) return;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${worldId ?? "reality-viewport"}.png`;
+    a.click();
+  }, [worldId]);
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Avoid intercepting input/textarea
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
       ) {
         return;
       }
@@ -326,6 +463,8 @@ export default function World3DViewport({
         toggleLayer("oversized");
       } else if (e.key === "u" || e.key === "U") {
         toggleLayer("uncertainty");
+      } else if (e.key === "c" || e.key === "C") {
+        changeCutaway(!cutaway);
       } else if (e.key === "Escape") {
         if (isMeasuring) {
           toggleMeasure();
@@ -340,337 +479,354 @@ export default function World3DViewport({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, isMeasuring, isolatedSpaceId, onSelectEntity]);
+  }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, changeCutaway, cutaway, isMeasuring, isolatedSpaceId, onSelectEntity]);
+
+  // Scale bar + axis gizmo (derived from the camera the controller reports)
+  const scale = useMemo(() => (camInfo && metersKnown ? niceScale(camInfo.metersPerPx, 110) : null), [camInfo, metersKnown]);
+  const axes = useMemo(() => (camInfo ? axisGizmo(camInfo.right, camInfo.up) : null), [camInfo]);
+  const legend = hasShell ? legendFor(viewModeToRender(mode)) : [];
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none bg-[var(--bg-base)]">
-      {/* 3D Canvas Mount Point */}
-      <div
-        ref={containerRef}
-        className={`w-full h-full ${
-          isMeasuring ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing"
-        }`}
-      />
-
-      {/* Floating Viewport HUD: Top Left Stats */}
-      <div className="absolute top-3 left-3 z-10 flex items-center gap-2 pointer-events-none">
+    <div className="flex h-full w-full select-none flex-col overflow-hidden bg-[var(--bg-base)]">
+      {/* Mode tabs: Realistic | Wireframe | Confidence. One canonical world, three materials. */}
+      <div className="flex shrink-0 items-center justify-center px-3 py-2" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
         <div
-          className="flex items-center gap-3 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono-num"
-          style={{
-            background: "rgba(10,20,36, 0.78)",
-            border: "1px solid var(--border)",
-            color: "var(--text-secondary)",
-          }}
+          role="group"
+          aria-label="Viewport mode"
+          data-testid="render-mode-group"
+          title={hasShell ? undefined : NO_SHELL_REASON}
+          className="flex items-center gap-1 rounded-lg p-1"
+          style={PANEL}
         >
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
-            <span className="font-semibold text-white tracking-wide">3D WORLDIR</span>
-          </div>
-          <span className="text-neutral-600">|</span>
-          {stats.isLODSampled ? (
-            <span
-              className="text-[#38bdf8]"
-              title={`${stats.renderedPoints.toLocaleString()} rendered / ${stats.canonicalPoints.toLocaleString()} canonical points (LOD strided for interactive WebGL rendering)`}
-            >
-              {stats.renderedPoints.toLocaleString()} / {stats.canonicalPoints.toLocaleString()} pts (LOD)
-            </span>
-          ) : (
-            <span>{stats.points.toLocaleString()} pts</span>
-          )}
-          <span>{stats.entities} entities</span>
-          <span>{stats.cameras} cameras</span>
-        </div>
-
-        {queryMatchingIds !== null && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[var(--accent)]/15 border border-[var(--accent)]/40 text-[var(--accent)] shadow-md">
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-ping" />
-            <span>Query: {queryMatchingIds.size} matching</span>
-          </div>
-        )}
-
-        {isolatedSpaceId && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[#3b82f6]/20 border border-[#3b82f6] text-[#3b82f6] shadow-lg pointer-events-auto">
-            <span>Isolated Space: {isolatedSpaceId}</span>
-            <button
-              type="button"
-              onClick={() => {
-                controllerRef.current?.isolateSpace(null);
-                setIsolatedSpaceId(null);
-              }}
-              className="text-white hover:text-red-300 ml-1 underline cursor-pointer text-[10px]"
-            >
-              Exit [Esc]
-            </button>
-          </div>
-        )}
-
-        {activeLevel !== null && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[#38bdf8]/20 border border-[#38bdf8] text-[#38bdf8] shadow-lg pointer-events-auto">
-            <span>Level {activeLevel} Filter</span>
-            <button
-              type="button"
-              onClick={() => {
-                controllerRef.current?.setLevelFilter(null);
-                setActiveLevel(null);
-              }}
-              className="text-white hover:text-red-300 ml-1 underline cursor-pointer text-[10px]"
-            >
-              Reset
-            </button>
-          </div>
-        )}
-
-        {isMeasuring && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[var(--accent)]/20 border border-[var(--accent)] text-[var(--accent)] shadow-lg pointer-events-auto">
-            <Ruler className="w-3.5 h-3.5" />
-            <span>Measuring: pick points in the viewport</span>
-            <button
-              type="button"
-              onClick={toggleMeasure}
-              className="text-neutral-300 hover:text-white ml-1 cursor-pointer"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-        {/* Partial Reconstruction Alert */}
-        {isReconPartial && (
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-[var(--warning)]/15 border border-[var(--warning)]/40 text-[var(--warning)] shadow-md pointer-events-auto"
-            role="status"
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>
-              Partial Reconstruction: {recon?.cameras_registered ?? 0}/{recon?.cameras_input ?? 0} cams registered
-            </span>
-          </div>
-        )}
-
-        {/* Unconstrained Scale Indicator */}
-        {isUnscaled && !isReconFailed && (
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md backdrop-blur-md text-xs font-mono bg-neutral-900/80 border border-neutral-700 text-neutral-300 shadow-md"
-            title="Spatial model scale is unconstrained or nominal. Relative proportions are accurate, absolute dimensions carry scale variance."
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            <span>Scale Unconstrained</span>
-          </div>
-        )}
-      </div>
-
-      {/* Interactive Measurement HUD Card */}
-      {isMeasuring && (
-        <MeasurementPanel
-          worldId={worldId ?? null}
-          world={world}
-          getController={getController}
-          onClose={toggleMeasure}
-        />
-      )}
-
-      {/* Floating Viewport HUD: Top Right Toolbar Controls */}
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 pointer-events-auto">
-        {/* Render mode: coloured surfaces / wireframe / both (only when a measured room shell exists) */}
-        {hasShell && (
-          <div
-            role="group"
-            aria-label="Room render mode"
-            className="flex items-center gap-1 p-1 rounded-md backdrop-blur-md"
-            style={{ background: "rgba(10,20,36, 0.85)", border: "1px solid var(--border)" }}
-          >
-            {([["solid", "Coloured"], ["wireframe", "Wireframe"], ["both", "Both"]] as const).map(([mode, label]) => (
+          {VIEW_MODES.map(({ id, label }) => {
+            const selected = hasShell && mode === id;
+            return (
               <button
-                key={mode}
+                key={id}
                 type="button"
-                data-testid={`render-mode-${mode}`}
-                aria-pressed={renderMode === mode}
-                onClick={() => {
-                  setRenderModeState(mode);
-                  controllerRef.current?.setRenderMode(mode);
+                data-testid={`render-mode-${id}`}
+                aria-pressed={selected}
+                disabled={!hasShell}
+                onClick={() => changeMode(id)}
+                className="h-8 min-w-[104px] rounded-md px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed cursor-pointer"
+                style={{
+                  color: !hasShell ? "var(--text-tertiary)" : selected ? "var(--accent)" : "var(--text-secondary)",
+                  background: selected ? "var(--accent-subtle)" : "transparent",
+                  border: `1px solid ${selected ? "var(--accent-border)" : "transparent"}`,
                 }}
-                className={`px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-                  renderMode === mode ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
-                }`}
               >
                 {label}
               </button>
-            ))}
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="relative min-h-0 flex-1">
+        {/* 3D Canvas Mount Point */}
+        <div
+          ref={containerRef}
+          className={`w-full h-full ${
+            isMeasuring ? "cursor-crosshair" : tool === "pan" ? "cursor-move" : "cursor-grab active:cursor-grabbing"
+          }`}
+        />
+
+        {/* Top left: stats + state badges */}
+        <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 max-w-[calc(100%-6rem)] pointer-events-none">
+          <div
+            className="flex items-center gap-3 px-3 py-1.5 rounded-md text-xs font-mono-num"
+            style={{ ...PANEL, color: "var(--text-secondary)" }}
+          >
+            {stats.isLODSampled ? (
+              <span
+                className="text-[var(--info)]"
+                title={`${stats.renderedPoints.toLocaleString()} rendered / ${stats.canonicalPoints.toLocaleString()} canonical points (LOD strided for interactive WebGL rendering)`}
+              >
+                {stats.renderedPoints.toLocaleString()} / {stats.canonicalPoints.toLocaleString()} pts (LOD)
+              </span>
+            ) : (
+              <span>{stats.points.toLocaleString()} pts</span>
+            )}
+            <span>{stats.entities} entities</span>
+            <span>{stats.cameras} cameras</span>
+          </div>
+
+          {queryMatchingIds !== null && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-mono bg-[var(--accent-subtle)] border border-[var(--accent-border)] text-[var(--accent)]">
+              <span>Query: {queryMatchingIds.size} matching</span>
+            </div>
+          )}
+
+          {isolatedSpaceId && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono bg-[var(--info-subtle)] border border-[var(--info)] text-[var(--info)] pointer-events-auto">
+              <span>Isolated Space: {isolatedSpaceId}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  controllerRef.current?.isolateSpace(null);
+                  setIsolatedSpaceId(null);
+                }}
+                className="text-[var(--text-primary)] ml-1 underline cursor-pointer text-[10px]"
+              >
+                Exit [Esc]
+              </button>
+            </div>
+          )}
+
+          {activeLevel !== null && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono bg-[var(--info-subtle)] border border-[var(--info)] text-[var(--info)] pointer-events-auto">
+              <span>Level {activeLevel} Filter</span>
+              <button
+                type="button"
+                onClick={() => {
+                  controllerRef.current?.setLevelFilter(null);
+                  setActiveLevel(null);
+                }}
+                className="text-[var(--text-primary)] ml-1 underline cursor-pointer text-[10px]"
+              >
+                Reset
+              </button>
+            </div>
+          )}
+
+          {isMeasuring && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono bg-[var(--accent-subtle)] border border-[var(--accent)] text-[var(--accent)] pointer-events-auto">
+              <Ruler className="w-3.5 h-3.5" />
+              <span>Measuring: pick points in the viewport</span>
+              <button type="button" onClick={toggleMeasure} className="text-[var(--text-secondary)] ml-1 cursor-pointer" aria-label="Stop measuring">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+          {isReconPartial && (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-mono bg-[var(--warning-subtle)] border border-[var(--warning)] text-[var(--warning)] pointer-events-auto"
+              role="status"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>
+                Partial Reconstruction: {recon?.cameras_registered ?? 0}/{recon?.cameras_input ?? 0} cams registered
+              </span>
+            </div>
+          )}
+
+          {isUnscaled && !isReconFailed && (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-mono"
+              style={{ ...PANEL, color: "var(--text-secondary)" }}
+              title="Spatial model scale is unconstrained or nominal. Relative proportions are accurate, absolute dimensions carry scale variance."
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)]" />
+              <span>Scale Unconstrained</span>
+            </div>
+          )}
+        </div>
+
+        {/* Interactive Measurement HUD Card */}
+        {isMeasuring && (
+          <MeasurementPanel
+            worldId={worldId ?? null}
+            world={world}
+            getController={getController}
+            onClose={toggleMeasure}
+          />
+        )}
+
+        {/* Top right: XYZ axis gizmo */}
+        {axes && (
+          <svg
+            width="64" height="64" viewBox="-32 -32 64 64"
+            className="absolute top-3 right-3 z-10 pointer-events-none"
+            role="img" aria-label="Axis gizmo"
+          >
+            {(["x", "y", "z"] as const).map((k) => {
+              const [dx, dy] = axes[k];
+              const color = k === "x" ? "var(--error)" : k === "y" ? "var(--success)" : "var(--info)";
+              return (
+                <g key={k}>
+                  <line x1="0" y1="0" x2={dx * 22} y2={-dy * 22} stroke={color} strokeWidth="1.5" />
+                  <text x={dx * 28} y={-dy * 28 + 3} textAnchor="middle" fontSize="9" fontFamily="var(--font-mono)" fill={color}>
+                    {k.toUpperCase()}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        )}
+
+        {/* Right edge: slim vertical tool column */}
+        <div
+          className="absolute right-3 top-20 z-10 flex flex-col items-center gap-0.5 rounded-lg p-1"
+          style={PANEL}
+          role="toolbar"
+          aria-label="Viewport tools"
+          aria-orientation="vertical"
+        >
+          <IconButton label="Select (click to inspect, drag to orbit)" active={tool === "select"} onClick={() => pickTool("select")}>
+            <MousePointer2 className="w-4 h-4" />
+          </IconButton>
+          <IconButton label="Pan (drag to move the view)" active={tool === "pan"} onClick={() => pickTool("pan")}>
+            <Hand className="w-4 h-4" />
+          </IconButton>
+          <IconButton label="Orbit (drag to rotate, no selection)" active={tool === "orbit"} onClick={() => pickTool("orbit")}>
+            <Orbit className="w-4 h-4" />
+          </IconButton>
+          <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
+          <IconButton label="Zoom in" onClick={() => controllerRef.current?.zoomBy(0.75)}>
+            <ZoomIn className="w-4 h-4" />
+          </IconButton>
+          <IconButton label="Zoom out" onClick={() => controllerRef.current?.zoomBy(1 / 0.75)}>
+            <ZoomOut className="w-4 h-4" />
+          </IconButton>
+          <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
+          <IconButton label="Camera frustums [3]" active={layers.cameras} onClick={() => toggleLayer("cameras")}>
+            <Camera className="w-4 h-4" />
+          </IconButton>
+          <IconButton label="Measure [M]" active={isMeasuring} onClick={toggleMeasure}>
+            <Ruler className="w-4 h-4" />
+          </IconButton>
+        </div>
+
+        {/* Bottom centre: compact toolbar */}
+        <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 max-w-[calc(100%-1.5rem)]">
+          {layersOpen && (
+            <div
+              className="mb-2 mx-auto w-[320px] max-w-full rounded-lg p-2 text-xs"
+              style={{ ...PANEL, color: "var(--text-secondary)" }}
+              role="group"
+              aria-label="Layers and views"
+            >
+              <div className="mb-1.5 flex items-center gap-1">
+                <span className="mr-1 text-[var(--text-tertiary)]">View</span>
+                {([["isometric", "Iso"], ["top", "Top"], ["front", "Front"], ["side", "Side"]] as const).map(([p, l]) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => handlePreset(p)}
+                    className="h-6 rounded px-2 font-mono hover:bg-[var(--bg-hover)] cursor-pointer"
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                {([
+                  ["points", "Points [1]", layers.points, () => toggleLayer("points"), Eye],
+                  ["entities", "Entities [2]", layers.entities, () => toggleLayer("entities"), Box],
+                  ["walls", "Walls [W]", layers.walls, () => toggleLayer("walls"), Layers],
+                  ["topology", "Topology [T]", layers.topology, () => toggleLayer("topology"), Workflow],
+                  ["grid", "Grid [G]", gridVisible, toggleGrid, Grid],
+                  ["oversized", "Noise [O]", layers.oversized, () => toggleLayer("oversized"), AlertTriangle],
+                  ["uncertainty", "Uncertainty [U]", layers.uncertainty, () => toggleLayer("uncertainty"), Sparkles],
+                ] as const).map(([key, label, on, fn, Icon]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={fn}
+                    className="flex h-7 items-center gap-1.5 rounded px-1.5 text-left cursor-pointer hover:bg-[var(--bg-hover)]"
+                    style={{ color: on ? "var(--accent)" : "var(--text-tertiary)" }}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-center gap-0.5 rounded-lg p-1" style={PANEL} role="toolbar" aria-label="Camera and scene">
+            <IconButton label="Isometric view" onClick={() => handlePreset("isometric")}>
+              <Box className="w-4 h-4" />
+            </IconButton>
+            <IconButton label="Fit to scene [F]" onClick={handleFit}>
+              <Maximize2 className="w-4 h-4" />
+            </IconButton>
+            <IconButton label={selectedEntityId ? "Focus selected [F]" : "Focus selected (select something first)"} disabled={!selectedEntityId} onClick={handleFocus}>
+              <Crosshair className="w-4 h-4" />
+            </IconButton>
+            <IconButton label="Save screenshot (PNG)" onClick={handleScreenshot}>
+              <Download className="w-4 h-4" />
+            </IconButton>
+            <div className="mx-0.5 h-5 w-px" style={{ background: "var(--border)" }} />
+            <IconButton
+              label={hasShell ? "Cutaway: hide ceiling and camera-facing walls [C]" : "Cutaway needs a reconstructed room shell"}
+              active={hasShell && cutaway}
+              disabled={!hasShell}
+              onClick={() => changeCutaway(!cutaway)}
+            >
+              <Scissors className="w-4 h-4" />
+            </IconButton>
+            {mode === "wireframe" && hasShell && metersKnown && (
+              <IconButton label="Room dimensions (bounding length, width, height)" active={showDims} onClick={() => setShowDims((v) => !v)}>
+                <MoveHorizontal className="w-4 h-4" />
+              </IconButton>
+            )}
+            <IconButton label="Layers and views" active={layersOpen} onClick={() => setLayersOpen((v) => !v)}>
+              <Layers className="w-4 h-4" />
+            </IconButton>
+            <div className="mx-0.5 h-5 w-px" style={{ background: "var(--border)" }} />
+            <select
+              aria-label="Camera projection"
+              value={ortho ? "ortho" : "persp"}
+              onChange={(e) => changeProjection(e.target.value === "ortho")}
+              className="h-8 rounded border-0 bg-transparent px-1 text-xs cursor-pointer"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <option value="persp" style={{ background: "var(--bg-surface)" }}>Perspective</option>
+              <option value="ortho" style={{ background: "var(--bg-surface)" }}>Orthographic</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Bottom left: legend / honest no-shell notice */}
+        {!hasNoWorldData && (!hasShell || legend.length > 0) && (
+          <div
+            className="absolute bottom-3 left-3 z-10 max-w-[240px] rounded-md px-2.5 py-2 text-[11px] leading-snug pointer-events-none"
+            style={PANEL}
+            data-testid="render-mode-legend"
+          >
+            {!hasShell ? (
+              <span className="text-[var(--warning)]">{NO_SHELL_REASON}</span>
+            ) : (
+              <ul className="space-y-1">
+                {legend.map((item) => (
+                  <li key={item.label} className="flex items-center gap-2 text-[var(--text-secondary)]">
+                    <span
+                      className="inline-block h-3 w-5 shrink-0 rounded-sm border border-[var(--border)]"
+                      style={{
+                        background: item.hatch
+                          ? `repeating-linear-gradient(45deg, rgb(${item.color.join(",")}) 0 3px, rgba(0,0,0,0.55) 3px 5px)`
+                          : `rgb(${item.color.join(",")})`,
+                      }}
+                    />
+                    {item.label}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
-        {/* Layer Visibility Toggles */}
-        <div
-          className="flex items-center gap-1 p-1 rounded-md backdrop-blur-md"
-          style={{
-            background: "rgba(10,20,36, 0.85)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => toggleLayer("points")}
-            title="Toggle Points [1]"
-            aria-label="Toggle point cloud visibility"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.points ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>Pts</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleLayer("entities")}
-            title="Toggle Entities [2]"
-            aria-label="Toggle entities visibility"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.entities ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Box className="w-3.5 h-3.5" />
-            <span>Ent</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleLayer("walls")}
-            title="Toggle Walls [W] (Peel back to inspect interior spaces)"
-            aria-label="Toggle walls visibility"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.walls ? "text-[var(--warning)] bg-[rgba(245,166,35,0.15)]" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Walls</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleLayer("topology")}
-            title="Toggle 3D Spatial Topology Connections [T]"
-            aria-label="Toggle spatial topology graph"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.topology ? "text-[var(--accent)] bg-[rgba(34,184,255,0.15)]" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Workflow className="w-3.5 h-3.5" />
-            <span>Topo</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleLayer("cameras")}
-            title="Toggle Cameras [3]"
-            aria-label="Toggle camera frustums"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.cameras ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Camera className="w-3.5 h-3.5" />
-            <span>Cam</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={toggleGrid}
-            title="Toggle ENU Ground Grid [G]"
-            aria-label="Toggle ground grid"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              gridVisible ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)]" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Grid className="w-3.5 h-3.5" />
-            <span>Grid</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={toggleMeasure}
-            title="Interactive 3D Measurement [M]"
-            aria-label="Toggle measurement mode"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              isMeasuring ? "text-[var(--accent)] bg-[rgba(34,184,255,0.2)] border border-[var(--accent)]/50" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Ruler className="w-3.5 h-3.5" />
-            <span>Measure</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleLayer("oversized")}
-            title="Toggle Oversized Depth Noise [O]"
-            aria-label="Toggle oversized noise"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.oversized ? "text-[var(--warning)] bg-[rgba(245,166,35,0.15)]" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Noise</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => toggleLayer("uncertainty")}
-            title="Toggle Uncertainty Heatmap [U]"
-            aria-label="Toggle uncertainty heatmap"
-            className={`flex items-center gap-1 px-2 h-7 rounded text-xs font-medium transition-colors cursor-pointer ${
-              layers.uncertainty ? "text-[var(--success)] bg-[rgba(34,197,94,0.15)]" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Uncert</span>
-          </button>
+        {/* Bottom right: metric scale bar (+ uncertainty legend when on) */}
+        <div className="absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2 pointer-events-none">
+          {layers.uncertainty && (
+            <div className="px-2.5 py-1.5 rounded-md text-[10px] font-mono flex items-center gap-2" style={{ ...PANEL, color: "var(--text-secondary)" }}>
+              <span>Confidence</span>
+              <span className="h-2 w-2 rounded-full" style={{ background: "var(--conf-low)" }} />
+              <span>low</span>
+              <span className="h-2 w-2 rounded-full" style={{ background: "var(--conf-high)" }} />
+              <span>high</span>
+            </div>
+          )}
+          {scale ? (
+            <div className="flex flex-col items-end gap-1 text-[10px] font-mono" style={{ color: "var(--text-secondary)" }} aria-label="Scale bar">
+              <span>{formatMeters(scale.meters)}</span>
+              <div style={{ width: scale.px, height: 6, borderLeft: "1px solid var(--text-secondary)", borderRight: "1px solid var(--text-secondary)", borderBottom: "1px solid var(--text-secondary)" }} />
+            </div>
+          ) : !metersKnown ? (
+            <span className="text-[10px] font-mono text-[var(--text-tertiary)]">scale unknown (model units)</span>
+          ) : null}
         </div>
-
-        {/* Camera Views & Framing */}
-        <div
-          className="flex items-center gap-1 p-1 rounded-md backdrop-blur-md"
-          style={{
-            background: "rgba(10,20,36, 0.85)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => handlePreset("isometric")}
-            title="Isometric View"
-            aria-label="Isometric camera view"
-            className="p-1.5 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
-          >
-            <Compass className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handlePreset("top")}
-            title="Top-down View"
-            aria-label="Top-down camera view"
-            className="px-1.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
-          >
-            TOP
-          </button>
-          <button
-            type="button"
-            onClick={() => handlePreset("front")}
-            title="Front View"
-            aria-label="Front camera view"
-            className="px-1.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
-          >
-            FRNT
-          </button>
-          <button
-            type="button"
-            onClick={handleFrameAll}
-            title="Frame Selection / All [F]"
-            aria-label="Frame selection or entire world"
-            className="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-[var(--accent)] hover:bg-[rgba(34,184,255,0.12)] transition-colors cursor-pointer"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span>[F]</span>
-          </button>
-        </div>
-      </div>
 
       {/* WebGL Context Loss Banner Overlay */}
       {isContextLost && (
@@ -764,66 +920,6 @@ export default function World3DViewport({
         </div>
       )}
 
-      {/* Bottom overlay: View navigation hint */}
-      <div className="absolute bottom-3 left-3 z-10 pointer-events-none text-[11px] font-mono text-neutral-500">
-        Left-click: Orbit · Right-click: Pan · Scroll: Zoom · Click entity to inspect · [M] Measure · [G] Grid
-      </div>
-
-      {/* Coordinate Orientation Compass & ENU Frame Gizmo */}
-      <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 pointer-events-auto">
-        {/* Uncertainty Heatmap Legend when active */}
-        {layers.uncertainty && (
-          <div className="px-2.5 py-1.5 rounded-md backdrop-blur-md bg-[var(--bg-surface)]/90 border border-neutral-800 text-[10px] font-mono text-neutral-300 flex items-center gap-2 shadow-lg">
-            <span className="text-neutral-400">Confidence:</span>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-[var(--error)]" title="Low / Uncertain (0.0)" />
-              <span className="text-neutral-500">0%</span>
-              <div className="w-12 h-1.5 rounded-full bg-gradient-to-r from-[var(--error)] via-[var(--warning)] to-[var(--success)]" />
-              <span className="text-neutral-500">100%</span>
-              <span className="w-2 h-2 rounded-full bg-[var(--success)]" title="High / Confident (1.0)" />
-            </div>
-          </div>
-        )}
-
-        {/* Orientation Compass Widget */}
-        <div
-          className="p-1.5 rounded-lg backdrop-blur-md bg-[var(--bg-surface)]/90 border border-[var(--border)] shadow-xl flex items-center gap-2 text-[10px] font-mono select-none"
-          title="Metric ENU Coordinate Orientation. Click North to align view."
-        >
-          {/* Circular Compass Dial */}
-          <button
-            type="button"
-            onClick={() => handlePreset("top")}
-            aria-label="Re-align camera to True North"
-            title="Re-align camera to True North (Top-down)"
-            className="w-8 h-8 rounded-full border border-neutral-700 bg-[var(--bg-elevated)] hover:border-[var(--accent)] relative flex items-center justify-center transition-all cursor-pointer group"
-          >
-            {/* North needle rotated by -cameraAngles.azimuthDeg */}
-            <div
-              className="absolute inset-0 flex flex-col items-center justify-between p-1 transition-transform duration-100 ease-out"
-              style={{ transform: `rotate(${-cameraAngles.azimuthDeg}deg)` }}
-            >
-              <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[8px] border-b-[var(--error)]" />
-              <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[8px] border-t-neutral-600" />
-            </div>
-            <span className="text-[8px] font-bold text-neutral-300 group-hover:text-[var(--accent)] z-10">
-              N
-            </span>
-          </button>
-
-          <div className="flex flex-col pr-1">
-            <div className="flex items-center gap-1.5 text-neutral-300">
-              <span className="font-semibold text-white">ENU Frame</span>
-              <span className="text-neutral-500">·</span>
-              <span className="text-[var(--accent)] font-mono">{cameraAngles.azimuthDeg}°</span>
-            </div>
-            <div className="text-[9px] text-neutral-400 flex items-center gap-1 mt-0.5">
-              <span className="text-[var(--error)]" title="East (+X)">+X:E</span>
-              <span className="text-[#3b82f6]" title="North (+Z)">+Z:N</span>
-              <span className="text-[var(--success)]" title="Up (+Y)">+Y:Up</span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

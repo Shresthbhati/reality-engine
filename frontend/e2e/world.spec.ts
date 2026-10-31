@@ -11,6 +11,7 @@ test("seeded world renders the 3D canvas", async ({ page }) => {
 
 test("Build dialog creates a room that lands in the WorldIR", async ({ page, request }) => {
   await page.goto(WORLD);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-build").click();
   const dialog = page.getByRole("dialog", { name: "Build" });
   await expect(dialog).toBeVisible();
@@ -40,6 +41,7 @@ test("Generated panel: widening a built room changes only that room's floor exte
   const id = `${name}-room`;
 
   await page.goto(WORLD);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-build").click();
   const build = page.getByRole("dialog", { name: "Build" });
   await build.getByRole("tab", { name: "room" }).click();
@@ -65,6 +67,7 @@ test("Generated panel: widening a built room changes only that room's floor exte
   };
   const xBefore = floorX(before);
 
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-generated").click();
   const panel = page.getByRole("dialog", { name: "Generated" });
   await panel.getByTestId("generated-list").getByRole("button", { name: new RegExp(name) }).click();
@@ -97,6 +100,7 @@ test("Geospatial Map tab says the local frame is not georeferenced", async ({ pa
 test("Apartment tab: 2-bedroom template -> Find layouts -> Build creates a building and rooms", async ({ page, request }) => {
   const name = `Flat${Date.now()}`;
   await page.goto(WORLD);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-build").click();
   const dialog = page.getByRole("dialog", { name: "Build" });
   await dialog.getByRole("tab", { name: "apartment" }).click();
@@ -132,6 +136,7 @@ test("Building tab: create against the live API -> appears in Generated -> edit 
     (await (await request.get(`${API_URL}/api/worlds/${worldId}/generated`)).json()) as Item[];
 
   await page.goto(WORLD);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-build").click();
   const dialog = page.getByRole("dialog", { name: "Build" });
   await dialog.getByRole("tab", { name: "building" }).click();
@@ -145,6 +150,7 @@ test("Building tab: create against the live API -> appears in Generated -> edit 
 
   await expect.poll(async () => (await generated()).some((g) => g.kind === "building" && g.name === name)).toBe(true);
 
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-generated").click();
   const panel = page.getByRole("dialog", { name: "Generated" });
   const row = panel.getByTestId("generated-list").getByRole("button", { name: new RegExp(name) });
@@ -165,6 +171,7 @@ test("Building tab: create against the live API -> appears in Generated -> edit 
 
 test("Building tab: a server 422 is shown verbatim, never as an empty state", async ({ page }) => {
   await page.goto(WORLD);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-build").click();
   const dialog = page.getByRole("dialog", { name: "Build" });
   await dialog.getByRole("tab", { name: "building" }).click();
@@ -184,6 +191,7 @@ test("District tab: create against the live API -> appears in Generated -> edit 
     (await (await request.get(`${API_URL}/api/worlds/${worldId}/generated`)).json()) as Item[];
 
   await page.goto(WORLD);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-build").click();
   const dialog = page.getByRole("dialog", { name: "Build" });
   await dialog.getByRole("tab", { name: "district" }).click();
@@ -199,6 +207,7 @@ test("District tab: create against the live API -> appears in Generated -> edit 
 
   await expect.poll(async () => (await generated()).some((g) => g.kind === "district" && g.name === name)).toBe(true);
 
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-generated").click();
   const panel = page.getByRole("dialog", { name: "Generated" });
   const row = panel.getByTestId("generated-list").getByRole("button", { name: new RegExp(name) });
@@ -218,6 +227,7 @@ test("District tab: create against the live API -> appears in Generated -> edit 
 
 test("District tab: a server 422 is shown verbatim, never as an empty state", async ({ page }) => {
   await page.goto(WORLD);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-build").click();
   const dialog = page.getByRole("dialog", { name: "Build" });
   await dialog.getByRole("tab", { name: "district" }).click();

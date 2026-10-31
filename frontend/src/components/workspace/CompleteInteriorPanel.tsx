@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Sparkles, X } from "lucide-react";
 import { isApiError } from "@/lib/api/client";
@@ -39,7 +39,7 @@ function errText(err: unknown, fallback: string): string {
 
 /** Toolbar entry + dialog: propose GENERATED interiors inside a reconstructed shell, review the diff, accept or reject.
  * Nothing is committed until Accept. `onChanged` must refetch the WorldIR. */
-export default function CompleteInteriorPanel({ worldId, onChanged }: { worldId: string; onChanged: () => void }) {
+export default function CompleteInteriorPanel({ worldId, onChanged, hideTrigger = false }: { worldId: string; onChanged: () => void; hideTrigger?: boolean }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("interior");
   const [program, setProgram] = useState<CompletionProgram>("studio");
@@ -122,9 +122,19 @@ export default function CompleteInteriorPanel({ worldId, onChanged }: { worldId:
   const current = proposals?.find((p) => p.id === selected) ?? null;
   const pending = current?.status === "proposed";
 
+  // The workstation's Actions menu opens this dialog with a window event.
+  useEffect(() => {
+    const onOpen = () => {
+      setOpen(true);
+      void refresh();
+    };
+    window.addEventListener("open-complete-interior", onOpen);
+    return () => window.removeEventListener("open-complete-interior", onOpen);
+  }, [refresh]);
+
   return (
     <>
-      <button
+      {!hideTrigger && (<button
         type="button"
         onClick={() => {
           setOpen(true);
@@ -132,22 +142,22 @@ export default function CompleteInteriorPanel({ worldId, onChanged }: { worldId:
         }}
         title="Propose a GENERATED interior inside the reconstructed shell"
         data-testid="open-complete"
-        className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
+        className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] transition-colors cursor-pointer"
       >
         <Sparkles className="w-3.5 h-3.5 text-[var(--accent)]" />
         <span className="hidden sm:inline">Complete interior</span>
-      </button>
+      </button>)}
 
       {open && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Complete interior">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/80 p-4" role="dialog" aria-modal="true" aria-label="Complete interior">
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-4 flex flex-col gap-3 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
                 <Sparkles className="w-4 h-4 text-[var(--accent)]" /> Complete interior
                 <span className="text-[10px] font-normal text-[var(--warning)] border border-[var(--warning)] rounded px-1">GENERATED</span>
               </h3>
               <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="cursor-pointer">
-                <X className="w-4 h-4 text-neutral-400" />
+                <X className="w-4 h-4 text-[var(--text-secondary)]" />
               </button>
             </div>
 
@@ -264,12 +274,12 @@ export default function CompleteInteriorPanel({ worldId, onChanged }: { worldId:
               </div>
             )}
             {proposals && proposals.length === 0 && (
-              <p className="text-xs text-neutral-400" data-testid="complete-empty">No proposals yet. Choose a program and Propose.</p>
+              <p className="text-xs text-[var(--text-secondary)]" data-testid="complete-empty">No proposals yet. Choose a program and Propose.</p>
             )}
 
             {current && (
               <section className="rounded border border-dashed border-[var(--warning)] p-2.5 flex flex-col gap-2" data-testid="complete-diff" aria-label="Proposal diff">
-                <h4 className="text-xs font-semibold text-white flex items-center gap-2">
+                <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
                   Existing vs proposed
                   <span className="text-[10px] font-normal text-[var(--warning)] border border-[var(--warning)] rounded px-1">{statusBadge(current.status)}</span>
                 </h4>
@@ -279,7 +289,7 @@ export default function CompleteInteriorPanel({ worldId, onChanged }: { worldId:
                 </p>
                 <p className="text-[11px] text-[var(--text-secondary)]">Program: {programLine(current.summary.program.rooms)}; entrance {current.summary.program.entrance}.</p>
                 {diffError && <p role="alert" className="text-xs text-[var(--error)]">{diffError}</p>}
-                {!diff && !diffError && <p className="text-xs text-neutral-400 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Computing diff…</p>}
+                {!diff && !diffError && <p className="text-xs text-[var(--text-secondary)] flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Computing diff…</p>}
                 {diff && diff.proposal_id === current.id && (
                   <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs text-[var(--text-primary)]">
                     <dt className="text-[var(--text-secondary)]">Change</dt>
@@ -315,7 +325,7 @@ export default function CompleteInteriorPanel({ worldId, onChanged }: { worldId:
                     type="button"
                     onClick={() => void decide("reject", current.id)}
                     disabled={!pending || deciding !== null}
-                    className="flex-1 h-9 rounded-md text-sm font-medium border border-[var(--border)] text-neutral-300 hover:text-white disabled:opacity-40 cursor-pointer"
+                    className="flex-1 h-9 rounded-md text-sm font-medium border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40 cursor-pointer"
                   >
                     Reject
                   </button>

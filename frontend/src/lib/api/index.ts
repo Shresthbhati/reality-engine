@@ -18,8 +18,10 @@ export * from "./platform";
 export * from "./unsupported";
 export * from "./worldir";
 export * from "./reconstructions";
+export * from "./scale";
 export * from "./version-evidence";
 export * from "./reconstruction-decision";
+export * from "./sites";
 export * from "./hooks";
 
 /**

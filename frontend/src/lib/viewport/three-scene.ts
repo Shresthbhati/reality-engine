@@ -11,7 +11,8 @@ import type {
 } from "@/types/worldir";
 import { pointsBounds, robustPointsBounds } from "./loaders";
 import { isOversizedEntity } from "./oversized";
-import { buildRoomShellParts, type ShellKind, type ShellPart } from "./room-shell-model";
+import { atlasUrl, buildRoomShellParts, partMaterial, DEFAULT_CONF_PALETTE, type ConfidencePalette, type ShellKind, type ShellPart, type ShellRenderMode } from "./room-shell-model";
+import { centroid, cutawayHides, dollyForFov, nearestCenter, parseHexColor, upAxisOf, ORTHO_FOV, PERSPECTIVE_FOV } from "./view-model";
 import { shouldAutoFrame } from "./autoframe";
 import type { MeasureKind, Vec3 } from "./measure-model";
 
@@ -28,7 +29,7 @@ export interface ViewportLayers {
   shell: boolean;
 }
 
-export type RenderMode = "solid" | "wireframe" | "both";
+export type RenderMode = ShellRenderMode;
 
 export type ViewPreset = "isometric" | "top" | "front" | "side";
 
@@ -92,6 +93,42 @@ function renderWeightFor(confidence: unknown): number {
     : UNRECORDED_RENDER_WEIGHT;
 }
 
+type RGB = [number, number, number];
+
+/** Scene colours come from the :root CSS tokens (globals.css); the fallbacks are the same values. */
+interface ScenePalette { bg: RGB; gridMajor: RGB; gridMinor: RGB; text: RGB; textSecondary: RGB; accent: RGB; conf: ConfidencePalette }
+
+function readPalette(): ScenePalette {
+  const css = typeof document !== "undefined" ? getComputedStyle(document.documentElement) : null;
+  const get = (name: string, fb: RGB): RGB => parseHexColor(css?.getPropertyValue(name)) ?? fb;
+  return {
+    bg: get("--bg-base", [23, 25, 24]),
+    gridMajor: get("--border", [59, 65, 59]),
+    gridMinor: get("--border-subtle", [46, 51, 46]),
+    text: get("--text-primary", [236, 237, 230]),
+    textSecondary: get("--text-secondary", [162, 166, 154]),
+    accent: get("--accent", [197, 138, 96]),
+    conf: {
+      low: get("--conf-low", DEFAULT_CONF_PALETTE.low),
+      mid: get("--warning", DEFAULT_CONF_PALETTE.mid),
+      high: get("--conf-high", DEFAULT_CONF_PALETTE.high),
+      unknown: get("--conf-unknown", DEFAULT_CONF_PALETTE.unknown),
+    },
+  };
+}
+const hex = (c: RGB) => (c[0] << 16) | (c[1] << 8) | c[2];
+
+export type PointerTool = "select" | "pan" | "orbit";
+export interface CameraInfo {
+  azimuthDeg: number;
+  elevationDeg: number;
+  /** camera right / up in world space, for the axis gizmo */
+  right: RGB;
+  up: RGB;
+  /** world metres per CSS pixel at the orbit target (scale bar) */
+  metersPerPx: number;
+}
+
 export class WorldSceneController {
   private container: HTMLElement;
   private scene: THREE.Scene;
@@ -113,9 +150,25 @@ export class WorldSceneController {
   };
 
   private shellParts: ShellPart[] = [];
+  /** atlas uri -> loaded texture, "loading", or "failed" (a failed atlas falls back to the flat/striped material) */
+  private atlasCache = new Map<string, THREE.Texture | "loading" | "failed">();
   private shellSolid: THREE.Object3D[] = [];
   private shellWire: THREE.Object3D[] = [];
   private renderMode: RenderMode = "solid";
+  /**
+   * All world content lives under `root`. Scene space is Y-up; a world compiled Z-up (metadata.compiled_from.up) is
+   * stood upright by rotating this group, so data coordinates (measurements, saved points) stay in the data frame.
+   */
+  private root = new THREE.Group();
+  private palette: ScenePalette = readPalette();
+  private shellMeta: Array<{ center: RGB; roomCenter: RGB }> = [];
+  private cutaway = false;
+  private hiddenEntityIds = new Set<string>();
+  /** entities whose every shell part is currently hidden (cutaway / explicit hide): their picking proxy is skipped */
+  private shellHiddenEntities = new Set<string>();
+  private selectionEnabled = true;
+  private dimGroup: THREE.Group | null = null;
+  private showDimensions = false;
 
   private entityMeshes = new Map<string, THREE.Mesh>();
   private selectedEntityId: string | null = null;
@@ -153,7 +206,7 @@ export class WorldSceneController {
   private onSelectCallback?: (id: string | null) => void;
   private onHoverCallback?: (id: string | null) => void;
   private onMeasureCallback?: (res: MeasurementResult | null) => void;
-  private onCameraChangeCallback?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
+  private onCameraChangeCallback?: (info: CameraInfo) => void;
   private onContextLossChangeCallback?: (isLost: boolean) => void;
 
   private cameraAnimation: {
@@ -166,6 +219,7 @@ export class WorldSceneController {
   } | null = null;
   private lastAzimuthDeg = -1;
   private lastElevationDeg = -1;
+  private lastMppKey = -1;
 
   // Spatial context & measurement tools
   private gridHelper: THREE.GridHelper | null = null;
@@ -186,10 +240,10 @@ export class WorldSceneController {
     this.container = container;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x08090b);
+    this.scene.background = new THREE.Color(hex(this.palette.bg));
 
     // Grid & Coordinate Frame
-    this.gridHelper = new THREE.GridHelper(20, 20, 0x1f222b, 0x151821);
+    this.gridHelper = new THREE.GridHelper(20, 20, hex(this.palette.gridMajor), hex(this.palette.gridMinor));
     this.gridHelper.position.y = -0.01;
     this.scene.add(this.gridHelper);
 
@@ -197,13 +251,16 @@ export class WorldSceneController {
     this.axesHelper = new THREE.AxesHelper(1.5);
     (this.axesHelper.material as THREE.Material).depthTest = false;
     this.axesHelper.renderOrder = 1;
+    this.axesHelper.visible = false; // the HUD axis gizmo replaces it
     this.scene.add(this.axesHelper);
+
+    this.scene.add(this.root);
 
     // Measurement group
     this.measurementGroup = new THREE.Group();
-    this.scene.add(this.measurementGroup);
+    this.root.add(this.measurementGroup);
     this.annotationGroup = new THREE.Group();
-    this.scene.add(this.annotationGroup);
+    this.root.add(this.annotationGroup);
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
@@ -213,7 +270,7 @@ export class WorldSceneController {
     dirLight1.position.set(6, 14, 5);
     this.scene.add(dirLight1);
 
-    const dirLight2 = new THREE.DirectionalLight(0x6080a0, 0.4);
+    const dirLight2 = new THREE.DirectionalLight(hex(this.palette.textSecondary), 0.4);
     dirLight2.position.set(-6, -8, -5);
     this.scene.add(dirLight2);
 
@@ -246,7 +303,7 @@ export class WorldSceneController {
     onSelect?: (id: string | null) => void;
     onHover?: (id: string | null) => void;
     onMeasure?: (res: MeasurementResult | null) => void;
-    onCameraChange?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
+    onCameraChange?: (info: CameraInfo) => void;
     onContextLossChange?: (isLost: boolean) => void;
   }) {
     this.onSelectCallback = callbacks.onSelect;
@@ -479,6 +536,8 @@ export class WorldSceneController {
     this.pointsData = points;
     this.camerasData = cameras;
     this.meshData = mesh;
+    this.root.rotation.x = upAxisOf(world) === "z" ? -Math.PI / 2 : 0;
+    this.root.updateMatrixWorld(true);
 
     this.rebuildScene();
   }
@@ -486,13 +545,13 @@ export class WorldSceneController {
   private clearSceneLayers() {
     this.renderedPointsCount = 0;
     if (this.layers.points) {
-      this.scene.remove(this.layers.points);
+      this.root.remove(this.layers.points);
       this.layers.points.geometry.dispose();
       (this.layers.points.material as THREE.Material).dispose();
       this.layers.points = null;
     }
     if (this.layers.entities) {
-      this.scene.remove(this.layers.entities);
+      this.root.remove(this.layers.entities);
       for (const mesh of this.entityMeshes.values()) {
         mesh.traverse((child) => {
           if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
@@ -509,7 +568,7 @@ export class WorldSceneController {
       this.layers.entities = null;
     }
     if (this.layers.shell) {
-      this.scene.remove(this.layers.shell);
+      this.root.remove(this.layers.shell);
       this.layers.shell.traverse((child) => {
         if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
           child.geometry.dispose();
@@ -521,7 +580,7 @@ export class WorldSceneController {
       this.shellWire = [];
     }
     if (this.layers.cameras) {
-      this.scene.remove(this.layers.cameras);
+      this.root.remove(this.layers.cameras);
       this.layers.cameras.traverse((child) => {
         if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
           child.geometry.dispose();
@@ -535,19 +594,19 @@ export class WorldSceneController {
       this.layers.cameras = null;
     }
     if (this.layers.mesh) {
-      this.scene.remove(this.layers.mesh);
+      this.root.remove(this.layers.mesh);
       this.layers.mesh.geometry.dispose();
       (this.layers.mesh.material as THREE.Material).dispose();
       this.layers.mesh = null;
     }
     if (this.layers.selectionOutline) {
-      this.scene.remove(this.layers.selectionOutline);
+      this.root.remove(this.layers.selectionOutline);
       this.layers.selectionOutline.geometry.dispose();
       (this.layers.selectionOutline.material as THREE.Material).dispose();
       this.layers.selectionOutline = null;
     }
     if (this.layers.topology) {
-      this.scene.remove(this.layers.topology);
+      this.root.remove(this.layers.topology);
       this.layers.topology.traverse((child) => {
         if (child instanceof THREE.Line || child instanceof THREE.Mesh) {
           child.geometry.dispose();
@@ -564,6 +623,7 @@ export class WorldSceneController {
 
   public rebuildScene() {
     this.clearSceneLayers();
+    this.disposeDimensions();
 
     // 1. Build Point Cloud
     if (this.pointsData && this.pointsData.length > 0) {
@@ -613,7 +673,7 @@ export class WorldSceneController {
         })
       );
       this.layers.points.visible = this.layerVisibility.points;
-      this.scene.add(this.layers.points);
+      this.root.add(this.layers.points);
 
       // Frame camera based on robust bounds of canonical source data
       const rb = robustPointsBounds(this.pointsData);
@@ -629,6 +689,7 @@ export class WorldSceneController {
     }
 
     // 1.5 Real room shell from measured interior semantics (replaces the faint per-entity boxes where it applies)
+    this.atlasCache.clear();
     this.shellParts = buildRoomShellParts(this.world);
     this.buildShell();
 
@@ -714,7 +775,7 @@ export class WorldSceneController {
         this.entityMeshes.set(e.id, mesh);
       }
 
-      this.scene.add(this.layers.entities);
+      this.root.add(this.layers.entities);
       this.updateMeshVisibilities();
 
       // Procedural worlds have no cloud to seed the camera; frame once per world so a large scene is on-screen.
@@ -796,7 +857,7 @@ export class WorldSceneController {
       this.layers.cameras.add(frustumLines);
 
       this.layers.cameras.visible = this.layerVisibility.cameras;
-      this.scene.add(this.layers.cameras);
+      this.root.add(this.layers.cameras);
     }
 
     // 4. Build Reconstructed Mesh (if available)
@@ -816,7 +877,7 @@ export class WorldSceneController {
         })
       );
       this.layers.mesh.visible = this.layerVisibility.mesh;
-      this.scene.add(this.layers.mesh);
+      this.root.add(this.layers.mesh);
     }
 
     // Reselect previous entity if still exists
@@ -838,20 +899,23 @@ export class WorldSceneController {
     this.shellWire = [];
     if (!this.shellParts.length) return;
     const group = new THREE.Group();
+    // thin warm-light architectural lines; furniture in the accent so it reads apart from the structure
     const WIRE: Record<ShellKind, number> = {
-      floor: 0x9ad1ff, wall: 0x7fd6ff, ceiling: 0xcfe9ff, false_ceiling: 0xfff0b3, ceiling_step: 0xffd27f,
-      window_glass: 0x66ccff, window_frame: 0xffffff, furniture: 0xffb36b,
+      floor: hex(this.palette.textSecondary), wall: hex(this.palette.text), ceiling: hex(this.palette.textSecondary),
+      false_ceiling: hex(this.palette.textSecondary), ceiling_step: hex(this.palette.textSecondary),
+      window_glass: hex(this.palette.textSecondary), window_frame: hex(this.palette.text), furniture: hex(this.palette.accent),
     };
+    this.shellMeta = [];
+    const floorCenters = this.shellParts.filter((p) => p.kind === "floor").map((p) => this.toScene(centroid(p.positions) as RGB));
     for (const part of this.shellParts) {
+      const center = this.toScene(centroid(part.positions) as RGB);
+      this.shellMeta.push({ center, roomCenter: nearestCenter(center, floorCenters) as RGB });
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.Float32BufferAttribute(part.positions, 3));
       geo.setIndex(part.indices);
+      if (part.texture) geo.setAttribute("uv", new THREE.Float32BufferAttribute(part.texture.uvs, 2));
       geo.computeVertexNormals();
-      const color = new THREE.Color(part.color[0] / 255, part.color[1] / 255, part.color[2] / 255).convertSRGBToLinear();
-      const solid = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-        color, side: THREE.DoubleSide, transparent: part.opacity < 1, opacity: part.opacity,
-        depthWrite: part.opacity >= 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
-      }));
+      const solid = new THREE.Mesh(geo, this.shellMaterial(part));
       solid.userData = { entityId: part.entityId, shellKind: part.kind };
       const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), new THREE.LineBasicMaterial({
         color: WIRE[part.kind], transparent: part.kind === "window_glass", opacity: part.kind === "window_glass" ? 0.8 : 1,
@@ -863,14 +927,251 @@ export class WorldSceneController {
     }
     group.visible = this.layerVisibility.shell;
     this.layers.shell = group;
-    this.scene.add(group);
+    this.root.add(group);
     this.applyRenderMode();
+    this.buildDimensions();
+  }
+
+  /**
+   * One material per part per mode. Geometry is never touched: modes differ only in this material (colour, stripe
+   * overlay) and in which of the solid / edge objects are visible.
+   */
+  /** The loaded atlas for a part, or null while loading / after a failure (then the part uses its flat/striped fallback). */
+  private atlasFor(part: ShellPart): THREE.Texture | null {
+    const uri = part.texture?.uri;
+    if (!uri) return null;
+    const hit = this.atlasCache.get(uri);
+    if (hit && hit !== "loading" && hit !== "failed") return hit;
+    if (hit === undefined) {
+      const url = atlasUrl(uri, this.world?.id);
+      if (!url) { this.atlasCache.set(uri, "failed"); return null; }
+      this.atlasCache.set(uri, "loading");
+      new THREE.TextureLoader().load(
+        url,
+        (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.anisotropy = 4;
+          this.atlasCache.set(uri, tex);
+          this.applyRenderMode();
+        },
+        undefined,
+        () => { this.atlasCache.set(uri, "failed"); this.applyRenderMode(); },
+      );
+    }
+    return null;
+  }
+
+  private shellMaterial(part: ShellPart): THREE.MeshLambertMaterial {
+    // Textured only once its atlas is actually loaded; until then / on failure the honest flat (striped) fallback shows.
+    const atlas = part.texture && this.renderMode !== "confidence" ? this.atlasFor(part) : null;
+    const m = partMaterial(atlas ? part : { ...part, texture: undefined }, this.renderMode, this.palette.conf);
+    if (atlas) {
+      // alpha=0 atlas texels are unobserved: they stay transparent (alphaTest), never inpainted or tinted
+      return new THREE.MeshLambertMaterial({
+        map: atlas, color: 0xffffff, side: THREE.DoubleSide, alphaTest: 0.02, transparent: m.opacity < 1, opacity: m.opacity,
+        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      });
+    }
+    const color = new THREE.Color(m.color[0] / 255, m.color[1] / 255, m.color[2] / 255).convertSRGBToLinear();
+    const mat = new THREE.MeshLambertMaterial({
+      color, side: THREE.DoubleSide, transparent: m.opacity < 1, opacity: m.opacity,
+      depthWrite: m.opacity >= 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+    });
+    if (m.hatch) {
+      // diagonal dark stripes in world space (0.25 m period): "not measured" / "inferred" overlay
+      mat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace("#include <common>", "#include <common>\nvarying vec3 vHatchPos;")
+          .replace("#include <begin_vertex>", "#include <begin_vertex>\nvHatchPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+        shader.fragmentShader = shader.fragmentShader
+          .replace("#include <common>", "#include <common>\nvarying vec3 vHatchPos;")
+          .replace("#include <dithering_fragment>",
+            "#include <dithering_fragment>\nif (fract((vHatchPos.x + vHatchPos.y + vHatchPos.z) / 0.25) < 0.4) gl_FragColor.rgb *= 0.45;");
+      };
+      mat.customProgramCacheKey = () => "shell-hatch";
+    }
+    return mat;
   }
 
   private applyRenderMode() {
-    // solid = coloured surfaces only; wireframe = edges only; both = surfaces with edge overlay
-    this.shellSolid.forEach((o) => { o.visible = this.renderMode !== "wireframe"; });
-    this.shellWire.forEach((o) => { o.visible = this.renderMode !== "solid"; });
+    // solid = coloured; wireframe = edges only; both = coloured + edges; confidence = confidence-coloured + faint edges
+    this.shellSolid.forEach((o, i) => {
+      const mesh = o as THREE.Mesh;
+      (mesh.material as THREE.Material).dispose();
+      mesh.material = this.shellMaterial(this.shellParts[i]);
+    });
+    this.refreshShellVisibility();
+    this.refreshDimensions();
+  }
+
+  /** Mode visibility x explicit hides x cutaway (a selected entity is always revealed, even a cut-away wall). */
+  public refreshShellVisibility() {
+    const camPos: RGB = [this.camera.position.x, this.camera.position.y, this.camera.position.z];
+    const total = new Map<string, number>();
+    const hidden = new Map<string, number>();
+    this.shellParts.forEach((part, i) => {
+      const meta = this.shellMeta[i];
+      const forced = part.entityId === this.selectedEntityId;
+      const userHidden = this.hiddenEntityIds.has(part.entityId);
+      const cut = this.cutaway && !forced && !!meta && cutawayHides(part.kind, meta.center, meta.roomCenter, camPos);
+      const show = !userHidden && !cut;
+      this.shellSolid[i].visible = show && this.renderMode !== "wireframe";
+      this.shellWire[i].visible = show && this.renderMode !== "solid";
+      total.set(part.entityId, (total.get(part.entityId) ?? 0) + 1);
+      if (!show) hidden.set(part.entityId, (hidden.get(part.entityId) ?? 0) + 1);
+    });
+    this.shellHiddenEntities = new Set([...total].filter(([id, n]) => hidden.get(id) === n).map(([id]) => id));
+  }
+
+  public setCutaway(on: boolean) {
+    this.cutaway = on;
+    this.refreshShellVisibility();
+  }
+
+  public getCutaway(): boolean {
+    return this.cutaway;
+  }
+
+  public setHiddenEntities(ids: Set<string> | null) {
+    this.hiddenEntityIds = new Set(ids ?? []);
+    this.refreshShellVisibility();
+    this.updateMeshVisibilities();
+  }
+
+  public setPointerTool(tool: PointerTool) {
+    this.selectionEnabled = tool === "select";
+    this.controls.mouseButtons.LEFT = tool === "pan" ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+  }
+
+  /** data-frame point -> scene (Y-up) point */
+  private toScene(p: RGB): RGB {
+    const v = this.root.localToWorld(new THREE.Vector3(p[0], p[1], p[2]));
+    return [v.x, v.y, v.z];
+  }
+
+  public setShowDimensions(on: boolean) {
+    this.showDimensions = on;
+    this.refreshDimensions();
+  }
+
+  private disposeDimensions() {
+    if (!this.dimGroup) return;
+    this.scene.remove(this.dimGroup);
+    this.dimGroup.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose();
+      const mat = m.material as (THREE.Material & { map?: THREE.Texture | null }) | undefined;
+      mat?.map?.dispose();
+      mat?.dispose();
+    });
+    this.dimGroup = null;
+  }
+
+  private refreshDimensions() {
+    if (this.dimGroup) this.dimGroup.visible = this.showDimensions && this.renderMode === "wireframe";
+  }
+
+  /** Bounding length / width / height of the measured shell. Built once per shell; shown in wireframe when requested. */
+  private buildDimensions() {
+    this.disposeDimensions();
+    const box = new THREE.Box3();
+    for (const p of this.shellParts) {
+      if (p.kind !== "floor" && p.kind !== "wall" && p.kind !== "ceiling") continue;
+      for (let i = 0; i < p.positions.length; i += 3) box.expandByPoint(this.root.localToWorld(new THREE.Vector3(p.positions[i], p.positions[i + 1], p.positions[i + 2])));
+    }
+    if (box.isEmpty()) return;
+    const g = new THREE.Group();
+    const lineMat = new THREE.LineBasicMaterial({ color: hex(this.palette.accent) });
+    const o = 0.3;
+    const { min, max } = box;
+    const dims: Array<{ a: THREE.Vector3; b: THREE.Vector3; text: string }> = [
+      { a: new THREE.Vector3(min.x, min.y, max.z + o), b: new THREE.Vector3(max.x, min.y, max.z + o), text: `${(max.x - min.x).toFixed(2)} m` },
+      { a: new THREE.Vector3(max.x + o, min.y, min.z), b: new THREE.Vector3(max.x + o, min.y, max.z), text: `${(max.z - min.z).toFixed(2)} m` },
+      { a: new THREE.Vector3(min.x - o, min.y, min.z - o), b: new THREE.Vector3(min.x - o, max.y, min.z - o), text: `${(max.y - min.y).toFixed(2)} m` },
+    ];
+    for (const d of dims) {
+      g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([d.a, d.b]), lineMat));
+      const sprite = this.textSprite(d.text);
+      sprite.position.copy(d.a).add(d.b).multiplyScalar(0.5);
+      g.add(sprite);
+    }
+    g.visible = false;
+    this.dimGroup = g;
+    this.scene.add(g);
+    this.refreshDimensions();
+  }
+
+  private textSprite(text: string): THREE.Sprite {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 64;
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = `rgb(${this.palette.bg.join(",")})`;
+      ctx.fillRect(0, 0, 256, 64);
+      ctx.fillStyle = `rgb(${this.palette.text.join(",")})`;
+      ctx.font = "600 34px ui-monospace, Consolas, monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, 128, 34);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+    sprite.scale.set(0.8, 0.2, 1);
+    sprite.renderOrder = 5;
+    return sprite;
+  }
+
+  // ---- camera: projection, zoom, screenshot ---------------------------------------------------------------------
+
+  /** ponytail: orthographic = narrow-FOV perspective at the same framing (see view-model ORTHO_FOV). */
+  public setOrthographic(on: boolean) {
+    const to = on ? ORTHO_FOV : PERSPECTIVE_FOV;
+    if (this.camera.fov === to) return;
+    const target = this.controls.target;
+    const dir = this.camera.position.clone().sub(target);
+    const d = dir.length() || 5;
+    dir.normalize().multiplyScalar(dollyForFov(d, this.camera.fov, to));
+    this.cameraAnimation = null;
+    const k = dollyForFov(1, PERSPECTIVE_FOV, to);
+    this.camera.fov = to;
+    this.camera.far = 5000 * k;
+    this.controls.minDistance = 0.2 * k;
+    this.controls.maxDistance = 200 * k;
+    this.camera.position.copy(target).add(dir);
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+  }
+
+  public isOrthographic(): boolean {
+    return this.camera.fov < PERSPECTIVE_FOV;
+  }
+
+  /** Distance multiplier that keeps perspective-calibrated framing valid at the current FOV. */
+  private fovScale(): number {
+    return dollyForFov(1, PERSPECTIVE_FOV, this.camera.fov);
+  }
+
+  public zoomBy(factor: number) {
+    if (this.isContextLost) return;
+    this.cameraAnimation = null;
+    const target = this.controls.target;
+    const off = this.camera.position.clone().sub(target);
+    const d = Math.min(this.controls.maxDistance, Math.max(this.controls.minDistance, off.length() * factor));
+    this.camera.position.copy(target).add(off.setLength(d));
+    this.controls.update();
+  }
+
+  public captureImage(): string | null {
+    if (this.isContextLost) return null;
+    this.renderer.render(this.scene, this.camera);
+    return this.renderer.domElement.toDataURL("image/png");
+  }
+
+  public getMetersPerPixel(): number {
+    const h = this.container.clientHeight || 600;
+    return (2 * this.camera.position.distanceTo(this.controls.target) * Math.tan((this.camera.fov * Math.PI) / 360)) / h;
   }
 
   public setRenderMode(mode: RenderMode) {
@@ -1028,6 +1329,11 @@ export class WorldSceneController {
 
       const matchesLevel = this.isEntityOnActiveLevel(eid);
 
+      if (this.hiddenEntityIds.has(eid)) {
+        mesh.visible = false;
+        continue;
+      }
+
       if (mesh.userData.coveredByShell && this.layers.shell) {
         // the shell draws this entity; keep the box only as an invisible picking proxy
         mesh.visible = true;
@@ -1077,7 +1383,7 @@ export class WorldSceneController {
   public renderSpatialTopology(selectedEntityId: string | null) {
     if (this.isContextLost) return;
     if (this.layers.topology) {
-      this.scene.remove(this.layers.topology);
+      this.root.remove(this.layers.topology);
       this.layers.topology.traverse((child) => {
         if (child instanceof THREE.Line || child instanceof THREE.Mesh) {
           child.geometry.dispose();
@@ -1168,7 +1474,7 @@ export class WorldSceneController {
       }
       if (topologyGroup.children.length > 0) {
         this.layers.topology = topologyGroup;
-        this.scene.add(topologyGroup);
+        this.root.add(topologyGroup);
       }
       return;
     }
@@ -1460,7 +1766,7 @@ export class WorldSceneController {
 
     this.layers.topology = topologyGroup;
     this.layers.topology.visible = this.layerVisibility.topology;
-    this.scene.add(this.layers.topology);
+    this.root.add(this.layers.topology);
   }
 
   public setCorrectionPreview(
@@ -1533,7 +1839,7 @@ export class WorldSceneController {
 
     // Reset outline
     if (this.layers.selectionOutline) {
-      this.scene.remove(this.layers.selectionOutline);
+      this.root.remove(this.layers.selectionOutline);
       this.layers.selectionOutline.geometry.dispose();
       (this.layers.selectionOutline.material as THREE.Material).dispose();
       this.layers.selectionOutline = null;
@@ -1542,21 +1848,21 @@ export class WorldSceneController {
     for (const [eid, mesh] of this.entityMeshes.entries()) {
       const mat = mesh.material as THREE.MeshLambertMaterial;
       const isSel = eid === id;
-      mat.emissive = new THREE.Color(isSel ? 0x00e5ff : 0x000000);
+      mat.emissive = new THREE.Color(isSel ? hex(this.palette.accent) : 0x000000);
       mat.emissiveIntensity = isSel ? 0.6 : 0;
 
       if (isSel) {
         // Create prominent bright selection outline
         const wireGeo = new THREE.EdgesGeometry(mesh.geometry);
         const wireMat = new THREE.LineBasicMaterial({
-          color: 0x00e5ff,
+          color: hex(this.palette.accent),
           linewidth: 2,
           transparent: true,
           opacity: 0.95,
         });
         this.layers.selectionOutline = new THREE.LineSegments(wireGeo, wireMat);
         this.layers.selectionOutline.position.copy(mesh.position);
-        this.scene.add(this.layers.selectionOutline);
+        this.root.add(this.layers.selectionOutline);
 
         if (updateCamera) {
           this.flyToEntity(id);
@@ -1565,10 +1871,11 @@ export class WorldSceneController {
     }
 
     this.renderSpatialTopology(id);
+    this.refreshShellVisibility(); // a selected (cut-away) wall is revealed
     this.onSelectCallback?.(id);
   }
 
-  private animateCameraTo(endPos: THREE.Vector3, endTarget: THREE.Vector3, duration = 380) {
+  private animateCameraTo(endPos: THREE.Vector3, endTarget: THREE.Vector3, duration = 380, scale = true) {
     if (
       !Number.isFinite(endPos.x) ||
       !Number.isFinite(endPos.y) ||
@@ -1579,6 +1886,8 @@ export class WorldSceneController {
     ) {
       return;
     }
+    const k = scale ? this.fovScale() : 1;
+    if (k !== 1) endPos = endTarget.clone().add(endPos.clone().sub(endTarget).multiplyScalar(k));
     this.cameraAnimation = {
       startPos: this.camera.position.clone(),
       endPos: endPos.clone(),
@@ -1599,8 +1908,9 @@ export class WorldSceneController {
     const dir = new THREE.Vector3(0.8, 0.55, 0.8).normalize();
     const d = Math.max(1.2, size * 1.45);
 
-    const endPos = mesh.position.clone().addScaledVector(dir, d);
-    const endTarget = mesh.position.clone();
+    const meshPos = mesh.getWorldPosition(new THREE.Vector3());
+    const endPos = meshPos.clone().addScaledVector(dir, d);
+    const endTarget = meshPos.clone();
 
     if (animate) {
       this.animateCameraTo(endPos, endTarget, 350);
@@ -1626,13 +1936,9 @@ export class WorldSceneController {
       cam.rotation_wxyz[3],
       cam.rotation_wxyz[0]
     );
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-    const endPos = new THREE.Vector3(p[0], p[1], p[2]);
-    const endTarget = new THREE.Vector3(
-      p[0] + forward.x * 2.5,
-      p[1] + forward.y * 2.5,
-      p[2] + forward.z * 2.5
-    );
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat).transformDirection(this.root.matrixWorld);
+    const endPos = this.root.localToWorld(new THREE.Vector3(p[0], p[1], p[2]));
+    const endTarget = endPos.clone().addScaledVector(forward, 2.5);
 
     if (animate) {
       this.animateCameraTo(endPos, endTarget, 380);
@@ -1647,8 +1953,8 @@ export class WorldSceneController {
   public flyToPosition(x: number, y: number, z: number, animate = true) {
     if (this.isContextLost) return;
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-    const endPos = new THREE.Vector3(x + 2.5, y + 2, z + 2.5);
-    const endTarget = new THREE.Vector3(x, y, z);
+    const endTarget = this.root.localToWorld(new THREE.Vector3(x, y, z));
+    const endPos = endTarget.clone().add(new THREE.Vector3(2.5, 2, 2.5));
     if (animate) {
       this.animateCameraTo(endPos, endTarget, 350);
     } else {
@@ -1671,7 +1977,7 @@ export class WorldSceneController {
     const endPos = new THREE.Vector3(position[0], position[1], position[2]);
     const endTarget = new THREE.Vector3(target[0], target[1], target[2]);
     if (animate) {
-      this.animateCameraTo(endPos, endTarget, 400);
+      this.animateCameraTo(endPos, endTarget, 400, false);
     } else {
       this.camera.position.copy(endPos);
       this.controls.target.copy(endTarget);
@@ -1686,12 +1992,8 @@ export class WorldSceneController {
 
     if (this.pointsData && this.pointsData.length > 0) {
       const rb = robustPointsBounds(this.pointsData);
-      endPos = new THREE.Vector3(
-        rb.center[0] + rb.extent * 1.2,
-        rb.center[1] + rb.extent * 0.7,
-        rb.center[2] + rb.extent * 1.2
-      );
-      endTarget = new THREE.Vector3(rb.center[0], rb.center[1], rb.center[2]);
+      endTarget = this.root.localToWorld(new THREE.Vector3(rb.center[0], rb.center[1], rb.center[2]));
+      endPos = endTarget.clone().addScalar(rb.extent * 1.0);
     } else if (this.entityMeshes.size > 0) {
       const box = new THREE.Box3();
       for (const mesh of this.entityMeshes.values()) {
@@ -1700,9 +2002,9 @@ export class WorldSceneController {
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3()).length();
       endPos = new THREE.Vector3(
-        center.x + size * 0.9,
-        center.y + size * 0.5,
-        center.z + size * 0.9
+        center.x + size * 0.8,
+        center.y + size * 0.8,
+        center.z + size * 0.8
       );
       endTarget = center;
     } else {
@@ -1723,7 +2025,7 @@ export class WorldSceneController {
   public setViewPreset(preset: ViewPreset, animate = true) {
     if (this.isContextLost) return;
     const target = this.controls.target.clone();
-    const d = this.camera.position.distanceTo(target) || 5;
+    const d = (this.camera.position.distanceTo(target) || 5) / this.fovScale();
     let endPos: THREE.Vector3;
 
     switch (preset) {
@@ -1739,9 +2041,9 @@ export class WorldSceneController {
       case "isometric":
       default:
         endPos = new THREE.Vector3(
-          target.x + d * 0.7,
-          target.y + d * 0.5,
-          target.z + d * 0.7
+          target.x + d * 0.577,
+          target.y + d * 0.577,
+          target.z + d * 0.577
         );
         break;
     }
@@ -1796,6 +2098,8 @@ export class WorldSceneController {
       this.startLoop();
     }, { signal });
 
+    this.controls.addEventListener("end", () => this.refreshShellVisibility());
+
     this.controls.addEventListener("start", () => {
       if (this.isContextLost) return;
       // User manual interaction takes precedence: cancel programmatic animation
@@ -1836,7 +2140,7 @@ export class WorldSceneController {
       if (this.isMeasurementMode) {
         let pt: THREE.Vector3 | null = null;
         const areaPlaneY = this.measureTool === "area" && this.measurePts.length > 0 && !this.measureDone
-          ? this.measurePts[0].y
+          ? this.root.localToWorld(this.measurePts[0].clone()).y
           : null;
         if (areaPlaneY !== null) {
           // Area polygons live on the horizontal plane through the first corner, so they are planar by construction.
@@ -1865,16 +2169,18 @@ export class WorldSceneController {
             // keep the area on its plane: snap only in-plane
             pt = areaPlaneY !== null ? new THREE.Vector3(snapped.x, areaPlaneY, snapped.z) : snapped;
           }
-          this.handleMeasurementPoint(pt);
+          this.handleMeasurementPoint(this.root.worldToLocal(pt));
         }
         return;
       }
 
-      // Entity Selection Mode:
+      // Entity Selection Mode (the orbit/pan tools do not select):
+      if (!this.selectionEnabled) return;
       // Filter meshes to visible and respecting active storey isolation (dimmed meshes cannot be clicked)
       const meshes = Array.from(this.entityMeshes.entries())
         .filter(([eid, m]) => {
           if (!m.visible) return false;
+          if (this.shellHiddenEntities.has(eid) || this.hiddenEntityIds.has(eid)) return false;
           if (this.activeLevelIndex !== null && !this.isEntityOnActiveLevel(eid)) return false;
           return true;
         })
@@ -1924,6 +2230,7 @@ export class WorldSceneController {
           this.camera.position.copy(this.cameraAnimation.endPos);
           this.controls.target.copy(this.cameraAnimation.endTarget);
           this.cameraAnimation = null;
+          this.refreshShellVisibility();
         } else {
           // Smooth cubic ease-in-out curve
           const t = elapsed < 0.5 ? 4 * elapsed * elapsed * elapsed : 1 - Math.pow(-2 * elapsed + 2, 3) / 2;
@@ -1942,10 +2249,17 @@ export class WorldSceneController {
         const azimuthDeg = Math.round(((azimuthRad * 180) / Math.PI + 360) % 360);
         const elevationRad = Math.asin(Math.max(-1, Math.min(1, dir.y)));
         const elevationDeg = Math.round((elevationRad * 180) / Math.PI);
-        if (azimuthDeg !== this.lastAzimuthDeg || elevationDeg !== this.lastElevationDeg) {
+        const mpp = this.getMetersPerPixel();
+        const mppKey = Math.round(mpp * 1000);
+        if (azimuthDeg !== this.lastAzimuthDeg || elevationDeg !== this.lastElevationDeg || mppKey !== this.lastMppKey) {
           this.lastAzimuthDeg = azimuthDeg;
           this.lastElevationDeg = elevationDeg;
-          this.onCameraChangeCallback({ azimuthDeg, elevationDeg });
+          this.lastMppKey = mppKey;
+          const e = this.camera.matrixWorld.elements;
+          this.onCameraChangeCallback({
+            azimuthDeg, elevationDeg, metersPerPx: mpp,
+            right: [e[0], e[1], e[2]], up: [e[4], e[5], e[6]],
+          });
         }
       }
 
@@ -1997,6 +2311,7 @@ export class WorldSceneController {
       this.resizeObserver = null;
     }
     this.clearSceneLayers();
+    this.disposeDimensions();
     if (this.gridHelper) {
       this.scene.remove(this.gridHelper);
       this.gridHelper.geometry.dispose();
@@ -2017,10 +2332,10 @@ export class WorldSceneController {
     }
     this.clearMeasurement();
     if (this.measurementGroup) {
-      this.scene.remove(this.measurementGroup);
+      this.root.remove(this.measurementGroup);
     }
     this.disposeGroupChildren(this.annotationGroup);
-    if (this.annotationGroup) this.scene.remove(this.annotationGroup);
+    if (this.annotationGroup) this.root.remove(this.annotationGroup);
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement) {

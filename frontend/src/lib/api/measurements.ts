@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPost } from "./client";
-import type { MeasureKind, ScaleBasis, Vec3 } from "@/lib/viewport/measure-model";
+import type { DimensionState, MeasureKind, ScaleBasis, Vec3 } from "@/lib/viewport/measure-model";
 
 export interface SavedMeasurement {
   id: string;
@@ -12,6 +12,12 @@ export interface SavedMeasurement {
   method: string;
   scale_state: ScaleBasis;
   created_at: string | null;
+  /** D1: state of the dimension; absent only from a pre-D1 server. */
+  state?: DimensionState;
+  basis?: string;
+  uncertainty_m?: number | null;
+  verified_value?: number | null;
+  dimension?: { value: number; unit: string; state: DimensionState; basis: string; uncertainty_m: number | null };
 }
 
 export interface MeasurementIn {
@@ -21,6 +27,8 @@ export interface MeasurementIn {
   method: string;
   value?: number;
   uncertainty?: number | null;
+  /** Tape measurement of the same length; marks the dimension VERIFIED (metric/authored worlds only). */
+  verified_value?: number;
 }
 
 const base = (worldId: string) => `/api/worlds/${encodeURIComponent(worldId)}/measurements`;

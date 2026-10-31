@@ -29,7 +29,30 @@ export interface ShellPart {
   /** sRGB 0-255 */
   color: [number, number, number];
   opacity: number;
+  /** false when `color` is a TYPE_FALLBACK default: nothing was measured, so it must never read as a measured colour */
+  colorMeasured: boolean;
+  /** entity confidence 0-1 straight from the WorldIR; null = the entity carries none (never invented) */
+  confidence: number | null;
+  /** entity provenance straight from the WorldIR (OBSERVED / INFERRED / ESTIMATED ...); null = not stated */
+  provenance: string | null;
+  confidenceState: "scored" | "unknown" | "unobserved";
+  /** M2: image-projected atlas for this part's entity (perception/materials/surface_appearance.py). Absent = flat/striped fallback. */
+  texture?: ShellTexture;
 }
+
+/** Reference to a stored atlas PNG; alpha=0 texels are unobserved (never inpainted) and must stay transparent. */
+export interface ShellTexture {
+  uri: string;
+  hash: string | null;
+  /** per-vertex atlas coordinates (2 per vertex, same order as positions), t=0 at the atlas bottom row */
+  uvs: number[];
+}
+
+/** Fields filled in by one annotate pass after the geometry is built. */
+type RawPart = Omit<ShellPart, "confidence" | "provenance" | "confidenceState" | "texture">;
+
+/** The only thing the viewer modes may differ in. Geometry (ids, positions, indices) is identical. */
+export type ShellRenderMode = "solid" | "wireframe" | "both" | "confidence";
 
 type V3 = [number, number, number];
 type Props = Record<string, unknown>;
@@ -66,14 +89,22 @@ function rgbOrNull(value: unknown): V3 | null {
   return Array.isArray(value) && value.length === 3 && value.every((n) => typeof n === "number") ? (value as V3) : null;
 }
 
-function meanColor(world: WorldIR, ids: string[], fallback: V3): V3 {
+interface Resolved { color: V3; measured: boolean }
+
+function meanColor(world: WorldIR, ids: string[], fallback: V3): Resolved {
   const cols: V3[] = [];
   for (const id of ids) {
     const c = rgbOrNull((world.entities?.[id]?.custom_properties as Props | undefined)?.mean_color_rgb);
     if (c) cols.push(c);
   }
-  if (!cols.length) return fallback;
-  return [0, 1, 2].map((i) => Math.round(cols.reduce((s, c) => s + c[i], 0) / cols.length)) as V3;
+  if (!cols.length) return { color: fallback, measured: false };
+  return { color: [0, 1, 2].map((i) => Math.round(cols.reduce((s, c) => s + c[i], 0) / cols.length)) as V3, measured: true };
+}
+
+/** A directly stored colour wins; else the mean of the entities' measured colours; else the flagged type default. */
+function resolveColor(direct: unknown, world: WorldIR, ids: string[], fallback: V3): Resolved {
+  const d = rgbOrNull(direct);
+  return d ? { color: d, measured: true } : meanColor(world, ids, fallback);
 }
 
 /** Ear-clipping triangulation of a simple (possibly concave) polygon given in 2D. Returns index triples. */
@@ -123,20 +154,23 @@ function planBasis(up: V3): { e1: V3; e2: V3 } {
 }
 
 function polygonPart(
-  id: string, kind: ShellKind, entityId: string, poly: V3[], e1: V3, e2: V3, color: V3, opacity: number,
-): ShellPart | null {
+  id: string, kind: ShellKind, entityId: string, poly: V3[], e1: V3, e2: V3, color: Resolved, opacity: number,
+): RawPart | null {
   const tri = triangulate2D(poly.map((p) => [dot(p, e1), dot(p, e2)] as [number, number]));
   if (!tri.length) return null;
-  return { id, kind, entityId, positions: poly.flat(), indices: tri, color, opacity };
+  return { id, kind, entityId, positions: poly.flat(), indices: tri, color: color.color, colorMeasured: color.measured, opacity };
 }
 
 function rectPart(
-  id: string, kind: ShellKind, entityId: string, o: V3, du: V3, dv: V3, color: V3, opacity: number,
-): ShellPart {
+  id: string, kind: ShellKind, entityId: string, o: V3, du: V3, dv: V3, color: Resolved, opacity: number,
+): RawPart {
   const p1 = add(o, du);
   const p2 = add(p1, dv);
   const p3 = add(o, dv);
-  return { id, kind, entityId, positions: [...o, ...p1, ...p2, ...p3], indices: [0, 1, 2, 0, 2, 3], color, opacity };
+  return {
+    id, kind, entityId, positions: [...o, ...p1, ...p2, ...p3], indices: [0, 1, 2, 0, 2, 3],
+    color: color.color, colorMeasured: color.measured, opacity,
+  };
 }
 
 interface WindowOnEdge { s0: number; s1: number; v0: number; v1: number; entityId: string }
@@ -171,22 +205,205 @@ function windowsOnEdge(
   return out.sort((p, q) => p.s0 - q.s0);
 }
 
-/** Build every shell part for every room that carries a measured footprint polygon. */
+
+// ---- solid wall slabs (perception/architecture/wall_slabs.py): walls built from WALL entities, not from the footprint ----
+
+interface SlabOpening { entityId: string; kind: string; offset: number; width: number; sill: number; height: number }
+
+interface Slab {
+  entity: { id: string; custom_properties?: Props };
+  start: V3; dir: V3; out: V3; up: V3; length: number; height: number; thickness: number;
+  openings: SlabOpening[];
+}
+
+function numberOr(v: unknown): number | null { return typeof v === "number" && Number.isFinite(v) ? v : null; }
+
+function slabOf(e: { id: string; type?: string; custom_properties?: Props }): Slab | null {
+  const ws = e.custom_properties?.wall_slab as Props | undefined;
+  if (e.type !== "wall" || !ws || !isV3(ws.start_xyz_m) || !isV3(ws.direction) || !isV3(ws.outward) || !isV3(ws.up)) return null;
+  const length = numberOr(ws.length_m), height = numberOr(ws.height_m), thickness = numberOr(ws.thickness_m);
+  if (length === null || height === null || thickness === null) return null;
+  const openings: SlabOpening[] = [];
+  for (const o of Array.isArray(ws.openings) ? (ws.openings as Props[]) : []) {
+    const [offset, width, sill, h] = [o.offset_m, o.width_m, o.sill_m, o.height_m].map(numberOr);
+    if (offset === null || width === null || sill === null || h === null) continue;
+    openings.push({ entityId: String(o.entity_id ?? ""), kind: String(o.kind ?? "opening"), offset, width, sill, height: h });
+  }
+  return { entity: e, start: ws.start_xyz_m, dir: ws.direction, out: ws.outward, up: ws.up, length, height, thickness, openings };
+}
+
+/** Axis-aligned (s0, s1, v0, v1) boxes tiling a wall rectangle minus its rectangular openings (mirror of room_layout.wall_pieces). */
+export function wallPieces(length: number, height: number, openings: Array<{ offset: number; width: number; sill: number; height: number }>):
+  Array<[number, number, number, number]> {
+  const holes = openings.map((o) => [Math.max(0, o.offset), Math.min(length, o.offset + o.width), Math.max(0, o.sill), Math.min(height, o.sill + o.height)])
+    .filter((h) => h[1] - h[0] > 1e-4 && h[3] - h[2] > 1e-4);
+  const cuts = Array.from(new Set([0, length, ...holes.flatMap((h) => [h[0], h[1]])])).sort((a, b) => a - b);
+  const out: Array<[number, number, number, number]> = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const [s0, s1] = [cuts[i], cuts[i + 1]];
+    if (s1 - s0 < 1e-4) continue;
+    const mid = (s0 + s1) / 2;
+    const spans = holes.filter((h) => h[0] <= mid && mid <= h[1]).map((h) => [h[2], h[3]]).sort((a, b) => a[0] - b[0]);
+    let v = 0;
+    for (const [h0, h1] of spans) {
+      if (h0 > v + 1e-4) out.push([s0, s1, v, h0]);
+      v = Math.max(v, h1);
+    }
+    if (height > v + 1e-4) out.push([s0, s1, v, height]);
+  }
+  return out;
+}
+
+const BOX_QUADS = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+
+/** Convex hexahedron (bottom ring 0-3, top ring 4-7) with outward-wound triangles. */
+function boxPart(id: string, kind: ShellKind, entityId: string, c: V3[], color: Resolved, opacity: number): RawPart {
+  const centre = mul(c.reduce((a, p) => add(a, p), [0, 0, 0] as V3), 1 / c.length);
+  const indices: number[] = [];
+  for (const q of BOX_QUADS) {
+    for (const t of [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]) {
+      const n = cross(sub(c[t[1]], c[t[0]]), sub(c[t[2]], c[t[0]]));
+      indices.push(...(dot(n, sub(c[t[0]], centre)) < 0 ? [t[0], t[2], t[1]] : t));
+    }
+  }
+  return { id, kind, entityId, positions: c.flat(), indices, color: color.color, colorMeasured: color.measured, opacity };
+}
+
+function slabParts(world: WorldIR, roomId: string, sl: Slab, fallbackColor: Resolved): RawPart[] {
+  const parts: RawPart[] = [];
+  const id = sl.entity.id;
+  const direct = rgbOrNull((sl.entity.custom_properties as Props | undefined)?.mean_color_rgb);
+  const color: Resolved = direct ? { color: direct, measured: true } : fallbackColor;
+  const at = (s: number, t: number, v: number): V3 => add(add(add(sl.start, mul(sl.dir, s)), mul(sl.out, t)), mul(sl.up, v));
+  wallPieces(sl.length, sl.height, sl.openings).forEach(([s0, s1, v0, v1], k) => {
+    const T = sl.thickness;
+    parts.push(boxPart(`${id}:box${k}`, "wall", id, [at(s0, 0, v0), at(s1, 0, v0), at(s1, T, v0), at(s0, T, v0),
+      at(s0, 0, v1), at(s1, 0, v1), at(s1, T, v1), at(s0, T, v1)], color, 1));
+  });
+  const flagged = (k: ShellKind): Resolved => ({ color: TYPE_FALLBACK[k], measured: false });
+  for (const o of sl.openings) {
+    const o0 = at(o.offset, sl.thickness / 2, o.sill);
+    if (o.kind === "window") {
+      parts.push(rectPart(`${id}:glass:${o.entityId}`, "window_glass", o.entityId || id, o0, mul(sl.dir, o.width), mul(sl.up, o.height),
+        flagged("window_glass"), 0.35));
+    }
+    const t = 0.05;
+    const bars: Array<[V3, V3, V3]> = [
+      [at(o.offset, 0, o.sill + o.height - t), mul(sl.dir, o.width), mul(sl.up, t)],
+      [at(o.offset, 0, o.sill), mul(sl.dir, t), mul(sl.up, o.height)],
+      [at(o.offset + o.width - t, 0, o.sill), mul(sl.dir, t), mul(sl.up, o.height)],
+    ];
+    if (o.kind !== "door") bars.push([at(o.offset, 0, o.sill), mul(sl.dir, o.width), mul(sl.up, t)]);
+    bars.forEach(([oo, du, dv], k) => parts.push(rectPart(`${id}:frame:${o.entityId}:${k}`, "window_frame", o.entityId || id, oo, du, dv,
+      flagged("window_frame"), 1)));
+  }
+  return parts;
+}
+
+/** Build every shell part for every room that carries a measured footprint polygon, or solid wall slabs. */
 export function buildRoomShellParts(world: WorldIR | null | undefined): ShellPart[] {
   if (!world?.entities) return [];
-  const parts: ShellPart[] = [];
+  return annotate(world, buildRawParts(world));
+}
+
+const UNOBSERVED = new Set(["UNOBSERVED", "MISSING", "UNSEEN"]);
+
+/** Browser URL for an atlas uri. `artifact://<sha256>` is served by the world's artifact route; plain URLs pass through. */
+export function atlasUrl(uri: string, worldId: string | undefined): string | null {
+  if (/^(https?:|data:image\/|blob:|\/)/.test(uri)) return uri;
+  const m = /^artifact:\/\/([0-9a-f]{64})$/.exec(uri);
+  return m && worldId ? `/api/worlds/${encodeURIComponent(worldId)}/artifacts/${m[1]}` : null;
+}
+
+const TEXTURED_KINDS = new Set<ShellKind>(["wall", "floor", "ceiling", "false_ceiling", "ceiling_step"]);
+
+/**
+ * The entity's atlas reference + frame -> a projector from world position to atlas (s,t). Null unless the appearance
+ * carries a uri and a complete, non-degenerate frame (so a malformed reference falls back instead of drawing garbage).
+ */
+export function atlasProjector(appearance: unknown): { uri: string; hash: string | null; project: (p: V3) => [number, number] } | null {
+  const tex = (appearance as Props | undefined)?.texture as Props | null | undefined;
+  const fr = tex?.frame as Props | undefined;
+  if (!tex || typeof tex.uri !== "string" || !tex.uri || !fr) return null;
+  const { origin, u_axis: ua, v_axis: va } = fr;
+  const ur = fr.u_range_m as unknown, vr = fr.v_range_m as unknown;
+  if (!isV3(origin) || !isV3(ua) || !isV3(va)) return null;
+  const rng = (r: unknown): [number, number] | null =>
+    Array.isArray(r) && r.length === 2 && r.every((n) => typeof n === "number" && Number.isFinite(n)) && r[1] > r[0] ? [r[0], r[1]] : null;
+  const u = rng(ur), v = rng(vr);
+  if (!u || !v) return null;
+  return {
+    uri: tex.uri,
+    hash: typeof tex.hash === "string" ? tex.hash : null,
+    project: (p) => {
+      const d = sub(p, origin);
+      return [(dot(d, ua) - u[0]) / (u[1] - u[0]), (dot(d, va) - v[0]) / (v[1] - v[0])];
+    },
+  };
+}
+
+function textureFor(world: WorldIR, p: RawPart): ShellTexture | undefined {
+  if (!TEXTURED_KINDS.has(p.kind)) return undefined;
+  const proj = atlasProjector((world.entities[p.entityId]?.custom_properties as Props | undefined)?.appearance);
+  if (!proj) return undefined;
+  const uvs: number[] = [];
+  for (let i = 0; i + 2 < p.positions.length; i += 3) uvs.push(...proj.project([p.positions[i], p.positions[i + 1], p.positions[i + 2]]));
+  return { uri: proj.uri, hash: proj.hash, uvs };
+}
+
+function annotate(world: WorldIR, raw: RawPart[]): ShellPart[] {
+  return raw.map((p) => {
+    const e = world.entities[p.entityId];
+    const c = typeof e?.confidence === "number" ? e.confidence
+      : typeof e?.uncertainty?.confidence === "number" ? e.uncertainty.confidence : null;
+    const provenance = typeof e?.provenance === "string" ? e.provenance : null;
+    const unobserved = provenance !== null && UNOBSERVED.has(provenance.toUpperCase());
+    const texture = textureFor(world, p);
+    return { ...p, confidence: c, provenance, confidenceState: unobserved ? "unobserved" : c === null ? "unknown" : "scored", ...(texture ? { texture } : {}) };
+  });
+}
+
+function buildRawParts(world: WorldIR): RawPart[] {
+  const parts: RawPart[] = [];
   const entities = Object.values(world.entities);
   const windows = entities.filter((e) => e.type === "window");
+  const slabWalls = entities.map((e) => slabOf(e as never)).filter((x): x is Slab => x !== null);
+  const boundaryIds = (cp: Props) => (Array.isArray(cp.boundary_element_ids) ? (cp.boundary_element_ids as string[]) : []).filter((id) => world.entities[id]?.type === "wall");
+  const polygonSlabParts = (world: WorldIR, roomId: string): RawPart[] => {
+    const out: RawPart[] = [];
+    for (const e of entities) {
+      const sp = (e.custom_properties ?? {}) as Props;
+      const slab = sp.slab as Props | undefined;
+      if (sp.room_id !== roomId || !slab || !isV3(slab.up) || (e.type !== "floor" && e.type !== "ceiling")) continue;
+      const pts = polygon3(slab.polygon_xyz_m);
+      if (!pts) continue;
+      const { e1, e2 } = planBasis(slab.up);
+      const kind: ShellKind = e.type === "floor" ? "floor" : sp.ceiling_role === "false_ceiling" ? "false_ceiling" : "ceiling";
+      const part = polygonPart(`${e.id}:top`, kind, e.id, pts, e1, e2, resolveColor(sp.mean_color_rgb, world, [], TYPE_FALLBACK[kind]), 1);
+      if (part) out.push(part);
+    }
+    return out;
+  };
   for (const room of entities) {
     if (room.type !== "room") continue;
     const cp = (room.custom_properties ?? {}) as Props;
     if (typeof cp.superseded_by === "string") continue; // a fragment of another room, not a room of its own
-    const poly = polygon3(cp.footprint_polygon_xyz_m);
+    const poly0 = polygon3(cp.footprint_polygon_xyz_m);
     const basis = cp.footprint_basis as { up?: unknown } | undefined;
-    if (!poly || !isV3(basis?.up) || typeof cp.floor_height_m !== "number") continue;
-    const up = basis.up as V3;
+    const slabs = slabWalls.filter((w) => w.entity.custom_properties?.room_id === room.id);
+    const hasFootprint = !!poly0 && isV3(basis?.up) && typeof cp.floor_height_m === "number";
+    if (!hasFootprint && !slabs.length) continue;
+    if (!hasFootprint) {
+      // no footprint polygon: the room is still drawn, from its solid wall / floor / ceiling slabs alone
+      const wallCol = resolveColor(cp.wall_color_rgb, world, boundaryIds(cp), TYPE_FALLBACK.wall);
+      slabs.forEach((sl) => parts.push(...slabParts(world, room.id, sl, wallCol)));
+      parts.push(...polygonSlabParts(world, room.id));
+      continue;
+    }
+    const poly = poly0 as V3[];
+    const up = (basis as { up: unknown }).up as V3;
     const { e1, e2 } = planBasis(up);
-    const floorLevel = mul(up, cp.floor_height_m);
+    const floorLevel = mul(up, (cp.floor_height_m as number));
     const ceilingLayers = Array.isArray(cp.ceiling_layers) ? (cp.ceiling_layers as Props[]) : [];
     const edgeHeights = Array.isArray(cp.footprint_edge_heights_m) ? (cp.footprint_edge_heights_m as unknown[]) : [];
     const fallbackH = typeof cp.ceiling_height_min_m === "number" ? cp.ceiling_height_min_m : 2.4;
@@ -194,13 +411,15 @@ export function buildRoomShellParts(world: WorldIR | null | undefined): ShellPar
     const byType = (t: string) => boundary.filter((id) => world.entities[id]?.type === t);
 
     const floor = polygonPart(`${room.id}:floor`, "floor", byType("floor")[0] ?? room.id, poly, e1, e2,
-      rgbOrNull(cp.floor_color_rgb) ?? meanColor(world, byType("floor"), TYPE_FALLBACK.floor), 1);
+      resolveColor(cp.floor_color_rgb, world, byType("floor"), TYPE_FALLBACK.floor), 1);
     if (floor) parts.push(floor);
 
     // walls, split around the windows that sit on them
-    const wallColor = rgbOrNull(cp.wall_color_rgb) ?? meanColor(world, byType("wall"), TYPE_FALLBACK.wall);
+    const wallColor = resolveColor(cp.wall_color_rgb, world, byType("wall"), TYPE_FALLBACK.wall);
+    const flagged = (k: ShellKind): Resolved => ({ color: TYPE_FALLBACK[k], measured: false });
     const wallEntity = byType("wall")[0] ?? room.id;
-    for (let i = 0; i < poly.length; i++) {
+    if (slabs.length) slabs.forEach((sl) => parts.push(...slabParts(world, room.id, sl, wallColor)));
+    for (let i = 0; i < (slabs.length ? 0 : poly.length); i++) {
       const a = poly[i];
       const edge = sub(poly[(i + 1) % poly.length], a);
       const L = len(edge);
@@ -222,7 +441,7 @@ export function buildRoomShellParts(world: WorldIR | null | undefined): ShellPar
         const W = w.s1 - w.s0;
         const Hh = w.v1 - w.v0;
         parts.push(rectPart(`${room.id}:glass:${w.entityId}`, "window_glass", w.entityId, o, mul(dir, W), mul(up, Hh),
-          TYPE_FALLBACK.window_glass, 0.35));
+          flagged("window_glass"), 0.35));
         const t = 0.05;
         const frame: Array<[V3, V3, V3]> = [
           [o, mul(dir, W), mul(up, t)],
@@ -232,7 +451,7 @@ export function buildRoomShellParts(world: WorldIR | null | undefined): ShellPar
         ];
         frame.forEach(([oo, du, dv]) =>
           parts.push(rectPart(`${room.id}:frame:${w.entityId}:${k++}`, "window_frame", w.entityId, oo, du, dv,
-            TYPE_FALLBACK.window_frame, 1)));
+            flagged("window_frame"), 1)));
         cursor = w.s1;
       }
       seg(cursor, L, 0, h);
@@ -254,7 +473,7 @@ export function buildRoomShellParts(world: WorldIR | null | undefined): ShellPar
       const kind: ShellKind = l.role === "false_ceiling" ? "false_ceiling" : "ceiling";
       const ids = Array.isArray(l.entity_ids) ? (l.entity_ids as string[]) : [];
       const part = polygonPart(`${room.id}:ceil${li}`, kind, ids[0] ?? room.id, lp, e1, e2,
-        rgbOrNull(l.color_rgb) ?? meanColor(world, ids, TYPE_FALLBACK[kind]), 1);
+        resolveColor(l.color_rgb, world, ids, TYPE_FALLBACK[kind]), 1);
       if (part) parts.push(part);
       if (tops[li] < topH - 0.05) {
         lp.forEach((p, j) => {
@@ -271,7 +490,7 @@ export function buildRoomShellParts(world: WorldIR | null | undefined): ShellPar
               const pb = add(p, mul(sub(q, p), Math.min(N, t - 0.5) / N));
               if (len(sub(pb, pa)) > 0.05) {
                 parts.push(rectPart(`${room.id}:step${li}:${j}:${start}`, "ceiling_step", ids[0] ?? room.id, pa, sub(pb, pa),
-                  mul(up, topH - tops[li]), TYPE_FALLBACK.ceiling_step, 1));
+                  mul(up, topH - tops[li]), flagged("ceiling_step"), 1));
               }
               start = -1;
             }
@@ -304,9 +523,78 @@ export function buildRoomShellParts(world: WorldIR | null | undefined): ShellPar
       parts.push({
         id: `${f.id}:box`, kind: "furniture", entityId: f.id, positions: c.flat(),
         indices: [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7],
-        color: rgbOrNull(fp.mean_color_rgb) ?? TYPE_FALLBACK.furniture, opacity: 1,
+        color: rgbOrNull(fp.mean_color_rgb) ?? TYPE_FALLBACK.furniture,
+        colorMeasured: rgbOrNull(fp.mean_color_rgb) !== null, opacity: 1,
       });
     }
   }
   return parts;
+}
+
+// ---- Material per render mode (the ONLY thing the modes change) -------------------------------------------------
+
+export interface PartMaterial {
+  color: V3;
+  /** diagonal stripe overlay */
+  hatch: boolean;
+  opacity: number;
+  /** draw the part's atlas (colour white, alpha=0 texels transparent); never in confidence mode */
+  textured: boolean;
+}
+
+// Defaults mirror the --conf-low / --warning / --conf-high / --conf-unknown tokens in globals.css; the viewer overrides
+// them from the live CSS custom properties (see three-scene.ts readPalette).
+export interface ConfidencePalette { low: V3; mid: V3; high: V3; unknown: V3 }
+export const DEFAULT_CONF_PALETTE: ConfidencePalette = {
+  low: [224, 82, 74], mid: [224, 164, 88], high: [76, 175, 98], unknown: [107, 112, 104],
+};
+const CONF_UNKNOWN: V3 = DEFAULT_CONF_PALETTE.unknown; // neutral grey: the entity states no confidence, so it is never coloured
+const CONF_UNOBSERVED: V3 = [96, 52, 128]; // dark violet: explicitly not observed
+const ESTIMATED = new Set(["INFERRED", "ESTIMATED", "SYNTHESIZED"]);
+
+export function confidenceRamp(c: number, pal: ConfidencePalette = DEFAULT_CONF_PALETTE): V3 {
+  const t = Math.max(0, Math.min(1, c));
+  const RAMP: Array<[number, V3]> = [[0, pal.low], [0.5, pal.mid], [1, pal.high]];
+  for (let i = 1; i < RAMP.length; i++) {
+    if (t <= RAMP[i][0]) {
+      const [t0, c0] = RAMP[i - 1];
+      const [t1, c1] = RAMP[i];
+      const k = (t - t0) / (t1 - t0);
+      return [0, 1, 2].map((j) => Math.round(c0[j] + (c1[j] - c0[j]) * k)) as V3;
+    }
+  }
+  return RAMP[RAMP.length - 1][1];
+}
+
+export function isEstimated(part: ShellPart): boolean {
+  return part.provenance !== null && ESTIMATED.has(part.provenance.toUpperCase());
+}
+
+export function partMaterial(part: ShellPart, mode: ShellRenderMode, pal: ConfidencePalette = DEFAULT_CONF_PALETTE): PartMaterial {
+  if (mode !== "confidence") {
+    const textured = !!part.texture;
+    // a textured part is not "colour not measured": the flat colour only shows through where the atlas has no texel
+    return { color: part.color, hatch: !part.colorMeasured && !textured, opacity: part.opacity, textured };
+  }
+  const color = part.confidenceState === "unobserved" ? CONF_UNOBSERVED
+    : part.confidenceState === "unknown" || part.confidence === null ? pal.unknown
+    : confidenceRamp(part.confidence, pal);
+  return { color, hatch: isEstimated(part), opacity: part.opacity, textured: false };
+}
+
+export interface LegendItem { label: string; color: V3; hatch: boolean }
+
+export function legendFor(mode: ShellRenderMode): LegendItem[] {
+  if (mode === "confidence") {
+    return [
+      { label: "High confidence", color: DEFAULT_CONF_PALETTE.high, hatch: false },
+      { label: "Medium", color: DEFAULT_CONF_PALETTE.mid, hatch: false },
+      { label: "Low", color: DEFAULT_CONF_PALETTE.low, hatch: false },
+      { label: "Confidence not stated", color: CONF_UNKNOWN, hatch: false },
+      { label: "Not observed", color: CONF_UNOBSERVED, hatch: false },
+      { label: "Striped = inferred / estimated", color: [200, 200, 200], hatch: true },
+    ];
+  }
+  if (mode === "wireframe") return [];
+  return [{ label: "Striped = colour not measured (type default)", color: [200, 194, 184], hatch: true }];
 }

@@ -215,7 +215,7 @@ test("palette is token-derived and keeps kinds apart", () => {
 test("scene tree: outdoor kinds get typed groups, OSM names, honest counts, and keep the imported badge", () => {
   const tree = buildSceneTree(syn);
   const labels = tree.map((n) => n.label);
-  assert.deepEqual(labels, ["Buildings (3)", "Roads & paths (3)", "Rail & metro (3)", "Bridges (1)", "Street furniture (8)", "Trees (2)"]);
+  assert.deepEqual(labels, ["Buildings (3)", "Roads & paths (3)", "Rail & metro (3)", "Bridges (1)", "Street furniture (7)", "Hedges & fences (1)", "Trees (2)"]);
   const leaves = (n: SceneNode): SceneNode[] => (n.entityId ? [n] : n.children.flatMap(leaves));
   const all = tree.flatMap(leaves);
   assert.equal(all.length, 20);

@@ -14,7 +14,7 @@ import { isOversizedEntity } from "./oversized";
 import { atlasUrl, buildRoomShellParts, confidenceRamp, partMaterial, DEFAULT_CONF_PALETTE, type ConfidencePalette, type ShellKind, type ShellPart, type ShellRenderMode } from "./room-shell-model";
 import { centroid, cutawayHides, dollyForFov, nearestCenter, parseHexColor, upAxisOf, ORTHO_FOV, PERSPECTIVE_FOV } from "./view-model";
 import { shouldAutoFrame } from "./autoframe";
-import { buildOutdoor, derivePalette, meshBounds, partMesh, type OutdoorPart, type OutdoorResult } from "./outdoor-model";
+import { buildOutdoor, derivePalette, emptyOutdoorResult, meshBounds, partMesh, type OutdoorPart, type OutdoorResult } from "./outdoor-model";
 import type { MeasureKind, Vec3 } from "./measure-model";
 
 export interface ViewportLayers {
@@ -170,7 +170,7 @@ export class WorldSceneController {
     shell: null as THREE.Group | null,
   };
 
-  private outdoor: OutdoorResult = { up: "y", parts: [], diagnostics: { drawn: 0, skipped: [], byGroup: { buildings: 0, roads: 0, rail: 0, bridges: 0, furniture: 0, trees: 0, other: 0 }, byKind: {} } };
+  private outdoor: OutdoorResult = emptyOutdoorResult();
   private outdoorGroup: THREE.Group | null = null;
   private outdoorBatches: OutdoorBatch[] = [];
   private outdoorBoxes = new Map<string, THREE.Box3>();
@@ -1046,7 +1046,7 @@ export class WorldSceneController {
     this.outdoorBatches = [];
     this.outdoorBoxes.clear();
     this.outdoorBox = null;
-    this.outdoor = { up: "y", parts: [], diagnostics: { drawn: 0, skipped: [], byGroup: { buildings: 0, roads: 0, rail: 0, bridges: 0, furniture: 0, trees: 0, other: 0 }, byKind: {} } };
+    this.outdoor = emptyOutdoorResult();
     if (this.gridCustom) {
       this.setGridExtent(20, 20, 0, 0);
       this.gridCustom = false;
@@ -1070,8 +1070,8 @@ export class WorldSceneController {
 
   private wireColorFor(part: OutdoorPart): RGB {
     const p = this.palette;
-    return part.group === "furniture" || part.group === "trees" || part.group === "rail" ? p.accent
-      : part.group === "roads" ? p.textSecondary : p.text;
+    return part.group === "furniture" || part.group === "trees" || part.group === "rail" || part.group === "hedges" ? p.accent
+      : part.group === "roads" || part.group === "gardens" || part.group === "flowerbeds" || part.group === "woodland" || part.group === "water" ? p.textSecondary : p.text;
   }
 
   private buildOutdoorLayer() {
@@ -1116,8 +1116,9 @@ export class WorldSceneController {
         for (const v of m.positions) pos.push(v);
         for (const i of m.indices) index.push(i + vOff);
         const real = srgb(part.color);
+        const real2 = part.color2 ? srgb(part.color2) : real; // roof slopes / tree trunks
         const conf = srgb(part.confidence === null ? pal.conf.unknown : confidenceRamp(part.confidence, pal.conf));
-        for (let v = 0; v < m.positions.length / 3; v++) { col.push(...real); ccol.push(...conf); }
+        for (let v = 0; v < m.positions.length / 3; v++) { col.push(...(m.tint[v] ? real2 : real)); ccol.push(...conf); }
         // edges only (same warm-light line style as the room wireframe)
         const g = new THREE.BufferGeometry();
         g.setAttribute("position", new THREE.Float32BufferAttribute(m.positions, 3));

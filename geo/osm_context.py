@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import random
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,8 +20,9 @@ from pathlib import Path
 import httpx
 from pyproj import Proj
 
-from provenance import Provenance
+from provenance import Provenance, Uncertainty
 from world_ir.schema_v1 import Entity, EntityType
+from world_ir.statement_state import StatementState
 from world_ir.world_v1 import WorldIR
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
@@ -48,7 +51,44 @@ POINT_DEFAULTS = {
     "traffic_sign": (EntityType.INFRASTRUCTURE, 0.3, 2.5), "fire_hydrant": (EntityType.INFRASTRUCTURE, 0.3, 0.8),
     "station": (EntityType.INFRASTRUCTURE, 20.0, 6.0), "station_entrance": (EntityType.INFRASTRUCTURE, 3.0, 3.0),
     "barrier": (EntityType.STRUCTURE, 1.5, 1.0), "tree": (EntityType.VEGETATION, 3.0, 6.0),
+    "shrub": (EntityType.VEGETATION, 1.2, 1.0),
 }
+
+# ---- roofs ---------------------------------------------------------------------------------------------------------
+OSM_ROOF_SHAPES = {"flat", "gabled", "hipped", "pyramidal", "skillion", "dome", "half-hipped", "gambrel", "mansard",
+                   "round"}
+# building=* values that default to a pitched (gabled) roof when no roof tags exist; everything else defaults to flat.
+GABLED_DEFAULT_BUILDINGS = {"house", "detached", "semidetached_house", "residential", "bungalow", "terrace", "farm",
+                            "cabin", "hut"}
+ROOF_LEVEL_HEIGHT_M = 2.5
+DEFAULT_ROOF_PITCH_DEG = 30.0
+ROOF_HEIGHT_RANGE_M = (0.5, 6.0)
+
+# ---- landscape -----------------------------------------------------------------------------------------------------
+# (osm key, osm value) -> kind. Order of the keys below is the precedence when a way carries several.
+# Narrow readings (ambiguous tags): allotments -> garden (cultivated plots); recreation_ground/common -> park;
+# greenfield/scrub/grassland/heath/wetland -> meadow (open low vegetation; never filled with generated trees).
+AREA_KIND = {
+    ("leisure", "garden"): "garden", ("leisure", "park"): "park", ("leisure", "common"): "park",
+    ("leisure", "playground"): "playground", ("leisure", "pitch"): "pitch",
+    ("landuse", "grass"): "lawn", ("landuse", "village_green"): "lawn", ("landuse", "flowerbed"): "flowerbed",
+    ("landuse", "meadow"): "meadow", ("landuse", "greenfield"): "meadow", ("landuse", "forest"): "woodland",
+    ("landuse", "orchard"): "orchard", ("landuse", "allotments"): "garden",
+    ("landuse", "recreation_ground"): "park", ("landuse", "cemetery"): "cemetery",
+    ("natural", "wood"): "woodland", ("natural", "scrub"): "meadow", ("natural", "grassland"): "meadow",
+    ("natural", "heath"): "meadow", ("natural", "wetland"): "meadow", ("natural", "water"): "water",
+}
+AREA_KEYS = ("leisure", "landuse", "natural")
+FILL_SPACING_M = {"woodland": 6.0, "orchard": 5.0}
+MAX_FILL_PER_POLYGON = 200
+MAX_FILL_PER_WORLD = 1500
+TREE_ROW_SPACING_M = 7.0
+MAX_TREE_ROW_TREES = 60
+GENERATED_LABEL = "Generated (not captured)"
+GENERATED_MAX_CONFIDENCE = 0.3
+CONIFER_GENERA = {"pinus", "picea", "abies", "larix", "cedrus", "cupressus", "taxus", "juniperus", "thuja",
+                  "araucaria", "pseudotsuga", "tsuga", "cryptomeria", "sequoia"}
+HEDGE_HEIGHT_M, HEDGE_WIDTH_M = 1.5, 0.8
 
 
 class OverpassError(RuntimeError):
@@ -63,6 +103,13 @@ class OverpassRateLimited(OverpassError):
     """HTTP 429 from Overpass."""
 
 
+def _alt(key: str) -> str:
+    return "^(" + "|".join(sorted(v for k, v in AREA_KIND if k == key)) + ")$"
+
+
+_LEISURE, _LANDUSE, _NATURAL = _alt("leisure"), _alt("landuse"), _alt("natural")
+
+
 def build_query(lat: float, lon: float, radius_m: float, timeout_s: int = 50) -> str:
     a = f"(around:{radius_m:g},{lat:.6f},{lon:.6f})"
     return (
@@ -73,7 +120,11 @@ def build_query(lat: float, lon: float, radius_m: float, timeout_s: int = 50) ->
         f'node["highway"~"^(street_lamp|traffic_signals|stop)$"]{a};\n'
         f'node["amenity"~"^(waste_basket|waste_disposal|post_box|bench)$"]{a};\n'
         f'node["barrier"]{a};\nnode["traffic_sign"]{a};\nnode["emergency"="fire_hydrant"]{a};\n'
-        f'node["natural"="tree"]{a};\n);\nout geom tags;'
+        f'node["natural"~"^(tree|shrub)$"]{a};\nway["natural"="tree_row"]{a};\n'
+        f'way["leisure"~"{_LEISURE}"]{a};\nway["landuse"~"{_LANDUSE}"]{a};\nway["natural"~"{_NATURAL}"]{a};\n'
+        f'relation["type"="multipolygon"]["leisure"~"{_LEISURE}"]{a};\n'
+        f'relation["type"="multipolygon"]["landuse"~"{_LANDUSE}"]{a};\n'
+        f'relation["type"="multipolygon"]["natural"~"{_NATURAL}"]{a};\n);\nout geom tags;'
     )
 
 
@@ -149,7 +200,95 @@ def _width_dim(tags: dict, default: float, default_basis: str) -> tuple[float, d
 
 
 _TAG_KEYS = ("name", "building", "building:levels", "height", "highway", "railway", "bridge", "tunnel", "layer",
-             "barrier", "amenity", "natural", "width", "public_transport", "emergency", "traffic_sign", "ref")
+             "barrier", "amenity", "natural", "width", "public_transport", "emergency", "traffic_sign", "ref",
+             "roof:shape", "roof:height", "roof:levels", "roof:angle", "roof:orientation", "leisure", "landuse",
+             "diameter_crown", "leaf_type", "genus")
+
+
+def _area_kind(t: dict) -> str | None:
+    for key in AREA_KEYS:
+        k = AREA_KIND.get((key, t.get(key)))
+        if k:
+            return k
+    return None
+
+
+def _closed(el: dict) -> bool:
+    g = el.get("geometry") or []
+    return len(g) >= 4 and g[0] == g[-1]
+
+
+def _canopy_style(t: dict) -> tuple[str, str]:
+    leaf, genus = str(t.get("leaf_type", "")).lower(), str(t.get("genus", "")).split()[0].lower() if t.get("genus") else ""
+    if leaf == "needleleaved":
+        return "cone", "osm_tag:leaf_type=needleleaved"
+    if leaf == "broadleaved":
+        return "round", "osm_tag:leaf_type=broadleaved"
+    if genus in CONIFER_GENERA:
+        return "cone", f"osm_tag:genus={genus} (conifer)"
+    return "round", "default: round canopy (leaf_type not mapped)"
+
+
+def _poly_area(pts) -> float:
+    return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
+
+
+def _obbox(pts) -> tuple[float, float]:
+    """(long side, short side) of the minimum-area oriented bounding box over the polygon's edge directions."""
+    best = None
+    for a, b in zip(pts, pts[1:] + pts[:1]):
+        d = math.hypot(b[0] - a[0], b[1] - a[1])
+        if d < 1e-9:
+            continue
+        ux, uz = (b[0] - a[0]) / d, (b[1] - a[1]) / d
+        us = [p[0] * ux + p[1] * uz for p in pts]
+        vs = [-p[0] * uz + p[1] * ux for p in pts]
+        w, h = max(us) - min(us), max(vs) - min(vs)
+        if best is None or w * h < best[0]:
+            best = (w * h, max(w, h), min(w, h))
+    return (best[1], best[2]) if best else (0.0, 0.0)
+
+
+def _in_poly(x: float, z: float, pts) -> bool:
+    inside = False
+    for (x1, z1), (x2, z2) in zip(pts, pts[1:] + pts[:1]):
+        if (z1 > z) != (z2 > z) and x < (x2 - x1) * (z - z1) / (z2 - z1) + x1:
+            inside = not inside
+    return inside
+
+
+def _roof_for(t: dict, pts, centre_only: bool) -> dict:
+    """Roof spec for a building. OSM roof tags are mapper estimates, so the height is ESTIMATED either way.
+    Ambiguity: unknown roof:shape values map to flat; roof:height wins over roof:levels over roof:angle over the pitch
+    default. Footprints that are only a centre point stay flat (no outline to put a roof on)."""
+    b = t.get("building", "yes")
+    raw = str(t.get("roof:shape", "")).strip().lower().replace("_", "-")
+    if centre_only:
+        return {"shape": "flat", "height_m": 0.0, "basis": "flat: footprint is a centre point only"}
+    if raw:
+        shape = raw if raw in OSM_ROOF_SHAPES else "flat"
+        basis = "OSM roof:shape tag" if raw in OSM_ROOF_SHAPES else f"roof:shape={raw} not recognised, drawn flat"
+    elif b in GABLED_DEFAULT_BUILDINGS:
+        shape, basis = "gabled", f"default for building={b} (not mapped)"
+    else:
+        return {"shape": "flat", "height_m": 0.0, "basis": f"default for building={b} (not mapped)"}
+    if shape == "flat":
+        return {"shape": "flat", "height_m": 0.0, "basis": basis}
+    _, span = _obbox(pts)
+    h_tag, lv, ang = _num(t.get("roof:height")), _num(t.get("roof:levels")), _num(t.get("roof:angle"))
+    if h_tag:
+        h, hb = h_tag, "OSM roof:height tag"
+    elif lv:
+        h, hb = lv * ROOF_LEVEL_HEIGHT_M, f"roof:levels*{ROOF_LEVEL_HEIGHT_M:g}m"
+    else:
+        deg = ang if ang and 0 < ang < 80 else DEFAULT_ROOF_PITCH_DEG
+        run = span if shape in ("skillion", "dome") else span / 2
+        h = math.tan(math.radians(deg)) * run
+        hb = f"roof:angle tag {deg:g} deg" if ang and 0 < ang < 80 else f"default {DEFAULT_ROOF_PITCH_DEG:g} deg pitch"
+    h = min(max(h, ROOF_HEIGHT_RANGE_M[0]), ROOF_HEIGHT_RANGE_M[1])
+    orient = str(t.get("roof:orientation", "along")).strip().lower()
+    return {"shape": shape, "height_m": round(h, 3), "basis": f"{basis}; height from {hb}",
+            "orientation": orient if orient in ("along", "across") else "along"}
 
 
 def osm_to_world(elements: list[dict], lat: float, lon: float, name: str, *, radius_m: float | None = None,
@@ -172,12 +311,12 @@ def osm_to_world(elements: list[dict], lat: float, lon: float, name: str, *, rad
         "fetched_at": fetched_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
-    def add(el, etype, kind, label, conf, dims, extra):
+    def add(el, etype, kind, label, conf, dims, extra, eid=None):
         tags = el.get("tags") or {}
         props = {"osm_id": el.get("id"), "osm_type": el.get("type"),
                  "osm_tags": {k: tags[k] for k in _TAG_KEYS if k in tags},
                  "source": SOURCE, "imported": True, "kind": kind, "dimensions": dims, **extra}
-        eid = f"osm-{el.get('type')}-{el.get('id')}"
+        eid = eid or f"osm-{el.get('type')}-{el.get('id')}"
         world.entities[eid] = Entity(
             id=eid, type=etype, name=tags.get("name") or label, provenance=Provenance.INFERRED,
             confidence=round(min(MAX_CONFIDENCE, max(0.05, conf)), 2), semantic_labels=[kind], custom_properties=props)
@@ -203,8 +342,102 @@ def osm_to_world(elements: list[dict], lat: float, lon: float, name: str, *, rad
         add(el, etype, kind, label, conf, {"width": width_dim, **(extra_dims or {})},
             {**(extra or {}), "polyline_xyz_m": [[x, y0, z] for x, z in pts], **box(pts, w / 2, h, y0)})
 
+    fill_left = [MAX_FILL_PER_WORLD]
+
+    def gen_tree(eid, parent_eid, parent_kind, pos, h, r, basis, extra=None):
+        """A tree invented to illustrate a mapped wood / orchard / tree row. NEVER an imported fact: flagged exactly like
+        world_ir.connectors output (generated_by, ESTIMATED, confidence <= 0.3, label, asserted False)."""
+        conf = GENERATED_MAX_CONFIDENCE
+        props = {
+            "generated_by": "osm_context", "label": GENERATED_LABEL, "asserted": False, "state": "ESTIMATED",
+            "confidence": conf, "imported": False, "kind": "tree", "derived_from": parent_eid,
+            "derived_from_kind": parent_kind,
+            "dimensions": {"height": {"value": round(h, 3), "unit": "m", "state": "ESTIMATED", "basis": basis},
+                           "footprint_side": {"value": round(2 * r, 3), "unit": "m", "state": "ESTIMATED", "basis": basis}},
+            "canopy": {"style": "round", "radius_m": round(r, 3), "height_m": round(h * 0.6, 3), "basis": basis,
+                       "radius_state": "ESTIMATED"},
+            "position_xyz_m": [round(pos[0], 3), 0.0, round(pos[1], 3)], **(extra or {}),
+            **box([pos], r, h),
+        }
+        world.entities[eid] = Entity(
+            id=eid, type=EntityType.VEGETATION, name="Tree (generated)", provenance=Provenance.GENERATED,
+            confidence=conf, uncertainty=Uncertainty(confidence=conf, note="generated illustration, not reconstructed"),
+            statement_state=StatementState.PROCEDURAL, semantic_labels=["generated", "tree"], custom_properties=props)
+
+    def tree_row(el):
+        pts = pts_of(el)
+        if len(pts) < 2:
+            return
+        add(el, EntityType.VEGETATION, "tree_row", "Tree row", 0.5, {"width": _dim(3.0, "ESTIMATED", "default_tree_row_width")},
+            {"polyline_xyz_m": [[x, 0.0, z] for x, z in pts], **box(pts, 1.5, 0.2)})
+        parent = f"osm-{el.get('type')}-{el.get('id')}"
+        n, carry = 0, 0.0
+        for a, b in zip(pts, pts[1:]):  # fixed spacing along the line, deterministic; first tree at the first node
+            seg = math.hypot(b[0] - a[0], b[1] - a[1])
+            d = carry
+            while d <= seg + 1e-9 and n < MAX_TREE_ROW_TREES:
+                f = d / seg if seg else 0.0
+                gen_tree(f"gen-tree-{el.get('type')}-{el.get('id')}-{n:03d}", parent, "tree_row",
+                         (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f), 6.0, 2.0,
+                         f"default tree for a tree row, {TREE_ROW_SPACING_M:g} m spacing (not mapped)")
+                n += 1
+                d += TREE_ROW_SPACING_M
+            carry = d - seg
+
+    def fill_trees(eid, osm_el, kind, ring):
+        spacing = FILL_SPACING_M[kind]
+        xs, zs = [p[0] for p in ring], [p[1] for p in ring]
+        w, d = max(xs) - min(xs), max(zs) - min(zs)
+        step = max(spacing, math.sqrt(max(w * d, 1.0) / 4000))  # bound the candidate grid on huge polygons
+        rng = random.Random(int(osm_el.get("id") or 0))  # seeded from the OSM id: same input -> same trees
+        cand = []
+        gx = min(xs) + step / 2
+        while gx < max(xs):
+            gz = min(zs) + step / 2
+            while gz < max(zs):
+                x, z = gx + rng.uniform(-0.3, 0.3) * step, gz + rng.uniform(-0.3, 0.3) * step
+                if _in_poly(x, z, ring):
+                    cand.append((x, z, rng.uniform(0.85, 1.15)))
+                gz += step
+            gx += step
+        cap = min(MAX_FILL_PER_POLYGON, fill_left[0])
+        if len(cand) > cap:  # even subsample, so a cap never bares one end of the polygon
+            cand = [cand[int(i * len(cand) / cap)] for i in range(cap)] if cap > 0 else []
+        for n, (x, z, s) in enumerate(cand):
+            gen_tree(f"gen-tree-{eid}-{n:03d}", eid, kind, (x, z), (7.0 if kind == "woodland" else 4.5) * s,
+                     (2.2 if kind == "woodland" else 1.8) * s,
+                     f"default tree generated inside mapped {kind}, ~{step:g} m spacing (not mapped)")
+        fill_left[0] -= len(cand)
+
+    def add_area(el, tag_el, kind, ring, t, eid=None, extra=None):
+        if len(ring) < 3 or _poly_area(ring) < 0.5:
+            return
+        eid = eid or f"osm-{el.get('type')}-{el.get('id')}"
+        area = _poly_area(ring)
+        etype = EntityType.WATER if kind == "water" else EntityType.VEGETATION
+        add(tag_el, etype, kind, kind.title(), 0.45, {"area": {"value": round(area, 1), "unit": "m2", "state": "ESTIMATED",
+            "basis": "polygon area of the OSM outline"}},
+            {"footprint_polygon_xyz_m": [[x, 0.0, z] for x, z in ring], **(extra or {}), **box(ring, 0, 0.05)}, eid=eid)
+        if kind in FILL_SPACING_M and fill_left[0] > 0:
+            fill_trees(eid, tag_el, kind, ring)
+
     for el in elements:
         t = el.get("tags") or {}
+        if el.get("type") == "relation":
+            akind = _area_kind(t)
+            if not akind:
+                continue
+            rings = []
+            for m in el.get("members") or []:
+                g = [(p["lat"], p["lon"]) for p in m.get("geometry") or [] if p and "lat" in p and "lon" in p]
+                # narrow: only outer members that are already closed rings; split/assembled rings are not stitched
+                if m.get("role") == "outer" and len(g) >= 4 and g[0] == g[-1]:
+                    rings.append([xz(*p) for p in g[:-1]])
+            inner = sum(1 for m in el.get("members") or [] if m.get("role") == "inner")
+            for n, ring in enumerate(rings):
+                eid = f"osm-relation-{el.get('id')}" + (f"-{n + 1}" if n else "")
+                add_area(el, el, akind, ring, t, eid, {"holes_ignored": inner, "outer_rings": len(rings)})
+            continue
         if el.get("type") == "way":
             if "building" in t:
                 pts = pts_of(el)
@@ -228,9 +461,20 @@ def osm_to_world(elements: list[dict], lat: float, lon: float, name: str, *, rad
                 dims = {"height": _dim(height, hs, hb)}
                 if est_fp:
                     dims["footprint_side"] = _dim(CENTER_ONLY_FOOTPRINT_M, "ESTIMATED", "centre_point_only")
+                roof = _roof_for(t, pts, est_fp)
+                rh = roof["height_m"]
+                # OSM `height` is the total height including the roof, so the walls stop lower; levels/default
+                # heights are wall heights and the roof sits on top of them.
+                eave = max(height - rh, 0.6 * height) if (h_tag and rh) else height
+                roof = {**roof, "eave_height_m": round(eave, 3)}
+                if rh:
+                    dims["roof_height"] = _dim(rh, "ESTIMATED", roof["basis"])
                 add(el, EntityType.BUILDING, "building", "Building", conf, dims,
                     {"footprint_polygon_xyz_m": [[x, 0.0, z] for x, z in pts], "footprint_estimated": est_fp,
-                     **box(pts, 0, height)})
+                     "roof": roof, **box(pts, 0, eave + rh)})
+            elif (akind := _area_kind(t)) and _closed(el):
+                ring = pts_of(el)[:-1]
+                add_area(el, el, akind, ring, t)
             elif t.get("highway") == "steps":
                 _, wd = _width_dim(t, 1.5, "default_steps_width")
                 line(el, EntityType.STAIRS, "steps", "Steps", wd, 0.5, h=2.0)
@@ -247,9 +491,18 @@ def osm_to_world(elements: list[dict], lat: float, lon: float, name: str, *, rad
                      _dim(RAIL_WIDTH_M, "ESTIMATED", "default_rail_width"), 0.45,
                      {"railway": t["railway"], "tunnel": tunnel, "layer": _num(t.get("layer")),
                       "underground": tunnel}, h=0.3)
+            elif t.get("barrier") == "hedge":
+                w, wd = _width_dim(t, HEDGE_WIDTH_M, "default_hedge_width")
+                ht = _num(t.get("height"))
+                hd = _dim(ht, "INFERRED", "osm_tag:height") if ht else _dim(HEDGE_HEIGHT_M, "ESTIMATED", "default_hedge_height")
+                line(el, EntityType.VEGETATION, "hedge", "Hedge", wd, 0.5, {"barrier_kind": "hedge"},
+                     {"height": hd}, h=hd["value"])
+            elif t.get("natural") == "tree_row":
+                tree_row(el)
             elif "barrier" in t:
                 line(el, EntityType.STRUCTURE, t["barrier"] if t["barrier"] != "yes" else "barrier", "Barrier",
-                     _dim(BARRIER_WIDTH_M, "ESTIMATED", "default_barrier_width"), 0.5, h=1.0)
+                     _dim(BARRIER_WIDTH_M, "ESTIMATED", "default_barrier_width"), 0.5,
+                     {"barrier_kind": t["barrier"]}, h=1.0)
             elif "highway" in t:
                 hw = t["highway"]
                 if hw in ("footway", "pedestrian", "path", "cycleway") or t.get("footway") == "sidewalk":
@@ -283,19 +536,29 @@ def osm_to_world(elements: list[dict], lat: float, lon: float, name: str, *, rad
             kind = "traffic_sign"
         elif t.get("emergency") == "fire_hydrant":
             kind = "fire_hydrant"
-        elif t.get("natural") == "tree":
-            kind = "tree"
+        elif t.get("natural") in ("tree", "shrub"):
+            kind = t["natural"]
         if kind is None:
             continue
         etype, side, dh = POINT_DEFAULTS[kind]
         h_tag = _num(t.get("height"))
         h, hs, hb = (h_tag, "INFERRED", "osm_tag:height") if h_tag else (dh, "ESTIMATED", f"default_{kind}_height")
-        extra = {"position_xyz_m": [c[0], 0.0, c[1]], **box([c], side / 2, h)}
+        dims = {"height": _dim(h, hs, hb), "footprint_side": _dim(side, "ESTIMATED", f"default_{kind}_size")}
+        extra = {}
+        if kind in ("tree", "shrub"):
+            crown = _num(t.get("diameter_crown"))
+            if crown and crown > 0:  # canopy diameter drives the drawn footprint
+                side = crown
+                dims["footprint_side"] = _dim(crown, "INFERRED", "osm_tag:diameter_crown")
+            style, sb = _canopy_style(t)
+            ch = h * (0.7 if style == "cone" else 0.6)
+            extra["canopy"] = {"style": style, "radius_m": round(side / 2, 3), "height_m": round(ch, 3), "basis": sb,
+                               "radius_state": "INFERRED" if crown else "ESTIMATED"}
+        extra.update({"position_xyz_m": [c[0], 0.0, c[1]], **box([c], side / 2, h)})
         label_kind = t["barrier"] if kind == "barrier" and t["barrier"] != "yes" else kind
         if kind == "barrier":
             extra["barrier_kind"] = t["barrier"]
-        add(el, etype, label_kind, kind.replace("_", " ").title(), 0.6,
-            {"height": _dim(h, hs, hb), "footprint_side": _dim(side, "ESTIMATED", f"default_{kind}_size")}, extra)
+        add(el, etype, label_kind, kind.replace("_", " ").title(), 0.6, dims, extra)
     return world
 
 

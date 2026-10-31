@@ -130,6 +130,9 @@ class CompileOptions:
     #: Pass explicit values to compile at a different scale.
     distance_tolerance_m: float = 0.02
     min_inliers: int = 8
+    #: Find floor / ceiling / walls with the room prior (perception.geometry.room_box) before generic RANSAC. Off by
+    #: default (RANSAC behaviour is unchanged); the vertical slice's dense structure pass tries it as a candidate.
+    room_prior: bool = False
     #: Entity id prefixes (caller-controllable so multiple compiles can
     #: target one world without id collisions).
     structure_prefix: str = "struct"
@@ -281,11 +284,17 @@ def compile_reconstruction_to_world(
     # downstream. assemble_interior_scene has applied the same
     # provenance-recording refinement since PR #111; the compiler path
     # consuming raw detection was the defect.
-    detection = detect_planes(
-        result, seed=options.seed,
-        distance_tolerance_m=options.distance_tolerance_m,
-        min_inliers=options.min_inliers,
-    )
+    detection = None
+    if options.room_prior:           # floor/ceiling/walls from histograms; None = not room-like -> RANSAC below
+        from perception.geometry.room_box import detect_room_planes
+
+        detection = detect_room_planes(result, options.up)
+    if detection is None:
+        detection = detect_planes(
+            result, seed=options.seed,
+            distance_tolerance_m=options.distance_tolerance_m,
+            min_inliers=options.min_inliers,
+        )
     positions_by_id = {p.track_id: p.position for p in result.points}
     refined_planes = refine_planes(
         detection.planes, positions_by_id, options.up,

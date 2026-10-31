@@ -173,6 +173,25 @@ class VerticalSliceOptions:
     plane_sweep_planes: int = 48
 
 
+def _refine_unit(result, unit_k: float, unit_facts):
+    """RELATIVE worlds only (unit_facts set): once the frame is canonical, refine the working unit so the cameras sit at a
+    typical handheld eye height above the detected floor -- a far better prior than viewing distance (measured: the
+    viewing-distance unit was ~2.8x too large on real photos, so walls fell under the 'room scale' thresholds). Still a
+    prior, never a measurement: the world stays relative. ``base_k`` (pre-refinement) is what the next version reuses."""
+    if not unit_facts:
+        return result, unit_k, unit_facts
+    from perception.geometry.room_box import NOMINAL_EYE_HEIGHT, eye_height_factor
+    from reconstruction.scene_scale import rescale
+
+    f = eye_height_factor(result)
+    if f is None or not (0.2 < f < 5.0):          # an implausible factor means the 'floor' was not one: keep the unit
+        return result, unit_k, dict(unit_facts, base_k=unit_k, eye_height_refined=False)
+    return rescale(result, f), unit_k * f, dict(
+        unit_facts, base_k=unit_k, unit_k=unit_k * f, eye_height_refined=True, eye_height_factor=f,
+        basis=unit_facts["basis"] + f"; refined so camera height above the floor is {NOMINAL_EYE_HEIGHT:g} units "
+                                    "(a typical handheld eye height) -- still NOT metres")
+
+
 def _canonicalize(result, options):
     """Stage 2.5 for both the arbiter's candidate snapshots and the final run: one rule, so they cannot disagree."""
     from reconstruction.frame import canonicalize_like_head
@@ -199,8 +218,12 @@ def _candidate_snapshot(result, evidence_items, options) -> dict:
     else:                          # the same working unit the real run uses, or the two candidates would be judged apart
         from reconstruction.scene_scale import working_unit
 
-        result, _ = working_unit(unscaled(result).result, options.head_unit_k)
-    result, _ = _canonicalize(result, options)
+        result, _uf = working_unit(unscaled(result).result, options.head_unit_k)
+        result, _ = _canonicalize(result, options)
+        result, _, _ = _refine_unit(result, _uf["unit_k"] if _uf else 1.0, _uf)
+        scaled = True
+    if scaled is not True:
+        result, _ = _canonicalize(result, options)
     world, _ = compile_reconstruction_to_world(
         result, CompileOptions(seed=options.seed, up=options.up, artifact_store=options.artifact_store))
     registered = [p.evidence_id for p in result.camera_poses]
@@ -385,6 +408,9 @@ def vertical_slice(
         result, frame_record = _canonicalize(result, options)
     except FrameCanonicalizationError as exc:
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
+    result, unit_k, unit_facts = _refine_unit(result, unit_k, unit_facts)
+    if unit_facts:
+        scale_note = scale_note + f" | {unit_facts['basis']}"
 
     lap("scale_and_frame")
     # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
@@ -459,6 +485,7 @@ def vertical_slice(
         # RELATIVE worlds only: the working unit (displayed units per solver unit) the structure was found in. Never a
         # metric claim; read back by the next version (head_unit_k) and by the scale-reference endpoint.
         "provisional_unit_k": unit_k if unit_facts else None,
+        "provisional_unit_base_k": (unit_facts or {}).get("base_k") or (unit_facts or {}).get("unit_k"),
         "provisional_unit": unit_facts,
     }
     # Plan D1: the compile stamped dimensions before the scale existed (RELATIVE caps at RECONSTRUCTED/model_units).
@@ -533,8 +560,10 @@ def vertical_slice(
 
 def _structure_rank(world, diagnostics) -> Tuple[int, int]:
     """(closed rooms, promoted wall/floor/ceiling entities): what a compile actually understood, rooms first."""
-    structural = sum(1 for e in world.entities.values() if e.type.value in ("wall", "floor", "ceiling"))
-    return (int(diagnostics.rooms_detected), structural)
+    # CAPPED per kind: a room has one floor, one ceiling and about four walls, so 70 'floor' fragments from furniture
+    # tops must not outrank a clean floor plus walls (that rewarded noise, the opposite of understanding the room).
+    n = {k: sum(1 for e in world.entities.values() if e.type.value == k) for k in ("wall", "floor", "ceiling")}
+    return (int(diagnostics.rooms_detected), min(n["wall"], 4) + min(n["floor"], 1) + min(n["ceiling"], 1))
 
 
 def _dense_structure_pass(result, world, diagnostics, compile_options, dense_facts, voxel: float = 0.05,
@@ -554,15 +583,25 @@ def _dense_structure_pass(result, world, diagnostics, compile_options, dense_fac
             return world, diagnostics, {"status": "skipped", "note": "no dense points"}
         keys = np.floor(np.asarray([p.position for p in dense], dtype=float) / voxel).astype(np.int64)
         idx = np.sort(np.unique(keys, axis=0, return_index=True)[1])
+        from perception.geometry.room_box import core_mask
+
+        idx = idx[core_mask(np.asarray([dense[i].position for i in idx], dtype=float))]   # floaters out
         if len(idx) > cap:
             idx = idx[np.linspace(0, len(idx) - 1, cap).astype(int)]
         cand = ReconstructionResult(points=sparse + [dense[i] for i in idx], camera_poses=result.camera_poses,
                                     registration_status=result.registration_status)
         w2, d2 = compile_reconstruction_to_world(cand, compile_options)
+        tried = {"ransac": _structure_rank(w2, d2)}
+        # the room prior (floor/ceiling/walls from histograms) is a second candidate; the best-understood world wins
+        w3, d3 = compile_reconstruction_to_world(cand, dataclasses.replace(compile_options, room_prior=True))
+        tried["room_prior"] = _structure_rank(w3, d3)
+        # the room prior is the principled candidate (clean floor + outer walls); RANSAC only wins by closing a room
+        if tried["room_prior"][1] > 0 and tried["room_prior"][0] >= tried["ransac"][0]:
+            w2, d2 = w3, d3
     except Exception as exc:  # noqa: BLE001 -- an enrichment pass must never lose the sparse world
         return world, diagnostics, {"status": "failed", "note": f"{type(exc).__name__}: {exc}"[:300]}
     before, after = _structure_rank(world, diagnostics), _structure_rank(w2, d2)
-    facts = {"sparse_rank": before, "dense_rank": after, "points_used": len(sparse) + len(idx)}
+    facts = {"sparse_rank": before, "dense_rank": after, "candidates": tried, "points_used": len(sparse) + len(idx)}
     if after > before:
         gid = dense_facts.get("geometry_id")
         if gid in world.geometries:

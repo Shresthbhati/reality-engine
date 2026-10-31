@@ -42,12 +42,12 @@ def test_head_unit_is_kept_while_the_solve_agrees_and_dropped_when_it_does_not()
     assert not dropped["reused_from_head"] and dropped["unit_k"] == pytest.approx(own)
 
 
-def _box_room(scale: float) -> ReconstructionResult:
+def _box_room(scale: float, step: float = 0.4) -> ReconstructionResult:
     """A 5 x 4 x 2.6 room (floor, ceiling, four walls; 1 cm noise) in an arbitrary solver frame and scale."""
     import numpy as np
 
     rng = np.random.default_rng(1)
-    w, d, h, step = 5.0, 4.0, 2.6, 0.4
+    w, d, h = 5.0, 4.0, 2.6
     xs, ys, zs = (np.arange(0, v + 1e-9, step) for v in (w, h, d))
     pts = ([(x, 0, z) for x in xs for z in zs] + [(x, h, z) for x in xs for z in zs]
            + [(x, y, 0) for x in xs for y in ys] + [(x, y, d) for x in xs for y in ys]
@@ -90,3 +90,23 @@ def test_unmeasurable_scale_is_left_alone():
     empty = ReconstructionResult(points=[], camera_poses=[], registration_status="failed")
     out, facts = working_unit(empty)
     assert out is empty and facts is None
+
+
+def test_room_prior_finds_one_floor_one_ceiling_and_four_walls_in_a_noisy_box():
+    """RANSAC shreds a furnished room into dozens of fragments; the room prior must give the room's own planes."""
+    from perception.geometry.room_box import detect_room_planes
+
+    raw = _box_room(1.0, step=0.1)
+    det = detect_room_planes(raw)
+    assert det is not None
+    horizontal = [p for p in det.planes if abs(p.normal[1]) > 0.9]
+    vertical = [p for p in det.planes if abs(p.normal[1]) < 0.1]
+    assert len(horizontal) == 2 and len(vertical) == 4
+
+
+def test_room_prior_declines_a_cloud_that_is_not_a_room():
+    from perception.geometry.room_box import detect_room_planes
+
+    pts = [ReconstructedPoint((i * 0.01, (i * 7 % 13) * 0.3, (i * 5 % 11) * 0.2), f"t{i}", ["a"]) for i in range(400)]
+    cams = [ReconstructedCameraPose(c, (float(i), 1.0, 0.0), (1, 0, 0, 0)) for i, c in enumerate("abc")]
+    assert detect_room_planes(ReconstructionResult(points=pts, camera_poses=cams, registration_status="success")) is None

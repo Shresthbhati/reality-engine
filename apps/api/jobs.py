@@ -595,7 +595,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             # the HEAD's canonical rotation: an incremental candidate (same raw COLMAP frame) reuses it
             head_frame=head_report.get("frame"),
             # a RELATIVE head's working unit, kept while this solve is in the same frame (reconstruction.scene_scale)
-            head_unit_k=(((head_report.get("stages") or {}).get("scale")) or {}).get("provisional_unit_k"),
+            head_unit_k=(((head_report.get("stages") or {}).get("scale")) or {}).get("provisional_unit_base_k"),
             **_dense_quality_options(),
             **_dense_cpu_options(job.payload))
     # The ladder: multi-view reconstruction when the evidence supports it,
@@ -853,6 +853,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                       "scale_basis": (world_ir.metadata.get("scale") or {}).get("scale_basis"),
                       "dimension_state": (world_ir.metadata.get("scale") or {}).get("dimension_state"),
                       "provisional_unit_k": (world_ir.metadata.get("scale") or {}).get("provisional_unit_k"),
+                      "provisional_unit_base_k": (world_ir.metadata.get("scale") or {}).get("provisional_unit_base_k"),
                       "dropped": scale_ref_notes},
             "depth": prog.stage_facts.get("depth"),
             "perception": prog.stage_facts.get("perception"),

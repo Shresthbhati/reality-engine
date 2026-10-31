@@ -75,3 +75,86 @@ class DetectionResult:
     detections: list  # List[Detection]
     model_name: str
     model_version: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Image-plane detector contract (rooms -> neighbourhoods plan, decision 6).
+#
+# Named `ImageDetection` (not `Detection`) because `Detection` above is already
+# imported by the Mask R-CNN backend and its tests. A detector that cannot run
+# says so: `NullDetector.detect` RAISES, silence never looks like "nothing
+# detected".
+# ---------------------------------------------------------------------------
+from typing import Callable, Dict, Optional, Protocol, Sequence, Tuple  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+
+@dataclass(frozen=True)
+class ImageDetection:
+    label: str
+    score: float
+    box_xyxy: Tuple[float, float, float, float]
+    mask: Optional[np.ndarray] = None  # (H, W) bool, same frame as the image
+    view_id: str = ""
+    source: str = ""
+
+
+class DetectorUnavailable(RuntimeError):
+    """No detector backend can run (missing package or weights)."""
+
+
+class Detector(Protocol):
+    name: str
+
+    def available(self) -> Tuple[bool, str]: ...
+
+    def detect(self, image_rgb: np.ndarray, queries: Sequence[str]) -> List[ImageDetection]: ...
+
+
+INSTALL_HINT = (
+    "OWL-ViT -> `huggingface-cli download google/owlvit-base-patch32` (~600 MB); "
+    "torchvision COCO -> fetch fasterrcnn_mobilenet_v3_large_320_fpn weights (~160 MB) into the "
+    "torch hub cache; or inject a FakeDetector for tests"
+)
+
+
+class NullDetector:
+    name = "null"
+
+    def __init__(self, reason: str = INSTALL_HINT):
+        self._reason = f"no detector installed: {reason}"
+
+    def available(self) -> Tuple[bool, str]:
+        return False, self._reason
+
+    def detect(self, image_rgb, queries):
+        raise DetectorUnavailable(self._reason)
+
+
+# name -> zero-arg factory; backends.py fills this in on import.
+_FACTORIES: Dict[str, Callable[[], "Detector"]] = {}
+
+
+def register_detector(name: str, factory: Callable[[], "Detector"]) -> None:
+    _FACTORIES[name] = factory
+
+
+def get_detector(name: Optional[str] = None) -> "Detector":
+    """First AVAILABLE backend (or the named one); NullDetector otherwise."""
+    from perception.detection import backends  # noqa: F401  (registers defaults)
+
+    if name is not None:
+        if name not in _FACTORIES:
+            return NullDetector(f"unknown detector '{name}'; known: {sorted(_FACTORIES)}")
+        det = _FACTORIES[name]()
+        ok, reason = det.available()
+        return det if ok else NullDetector(f"{name}: {reason}")
+    reasons = []
+    for factory in list(_FACTORIES.values()):
+        det = factory()
+        ok, reason = det.available()
+        if ok:
+            return det
+        reasons.append(f"{det.name}: {reason}")
+    return NullDetector("; ".join(reasons) if reasons else INSTALL_HINT)

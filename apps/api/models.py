@@ -329,3 +329,27 @@ class SitePlacement(Base):
     rotation_deg: Mapped[float] = mapped_column(Float, default=0.0)
     scale: Mapped[float] = mapped_column(Float, default=1.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SiteComposite(Base):
+    """The world a Site was composed into (one per site/kind/name; re-composing commits a new version to it)."""
+
+    __tablename__ = "site_composites"
+
+    site_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SiteAnchor(Base):
+    """Optional real-world anchor of a Site (user-set): where its origin is on Earth and how the grid is rotated."""
+
+    __tablename__ = "site_anchors"
+
+    site_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    lat: Mapped[float] = mapped_column(Float)
+    lon: Mapped[float] = mapped_column(Float)
+    rotation_deg: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

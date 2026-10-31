@@ -60,6 +60,20 @@ async def init_db() -> None:
     get_engine()
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_add_missing_columns)
+
+
+def _add_missing_columns(sync_conn) -> None:
+    """create_all never alters an existing table; add the nullable D1 columns to a pre-D1 world_measurements."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(sync_conn)
+    if "world_measurements" not in insp.get_table_names():
+        return
+    have = {c["name"] for c in insp.get_columns("world_measurements")}
+    for name, ddl in (("state", "VARCHAR(16)"), ("verified_value", "FLOAT")):
+        if name not in have:
+            sync_conn.execute(text(f"ALTER TABLE world_measurements ADD COLUMN {name} {ddl}"))
 
 
 async def dispose_db() -> None:

@@ -34,6 +34,9 @@ _MEDIA_TYPES = {
     "sdf": "application/xml",
     "tscn": "text/plain",
     "unreal": "application/x-python",
+    "floorplan_svg": "image/svg+xml",
+    "floorplan_dxf": "image/vnd.dxf",
+    "room_report_pdf": "application/pdf",
 }
 # profile bundles (multi-file, may hold binary) are stored as one JSON document; see _bundle_json
 _MEDIA_TYPES.update({name: "application/json" for name in reality.EXPORT_PROFILES})

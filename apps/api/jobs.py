@@ -247,6 +247,15 @@ def _carry_entity_identity(world_ir, prog, cand_snap, delta, conflicts, head_rep
         world=trial, artifact_store=artifact_store)
     return trial, snap, {"carried": len(carried), "ids": carried, "lineage": out["lineage"]}
 
+def _dense_cpu_options(payload) -> dict:
+    """VerticalSliceOptions kwargs from the opt-in CPU plane-sweep request on a job payload ({} = current behaviour)."""
+    cfg = (payload or {}).get("dense_cpu") if isinstance(payload, dict) else None
+    if not isinstance(cfg, dict) or not cfg.get("enabled"):
+        return {}
+    return {"plane_sweep_enabled": True,
+            **{f"plane_sweep_{k}": int(cfg[k]) for k in ("max_views", "stride", "planes") if cfg.get(k) is not None}}
+
+
 def enqueue_job(
     db: AsyncSession,
     job_type: str,
@@ -444,6 +453,15 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     )
     evidence_rows = list(result.scalars().all())
     head_report = await _head_report(db, world)
+    # F6: user-verified corrections from the current version are replayed onto the rebuilt world below. A failure to
+    # read the previous version only means no carry-over, never a lost reconstruction.
+    prev_corrections: list = []
+    try:
+        from apps.api.worldstore_service import get_current_worldir as _get_head_world
+        _prev_world = await _get_head_world(db, world.id)
+        prev_corrections = list(((_prev_world.metadata or {}).get("user_corrections") if _prev_world else []) or [])
+    except Exception:  # noqa: BLE001 -- enrichment only
+        prev_corrections = []
     prior_ids = list((head_report.get("evidence") or {}).get("all_ids") or [])
     resolved = []
     skipped_evidence = []
@@ -524,15 +542,20 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
     # Operator-measured distances between two of this world's photographs (POST /api/worlds/{id}/scale):
     # the ONLY source of metric scale. Without one the world stays RELATIVE -- meters are never assumed.
-    from reconstruction.scale import ScaleAnchoringError, ScaleReference
+    from reconstruction.scale import (
+        ScaleAnchoringError, ScaleReference, basis_from_note, consolidate_references, dimension_state_for_basis,
+    )
 
     baselines = []
     for r in worldstore_service.list_scale_references(world.id):
         try:
             baselines.append(ScaleReference(r["evidence_id_a"], r["evidence_id_b"], float(r["distance_m"]),
-                                            r.get("method", "manual_measurement")))
-        except (KeyError, ValueError, ScaleAnchoringError):
+                                            r.get("method", "manual_measurement"),
+                                            r.get("model_distance"), r.get("unit_check_sep")))
+        except (KeyError, ValueError, TypeError, ScaleAnchoringError):
             continue            # a malformed stored reference is skipped, never guessed at
+    # trust order: camera baselines > known lengths (median, spread-gated) > accepted typical-size prior
+    baselines, scale_ref_notes = consolidate_references(baselines)
     if test_backend is not None:
         options = VerticalSliceOptions(
             artifact_store=artifact_store,
@@ -560,7 +583,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             head_snapshot=world_delta.snapshot_from_report(head_report),
             head_conflicts=head_report.get("conflicts"),
             # the HEAD's canonical rotation: an incremental candidate (same raw COLMAP frame) reuses it
-            head_frame=head_report.get("frame"))
+            head_frame=head_report.get("frame"),
+            **_dense_cpu_options(job.payload))
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
     prog = await asyncio.to_thread(
@@ -584,10 +608,39 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         for ei in eval_inputs
     ]
     world_ir.metadata["evidence"] = {"used": evidence_records, "excluded": prog.excluded}
+    if prog.scale_state == "metric" and isinstance(world_ir.metadata.get("scale"), dict):
+        # D1 reads these: HOW the metres were obtained, and the state every dimension inherits
+        # (an accepted typical-size prior is ESTIMATED, never MEASURED).
+        _basis = basis_from_note(world_ir.metadata["scale"].get("note"))
+        world_ir.metadata["scale"]["scale_basis"] = _basis
+        world_ir.metadata["scale"]["dimension_state"] = dimension_state_for_basis(_basis)
     world_ir.metadata["progressive"] = {
         "level": prog.level, "level_name": prog.level_name, "model_state": prog.model_state,
         "attempts": prog.attempts,
     }
+
+    # ---- F6: replay user-verified corrections (they outrank every automatic result and survive a rebuild) ----
+    if prev_corrections:
+        try:
+            from world_ir.corrections import carry_corrections
+            carry_corrections(world_ir, prev_corrections)
+        except Exception as exc:  # noqa: BLE001 -- the rebuilt world stands; the failure is visible
+            world_ir.metadata["correction_carry"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # ---- M2: measured colour + planar texture per solid room surface, from the posed photos ----
+    # Runs before persistence so the version the UI reads already carries the appearance reference. A failure is
+    # recorded on the world and never loses an otherwise valid reconstruction.
+    try:
+        from perception.materials.room_surfaces import measure_world_appearance, views_from_photos
+        # the compiler measures it itself when handed CompileOptions.appearance_views: do not repeat the work
+        if not (world_ir.metadata.get("surface_appearance") or {}).get("available"):
+            _items_by_id = {it.id: it for it in items}
+            _views, _intr_sources, _skipped = views_from_photos(prog.camera_poses, _items_by_id)
+            measure_world_appearance(world_ir, _views, artifact_store=artifact_store,
+                                     intrinsics_sources=_intr_sources, skipped=_skipped)
+    except Exception as exc:  # noqa: BLE001 -- appearance is an enrichment, not a precondition for the world
+        world_ir.metadata["surface_appearance"] = {"available": False,
+                                                   "reason": f"{type(exc).__name__}: {exc}"}
 
     # Provenance + determinism record: stamp every reconstructed entity
     # with the session, backend, and pipeline configuration it was built
@@ -651,7 +704,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         prev_scale = ((head_report.get("stages") or {}).get("scale")) or {}
         if prog.scale_state != prev_scale.get("state") or prog.meters_per_unit != prev_scale.get("meters_per_unit"):
             if prog.scale_state == "metric" and prog.meters_per_unit:
-                refs_used = [f"{b.distance_m:g} m between two photographs ({b.method})" for b in baselines]
+                refs_used = [b.describe() for b in baselines]
                 changes.insert(0, f"Scale changed from {prev_scale.get('state') or 'unknown'} to metric: "
                                   f"{prog.meters_per_unit:.6g} m per model unit, anchored by "
                                   f"{'; '.join(refs_used) or 'a measured reference'}. The same world, now in meters.")
@@ -783,10 +836,16 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             "scale": {"state": prog.scale_state, "meters_per_unit": prog.meters_per_unit,
                       "references": [{"evidence_id_a": b.evidence_id_a, "evidence_id_b": b.evidence_id_b,
                                       "distance_m": b.distance_m, "method": b.method} for b in baselines],
-                      "note": prog.stage_facts.get("scale_error_note")},
+                      "note": prog.stage_facts.get("scale_error_note"),
+                      "scale_basis": (world_ir.metadata.get("scale") or {}).get("scale_basis"),
+                      "dimension_state": (world_ir.metadata.get("scale") or {}).get("dimension_state"),
+                      "dropped": scale_ref_notes},
             "depth": prog.stage_facts.get("depth"),
             "perception": prog.stage_facts.get("perception"),
             "mesh": prog.stage_facts.get("mesh"),
+            # Plan F3 / F2 facts: surfaced so the status endpoint can say whether they ran or why not
+            "plane_sweep": prog.stage_facts.get("plane_sweep"),
+            "device_depth_scale": prog.stage_facts.get("device_depth_scale"),
             "compile": {
                 "entities": prog.counts.get("entities", len(world_ir.entities)),
                 "measurements": prog.counts.get("measurements", 0),

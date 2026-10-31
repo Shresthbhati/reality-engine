@@ -1,0 +1,191 @@
+{
+  "ceiling": {
+    "color_rgb": [
+      240,
+      240,
+      235
+    ]
+  },
+  "fixture": "fidelity_room",
+  "floor": {
+    "color_rgb": [
+      150,
+      110,
+      70
+    ]
+  },
+  "furniture": [
+    {
+      "color_rgb": [
+        140,
+        90,
+        160
+      ],
+      "max": [
+        3.2,
+        2.0,
+        0.75
+      ],
+      "min": [
+        2.0,
+        1.2,
+        0.0
+      ],
+      "ref": "table",
+      "size_m": [
+        1.2000000000000002,
+        0.8,
+        0.75
+      ]
+    },
+    {
+      "color_rgb": [
+        40,
+        40,
+        40
+      ],
+      "max": [
+        4.4,
+        3.2,
+        1.8
+      ],
+      "min": [
+        3.8,
+        2.6,
+        0.0
+      ],
+      "ref": "wardrobe",
+      "size_m": [
+        0.6000000000000005,
+        0.6000000000000001,
+        1.8
+      ]
+    }
+  ],
+  "openings": [
+    {
+      "center": [
+        1.45,
+        0.0,
+        1.025
+      ],
+      "height_m": 2.05,
+      "kind": "door",
+      "sill_m": 0.0,
+      "wall": "room-a-wall-south",
+      "width_m": 0.9
+    },
+    {
+      "center": [
+        2.9,
+        4.0,
+        1.45
+      ],
+      "height_m": 1.1,
+      "kind": "window",
+      "sill_m": 0.9,
+      "wall": "room-a-wall-north",
+      "width_m": 1.2
+    }
+  ],
+  "room": {
+    "area_m2": 20,
+    "ceiling_z": 2.6,
+    "floor_z": 0.0,
+    "height_m": 2.6,
+    "id": "room-a",
+    "length_m": 5,
+    "max": [
+      5,
+      4
+    ],
+    "min": [
+      0,
+      0
+    ],
+    "width_m": 4
+  },
+  "scale_basis": "exact (synthetic generator)",
+  "schema": "room_fidelity_ground_truth/1",
+  "source": "synthetic",
+  "units": "m",
+  "up_axis": "z",
+  "walls": [
+    {
+      "color_rgb": [
+        200,
+        60,
+        60
+      ],
+      "end": [
+        5,
+        0
+      ],
+      "height_m": 2.6,
+      "id": "room-a-wall-south",
+      "length_m": 5.0,
+      "side": "south",
+      "start": [
+        0,
+        0
+      ]
+    },
+    {
+      "color_rgb": [
+        60,
+        160,
+        70
+      ],
+      "end": [
+        5,
+        4
+      ],
+      "height_m": 2.6,
+      "id": "room-a-wall-east",
+      "length_m": 4.0,
+      "side": "east",
+      "start": [
+        5,
+        0
+      ]
+    },
+    {
+      "color_rgb": [
+        60,
+        90,
+        200
+      ],
+      "end": [
+        0,
+        4
+      ],
+      "height_m": 2.6,
+      "id": "room-a-wall-north",
+      "length_m": 5.0,
+      "side": "north",
+      "start": [
+        5,
+        4
+      ]
+    },
+    {
+      "color_rgb": [
+        210,
+        190,
+        60
+      ],
+      "end": [
+        0,
+        0
+      ],
+      "height_m": 2.6,
+      "id": "room-a-wall-west",
+      "length_m": 4.0,
+      "side": "west",
+      "start": [
+        0,
+        4
+      ]
+    }
+  ]
+}

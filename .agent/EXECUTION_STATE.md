@@ -3,6 +3,48 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-10-31 -- Room reconstruction fidelity (Phase 7), worktree room-reconstruction-phase-7-dd491b
+
+Plan: docs/superpowers/plans/2026-10-30-room-reconstruction-fidelity.md. Registry updated in the same change:
+docs/implementation/PENDING_IMPLEMENTATION.md ("Room fidelity plan items"), IMPLEMENTATION_STATUS.md, CAPABILITIES.md,
+DESIGN_DECISIONS.md (Decision 023 amendment cites D2b; new Site-composer decision).
+
+HONEST BOUNDARY: everything is verified on SYNTHETIC fixtures only. No real-room photos or tape measurements exist.
+Nothing is browser-verified. No item was upgraded to VERIFIED.
+
+Completed with the verification actually observed:
+- Freebuff-owned test files: 44 tests passed.
+- Frontend: 171/171 contract tests passed; `tsc --noEmit` exit 0.
+- tests/test_api_dense_cpu.py + tests/test_api_world_artifacts.py: 19 tests passed.
+- Backend agent reported 203 passed, 1 skipped, 0 failed over its own suites.
+- A clean FULL python suite result is NOT yet available (a run was in progress). Do not claim a full-suite pass.
+
+Statuses held: Phase 0 baseline/CI gate PARTIAL (synthetic); S1-S4 PARTIAL; D1 PARTIAL; D2/D2b PARTIAL (accept path never
+run end to end); D3/D4 EXPERIMENTAL (real-room variant of tests/test_dimension_gates.py is opt-in and SKIPPED); M1/M2
+PARTIAL; M3 EXPERIMENTAL (ESTIMATED, asserted=False, confidence <= 0.4, not wired to physics); V1/V2 EXPERIMENTAL; U1-U3
+PARTIAL; F2 IMPLEMENTED (synthetic RGB-D); F3 PARTIAL (dense_cpu API fields exist, no real job run with dense_cpu=true);
+F4 PARTIAL/BLOCKED (fusion half only, no learned layout model); F6/F7/F8 IMPLEMENTED (synthetic worlds).
+New registry rows: SITE-1 Site composer FOUNDATION (manual placement only, being built by other agents, unverified);
+LAND-1 landmark/curved-structure reconstruction from one image MISSING (not promised).
+
+Partial work: Site composer (tables Site/SitePlacement, /api/sites, frontend /sites) in progress elsewhere; re-verify the
+files exist and tests run before moving it past FOUNDATION.
+
+Blockers:
+- O1/O2 (BLOCKED, DECISION REQUIRED): which 2D door/window detector may be installed (YOLO/GroundingDINO-class vs keep
+  geometry-only vs defer). Recommendation: ask the user, keep geometry-only meanwhile.
+- Real-room fixture: needs photos + tape measurements from the USER; until then every accuracy claim is synthetic.
+
+Known limits (OPEN): wall thickness is always the labelled 0.10 m default; camera view cone (30 deg half-angle, 8 m) is an
+assumed model; scale.py drops dense_points on rebuild; dense_ingest persists the cloud without colour; capture-coverage
+routes never run against a stored world; accepting a scale suggestion never exercised end to end; guided-flow steps 4/5
+always "needs action"; artifact route parses the full head WorldIR per request (uncached); UVs on thin wall sides are
+stretched; photo list shows view ids not thumbnails.
+
+Exact next priority: (1) get the full python suite to a clean recorded result; (2) browser-verify V1/V2 and the guided
+flow; (3) exercise scale-suggestion accept end to end; (4) ask the user for the O1/O2 detector decision and for real-room
+photos + tape measurements, then enable the real-room dimension gate.
+
 ## 2026-10-02/03 -- Final engineering/verification sprint (worktree reality-engine-final-sprint-2b170d)
 
 Ledger after: DONE 36 / PARTIAL 2 (PROD-01, P16-01) / BLOCKED 5 (P1-03 hardware, P3-02 VIO backend, P7-03 real indoor

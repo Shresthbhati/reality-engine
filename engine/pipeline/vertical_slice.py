@@ -121,6 +121,11 @@ class VerticalSliceOptions:
     dense_mvs_sparse_model_dir: Optional[Path] = None
     dense_mvs_workspace: Optional[Path] = None
     dense_mvs_use_gpu: Optional[bool] = None
+    #: Dense cost limits (None = COLMAP's own defaults: full resolution, up to 20 source views per image). The job
+    #: runner sets a fast tier (apps.api.jobs._dense_quality_options); REALITY_DENSE_QUALITY=full restores the defaults.
+    dense_max_image_size: Optional[int] = None
+    dense_num_src_images: Optional[int] = None
+    dense_geom_consistency: bool = True
 
     #: Detail stage (P7-06): measured quality -> detail discovery ->
     #: ROI work orders -> local refinement, recorded in world metadata
@@ -148,6 +153,9 @@ class VerticalSliceOptions:
     #: demonstrably shares HEAD's raw frame reuses it instead of re-estimating 'up' (reconstruction.frame.canonicalize_like_head),
     #: so the world's visible frame does not wander between versions.
     head_frame: Optional[dict] = None
+    #: The working unit HEAD's RELATIVE world already uses (``scale.provisional_unit_k``); reused while this solve agrees
+    #: with it so successive versions of one world keep one unit (reconstruction.scene_scale).
+    head_unit_k: Optional[float] = None
     #: Escalate to dense MVS (Level 3) when the sparse model's MEASURED properties justify it
     #: (engine.pipeline.dense_gate), using the persistent COLMAP session's own images and sparse model; the dense
     #: cloud is then JUDGED against the sparse world and kept only if better (engine.pipeline.dense_judge). The
@@ -186,7 +194,12 @@ def _candidate_snapshot(result, evidence_items, options) -> dict:
             break
         except ScaleAnchoringError:
             continue
-    result = (scaled or unscaled(result)).result
+    if scaled is not None:
+        result = scaled.result
+    else:                          # the same working unit the real run uses, or the two candidates would be judged apart
+        from reconstruction.scene_scale import working_unit
+
+        result, _ = working_unit(unscaled(result).result, options.head_unit_k)
     result, _ = _canonicalize(result, options)
     world, _ = compile_reconstruction_to_world(
         result, CompileOptions(seed=options.seed, up=options.up, artifact_store=options.artifact_store))
@@ -251,6 +264,16 @@ def vertical_slice(
     never returns a fabricated world."""
     options = options or VerticalSliceOptions()
 
+    import time as _time
+
+    clock: Dict[str, float] = {}      # seconds per stage, written to the report so slowness is never invisible
+    _mark = [_time.perf_counter()]
+
+    def lap(name: str) -> None:
+        now = _time.perf_counter()
+        clock[name] = round(now - _mark[0], 2)
+        _mark[0] = now
+
     if len(evidence_items) < 2:
         raise VerticalSliceError(
             f"vertical slice needs >= 2 image evidence items, got {len(evidence_items)}"
@@ -295,6 +318,7 @@ def vertical_slice(
     except Exception as exc:  # noqa: BLE001 -- surfaced verbatim below
         raise VerticalSliceError(f"reconstruction stage failed: {exc}") from exc
 
+    lap("sparse_reconstruction")
     result = run.result
     if result.registration_status == "failed" or not result.points:
         raise VerticalSliceError(
@@ -305,6 +329,7 @@ def vertical_slice(
 
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None
+    unit_k, unit_facts = 1.0, None     # the RELATIVE working unit (reconstruction.scene_scale); 1.0 = solver units
     scale_error: Optional[str] = None
     device_depth_facts = None
     for ref in options.measured_baselines:
@@ -337,10 +362,15 @@ def vertical_slice(
         scale_note = scaled.diagnostics.note
     else:
         rel = unscaled(result)
-        result = rel.result
+        # COLMAP's scale is arbitrary but every structure threshold downstream is in metres: give a RELATIVE result a
+        # working unit so walls and floors are findable (still "relative" -- no metric claim, see scene_scale).
+        from reconstruction.scene_scale import working_unit
+
+        result, unit_facts = working_unit(rel.result, options.head_unit_k)
+        unit_k = unit_facts["unit_k"] if unit_facts else 1.0
         meters_per_unit = None
         scale_state = rel.state
-        scale_note = rel.diagnostics.note
+        scale_note = rel.diagnostics.note + (f" | working unit: {unit_facts['basis']}" if unit_facts else "")
         if options.measured_baselines:
             scale_error = (
                 "no measured baseline had both endpoints registered; world "
@@ -356,12 +386,14 @@ def vertical_slice(
     except FrameCanonicalizationError as exc:
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
 
+    lap("scale_and_frame")
     # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
     depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options, scale_state)
 
     # ---- stage 2.9: single-image layout evidence (plan F4; projected, lower-confidence wall support) ----
     layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
 
+    lap("depth_and_layout")
     # ---- stage 3: compile to validated WorldIR ----
     compile_options = CompileOptions(
         seed=options.seed, up=options.up, artifact_store=options.artifact_store,
@@ -372,6 +404,7 @@ def vertical_slice(
     except Exception as exc:  # noqa: BLE001
         raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
 
+    lap("compile")
     # ---- stage 3.5: semantic perception -> object entities (optional) ----
     perception_facts = _perception_stage(
         result, world, evidence_items, metric_depth_maps, options
@@ -380,6 +413,7 @@ def vertical_slice(
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
     mesh_facts = _mesh_stage(result, world, options, scale_state)
 
+    lap("perception_and_mesh")
     # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
     # Runs BEFORE fusion so dense points can participate in cross-source fusion
     dense_options, dense_gate_facts, dense_tmp = options, None, None
@@ -390,6 +424,7 @@ def vertical_slice(
             result, world, dense_options, scale_state, meters_per_unit,
             frame_rotation=frame_record.rotation,
             judge=dense_gate_facts is not None,          # an AUTOMATIC dense candidate must earn its place
+            unit_k=unit_k,
         )
     finally:
         if dense_tmp is not None:
@@ -397,20 +432,34 @@ def vertical_slice(
 
             shutil.rmtree(dense_tmp, ignore_errors=True)       # the fused cloud was ingested into the artifact store
 
+    lap("dense_mvs")
+    # ---- stage 3.655: structure from the DENSE cloud (adopted only when it finds strictly more) ----
+    structure_facts = None
+    if (dense_mvs_facts or {}).get("status") == "ran" and (perception_facts or {}).get("status") in (None, "skipped", "disabled") \
+            and (mesh_facts or {}).get("status") in (None, "skipped", "disabled"):
+        world, diagnostics, structure_facts = _dense_structure_pass(
+            result, world, diagnostics, compile_options, dense_mvs_facts)
+    lap("dense_structure")
     # ---- stage 3.66: CPU plane-sweep dense geometry (plan F3) ----
     plane_sweep_facts = _plane_sweep_stage(result, evidence_items, options, scale_state)
 
     # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
+    lap("plane_sweep_and_fusion")
     # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
     detail_facts = _detail_stage(result, world, options, scale_state)
+    lap("detail")
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,
         "meters_per_unit": meters_per_unit,
         "note": scale_note,
+        # RELATIVE worlds only: the working unit (displayed units per solver unit) the structure was found in. Never a
+        # metric claim; read back by the next version (head_unit_k) and by the scale-reference endpoint.
+        "provisional_unit_k": unit_k if unit_facts else None,
+        "provisional_unit": unit_facts,
     }
     # Plan D1: the compile stamped dimensions before the scale existed (RELATIVE caps at RECONSTRUCTED/model_units).
     # Re-stamp now that the unit is known; idempotent, and a tape-verified value is preserved.
@@ -462,6 +511,7 @@ def vertical_slice(
         stage_facts={
             "backend": run.diagnostics.backend_name,
             "duration_s": run.diagnostics.duration_s,
+            "timings_s": clock,
             "scale_error_note": scale_error,
             # Plan F2: how a device-depth scale was estimated (or why it was refused); None when no device depth exists
             "device_depth_scale": device_depth_facts,
@@ -471,6 +521,7 @@ def vertical_slice(
             "mesh": mesh_facts,
             "detail": detail_facts,
             "dense_mvs": dense_mvs_facts,
+            "dense_structure": structure_facts,
             "plane_sweep": plane_sweep_facts,
             "dense_gate": dense_gate_facts,
             # how the sparse model was actually produced (full / incremental / reused, counts, timings);
@@ -478,6 +529,47 @@ def vertical_slice(
             "colmap_session": dict(getattr(backend, "last_run_info", None) or {}) or None,
         },
     )
+
+
+def _structure_rank(world, diagnostics) -> Tuple[int, int]:
+    """(closed rooms, promoted wall/floor/ceiling entities): what a compile actually understood, rooms first."""
+    structural = sum(1 for e in world.entities.values() if e.type.value in ("wall", "floor", "ceiling"))
+    return (int(diagnostics.rooms_detected), structural)
+
+
+def _dense_structure_pass(result, world, diagnostics, compile_options, dense_facts, voxel: float = 0.05,
+                          cap: int = 12000):
+    """Plain walls carry few sparse features, so the sparse compile often finds floors but no closed room. The dense
+    cloud covers them: recompile on sparse + a voxel-thinned dense cloud and adopt that world ONLY when it understood
+    strictly more (more closed rooms, then more promoted structure). Otherwise the sparse world stands. The dense
+    POINTCLOUD geometry the dense stage attached is carried over. Never raises: a failure keeps the sparse world."""
+    import numpy as np
+
+    from reconstruction.backend.interface import ReconstructionResult
+
+    try:
+        dense = [p for p in result.points if (p.track_id or "").startswith("dense_mvs:")]
+        sparse = [p for p in result.points if not (p.track_id or "").startswith("dense_mvs:")]
+        if not dense:
+            return world, diagnostics, {"status": "skipped", "note": "no dense points"}
+        keys = np.floor(np.asarray([p.position for p in dense], dtype=float) / voxel).astype(np.int64)
+        idx = np.sort(np.unique(keys, axis=0, return_index=True)[1])
+        if len(idx) > cap:
+            idx = idx[np.linspace(0, len(idx) - 1, cap).astype(int)]
+        cand = ReconstructionResult(points=sparse + [dense[i] for i in idx], camera_poses=result.camera_poses,
+                                    registration_status=result.registration_status)
+        w2, d2 = compile_reconstruction_to_world(cand, compile_options)
+    except Exception as exc:  # noqa: BLE001 -- an enrichment pass must never lose the sparse world
+        return world, diagnostics, {"status": "failed", "note": f"{type(exc).__name__}: {exc}"[:300]}
+    before, after = _structure_rank(world, diagnostics), _structure_rank(w2, d2)
+    facts = {"sparse_rank": before, "dense_rank": after, "points_used": len(sparse) + len(idx)}
+    if after > before:
+        gid = dense_facts.get("geometry_id")
+        if gid in world.geometries:
+            w2.geometries[gid] = world.geometries[gid]
+        return w2, d2, {"status": "adopted", **facts,
+                        "note": "the dense cloud understood more structure (rank = closed rooms, promoted structure)"}
+    return world, diagnostics, {"status": "kept_sparse", **facts}
 
 
 def _auto_dense_options(result, n_input: int, options):
@@ -1042,7 +1134,7 @@ def _fusion_stage(result, world, options, scale_state: str):
 
 
 def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit,
-                     frame_rotation=None, judge: bool = False):
+                     frame_rotation=None, judge: bool = False, unit_k: float = 1.0):
     """Stage 3.65 (P6-01): COLMAP dense MVS as a first-class stage.
 
     The sparse model that stage 1 just produced is fed to COLMAP's dense
@@ -1141,6 +1233,9 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit,
             workspace=options.dense_mvs_workspace,
             binary=options.colmap_binary,
             use_gpu=options.dense_mvs_use_gpu,
+            max_image_size=options.dense_max_image_size,
+            num_src_images=options.dense_num_src_images,
+            geom_consistency=options.dense_geom_consistency,
         )
     except (DenseMVSUnavailableError, DenseMVSRunError) as exc:
         return {"status": "failed", "note": f"{type(exc).__name__}: {exc}"}
@@ -1151,10 +1246,11 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit,
         scale_factor = float(meters_per_unit)
         scale_note = "rescaled by the pipeline's measured metric anchor"
     else:
-        scale_factor = 1.0
+        # a RELATIVE world's sparse points were put in the working unit, so the dense cloud must follow them
+        scale_factor = float(unit_k)
         scale_note = (
-            f"world scale is {scale_state}: COLMAP's own SfM scale is "
-            "preserved and recorded, never claimed as meters"
+            f"world scale is {scale_state}: the cloud follows the sparse model's working unit "
+            f"(x{scale_factor:.6g} of COLMAP's own SfM scale), recorded and never claimed as meters"
         )
 
     judged = None

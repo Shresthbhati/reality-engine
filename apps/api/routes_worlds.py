@@ -1285,7 +1285,11 @@ def _head_scale_context(row: WorldVersion) -> tuple[dict, float, str | None, str
     separation) -- the camera pair fingerprints the model unit for model-space references."""
     world = _load_world_or_409(row)
     scale = dict((world.metadata or {}).get("scale") or {})
-    mpu = float(scale.get("meters_per_unit") or 1.0) if scale.get("state") == "metric" else 1.0
+    # Displayed units per solver unit. Metric: metres per unit. Relative: the working unit the structure was found in
+    # (reconstruction.scene_scale), so a length picked in the viewer is converted back to the solver units references
+    # are recorded and applied in.
+    mpu = (float(scale.get("meters_per_unit") or 1.0) if scale.get("state") == "metric"
+           else float(scale.get("provisional_unit_k") or 1.0))
     cams = (row.report or {}).get("cameras") or {}
     ids = sorted(k for k, v in cams.items() if isinstance(v, (list, tuple)) and len(v) == 3)
     for i, a in enumerate(ids):
@@ -1405,7 +1409,7 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
             lo, hi = sug.typical_range_m
             if not (lo <= distance_m <= hi):
                 raise HTTPException(422, f"accepted size must lie in the typical range {lo}-{hi} m")
-            model_distance = sug.measured_model_units
+            model_distance = sug.measured_model_units / mpu     # displayed (working) units -> solver units
         else:  # KNOWN_LENGTH
             if distance_m is None:
                 raise HTTPException(422, "distance_m (the real length) is required")

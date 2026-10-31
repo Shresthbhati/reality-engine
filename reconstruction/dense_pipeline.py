@@ -146,6 +146,8 @@ def run_dense_mvs(
     use_gpu: Optional[bool] = None,
     geom_consistency: bool = True,
     timeout_s: float = 3600.0,
+    max_image_size: Optional[int] = None,
+    num_src_images: Optional[int] = None,
 ) -> DenseMVSRun:
     """Run the COLMAP dense stereo chain and return the fused output's
     facts. `use_gpu=None` leaves the choice to COLMAP (the verified real
@@ -214,12 +216,20 @@ def run_dense_mvs(
         return option in help_text
 
     # Stage 1: image_undistorter -- rectified images + dense workspace.
-    start = time.perf_counter()
-    run_step("image_undistorter", [
+    # Cost scales with pixels x source views per reference image (measured: 18 photos at 1024x1536 against up to 20
+    # sources each took ~7 min). Both limits are opt-in and only passed when this binary's undistorter accepts them.
+    undistort_args = [
         "--image_path", str(image_dir),
         "--input_path", str(sparse_model_dir),
         "--output_path", str(dense_dir),
-    ])
+    ]
+    undistort_help = _help_text(colmap_path, "image_undistorter") if (max_image_size or num_src_images) else ""
+    if max_image_size and _accepts(undistort_help, "--max_image_size"):
+        undistort_args += ["--max_image_size", str(int(max_image_size))]
+    if num_src_images and _accepts(undistort_help, "--num_patch_match_src_images"):
+        undistort_args += ["--num_patch_match_src_images", str(int(num_src_images))]
+    start = time.perf_counter()
+    run_step("image_undistorter", undistort_args)
     stage_durations["image_undistorter"] = time.perf_counter() - start
 
     # Stage 2: patch_match_stereo -- per-view depth/normal maps.

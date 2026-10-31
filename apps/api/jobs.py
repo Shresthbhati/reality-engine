@@ -247,6 +247,16 @@ def _carry_entity_identity(world_ir, prog, cand_snap, delta, conflicts, head_rep
         world=trial, artifact_store=artifact_store)
     return trial, snap, {"carried": len(carried), "ids": carried, "lineage": out["lineage"]}
 
+def _dense_quality_options() -> dict:
+    """Dense cost tier for the product path. The dense cloud is a display layer (room structure is found on the sparse
+    model), so the default is the fast tier: 800 px, 4 source views, photometric only. Measured on 18 living-room
+    photos (RTX 4050): full defaults 485 s / 61k points; 960px+geometric 168 s / 14k; this tier 53 s / 7.6k.
+    ``REALITY_DENSE_QUALITY=full`` keeps COLMAP's own defaults (full resolution, up to 20 sources, geometric)."""
+    if os.environ.get("REALITY_DENSE_QUALITY", "").strip().lower() == "full":
+        return {}
+    return {"dense_max_image_size": 800, "dense_num_src_images": 4, "dense_geom_consistency": False}
+
+
 def _dense_cpu_options(payload) -> dict:
     """VerticalSliceOptions kwargs from the opt-in CPU plane-sweep request on a job payload ({} = current behaviour)."""
     cfg = (payload or {}).get("dense_cpu") if isinstance(payload, dict) else None
@@ -584,6 +594,9 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             head_conflicts=head_report.get("conflicts"),
             # the HEAD's canonical rotation: an incremental candidate (same raw COLMAP frame) reuses it
             head_frame=head_report.get("frame"),
+            # a RELATIVE head's working unit, kept while this solve is in the same frame (reconstruction.scene_scale)
+            head_unit_k=(((head_report.get("stages") or {}).get("scale")) or {}).get("provisional_unit_k"),
+            **_dense_quality_options(),
             **_dense_cpu_options(job.payload))
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
@@ -839,12 +852,14 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                       "note": prog.stage_facts.get("scale_error_note"),
                       "scale_basis": (world_ir.metadata.get("scale") or {}).get("scale_basis"),
                       "dimension_state": (world_ir.metadata.get("scale") or {}).get("dimension_state"),
+                      "provisional_unit_k": (world_ir.metadata.get("scale") or {}).get("provisional_unit_k"),
                       "dropped": scale_ref_notes},
             "depth": prog.stage_facts.get("depth"),
             "perception": prog.stage_facts.get("perception"),
             "mesh": prog.stage_facts.get("mesh"),
             # Plan F3 / F2 facts: surfaced so the status endpoint can say whether they ran or why not
             "plane_sweep": prog.stage_facts.get("plane_sweep"),
+            "timings_s": prog.stage_facts.get("timings_s"),
             "device_depth_scale": prog.stage_facts.get("device_depth_scale"),
             "compile": {
                 "entities": prog.counts.get("entities", len(world_ir.entities)),

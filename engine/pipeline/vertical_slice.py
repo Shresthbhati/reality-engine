@@ -99,6 +99,9 @@ class VerticalSliceOptions:
     detection_score_threshold: float = 0.5
     #: Cross-view merge distance for object hypotheses (meters).
     object_merge_distance_m: float = 0.5
+    #: how per-view object hypotheses become entities: "association" (gated Hungarian, no transitive merges, AMBIGUOUS
+    #: kept apart; perception/instances/association.py) or "union_find" (the older label+distance resolver)
+    object_resolver: str = "association"
     #: Content-addressed store for real geometry artifacts: the surface
     #: mesh (stage 3.6) and, when given, the promoted planes' inlier
     #: point payloads. None keeps legacy behavior (no real payloads).
@@ -903,7 +906,22 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             if hyp is not None:
                 hypotheses.append(hyp)
 
-    candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
+    resolution = {"resolver": options.object_resolver}
+    if options.object_resolver == "union_find":
+        candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
+    elif options.object_resolver == "association":
+        from collections import Counter
+
+        from perception.instances.association import resolve_hypotheses
+        from world_ir.observations import DepthSource
+
+        cam_pos = {p.evidence_id: tuple(float(v) for v in p.position) for p in result.camera_poses}
+        # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
+        candidates, assoc = resolve_hypotheses(hypotheses, DepthSource.MVS, cam_pos, model="mask_rcnn@coco", license="BSD-3-Clause")
+        resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
+        resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
+    else:
+        raise VerticalSliceError(f"unknown object_resolver {options.object_resolver!r}: expected 'association' or 'union_find'")
 
     promoted = 0
     for i, cand in enumerate(candidates):
@@ -928,9 +946,11 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         "hypotheses_lifted": len(hypotheses),
         "candidates_merged": len(candidates),
         "entities_promoted": promoted,
+        "resolution": resolution,
         "note": (
             "COCO Mask R-CNN masks lifted via SfM-aligned depth (metric-by-"
-            "alignment, approximate); merged by label+proximity; provenance "
+            "alignment, approximate); merged by the gated association resolver (or label+proximity if "
+            "object_resolver='union_find'); provenance "
             "INFERRED with per-entity evidence ids"
         ),
     }

@@ -159,3 +159,63 @@ def test_observation_from_hypothesis_uses_depth_source_and_range_for_sigma():
     met = observation_from_hypothesis(h, DepthSource.METRIC)
     assert rel.sigma_m == pytest.approx(1.0) and met.sigma_m == pytest.approx(0.08)
     assert rel.model == "midas@dpt" and rel.license == "MIT" and rel.image_id == "e"
+
+
+# --- wiring: resolve_hypotheses is a drop-in for merge_hypotheses ------------------------------------------------
+
+def _hyp(region, evidence, label, x, y=0.0, z=3.0, conf=0.8):
+    return ObjectHypothesis3D(
+        region_id=region, evidence_id=evidence, label=label, position=Vec3(x, y, z),
+        bounds_min=Vec3(x - 0.2, y - 0.2, z - 0.2), bounds_max=Vec3(x + 0.2, y + 0.2, z + 0.2), point_count=50,
+        mask_pixel_count=60, confidence=conf, uncertainty=Uncertainty(confidence=conf))
+
+
+def test_resolve_hypotheses_returns_the_same_candidate_type_with_every_source_kept():
+    from perception.instances.association import resolve_hypotheses
+
+    hyps = [_hyp(f"r{i}", f"ev{i}", "door", 2.0 + 0.01 * i) for i in range(5)]
+    cands, result = resolve_hypotheses(hyps, DepthSource.METRIC)
+    assert len(cands) == 1
+    assert cands[0].observation_count == 5 and cands[0].evidence_ids == tuple(f"ev{i}" for i in range(5))
+    assert cands[0].bounds_min.x <= 1.8 and cands[0].confidence >= 0.8
+    assert len(result.decisions) == 5
+
+
+def test_resolve_hypotheses_survives_region_ids_repeated_across_images():
+    from perception.instances.association import resolve_hypotheses
+
+    hyps = [_hyp("region-0", f"ev{i}", "lamp", 1.0) for i in range(3)]  # same region id in every image
+    cands, _ = resolve_hypotheses(hyps, DepthSource.METRIC)
+    assert len(cands) == 1 and cands[0].observation_count == 3
+
+
+def test_crowded_row_of_chairs_measured_union_find_versus_association(capsys):
+    """8 identical chairs 0.4 m apart, each seen in 6 noisy views (sigma 2 cm), metric depth. Union-find chains the
+    row into one blob; the association engine keeps the chairs apart. Numbers are printed for the record."""
+    from perception.instances.association import resolve_hypotheses
+
+    rng = random.Random(1)
+    hyps, truth = [], {}
+    for v in range(6):
+        for k in range(8):
+            h = _hyp(f"v{v}-k{k}", f"view{v}", "chair", 0.4 * k + rng.gauss(0, 0.02), rng.gauss(0, 0.02), 3.0 + rng.gauss(0, 0.02))
+            hyps.append(h)
+            truth[f"view{v}|{h.region_id}"] = k
+
+    def assignment_from(cands):
+        return {f"{h.evidence_id}|{h.region_id}": c.candidate_id for c in cands for h in c.source_hypotheses}
+
+    old = identity_metrics(assignment_from(merge_hypotheses(hyps)), truth)
+    new_cands, _ = resolve_hypotheses(hyps, DepthSource.METRIC)
+    new = identity_metrics(assignment_from(new_cands), truth)
+    with capsys.disabled():
+        print(f"\nunion_find : {old}\nassociation: {new}")
+    assert old["wrong_merge_rate"] > 0.5 and old["duplicate_entity_rate"] < 0  # collapsed the row
+    assert new["wrong_merge_rate"] <= 0.05
+    assert abs(new["duplicate_entity_rate"]) <= 0.25
+
+
+def test_pipeline_option_defaults_to_the_association_resolver():
+    from engine.pipeline.vertical_slice import VerticalSliceOptions
+
+    assert VerticalSliceOptions().object_resolver == "association"

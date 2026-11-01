@@ -23,6 +23,7 @@ here (see PENDING_IMPLEMENTATION.md): epipolar/reprojection verification
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Set, Tuple
@@ -264,6 +265,49 @@ def observation_from_hypothesis(
         bounds_min=(h.bounds_min.x, h.bounds_min.y, h.bounds_min.z),
         bounds_max=(h.bounds_max.x, h.bounds_max.y, h.bounds_max.z), confidence=h.confidence,
     )
+
+
+def resolve_hypotheses(
+    hypotheses,
+    depth_source: DepthSource = DepthSource.MVS,
+    camera_positions: Optional[Dict[str, Tuple[float, float, float]]] = None,
+    model: str = "unknown@unknown",
+    license: str = "unknown",
+):
+    """Drop-in for `merge_hypotheses`: same `MergedObjectCandidate` output, but identity comes from `associate()` (no
+    transitive chaining, AMBIGUOUS kept apart). Returns (candidates, AssociationResult) so callers can report the
+    decisions. `camera_positions` (evidence_id -> xyz) sets each observation's range, hence its uncertainty."""
+    from perception.instances.object_resolution import MergedObjectCandidate
+
+    camera_positions = camera_positions or {}
+    by_obs = {}
+    observations = []
+    for h in hypotheses:
+        o = observation_from_hypothesis(h, depth_source, camera_positions.get(h.evidence_id, (0.0, 0.0, 0.0)), model, license)
+        o = dataclasses.replace(o, observation_id=f"{h.evidence_id}|{h.region_id}")  # region ids are not unique across images
+        by_obs[o.observation_id] = h
+        observations.append(o)
+    result = associate(observations)
+
+    groups: Dict[str, list] = {}
+    for oid, eid in result.assignment.items():
+        groups.setdefault(eid, []).append(by_obs[oid])
+
+    from engine.math import Vec3
+
+    candidates = []
+    for n, (_, members) in enumerate(sorted(groups.items())):
+        members.sort(key=lambda h: (h.evidence_id, h.region_id))
+        w = sum(h.confidence for h in members) or 1.0
+        pos = Vec3(*(sum(getattr(h.position, a) * h.confidence for h in members) / w for a in "xyz"))
+        lo = Vec3(*(min(getattr(h.bounds_min, a) for h in members) for a in "xyz"))
+        hi = Vec3(*(max(getattr(h.bounds_max, a) for h in members) for a in "xyz"))
+        best = max(h.confidence for h in members)
+        candidates.append(MergedObjectCandidate(
+            candidate_id=f"obj-{members[0].label}-{n:04d}", label=members[0].label, position=pos, bounds_min=lo,
+            bounds_max=hi, source_hypotheses=tuple(members), confidence=max(best, min(1.0, 1.0 - (1.0 - best) ** len(members)))))
+    candidates.sort(key=lambda c: (c.label, c.position.x, c.position.y, c.position.z))
+    return candidates, result
 
 
 def overlap_relation(bounds_a, bounds_b, camera=None) -> AssociationState:

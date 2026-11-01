@@ -21,6 +21,8 @@ from typing import List, Optional
 from provenance import Uncertainty
 
 from evidence.session import EvidenceItem, EvidenceKind
+from perception.device import select_device
+
 from .interface import ISegmentationBackend, SegmentedRegion, SegmentationResult
 
 
@@ -106,7 +108,7 @@ class SAMSegmentationBackend(ISegmentationBackend):
             )
         self._model_type = model_type
         self._checkpoint_path = checkpoint_path
-        self._device = device or ("cuda" if self._cuda_available() else "cpu")
+        self._device = device or select_device().device
         self._model = None
         self._mask_generator = None
 

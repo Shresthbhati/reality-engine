@@ -846,7 +846,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "capture_quality": capture_quality(
             len(items), prog.registered_ids, len(prog.points),
             n_duplicates_dropped=sum(1 for s in skipped_evidence if "duplicate" in s.get("reason", "")),
-            structure=cand_snap["entity_types"]),
+            structure=cand_snap["entity_types"], attempts=prog.attempts),
         "structure_points": _structure_points(world_ir),
         "level": prog.level,
         "level_name": prog.level_name,

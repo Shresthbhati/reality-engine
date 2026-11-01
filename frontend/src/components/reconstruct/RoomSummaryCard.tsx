@@ -5,6 +5,7 @@ import { AlertTriangle, Lightbulb, Ruler } from "lucide-react";
 import CaptureCoverage from "@/components/reconstruct/CaptureCoverage";
 import { getCaptureCoverage, type CaptureCoverageDto } from "@/lib/api/capture-coverage";
 import { buildRoomSummary, type SummaryExtras } from "@/lib/reconstruct/summary-model";
+import { captureBadge } from "@/lib/viewport/structure-points-model";
 import type { WorldIR } from "@/types/worldir";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +25,6 @@ const STATE_STYLE: Record<string, string> = {
   INFERRED: "border-sky-400/40 text-sky-300",
 };
 
-const VERDICT_LABEL = { sufficient: "Capture sufficient", partial: "Capture partial", insufficient: "Not placed in 3D" } as const;
 const VERDICT_STYLE = {
   sufficient: "border-emerald-500/40 text-emerald-300",
   partial: "border-amber-400/50 text-amber-300",
@@ -147,7 +147,7 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
           className="mt-1.5 flex flex-wrap items-start gap-x-2 gap-y-0.5 text-[11px]"
         >
           <span className={cn("rounded border px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide", VERDICT_STYLE[s.captureQuality.state])}>
-            {VERDICT_LABEL[s.captureQuality.state]}
+            {captureBadge(s.captureQuality)}
           </span>
           {s.captureQuality.message && <span className="min-w-0 flex-1 text-neutral-200">{s.captureQuality.message}</span>}
         </div>

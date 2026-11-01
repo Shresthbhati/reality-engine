@@ -1,0 +1,182 @@
+# Release Gate Plan: Real Photos -> Persisted World -> Correction -> V2 Diff
+
+**Executor:** Claude Sonnet (single agent, sequential). Optional parallel split in section 8.
+**Written:** 2026-10-16. **Base:** `main` @ 3e452a6.
+**Goal:** one end-to-end workflow that a user can test and repeat. Do not add features. Do not polish the UI. Interior semantics and extra automation come only after this gate passes.
+
+---
+
+## 0. Rules for the executor (read first)
+
+1. **Evidence only.** A step is done only when a command you ran shows it passing. Never write "should work". Never report a percentage complete.
+2. **No fake success.** A missing or malformed reconstruction, an empty world, or a UI showing data that is not persisted counts as a FAILURE. Never make one look like success.
+3. **Smallest diff.** Fix root causes in shared functions (grep every caller first). Do not refactor unrelated code.
+4. **One branch per phase:** `claude/gate-p<N>-<slug>`. One reviewable commit per fix. Never push or merge without the user's go-ahead.
+5. **Stop and ask** only when a product or architecture decision is needed (section 51 of CLAUDE.md: record BLOCKED with OPTIONS / TRADEOFFS / RECOMMENDATION). Decide everything else yourself.
+6. **Ledger discipline:** after each phase, update `.agent/EXECUTION_STATE.md` and `.agent/TASKS.yaml` with the exact commands run and their results.
+7. Every phase ends with the **Phase Report** (section 7). If the report is missing, the phase is not accepted.
+
+### Known facts (verified 2026-10-16, re-check before relying on them)
+
+| Thing | Where |
+|---|---|
+| API entrypoint | `uvicorn apps.api.main:app --port 8100` (`QUICKSTART.md:36`); storage root env var `STORAGE_ROOT` (`apps/api/storage.py:19`) |
+| Upload | `POST /uploads` (`apps/api/routes_misc.py`) |
+| Reconstruct | `POST /reconstructions`, `POST /sessions/{id}/reconstruct`; job status `GET /jobs/{id}` |
+| World read | `GET /worlds/{id}`, `/worldir`, `/versions`, `/points`, `/cameras`, `/status` |
+| Correction | `POST /worlds/{id}/commit` (`apps/api/routes_worlds.py:745`; documented contract: 422/413/409/404, never moves HEAD on failure, an identical retry returns `duplicate: true`) |
+| Diff / rollback | `GET /worlds/{id}/diff`, `POST /worlds/{id}/rollback` |
+| Real dataset | `datasets/south_building` (128 real photos, `MANIFEST.json`) |
+| Existing golden journeys | `tests/integration/test_progressive_product_journey.py` (A-H), `tests/integration/test_reliability_journey.py` |
+| Frontend | `frontend/` (Next 16): `npm run build`, `npm run lint`, `npm run test:contract`; Studio runs on :3000 |
+
+---
+
+## Phase 1: Fix the `world.geometries` regression (highest priority)
+
+**Why first:** every later step reads `world.geometries` (points route `routes_worlds.py:398`, exporters, `frontend/src/lib/viewport/three-scene.ts`, `WorldNavPanel.tsx`, `AdaptiveInspector.tsx`).
+
+The repo does not document the regression's symptom. **Reproduce it before you change anything.**
+
+1. Run these and collect every failure that mentions `geometries`:
+   ```bash
+   python -m pytest tests/test_canonical_interior.py tests/integration/test_golden_world_flow.py tests/integration/test_contract_compatibility.py tests/integration/test_reconstruction_to_worldos_e2e.py -q -x
+   python -m pytest tests -q -m "not slow" -k geometr
+   ```
+2. If nothing fails, find the regression by reading. Grep the writers and readers of `.geometries` (list: `grep -rln "\.geometries" --include=*.py --include=*.ts --include=*.tsx . | grep -v node_modules`). Check these invariants:
+   - every `entity.geometry_ref` resolves to a key in `world.geometries`;
+   - the WorldStore save/load round-trip keeps `geometries` (same count, same digests);
+   - incremental updates keep untouched geometries by identity (`is`) and never drop them;
+   - `GET /worlds/{id}/worldir` and `/points` return geometries for a reconstructed world.
+3. If you still can't reproduce it: **stop and ask the user for the symptom** (traceback, command, world id). Do not guess-fix.
+4. Write a **minimal failing regression test** first, in `tests/test_world_geometries_regression.py`. It must fail on the current code, then fix the root cause, then show it passing.
+5. Gate: the new test passes, and the non-slow suite shows no new failures (compare against the baseline you ran in step 1).
+
+**Done when:** you can name the root cause in one sentence, a regression test exists and passes, and the non-slow suite matches the baseline.
+
+---
+
+## Phase 2: Reconstruction output validation (prove it is real and measurable)
+
+Goal: a reconstruction only counts as success when its output is valid. Finishing the process is not enough.
+
+1. Find where a reconstruction is turned into a success (job terminal-state code in `apps/api/jobs.py`, `apps/api/reconstruction_state.py`, `evidence/promote_reconstruction.py`, `reconstruction/diagnostics.py`).
+2. Check that an output validator rejects each of the following. Add a test for any check that is missing:
+   - zero registered cameras, or fewer than 2 registered cameras;
+   - an empty or missing sparse model or point cloud;
+   - NaN or Inf in camera poses or points;
+   - a world with entities whose geometry refs dangle.
+   On any of these, the job must end `FAILED` (or an honestly labelled degraded state) with a useful error message, and **no new WorldStore version** may be created.
+3. Run the real controlled experiment with the SIX window (`[15:21]`) from the product-journey test:
+   ```bash
+   python -m pytest tests/integration/test_progressive_product_journey.py -q -k "test_B or test_D" -m slow
+   ```
+   Record these measured numbers: registered images out of submitted, point count, mean reprojection error, and wall time. Put them in the Phase Report.
+4. Gate: malformed-output tests pass, and test_B and test_D pass with measured values recorded.
+
+---
+
+## Phase 3: Lifecycle, persistence and API contract baseline (read and test first, change little)
+
+Goal: establish what is actually true today. Do not change architecture. Any change to WorldStore or WorldIR persistence needs a regression test and must be kept small.
+
+1. Run and record:
+   ```bash
+   python -m pytest tests/integration/test_reliability_journey.py -q
+   python -m pytest tests/integration/test_progressive_product_journey.py -q -k "test_E or test_F" -m slow
+   cd frontend && npm run test:contract && npx tsc --noEmit
+   ```
+2. Write a contract table into this file's Appendix A for every route in "Known facts": the request shape, the success shape, and each error code. Check it against the frontend callers (`frontend/src/lib/**`) and flag every mismatch (a field the UI reads that the API doesn't send, or the reverse).
+3. Security and lifecycle checks (fix only real defects, each with a test):
+   - Upload: limits on size, type and count; filenames can't escape `STORAGE_ROOT` (path traversal); original bytes are stored unchanged (sha256 matches the input).
+   - Input metadata (EXIF, original filename) is preserved and retrievable via `GET /evidence/{id}`.
+   - Job cancel moves the job to a terminal state and creates no version.
+4. Gate: every listed test passes, Appendix A is filled in, and each mismatch is either fixed with a test or listed as a handoff.
+
+---
+
+## Phase 4: The release-gate test (the definition of "prototype complete")
+
+Create **one** test: `tests/integration/test_release_gate.py` (marked `slow`). It drives the real API in-process, the same way `test_progressive_product_journey.py` does, and asserts **all eight acceptance criteria in order**:
+
+| # | Step | Assertion |
+|---|---|---|
+| 1 | Upload SIX real photos | each evidence sha256 equals the input file's sha256; EXIF and filename are retrievable |
+| 2 | Reconstruct | the job reaches a terminal `SUCCEEDED`; registered cameras >= 4; point count > 0; poses are finite |
+| 3 | Canonical WorldIR | `validate()` passes; every geometry ref resolves; every entity carries uncertainty and provenance |
+| 4 | Persistent V1 | **restart**: rebuild the app or a new process against the same `STORAGE_ROOT`; `GET /worlds/{id}` returns the same version id and WorldIR digest |
+| 5 | Studio data source | `/worldir`, `/points` and `/cameras` return exactly the persisted data (digest match). No synthetic or placeholder fields |
+| 6 | Correction | `POST /commit` with a valid change creates V2. An invalid change gets 422 and HEAD stays put. A stale parent gets 409 |
+| 7 | V2 and diff | V2's parent is V1; `GET /diff?from=V1&to=V2` lists **exactly** the corrected entity/field and nothing else |
+| 8 | Failure path | the HARD window (`[0:6]`) ends FAILED or degraded, has a useful error message, creates **no** successful world version, and leaves the HEAD of an existing world untouched |
+
+Plus a **reproducibility** check: run steps 1-2 twice from scratch with the same input and config. Registered-camera counts must match exactly, and point counts must be within the documented tolerance (if needed, set the tolerance after measuring Phase 2's run-to-run variance and write it down here).
+
+Write `docs/implementation/RELEASE_GATE_RUNBOOK.md` with the exact commands, the environment (Python version, COLMAP version, `pip freeze` hash), and the expected output, so a human can rerun the gate.
+
+**Gate:** `python -m pytest tests/integration/test_release_gate.py -q -m slow` passes **twice in a row** on a clean `STORAGE_ROOT`.
+
+---
+
+## Phase 5: Integrated validation (the KiloCode role, done by you)
+
+1. Merge the phase branches into `claude/gate-integration` locally (no push).
+2. Run everything:
+   ```bash
+   python -m pytest tests -q -m "not slow"
+   python -m pytest tests/integration -q -m slow
+   cd frontend && npx tsc --noEmit && npm run build && npm run test:contract
+   ```
+3. Compare against the 2026-10-03 baseline in `.agent/EXECUTION_STATE.md` (2776 passed, 0 failed, 28 skipped non-slow). Any new failure blocks the gate: fix it or report it as a regression.
+
+---
+
+## Phase 6: Reality Studio wired to real persisted data (the Antigravity role)
+
+Goal: the UI shows only persisted data. No optimistic or fabricated state.
+
+1. Start the API (`STORAGE_ROOT=<tmp> uvicorn apps.api.main:app --port 8100`) and the Studio (`cd frontend && npm run dev`). Use the browser preview tools.
+2. Walk through steps 1-8 of the gate **in the UI**: upload photos, watch the job, open the world, inspect the points and cameras, make a correction, see V2 and the diff, then trigger a failing upload.
+3. For each screen, check against the network responses (`read_network_requests`) that every displayed number or entity comes from an API response. Grep the components you touch for hard-coded or mock data, and for optimistic updates that show a change before the server confirms it. Remove them. While waiting, show an honest pending state.
+4. Restart the API, reload the Studio, and confirm the world, the versions and the diff all reappear.
+5. Gate: screenshots of each step plus a network-trace check. `npm run build` and `npx tsc --noEmit` pass. Lint shows no **new** errors (the 10 existing ones are known).
+
+---
+
+## 7. Phase Report (required at the end of every phase)
+
+```
+### Phase N report
+Changed:      <file:line -- behavior change>, one line each
+Verified:     <exact command> -> <actual result line, e.g. "14 passed, 0 failed in 312s">
+Unverified:   <anything not run or not confirmed, and why>
+Regressions:  <existing behavior affected, or "none observed vs baseline <cmd>">
+Handoffs:     <interfaces or assumptions a later phase must accommodate>
+Commit:       <branch> @ <sha>, "<message>"
+```
+
+Release criterion = the Phase 4 test passes twice, plus a clean Phase 5 run, plus the Phase 6 walkthrough evidence. Nothing else counts.
+
+---
+
+## 8. Optional parallel split (only if the user asks for multiple sessions)
+
+Use one designated **integration owner** (the main session). Agents with no shared files can run at the same time:
+
+| Track | Phases | Owns files | Must coordinate on |
+|---|---|---|---|
+| A (Claude/Sonnet) | 1, then 4 | `world_ir/`, `worldstore/`, `engine/compiler/`, new tests | none (owner of WorldIR and WorldStore) |
+| B (FreeBuff role) | 2 | `reconstruction/`, `evidence/promote_reconstruction.py`, `apps/api/jobs.py` | A, before touching persistence |
+| C (OpenCode + Cline role) | 3 | `apps/api/routes_misc.py`, `validation.py`, Appendix A, `frontend/tests/contract` | A for any WorldStore change; read-only on `routes_worlds.py` |
+| D (KiloCode role) | 5 | none (runs tests only) | starts after A, B and C have merged into integration |
+| E (Antigravity role) | 6 | `frontend/src/**` | starts after D is green |
+
+Each track works in its own worktree and branch. Only the integration owner merges.
+
+---
+
+## Appendix A: API contract baseline (filled in during Phase 3)
+
+| Route | Request | 2xx shape | Error codes | Frontend caller | Mismatch |
+|---|---|---|---|---|---|
+| | | | | | |

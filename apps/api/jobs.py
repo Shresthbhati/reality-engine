@@ -286,6 +286,21 @@ def enqueue_job(
     return job
 
 
+def _drop_exact_duplicates(resolved):
+    """Byte-identical photos add no geometry and make COLMAP match a picture with its own copy (zero baseline),
+    which degrades registration. Keep the first of each checksum; report the rest."""
+    seen, kept, dropped = {}, [], []
+    for ev, path in resolved:
+        first = seen.get(ev.checksum) if ev.checksum else None
+        if first is None:
+            if ev.checksum:
+                seen[ev.checksum] = ev.id
+            kept.append((ev, path))
+        else:
+            dropped.append({"evidence_id": ev.id, "reason": f"byte-identical duplicate of {first}"})
+    return kept, dropped
+
+
 def _file_sha256(path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -487,6 +502,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             })
             continue
         resolved.append((ev, path))
+    resolved, dupes = _drop_exact_duplicates(resolved)
+    skipped_evidence.extend(dupes)
     if not resolved:
         raise InsufficientEvidence(
             "World has 0 usable photo evidence item(s) with stored artifacts; "

@@ -379,6 +379,32 @@ def diagnose_counts(n_input: int, registered_ids: Sequence[str], n_points: int, 
         ["mean_reprojection_error_px", "components", "camera_coverage"])
 
 
+def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, *,
+                    n_duplicates_dropped: int = 0) -> dict:
+    """Plain-language verdict on whether the photos could be placed in one shared 3D space.
+
+    Pairwise 2D matching cannot tell a consistent set from an inconsistent one (measured: an inconsistent set
+    passed the 2D gate with 31/45 verified pairs), so this is judged from the multi-view result itself. The causes
+    listed are candidates -- the check cannot tell which one applies."""
+    d = diagnose_counts(n_input, registered_ids, n_points)
+    state = {ReconOutcome.SUCCESS: "sufficient", ReconOutcome.PARTIAL: "partial"}.get(d.outcome, "insufficient")
+    out = {"state": state, "n_input": n_input, "registered": d.registered_images, "points": n_points,
+           "duplicates_dropped": n_duplicates_dropped, "reasons": list(d.reasons), "advice": []}
+    if state == "sufficient":
+        out["message"] = f"{d.registered_images}/{n_input} photos were placed in one shared 3D space."
+        return out
+    out["message"] = (f"Only {d.registered_images} of {n_input} photos could be placed in one shared 3D space "
+                      f"({n_points} points). The model is " + ("incomplete." if state == "partial" else
+                      "too sparse to build a trustworthy room."))
+    out["advice"] = [
+        "Photos must show one fixed scene: objects, lighting and layout must not change between shots (generated or "
+        "edited images usually fail this).",
+        "Move between shots, don't only rotate in place; keep roughly 60-80% overlap between neighbouring views.",
+        "Plain walls and glossy surfaces give no features: include furniture, door frames and edges in every view.",
+    ]
+    return out
+
+
 # --------------------------------------------------------------------------- correction loop
 
 

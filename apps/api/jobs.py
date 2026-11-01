@@ -286,6 +286,9 @@ def enqueue_job(
     return job
 
 
+from reconstruction.scene_identity import capture_quality  # noqa: E402
+
+
 def _drop_exact_duplicates(resolved):
     """Byte-identical photos add no geometry and make COLMAP match a picture with its own copy (zero baseline),
     which degrades registration. Keep the first of each checksum; report the rest."""
@@ -828,6 +831,9 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "session_id": session.id,
         "images_ingested": len(items),
         "scene_identity": scene_info,
+        "capture_quality": capture_quality(
+            len(items), prog.registered_ids, len(prog.points),
+            n_duplicates_dropped=sum(1 for s in skipped_evidence if "duplicate" in s.get("reason", ""))),
         "level": prog.level,
         "level_name": prog.level_name,
         "model_state": prog.model_state,

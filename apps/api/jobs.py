@@ -50,6 +50,16 @@ from reconstruction.proc import (
     unregister_worker,
 )
 from evidence.session import EvidenceItem, EvidenceKind
+from reconstruction.proc import (
+    discard_job,
+    set_current_job,
+    terminate_job_procs,
+    recover_orphaned_jobs,
+    is_worker_alive,
+    register_worker,
+    unregister_worker,
+    get_dead_worker_jobs,
+)
 
 log = logging.getLogger("reality.api.jobs")
 

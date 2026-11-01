@@ -1,6 +1,11 @@
 # Reality Engine — Roadmap (Priority Order)
 
-**This file is the authoritative WHAT.** Agents and sessions execute the
+> **Superseded as the work queue (2026-11-01).** The authoritative order is now
+> [`docs/blueprint/30_BUILD_PLAN.md`](../blueprint/30_BUILD_PLAN.md); product
+> intent lives in [`docs/blueprint/`](../blueprint/README.md). The table below
+> is kept as history of the earlier P0–P9 sequence.
+
+**This file was the authoritative WHAT.** Agents and sessions execute the
 priorities in this order; they own the HOW. Do not reorder based on
 preference. If a priority is blocked, resolve the dependency and return;
 if the blocker requires a genuine product decision, record it as BLOCKED

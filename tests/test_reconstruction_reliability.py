@@ -624,7 +624,7 @@ def test_same_world_concurrent_completion_single_head(client, tmp_path, monkeypa
         for i in range(2):
             client.post(
                 f"/api/uploads?session_id={sid}",
-                files={"file": (f"f{i}.jpg", b"jpeg-bytes-here", "image/jpeg")},
+                files={"file": (f"f{i}.jpg", b"jpeg-bytes-here-%d" % i, "image/jpeg")},
             )
         setups.append((sid, wid))
 

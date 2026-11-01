@@ -40,15 +40,6 @@ from engine.pipeline.progressive import (
     run_progressive,
 )
 from evidence.image_check import ImageFacts, inspect_image
-from reconstruction.proc import (
-    discard_job,
-    get_dead_worker_jobs,
-    recover_orphaned_jobs,
-    register_worker,
-    set_current_job,
-    terminate_job_procs,
-    unregister_worker,
-)
 from evidence.session import EvidenceItem, EvidenceKind
 from reconstruction.proc import (
     discard_job,

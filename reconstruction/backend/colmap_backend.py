@@ -537,7 +537,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         images_txt = (model_dir / "images.txt").read_text()
         points3d_txt = (model_dir / "points3D.txt").read_text()
         try:
-            return self._parse_model_txt(images_txt, points3d_txt, evidence_id_by_name, n_input)
+            return self._parse_model_txt(model_dir.name, images_txt, points3d_txt, evidence_id_by_name, n_input)
         except (ValueError, IndexError) as exc:
             # A malformed/truncated model is a failed COLMAP step, not a bare ValueError: typed, names the
             # step, and lets the incremental path fall back to a full rebuild.
@@ -546,7 +546,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 stderr=f"unparseable images.txt/points3D.txt in {model_dir.name}: {type(exc).__name__}: {exc}")
             raise ReconstructionStepError("model_parse", proc, [self._colmap_binary, "model_parse"]) from exc
 
-    def _parse_model_txt(self, images_txt, points3d_txt, evidence_id_by_name, n_input) -> ReconstructionResult:
+    def _parse_model_txt(self, name: str, images_txt, points3d_txt, evidence_id_by_name, n_input) -> ReconstructionResult:
         poses = _parse_images_txt(images_txt, evidence_id_by_name)
         image_id_to_evidence_id = {}
         for line in images_txt.splitlines():
@@ -569,7 +569,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 errors.append(float(parts[7]))
                 track_lens.append((len(parts) - 8) // 2)
         stats = {
-            "name": model_dir.name,
+            "name": name,
             "n_input": n_input,
             "registered_images": len(poses),
             "points": len(points),

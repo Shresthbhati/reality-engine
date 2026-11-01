@@ -65,38 +65,14 @@ class SiftPairVerifier:
     #: one-way variant let different-texture look-alike scenes reach 16 "inliers", overlapping real links;
     #: ratio 0.75 / 0.5 px / mutual-NN brought that ceiling to 8 while keeping the true scene connected.
     def __init__(self, paths: Dict[str, Path], max_side: int = 960, ratio: float = 0.75, ransac_px: float = 0.5):
-        self.paths, self.max_side, self.ratio, self.ransac_px = dict(paths), max_side, ratio, ransac_px
-        self._feat: Dict[str, tuple] = {}
+        from reconstruction.matching.sift import SiftMatcher
 
-    def _features(self, eid: str):
-        if eid not in self._feat:
-            import cv2
-            img = cv2.imread(str(self.paths[eid]), cv2.IMREAD_GRAYSCALE)
-            if img is None:
-                raise ValueError(f"unreadable image for evidence {eid}: {self.paths[eid]}")
-            scale = self.max_side / max(img.shape)
-            if scale < 1:
-                img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-            kp, des = cv2.SIFT_create(nfeatures=4000).detectAndCompute(img, None)
-            self._feat[eid] = (np.float32([k.pt for k in kp]), des)
-        return self._feat[eid]
+        self.paths, self.max_side, self.ratio, self.ransac_px = dict(paths), max_side, ratio, ransac_px
+        self._matcher = SiftMatcher(self.paths, max_side, ratio, ransac_px)  # the logic lives behind IMatcher now
 
     def __call__(self, a: str, b: str) -> PairEvidence:
-        import cv2
-        (pa, da), (pb, db) = self._features(a), self._features(b)
-        if da is None or db is None or len(da) < 8 or len(db) < 8:
-            return PairEvidence(a, b, 0, 0, 0.0)
-        bf = cv2.BFMatcher(cv2.NORM_L2)
-        back = {m.queryIdx: m.trainIdx for m in bf.match(db, da)}
-        good = [m[0] for m in bf.knnMatch(da, db, k=2)
-                if len(m) == 2 and m[0].distance < self.ratio * m[1].distance and back.get(m[0].trainIdx) == m[0].queryIdx]
-        if len(good) < 8:
-            return PairEvidence(a, b, len(good), 0, 0.0)
-        p1 = pa[[m.queryIdx for m in good]]
-        p2 = pb[[m.trainIdx for m in good]]
-        _, mask = cv2.findFundamentalMat(p1, p2, cv2.FM_RANSAC, self.ransac_px, 0.999, 5000)
-        inl = int(mask.sum()) if mask is not None else 0
-        return PairEvidence(a, b, len(good), inl, inl / len(good))
+        r = self._matcher.match(a, b)
+        return PairEvidence(a, b, r.matches, r.inliers, r.inlier_ratio)
 
 
 # --------------------------------------------------------------------------- grouping

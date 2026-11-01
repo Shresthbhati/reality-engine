@@ -73,8 +73,9 @@ class OwlVitDetector:
         inputs = self._proc(text=[qs], images=Image.fromarray(image_rgb), return_tensors="pt")
         with torch.no_grad():
             out = self._model(**inputs)
-        res = self._proc.post_process_object_detection(
-            out, threshold=self.threshold, target_sizes=torch.tensor([[h, w]]))[0]
+        # transformers 5 renamed the processor method
+        post = getattr(self._proc, "post_process_object_detection", None) or self._proc.post_process_grounded_object_detection
+        res = post(out, threshold=self.threshold, target_sizes=torch.tensor([[h, w]]))[0]
         return [ImageDetection(qs[int(i)], float(s), tuple(float(v) for v in b.tolist()), source=self.name)
                 for s, i, b in zip(res["scores"], res["labels"], res["boxes"])]
 

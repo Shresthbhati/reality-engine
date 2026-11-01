@@ -380,7 +380,7 @@ def diagnose_counts(n_input: int, registered_ids: Sequence[str], n_points: int, 
 
 
 def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, *,
-                    n_duplicates_dropped: int = 0) -> dict:
+                    n_duplicates_dropped: int = 0, structure: Optional[Dict[str, int]] = None) -> dict:
     """Plain-language verdict on whether the photos could be placed in one shared 3D space.
 
     Pairwise 2D matching cannot tell a consistent set from an inconsistent one (measured: an inconsistent set
@@ -390,6 +390,24 @@ def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, 
     state = {ReconOutcome.SUCCESS: "sufficient", ReconOutcome.PARTIAL: "partial"}.get(d.outcome, "insufficient")
     out = {"state": state, "n_input": n_input, "registered": d.registered_images, "points": n_points,
            "duplicates_dropped": n_duplicates_dropped, "reasons": list(d.reasons), "advice": []}
+    if state == "sufficient" and structure is not None:
+        # placing cameras is not building a room: the verdict also needs a closed room (a room entity, or a floor
+        # with at least three walls) -- otherwise it is only partial, and says what is missing
+        n = {k: int(v) for k, v in structure.items()}
+        out["room_found"] = n.get("room", 0) > 0 or (n.get("floor", 0) > 0 and n.get("wall", 0) >= 3)
+        if not out["room_found"]:
+            found = ", ".join(f"{v} {k}" for k, v in sorted(n.items()) if v) or "no structure"
+            miss = [k for k, need in (("floor", 1), ("wall", 3)) if n.get(k, 0) < need]
+            out["state"] = state = "partial"
+            out["reasons"].append(f"no closed room built (found {found}; missing {', '.join(miss) or 'closure'})")
+            out["message"] = (f"{d.registered_images}/{n_input} photos were placed, but no closed room could be "
+                              f"built: found {found}, {n_points} sparse points.")
+            out["advice"] = [
+                "Photograph the missing surfaces so every wall, the floor and the ceiling are each seen in at least "
+                "two photos that also share a corner or a door frame with a neighbouring wall.",
+                "Take the photos from different positions in the same room without changing the scene between shots.",
+            ]
+            return out
     if state == "sufficient":
         out["message"] = f"{d.registered_images}/{n_input} photos were placed in one shared 3D space."
         return out

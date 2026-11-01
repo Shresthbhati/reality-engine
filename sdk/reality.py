@@ -207,6 +207,9 @@ def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] 
     return exporter_fn(world, artifact_store)
 
 
+#: single-document export format names accepted by `export()`
+EXPORT_FORMATS = frozenset(_EXPORTERS)
+
 #: game-ready profile names (multi-file bundles, content is ``{filename: bytes}``); see exporters/profiles.py
 EXPORT_PROFILES = frozenset(PROFILES)
 

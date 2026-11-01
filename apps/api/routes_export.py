@@ -62,6 +62,38 @@ def _bundle_json(files: dict) -> dict:
     return out
 
 
+@export.get("/formats")
+async def export_formats(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Which formats this world can export right now. An unavailable format
+    carries the one-line reason (no version yet, optional library missing) so
+    the UI can disable it with an explanation instead of failing on click."""
+    import importlib.util
+
+    world_reason: str | None = None
+    try:
+        await _version_row(db, world_id, version)
+    except HTTPException as exc:
+        if exc.detail == "World not found":
+            raise
+        world_reason = str(exc.detail)
+
+    def reason_for(name: str) -> str | None:
+        if world_reason:
+            return world_reason
+        if name == "ifc" and importlib.util.find_spec("ifcopenshell") is None:
+            return "IfcOpenShell is not installed on this server"
+        return None
+
+    names = sorted(reality.EXPORT_FORMATS | reality.EXPORT_PROFILES)
+    return {
+        "formats": [
+            {"format": n, "available": reason_for(n) is None, "reason": reason_for(n)} for n in names
+        ]
+    }
+
+
 @export.post("")
 async def export_world(
     world_id: str, body: ExportRequest, db: AsyncSession = Depends(get_db),

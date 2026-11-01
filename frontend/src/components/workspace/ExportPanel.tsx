@@ -1,26 +1,43 @@
 "use client";
 
-import { useState } from "react";
-import { X, Loader2, Download } from "lucide-react";
-import { exportWorld, type ExportFormat, type ExportResult } from "@/lib/api/export";
+import { useEffect, useState, type ComponentType } from "react";
+import {
+  X,
+  Loader2,
+  Download,
+  Box,
+  Package,
+  Building2,
+  Code2,
+  FileJson,
+  Map as MapIcon,
+  Globe,
+  Gamepad2,
+} from "lucide-react";
+import {
+  exportWorld,
+  listExportFormats,
+  type ExportFormat,
+  type ExportFormatStatus,
+} from "@/lib/api/export";
+import { downloadArtifact } from "@/lib/api/download";
 import { isApiError } from "@/lib/api/client";
-import { apiBaseUrl } from "@/lib/api/client";
 
-const FORMATS: { value: ExportFormat; label: string }[] = [
-  { value: "gltf", label: "glTF (.gltf)" },
-  { value: "usda", label: "USD ASCII (.usda)" },
-  { value: "ifc", label: "IFC (.ifc)" },
-  { value: "blender", label: "Blender script (.py)" },
-  { value: "cityjson", label: "CityJSON" },
-  { value: "citygml", label: "CityGML" },
-  { value: "geojson", label: "GIS footprints (GeoJSON)" },
-  { value: "godot", label: "Godot bundle (JSON: glb + tscn + manifest)" },
+const FORMATS: { value: ExportFormat; label: string; ext: string; Icon: ComponentType<{ className?: string }> }[] = [
+  { value: "gltf", label: "glTF", ext: "gltf", Icon: Box },
+  { value: "usda", label: "USD", ext: "usda", Icon: Package },
+  { value: "ifc", label: "IFC", ext: "ifc", Icon: Building2 },
+  { value: "blender", label: "Blender", ext: "py", Icon: Code2 },
+  { value: "cityjson", label: "CityJSON", ext: "json", Icon: FileJson },
+  { value: "citygml", label: "CityGML", ext: "gml", Icon: Globe },
+  { value: "geojson", label: "GeoJSON", ext: "geojson", Icon: MapIcon },
+  { value: "godot", label: "Godot", ext: "json", Icon: Gamepad2 },
 ];
 
-/** Real export via sdk.reality.export() (apps/api/routes_export.py) --
- * no client-side format conversion, no fabricated file content. The
- * download link points straight at the backend's content-addressed
- * artifact, same host apiGet/apiPost already talk to. */
+/** Real export via sdk.reality.export() (apps/api/routes_export.py) -- no
+ * client-side format conversion, no fabricated file content. One click
+ * exports and downloads; a format the world can't produce is disabled with
+ * the server's one-line reason, and a failed export shows its reason. */
 export default function ExportPanel({
   worldId,
   onClose,
@@ -28,99 +45,103 @@ export default function ExportPanel({
   worldId: string;
   onClose: () => void;
 }) {
-  const [format, setFormat] = useState<ExportFormat>("gltf");
-  const [running, setRunning] = useState(false);
+  const [status, setStatus] = useState<Record<string, ExportFormatStatus>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [running, setRunning] = useState<ExportFormat | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ExportResult | null>(null);
+  const [done, setDone] = useState<{ title: string; detail: string } | null>(null);
 
-  async function handleExport() {
-    setRunning(true);
+  useEffect(() => {
+    let cancelled = false;
+    listExportFormats(worldId)
+      .then((list) => {
+        if (cancelled) return;
+        setStatus(Object.fromEntries(list.map((f) => [f.format, f])));
+        setLoadError(null);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(isApiError(err) ? err.describe() : "Could not check export formats.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId]);
+
+  async function handleExport(format: ExportFormat, ext: string) {
+    setRunning(format);
     setError(null);
-    setResult(null);
+    setDone(null);
     try {
-      setResult(await exportWorld(worldId, format));
+      const result = await exportWorld(worldId, format);
+      await downloadArtifact(result.download_url, `${worldId}.${ext}`);
+      const skipped = result.entities_skipped.length;
+      setDone({
+        title:
+          `${format} downloaded · ${result.entities_exported.length} entities` +
+          (skipped > 0 ? `, ${skipped} skipped` : ""),
+        detail: result.entities_skipped
+          .map((id, i) => `${id}: ${result.skip_reasons[i] ?? "unknown reason"}`)
+          .join("\n"),
+      });
     } catch (err) {
       setError(isApiError(err) ? err.describe() : "Export failed.");
     } finally {
-      setRunning(false);
+      setRunning(null);
     }
   }
 
   return (
     <div
-      className="absolute top-4 right-4 z-20 w-80 rounded-lg p-4 flex flex-col gap-3 shadow-xl"
+      className="absolute top-4 right-4 z-20 w-72 rounded-lg p-4 flex flex-col gap-3 shadow-xl"
       style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
     >
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold flex items-center gap-1.5" style={{ color: "var(--text-primary)" }}>
           <Download className="w-3.5 h-3.5" />
-          Export World
+          Export
         </h3>
         <button type="button" onClick={onClose} aria-label="Close">
           <X className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
         </button>
       </div>
 
-      <label className="flex flex-col gap-1 text-xs" style={{ color: "var(--text-tertiary)" }}>
-        Format
-        <select
-          value={format}
-          onChange={(e) => {
-            setFormat(e.target.value as ExportFormat);
-            setResult(null);
-          }}
-          className="w-full bg-transparent outline-none text-sm px-2 h-8 rounded"
-          style={{ border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }}
-        >
-          {FORMATS.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="grid grid-cols-4 gap-2">
+        {FORMATS.map(({ value, label, ext, Icon }) => {
+          const s = status[value];
+          const reason = loadError ?? (s && !s.available ? s.reason : null);
+          const disabled = running !== null || Boolean(reason) || (!s && !loadError);
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => handleExport(value, ext)}
+              disabled={disabled}
+              title={reason ?? `Export ${label}`}
+              aria-label={reason ? `${label} unavailable: ${reason}` : `Export ${label}`}
+              className="flex flex-col items-center justify-center gap-1 h-16 rounded-md text-[11px] disabled:opacity-35 transition-colors"
+              style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
+            >
+              {running === value ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
+              {label}
+            </button>
+          );
+        })}
+      </div>
 
-      <button
-        type="button"
-        onClick={handleExport}
-        disabled={running}
-        className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-medium disabled:opacity-40 transition-colors"
-        style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
-      >
-        {running && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-        {running ? "Exporting…" : "Export"}
-      </button>
-
+      {loadError && (
+        <p role="alert" className="text-xs" style={{ color: "var(--error)" }}>
+          {loadError}
+        </p>
+      )}
       {error && (
-        <p className="text-xs" style={{ color: "var(--error)" }}>
+        <p role="alert" className="text-xs" style={{ color: "var(--error)" }}>
           {error}
         </p>
       )}
-
-      {result && (
-        <div className="flex flex-col gap-2">
-          <a
-            href={`${apiBaseUrl()}${result.download_url}`}
-            className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-medium transition-colors"
-            style={{ background: "var(--accent)", color: "var(--bg-base)" }}
-          >
-            <Download className="w-3.5 h-3.5" />
-            Download {result.format}
-          </a>
-          <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-            {result.entities_exported.length} entities exported
-            {result.entities_skipped.length > 0 && `, ${result.entities_skipped.length} skipped`}
-          </p>
-          {result.entities_skipped.length > 0 && (
-            <div className="flex flex-col gap-0.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-              {result.entities_skipped.map((id, i) => (
-                <div key={id}>
-                  {id}: {result.skip_reasons[i] ?? "unknown reason"}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {done && (
+        <p className="text-xs" style={{ color: "var(--text-tertiary)" }} title={done.detail || undefined}>
+          {done.title}
+        </p>
       )}
     </div>
   );

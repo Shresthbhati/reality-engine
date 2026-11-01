@@ -34,6 +34,8 @@ import {
   type CreateReconstructionResult,
 } from "@/lib/api";
 import { commitWorldCorrection } from "@/lib/api/worlds";
+import { downloadArtifact } from "@/lib/api/download";
+import { isApiError } from "@/lib/api/client";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
 import { parseCaptureQuality, parseStructurePoints } from "@/lib/viewport/structure-points-model";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
@@ -99,6 +101,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   const [isolateSpaceId, setIsolateSpaceId] = useState<string | null>(null);
@@ -322,20 +325,12 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       filename = `report-${worldId}.json`;
     }
 
+    setExportError(null);
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
+      // same-origin Next proxy route: pass it absolute so downloadArtifact doesn't re-point it at the API host
+      await downloadArtifact(`${window.location.origin}${url}`, filename);
     } catch (e) {
-      console.error("Export error", e);
+      setExportError(isApiError(e) ? e.describe() : `Export of ${format} failed.`);
     }
   }, [worldId]);
 
@@ -679,6 +674,19 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           )}
 
           {exportPanelOpen && <ExportPanel worldId={worldId} onClose={() => setExportPanelOpen(false)} />}
+
+          {exportError && (
+            <div
+              role="alert"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-md px-3 py-2 text-xs shadow-xl"
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--error)", color: "var(--error)" }}
+            >
+              <span>{exportError}</span>
+              <button type="button" onClick={() => setExportError(null)} aria-label="Dismiss export error">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </main>
 
         {layout === "desktop" && inspectorOpen && (

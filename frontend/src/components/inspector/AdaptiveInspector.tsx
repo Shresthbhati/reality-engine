@@ -34,6 +34,7 @@ import type { Entity, Geometry, WorldIR } from "@/types/worldir";
 import {
   buildEntityEvidence, fmtConfidence, NOT_RECORDED,
 } from "@/lib/viewport/inspector-evidence-model";
+import { buildIdentityEvidence } from "@/lib/viewport/identity-model";
 import { buildConfidenceFacets, readConfidence, roomMembers, TONE_TOKEN } from "@/lib/inspector/confidence-model";
 import {
   allDimensionRows, anyUncalibrated, countWorld, describeWorldCounts, displayName, entityKind, fmtValue,
@@ -1191,6 +1192,7 @@ function EntityDetails({
 
         {tab === "evidence" && (
           <div className="space-y-5">
+            <IdentityLine cp={entity.custom_properties} />
             <section aria-label="Supporting photographs">
               <SectionTitle>Supporting photographs</SectionTitle>
               {provenanceLoading ? (
@@ -1631,6 +1633,24 @@ function EntityDetails({
         </Disclosure>
       </div>
     </>
+  );
+}
+
+/** One line on why this is one item: how many photos agreed, or that the engine could not tell it from another. */
+function IdentityLine({ cp }: { cp: Record<string, unknown> | undefined }) {
+  const id = buildIdentityEvidence(cp);
+  if (id.state === "not_recorded") return null;
+  const ambiguous = id.state === "ambiguous";
+  const Icon = ambiguous ? AlertTriangle : Check;
+  return (
+    <p
+      role="status"
+      className="flex items-center gap-1.5 text-[12px]"
+      style={{ color: ambiguous ? "var(--warning)" : "var(--text-secondary)" }}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {id.text}
+    </p>
   );
 }
 

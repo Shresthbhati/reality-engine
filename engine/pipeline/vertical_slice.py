@@ -935,6 +935,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
                 hypotheses.append(hyp)
 
     resolution = {"resolver": options.object_resolver}
+    assoc = None
     if options.object_resolver == "union_find":
         candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
     elif options.object_resolver == "association":
@@ -951,11 +952,31 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     else:
         raise VerticalSliceError(f"unknown object_resolver {options.object_resolver!r}: expected 'association' or 'union_find'")
 
+    entity_ids = {c.candidate_id: f"entity-object-{i:03d}" for i, c in enumerate(candidates)}
+    tracks, track_to_entity = {}, {}
+    if assoc is not None:
+        tracks = {t.entity_id: t for t in assoc.entities}
+        for c in candidates:
+            first = c.source_hypotheses[0]
+            track_to_entity[assoc.assignment[f"{first.evidence_id}|{first.region_id}"]] = entity_ids[c.candidate_id]
+
     promoted = 0
-    for i, cand in enumerate(candidates):
-        promote_object_to_entity(
-            cand, world, entity_id=f"entity-object-{i:03d}"
-        )
+    for cand in candidates:
+        promoted_obj = promote_object_to_entity(cand, world, entity_id=entity_ids[cand.candidate_id])
+        if assoc is not None:
+            # why this is one entity (viewer: identity line). `ambiguous_with` is mapped from the engine's track ids to the
+            # ids these entities actually carry in the world.
+            first = cand.source_hypotheses[0]
+            track = tracks[assoc.assignment[f"{first.evidence_id}|{first.region_id}"]]
+            ambiguous_with = [track_to_entity[t] for t in track.ambiguous_with if t in track_to_entity]
+            promoted_obj.entity.custom_properties["association"] = {
+                "resolver": "association",
+                "observations": cand.observation_count,
+                "images": len({h.evidence_id for h in cand.source_hypotheses}),
+                "decision": "AMBIGUOUS" if ambiguous_with else (
+                    "SAME_ENTITY_CONFIRMED" if cand.observation_count > 1 else "DIFFERENT_ENTITY"),
+                "ambiguous_with": ambiguous_with,
+            }
         promoted += 1
 
     # Final gate: the world must still be valid after mutation.

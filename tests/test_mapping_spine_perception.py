@@ -278,6 +278,39 @@ def test_perception_stage_association_resolver_reports_its_decisions(
     assert facts["resolution"]["resolver"] == "association"
     assert facts["resolution"]["decisions"] == {"DIFFERENT_ENTITY": 2}
     assert facts["entities_promoted"] == 2
+    for e in (e for e in world.entities.values() if e.id.startswith("entity-object")):
+        a = e.custom_properties["association"]
+        assert a["resolver"] == "association" and a["observations"] == 1 and a["images"] == 1
+        assert a["ambiguous_with"] == []
+
+
+def test_perception_stage_records_a_multi_photo_merge_on_the_entity(synthetic_registered_result, monkeypatch):
+    """Both cameras at the same pose lift the same point: one entity, and its record says two photos agreed."""
+    import dataclasses
+
+    from engine.pipeline import vertical_slice as vs
+
+    result, intr, maps = synthetic_registered_result
+    result.camera_poses[1] = dataclasses.replace(result.camera_poses[1], position=(0.0, 0.0, 0.0))
+    options = VerticalSliceOptions(
+        intrinsics=(64.0, 64.0, 32.0, 32.0), image_size=(64, 64), perception_model="fake",
+    )
+
+    class _Evidence:
+        def __init__(self, eid):
+            self.evidence_id = eid
+            self.source_uri = f"file://{eid}.jpg"
+
+    import perception.detection.maskrcnn_backend as mb
+    monkeypatch.setattr(mb, "MaskRCNNDetector", _FakeDetector)
+
+    world = _empty_world()
+    facts = vs._perception_stage(result, world, [_Evidence("IMG_A"), _Evidence("IMG_B")], maps, options)
+
+    assert facts["candidates_merged"] == 1
+    (ent,) = [e for e in world.entities.values() if e.id.startswith("entity-object")]
+    a = ent.custom_properties["association"]
+    assert (a["observations"], a["images"], a["decision"], a["ambiguous_with"]) == (2, 2, "SAME_ENTITY_CONFIRMED", [])
 
 
 def test_perception_stage_rejects_an_unknown_resolver(synthetic_registered_result, monkeypatch):

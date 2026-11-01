@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api import jobs as jobrunner
+from apps.api.auth import auth_middleware
 from apps.api.db import dispose_db, init_db
 from apps.api.routes_artifacts import artifacts
 from apps.api.routes_assistant import assistant, assistant_tools
@@ -37,6 +38,8 @@ from apps.api.routes_worlds import worlds
 from reconstruction.proc import recover_orphaned_jobs
 
 app = FastAPI(title="Reality Engine API", version="0.1.0")
+# Added before CORS so CORS stays outermost (401 responses still carry CORS headers).
+app.middleware("http")(auth_middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(","),

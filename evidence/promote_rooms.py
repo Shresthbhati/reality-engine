@@ -53,10 +53,13 @@ derived, and each records the derivation in metadata so "why does the
 engine believe this wall is part of this room?" is answerable from the
 WorldIR alone).
 
-Known limitation, labelled: the ring walk assumes a simply-connected,
-convex boundary (corners in angular order). Non-convex rooms (L-shapes)
-will produce a conservatively wrong-or-failed ring rather than a silent
-lie, but proper non-convex ring tracing is undone work.
+Ring tracing: convex rooms use the angular-order walk. If that fails, a
+validated non-convex trace (DFS over directed wall lines; simple CCW
+polygon, area sanity, forward traversal, every line used once) handles
+simple L/U/T-shaped rooms. Known limitations, labelled: more than
+MAX_CONCAVE_LINES boundary lines, rooms with holes/islands, interior
+partition walls (a line that is not a ring edge) and walls revisited by
+the ring all fail honestly (no room) rather than lie.
 
 Deterministic: canonical ordering (planes, lines, corners, outputs),
 pure float math, no clocks, no RNG.
@@ -417,10 +420,10 @@ class _Ring:
         return (min(us), max(us)), (min(vs), max(vs))
 
 
-def _trace_ring_from_lines(
+def _trace_convex_ring(
     lines: List[_WallLine], interior_point: Tuple[float, float]
 ) -> Optional[_Ring]:
-    """Order boundary lines into a closed loop of corners.
+    """Order boundary lines into a closed CONVEX loop of corners.
 
     Each line is oriented so the interior point (the floor's inlier
     centroid -- real evidence, not a guess) lies on its LEFT; oriented
@@ -468,6 +471,171 @@ def _trace_ring_from_lines(
         vertices.append(corner)
         edge_walls.append("|".join(current.wall_plane_ids))
     return _Ring(vertices=tuple(vertices), segment_wall_ids=tuple(edge_walls))
+
+
+#: The non-convex search is a DFS over line orderings; bound it so a
+#: pathological line soup fails (None) instead of exploding.
+MAX_CONCAVE_LINES = 10
+
+#: A traced non-convex ring must enclose at least this fraction of its
+#: bounding box (rejects degenerate slivers / spiky self-folds).
+MIN_RING_BBOX_FILL = 0.2
+
+
+def _cross2(o, a, b) -> float:
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+
+def _signed_area2(vertices: Sequence[Tuple[float, float]]) -> float:
+    n = len(vertices)
+    return sum(
+        vertices[i][0] * vertices[(i + 1) % n][1]
+        - vertices[(i + 1) % n][0] * vertices[i][1]
+        for i in range(n)
+    )
+
+
+def _is_convex(vertices: Sequence[Tuple[float, float]]) -> bool:
+    n = len(vertices)
+    signs = set()
+    for i in range(n):
+        c = _cross2(vertices[i], vertices[(i + 1) % n], vertices[(i + 2) % n])
+        if abs(c) > 1e-9:
+            signs.add(c > 0.0)
+    return len(signs) == 1
+
+
+def _segments_cross(p1, p2, p3, p4) -> bool:
+    """Proper (interior) crossing of segments p1p2 and p3p4."""
+    d1, d2 = _cross2(p3, p4, p1), _cross2(p3, p4, p2)
+    d3, d4 = _cross2(p1, p2, p3), _cross2(p1, p2, p4)
+    return ((d1 > 1e-12 and d2 < -1e-12) or (d1 < -1e-12 and d2 > 1e-12)) and (
+        (d3 > 1e-12 and d4 < -1e-12) or (d3 < -1e-12 and d4 > 1e-12)
+    )
+
+
+def _valid_simple_ring(vertices: Sequence[Tuple[float, float]]) -> bool:
+    """Simple polygon (no self-crossing), CCW, non-degenerate edges and a
+    sane area relative to its bounding box."""
+    n = len(vertices)
+    if n < 3:
+        return False
+    for i in range(n):
+        a, b = vertices[i], vertices[(i + 1) % n]
+        if math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-3:
+            return False
+    area2 = _signed_area2(vertices)
+    if area2 <= 0.0:  # CW or zero area
+        return False
+    for i in range(n):
+        for j in range(i + 1, n):
+            if j == i + 1 or (i == 0 and j == n - 1):
+                continue
+            if _segments_cross(vertices[i], vertices[(i + 1) % n],
+                               vertices[j], vertices[(j + 1) % n]):
+                return False
+    us = [v[0] for v in vertices]
+    vs = [v[1] for v in vertices]
+    bbox = (max(us) - min(us)) * (max(vs) - min(vs))
+    return bbox > 0.0 and (area2 / 2.0) >= MIN_RING_BBOX_FILL * bbox
+
+
+def _flip(line: _WallLine) -> _WallLine:
+    return _WallLine(
+        point=line.point,
+        direction=(-line.direction[0], -line.direction[1]),
+        support_lo=-line.support_hi,
+        support_hi=-line.support_lo,
+        wall_plane_ids=line.wall_plane_ids,
+    )
+
+
+def _trace_concave_ring(lines: List[_WallLine]) -> Optional[_Ring]:
+    """Trace a simple (possibly non-convex, e.g. L/U-shaped) ring.
+
+    Searches cyclic orderings of directed lines where every consecutive
+    pair meets at a support-reachable corner, each wall is traversed
+    forward (exit corner after entry corner), every line is used exactly
+    once, and the result is a simple CCW polygon of sane area. Among
+    valid rings the one with the least wall length lacking inlier
+    support wins (tie-break: fewer vertices, larger area). Rings that
+    need a wall used twice, or a line that is not a ring edge (interior
+    partition), are not handled -> None.
+    """
+    n = len(lines)
+    if n < MIN_WALLS or n > MAX_CONCAVE_LINES:
+        return None
+    base = sorted(
+        lines,
+        key=lambda l: (round(l.angle(), 9), round(l.offset(), 9), l.wall_plane_ids),
+    )
+    best: List[Optional[Tuple[tuple, _Ring]]] = [None]
+
+    def corner(a: _WallLine, b: _WallLine):
+        c = _line_intersection(a, b)
+        if c is None:
+            return None
+        if not a.covers(_parameter_on(a, c)) or not b.covers(_parameter_on(b, c)):
+            return None
+        return c
+
+    def finish(seq: List[_WallLine], corners: list) -> None:
+        # corners[i] = corner(seq[i], seq[i+1]); close seq[-1] -> seq[0].
+        close = corner(seq[-1], seq[0])
+        if close is None:
+            return
+        verts = corners + [close]
+        cost = 0.0
+        for k, line in enumerate(seq):
+            c_in, c_out = verts[k - 1], verts[k]
+            t_in, t_out = _parameter_on(line, c_in), _parameter_on(line, c_out)
+            if t_out <= t_in + 1e-9:
+                return
+            cost += max(0.0, line.support_lo - t_in) + max(0.0, t_out - line.support_hi)
+        if not _valid_simple_ring(verts):
+            return
+        key = (round(cost, 9), len(verts), -round(abs(_signed_area2(verts)) / 2.0, 9))
+        if best[0] is None or key < best[0][0]:
+            best[0] = (key, _Ring(
+                vertices=tuple(verts),
+                segment_wall_ids=tuple("|".join(l.wall_plane_ids) for l in seq),
+            ))
+
+    def dfs(seq, used, corners):
+        if len(seq) == n:
+            finish(seq, corners)
+            return
+        for idx in range(1, n):
+            if idx in used:
+                continue
+            for cand in (base[idx], _flip(base[idx])):
+                c = corner(seq[-1], cand)
+                if c is None:
+                    continue
+                if corners and (
+                    _parameter_on(seq[-1], c) <= _parameter_on(seq[-1], corners[-1]) + 1e-9
+                ):
+                    continue
+                dfs(seq + [cand], used | {idx}, corners + [c])
+
+    for first in (base[0], _flip(base[0])):
+        dfs([first], {0}, [])
+    return best[0][1] if best[0] else None
+
+
+def _trace_ring_from_lines(
+    lines: List[_WallLine], interior_point: Tuple[float, float]
+) -> Optional[_Ring]:
+    """Closed boundary ring from wall lines: the convex angular-order walk
+    first (unchanged behaviour for convex rooms); if that fails or yields
+    an invalid polygon, a validated non-convex trace (simple polygon, sane
+    area); otherwise None -- honest failure, no guess."""
+    ring = _trace_convex_ring(lines, interior_point)
+    if ring is not None and _is_convex(ring.vertices):
+        verts = ring.vertices
+        if _valid_simple_ring(verts if _signed_area2(verts) > 0 else verts[::-1]):
+            return ring
+    return _trace_concave_ring(lines)
 
 
 # ----------------------------------------------------------------------

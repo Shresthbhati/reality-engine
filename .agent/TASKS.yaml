@@ -1811,7 +1811,7 @@ tasks:
         (pipe-deadlock regression), tests/test_world_diff.py"
       - "frontend tsc --noEmit + next build --webpack + real-browser run"
     remaining:
-      - "ENGINEERING: audit the Observation/Relationship constructor confidence defaults (1.0); producers are fixed, the defaults were left for a dedicated pass (PROD.3)"
+      - "ENGINEERING: DONE 2026-10-04 (commit f698f49): Observation/Relationship/CausalRelation constructor and from_dict defaults are 0.5 / Provenance.UNKNOWN (never 1.0 / OBSERVED); producers pass confidence explicitly; tests/test_confidence_defaults.py asserts defaults and that no producer omits confidence (registry entry PROD.3, also in docs/implementation/PENDING_IMPLEMENTATION.md)."
       - "EXTERNAL DATA (UNVERIFIED): no real corridor or real room photograph dataset exists in the repo; the 4 indoor photos outside it have unverified provenance and were not used"
     done_2026_10_03: "per-version evidence panel: the status API carries each version's evidence_ids / registered_ids (the version's own record, null for versions that predate it); the Studio shows, for an inspected earlier version, each photo as placed / waiting / added after it plus a one-line summary, and relabels the changes block as the CURRENT version's. Verified in the real browser against a two-version world (V1: 3 photos used, 3 placed, 1 added since); 5 contract tests (frontend/tests/contract/version-evidence.test.mts) + tests/test_reconstruction_reliability.py::test_status_versions_carry_what_each_version_was_built_from."
     done_2026_10_03_prototype: >-

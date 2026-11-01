@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last reconciled: 2026-09-23 (cross-checked against REALITY_ENGINE_CURRENT_STATUS.md and .agent/TASKS.yaml).
+Last reconciled: 2026-10-17 (Provenance and Uncertainty rows re-checked against .agent/TASKS.yaml P10-01/P10-02; other rows last reconciled 2026-09-23).
 Status vocabulary is defined in `PENDING_IMPLEMENTATION.md`; transitions
 require the evidence named there. This file states **what exists and was
 verified**, not what is planned — see REALITY_ENGINE_CURRENT_STATUS.md for
@@ -38,7 +38,7 @@ the authoritative status and PENDING_IMPLEMENTATION for the backlog.
 | CLI (session/source/orchestrator) | IMPLEMENTED | Full CLI with ingest/session/compile/reconstruct/validate/diff/export/register/query/store/inspect/viewer |
 | Deterministic compiler (hash-stable outputs) | IMPLEMENTED | artifact hashes stable across runs |
 | Multi-source session manifest | IMPLEMENTED | MultiSourceSession + full CLI |
-| Provenance (per-artifact records) | IMPLEMENTED | Per-entity provenance enum; queryable graph not yet built |
+| Provenance (per-artifact records) | IMPLEMENTED | Per-entity provenance enum + queryable provenance graph (ledger P10-01 DONE; `tests/test_provenance_graph.py`) |
 | WorldStore / incremental compilation | IMPLEMENTED | Versioned immutable lineage + integrity + CLI save/load/list/verify |
 | Registration (GNSS/ICP/point-to-plane) | IMPLEMENTED | GNSS + ICP + point-to-plane + covariance + CLI |
 | Trajectories (model/TUM/VIO) | IMPLEMENTED | Model, TUM, VIO federation, sync, diagnostics |
@@ -49,8 +49,8 @@ the authoritative status and PENDING_IMPLEMENTATION for the backlog.
 | **Exporters (gltf/blender/usda/cityjson/citygml)** | **IMPLEMENTED** | **13 exporter modules with real-geometry paths + reports** |
 | **Competitive benchmark suite** | **IMPLEMENTED** | **13 benchmark modules** |
 | CI | **IMPLEMENTED** | **.github/workflows/ci.yml — multi-Python matrix, wheel build, 28+ test files** |
-| Uncertainty propagation | PARTIAL | Schema fields exist; first-order propagation not implemented |
-| **Uncertainty visualization in Studio** | **MISSING** | **No Studio UI for uncertainty** |
+| Uncertainty propagation | IMPLEMENTED | Ledger P10-02 DONE; `tests/test_uncertainty_propagation.py` |
+| Uncertainty visualization in Studio | PARTIAL | Inspector "Uncertainty Model" panel (`frontend/src/components/inspector/AdaptiveInspector.tsx`) shows entity confidence (value, % and bar), the engine's `uncertainty` record (confidence/note), a "Low confidence" marker (< 0.5, header chip + panel), and an honest empty state. Data comes from the existing world API (`Entity.to_dict` already emits `confidence` and `uncertainty`; no API change). Spatial sigma/covariance shows only if `custom_properties.uncertainty_sigma_m` exists - no engine writer emits it yet, so that row is empty in practice. Not covered: covariance ellipsoids in the 3D viewport, propagated `Uncertain` quantities. Verified by tsc/lint/build/contract test only; not visually inspected against a live world. |
 
 ## Room reconstruction fidelity (Phase 7, 2026-10-31)
 

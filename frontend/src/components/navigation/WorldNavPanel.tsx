@@ -2490,39 +2490,29 @@ export function BuildingTopologyInspector({
   onSelectEntity: (id: string | null) => void;
   onFrameEntity: (id: string) => void;
 }) {
-  const [graphData, setGraphData] = useState<SpaceGraphData | null>(null);
-  const [loading, setLoading] = useState(Boolean(worldIR?.id));
-
-  // A new world id restarts the read: reset status during render, not in the effect.
-  const [loadedFor, setLoadedFor] = useState(worldIR?.id);
-  if (loadedFor !== worldIR?.id) {
-    setLoadedFor(worldIR?.id);
-    if (!worldIR?.id) setGraphData(null);
-    setLoading(Boolean(worldIR?.id));
-  }
+  const [graphState, setGraphState] = useState<{ id: string; data: SpaceGraphData | null } | null>(null);
+  const graphWorldId = worldIR?.id;
+  const graphSettled = graphState?.id === graphWorldId;
+  const graphData = graphSettled && graphState ? graphState.data : null;
+  const loading = !!graphWorldId && !graphSettled;
 
   useEffect(() => {
-    if (!worldIR?.id) return;
+    if (!graphWorldId) return;
     let isCancelled = false;
 
-    fetch(`/api/worlds/${encodeURIComponent(worldIR.id)}/space-graph`)
+    fetch(`/api/worlds/${encodeURIComponent(graphWorldId)}/space-graph`)
       .then((res) => (res.ok ? res.json() : null))
+      .then((data) => (data && data.nodes ? (data as SpaceGraphData) : null))
+      // On failure fall back to local derivation from entitiesList
+      .catch(() => null)
       .then((data) => {
-        if (!isCancelled && data && data.nodes) {
-          setGraphData(data as SpaceGraphData);
-        }
-      })
-      .catch(() => {
-        // Fallback to local derivation from entitiesList
-      })
-      .finally(() => {
-        if (!isCancelled) setLoading(false);
+        if (!isCancelled) setGraphState({ id: graphWorldId, data });
       });
 
     return () => {
       isCancelled = true;
     };
-  }, [worldIR?.id]);
+  }, [graphWorldId]);
 
   // Fallback / enhanced derivation from entitiesList
   const derivedData = useMemo(() => {

@@ -69,6 +69,9 @@ interface AdaptiveInspectorProps {
   onRetryLoad?: () => void;
 }
 
+/** Entities with recorded confidence below this are flagged in the inspector. */
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
 type InspectorTab = "overview" | "dimensions" | "materials" | "evidence";
 const TABS: ReadonlyArray<{ id: InspectorTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -1554,6 +1557,41 @@ function EntityDetails({
                 {conf !== null ? `${conf.toFixed(3)} (${(conf * 100).toFixed(1)}%)` : "Not available"}
               </span>
             </div>
+            {conf !== null && (
+              <div
+                role="meter"
+                aria-label="Entity confidence"
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={conf}
+                className="h-1.5 rounded bg-neutral-800 overflow-hidden"
+              >
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${Math.min(1, Math.max(0, conf)) * 100}%`,
+                    background: conf < LOW_CONFIDENCE_THRESHOLD ? "#f5a623" : "#35d07f",
+                  }}
+                />
+              </div>
+            )}
+            {conf !== null && conf < LOW_CONFIDENCE_THRESHOLD && (
+              <div className="text-[10px] text-[#f5a623] flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Low confidence (below {LOW_CONFIDENCE_THRESHOLD * 100}%) - treat as unverified.
+              </div>
+            )}
+            {typeof entity.uncertainty?.confidence === "number" && entity.uncertainty.confidence !== conf && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Uncertainty Record</span>
+                <span className="font-mono text-white">
+                  {(entity.uncertainty.confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+            {typeof entity.uncertainty?.note === "string" && entity.uncertainty.note && (
+              <div className="text-[10px] text-neutral-400">Note: {entity.uncertainty.note}</div>
+            )}
             {typeof (entity.custom_properties?.inlier_fraction ?? entity.custom_properties?.inlier_ratio) === "number" && (
               <div className="flex justify-between">
                 <span className="text-[var(--text-secondary)]">Inlier Fraction</span>

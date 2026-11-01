@@ -757,6 +757,21 @@ def cmd_store_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_store_prune(args: argparse.Namespace) -> int:
+    """Retention: drop old quarantined versions and unreferenced blobs (dry run unless --apply)."""
+    from worldstore.store import WorldStore
+
+    try:
+        out = WorldStore(args.store).prune_quarantine(
+            max_age=args.max_age_days * 86400, keep_last=args.keep_last, dry_run=not args.apply)
+    except Exception as exc:
+        _eprint(f"store prune failed: {exc}")
+        return 1
+    verb = "would remove" if out["dry_run"] else "removed"
+    print(f"{verb} {len(out['quarantine_removed'])} quarantined version(s), {len(out['blobs_removed'])} blob(s)")
+    return 0
+
+
 def cmd_store_verify(args: argparse.Namespace) -> int:
     """Verify one WorldStore version's artifact integrity."""
     from worldstore.store import WorldStore
@@ -1037,6 +1052,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_store_verify.add_argument("--store", required=True, help="WorldStore root directory")
     p_store_verify.add_argument("--version", required=True, help="version id to verify")
     p_store_verify.set_defaults(func=cmd_store_verify)
+
+    p_store_prune = store_sub.add_parser("prune", help="retention: remove old quarantined versions + unreferenced blobs")
+    p_store_prune.add_argument("--store", required=True, help="WorldStore root directory")
+    p_store_prune.add_argument("--max-age-days", type=float, default=30.0, help="minimum age (default 30)")
+    p_store_prune.add_argument("--keep-last", type=int, default=20, help="newest quarantined records always kept")
+    p_store_prune.add_argument("--apply", action="store_true", help="actually delete (default is a dry run)")
+    p_store_prune.set_defaults(func=cmd_store_prune)
 
     p_inspect = sub.add_parser("inspect", help="inspect a world summary or one entity's provenance")
     p_inspect.add_argument("world", help="world JSON path")

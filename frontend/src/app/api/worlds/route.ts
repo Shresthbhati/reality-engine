@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
+import { BACKEND_URL, backendFetch } from "@/lib/api/backend";
 
 /**
  * Thin proxy to the FastAPI contract `GET/POST /api/worlds`
@@ -26,7 +26,7 @@ function parseJson(text: string): unknown {
 
 export async function GET() {
   try {
-    const backendRes = await fetch(`${BACKEND_URL}/api/worlds`, {
+    const backendRes = await backendFetch(`${BACKEND_URL}/api/worlds`, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(10000),
     });
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/worlds`, {
+    const res = await backendFetch(`${BACKEND_URL}/api/worlds`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),

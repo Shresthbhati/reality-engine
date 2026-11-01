@@ -110,3 +110,17 @@ def test_room_prior_declines_a_cloud_that_is_not_a_room():
     pts = [ReconstructedPoint((i * 0.01, (i * 7 % 13) * 0.3, (i * 5 % 11) * 0.2), f"t{i}", ["a"]) for i in range(400)]
     cams = [ReconstructedCameraPose(c, (float(i), 1.0, 0.0), (1, 0, 0, 0)) for i, c in enumerate("abc")]
     assert detect_room_planes(ReconstructionResult(points=pts, camera_poses=cams, registration_status="success")) is None
+
+
+def test_compiler_refines_the_room_prior_planes_and_keeps_their_ids():
+    """The refinement hook: same plane ids, still one floor/ceiling + four walls, fit RMS not worse than the prior's."""
+    from engine.compiler.world_compiler import _refine_room_detection
+    from perception.geometry.room_box import detect_room_planes
+
+    raw = _box_room(1.0, step=0.1)
+    det = detect_room_planes(raw)
+    out = _refine_room_detection(det, raw, (0.0, 1.0, 0.0), 10.0)
+    assert out is not det                                   # the refinement engaged, it did not silently fall back
+    assert [p.plane_id for p in out.planes] == [p.plane_id for p in det.planes]
+    assert sum(abs(p.normal[1]) > 0.9 for p in out.planes) == 2 and sum(abs(p.normal[1]) < 0.1 for p in out.planes) == 4
+    assert sum(p.inlier_rms_distance_m for p in out.planes) <= sum(p.inlier_rms_distance_m for p in det.planes) * 1.05

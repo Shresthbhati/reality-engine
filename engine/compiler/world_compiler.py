@@ -133,6 +133,8 @@ class CompileOptions:
     #: Find floor / ceiling / walls with the room prior (perception.geometry.room_box) before generic RANSAC. Off by
     #: default (RANSAC behaviour is unchanged); the vertical slice's dense structure pass tries it as a candidate.
     room_prior: bool = False
+    refine_room: bool = True         # only with room_prior: robust constrained re-fit of the room shell (reconstruction.refine)
+    refine_budget_s: float = 60.0
     #: Entity id prefixes (caller-controllable so multiple compiles can
     #: target one world without id collisions).
     structure_prefix: str = "struct"
@@ -220,6 +222,44 @@ class CompileDiagnostics:
         return "\n".join(lines)
 
 
+def _refine_room_detection(detection, result, up, budget_s):
+    """Re-fit the room-prior planes jointly (floor/ceiling parallel, walls perpendicular, robust to floaters).
+    Same plane ids; inliers are re-collected within 3 sigma of the refined plane. Any failure or an unusable
+    plane keeps the detection unchanged -- refinement must never make a compile fail."""
+    import numpy as np
+
+    from perception.geometry.planes import DetectedPlane, PlaneDetection
+    from reconstruction.refine.room_refine import refine_room
+
+    try:
+        ids = [p.track_id for p in result.points]
+        pts = np.asarray([p.position for p in result.points], dtype=float)
+        ref = refine_room(pts, detection.planes, up=tuple(up), time_budget_s=budget_s)
+        by_src = {rp.source_index: rp for rp in ref.planes if rp.status == "refined"}
+        out, used = [], set()
+        for i, pl in enumerate(detection.planes):
+            rp = by_src.get(i)
+            if rp is None:
+                out.append(pl)
+                continue
+            n = np.asarray(rp.normal, float)
+            n = n / np.linalg.norm(n)
+            dist = np.abs(pts @ n + rp.d)
+            tol = max(3.0 * rp.inlier_rms, 1e-12)
+            keep = sorted(ids[k] for k in np.flatnonzero(dist <= tol))
+            if len(keep) < 3:
+                out.append(pl)
+                continue
+            out.append(DetectedPlane(plane_id=pl.plane_id, normal=tuple(float(c) for c in n), d=float(rp.d),
+                                     inlier_ids=keep, inlier_rms_distance_m=float(rp.inlier_rms),
+                                     uncertainty=pl.uncertainty))
+            used.update(keep)
+        unassigned = sorted(set(ids) - used)
+        return PlaneDetection(planes=out, unassigned_point_ids=unassigned, points_total=len(ids))
+    except Exception:  # noqa: BLE001 -- refinement is an improvement step, never a failure path
+        return detection
+
+
 def compile_reconstruction_to_world(
     result,
     options: Optional[CompileOptions] = None,
@@ -289,6 +329,8 @@ def compile_reconstruction_to_world(
         from perception.geometry.room_box import detect_room_planes
 
         detection = detect_room_planes(result, options.up)
+        if detection is not None and options.refine_room:
+            detection = _refine_room_detection(detection, result, options.up, options.refine_budget_s)
     if detection is None:
         detection = detect_planes(
             result, seed=options.seed,

@@ -32,7 +32,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from pathlib import Path
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -50,10 +51,36 @@ class DepthToPointsError(ValueError):
     pass
 
 
+def load_image_rgb(source_uri: str) -> np.ndarray:
+    """Decode an evidence item's image (file path or file:// URI) to an (H, W, 3) uint8 RGB array.
+
+    Raises DepthToPointsError when the image cannot be read -- callers decide whether to proceed
+    WITHOUT colour (points then carry color=None, i.e. "colour not measured"), never with a guess."""
+    from urllib.parse import urlparse
+    from urllib.request import url2pathname
+
+    parsed = urlparse(source_uri)
+    if parsed.scheme == "file":
+        raw = parsed.path
+        if parsed.netloc and len(parsed.netloc) == 1:  # file://C:/x malformed Windows form
+            raw = parsed.netloc + ":" + raw
+        path = Path(url2pathname(raw))
+    else:
+        path = Path(source_uri)
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            return np.asarray(im.convert("RGB"), dtype=np.uint8)
+    except Exception as exc:  # noqa: BLE001 -- any decode/IO failure is "no colour", reported by the caller
+        raise DepthToPointsError(f"cannot read image {source_uri!r} for colour sampling: {exc}") from exc
+
+
 def depth_map_to_points(
     depth: DepthMap,
     camera: PinholeCamera,
     stride: int = 1,
+    image_rgb: Optional[np.ndarray] = None,
 ) -> List[ReconstructedPoint]:
     """Unproject every valid pixel of a METRIC `depth` map (subsampled
     by `stride`) through `camera` into world-space `ReconstructedPoint`s.
@@ -63,6 +90,11 @@ def depth_map_to_points(
     invent metric scale. Skips (never fabricates) pixels with
     non-finite/non-positive depth. track_id is deterministic (evidence
     id + pixel coordinates).
+
+    `image_rgb` is the SAME view's photo as an (H, W, 3) array (0-255). When given, each point's
+    `color` is the photo pixel the point was unprojected from (nearest pixel; the photo may have a
+    different resolution than the depth map as long as the aspect ratio matches). When omitted,
+    `color` stays None -- "colour not measured" -- never a default grey.
     """
     if depth.unit != "meters":
         raise DepthToPointsError(
@@ -72,6 +104,20 @@ def depth_map_to_points(
         )
     if stride < 1:
         raise DepthToPointsError(f"stride must be >= 1, got {stride}")
+
+    img = None
+    sx = sy = 1.0
+    if image_rgb is not None:
+        img = np.asarray(image_rgb)
+        if img.ndim != 3 or img.shape[2] < 3:
+            raise DepthToPointsError(f"image_rgb must be (H, W, 3), got shape {img.shape}")
+        ih, iw = img.shape[:2]
+        if abs(iw / ih - depth.width / depth.height) > 0.01 * (depth.width / depth.height):
+            raise DepthToPointsError(
+                f"photo {iw}x{ih} and depth map {depth.width}x{depth.height} for {depth.evidence_id} "
+                "differ in aspect ratio -- colour would land on the wrong pixels"
+            )
+        sx, sy = iw / depth.width, ih / depth.height
 
     rows = range(0, depth.height, stride)
     cols = range(0, depth.width, stride)
@@ -84,11 +130,16 @@ def depth_map_to_points(
             if not math.isfinite(d) or d <= 0.0:
                 continue
             world_point = camera.unproject(col + 0.5, row + 0.5, d)
+            color = None
+            if img is not None:
+                px = img[min(int((row + 0.5) * sy), img.shape[0] - 1), min(int((col + 0.5) * sx), img.shape[1] - 1)]
+                color = (int(px[0]), int(px[1]), int(px[2]))
             points.append(ReconstructedPoint(
                 position=world_point.as_tuple(),
                 track_id=f"depth-{depth.evidence_id}-{row:05d}-{col:05d}",
                 source_evidence_ids=[depth.evidence_id],
                 uncertainty=depth.uncertainty,
+                color=color,
             ))
     return points
 

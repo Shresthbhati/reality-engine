@@ -115,7 +115,7 @@ export default function BottomContextBar({
             }}
             className={`flex items-center gap-1.5 px-2.5 h-6 rounded transition-colors cursor-pointer ${
               activeTab === "context" && !collapsed
-                ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)] font-medium border border-[var(--accent)]/30"
+                ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-medium border border-[var(--accent)]/30"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -131,7 +131,7 @@ export default function BottomContextBar({
             }}
             className={`flex items-center gap-1.5 px-2.5 h-6 rounded transition-colors cursor-pointer ${
               activeTab === "timeline" && !collapsed
-                ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)] font-medium border border-[var(--accent)]/30"
+                ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-medium border border-[var(--accent)]/30"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -147,7 +147,7 @@ export default function BottomContextBar({
             }}
             className={`flex items-center gap-1.5 px-2.5 h-6 rounded transition-colors cursor-pointer ${
               activeTab === "processing" && !collapsed
-                ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)] font-medium border border-[var(--accent)]/30"
+                ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-medium border border-[var(--accent)]/30"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -163,7 +163,7 @@ export default function BottomContextBar({
             }}
             className={`flex items-center gap-1.5 px-2.5 h-6 rounded transition-colors cursor-pointer ${
               activeTab === "activity" && !collapsed
-                ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)] font-medium border border-[var(--accent)]/30"
+                ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-medium border border-[var(--accent)]/30"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -281,7 +281,7 @@ export default function BottomContextBar({
                   {activeVersion ?? "—"}
                 </div>
                 <div className="text-[10px] font-mono" style={{ color: activeVersion ? "var(--success)" : "var(--text-tertiary)" }}>
-                  {activeVersion ? "Status: Canonical Head" : "No version committed"}
+                  {activeVersion ? "Status: Latest version" : "No version committed"}
                 </div>
               </div>
             </div>
@@ -316,11 +316,11 @@ export default function BottomContextBar({
               <span className="w-8 h-px bg-neutral-800" />
 
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#b28dff]" />
+                <span className="w-2.5 h-2.5 rounded-full bg-[var(--purple)]" />
                 <div className="text-xs">
                   <div className="text-white font-medium">3. Structural Plane Promotion</div>
                   <div className="text-neutral-500 text-[11px] font-mono">
-                    {Object.keys(world?.entities || {}).length} entities in WorldIR
+                    {Object.keys(world?.entities || {}).length} items in this world
                   </div>
                 </div>
               </div>

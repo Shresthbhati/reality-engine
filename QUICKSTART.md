@@ -41,6 +41,10 @@ uvicorn apps.api.main:app --port 8100              # the engine (reconstruction 
 cd frontend && npm run build && npm start          # the Studio on http://localhost:3000
 ```
 
+Optional auth: set `REALITY_API_TOKEN=<secret>` before starting the engine to require `Authorization: Bearer <secret>` on
+every endpoint except `/api/health`; give the Studio server the same value via `REALITY_API_TOKEN` (read server-side by its proxy routes; `NEXT_PUBLIC_API_TOKEN` is a browser-visible fallback). If unset, only loopback
+clients are accepted (a warning is logged) and anything else gets 401, so binding `--host 0.0.0.0` without a token is safe.
+
 (`npm run dev` instead of build/start while developing.) `http://localhost:8100/api/health` answers `{"status":"ok"}`
 when the engine is up. Data lives under `./data/` (database, uploaded photos, worlds); delete it to start empty.
 

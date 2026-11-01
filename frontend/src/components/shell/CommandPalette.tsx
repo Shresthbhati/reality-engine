@@ -148,7 +148,7 @@ const COMMANDS: Command[] = [
   },
   // Exports
   {
-    label: "Export Canonical WorldIR (JSON)",
+    label: "Export world data (JSON)",
     icon: Download,
     action: () => window.dispatchEvent(new CustomEvent("trigger-export", { detail: { format: "worldir" } })),
   },
@@ -336,7 +336,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
-      style={{ background: "rgba(6,7,9,0.6)" }}
+      style={{ background: "color-mix(in srgb, var(--bg-base) 70%, transparent)" }}
       onClick={onClose}
     >
       <div

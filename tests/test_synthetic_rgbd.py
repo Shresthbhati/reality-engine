@@ -204,16 +204,21 @@ def test_the_compiled_world_is_valid_and_metric(capture):
     assert result.cameras_registered == result.cameras_input == 16
 
 
-def test_relative_scale_world_refuses_device_metres(tmp_path):
-    """No measured baseline -> the world stays RELATIVE -> metric depth must not be unprojected into it."""
+def test_device_depth_anchors_a_world_without_a_tape_measurement(tmp_path):
+    """Plan F2: the sensor's metric depth replaces the tape baseline, then its pixels are unprojected as dense geometry."""
     ind = single_room()
     frames = [render_frame(ind.scene, INDOOR_INTRINSICS, p, INDOOR_SENSOR_NOISY, i)
               for i, p in enumerate(panorama((1.3, 1.0, 1.4), yaws=4, pitches_deg=(0,)))]
     root = write_capture(tmp_path / "relworld", frames, measured_baseline=False)
     result, sparse = _run(root)
     depth = result.stage_facts["depth"]
-    assert result.scale_state != "metric"
-    assert depth["status"] == "skipped" and "non-metric" in depth["note"] and result.points_total == sparse
+    facts = result.stage_facts["device_depth_scale"]
+    assert facts and facts["status"] == "accepted" and facts["frames_used"] == len(frames)
+    assert result.scale_state == "metric"
+    assert result.meters_per_unit == pytest.approx(1.0, abs=1e-3)
+    assert "device_depth" in result.scale_note
+    assert depth["status"] == "ran" and depth["source"] == "sidecar" and depth["dense_points"] > 0
+    assert result.points_total > sparse
 
 
 def test_undeclared_depth_scale_fails_the_depth_stage_honestly(tmp_path):
@@ -226,6 +231,9 @@ def test_undeclared_depth_scale_fails_the_depth_stage_honestly(tmp_path):
     depth = result.stage_facts["depth"]
     assert depth["status"] == "failed" and depth["frames_parsed"] == 0 and depth["dense_points"] == 0
     assert any("depth_scale" in e for e in depth["errors"]) and result.points_total == sparse
+    # the tape baseline anchored the scale, so no device-depth estimate was needed
+    assert result.stage_facts["device_depth_scale"] is None
+    assert result.scale_state == "metric"
 
 
 def test_the_pipeline_result_is_deterministic(capture):

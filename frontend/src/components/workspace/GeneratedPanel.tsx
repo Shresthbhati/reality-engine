@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Layers, Loader2, Trash2, X } from "lucide-react";
 import { isApiError } from "@/lib/api/client";
@@ -41,7 +41,7 @@ import {
 import OpeningsEditor from "@/components/workspace/OpeningsEditor";
 
 const inputCls =
-  "w-full bg-transparent outline-none text-sm px-2 h-8 rounded border border-[var(--border)] text-[var(--text-primary,#fff)]";
+  "w-full bg-transparent outline-none text-sm px-2 h-8 rounded border border-[var(--border)] text-[var(--text-primary)]";
 
 function errText(err: unknown, fallback: string): string {
   return isApiError(err) ? err.message : fallback;
@@ -49,7 +49,7 @@ function errText(err: unknown, fallback: string): string {
 
 /** Toolbar entry + dialog listing every stored generated object. Select one to edit it
  * (PUT -> new version) or delete it. `onChanged` must refetch the WorldIR. */
-export default function GeneratedPanel({ worldId, onChanged }: { worldId: string; onChanged: () => void }) {
+export default function GeneratedPanel({ worldId, onChanged, hideTrigger = false }: { worldId: string; onChanged: () => void; hideTrigger?: boolean }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<GeneratedItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -66,9 +66,19 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
 
   const current = items?.find((i) => i.entity_id === selected) ?? null;
 
+  // The workstation's Actions menu opens this dialog with a window event.
+  useEffect(() => {
+    const onOpen = () => {
+      setOpen(true);
+      void load();
+    };
+    window.addEventListener("open-generated-panel", onOpen);
+    return () => window.removeEventListener("open-generated-panel", onOpen);
+  }, [load]);
+
   return (
     <>
-      <button
+      {!hideTrigger && (<button
         type="button"
         onClick={() => {
           setOpen(true);
@@ -76,23 +86,23 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
         }}
         title="Edit or delete generated rooms, corridors, cities, apartments and buildings"
         data-testid="open-generated"
-        className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
+        className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] transition-colors cursor-pointer"
       >
         <Layers className="w-3.5 h-3.5 text-[var(--accent)]" />
         <span className="hidden sm:inline">Generated</span>
-      </button>
+      </button>)}
 
       {/* Portaled: the toolbar is a z-30 stacking context, which would paint the status footer over a tall dialog. */}
       {open && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Generated">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/80 p-4" role="dialog" aria-modal="true" aria-label="Generated">
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-base)] p-4 flex flex-col gap-3 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
                 <Layers className="w-4 h-4 text-[var(--accent)]" /> Generated objects
                 <span className="text-[10px] font-normal text-[var(--warning)] border border-[var(--warning)] rounded px-1">PROCEDURAL</span>
               </h3>
               <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="cursor-pointer">
-                <X className="w-4 h-4 text-neutral-400" />
+                <X className="w-4 h-4 text-[var(--text-secondary)]" />
               </button>
             </div>
 
@@ -103,10 +113,10 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
               </div>
             )}
             {!items && !loadError && (
-              <p className="text-xs text-neutral-400 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…</p>
+              <p className="text-xs text-[var(--text-secondary)] flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…</p>
             )}
             {items && items.length === 0 && (
-              <p className="text-xs text-neutral-400" data-testid="generated-empty">
+              <p className="text-xs text-[var(--text-secondary)]" data-testid="generated-empty">
                 Nothing generated in this world yet. Use Build to add a room, corridor, city, apartment or building.
               </p>
             )}
@@ -127,13 +137,13 @@ export default function GeneratedPanel({ worldId, onChanged }: { worldId: string
                             : "border-[var(--border)] hover:bg-[var(--bg-surface)]"
                         }`}
                       >
-                        <div className="flex items-center gap-2 text-sm text-white">
+                        <div className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
                           <span className="text-[10px] uppercase tracking-wide text-[var(--accent)] w-[4.5rem]">{it.kind}</span>
                           <span className="font-medium">{it.name}</span>
-                          <span className="text-xs text-neutral-400 ml-auto">{summarize(it)}</span>
+                          <span className="text-xs text-[var(--text-secondary)] ml-auto">{summarize(it)}</span>
                         </div>
                         {lines.map((l) => (
-                          <div key={l} className="text-[11px] text-neutral-500 pl-[5.25rem]">{l}</div>
+                          <div key={l} className="text-[11px] text-[var(--text-tertiary)] pl-[5.25rem]">{l}</div>
                         ))}
                       </button>
                     </li>
@@ -273,7 +283,7 @@ function EditForm({
 
   return (
     <div className="rounded border border-[var(--border)] bg-[var(--bg-surface)] p-3 flex flex-col gap-3" data-testid="generated-edit">
-      <h4 className="text-xs font-semibold text-white">
+      <h4 className="text-xs font-semibold text-[var(--text-primary)]">
         Edit {item.kind} <span className="text-[var(--accent)]">{item.name}</span>
       </h4>
 
@@ -300,7 +310,7 @@ function EditForm({
             <N label="Width (m)" value={corridor.width} onChange={(v) => setCorridor({ ...corridor, width: v })} />
             <N label="Height (m)" value={corridor.height} onChange={(v) => setCorridor({ ...corridor, height: v })} />
           </div>
-          <label className="flex flex-col gap-1 text-xs text-neutral-400">
+          <label className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
             Runs along
             <select value={corridor.axis} onChange={(e) => setCorridor({ ...corridor, axis: e.target.value as "x" | "y" })} className={inputCls}>
               <option value="x">East-West (x)</option>
@@ -308,7 +318,7 @@ function EditForm({
             </select>
           </label>
           {corridor.attach ? (
-            <label className="flex flex-col gap-1 text-xs text-neutral-400">
+            <label className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
               Attached side (position follows the room)
               <select
                 value={corridor.attach.side}
@@ -345,7 +355,7 @@ function EditForm({
 
       {kind === "building" && (
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-xs text-neutral-400 mb-1">Storeys and storey heights (metres)</legend>
+          <legend className="text-xs text-[var(--text-secondary)] mb-1">Storeys and storey heights (metres)</legend>
           <N
             label={`Storeys (1-${MAX_UI_STOREYS})`}
             value={building.storeys}
@@ -367,7 +377,7 @@ function EditForm({
 
       {kind === "district" && (
         <fieldset className="flex flex-col gap-2" data-testid="district-edit">
-          <legend className="text-xs text-neutral-400 mb-1 flex items-center gap-2">
+          <legend className="text-xs text-[var(--text-secondary)] mb-1 flex items-center gap-2">
             Seed and detail policy
             <span className="text-[10px] font-semibold text-[var(--warning)] border border-[var(--warning)] rounded px-1">GENERATED</span>
           </legend>
@@ -376,7 +386,7 @@ function EditForm({
             <N label="Fully detailed buildings (empty = all)" value={district.maxFull} step={1} onChange={(v) => setDistrict({ ...district, maxFull: v })} />
             <N label="Full detail within (m, empty = no limit)" value={district.fullWithin} step={1} onChange={(v) => setDistrict({ ...district, fullWithin: v })} />
           </div>
-          <p className="text-[11px] text-neutral-500">
+          <p className="text-[11px] text-[var(--text-tertiary)]">
             Buildings beyond the policy become one box each (footprint only). Layout, sizes and families are fixed here: delete and rebuild to change them.
           </p>
         </fieldset>
@@ -386,7 +396,7 @@ function EditForm({
         <div className="grid grid-cols-2 gap-2">
           <N label="Seed" value={apt.seed} step={1} onChange={(v) => setApt({ ...apt, seed: v })} />
           <N label="Plan index (0-9)" value={apt.plan_index} step={1} onChange={(v) => setApt({ ...apt, plan_index: v })} />
-          <p className="col-span-2 text-[11px] text-neutral-500">
+          <p className="col-span-2 text-[11px] text-[var(--text-tertiary)]">
             Changing either re-solves the layout from the stored brief. Rooms and adjacency are fixed here: delete and rebuild to change them.
           </p>
         </div>
@@ -402,7 +412,7 @@ function EditForm({
       {status && <p role="status" data-testid="generated-result" className="text-xs text-[var(--success)]">{status}</p>}
 
       {dependents && (
-        <div role="alert" className="rounded border border-[var(--warning)] p-2 text-xs text-neutral-200 flex flex-col gap-2" data-testid="delete-dependents">
+        <div role="alert" className="rounded border border-[var(--warning)] p-2 text-xs text-[var(--text-primary)] flex flex-col gap-2" data-testid="delete-dependents">
           <p>{dependents.message}</p>
           {dependents.names.length > 0 && (
             <ul className="list-disc pl-4">
@@ -416,7 +426,7 @@ function EditForm({
           ) : (
             <div className="flex items-center gap-2">
               <span>Delete {item.name} and {dependents.names.length || "its"} dependent(s)? This cannot be undone here.</span>
-              <button type="button" disabled={busy} onClick={() => void remove(true)} className="h-7 px-2 rounded bg-[var(--error)] text-white disabled:opacity-40 cursor-pointer">
+              <button type="button" disabled={busy} onClick={() => void remove(true)} className="h-7 px-2 rounded bg-[var(--error)] text-[var(--text-primary)] disabled:opacity-40 cursor-pointer">
                 Confirm delete all
               </button>
               <button type="button" onClick={() => { setConfirmCascade(false); setDependents(null); }} className="h-7 px-2 rounded border border-[var(--border)] cursor-pointer">
@@ -432,7 +442,7 @@ function EditForm({
           type="button"
           onClick={() => void save()}
           disabled={!canSave}
-          className="flex items-center gap-2 h-8 px-3 rounded-md text-xs font-semibold bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
+          className="flex items-center gap-2 h-8 px-3 rounded-md text-xs font-semibold bg-[var(--primary)] text-[var(--text-primary)] hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
         >
           {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save changes
         </button>
@@ -440,14 +450,14 @@ function EditForm({
           <button
             type="button"
             onClick={() => { setConfirmDelete(true); setDependents(null); setConfirmCascade(false); }}
-            className="flex items-center gap-1 h-8 px-3 rounded-md text-xs border border-[var(--border)] text-neutral-300 hover:text-white cursor-pointer"
+            className="flex items-center gap-1 h-8 px-3 rounded-md text-xs border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </button>
         ) : (
-          <span className="flex items-center gap-2 text-xs text-neutral-300">
+          <span className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
             Delete {item.name}?
-            <button type="button" disabled={busy} onClick={() => void remove(false)} className="h-7 px-2 rounded bg-[var(--error)] text-white disabled:opacity-40 cursor-pointer">
+            <button type="button" disabled={busy} onClick={() => void remove(false)} className="h-7 px-2 rounded bg-[var(--error)] text-[var(--text-primary)] disabled:opacity-40 cursor-pointer">
               Confirm delete
             </button>
             <button type="button" onClick={() => setConfirmDelete(false)} className="h-7 px-2 rounded border border-[var(--border)] cursor-pointer">
@@ -462,7 +472,7 @@ function EditForm({
 
 function N({ label, value, onChange, step = 0.1 }: { label: string; value: number; onChange: (v: number) => void; step?: number }) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-neutral-400">
+    <label className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
       {label}
       <input
         type="number"

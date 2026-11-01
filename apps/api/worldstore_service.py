@@ -320,6 +320,26 @@ async def commit_version(
     return row
 
 
+async def nearest_report(db: AsyncSession, version_id: str | None, max_hops: int = 256) -> dict:
+    """The reconstruction report that describes `version_id`'s content.
+
+    A correction commit creates a version row with no report of its own (nothing was reconstructed), but its content
+    still derives from the nearest ancestor that has one. Rebuild arbitration and the status read the HEAD report;
+    reading only the HEAD row made every corrected world look like it had no history, so a degraded rebuild was
+    accepted over it and the status lost its model. Walks parents; {} when no ancestor has a report."""
+    seen: set[str] = set()
+    vid = version_id
+    while vid and vid not in seen and len(seen) < max_hops:
+        seen.add(vid)
+        row = await db.get(WorldVersion, vid)
+        if row is None:
+            return {}
+        if row.report:
+            return dict(row.report)
+        vid = row.parent_version_id
+    return {}
+
+
 async def get_current_worldir(db: AsyncSession, world_id: str) -> WorldIR | None:
     w = await db.get(World, world_id)
     if w is None or not w.current_version_id:
@@ -443,21 +463,54 @@ def list_scale_references(world_id: str) -> list[dict]:
 
 
 def add_scale_reference(world_id: str, evidence_id_a: str, evidence_id_b: str, distance_m: float,
-                        method: str = "manual_measurement") -> dict:
-    """Record one measured distance between two capture positions. The same pair replaces its earlier entry
-    (a corrected measurement); every other reference is kept. Validation is the scale module's own
-    (two different ids, positive finite distance) -- this never invents or rounds a value."""
-    from reconstruction.scale import ScaleReference
+                        method: str = "manual_measurement", model_distance: float | None = None,
+                        unit_check_sep: float | None = None) -> dict:
+    """Record one scale fact. Camera baseline: the same pair replaces its earlier entry (a corrected
+    measurement). Model-space (known_length / prior_accepted_by_user): the camera pair only fingerprints
+    the model unit; a new prior replaces the old one, known lengths accumulate (they are median-gated
+    when applied). Validation is the scale module's own -- this never invents or rounds a value."""
+    from reconstruction.scale import MODEL_SPACE_METHODS, PRIOR_ACCEPTED, ScaleReference
 
-    ScaleReference(evidence_id_a, evidence_id_b, float(distance_m), method)      # raises ScaleAnchoringError
+    ScaleReference(evidence_id_a, evidence_id_b, float(distance_m), method,
+                   model_distance, unit_check_sep)                                  # raises ScaleAnchoringError
     ref = {"evidence_id_a": evidence_id_a, "evidence_id_b": evidence_id_b, "distance_m": float(distance_m),
            "method": method, "recorded_at": utcnow().isoformat()}
-    pair = frozenset((evidence_id_a, evidence_id_b))
-    refs = [r for r in list_scale_references(world_id)
-            if frozenset((r.get("evidence_id_a"), r.get("evidence_id_b"))) != pair] + [ref]
+    if method in MODEL_SPACE_METHODS:
+        ref["model_distance"] = float(model_distance)
+        if unit_check_sep is not None:
+            ref["unit_check_sep"] = float(unit_check_sep)
+        refs = [r for r in list_scale_references(world_id)
+                if not (method == PRIOR_ACCEPTED and r.get("method") == PRIOR_ACCEPTED)] + [ref]
+    else:
+        pair = frozenset((evidence_id_a, evidence_id_b))
+        refs = [r for r in list_scale_references(world_id)
+                if r.get("method") in MODEL_SPACE_METHODS
+                or frozenset((r.get("evidence_id_a"), r.get("evidence_id_b"))) != pair] + [ref]
     path = _scale_ref_path(world_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(refs, indent=1, sort_keys=True), encoding="utf-8")
     os.replace(tmp, path)
     return ref
+
+
+def _scale_rejected_path(world_id: str) -> Path:
+    return worldstore_root() / "scale-references" / f"{world_id}.rejected.json"
+
+
+def list_rejected_suggestions(world_id: str) -> list[str]:
+    """Suggestion keys the user rejected for this world (a rejection changes nothing else)."""
+    try:
+        data = json.loads(_scale_rejected_path(world_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(k) for k in data] if isinstance(data, list) else []
+
+
+def reject_scale_suggestion(world_id: str, key: str) -> None:
+    keys = list_rejected_suggestions(world_id)
+    if key not in keys:
+        keys.append(key)
+    path = _scale_rejected_path(world_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(keys), encoding="utf-8")

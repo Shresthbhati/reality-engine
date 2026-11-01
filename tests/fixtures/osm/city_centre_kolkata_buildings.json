@@ -1,0 +1,1383 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-31T13:55:51Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "way",
+  "id": 134101085,
+  "center": {
+    "lat": 22.5775309,
+    "lon": 88.4296698
+  },
+  "tags": {
+    "building": "yes",
+    "name": "PWC Office"
+  }
+},
+{
+  "type": "way",
+  "id": 134101096,
+  "center": {
+    "lat": 22.5778457,
+    "lon": 88.4311747
+  },
+  "tags": {
+    "building": "yes",
+    "name": "Haldia Petrochemicals"
+  }
+},
+{
+  "type": "way",
+  "id": 134101262,
+  "center": {
+    "lat": 22.5757802,
+    "lon": 88.4283121
+  },
+  "tags": {
+    "building": "college"
+  }
+},
+{
+  "type": "way",
+  "id": 134101300,
+  "center": {
+    "lat": 22.5742147,
+    "lon": 88.4336852
+  },
+  "tags": {
+    "addr:city": "Kolkata",
+    "addr:housenumber": "Y2",
+    "addr:place": "EP Block",
+    "addr:postcode": "700091",
+    "addr:street": "Street Number 15",
+    "alt_name": "IEM Gurukul Campus",
+    "amenity": "college",
+    "building": "college",
+    "internet_access": "yes",
+    "name": "Institute of Engineering and Management",
+    "short_name": "IEM",
+    "website": "https://iem.edu.in/"
+  }
+},
+{
+  "type": "way",
+  "id": 158019904,
+  "center": {
+    "lat": 22.5782192,
+    "lon": 88.4286587
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 158019905,
+  "center": {
+    "lat": 22.5784734,
+    "lon": 88.4293144
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 158645668,
+  "center": {
+    "lat": 22.5758783,
+    "lon": 88.4297652
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 193308962,
+  "center": {
+    "lat": 22.5790972,
+    "lon": 88.4307673
+  },
+  "tags": {
+    "addr:city": "kolkata",
+    "addr:housenumber": "CN-1,, CN-1, Camac St, DN Block, Sector V,",
+    "addr:postcode": "700091",
+    "addr:street": "camac street road",
+    "building": "yes",
+    "check_date": "2025-01-19",
+    "government": "yes",
+    "name": "Wipro Tower 5",
+    "office": "company",
+    "opening_hours": "Mo-Fr 08:00-18:00"
+  }
+},
+{
+  "type": "way",
+  "id": 193308964,
+  "center": {
+    "lat": 22.5786886,
+    "lon": 88.4312122
+  },
+  "tags": {
+    "addr:city": "kolkata",
+    "addr:housenumber": "HCHJ+CFW,DN Block, Sector V,",
+    "addr:postcode": "700091",
+    "building": "yes",
+    "name": "Meridian Capital",
+    "office": "company"
+  }
+},
+{
+  "type": "way",
+  "id": 193475620,
+  "center": {
+    "lat": 22.5777528,
+    "lon": 88.4307065
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 193475625,
+  "center": {
+    "lat": 22.5771391,
+    "lon": 88.4326372
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 193475626,
+  "center": {
+    "lat": 22.5770370,
+    "lon": 88.4312518
+  },
+  "tags": {
+    "building": "yes",
+    "name": "Millenium City IBM DAKSH"
+  }
+},
+{
+  "type": "way",
+  "id": 193475634,
+  "center": {
+    "lat": 22.5772909,
+    "lon": 88.4322772
+  },
+  "tags": {
+    "building": "yes",
+    "name": "Srijan Tech Park",
+    "office": "company"
+  }
+},
+{
+  "type": "way",
+  "id": 193475636,
+  "center": {
+    "lat": 22.5772859,
+    "lon": 88.4308475
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 193477771,
+  "center": {
+    "lat": 22.5773962,
+    "lon": 88.4315598
+  },
+  "tags": {
+    "building": "yes",
+    "name": "Webel Electronics Communication System Ltd"
+  }
+},
+{
+  "type": "way",
+  "id": 194273805,
+  "center": {
+    "lat": 22.5727883,
+    "lon": 88.4294357
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 238285653,
+  "center": {
+    "lat": 22.5765542,
+    "lon": 88.4303720
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 238287187,
+  "center": {
+    "lat": 22.5753263,
+    "lon": 88.4333568
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 238287188,
+  "center": {
+    "lat": 22.5751340,
+    "lon": 88.4336811
+  },
+  "tags": {
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 358886752,
+  "center": {
+    "lat": 22.5744179,
+    "lon": 88.4304434
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886754,
+  "center": {
+    "lat": 22.5749545,
+    "lon": 88.4306823
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886756,
+  "center": {
+    "lat": 22.5746928,
+    "lon": 88.4305860
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886757,
+  "center": {
+    "lat": 22.5750269,
+    "lon": 88.4315084
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886769,
+  "center": {
+    "lat": 22.5767839,
+    "lon": 88.4328873
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886771,
+  "center": {
+    "lat": 22.5731202,
+    "lon": 88.4312680
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886780,
+  "center": {
+    "lat": 22.5764100,
+    "lon": 88.4334796
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886785,
+  "center": {
+    "lat": 22.5760230,
+    "lon": 88.4341161
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886799,
+  "center": {
+    "lat": 22.5769952,
+    "lon": 88.4337829
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886807,
+  "center": {
+    "lat": 22.5763922,
+    "lon": 88.4339241
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886810,
+  "center": {
+    "lat": 22.5750024,
+    "lon": 88.4300374
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886821,
+  "center": {
+    "lat": 22.5728488,
+    "lon": 88.4310894
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886825,
+  "center": {
+    "lat": 22.5731763,
+    "lon": 88.4302374
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886830,
+  "center": {
+    "lat": 22.5727659,
+    "lon": 88.4319294
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886834,
+  "center": {
+    "lat": 22.5766089,
+    "lon": 88.4335900
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886843,
+  "center": {
+    "lat": 22.5760646,
+    "lon": 88.4336994
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886864,
+  "center": {
+    "lat": 22.5734821,
+    "lon": 88.4299932
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886865,
+  "center": {
+    "lat": 22.5748722,
+    "lon": 88.4303196
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886866,
+  "center": {
+    "lat": 22.5729726,
+    "lon": 88.4320729
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886888,
+  "center": {
+    "lat": 22.5732816,
+    "lon": 88.4302911
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886911,
+  "center": {
+    "lat": 22.5733962,
+    "lon": 88.4318537
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886920,
+  "center": {
+    "lat": 22.5753665,
+    "lon": 88.4328617
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886923,
+  "center": {
+    "lat": 22.5730563,
+    "lon": 88.4302346
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886924,
+  "center": {
+    "lat": 22.5728534,
+    "lon": 88.4319959
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886932,
+  "center": {
+    "lat": 22.5765732,
+    "lon": 88.4340325
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886944,
+  "center": {
+    "lat": 22.5733575,
+    "lon": 88.4310038
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886957,
+  "center": {
+    "lat": 22.5729681,
+    "lon": 88.4316488
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886965,
+  "center": {
+    "lat": 22.5731577,
+    "lon": 88.4305596
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358886991,
+  "center": {
+    "lat": 22.5735313,
+    "lon": 88.4319273
+  },
+  "tags": {
+    "addr:city": "Kolkata",
+    "addr:housenumber": "EN-27",
+    "addr:postcode": "700091",
+    "building": "yes",
+    "building:levels": "10",
+    "building:material": "mirror",
+    "name": "Advantage Tower"
+  }
+},
+{
+  "type": "way",
+  "id": 358887003,
+  "center": {
+    "lat": 22.5768349,
+    "lon": 88.4341288
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887009,
+  "center": {
+    "lat": 22.5734011,
+    "lon": 88.4314436
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887020,
+  "center": {
+    "lat": 22.5764881,
+    "lon": 88.4330849
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887022,
+  "center": {
+    "lat": 22.5732463,
+    "lon": 88.4317602
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887028,
+  "center": {
+    "lat": 22.5741472,
+    "lon": 88.4307548
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887045,
+  "center": {
+    "lat": 22.5736904,
+    "lon": 88.4315624
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887052,
+  "center": {
+    "lat": 22.5726684,
+    "lon": 88.4318684
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887064,
+  "center": {
+    "lat": 22.5739217,
+    "lon": 88.4306433
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887066,
+  "center": {
+    "lat": 22.5732668,
+    "lon": 88.4313370
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887071,
+  "center": {
+    "lat": 22.5730995,
+    "lon": 88.4325311
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887074,
+  "center": {
+    "lat": 22.5762461,
+    "lon": 88.4333928
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887081,
+  "center": {
+    "lat": 22.5766906,
+    "lon": 88.4344983
+  },
+  "tags": {
+    "building": "yes",
+    "building:levels": "10",
+    "name": "R S Softwares",
+    "office": "company"
+  }
+},
+{
+  "type": "way",
+  "id": 358887095,
+  "center": {
+    "lat": 22.5735634,
+    "lon": 88.4314892
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887100,
+  "center": {
+    "lat": 22.5739058,
+    "lon": 88.4301904
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887102,
+  "center": {
+    "lat": 22.5732619,
+    "lon": 88.4321849
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887112,
+  "center": {
+    "lat": 22.5740348,
+    "lon": 88.4306878
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887121,
+  "center": {
+    "lat": 22.5738074,
+    "lon": 88.4312065
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887124,
+  "center": {
+    "lat": 22.5732411,
+    "lon": 88.4326011
+  },
+  "tags": {
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 358887136,
+  "center": {
+    "lat": 22.5734789,
+    "lon": 88.4307420
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887150,
+  "center": {
+    "lat": 22.5770007,
+    "lon": 88.4333606
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887154,
+  "center": {
+    "lat": 22.5735901,
+    "lon": 88.4307859
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887157,
+  "center": {
+    "lat": 22.5736522,
+    "lon": 88.4300657
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887160,
+  "center": {
+    "lat": 22.5731190,
+    "lon": 88.4321206
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887167,
+  "center": {
+    "lat": 22.5730342,
+    "lon": 88.4308323
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887170,
+  "center": {
+    "lat": 22.5769097,
+    "lon": 88.4329558
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887183,
+  "center": {
+    "lat": 22.5740121,
+    "lon": 88.4313502
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887189,
+  "center": {
+    "lat": 22.5738110,
+    "lon": 88.4302316
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887191,
+  "center": {
+    "lat": 22.5735364,
+    "lon": 88.4323309
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887197,
+  "center": {
+    "lat": 22.5733977,
+    "lon": 88.4322614
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887208,
+  "center": {
+    "lat": 22.5753970,
+    "lon": 88.4338042
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887217,
+  "center": {
+    "lat": 22.5739183,
+    "lon": 88.4309601
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887227,
+  "center": {
+    "lat": 22.5733732,
+    "lon": 88.4306905
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887230,
+  "center": {
+    "lat": 22.5770268,
+    "lon": 88.4330004
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887241,
+  "center": {
+    "lat": 22.5726396,
+    "lon": 88.4314888
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887242,
+  "center": {
+    "lat": 22.5768263,
+    "lon": 88.4336854
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887243,
+  "center": {
+    "lat": 22.5737383,
+    "lon": 88.4298927
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887248,
+  "center": {
+    "lat": 22.5762381,
+    "lon": 88.4338282
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887257,
+  "center": {
+    "lat": 22.5729041,
+    "lon": 88.4336964
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887258,
+  "center": {
+    "lat": 22.5726678,
+    "lon": 88.4324037
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 358887260,
+  "center": {
+    "lat": 22.5729975,
+    "lon": 88.4306390
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 362948049,
+  "center": {
+    "lat": 22.5783182,
+    "lon": 88.4329784
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 362948118,
+  "center": {
+    "lat": 22.5761002,
+    "lon": 88.4280979
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 362948196,
+  "center": {
+    "lat": 22.5759118,
+    "lon": 88.4274817
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 362948230,
+  "center": {
+    "lat": 22.5756533,
+    "lon": 88.4330844
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 362948235,
+  "center": {
+    "lat": 22.5775215,
+    "lon": 88.4340543
+  },
+  "tags": {
+    "building": "yes",
+    "check_date": "2025-01-19",
+    "name": "CSIR IICB GUEST HOUSE",
+    "tourism": "guest_house"
+  }
+},
+{
+  "type": "way",
+  "id": 382403602,
+  "center": {
+    "lat": 22.5769940,
+    "lon": 88.4306574
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 382403603,
+  "center": {
+    "lat": 22.5770559,
+    "lon": 88.4303064
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 382403604,
+  "center": {
+    "lat": 22.5768748,
+    "lon": 88.4302041
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 757514295,
+  "center": {
+    "lat": 22.5776801,
+    "lon": 88.4335612
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986982884,
+  "center": {
+    "lat": 22.5783019,
+    "lon": 88.4303191
+  },
+  "tags": {
+    "addr:city": "kolkata",
+    "addr:housenumber": "54;55",
+    "addr:postcode": "700091",
+    "addr:street": "street no 18 DN BLOCK SECTOR V",
+    "building": "office",
+    "name": "TCS gitobitan",
+    "phone": "+91 90380 16398"
+  }
+},
+{
+  "type": "way",
+  "id": 986997135,
+  "center": {
+    "lat": 22.5765257,
+    "lon": 88.4323402
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997136,
+  "center": {
+    "lat": 22.5761591,
+    "lon": 88.4325513
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997137,
+  "center": {
+    "lat": 22.5762522,
+    "lon": 88.4326219
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997138,
+  "center": {
+    "lat": 22.5758077,
+    "lon": 88.4327037
+  },
+  "tags": {
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 986997139,
+  "center": {
+    "lat": 22.5755414,
+    "lon": 88.4326138
+  },
+  "tags": {
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 986997140,
+  "center": {
+    "lat": 22.5760762,
+    "lon": 88.4328939
+  },
+  "tags": {
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 986997141,
+  "center": {
+    "lat": 22.5762389,
+    "lon": 88.4329972
+  },
+  "tags": {
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 986997142,
+  "center": {
+    "lat": 22.5768082,
+    "lon": 88.4332599
+  },
+  "tags": {
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 986997143,
+  "center": {
+    "lat": 22.5765521,
+    "lon": 88.4315958
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997144,
+  "center": {
+    "lat": 22.5764744,
+    "lon": 88.4317296
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997145,
+  "center": {
+    "lat": 22.5761715,
+    "lon": 88.4317510
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997146,
+  "center": {
+    "lat": 22.5767052,
+    "lon": 88.4318978
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997147,
+  "center": {
+    "lat": 22.5758882,
+    "lon": 88.4332101
+  },
+  "tags": {
+    "building": "office"
+  }
+},
+{
+  "type": "way",
+  "id": 986997148,
+  "center": {
+    "lat": 22.5755156,
+    "lon": 88.4338876
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997151,
+  "center": {
+    "lat": 22.5743719,
+    "lon": 88.4340399
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 986997156,
+  "center": {
+    "lat": 22.5741011,
+    "lon": 88.4328234
+  },
+  "tags": {
+    "building": "industrial"
+  }
+},
+{
+  "type": "way",
+  "id": 992001222,
+  "center": {
+    "lat": 22.5772360,
+    "lon": 88.4297726
+  },
+  "tags": {
+    "building": "yes",
+    "office": "private"
+  }
+},
+{
+  "type": "way",
+  "id": 992001223,
+  "center": {
+    "lat": 22.5776527,
+    "lon": 88.4317634
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 992001224,
+  "center": {
+    "lat": 22.5784779,
+    "lon": 88.4324266
+  },
+  "tags": {
+    "building": "yes",
+    "office": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1364219055,
+  "center": {
+    "lat": 22.5736832,
+    "lon": 88.4320395
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1364320755,
+  "center": {
+    "lat": 22.5752373,
+    "lon": 88.4316575
+  },
+  "tags": {
+    "building": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1364685540,
+  "center": {
+    "lat": 22.5739723,
+    "lon": 88.4339355
+  },
+  "tags": {
+    "building": "yes"
+  }
+}
+
+  ]
+}

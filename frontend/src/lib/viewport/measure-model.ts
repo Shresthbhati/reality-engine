@@ -41,6 +41,28 @@ export const KIND_LABEL: Record<MeasureKind, string> = {
   elevation_difference: "Elevation Difference",
 };
 
+/** D1 dimension state (extends the measured/reconstructed/inferred provenance distinction). */
+export type DimensionState = "MEASURED" | "RECONSTRUCTED" | "ESTIMATED" | "VERIFIED";
+
+export const STATE_HELP: Record<DimensionState, string> = {
+  MEASURED: "Direct from metric evidence",
+  RECONSTRUCTED: "Derived from reconstructed geometry",
+  ESTIMATED: "Inferred, or scaled from an accepted typical-size prior",
+  VERIFIED: "Confirmed by the user against a tape measurement",
+};
+
+/**
+ * State to show for a dimension. Prefers the server's `state`; derives one for a pre-D1 row. A model-unit
+ * (unknown-scale) dimension is never MEASURED, whatever a caller passes.
+ */
+export function stateFor(row: { state?: string; unit: string }): DimensionState {
+  const s = row.state as DimensionState | undefined;
+  const unitless = row.unit.startsWith("model_units");
+  if (s === "VERIFIED" && !unitless) return s;
+  if (s === "ESTIMATED" || s === "RECONSTRUCTED") return s;
+  return unitless ? "RECONSTRUCTED" : "MEASURED";
+}
+
 export interface UnitContext {
   basis: ScaleBasis;
   /** Length unit label: "m" or "model units". */
@@ -50,12 +72,14 @@ export interface UnitContext {
   method: string;
   /** Visible badge text, or null when no caveat applies. */
   badge: string | null;
+  /** State of a point-picked dimension in this world (live preview). */
+  state: DimensionState;
   /** Known uncertainty (same unit as the value), or null = not estimated. */
   uncertainty: number | null;
 }
 
 interface WorldLike {
-  metadata?: { scale?: { state?: string; method?: string } };
+  metadata?: { scale?: { state?: string; method?: string; dimension_state?: string } };
   entities?: Record<string, { provenance?: string }>;
 }
 
@@ -68,6 +92,7 @@ export function resolveUnitContext(world: WorldLike | null | undefined): UnitCon
       areaUnit: "m²",
       method: "picked points, metric-anchored reconstruction",
       badge: null,
+      state: world?.metadata?.scale?.dimension_state === "ESTIMATED" ? "ESTIMATED" : "MEASURED",
       uncertainty: null,
     };
   }
@@ -79,6 +104,7 @@ export function resolveUnitContext(world: WorldLike | null | undefined): UnitCon
       areaUnit: "m²",
       method: "authored geometry (exact)",
       badge: null,
+      state: "MEASURED",
       uncertainty: 0,
     };
   }
@@ -88,6 +114,7 @@ export function resolveUnitContext(world: WorldLike | null | undefined): UnitCon
     areaUnit: "model units²",
     method: "picked points, scale unknown (model units)",
     badge: "scale unknown",
+    state: "RECONSTRUCTED",
     uncertainty: null,
   };
 }

@@ -310,7 +310,7 @@ export default function RoomConstructionModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--bg-base)]/80 backdrop-blur-sm select-none"
       onClick={onClose}
     >
       <div
@@ -325,7 +325,7 @@ export default function RoomConstructionModal({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-white">Room Construction Pipeline</h3>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Room Construction Pipeline</h3>
                 {jobStatus !== "idle" && (
                   <span
                     className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
@@ -336,17 +336,17 @@ export default function RoomConstructionModal({
                         : jobStatus === "running"
                         ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40 animate-pulse"
                         : jobStatus === "queued"
-                        ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                        ? "bg-[var(--warning-subtle)] text-[var(--warning)] border-[var(--warning)]"
                         : jobStatus === "failed"
-                        ? "bg-red-500/20 text-red-400 border-red-500/40"
-                        : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                        ? "bg-[var(--error-subtle)] text-[var(--error)] border-[var(--error)]"
+                        : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border)]"
                     }`}
                   >
                     {jobStatus}
                   </span>
                 )}
               </div>
-              <p className="text-[11px] font-mono text-neutral-400">
+              <p className="text-[11px] font-mono text-[var(--text-secondary)]">
                 Spatial World: <span className="text-[var(--accent)]">{worldId}</span>
               </p>
             </div>
@@ -354,7 +354,7 @@ export default function RoomConstructionModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+            className="p-1.5 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -365,14 +365,14 @@ export default function RoomConstructionModal({
           {/* Evidence source. The reconstruction job is per-Session, so this
               is the only input that actually changes what runs. */}
           <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]">
-            <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
+            <label className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider block mb-1">
               Capture Session
             </label>
             <select
               value={sessionId ?? ""}
               onChange={(e) => onSelectSession?.(e.target.value || null)}
               disabled={running || sessions.length === 0}
-              className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none"
+              className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
             >
               {sessions.length === 0 && (
                 <option value="">No sessions attached to this world</option>
@@ -383,7 +383,7 @@ export default function RoomConstructionModal({
                 </option>
               ))}
             </select>
-            <p className="text-[10px] text-neutral-500 mt-1.5 leading-relaxed">
+            <p className="text-[10px] text-[var(--text-tertiary)] mt-1.5 leading-relaxed">
               Reconstruction runs on this session&apos;s stored evidence using the
               backend&apos;s own pipeline configuration (SfM backend, depth model,
               acceleration).
@@ -392,7 +392,7 @@ export default function RoomConstructionModal({
 
           {/* Canonical 7 Pipeline Stages */}
           <div className="space-y-2">
-            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               Canonical Pipeline Stages
             </h4>
             <div className="space-y-1.5">
@@ -424,7 +424,7 @@ export default function RoomConstructionModal({
                           ? "bg-[var(--accent)]/20 text-[var(--accent)]"
                           : isDone
                           ? "bg-[var(--success)]/20 text-[var(--success)]"
-                          : "bg-neutral-800 text-neutral-400"
+                          : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
                       }`}
                     >
                       {isActive ? (
@@ -438,14 +438,14 @@ export default function RoomConstructionModal({
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-white">{s.title}</span>
+                        <span className="font-semibold text-[var(--text-primary)]">{s.title}</span>
                         <span
                           className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
                             isActive
                               ? "bg-[var(--accent)]/20 text-[var(--accent)]"
                               : isPast || isFinished
                               ? "bg-[var(--success)]/20 text-[var(--success)]"
-                              : "bg-neutral-800 text-neutral-500"
+                              : "bg-[var(--bg-elevated)] text-[var(--text-tertiary)]"
                           }`}
                         >
                           {isActive
@@ -455,7 +455,7 @@ export default function RoomConstructionModal({
                             : "PENDING"}
                         </span>
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-0.5">{s.desc}</p>
+                      <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">{s.desc}</p>
                     </div>
                   </div>
                 );
@@ -469,7 +469,7 @@ export default function RoomConstructionModal({
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <div className="font-semibold text-xs">Reconstruction did not complete</div>
-                <div className="text-[11px] leading-relaxed text-neutral-300 font-mono">
+                <div className="text-[11px] leading-relaxed text-[var(--text-secondary)] font-mono">
                   {error}
                 </div>
               </div>
@@ -514,7 +514,7 @@ export default function RoomConstructionModal({
         {/* Footer */}
         <div className="flex items-center justify-between px-5 h-14 border-t border-[var(--border)] bg-[var(--bg-surface)]">
           <div className="flex items-center gap-2 font-mono text-[11px]">
-            <span className="text-neutral-500">Status:</span>
+            <span className="text-[var(--text-tertiary)]">Status:</span>
             <span
               className={`font-semibold uppercase ${
                 jobStatus === "succeeded"
@@ -524,18 +524,18 @@ export default function RoomConstructionModal({
                   : jobStatus === "running"
                   ? "text-[var(--accent)]"
                   : jobStatus === "queued"
-                  ? "text-amber-400"
+                  ? "text-[var(--warning)]"
                   : jobStatus === "failed"
-                  ? "text-red-400"
+                  ? "text-[var(--error)]"
                   : jobStatus === "cancelled"
-                  ? "text-neutral-400"
-                  : "text-neutral-500"
+                  ? "text-[var(--text-secondary)]"
+                  : "text-[var(--text-tertiary)]"
               }`}
             >
               {jobStatus === "idle" ? "READY" : jobStatus}
             </span>
             {outcome?.versionId && (
-              <span className="text-neutral-400">· {outcome.versionId}</span>
+              <span className="text-[var(--text-secondary)]">· {outcome.versionId}</span>
             )}
           </div>
 
@@ -544,7 +544,7 @@ export default function RoomConstructionModal({
               type="button"
               onClick={running ? handleCancel : onClose}
               disabled={running && (cancelling || jobStatus === "cancelled")}
-              className="px-3.5 py-1.5 rounded text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3.5 py-1.5 rounded text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {running ? (cancelling ? "Cancelling…" : "Cancel") : outcome ? "Close" : "Cancel"}
             </button>
@@ -555,7 +555,7 @@ export default function RoomConstructionModal({
                   onReconstructionSuccess?.();
                   onClose();
                 }}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[var(--success)] text-black hover:bg-[var(--success)] transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[var(--success)] text-[var(--bg-base)] hover:bg-[var(--success)] transition-colors cursor-pointer"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Inspect Reconstructed World</span>
@@ -565,7 +565,7 @@ export default function RoomConstructionModal({
                 type="button"
                 onClick={handleRunPipeline}
                 disabled={running}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[var(--primary)] text-[var(--text-primary)] hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {running ? (
                   <>

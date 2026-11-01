@@ -3,36 +3,48 @@
 import { useState, useEffect, useMemo } from "react";
 import { fetchEntityProvenance, type EntityProvenance } from "@/lib/api/provenance";
 import {
-  Box,
-  Compass,
-  FileSearch,
+  Armchair,
+  BrickWall,
+  Check,
+  ChevronRight,
+  Download,
+  DoorOpen,
+  Edit3,
+  Eye,
+  AppWindow,
+  GitBranch,
+  House,
+  Image as ImageIcon,
   Layers,
+  Link2,
   Maximize2,
+  Plus,
+  Sliders,
+  Square,
+  Workflow,
+  X,
+  AlertTriangle,
+  Box,
+  Building,
+  FileSearch,
   Shield,
   Sparkles,
-  X,
-  Camera,
-  Activity,
-  Edit3,
-  Check,
-  Sliders,
-  Workflow,
-  Download,
-  Image as ImageIcon,
-  Building,
-  AlertTriangle,
-  Eye,
-  Plus,
-  Trash2,
-  Link2,
-  GitBranch,
 } from "lucide-react";
-import type {
-  Entity,
-  Geometry,
-  WorldIR,
-} from "@/types/worldir";
-import { TYPE_COLORS } from "@/lib/viewport/three-scene";
+import type { Entity, Geometry, WorldIR } from "@/types/worldir";
+import {
+  buildEntityEvidence, fmtConfidence, NOT_RECORDED,
+} from "@/lib/viewport/inspector-evidence-model";
+import { buildIdentityEvidence } from "@/lib/viewport/identity-model";
+import { buildConfidenceFacets, readConfidence, roomMembers, TONE_TOKEN } from "@/lib/inspector/confidence-model";
+import {
+  allDimensionRows, anyUncalibrated, countWorld, describeWorldCounts, displayName, entityKind, fmtValue,
+  hostedOpeningIds, isEvidencePlane, kindLabel, materialSwatches, openingHostId, primaryDimensionRows,
+  roomFacts, scaleSentence, stateWord, type EntityKind, type Fact,
+} from "@/lib/inspector/entity-facts";
+import { describeScale } from "@/lib/api/scale-model";
+import {
+  ChipGroup, ConfidenceBars, DimensionRows, Disclosure, EntityChip, FactList, KV, MaterialCards, Muted, SectionTitle,
+} from "./InspectorParts";
 
 interface AdaptiveInspectorProps {
   world: WorldIR | null;
@@ -58,7 +70,24 @@ interface AdaptiveInspectorProps {
   onRetryLoad?: () => void;
 }
 
-type InspectorTab = "all" | "geometry" | "evidence" | "observations" | "provenance" | "uncertainty";
+/** Entities with recorded confidence below this are flagged in the inspector. */
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
+type InspectorTab = "overview" | "dimensions" | "materials" | "evidence";
+const TABS: ReadonlyArray<{ id: InspectorTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "dimensions", label: "Dimensions" },
+  { id: "materials", label: "Materials" },
+  { id: "evidence", label: "Evidence" },
+];
+
+const PROVENANCE_WORDS: Record<string, string> = {
+  OBSERVED: "Observed directly", RECONSTRUCTED: "Reconstructed from observations", INFERRED: "Inferred", PROCEDURAL: "Generated from rules", SYNTHESIZED: "Synthesised",
+};
+
+const KIND_ICON: Record<EntityKind, typeof Box> = {
+  room: House, wall: BrickWall, window: AppWindow, door: DoorOpen, floor: Layers, ceiling: Square, furniture: Armchair, other: Box,
+};
 
 export default function AdaptiveInspector({
   world,
@@ -75,7 +104,7 @@ export default function AdaptiveInspector({
   loadError,
   onRetryLoad,
 }: AdaptiveInspectorProps) {
-  const [tab, setTab] = useState<InspectorTab>("all");
+  const [tab, setTab] = useState<InspectorTab>("overview");
   const [isEditing, setIsEditing] = useState(false);
   const [previewImageId, setPreviewImageId] = useState<string | null>(null);
 
@@ -91,123 +120,41 @@ export default function AdaptiveInspector({
 
   return (
     <aside
-      className="w-full h-full flex flex-col overflow-hidden bg-[var(--bg-surface)] select-none"
-      style={{ borderColor: "var(--border)" }}
+      aria-label="Properties"
+      className="w-full h-full flex flex-col overflow-hidden bg-[var(--bg-surface)] text-[var(--text-primary)]"
     >
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 h-12 border-b shrink-0 bg-[var(--bg-surface)]"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 shrink-0">
-            {entity ? "Entity Inspector" : "World Inspector"}
-          </span>
-          {entity && (
-            <span
-              className="text-[10px] font-mono px-1.5 py-0.5 rounded truncate"
-              style={{
-                background: "rgba(34,184,255, 0.12)",
-                color: "var(--accent)",
-                border: "1px solid rgba(34,184,255, 0.3)",
-              }}
-            >
-              {entity.type}
-            </span>
-          )}
-        </div>
-
-        {entity && (
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => onFrameEntity(entity.id)}
-              title="Frame Entity in Viewport [F]"
-              className="p-1 rounded text-neutral-400 hover:text-[var(--accent)] hover:bg-neutral-800 transition-colors cursor-pointer"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsEditing(false);
-                onSelectEntity(null);
-              }}
-              title="Deselect [Esc]"
-              className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Tabs */}
-      {entity && (
-        <div
-          className="flex items-center px-3 gap-1 h-9 border-b shrink-0 overflow-x-auto text-xs bg-[var(--bg-surface)]"
-          style={{ borderColor: "var(--border-subtle)" }}
-        >
-          {(
-            [
-              { id: "all", label: "Overview" },
-              { id: "geometry", label: "Geometry" },
-              { id: "evidence", label: "Evidence" },
-              { id: "observations", label: "Observations" },
-              { id: "provenance", label: "Provenance" },
-              { id: "uncertainty", label: "Uncertainty" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`px-2 py-1 rounded transition-colors whitespace-nowrap cursor-pointer ${
-                tab === t.id
-                  ? "text-[var(--accent)] font-medium bg-[rgba(34,184,255,0.12)]"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+      {entity ? (
+        <EntityDetails
+          key={entity.id}
+          world={world}
+          worldId={worldId}
+          activeVersion={activeVersion}
+          entity={entity}
+          geometry={geometry}
+          tab={tab}
+          setTab={setTab}
+          onSelectEntity={onSelectEntity}
+          onFrame={() => onFrameEntity(entity.id)}
+          onFrameEntity={onFrameEntity}
+          onTraceEvidence={onTraceEvidence}
+          onCommitCorrection={onCommitCorrection}
+          onOpenDiff={onOpenDiff}
+          isEditing={isEditing}
+          setIsEditing={setIsEditing}
+          previewImageId={previewImageId}
+          setPreviewImageId={setPreviewImageId}
+        />
+      ) : (
+        <WorldOverview
+          world={world}
+          worldId={worldId}
+          activeVersion={activeVersion}
+          onOpenRoomConstruction={onOpenRoomConstruction}
+          onExport={onExport}
+          loadError={loadError}
+          onRetryLoad={onRetryLoad}
+        />
       )}
-
-      {/* Body Content */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 text-xs">
-        {entity ? (
-          <EntityDetails
-            key={entity.id}
-            world={world}
-            worldId={worldId}
-            activeVersion={activeVersion}
-            entity={entity}
-            geometry={geometry}
-            tab={tab}
-            onSelectEntity={onSelectEntity}
-            onFrame={() => onFrameEntity(entity.id)}
-            onFrameEntity={onFrameEntity}
-            onTraceEvidence={onTraceEvidence}
-            onCommitCorrection={onCommitCorrection}
-            onOpenDiff={onOpenDiff}
-            isEditing={isEditing}
-            setIsEditing={setIsEditing}
-            previewImageId={previewImageId}
-            setPreviewImageId={setPreviewImageId}
-          />
-        ) : (
-          <WorldOverview
-            world={world}
-            worldId={worldId}
-            activeVersion={activeVersion}
-            onOpenRoomConstruction={onOpenRoomConstruction}
-            onExport={onExport}
-            loadError={loadError}
-            onRetryLoad={onRetryLoad}
-          />
-        )}
-      </div>
     </aside>
   );
 }
@@ -219,6 +166,7 @@ function EntityDetails({
   entity,
   geometry,
   tab,
+  setTab,
   onSelectEntity,
   onFrame,
   onFrameEntity,
@@ -236,6 +184,7 @@ function EntityDetails({
   entity: Entity;
   geometry: Geometry | null;
   tab: InspectorTab;
+  setTab: (t: InspectorTab) => void;
   onSelectEntity: (id: string | null) => void;
   onFrame: () => void;
   onFrameEntity?: (id: string) => void;
@@ -259,9 +208,6 @@ function EntityDetails({
     typeof entity.confidence === "number" && Number.isFinite(entity.confidence)
       ? entity.confidence
       : null;
-  const hexColor = (TYPE_COLORS[entity.type] || TYPE_COLORS.default)
-    .toString(16)
-    .padStart(6, "0");
 
   const pos = entity.transform?.position;
   const observations = entity.observations || [];
@@ -319,11 +265,20 @@ function EntityDetails({
   const [correctionTab, setCorrectionTab] = useState<string>(initialCorrectionTab);
 
   const [commitMessage, setCommitMessage] = useState(`Review & verify ${entity.id}`);
+  // F6: a typed real dimension is VERIFIED evidence, carried across rebuilds by the server.
+  const dimensionEntries = Object.entries(
+    ((entity.custom_properties?.dimensions as Record<string, { value?: number; unit?: string; state?: string }>) || {})
+  ).filter(([, v]) => v && typeof v.value === "number");
+  const [dimensionProp, setDimensionProp] = useState<string>(dimensionEntries[0]?.[0] ?? "");
+  const [dimensionValue, setDimensionValue] = useState<string>("");
+  const selectedDim = dimensionEntries.find(([k]) => k === dimensionProp)?.[1];
+  const dimensionIsValid = dimensionValue.trim() !== "" && Number(dimensionValue) > 0 && Number.isFinite(Number(dimensionValue));
   const [submitting, setSubmitting] = useState(false);
   const [committedSuccess, setCommittedSuccess] = useState(false);
   const [committedVersionResult, setCommittedVersionResult] = useState<{
     version_id: string;
     parent_version_id?: string;
+    duplicate?: boolean;
   } | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -414,12 +369,21 @@ function EntityDetails({
           semantic_labels: editedLabels.split(",").map((s) => s.trim()).filter(Boolean),
         };
       }
+      if (dimensionProp && dimensionIsValid) {
+        payload.user_correction = {
+          entity_id: entity.id,
+          property: dimensionProp,
+          value: Number(dimensionValue),
+          note: commitMessage,
+        };
+      }
 
       const res = await onCommitCorrection(entity.id, payload, commitMessage);
       if (res && typeof res === "object" && "version_id" in res) {
         setCommittedVersionResult({
           version_id: res.version_id,
           parent_version_id: (res as { parent_version_id?: string }).parent_version_id,
+          duplicate: (res as { duplicate?: boolean }).duplicate === true,
         });
       }
       setCommittedSuccess(true);
@@ -442,48 +406,196 @@ function EntityDetails({
       Math.abs(geometry.bounds_max.z - geometry.bounds_min.z),
   } : null;
 
-  // Derivation status. A provenance the compiler did not stamp is reported as
-  // unrecorded -- it is never guessed to be "inferred", which would claim a
-  // derivation method the pipeline never ran.
-  const derivationBadge = !entity.provenance
-    ? { label: "Derivation Not Recorded", color: "text-neutral-400 bg-neutral-800/40 border-neutral-600/40" }
-    : entity.provenance === "OBSERVED"
-    ? { label: "Directly Observed", color: "text-[var(--success)] bg-[var(--success)]/10 border-[var(--success)]/30" }
-    : entity.provenance === "PROCEDURAL"
-    ? { label: "Procedurally Extruded", color: "text-[#b28dff] bg-[#b28dff]/10 border-[#b28dff]/30" }
-    : entity.provenance === "RECONSTRUCTED"
-    ? { label: "Reconstructed", color: "text-[var(--accent)] bg-[var(--accent)]/10 border-[var(--accent)]/30" }
-    : { label: `Inferred (${entity.provenance})`, color: "text-[var(--accent)] bg-[var(--accent)]/10 border-[var(--accent)]/30" };
+  const evidence = useMemo(() => buildEntityEvidence(entity), [entity]);
+
+  const entities = (world?.entities ?? {}) as Record<string, Entity>;
+  const kind = entityKind(entity);
+  const title = displayName(entity);
+  const KindIcon = KIND_ICON[kind];
+  const subtype = typeof entity.custom_properties?.subtype === "string" ? (entity.custom_properties.subtype as string) : null;
+  const subtitle = subtype ? `${kindLabel(entity)} · ${subtype}` : kindLabel(entity);
+
+  const facets = useMemo(() => buildConfidenceFacets(entity, entities), [entity, world]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dimRows = useMemo(() => primaryDimensionRows(entity, evidence.dimensions), [entity, evidence.dimensions]);
+  const allRows = useMemo(() => allDimensionRows(entity, evidence.dimensions), [entity, evidence.dimensions]);
+  const swatches = useMemo(() => materialSwatches(entity), [entity]);
+  const materialReading = readConfidence(entity.custom_properties?.material_confidence);
+  const photos = (provenance?.evidence ?? []).filter((ev) => ev.evidence_type === "photo");
+  const otherEvidence = (provenance?.evidence ?? []).filter((ev) => ev.evidence_type !== "photo");
+
+  const stateSuffix = (s: Parameters<typeof stateWord>[0]) => (s === "MEASURED" || s === "VERIFIED" || s === null ? "" : ` (${stateWord(s).toLowerCase()})`);
+  const rowFacts: Fact[] = dimRows.map((r) => ({
+    label: r.assumedDefault ? `${r.label} (assumed default)` : `${r.label}${stateSuffix(r.state)}`,
+    value: fmtValue(r.value, r.unit),
+  }));
+  const parentLevel = entity.parent_id ? entities[entity.parent_id] : undefined;
+  const levelName = parentLevel && (parentLevel.type === "storey" || parentLevel.type === "level") ? displayName(parentLevel) : null;
+  const overviewFacts: Fact[] = kind === "room" ? roomFacts(entity, evidence.dimensions, levelName) : rowFacts;
+
+  const roomOf = (e: Entity): string | null => {
+    const direct = e.custom_properties?.room_id;
+    if (typeof direct === "string" && entities[direct]) return direct;
+    const rel = (e.relationships ?? []).find((r) => entities[r.target_id]?.type === "room" && (r.kind === "part_of" || r.type === "part_of"));
+    return rel ? rel.target_id : null;
+  };
+  const idList = (key: string): string[] => {
+    const v = entity.custom_properties?.[key];
+    return Array.isArray(v) ? (v as unknown[]).filter((x): x is string => typeof x === "string" && !!entities[x]) : [];
+  };
+
+  const linked: Array<{ title: string; ids: string[] }> = [];
+  if (kind === "room") {
+    const members = roomMembers(entity, entities as never).filter((m) => !isEvidencePlane(m as never)) as Entity[];
+    const by = (k: EntityKind) => members.filter((m) => entityKind(m) === k).map((m) => m.id);
+    linked.push(
+      { title: "Walls", ids: by("wall") }, { title: "Doors", ids: by("door") }, { title: "Windows", ids: by("window") },
+      { title: "Furniture", ids: by("furniture") }, { title: "Floor", ids: by("floor") }, { title: "Ceiling", ids: by("ceiling") },
+      { title: "Connected spaces", ids: [...idList("connected_corridor_ids"), ...idList("adjacent_room_ids")] },
+    );
+  } else if (kind === "wall") {
+    linked.push({ title: "Openings in this wall", ids: hostedOpeningIds(entity as never, entities as never) });
+    const rid = roomOf(entity);
+    if (rid) linked.push({ title: "Part of", ids: [rid] });
+  } else if (kind === "window" || kind === "door") {
+    const host = openingHostId(entity as never, entities as never);
+    if (host) linked.push({ title: "In wall", ids: [host] });
+    const rid = roomOf(entity);
+    if (rid) linked.push({ title: "Part of", ids: [rid] });
+  } else if (kind === "furniture") {
+    const rests = (entity.relationships ?? []).filter((r) => (r.kind ?? r.type) === "rests_on" && entities[r.target_id]).map((r) => r.target_id);
+    linked.push({ title: "Resting on", ids: rests });
+    const rid = roomOf(entity);
+    if (rid) linked.push({ title: "Part of", ids: [rid] });
+  } else if (kind === "floor" || kind === "ceiling") {
+    const rid = roomOf(entity);
+    if (rid) linked.push({ title: "Part of", ids: [rid] });
+  } else {
+    linked.push(
+      { title: "Levels", ids: idList("storey_ids") }, { title: "Rooms", ids: idList("room_ids") },
+      { title: "Connected rooms", ids: idList("connected_room_ids") }, { title: "Connected levels", ids: idList("connected_level_ids") },
+      { title: "Doors", ids: idList("door_ids") }, { title: "Windows", ids: idList("window_ids") },
+    );
+  }
+  if (kind === "other") {
+    if (parentEntity) linked.push({ title: "Part of", ids: [parentEntity.id] });
+    linked.push({ title: "Contains", ids: childrenList.map((c) => c.id) });
+  }
+  const shownLinked = linked.map((l) => ({ ...l, ids: [...new Set(l.ids)].filter((id) => entities[id] && !isEvidencePlane(entities[id] as never)) })).filter((l) => l.ids.length > 0);
+
+  const focusEntity = (id: string) => {
+    onSelectEntity(id);
+    onFrameEntity?.(id);
+  };
+
+  const toggleEditing = () => {
+    if (isEditing && isPreviewing) {
+      window.dispatchEvent(new CustomEvent("clear-correction-preview"));
+      setIsPreviewing(false);
+    }
+    setIsEditing(!isEditing);
+  };
+  const correctDimension = (key: string) => {
+    if (dimensionEntries.some(([k]) => k === key)) setDimensionProp(key);
+    setIsEditing(true);
+    requestAnimationFrame(() => document.querySelector('[data-testid="verified-dimension"]')?.scrollIntoView({ block: "nearest" }));
+  };
+
+  const iconBtn =
+    "p-1.5 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer";
 
   return (
-    <div className="space-y-4">
+    <>
+      <header className="shrink-0 border-b border-[var(--border)] bg-[var(--bg-surface)] px-4 pt-3">
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[var(--accent-subtle)] text-[var(--accent)]">
+            <KindIcon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]" title={title}>{title}</h2>
+            <p className="truncate text-[12px] text-[var(--text-secondary)]">{subtitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleEditing}
+            aria-pressed={isEditing}
+            title={isEditing ? "Close the correction form" : "Correct this item"}
+            aria-label="Correct this item"
+            className={`${iconBtn} ${isEditing ? "bg-[var(--accent-subtle)] text-[var(--accent)]" : ""}`}
+          >
+            <Edit3 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsEditing(false);
+              onSelectEntity(null);
+            }}
+            title="Deselect [Esc]"
+            aria-label="Deselect"
+            className={iconBtn}
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onFrame} title="Show in 3D view [F]" aria-label="Show in 3D view" className={iconBtn}>
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+        <div role="tablist" aria-label="Item properties" className="mt-3 flex gap-5">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              id={`insp-tab-${t.id}`}
+              role="tab"
+              type="button"
+              aria-selected={tab === t.id}
+              aria-controls="insp-panel"
+              onClick={() => setTab(t.id)}
+              className={`-mb-px border-b-2 pb-2 text-[12px] transition-colors cursor-pointer ${
+                tab === t.id
+                  ? "border-[var(--accent)] font-medium text-[var(--text-primary)]"
+                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <div id="insp-panel" role="tabpanel" aria-labelledby={`insp-tab-${tab}`} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 text-xs">
       {/* Commit Failure Error Banner */}
       {commitError && (
         <div className="p-3 rounded-lg border border-[var(--error)]/40 bg-[var(--error-subtle)] space-y-2 text-xs">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-[var(--error)] font-semibold">
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Correction Failed</span>
+              <span>Correction failed</span>
             </span>
             <button
               type="button"
               onClick={() => setCommitError(null)}
-              className="text-neutral-400 hover:text-white cursor-pointer"
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
             >
               <X className="w-3 h-3" />
             </button>
           </div>
-          <p className="text-[11px] text-neutral-300 font-mono">{commitError}</p>
+          <p className="text-[11px] text-[var(--text-primary)] font-mono">{commitError}</p>
         </div>
       )}
 
       {/* Post-Commit WorldStore Version Banner */}
       {committedVersionResult && (
-        <div className="p-3 rounded-lg border border-[var(--success)]/40 bg-[var(--success-subtle)] space-y-2 text-xs">
+        <div className={`p-3 rounded-lg border space-y-2 text-xs ${
+          committedVersionResult.duplicate
+            ? "border-[var(--warning)]/40 bg-[var(--warning-subtle)]"
+            : "border-[var(--success)]/40 bg-[var(--success-subtle)]"
+        }`}>
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[var(--success)] font-semibold">
-              <Check className="w-3.5 h-3.5" />
-              <span>WorldStore Snapshot Committed</span>
+            <span className={`flex items-center gap-1.5 font-semibold ${
+              committedVersionResult.duplicate ? "text-[var(--warning)]" : "text-[var(--success)]"
+            }`}>
+              {committedVersionResult.duplicate ? <AlertTriangle className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+              <span>{committedVersionResult.duplicate ? "No change: identical to the current version" : "Correction saved"}</span>
             </span>
             <button
               type="button"
@@ -491,226 +603,29 @@ function EntityDetails({
                 setCommittedVersionResult(null);
                 setCommittedSuccess(false);
               }}
-              className="text-neutral-400 hover:text-white cursor-pointer"
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
             >
               <X className="w-3 h-3" />
             </button>
           </div>
-          <div className="text-[11px] font-mono text-neutral-300 space-y-0.5">
-            <div>Version: <span className="text-[var(--accent)] font-semibold">{committedVersionResult.version_id}</span></div>
-            {committedVersionResult.parent_version_id && (
-              <div className="text-[10px] text-neutral-400">Parent: {committedVersionResult.parent_version_id}</div>
+          <div className="text-[11px] font-mono text-[var(--text-primary)] space-y-0.5">
+            <div>{committedVersionResult.duplicate ? "Current version" : "Version"}: <span className="text-[var(--accent)] font-semibold">{committedVersionResult.version_id}</span></div>
+            {!committedVersionResult.duplicate && committedVersionResult.parent_version_id && (
+              <div className="text-[10px] text-[var(--text-secondary)]">Parent: {committedVersionResult.parent_version_id}</div>
             )}
           </div>
-          {onOpenDiff && (
+          {onOpenDiff && !committedVersionResult.duplicate && (
             <button
               type="button"
               onClick={() => onOpenDiff(committedVersionResult.parent_version_id, committedVersionResult.version_id)}
               className="w-full py-1.5 rounded bg-[var(--accent)]/20 hover:bg-[var(--accent)]/30 text-[var(--accent)] border border-[var(--accent)]/40 text-xs font-mono flex items-center justify-center gap-1.5 cursor-pointer font-medium"
             >
               <GitBranch className="w-3.5 h-3.5" />
-              <span>Inspect Lineage Diff</span>
+              <span>See what changed</span>
             </button>
           )}
         </div>
       )}
-
-      {/* Title Card */}
-      <div
-        className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-3"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className="w-3 h-3 rounded-sm shrink-0"
-              style={{ background: `#${hexColor}` }}
-            />
-            <span className="font-mono font-semibold text-white truncate text-sm">
-              {entity.name || entity.id}
-            </span>
-          </div>
-          <span
-            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${derivationBadge.color}`}
-          >
-            {derivationBadge.label}
-          </span>
-        </div>
-
-        {/* Identity & Classification */}
-        <div className="space-y-1.5 text-[11px] pt-1 border-t border-neutral-800">
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-400">Entity Identity</span>
-            <span className="font-mono text-neutral-200">{entity.id}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-400">Semantic Class</span>
-            <div className="flex items-center gap-1">
-              <span className="font-mono text-[var(--accent)] capitalize font-medium">{entity.type}</span>
-              {Boolean(entity.custom_properties?.subtype) && (
-                <span className="text-[10px] font-mono text-neutral-400">
-                  ({String(entity.custom_properties?.subtype)})
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-400">Derivation Status</span>
-            <span className="font-mono text-white">
-              {entity.provenance || "Not recorded"}
-            </span>
-          </div>
-
-          {/* Parent Entity */}
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-400">Parent Entity</span>
-            {entity.parent_id ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectEntity(entity.parent_id!);
-                  onFrameEntity?.(entity.parent_id!);
-                }}
-                className="font-mono text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[170px]"
-                title={`Frame parent: ${entity.parent_id}`}
-              >
-                <Link2 className="w-3 h-3 shrink-0" />
-                <span className="truncate">
-                  {parentEntity?.name || entity.parent_id}
-                </span>
-              </button>
-            ) : (
-              <span className="font-mono text-neutral-500">None (Root Entity)</span>
-            )}
-          </div>
-
-          {/* Children Entities */}
-          <div className="flex justify-between items-start pt-0.5">
-            <span className="text-neutral-400 shrink-0">Children</span>
-            <div className="flex flex-wrap gap-1 justify-end max-w-[190px]">
-              {childrenList.length > 0 ? (
-                childrenList.slice(0, 4).map((ch) => (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    onClick={() => {
-                      onSelectEntity(ch.id);
-                      onFrameEntity?.(ch.id);
-                    }}
-                    className="text-[9px] px-1 py-0.2 rounded bg-neutral-800 hover:bg-[var(--accent)]/20 text-neutral-300 hover:text-[var(--accent)] font-mono border border-neutral-700 cursor-pointer truncate max-w-[85px]"
-                    title={`Frame child: ${ch.id}`}
-                  >
-                    {ch.name || ch.id}
-                  </button>
-                ))
-              ) : (
-                <span className="font-mono text-neutral-500">None</span>
-              )}
-              {childrenList.length > 4 && (
-                <span className="text-[9px] text-neutral-500">+{childrenList.length - 4}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Coordinate Frame */}
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-400">Coordinate Frame</span>
-            <span className="font-mono text-neutral-300">
-              {String(world?.coordinate_frame || world?.coordinate_system || "metric_enu")}
-            </span>
-          </div>
-
-          {/* WorldStore Version */}
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-400">WorldStore Version</span>
-            <span className="font-mono text-[var(--accent)] text-[10px] truncate max-w-[160px]">
-              {provenanceLoading ? "…" : provenance?.version_id || activeVersion || "Not compiled"}
-            </span>
-          </div>
-        </div>
-
-        {/* Confidence Meter */}
-        <div>
-          <div className="flex justify-between text-[11px] text-neutral-400 mb-1">
-            <span>Spatial Confidence</span>
-            {conf !== null ? (
-              <span className="font-mono-num text-white">{(conf * 100).toFixed(1)}%</span>
-            ) : (
-              <span className="font-mono text-neutral-500">Not recorded</span>
-            )}
-          </div>
-          {conf !== null ? (
-            <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-300"
-                style={{
-                  width: `${Math.max(5, conf * 100)}%`,
-                  background: conf > 0.7 ? "var(--success)" : conf > 0.4 ? "var(--warning)" : "var(--error)",
-                }}
-              />
-            </div>
-          ) : (
-            <div className="w-full h-1.5 rounded-full bg-neutral-800 overflow-hidden">
-              <div
-                className="h-full w-full rounded-full"
-                style={{
-                  background:
-                    "repeating-linear-gradient(90deg, #2a2a2a 0px, #2a2a2a 6px, #1a1a1a 6px, #1a1a1a 12px)",
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Position & Volume */}
-        <div className="pt-2 border-t border-neutral-800 space-y-1 text-[11px]">
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-400">Position (XYZ m)</span>
-            <span className="font-mono text-white">
-              {pos
-                ? `${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`
-                : "Unavailable"}
-            </span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-neutral-400">Bounding Volume</span>
-            <span className="font-mono text-[var(--accent)]">
-              {extentDimensions ? `${extentDimensions.volume.toFixed(2)} m³` : "Unavailable"}
-            </span>
-          </div>
-        </div>
-
-        {/* Action Button Row */}
-        <div className="flex items-center gap-2 pt-2 border-t border-neutral-800">
-          <button
-            type="button"
-            onClick={() => onFrame()}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white transition-colors text-[11px] font-medium cursor-pointer"
-          >
-            <Maximize2 className="w-3 h-3 text-[var(--accent)]" />
-            <span>Frame [F]</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (isEditing && isPreviewing) {
-                window.dispatchEvent(new CustomEvent("clear-correction-preview"));
-                setIsPreviewing(false);
-              }
-              setIsEditing(!isEditing);
-            }}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded transition-colors text-[11px] font-medium cursor-pointer ${
-              isEditing
-                ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40"
-                : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white"
-            }`}
-          >
-            <Edit3 className="w-3 h-3 text-[var(--warning)]" />
-            <span>{isEditing ? "Editing..." : "Correct"}</span>
-          </button>
-        </div>
-      </div>
 
       {/* Review / Architectural Correction Panel */}
       {isEditing && (
@@ -718,7 +633,7 @@ function EntityDetails({
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5" />
-              <span>Architectural Correction (WorldStore CAS)</span>
+              <span>Correct this item</span>
             </span>
             <button
               type="button"
@@ -729,14 +644,14 @@ function EntityDetails({
                 }
                 setIsEditing(false);
               }}
-              className="text-neutral-400 hover:text-white cursor-pointer"
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
             >
               <X className="w-3 h-3" />
             </button>
           </div>
 
           {/* Submode Selection Tabs */}
-          <div className="flex items-center gap-1 border-b border-neutral-800 pb-2 overflow-x-auto text-[10px]">
+          <div className="flex items-center gap-1 border-b border-[var(--border-subtle)] pb-2 overflow-x-auto text-[10px]">
             {(entity.type === "room" || entity.id.startsWith("room")) && (
               <>
                 <button
@@ -745,7 +660,7 @@ function EntityDetails({
                   className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
                     correctionTab === "boundary"
                       ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
-                      : "text-neutral-400 hover:text-white"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   Room Boundaries ({editedBoundaryIds.length})
@@ -756,7 +671,7 @@ function EntityDetails({
                   className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
                     correctionTab === "classification"
                       ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
-                      : "text-neutral-400 hover:text-white"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   Classification
@@ -772,7 +687,7 @@ function EntityDetails({
                   className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
                     correctionTab === "connected_rooms"
                       ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
-                      : "text-neutral-400 hover:text-white"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   Connected Rooms ({editedConnectedRoomIds.length})
@@ -783,7 +698,7 @@ function EntityDetails({
                   className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
                     correctionTab === "classification"
                       ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
-                      : "text-neutral-400 hover:text-white"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   Classification
@@ -834,11 +749,11 @@ function EntityDetails({
           {correctionTab === "boundary" && (
             <div className="space-y-2.5">
               <div>
-                <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
+                <label className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider block mb-1">
                   Enclosing Boundary Walls
                 </label>
                 {editedBoundaryIds.length === 0 ? (
-                  <p className="text-[11px] text-neutral-500 italic">No boundary walls assigned yet.</p>
+                  <p className="text-[11px] text-[var(--text-tertiary)] italic">No boundary walls assigned yet.</p>
                 ) : (
                   <div className="flex flex-wrap gap-1 mb-2">
                     {editedBoundaryIds.map((wId) => (
@@ -850,7 +765,7 @@ function EntityDetails({
                         <button
                           type="button"
                           onClick={() => setEditedBoundaryIds(editedBoundaryIds.filter((id) => id !== wId))}
-                          className="hover:text-red-400 cursor-pointer"
+                          className="hover:text-[var(--error)] cursor-pointer"
                         >
                           <X className="w-2.5 h-2.5" />
                         </button>
@@ -863,7 +778,7 @@ function EntityDetails({
                   <select
                     value={selectedWallToAdd}
                     onChange={(e) => setSelectedWallToAdd(e.target.value)}
-                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none cursor-pointer"
+                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
                   >
                     <option value="">Select wall from WorldIR to add...</option>
                     {Object.entries(world?.entities || {})
@@ -883,7 +798,7 @@ function EntityDetails({
                         setSelectedWallToAdd("");
                       }
                     }}
-                    className="px-2.5 h-7 rounded bg-neutral-800 hover:bg-neutral-700 text-[var(--accent)] border border-neutral-700 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                    className="px-2.5 h-7 rounded bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] text-[var(--accent)] border border-[var(--border)] text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
                   >
                     <Plus className="w-3 h-3" />
                     <span>Add</span>
@@ -897,11 +812,11 @@ function EntityDetails({
           {correctionTab === "connected_rooms" && (
             <div className="space-y-2.5">
               <div>
-                <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
+                <label className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider block mb-1">
                   Connected Rooms & Spaces
                 </label>
                 {editedConnectedRoomIds.length === 0 ? (
-                  <p className="text-[11px] text-neutral-500 italic">No connected rooms linked yet.</p>
+                  <p className="text-[11px] text-[var(--text-tertiary)] italic">No connected rooms linked yet.</p>
                 ) : (
                   <div className="flex flex-wrap gap-1 mb-2">
                     {editedConnectedRoomIds.map((rId) => (
@@ -913,7 +828,7 @@ function EntityDetails({
                         <button
                           type="button"
                           onClick={() => setEditedConnectedRoomIds(editedConnectedRoomIds.filter((id) => id !== rId))}
-                          className="hover:text-red-400 cursor-pointer"
+                          className="hover:text-[var(--error)] cursor-pointer"
                         >
                           <X className="w-2.5 h-2.5" />
                         </button>
@@ -926,7 +841,7 @@ function EntityDetails({
                   <select
                     value={selectedRoomToAdd}
                     onChange={(e) => setSelectedRoomToAdd(e.target.value)}
-                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none cursor-pointer"
+                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
                   >
                     <option value="">Select room to connect...</option>
                     {Object.entries(world?.entities || {})
@@ -946,7 +861,7 @@ function EntityDetails({
                         setSelectedRoomToAdd("");
                       }
                     }}
-                    className="px-2.5 h-7 rounded bg-neutral-800 hover:bg-neutral-700 text-[var(--accent)] border border-neutral-700 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                    className="px-2.5 h-7 rounded bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] text-[var(--accent)] border border-[var(--border)] text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
                   >
                     <Plus className="w-3 h-3" />
                     <span>Add</span>
@@ -959,15 +874,15 @@ function EntityDetails({
           {/* 3. OPENING CLASSIFICATION (DOOR VS WINDOW) */}
           {correctionTab === "opening" && (
             <div className="space-y-2.5">
-              <label className="text-[10px] text-neutral-400 uppercase tracking-wider block">Opening Classification</label>
+              <label className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider block">Opening Classification</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setEditedType("door")}
                   className={`py-2 rounded border text-xs font-mono font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
                     editedType === "door"
-                      ? "bg-[#10b981]/20 border-[#10b981] text-[#10b981]"
-                      : "bg-[var(--bg-surface)] border-neutral-700 text-neutral-400 hover:text-white"
+                      ? "bg-[var(--success)]/20 border-[var(--success)] text-[var(--success)]"
+                      : "bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   <Building className="w-3.5 h-3.5" />
@@ -978,8 +893,8 @@ function EntityDetails({
                   onClick={() => setEditedType("window")}
                   className={`py-2 rounded border text-xs font-mono font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
                     editedType === "window"
-                      ? "bg-[#06b6d4]/20 border-[#06b6d4] text-[#06b6d4]"
-                      : "bg-[var(--bg-surface)] border-neutral-700 text-neutral-400 hover:text-white"
+                      ? "bg-[var(--info)]/20 border-[var(--info)] text-[var(--info)]"
+                      : "bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   <Box className="w-3.5 h-3.5" />
@@ -993,23 +908,23 @@ function EntityDetails({
           {correctionTab === "stair_levels" && (
             <div className="space-y-2.5">
               <div>
-                <label className="text-[10px] text-neutral-400 uppercase tracking-wider block mb-1">
+                <label className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider block mb-1">
                   Connected Levels / Storeys
                 </label>
                 {editedConnectedLevelIds.length === 0 ? (
-                  <p className="text-[11px] text-neutral-500 italic">No connected levels assigned yet.</p>
+                  <p className="text-[11px] text-[var(--text-tertiary)] italic">No connected levels assigned yet.</p>
                 ) : (
                   <div className="flex flex-wrap gap-1 mb-2">
                     {editedConnectedLevelIds.map((lvlId) => (
                       <span
                         key={lvlId}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#a855f7]/20 text-[#a855f7] border border-[#a855f7]/40 text-[10px] font-mono"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--purple)]/20 text-[var(--purple)] border border-[var(--purple)]/40 text-[10px] font-mono"
                       >
                         <span>{lvlId}</span>
                         <button
                           type="button"
                           onClick={() => setEditedConnectedLevelIds(editedConnectedLevelIds.filter((id) => id !== lvlId))}
-                          className="hover:text-red-400 cursor-pointer"
+                          className="hover:text-[var(--error)] cursor-pointer"
                         >
                           <X className="w-2.5 h-2.5" />
                         </button>
@@ -1022,7 +937,7 @@ function EntityDetails({
                   <select
                     value={selectedLevelToAdd}
                     onChange={(e) => setSelectedLevelToAdd(e.target.value)}
-                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none cursor-pointer"
+                    className="flex-1 h-7 px-2 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
                   >
                     <option value="">Select storey/level to connect...</option>
                     {Object.entries(world?.entities || {})
@@ -1046,7 +961,7 @@ function EntityDetails({
                         setSelectedLevelToAdd("");
                       }
                     }}
-                    className="px-2.5 h-7 rounded bg-neutral-800 hover:bg-neutral-700 text-[#a855f7] border border-neutral-700 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
+                    className="px-2.5 h-7 rounded bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] text-[var(--purple)] border border-[var(--border)] text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40"
                   >
                     <Plus className="w-3 h-3" />
                     <span>Add</span>
@@ -1060,11 +975,11 @@ function EntityDetails({
           {correctionTab === "classification" && (
             <div className="space-y-2.5">
               <div className="space-y-1">
-                <label className="text-[10px] text-neutral-400 uppercase tracking-wider">Semantic Classification</label>
+                <label className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">Semantic Classification</label>
                 <select
                   value={editedType}
                   onChange={(e) => setEditedType(e.target.value)}
-                  className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white focus:border-[var(--accent)] focus:outline-none cursor-pointer"
+                  className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
                 >
                   <option value="room">Room (Enclosed Space)</option>
                   <option value="corridor">Corridor (Circulation Space)</option>
@@ -1082,21 +997,57 @@ function EntityDetails({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] text-neutral-400 uppercase tracking-wider">Semantic Labels</label>
+                <label className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">Semantic Labels</label>
                 <input
                   type="text"
                   value={editedLabels}
                   onChange={(e) => setEditedLabels(e.target.value)}
                   placeholder="e.g. office, meeting_room, primary_corridor"
-                  className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[var(--accent)] focus:outline-none font-mono"
+                  className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent)] focus:outline-none font-mono"
                 />
               </div>
             </div>
           )}
 
+          {/* F6: correct a measured dimension with a real one (VERIFIED, survives rebuilds) */}
+          {dimensionEntries.length > 0 && (
+            <div className="space-y-1 rounded border border-[var(--border)] p-2" data-testid="verified-dimension">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Verified dimension</span>
+                <span className="text-[10px] text-[var(--text-tertiary)]">tape-measured</span>
+              </div>
+              <div className="flex gap-1.5">
+                <select
+                  value={dimensionProp}
+                  onChange={(e) => setDimensionProp(e.target.value)}
+                  className="h-7 min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--bg-surface)] px-1 text-[11px] text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                >
+                  {dimensionEntries.map(([k, v]) => (
+                    <option key={k} value={k}>{k} ({v.unit ?? "?"})</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={dimensionValue}
+                  onChange={(e) => setDimensionValue(e.target.value)}
+                  placeholder={selectedDim?.value !== undefined ? selectedDim.value.toFixed(3) : "real value"}
+                  className="h-7 w-24 rounded border border-[var(--border)] bg-[var(--bg-surface)] px-1.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent)] focus:outline-none"
+                />
+                <span className="flex h-7 items-center text-[10px] text-[var(--text-secondary)]">{selectedDim?.unit ?? ""}</span>
+              </div>
+              <p className="text-[10px] leading-snug text-[var(--text-tertiary)]">
+                {dimensionValue.trim() === ""
+                  ? "Leave blank to keep the measured value. A typed value is marked VERIFIED and replayed after a rebuild."
+                  : "This value will be marked VERIFIED (user-entered), not measured by the engine."}
+              </p>
+            </div>
+          )}
+
           {/* Common fields: Confidence & Commit Message */}
-          <div className="space-y-1 pt-1 border-t border-neutral-800">
-            <div className="flex justify-between text-[10px] text-neutral-400 uppercase tracking-wider">
+          <div className="space-y-1 pt-1 border-t border-[var(--border-subtle)]">
+            <div className="flex justify-between text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">
               <span>Adjusted Confidence</span>
               <span className="font-mono text-[var(--accent)]">
                 {confidenceIsValid ? `${(parsedConfidence * 100).toFixed(0)}%` : "unchanged"}
@@ -1111,7 +1062,7 @@ function EntityDetails({
               onChange={(e) => setEditedConfidence(e.target.value)}
               className="w-full accent-[var(--accent)] cursor-pointer"
             />
-            <p className="text-[10px] text-neutral-500">
+            <p className="text-[10px] text-[var(--text-tertiary)]">
               {conf === null
                 ? "This entity has no recorded confidence. Leaving this at \"unchanged\" keeps it unrecorded - the correction will not invent a value."
                 : "Leave unchanged to keep the recorded value."}
@@ -1119,13 +1070,13 @@ function EntityDetails({
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] text-neutral-400 uppercase tracking-wider">Commit Rationale (WorldStore Version)</label>
+            <label className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider">Reason for the change</label>
             <input
               type="text"
               value={commitMessage}
               onChange={(e) => setCommitMessage(e.target.value)}
               placeholder="e.g. Correct boundary wall assignment and connectivity"
-              className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:border-[var(--accent)] focus:outline-none font-mono"
+              className="w-full h-7 px-2 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent)] focus:outline-none font-mono"
             />
           </div>
 
@@ -1135,8 +1086,8 @@ function EntityDetails({
               onClick={handleTogglePreview}
               className={`flex-1 py-1.5 rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer border ${
                 isPreviewing
-                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                  : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700"
+                  ? "bg-[var(--warning)]/20 text-[var(--warning)] border-[var(--warning)]/40"
+                  : "bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] text-[var(--text-primary)] border-[var(--border)]"
               }`}
             >
               <Eye className="w-3.5 h-3.5" />
@@ -1149,720 +1100,218 @@ function EntityDetails({
               onClick={() => handleSaveCorrection()}
               className={`flex-1 py-1.5 rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                 committedSuccess
-                  ? "bg-[var(--success)] text-black"
-                  : "bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white"
+                  ? "bg-[var(--success)] text-[var(--bg-base)]"
+                  : "bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[var(--text-primary)]"
               }`}
             >
               {submitting ? (
-                <span>Persisting CAS Version...</span>
+                <span>Saving...</span>
               ) : committedSuccess ? (
                 <>
                   <Check className="w-3.5 h-3.5" />
-                  <span>Committed to WorldStore!</span>
+                  <span>Saved</span>
                 </>
               ) : (
-                <span>Commit Version</span>
+                <span>Save correction</span>
               )}
             </button>
           </div>
         </div>
       )}
 
-      {/* Building Envelope & Overview */}
-      {(entity.type === "building" || entity.id.startsWith("building")) && (
-        <div className="p-3 rounded-lg border border-[var(--warning)]/40 bg-[var(--warning)]/10 space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--warning)] uppercase tracking-wide">
-            <span className="flex items-center gap-1.5">
-              <Building className="w-3.5 h-3.5" />
-              <span>Building Envelope</span>
-            </span>
-            <span className="font-mono text-[10px]">
-              {String((entity.custom_properties?.n_storeys as number | undefined) ?? (entity.custom_properties?.storey_ids as string[] | undefined)?.length ?? "1")} Levels
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
-            <div>
-              <span className="text-neutral-500">Envelope: </span>
-              <span>{extentDimensions ? `${extentDimensions.x.toFixed(1)}×${extentDimensions.y.toFixed(1)}×${extentDimensions.z.toFixed(1)}m` : "—"}</span>
+        {tab === "overview" && (
+          <div className="space-y-5">
+            <div className="flex items-start gap-3">
+              {photos[0] && <PhotoThumb worldId={worldId} evidenceId={photos[0].evidence_id} name={photos[0].evidence_name} className="h-24 w-24 shrink-0" />}
+              <div className="min-w-0 flex-1">
+                {overviewFacts.length > 0 ? <FactList facts={overviewFacts} /> : <Muted>No measurements are recorded for this item.</Muted>}
+              </div>
             </div>
-            <div>
-              <span className="text-neutral-500">Volume: </span>
-              <span>{extentDimensions ? `${extentDimensions.volume.toFixed(1)} m³` : "—"}</span>
-            </div>
-          </div>
 
-          {Array.isArray(entity.custom_properties?.storey_ids) && (entity.custom_properties.storey_ids as string[]).length > 0 && (
-            <div className="pt-1.5 border-t border-[var(--warning)]/20 space-y-1">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Building Storeys / Levels</span>
-              <div className="flex flex-wrap gap-1">
-                {(entity.custom_properties.storey_ids as string[]).map((sId) => (
-                  <button
-                    key={sId}
-                    type="button"
-                    onClick={() => onSelectEntity(sId)}
-                    className="px-2 py-0.5 rounded bg-[var(--warning)]/20 text-[var(--warning)] hover:bg-[var(--warning)]/30 text-[10px] font-mono cursor-pointer border border-[var(--warning)]/30"
-                  >
-                    {sId}
-                  </button>
+            {(kind === "window" || kind === "door") && conf !== null && conf < 0.5 && (
+              <p className="flex items-start gap-1.5 text-[12px] text-[var(--warning)]">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>Not enough evidence to be sure this is a {kind} (the depth fit was weak or the frame was hidden).</span>
+              </p>
+            )}
+
+            {shownLinked.map((l) => (
+              <ChipGroup key={l.title} title={l.title}>
+                {l.ids.map((id) => (
+                  <EntityChip key={id} label={displayName(entities[id])} hint={`Show ${displayName(entities[id])}`} onClick={() => focusEntity(id)} />
                 ))}
+              </ChipGroup>
+            ))}
+
+            <section aria-label="Confidence">
+              <SectionTitle>Confidence</SectionTitle>
+              <ConfidenceBars facets={facets} />
+              <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">Grey means no confidence was recorded. It is not a score.</p>
+            </section>
+          </div>
+        )}
+
+        {tab === "dimensions" && (
+          <section aria-label="Dimensions">
+            {dimRows.length > 0 ? (
+              <>
+                <DimensionRows rows={dimRows} onCorrect={onCommitCorrection ? correctDimension : undefined} />
+                {dimRows.some((r) => r.unit?.startsWith("model_units")) && (
+                  <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+                    These sizes are in model units: the world has no metric scale yet, so they are not metres.
+                  </p>
+                )}
+              </>
+            ) : extentDimensions ? (
+              <div className="space-y-2">
+                <Muted>No dimensions are recorded for this item. Its 3D box measures:</Muted>
+                <FactList
+                  facts={[
+                    { label: "Box width", value: `${extentDimensions.x.toFixed(2)}` },
+                    { label: "Box depth", value: `${extentDimensions.y.toFixed(2)}` },
+                    { label: "Box height", value: `${extentDimensions.z.toFixed(2)}` },
+                  ]}
+                />
+                <Muted>Taken from the model geometry, not from a recorded measurement.</Muted>
               </div>
+            ) : (
+              <Muted>No dimensions are recorded for this item.</Muted>
+            )}
+          </section>
+        )}
+
+        {tab === "materials" && (
+          <section aria-label="Materials">
+            {swatches.length > 0 ? (
+              <MaterialCards swatches={swatches} confidenceLabel={materialReading.label} confidenceToken={TONE_TOKEN[materialReading.tone]} />
+            ) : (
+              <Muted>No colour or material is recorded for this item.</Muted>
+            )}
+          </section>
+        )}
+
+        {tab === "evidence" && (
+          <div className="space-y-5">
+            <IdentityLine cp={entity.custom_properties} />
+            <section aria-label="Supporting photographs">
+              <SectionTitle>Supporting photographs</SectionTitle>
+              {provenanceLoading ? (
+                <Muted>Looking for supporting photographs&hellip;</Muted>
+              ) : photos.length === 0 ? (
+                <Muted>{provenance?.reason || "No photographs are linked to this item."}</Muted>
+              ) : (
+                <>
+                  {provenance?.trace_level === "session" && (
+                    <p className="mb-2 text-[11px] text-[var(--text-tertiary)]">
+                      Linked to the capture session this came from, not to a specific frame.
+                    </p>
+                  )}
+                  <ul className="grid grid-cols-2 gap-3">
+                    {photos.map((ev) => {
+                      const big = previewImageId === ev.evidence_id;
+                      return (
+                        <li key={ev.evidence_id} className={`space-y-1 ${big ? "col-span-2" : ""}`}>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImageId(big ? null : ev.evidence_id)}
+                            aria-label={big ? "Shrink photo" : "Enlarge photo"}
+                            className="block w-full cursor-pointer"
+                          >
+                            <PhotoThumb worldId={worldId} evidenceId={ev.evidence_id} name={ev.evidence_name} className={`w-full ${big ? "h-44" : "h-20"}`} />
+                          </button>
+                          <div className="flex items-center justify-between gap-2 text-[11px]">
+                            <span className="truncate font-mono text-[var(--text-secondary)]" title={ev.evidence_name}>{ev.evidence_name}</span>
+                            <a
+                              href={`/evidence/${ev.evidence_id}`}
+                              onClick={() => onTraceEvidence?.(ev.evidence_id)}
+                              className="shrink-0 text-[var(--accent)] hover:underline"
+                            >
+                              Open
+                            </a>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+              {otherEvidence.length > 0 && (
+                <ul className="mt-3 space-y-1 text-[12px]">
+                  {otherEvidence.map((ev) => (
+                    <li key={ev.evidence_id} className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[var(--text-primary)]">{ev.evidence_name}</span>
+                      <a href={`/evidence/${ev.evidence_id}`} onClick={() => onTraceEvidence?.(ev.evidence_id)} className="shrink-0 text-[var(--accent)] hover:underline">
+                        Open {ev.evidence_type}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+      {evidence.isTarget && (
+        <section className="space-y-2" aria-label={`Evidence for ${title}`} data-testid="entity-evidence">
+          <SectionTitle>Evidence summary</SectionTitle>
+          <FactList
+            facts={[
+              { label: "Confidence", value: fmtConfidence(evidence.confidence), muted: evidence.confidence === null },
+              { label: "How it was derived", value: evidence.provenance ? PROVENANCE_WORDS[evidence.provenance] ?? evidence.provenance : NOT_RECORDED, muted: !evidence.provenance },
+              { label: "Colour", value: evidence.colour.state === "measured" ? "Measured from photos" : "Not measured", muted: evidence.colour.state !== "measured" },
+              { label: "Photos used", value: evidence.supportingViews.length ? evidence.supportingViews.join(", ") : NOT_RECORDED, muted: evidence.supportingViews.length === 0 },
+            ]}
+          />
+          <p className="text-[11px] text-[var(--text-tertiary)]">
+            {evidence.colour.basis}
+            {evidence.colour.coverage !== null ? ` · ${Math.round(evidence.colour.coverage * 100)}% of the surface observed` : ""}
+            {evidence.colour.hasTexture ? " · textured" : ""}
+          </p>
+        </section>
+      )}
+          </div>
+        )}
+
+        <Disclosure title="Details" testId="inspector-details">
+          <div className="space-y-2">
+            <KV k="Identifier" v={entity.id} wrap />
+            <KV k="Type" v={entity.type} />
+            <KV k="How it was derived" v={entity.provenance || "Not recorded"} />
+            <KV
+              k="Parent"
+              v={
+                entity.parent_id ? (
+                  <button type="button" onClick={() => focusEntity(entity.parent_id!)} className="inline-flex items-center gap-1 text-[var(--accent)] hover:underline cursor-pointer" title={`Show parent: ${entity.parent_id}`}>
+                    <Link2 className="h-3 w-3" aria-hidden />
+                    {parentEntity?.name || entity.parent_id}
+                  </button>
+                ) : (
+                  "None"
+                )
+              }
+            />
+            <KV k="Children" v={childrenList.length > 0 ? childrenList.map((c) => c.name || c.id).slice(0, 4).join(", ") + (childrenList.length > 4 ? ` +${childrenList.length - 4}` : "") : "None"} />
+            <KV k="Coordinate frame" v={String(world?.coordinate_frame || world?.coordinate_system || "metric_enu")} />
+            <KV k="World version" v={provenanceLoading ? "…" : provenance?.version_id || activeVersion || "Not compiled"} wrap />
+            <KV k="Position (XYZ)" v={pos ? `${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}` : "Unavailable"} />
+            <KV k="Bounding volume" v={extentDimensions ? `${extentDimensions.volume.toFixed(2)} m³` : "Unavailable"} />
+            {entity.semantic_labels && entity.semantic_labels.length > 0 && <KV k="Labels" v={entity.semantic_labels.join(", ")} />}
+            {Array.isArray(entity.custom_properties?.evidence_plane_ids) && (
+              <KV k="Fitted from" v={`${(entity.custom_properties.evidence_plane_ids as unknown[]).length} surface patch(es)`} />
+            )}
+          </div>
+
+          {allRows.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">Every recorded dimension</h4>
+              {allRows.map((r) => (
+                <KV key={r.key} k={r.label} v={`${fmtValue(r.value, r.unit)} · ${r.assumedDefault ? "assumed default" : stateWord(r.state)}`} />
+              ))}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Storey / Level Details */}
-      {(entity.type === "storey" || entity.type === "level" || entity.id.startsWith("storey")) && (
-        <div className="p-3 rounded-lg border border-[var(--purple)]/40 bg-[var(--purple)]/10 space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--purple)] uppercase tracking-wide">
-            <span className="flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5" />
-              <span>Building Storey / Level</span>
-            </span>
-            <span className="font-mono text-[10px]">
-              Elev: {Number(entity.custom_properties?.floor_height_m ?? entity.custom_properties?.elevation_m ?? pos?.z ?? pos?.y ?? 0).toFixed(2)} m
-            </span>
-          </div>
-
-          <div className="space-y-1.5 text-[11px]">
-            {Array.isArray(entity.custom_properties?.room_ids) && (entity.custom_properties.room_ids as string[]).length > 0 && (
-              <div>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Rooms</span>
-                <div className="flex flex-wrap gap-1 mt-0.5">
-                  {(entity.custom_properties.room_ids as string[]).map((rId) => (
-                    <button
-                      key={rId}
-                      type="button"
-                      onClick={() => onSelectEntity(rId)}
-                      className="px-2 py-0.5 rounded bg-[#3b82f6]/20 text-[#3b82f6] hover:bg-[#3b82f6]/30 text-[10px] font-mono cursor-pointer border border-[#3b82f6]/30"
-                    >
-                      {rId}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {Array.isArray(entity.custom_properties?.corridor_ids) && (entity.custom_properties.corridor_ids as string[]).length > 0 && (
-              <div>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Circulation Corridors</span>
-                <div className="flex flex-wrap gap-1 mt-0.5">
-                  {(entity.custom_properties.corridor_ids as string[]).map((cId) => (
-                    <button
-                      key={cId}
-                      type="button"
-                      onClick={() => onSelectEntity(cId)}
-                      className="px-2 py-0.5 rounded bg-[#06b6d4]/20 text-[#06b6d4] hover:bg-[#06b6d4]/30 text-[10px] font-mono cursor-pointer border border-[#06b6d4]/30"
-                    >
-                      {cId}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {Array.isArray(entity.custom_properties?.stair_ids) && (entity.custom_properties.stair_ids as string[]).length > 0 && (
-              <div>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Vertical Stairs</span>
-                <div className="flex flex-wrap gap-1 mt-0.5">
-                  {(entity.custom_properties.stair_ids as string[]).map((stId) => (
-                    <button
-                      key={stId}
-                      type="button"
-                      onClick={() => onSelectEntity(stId)}
-                      className="px-2 py-0.5 rounded bg-[#a855f7]/20 text-[#a855f7] hover:bg-[#a855f7]/30 text-[10px] font-mono cursor-pointer border border-[#a855f7]/30"
-                    >
-                      {stId}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Structural Plane Details (Wall / Floor / Ceiling) */}
-      {(entity.type === "wall" || entity.type === "floor" || entity.type === "ceiling") && (
-        <div className="p-3 rounded-lg border border-[#64748b]/40 bg-[#64748b]/10 space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-[#94a3b8] uppercase tracking-wide">
-            <span className="flex items-center gap-1.5">
-              <Box className="w-3.5 h-3.5" />
-              <span>Structural {entity.type} Primitive</span>
-            </span>
-            <span className="font-mono text-[10px]">
-              {geometry?.vertex_count ? `${geometry.vertex_count} inliers` : "Plane"}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
-            <div>
-              <span className="text-neutral-500">Span: </span>
-              <span>{extentDimensions ? `${Math.max(extentDimensions.x, extentDimensions.y).toFixed(2)} m` : "—"}</span>
-            </div>
-            <div>
-              <span className="text-neutral-500">Thickness: </span>
-              <span>{typeof entity.custom_properties?.thickness_m === "number" ? `${(entity.custom_properties.thickness_m as number).toFixed(3)} m` : "Not available"}</span>
-            </div>
-          </div>
-
-          {Array.isArray(entity.custom_properties?.window_ids) && (entity.custom_properties.window_ids as string[]).length > 0 && (
-            <div className="pt-1.5 border-t border-[#64748b]/20 space-y-1">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Openings in Surface</span>
-              <div className="flex flex-wrap gap-1">
-                {(entity.custom_properties.window_ids as string[]).map((wId) => (
-                  <button
-                    key={wId}
-                    type="button"
-                    onClick={() => onSelectEntity(wId)}
-                    className="px-2 py-0.5 rounded bg-[#10b981]/20 text-[#10b981] hover:bg-[#10b981]/30 text-[10px] font-mono cursor-pointer border border-[#10b981]/30"
-                  >
-                    {wId}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Opening Inspection Details (for Doors and Windows) */}
-      {(entity.type === "door" || entity.type === "window") && (
-        <div className="p-3 rounded-lg border border-[#10b981]/40 bg-[#10b981]/10 space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-[#10b981] uppercase tracking-wide">
-            <span className="flex items-center gap-1.5">
-              <Building className="w-3.5 h-3.5" />
-              <span>Opening Specification ({entity.type})</span>
-            </span>
-            <span className="font-mono text-[10px]">
-              {extentDimensions ? `${(extentDimensions.x * extentDimensions.y).toFixed(2)} m² area` : "Opening"}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-300 font-mono">
-            <div>
-              <span className="text-neutral-500">Width: </span>
-              <span>{extentDimensions ? `${extentDimensions.x.toFixed(2)} m` : "—"}</span>
-            </div>
-            <div>
-              <span className="text-neutral-500">Height: </span>
-              <span>{extentDimensions ? `${extentDimensions.y.toFixed(2)} m` : "—"}</span>
-            </div>
-          </div>
-
-          {conf !== null && conf < 0.5 && (
-            <div className="flex items-center gap-1.5 p-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-sans">
-              <AlertTriangle className="w-3 h-3 shrink-0" />
-              <span>Insufficient evidence to classify opening (depth fitting unconstrained or frame occluded)</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 1. ROOM INSPECTOR: Explicit Room Architecture, Boundaries, Openings & Metrics */}
-      {(entity.type === "room" || entity.id.startsWith("room")) && (() => {
-        const area = (entity.custom_properties?.floor_area_m2 as number) || (extentDimensions ? extentDimensions.x * extentDimensions.z : null);
-        const dims = extentDimensions ? `${extentDimensions.x.toFixed(2)} × ${extentDimensions.z.toFixed(2)} × ${extentDimensions.y.toFixed(2)} m` : "—";
-        const height = (entity.custom_properties?.height_m as number) || (extentDimensions ? extentDimensions.y : null);
-
-        const levelId = (entity.parent_id?.startsWith("storey") || entity.parent_id?.startsWith("level"))
-          ? entity.parent_id
-          : (entity.custom_properties?.storey_id as string) || (entity.custom_properties?.level_id as string) || (entity.custom_properties?.level !== undefined ? `level-${entity.custom_properties.level}` : null)
-          || relationships.find(r => (r.kind === "part_of" || r.kind === "contains") && (r.target_id?.startsWith("storey") || r.target_id?.startsWith("level")))?.target_id || null;
-
-        const boundaryWallIds: string[] = Array.from(new Set([
-          ...(Array.isArray(entity.custom_properties?.boundary_element_ids) ? (entity.custom_properties.boundary_element_ids as string[]) : []),
-          ...(Array.isArray(entity.custom_properties?.wall_ids) ? (entity.custom_properties.wall_ids as string[]) : []),
-          ...Object.entries(world?.entities || {})
-            .filter(([id, e]) => e.type === "wall" && (e.parent_id === entity.id || relationships.some(r => r.target_id === id)))
-            .map(([id]) => id),
-        ]));
-
-        const floorId: string | null = (entity.custom_properties?.floor_id as string)
-          || relationships.find(r => world?.entities[r.target_id || ""]?.type === "floor")?.target_id
-          || Object.entries(world?.entities || {}).find(([id, e]) => e.type === "floor" && e.parent_id === entity.id)?.[0] || null;
-
-        const ceilingId: string | null = (entity.custom_properties?.ceiling_id as string)
-          || relationships.find(r => world?.entities[r.target_id || ""]?.type === "ceiling")?.target_id
-          || Object.entries(world?.entities || {}).find(([id, e]) => e.type === "ceiling" && e.parent_id === entity.id)?.[0] || null;
-
-        const doorIds: string[] = Array.from(new Set([
-          ...(Array.isArray(entity.custom_properties?.door_ids) ? (entity.custom_properties.door_ids as string[]) : []),
-          ...relationships
-            .filter(r => world?.entities[r.target_id || ""]?.type === "door")
-            .map(r => r.target_id as string),
-        ]));
-
-        const windowIds: string[] = Array.from(new Set([
-          ...(Array.isArray(entity.custom_properties?.window_ids) ? (entity.custom_properties.window_ids as string[]) : []),
-          ...relationships
-            .filter(r => world?.entities[r.target_id || ""]?.type === "window")
-            .map(r => r.target_id as string),
-        ]));
-
-        const connectedSpaces: string[] = Array.from(new Set([
-          ...(Array.isArray(entity.custom_properties?.connected_corridor_ids) ? (entity.custom_properties.connected_corridor_ids as string[]) : []),
-          ...(Array.isArray(entity.custom_properties?.adjacent_room_ids) ? (entity.custom_properties.adjacent_room_ids as string[]) : []),
-          ...relationships
-            .filter(r => {
-              const tgt = world?.entities[r.target_id || ""];
-              return tgt && (tgt.type === "room" || tgt.type === "corridor") && r.target_id !== entity.id;
-            })
-            .map(r => r.target_id as string),
-        ]));
-
-        const completeness = entity.custom_properties?.boundary_completeness != null
-          ? Number(entity.custom_properties.boundary_completeness)
-          : null;
-
-        return (
-          <div className="p-3 rounded-lg border border-[#3b82f6]/40 bg-[#3b82f6]/10 space-y-3">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-[#3b82f6] uppercase tracking-wide">
-              <span className="flex items-center gap-1.5">
-                <Building className="w-3.5 h-3.5" />
-                <span>Room Inspector</span>
-              </span>
-              <span className="font-mono text-[10px] text-neutral-300">
-                {area ? `${area.toFixed(2)} m²` : "—"}
-              </span>
-            </div>
-
-            {/* Core Metrics Grid */}
-            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[var(--bg-surface)]/60 p-2 rounded border border-neutral-800">
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Room Area</span>
-                <span className="text-white font-semibold">{area ? `${area.toFixed(2)} m²` : "—"}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Dimensions (L×W×H)</span>
-                <span className="text-white font-semibold">{dims}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Clear Height</span>
-                <span className="text-white font-semibold">{height ? `${Number(height).toFixed(2)} m` : "—"}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Storey / Level</span>
-                {levelId ? (
-                  <button
-                    type="button"
-                    onClick={() => onSelectEntity(levelId)}
-                    className="text-[var(--purple)] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[120px]"
-                  >
-                    <Layers className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{levelId}</span>
-                  </button>
-                ) : (
-                  <span className="text-neutral-500">Unassigned</span>
-                )}
-              </div>
-            </div>
-
-            {/* Boundaries & Walls */}
-            <div className="space-y-1.5 pt-1 border-t border-[#3b82f6]/20">
-              <div className="flex items-center justify-between text-[10px] text-neutral-400 uppercase tracking-wider">
-                <span>Boundary Elements & Walls ({boundaryWallIds.length})</span>
-              </div>
-              {boundaryWallIds.length === 0 ? (
-                <p className="text-[10px] text-neutral-500 italic">No boundary walls registered.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {boundaryWallIds.map((wId) => (
-                    <button
-                      key={wId}
-                      type="button"
-                      onClick={() => onSelectEntity(wId)}
-                      className="px-2 py-0.5 rounded bg-[var(--warning)]/20 text-[var(--warning)] hover:bg-[var(--warning)]/30 text-[10px] font-mono cursor-pointer border border-[var(--warning)]/30 flex items-center gap-1"
-                    >
-                      <Box className="w-2.5 h-2.5" />
-                      <span>{wId}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Floor & Ceiling */}
-            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#3b82f6]/20 text-[10px]">
-              <div>
-                <span className="text-neutral-400 uppercase tracking-wider block mb-1">Floor Primitive</span>
-                {floorId ? (
-                  <button
-                    type="button"
-                    onClick={() => onSelectEntity(floorId)}
-                    className="w-full px-2 py-1 rounded bg-[#3b82f6]/20 text-[#3b82f6] hover:bg-[#3b82f6]/30 font-mono cursor-pointer border border-[#3b82f6]/30 flex items-center justify-between"
-                  >
-                    <span className="truncate">{floorId}</span>
-                    <Maximize2 className="w-2.5 h-2.5" />
-                  </button>
-                ) : (
-                  <span className="text-neutral-500 italic">Unmeasured</span>
-                )}
-              </div>
-              <div>
-                <span className="text-neutral-400 uppercase tracking-wider block mb-1">Ceiling Primitive</span>
-                {ceilingId ? (
-                  <button
-                    type="button"
-                    onClick={() => onSelectEntity(ceilingId)}
-                    className="w-full px-2 py-1 rounded bg-[#94a3b8]/20 text-[#94a3b8] hover:bg-[#94a3b8]/30 font-mono cursor-pointer border border-[#94a3b8]/30 flex items-center justify-between"
-                  >
-                    <span className="truncate">{ceilingId}</span>
-                    <Maximize2 className="w-2.5 h-2.5" />
-                  </button>
-                ) : (
-                  <span className="text-neutral-500 italic">
-                    {entity.custom_properties?.ceiling_evidence ? "Measured" : "Procedural Extrusion"}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Doors & Windows */}
-            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#3b82f6]/20 text-[10px]">
-              <div>
-                <span className="text-neutral-400 uppercase tracking-wider block mb-1">Doors ({doorIds.length})</span>
-                {doorIds.length === 0 ? (
-                  <span className="text-neutral-500 italic">None</span>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {doorIds.map((dId) => (
-                      <button
-                        key={dId}
-                        type="button"
-                        onClick={() => onSelectEntity(dId)}
-                        className="px-1.5 py-0.5 rounded bg-[#10b981]/20 text-[#10b981] hover:bg-[#10b981]/30 font-mono cursor-pointer border border-[#10b981]/30 truncate max-w-full"
-                      >
-                        {dId}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <span className="text-neutral-400 uppercase tracking-wider block mb-1">Windows ({windowIds.length})</span>
-                {windowIds.length === 0 ? (
-                  <span className="text-neutral-500 italic">None</span>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {windowIds.map((wId) => (
-                      <button
-                        key={wId}
-                        type="button"
-                        onClick={() => onSelectEntity(wId)}
-                        className="px-1.5 py-0.5 rounded bg-[#06b6d4]/20 text-[#06b6d4] hover:bg-[#06b6d4]/30 font-mono cursor-pointer border border-[#06b6d4]/30 truncate max-w-full"
-                      >
-                        {wId}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Connected Spaces (Corridors & Adjacent Rooms) */}
-            <div className="space-y-1.5 pt-1 border-t border-[#3b82f6]/20">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                Connected Spaces ({connectedSpaces.length})
-              </span>
-              {connectedSpaces.length === 0 ? (
-                <p className="text-[10px] text-neutral-500 italic">No circulation connections recorded.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {connectedSpaces.map((sId) => (
-                    <button
-                      key={sId}
-                      type="button"
-                      onClick={() => onSelectEntity(sId)}
-                      className="px-2 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent)]/30 text-[10px] font-mono cursor-pointer border border-[var(--accent)]/30 flex items-center gap-1"
-                    >
-                      <Workflow className="w-2.5 h-2.5" />
-                      <span>{sId}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Uncertainty Model */}
-            <div className="p-2 rounded bg-[var(--bg-surface)]/60 border border-neutral-800 text-[10px] font-mono space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-neutral-500 uppercase">Boundary Completeness:</span>
-                <span className="text-white">
-                  {completeness != null ? `${(completeness * 100).toFixed(0)}%` : "Not available"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-neutral-500 uppercase">Certainty Score:</span>
-                <span className="text-[var(--accent)] font-semibold">
-                  {conf !== null ? conf.toFixed(3) : "Not available"}
-                </span>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* 2. CORRIDOR INSPECTOR: Circulation Route, Connected Rooms & Openings */}
-      {(entity.type === "corridor" || entity.id.startsWith("corridor")) && (() => {
-        const length = (entity.custom_properties?.length_m as number) || (extentDimensions ? Math.max(extentDimensions.x, extentDimensions.z) : null);
-        const width = (entity.custom_properties?.width_m as number) || (extentDimensions ? Math.min(extentDimensions.x, extentDimensions.z) : null);
-        const height = (entity.custom_properties?.height_m as number) || (extentDimensions ? extentDimensions.y : null);
-        const area = (entity.custom_properties?.floor_area_m2 as number) || (length && width ? length * width : null);
-
-        const levelId = (entity.parent_id?.startsWith("storey") || entity.parent_id?.startsWith("level"))
-          ? entity.parent_id
-          : (entity.custom_properties?.storey_id as string) || (entity.custom_properties?.level_id as string)
-          || relationships.find(r => (r.kind === "part_of" || r.kind === "contains") && (r.target_id?.startsWith("storey") || r.target_id?.startsWith("level")))?.target_id || null;
-
-        const connectedRooms: string[] = Array.from(new Set([
-          ...(Array.isArray(entity.custom_properties?.connected_room_ids) ? (entity.custom_properties.connected_room_ids as string[]) : []),
-          ...relationships
-            .filter(r => {
-              const tgt = world?.entities[r.target_id || ""];
-              return tgt && (tgt.type === "room" || tgt.type === "space") && r.target_id !== entity.id;
-            })
-            .map(r => r.target_id as string),
-        ]));
-
-        const openings: string[] = Array.from(new Set([
-          ...relationships
-            .filter(r => {
-              const tgt = world?.entities[r.target_id || ""];
-              return tgt && (tgt.type === "door" || tgt.type === "window");
-            })
-            .map(r => r.target_id as string),
-        ]));
-
-        const intersections: string[] = Array.from(new Set([
-          ...relationships
-            .filter(r => {
-              const tgt = world?.entities[r.target_id || ""];
-              return tgt && (tgt.type === "stairs" || tgt.type === "stair" || (tgt.type === "corridor" && r.target_id !== entity.id));
-            })
-            .map(r => r.target_id as string),
-        ]));
-
-        return (
-          <div className="p-3 rounded-lg border border-[#06b6d4]/40 bg-[#06b6d4]/10 space-y-3">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-[#06b6d4] uppercase tracking-wide">
-              <span className="flex items-center gap-1.5">
-                <Workflow className="w-3.5 h-3.5" />
-                <span>Corridor Inspector</span>
-              </span>
-              <span className="font-mono text-[10px] text-neutral-300">
-                {(entity.custom_properties?.aspect_ratio as number | undefined)?.toFixed(1) ?? (length && width ? (length / width).toFixed(1) : "—")} : 1 Aspect
-              </span>
-            </div>
-
-            {/* Metrics Grid */}
-            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[var(--bg-surface)]/60 p-2 rounded border border-neutral-800">
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Length</span>
-                <span className="text-white font-semibold">{length ? `${length.toFixed(2)} m` : "—"}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Width</span>
-                <span className="text-white font-semibold">{width ? `${width.toFixed(2)} m` : "—"}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Area / Height</span>
-                <span className="text-white font-semibold">{area ? `${area.toFixed(1)}m²` : "—"} · {height ? `${Number(height).toFixed(2)}m` : "—"}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Storey / Level</span>
-                {levelId ? (
-                  <button
-                    type="button"
-                    onClick={() => onSelectEntity(levelId)}
-                    className="text-[var(--purple)] hover:underline flex items-center gap-1 cursor-pointer truncate max-w-[120px]"
-                  >
-                    <Layers className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{levelId}</span>
-                  </button>
-                ) : (
-                  <span className="text-neutral-500">Unassigned</span>
-                )}
-              </div>
-            </div>
-
-            {/* Connected Rooms */}
-            <div className="space-y-1.5 pt-1 border-t border-[#06b6d4]/20">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                Connected Rooms ({connectedRooms.length})
-              </span>
-              {connectedRooms.length === 0 ? (
-                <p className="text-[10px] text-neutral-500 italic">No connected rooms recorded.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {connectedRooms.map((rId) => (
-                    <button
-                      key={rId}
-                      type="button"
-                      onClick={() => onSelectEntity(rId)}
-                      className="px-2 py-0.5 rounded bg-[#06b6d4]/20 text-[#06b6d4] hover:bg-[#06b6d4]/30 text-[10px] font-mono cursor-pointer border border-[#06b6d4]/30 flex items-center gap-1"
-                    >
-                      <Building className="w-2.5 h-2.5" />
-                      <span>{rId}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Openings & Doorways */}
-            <div className="space-y-1.5 pt-1 border-t border-[#06b6d4]/20">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                Doorways & Openings ({openings.length})
-              </span>
-              {openings.length === 0 ? (
-                <p className="text-[10px] text-neutral-500 italic">No direct openings attached.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {openings.map((opId) => (
-                    <button
-                      key={opId}
-                      type="button"
-                      onClick={() => onSelectEntity(opId)}
-                      className="px-2 py-0.5 rounded bg-[#10b981]/20 text-[#10b981] hover:bg-[#10b981]/30 text-[10px] font-mono cursor-pointer border border-[#10b981]/30 flex items-center gap-1"
-                    >
-                      <span>{opId}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Intersections (Stairs / Cross-Corridors) */}
-            <div className="space-y-1.5 pt-1 border-t border-[#06b6d4]/20">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                Intersections & Vertical Landings ({intersections.length})
-              </span>
-              {intersections.length === 0 ? (
-                <p className="text-[10px] text-neutral-500 italic">No cross intersections or stairs.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {intersections.map((intId) => (
-                    <button
-                      key={intId}
-                      type="button"
-                      onClick={() => onSelectEntity(intId)}
-                      className="px-2 py-0.5 rounded bg-[#a855f7]/20 text-[#a855f7] hover:bg-[#a855f7]/30 text-[10px] font-mono cursor-pointer border border-[#a855f7]/30 flex items-center gap-1"
-                    >
-                      <Layers className="w-2.5 h-2.5" />
-                      <span>{intId}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* 3. STAIR INSPECTOR: Vertical Circulation & Level Connectors */}
-      {(entity.type === "stairs" || entity.type === "stair" || entity.id.startsWith("stair")) && (() => {
-        const rise = (entity.custom_properties?.total_rise_m as number) || (extentDimensions ? extentDimensions.y : null);
-        const run = (entity.custom_properties?.total_run_m as number) || (extentDimensions ? Math.max(extentDimensions.x, extentDimensions.z) : null);
-        const stepCount = entity.custom_properties?.step_count as number | undefined;
-
-        const connectedLevels: string[] = Array.from(new Set([
-          ...(Array.isArray(entity.custom_properties?.connected_level_ids) ? (entity.custom_properties.connected_level_ids as string[]) : []),
-          ...(Array.isArray(entity.custom_properties?.storey_ids) ? (entity.custom_properties.storey_ids as string[]) : []),
-          ...relationships
-            .filter(r => {
-              const tgt = world?.entities[r.target_id || ""];
-              return tgt && (tgt.type === "storey" || tgt.type === "level" || r.target_id?.startsWith("storey") || r.target_id?.startsWith("level"));
-            })
-            .map(r => r.target_id as string),
-        ]));
-
-        const connectedCorridors: string[] = Array.from(new Set([
-          ...relationships
-            .filter(r => {
-              const tgt = world?.entities[r.target_id || ""];
-              return tgt && (tgt.type === "corridor" || r.target_id?.startsWith("corridor"));
-            })
-            .map(r => r.target_id as string),
-        ]));
-
-        return (
-          <div className="p-3 rounded-lg border border-[#a855f7]/40 bg-[#a855f7]/10 space-y-3">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-[#a855f7] uppercase tracking-wide">
-              <span className="flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5" />
-                <span>Stair Inspector</span>
-              </span>
-              <span className="font-mono text-[10px] text-neutral-300">
-                {stepCount != null ? `${stepCount} Steps` : "Staircase Flight"}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-300 font-mono bg-[var(--bg-surface)]/60 p-2 rounded border border-neutral-800">
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Total Rise</span>
-                <span className="text-white font-semibold">{rise ? `${rise.toFixed(2)} m` : "—"}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500 block text-[9px] uppercase tracking-wider">Total Run</span>
-                <span className="text-white font-semibold">{run ? `${run.toFixed(2)} m` : "—"}</span>
-              </div>
-            </div>
-
-            {/* Connected Levels */}
-            <div className="space-y-1.5 pt-1 border-t border-[#a855f7]/20">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                Connected Levels ({connectedLevels.length})
-              </span>
-              {connectedLevels.length === 0 ? (
-                <p className="text-[10px] text-neutral-500 italic">No connected levels assigned.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {connectedLevels.map((lvlId) => (
-                    <button
-                      key={lvlId}
-                      type="button"
-                      onClick={() => onSelectEntity(lvlId)}
-                      className="px-2 py-0.5 rounded bg-[#a855f7]/20 text-[#a855f7] hover:bg-[#a855f7]/30 text-[10px] font-mono cursor-pointer border border-[#a855f7]/30 flex items-center gap-1"
-                    >
-                      <Layers className="w-2.5 h-2.5" />
-                      <span>{lvlId}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Connected Landings / Corridors */}
-            {connectedCorridors.length > 0 && (
-              <div className="space-y-1.5 pt-1 border-t border-[#a855f7]/20">
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                  Circulation Landings ({connectedCorridors.length})
-                </span>
-                <div className="flex flex-wrap gap-1">
-                  {connectedCorridors.map((cId) => (
-                    <button
-                      key={cId}
-                      type="button"
-                      onClick={() => onSelectEntity(cId)}
-                      className="px-2 py-0.5 rounded bg-[#06b6d4]/20 text-[#06b6d4] hover:bg-[#06b6d4]/30 text-[10px] font-mono cursor-pointer border border-[#06b6d4]/30 flex items-center gap-1"
-                    >
-                      <Workflow className="w-2.5 h-2.5" />
-                      <span>{cId}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
 
       {/* Geometry Section */}
-      {(tab === "all" || tab === "geometry") && (
+      {(
         <div className="space-y-2">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] flex items-center gap-1.5">
             <Box className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span>Geometry & Bounds</span>
           </h4>
@@ -1871,40 +1320,40 @@ function EntityDetails({
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex justify-between items-start">
-              <span className="text-neutral-400 shrink-0">
+              <span className="text-[var(--text-secondary)] shrink-0">
                 Geometry ID{entity.geometry_ids && entity.geometry_ids.length > 1 ? `s (${entity.geometry_ids.length})` : ""}
               </span>
               <div className="flex flex-col items-end gap-0.5">
                 {entity.geometry_ids && entity.geometry_ids.length > 0 ? (
                   entity.geometry_ids.map((gid) => (
-                    <span key={gid} className="font-mono text-white truncate max-w-[150px]">
+                    <span key={gid} className="font-mono text-[var(--text-primary)] truncate max-w-[150px]">
                       {gid}
                     </span>
                   ))
                 ) : (
-                  <span className="font-mono text-neutral-500">Unavailable</span>
+                  <span className="font-mono text-[var(--text-tertiary)]">Unavailable</span>
                 )}
               </div>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-400">Dimensions (L × W × H)</span>
-              <span className="font-mono text-white">
+              <span className="text-[var(--text-secondary)]">Dimensions (L × W × H)</span>
+              <span className="font-mono text-[var(--text-primary)]">
                 {extentDimensions
-                  ? `${extentDimensions.x.toFixed(2)} × ${extentDimensions.y.toFixed(2)} × ${extentDimensions.z.toFixed(2)} m`
+                  ? `${extentDimensions.x.toFixed(2)} × ${extentDimensions.y.toFixed(2)} × ${extentDimensions.z.toFixed(2)}`
                   : "Unavailable"}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-400">Inlier / Vertex Count</span>
-              <span className="font-mono text-white">
+              <span className="text-[var(--text-secondary)]">Inlier / Vertex Count</span>
+              <span className="font-mono text-[var(--text-primary)]">
                 {geometry?.vertex_count != null
                   ? geometry.vertex_count.toLocaleString()
                   : "Unavailable"}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-400">LOD Representation</span>
-              <span className="font-mono text-white">
+              <span className="text-[var(--text-secondary)]">LOD Representation</span>
+              <span className="font-mono text-[var(--text-primary)]">
                 {geometry?.lod_level != null ? `LOD ${geometry.lod_level}` : "Unavailable"}
               </span>
             </div>
@@ -1913,14 +1362,14 @@ function EntityDetails({
       )}
 
       {/* Spatial Topology Graph Section */}
-      {(tab === "all" || tab === "geometry") && (
+      {(
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
+            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] flex items-center gap-1.5">
               <Workflow className="w-3.5 h-3.5 text-[var(--accent)]" />
               <span>Spatial Topology Graph</span>
             </h4>
-            <span className="text-[10px] text-neutral-500 font-mono">
+            <span className="text-[10px] text-[var(--text-tertiary)] font-mono">
               {relationships.length} connections
             </span>
           </div>
@@ -1930,7 +1379,7 @@ function EntityDetails({
             style={{ borderColor: "var(--border)" }}
           >
             {relationships.length === 0 ? (
-              <p className="text-neutral-500 italic">No topological relationships recorded in WorldIR.</p>
+              <p className="text-[var(--text-tertiary)] italic">No topological relationships recorded in WorldIR.</p>
             ) : (
               <div className="space-y-1.5">
                 {relationships.map((rel: { predicate?: string; kind?: string; type?: string; target_entity_id?: string; target_id?: string }, idx) => {
@@ -1945,16 +1394,16 @@ function EntityDetails({
                       className="group p-1.5 rounded bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] transition-colors flex items-center justify-between font-mono cursor-pointer"
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 uppercase font-semibold">
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-[var(--warning)]/15 text-[var(--warning)] uppercase font-semibold">
                           {relKind}
                         </span>
-                        <span className="text-neutral-200 group-hover:text-white truncate">
+                        <span className="text-[var(--text-primary)] group-hover:text-[var(--text-primary)] truncate">
                           {targetEnt?.name || targetId || "unknown"}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] text-neutral-500 shrink-0">
+                      <div className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] shrink-0">
                         {targetEnt && <span className="capitalize">{targetEnt.type}</span>}
-                        <Maximize2 className="w-3 h-3 text-neutral-500 group-hover:text-[var(--accent)]" />
+                        <Maximize2 className="w-3 h-3 text-[var(--text-tertiary)] group-hover:text-[var(--accent)]" />
                       </div>
                     </div>
                   );
@@ -1967,135 +1416,52 @@ function EntityDetails({
 
       {/* Canonical Provenance Pipeline: ENTITY → EVIDENCE → SESSION → RECONSTRUCTION */}
       <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] space-y-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 flex items-center justify-between">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] flex items-center justify-between">
           <span>Provenance Pipeline</span>
           <span className="font-mono text-[var(--accent)] text-[9px]">REAL DATA CHAIN</span>
         </div>
         <div className="flex items-center justify-between text-[10px] font-mono">
           <div className="flex flex-col items-center gap-1 text-center">
             <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />
-            <span className="text-white font-semibold">ENTITY</span>
-            <span className="text-neutral-500 max-w-[65px] truncate">{entity.id}</span>
+            <span className="text-[var(--text-primary)] font-semibold">ENTITY</span>
+            <span className="text-[var(--text-tertiary)] max-w-[65px] truncate">{entity.id}</span>
           </div>
-          <span className="text-neutral-600">→</span>
+          <span className="text-[var(--text-tertiary)]">→</span>
           <div className="flex flex-col items-center gap-1 text-center">
             <span className="w-2 h-2 rounded-full bg-[var(--success)]" />
-            <span className="text-white font-semibold">EVIDENCE</span>
-            <span className="text-neutral-500 max-w-[65px] truncate">
+            <span className="text-[var(--text-primary)] font-semibold">EVIDENCE</span>
+            <span className="text-[var(--text-tertiary)] max-w-[65px] truncate">
               {provenance?.evidence[0]?.evidence_name || (provenance?.trace_level === "none" ? "None" : "—")}
             </span>
           </div>
-          <span className="text-neutral-600">→</span>
+          <span className="text-[var(--text-tertiary)]">→</span>
           <div className="flex flex-col items-center gap-1 text-center">
-            <span className="w-2 h-2 rounded-full bg-[#b28dff]" />
-            <span className="text-white font-semibold">SESSION</span>
-            <span className="text-neutral-500 max-w-[65px] truncate">
+            <span className="w-2 h-2 rounded-full bg-[var(--purple)]" />
+            <span className="text-[var(--text-primary)] font-semibold">SESSION</span>
+            <span className="text-[var(--text-tertiary)] max-w-[65px] truncate">
               {provenance?.source_session_ids?.[0] || (provenance?.trace_level === "none" ? "None" : "—")}
             </span>
           </div>
-          <span className="text-neutral-600">→</span>
+          <span className="text-[var(--text-tertiary)]">→</span>
           <div className="flex flex-col items-center gap-1 text-center">
             <span className="w-2 h-2 rounded-full bg-[var(--warning)]" />
-            <span className="text-white font-semibold">RECON</span>
-            <span className="text-neutral-500 max-w-[65px] truncate">
+            <span className="text-[var(--text-primary)] font-semibold">RECON</span>
+            <span className="text-[var(--text-tertiary)] max-w-[65px] truncate">
               {String(world?.metadata?.reconstruction?.backend ?? "unrecorded")}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Traceable Source Evidence -- real trace, never fabricated */}
-      {(tab === "all" || tab === "evidence") && (
-        <div className="space-y-2">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-            <Camera className="w-3.5 h-3.5 text-[var(--success)]" />
-            <span>Source Evidence</span>
-          </h4>
-          <div className="space-y-2">
-            {provenanceLoading ? (
-              <p className="text-neutral-500 italic p-2">Tracing evidence…</p>
-            ) : !provenance || provenance.evidence.length === 0 ? (
-              <p className="text-neutral-500 italic p-2">
-                {provenance?.reason || "No evidence linked to this entity or its capture session."}
-              </p>
-            ) : (
-              <>
-                {provenance.trace_level === "session" && (
-                  <p className="text-neutral-500 text-[10px] px-0.5">
-                    Traced at session level: this entity&apos;s version came from this session&apos;s
-                    capture, not a specific frame within it.
-                  </p>
-                )}
-                {provenance.evidence.map((ev) => {
-                  const isViewingImage = previewImageId === ev.evidence_id;
-                  return (
-                    <div
-                      key={ev.evidence_id}
-                      className="p-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] text-[11px] space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono font-semibold text-white truncate">
-                          {ev.evidence_name}
-                        </span>
-                        <span className="font-mono text-[10px] text-[var(--success)] px-1 rounded bg-[var(--success)]/10 shrink-0">
-                          {ev.evidence_type}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 border-t border-neutral-800">
-                        <a
-                          href={`/evidence/${ev.evidence_id}`}
-                          onClick={() => onTraceEvidence?.(ev.evidence_id)}
-                          className="text-[10px] text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          <Maximize2 className="w-3 h-3" />
-                          <span>Open Evidence</span>
-                        </a>
-
-                        {ev.evidence_type === "photo" && (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewImageId(isViewingImage ? null : ev.evidence_id)}
-                            className="text-[10px] text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                          >
-                            <ImageIcon className="w-3 h-3" />
-                            <span>{isViewingImage ? "Hide Image" : "View Photo"}</span>
-                          </button>
-                        )}
-                      </div>
-
-                      {isViewingImage && (
-                        <div className="pt-2 border-t border-neutral-800 space-y-1">
-                          <div className="relative w-full h-36 rounded overflow-hidden bg-black border border-neutral-800">
-                            <img
-                              src={`/api/worlds/${worldId}/evidence/${ev.evidence_id}/image`}
-                              alt={ev.evidence_name}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.currentTarget.style.display = "none";
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Observations: WHERE THIS CAME FROM */}
-      {(tab === "all" || tab === "observations") && (
+      {(
         <div className="space-y-2">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] flex items-center gap-1.5">
             <FileSearch className="w-3.5 h-3.5 text-[var(--warning)]" />
             <span>Observations ({observations.length})</span>
           </h4>
           {observations.length === 0 ? (
-            <p className="text-neutral-500 italic">No explicit observations attached.</p>
+            <p className="text-[var(--text-tertiary)] italic">No explicit observations attached.</p>
           ) : (
             observations.map((obs) => (
               <div
@@ -2108,17 +1474,17 @@ function EntityDetails({
                     {obs.sensor_type}
                   </span>
                   {obs.confidence != null && (
-                    <span className="text-neutral-400 font-mono-num">
+                    <span className="text-[var(--text-secondary)] font-mono-num">
                       {(obs.confidence * 100).toFixed(0)}% conf
                     </span>
                   )}
                 </div>
                 {obs.metadata && (
-                  <div className="space-y-1 pt-1 border-t border-neutral-800">
+                  <div className="space-y-1 pt-1 border-t border-[var(--border-subtle)]">
                     {Object.entries(obs.metadata).map(([k, v]) => (
                       <div key={k} className="flex justify-between gap-2">
-                        <span className="text-neutral-400 truncate">{k}</span>
-                        <span className="font-mono text-white text-right truncate">
+                        <span className="text-[var(--text-secondary)] truncate">{k}</span>
+                        <span className="font-mono text-[var(--text-primary)] text-right truncate">
                           {typeof v === "number"
                             ? Number.isInteger(v)
                               ? v
@@ -2136,9 +1502,9 @@ function EntityDetails({
       )}
 
       {/* Provenance & Lineage */}
-      {(tab === "all" || tab === "provenance") && (
+      {(
         <div className="space-y-2">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5 text-[var(--success)]" />
             <span>Provenance & Lineage</span>
           </h4>
@@ -2147,27 +1513,27 @@ function EntityDetails({
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex justify-between">
-              <span className="text-neutral-400">Derivation</span>
-              <span className="font-mono font-medium text-white">
+              <span className="text-[var(--text-secondary)]">Derivation</span>
+              <span className="font-mono font-medium text-[var(--text-primary)]">
                 {entity.provenance || "Not recorded"}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-400">Source Session</span>
-              <span className="text-neutral-300 font-mono">
+              <span className="text-[var(--text-secondary)]">Source Session</span>
+              <span className="text-[var(--text-primary)] font-mono">
                 {provenance?.source_session_ids?.join(", ") || "Unassigned"}
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-neutral-400 shrink-0">WorldStore Version</span>
+              <span className="text-[var(--text-secondary)] shrink-0">WorldStore Version</span>
               <span className="text-[var(--accent)] font-mono break-all text-right">
                 {provenanceLoading ? "…" : provenance?.version_id ?? "Not compiled"}
               </span>
             </div>
             {entity.semantic_labels && entity.semantic_labels.length > 0 && (
               <div className="flex justify-between">
-                <span className="text-neutral-400">Semantic Labels</span>
-                <span className="font-mono text-white">
+                <span className="text-[var(--text-secondary)]">Semantic Labels</span>
+                <span className="font-mono text-[var(--text-primary)]">
                   {entity.semantic_labels.join(", ")}
                 </span>
               </div>
@@ -2177,9 +1543,9 @@ function EntityDetails({
       )}
 
       {/* Uncertainty */}
-      {(tab === "all" || tab === "uncertainty") && (
+      {(
         <div className="space-y-2">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-secondary)] flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-[var(--warning)]" />
             <span>Uncertainty Model</span>
           </h4>
@@ -2188,31 +1554,66 @@ function EntityDetails({
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex justify-between">
-              <span className="text-neutral-400">Certainty Score</span>
-              <span className="font-mono text-white">
-                {conf !== null ? `${conf.toFixed(3)} (${(conf * 100).toFixed(1)}%)` : "Not recorded"}
+              <span className="text-[var(--text-secondary)]">Certainty Score</span>
+              <span className="font-mono text-[var(--text-primary)]">
+                {conf !== null ? `${conf.toFixed(3)} (${(conf * 100).toFixed(1)}%)` : "Not available"}
               </span>
             </div>
+            {conf !== null && (
+              <div
+                role="meter"
+                aria-label="Entity confidence"
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={conf}
+                className="h-1.5 rounded bg-neutral-800 overflow-hidden"
+              >
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${Math.min(1, Math.max(0, conf)) * 100}%`,
+                    background: conf < LOW_CONFIDENCE_THRESHOLD ? "#f5a623" : "#35d07f",
+                  }}
+                />
+              </div>
+            )}
+            {conf !== null && conf < LOW_CONFIDENCE_THRESHOLD && (
+              <div className="text-[10px] text-[#f5a623] flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Low confidence (below {LOW_CONFIDENCE_THRESHOLD * 100}%) - treat as unverified.
+              </div>
+            )}
+            {typeof entity.uncertainty?.confidence === "number" && entity.uncertainty.confidence !== conf && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Uncertainty Record</span>
+                <span className="font-mono text-white">
+                  {(entity.uncertainty.confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+            {typeof entity.uncertainty?.note === "string" && entity.uncertainty.note && (
+              <div className="text-[10px] text-neutral-400">Note: {entity.uncertainty.note}</div>
+            )}
             {typeof (entity.custom_properties?.inlier_fraction ?? entity.custom_properties?.inlier_ratio) === "number" && (
               <div className="flex justify-between">
-                <span className="text-neutral-400">Inlier Fraction</span>
-                <span className="font-mono text-white">
+                <span className="text-[var(--text-secondary)]">Inlier Fraction</span>
+                <span className="font-mono text-[var(--text-primary)]">
                   {(Number(entity.custom_properties?.inlier_fraction ?? entity.custom_properties?.inlier_ratio) * 100).toFixed(1)}%
                 </span>
               </div>
             )}
             {typeof (entity.custom_properties?.residual_m ?? entity.custom_properties?.fit_residual_m) === "number" && (
               <div className="flex justify-between">
-                <span className="text-neutral-400">Fit Residual</span>
-                <span className="font-mono text-white">
+                <span className="text-[var(--text-secondary)]">Fit Residual</span>
+                <span className="font-mono text-[var(--text-primary)]">
                   {(Number(entity.custom_properties?.residual_m ?? entity.custom_properties?.fit_residual_m) * 1000).toFixed(1)} mm
                 </span>
               </div>
             )}
             {typeof entity.custom_properties?.uncertainty_sigma_m === "number" && (
               <div className="flex justify-between">
-                <span className="text-neutral-400">Spatial StdDev (σ)</span>
-                <span className="font-mono text-white">
+                <span className="text-[var(--text-secondary)]">Spatial StdDev (σ)</span>
+                <span className="font-mono text-[var(--text-primary)]">
                   {(Number(entity.custom_properties?.uncertainty_sigma_m) * 100).toFixed(2)} cm
                 </span>
               </div>
@@ -2222,14 +1623,54 @@ function EntityDetails({
               entity.custom_properties?.residual_m === undefined &&
               entity.custom_properties?.fit_residual_m === undefined &&
               entity.custom_properties?.uncertainty_sigma_m === undefined && (
-                <div className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-800">
+                <div className="text-[10px] text-[var(--text-tertiary)] pt-1 border-t border-[var(--border-subtle)]">
                   No spatial covariance matrix or residual metrics recorded for this entity.
                 </div>
             )}
           </div>
         </div>
       )}
-    </div>
+        </Disclosure>
+      </div>
+    </>
+  );
+}
+
+/** One line on why this is one item: how many photos agreed, or that the engine could not tell it from another. */
+function IdentityLine({ cp }: { cp: Record<string, unknown> | undefined }) {
+  const id = buildIdentityEvidence(cp);
+  if (id.state === "not_recorded") return null;
+  const ambiguous = id.state === "ambiguous";
+  const Icon = ambiguous ? AlertTriangle : Check;
+  return (
+    <p
+      role="status"
+      className="flex items-center gap-1.5 text-[12px]"
+      style={{ color: ambiguous ? "var(--warning)" : "var(--text-secondary)" }}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {id.text}
+    </p>
+  );
+}
+
+function PhotoThumb({ worldId, evidenceId, name, className }: { worldId: string; evidenceId: string; name: string; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span className={`${className ?? ""} grid place-items-center rounded border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-tertiary)]`}>
+        <ImageIcon className="h-4 w-4" aria-label="Photo unavailable" />
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`/api/worlds/${worldId}/evidence/${evidenceId}/image`}
+      alt={`Photograph ${name}`}
+      className={`${className ?? ""} rounded border border-[var(--border)] object-cover`}
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -2250,15 +1691,18 @@ function WorldOverview({
   loadError?: string | null;
   onRetryLoad?: () => void;
 }) {
+  const actionBtn =
+    "w-full py-2 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] border border-[var(--border)] text-[var(--text-primary)] transition-colors flex items-center justify-center gap-1.5 cursor-pointer";
+
   if (!world && loadError) {
     return (
-      <div className="p-4 text-center text-red-400 space-y-3">
+      <div className="space-y-3 p-4 text-center text-xs text-[var(--error)]">
         <p>Couldn&apos;t load the compiled world: {loadError}</p>
         {onRetryLoad && (
           <button
             type="button"
             onClick={onRetryLoad}
-            className="px-3.5 py-1.5 rounded text-xs bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30 transition-colors cursor-pointer"
+            className="cursor-pointer rounded border border-[var(--error)]/40 bg-[var(--error-subtle)] px-3.5 py-1.5 text-xs text-[var(--error)] transition-colors hover:bg-[var(--error)]/20"
           >
             Retry
           </button>
@@ -2269,15 +1713,15 @@ function WorldOverview({
 
   if (!world) {
     return (
-      <div className="p-4 text-center text-neutral-500 space-y-3">
-        <p>No 3D WorldIR compiled for this world yet.</p>
+      <div className="space-y-3 p-4 text-center text-xs text-[var(--text-tertiary)]">
+        <p>No 3D world has been built for this project yet.</p>
         {onOpenRoomConstruction && (
           <button
             type="button"
             onClick={onOpenRoomConstruction}
-            className="px-3.5 py-1.5 rounded text-xs bg-[var(--primary)] text-white font-medium hover:bg-[var(--primary-hover)] transition-colors cursor-pointer"
+            className="cursor-pointer rounded bg-[var(--primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--primary-hover)]"
           >
-            Open Room Construction
+            Open room construction
           </button>
         )}
       </div>
@@ -2285,147 +1729,96 @@ function WorldOverview({
   }
 
   const meta = world.metadata || {};
+  const counts = countWorld(world.entities as never);
+  const scaleView = describeScale(meta.scale);
+  const scaleKind = scaleView.kind === "unknown" && anyUncalibrated(world.entities as never) ? "relative" : scaleView.kind;
   const nEnt = Object.keys(world.entities || {}).length;
+  const stats: Array<[string, number]> = [
+    ["Rooms", counts.rooms], ["Walls", counts.walls], ["Doors", counts.doors], ["Windows", counts.windows], ["Furniture", counts.furniture],
+  ];
 
   return (
-    <div className="space-y-4">
-      {/* World Card */}
-      <div
-        className="p-3 rounded-lg border bg-[var(--bg-elevated)]"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <div className="text-[11px] uppercase tracking-wider text-neutral-400">
-          World Specification
-        </div>
-        <div className="text-sm font-semibold text-white mt-0.5 font-mono">
-          {world.id || worldId}
-        </div>
-        <div className="text-xs text-neutral-400 mt-1">
-          {world.name || "Canonical WorldIR"}
-        </div>
-        {activeVersion && (
-          <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400 pt-2 mt-2 border-t border-neutral-800">
-            <span className="text-neutral-500 uppercase">WorldStore Version</span>
-            <span className="text-[var(--accent)] font-semibold">{activeVersion}</span>
+    <>
+      <header className="shrink-0 border-b border-[var(--border)] bg-[var(--bg-surface)] px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-[var(--accent-subtle)] text-[var(--accent)]">
+            <House className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]">{world.name || "This world"}</h2>
+            <p className="truncate text-[12px] text-[var(--text-secondary)]">Nothing selected</p>
           </div>
-        )}
-      </div>
+        </div>
+      </header>
 
-      {/* Pipeline Stage Facts */}
-      <div className="space-y-2">
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-          <Activity className="w-3.5 h-3.5 text-[var(--accent)]" />
-          <span>Stage Facts & Diagnostics</span>
-        </h4>
-        <div
-          className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2.5 text-[11px]"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Reconstruction Backend</span>
-            <span className="font-mono text-white">
-              {meta.reconstruction?.backend || "Unavailable"}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Registration Status</span>
-            <span className="font-mono text-[var(--success)]">
-              {meta.reconstruction?.registration_status || "Unavailable"}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Registered Cameras</span>
-            <span className="font-mono text-white">
-              {meta.reconstruction?.cameras_registered != null
-                ? `${meta.reconstruction.cameras_registered} / ${meta.reconstruction.cameras_input ?? "—"}`
-                : "Unavailable"}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Compiled Entities</span>
-            <span className="font-mono text-white">{nEnt}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Metric Scale State */}
-      <div className="space-y-2">
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-          <Compass className="w-3.5 h-3.5 text-[var(--success)]" />
-          <span>Metric Scale Calibration</span>
-        </h4>
-        <div
-          className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Scale State</span>
-            <span className="font-mono font-medium text-[var(--accent)]">
-              {meta.scale?.state || "Unavailable"}
-            </span>
-          </div>
-          <p className="text-neutral-400 text-[11px] leading-relaxed pt-1 border-t border-neutral-800">
-            {meta.scale?.note || "Unavailable"}
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 text-xs">
+        <section aria-label="What this world is">
+          <SectionTitle>What this is</SectionTitle>
+          <p className="text-[13px] leading-relaxed text-[var(--text-primary)]">
+            {counts.total > 0 ? `A reconstructed space with ${describeWorldCounts(counts)}.` : "A reconstructed space with nothing recognised in it yet."}
           </p>
-        </div>
-      </div>
+          <p className="mt-1 text-[12px] text-[var(--text-tertiary)]">Select a wall, window or object in the 3D view to see its properties.</p>
+          <dl className="mt-3 grid grid-cols-5 divide-x divide-[var(--border-subtle)] border-y border-[var(--border-subtle)]" data-testid="world-counts">
+            {stats.map(([label, n]) => (
+              <div key={label} className="px-1 py-2 text-center">
+                <dd className={`font-mono-num text-[15px] ${n === 0 ? "text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"}`}>{n}</dd>
+                <dt className="text-[10px] text-[var(--text-tertiary)]">{label}</dt>
+              </div>
+            ))}
+          </dl>
+        </section>
 
-      {/* Monocular Depth Metricization */}
-      {meta.depth && (
+        <section aria-label="Scale">
+          <SectionTitle>Scale</SectionTitle>
+          <p className="flex items-start gap-2 text-[12px] leading-relaxed text-[var(--text-secondary)]" data-scale-kind={scaleKind}>
+            <span
+              aria-hidden
+              className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+              style={{ background: scaleKind === "measured" ? "var(--conf-high)" : scaleKind === "estimated" ? "var(--warning)" : "var(--conf-unknown)" }}
+            />
+            <span>{scaleSentence({ kind: scaleKind })}</span>
+          </p>
+        </section>
+
         <div className="space-y-2">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-[#b28dff]" />
-            <span>Monocular Depth Fusion</span>
-          </h4>
-          <div
-            className="p-3 rounded-lg border bg-[var(--bg-elevated)] space-y-2 text-[11px]"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <div className="flex justify-between">
-              <span className="text-neutral-400">Depth Model</span>
-              <span className="font-mono text-white">
-                {meta.depth.model || "Unavailable"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-400">Metricized Maps</span>
-              <span className="font-mono text-white">
-                {meta.depth.metricized != null
-                  ? `${meta.depth.metricized} / ${meta.depth.maps ?? "—"}`
-                  : "Unavailable"}
-              </span>
-            </div>
-            <p className="text-neutral-400 text-[11px] leading-relaxed pt-1 border-t border-neutral-800">
-              {meta.depth.note || "Unavailable"}
-            </p>
-          </div>
+          {onOpenRoomConstruction && (
+            <button type="button" onClick={onOpenRoomConstruction} className={actionBtn}>
+              <Workflow className="h-3.5 w-3.5 text-[var(--accent)]" />
+              <span>Open room construction</span>
+            </button>
+          )}
+          {onExport && (
+            <button type="button" onClick={() => onExport("worldir")} className={actionBtn}>
+              <Download className="h-3.5 w-3.5 text-[var(--accent)]" />
+              <span>Export world data (JSON)</span>
+            </button>
+          )}
         </div>
-      )}
 
-      {/* Quick Actions */}
-      <div className="pt-2 border-t border-neutral-800 space-y-2">
-        {onOpenRoomConstruction && (
-          <button
-            type="button"
-            onClick={onOpenRoomConstruction}
-            className="w-full py-2 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border)] text-neutral-200 hover:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Workflow className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span>Room Construction Workflow</span>
-          </button>
-        )}
-
-        {onExport && (
-          <button
-            type="button"
-            onClick={() => onExport("worldir")}
-            className="w-full py-2 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] border border-[var(--border)] text-neutral-200 hover:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-[var(--success)]" />
-            <span>Export WorldIR (JSON)</span>
-          </button>
-        )}
+        <Disclosure title="Details" testId="inspector-details">
+          <div className="space-y-2">
+            <KV k="World" v={world.id || worldId} wrap />
+            {activeVersion && <KV k="Version" v={activeVersion} wrap />}
+            <KV k="Items compiled" v={nEnt} />
+            <KV k="Reconstruction backend" v={meta.reconstruction?.backend || "Unavailable"} />
+            <KV k="Registration" v={meta.reconstruction?.registration_status || "Unavailable"} />
+            <KV
+              k="Cameras registered"
+              v={meta.reconstruction?.cameras_registered != null ? `${meta.reconstruction.cameras_registered} / ${meta.reconstruction.cameras_input ?? "—"}` : "Unavailable"}
+            />
+            <KV k="Scale state" v={meta.scale?.state || "Unavailable"} />
+          </div>
+          {meta.scale?.note && <p className="text-[11px] leading-relaxed text-[var(--text-secondary)]">{meta.scale.note}</p>}
+          {meta.depth && (
+            <div className="space-y-2">
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">Depth estimation</h4>
+              <KV k="Model" v={meta.depth.model || "Unavailable"} />
+              <KV k="Depth maps scaled" v={meta.depth.metricized != null ? `${meta.depth.metricized} / ${meta.depth.maps ?? "—"}` : "Unavailable"} />
+              {meta.depth.note && <p className="text-[11px] leading-relaxed text-[var(--text-secondary)]">{meta.depth.note}</p>}
+            </div>
+          )}
+        </Disclosure>
       </div>
-    </div>
+    </>
   );
 }

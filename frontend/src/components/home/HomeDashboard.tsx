@@ -152,15 +152,8 @@ function Hero() {
     <section
       aria-label="Welcome"
       className="rounded-xl p-8 min-h-[260px] flex flex-col justify-center"
-      style={{
-        border: "1px solid var(--border)",
-        background:
-          "radial-gradient(ellipse at 85% 10%, rgba(37,99,235,0.28), transparent 55%), radial-gradient(ellipse at 10% 100%, rgba(34,184,255,0.12), transparent 50%), var(--bg-surface)",
-      }}
+      style={{ border: "1px solid var(--border)", background: "var(--bg-surface)" }}
     >
-      <p className="text-[11px] tracking-[0.28em] uppercase mb-3" style={{ color: "var(--text-secondary)" }}>
-        Real places. Persistent digital worlds.
-      </p>
       <h1 className="text-4xl lg:text-5xl font-bold leading-tight" style={{ color: "var(--text-primary)" }}>
         Turn evidence into
         <span className="block" style={{ color: "var(--accent)" }}>

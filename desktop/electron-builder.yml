@@ -1,0 +1,31 @@
+appId: app.realityengine.desktop
+productName: Reality Engine
+directories:
+  output: dist
+afterPack: after-pack.js
+files:
+  - src/**
+  - package.json
+# Staged by scripts/build_desktop.ps1: build/python (embedded CPython + site-packages + engine sources) and build/ui (Next standalone).
+extraResources:
+  - from: build/python
+    to: python
+  - from: build/ui
+    to: ui
+    # node_modules is dropped by electron-builder here; after-pack.js copies it in.
+win:
+  target:
+    - target: nsis
+      arch: x64
+    - target: dir
+      arch: x64
+  # Unsigned on purpose (no certificate in this repo); also skips the winCodeSign download that needs symlink privileges.
+  signAndEditExecutable: false
+  forceCodeSigning: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+artifactName: ${productName}-Setup-${version}.${ext}
+compression: normal

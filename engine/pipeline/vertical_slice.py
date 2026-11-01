@@ -99,6 +99,9 @@ class VerticalSliceOptions:
     detection_score_threshold: float = 0.5
     #: Cross-view merge distance for object hypotheses (meters).
     object_merge_distance_m: float = 0.5
+    #: how per-view object hypotheses become entities: "association" (gated Hungarian, no transitive merges, AMBIGUOUS
+    #: kept apart; perception/instances/association.py) or "union_find" (the older label+distance resolver)
+    object_resolver: str = "association"
     #: Content-addressed store for real geometry artifacts: the surface
     #: mesh (stage 3.6) and, when given, the promoted planes' inlier
     #: point payloads. None keeps legacy behavior (no real payloads).
@@ -121,6 +124,11 @@ class VerticalSliceOptions:
     dense_mvs_sparse_model_dir: Optional[Path] = None
     dense_mvs_workspace: Optional[Path] = None
     dense_mvs_use_gpu: Optional[bool] = None
+    #: Dense cost limits (None = COLMAP's own defaults: full resolution, up to 20 source views per image). The job
+    #: runner sets a fast tier (apps.api.jobs._dense_quality_options); REALITY_DENSE_QUALITY=full restores the defaults.
+    dense_max_image_size: Optional[int] = None
+    dense_num_src_images: Optional[int] = None
+    dense_geom_consistency: bool = True
 
     #: Detail stage (P7-06): measured quality -> detail discovery ->
     #: ROI work orders -> local refinement, recorded in world metadata
@@ -148,12 +156,43 @@ class VerticalSliceOptions:
     #: demonstrably shares HEAD's raw frame reuses it instead of re-estimating 'up' (reconstruction.frame.canonicalize_like_head),
     #: so the world's visible frame does not wander between versions.
     head_frame: Optional[dict] = None
+    #: The working unit HEAD's RELATIVE world already uses (``scale.provisional_unit_k``); reused while this solve agrees
+    #: with it so successive versions of one world keep one unit (reconstruction.scene_scale).
+    head_unit_k: Optional[float] = None
     #: Escalate to dense MVS (Level 3) when the sparse model's MEASURED properties justify it
     #: (engine.pipeline.dense_gate), using the persistent COLMAP session's own images and sparse model; the dense
     #: cloud is then JUDGED against the sparse world and kept only if better (engine.pipeline.dense_judge). The
     #: library default stays off (a GPU-heavy stage a bare caller must ask for); the job runner turns it on through
     #: dense_gate.dense_auto_enabled(), so the product path escalates on evidence. Thresholds are EXPERIMENTAL.
     dense_auto: bool = False
+
+    #: Plan F3: CPU plane-sweep dense geometry (reconstruction.backend.plane_sweep). Off by default because it is a
+    #: per-pixel multi-view sweep; when on, it runs only in a METRIC world with registered cameras + trusted
+    #: intrinsics, and only accepts pixels with a clear photometric winner (a blank wall yields no points, never a
+    #: filled one). Points are added with track_id "plane_sweep:" so fusion treats them as measured dense geometry.
+    plane_sweep_enabled: bool = False
+    plane_sweep_max_views: int = 4
+    plane_sweep_stride: int = 2
+    plane_sweep_planes: int = 48
+
+
+def _refine_unit(result, unit_k: float, unit_facts):
+    """RELATIVE worlds only (unit_facts set): once the frame is canonical, refine the working unit so the cameras sit at a
+    typical handheld eye height above the detected floor -- a far better prior than viewing distance (measured: the
+    viewing-distance unit was ~2.8x too large on real photos, so walls fell under the 'room scale' thresholds). Still a
+    prior, never a measurement: the world stays relative. ``base_k`` (pre-refinement) is what the next version reuses."""
+    if not unit_facts:
+        return result, unit_k, unit_facts
+    from perception.geometry.room_box import NOMINAL_EYE_HEIGHT, eye_height_factor
+    from reconstruction.scene_scale import rescale
+
+    f = eye_height_factor(result)
+    if f is None or not (0.2 < f < 5.0):          # an implausible factor means the 'floor' was not one: keep the unit
+        return result, unit_k, dict(unit_facts, base_k=unit_k, eye_height_refined=False)
+    return rescale(result, f), unit_k * f, dict(
+        unit_facts, base_k=unit_k, unit_k=unit_k * f, eye_height_refined=True, eye_height_factor=f,
+        basis=unit_facts["basis"] + f"; refined so camera height above the floor is {NOMINAL_EYE_HEIGHT:g} units "
+                                    "(a typical handheld eye height) -- still NOT metres")
 
 
 def _canonicalize(result, options):
@@ -177,8 +216,17 @@ def _candidate_snapshot(result, evidence_items, options) -> dict:
             break
         except ScaleAnchoringError:
             continue
-    result = (scaled or unscaled(result)).result
-    result, _ = _canonicalize(result, options)
+    if scaled is not None:
+        result = scaled.result
+    else:                          # the same working unit the real run uses, or the two candidates would be judged apart
+        from reconstruction.scene_scale import working_unit
+
+        result, _uf = working_unit(unscaled(result).result, options.head_unit_k)
+        result, _ = _canonicalize(result, options)
+        result, _, _ = _refine_unit(result, _uf["unit_k"] if _uf else 1.0, _uf)
+        scaled = True
+    if scaled is not True:
+        result, _ = _canonicalize(result, options)
     world, _ = compile_reconstruction_to_world(
         result, CompileOptions(seed=options.seed, up=options.up, artifact_store=options.artifact_store))
     registered = [p.evidence_id for p in result.camera_poses]
@@ -242,6 +290,16 @@ def vertical_slice(
     never returns a fabricated world."""
     options = options or VerticalSliceOptions()
 
+    import time as _time
+
+    clock: Dict[str, float] = {}      # seconds per stage, written to the report so slowness is never invisible
+    _mark = [_time.perf_counter()]
+
+    def lap(name: str) -> None:
+        now = _time.perf_counter()
+        clock[name] = round(now - _mark[0], 2)
+        _mark[0] = now
+
     if len(evidence_items) < 2:
         raise VerticalSliceError(
             f"vertical slice needs >= 2 image evidence items, got {len(evidence_items)}"
@@ -266,6 +324,7 @@ def vertical_slice(
 
     # ---- stage 1: reconstruction (real COLMAP through the orchestrator) ----
     from reconstruction.orchestrator import ReconstructionOrchestrator
+    from reconstruction.validation import UnvalidatableReconstructionError, validate_reconstruction_output
 
     if options.reconstruction_backend is not None:
         backend = options.reconstruction_backend
@@ -286,6 +345,7 @@ def vertical_slice(
     except Exception as exc:  # noqa: BLE001 -- surfaced verbatim below
         raise VerticalSliceError(f"reconstruction stage failed: {exc}") from exc
 
+    lap("sparse_reconstruction")
     result = run.result
     if result.registration_status == "failed" or not result.points:
         raise VerticalSliceError(
@@ -293,16 +353,31 @@ def vertical_slice(
             f"(status={result.registration_status!r}, "
             f"{len(result.points)} points) -- not compiling"
         )
+    try:
+        validate_reconstruction_output(result)
+    except UnvalidatableReconstructionError as exc:
+        raise VerticalSliceError(f"reconstruction output is invalid ({exc}) -- not compiling") from exc
 
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None
+    unit_k, unit_facts = 1.0, None     # the RELATIVE working unit (reconstruction.scene_scale); 1.0 = solver units
     scale_error: Optional[str] = None
+    device_depth_facts = None
     for ref in options.measured_baselines:
         try:
             scaled = anchor_metric_scale(result, ref)
             break
         except ScaleAnchoringError:
             continue
+    if scaled is None:
+        # Plan F2: an explicit tape measurement always wins, but a phone LiDAR / structured-light capture already
+        # carries metres, so when no baseline registration succeeded the device depth anchors the world. A refused
+        # estimate (spread too wide, too few samples, undeclared depth scale) leaves it RELATIVE and is reported.
+        estimate, device_depth_facts = _device_depth_scale(result, evidence_items, options)
+        if estimate is not None and estimate.accepted:
+            from reconstruction.depth_scale import scale_from_depth
+
+            scaled = scale_from_depth(result, estimate)
     if scaled is not None:
         # Adopt the scaled reconstruction itself -- poses, points, and
         # every downstream stage (depth unprojection, perception
@@ -318,10 +393,15 @@ def vertical_slice(
         scale_note = scaled.diagnostics.note
     else:
         rel = unscaled(result)
-        result = rel.result
+        # COLMAP's scale is arbitrary but every structure threshold downstream is in metres: give a RELATIVE result a
+        # working unit so walls and floors are findable (still "relative" -- no metric claim, see scene_scale).
+        from reconstruction.scene_scale import working_unit
+
+        result, unit_facts = working_unit(rel.result, options.head_unit_k)
+        unit_k = unit_facts["unit_k"] if unit_facts else 1.0
         meters_per_unit = None
         scale_state = rel.state
-        scale_note = rel.diagnostics.note
+        scale_note = rel.diagnostics.note + (f" | working unit: {unit_facts['basis']}" if unit_facts else "")
         if options.measured_baselines:
             scale_error = (
                 "no measured baseline had both endpoints registered; world "
@@ -336,19 +416,29 @@ def vertical_slice(
         result, frame_record = _canonicalize(result, options)
     except FrameCanonicalizationError as exc:
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
+    result, unit_k, unit_facts = _refine_unit(result, unit_k, unit_facts)
+    if unit_facts:
+        scale_note = scale_note + f" | {unit_facts['basis']}"
 
+    lap("scale_and_frame")
     # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
     depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options, scale_state)
 
+    # ---- stage 2.9: single-image layout evidence (plan F4; projected, lower-confidence wall support) ----
+    layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
+
+    lap("depth_and_layout")
     # ---- stage 3: compile to validated WorldIR ----
     compile_options = CompileOptions(
-        seed=options.seed, up=options.up, artifact_store=options.artifact_store
+        seed=options.seed, up=options.up, artifact_store=options.artifact_store,
+        layout_edges_ab=layout_edges_ab,
     )
     try:
         world, diagnostics = compile_reconstruction_to_world(result, compile_options)
     except Exception as exc:  # noqa: BLE001
         raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
 
+    lap("compile")
     # ---- stage 3.5: semantic perception -> object entities (optional) ----
     perception_facts = _perception_stage(
         result, world, evidence_items, metric_depth_maps, options
@@ -357,6 +447,7 @@ def vertical_slice(
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
     mesh_facts = _mesh_stage(result, world, options, scale_state)
 
+    lap("perception_and_mesh")
     # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
     # Runs BEFORE fusion so dense points can participate in cross-source fusion
     dense_options, dense_gate_facts, dense_tmp = options, None, None
@@ -367,6 +458,7 @@ def vertical_slice(
             result, world, dense_options, scale_state, meters_per_unit,
             frame_rotation=frame_record.rotation,
             judge=dense_gate_facts is not None,          # an AUTOMATIC dense candidate must earn its place
+            unit_k=unit_k,
         )
     finally:
         if dense_tmp is not None:
@@ -374,18 +466,43 @@ def vertical_slice(
 
             shutil.rmtree(dense_tmp, ignore_errors=True)       # the fused cloud was ingested into the artifact store
 
+    lap("dense_mvs")
+    # ---- stage 3.655: structure from the DENSE cloud (adopted only when it finds strictly more) ----
+    structure_facts = None
+    if (dense_mvs_facts or {}).get("status") == "ran" and (perception_facts or {}).get("status") in (None, "skipped", "disabled") \
+            and (mesh_facts or {}).get("status") in (None, "skipped", "disabled"):
+        world, diagnostics, structure_facts = _dense_structure_pass(
+            result, world, diagnostics, compile_options, dense_mvs_facts)
+    lap("dense_structure")
+    # ---- stage 3.66: CPU plane-sweep dense geometry (plan F3) ----
+    plane_sweep_facts = _plane_sweep_stage(result, evidence_items, options, scale_state)
+
     # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
+    lap("plane_sweep_and_fusion")
     # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
     detail_facts = _detail_stage(result, world, options, scale_state)
+    lap("detail")
 
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,
         "meters_per_unit": meters_per_unit,
         "note": scale_note,
+        # RELATIVE worlds only: the working unit (displayed units per solver unit) the structure was found in. Never a
+        # metric claim; read back by the next version (head_unit_k) and by the scale-reference endpoint.
+        "provisional_unit_k": unit_k if unit_facts else None,
+        "provisional_unit_base_k": (unit_facts or {}).get("base_k") or (unit_facts or {}).get("unit_k"),
+        "provisional_unit": unit_facts,
     }
+    # Plan D1: the compile stamped dimensions before the scale existed (RELATIVE caps at RECONSTRUCTED/model_units).
+    # Re-stamp now that the unit is known; idempotent, and a tape-verified value is preserved.
+    try:
+        from world_ir.measure import stamp_world_dimensions
+        world.metadata["dimension_stamp"] = stamp_world_dimensions(world)
+    except Exception as exc:  # noqa: BLE001 -- never lose the world over a labelling pass
+        world.metadata["dimension_stamp"] = {"error": f"{type(exc).__name__}: {exc}"}
     world.metadata["reconstruction"] = {
         "backend": run.diagnostics.backend_name,
         "registration_status": result.registration_status,
@@ -394,6 +511,7 @@ def vertical_slice(
         "points": len(result.points),
     }
     world.metadata["frame"] = frame_record.to_dict()
+    world.metadata["layout_evidence"] = layout_facts
     if depth_facts is not None:
         world.metadata["depth"] = depth_facts
     world.metadata["perception"] = perception_facts
@@ -428,18 +546,77 @@ def vertical_slice(
         stage_facts={
             "backend": run.diagnostics.backend_name,
             "duration_s": run.diagnostics.duration_s,
+            "timings_s": clock,
             "scale_error_note": scale_error,
+            # Plan F2: how a device-depth scale was estimated (or why it was refused); None when no device depth exists
+            "device_depth_scale": device_depth_facts,
+            "layout_evidence": layout_facts,
             "depth": depth_facts,
             "perception": perception_facts,
             "mesh": mesh_facts,
             "detail": detail_facts,
             "dense_mvs": dense_mvs_facts,
+            "dense_structure": structure_facts,
+            "plane_sweep": plane_sweep_facts,
             "dense_gate": dense_gate_facts,
             # how the sparse model was actually produced (full / incremental / reused, counts, timings);
             # empty for backends without a persistent session
             "colmap_session": dict(getattr(backend, "last_run_info", None) or {}) or None,
         },
     )
+
+
+def _structure_rank(world, diagnostics) -> Tuple[int, int]:
+    """(closed rooms, promoted wall/floor/ceiling entities): what a compile actually understood, rooms first."""
+    # CAPPED per kind: a room has one floor, one ceiling and about four walls, so 70 'floor' fragments from furniture
+    # tops must not outrank a clean floor plus walls (that rewarded noise, the opposite of understanding the room).
+    n = {k: sum(1 for e in world.entities.values() if e.type.value == k) for k in ("wall", "floor", "ceiling")}
+    return (int(diagnostics.rooms_detected), min(n["wall"], 4) + min(n["floor"], 1) + min(n["ceiling"], 1))
+
+
+def _dense_structure_pass(result, world, diagnostics, compile_options, dense_facts, voxel: float = 0.05,
+                          cap: int = 12000):
+    """Plain walls carry few sparse features, so the sparse compile often finds floors but no closed room. The dense
+    cloud covers them: recompile on sparse + a voxel-thinned dense cloud and adopt that world ONLY when it understood
+    strictly more (more closed rooms, then more promoted structure). Otherwise the sparse world stands. The dense
+    POINTCLOUD geometry the dense stage attached is carried over. Never raises: a failure keeps the sparse world."""
+    import numpy as np
+
+    from reconstruction.backend.interface import ReconstructionResult
+
+    try:
+        dense = [p for p in result.points if (p.track_id or "").startswith("dense_mvs:")]
+        sparse = [p for p in result.points if not (p.track_id or "").startswith("dense_mvs:")]
+        if not dense:
+            return world, diagnostics, {"status": "skipped", "note": "no dense points"}
+        keys = np.floor(np.asarray([p.position for p in dense], dtype=float) / voxel).astype(np.int64)
+        idx = np.sort(np.unique(keys, axis=0, return_index=True)[1])
+        from perception.geometry.room_box import core_mask
+
+        idx = idx[core_mask(np.asarray([dense[i].position for i in idx], dtype=float))]   # floaters out
+        if len(idx) > cap:
+            idx = idx[np.linspace(0, len(idx) - 1, cap).astype(int)]
+        cand = ReconstructionResult(points=sparse + [dense[i] for i in idx], camera_poses=result.camera_poses,
+                                    registration_status=result.registration_status)
+        w2, d2 = compile_reconstruction_to_world(cand, compile_options)
+        tried = {"ransac": _structure_rank(w2, d2)}
+        # the room prior (floor/ceiling/walls from histograms) is a second candidate; the best-understood world wins
+        w3, d3 = compile_reconstruction_to_world(cand, dataclasses.replace(compile_options, room_prior=True))
+        tried["room_prior"] = _structure_rank(w3, d3)
+        # the room prior is the principled candidate (clean floor + outer walls); RANSAC only wins by closing a room
+        if tried["room_prior"][1] > 0 and tried["room_prior"][0] >= tried["ransac"][0]:
+            w2, d2 = w3, d3
+    except Exception as exc:  # noqa: BLE001 -- an enrichment pass must never lose the sparse world
+        return world, diagnostics, {"status": "failed", "note": f"{type(exc).__name__}: {exc}"[:300]}
+    before, after = _structure_rank(world, diagnostics), _structure_rank(w2, d2)
+    facts = {"sparse_rank": before, "dense_rank": after, "candidates": tried, "points_used": len(sparse) + len(idx)}
+    if after > before:
+        gid = dense_facts.get("geometry_id")
+        if gid in world.geometries:
+            w2.geometries[gid] = world.geometries[gid]
+        return w2, d2, {"status": "adopted", **facts,
+                        "note": "the dense cloud understood more structure (rank = closed rooms, promoted structure)"}
+    return world, diagnostics, {"status": "kept_sparse", **facts}
 
 
 def _auto_dense_options(result, n_input: int, options):
@@ -479,6 +656,25 @@ def _auto_dense_options(result, n_input: int, options):
     return (dataclasses.replace(options, dense_mvs_enabled=True, dense_mvs_image_dir=ws / "images",
                                 dense_mvs_sparse_model_dir=model, dense_mvs_workspace=scratch),
             dict(facts, decision="escalated to dense MVS: every measured criterion passed"), scratch)
+
+
+#: Detail voxel size for a world with NO metric anchor, as a fraction of the scene's bounding-box diagonal.
+#: Measured on the real South Building scene (docs/engineering/DETAIL_CALIBRATION.md): ROI count has a cliff
+#: between 2% and 4% of the extent, so 1.5% stays on the detail side of it. EXPERIMENTAL (one dataset).
+RELATIVE_DETAIL_VOXEL_FRACTION = 0.015
+
+
+def _detail_voxel(result, options, scale_state):
+    """(voxel_size, basis). An absolute size only means something in meters; in a relative-scale world it is
+    derived from the scene's own extent instead of silently assuming 1 unit = 1 m."""
+    if scale_state != "relative" or len(result.points) < 2:
+        return options.detail_voxel_size_m, "options.detail_voxel_size_m (metric / unspecified scale)"
+    lo, hi = _cloud_bounds(result.points)
+    diag = sum((h - l) ** 2 for l, h in zip(lo, hi)) ** 0.5
+    if not diag > 0:
+        return options.detail_voxel_size_m, "options.detail_voxel_size_m (degenerate extent)"
+    return (RELATIVE_DETAIL_VOXEL_FRACTION * diag,
+            f"{RELATIVE_DETAIL_VOXEL_FRACTION:.1%} of the scene extent (relative-scale world: model units, not meters)")
 
 
 def _detail_stage(result, world, options, scale_state: str = "unknown"):
@@ -534,11 +730,12 @@ def _detail_stage(result, world, options, scale_state: str = "unknown"):
             "note": f"optional detail dependencies unavailable: {exc}",
         }
 
+    voxel, voxel_basis = _detail_voxel(result, options, scale_state)
     try:
         report = run_detail_pipeline(
             result,
             cameras,
-            voxel_size=options.detail_voxel_size_m,
+            voxel_size=voxel,
             up=options.up,
             build_world_ir=True,
             world=world,
@@ -556,6 +753,9 @@ def _detail_stage(result, world, options, scale_state: str = "unknown"):
         "quality": report.quality.to_dict(),
         "summary": dict(report.summary),
         "n_candidates": len(report.candidates),
+        "voxel_size": voxel,
+        "voxel_basis": voxel_basis,
+        "budget_units": "model-unit mm/px: GSD level bands are NOT metric" if scale_state == "relative" else "metric",
         "rois": [r.to_dict() for r in report.rois],
         "outcomes": [o.to_dict() for o in report.outcomes],
         "note": (
@@ -638,7 +838,8 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
                 break
         if camera is None:
             continue  # metricize_all guarantees a pose; belt and braces
-        dense.extend(depth_map_to_points(dm, camera, stride=options.depth_stride))
+        dense.extend(depth_map_to_points(dm, camera, stride=options.depth_stride,
+                                         image_rgb=_photo_rgb_or_none(evidence_items, dm.evidence_id)))
 
     result.points.extend(dense)
     residuals = sorted(a.residual_median_m for a in alignments)
@@ -650,6 +851,7 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
         "metricized": len(metric_maps),
         "metricize_failed": failed,
         "dense_points": len(dense),
+        "dense_points_with_colour": sum(1 for p in dense if p.color is not None),
         "stride": options.depth_stride,
         "residual_median_m": median_residual,
         "alignments": [a.to_dict() for a in alignments],
@@ -732,13 +934,49 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             if hyp is not None:
                 hypotheses.append(hyp)
 
-    candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
+    resolution = {"resolver": options.object_resolver}
+    assoc = None
+    if options.object_resolver == "union_find":
+        candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
+    elif options.object_resolver == "association":
+        from collections import Counter
+
+        from perception.instances.association import resolve_hypotheses
+        from world_ir.observations import DepthSource
+
+        cam_pos = {p.evidence_id: tuple(float(v) for v in p.position) for p in result.camera_poses}
+        # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
+        candidates, assoc = resolve_hypotheses(hypotheses, DepthSource.MVS, cam_pos, model="mask_rcnn@coco", license="BSD-3-Clause")
+        resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
+        resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
+    else:
+        raise VerticalSliceError(f"unknown object_resolver {options.object_resolver!r}: expected 'association' or 'union_find'")
+
+    entity_ids = {c.candidate_id: f"entity-object-{i:03d}" for i, c in enumerate(candidates)}
+    tracks, track_to_entity = {}, {}
+    if assoc is not None:
+        tracks = {t.entity_id: t for t in assoc.entities}
+        for c in candidates:
+            first = c.source_hypotheses[0]
+            track_to_entity[assoc.assignment[f"{first.evidence_id}|{first.region_id}"]] = entity_ids[c.candidate_id]
 
     promoted = 0
-    for i, cand in enumerate(candidates):
-        promote_object_to_entity(
-            cand, world, entity_id=f"entity-object-{i:03d}"
-        )
+    for cand in candidates:
+        promoted_obj = promote_object_to_entity(cand, world, entity_id=entity_ids[cand.candidate_id])
+        if assoc is not None:
+            # why this is one entity (viewer: identity line). `ambiguous_with` is mapped from the engine's track ids to the
+            # ids these entities actually carry in the world.
+            first = cand.source_hypotheses[0]
+            track = tracks[assoc.assignment[f"{first.evidence_id}|{first.region_id}"]]
+            ambiguous_with = [track_to_entity[t] for t in track.ambiguous_with if t in track_to_entity]
+            promoted_obj.entity.custom_properties["association"] = {
+                "resolver": "association",
+                "observations": cand.observation_count,
+                "images": len({h.evidence_id for h in cand.source_hypotheses}),
+                "decision": "AMBIGUOUS" if ambiguous_with else (
+                    "SAME_ENTITY_CONFIRMED" if cand.observation_count > 1 else "DIFFERENT_ENTITY"),
+                "ambiguous_with": ambiguous_with,
+            }
         promoted += 1
 
     # Final gate: the world must still be valid after mutation.
@@ -757,12 +995,121 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         "hypotheses_lifted": len(hypotheses),
         "candidates_merged": len(candidates),
         "entities_promoted": promoted,
+        "resolution": resolution,
         "note": (
             "COCO Mask R-CNN masks lifted via SfM-aligned depth (metric-by-"
-            "alignment, approximate); merged by label+proximity; provenance "
+            "alignment, approximate); merged by the gated association resolver (or label+proximity if "
+            "object_resolver='union_find'); provenance "
             "INFERRED with per-entity evidence ids"
         ),
     }
+
+
+def _quat_matrix(quat):
+    """Camera-to-world rotation from a (w, x, y, z) quaternion."""
+    import numpy as np
+
+    w, x, y, z = (float(v) for v in quat)
+    n = (w * w + x * x + y * y + z * z) ** 0.5 or 1.0
+    w, x, y, z = w / n, x / n, y / n, z / n
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+    ])
+
+
+def _plane_sweep_stage(result, evidence_items, options, scale_state: str):
+    """Stage 3.66 (plan F3): CPU plane-sweep dense geometry for textured surfaces.
+
+    The COLMAP dense stage needs a GPU and a COLMAP build with dense support. This stage is the no-CUDA fallback: the
+    sparse cloud supplies the depth range (never a guessed default), every registered photo is a reference view, and a
+    pixel is kept only where one candidate depth clearly wins the photometric match against the other photos. A plain
+    painted wall therefore contributes nothing rather than a fabricated surface; the result is appended to
+    ``result.points`` (track ids ``plane_sweep:``) so the normal fusion stage sees it as measured geometry.
+    """
+    if not options.plane_sweep_enabled:
+        return {"status": "disabled", "note": "CPU plane sweep is opt-in (set plane_sweep_enabled=True)"}
+    if scale_state != ScaleState.METRIC:
+        return {"status": "skipped", "backend": "plane_sweep_cpu",
+                "note": f"world scale is {scale_state!r}; a metric depth range cannot be derived from model units"}
+    if options.intrinsics is None or not options.image_size:
+        return {"status": "skipped", "backend": "plane_sweep_cpu",
+                "note": "no trusted intrinsics/image size -- plane sweep cannot warp the views"}
+
+    import numpy as np
+
+    from reconstruction.calibration.camera import CameraIntrinsics
+
+    poses = sorted(result.camera_poses, key=lambda p: p.evidence_id)
+    if len(poses) < 2:
+        return {"status": "skipped", "backend": "plane_sweep_cpu",
+                "note": f"plane sweep needs >=2 registered cameras (have {len(poses)})"}
+
+    # Depth range from the sparse cloud itself: camera-frame z of every registered point. The 2nd/98th percentiles
+    # keep a single stray point from spanning the sweep over an absurd range.
+    zs = []
+    for pose in poses:
+        rel = np.asarray([p.position for p in result.points], float) - np.asarray(pose.position, float)
+        if not len(rel):
+            continue
+        z = (rel @ _quat_matrix(pose.rotation))[:, 2]
+        zs.extend(z[z > 1e-3].tolist())
+    if len(zs) < 10:
+        return {"status": "skipped", "backend": "plane_sweep_cpu",
+                "note": "too few points in front of the cameras to bound a depth range"}
+    lo = max(0.05, float(np.percentile(zs, 2)) * 0.9)
+    hi = float(np.percentile(zs, 98)) * 1.1
+    if not (hi > lo):
+        return {"status": "skipped", "backend": "plane_sweep_cpu",
+                "note": f"degenerate depth range from the sparse cloud ({lo:.3f}..{hi:.3f} m)"}
+
+    fx, fy, cx, cy = options.intrinsics
+    width, height = options.image_size
+    K = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height)
+    views, unreadable = [], []
+    for pose in poses:
+        rgb = _photo_rgb_or_none(evidence_items, pose.evidence_id)
+        if rgb is None:
+            unreadable.append(pose.evidence_id)
+            continue
+        views.append({"id": pose.evidence_id, "K": K, "R": tuple(pose.rotation), "C": tuple(pose.position),
+                      "image": np.asarray(rgb)})
+    cap = max(2, int(options.plane_sweep_max_views))
+    views = views[:cap]
+    if len(views) < 2:
+        return {"status": "skipped", "backend": "plane_sweep_cpu",
+                "note": f"only {len(views)} registered photo(s) could be read; unreadable: {unreadable[:5]}"}
+
+    from reconstruction.backend import plane_sweep
+    from reconstruction.backend.interface import ReconstructedPoint
+
+    added, per_view = 0, {}
+    for ref in views:
+        neighbours = [v for v in views if v["id"] != ref["id"]][:cap]
+        report = plane_sweep.sweep_view(
+            ref, neighbours, lo, hi, planes=int(options.plane_sweep_planes),
+            stride=max(1, int(options.plane_sweep_stride)),
+        )
+        sources = [ref["id"]] + [v["id"] for v in neighbours]
+        for k, (xyz, rgb) in enumerate(zip(report["points_world"], report["colors"])):
+            result.points.append(ReconstructedPoint(
+                position=tuple(float(v) for v in xyz),
+                track_id=f"plane_sweep:{ref['id']}:{k}",
+                source_evidence_ids=list(sources),
+                color=tuple(int(v) for v in rgb),
+            ))
+        added += len(report["points_world"])
+        per_view[ref["id"]] = len(report["points_world"])
+
+    from reconstruction.backend.dense_registry import select_dense_backends
+    return {"status": "ran" if added else "refused", "backend": "plane_sweep_cpu", "license": "Apache-2.0 (OpenCV)",
+            "runnable_dense_backends": list(select_dense_backends()),
+            "views": len(views), "points_added": added, "points_per_view": per_view,
+            "depth_range_m": [round(lo, 3), round(hi, 3)], "stride": int(options.plane_sweep_stride),
+            "planes": int(options.plane_sweep_planes), "unreadable": unreadable[:5],
+            "note": ("dense points accepted only where one candidate depth clearly won the photometric match" if added
+                     else "no pixel had a clear depth winner (blank / occluded surfaces); no geometry invented")}
 
 
 def _fusion_stage(result, world, options, scale_state: str):
@@ -895,7 +1242,7 @@ def _fusion_stage(result, world, options, scale_state: str):
 
 
 def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit,
-                     frame_rotation=None, judge: bool = False):
+                     frame_rotation=None, judge: bool = False, unit_k: float = 1.0):
     """Stage 3.65 (P6-01): COLMAP dense MVS as a first-class stage.
 
     The sparse model that stage 1 just produced is fed to COLMAP's dense
@@ -994,6 +1341,9 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit,
             workspace=options.dense_mvs_workspace,
             binary=options.colmap_binary,
             use_gpu=options.dense_mvs_use_gpu,
+            max_image_size=options.dense_max_image_size,
+            num_src_images=options.dense_num_src_images,
+            geom_consistency=options.dense_geom_consistency,
         )
     except (DenseMVSUnavailableError, DenseMVSRunError) as exc:
         return {"status": "failed", "note": f"{type(exc).__name__}: {exc}"}
@@ -1004,10 +1354,11 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit,
         scale_factor = float(meters_per_unit)
         scale_note = "rescaled by the pipeline's measured metric anchor"
     else:
-        scale_factor = 1.0
+        # a RELATIVE world's sparse points were put in the working unit, so the dense cloud must follow them
+        scale_factor = float(unit_k)
         scale_note = (
-            f"world scale is {scale_state}: COLMAP's own SfM scale is "
-            "preserved and recorded, never claimed as meters"
+            f"world scale is {scale_state}: the cloud follows the sparse model's working unit "
+            f"(x{scale_factor:.6g} of COLMAP's own SfM scale), recorded and never claimed as meters"
         )
 
     judged = None
@@ -1079,6 +1430,21 @@ def _dense_mvs_stage(result, world, options, scale_state: str, meters_per_unit,
         "dense_points_added": len(dense_points) if 'dense_points' in locals() else 0,
         "judge": judged,
     }
+
+
+def _photo_rgb_or_none(evidence_items, evidence_id: str):
+    """The view's photo as RGB for sampling dense-point colour, or None when it cannot be read.
+    None means those points carry color=None ("colour not measured"); the surface-colour stage then
+    reports it instead of inventing a grey."""
+    from reconstruction.depth_to_points import DepthToPointsError, load_image_rgb
+
+    item = next((e for e in evidence_items if e.id == evidence_id), None)
+    if item is None or not getattr(item, "source_uri", None):
+        return None
+    try:
+        return load_image_rgb(item.source_uri)
+    except DepthToPointsError:
+        return None
 
 
 def _place_points(points, scale_factor: float, rotation, track_prefix: Optional[str] = None):
@@ -1323,34 +1689,12 @@ def _mesh_stage(result, world, options, scale_state: str):
         "outlier_filter": outlier_facts,
     }
 
-def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
-    """RGB-D priority leg of the depth stage (P1.4).
+def _capture_dataset_dirs(evidence_items):
+    """Capture roots inferred from evidence source URIs (``.../images/x.jpg`` -> ``...``).
 
-    Parse the capture's 16-bit PNG depth sidecars (Decision 020) and
-    unproject them directly as device-metric depth. Returns None when
-    the run carries no sidecar depth at all (the caller then falls
-    through to the MiDaS path unchanged); returns a facts dict (with
-    no dense points added) when sidecars exist but cannot honestly be
-    used, so the skip is visible in the report.
-
-    Rules:
-      - Device meters never mix into a RELATIVE/UNKNOWN world: the
-        scale gate refuses with the reason rather than inventing a
-        conversion.
-      - Frames match evidence items by stem (frame_0001.png <->
-        img_0001); unmatched frames and frames without a registered
-        camera are counted, not silently dropped.
-      - Unprojection runs through the same PinholeCamera path as the
-        MiDaS leg, producing 'depth-'-prefixed track ids so the mesh
-        stage's envelope filter treats sidecar and estimated depth
-        identically.
-      - Never raises: a DepthFrameError/SensorParseError from one bad
-        sidecar is recorded as a failed frame; the stage stays an
-        enhancement that cannot lose the sparse world.
+    The dataset loader records ``file:///.../images/x.jpg``, so the dataset root is two levels up from each image.
+    url2pathname (not bare urlparse.path) is what makes Windows file URIs work: file:///C:/... -> a drive path.
     """
-    # Locate the capture's depth sidecars through the evidence items'
-    # source URIs (the dataset loader records file:///.../images/x.jpg,
-    # so the dataset root is two levels up from each image).
     dataset_dirs = set()
     for item in evidence_items:
         uri = item.source_uri or ""
@@ -1359,14 +1703,17 @@ def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
         from urllib.parse import urlparse
         from urllib.request import url2pathname
 
-        # url2pathname (not bare urlparse.path) is what makes Windows
-        # file URIs work: file:///C:/... -> C:\...
         images_dir = Path(url2pathname(urlparse(uri).path)).parent
         if images_dir.name.lower() in {"images", "photos", "rgb"}:
             dataset_dirs.add(images_dir.parent)
-    dataset_dirs = sorted(dataset_dirs)
+    return sorted(dataset_dirs)
+
+
+def _depth_sidecar_frames(evidence_items):
+    """Locate + parse the capture's depth sidecars once. Returns (frames_by_evidence, sidecar_count, errors)."""
+    dataset_dirs = _capture_dataset_dirs(evidence_items)
     if not dataset_dirs:
-        return None
+        return {}, 0, []
 
     from evidence.depth_frames import (
         DepthFrameError,
@@ -1409,6 +1756,125 @@ def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
             continue
         for frame in frames:
             frames_by_evidence[frame.frame_id] = frame
+    return frames_by_evidence, sidecar_count, parse_errors
+
+
+def _device_depth_scale(result, evidence_items, options):
+    """Plan F2: metres-per-model-unit from the capture's own metric depth frames.
+
+    A phone depth frame is already in metres, so the ratio between its depth and the reconstruction's model depth at the
+    same pixels is the scale. The sparse points must project into a frame, the frame is resampled to the photo's camera
+    model when the sensor stores it at lower resolution (the depth frame covers the same field of view), and the spread
+    gate in ``estimate_scale_from_depth`` decides whether it is one rigid scene. Returns (estimate or None, facts).
+    """
+    frames, sidecar_count, errors = _depth_sidecar_frames(evidence_items)
+    if sidecar_count == 0:
+        return None, None
+    facts = {"source": "sidecar", "frames_parsed": len(frames), "frames_used": 0,
+             "resampled_to_image_size": 0, "errors": errors}
+    if not frames:
+        return None, {**facts, "status": "failed", "note": "depth sidecars exist but none parsed -- see errors"}
+    if options.intrinsics is None:
+        return None, {**facts, "status": "skipped",
+                      "note": "no trusted intrinsics -- device depth cannot be projected onto the model"}
+    fx, fy, cx, cy = options.intrinsics
+    width, height = options.image_size
+    import numpy as np
+
+    from reconstruction.calibration.camera import CameraIntrinsics
+    from reconstruction.depth_scale import estimate_scale_from_depth
+
+    intrinsics = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height)
+    depth_by_id = {}
+    for fid, frame in sorted(frames.items()):
+        raw = np.asarray(frame.raw, dtype=np.float32) * float(frame.depth_scale)
+        raw[raw <= 0.0] = 0.0
+        if (frame.width, frame.height) != (width, height):
+            try:
+                import cv2
+
+                raw = cv2.resize(raw, (width, height), interpolation=cv2.INTER_NEAREST)
+                facts["resampled_to_image_size"] += 1
+            except ImportError:
+                errors.append(f"{fid}: depth is {frame.width}x{frame.height}, image is {width}x{height}, "
+                              "and OpenCV is unavailable to resample it -- frame skipped")
+                continue
+        depth_by_id[fid] = raw
+    if not depth_by_id:
+        return None, {**facts, "status": "skipped", "note": "no depth frame matches the photo camera model"}
+    estimate = estimate_scale_from_depth(result.camera_poses, result.points, depth_by_id, intrinsics)
+    return estimate, {**facts, "status": "accepted" if estimate.accepted else "refused",
+                      "frames_used": len(estimate.used_views), "estimate": estimate.to_dict()}
+
+
+def _layout_evidence_stage(result, evidence_items, options):
+    """Stage 2.9 (plan F4): project optional single-image layout sidecars onto the floor plane.
+
+    Returns (edges or None, facts). No learned estimator is bundled, so a capture without ``layout/<stem>.json``
+    reports the honest UNAVAILABLE status; supplied evidence is projected through the registered pose and only ever
+    supports walls nobody's points saw.
+    """
+    from perception.architecture.layout_evidence import (
+        edges_from_hypotheses,
+        estimator_status,
+        load_layout_sidecars,
+    )
+
+    dirs = _capture_dataset_dirs(evidence_items)
+    hypotheses, errors = load_layout_sidecars(dirs, default_size=options.image_size)
+    if not hypotheses:
+        facts = estimator_status()
+        facts.update({"hypotheses": 0, "errors": errors[:10],
+                      "note": "" if not dirs else "no layout/<stem>.json sidecars in the capture"})
+        return None, facts
+    if options.intrinsics is None:
+        facts = estimator_status()
+        facts.update({"status": "skipped", "hypotheses": len(hypotheses), "errors": errors[:10],
+                      "note": "no trusted intrinsics -- a boundary line cannot be projected to the floor plane"})
+        return None, facts
+
+    # Floor plane from the canonical cloud (+Y up): the 2nd percentile is a robust floor estimate; a capture without
+    # floor points simply shifts the projected edges, which then fail the support band and change nothing.
+    import numpy as np
+
+    ys = [float(p.position[1]) for p in result.points]
+    if len(ys) < 20:
+        facts = estimator_status()
+        facts.update({"status": "skipped", "hypotheses": len(hypotheses),
+                      "note": f"only {len(ys)} points -- no floor plane can be estimated"})
+        return None, facts
+    floor_y = float(np.percentile(ys, 2))
+    edges, facts = edges_from_hypotheses(result, hypotheses, options.intrinsics, floor_y)
+    facts["errors"] = (errors + list(facts.get("errors") or []))[:10]
+    return (edges or None), facts
+
+
+def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
+    """RGB-D priority leg of the depth stage (P1.4).
+
+    Parse the capture's 16-bit PNG depth sidecars (Decision 020) and
+    unproject them directly as device-metric depth. Returns None when
+    the run carries no sidecar depth at all (the caller then falls
+    through to the MiDaS path unchanged); returns a facts dict (with
+    no dense points added) when sidecars exist but cannot honestly be
+    used, so the skip is visible in the report.
+
+    Rules:
+      - Device meters never mix into a RELATIVE/UNKNOWN world: the
+        scale gate refuses with the reason rather than inventing a
+        conversion.
+      - Frames match evidence items by stem (frame_0001.png <->
+        img_0001); unmatched frames and frames without a registered
+        camera are counted, not silently dropped.
+      - Unprojection runs through the same PinholeCamera path as the
+        MiDaS leg, producing 'depth-'-prefixed track ids so the mesh
+        stage's envelope filter treats sidecar and estimated depth
+        identically.
+      - Never raises: a DepthFrameError/SensorParseError from one bad
+        sidecar is recorded as a failed frame; the stage stays an
+        enhancement that cannot lose the sparse world.
+    """
+    frames_by_evidence, sidecar_count, parse_errors = _depth_sidecar_frames(evidence_items)
 
     if sidecar_count == 0:
         return None
@@ -1505,7 +1971,8 @@ def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
     for dm in metric_maps:
         camera = camera_from_pose(intrinsics, poses_by_id[dm.evidence_id])
         try:
-            dense.extend(depth_map_to_points(dm, camera, stride=options.depth_stride))
+            dense.extend(depth_map_to_points(dm, camera, stride=options.depth_stride,
+                                             image_rgb=_photo_rgb_or_none(evidence_items, dm.evidence_id)))
         except Exception as exc:  # noqa: BLE001 -- per-view isolation
             failed_views += 1
             parse_errors.append(f"{dm.evidence_id}: unprojection failed: {exc}")
@@ -1522,6 +1989,7 @@ def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
         "frames_dimension_mismatch": sum(1 for e in parse_errors if "do not match image_size" in e),
         "failed_views": failed_views,
         "dense_points": len(dense),
+        "dense_points_with_colour": sum(1 for p in dense if p.color is not None),
         "stride": options.depth_stride,
         "errors": parse_errors,
         "note": (

@@ -1,81 +1,83 @@
 # Reality Engine
 
-**New here? Start with [`QUICKSTART.md`](QUICKSTART.md)** (install, start, add photos, refine the same world, export). Developers: [`docs/DEVELOPER_ARCHITECTURE.md`](docs/DEVELOPER_ARCHITECTURE.md). What is verified, and against what: `reality verification`.
+Reality Engine turns captured evidence (overlapping photos of a place) into a versioned 3D world. Photos go through
+COLMAP-based reconstruction into a canonical **WorldIR** with per-entity provenance and uncertainty; adding more photos
+improves the *same* world as a new version you can diff, query and export (glTF / USD / Blender / IFC). A FastAPI
+engine and a Next.js **Studio** sit on top of the same pipeline the `reality` CLI drives.
 
-> **ARCHIVED README — superseded 2026-09-23.** This README references
-> the obsolete "V10" specification and incorrectly describes the project
-> state. Physics, destruction, fire, and disaster simulation were moved
-> to `reality-engine-child` on 2026-09-18. A full browser-based Studio
-> UI (Next.js 16 + Three.js) is now implemented. See
-> `docs/REALITY_ENGINE_CURRENT_STATUS.md` for the authoritative status.
+What is verified, and against what, is in [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) and
+`reality verification --runtime`. Read those before relying on any capability.
 
-World Compiler + Universal Physics + Destruction + Disaster + Studio UI.
+## 60-second start: photos in, 3D world out
 
-Full spec: `REALITY_ENGINE_MASTER_SPECIFICATION_V10_WORLD_PHYSICS_AND_AGENT_BUILD_BIBLE.md`
-(not versioned in this repo — keep it alongside as the standing reference).
-
-## Status
-
-Steps 1-11 of 33 (spec §108). See [`docs/BUILD_ORDER.md`](docs/BUILD_ORDER.md)
-for exactly what's implemented versus scaffolded, and for the honest
-list of physics-backend gaps (no CCD, no angular contact response —
-read it before building anything on top of the physics layer). No
-rendering, reconstruction, or disaster simulation yet — deliberate;
-the spec itself says not to start there.
-
-A "V11 DETAILED" upload (5 files, ~1.1M lines) was checked and is
-overwhelmingly machine-generated template filler with one substantive
-220-line prose section (V11 §900-969) that's been incorporated — see
-`docs/BUILD_ORDER.md` for specifics before trusting anything else from
-that upload set.
-
-> **OUTDATED:** The following "Implemented" section reflects a
-> pre-2026-09-15 state. See `docs/REALITY_ENGINE_CURRENT_STATUS.md`
-> for current status.
-
-Implemented:
-
-- **WorldIR** (`world_ir/`) — the canonical world representation: entity
-  system with relationship-integrity checks, coordinate frames/transforms,
-  a versioned save/load format.
-- **provenance** (`provenance/`) — the evidence-first model (OBSERVED /
-  RECONSTRUCTED / ESTIMATED / INFERRED / GENERATED / UNKNOWN / CONFLICT)
-  that every value in WorldIR carries.
-- **engine/core** — canonical units with mismatch detection, a
-  deterministic fixed-timestep clock, a dependency-ordered job system,
-  and a seeded RNG with reproducible sub-streams.
-- **engine/world** — a runtime that loads a `WorldIR` package and resolves
-  points between coordinate frames.
-- **engine/physics** — **MOVED TO `reality-engine-child` 2026-09-18**
-  (rigid body backend, collision, contact solver).
-- **events** (`events/`) — a deterministic event bus
-
-> **CURRENTLY IMPLEMENTED (2026-09-23):**
-> - **reconstruction/** — COLMAP backend, orchestrator, scale, depth, fusion, meshing
-> - **perception/** — MiDaS, Mask R-CNN, SAM, lifting, fusion, quality, detail, tracking
-> - **apps/** — Full `reality` CLI + FastAPI backend (10 modules)
-> - **exporters/** — glTF, Blender, USDA, CityJSON, CityGML (13 modules)
-> - **benchmarks/** — Competitive benchmark suite (13 modules)
-> - **frontend/** — Next.js 16 + Three.js viewer, 12 API routes, 33 pages
-> - **.github/workflows/ci.yml** — CI with multi-Python matrix, wheel build
-
-Everything else under `engine/` (physics moved to child),
-`reconstruction/`, `perception/`, `apps/`, `exporters/`, `frontend/`
-now contains real code — see `docs/REALITY_ENGINE_CURRENT_STATUS.md`.
-`gpu/`, `datasets/`, `plugins/`, `shaders/`, `tools/` remain
-placeholder/empty.
-
-## Setup
+Needs Python 3.10+, Node 20+ (for the Studio) and [COLMAP](https://github.com/colmap/colmap/releases) on `PATH`.
 
 ```bash
-cd reality-engine
-python -m venv .venv
-.venv/Scripts/activate  # or: source .venv/bin/activate
+python -m venv .venv && .venv/Scripts/activate      # macOS/Linux: source .venv/bin/activate
 pip install -e ".[dev]"
-pytest
+reality verification --runtime                      # which optional tools this machine can run
+
+# a dataset is a folder with manifest.json + images/ (see QUICKSTART.md for the layout)
+reality compile path/to/dataset -o out/             # capture dataset -> pipeline -> WorldIR + artifacts + exports
+reality validate out/worldir.json                  # check the compiled WorldIR
+reality export out/worldir.json --format gltf -o out/world.gltf   # also usda, blender, cityjson, citygml
 ```
 
-## Repository layout
+`reality compile` flags: `-o/--output` (default `<dataset>/pipeline_out`), `--colmap-binary`, `--no-depth`, `--no-mesh`.
+Run `reality --help` for the rest (`ingest`, `session`, `reconstruct`, `diff`, `query`, `store`, `inspect`, `viewer`, ...).
+The step-by-step, photos-only walk-through (no CLI needed) is [`QUICKSTART.md`](QUICKSTART.md).
 
-See spec §81 (repository structure) and §82 (physics subdirectory) for
-the full rationale; `docs/BUILD_ORDER.md` tracks what's real vs. stubbed.
+## Launch the Studio
+
+```bash
+uvicorn apps.api.main:app --port 8100               # engine API; health: http://localhost:8100/api/health
+cd frontend && npm ci && npm run build && npm start # Studio on http://localhost:3000  (npm run dev while developing)
+```
+
+On Windows, `launch_ui.bat` installs frontend dependencies if needed and opens the Studio on port 3000; it does not
+start the API, so run `uvicorn` first.
+
+## API token
+
+Set `REALITY_API_TOKEN=<secret>` before starting the engine to require `Authorization: Bearer <secret>` on every
+endpoint except `/api/health`. Give the Studio's server the same variable `REALITY_API_TOKEN` (the Next.js proxy routes
+read it server-side and never ship it to the browser). `NEXT_PUBLIC_API_TOKEN` is an optional fallback that *is* visible
+to the browser, so use it only for a local, trusted setup. With no token set, only loopback clients are served.
+Single shared token, no users or roles; see `docs/KNOWN_LIMITATIONS.md`.
+
+## Tests
+
+```bash
+pytest -m "not slow"                  # default suite; what CI runs on every push
+pytest -m slow                        # long-running (real-model downloads, GPU); CI runs it nightly
+cd frontend && npx tsc --noEmit && npm run lint && npm run test:contract
+```
+
+Markers are defined in `pyproject.toml` (`slow`, `physics`, ...).
+
+## Project layout
+
+| Path | What it is |
+| --- | --- |
+| `apps/api/` | FastAPI engine (`apps.api.main:app`), including `auth.py` |
+| `apps/cli/` | The `reality` command-line interface |
+| `apps/viewer/` | Self-contained offline viewer builder (`reality viewer`) |
+| `frontend/` | Next.js Studio (UI plus `src/app/api/*` proxy routes) |
+| `evidence/` | Sessions, datasets and session merging |
+| `reconstruction/`, `registration/` | Calibration, SfM/MVS, meshing; cross-source alignment |
+| `world_ir/`, `worldstore/` | Canonical WorldIR; versioned persistence |
+| `provenance/`, `uncertainty/` | Evidence-first provenance; uncertainty propagation |
+| `exporters/` | glTF, USD, Blender, CityJSON/CityGML, IFC bridge |
+| `perception/`, `synthetic/`, `procedural/` | Optional depth/segmentation; synthetic fixtures; procedural generation |
+| `sdk/` | Public Python SDK (`sdk/reality.py`) |
+| `tests/` | Python test suite |
+| `docs/` | Architecture, status, roadmap and per-subsystem specs |
+
+`apps/capture/` and `apps/studio/` are placeholders ("Not yet implemented").
+
+## Docs
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) -- how the system is built
+- [`QUICKSTART.md`](QUICKSTART.md) -- install, start, add photos, refine, export
+- [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) -- what is and is not verified
+- [`docs/implementation/ROADMAP.md`](docs/implementation/ROADMAP.md) -- prioritised pending work

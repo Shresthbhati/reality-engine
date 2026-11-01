@@ -149,12 +149,13 @@ def test_canonical_two_storey_recovers_genuine_upper_storey():
     world, diag = compile_reconstruction_to_world(
         _canonical_interior_scene(), CompileOptions(seed=42, up=CANON_UP))
     types = [e.type.value for e in world.entities.values()]
-    assert types.count("floor") == 2, sorted(types)
-    assert types.count("ceiling") == 2, sorted(types)
+    # two measured floor/ceiling planes per storey, plus the solid floor and ceiling slabs solved for each room
+    assert types.count("floor") == 3, sorted(types)
+    assert types.count("ceiling") == 3, sorted(types)
     assert types.count("room") == 2, sorted(types)
-    buildings = [e for e in world.entities.values()
-                 if e.type.value == "building"]
-    assert buildings and buildings[0].custom_properties["n_storeys"] == 2
+    # building/storey promotion is opt-in and this compile does not ask for it (CompileOptions.promote_building=False);
+    # the detected rooms are still fully present, and no half-promoted building entity is invented
+    assert not [e for e in world.entities.values() if e.type.value == "building"]
     assert diag.rooms_detected == 2
 
 

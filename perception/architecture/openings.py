@@ -401,3 +401,62 @@ def promote_opening_to_entity(
 
 class OpeningPromotionError(ValueError):
     """Opening promotion refused (host wall absent, unknown kind)."""
+
+
+# ------------------------------------------------------------------
+# Hosting: which solid wall carries an opening, and where in it (plan task S4)
+# ------------------------------------------------------------------
+
+#: An opening belongs to a wall when its centre is within this plan distance of the wall's inner face (a recessed window
+#: sits up to a wall-thickness behind it; the shell model's own tolerance is the same 0.35 m).
+HOST_MAX_PLANE_DISTANCE_M = 0.35
+#: ... and at least this share of its width lies within the wall's extent along the wall.
+HOST_MIN_OVERLAP_FRACTION = 0.6
+
+
+@dataclass(frozen=True)
+class InWallRect:
+    """An opening's rectangle in its host wall's own frame: ``offset_m`` along the wall from its start, ``sill_m`` above
+    the floor, plus width/height. All measured from the opening's bounds, clipped to the wall."""
+
+    wall_index: int
+    offset_m: float
+    sill_m: float
+    width_m: float
+    height_m: float
+    plane_distance_m: float
+
+    def to_dict(self) -> dict:
+        return {"wall_index": self.wall_index, "offset_m": round(self.offset_m, 4), "sill_m": round(self.sill_m, 4),
+                "width_m": round(self.width_m, 4), "height_m": round(self.height_m, 4),
+                "plane_distance_m": round(self.plane_distance_m, 4)}
+
+
+def host_opening_on_wall(corners_abh: Sequence[Sequence[float]], walls: Sequence) -> Optional[InWallRect]:
+    """The wall (from ``walls``: objects with ``a``, ``b`` plan points, ``height_m`` and ``length_m``) that hosts an opening
+    whose bounds have the given (a, b, height-above-floor) corners, with the in-wall rectangle; None when no wall fits.
+
+    Decided by plane distance and in-plane bounds only -- never by guesswork about which wall "should" have a door."""
+    best = None
+    for k, w in enumerate(walls):
+        L = w.length_m
+        if L < 1e-6:
+            continue
+        dx, dy = (w.b[0] - w.a[0]) / L, (w.b[1] - w.a[1]) / L
+        ss = [(c[0] - w.a[0]) * dx + (c[1] - w.a[1]) * dy for c in corners_abh]
+        off = [abs((c[0] - w.a[0]) * dy - (c[1] - w.a[1]) * dx) for c in corners_abh]
+        dist = sum(off) / len(off)
+        s0, s1 = min(ss), max(ss)
+        width = s1 - s0
+        inside = min(s1, L) - max(s0, 0.0)
+        if dist > HOST_MAX_PLANE_DISTANCE_M or width < 1e-6 or inside < HOST_MIN_OVERLAP_FRACTION * width or inside < 0.1:
+            continue
+        hs = [c[2] for c in corners_abh]
+        sill = max(0.0, min(hs))
+        top = max(hs) if w.height_m is None else min(max(hs), w.height_m)
+        if top - sill < 0.05:
+            continue
+        rect = InWallRect(k, max(0.0, s0), sill, inside, top - sill, dist)
+        if best is None or dist < best.plane_distance_m:
+            best = rect
+    return best

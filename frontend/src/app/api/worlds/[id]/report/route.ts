@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
+import { BACKEND_URL, backendFetch } from "@/lib/api/backend";
 
 /**
  * Thin proxy to `GET /api/worlds/{world_id}/report`
@@ -26,7 +26,7 @@ export async function GET(
     const url = new URL(`${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/report`);
     if (version) url.searchParams.set("version", version);
 
-    const response = await fetch(url.toString(), {
+    const response = await backendFetch(url.toString(), {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(30000),
     });

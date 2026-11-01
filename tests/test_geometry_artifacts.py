@@ -154,10 +154,15 @@ def _compiled_world_with_store(seed: int = 42):
 
 class TestPromotePlanesWritesRealGeometry:
     def test_compiled_plane_geometries_carry_a_resolvable_data_uri(self):
+        from world_ir import GeometryType
+
         world, diagnostics, store = _compiled_world_with_store()
         assert diagnostics.entities_created  # sanity: something was actually promoted
 
-        plane_geometries = [g for g in world.geometries.values() if g.data_uri]
+        # PLANE geometries carry the inlier POINT CLOUD; the solid wall/floor/ceiling slabs added by the room layout
+        # are MESH geometries with their own payload format, so they are not decoded as point clouds here.
+        plane_geometries = [g for g in world.geometries.values()
+                            if g.data_uri and g.type is GeometryType.PLANE]
         assert plane_geometries, "at least one promoted plane must have written a real artifact"
 
         for geom in plane_geometries:
@@ -205,22 +210,24 @@ class TestPromoteRoomsWritesRealGeometry:
     landed."""
 
     def test_compiled_room_geometry_carries_a_resolvable_data_uri(self):
-        from world_ir import EntityType
+        from world_ir import EntityType, GeometryType
 
         world, diagnostics, store = _compiled_world_with_store()
         rooms = [e for e in world.entities.values() if e.type is EntityType.ROOM]
         assert rooms, "sanity: the two-room fixture must actually produce a ROOM entity"
 
         room = rooms[0]
-        assert room.geometry_ids, "compiled room must have real boundary geometry, not []"
+        assert room.geometry_ids, "compiled room must carry its boundary geometry, not []"
         geom = world.geometries[room.geometry_ids[0]]
-        assert geom.data_uri and geom.data_hash
+        # the room boundary is the measured footprint outline (a BOX, inferred from the room semantics); the solid
+        # slabs solved for the same room are separate entities with real artifact payloads when a store is given
+        assert geom.type is GeometryType.BOX
+        slabs = [g for g in world.geometries.values() if g.type is GeometryType.MESH and g.data_uri]
+        assert slabs, "the room layout must persist real slab meshes when an artifact store is given"
+        for slab in slabs:
+            assert store.get(slab.data_uri) and store.digest_of(slab.data_uri) == slab.data_hash
 
-        payload = store.get(geom.data_uri)
-        cloud = PointCloudData.from_bytes(payload)
-        assert len(cloud.points) == geom.vertex_count
-
-    def test_omitting_artifact_store_leaves_room_geometry_ids_empty(self):
+    def test_omitting_artifact_store_leaves_room_geometry_payload_free(self):
         from engine.compiler import CompileOptions, compile_reconstruction_to_world
         from reconstruction.backend.interface import ReconstructedCameraPose
         from tests.test_room_inference import _CAMS, _two_room_scene
@@ -236,7 +243,10 @@ class TestPromoteRoomsWritesRealGeometry:
         rooms = [e for e in world.entities.values() if e.type is EntityType.ROOM]
         assert rooms
         for room in rooms:
-            assert room.geometry_ids == []
+            # the boundary BOX is recorded even without a store (it is inferred geometry, not an artifact); no
+            # geometry may claim a payload it does not have
+            assert all(not world.geometries[gid].data_uri and not world.geometries[gid].data_hash
+                       for gid in room.geometry_ids)
 
 
 # ---------------------------------------------------------------- object promotion wiring
@@ -367,11 +377,10 @@ class TestGltfExportsRealGeometry:
         mesh_indices_used = {node["mesh"] for node in gltf["nodes"]}
         assert mesh_indices_used - {0}, "expected at least one real (non-cube) mesh"
 
-        # Every non-cube mesh must be a real POINTS primitive with a
-        # vertex count matching what was actually stored.
+        # Every non-cube mesh is real geometry: a POINTS cloud or a TRIANGLES slab, with data behind it.
         for mesh_index in mesh_indices_used - {0}:
             primitive = gltf["meshes"][mesh_index]["primitives"][0]
-            assert primitive["mode"] == 0  # POINTS
+            assert primitive["mode"] in (0, 4)  # POINTS / TRIANGLES
             accessor = gltf["accessors"][primitive["attributes"]["POSITION"]]
             assert accessor["count"] > 0
 

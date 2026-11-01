@@ -101,6 +101,10 @@ class WorldMeasurement(Base):
     uncertainty: Mapped[float | None] = mapped_column(Float, nullable=True)
     method: Mapped[str] = mapped_column(String(200))
     scale_state: Mapped[str] = mapped_column(String(16))
+    #: D1 dimension state (MEASURED/RECONSTRUCTED/ESTIMATED/VERIFIED); NULL on rows saved before D1.
+    state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    #: user tape-confirmed value (VERIFIED override); the computed `value` is kept beside it.
+    verified_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -295,3 +299,57 @@ class CompletionProposal(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class Site(Base):
+    """A user-directed composition of several reconstructed worlds on a metric grid. Placement is chosen by the
+    user; it is NOT automatic geo-registration."""
+
+    __tablename__ = "sites"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    grid_cell_m: Mapped[float] = mapped_column(Float, default=50.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SitePlacement(Base):
+    """One world placed in a Site cell, with a user-chosen offset/rotation/scale."""
+
+    __tablename__ = "site_placements"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), index=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    cell_x: Mapped[int] = mapped_column(Integer)
+    cell_z: Mapped[int] = mapped_column(Integer)
+    offset_x_m: Mapped[float] = mapped_column(Float, default=0.0)
+    offset_z_m: Mapped[float] = mapped_column(Float, default=0.0)
+    rotation_deg: Mapped[float] = mapped_column(Float, default=0.0)
+    scale: Mapped[float] = mapped_column(Float, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SiteComposite(Base):
+    """The world a Site was composed into (one per site/kind/name; re-composing commits a new version to it)."""
+
+    __tablename__ = "site_composites"
+
+    site_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SiteAnchor(Base):
+    """Optional real-world anchor of a Site (user-set): where its origin is on Earth and how the grid is rotated."""
+
+    __tablename__ = "site_anchors"
+
+    site_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    lat: Mapped[float] = mapped_column(Float)
+    lon: Mapped[float] = mapped_column(Float)
+    rotation_deg: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

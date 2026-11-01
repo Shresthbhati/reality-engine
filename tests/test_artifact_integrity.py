@@ -228,7 +228,7 @@ def test_hostile_filename_sanitized_end_to_end(client):
     evil = '../../etc/x"\r\nSet-Cookie: pwned=1.jpg'
     r = client.post(
         "/api/uploads",
-        files={"file": (evil, b"jpeg-bytes", "image/jpeg")},
+        files={"file": (evil, b"\xff\xd8\xff\xe0jpeg-bytes", "image/jpeg")},
     )
     assert r.status_code == 201, r.text
     ev_id = r.json()["evidence_id"]
@@ -238,7 +238,7 @@ def test_hostile_filename_sanitized_end_to_end(client):
     assert ev["name"], "sanitized name must never be empty"
     art = client.get(f"/api/evidence/{ev_id}/artifact")
     assert art.status_code == 200
-    assert art.content == b"jpeg-bytes"
+    assert art.content == b"\xff\xd8\xff\xe0jpeg-bytes"
     # Structural header safety: Starlette RFC-5987-encodes the filename,
     # so hostile text may survive only as inert percent-escapes -- it must
     # never appear raw (no CR/LF for response splitting, no raw quotes to

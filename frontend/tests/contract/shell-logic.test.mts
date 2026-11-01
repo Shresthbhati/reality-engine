@@ -30,7 +30,7 @@ test("every nav href points at a real route; entries without one are null (disab
     if (e.href !== null) assert.ok(routeExists(e.href), `${e.id} -> ${e.href} has no page.tsx`);
   }
   assert.equal(MODE_TABS.find((t) => t.id === "compare")?.href, null);
-  assert.equal(RAIL_ITEMS.find((t) => t.id === "help")?.href, null);
+  assert.ok(RAIL_ITEMS.every((e) => e.href !== null), "rail has no disabled placeholders");
 });
 
 test("Home is active only on /, never on a world workspace", () => {

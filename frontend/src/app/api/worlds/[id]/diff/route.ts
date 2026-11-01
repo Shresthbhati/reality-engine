@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
+import { BACKEND_URL, backendFetch } from "@/lib/api/backend";
 
 /**
  * Thin proxy to the FastAPI contract
@@ -34,7 +34,7 @@ export async function GET(
     if (baseVersion) q.set("base_version", baseVersion);
     if (headVersion) q.set("head_version", headVersion);
 
-    const res = await fetch(
+    const res = await backendFetch(
       `${BACKEND_URL}/api/worlds/${encodeURIComponent(id)}/diff?${q.toString()}`,
       { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10000) }
     );

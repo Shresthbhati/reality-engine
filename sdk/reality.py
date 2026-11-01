@@ -45,6 +45,11 @@ from engine.scene_graph.spatial_index import SpatialIndex
 from exporters.blender.exporter import export_to_blender_script_with_report
 from exporters.citygml.exporter import export_to_citygml_with_report
 from exporters.cityjson.exporter import export_to_cityjson_with_report
+from exporters.floorplan import (
+    export_to_floorplan_dxf_with_report,
+    export_to_floorplan_svg_with_report,
+    export_to_room_report_pdf_with_report,
+)
 from exporters.gis.exporter import export_to_geojson_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
 from exporters.godot.exporter import export_to_tscn_with_report
@@ -128,6 +133,10 @@ _EXPORTERS = {
     "unreal": export_to_unreal_script_with_report,  # Unreal Editor Python script
     "sumo": export_to_sumo_with_report,         # JSON {filename: text}: netconvert node + edge files
     "habitat": export_to_habitat_with_report,   # JSON {filename: text}: stage bundle
+    # F8: 2D plan and report, read from the same canonical WorldIR. Dimensions carry their D1 state.
+    "floorplan_svg": export_to_floorplan_svg_with_report,
+    "floorplan_dxf": export_to_floorplan_dxf_with_report,
+    "room_report_pdf": export_to_room_report_pdf_with_report,
 }
 
 #: formats whose content is a JSON object {filename: text} that must be written as FILES, not as one document
@@ -197,6 +206,9 @@ def export(world: WorldIR, format: str, artifact_store: Optional[ArtifactStore] 
         )
     return exporter_fn(world, artifact_store)
 
+
+#: single-document export format names accepted by `export()`
+EXPORT_FORMATS = frozenset(_EXPORTERS)
 
 #: game-ready profile names (multi-file bundles, content is ``{filename: bytes}``); see exporters/profiles.py
 EXPORT_PROFILES = frozenset(PROFILES)

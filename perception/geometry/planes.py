@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+
+import numpy as np
 from typing import Dict, List, Sequence, Tuple
 
 from engine.core.rng import DeterministicRNG
@@ -753,14 +755,14 @@ def detect_planes(
         rng = DeterministicRNG(seed, name=f"plane-ransac/{plane_seq}")
         remaining_sorted = sorted(remaining_ids)
 
+        # Vectorised with the SAME elementwise arithmetic order as the scalar form (n0*x + n1*y + n2*z + d), so the
+        # inlier sets are identical; the per-point Python loop made dense clouds unusable (500 RANSAC rounds x N).
+        _xyz = np.asarray([positions_by_id[pid] for pid in remaining_sorted], dtype=float).reshape(-1, 3)
+        _ids = np.asarray(remaining_sorted, dtype=object)
+
         def _collect(normal, d) -> List[str]:
-            return [
-                pid for pid in remaining_sorted
-                if abs(normal[0] * positions_by_id[pid][0]
-                       + normal[1] * positions_by_id[pid][1]
-                       + normal[2] * positions_by_id[pid][2]
-                       + d) <= distance_tolerance_m
-            ]
+            dist = normal[0] * _xyz[:, 0] + normal[1] * _xyz[:, 1] + normal[2] * _xyz[:, 2] + d
+            return _ids[np.abs(dist) <= distance_tolerance_m].tolist()
 
         # ---- consensus ----
         best_normal = None

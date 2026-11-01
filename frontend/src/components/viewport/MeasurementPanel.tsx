@@ -13,6 +13,9 @@ import {
   histogram,
   provenanceSummary,
   resolveUnitContext,
+  stateFor,
+  STATE_HELP,
+  type DimensionState,
   unitFor,
   unitLabelFromRow,
   type MeasureKind,
@@ -40,6 +43,25 @@ interface Live {
 
 function label(m: SavedMeasurement): string {
   return `${KIND_LABEL[m.kind]} ${formatValue(m.value, unitLabelFromRow(m.unit), 2)}`;
+}
+
+const STATE_STYLE: Record<DimensionState, string> = {
+  MEASURED: "bg-emerald-500/15 border-emerald-500/40 text-emerald-300",
+  RECONSTRUCTED: "bg-sky-500/15 border-sky-500/40 text-sky-300",
+  ESTIMATED: "bg-amber-500/15 border-amber-500/40 text-amber-300",
+  VERIFIED: "bg-violet-500/15 border-violet-500/40 text-violet-300",
+};
+
+function StateBadge({ state }: { state: DimensionState }) {
+  return (
+    <span
+      data-testid="state-badge"
+      title={STATE_HELP[state]}
+      className={`px-1.5 py-0.5 rounded border text-[9px] font-mono ${STATE_STYLE[state]}`}
+    >
+      {state}
+    </span>
+  );
 }
 
 export default function MeasurementPanel({ worldId, world, getController, onClose }: Props) {
@@ -135,8 +157,8 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
 
   return (
     <div
-      className="absolute top-14 left-3 z-20 w-[310px] max-h-[calc(100%-5rem)] overflow-y-auto rounded-lg backdrop-blur-md text-xs pointer-events-auto"
-      style={{ background: "rgba(10,16,28,0.92)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+      className="absolute top-14 left-3 z-20 w-[310px] max-h-[calc(100%-5rem)] overflow-y-auto rounded-lg text-xs pointer-events-auto"
+      style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
       aria-label="Measurement mode"
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
@@ -170,7 +192,7 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
               onClick={() => !disabled && setTool(t.kind as MeasureKind)}
               className={`text-left px-2 h-7 rounded border transition-colors ${
                 active
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[rgba(0,229,255,0.12)] cursor-pointer"
+                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-subtle)] cursor-pointer"
                   : disabled
                     ? "border-transparent text-neutral-600 cursor-not-allowed"
                     : "border-transparent hover:text-white hover:bg-neutral-800 cursor-pointer"
@@ -194,8 +216,11 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
         <div className="text-[10px] uppercase tracking-wider text-neutral-500">Current</div>
         {live && live.points.length > 0 ? (
           <>
-            <div className="text-lg font-bold text-white font-mono">
-              {preview !== null ? formatValue(preview, unitFor(live.tool, ctx)) : `${live.points.length} point(s)…`}
+            <div className="flex items-center gap-2">
+              <div className="text-lg font-bold text-white font-mono">
+                {preview !== null ? formatValue(preview, unitFor(live.tool, ctx)) : `${live.points.length} point(s)…`}
+              </div>
+              {preview !== null && <StateBadge state={ctx.state} />}
             </div>
             <div className="text-[11px]">{formatUncertainty(ctx.uncertainty, ctx.lengthUnit)}</div>
             <div className="flex gap-1.5 pt-1">
@@ -227,7 +252,14 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
         <div className="px-3 py-2 border-t border-[var(--border)] space-y-1">
           <div className="text-[10px] uppercase tracking-wider text-neutral-500">Measurement Details</div>
           <div className="text-white font-semibold">{KIND_LABEL[selected.kind]}</div>
+          <div className="flex justify-between gap-3 items-center">
+            <span className="text-neutral-500 shrink-0">State</span>
+            <StateBadge state={stateFor(selected)} />
+          </div>
           <Row k="Estimated Value" v={formatValue(selected.value, unitLabelFromRow(selected.unit))} />
+          {selected.verified_value != null && (
+            <Row k="Tape-verified" v={formatValue(selected.verified_value, unitLabelFromRow(selected.unit))} />
+          )}
           <Row k="Uncertainty (±)" v={selected.uncertainty === null ? "not estimated" : selected.uncertainty === 0 ? "exact (authored)" : `± ${selected.uncertainty.toFixed(3)} ${unitLabelFromRow(selected.unit)}`} />
           <Row k="Confidence" v="not estimated" />
           <Row k="Method" v={selected.method} />
@@ -243,18 +275,19 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
         ) : (
           <table className="w-full text-[11px]">
             <thead className="text-neutral-500 text-left">
-              <tr><th>Type</th><th>Value</th><th>±</th><th>Created</th><th /></tr>
+              <tr><th>Type</th><th>Value</th><th>State</th><th>±</th><th>Created</th><th /></tr>
             </thead>
             <tbody>
               {saved.map((m) => (
                 <tr
                   key={m.id}
                   onClick={() => { setSelectedId(m.id); getController()?.focusMeasurement(m.id); }}
-                  className={`cursor-pointer hover:bg-neutral-800 ${m.id === selectedId ? "text-white bg-[rgba(0,229,255,0.1)]" : ""}`}
+                  className={`cursor-pointer hover:bg-neutral-800 ${m.id === selectedId ? "text-white bg-[var(--accent-subtle)]" : ""}`}
                   title={m.method}
                 >
                   <td>{KIND_LABEL[m.kind]}</td>
                   <td className="font-mono">{formatValue(m.value, unitLabelFromRow(m.unit), 2)}</td>
+                  <td><StateBadge state={stateFor(m)} /></td>
                   <td className="font-mono">{m.uncertainty === null ? "n/e" : m.uncertainty === 0 ? "exact" : m.uncertainty.toFixed(2)}</td>
                   <td>{m.created_at ? new Date(m.created_at).toLocaleTimeString() : "—"}</td>
                   <td>

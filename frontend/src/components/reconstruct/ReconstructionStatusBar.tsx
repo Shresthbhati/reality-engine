@@ -24,6 +24,7 @@ import { changeCategoryCounts, describeBuild, evidenceInVersion, modelStateCopy,
 import type { WorldIR } from "@/types/worldir";
 import ScaleCard from "@/components/reconstruct/ScaleCard";
 import RoomSummaryCard from "@/components/reconstruct/RoomSummaryCard";
+import { parseCaptureQuality } from "@/lib/viewport/structure-points-model";
 import { cn } from "@/lib/utils";
 
 const STATE_STYLE: Record<ReconstructionState, string> = {
@@ -292,6 +293,7 @@ export default function ReconstructionStatusBar({
             scale={viewingOld ? null : model?.scale}
             imagesUsed={viewingOld ? inspecting?.images_used : model?.images_used}
             imagesRegistered={viewingOld ? inspecting?.registered_ids?.length ?? null : model?.images_registered}
+            captureQuality={viewingOld ? null : parseCaptureQuality(model?.capture_quality)}
           />
         </div>
       )}

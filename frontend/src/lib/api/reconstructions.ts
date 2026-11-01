@@ -126,6 +126,10 @@ export interface WorldStatus {
     device_depth_scale?: { [k: string]: unknown } | null;
     images_used: number;
     images_registered: number;
+    /** capture-quality verdict for this version (absent on versions that predate it); parse with parseCaptureQuality */
+    capture_quality?: unknown;
+    /** room corners / opening corners / dimension-defining points in the point cloud's frame; parse with parseStructurePoints */
+    structure_points?: unknown;
     /** measured statements about what this version changed versus the previous one */
     changes?: string[];
     verdict?: "ACCEPT" | "ACCEPT_WITH_UNCERTAINTY" | null;

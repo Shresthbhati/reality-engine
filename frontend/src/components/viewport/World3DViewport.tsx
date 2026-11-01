@@ -61,6 +61,7 @@ import {
   type ViewMode,
 } from "@/lib/viewport/view-model";
 import { resolveUnitContext } from "@/lib/viewport/measure-model";
+import { isUnplaced, type CaptureQuality, type StructurePoint } from "@/lib/viewport/structure-points-model";
 import MeasurementPanel from "./MeasurementPanel";
 
 const NO_SHELL_REASON =
@@ -73,6 +74,10 @@ interface World3DViewportProps {
   points: Float32Array | null;
   cameras: CamerasPayload | null;
   mesh?: { positions: Float32Array; indices: Uint32Array } | null;
+  /** Room corners / opening corners / dimension points (the cloud's frame). Shown instead of the dense cloud unless "Full point cloud" is on. */
+  structurePoints?: StructurePoint[] | null;
+  /** Capture-quality verdict. When "insufficient" the photos were not placed in one 3D space: no room is drawn, an explanation is shown. */
+  captureQuality?: CaptureQuality | null;
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
   highlightedEvidenceId?: string | null;
@@ -119,6 +124,8 @@ export default function World3DViewport({
   points,
   cameras,
   mesh = null,
+  structurePoints = null,
+  captureQuality = null,
   selectedEntityId,
   onSelectEntity,
   highlightedEvidenceId,
@@ -144,8 +151,10 @@ export default function World3DViewport({
   onSelectRef.current = onSelectEntity;
   onMeasureRef.current = onMeasurementChange;
 
+  const unplaced = isUnplaced(captureQuality);
   const [layers, setLayers] = useState<ViewportLayers>({
     points: true,
+    fullCloud: false,
     entities: true,
     cameras: true,
     mesh: true,
@@ -176,6 +185,7 @@ export default function World3DViewport({
     canonicalPoints: 0,
     renderedPoints: 0,
     isLODSampled: false,
+    pointMode: "none",
     cameras: 0,
     entities: 0,
     isContextLost: false,
@@ -244,7 +254,7 @@ export default function World3DViewport({
     if (!controller) return;
 
     if (world) {
-      controller.loadWorldData(world, points, cameras, mesh);
+      controller.loadWorldData(world, points, cameras, mesh, { structurePoints, suppressLegacy: unplaced });
       setStats(controller.getStatistics());
       setHasShell(controller.hasShell());
       if (controller.hasOutdoor()) {
@@ -254,24 +264,30 @@ export default function World3DViewport({
         setOutdoorInfo(null);
       }
     }
-  }, [world, points, cameras, mesh]);
+  }, [world, points, cameras, mesh, structurePoints, unplaced]);
+
+  // The point layer is swapped inside the controller when "Full point cloud" changes: refresh the HUD counts.
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (controller) setStats(controller.getStatistics());
+  }, [layers.fullCloud]);
 
   // View mode / cutaway / hidden entities (re-applied after every data load so a rebuilt shell keeps them)
   useEffect(() => {
     controllerRef.current?.setRenderMode(viewModeToRender(mode));
-  }, [mode, world, points, cameras, mesh]);
+  }, [mode, world, points, cameras, mesh, structurePoints, unplaced]);
 
   useEffect(() => {
     controllerRef.current?.setCutaway(cutaway);
-  }, [cutaway, world, points, cameras, mesh]);
+  }, [cutaway, world, points, cameras, mesh, structurePoints, unplaced]);
 
   useEffect(() => {
     controllerRef.current?.setHiddenEntities(hiddenEntityIds ?? null);
-  }, [hiddenEntityIds, world, points, cameras, mesh]);
+  }, [hiddenEntityIds, world, points, cameras, mesh, structurePoints, unplaced]);
 
   useEffect(() => {
     controllerRef.current?.setShowDimensions(showDims && metersKnown);
-  }, [showDims, metersKnown, world, points, cameras, mesh]);
+  }, [showDims, metersKnown, world, points, cameras, mesh, structurePoints, unplaced]);
 
   // Sync spatial query filtering
   useEffect(() => {
@@ -548,7 +564,22 @@ export default function World3DViewport({
             className="flex items-center gap-3 px-3 py-1.5 rounded-md text-xs font-mono-num"
             style={{ ...PANEL, color: "var(--text-secondary)" }}
           >
-            {stats.isLODSampled ? (
+            {stats.pointMode === "structure" ? (
+              <span
+                data-testid="point-mode-structure"
+                title={`${stats.renderedPoints.toLocaleString()} structure points (room corners, opening corners, dimension points). The dense cloud${stats.canonicalPoints > 0 ? ` (${stats.canonicalPoints.toLocaleString()} points)` : ""} is hidden: turn on "Full point cloud" to see it.`}
+              >
+                {stats.renderedPoints.toLocaleString()} structure pts
+              </span>
+            ) : stats.pointMode === "decimated" ? (
+              <span
+                className="text-[var(--info)]"
+                data-testid="point-mode-decimated"
+                title={`Cloud thinned to ${stats.renderedPoints.toLocaleString()} of ${stats.canonicalPoints.toLocaleString()} points. No structure points were reported. Turn on "Full point cloud" to see all of it.`}
+              >
+                {stats.renderedPoints.toLocaleString()} / {stats.canonicalPoints.toLocaleString()} pts (thinned)
+              </span>
+            ) : stats.isLODSampled ? (
               <span
                 className="text-[var(--info)]"
                 title={`${stats.renderedPoints.toLocaleString()} rendered / ${stats.canonicalPoints.toLocaleString()} canonical points (LOD strided for interactive WebGL rendering)`}
@@ -561,6 +592,25 @@ export default function World3DViewport({
             <span>{stats.entities} entities</span>
             <span>{stats.cameras} cameras</span>
           </div>
+
+          {stats.canonicalPoints > 0 && (
+            <button
+              type="button"
+              data-testid="full-point-cloud-toggle"
+              aria-pressed={layers.fullCloud}
+              onClick={() => toggleLayer("fullCloud")}
+              title="Show every point of the dense cloud instead of only the structure points"
+              className="pointer-events-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-mono cursor-pointer"
+              style={{
+                ...PANEL,
+                color: layers.fullCloud ? "var(--accent)" : "var(--text-secondary)",
+                background: layers.fullCloud ? "var(--accent-subtle)" : PANEL.background,
+              }}
+            >
+              <Eye className="h-3.5 w-3.5" aria-hidden />
+              Full point cloud
+            </button>
+          )}
 
           {outdoorInfo && (
             <div
@@ -810,7 +860,7 @@ export default function World3DViewport({
         </div>
 
         {/* Bottom left: legend / honest no-shell notice */}
-        {!hasNoWorldData && (!hasModes || legend.length > 0) && (
+        {!hasNoWorldData && !unplaced && (!hasModes || legend.length > 0) && (
           <div
             className="absolute bottom-3 left-3 z-10 max-w-[240px] rounded-md px-2.5 py-2 text-[11px] leading-snug pointer-events-none"
             style={PANEL}
@@ -923,8 +973,36 @@ export default function World3DViewport({
         </div>
       )}
 
+      {/* The photos could not be placed in one 3D space: say so, with the engine's own reasons and advice */}
+      {!isLoading && !isReconFailed && unplaced && captureQuality && (
+        <div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/90 pointer-events-auto"
+          role="alert"
+          data-testid="capture-insufficient"
+        >
+          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-amber-950/40 border border-amber-500/40 text-amber-400 mb-4 shadow-inner">
+            <AlertTriangle className="w-7 h-7 text-amber-400" />
+          </div>
+          <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
+            The photos could not be placed in one 3D space
+          </h3>
+          {captureQuality.message && (
+            <p className="text-xs text-neutral-300 max-w-lg mb-3 leading-relaxed" data-testid="capture-insufficient-message">
+              {captureQuality.message}
+            </p>
+          )}
+          {captureQuality.advice.length > 0 && (
+            <ul className="max-w-lg space-y-1 text-left text-xs text-neutral-300 list-disc pl-5" data-testid="capture-insufficient-advice" aria-label="What to do next">
+              {captureQuality.advice.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* Explicit Empty State when no world data exists (honest, never fake) */}
-      {!isLoading && !isReconFailed && (hasNoWorldData || (!world && stats.points === 0)) && (
+      {!isLoading && !isReconFailed && !unplaced && (hasNoWorldData || (!world && stats.points === 0)) && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/90 pointer-events-auto">
           <div className="w-14 h-14 rounded-full flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 mb-4 shadow-inner">
             <Box className="w-7 h-7 text-[var(--accent)]" />

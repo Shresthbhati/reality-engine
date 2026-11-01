@@ -5,6 +5,7 @@
  */
 import type { WorldIR } from "@/types/worldir";
 import { describeScale, type ScaleStageDto } from "../api/scale-model.ts";
+import { isUnplaced, type CaptureQuality } from "../viewport/structure-points-model.ts";
 
 export type DimState = "MEASURED" | "ESTIMATED" | "INFERRED" | "UNKNOWN" | string;
 
@@ -29,6 +30,10 @@ export interface RoomSummary {
   /** explicit sentence shown when dimensions are not in metres */
   unitNote: string | null;
   counts: { walls: number; doors: number; windows: number; furniture: number };
+  /** false when the photos could not be placed in one space: the wall/door/window counts then come from unplaced per-photo boxes and are shown as "—" */
+  countsReliable: boolean;
+  /** the engine's capture-quality verdict when it reported one (drives the verdict line and the capture hint) */
+  captureQuality: CaptureQuality | null;
   /** walls the engine never saw (provenance UNOBSERVED / MISSING / UNSEEN), or the API's number when it gives one */
   unobservedWalls: number;
   warnings: string[];
@@ -49,6 +54,8 @@ export interface SummaryExtras {
   imagesRegistered?: number | null;
   /** capture-coverage from the API when it provides it: its numbers and hint override the derived ones */
   coverage?: { unobserved_walls?: number | null; weak_walls?: number | null; hint?: string | null } | null;
+  /** the version's capture-quality verdict (already parsed); replaces the generic unplaced-photo wording */
+  captureQuality?: CaptureQuality | null;
 }
 
 /** The dimension-state shape `dimensions{<key>: {value, unit, state}}` when the compiler wrote it. */
@@ -132,22 +139,30 @@ export function buildRoomSummary(world: WorldIR | null | undefined, extras: Summ
     furniture: entities.filter((e) => (e.semantic_labels ?? []).includes("furniture_candidate")).length,
   };
 
-  const missingWalls = num(extras.coverage?.unobserved_walls) ?? derivedUnobserved;
+  const cq = extras.captureQuality ?? null;
+  const countsReliable = !isUnplaced(cq);
+  // Walls derived from unplaced per-photo boxes say nothing about the room, so no wall coverage claims are made then.
+  const missingWalls = countsReliable ? num(extras.coverage?.unobserved_walls) ?? derivedUnobserved : 0;
   const used = extras.imagesUsed ?? null;
   const placed = extras.imagesRegistered ?? null;
   const unplaced = used !== null && placed !== null && placed < used ? used - placed : 0;
-  const weakWalls = num(extras.coverage?.weak_walls) ?? 0;
+  const weakWalls = countsReliable ? num(extras.coverage?.weak_walls) ?? 0 : 0;
   const warnings: string[] = [];
   if (missingWalls > 0) warnings.push(`${missingWalls} wall${missingWalls === 1 ? " was" : "s were"} not seen in your photos.`);
   if (weakWalls > 0) warnings.push(`${weakWalls} wall${weakWalls === 1 ? " was" : "s were"} seen only weakly (from one angle or at a grazing view).`);
-  if (unplaced > 0) warnings.push(`${unplaced} of ${used} photos could not be placed in the model.`);
+  // The engine's verdict (shown separately) replaces the generic unplaced-photo line.
+  if (!cq && unplaced > 0) warnings.push(`${unplaced} of ${used} photos could not be placed in the model.`);
 
-  let captureHint: string | null = extras.coverage?.hint ?? null;
-  if (!captureHint && (missingWalls > 0 || weakWalls > 0)) {
+  let captureHint: string | null = countsReliable ? extras.coverage?.hint ?? null : null;
+  if (!countsReliable) {
+    captureHint = cq?.advice[0] ?? null;
+  } else if (!captureHint && (missingWalls > 0 || weakWalls > 0)) {
     captureHint = "Photograph the unseen or weakly seen wall(s) head-on from the opposite side of the room, overlapping your earlier photos by 60% or more.";
-  } else if (!captureHint && unplaced > 0) {
+  } else if (!captureHint && cq && cq.state !== "sufficient") {
+    captureHint = cq.advice[0] ?? null;
+  } else if (!captureHint && !cq && unplaced > 0) {
     captureHint = "Retake the unplaced views with more overlap and a clear shared patch (a corner, a door frame) with a placed photo.";
   }
 
-  return { roomId: room?.id ?? null, metric, scaleKind: view.kind, scaleLabel, dimensions, unitNote, counts, unobservedWalls: missingWalls, warnings, captureHint };
+  return { roomId: room?.id ?? null, metric, scaleKind: view.kind, scaleLabel, dimensions, unitNote, counts, countsReliable, captureQuality: cq, unobservedWalls: missingWalls, warnings, captureHint };
 }

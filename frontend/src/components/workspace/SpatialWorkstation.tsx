@@ -35,6 +35,7 @@ import {
 } from "@/lib/api";
 import { commitWorldCorrection } from "@/lib/api/worlds";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
+import { parseCaptureQuality, parseStructurePoints } from "@/lib/viewport/structure-points-model";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
 import type { PlaceRow, WorldVersionRow } from "@/lib/types";
 import { buildFlowSteps } from "@/lib/reconstruct/flow-model";
@@ -130,6 +131,12 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const { data: pointsBuffer } = useWorldPoints(worldId || null, selectedVersionId, modelVersionKey);
   const { data: camerasPayload } = useWorldCameras(worldId || null, selectedVersionId, modelVersionKey);
   const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null, modelVersionKey);
+
+  // Capture-quality verdict and structure points belong to the CURRENT version's report: not passed when an older version is inspected.
+  const currentModel = reconStatus?.model ?? null;
+  const viewingCurrent = selectedVersionId === null || selectedVersionId === currentModel?.version_id;
+  const captureQuality = useMemo(() => (viewingCurrent ? parseCaptureQuality(currentModel?.capture_quality) : null), [viewingCurrent, currentModel?.capture_quality]);
+  const structurePoints = useMemo(() => (viewingCurrent ? parseStructurePoints(currentModel?.structure_points) : []), [viewingCurrent, currentModel?.structure_points]);
 
   // Derived 3D artifacts
   const points = useMemo(() => {
@@ -625,6 +632,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               points={activePoints}
               cameras={activeCameras}
               mesh={activeMesh}
+              structurePoints={structurePoints}
+              captureQuality={captureQuality}
               selectedEntityId={selectedEntityId}
               onSelectEntity={handleSelectEntity}
               highlightedEvidenceId={selectedEvidenceId}

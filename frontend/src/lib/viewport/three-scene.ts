@@ -16,9 +16,12 @@ import { centroid, cutawayHides, dollyForFov, nearestCenter, parseHexColor, upAx
 import { shouldAutoFrame } from "./autoframe";
 import { buildOutdoor, derivePalette, emptyOutdoorResult, meshBounds, partMesh, type OutdoorPart, type OutdoorResult } from "./outdoor-model";
 import type { MeasureKind, Vec3 } from "./measure-model";
+import { STRUCTURE_COLORS, choosePointDisplay, decimatePoints, type PointDisplayMode, type StructurePoint } from "./structure-points-model";
 
 export interface ViewportLayers {
   points: boolean;
+  /** show the whole dense cloud instead of the structure points (or the decimated cloud when there are none); off by default */
+  fullCloud: boolean;
   entities: boolean;
   cameras: boolean;
   mesh: boolean;
@@ -54,6 +57,8 @@ export interface ViewportStatistics {
   canonicalPoints: number;
   renderedPoints: number;
   isLODSampled: boolean;
+  /** what the point layer shows: structure points, the full cloud, a decimated cloud, or nothing */
+  pointMode: PointDisplayMode;
   cameras: number;
   entities: number;
   isContextLost: boolean;
@@ -212,6 +217,10 @@ export class WorldSceneController {
   // WebGL Context Loss & LOD State
   private isContextLost = false;
   private renderedPointsCount = 0;
+  private pointMode: PointDisplayMode = "none";
+  private structurePoints: StructurePoint[] = [];
+  /** the photos could not be placed in one space: per-photo boxes and shell are not drawn as a room */
+  private suppressLegacy = false;
 
   // Data cache
   private world: WorldIR | null = null;
@@ -222,6 +231,7 @@ export class WorldSceneController {
 
   private layerVisibility: ViewportLayers = {
     points: true,
+    fullCloud: false,
     entities: true,
     cameras: true,
     mesh: true,
@@ -553,8 +563,11 @@ export class WorldSceneController {
     world: WorldIR,
     points: Float32Array | null,
     cameras: CamerasPayload | null,
-    mesh: { positions: Float32Array; indices: Uint32Array } | null = null
+    mesh: { positions: Float32Array; indices: Uint32Array } | null = null,
+    opts: { structurePoints?: StructurePoint[] | null; suppressLegacy?: boolean } = {}
   ) {
+    this.structurePoints = opts.structurePoints ?? [];
+    this.suppressLegacy = Boolean(opts.suppressLegacy);
     this.cameraAnimation = null;
     if (this.selectedEntityId !== null) {
       this.selectedEntityId = null;
@@ -571,7 +584,7 @@ export class WorldSceneController {
     this.rebuildScene();
   }
 
-  private clearSceneLayers() {
+  private disposePointLayer() {
     this.renderedPointsCount = 0;
     if (this.layers.points) {
       this.root.remove(this.layers.points);
@@ -579,6 +592,83 @@ export class WorldSceneController {
       (this.layers.points.material as THREE.Material).dispose();
       this.layers.points = null;
     }
+  }
+
+  /**
+   * The point layer, by `choosePointDisplay`: the structure points (room corners, opening corners, dimension-defining
+   * points) by default; the whole cloud only when `fullCloud` is on; otherwise, with no structure points, a cloud
+   * decimated to DECIMATED_CAP points. `frame` re-aims the camera (a toggle must not move the view).
+   */
+  private buildPointLayer(frame: boolean) {
+    this.disposePointLayer();
+    const total = this.pointsData ? this.pointsData.length / 3 : 0;
+    this.pointMode = choosePointDisplay({ structureCount: this.structurePoints.length, fullCloud: this.layerVisibility.fullCloud, totalPoints: total });
+    if (this.pointsData && total > 0) this.robustExtent = robustPointsBounds(this.pointsData).extent;
+    if (this.pointMode === "none") return;
+
+    let positions: Float32Array;
+    let colors: Float32Array;
+    let material: THREE.PointsMaterial;
+    if (this.pointMode === "structure") {
+      positions = new Float32Array(this.structurePoints.length * 3);
+      colors = new Float32Array(positions.length);
+      const c = new THREE.Color();
+      this.structurePoints.forEach((p, i) => {
+        positions.set(p.position, i * 3);
+        c.setHex(STRUCTURE_COLORS[p.kind]);
+        colors.set([c.r, c.g, c.b], i * 3);
+      });
+      // screen-space markers: legible at any zoom, drawn on top of the shell
+      material = new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, vertexColors: true, depthTest: false, transparent: true });
+    } else {
+      // Practical interactive WebGL rendering limit for dense point clouds
+      const MAX_RENDER_POINTS = 1_500_000;
+      const src = this.pointsData as Float32Array;
+      if (this.pointMode === "decimated") {
+        positions = decimatePoints(src);
+      } else if (total > MAX_RENDER_POINTS) {
+        const stride = Math.ceil(total / MAX_RENDER_POINTS);
+        positions = new Float32Array(Math.floor(total / stride) * 3);
+        let dst = 0;
+        for (let i = 0; i < total; i += stride) {
+          positions[dst++] = src[i * 3];
+          positions[dst++] = src[i * 3 + 1];
+          positions[dst++] = src[i * 3 + 2];
+        }
+      } else {
+        positions = src;
+      }
+      const b = pointsBounds(positions);
+      const span = Math.max(1e-6, b.max[1] - b.min[1]);
+      colors = new Float32Array(positions.length);
+      for (let i = 0; i < positions.length; i += 3) {
+        const t = (positions[i + 1] - b.min[1]) / span; // y in [0, 1]
+        colors[i] = 0.25 + 0.65 * t; // r
+        colors[i + 1] = 0.85; // g
+        colors[i + 2] = 1.0 - 0.45 * t; // b
+      }
+      material = new THREE.PointsMaterial({ size: this.pointMode === "decimated" ? 0.07 : 0.045, vertexColors: true, sizeAttenuation: true });
+    }
+    this.renderedPointsCount = positions.length / 3;
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    this.layers.points = new THREE.Points(geo, material);
+    this.layers.points.renderOrder = this.pointMode === "structure" ? 10 : 0;
+    this.layers.points.visible = this.layerVisibility.points;
+    this.root.add(this.layers.points);
+
+    if (frame) {
+      // Frame on the structure when there is one, else on the robust bounds of the canonical cloud
+      const rb = robustPointsBounds(this.pointMode === "structure" ? positions : (this.pointsData as Float32Array));
+      this.camera.position.set(rb.center[0] + rb.extent * 1.3, rb.center[1] + rb.extent * 0.8, rb.center[2] + rb.extent * 1.3);
+      this.controls.target.set(rb.center[0], rb.center[1], rb.center[2]);
+    }
+  }
+
+  private clearSceneLayers() {
+    this.disposePointLayer();
     if (this.layers.entities) {
       this.root.remove(this.layers.entities);
       for (const mesh of this.entityMeshes.values()) {
@@ -655,77 +745,18 @@ export class WorldSceneController {
     this.clearSceneLayers();
     this.disposeDimensions();
 
-    // 1. Build Point Cloud
-    if (this.pointsData && this.pointsData.length > 0) {
-      const totalPoints = this.pointsData.length / 3;
-      // Practical interactive WebGL rendering limit for dense point clouds
-      const MAX_RENDER_POINTS = 1_500_000;
+    // 1. Build the point layer (structure points by default, the full cloud on request)
+    this.buildPointLayer(true);
 
-      let renderPositions: Float32Array;
-      if (totalPoints > MAX_RENDER_POINTS) {
-        const stride = Math.ceil(totalPoints / MAX_RENDER_POINTS);
-        const sampledCount = Math.floor(totalPoints / stride);
-        renderPositions = new Float32Array(sampledCount * 3);
-        let dst = 0;
-        for (let i = 0; i < totalPoints; i += stride) {
-          const src = i * 3;
-          renderPositions[dst++] = this.pointsData[src];
-          renderPositions[dst++] = this.pointsData[src + 1];
-          renderPositions[dst++] = this.pointsData[src + 2];
-        }
-        this.renderedPointsCount = sampledCount;
-      } else {
-        renderPositions = this.pointsData;
-        this.renderedPointsCount = totalPoints;
-      }
-
-      const b = pointsBounds(renderPositions);
-      const span = Math.max(1e-6, b.max[1] - b.min[1]);
-      const colors = new Float32Array(renderPositions.length);
-
-      for (let i = 0; i < renderPositions.length; i += 3) {
-        const t = (renderPositions[i + 1] - b.min[1]) / span; // y in [0, 1]
-        colors[i] = 0.25 + 0.65 * t; // r
-        colors[i + 1] = 0.85; // g
-        colors[i + 2] = 1.0 - 0.45 * t; // b
-      }
-
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(renderPositions, 3));
-      geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-      this.layers.points = new THREE.Points(
-        geo,
-        new THREE.PointsMaterial({
-          size: 0.045,
-          vertexColors: true,
-          sizeAttenuation: true,
-        })
-      );
-      this.layers.points.visible = this.layerVisibility.points;
-      this.root.add(this.layers.points);
-
-      // Frame camera based on robust bounds of canonical source data
-      const rb = robustPointsBounds(this.pointsData);
-      this.robustExtent = rb.extent;
-      this.camera.position.set(
-        rb.center[0] + rb.extent * 1.3,
-        rb.center[1] + rb.extent * 0.8,
-        rb.center[2] + rb.extent * 1.3
-      );
-      this.controls.target.set(rb.center[0], rb.center[1], rb.center[2]);
-    } else {
-      this.renderedPointsCount = 0;
-    }
-
-    // 1.5 Real room shell from measured interior semantics (replaces the faint per-entity boxes where it applies)
+    // 1.5 Real room shell from measured interior semantics (replaces the faint per-entity boxes where it applies).
+    // Not drawn when the photos could not be placed in one space: it would present unplaced geometry as a room.
     this.atlasCache.clear();
-    this.shellParts = buildRoomShellParts(this.world);
+    this.shellParts = this.suppressLegacy ? [] : buildRoomShellParts(this.world);
     this.buildShell();
     this.buildOutdoorLayer();
 
-    // 2. Build Entities
-    if (this.world && this.world.entities) {
+    // 2. Build Entities (the per-entity legacy boxes are skipped for the same reason)
+    if (this.world && this.world.entities && !this.suppressLegacy) {
       this.layers.entities = new THREE.Group();
       const geometries = this.world.geometries || {};
 
@@ -1490,7 +1521,9 @@ export class WorldSceneController {
   }
 
   public setLayerVisibility(layers: Partial<ViewportLayers>) {
+    const fullCloudChanged = layers.fullCloud !== undefined && layers.fullCloud !== this.layerVisibility.fullCloud;
     this.layerVisibility = { ...this.layerVisibility, ...layers };
+    if (fullCloudChanged) this.buildPointLayer(false); // swap the point layer only; the view stays where it is
 
     if (this.layers.points) {
       this.layers.points.visible = this.layerVisibility.points;
@@ -1700,7 +1733,7 @@ export class WorldSceneController {
       this.layers.topology = null;
     }
 
-    if (!this.layerVisibility.topology || !this.world) return;
+    if (!this.layerVisibility.topology || !this.world || this.suppressLegacy) return;
 
     const topologyGroup = new THREE.Group();
     topologyGroup.name = "SpatialTopologyGroup";
@@ -2590,6 +2623,7 @@ export class WorldSceneController {
       canonicalPoints: pts,
       renderedPoints: this.renderedPointsCount > 0 ? this.renderedPointsCount : pts,
       isLODSampled: this.renderedPointsCount > 0 && this.renderedPointsCount < pts,
+      pointMode: this.pointMode,
       cameras: cams,
       entities: ents,
       isContextLost: this.isContextLost,

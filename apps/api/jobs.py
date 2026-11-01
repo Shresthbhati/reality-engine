@@ -289,6 +289,16 @@ def enqueue_job(
 from reconstruction.scene_identity import capture_quality  # noqa: E402
 
 
+def _structure_points(world_ir) -> list:
+    """The room-defining corners for the viewer; a failure here must never fail the job."""
+    try:
+        from reconstruction.structure_points import structure_points
+        return structure_points(world_ir)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("structure_points failed: %s: %s", type(exc).__name__, exc)
+        return []
+
+
 def _drop_exact_duplicates(resolved):
     """Byte-identical photos add no geometry and make COLMAP match a picture with its own copy (zero baseline),
     which degrades registration. Keep the first of each checksum; report the rest."""
@@ -834,6 +844,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "capture_quality": capture_quality(
             len(items), prog.registered_ids, len(prog.points),
             n_duplicates_dropped=sum(1 for s in skipped_evidence if "duplicate" in s.get("reason", ""))),
+        "structure_points": _structure_points(world_ir),
         "level": prog.level,
         "level_name": prog.level_name,
         "model_state": prog.model_state,

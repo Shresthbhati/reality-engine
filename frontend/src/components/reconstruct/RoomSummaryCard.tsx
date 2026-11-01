@@ -24,6 +24,13 @@ const STATE_STYLE: Record<string, string> = {
   INFERRED: "border-sky-400/40 text-sky-300",
 };
 
+const VERDICT_LABEL = { sufficient: "Capture sufficient", partial: "Capture partial", insufficient: "Not placed in 3D" } as const;
+const VERDICT_STYLE = {
+  sufficient: "border-emerald-500/40 text-emerald-300",
+  partial: "border-amber-400/50 text-amber-300",
+  insufficient: "border-red-400/60 text-red-300",
+} as const;
+
 /**
  * Results summary for one world, read from its WorldIR. A relative world shows "model units", never "m".
  *
@@ -31,7 +38,7 @@ const STATE_STYLE: Record<string, string> = {
  * top-down map (CaptureCoverage) opens under "Wall coverage map". If the endpoint has nothing, the card falls back to
  * what the WorldIR itself says (UNOBSERVED walls) and to unplaced photos.
  */
-export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAdded, scale, imagesUsed, imagesRegistered }: RoomSummaryCardProps) {
+export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAdded, scale, imagesUsed, imagesRegistered, captureQuality }: RoomSummaryCardProps) {
   const [dto, setDto] = useState<CaptureCoverageDto | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   useEffect(() => {
@@ -53,8 +60,8 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
     [dto, worldId],
   );
   const s = useMemo(
-    () => buildRoomSummary(world, { scale, imagesUsed, imagesRegistered, coverage }),
-    [world, scale, imagesUsed, imagesRegistered, coverage],
+    () => buildRoomSummary(world, { scale, imagesUsed, imagesRegistered, coverage, captureQuality }),
+    [world, scale, imagesUsed, imagesRegistered, coverage, captureQuality],
   );
   if (!s) return null;
 
@@ -94,12 +101,23 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
         )}
 
         <ul className="flex flex-wrap items-center gap-1.5 text-[11px]" aria-label="What was found" data-testid="summary-counts">
-          <li className="rounded border border-[var(--border)] px-1.5 py-0.5 text-neutral-200">{s.counts.walls} walls</li>
-          <li className="rounded border border-[var(--border)] px-1.5 py-0.5 text-neutral-200">{s.counts.doors} doors</li>
-          <li className="rounded border border-[var(--border)] px-1.5 py-0.5 text-neutral-200">{s.counts.windows} windows</li>
-          <li className="rounded border border-[var(--border)] px-1.5 py-0.5 text-neutral-200" title="Furniture candidates are unlabelled objects the engine found resting on the floor.">
-            {s.counts.furniture} furniture
-          </li>
+          {(
+            [
+              ["walls", s.counts.walls, undefined],
+              ["doors", s.counts.doors, undefined],
+              ["windows", s.counts.windows, undefined],
+              ["furniture", s.counts.furniture, "Furniture candidates are unlabelled objects the engine found resting on the floor."],
+            ] as const
+          ).map(([name, n, tip]) => (
+            <li
+              key={name}
+              data-testid={`summary-count-${name}`}
+              className="rounded border border-[var(--border)] px-1.5 py-0.5 text-neutral-200"
+              title={s.countsReliable ? tip : "Not counted: the photos could not be placed in one 3D space, so nothing here describes the room."}
+            >
+              {s.countsReliable ? n : "—"} {name}
+            </li>
+          ))}
         </ul>
 
         <p
@@ -119,6 +137,20 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
         <p className="mt-1 text-[11px] text-amber-300" data-testid="summary-unit-note">
           {s.unitNote}
         </p>
+      )}
+
+      {s.captureQuality && (
+        <div
+          data-testid="summary-capture-verdict"
+          data-state={s.captureQuality.state}
+          role={s.captureQuality.state === "insufficient" ? "alert" : "status"}
+          className="mt-1.5 flex flex-wrap items-start gap-x-2 gap-y-0.5 text-[11px]"
+        >
+          <span className={cn("rounded border px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide", VERDICT_STYLE[s.captureQuality.state])}>
+            {VERDICT_LABEL[s.captureQuality.state]}
+          </span>
+          {s.captureQuality.message && <span className="min-w-0 flex-1 text-neutral-200">{s.captureQuality.message}</span>}
+        </div>
       )}
 
       {s.warnings.length > 0 && (

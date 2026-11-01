@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { buildRoomSummary } from "../../src/lib/reconstruct/summary-model.ts";
+import { parseCaptureQuality } from "../../src/lib/viewport/structure-points-model.ts";
 
 const ent = (id: string, type: string, extra: Record<string, unknown> = {}) => ({ id, type, ...extra });
 
@@ -98,6 +99,49 @@ test("unobserved walls produce a coverage warning and a capture hint; an API hin
   const weak = buildRoomSummary(world(), { coverage: { unobserved_walls: 0, weak_walls: 2 } })!;
   assert.deepEqual(weak.warnings, ["2 walls were seen only weakly (from one angle or at a grazing view)."]);
   assert.ok(weak.captureHint);
+});
+
+const cq = (state: string, extra: Record<string, unknown> = {}) =>
+  parseCaptureQuality({ state, message: `msg-${state}`, advice: ["first advice", "second advice"], reasons: ["why"], ...extra });
+
+test("an insufficient capture verdict replaces the generic wording and withholds counts from unplaced boxes", () => {
+  const s = buildRoomSummary(world(), {
+    scale: { state: "relative" },
+    imagesUsed: 10,
+    imagesRegistered: 0,
+    coverage: { unobserved_walls: 3, weak_walls: 1, hint: "Capture the north wall." },
+    captureQuality: cq("insufficient"),
+  })!;
+  assert.equal(s.countsReliable, false);
+  assert.equal(s.captureQuality?.message, "msg-insufficient");
+  assert.equal(s.captureHint, "first advice", "first advice item, not the generic or wall-derived hint");
+  assert.equal(s.unobservedWalls, 0);
+  assert.deepEqual(s.warnings, [], "no 'N of M photos could not be placed' and no wall claims from unplaced boxes");
+});
+
+test("a partial verdict supplies the capture hint and drops the generic unplaced line; walls still count", () => {
+  const s = buildRoomSummary(world(), { scale: { state: "relative" }, imagesUsed: 8, imagesRegistered: 6, captureQuality: cq("partial") })!;
+  assert.equal(s.countsReliable, true);
+  assert.ok(!s.warnings.some((w) => /could not be placed/.test(w)));
+  assert.equal(s.captureQuality?.state, "partial");
+  // a wall-specific hint still wins over a generic advice item when walls are unobserved...
+  assert.match(s.captureHint ?? "", /unseen or weakly seen wall/);
+  // ...and the advice is used when nothing wall-specific applies
+  const noWalls = buildRoomSummary({ id: "w", entities: { "room-001": ent("room-001", "room", { custom_properties: {} }) } } as never, {
+    imagesUsed: 8,
+    imagesRegistered: 6,
+    captureQuality: cq("partial"),
+  })!;
+  assert.equal(noWalls.captureHint, "first advice");
+});
+
+test("without a capture-quality verdict the old unplaced wording is kept", () => {
+  const s = buildRoomSummary(world(), { scale: { state: "relative" }, imagesUsed: 8, imagesRegistered: 6, captureQuality: null })!;
+  assert.equal(s.countsReliable, true);
+  assert.equal(s.captureQuality, null);
+  assert.ok(s.warnings.includes("2 of 8 photos could not be placed in the model."));
+  const plain = buildRoomSummary({ id: "w", entities: { "room-001": ent("room-001", "room", { custom_properties: {} }) } } as never, { imagesUsed: 8, imagesRegistered: 6 })!;
+  assert.match(plain.captureHint ?? "", /Retake the unplaced views/);
 });
 
 test("no room, no footprint: values are null (not available), never defaulted", () => {

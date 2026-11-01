@@ -298,6 +298,22 @@ Current merging is label + geometric proximity — an honest heuristic,
 never presented as a learned embedding. Evidence to advance: embedding
 backend behind an interface, epipolar verification, identity benchmark.
 
+### ML reconstruction, overlap intelligence and export plan (2026-11-01)
+
+Source plan: `2026-11-01-ml-reconstruction-overlap-plan.md`. Status per step, with the evidence that exists today:
+
+| Item | Status | Evidence / what is missing |
+|---|---|---|
+| Step 0: CUDA torch + `perception/device.py` | IMPLEMENTED | torch 2.14.0+cu130 on RTX 4050 (6 GB), fp16 matmul ran on GPU; `tests/test_device.py` passes on GPU and with `REALITY_DEVICE=cpu`; SAM and MiDaS backends use it. Other backends (Mask R-CNN) not yet wired. Dataset access requests (ScanNet++, ARKitScenes) NOT filed. |
+| Step 1: export fix | IMPLEMENTED | `GET /export/formats` + `downloadArtifact()` + icon grid; failures show status and server reason. Browser-verified (glTF download, 404 PLY error banner) in an older UI worktree; NOT yet browser-verified in this UI. 14/14 export route tests. Whether the 15 s default timeout was the user's real failure is not confirmed. |
+| Phase 1: observation ledger + association engine | FOUNDATION | `world_ir/observations.py`, `perception/instances/association.py`, `tests/test_association.py` (scenarios 2, 4, 5, 16, chain-vs-union-find, AMBIGUOUS, relative-depth widening, occlusion vs intersection). Synthetic only. NOT wired into the pipeline (`object_resolution.merge_hypotheses` is still what runs), no epipolar `geom_verified`, no negative-visibility evidence, no CONFLICTED surface fusion, ledger not persisted into WorldStore, sigma constants untuned. |
+| Phase 2: IMatcher (ALIKED+LightGlue), metric depth, benchmarks | MISSING | `reconstruction/{features,matching}` are still README stubs. |
+| Phase 3: cross-session identity via ledger | MISSING | Needs Phase 1 wired in. |
+| Phase 4: coverage map, capture requests | MISSING | |
+| Phase 5/6/7: completion, appearance, whole-journey validation | MISSING | |
+
+Open diagnosis (2026-11-01): the user's 10-photo room registers 9/10 cameras with COLMAP yet compiles to 2 walls and no floor; dense MVS runs and is rejected ("no material gain"). Root cause not found. COLMAP also refuses workspace paths over 170 characters (reproduced with a 262-character store path), which silently drops the pipeline to unregistered single-view fusion.
+
 ## P2.15 — Tracking / temporal identity
 
 **Status: PARTIAL.** The 3D observation-level identity-lifecycle layer

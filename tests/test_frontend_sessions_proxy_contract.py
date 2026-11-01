@@ -125,3 +125,19 @@ def test_no_scenario_throws(observed: dict):
     """The route must always answer; an unhandled throw hides which layer broke."""
     for name, result in observed.items():
         assert not result.get("threw"), f"{name} threw instead of returning a response: {result}"
+
+
+@pytest.mark.parametrize(
+    "scenario", ["emptyBody200", "nonJsonBody200", "worldsEmptyBody200", "worldsNonJsonBody200"]
+)
+def test_a_200_with_an_empty_or_invalid_body_is_a_502_not_an_empty_list(observed: dict, scenario: str):
+    """Release gate: a broken backend body used to be rewritten to {items: []}, i.e. 'you have no sessions/worlds'."""
+    result = observed[scenario]
+    assert result["status"] == 502, f"{scenario}: got {result['status']} {result.get('body')!r}"
+    assert "items" not in result["body"]
+    assert "empty or invalid body" in result["body"]["detail"]
+
+
+def test_a_genuinely_empty_world_list_is_still_an_honest_success(observed: dict):
+    result = observed["worldsSuccess"]
+    assert result["status"] == 200 and result["body"] == {"items": []}

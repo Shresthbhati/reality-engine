@@ -274,6 +274,7 @@ function EntityDetails({
   const [committedVersionResult, setCommittedVersionResult] = useState<{
     version_id: string;
     parent_version_id?: string;
+    duplicate?: boolean;
   } | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -378,6 +379,7 @@ function EntityDetails({
         setCommittedVersionResult({
           version_id: res.version_id,
           parent_version_id: (res as { parent_version_id?: string }).parent_version_id,
+          duplicate: (res as { duplicate?: boolean }).duplicate === true,
         });
       }
       setCommittedSuccess(true);
@@ -579,11 +581,17 @@ function EntityDetails({
 
       {/* Post-Commit WorldStore Version Banner */}
       {committedVersionResult && (
-        <div className="p-3 rounded-lg border border-[var(--success)]/40 bg-[var(--success-subtle)] space-y-2 text-xs">
+        <div className={`p-3 rounded-lg border space-y-2 text-xs ${
+          committedVersionResult.duplicate
+            ? "border-[var(--warning)]/40 bg-[var(--warning-subtle)]"
+            : "border-[var(--success)]/40 bg-[var(--success-subtle)]"
+        }`}>
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[var(--success)] font-semibold">
-              <Check className="w-3.5 h-3.5" />
-              <span>Correction saved</span>
+            <span className={`flex items-center gap-1.5 font-semibold ${
+              committedVersionResult.duplicate ? "text-[var(--warning)]" : "text-[var(--success)]"
+            }`}>
+              {committedVersionResult.duplicate ? <AlertTriangle className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+              <span>{committedVersionResult.duplicate ? "No change: identical to the current version" : "Correction saved"}</span>
             </span>
             <button
               type="button"
@@ -597,12 +605,12 @@ function EntityDetails({
             </button>
           </div>
           <div className="text-[11px] font-mono text-[var(--text-primary)] space-y-0.5">
-            <div>Version: <span className="text-[var(--accent)] font-semibold">{committedVersionResult.version_id}</span></div>
-            {committedVersionResult.parent_version_id && (
+            <div>{committedVersionResult.duplicate ? "Current version" : "Version"}: <span className="text-[var(--accent)] font-semibold">{committedVersionResult.version_id}</span></div>
+            {!committedVersionResult.duplicate && committedVersionResult.parent_version_id && (
               <div className="text-[10px] text-[var(--text-secondary)]">Parent: {committedVersionResult.parent_version_id}</div>
             )}
           </div>
-          {onOpenDiff && (
+          {onOpenDiff && !committedVersionResult.duplicate && (
             <button
               type="button"
               onClick={() => onOpenDiff(committedVersionResult.parent_version_id, committedVersionResult.version_id)}

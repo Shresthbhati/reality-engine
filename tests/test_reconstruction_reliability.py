@@ -181,17 +181,24 @@ def test_refinement_chains_and_failed_refinement_preserves_head(
 
 
 def test_corrupted_capture_fails_honestly(client, tmp_path, monkeypatch):
-    """Garbage bytes typed as photos: the pipeline must fail with a real
-    error, never a fabricated reconstruction."""
+    """Garbage bytes typed as photos never reach the pipeline: the upload is refused (415) with its reason, and when
+    such bytes are already stored as evidence (rows written before upload vetting) the reconstruction still fails
+    with a real error, never a fabricated reconstruction."""
     sid = client.post("/api/sessions", json={"name": "Corrupt"}).json()["id"]
     wid = client.post("/api/worlds", json={"name": "Corrupt world"}).json()["id"]
     assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
+    garbage = bytes(range(256)) * 4
+    for i in range(2):
+        r = client.post(f"/api/uploads?session_id={sid}", files={"file": (f"frame_{i}.jpg", garbage, "image/jpeg")})
+        assert r.status_code == 415, r.text
+    assert client.get("/api/evidence").json()["items"] == []
+    # legacy rows: bytes that are valid JPEG magic but not a decodable image (passes vetting, must fail in the pipeline)
     for i in range(2):
         r = client.post(
             f"/api/uploads?session_id={sid}",
-            files={"file": (f"frame_{i}.jpg", bytes(range(256)) * 4, "image/jpeg")},
+            files={"file": (f"frame_{i}.jpg", b"\xff\xd8\xff\xe0" + garbage, "image/jpeg")},
         )
-        assert r.status_code == 201
+        assert r.status_code == 201, r.text
     job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"],
                     timeout=150.0)
     assert job["status"] == "failed", job
@@ -756,3 +763,77 @@ def test_status_versions_carry_what_each_version_was_built_from(client, tmp_path
         assert set(v["registered_ids"]) <= set(v["evidence_ids"]), "a version cannot place a photo it did not use"
     new = (set(v2["evidence_ids"]) - set(v1["evidence_ids"])).pop()
     assert new in {e["id"] for e in st["evidence"]}, "the photo added after V1 is known to the world"
+
+
+class _NanPoseBackend:
+    """A backend that 'finishes' with a non-finite camera pose: process success is not output validity."""
+
+    def reconstruct(self, evidence):
+        import dataclasses
+        import math
+
+        from tests.test_cli_compile import _TwoViewBackend
+
+        res = _TwoViewBackend().reconstruct(evidence)
+        bad = dataclasses.replace(res.camera_poses[0], position=(math.nan, 0.0, 0.0))
+        return dataclasses.replace(res, camera_poses=[bad, *res.camera_poses[1:]])
+
+
+def test_malformed_reconstruction_output_fails_the_job_and_leaves_head_untouched(client, tmp_path, monkeypatch):
+    """Release gate Phase 2: NaN pose output -> job FAILED with the reason, no new version, HEAD unchanged."""
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    first = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert first["status"] == "succeeded", first.get("error")
+    v1 = first["payload"]["version_id"]
+
+    monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.test_reconstruction_reliability:_NanPoseBackend")
+    r = client.post(
+        f"/api/uploads?session_id={sid}",
+        files={"file": ("frame_09.jpg", b"jpeg-" + b"9" * 8, "image/jpeg")},
+    )
+    assert r.status_code == 201, r.text
+    bad = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert bad["status"] == "failed", bad
+    assert "non-finite camera pose" in (bad.get("error") or ""), bad.get("error")
+    assert client.get(f"/api/worlds/{wid}").json()["current_version_id"] == v1
+    assert [v["id"] for v in client.get(f"/api/worlds/{wid}/versions").json()["items"]] == [v1]
+
+
+def test_a_correction_does_not_blind_the_next_rebuild_or_the_status(client, tmp_path, monkeypatch):
+    """Release gate: a correction commit creates a version row WITHOUT a reconstruction report. Rebuild arbitration
+    (world_delta.decide) and /status read the HEAD report, so after any correction an empty report made the next
+    rebuild look like a 'first version' (every degraded fallback was ACCEPTed over a good world) and the status lose
+    its model. The effective report of a corrected HEAD must be the nearest ancestor's."""
+    import asyncio
+
+    sid, wid = _chain_setup(client, tmp_path, monkeypatch)
+    first = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
+    assert first["status"] == "succeeded", first.get("error")
+    v1 = first["payload"]["version_id"]
+    status_v1 = client.get(f"/api/worlds/{wid}/status").json()
+    assert status_v1["model"]["images_registered"] >= 2
+
+    eid = next(iter(client.get(f"/api/worlds/{wid}/worldir").json()["entities"]))
+    r = client.post(f"/api/worlds/{wid}/commit", json={"entity_id": eid, "changes": {"name": "Corrected"}})
+    assert r.status_code == 200, r.text
+    v2 = r.json()["version_id"]
+    assert v2 != v1
+
+    # the status of a corrected world still reports the model it was built from
+    status_v2 = client.get(f"/api/worlds/{wid}/status").json()
+    assert status_v2["has_model"] is True and status_v2["model"] is not None
+    assert status_v2["model"]["images_registered"] == status_v1["model"]["images_registered"]
+    assert status_v2["model"]["level"] == status_v1["model"]["level"]
+
+    # and the rebuild arbiter sees the evidence the world was built from
+    import apps.api.db as db_mod
+    from apps.api import jobs as jobrunner
+    from apps.api.models import World
+
+    async def head_report():
+        async with db_mod.get_sessionmaker()() as db:
+            world = await db.get(World, wid)
+            return await jobrunner._head_report(db, world)
+
+    rep = asyncio.run(head_report())
+    assert (rep.get("evidence") or {}).get("all_ids"), "corrected HEAD has no evidence record: arbitration is blind"

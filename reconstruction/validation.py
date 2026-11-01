@@ -18,6 +18,7 @@ differ from a naive first-min -- the report stays deterministic either way.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -114,3 +115,23 @@ def validate_reconstructions(
         unmatched_a=0,
         unmatched_b=unmatched_b,
     )
+
+
+def validate_reconstruction_output(result: ReconstructionResult) -> None:
+    """Refuse a backend output that cannot be a real reconstruction: finishing the process is not success.
+
+    Raises UnvalidatableReconstructionError for: fewer than 2 registered cameras (one pose fixes no
+    geometry), no points, or any NaN/Inf in a camera position/rotation or a point position (sparse and
+    dense). Statuses are not trusted: a "success" result with a NaN pose is still refused.
+    """
+    poses = list(result.camera_poses)
+    if len(poses) < 2:
+        raise UnvalidatableReconstructionError(f"{len(poses)} registered camera(s); at least 2 are required")
+    if not result.points:
+        raise UnvalidatableReconstructionError("no reconstructed points")
+    for pose in poses:
+        if not all(math.isfinite(float(v)) for v in (*pose.position, *pose.rotation)):
+            raise UnvalidatableReconstructionError(f"non-finite camera pose for evidence {pose.evidence_id!r}")
+    for point in (*result.points, *(result.dense_points or ())):
+        if not all(math.isfinite(float(v)) for v in point.position):
+            raise UnvalidatableReconstructionError(f"non-finite point position (track {point.track_id!r})")

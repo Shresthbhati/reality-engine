@@ -432,6 +432,13 @@ def test_H_video_is_sampled_into_frame_evidence_and_duplicates_are_measured(tmp_
         assert all(m["source_video"] == "walk.mp4" and "frame_index" in m for m in frame_meta)
 
         # an unreadable "video" is rejected with a reason, not silently turned into a world
+        # bytes that are not a video at all are refused at the upload boundary (content sniffing) ...
         r2 = c.post("/api/reconstructions", files=[("files", ("bad.mp4", b"not a video at all", "video/mp4"))])
         assert r2.status_code == 422
-        assert "video could not be read" in r2.json()["detail"]["rejected"][0]["reason"]
+        assert "not a valid video" in r2.json()["detail"]["rejected"][0]["reason"]
+        # ... and a container header with nothing decodable behind it is refused by the frame extractor
+        hollow = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 64
+        r3 = c.post("/api/reconstructions", files=[("files", ("hollow.mp4", hollow, "video/mp4"))])
+        assert r3.status_code == 422
+        assert "video could not be read" in r3.json()["detail"]["rejected"][0]["reason"] or \
+            "no decodable frames" in r3.json()["detail"]["rejected"][0]["reason"]

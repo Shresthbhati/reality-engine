@@ -48,7 +48,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(data ?? { items: [] });
+    if (data === null) {
+      // 200 with an empty or unparsable body is a broken backend, not "no sessions"
+      return NextResponse.json(
+        { detail: "The Reality Engine API returned an empty or invalid body for the session listing." },
+        { status: 502 }
+      );
+    }
+    return NextResponse.json(data);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(

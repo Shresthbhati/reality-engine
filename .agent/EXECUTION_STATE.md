@@ -1749,3 +1749,32 @@ executed for real, and produces canonical persisted artifacts.
   COLUMN_BEAM_DETECTORS_READY.md.
 - Remaining declared-but-unwired: windows, roofs. Untouched:
   tests/test_reconstruction_batch.py runtime flake (other agent's).
+
+## 2026-10-16 Release gate (docs/implementation/RELEASE_GATE_PLAN.md) -- Phase 1
+- Branch claude/gate-p1-geometries. world.geometries regression: NOT REPRODUCED (no symptom in repo).
+  Evidence: 4 plan test files 24 passed; `-m "not slow" -k geometr` 165 passed / 3 skipped; real COLMAP via API SIX then
+  ADD_4 on one world: V1 5 ent / 6 geom / 0 dangling / 85016 pts; V2 (parent V1) 11 ent / 10 geom / 0 dangling / 121822 pts;
+  V1 digest unchanged after V2; restart -> identical V2 digest; test_B 1 passed (102 s). User asked for the symptom.
+- REAL env defect found + fixed: httpx 0.28.1 + starlette 0.35.1 -> TestClient TypeError ('app'), ~100 API tests error.
+  Fix commit d2dfacc: httpx>=0.27,<0.28 in pyproject.toml + apps/api/requirements.txt. Before: bare TestClient raises
+  TypeError; after (declared spec installed): returns {'ok': 1}.
+- Non-slow baseline (httpx<0.28): main run 2815 passed / 2 failed / 102 errors (all 'Client.__init__ app' on the unpinned run);
+  re-run of the 11 affected files with the pin: 151 passed, 0 failed. => 0 failures, 28 skipped.
+
+## 2026-10-16 Release gate -- Phase 2 (branch claude/gate-p2-recon-validation)
+- Gap reproduced: vertical_slice() compiled a world from backend output with 1 registered camera, a NaN camera position,
+  an Inf rotation or an Inf point (0 cameras / empty cloud were already refused). Fix: reconstruction.validation.validate_reconstruction_output
+  called in engine/pipeline/vertical_slice.py right after the backend result; raises VerticalSliceError -> ladder records a failed L2 attempt.
+- Tests: tests/test_reconstruction_output_validation.py 7 passed (4 failed before fix); tests/test_reconstruction_reliability.py
+  ::test_malformed_reconstruction_output_fails_the_job_and_leaves_head_untouched passed (job 'succeeded' without fix, 'failed' with it; HEAD and version list unchanged).
+- Regression: 261 passed / 14 skipped over reconstruction, vertical-slice, cli, application_api, golden_loop and tests/integration (non-slow).
+- Real run, SIX window [15:21], real COLMAP: submitted 6 / registered 6, level 3, sparse points 1132 (COLMAP model_analyzer), served /points 85,782
+  (sparse + dense), mean reprojection error 0.295 px, wall 101 s (clean machine). test_B + test_D + test_D2 (slow): 3 passed in 1146 s (contended run).
+
+## 2026-10-16 Release gate -- final verification (branch claude/gate-p4-release-gate)
+- Gate `pytest -q tests/integration/test_release_gate.py` passed TWICE consecutively on 994af9c: 3 passed / exit 0 / 8m05s and 3 passed / exit 0 / 7m54s, clean tree, nothing overlapping.
+- Non-slow backend: 2976 passed, 28 skipped, 5 xfailed, 0 failed (39m39s). Slow journeys: 28 of 28 passed (27 + test_H re-run after its stale assertion was updated).
+- Frontend: tsc 0, contract 17/17, build 0, lint 10 errors (baseline).
+- NOT RUN: tests/integration/test_system_runtime_proof.py (gitignored fixtures absent); Phase 6 browser walkthrough.
+- Fixes: nearest_report (corrected HEAD), output validation, transform/finite/trace validation, registered-only cameras, upload vetting + per-session cap, Studio truthfulness fixes, httpx pin.
+- Open: no authn/authz/rate limiting; world.geometries symptom not reproduced; see docs/implementation/RELEASE_GATE_PLAN.md Appendix C.

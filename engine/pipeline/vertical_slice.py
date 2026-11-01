@@ -324,6 +324,7 @@ def vertical_slice(
 
     # ---- stage 1: reconstruction (real COLMAP through the orchestrator) ----
     from reconstruction.orchestrator import ReconstructionOrchestrator
+    from reconstruction.validation import UnvalidatableReconstructionError, validate_reconstruction_output
 
     if options.reconstruction_backend is not None:
         backend = options.reconstruction_backend
@@ -352,6 +353,10 @@ def vertical_slice(
             f"(status={result.registration_status!r}, "
             f"{len(result.points)} points) -- not compiling"
         )
+    try:
+        validate_reconstruction_output(result)
+    except UnvalidatableReconstructionError as exc:
+        raise VerticalSliceError(f"reconstruction output is invalid ({exc}) -- not compiling") from exc
 
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None

@@ -77,6 +77,16 @@ def _entity_position(entity: Entity) -> Optional[np.ndarray]:
     return None
 
 
+def _entity_bottom_z(entity: Entity) -> Optional[float]:
+    """Extract bottom z elevation of entity using bounds_min or position."""
+    cp = entity.custom_properties or {}
+    bmin = cp.get("bounds_min")
+    if isinstance(bmin, (list, tuple)) and len(bmin) >= 3:
+        return float(bmin[2])
+    pos = _entity_position(entity)
+    return float(pos[2]) if pos is not None else None
+
+
 def _has_relationship(entity: Entity, kind: RelationshipKind, target_id: str) -> bool:
     """Check if entity already carries a relationship of this kind to target_id."""
     for rel in entity.relationships:
@@ -153,7 +163,7 @@ def infer_spatial_relationships(
 
         if e_type == "wall" or "wall" in labels or role == "wall":
             walls.append(ent)
-        elif e_type == "floor" or "floor" in labels or role == "floor":
+        elif e_type in ("floor", "sidewalk", "road", "curb") or "floor" in labels or role in ("floor", "ground", "sidewalk", "road"):
             floors.append(ent)
         elif e_type == "ceiling" or "ceiling" in labels or role == "ceiling":
             ceilings.append(ent)
@@ -196,7 +206,8 @@ def infer_spatial_relationships(
         )
         is_floor_rest = (
             "envelope.floor" in hosts
-            or any(k in name or k in labels for k in ("chair", "table", "desk", "sofa", "bed", "wardrobe", "shelf", "furniture", "appliance"))
+            or any(k in name or k in labels for k in ("chair", "table", "desk", "sofa", "bed", "wardrobe", "shelf", "furniture", "appliance", "bench", "bin", "lamppost", "tree", "bollard"))
+            or e_class.startswith("street.") or e_class.startswith("vegetation.")
             or "furniture_candidate" in labels
         )
 
@@ -266,10 +277,12 @@ def infer_spatial_relationships(
         if is_floor_rest and floors:
             best_floor = None
             min_dz = float("inf")
+            obj_base_z = _entity_bottom_z(obj)
+            base_z = obj_base_z if obj_base_z is not None else pos[2]
             for floor in floors:
                 f_pos = _entity_position(floor)
-                if f_pos is not None and pos[2] >= f_pos[2] - 0.05:
-                    dz = float(abs(pos[2] - f_pos[2]))
+                if f_pos is not None and base_z >= f_pos[2] - 0.15:
+                    dz = float(abs(base_z - f_pos[2]))
                     if dz < min_dz:
                         min_dz = dz
                         best_floor = floor

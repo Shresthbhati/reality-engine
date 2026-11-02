@@ -247,6 +247,25 @@ def _carry_entity_identity(world_ir, prog, cand_snap, delta, conflicts, head_rep
         world=trial, artifact_store=artifact_store)
     return trial, snap, {"carried": len(carried), "ids": carried, "lineage": out["lineage"]}
 
+def _dense_quality_options() -> dict:
+    """Dense cost tier for the product path. The dense cloud is a display layer (room structure is found on the sparse
+    model), so the default is the fast tier: 800 px, 4 source views, photometric only. Measured on 18 living-room
+    photos (RTX 4050): full defaults 485 s / 61k points; 960px+geometric 168 s / 14k; this tier 53 s / 7.6k.
+    ``REALITY_DENSE_QUALITY=full`` keeps COLMAP's own defaults (full resolution, up to 20 sources, geometric)."""
+    if os.environ.get("REALITY_DENSE_QUALITY", "").strip().lower() == "full":
+        return {}
+    return {"dense_max_image_size": 800, "dense_num_src_images": 4, "dense_geom_consistency": False}
+
+
+def _dense_cpu_options(payload) -> dict:
+    """VerticalSliceOptions kwargs from the opt-in CPU plane-sweep request on a job payload ({} = current behaviour)."""
+    cfg = (payload or {}).get("dense_cpu") if isinstance(payload, dict) else None
+    if not isinstance(cfg, dict) or not cfg.get("enabled"):
+        return {}
+    return {"plane_sweep_enabled": True,
+            **{f"plane_sweep_{k}": int(cfg[k]) for k in ("max_views", "stride", "planes") if cfg.get(k) is not None}}
+
+
 def enqueue_job(
     db: AsyncSession,
     job_type: str,
@@ -265,6 +284,34 @@ def enqueue_job(
     )
     db.add(job)
     return job
+
+
+from reconstruction.scene_identity import capture_quality  # noqa: E402
+
+
+def _structure_points(world_ir) -> list:
+    """The room-defining corners for the viewer; a failure here must never fail the job."""
+    try:
+        from reconstruction.structure_points import structure_points
+        return structure_points(world_ir)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("structure_points failed: %s: %s", type(exc).__name__, exc)
+        return []
+
+
+def _drop_exact_duplicates(resolved):
+    """Byte-identical photos add no geometry and make COLMAP match a picture with its own copy (zero baseline),
+    which degrades registration. Keep the first of each checksum; report the rest."""
+    seen, kept, dropped = {}, [], []
+    for ev, path in resolved:
+        first = seen.get(ev.checksum) if ev.checksum else None
+        if first is None:
+            if ev.checksum:
+                seen[ev.checksum] = ev.id
+            kept.append((ev, path))
+        else:
+            dropped.append({"evidence_id": ev.id, "reason": f"byte-identical duplicate of {first}"})
+    return kept, dropped
 
 
 def _file_sha256(path) -> str:
@@ -444,6 +491,15 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     )
     evidence_rows = list(result.scalars().all())
     head_report = await _head_report(db, world)
+    # F6: user-verified corrections from the current version are replayed onto the rebuilt world below. A failure to
+    # read the previous version only means no carry-over, never a lost reconstruction.
+    prev_corrections: list = []
+    try:
+        from apps.api.worldstore_service import get_current_worldir as _get_head_world
+        _prev_world = await _get_head_world(db, world.id)
+        prev_corrections = list(((_prev_world.metadata or {}).get("user_corrections") if _prev_world else []) or [])
+    except Exception:  # noqa: BLE001 -- enrichment only
+        prev_corrections = []
     prior_ids = list((head_report.get("evidence") or {}).get("all_ids") or [])
     resolved = []
     skipped_evidence = []
@@ -459,6 +515,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             })
             continue
         resolved.append((ev, path))
+    resolved, dupes = _drop_exact_duplicates(resolved)
+    skipped_evidence.extend(dupes)
     if not resolved:
         raise InsufficientEvidence(
             "World has 0 usable photo evidence item(s) with stored artifacts; "
@@ -524,15 +582,20 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
     # Operator-measured distances between two of this world's photographs (POST /api/worlds/{id}/scale):
     # the ONLY source of metric scale. Without one the world stays RELATIVE -- meters are never assumed.
-    from reconstruction.scale import ScaleAnchoringError, ScaleReference
+    from reconstruction.scale import (
+        ScaleAnchoringError, ScaleReference, basis_from_note, consolidate_references, dimension_state_for_basis,
+    )
 
     baselines = []
     for r in worldstore_service.list_scale_references(world.id):
         try:
             baselines.append(ScaleReference(r["evidence_id_a"], r["evidence_id_b"], float(r["distance_m"]),
-                                            r.get("method", "manual_measurement")))
-        except (KeyError, ValueError, ScaleAnchoringError):
+                                            r.get("method", "manual_measurement"),
+                                            r.get("model_distance"), r.get("unit_check_sep")))
+        except (KeyError, ValueError, TypeError, ScaleAnchoringError):
             continue            # a malformed stored reference is skipped, never guessed at
+    # trust order: camera baselines > known lengths (median, spread-gated) > accepted typical-size prior
+    baselines, scale_ref_notes = consolidate_references(baselines)
     if test_backend is not None:
         options = VerticalSliceOptions(
             artifact_store=artifact_store,
@@ -560,7 +623,11 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             head_snapshot=world_delta.snapshot_from_report(head_report),
             head_conflicts=head_report.get("conflicts"),
             # the HEAD's canonical rotation: an incremental candidate (same raw COLMAP frame) reuses it
-            head_frame=head_report.get("frame"))
+            head_frame=head_report.get("frame"),
+            # a RELATIVE head's working unit, kept while this solve is in the same frame (reconstruction.scene_scale)
+            head_unit_k=(((head_report.get("stages") or {}).get("scale")) or {}).get("provisional_unit_base_k"),
+            **_dense_quality_options(),
+            **_dense_cpu_options(job.payload))
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
     prog = await asyncio.to_thread(
@@ -584,10 +651,39 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         for ei in eval_inputs
     ]
     world_ir.metadata["evidence"] = {"used": evidence_records, "excluded": prog.excluded}
+    if prog.scale_state == "metric" and isinstance(world_ir.metadata.get("scale"), dict):
+        # D1 reads these: HOW the metres were obtained, and the state every dimension inherits
+        # (an accepted typical-size prior is ESTIMATED, never MEASURED).
+        _basis = basis_from_note(world_ir.metadata["scale"].get("note"))
+        world_ir.metadata["scale"]["scale_basis"] = _basis
+        world_ir.metadata["scale"]["dimension_state"] = dimension_state_for_basis(_basis)
     world_ir.metadata["progressive"] = {
         "level": prog.level, "level_name": prog.level_name, "model_state": prog.model_state,
         "attempts": prog.attempts,
     }
+
+    # ---- F6: replay user-verified corrections (they outrank every automatic result and survive a rebuild) ----
+    if prev_corrections:
+        try:
+            from world_ir.corrections import carry_corrections
+            carry_corrections(world_ir, prev_corrections)
+        except Exception as exc:  # noqa: BLE001 -- the rebuilt world stands; the failure is visible
+            world_ir.metadata["correction_carry"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # ---- M2: measured colour + planar texture per solid room surface, from the posed photos ----
+    # Runs before persistence so the version the UI reads already carries the appearance reference. A failure is
+    # recorded on the world and never loses an otherwise valid reconstruction.
+    try:
+        from perception.materials.room_surfaces import measure_world_appearance, views_from_photos
+        # the compiler measures it itself when handed CompileOptions.appearance_views: do not repeat the work
+        if not (world_ir.metadata.get("surface_appearance") or {}).get("available"):
+            _items_by_id = {it.id: it for it in items}
+            _views, _intr_sources, _skipped = views_from_photos(prog.camera_poses, _items_by_id)
+            measure_world_appearance(world_ir, _views, artifact_store=artifact_store,
+                                     intrinsics_sources=_intr_sources, skipped=_skipped)
+    except Exception as exc:  # noqa: BLE001 -- appearance is an enrichment, not a precondition for the world
+        world_ir.metadata["surface_appearance"] = {"available": False,
+                                                   "reason": f"{type(exc).__name__}: {exc}"}
 
     # Provenance + determinism record: stamp every reconstructed entity
     # with the session, backend, and pipeline configuration it was built
@@ -651,7 +747,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         prev_scale = ((head_report.get("stages") or {}).get("scale")) or {}
         if prog.scale_state != prev_scale.get("state") or prog.meters_per_unit != prev_scale.get("meters_per_unit"):
             if prog.scale_state == "metric" and prog.meters_per_unit:
-                refs_used = [f"{b.distance_m:g} m between two photographs ({b.method})" for b in baselines]
+                refs_used = [b.describe() for b in baselines]
                 changes.insert(0, f"Scale changed from {prev_scale.get('state') or 'unknown'} to metric: "
                                   f"{prog.meters_per_unit:.6g} m per model unit, anchored by "
                                   f"{'; '.join(refs_used) or 'a measured reference'}. The same world, now in meters.")
@@ -745,6 +841,11 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "session_id": session.id,
         "images_ingested": len(items),
         "scene_identity": scene_info,
+        "capture_quality": capture_quality(
+            len(items), prog.registered_ids, len(prog.points),
+            n_duplicates_dropped=sum(1 for s in skipped_evidence if "duplicate" in s.get("reason", "")),
+            structure=cand_snap["entity_types"]),
+        "structure_points": _structure_points(world_ir),
         "level": prog.level,
         "level_name": prog.level_name,
         "model_state": prog.model_state,
@@ -783,10 +884,19 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             "scale": {"state": prog.scale_state, "meters_per_unit": prog.meters_per_unit,
                       "references": [{"evidence_id_a": b.evidence_id_a, "evidence_id_b": b.evidence_id_b,
                                       "distance_m": b.distance_m, "method": b.method} for b in baselines],
-                      "note": prog.stage_facts.get("scale_error_note")},
+                      "note": prog.stage_facts.get("scale_error_note"),
+                      "scale_basis": (world_ir.metadata.get("scale") or {}).get("scale_basis"),
+                      "dimension_state": (world_ir.metadata.get("scale") or {}).get("dimension_state"),
+                      "provisional_unit_k": (world_ir.metadata.get("scale") or {}).get("provisional_unit_k"),
+                      "provisional_unit_base_k": (world_ir.metadata.get("scale") or {}).get("provisional_unit_base_k"),
+                      "dropped": scale_ref_notes},
             "depth": prog.stage_facts.get("depth"),
             "perception": prog.stage_facts.get("perception"),
             "mesh": prog.stage_facts.get("mesh"),
+            # Plan F3 / F2 facts: surfaced so the status endpoint can say whether they ran or why not
+            "plane_sweep": prog.stage_facts.get("plane_sweep"),
+            "timings_s": prog.stage_facts.get("timings_s"),
+            "device_depth_scale": prog.stage_facts.get("device_depth_scale"),
             "compile": {
                 "entities": prog.counts.get("entities", len(world_ir.entities)),
                 "measurements": prog.counts.get("measurements", 0),

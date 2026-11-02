@@ -126,6 +126,9 @@ def parse_fused_ply(
         off += _PLY_SIZES[ptype]
 
     evidence = source_evidence_ids or []
+    # COLMAP's fused.ply carries the per-point RGB it measured from the photos; keep it. A PLY without
+    # red/green/blue leaves color=None ("not measured") -- never a default.
+    has_rgb = {"red", "green", "blue"} <= names
     points: List[ReconstructedPoint] = []
     for i in range(nv):
         base = i * stride
@@ -142,6 +145,7 @@ def parse_fused_ply(
             position=(read("x"), read("y"), read("z")),
             track_id=f"dense:{i}",
             source_evidence_ids=list(evidence),
+            color=(int(read("red")), int(read("green")), int(read("blue"))) if has_rgb else None,
         ))
 
     if return_facts:

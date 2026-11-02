@@ -1,4 +1,4 @@
-import { apiPost } from "./client";
+import { apiGet, apiPost } from "./client";
 
 export type ExportFormat = "gltf" | "usda" | "ifc" | "blender" | "cityjson" | "citygml" | "geojson" | "godot";
 
@@ -20,8 +20,24 @@ export function exportWorld(
   format: ExportFormat,
   version?: string,
 ): Promise<ExportResult> {
-  return apiPost<ExportResult>(`/api/worlds/${encodeURIComponent(worldId)}/export`, {
-    format,
-    version: version ?? null,
-  });
+  // 60s, not the client's 15s default: building a gltf/godot bundle for a big world can exceed it
+  return apiPost<ExportResult>(
+    `/api/worlds/${encodeURIComponent(worldId)}/export`,
+    { format, version: version ?? null },
+    { timeoutMs: 60_000 },
+  );
+}
+
+export interface ExportFormatStatus {
+  format: string;
+  available: boolean;
+  reason: string | null;
+}
+
+/** Which formats this world can export right now, with a one-line reason when not. */
+export async function listExportFormats(worldId: string): Promise<ExportFormatStatus[]> {
+  const res = await apiGet<{ formats: ExportFormatStatus[] }>(
+    `/api/worlds/${encodeURIComponent(worldId)}/export/formats`,
+  );
+  return res.formats;
 }

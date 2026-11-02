@@ -12,6 +12,7 @@ import {
   formatValue,
   histogram,
   resolveUnitContext,
+  stateFor,
   unitFor,
   unitLabelFromRow,
 } from "../../src/lib/viewport/measure-model.ts";
@@ -82,4 +83,16 @@ test("histogram bins every value once", () => {
   assert.equal(h.reduce((s, b) => s + b.count, 0), 4);
   assert.deepEqual(histogram([]), []);
   assert.equal(histogram([5, 5]).length, 1);
+});
+
+test("dimension state: a model-unit dimension is never MEASURED; an accepted prior is ESTIMATED", () => {
+  assert.equal(resolveUnitContext(reconstructed("relative")).state, "RECONSTRUCTED");
+  assert.equal(resolveUnitContext(reconstructed("metric")).state, "MEASURED");
+  const prior = { metadata: { scale: { state: "metric", dimension_state: "ESTIMATED" } }, entities: {} };
+  assert.equal(resolveUnitContext(prior).state, "ESTIMATED");
+  assert.equal(stateFor({ state: "MEASURED", unit: "model_units" }), "RECONSTRUCTED");
+  assert.equal(stateFor({ state: "VERIFIED", unit: "model_units" }), "RECONSTRUCTED");
+  assert.equal(stateFor({ state: "VERIFIED", unit: "m" }), "VERIFIED");
+  assert.equal(stateFor({ state: "ESTIMATED", unit: "m" }), "ESTIMATED");
+  assert.equal(stateFor({ unit: "m" }), "MEASURED"); // pre-D1 row
 });

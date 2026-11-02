@@ -51,7 +51,7 @@ export default function GeoLayerMap({ points, visible, onCursor }: Props) {
       style: {
         version: 8,
         sources: {},
-        layers: [{ id: "bg", type: "background", paint: { "background-color": token("--bg-base", "#0b0d12") } }],
+        layers: [{ id: "bg", type: "background", paint: { "background-color": token("--bg-base", "gray") } }],
       },
       center: first ? [first.lng, first.lat] : [0, 0],
       zoom: 15,
@@ -68,9 +68,9 @@ export default function GeoLayerMap({ points, visible, onCursor }: Props) {
           filter: ["==", ["get", "kind"], k],
           paint: {
             "circle-radius": k === "origin" ? 8 : 5,
-            "circle-color": token(GEO_KIND_TOKEN[k], "#38bdf8"),
+            "circle-color": token(GEO_KIND_TOKEN[k], "gray"),
             "circle-stroke-width": 1.5,
-            "circle-stroke-color": token("--bg-surface", "#11141a"),
+            "circle-stroke-color": token("--bg-surface", "gray"),
           },
           layout: { visibility: latest.current.visible[k] ? "visible" : "none" },
         });

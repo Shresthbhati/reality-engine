@@ -130,6 +130,11 @@ class CompileOptions:
     #: Pass explicit values to compile at a different scale.
     distance_tolerance_m: float = 0.02
     min_inliers: int = 8
+    #: Find floor / ceiling / walls with the room prior (perception.geometry.room_box) before generic RANSAC. Off by
+    #: default (RANSAC behaviour is unchanged); the vertical slice's dense structure pass tries it as a candidate.
+    room_prior: bool = False
+    refine_room: bool = True         # only with room_prior: robust constrained re-fit of the room shell (reconstruction.refine)
+    refine_budget_s: float = 60.0
     #: Entity id prefixes (caller-controllable so multiple compiles can
     #: target one world without id collisions).
     structure_prefix: str = "struct"
@@ -144,6 +149,9 @@ class CompileOptions:
     #: only vertex_count + bounds. Optional and additive: omitting it
     #: (default) reproduces the exact pre-existing behavior.
     artifact_store: Optional[ArtifactStore] = None
+    #: Posed photos (``perception.materials.surface_appearance.SurfaceView``) the solid room surfaces are projected into
+    #: to MEASURE colour/texture (M2). Empty (default): nothing is measured and no surface gets a photo colour.
+    appearance_views: Tuple = ()
     #: When True, promoted corridor candidates are added directly to world.entities.
     promote_corridors: bool = True
     #: When True, promoted window candidates are added directly to world.entities and associated to rooms.
@@ -152,6 +160,10 @@ class CompileOptions:
     promote_stairs: bool = True
     #: When True, promoted building envelope and storey entities are added directly to world.entities.
     promote_building: bool = False
+    #: Plan F4: projected single-image room-layout edges in the world's plan frame ((x, z), (x, z)). They are a
+    #: lower-confidence ADDITIONAL observation for the S2 solver: they can only raise a wall no point supports to
+    #: OBSERVED with a layout basis, never move or outrank a measured wall. None = no layout evidence supplied.
+    layout_edges_ab: Optional[Sequence] = None
 
 
 @dataclass(frozen=True)
@@ -208,6 +220,44 @@ class CompileDiagnostics:
         for warning in self.interior_warnings:
             lines.append(f"  interior warning: {warning}")
         return "\n".join(lines)
+
+
+def _refine_room_detection(detection, result, up, budget_s):
+    """Re-fit the room-prior planes jointly (floor/ceiling parallel, walls perpendicular, robust to floaters).
+    Same plane ids; inliers are re-collected within 3 sigma of the refined plane. Any failure or an unusable
+    plane keeps the detection unchanged -- refinement must never make a compile fail."""
+    import numpy as np
+
+    from perception.geometry.planes import DetectedPlane, PlaneDetection
+    from reconstruction.refine.room_refine import refine_room
+
+    try:
+        ids = [p.track_id for p in result.points]
+        pts = np.asarray([p.position for p in result.points], dtype=float)
+        ref = refine_room(pts, detection.planes, up=tuple(up), time_budget_s=budget_s)
+        by_src = {rp.source_index: rp for rp in ref.planes if rp.status == "refined"}
+        out, used = [], set()
+        for i, pl in enumerate(detection.planes):
+            rp = by_src.get(i)
+            if rp is None:
+                out.append(pl)
+                continue
+            n = np.asarray(rp.normal, float)
+            n = n / np.linalg.norm(n)
+            dist = np.abs(pts @ n + rp.d)
+            tol = max(3.0 * rp.inlier_rms, 1e-12)
+            keep = sorted(ids[k] for k in np.flatnonzero(dist <= tol))
+            if len(keep) < 3:
+                out.append(pl)
+                continue
+            out.append(DetectedPlane(plane_id=pl.plane_id, normal=tuple(float(c) for c in n), d=float(rp.d),
+                                     inlier_ids=keep, inlier_rms_distance_m=float(rp.inlier_rms),
+                                     uncertainty=pl.uncertainty))
+            used.update(keep)
+        unassigned = sorted(set(ids) - used)
+        return PlaneDetection(planes=out, unassigned_point_ids=unassigned, points_total=len(ids))
+    except Exception:  # noqa: BLE001 -- refinement is an improvement step, never a failure path
+        return detection
 
 
 def compile_reconstruction_to_world(
@@ -274,11 +324,19 @@ def compile_reconstruction_to_world(
     # downstream. assemble_interior_scene has applied the same
     # provenance-recording refinement since PR #111; the compiler path
     # consuming raw detection was the defect.
-    detection = detect_planes(
-        result, seed=options.seed,
-        distance_tolerance_m=options.distance_tolerance_m,
-        min_inliers=options.min_inliers,
-    )
+    detection = None
+    if options.room_prior:           # floor/ceiling/walls from histograms; None = not room-like -> RANSAC below
+        from perception.geometry.room_box import detect_room_planes
+
+        detection = detect_room_planes(result, options.up)
+        if detection is not None and options.refine_room:
+            detection = _refine_room_detection(detection, result, options.up, options.refine_budget_s)
+    if detection is None:
+        detection = detect_planes(
+            result, seed=options.seed,
+            distance_tolerance_m=options.distance_tolerance_m,
+            min_inliers=options.min_inliers,
+        )
     positions_by_id = {p.track_id: p.position for p in result.points}
     refined_planes = refine_planes(
         detection.planes, positions_by_id, options.up,
@@ -751,6 +809,55 @@ def compile_reconstruction_to_world(
     except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
         interior_warnings.append(f"room semantics: {type(exc).__name__}: {exc}")
 
+    # ---- per-room footprints (multi-room / multi-storey: each room from its own storey floor) ----
+    try:
+        from perception.architecture.multi_room import refine_room_footprints
+        mr = refine_room_footprints(world, result, options.up, structure_prefix=options.structure_prefix)
+        interior_warnings.extend(f"multi-room: {w}" for w in mr.get("warnings", []))
+        if mr.get("rooms"):
+            world.metadata["multi_room"] = mr
+    except Exception as exc:  # noqa: BLE001 -- the single-space result stands; the failure is visible
+        interior_warnings.append(f"multi-room: {type(exc).__name__}: {exc}")
+
+    # ---- solved room layout -> solid wall/floor/ceiling slabs, openings carved into their host walls ----
+    try:
+        from perception.architecture.wall_slabs import promote_room_layout
+        before = set(world.entities)
+        layout_report = promote_room_layout(
+            world, result, options.up,
+            wall_planes=[(f"{options.structure_prefix}-{o.plane.plane_id}", positions.get(o.plane.plane_id, []))
+                         for o in oriented if o.role == "wall"
+                         and f"{options.structure_prefix}-{o.plane.plane_id}" in world.entities],
+            artifact_store=options.artifact_store, structure_prefix=options.structure_prefix,
+            layout_edges_ab=options.layout_edges_ab)
+        entities_created.extend(sorted(set(world.entities) - before))
+        interior_warnings.extend(f"room layout: {w}" for w in layout_report.get("warnings", []))
+    except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
+        interior_warnings.append(f"room layout: {type(exc).__name__}: {exc}")
+
+    # ---- F7: join rooms through the openings they share (same physical doorway on both partitions) ----
+    try:
+        from perception.architecture.room_join import join_rooms_through_openings
+        joins = join_rooms_through_openings(world)
+        interior_warnings.extend(f"room join: {w}" for w in joins.get("warnings", []))
+    except Exception as exc:  # noqa: BLE001 -- the rooms stand; the join failure is visible
+        interior_warnings.append(f"room join: {type(exc).__name__}: {exc}")
+
+    # ---- M2: measured colour per solid surface, only where a posed photo saw it (else color_state=not_measured) ----
+    if options.appearance_views:
+        try:
+            from perception.materials.room_surfaces import measure_world_appearance
+            measure_world_appearance(world, list(options.appearance_views), artifact_store=options.artifact_store)
+        except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
+            interior_warnings.append(f"surface appearance: {type(exc).__name__}: {exc}")
+
+    # ---- D3: reconcile area / extent / net wall area / dimension states across each room ----
+    try:
+        from perception.architecture.dimension_consistency import reconcile_room_dimensions
+        interior_warnings.extend(f"dimension consistency: {w}" for w in reconcile_room_dimensions(world)["warnings"])
+    except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
+        interior_warnings.append(f"dimension consistency: {type(exc).__name__}: {exc}")
+
     # ---- provenance stamping on the world itself ----
     # The world as a whole is derived from reconstruction; its
     # global_provenance records that without upgrading any entity's own
@@ -764,6 +871,15 @@ def compile_reconstruction_to_world(
         "registration_status": result.registration_status,
         "up": list(options.up),
     }
+
+    # ---- D1: every dimension carries {value, unit, state, basis, uncertainty_m} ----
+    # At compile time there is no scale yet, so units are model_units and states are capped at RECONSTRUCTED; the
+    # pipeline re-stamps after it records the scale. The flat *_m properties stay for existing readers.
+    try:
+        from world_ir.measure import stamp_world_dimensions
+        world.metadata["dimension_stamp"] = stamp_world_dimensions(world)
+    except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
+        interior_warnings.append(f"dimension state: {type(exc).__name__}: {exc}")
 
     # ---- validation gate ----
     report = validate_world_ir(world)

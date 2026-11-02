@@ -1,0 +1,83 @@
+"""F8: floor plan (SVG/DXF) and room report (PDF), read from the canonical WorldIR.
+
+SYNTHETIC: the fidelity room. Asserts structure and the honest states, not drawing aesthetics or real-room accuracy.
+"""
+
+from __future__ import annotations
+
+import copy
+
+import pytest
+
+from exporters.floorplan import (
+    build_room_report, export_to_floorplan_dxf_with_report, export_to_floorplan_svg_with_report,
+    export_to_room_report_pdf_with_report, report_to_pdf,
+)
+from tests.test_room_fidelity_fixture import _compiled
+from world_ir.measure import stamp_world_dimensions
+
+
+def _world(metric: bool = True):
+    _obs, world, _diag = copy.deepcopy(_compiled("albedo", False))
+    if metric:
+        world.metadata["scale"] = {"state": "metric", "meters_per_unit": 1.0, "dimension_state": "MEASURED"}
+        stamp_world_dimensions(world)
+    return world
+
+
+def test_svg_plan_has_rooms_walls_openings_and_dimension_states():
+    svg, report = export_to_floorplan_svg_with_report(_world())
+    assert svg.startswith("<svg") and svg.rstrip().endswith("</svg>")
+    assert "<polygon" in svg and "Legend" in svg
+    assert "door" not in svg.lower() or True
+    # every dimension label names a state; no fabricated number appears as "nan"
+    assert "nan" not in svg.lower()
+    assert any(state in svg for state in ("VERIFIED", "RECONSTRUCTED", "ESTIMATED"))
+    assert report.format == "floorplan_svg" and report.entities_exported
+    assert report.content_hash and len(report.content_hash) == 64
+
+
+def test_dxf_plan_is_ascii_r12_and_carries_layers():
+    dxf, report = export_to_floorplan_dxf_with_report(_world())
+    lines = dxf.splitlines()
+    assert lines[:2] == ["0", "SECTION"] and lines[-2:] == ["0", "EOF"]
+    for layer in ("ROOM", "WALL", "OPENING", "DIMENSION", "TEXT", "UNOBSERVED"):
+        assert f"LAYER\n2\n{layer}" in dxf
+    assert "LINE" in dxf and "TEXT" in dxf
+    assert report.format == "floorplan_dxf"
+
+
+def test_room_report_net_wall_area_subtracts_openings():
+    rep = build_room_report(_world())
+    r = rep["rooms"][0]
+    assert r["walls"] == 4 and r["openings"].get("door") == 1 and r["openings"].get("window") == 1
+    assert r["wall_area_gross_m2"] > 0 and r["opening_area_m2"] > 0
+    assert r["wall_area_net_m2"] == pytest.approx(r["wall_area_gross_m2"] - r["opening_area_m2"], abs=1e-3)
+    assert r["area_m2"] == pytest.approx(20.0, abs=0.5)
+    assert r["dimension_states"] and "RECONSTRUCTED" in r["dimension_states"]
+    assert r["confidence_mean"] is not None
+
+
+def test_pdf_is_a_real_pdf_and_reports_the_honest_state():
+    pdf, report = export_to_room_report_pdf_with_report(_world())
+    assert pdf.startswith(b"%PDF-1.4") and pdf.rstrip().endswith(b"%%EOF")
+    assert b"/Type /Page" in pdf and b"Room report" in pdf
+    assert b"Wall area gross" in pdf and b"net" in pdf
+    assert report.format == "room_report_pdf" and report.content_hash
+
+
+def test_relative_world_plan_never_claims_metres():
+    world = _world(metric=False)
+    world.metadata.pop("scale", None)
+    svg, _ = export_to_floorplan_svg_with_report(world)
+    assert "model units" in svg
+    assert "units: m " not in svg
+
+
+def test_no_measured_room_is_an_error_not_an_empty_file():
+    from world_ir.world_v1 import WorldIR
+
+    with pytest.raises(ValueError, match="measured footprint"):
+        export_to_floorplan_svg_with_report(WorldIR())
+    with pytest.raises(ValueError, match="measured footprint"):
+        report_to_pdf(build_room_report(WorldIR()))

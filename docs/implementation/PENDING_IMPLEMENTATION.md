@@ -5,7 +5,7 @@
 > that these features exist. Every entry names the evidence required to
 > advance its status; a status may only move when that evidence exists.
 
-Last reconciled: 2026-09-14 (mapping campaign; PRs #11, #12, #14, #16 merged; #17/#18 by concurrent agents; #19 open).
+Last reconciled: 2026-10-31 (room fidelity items S/D/O/M/V/U, site composer and landmark rows added; earlier rows 2026-09-14: mapping campaign; PRs #11, #12, #14, #16 merged; #17/#18 by concurrent agents; #19 open).
 
 Detailed per-subsystem specifications live in [`docs/future/`](../future/).
 Architecture rationale lives in [`../engineering/DESIGN_DECISIONS.md`](../engineering/DESIGN_DECISIONS.md).
@@ -99,11 +99,80 @@ Remaining (P2): appearance embeddings, epipolar verification.
 
 ## P0.11 — Dense multi-view geometry
 
-**Status: PARTIAL** — dense geometry currently comes from metricized
-mono-depth (per-view MiDaS + SfM alignment), NOT true multi-view stereo.
-COLMAP's `patch_match_stereo` is BLOCKED: the available binary is
-CPU-only (4.2.0, no CUDA). Remaining: dense MVS backend (CUDA COLMAP,
-OpenMVS, or hybrid), cross-view depth consistency checks.
+**Status: PARTIAL** — dense geometry comes from metricized mono-depth
+(per-view MiDaS + SfM alignment), true COLMAP MVS where the binary
+supports it, and (2026-10-31) a CPU plane-sweep backend:
+`reconstruction/backend/plane_sweep.py`, registered in
+`reconstruction/backend/dense_registry.py`, opt-in through
+`VerticalSliceOptions.plane_sweep_enabled`. The sweep derives its depth
+range from the sparse cloud, keeps a pixel only when one candidate depth
+beats the runner-up by a margin in every neighbour, and drops a blank
+wall instead of filling it; points enter `result.points` as
+`plane_sweep:` tracks and go through normal fusion. Tests:
+`tests/test_plane_sweep.py` (known-depth recovery, textureless refusal,
+pipeline stage). Remaining: measured wall-coverage improvement on a real
+room fixture (no real capture in the repo), CUDA/learned MVS options.
+
+## Room reconstruction fidelity (Phase 7, 2026-10-31)
+
+Plan: `docs/superpowers/plans/2026-10-30-room-reconstruction-fidelity.md`.
+Baseline and scorecard: `docs/reconstruction/ROOM_FIDELITY_BASELINE.md`,
+`scripts/room_fidelity_report.py`, CI gate `--fail-on-regression`.
+
+| # | Item | Status | Evidence / remaining |
+|---|---|---|---|
+| F1 | Capture guidance | IMPLEMENTED | `reconstruction/capture_quality.py`, `evidence/image_check.py`, coverage/hints in `engine/pipeline/guidance.py`; UI `CaptureCoverage.tsx`; `tests/test_capture_quality.py`. Not yet validated on a re-capture by a user. |
+| F2 | Phone LiDAR / depth ingestion | IMPLEMENTED (synthetic) | 16-bit sidecars `evidence/depth_frames.py`; metric scale from device depth `reconstruction/depth_scale.py`, wired in `vertical_slice` stage 2; unprojection in the sidecar depth stage. `tests/test_depth_scale.py`, `tests/test_synthetic_rgbd.py`. PHYSICAL DEVICE VERIFICATION PENDING. |
+| F3 | Dense geometry for blank walls | PARTIAL | CPU plane sweep above; textureless surfaces refuse by design. Real-fixture wall coverage not measured. |
+| F4 | Learned room-layout evidence | PARTIAL — BLOCKED on model choice | Sidecar contract, validation, floor-plane projection and lower-confidence fusion are implemented (`perception/architecture/layout_evidence.py`, `room_layout.solve_room_layout(layout_edges_ab=...)`); `tests/test_layout_evidence.py`. No HorizonNet/LayoutNet weights are shipped; `estimator_status()` reports UNAVAILABLE. Decision required: which offline layout model to install (plan section 6, item 3). |
+| F5 | Lighting-independent colour | IMPLEMENTED | Per-view white-balance/exposure normalisation in `perception/materials/surface_appearance.py`; `tests/test_surface_appearance.py`. Limited to overlapping views; no colour-card verification. |
+| F6 | User corrections as evidence | IMPLEMENTED | API `routes_worlds.py` corrections + `apps/api/models.py`; UI in the inspector; `tests/test_corrections.py`. |
+| F7 | Multi-room / whole-home | IMPLEMENTED | `perception/architecture/room_join.py` joins shared doorways; building promotion defect fixed; `tests/test_room_join.py`, `tests/test_room_fidelity_fixture.py`. |
+| F8 | Floor plan / room report | IMPLEMENTED | `exporters/floorplan.py` (SVG + DXF) and room report with wall areas net of openings; API route; `tests/test_floorplan_export.py`. Room report also renders as a hand-built PDF (`report_to_pdf`, wired through `sdk/reality.py` and `apps/api/routes_export.py`; `tests/test_floorplan_export.py`). No real-room plan has been checked against a tape measure. |
+| F9 | Accuracy scorecard in CI | IMPLEMENTED | `scripts/room_fidelity_report.py --fail-on-regression`, baseline JSON, `.github/workflows/ci.yml`. |
+| F10 | Progressive preview + timings | PARTIAL | Per-stage `elapsed_s` in progressive attempts and scorecard timings; progressive levels already return the strongest valid world. No performance target is set until real-capture baselines exist. |
+
+### Room fidelity plan items S/D/O/M/V/U (registered 2026-10-31)
+
+Plan: `docs/superpowers/plans/2026-10-30-room-reconstruction-fidelity.md`. HONEST BOUNDARY for every row: verified on
+SYNTHETIC fixtures only. No real-room photos and no tape measurements exist in the repo, so NOTHING below is VERIFIED
+and nothing is browser-verified. Statuses are held at PARTIAL/EXPERIMENTAL accordingly.
+
+| # | Item | Status | Evidence / remaining |
+|---|---|---|---|
+| P0 | Phase 0 baseline + CI gate | PARTIAL (synthetic only) | `scripts/room_fidelity_report.py`, `docs/reconstruction/ROOM_FIDELITY_BASELINE.md` + `room_fidelity_baseline.json`, `synthetic/fidelity_room` fixtures, CI job `fidelity-gate` in `.github/workflows/ci.yml`. The gate guards synthetic regressions only. |
+| S1-S4 | Structure: solid wall slabs with carved openings, Manhattan snapping, inferred closing walls, layout-consistency over the union of facing-wall spans | PARTIAL | `perception/architecture/wall_slabs.py`; `tests/test_wall_entities.py`, `tests/test_room_fidelity_fixture.py`. Wall thickness is always the labelled 0.10 m default (not measured). Real-room accuracy unknown. |
+| D1 | Dimension shape `{value, unit, state, basis, uncertainty_m}` (MEASURED / RECONSTRUCTED / ESTIMATED / VERIFIED) | PARTIAL | `world_ir/measure.py`; `tests/test_dimension_state.py`. |
+| D2/D2b | Known-length scale + scale SUGGESTION from a fitted door (user must accept; Decision 023 amendment) | PARTIAL | `reconstruction/scale.py`, `GET/POST /api/worlds/{id}/scale*`; `tests/test_scale_suggestion.py`. Accepting a suggestion has NEVER been exercised end to end (UI to API to rebuild to ESTIMATED dimensions). `scale.py` drops `dense_points` on rebuild. |
+| D3/D4 | Dimension consistency + dimension gates | EXPERIMENTAL | `perception/architecture/dimension_consistency.py`; `tests/test_dimension_gates.py` checks 2 % on L/W/H and 6 cm on openings against SYNTHETIC ground truth only. The real-room variant is opt-in and SKIPPED (needs photos + tape measurements from the user). |
+| O1/O2 | Openings / furniture from a learned 2D door/window detector | BLOCKED - DECISION REQUIRED | DECISION REQUIRED: which 2D door/window detector may be installed. OPTIONS: (a) install an open-vocabulary detector such as a YOLO/GroundingDINO-class model; (b) keep the geometry-only opening host already present; (c) defer. TRADEOFFS: accuracy vs install weight and licence. RECOMMENDATION: ask the user; keep geometry-only (b) meanwhile. DEPENDENCIES: model registry (`perception/model_registry.py`), offline checkpoint policy. |
+| M1/M2 | Surface colour (CIELAB robust median), hash-addressed texture atlas, unobserved texels transparent | PARTIAL | `perception/materials/room_surfaces.py`; `tests/test_room_surfaces.py`. `dense_ingest` persists the cloud without colour. |
+| M3 | Material hypotheses | EXPERIMENTAL | `perception/materials/material_hypotheses.py`: state ESTIMATED, `asserted=False`, confidence <= 0.4; compiler runs it via `CompileOptions.appearance_views`; `tests/test_material_hypotheses.py`. NOT wired to any physics-material mapping (by design, an unverified label must not drive physics). |
+| V1/V2 | Viewer: room shell + atlas texture, evidence summary in the inspector | EXPERIMENTAL (not browser-verified) | `frontend/src/lib/viewport/room-shell-model.ts`, `three-scene.ts` (atlas on `MeshLambertMaterial`), `inspector-evidence-model.ts`, `AdaptiveInspector` "Evidence summary", `apps/api/routes_artifacts.py` (texture by hash; `tests/test_api_world_artifacts.py`). Frontend 171/171 contract tests and `tsc --noEmit` exit 0; NO browser run. UVs on thin wall sides are stretched; the artifact route parses the full head WorldIR per request (uncached); the photo list shows view ids, not thumbnails. |
+| U1-U3 | UX: capture guidance and coverage, guided flow | PARTIAL | `frontend/src/lib/reconstruct/flow-model.ts`; guided-flow steps 4 and 5 always show "needs action"; capture-coverage routes have never run against a stored world. |
+
+Known limits recorded with this change (all OPEN): wall thickness is the labelled 0.10 m default; the camera view cone
+(30 deg half-angle, 8 m) used for coverage is an assumed model, not a calibrated one; `scale.py` drops `dense_points` on
+rebuild; `dense_ingest` persists the cloud without colour; capture-coverage routes never run against a stored world;
+accepting a scale suggestion never exercised end to end; guided-flow steps 4/5 always show "needs action"; the artifact
+route is uncached; UVs on thin wall sides are stretched; the photo list shows view ids rather than thumbnails.
+
+Dense CPU plane sweep exposure (F3): `apps/api/routes_reconstructions.py` accepts form fields `dense_cpu`,
+`plane_sweep_max_views`, `plane_sweep_stride`, `plane_sweep_planes` and `apps/api/jobs.py` forwards them
+(`tests/test_api_dense_cpu.py`, 8 tests). OFF by default. No real end-to-end job has been run with `dense_cpu=true`, so F3
+stays PARTIAL.
+
+Test status for this campaign (observed, not a full-suite claim): 44 tests in the freebuff-owned files; frontend 171/171
+contract tests with `tsc --noEmit` exit 0; `tests/test_api_dense_cpu.py` + `tests/test_api_world_artifacts.py` 19 tests;
+a backend agent reported 203 passed, 1 skipped, 0 failed over its own suites. A CLEAN FULL python suite result is NOT
+yet available (a run was still in progress when this was written); do not read this section as a full-suite pass.
+
+### Site composer and landmark reconstruction (registered 2026-10-31)
+
+| ID | Item | Status | Detail |
+|---|---|---|---|
+| SITE-1 | Site composer: user-directed placement of several reconstructed worlds on a metric grid | FOUNDATION (being built; not verified) | Tables `Site` / `SitePlacement`, routes `/api/sites`, frontend `/sites`. This is MANUAL placement only: the user decides where each world goes. It is NOT automatic cross-source or geo-registration, and it does not move [`P1.10 Cross-source registration`](../future/registration/CROSS_SOURCE_REGISTRATION.md), which stays MISSING. Do not advance past FOUNDATION until routes, UI and tests exist and have been run. |
+| LAND-1 | Landmark / curved-structure reconstruction from a single image (domes, arches, towers, facade ornament, e.g. Taj Mahal, Burj Khalifa) | MISSING | The current pipeline reconstructs planar rooms (walls, floor, ceiling, openings) and cannot recover curved or ornamented exterior architecture from one photograph. Not promised. ACCEPTANCE CRITERION: the reconstructed model is measured against a ground-truth model (for example surveyed dimensions or a reference mesh) with a stated error metric and threshold; looking plausible by eye does not count. DEPENDENCIES: a learned monocular / multi-view model, OR multi-view capture of the structure, AND curved-surface primitives in WorldIR (today only planes, boxes, cylinders and meshes of measured points). |
 
 ## P0.12 — Real mesh representation / P0.13 — Mesh → WorldIR
 
@@ -228,6 +297,22 @@ dense-MVS integration.
 Current merging is label + geometric proximity — an honest heuristic,
 never presented as a learned embedding. Evidence to advance: embedding
 backend behind an interface, epipolar verification, identity benchmark.
+
+### ML reconstruction, overlap intelligence and export plan (2026-11-01)
+
+Source plan: `2026-11-01-ml-reconstruction-overlap-plan.md`. Status per step, with the evidence that exists today:
+
+| Item | Status | Evidence / what is missing |
+|---|---|---|
+| Step 0: CUDA torch + `perception/device.py` | IMPLEMENTED | torch 2.14.0+cu130 on RTX 4050 (6 GB), fp16 matmul ran on GPU; `tests/test_device.py` passes on GPU and with `REALITY_DEVICE=cpu`; SAM and MiDaS backends use it. Other backends (Mask R-CNN) not yet wired. Dataset access requests (ScanNet++, ARKitScenes) NOT filed. |
+| Step 1: export fix | IMPLEMENTED | `GET /export/formats` + `downloadArtifact()` + icon grid; failures show status and server reason. Browser-verified (glTF download, 404 PLY error banner) in an older UI worktree; NOT yet browser-verified in this UI. 14/14 export route tests. Whether the 15 s default timeout was the user's real failure is not confirmed. |
+| Phase 1: observation ledger + association engine | FOUNDATION | `world_ir/observations.py`, `perception/instances/association.py`, `tests/test_association.py` (scenarios 2, 4, 5, 16, chain-vs-union-find, AMBIGUOUS, relative-depth widening, occlusion vs intersection). Synthetic only. NOT wired into the pipeline (`object_resolution.merge_hypotheses` is still what runs), no epipolar `geom_verified`, no negative-visibility evidence, no CONFLICTED surface fusion, ledger not persisted into WorldStore, sigma constants untuned. |
+| Phase 2: IMatcher (ALIKED+LightGlue), metric depth, benchmarks | MISSING | `reconstruction/{features,matching}` are still README stubs. |
+| Phase 3: cross-session identity via ledger | MISSING | Needs Phase 1 wired in. |
+| Phase 4: coverage map, capture requests | MISSING | |
+| Phase 5/6/7: completion, appearance, whole-journey validation | MISSING | |
+
+Open diagnosis (2026-11-01): the user's 10-photo room registers 9/10 cameras with COLMAP yet compiles to 2 walls and no floor; dense MVS runs and is rejected ("no material gain"). Root cause not found. COLMAP also refuses workspace paths over 170 characters (reproduced with a 262-character store path), which silently drops the pipeline to unregistered single-view fusion.
 
 ## P2.15 — Tracking / temporal identity
 

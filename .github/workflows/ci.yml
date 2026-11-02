@@ -107,6 +107,31 @@ jobs:
           # Run the vertical slice test which exercises the full CLI path
           pytest tests/test_cli_vertical_slice.py -v --tb=short
 
+  fidelity-gate:
+    name: Room Fidelity Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install package
+        run: pip install -e ".[dev]"
+      # F9: a change that makes the measured room worse fails CI. The baseline is the committed, reproducible
+      # scorecard from the synthetic fixture (docs/reconstruction/ROOM_FIDELITY_BASELINE.md).
+      - name: Fidelity scorecard regression gate
+        run: |
+          python scripts/room_fidelity_report.py \
+            --baseline docs/reconstruction/room_fidelity_baseline.json \
+            --fail-on-regression
+      - name: Fidelity and dimension contract tests
+        run: |
+          pytest tests/test_room_fidelity_report.py tests/test_room_fidelity_fixture.py \
+            tests/test_room_layout.py tests/test_dimension_state.py tests/test_scale_suggestion.py \
+            tests/test_corrections.py tests/test_floorplan_export.py tests/test_room_surfaces.py \
+            -q --tb=short
+
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest

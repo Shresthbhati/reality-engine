@@ -196,8 +196,9 @@ class TestCanonicalCompileEndToEnd:
         storeys = [e for e in reloaded.entities.values() if e.type == EntityType.STOREY]
         rooms = [e for e in reloaded.entities.values() if e.type == EntityType.ROOM]
         assert len(buildings) == 1
-        assert len(storeys) >= 2
-        assert len(rooms) >= 2
+        assert len(storeys) == 2
+        assert len(rooms) == 2
+        assert len({r.id for r in rooms}) == 2, "duplicate ROOM entity ids"
 
         # Relationships (topology) round-trip byte-for-byte, not just entity ids.
         for entity_id, original in world.entities.items():

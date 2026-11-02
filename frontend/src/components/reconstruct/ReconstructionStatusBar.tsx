@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -21,6 +22,9 @@ import type {
 } from "@/lib/api";
 import { changeCategoryCounts, describeBuild, evidenceInVersion, modelStateCopy, versionEvidenceSummary } from "@/lib/api";
 import type { WorldIR } from "@/types/worldir";
+import ScaleCard from "@/components/reconstruct/ScaleCard";
+import RoomSummaryCard from "@/components/reconstruct/RoomSummaryCard";
+import { parseCaptureQuality } from "@/lib/viewport/structure-points-model";
 import { cn } from "@/lib/utils";
 
 const STATE_STYLE: Record<ReconstructionState, string> = {
@@ -200,6 +204,8 @@ export interface ReconstructionStatusBarProps {
   onCancel?: (jobId: string) => void;
   /** Re-run a failed/cancelled reconstruction (the photos are kept). */
   onRetry?: (sessionId: string) => void;
+  /** Called after the user accepts/rejects a scale suggestion, so the owner can refresh `status`. */
+  onScaleChanged?: () => void;
 }
 
 export default function ReconstructionStatusBar({
@@ -212,12 +218,31 @@ export default function ReconstructionStatusBar({
   onCompareVersions,
   onCancel,
   onRetry,
+  onScaleChanged,
 }: ReconstructionStatusBarProps) {
   const [showEvidence, setShowEvidence] = useState(false);
   // null = automatic: open while there is no model yet (nothing else to look at),
   // collapsed to a one-line strip once a model exists so the viewport keeps the space.
   const [expandedPref, setExpandedPref] = useState<boolean | null>(null);
   const counts = useMemo(() => provenanceCounts(world), [world]);
+  // `/worlds/<id>?step=scale` (the reconstruct page's "Set scale" CTA) lands on the open scale card.
+  const hasModel = Boolean(status?.has_model);
+  useEffect(() => {
+    if (!hasModel || new URLSearchParams(window.location.search).get("step") !== "scale") return;
+    setExpandedPref(true);
+    const t = setTimeout(() => document.querySelector('[data-testid="scale-card"]')?.scrollIntoView({ block: "nearest" }), 80);
+    return () => clearTimeout(t);
+  }, [hasModel]);
+
+  // The workstation's primary action ("Set scale") asks this bar to open the scale card.
+  useEffect(() => {
+    const open = () => {
+      setExpandedPref(true);
+      setTimeout(() => document.querySelector('[data-testid="scale-card"]')?.scrollIntoView({ block: "nearest" }), 50);
+    };
+    window.addEventListener("reconstruction-expand", open);
+    return () => window.removeEventListener("reconstruction-expand", open);
+  }, []);
 
   if (!status) {
     return (
@@ -257,6 +282,21 @@ export default function ReconstructionStatusBar({
 
   return (
     <section aria-label="Reconstruction status" className="bg-[var(--bg-base)] text-neutral-200">
+      {/* results summary for the inspected version, read from its WorldIR */}
+      {status.has_model && world && (
+        <div className="border-b border-[var(--border)]">
+          <RoomSummaryCard
+            world={world}
+            worldId={viewingOld ? null : status.world_id}
+            refreshKey={model?.version_id}
+            onPhotosAdded={onScaleChanged}
+            scale={viewingOld ? null : model?.scale}
+            imagesUsed={viewingOld ? inspecting?.images_used : model?.images_used}
+            imagesRegistered={viewingOld ? inspecting?.registered_ids?.length ?? null : model?.images_registered}
+            captureQuality={viewingOld ? null : parseCaptureQuality(model?.capture_quality)}
+          />
+        </div>
+      )}
       {/* one-line strip: always visible */}
       <div className="flex h-9 items-center gap-2 px-3 text-[11px]">
         <span
@@ -360,7 +400,7 @@ export default function ReconstructionStatusBar({
       </div>
 
       {expanded && (
-      <div className="max-h-[42vh] overflow-y-auto border-t border-[var(--border)]">
+      <div className="max-h-[30vh] overflow-y-auto border-t border-[var(--border)]">
       <div className="flex flex-col gap-3 px-3 py-2.5 md:flex-row md:items-start md:gap-6">
         {/* state + model honesty */}
         <div className="min-w-0 md:w-[30%]">
@@ -388,6 +428,7 @@ export default function ReconstructionStatusBar({
                 {model.images_registered} of {model.images_used} photos placed in the model
                 {model.scale?.state?.toLowerCase() === "relative" ? " · relative scale (no real-world units)" : ""}
               </p>
+              {!viewingOld && <ScaleCard worldId={status.world_id} scale={model.scale} onChanged={onScaleChanged} />}
               <p
                 className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]"
                 title="Observed = seen directly. Inferred = deduced by the engine. Unknown = not seen, so not guessed."
@@ -550,6 +591,11 @@ export default function ReconstructionStatusBar({
             >
               <Plus className="h-3 w-3" aria-hidden /> Add evidence
             </button>
+            {world?.id && (
+              <Link href={`/reconstruct?world=${encodeURIComponent(world.id)}`} className="text-[11px] text-[var(--accent)] underline">
+                Capture tips
+              </Link>
+            )}
           </div>
           <ul className="space-y-1" data-testid="guidance">
             {status.guidance.slice(0, 4).map((g, i) => (

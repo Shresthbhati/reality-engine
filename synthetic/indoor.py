@@ -78,20 +78,24 @@ def panorama(eye: Sequence[float], *, yaws: int = 8, pitches_deg: Sequence[float
 
 def _room(scene: Scene, rid: str, x0, x1, y0, y1, z0, h, *, storey: int = 0, kind: str = "room",
           openings: Optional[Dict[str, List[Opening]]] = None, skip_walls: Sequence[str] = (),
-          floor_hole=None, ceiling_hole=None) -> None:
+          floor_hole=None, ceiling_hole=None, colors: Optional[Dict[str, Tuple[int, int, int]]] = None) -> None:
     """Floor, ceiling and four walls (sides: south y0, east x1, north y1, west x0). ``skip_walls`` omits a wall
-    another room already built (a shared wall is built once). Records the room and its openings in the truth."""
+    another room already built (a shared wall is built once). Records the room and its openings in the truth.
+    ``colors`` optionally overrides per-surface base colours: keys ``floor``, ``ceiling`` and the four side names."""
     openings = openings or {}
-    add_slab(scene, x0, x1, y0, y1, z0, label="floor", color=FLOOR_COLOR, ref=f"{rid}-floor", hole=floor_hole)
-    add_slab(scene, x0, x1, y0, y1, z0 + h, label="ceiling", color=CEILING_COLOR, ref=f"{rid}-ceiling",
-             hole=ceiling_hole)
+    colors = colors or {}
+    add_slab(scene, x0, x1, y0, y1, z0, label="floor", color=colors.get("floor", FLOOR_COLOR), ref=f"{rid}-floor",
+             hole=floor_hole)
+    add_slab(scene, x0, x1, y0, y1, z0 + h, label="ceiling", color=colors.get("ceiling", CEILING_COLOR),
+             ref=f"{rid}-ceiling", hole=ceiling_hole)
     sides = {"south": ((x0, y0), (x1, y0)), "east": ((x1, y0), (x1, y1)),
              "north": ((x1, y1), (x0, y1)), "west": ((x0, y1), (x0, y0))}
     for side, (p0, p1) in sides.items():
         if side in skip_walls:
             continue
         ops = openings.get(side, [])
-        add_wall(scene, p0, p1, z0, z0 + h, ref=f"{rid}-wall-{side}", openings=ops)
+        add_wall(scene, p0, p1, z0, z0 + h, ref=f"{rid}-wall-{side}", openings=ops,
+                 **({"color": colors[side]} if side in colors else {}))
         for op in ops:
             p0a, p1a = np.array(p0), np.array(p1)
             d = (p1a - p0a) / np.linalg.norm(p1a - p0a)
@@ -127,6 +131,74 @@ def single_room() -> IndoorScene:
     _clutter(s, "pillar", (3.8, 2.6, 0.0), (4.1, 2.9, 2.6))
     cams = panorama((1.3, 1.0, 1.4)) + panorama((3.7, 1.0, 1.4)) + panorama((2.5, 3.1, 1.4))
     return IndoorScene(s, cams)
+
+
+#: Fidelity fixture (docs/reconstruction/ROOM_FIDELITY_BASELINE.md): every surface a DISTINCT, well-separated colour so a
+#: colour that is lost, averaged or swapped is detectable. Known sizes: 5.0 x 4.0 x 2.6 m, one door, one window, two boxes.
+FIDELITY_COLORS = {"floor": (150, 110, 70), "ceiling": (240, 240, 235), "south": (200, 60, 60),
+                   "east": (60, 160, 70), "north": (60, 90, 200), "west": (210, 190, 60)}
+FIDELITY_FURNITURE = {"table": ((2.0, 1.2, 0.0), (3.2, 2.0, 0.75), (140, 90, 160)),
+                      "wardrobe": ((3.8, 2.6, 0.0), (4.4, 3.2, 1.8), (40, 40, 40))}
+
+
+def fidelity_room() -> IndoorScene:
+    """5 x 4 x 2.6 m box room with known ground truth for the room-fidelity scorecard: a door (south), a window
+    (north), a table and a wardrobe, and distinctly coloured walls / floor / ceiling (``FIDELITY_COLORS``)."""
+    s = Scene()
+    _storey(s, 0, 0.0, 2.6)
+    _room(s, "room-a", 0, 5, 0, 4, 0.0, 2.6, colors=FIDELITY_COLORS, openings={
+        "south": [Opening(offset=1.0, width=0.9, **DOOR)],
+        "north": [Opening(offset=1.5, width=1.2, **WINDOW)]})
+    for ref, (lo, hi, col) in FIDELITY_FURNITURE.items():
+        add_box(s, lo, hi, label="clutter", color=col, ref=ref)
+        s.truth["clutter"].append({"ref": ref, "min": tuple(lo), "max": tuple(hi), "color": col})
+    cams = panorama((1.3, 1.0, 1.4)) + panorama((3.7, 1.0, 1.4)) + panorama((2.5, 3.1, 1.4))
+    return IndoorScene(s, cams)
+
+
+def fidelity_ground_truth(ind: IndoorScene) -> dict:
+    """Schema ``room_fidelity_ground_truth/1`` (documented in datasets/README.md). Everything is derived from
+    ``scene.truth`` and the quads, never typed twice."""
+    t = ind.scene.truth
+    room = t["rooms"][0]
+    (x0, y0), (x1, y1) = room["min"], room["max"]
+    quad_col = {q.ref: q.color for q in ind.scene.quads if q.label != "glass"}
+    walls = []
+    for side, (a, b) in {"south": ((x0, y0), (x1, y0)), "east": ((x1, y0), (x1, y1)),
+                         "north": ((x1, y1), (x0, y1)), "west": ((x0, y1), (x0, y0))}.items():
+        walls.append({"id": f"{room['id']}-wall-{side}", "side": side, "start": list(a), "end": list(b),
+                      "length_m": float(np.hypot(b[0] - a[0], b[1] - a[1])),
+                      "height_m": room["ceiling_z"] - room["floor_z"],
+                      "color_rgb": list(quad_col[f"{room['id']}-wall-{side}"])})
+    return {
+        "schema": "room_fidelity_ground_truth/1", "fixture": "fidelity_room", "source": "synthetic",
+        "units": "m", "up_axis": "z", "scale_basis": "exact (synthetic generator)",
+        "room": {"id": room["id"], "length_m": x1 - x0, "width_m": y1 - y0,
+                 "height_m": room["ceiling_z"] - room["floor_z"], "floor_z": room["floor_z"],
+                 "ceiling_z": room["ceiling_z"], "area_m2": room["area_m2"], "min": list(room["min"]),
+                 "max": list(room["max"])},
+        "walls": walls,
+        "floor": {"color_rgb": list(quad_col[f"{room['id']}-floor"])},
+        "ceiling": {"color_rgb": list(quad_col[f"{room['id']}-ceiling"])},
+        "openings": [{"kind": o["kind"], "wall": o["wall"], "width_m": o["width"],
+                      "height_m": o["top"] - o["bottom"], "sill_m": o["bottom"], "center": list(o["center"])}
+                     for o in t["openings"]],
+        "furniture": [{"ref": c["ref"], "min": list(c["min"]), "max": list(c["max"]),
+                       "size_m": [h - l for l, h in zip(c["min"], c["max"])], "color_rgb": list(c["color"])}
+                      for c in t["clutter"]],
+    }
+
+
+def write_fidelity_fixture(out_dir):
+    """Write ``ground_truth.json`` for the fidelity fixture into ``out_dir`` (deterministic, sorted keys)."""
+    import json
+    from pathlib import Path
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "ground_truth.json"
+    path.write_text(json.dumps(fidelity_ground_truth(fidelity_room()), indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8")
+    return path
 
 
 def corridor_with_rooms() -> IndoorScene:
@@ -203,9 +275,16 @@ def voxel_downsample(points: np.ndarray, cell: float) -> np.ndarray:
 
 
 def observe(ind: IndoorScene, *, sensor: SensorModel = INDOOR_SENSOR, intr: Intrinsics = INDOOR_INTRINSICS,
-            stride: int = 2, voxel_m: float = 0.04, cameras: Optional[Sequence[Pose]] = None) -> Observation:
+            stride: int = 2, voxel_m: float = 0.04, cameras: Optional[Sequence[Pose]] = None,
+            colors: Optional[str] = None) -> Observation:
     """Render ``cameras`` (default: the scene's viewpoints) and back-project the valid depth. The camera that saw
-    each point is recorded; cameras whose view saw nothing valid are still registered poses."""
+    each point is recorded; cameras whose view saw nothing valid are still registered poses.
+
+    ``colors`` gives every point an observed RGB: ``"albedo"`` = the base colour of the surface the ray hit (what a
+    perfect colour mapper recovers; isolates pipeline loss from shading), ``"rendered"`` = the shaded pixel of the
+    rendered image (lambert + texture). ``None`` (default) records no colour, as before."""
+    if colors not in (None, "albedo", "rendered"):
+        raise ValueError("colors must be None, 'albedo' or 'rendered'")
     from provenance import Uncertainty
     from reconstruction.backend.interface import ReconstructedCameraPose, ReconstructedPoint, ReconstructionResult
 
@@ -219,18 +298,30 @@ def observe(ind: IndoorScene, *, sensor: SensorModel = INDOOR_SENSOR, intr: Intr
         rr, cc = np.nonzero(f.valid[::stride, ::stride])
         rr, cc = rr * stride, cc * stride
         z = f.depth_measured[rr, cc].astype(float)
+        if colors == "albedo":
+            pix_col = np.array([ind.scene.quads[i].color for i in f.quad_index[rr, cc]], dtype=float)
+        elif colors == "rendered":
+            pix_col = f.rgb[rr, cc].astype(float)
         cam_pts = np.stack([(cc + 0.5 - intr.cx) / intr.fx * z, (rr + 0.5 - intr.cy) / intr.fy * z, z], axis=1)
         world = cam_pts @ f.pose.matrix.T + np.asarray(f.pose.t)
         keep = voxel_downsample(world, voxel_m) if len(world) else world
-        for j, p in enumerate(keep):
-            pts.append((eid, p))
+        if colors is not None and len(world):
+            # voxel_downsample keeps the first row of each voxel in input order: recover each kept row's colour
+            keys = np.floor(world / voxel_m).astype(np.int64)
+            _, first = np.unique(keys, axis=0, return_index=True)
+            col_keep = pix_col[np.sort(first)]
+        else:
+            col_keep = [None] * len(keep)
+        for p, c in zip(keep, col_keep):
+            pts.append((eid, p, c))
     # one global voxel pass so overlapping views do not multiply points; first observer is kept
     if pts:
-        arr = np.array([p for _, p in pts])
+        arr = np.array([p for _, p, _c in pts])
         keys = np.floor(arr / voxel_m).astype(np.int64)
         _, first = np.unique(keys, axis=0, return_index=True)
         pts = [pts[i] for i in np.sort(first)]
     points = [ReconstructedPoint(position=tuple(float(v) for v in p), track_id=f"pt-{i:06d}",
-                                 source_evidence_ids=[eid], uncertainty=Uncertainty(confidence=0.9))
-              for i, (eid, p) in enumerate(pts)]
+                                 source_evidence_ids=[eid], uncertainty=Uncertainty(confidence=0.9),
+                                 color=None if c is None else tuple(int(round(v)) for v in c))
+              for i, (eid, p, c) in enumerate(pts)]
     return Observation(ReconstructionResult(points=points, camera_poses=poses, registration_status="success"), frames)

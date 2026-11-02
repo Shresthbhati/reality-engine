@@ -65,38 +65,14 @@ class SiftPairVerifier:
     #: one-way variant let different-texture look-alike scenes reach 16 "inliers", overlapping real links;
     #: ratio 0.75 / 0.5 px / mutual-NN brought that ceiling to 8 while keeping the true scene connected.
     def __init__(self, paths: Dict[str, Path], max_side: int = 960, ratio: float = 0.75, ransac_px: float = 0.5):
-        self.paths, self.max_side, self.ratio, self.ransac_px = dict(paths), max_side, ratio, ransac_px
-        self._feat: Dict[str, tuple] = {}
+        from reconstruction.matching.sift import SiftMatcher
 
-    def _features(self, eid: str):
-        if eid not in self._feat:
-            import cv2
-            img = cv2.imread(str(self.paths[eid]), cv2.IMREAD_GRAYSCALE)
-            if img is None:
-                raise ValueError(f"unreadable image for evidence {eid}: {self.paths[eid]}")
-            scale = self.max_side / max(img.shape)
-            if scale < 1:
-                img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-            kp, des = cv2.SIFT_create(nfeatures=4000).detectAndCompute(img, None)
-            self._feat[eid] = (np.float32([k.pt for k in kp]), des)
-        return self._feat[eid]
+        self.paths, self.max_side, self.ratio, self.ransac_px = dict(paths), max_side, ratio, ransac_px
+        self._matcher = SiftMatcher(self.paths, max_side, ratio, ransac_px)  # the logic lives behind IMatcher now
 
     def __call__(self, a: str, b: str) -> PairEvidence:
-        import cv2
-        (pa, da), (pb, db) = self._features(a), self._features(b)
-        if da is None or db is None or len(da) < 8 or len(db) < 8:
-            return PairEvidence(a, b, 0, 0, 0.0)
-        bf = cv2.BFMatcher(cv2.NORM_L2)
-        back = {m.queryIdx: m.trainIdx for m in bf.match(db, da)}
-        good = [m[0] for m in bf.knnMatch(da, db, k=2)
-                if len(m) == 2 and m[0].distance < self.ratio * m[1].distance and back.get(m[0].trainIdx) == m[0].queryIdx]
-        if len(good) < 8:
-            return PairEvidence(a, b, len(good), 0, 0.0)
-        p1 = pa[[m.queryIdx for m in good]]
-        p2 = pb[[m.trainIdx for m in good]]
-        _, mask = cv2.findFundamentalMat(p1, p2, cv2.FM_RANSAC, self.ransac_px, 0.999, 5000)
-        inl = int(mask.sum()) if mask is not None else 0
-        return PairEvidence(a, b, len(good), inl, inl / len(good))
+        r = self._matcher.match(a, b)
+        return PairEvidence(a, b, r.matches, r.inliers, r.inlier_ratio)
 
 
 # --------------------------------------------------------------------------- grouping
@@ -377,6 +353,50 @@ def diagnose_counts(n_input: int, registered_ids: Sequence[str], n_points: int, 
         len(grouping.groups) if grouping else None, None, None, None, n_points, None, None, runtime_s,
         None if outcome in _VALID else "; ".join(reasons), reasons,
         ["mean_reprojection_error_px", "components", "camera_coverage"])
+
+
+def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, *,
+                    n_duplicates_dropped: int = 0, structure: Optional[Dict[str, int]] = None) -> dict:
+    """Plain-language verdict on whether the photos could be placed in one shared 3D space.
+
+    Pairwise 2D matching cannot tell a consistent set from an inconsistent one (measured: an inconsistent set
+    passed the 2D gate with 31/45 verified pairs), so this is judged from the multi-view result itself. The causes
+    listed are candidates -- the check cannot tell which one applies."""
+    d = diagnose_counts(n_input, registered_ids, n_points)
+    state = {ReconOutcome.SUCCESS: "sufficient", ReconOutcome.PARTIAL: "partial"}.get(d.outcome, "insufficient")
+    out = {"state": state, "n_input": n_input, "registered": d.registered_images, "points": n_points,
+           "duplicates_dropped": n_duplicates_dropped, "reasons": list(d.reasons), "advice": []}
+    if state == "sufficient" and structure is not None:
+        # placing cameras is not building a room: the verdict also needs a closed room (a room entity, or a floor
+        # with at least three walls) -- otherwise it is only partial, and says what is missing
+        n = {k: int(v) for k, v in structure.items()}
+        out["room_found"] = n.get("room", 0) > 0 or (n.get("floor", 0) > 0 and n.get("wall", 0) >= 3)
+        if not out["room_found"]:
+            found = ", ".join(f"{v} {k}" for k, v in sorted(n.items()) if v) or "no structure"
+            miss = [k for k, need in (("floor", 1), ("wall", 3)) if n.get(k, 0) < need]
+            out["state"] = state = "partial"
+            out["reasons"].append(f"no closed room built (found {found}; missing {', '.join(miss) or 'closure'})")
+            out["message"] = (f"{d.registered_images}/{n_input} photos were placed, but no closed room could be "
+                              f"built: found {found}, {n_points} sparse points.")
+            out["advice"] = [
+                "Photograph the missing surfaces so every wall, the floor and the ceiling are each seen in at least "
+                "two photos that also share a corner or a door frame with a neighbouring wall.",
+                "Take the photos from different positions in the same room without changing the scene between shots.",
+            ]
+            return out
+    if state == "sufficient":
+        out["message"] = f"{d.registered_images}/{n_input} photos were placed in one shared 3D space."
+        return out
+    out["message"] = (f"Only {d.registered_images} of {n_input} photos could be placed in one shared 3D space "
+                      f"({n_points} points). The model is " + ("incomplete." if state == "partial" else
+                      "too sparse to build a trustworthy room."))
+    out["advice"] = [
+        "Photos must show one fixed scene: objects, lighting and layout must not change between shots (generated or "
+        "edited images usually fail this).",
+        "Move between shots, don't only rotate in place; keep roughly 60-80% overlap between neighbouring views.",
+        "Plain walls and glossy surfaces give no features: include furniture, door frames and edges in every view.",
+    ]
+    return out
 
 
 # --------------------------------------------------------------------------- correction loop

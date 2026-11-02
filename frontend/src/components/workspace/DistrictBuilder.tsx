@@ -107,7 +107,7 @@ export default function DistrictBuilder({
         </Field>
       </div>
 
-      <p className="text-[11px] text-neutral-500" data-testid="district-note">
+      <p className="text-[11px] text-[var(--text-tertiary)]" data-testid="district-note">
         {note || "Fix the highlighted values to see what will be generated."}
       </p>
 

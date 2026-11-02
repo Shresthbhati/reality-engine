@@ -32,14 +32,20 @@ export const MODE_TABS: NavEntry[] = [
 /** Left icon rail. `icon` is resolved in the component to keep this file React-free. */
 export const RAIL_ITEMS: NavEntry[] = [
   { id: "home", label: "Home", href: "/" },
+  { id: "worlds", label: "3D Studio", href: "/worlds", matches: ["/worlds"] },
+  { id: "sites", label: "Sites", href: "/sites", matches: ["/sites"] },
   { id: "ingest", label: "Ingest", href: "/reconstruct" },
   { id: "evidence", label: "Evidence", href: "/evidence", matches: ["/evidence"] },
-  { id: "worlds", label: "Worlds", href: "/worlds", matches: ["/worlds"] },
   { id: "sessions", label: "Sessions", href: "/sessions", matches: ["/sessions"] },
   { id: "reports", label: "Reports", href: "/reports", matches: ["/reports"] },
   { id: "settings", label: "Settings", href: "/settings" },
-  { id: "help", label: "Help", href: null },
 ];
+
+/** Mobile bottom tab bar: these five are tabs, the rest go behind "More". */
+export const MOBILE_PRIMARY_IDS = ["home", "worlds", "sites", "ingest", "sessions"];
+
+/** Where the top bar's Export button goes (the existing reports/export flow). */
+export const EXPORT_HREF = "/reports";
 
 function pathMatches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
@@ -70,6 +76,11 @@ export type ConnectionState = "checking" | "online" | "offline";
 export function connectionState(health: { ok: boolean } | null): ConnectionState {
   if (health === null) return "checking";
   return health.ok ? "online" : "offline";
+}
+
+/** Top-bar status text. Only what the API health check proves; never a fake "Saved". */
+export function statusText(state: ConnectionState): string {
+  return state === "online" ? "Online" : state === "offline" ? "Offline" : "Checking…";
 }
 
 /** Right-hand footer text; null (omitted) unless the API actually reported a count. */

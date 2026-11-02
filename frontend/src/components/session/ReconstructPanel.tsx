@@ -97,14 +97,14 @@ export default function ReconstructPanel({
       </button>
 
       {job?.status === "succeeded" && (
-        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--success, #2ecc71)" }}>
+        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--success)" }}>
           <CheckCircle2 className="w-3.5 h-3.5" />
           Reconstruction complete — opening World…
         </p>
       )}
 
       {job?.status === "partial" && (
-        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning, #e6a23c)" }}>
+        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning)" }}>
           <CheckCircle2 className="w-3.5 h-3.5" />
           Reconstruction partially complete — opening World…
         </p>
@@ -118,14 +118,14 @@ export default function ReconstructPanel({
       )}
 
       {job?.status === "failed" && (
-        <p className="flex items-start gap-1.5 text-xs" style={{ color: "var(--error, #e57373)" }}>
+        <p className="flex items-start gap-1.5 text-xs" style={{ color: "var(--error)" }}>
           <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{job.error ?? "Reconstruction failed."}</span>
         </p>
       )}
 
       {error && (
-        <p className="text-xs" style={{ color: "var(--error, #e57373)" }}>
+        <p className="text-xs" style={{ color: "var(--error)" }}>
           {error}
         </p>
       )}

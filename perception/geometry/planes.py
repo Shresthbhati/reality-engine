@@ -773,9 +773,12 @@ def detect_planes(
         _xyz = np.asarray([positions_by_id[pid] for pid in remaining_sorted], dtype=float).reshape(-1, 3)
         _ids = np.asarray(remaining_sorted, dtype=object)
 
-        def _collect(normal, d) -> List[str]:
+        def _inlier_mask(normal, d):
             dist = normal[0] * _xyz[:, 0] + normal[1] * _xyz[:, 1] + normal[2] * _xyz[:, 2] + d
-            return _ids[np.abs(dist) <= distance_tolerance_m].tolist()
+            return np.abs(dist) <= distance_tolerance_m
+
+        def _collect(normal, d) -> List[str]:
+            return _ids[_inlier_mask(normal, d)].tolist()
 
         # ---- consensus ----
         best_normal = None

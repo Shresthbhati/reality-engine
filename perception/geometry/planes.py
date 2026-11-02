@@ -867,3 +867,37 @@ def detect_planes(
         unassigned_point_ids=unassigned,
         points_total=len(result.points),
     )
+
+
+def plane_centroids(
+    result: ReconstructionResult, planes: Sequence[DetectedPlane]
+) -> Dict[str, Tuple[float, float, float]]:
+    """Mean 3D position of each plane's own real inlier points.
+
+    A DetectedPlane's (normal, d) describes an infinite plane with no
+    spatial extent -- it says nothing about WHERE on that plane the real
+    structure actually sits. The centroid is that missing spatial
+    location, computed from the plane's own inlier point positions. It
+    exists to let orientation.classify_planes pick the camera that
+    actually observed THIS plane (nearest to it in full 3D) rather than
+    the mean of every camera in the capture, which is essential once a
+    capture spans more than one room or storey: a camera in a distant
+    room can otherwise look like a better orientation reference than the
+    plane's own local cameras merely by chance proximity along one axis.
+    Planes whose inlier ids are not found in `result` (should not happen
+    for a PlaneDetection produced from the same `result`) are omitted,
+    not guessed.
+    """
+    positions_by_id = {p.track_id: p.position for p in result.points}
+    centroids: Dict[str, Tuple[float, float, float]] = {}
+    for plane in planes:
+        positions = [positions_by_id[pid] for pid in plane.inlier_ids if pid in positions_by_id]
+        if not positions:
+            continue
+        n = len(positions)
+        centroids[plane.plane_id] = (
+            sum(p[0] for p in positions) / n,
+            sum(p[1] for p in positions) / n,
+            sum(p[2] for p in positions) / n,
+        )
+    return centroids

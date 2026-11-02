@@ -12,20 +12,16 @@ from pathlib import Path
 log = logging.getLogger("reality.api.worlds")
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api import place_summary
 from apps.api.db import get_db
 from apps.api.models import (
     ActivityEvent,
     Evidence,
-    Job,
     Location,
     Session,
-    Upload,
     World,
     WorldVersion,
     new_id,
@@ -121,92 +117,6 @@ async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)
         )).all()
     )
     return {"items": [_world_out(w, ses_counts.get(w.id, 0)) for w in res.scalars().all()]}
-
-
-class WorldRename(BaseModel):
-    name: str
-
-
-@worlds.patch("/{world_id}")
-async def rename_world(world_id: str, body: WorldRename, db: AsyncSession = Depends(get_db)) -> dict:
-    from apps.api.validation import require_name
-
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    old = w.name
-    w.name = require_name(body.name, "world name")
-    db.add(ActivityEvent(id=new_id("act"), type="world.renamed", entity_type="world", entity_id=w.id,
-                         summary=f"World '{old}' renamed to '{w.name}'"))
-    await db.commit()
-    return {"id": w.id, "name": w.name}
-
-
-@worlds.delete("/{world_id}", status_code=204)
-async def delete_world(world_id: str, db: AsyncSession = Depends(get_db)) -> Response:
-    """Delete a place: its application records, its quarantined version records, its derived reconstruction state.
-
-    Refused (409) while a build is queued or running. Shared content-addressed artifacts are NOT removed (see
-    worldstore_service.delete_world_state)."""
-    from apps.api import worldstore_service
-
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    session_ids = list((await db.execute(select(Session.id).where(Session.world_id == world_id))).scalars().all())
-    if session_ids:
-        busy = (await db.execute(
-            select(Job.id).where(Job.entity_id.in_(session_ids), Job.status.in_(("queued", "running"))).limit(1)
-        )).scalar_one_or_none()
-        if busy:
-            raise HTTPException(409, f"a build is in progress (job {busy}); wait for it to finish or cancel it first")
-    version_ids = list((await db.execute(select(WorldVersion.id).where(WorldVersion.world_id == world_id))).scalars().all())
-
-    name = w.name
-    from sqlalchemy import delete
-
-    ev_rows = (await db.execute(
-        select(Evidence.id, Evidence.upload_id).where(Evidence.session_id.in_(session_ids))
-    )).all() if session_ids else []
-    evidence_ids = [r[0] for r in ev_rows]
-    upload_ids = [r[1] for r in ev_rows if r[1]]
-    for entity_type, ids in (("session", session_ids), ("evidence", evidence_ids), ("world", [world_id])):
-        if ids:
-            await db.execute(delete(Location).where(Location.entity_type == entity_type, Location.entity_id.in_(ids)))
-    if session_ids:
-        await db.execute(delete(Job).where(Job.entity_type == "session", Job.entity_id.in_(session_ids)))
-        await db.execute(delete(Evidence).where(Evidence.session_id.in_(session_ids)))
-        if upload_ids:
-            await db.execute(delete(Upload).where(Upload.id.in_(upload_ids)))
-        await db.execute(delete(Session).where(Session.id.in_(session_ids)))
-    if version_ids:
-        await db.execute(delete(WorldVersion).where(WorldVersion.world_id == world_id))
-    await db.delete(w)
-    db.add(ActivityEvent(id=new_id("act"), type="world.deleted", entity_type="world", entity_id=world_id,
-                         summary=f"World '{name}' deleted"))
-    await db.commit()
-    # Disk state last: if it fails the place is already gone from the app, and the leftovers are inert.
-    worldstore_service.delete_world_state(world_id, version_ids)
-    return Response(status_code=204)
-
-
-@worlds.get("/{world_id}/thumbnail")
-async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession = Depends(get_db)):
-    """A 480 px JPEG of one of the place's own photographs (a placed one when the model has them). `v` is only a
-    cache-buster the client sets to the current version id."""
-    import asyncio
-
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    ev = await place_summary.pick_thumbnail_source(db, w)
-    if ev is None:
-        raise HTTPException(404, "This place has no photographs yet, so there is nothing to show")
-    path = place_summary.thumbnail_path(w, ev)
-    rendered = await asyncio.to_thread(place_summary.render_thumbnail, ev, path)
-    if rendered is None:
-        raise HTTPException(404, "The photograph could not be read, so no thumbnail was made")
-    return FileResponse(rendered, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
 
 
 @worlds.get("/{world_id}")
@@ -580,20 +490,6 @@ async def entity_provenance(
         "evidence": [],
         "reason": "This version has no source capture sessions (procedurally generated, or predates session tracking).",
     }
-
-
-@worlds.get("/{world_id}/quality")
-async def world_quality(
-    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
-) -> dict:
-    """Per-entity quality bands plus the place-level summary the viewer's quality card shows (B-07)."""
-    row = await _version_row(db, world_id, version)
-    world_row = await db.get(World, world_id)
-    world = _load_world_or_409(row)
-    card = (await place_summary.summaries(db, [world_row]))[world_id]
-    out = place_summary.quality_view(world, card, row.report)
-    out["version_id"] = row.id
-    return out
 
 
 @worlds.get("/{world_id}/report")
@@ -1736,3 +1632,40 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
             "dimension_state_after": "ESTIMATED" if body.method == PRIOR_ACCEPTED else "MEASURED",
             "note": "the same world will be re-evaluated with this measured distance; a new version is created "
                     "only if the authoritative geometry changes"}
+
+
+@worlds.get("/{world_id}/thumbnail")
+async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession = Depends(get_db)):
+    """A 480 px JPEG of one of the place's own photographs (a placed one when the model has them). `v` is only a
+    cache-buster the client sets to the current version id."""
+    import asyncio
+    from fastapi.responses import FileResponse
+    from apps.api import place_summary
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    ev = await place_summary.pick_thumbnail_source(db, w)
+    if ev is None:
+        raise HTTPException(404, "This place has no photographs yet, so there is nothing to show")
+    path = place_summary.thumbnail_path(w, ev)
+    rendered = await asyncio.to_thread(place_summary.render_thumbnail, ev, path)
+    if rendered is None:
+        raise HTTPException(404, "The photograph could not be read, so no thumbnail was made")
+    return FileResponse(rendered, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@worlds.get("/{world_id}/quality")
+async def world_quality(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Per-entity quality bands plus the place-level summary the viewer's quality card shows (B-07)."""
+    from apps.api import place_summary
+
+    row = await _version_row(db, world_id, version)
+    world_row = await db.get(World, world_id)
+    world = _load_world_or_409(row)
+    card = (await place_summary.summaries(db, [world_row]))[world_id]
+    out = place_summary.quality_view(world, card, row.report)
+    out["version_id"] = row.id
+    return out

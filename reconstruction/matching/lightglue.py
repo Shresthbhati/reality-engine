@@ -49,7 +49,7 @@ class LightGlueMatcher:
 
         import torch
         import kornia.feature as kf
-        from perception.device import select_device
+        from engine.core.device import select_device
 
         if self._custom_device:
             self._device = torch.device(self._custom_device)

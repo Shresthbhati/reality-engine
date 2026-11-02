@@ -12,12 +12,11 @@ Device: CUDA with fp16 when available (via perception.device.select_device), CPU
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
-from evidence.session import EvidenceItem, EvidenceKind
-from perception.device import select_device
+from engine.core.device import select_device
 from provenance import Uncertainty
 
 from .interface import DepthMap, IDepthBackend
@@ -98,7 +97,7 @@ class DepthAnythingV2Backend(IDepthBackend):
                 f"Failed to load Depth Anything V2 checkpoint '{self._checkpoint}': {e}"
             ) from e
 
-    def estimate_depth(self, evidence: List[EvidenceItem]) -> List[DepthMap]:
+    def estimate_depth(self, evidence: List[Any]) -> List[DepthMap]:
         """Produce one DepthMap per PHOTO/VIDEO evidence item."""
         _ensure_dependencies()
         import numpy as np
@@ -106,7 +105,8 @@ class DepthAnythingV2Backend(IDepthBackend):
         from PIL import Image
 
         image_evidence = [
-            e for e in evidence if e.kind in (EvidenceKind.PHOTO, EvidenceKind.VIDEO)
+            e for e in evidence
+            if str(getattr(e, "kind", "")).lower() in ("photo", "video", "evidencekind.photo", "evidencekind.video")
         ]
         if not image_evidence:
             return []

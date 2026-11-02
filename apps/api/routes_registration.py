@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from engine.math import Quat, Vec3
-from reconstruction.calibration.transforms import CalibrationTransformError, RigidTransform
+from registration.registration import RegistrationError, RigidTransform
 from registration.cross_session import SessionAlignment, refine_session_chain
 from registration.pose_graph import Edge, GnssPrior, Pose, PoseGraphError, optimize_pose_graph
 
@@ -104,6 +104,6 @@ def refine_alignments(body: SessionAlignmentsIn) -> dict:
                 a.from_session, a.to_session, "accepted", a.method, tr, a.rmse, 1.0,
                 "supplied by caller", 0, 0)
         report = refine_session_chain(anchors, body.sessions, body.characteristic_length_m)
-    except (CalibrationTransformError, PoseGraphError, ValueError) as exc:
+    except (RegistrationError, PoseGraphError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
     return report.to_dict()

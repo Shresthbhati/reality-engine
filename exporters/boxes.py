@@ -39,6 +39,35 @@ class PlacedBox:
         return tuple(c + s / 2.0 for c, s in zip(self.center, self.size))
 
 
+def with_explicit_placement(world):
+    """Shallow copy of ``world`` in which every GENERATED entity that has real box bounds but NO transform gets an
+    explicit identity placement ({0, 0, 0}).
+
+    Procedural grammars author their bounds directly in world space and attach no transform, so the exporters that
+    require ``transform.position`` skipped every procedural entity (measured: 11 of 14 exporters exported 0 of 35
+    entities of a generated building). Identity is the TRUE offset for such entities, not a guess. Entities of any
+    other provenance (e.g. reconstructed) that lack a transform are left alone and still skipped: their bounds may
+    be in a local frame and placing them at the origin would be an invention. The input world is not modified."""
+    import copy
+    from dataclasses import replace
+    from provenance import Provenance
+
+    def bounded(entity):
+        return any(g in world.geometries and world.geometries[g].type in _EXPORTABLE
+                   and world.geometries[g].bounds_min is not None and world.geometries[g].bounds_max is not None
+                   for g in entity.geometry_ids)
+
+    fixed = {k: (replace(e, transform={**(e.transform or {}), "position": {"x": 0.0, "y": 0.0, "z": 0.0}})
+                 if e.provenance == Provenance.GENERATED and not (e.transform or {}).get("position") and bounded(e)
+                 else e)
+             for k, e in world.entities.items()}
+    if all(fixed[k] is e for k, e in world.entities.items()):
+        return world
+    out = copy.copy(world)
+    out.entities = fixed
+    return out
+
+
 def collect_boxes(world, require_position: bool = True) -> Tuple[List[PlacedBox], List[str], List[str]]:
     """(boxes, skipped ids, skip reasons) in the world's entity order -- deterministic.
 

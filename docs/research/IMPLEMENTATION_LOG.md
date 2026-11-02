@@ -1,97 +1,114 @@
-# Implementation Log — Reality Engine Capability Fusion
+# Implementation log
 
-Chronological record of work actually performed in this session. Statuses: implemented / tested / benchmarked / documented / planned / blocked. Nothing is claimed as run unless it actually ran.
+Environment: Windows 11, Python 3.14.7, Node 26.8.1, RTX 4050 6 GB, **PyTorch 2.14.0+cpu (CUDA unavailable to torch)**,
+COLMAP 4.2.0 CPU-only binary, SciPy 1.18.1. GTSAM: no wheel for Python 3.14. Open3D: not installed.
 
-## Session context
-- Reality Engine root: `C:\Users\shres\.cline\worktrees\fed0c\reality-engine` (branch `cline/fed0c`, commit `f53af6e`, working tree clean before this session)
-- Codes sibling: `C:\Users\shres\.cline\worktrees\fed0c\codes` (created)
-- Environment: Windows, Python 3.14.7, pytest 9.1.1, Node.js v26.8.1 / npm 11.19.0, torch 2.14.0+cpu, torchvision 0.29.0+cpu, numpy 2.5.3, scipy 1.18.1, opencv 5.0.0, pillow 12.3.0, segment-anything installed; COLMAP binary at `C:\Users\shres\tools\colmap-extracted\bin\colmap.exe`; no GPU/CUDA; PyPI (files.pythonhosted.org) unreachable — `pip install` fails, so no additional Python packages or model weights can be fetched.
+## Batch A -- stabilise
+- Baseline (`pytest tests -m "not slow"`, before any fix): **6 failed, 3159 passed, 28 skipped, 5 xfailed** in 25m48s.
+  - FIXED `reconstruction/merge.py:90` read `point.color` on points lacking it (2 colmap_coverage tests) -> `getattr(..., None)`.
+  - FIXED `assistant` package missing from `pyproject.toml` packages.find.include (packaging smoke).
+  - FLAKY `test_world_store_concurrency::test_no_lost_writes_under_thread_contention`: failed in the 25-min run,
+    passed in isolation. Under-load race in WorldStore -- NOT root-caused; do not treat as resolved.
+  - OPEN 2x `test_geometry_artifacts::TestPromoteRoomsWritesRealGeometry`: compiled rooms now carry an INFERRED BOX
+    geometry `geom-room-plane-NNN` with no `data_uri`; tests expect a boundary point cloud / empty geometry_ids.
+    Coincides with the "true room footprint" interior redesign (commit 489272b). Needs an owner decision on which
+    contract is intended; not touched.
+- 3D Tiles profile verified: 8 tests pass, tileset validates against the official 3d-tiles schema; also Godot profile
+  regression (15 pass). CLI `export --format 3dtiles|godot` writes bundle files as bytes. Box geometry + 1 LOD only.
+- `cityjson.io` named in the brief does not exist; cloned `cityjson/specs` and `cityjson/cjval` instead.
 
-## Work performed
+## Batch B -- SAM
+- Backlog said SAM BROKEN; measured: **works** (vit_b, CPU, 1280x960 real photo, points_per_side=16: 12 regions, 29 s).
+- Real defects fixed in `perception/segmentation/sam_backend.py`: (1) default vit_h would silently download ~2.5 GB
+  -> now `allow_download=False` by default with an actionable error naming cached alternatives; (2) per-image failures
+  were swallowed invisibly -> `backend.diagnostics` (status ok/skipped/failed, reason, seconds, device). A missing file
+  previously returned `[]` with no explanation (observed). Tests: 3 added, 23 pass incl. the real-model integration test.
+- Not done: Depth Anything V2 benchmark vs MiDaS; unified perception-provider interface; GPU torch.
 
-### Phase 0 — Protect and baseline (completed)
-- Inspected repository root, git status (clean, branch `cline/fed0c`), git log, branch list.
-- Inspected authoritative docs: `REALITY_ENGINE_CURRENT_STATUS.md` (reconciled 2026-09-23), `ARCHITECTURE.md` (V11 dependency rules), `BUILD_ORDER.md`, `KNOWN_LIMITATIONS.md`, `TECHNOLOGY_REGISTRY.md`, `DECISIONS.md`, `CAPABILITY_MATRIX.md`, `WORLD_IR_IMPLEMENTATION.md`, `RECONSTRUCTION_BACKEND_DECISION.md`.
-- Mapped source: `reconstruction/` (COLMAP backend, orchestrator, scale, consistency, depth_to_points, meshing, evaluation), `perception/` (depth MiDaS + SAM backends behind IDepthBackend/ISegmentationBackend, availability probe), `registration/` (ICP/GNSS/point-to-plane/covariance), `world_ir/` (WorldIR v1/v2, schema, coordinates, diff, frame_graph, incremental, entity_reid), `worldstore/` (immutable versions, sequence lock, integrity), `exporters/` (glTF/USDA/Blender/CityJSON/CityGML), `apps/cli/` (+ FastAPI API), `frontend/` (Next.js + Three.js), `benchmarks/`, `tests/`.
-- Baseline tests run (results below).
-- Recorded environment capabilities and pre-existing failures.
+## Batch C -- pose graph
+- New `registration/pose_graph.py` (scipy backend). 7 tests (synthetic circular trajectory with known ground truth).
+- Measured design failures along the way, kept as documented reasons in the module docstring:
+  absolute rotation-vector parameterisation is singular past pi (did not converge in 300 evals, 28 s) -> local
+  perturbations + vectorised residuals (131 s -> 14 s suite); Huber smeared an outlier onto healthy edges; Cauchy from a
+  drifted start rejected a legitimate loop closure -> likelihood-ratio test per candidate constraint.
+- GNSS: needs >=3 non-collinear anchors; initial guess is Kabsch-aligned to the anchors.
+- CLI `pose-graph` added. NOT yet connected to registration/cross_session.py or WorldIR; no IMU/VIO.
 
-### Phase 1 — Acquire candidate repositories (completed for highest-priority subset)
-- Created `codes/` as a sibling of `reality-engine` (not inside its tree).
-- Cloned REA: `codes/rea`, commit `b22b0ef22a34ce983d12d015d2895f70263f457a`, branch main, MIT license. Shallow clone. Full `npm ci && build` NOT attempted (Node 26.8.1 below REA's 26.12.1 minimum).
-- Cloned COLMAP: `codes/colmap`, commit `fa089062a56261d11b070aaea0c767cc3730526f`, branch main (shallow), New BSD license. Colmap binary already installed separately on this machine.
-- Cloned Open3D: `codes/Open3D`, commit `b6c5e196384ad71e75b6e6f9c5da22d046221f1d`, branch main (shallow), MIT license. open3d python package NOT installable here (PyPI unreachable).
-- Deferred (not cloned, with reasons): ORB_SLAM3, VINS-Fusion, GTSAM, OpenVINS, segment-anything, Depth-Anything-V2, Detectron2, PyTorch3D, CesiumJS, 3d-tiles, MapLibre, GDAL, PROJ, IfcOpenShell, OpenUSD, Blender, CityJSON/CityGML, ROS2, Gazebo, Habitat-Sim, SUMO.
-### Phase 2 — Establish REA (partially completed — source inspection only)
-- Inspected REA README, LICENSE (MIT), AGENTS.md, package.json (v6.7.0), docs/cli.md, docs/installation.md, docs/architecture.mermaid, src/cli, src/domain, src/application, src/contracts, scripts/rea.mjs.
-- Determined REA architecture: entry points (CLI/MCP/dispatcher), composition (provider/session factories), application layer (SessionProviderRouter + BinarySession, AnalysisProviderRegistry = deterministic selection, no fallback, EvidenceLedger + Unknown ownership), provider layers (Ghidra/IDA/Hopper/Kuna/Frida = bring-your-own commercial tools).
-- REA runtime blocked: live binary analysis requires Ghidra/IDA/Hopper (not installed) and Node >= 22.23.4/24.22.1/>=26.12.1 (env has 26.8.1). Used REA as source-level research material per the fallback rule.
+## Batch C (cont.) -- pose graph wired into cross-session registration, WorldIR, API
+- `registration/cross_session.py`: `refine_session_chain` (joint solve over ALL accepted pairwise alignments; BFS result
+  is the initial guess and is preserved under `refinement.initial_transforms`; reference stays at identity),
+  `align_reconstructed_sessions(all_pairs=, refine=)` (opt-in; defaults unchanged), `CrossSessionReport.refinement`
+  (serialised only when set), `record_cross_session_registration(world, report)` -> `world.metadata["registration"]
+  ["cross_session"]` with provenance `registration:pose_graph` | `registration:chain`. Per-session frames cannot be
+  WorldIR frame-graph edges (Frame is a closed enum), hence the metadata record.
+- Side fix: `align_reconstructed_sessions` used `list(results.keys())` as the chain, which only treats the reference
+  correctly if it is first; the chain is now reference-first.
+- `registration/pose_graph.py`: constraints that are inconsistent but NOT individually identifiable (single loop: every
+  edge's removal removes the same cost) are reported in `ambiguous`, nothing rejected; cross-session then keeps the BFS
+  result and records `refinement.status = "ambiguous"`. Multi-loop graphs identify the offender (tested, 4 sessions).
+- API `apps/api/routes_registration.py` (mounted in `apps/api/main.py`): `POST /api/registration/pose-graph`,
+  `POST /api/registration/session-alignments`. Stateless; 422 with the optimiser's reason; size caps.
+- Tests: 27 pass (pose graph 8, cross-session refinement 8, API 5, existing cross-session 6).
+- MEASURED, upstream: on three synthetic sessions with known frames, `align_session` ACCEPTED a C->A alignment that is
+  4.29 m off (rmse 0.55 m, inlier fraction 1.0) while A/B and B/C were exact. The pose graph flagged the loop as
+  inconsistent and refused to guess. The ICP acceptance gate (relative to scene scale) is the weak point, not the graph.
 
-### Phase 3 — Map Reality Engine (completed)
-- Confirmed RE is mature: WorldIR v1/v2, WorldStore immutable versioning, COLMAP reconstruction, ICP/GNSS registration, metric scale anchoring, cross-view depth consistency, exporters, CLI/API, frontend, spatial index, frame graph.
-- Identified genuine gaps are environment-blocked (neural checkpoints, GPU, open3d wheel) or scope-deferred (SLAM, BIM, geospatial, multi-session pose-graph); no working component needs rewriting.
+## Batch E (start) -- CityJSON validated against the official schema
+- Oracle: `cityjson/specs` schemas (v2.0.2, draft-07) via jsonschema + referencing. `cjval` itself NOT run (no Rust
+  toolchain here), so geometric validity (planarity, ring orientation, closed shells) is UNCHECKED; only structure is.
+- DEFECT FOUND AND FIXED: `exporters/cityjson/exporter.py` emitted `MultiSurface.boundaries` one nesting level too
+  shallow (list of rings instead of surfaces -> rings -> indices). Every exported object failed the schema; the module
+  and tests claimed official-tool parseability. Fixed at both emit sites (`[ring]`).
+- Two existing tests indexed `boundaries` with the old shape (they encoded the defect); updated to flatten
+  surface -> ring -> index. New test `test_output_validates_against_official_cityjson_schema` (skips if the clone is
+  absent). Exporter suite: 79 passed, 1 skipped.
+- Gaps: exporter declares version "1.1" while the oracle is 2.0.2 (version string substituted in the test; for the types
+  emitted the structure is identical, not proven for every 1.1/2.0 difference); a procedural building exported 0
+  CityObjects (entities carry no transform position, so they are skipped) -- the exporter cannot yet export procedural
+  worlds; CityGML/3DCityDB exporters not yet checked against an oracle.
 
-### Phase 4 — Decompose and prioritize (completed)
-- Wrote `docs/research/REPOSITORY_INVENTORY.md` (3 cloned + deferred list with reasons).
-- Wrote `docs/research/capability-fusion-matrix.csv` (14 rows: REC-001, REG-001, DEP-001, SEG-001, REA-001, WIR-001, WS-001, EXP-001, SPA-001, CF-001, PER-ARCH, BIM-001, SLAM-001).
-- Wrote `docs/research/TECHNOLOGY_DECOMPOSITION.md` (REA, COLMAP, Open3D, Depth/Segmentation, SLAM, Geospatial, BIM decompositions + cross-cutting findings).
-- Wrote `docs/research/REALITY_ENGINE_TARGET_ARCHITECTURE.md` (9 layers, principles, backward compatibility).
-- Wrote `docs/research/INTEGRATION_DECISIONS.md` (decision index + details + licensing attestation).
+## Batch E (cont.) -- procedural worlds now export from every applicable format
+- MEASURED before: on a generated 2-storey building (35 entities), 11 of 14 exporters exported 0 entities (every
+  exporter that requires `transform.position`); only ifc, godot and 3dtiles exported (30 each).
+- Cause: procedural grammars author bounds in world space and attach no transform. Fix: `exporters.boxes.
+  with_explicit_placement(world)` gives GENERATED, box-bounded, transform-less entities an explicit identity placement
+  on a shallow copy; `sdk.reality.export` / `export_profile` apply it (so CLI and API get it too). Other provenance
+  without transform is still skipped (bounds frame unknown).
+- AFTER: 13 of 14 export the same 30 entities; the other 5 are containers with no geometry; SUMO exports 0 by design
+  (roads only, reports "not a road"). CityJSON vertex extent equals the geometry bounds exactly.
+- Tests: tests/test_procedural_export.py (17). Sweep over all export/API tests: 304 passed, 8 skipped.
+- Caveat: direct calls to an individual exporter module (not via sdk.reality) still skip transform-less entities.
 
-### Phase 5 — Implement (no new code added)
-- No new RE code was implemented in this session. Justification: RE's core capabilities are already implemented and tested; the remaining gaps are environment-blocked or scope-deferred, and the mission forbids rewriting working components or adding placeholder/unverified code. Future concrete work (when unblocked): Open3D/GTSAM pose-graph, round-trip export tests, IFC/USD adapters.
+## Batch D -- evidence-backed change proposals over WorldStore
+- `worldstore/proposals.py`: `propose_update` (candidate vs stored version -> persisted, deterministic, idempotent
+  proposal with per-entity verdicts supported | needs_review | conflict), `prepare_acceptance` / `record_acceptance` /
+  `accept_proposal`, `reject_proposal`, `list_proposals`, `get_proposal`. Rules are in the module docstring. Accepting
+  creates a NEW version (parent = base); the base is never touched; merged world must pass `validate_world_ir`; the
+  saved version is read-back verified (quarantined on failure). Conflicts need `override_conflicts` + a reason.
+- FOUND BY TESTS: a geometry edited IN PLACE (same ids) leaves the entity record identical, so an entity-diff-only
+  assessor produced NO review item for it. Fixed: geometry diffs are attributed to every entity referencing them.
+- API `apps/api/routes_proposals.py`: `POST/GET /api/worlds/{id}/proposals`, `GET /{pid}`, `POST /{pid}/accept`,
+  `POST /{pid}/reject`. Accept goes through `worldstore_service.commit_version` (DB mirror + atomic HEAD claim); a moved
+  HEAD is 409 "stale" (never a silent rebase); another world's proposal is 404; rule refusals 422; already decided 409.
+- Tests: 9 (store level) + 5 (API, real SQLite DB + WorldStore). Sweep over WorldStore/adoption/API/packaging: 166 passed.
+- Limits: materials/surfaces of applied entities are not copied (validation refuses dangling refs); relationship edges
+  from OTHER entities to an added/removed entity are not rewritten; no Studio UI yet; the candidate is supplied as a
+  WorldIR document (no "compile new evidence into a candidate" endpoint wired to a proposal yet).
 
-### Phase 6 — Integrate (not applicable this session)
-- No new integration performed; existing integrations (COLMAP backend, ICP registration, MiDaS/SAM backends blocked) remain as-is.
-
-### Phase 7 — Validate the product (baseline tests run)
-- Baseline test results recorded below. Pre-existing failures documented, not hidden or "fixed" to appear healthy.
-
-### Phase 8 — Repeat (next tasks)
-- See `docs/research/KNOWN_LIMITATIONS.md` and the next-five-tasks list in this session's final report.
-
-## Baseline test results (established this session)
-
-Passing (fast subsets run):
-- `test_world_ir.py`, `test_world_ir_v1.py`, `test_clock.py`, `test_units.py`: 48 passed
-- `test_colmap_backend.py`, `test_camera_calibration.py`, `test_calibration_transforms.py`, `test_registration.py`: 94 passed
-- `test_world_store.py`: 9 passed
-- `test_world_store_atomicity.py`: 6 passed
-- `test_world_diff.py`, `test_world_query.py`: 18 passed
-- `test_artifact_integrity.py` + several others batch: 130 passed, 11 errors (fixture-related, pre-existing), 1 failed
-- `test_reconstruction_orchestrator.py`, `test_compile_command.py`, `test_city_compiler.py`, `test_city_import.py`: 40 passed, 3 failed, 7 skipped
-- `test_world_ir.py ... test_worldstore_tiles.py` batch: 143 passed, 4 failed (test_world_ir_v2.py v2 schema issues)
-
-Pre-existing failures (NOT introduced by this session; documented in `test_results.txt` and confirmed by re-runs):
-- `test_room_inference.py`: `AttributeError: 'PlaneSummary' object has no attribute 'plane'` (multiple tests)
-- `test_world_compiler.py`: multiple TestCompilerEndToEnd / TestValidationGate failures
-- `test_reconstruction_orchestrator.py`: TestEndToEnd failures
-- `test_compile_command.py`: 3 failures (`assert 10 == 8` — compiler entity count mismatch)
-- `test_world_ir_v2.py`: 4 failures (v2 schema: `temporal_history` attribute, external references)
-- `test_world_store_concurrency.py`: hangs (multi-process race spawns subprocesses; exceeds command timeout)
-- `test_artifact_integrity.py`: 11 fixture-related errors (pre-existing)
-
-Repo-level baseline (pre-existing, from `test_results.txt`): 35 failed, 75 passed in 41.73s (full-suite run, includes the hanging concurrency test which prevented a clean full run here).
-
-## Environment constraints observed
-- PyPI unreachable: cannot `pip install` open3d, segment-anything (already installed), or model weights.
-- No GPU/CUDA: torch is CPU-only; neural inference (MiDaS/SAM) cannot run even if weights were present.
-- No model weights cached: MiDaS/SAM backends blocked at runtime (honest `*UnavailableError`).
-- Command timeout: 30s per shell call; large test suites and `git clone`/`pip install` over slow network must be chunked.
-
-## Session 2026-10-25 — Task 5 ICP acceptance gate hardening
-
-### What ran
-- `python -m pytest tests/test_registration.py tests/test_cross_session_registration.py -q --no-header -p no:cacheprovider` → 29 passed in 1.26s
-- `python -m pytest tests/test_geometry_artifacts.py::TestPromoteRoomsWritesRealGeometry -q --no-header -p no:cacheprovider` → 2 passed in 7.56s
-- `python -m pytest tests/test_world_store_concurrency.py::TestConcurrentThreadWriters::test_no_lost_writes_under_thread_contention -q --no-header -p no:cacheprovider` → 1 passed in 2.22s
-
-### Change
-- `registration/registration.py::register_icp` gained `max_rmse_fraction_of_diagonal` (default 0.05) and a scale-relative gate refusing alignments whose rmse exceeds 5% of the target cloud's bounding-box diagonal. Threshold 0.05 chosen because the exact-match / small-offset fixtures in `tests/test_registration.py` sit at ~2% of diagonal, while the documented defect (4.29 m error on a ~10 m scene, rmse 0.55 m) sits at ~4–6% and is now refused. A local-minimum acceptance test was updated to reflect the hardened (correct) behavior.
-
-### Task status
-- Task 1 (room-geometry tests): already green; contract is boundary point cloud, verified above.
-- Task 2 (concurrency): single run passed; not reproducible in this session (1 run). NOT VERIFIED under 30x load.
-- Task 5: implemented + tests green.
-- Tasks 3,4,6,7,8,9,10,11,12: not attempted — many referenced files/tests do not exist in this worktree (proposals pipeline, cross-session API route, playwright config, test_cross_session_pose_graph.py). Need user direction.
-PY
+## Batch F (start) -- Studio UI for change proposals
+- Files: `frontend/src/lib/api/proposals.ts` (typed DTOs + calls on the canonical client), `frontend/src/lib/proposals/
+  proposal-model.ts` (pure selection/validation logic), `frontend/src/components/proposals/ProposalsPanel.tsx`,
+  route `frontend/src/app/(desktop)/worlds/[id]/proposals/page.tsx`, entry link in `WorldNavPanel` (Versions section).
+- Controls, each wired to a real endpoint: list, select, per-entity checkbox (supported pre-selected), override of a
+  selected conflict with a required written reason, Accept N changes, Reject with reason, "Submit a candidate world"
+  (paste/load WorldIR JSON -> POST). Server errors are shown verbatim (409 stale gets a reload hint).
+- VERIFIED in the browser against a real API + SQLite + WorldStore (throwaway dir): create via UI; verdict ordering and
+  reasons; conflict tick -> reason field + disabled Accept + blocker text; accept with override -> new version is HEAD,
+  base kept as parent, `wall-b` taken at INFERRED, `door` removal (needs_review) NOT applied; reject recorded, no new
+  version; stale proposal -> 409 text shown; 375 px: single column, no horizontal overflow; nav link href correct.
+- Automated: `tsc --noEmit` clean; eslint clean on new files; contract suite 139/139 (7 new in proposal-model.test.mts).
+- NOT verified: screenshots (pane could not draw while hidden; checked via DOM/text/network instead), keyboard-only
+  navigation by hand, contrast by measurement, Playwright e2e (none written), the Next dev server under Turbopack
+  (the worktree's symlinked node_modules crashes Turbopack; verified with the repo's webpack launch config).
+- Unattributed console error `getComputedStyle ... not of type 'Element'` from anonymous injected code appears on every
+  page (also the empty-state load before any proposal call); not traced to app source.

@@ -159,7 +159,7 @@ def export_to_cityjson(world: "WorldIR") -> dict:
                     vertex_index[q] = idx
                     vertices.append(list(q))
                 ring.append(idx)
-            boundaries.append(ring)
+            boundaries.append([ring])      # MultiSurface: surfaces -> rings -> vertex indices (one outer ring each)
 
         position = entity.transform["position"]
         obj = {
@@ -249,7 +249,7 @@ def export_to_cityjson_with_report(world: "WorldIR") -> tuple:
                     vertex_index[q] = idx
                     vertices.append(list(q))
                 ring.append(idx)
-            boundaries.append(ring)
+            boundaries.append([ring])      # MultiSurface: surfaces -> rings -> vertex indices (one outer ring each)
 
         position = entity.transform["position"]
         obj = {

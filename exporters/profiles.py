@@ -7,8 +7,9 @@ Adding an entry means the profile is implemented and tested, never a placeholder
 from __future__ import annotations
 
 from exporters.godot.profile import export_godot_profile
+from exporters.tiles3d.exporter import export_3dtiles_profile
 
-PROFILES = {"godot": export_godot_profile}
+PROFILES = {"godot": export_godot_profile, "3dtiles": export_3dtiles_profile}
 
 
 class UnknownProfileError(ValueError):

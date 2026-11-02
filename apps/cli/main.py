@@ -579,6 +579,19 @@ def cmd_export(args: argparse.Namespace) -> int:
     if store_root.is_dir():
         artifact_store = FileArtifactStore(store_root)
     try:
+        if args.format in reality.EXPORT_PROFILES:
+            # a game/GIS profile is a binary-capable multi-file bundle: --output names the DIRECTORY
+            files, report = reality.export_profile(world, args.format, artifact_store=artifact_store)
+            out_dir = Path(args.output)
+            for name, body in files.items():
+                (out_dir / name).parent.mkdir(parents=True, exist_ok=True)
+                (out_dir / name).write_bytes(body)
+            print(f"exported {args.format} -> {out_dir}/ ({len(files)} files, "
+                  f"{len(report.entities_exported)} entities, {len(report.entities_skipped)} skipped, "
+                  f"hash={report.content_hash[:12]})")
+            for entity_id, reason in zip(report.entities_skipped, report.skip_reasons):
+                _eprint(f"  skipped {entity_id}: {reason}")
+            return 0
         content, report = reality.export(world, args.format, artifact_store=artifact_store)
     except reality.UnsupportedExportFormatError as exc:
         _eprint(str(exc))
@@ -610,6 +623,31 @@ def cmd_export(args: argparse.Namespace) -> int:
           f"hash={report.content_hash[:12]})")
     for entity_id, reason in zip(report.entities_skipped, report.skip_reasons):
         _eprint(f"  skipped {entity_id}: {reason}")
+    return 0
+
+
+def cmd_pose_graph(args: argparse.Namespace) -> int:
+    """Optimise a pose graph: poses {id: {t, q}}, edges [{id, i, j, t, q, sigma_t?, sigma_r?}], gnss [{node, xyz, sigma?}].
+    Units: metres / radians; quaternions are [x, y, z, w]. Raw input is echoed back under "initial"."""
+    from registration.pose_graph import Edge, GnssPrior, Pose, PoseGraphError, optimize_pose_graph
+    try:
+        data = json.loads(Path(args.graph).read_text(encoding="utf-8"))
+        poses = {k: Pose(tuple(v["t"]), tuple(v["q"])) for k, v in data["poses"].items()}
+        edges = [Edge(e["id"], e["i"], e["j"], tuple(e["t"]), tuple(e["q"]),
+                      e.get("sigma_t", 0.05), e.get("sigma_r", 0.02)) for e in data.get("edges", [])]
+        priors = [GnssPrior(g["node"], tuple(g["xyz"]), g.get("sigma", 1.0)) for g in data.get("gnss", [])]
+        result = optimize_pose_graph(poses, edges, priors)
+    except (KeyError, TypeError, ValueError, OSError) as exc:      # PoseGraphError is a ValueError
+        _eprint(f"pose-graph: {exc}")
+        return 1
+    Path(args.output).write_text(json.dumps(result.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+    print(f"optimised {len(result.poses)} poses -> {args.output} (converged={result.converged}, "
+          f"cost {result.initial_cost:.3g} -> {result.final_cost:.3g}, "
+          f"{len(result.rejected_edges)} edges and {len(result.rejected_priors)} priors rejected)")
+    for r in result.rejected_edges:
+        _eprint(f"  rejected edge {r['id']}: {r['reason']}")
+    for w in result.warnings:
+        _eprint(f"  warning: {w}")
     return 0
 
 
@@ -994,7 +1032,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("world")
     p_export.add_argument("--format", required=True,
                           choices=["gltf", "usda", "blender", "cityjson", "citygml", "ifc",
-                                   "geojson", "sdf", "tscn", "unreal", "sumo", "habitat"])
+                                   "geojson", "sdf", "tscn", "unreal", "sumo", "habitat", "godot", "3dtiles"])
     p_export.add_argument("-o", "--output", required=True)
     p_export.set_defaults(func=cmd_export)
 
@@ -1011,6 +1049,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_register.add_argument("--initial-transform", help="JSON file with initial RigidTransform")
     p_register.add_argument("--min-overlap", type=float, default=0.5, help="minimum inlier fraction (default: 0.5)")
     p_register.set_defaults(func=cmd_register)
+
+    p_pg = sub.add_parser(
+        "pose-graph",
+        help="optimise an SE(3) pose graph (relative-pose edges, optional GNSS priors) with outlier rejection",
+    )
+    p_pg.add_argument("graph", help="JSON: {poses, edges, gnss?} (metres, radians, quaternions [x,y,z,w])")
+    p_pg.add_argument("-o", "--output", required=True)
+    p_pg.set_defaults(func=cmd_pose_graph)
 
     p_query = sub.add_parser("query", help="spatial/relationship queries over a WorldIR")
     query_sub = p_query.add_subparsers(dest="query_command", required=True)

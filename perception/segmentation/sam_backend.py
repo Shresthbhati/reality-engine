@@ -101,6 +101,7 @@ class SAMSegmentationBackend(ISegmentationBackend):
         crop_n_layers: int = 0,
         crop_n_points_downscale_factor: int = 1,
         min_mask_region_area: int = 0,
+        allow_download: bool = False,
     ):
         if model_type not in self.VALID_MODEL_TYPES:
             raise ValueError(
@@ -111,6 +112,11 @@ class SAMSegmentationBackend(ISegmentationBackend):
         self._device = device or select_device().device
         self._model = None
         self._mask_generator = None
+        self._allow_download = allow_download
+        #: one dict per input item of the last segment() call: evidence_id, status ("ok"|"skipped"|"failed"),
+        #: reason, seconds, device. A skipped/failed item is still omitted from the results (no fabrication),
+        #: but is no longer invisible.
+        self.diagnostics: List[dict] = []
 
         # Store mask generator config
         self._mask_gen_config = {
@@ -163,6 +169,13 @@ class SAMSegmentationBackend(ISegmentationBackend):
         if cached.exists():
             return str(cached)
 
+        if not self._allow_download:
+            raise SegmentationBackendUnavailableError(
+                f"SAM checkpoint for {self._model_type} is not cached under {cache} and downloads are disabled "
+                f"(the {self._model_type} file is large). Pass checkpoint_path=..., place it in that cache, or "
+                f"construct with allow_download=True. Cached alternatives: "
+                f"{sorted(p.name for p in cache.glob('sam_*.pth')) or 'none'}"
+            )
         try:
             return str(torch.hub.load_state_dict_from_url(url, progress=False))
         except Exception as exc:  # noqa: BLE001 - honest unavailability, any cause
@@ -214,12 +227,18 @@ class SAMSegmentationBackend(ISegmentationBackend):
             return []
 
         results = []
+        self.diagnostics = []
+        import time
         for item in image_evidence:
+            t0 = time.perf_counter()
+            diag = {"evidence_id": item.id, "status": "failed", "reason": "", "seconds": 0.0, "device": self._device}
+            self.diagnostics.append(diag)
             try:
                 # Load image from source_uri
                 src_path = Path(item.source_uri.replace("file://", "", 1))
-                if not src_path.exists():
-                    # Skip evidence items we can't read -- honest failure mode
+                if not src_path.is_file():
+                    # Skip evidence items we can't read -- honest failure mode, but say why
+                    diag.update(status="skipped", reason=f"source file not found: {src_path}")
                     continue
 
                 image = Image.open(src_path).convert("RGB")
@@ -272,9 +291,14 @@ class SAMSegmentationBackend(ISegmentationBackend):
                         model_name="sam",
                         model_version=self._model_type,
                     ))
+                    diag.update(status="ok", reason=f"{len(regions)} regions")
+                else:
+                    diag.update(status="skipped", reason="model produced no masks")
 
-            except Exception:
-                # Skip items that fail processing -- don't fabricate output
-                continue
+            except Exception as exc:  # noqa: BLE001
+                # Skip items that fail processing -- don't fabricate output, but record the cause
+                diag.update(status="failed", reason=f"{type(exc).__name__}: {exc}")
+            finally:
+                diag["seconds"] = round(time.perf_counter() - t0, 3)
 
         return results

@@ -213,6 +213,11 @@ DISCOVERED → UNDER_EVALUATION → APPROVED → INTEGRATED → BENCHMARKED
 | **Spatial Graphs** | NetworkX | BSD-3 | **APPROVED** | CPU | Adjacency graphs and topological networks. |
 | **2D Floorplan Export** | Floorplan Engine | Custom/Proprietary | **BENCHMARKED** | CPU / 6 tests pass | Generates SVG, DXF, and PDF with dimension states. `exporters/floorplan.py`. |
 | **Video Ingestion** | Video Frames Engine | Custom/Proprietary | **BENCHMARKED** | CPU / 7 tests pass | Keyframe extraction and deduplication. `reconstruction/video_frames.py`. |
+| **Dense MVS Reconstruction** | COLMAP Dense Chain | BSD-3 | **INTEGRATED** | CUDA / CPU Subprocess | Undistort -> patch_match_stereo -> stereo_fusion. `reconstruction/dense_pipeline.py`. |
+| **3D Spatial Index & Delta Tiling** | WorldStore 3D Tiling | Custom/Proprietary | **BENCHMARKED** | CPU / 34 tests pass | Spatial partitioning, lazy queries, delta manifests, compaction. `world_ir/spatial_index.py`, `worldstore/`. |
+| **Pose Graph Optimization** | G2O / Huber Pose Graph | Custom/Proprietary | **BENCHMARKED** | CPU / 38 tests pass | Cross-session loop closure and global camera registration. `reconstruction/pose_graph.py`, `registration/`. |
+| **Stacked Storey Reconstruction** | Multi-Level Elevation Slicing | Custom/Proprietary | **BENCHMARKED** | CPU / 3 tests pass | Observer-aware floor/ceiling classification and storey isolation. `perception/geometry/orientation.py`. |
+| **OGC 3D Tiles 1.1 Export** | 3D Tiles 1.1 / B3DM | Custom/Proprietary | **BENCHMARKED** | CPU / 5 tests pass | Streaming geospatial 3D tiles with glTF payloads. `export/tiles3d/`. |
 
 ### Rejected Technologies List
 

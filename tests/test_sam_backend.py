@@ -323,3 +323,38 @@ class TestSAMSegmentationBackendProvenance:
             # We can't easily test the full output without a real image,
             # but we can verify the model info is stored
             assert backend._model_type == "vit_l"
+
+@pytest.mark.skipif(not _has_perception_deps(), reason="needs torch/torchvision/numpy")
+class TestSAMFailureModes:
+    """Regression: no silent multi-GB download, and no invisible per-item failure."""
+
+    def test_uncached_checkpoint_is_not_downloaded_by_default(self, tmp_path):
+        import torch
+        with patch.object(torch.hub, "get_dir", return_value=str(tmp_path)), \
+                patch.object(torch.hub, "load_state_dict_from_url") as dl:
+            with pytest.raises(SegmentationBackendUnavailableError, match="downloads are disabled"):
+                SAMSegmentationBackend(model_type="vit_h")._resolve_checkpoint()
+            dl.assert_not_called()
+
+    def test_download_only_when_explicitly_allowed(self, tmp_path):
+        import torch
+        with patch.object(torch.hub, "get_dir", return_value=str(tmp_path)), \
+                patch.object(torch.hub, "load_state_dict_from_url", return_value="x.pth") as dl:
+            assert SAMSegmentationBackend(model_type="vit_b", allow_download=True)._resolve_checkpoint() == "x.pth"
+            dl.assert_called_once()
+
+    def test_unreadable_and_failing_items_are_diagnosed_not_silent(self, tmp_path):
+        from PIL import Image
+        good = tmp_path / "ok.png"
+        Image.new("RGB", (8, 8)).save(good)
+        backend = SAMSegmentationBackend(model_type="vit_b", device="cpu")
+        backend._load_model = lambda: None
+        backend._mask_generator = MagicMock()
+        backend._mask_generator.generate.side_effect = RuntimeError("boom")
+        items = [EvidenceItem(id="missing", kind=EvidenceKind.PHOTO, source_uri="file://" + str(tmp_path / "no.png")),
+                 EvidenceItem(id="bad", kind=EvidenceKind.PHOTO, source_uri="file://" + str(good))]
+        assert backend.segment(items) == []
+        by_id = {d["evidence_id"]: d for d in backend.diagnostics}
+        assert by_id["missing"]["status"] == "skipped" and "not found" in by_id["missing"]["reason"]
+        assert by_id["bad"]["status"] == "failed" and "boom" in by_id["bad"]["reason"]
+        assert by_id["bad"]["device"] == "cpu"

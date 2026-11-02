@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useMemo, useEffect, useSyncExternalStore } from "react";
 import {
   Globe,
@@ -1406,6 +1407,14 @@ interface SpatialAnchor {
               <span>WorldStore Lineage</span>
               <span className="text-[var(--accent)] font-mono">Immutable Snapshots</span>
             </div>
+
+            <Link
+              href={`/worlds/${encodeURIComponent(activeWorldId)}/proposals`}
+              className="w-full py-1.5 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--border)] text-[var(--accent)] border border-[var(--accent)]/30 transition-colors flex items-center justify-center gap-1.5 font-sans"
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>Review change proposals</span>
+            </Link>
 
             {onCompareVersions && versions.length > 0 && versions[0]?.parentVersionId && (
               <button

@@ -109,9 +109,12 @@ class CrossSessionReport:
     transforms: Dict[str, Optional[RigidTransform]] = field(default_factory=dict)
     status_by_session: Dict[str, str] = field(default_factory=dict)
     reasons: Dict[str, str] = field(default_factory=dict)
+    #: Pose-graph refinement record (refine_session_chain): None = the transforms are the plain BFS composition.
+    #: When set it always carries the INITIAL (pre-optimisation) transforms next to the optimised ones.
+    refinement: Optional[dict] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "reference_session": self.reference_session,
             "transforms": {
                 name: (t.to_dict() if t else None)
@@ -120,6 +123,9 @@ class CrossSessionReport:
             "status_by_session": dict(self.status_by_session),
             "reasons": dict(self.reasons),
         }
+        if self.refinement is not None:
+            d["refinement"] = self.refinement
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -435,9 +441,15 @@ def result_to_points(result: ReconstructionResult) -> List[Vec3]:
 def align_reconstructed_sessions(
     results: Dict[str, ReconstructionResult],
     reference_session: str,
+    all_pairs: bool = False,
+    refine: bool = False,
     **align_kwargs,
 ) -> CrossSessionReport:
     """Resolve independently-reconstructed sessions into one frame.
+
+    ``all_pairs`` additionally registers every pair of non-reference sessions (O(n^2) alignments), which creates
+    loop closures; ``refine`` then solves all accepted alignments jointly with the pose-graph optimiser
+    (refine_session_chain) instead of trusting the first BFS path. Both default off: behaviour is unchanged.
 
     Takes ReconstructionResults straight from IReconstructionBackend runs
     (via the orchestrator), registers every session that produced real
@@ -483,7 +495,15 @@ def align_reconstructed_sessions(
             **align_kwargs,
         )
 
-    report = align_session_chain(anchors, list(results.keys()))
+    if all_pairs:
+        names = [n for n in sorted(clouds) if n != reference_session]
+        for a_idx, a in enumerate(names):
+            for b in names[a_idx + 1:]:
+                anchors[(b, a)] = align_session(
+                    clouds[b], clouds[a], from_session=b, to_session=a, **align_kwargs,
+                )
+    chain = [reference_session] + [n for n in results if n != reference_session]
+    report = (refine_session_chain(anchors, chain) if refine else align_session_chain(anchors, chain))
     # Merge the skip reasons into the chain report: a skipped session is
     # "unresolved" with its SPECIFIC reason (why it produced no
     # geometry), not the generic no-path reason.
@@ -580,3 +600,130 @@ def align_session_chain(
         status_by_session=status_by_session,
         reasons=reasons,
     )
+
+
+# ---------------------------------------------------------------------------
+# Pose-graph refinement
+# ---------------------------------------------------------------------------
+
+#: Rotation sigma is not measured by ICP; it is derived as sigma_t / characteristic_length (rad per metre of
+#: lever arm). A heuristic, recorded in the refinement record, and overridable.
+DEFAULT_CHARACTERISTIC_LENGTH_M = 10.0
+MIN_SIGMA_T_M = 1e-3
+MIN_SIGMA_R_RAD = 1e-4
+
+
+def _to_pose(t: Optional[RigidTransform]):
+    from registration.pose_graph import Pose
+    if t is None:
+        return Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+    r = t.rotation
+    return Pose((t.translation.x, t.translation.y, t.translation.z), (r.x, r.y, r.z, r.w))
+
+
+def _from_pose(pose, from_frame: str, to_frame: str) -> RigidTransform:
+    from engine.math import Quat
+    x, y, z, w = pose.q
+    return RigidTransform(from_frame=from_frame, to_frame=to_frame, rotation=Quat(w=w, x=x, y=y, z=z).normalized(),
+                          translation=Vec3(*pose.t))
+
+
+def refine_session_chain(
+    anchors: Dict[Tuple[str, str], SessionAlignment],
+    chain: Sequence[str],
+    characteristic_length_m: float = DEFAULT_CHARACTERISTIC_LENGTH_M,
+) -> CrossSessionReport:
+    """align_session_chain, then a joint pose-graph solve over ALL accepted pairwise alignments.
+
+    The BFS composition uses one path per session and ignores every other accepted alignment; when sessions form
+    loops (A->B, B->C and C->A), the accumulated ICP error is never reconciled. Here each accepted alignment is an
+    edge (rmse -> sigma_t), the BFS result is the initial guess, and the reference session stays at identity.
+    The report keeps the BFS transforms under ``refinement["initial_transforms"]`` (optimised estimates never
+    replace the evidence of how they were obtained). Falls back to the plain BFS report -- with the reason recorded
+    in ``refinement`` -- when there is no loop to exploit or the graph cannot be solved."""
+    from dataclasses import replace
+    from scipy.spatial.transform import Rotation
+    from registration.pose_graph import Edge, Pose, PoseGraphError, optimize_pose_graph
+
+    initial = align_session_chain(anchors, chain)
+    ref = initial.reference_session
+    resolved = [s for s in chain if initial.status_by_session.get(s) in ("reference", "aligned")]
+    edges, meta = [], {}
+    for (frm, to), a in sorted(anchors.items()):
+        if a.status != "accepted" or a.transform is None or frm == to or frm not in resolved or to not in resolved:
+            continue
+        sigma_t = max(float(a.rmse), MIN_SIGMA_T_M)
+        sigma_r = max(sigma_t / characteristic_length_m, MIN_SIGMA_R_RAD)
+        eid = f"{frm}->{to}"
+        # transform X maps frm-coordinates into to-coordinates, i.e. the pose of `frm` seen from `to`
+        e = _to_pose(a.transform)
+        edges.append(Edge(eid, to, frm, e.t, e.q, sigma_t=sigma_t, sigma_r=sigma_r))
+        meta[eid] = {"id": eid, "method": a.method, "rmse": a.rmse, "sigma_t": sigma_t, "sigma_r": sigma_r}
+    loops = len(edges) - (len(resolved) - 1)
+    if len(resolved) < 2 or loops <= 0:
+        return replace(initial, refinement={"status": "skipped", "backend": None, "loop_closures": max(loops, 0),
+                                            "reason": "no loop closures: the BFS composition is already the only "
+                                                      "consistent solution, nothing to reconcile"})
+    poses = {s: _to_pose(initial.transforms.get(s)) for s in resolved}
+    try:
+        res = optimize_pose_graph(poses, edges)
+    except PoseGraphError as exc:
+        return replace(initial, refinement={"status": "failed", "backend": None, "reason": str(exc),
+                                            "loop_closures": loops})
+
+    if res.ambiguous:
+        return replace(initial, refinement={
+            "status": "ambiguous", "backend": res.backend, "loop_closures": loops, "ambiguous_edges": res.ambiguous,
+            "reason": "alignments are mutually inconsistent but the offender cannot be identified from this graph "
+                      f"(removing any of {res.ambiguous} would restore consistency); kept the BFS composition. "
+                      "Add independent alignments (more overlapping sessions) or review these pairs.",
+            "initial_transforms": {s: (t.to_dict() if t else None) for s, t in initial.transforms.items()}})
+
+    # Pose graphs fix a gauge, not necessarily the reference: re-express everything relative to the reference.
+    r0 = res.poses[ref]
+    inv = Rotation.from_quat(r0.q).inv()
+    transforms = dict(initial.transforms)
+    reasons = dict(initial.reasons)
+    shifts = {}
+    for s in resolved:
+        if s == ref:
+            continue
+        p = res.poses[s]
+        rel = Pose(tuple(float(v) for v in inv.apply(np.array(p.t) - np.array(r0.t))),
+                   tuple(float(v) for v in (inv * Rotation.from_quat(p.q)).as_quat()))
+        old = initial.transforms[s]
+        transforms[s] = _from_pose(rel, old.from_frame, old.to_frame)
+        shifts[s] = math.dist(tuple(rel.t), (old.translation.x, old.translation.y, old.translation.z))
+        reasons[s] = (f"{initial.reasons[s]}; refined by pose graph over {len(edges)} alignments "
+                      f"({loops} loop closure(s), moved {shifts[s]:.4g} m)")
+    rejected = {r["id"]: r for r in res.rejected_edges}
+    return replace(initial, transforms=transforms, reasons=reasons, refinement={
+        "status": "refined", "backend": res.backend, "provenance": "registration:pose_graph",
+        "converged": res.converged, "iterations": res.iterations,
+        "initial_cost": res.initial_cost, "final_cost": res.final_cost, "loop_closures": loops,
+        "characteristic_length_m": characteristic_length_m,
+        "sigma_basis": "sigma_t = max(rmse, 1e-3 m); sigma_r = sigma_t / characteristic_length_m (heuristic)",
+        "edges": [dict(meta[e.id], chi2=res.edge_chi2.get(e.id), rejected=e.id in rejected) for e in edges],
+        "rejected_edges": res.rejected_edges, "warnings": res.warnings,
+        "max_shift_m": max(shifts.values(), default=0.0),
+        "initial_transforms": {s: (t.to_dict() if t else None) for s, t in initial.transforms.items()},
+    })
+
+
+def record_cross_session_registration(world, report: CrossSessionReport) -> dict:
+    """Store the cross-session registration (and how it was obtained) on a WorldIR, at
+    ``world.metadata["registration"]["cross_session"]`` (the slot world_ir.frame_graph.build_frame_graph_from_world
+    already reserves for registration data).
+
+    WorldIR's Frame enum has no per-session frames, so the transforms cannot be frame-graph edges; the metadata
+    dict is serialised verbatim.
+    Provenance is explicit: "registration:pose_graph" only when a refinement actually ran, otherwise
+    "registration:chain" (plain BFS composition). Unresolved sessions are recorded as such, never as identity."""
+    refined = bool(report.refinement and report.refinement.get("status") == "refined")
+    record = {
+        "schema": 1,
+        "provenance": "registration:pose_graph" if refined else "registration:chain",
+        "report": report.to_dict(),
+    }
+    world.metadata.setdefault("registration", {})["cross_session"] = record
+    return record

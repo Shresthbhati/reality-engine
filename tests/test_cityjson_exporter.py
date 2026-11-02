@@ -127,8 +127,8 @@ class TestCityJsonStructure:
         # the world position it came from (within one quantum).
         wall = doc["CityObjects"]["wall-north"]
         entity_origin = (10.0, 5.0, 0.0)
-        verts = [doc["vertices"][i] for face in
-                 wall["geometry"][0]["boundaries"] for i in face]
+        verts = [doc["vertices"][i] for surface in wall["geometry"][0]["boundaries"]
+                 for ring in surface for i in ring]
         assert verts, "expected at least one vertex index"
         assert all(
             abs(v[0] * scale[0] - (entity_origin[0] + lx)) <= 1e-3
@@ -141,10 +141,10 @@ class TestCityJsonStructure:
         # vertex index (the CityJSON convention).
         doc = export_to_cityjson(_world())
         objs = doc["CityObjects"]
-        idx_a = {i for f in objs["wall-north"]["geometry"][0]["boundaries"]
-                 for i in f}
-        idx_b = {i for f in objs["bld-1"]["geometry"][0]["boundaries"]
-                 for i in f}
+        idx_a = {i for surface in objs["wall-north"]["geometry"][0]["boundaries"]
+                 for ring in surface for i in ring}
+        idx_b = {i for surface in objs["bld-1"]["geometry"][0]["boundaries"]
+                 for ring in surface for i in ring}
         # The two AABBs are far apart -> no overlap, but every index
         # must exist and dedup within one object must hold.
         assert len(idx_a) == len({tuple(doc["vertices"][i]) for i in idx_a})
@@ -172,3 +172,35 @@ class TestDeterminism:
 def content_hash_of(doc) -> str:
     from exporters.report import content_hash
     return content_hash(json.dumps(doc, sort_keys=True))
+
+
+# ---- official-schema oracle (cityjson/specs schemas; skipped when the research clone is absent) -------------------
+
+import os
+import pathlib
+
+_SCHEMA_DIR = pathlib.Path(os.environ.get(
+    "REALITY_CITYJSON_SCHEMAS", pathlib.Path.home() / "codes-research" / "cityjson-specs" / "schemas"))
+
+
+@pytest.mark.skipif(not _SCHEMA_DIR.is_dir(), reason="official cityjson/specs clone not present")
+def test_output_validates_against_official_cityjson_schema():
+    """The oracle is the 2.0.2 schema; the exporter declares "1.1". For the object/geometry types emitted here the
+    structures are identical, so only the version string is substituted. This test caught MultiSurface boundaries
+    emitted one nesting level too shallow (rings instead of surfaces -> rings)."""
+    from jsonschema import Draft7Validator
+    from referencing import Registry, Resource
+    from referencing.jsonschema import DRAFT7
+
+    base = "https://www.cityjson.org/schemas/2.0.2/"
+
+    def retrieve(uri):
+        return Resource.from_contents(json.loads((_SCHEMA_DIR / uri[len(base):]).read_text(encoding="utf-8")),
+                                      default_specification=DRAFT7)
+
+    validator = Draft7Validator(json.loads((_SCHEMA_DIR / "cityjson.schema.json").read_text(encoding="utf-8")),
+                                registry=Registry(retrieve=retrieve))
+    doc = json.loads(json.dumps(export_to_cityjson(_world())))
+    assert doc["CityObjects"], "sanity: the fixture must export objects or this test proves nothing"
+    doc["version"] = "2.0"
+    assert [e.message[:200] for e in validator.iter_errors(doc)] == []

@@ -84,10 +84,22 @@ class LightGlueMatcher:
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             t_img = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).float().to(self._device) / 255.0
 
+            # DISK U-Net requires input dimensions divisible by 16; pad if needed
+            pad_h = (16 - (h % 16)) % 16
+            pad_w = (16 - (w % 16)) % 16
+            if pad_h > 0 or pad_w > 0:
+                t_img = torch.nn.functional.pad(t_img, (0, pad_w, 0, pad_h), mode="replicate")
+
             with torch.no_grad():
                 features = self._disk(t_img)[0]
                 kpts = features.keypoints  # (N, 2) in (x, y) coordinates
                 descs = features.descriptors  # (N, D)
+
+                # Filter out any keypoints detected in the padded region
+                if pad_h > 0 or pad_w > 0:
+                    valid = (kpts[:, 0] < float(w)) & (kpts[:, 1] < float(h))
+                    kpts = kpts[valid]
+                    descs = descs[valid]
 
                 # Store keypoints as float32 numpy array and descriptors on device
                 kpts_np = kpts.cpu().numpy().astype(np.float32)

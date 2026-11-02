@@ -75,6 +75,32 @@ class SiftPairVerifier:
         return PairEvidence(a, b, r.matches, r.inliers, r.inlier_ratio)
 
 
+class MatcherPairVerifier:
+    """PairVerifier backed by any IMatcher (SIFT, LightGlue, LoFTR, etc.)."""
+
+    def __init__(self, matcher):
+        self._matcher = matcher
+
+    def __call__(self, a: str, b: str) -> PairEvidence:
+        r = self._matcher.match(a, b)
+        return PairEvidence(a, b, r.matches, r.inliers, r.inlier_ratio)
+
+
+def make_pair_verifier(
+    paths: Dict[str, Path],
+    matcher_name: str = "auto",
+    **kwargs,
+) -> PairVerifier:
+    """Return a PairVerifier backed by the best available matcher (LightGlue if available, else SIFT)."""
+    from reconstruction.matching import available_matchers, get_matcher
+
+    if matcher_name == "auto":
+        matchers = available_matchers()
+        matcher_name = "lightglue" if matchers.get("lightglue") == "available" else "sift"
+    matcher = get_matcher(matcher_name, paths, **kwargs)
+    return MatcherPairVerifier(matcher)
+
+
 # --------------------------------------------------------------------------- grouping
 
 

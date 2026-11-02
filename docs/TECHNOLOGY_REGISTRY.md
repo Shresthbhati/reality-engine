@@ -151,6 +151,27 @@ re-evaluation, since its memory mechanism would map onto tracking a segmented
 entity across frames the same way COLMAP tracks feature points — but that is
 a future trigger condition, not today's recommendation.
 
+---
+
+## Room layout candidates
+
+### PolyLayout
+
+| Field | Value |
+|---|---|
+| Name | PolyLayout: Multi-room Manhattan Layout Estimation (ECCV) |
+| Category | CANDIDATE / UNDER_EVALUATION |
+| Repository | `ghanning/PolyLayout` (GitHub), Gustav Hanning et al. |
+| License | Research open-source / check root LICENSE |
+| Commercial use | Conditional on repository license verification |
+| Platform support | PyTorch, CUDA / CPU |
+| Dependencies | `torch`, `numpy`, `omegaconf`, `rerun`, `pixloc` |
+| Reality Engine adapter status | UNDER_EVALUATION |
+| Strengths | Directly tackles joint multi-room polygonal 3D layout estimation from posed images; shares structural cues (ground planes, wall orientations, ceiling heights) across connected rooms rather than isolating each room; outputs 2D/3D polygon vertices and edges matching WorldIR's boundary model. |
+| Weaknesses | Strictly enforces a Manhattan world assumption (orthogonal 90-degree walls), failing on slanted or non-Manhattan geometry (where our EM room refine solver excels); external dependencies on pixloc/ASE renderers; best positioned as an optional architectural prior alongside our deterministic planar boundary solver. |
+
+---
+
 **Neither recommendation is a decision.** Per this document's own confidence
 flags, both candidates need: (1) a direct read of the live repository's
 `LICENSE` file and model card, not this document's memory-based summary; (2)
@@ -218,6 +239,7 @@ DISCOVERED → UNDER_EVALUATION → APPROVED → INTEGRATED → BENCHMARKED
 | **Pose Graph Optimization** | G2O / Huber Pose Graph | Custom/Proprietary | **BENCHMARKED** | CPU / 38 tests pass | Cross-session loop closure and global camera registration. `reconstruction/pose_graph.py`, `registration/`. |
 | **Stacked Storey Reconstruction** | Multi-Level Elevation Slicing | Custom/Proprietary | **BENCHMARKED** | CPU / 3 tests pass | Observer-aware floor/ceiling classification and storey isolation. `perception/geometry/orientation.py`. |
 | **OGC 3D Tiles 1.1 Export** | 3D Tiles 1.1 / B3DM | Custom/Proprietary | **BENCHMARKED** | CPU / 5 tests pass | Streaming geospatial 3D tiles with glTF payloads. `export/tiles3d/`. |
+| **Multi-Room Layouts** | PolyLayout (ECCV) | Open-Source Research | **UNDER_EVALUATION** | PyTorch / GPU | Joint multi-room Manhattan polygon estimation from posed images (`ghanning/PolyLayout`). |
 
 ### Rejected Technologies List
 

@@ -53,6 +53,12 @@ for router in (health, sessions, uploads, quality, evidence, reconstructions, wo
     app.include_router(router)
 
 
+@app.get('/healthz', tags=['health'])
+async def healthz_check() -> dict:
+    from apps.api.models import utcnow
+    return {'status': 'ok', 'time': utcnow().isoformat()}
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     await init_db()

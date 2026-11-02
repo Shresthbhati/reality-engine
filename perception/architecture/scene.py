@@ -44,6 +44,7 @@ from perception.geometry.planes import (
     canonicalize_plane_ids,
     detect_planes,
     merge_coplanar_fragments,
+    plane_centroids,
     split_parallel_sheets,
 )
 from perception.geometry.orientation import classify_planes as orient_planes
@@ -190,7 +191,10 @@ def assemble_interior_scene(
     )
     split_planes = canonicalize_plane_ids(split_planes)
     camera_positions = [p.position for p in result.camera_poses]
-    oriented = orient_planes(split_planes, camera_positions, up=up)
+    oriented = orient_planes(
+        split_planes, camera_positions, up=up,
+        plane_centroids=plane_centroids(result, split_planes),
+    )
     positions = positions_by_plane(result, oriented)
 
     world = world if world is not None else WorldIR(id="world-interior")

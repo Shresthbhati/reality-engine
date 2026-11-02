@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from provenance import Uncertainty
 from .planes import DetectedPlane, flip_normal_toward
@@ -72,6 +72,7 @@ def classify_plane(
     plane: DetectedPlane,
     camera_positions: Sequence[Tuple[float, float, float]],
     up: Optional[Tuple[float, float, float]] = None,
+    plane_centroid: Optional[Tuple[float, float, float]] = None,
 ) -> OrientedPlane:
     """Classify one plane against camera positions and an up vector.
 
@@ -84,6 +85,15 @@ def classify_plane(
     which itself needs `up` to define "horizontal" -- so with up=None
     every plane is UNKNOWN with an explanatory note. This is a refusal to
     guess, surfaced, not a crash.
+
+    plane_centroid (optional): the mean position of this plane's own real
+    inlier points (e.g. from perception.geometry.planes.plane_centroids).
+    When supplied, the plane is oriented toward whichever camera is
+    spatially closest to it in full 3D, not the mean of every camera in
+    the capture -- see the "Orientation reference point" note below for
+    why this matters for multi-room/multi-storey captures. Omitting it
+    keeps the original global-mean behavior unchanged, so every existing
+    caller that does not pass it sees no behavior change.
     """
     if not camera_positions:
         raise OrientationError(
@@ -96,12 +106,6 @@ def classify_plane(
         raise OrientationError(f"plane {plane.plane_id} has degenerate normal {plane.normal!r}")
     raw_normal = (plane.normal[0] / n_len, plane.normal[1] / n_len, plane.normal[2] / n_len)
     raw_d = plane.d / n_len  # keep n . p + d = 0 the same zero-set after normalizing
-
-    camera_side = (
-        sum(c[0] for c in camera_positions) / len(camera_positions),
-        sum(c[1] for c in camera_positions) / len(camera_positions),
-        sum(c[2] for c in camera_positions) / len(camera_positions),
-    )
 
     if up is None:
         return OrientedPlane(
@@ -117,6 +121,43 @@ def classify_plane(
         )
 
     up_unit = _as_unit(up)
+
+    # Orientation reference point for flip_normal_toward. The mean of
+    # EVERY camera in the whole capture is only a valid "which side is
+    # the camera on" reference when every camera is genuinely on the
+    # same side of this plane -- true for a single-room capture, false
+    # once a capture spans multiple rooms or storeys: a plane can have
+    # cameras from an entirely different room/floor sitting closer to
+    # its GLOBAL average than its own room's cameras are, and the mean
+    # can land on the wrong side of the plane entirely (e.g. a storey
+    # boundary with half the capture's cameras above it, half below).
+    # Either way the plane gets misclassified against its own local
+    # evidence (floor read as ceiling or vice versa).
+    #
+    # When the caller supplies plane_centroid (this plane's own real
+    # inlier points' mean position -- not just its infinite normal/d
+    # equation), the camera spatially closest to it in full 3D is used
+    # instead: the camera that actually stood nearest this specific
+    # plane when it was captured, regardless of which room or storey
+    # other cameras in the capture belong to. Without a centroid (the
+    # caller has not resolved inlier positions, or none were passed) the
+    # original global mean is used unchanged, so no existing caller's
+    # behavior changes by omission.
+    if plane_centroid is not None and len(camera_positions) > 1:
+        camera_side = min(
+            camera_positions,
+            key=lambda c: (
+                (c[0] - plane_centroid[0]) ** 2
+                + (c[1] - plane_centroid[1]) ** 2
+                + (c[2] - plane_centroid[2]) ** 2
+            ),
+        )
+    else:
+        camera_side = (
+            sum(c[0] for c in camera_positions) / len(camera_positions),
+            sum(c[1] for c in camera_positions) / len(camera_positions),
+            sum(c[2] for c in camera_positions) / len(camera_positions),
+        )
 
     # Camera-facing orientation of the raw plane.
     normal, d = flip_normal_toward(raw_normal, raw_d, camera_side)
@@ -171,9 +212,22 @@ def classify_planes(
     planes: List[DetectedPlane],
     camera_positions: Sequence[Tuple[float, float, float]],
     up: Optional[Tuple[float, float, float]] = None,
+    plane_centroids: Optional[Dict[str, Tuple[float, float, float]]] = None,
 ) -> List[OrientedPlane]:
-    """Classify every plane; deterministic (input order preserved)."""
-    return [classify_plane(p, camera_positions, up) for p in planes]
+    """Classify every plane; deterministic (input order preserved).
+
+    plane_centroids (optional): plane_id -> mean inlier position, e.g.
+    from perception.geometry.planes.plane_centroids(result, planes). See
+    classify_plane's docstring for why this matters once a capture spans
+    more than one room or storey.
+    """
+    return [
+        classify_plane(
+            p, camera_positions, up,
+            plane_centroid=(plane_centroids or {}).get(p.plane_id),
+        )
+        for p in planes
+    ]
 
 
 def _as_unit(v: Tuple[float, float, float]) -> Tuple[float, float, float]:

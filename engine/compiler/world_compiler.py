@@ -68,7 +68,7 @@ from perception.geometry.orientation import (
     OrientationError,
     classify_planes,
 )
-from perception.geometry.planes import detect_planes
+from perception.geometry.planes import detect_planes, plane_centroids
 from provenance import Provenance
 from world_ir import WorldIR
 
@@ -243,7 +243,10 @@ def compile_reconstruction_to_world(
     # ---- planes: detect -> classify ----
     detection = detect_planes(result, seed=options.seed)
     try:
-        oriented = classify_planes(detection.planes, camera_positions, options.up)
+        oriented = classify_planes(
+            detection.planes, camera_positions, options.up,
+            plane_centroids=plane_centroids(result, detection.planes),
+        )
     except OrientationError as exc:
         raise CompileInputError(f"plane classification failed: {exc}") from exc
 

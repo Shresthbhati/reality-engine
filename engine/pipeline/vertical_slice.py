@@ -833,7 +833,6 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
         return {"status": "skipped", "note": "disabled (depth_model=None)"}, []
 
     try:
-        from perception.depth.midAS_backend import MiDaSDepthBackend
         from reconstruction.calibration.camera import CameraIntrinsics, camera_from_pose
         from reconstruction.depth_to_points import depth_map_to_points, metricize_all
     except ImportError as exc:
@@ -855,7 +854,13 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
     )
 
     try:
-        backend = MiDaSDepthBackend(model_type=options.depth_model)
+        model_name = str(options.depth_model or "").lower()
+        if "depth_anything" in model_name:
+            from perception.depth.depth_anything_backend import DepthAnythingV2Backend
+            backend = DepthAnythingV2Backend()
+        else:
+            from perception.depth.midAS_backend import MiDaSDepthBackend
+            backend = MiDaSDepthBackend(model_type=options.depth_model)
         depth_maps = backend.estimate_depth(list(evidence_items))
     except Exception as exc:  # noqa: BLE001 -- model/dep failures are a skip, not a crash
         return {

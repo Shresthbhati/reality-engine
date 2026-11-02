@@ -86,3 +86,29 @@ class TestDepthAnythingV2BackendIntegration:
         assert val_arr.max() <= 1.0 + 1e-5
         assert dm.uncertainty.note == "depth_anything_v2_small"
         assert dm.uncertainty.confidence > 0.8
+
+    def test_pipeline_depth_stage_dispatches_depth_anything(self, sample_photo):
+        from engine.pipeline.vertical_slice import VerticalSliceOptions, _depth_stage
+        from reconstruction.backend.interface import ReconstructionResult, ReconstructedCameraPose
+
+        options = VerticalSliceOptions(
+            depth_model="depth_anything_v2_small",
+            intrinsics=(100.0, 100.0, 80.0, 60.0),
+            image_size=(160, 120),
+        )
+        fake_recon = ReconstructionResult(
+            camera_poses=[
+                ReconstructedCameraPose(
+                    evidence_id="ev_001",
+                    position=(0.0, 0.0, 0.0),
+                    rotation=(1.0, 0.0, 0.0, 0.0),
+                )
+            ],
+            points=[],
+            registration_status="complete",
+        )
+        facts, metric_maps = _depth_stage(fake_recon, [sample_photo], options, scale_state="metric")
+        assert facts["status"] == "ran"
+        assert facts["model"] == "depth_anything_v2_small"
+        assert facts["maps"] == 1
+

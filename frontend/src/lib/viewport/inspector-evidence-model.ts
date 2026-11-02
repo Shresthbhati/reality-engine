@@ -30,6 +30,24 @@ export interface ColourEvidence {
   notes: string[];
 }
 
+export interface CandidateHypothesisEvidence {
+  id: string;
+  sourceEngine: string;
+  value: string;
+  confidence: number;
+  evidenceCount: number;
+  isActive: boolean;
+  provenance: string | null;
+  rationale: string | null;
+}
+
+export interface DomainHypothesesEvidence {
+  domain: string;
+  activeId: string | null;
+  hasConflict: boolean;
+  candidates: CandidateHypothesisEvidence[];
+}
+
 export interface EntityEvidence {
   entityId: string;
   kind: string;
@@ -40,6 +58,8 @@ export interface EntityEvidence {
   colour: ColourEvidence;
   /** photo / view ids that supported the colour measurement; empty = not recorded */
   supportingViews: string[];
+  /** competing hypotheses from multiple perception/inference backends */
+  hypotheses: DomainHypothesesEvidence[];
 }
 
 type Props = Record<string, unknown>;
@@ -73,6 +93,53 @@ export function buildDimensionEvidence(cp: Props | undefined): DimensionEvidence
     });
   }
   return out;
+}
+
+export function buildHypothesesEvidence(cp: Props | undefined): DomainHypothesesEvidence[] {
+  const raw = cp?.hypotheses;
+  if (!isRec(raw)) return [];
+  const out: DomainHypothesesEvidence[] = [];
+  for (const [domain, setObj] of Object.entries(raw)) {
+    if (!isRec(setObj)) continue;
+    const candidatesRaw = Array.isArray(setObj.candidates) ? setObj.candidates : [];
+    const candidates: CandidateHypothesisEvidence[] = [];
+    for (const c of candidatesRaw) {
+      if (!isRec(c)) continue;
+      const id = str(c.id);
+      const sourceEngine = str(c.source_engine) ?? "unknown";
+      const value = str(c.value) ?? (isRec(c.value) ? JSON.stringify(c.value) : String(c.value ?? ""));
+      const confidence = num(c.confidence) ?? 0;
+      const evidenceCount = num(c.evidence_count) ?? 0;
+      const isActive = Boolean(c.is_active);
+      const provenance = str(c.provenance);
+      const rationale = str(c.rationale);
+      if (id) {
+        candidates.push({
+          id,
+          sourceEngine,
+          value,
+          confidence,
+          evidenceCount,
+          isActive,
+          provenance,
+          rationale,
+        });
+      }
+    }
+    if (candidates.length > 0) {
+      out.push({
+        domain,
+        activeId: str(setObj.active_id),
+        hasConflict: Boolean(setObj.has_conflict),
+        candidates,
+      });
+    }
+  }
+  return out;
+}
+
+export function hasConflictingHypotheses(evidence: EntityEvidence): boolean {
+  return evidence.hypotheses.some((h) => h.hasConflict);
 }
 
 export function buildColourEvidence(cp: Props | undefined): ColourEvidence {
@@ -114,6 +181,7 @@ export function buildEntityEvidence(entity: {
     provenance: str(entity.provenance),
     colour,
     supportingViews: colour.viewsUsed,
+    hypotheses: buildHypothesesEvidence(cp),
   };
 }
 

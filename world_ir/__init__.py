@@ -6,6 +6,7 @@ Complete WorldIR implementation with schema v1:
 - Temporal events and causal relations
 - Multiple coordinate frames and branching
 - Deterministic serialization with validation
+- Competing hypothesis support and multi-engine reconciliation
 """
 
 # Legacy (foundation layer)
@@ -29,6 +30,15 @@ from .diff import diff_worlds, WorldDiff, EntityDiff, GeometryDiff, ChangeKind
 from .incremental import (
     affected_closure, apply_incremental_update,
     DEFAULT_PROPAGATING_KINDS, IncrementalUpdateResult,
+)
+from .hypotheses import (
+    CompetingHypothesis,
+    HypothesisSet,
+    ReconciliationStrategy,
+    attach_competing_hypothesis,
+    get_active_hypothesis,
+    get_competing_hypotheses,
+    reconcile_hypotheses,
 )
 
 __all__ = [
@@ -78,4 +88,12 @@ __all__ = [
     "DEFAULT_PROPAGATING_KINDS",
     "apply_incremental_update",
     "IncrementalUpdateResult",
+    # Hypotheses & Reconciliation (Tasks 7.3 & 7.6)
+    "CompetingHypothesis",
+    "HypothesisSet",
+    "ReconciliationStrategy",
+    "attach_competing_hypothesis",
+    "get_active_hypothesis",
+    "get_competing_hypotheses",
+    "reconcile_hypotheses",
 ]

@@ -1031,8 +1031,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_export.add_argument("world")
     p_export.add_argument("--format", required=True,
-                          choices=["gltf", "usda", "blender", "cityjson", "citygml", "ifc",
-                                   "geojson", "sdf", "tscn", "unreal", "sumo", "habitat", "godot", "3dtiles"])
+                          choices=sorted(reality.EXPORT_FORMATS | reality.EXPORT_PROFILES))
     p_export.add_argument("-o", "--output", required=True)
     p_export.set_defaults(func=cmd_export)
 

@@ -17,6 +17,24 @@ from .session import (
 )
 from .dataset import Dataset, MergedContext, UnknownSessionError, DuplicateSessionError
 from .promote import promote_measurement_to_entity, UnsupportedEvidenceKindError
+from .session_grouping import SessionGroup, group_evidence_by_session, haversine_distance_m
+from .dedup import (
+    DeduplicationResult,
+    DuplicateRecord,
+    compute_dhash,
+    compute_phash,
+    deduplicate_images,
+    hamming_distance,
+    hash_to_hex,
+    hex_to_hash,
+)
+from .video import (
+    SceneAwareFrameSelectionStrategy,
+    SceneTransition,
+    compute_frame_difference,
+    detect_scene_transitions_from_frames,
+    extract_video_keyframes,
+)
 
 __all__ = [
     "promote_measurement_to_entity",
@@ -33,4 +51,20 @@ __all__ = [
     "MergedContext",
     "UnknownSessionError",
     "DuplicateSessionError",
+    "SessionGroup",
+    "group_evidence_by_session",
+    "haversine_distance_m",
+    "DeduplicationResult",
+    "DuplicateRecord",
+    "compute_dhash",
+    "compute_phash",
+    "deduplicate_images",
+    "hamming_distance",
+    "hash_to_hex",
+    "hex_to_hash",
+    "SceneAwareFrameSelectionStrategy",
+    "SceneTransition",
+    "compute_frame_difference",
+    "detect_scene_transitions_from_frames",
+    "extract_video_keyframes",
 ]

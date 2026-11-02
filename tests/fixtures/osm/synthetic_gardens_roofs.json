@@ -1,0 +1,367 @@
+{
+ "_note": "SYNTHETIC hand-written Overpass-shaped fixture around (22.5757, 88.4312). Not real map data.",
+ "version": 0.6,
+ "generator": "synthetic",
+ "elements": [
+  {
+   "type": "way",
+   "id": 7001,
+   "tags": {
+    "building": "house",
+    "roof:shape": "hipped",
+    "roof:height": "3",
+    "building:levels": "2"
+   },
+   "geometry": [
+    {
+     "lat": 22.577,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.577,
+     "lon": 88.43010000000001
+    },
+    {
+     "lat": 22.577080000000002,
+     "lon": 88.43010000000001
+    },
+    {
+     "lat": 22.577080000000002,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.577,
+     "lon": 88.43
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7002,
+   "tags": {
+    "building": "detached",
+    "roof:shape": "skillion",
+    "roof:angle": "20"
+   },
+   "geometry": [
+    {
+     "lat": 22.577,
+     "lon": 88.4303
+    },
+    {
+     "lat": 22.577,
+     "lon": 88.4304
+    },
+    {
+     "lat": 22.577080000000002,
+     "lon": 88.4304
+    },
+    {
+     "lat": 22.577080000000002,
+     "lon": 88.4303
+    },
+    {
+     "lat": 22.577,
+     "lon": 88.4303
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7003,
+   "tags": {
+    "building": "house",
+    "roof:shape": "zigzag"
+   },
+   "geometry": [
+    {
+     "lat": 22.577,
+     "lon": 88.4306
+    },
+    {
+     "lat": 22.577,
+     "lon": 88.4307
+    },
+    {
+     "lat": 22.577080000000002,
+     "lon": 88.4307
+    },
+    {
+     "lat": 22.577080000000002,
+     "lon": 88.4306
+    },
+    {
+     "lat": 22.577,
+     "lon": 88.4306
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7004,
+   "tags": {
+    "building": "house"
+   },
+   "geometry": [
+    {
+     "lat": 22.577,
+     "lon": 88.4309
+    },
+    {
+     "lat": 22.577,
+     "lon": 88.431
+    },
+    {
+     "lat": 22.577080000000002,
+     "lon": 88.431
+    },
+    {
+     "lat": 22.577080000000002,
+     "lon": 88.4309
+    },
+    {
+     "lat": 22.577,
+     "lon": 88.4309
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7005,
+   "tags": {
+    "building": "apartments",
+    "building:levels": "6"
+   },
+   "geometry": [
+    {
+     "lat": 22.578,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.578,
+     "lon": 88.43020000000001
+    },
+    {
+     "lat": 22.5782,
+     "lon": 88.43020000000001
+    },
+    {
+     "lat": 22.5782,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.578,
+     "lon": 88.43
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7010,
+   "tags": {
+    "leisure": "garden"
+   },
+   "geometry": [
+    {
+     "lat": 22.576,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.576,
+     "lon": 88.4304
+    },
+    {
+     "lat": 22.5763,
+     "lon": 88.4304
+    },
+    {
+     "lat": 22.5763,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.576,
+     "lon": 88.43
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7011,
+   "tags": {
+    "landuse": "flowerbed"
+   },
+   "geometry": [
+    {
+     "lat": 22.57615,
+     "lon": 88.4302
+    },
+    {
+     "lat": 22.57615,
+     "lon": 88.43028
+    },
+    {
+     "lat": 22.5762,
+     "lon": 88.43028
+    },
+    {
+     "lat": 22.5762,
+     "lon": 88.4302
+    },
+    {
+     "lat": 22.57615,
+     "lon": 88.4302
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7012,
+   "tags": {
+    "barrier": "hedge"
+   },
+   "geometry": [
+    {
+     "lat": 22.576,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.576,
+     "lon": 88.431
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7013,
+   "tags": {
+    "natural": "tree_row"
+   },
+   "geometry": [
+    {
+     "lat": 22.5758,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.5758,
+     "lon": 88.4308
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7014,
+   "tags": {
+    "natural": "wood"
+   },
+   "geometry": [
+    {
+     "lat": 22.574,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.574,
+     "lon": 88.43050000000001
+    },
+    {
+     "lat": 22.5744,
+     "lon": 88.43050000000001
+    },
+    {
+     "lat": 22.5744,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.574,
+     "lon": 88.43
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7015,
+   "tags": {
+    "natural": "water"
+   },
+   "geometry": [
+    {
+     "lat": 22.575,
+     "lon": 88.432
+    },
+    {
+     "lat": 22.575,
+     "lon": 88.43220000000001
+    },
+    {
+     "lat": 22.57515,
+     "lon": 88.43220000000001
+    },
+    {
+     "lat": 22.57515,
+     "lon": 88.432
+    },
+    {
+     "lat": 22.575,
+     "lon": 88.432
+    }
+   ]
+  },
+  {
+   "type": "way",
+   "id": 7016,
+   "tags": {
+    "barrier": "fence"
+   },
+   "geometry": [
+    {
+     "lat": 22.5759,
+     "lon": 88.43
+    },
+    {
+     "lat": 22.5759,
+     "lon": 88.4305
+    }
+   ]
+  },
+  {
+   "type": "node",
+   "id": 7021,
+   "lat": 22.5765,
+   "lon": 88.4312,
+   "tags": {
+    "natural": "tree",
+    "height": "12",
+    "diameter_crown": "8",
+    "leaf_type": "broadleaved"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7022,
+   "lat": 22.5765,
+   "lon": 88.4314,
+   "tags": {
+    "natural": "tree",
+    "genus": "Pinus sylvestris",
+    "height": "15"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7023,
+   "lat": 22.5765,
+   "lon": 88.4316,
+   "tags": {
+    "natural": "tree"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7024,
+   "lat": 22.5766,
+   "lon": 88.4312,
+   "tags": {
+    "natural": "shrub"
+   }
+  }
+ ]
+}

@@ -9,5 +9,6 @@ a real artifact either way.
 """
 
 from .mesh import MeshData, mesh_summary
+from .repair import clean_and_repair_mesh, mesh_to_trimesh, trimesh_to_mesh
 
-__all__ = ["MeshData", "mesh_summary"]
+__all__ = ["MeshData", "mesh_summary", "clean_and_repair_mesh", "mesh_to_trimesh", "trimesh_to_mesh"]

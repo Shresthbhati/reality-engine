@@ -1417,8 +1417,10 @@ engineering decisions are made autonomously.
 # 52. PRIORITY AUTHORITY
 ============================================================
 
-The project's priority roadmap (`docs/implementation/ROADMAP.md` and
-the task ledger in `.agent/TASKS.yaml`) is authoritative.
+The project's priority roadmap (`docs/blueprint/30_BUILD_PLAN.md`,
+with product intent in `docs/blueprint/` — start at its README) is
+authoritative. `docs/implementation/ROADMAP.md` is kept as history;
+`.agent/TASKS.yaml` records execution progress against the build plan.
 The user/project has already established an ordered sequence of
 implementation priorities.
 

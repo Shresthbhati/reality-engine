@@ -5,7 +5,7 @@ __pycache__/
 *.egg-info/
 
 # Rendered/real capture fixtures are large and machine-specific --
-# never committed (docs/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md).
+# never committed (docs/archive/audits/REAL_CAPTURE_VERTICAL_SLICE_AUDIT.md).
 datasets/*/
 !datasets/README.md
 
@@ -41,5 +41,28 @@ tmpcheck.py
 security_audit_report.json
 .audit_*.txt
 
+
 # stray COLMAP database written to the cwd by ad-hoc colmap runs
 /db.db
+
+# Claude mem database and SQLite files
+.claude/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Root-level scratch output and throwaway helpers (anchored so tests/ and packages are untouched)
+/t.txt
+/test_*.txt
+/quick_test*
+/quick_ingest_check.py
+/run_tests.py
+/pr_body_*.md
+*.base
+/'
+
+# Editor / agent tool state
+.obsidian/
+.kilo/
+.freebuff/
+.serena/

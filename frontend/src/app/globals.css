@@ -1,44 +1,118 @@
 @import "tailwindcss";
 
-/* ── Obsidian Cartography — design tokens ──────────────────────────────
-   Every value here is used somewhere. Delete a token when it stops
-   being referenced; don't leave dead tokens for "later".            */
+/* ── Dark Architectural Studio — design tokens ─────────────────────────
+   Warm charcoal surfaces, one copper accent, one sage accent. Names are kept from the
+   previous palette so every component re-skins from here. Contrast on --bg-base:
+   primary 14:1, secondary 7:1, tertiary 4.6:1, copper accent 6:1 (all >= WCAG AA). */
 :root {
-  /* Navy palette sampled from the reference designs (docs/screenshots/parity/B0-gap-audit.md).
-     Contrast on --bg-base: primary 17:1, secondary 7.6:1, tertiary 4.9:1 (all >= WCAG AA). */
-  --bg-base: #050b16;
-  --bg-surface: #0a1424;
-  --bg-elevated: #0f1c30;
-  --bg-hover: rgba(143, 163, 191, 0.08);
+  --bg-base: #171918;
+  --bg-sidebar: #202320;
+  --bg-surface: #252925;
+  --bg-elevated: #303530;
+  --bg-hover: rgba(236, 237, 230, 0.06);
 
-  --border: #1a3050;
-  --border-subtle: #12233a;
+  --border: #3b413b;
+  --border-subtle: #2e332e;
 
-  --text-primary: #eaf2ff;
-  --text-secondary: #8fa3bf;
-  --text-tertiary: #6f85a5;
+  --text-primary: #ecede6;
+  --text-secondary: #a2a69a;
+  --text-tertiary: #7f8378;
 
-  --accent: #22b8ff;
-  --accent-subtle: rgba(34, 184, 255, 0.12);
-  --accent-border: rgba(34, 184, 255, 0.4);
+  --accent: #c58a60;
+  --accent-subtle: rgba(197, 138, 96, 0.14);
+  --accent-border: rgba(197, 138, 96, 0.45);
 
-  /* Bright blue for primary buttons (white text on it is 5.2:1). */
-  --primary: #2563eb;
-  --primary-hover: #1d4fd8;
-  --purple: #8b5cf6;
-  --purple-subtle: rgba(139, 92, 246, 0.14);
+  --sage: #98a987;
+  --sage-subtle: rgba(152, 169, 135, 0.16);
 
-  --success: #22c55e;
-  --success-subtle: rgba(34, 197, 94, 0.12);
-  --warning: #f5a623;
-  --warning-subtle: rgba(245, 166, 35, 0.12);
-  --error: #e74c3c;
-  --error-subtle: rgba(231, 76, 60, 0.12);
-  --info: #3d8ef7;
-  --info-subtle: rgba(61, 142, 247, 0.12);
+  /* Deep copper for primary buttons; --text-primary on it is 5.6:1 (AA for small text). */
+  --primary: #8f5530;
+  --primary-hover: #7b4727;
+  --purple: #a39ab5;
+  --purple-subtle: rgba(163, 154, 181, 0.14);
+
+  --success: #7fb069;
+  --success-subtle: rgba(127, 176, 105, 0.14);
+  --warning: #e0a458;
+  --warning-subtle: rgba(224, 164, 88, 0.14);
+  --error: #d9625a;
+  --error-subtle: rgba(217, 98, 90, 0.14);
+  --info: #8fa8a8;
+  --info-subtle: rgba(143, 168, 168, 0.14);
+
+  /* Confidence view: unmistakable green and red (unknown stays neutral, never coloured). */
+  --conf-high: #4caf62;
+  --conf-low: #e0524a;
+  --conf-unknown: #6b7068;
+  --border-strong: #606679;
+  --on-error: #0e1013;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Light theme. Dark is the default; data-theme="light"|"dark" (Settings > Appearance) overrides the OS setting.
+   The two light blocks below must stay identical -- CSS cannot share one rule across a media query and an attribute. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-base: #f6f7f9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #eef0f4;
+  --bg-hover: rgba(0, 0, 0, 0.05);
+
+  --border: #d6d9e2;
+  --border-subtle: #e6e8ee;
+  --border-strong: #868ca0;
+  --on-error: #ffffff;
+
+  --text-primary: #14161c;
+  --text-secondary: #464b5a;
+  --text-tertiary: #646a7a;
+
+  --accent: #00708a;
+  --accent-subtle: rgba(0, 112, 138, 0.1);
+  --accent-border: rgba(0, 112, 138, 0.4);
+
+  --success: #176f3c;
+  --success-subtle: rgba(23, 111, 60, 0.1);
+  --warning: #8a5000;
+  --warning-subtle: rgba(138, 80, 0, 0.1);
+  --error: #b02f22;
+  --error-subtle: rgba(176, 47, 34, 0.1);
+  --info: #1f6fd1;
+  --info-subtle: rgba(31, 111, 209, 0.1);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg-base: #f6f7f9;
+    --bg-surface: #ffffff;
+    --bg-elevated: #eef0f4;
+    --bg-hover: rgba(0, 0, 0, 0.05);
+
+    --border: #d6d9e2;
+    --border-subtle: #e6e8ee;
+    --border-strong: #868ca0;
+    --on-error: #ffffff;
+
+    --text-primary: #14161c;
+    --text-secondary: #464b5a;
+    --text-tertiary: #646a7a;
+
+    --accent: #00708a;
+    --accent-subtle: rgba(0, 112, 138, 0.1);
+    --accent-border: rgba(0, 112, 138, 0.4);
+
+    --success: #176f3c;
+    --success-subtle: rgba(23, 111, 60, 0.1);
+    --warning: #8a5000;
+    --warning-subtle: rgba(138, 80, 0, 0.1);
+    --error: #b02f22;
+    --error-subtle: rgba(176, 47, 34, 0.1);
+    --info: #1f6fd1;
+    --info-subtle: rgba(31, 111, 209, 0.1);
+  }
 }
 
 * {
@@ -97,4 +171,38 @@ body {
 [data-reduce-motion="true"] *::after {
   animation-duration: 0.001ms !important;
   transition-duration: 0.001ms !important;
+}
+
+/* Interface polish (design-engineering details) */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
+}
+
+/* Tactile press on controls that opt in; transitions name their properties (never `all`). */
+.btn-press {
+  transition-property: transform, opacity, background-color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+.btn-press:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Neutral inset outline so a photo's edge does not dissolve into the surface (black/white alpha, never brand-tinted). */
+.photo-outline {
+  outline: 1px solid rgba(0, 0, 0, 0.12);
+  outline-offset: -1px;
+}
+:root[data-theme="dark"] .photo-outline {
+  outline-color: rgba(255, 255, 255, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .photo-outline {
+    outline-color: rgba(255, 255, 255, 0.12);
+  }
 }

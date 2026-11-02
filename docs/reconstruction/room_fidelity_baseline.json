@@ -1,0 +1,414 @@
+{
+  "config": {
+    "cameras": "all",
+    "colors": "albedo",
+    "promote_building": false,
+    "seed": 42,
+    "voxel_m": 0.08
+  },
+  "fixture": "fidelity_room",
+  "metrics": {
+    "deltaE76_ceiling": {
+      "direction": "lower",
+      "ground_truth": [
+        240,
+        240,
+        235
+      ],
+      "measured": [
+        240,
+        240,
+        235
+      ],
+      "status": "ok",
+      "unit": "dE76",
+      "value": 0.0
+    },
+    "deltaE76_floor": {
+      "direction": "lower",
+      "ground_truth": [
+        150,
+        110,
+        70
+      ],
+      "measured": [
+        149,
+        110,
+        70
+      ],
+      "status": "ok",
+      "unit": "dE76",
+      "value": 0.4856624491919182
+    },
+    "deltaE76_wall_east": {
+      "direction": "lower",
+      "ground_truth": [
+        60,
+        160,
+        70
+      ],
+      "measured": [
+        60,
+        160,
+        70
+      ],
+      "status": "ok",
+      "unit": "dE76",
+      "value": 0.0
+    },
+    "deltaE76_wall_north": {
+      "direction": "lower",
+      "ground_truth": [
+        60,
+        90,
+        200
+      ],
+      "measured": [
+        60,
+        90,
+        199
+      ],
+      "status": "ok",
+      "unit": "dE76",
+      "value": 0.5902583049066816
+    },
+    "deltaE76_wall_south": {
+      "direction": "lower",
+      "ground_truth": [
+        200,
+        60,
+        60
+      ],
+      "measured": [
+        200,
+        61,
+        60
+      ],
+      "status": "ok",
+      "unit": "dE76",
+      "value": 0.43921900657627194
+    },
+    "deltaE76_wall_west": {
+      "direction": "lower",
+      "ground_truth": [
+        210,
+        190,
+        60
+      ],
+      "measured": [
+        210,
+        190,
+        60
+      ],
+      "status": "ok",
+      "unit": "dE76",
+      "value": 0.0
+    },
+    "dimensional_consistency": {
+      "direction": "higher",
+      "height_layers_m": [
+        2.61
+      ],
+      "mismatches": 0,
+      "status": "ok",
+      "unit": "bool",
+      "value": 1.0
+    },
+    "dimensions_with_state_pct": {
+      "dimensions": 39,
+      "direction": "higher",
+      "status": "ok",
+      "unit": "%",
+      "value": 100.0,
+      "with_state": 39
+    },
+    "door_height_error_cm": {
+      "direction": "lower",
+      "status": "ok",
+      "unit": "cm",
+      "value": 4.999999999999982
+    },
+    "door_precision": {
+      "direction": "higher",
+      "status": "ok",
+      "unit": "fraction",
+      "value": 1.0
+    },
+    "door_recall": {
+      "detected": 1,
+      "direction": "higher",
+      "ground_truth": 1,
+      "status": "ok",
+      "unit": "fraction",
+      "value": 1.0
+    },
+    "door_width_error_cm": {
+      "direction": "lower",
+      "status": "ok",
+      "unit": "cm",
+      "value": 4.999999999999993
+    },
+    "duplicate_room_entities": {
+      "direction": "lower",
+      "status": "ok",
+      "unit": "pairs",
+      "value": 0.0
+    },
+    "duplicate_room_ids": {
+      "direction": "lower",
+      "status": "ok",
+      "unit": "ids",
+      "value": 0.0
+    },
+    "footprint_area_error_pct": {
+      "bbox_floor_area_m2": 19.99986330376722,
+      "direction": "lower",
+      "ground_truth_m2": 20,
+      "measured_m2": 19.6416,
+      "status": "ok",
+      "unit": "%",
+      "value": 1.791999999999998
+    },
+    "furniture_precision": {
+      "direction": "higher",
+      "status": "ok",
+      "unit": "fraction",
+      "value": 1.0
+    },
+    "furniture_recall": {
+      "detected": 2,
+      "direction": "higher",
+      "ground_truth": 2,
+      "status": "ok",
+      "unit": "fraction",
+      "value": 1.0
+    },
+    "furniture_size_error_cm_max": {
+      "direction": "lower",
+      "per_item": {
+        "table": [
+          120.2,
+          80.2,
+          65.0
+        ],
+        "wardrobe": [
+          57.5,
+          57.0,
+          168.0
+        ]
+      },
+      "status": "ok",
+      "unit": "cm",
+      "value": 12.002401478245673
+    },
+    "layout_length_error_pct": {
+      "direction": "lower",
+      "error_cm": 6.6600000000000215,
+      "ground_truth_m": 5,
+      "measured_m": 4.9334,
+      "status": "ok",
+      "unit": "%",
+      "value": 1.3320000000000043
+    },
+    "layout_width_error_pct": {
+      "direction": "lower",
+      "error_cm": 1.8600000000000172,
+      "ground_truth_m": 4,
+      "measured_m": 3.9814,
+      "status": "ok",
+      "unit": "%",
+      "value": 0.4650000000000043
+    },
+    "room_count_error": {
+      "detected": 1,
+      "direction": "lower",
+      "ground_truth": 1,
+      "status": "ok",
+      "unit": "rooms",
+      "value": 0.0
+    },
+    "room_floor_color_rgb_present": {
+      "direction": "higher",
+      "status": "ok",
+      "unit": "bool",
+      "value": 1.0
+    },
+    "room_height_error_pct": {
+      "direction": "lower",
+      "error_cm": 0.009114490245831774,
+      "ground_truth_m": 2.6,
+      "measured_m": 2.5999088550975418,
+      "status": "ok",
+      "unit": "%",
+      "value": 0.003505573171473759
+    },
+    "room_length_error_pct": {
+      "direction": "lower",
+      "error_cm": 0.013261086758387108,
+      "ground_truth_m": 5,
+      "measured_m": 5.000132610867584,
+      "status": "ok",
+      "unit": "%",
+      "value": 0.0026522173516774217
+    },
+    "room_wall_color_rgb_present": {
+      "direction": "higher",
+      "status": "ok",
+      "unit": "bool",
+      "value": 1.0
+    },
+    "room_width_error_pct": {
+      "direction": "lower",
+      "error_cm": 0.005927129458260794,
+      "ground_truth_m": 4,
+      "measured_m": 3.9999407287054174,
+      "status": "ok",
+      "unit": "%",
+      "value": 0.0014817823645651984
+    },
+    "scale_state": {
+      "reason": "compile_reconstruction_to_world records no scale; engine/pipeline/vertical_slice sets world.metadata['scale']. Treat as RELATIVE (Decision 023)",
+      "status": "not available",
+      "value": null
+    },
+    "wall_count": {
+      "direction": "higher",
+      "ground_truth": 4,
+      "status": "ok",
+      "unit": "walls",
+      "value": 4.0
+    },
+    "wall_count_error": {
+      "direction": "lower",
+      "status": "ok",
+      "unit": "walls",
+      "value": 0.0
+    },
+    "wall_perimeter_coverage": {
+      "basis": "a wall entity's plan bounds (+0.15 m) overlaps the GT perimeter",
+      "direction": "higher",
+      "status": "ok",
+      "unit": "fraction",
+      "value": 1.0
+    },
+    "window_height_error_cm": {
+      "direction": "lower",
+      "status": "ok",
+      "unit": "cm",
+      "value": 5.000000000000004
+    },
+    "window_precision": {
+      "direction": "higher",
+      "status": "ok",
+      "unit": "fraction",
+      "value": 1.0
+    },
+    "window_recall": {
+      "detected": 1,
+      "direction": "higher",
+      "ground_truth": 1,
+      "status": "ok",
+      "unit": "fraction",
+      "value": 1.0
+    },
+    "window_width_error_cm": {
+      "direction": "lower",
+      "status": "ok",
+      "unit": "cm",
+      "value": 2.220446049250313e-14
+    }
+  },
+  "schema": "room_fidelity_report/1",
+  "source": "synthetic",
+  "stage_trace": {
+    "ceiling_layers": [
+      {
+        "color_rgb": [
+          240,
+          240,
+          235
+        ],
+        "entity_ids": [
+          "struct-plane-004"
+        ],
+        "height_above_floor_m": 2.61,
+        "plan_coverage_fraction": 0.9193,
+        "polygon_m": [
+          [
+            0.1276,
+            -4.874
+          ],
+          [
+            0.1276,
+            -0.1137
+          ],
+          [
+            3.8493,
+            -0.1137
+          ],
+          [
+            3.9358,
+            -4.7874
+          ]
+        ],
+        "polygon_xyz_m": [
+          [
+            4.874,
+            0.1276,
+            2.61
+          ],
+          [
+            0.1137,
+            0.1276,
+            2.61
+          ],
+          [
+            0.1137,
+            3.8493,
+            2.61
+          ],
+          [
+            4.7874,
+            3.9358,
+            2.61
+          ]
+        ],
+        "role": "ceiling"
+      }
+    ],
+    "ceilings_promoted": 2,
+    "doors": 1,
+    "duplicate_room_pairs": 0,
+    "entities_with_mean_color_rgb": 14,
+    "floors_promoted": 2,
+    "footprint_polygon_present": true,
+    "footprint_vertices": 4,
+    "furniture_candidates": 2,
+    "interior_warnings": [],
+    "openings_generic": 0,
+    "planes_by_role": {
+      "ceiling": 1,
+      "floor": 2,
+      "unknown": 1,
+      "wall": 10
+    },
+    "planes_total": 13,
+    "planes_unpromoted": 8,
+    "points_in_planes": 22063,
+    "points_total": 22063,
+    "points_with_colour": 22063,
+    "room_floor_color_rgb_present": true,
+    "room_wall_color_rgb_present": true,
+    "rooms": 1,
+    "scale_state": "not recorded by compile",
+    "validation_issues": [],
+    "walls_promoted": 8,
+    "windows": 1
+  },
+  "timings": {
+    "compile_s": 8.036,
+    "observe_s": 3.319,
+    "sensor_fixture_s": 0.04,
+    "total_s": 11.395
+  }
+}

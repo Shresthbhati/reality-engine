@@ -1811,7 +1811,7 @@ tasks:
         (pipe-deadlock regression), tests/test_world_diff.py"
       - "frontend tsc --noEmit + next build --webpack + real-browser run"
     remaining:
-      - "ENGINEERING: audit the Observation/Relationship constructor confidence defaults (1.0); producers are fixed, the defaults were left for a dedicated pass (PROD.3)"
+      - "ENGINEERING: DONE 2026-10-04 (commit f698f49): Observation/Relationship/CausalRelation constructor and from_dict defaults are 0.5 / Provenance.UNKNOWN (never 1.0 / OBSERVED); producers pass confidence explicitly; tests/test_confidence_defaults.py asserts defaults and that no producer omits confidence (registry entry PROD.3, also in docs/implementation/PENDING_IMPLEMENTATION.md)."
       - "EXTERNAL DATA (UNVERIFIED): no real corridor or real room photograph dataset exists in the repo; the 4 indoor photos outside it have unverified provenance and were not used"
     done_2026_10_03: "per-version evidence panel: the status API carries each version's evidence_ids / registered_ids (the version's own record, null for versions that predate it); the Studio shows, for an inspected earlier version, each photo as placed / waiting / added after it plus a one-line summary, and relabels the changes block as the CURRENT version's. Verified in the real browser against a two-version world (V1: 3 photos used, 3 placed, 1 added since); 5 contract tests (frontend/tests/contract/version-evidence.test.mts) + tests/test_reconstruction_reliability.py::test_status_versions_carry_what_each_version_was_built_from."
     done_2026_10_03_prototype: >-
@@ -1838,3 +1838,83 @@ tasks:
       gain, so the incremental build wins and the rest stay waiting (kept, retried). The test now asserts that invariant (frame kept
       => re-solve gain < FRAME_CHANGE_MIN_EXTRA_PHOTOS; frame changed => gain >= it) instead of a raw count. The margin itself stays
       PROVISIONAL (owner decision on 2 vs a larger value).
+
+  # ================= ROOM RECONSTRUCTION FIDELITY (Phase 7, 2026-10-31) ===========
+  # Plan: docs/superpowers/plans/2026-10-30-room-reconstruction-fidelity.md
+  # Everything below is SYNTHETIC-fixture evidence only; no real-room data exists.
+
+  - id: ROOMFID-01
+    name: room reconstruction fidelity (structure, dimensions, appearance, viewer, UX)
+    status: PARTIAL
+    basis: >-
+      2026-10-31. Code present (files checked to exist): perception/architecture/wall_slabs.py, world_ir/measure.py,
+      perception/architecture/dimension_consistency.py, perception/materials/room_surfaces.py,
+      perception/materials/material_hypotheses.py, apps/api/routes_artifacts.py, exporters/floorplan.py,
+      world_ir/corrections.py, perception/architecture/multi_room.py + room_join.py,
+      perception/architecture/layout_evidence.py, reconstruction/backend/plane_sweep.py + dense_registry.py,
+      reconstruction/depth_scale.py, scripts/room_fidelity_report.py, CI job fidelity-gate.
+    verification:
+      - "freebuff-owned test files: 44 tests passed (observed)"
+      - "frontend: 171/171 contract tests passed; tsc --noEmit exit 0 (observed)"
+      - "tests/test_api_dense_cpu.py + tests/test_api_world_artifacts.py: 19 tests passed (observed)"
+      - "backend agent reported 203 passed, 1 skipped, 0 failed over its suites (reported, not re-run here)"
+      - "tests/test_dimension_gates.py: 2% on L/W/H and 6 cm on openings vs SYNTHETIC ground truth; real-room variant opt-in and SKIPPED"
+    not_verified:
+      - "a clean FULL python suite result (a run was in progress; do not claim a full-suite pass)"
+      - "any real room; any browser run of the viewer/guided flow; scale-suggestion accept end to end; a real job with dense_cpu=true"
+    remaining:
+      - "O1/O2 learned door/window/furniture detector: BLOCKED (see ROOMFID-02)"
+      - "real-room fixture (photos + tape measurements from the user) to turn the SKIPPED real-room dimension gate on"
+      - "known limits: wall thickness fixed at labelled 0.10 m default; assumed camera view cone (30 deg, 8 m); scale.py drops dense_points on rebuild; dense_ingest persists cloud without colour; coverage routes never run on a stored world; guided-flow steps 4/5 always needs-action; artifact route uncached; UVs on thin wall sides stretched; photo list shows view ids not thumbnails"
+    next: "clean full-suite run -> browser-verify V1/V2 + guided flow -> exercise scale-suggestion accept -> ask user for detector decision and real-room data"
+
+  - id: ROOMFID-02
+    name: learned 2D door/window detector for openings/furniture (plan O1/O2)
+    status: BLOCKED
+    blocker: >-
+      DECISION REQUIRED: which 2D door/window detector may be installed. OPTIONS: install an open-vocabulary detector
+      (YOLO/GroundingDINO-class); keep the geometry-only opening host already present; defer. TRADEOFFS: accuracy vs
+      install weight and licence. RECOMMENDATION: ask the user; keep geometry-only meanwhile.
+
+  - id: SITE-01
+    name: Site composer (user-directed placement of reconstructed worlds on a metric grid)
+    status: PARTIAL
+    basis: >-
+      FOUNDATION only (the ledger vocabulary has no FOUNDATION value, PARTIAL is the nearest): tables Site/SitePlacement,
+      routes /api/sites, frontend /sites are being built by other agents and are unverified. Manual placement; NOT
+      automatic cross-source/geo-registration (P1.10 stays MISSING).
+
+  - id: LAND-01
+    name: landmark / curved-structure reconstruction from a single image (domes, arches, towers, facade ornament)
+    status: PARTIAL
+    basis: >-
+      FOUNDATION landed: perception/architecture/landmark.py fits single-image 3D point clusters to curved
+      landmark kinds (dome via sphere fit, arch via circle cross-section, tower via vertical cylinder fit) with
+      measured residuals (rms/max), honest FitRefused when evidence is insufficient, deterministic output,
+      relative-vs-measured scale handling (single-image scale is relative unless a trusted baseline is supplied),
+      and a LandmarkErrorReport structure for the acceptance-criterion measurement against ground truth.
+      WorldIR already carries DOME/ARCH entity types and SPHERE/CYLINDER/CAPSULE/IMPLICIT/MESH geometry types;
+      the ArchitectureRegistry already registers arch/dome (SPHERE), arch/arch (CIRCLE), tower (CYLINDER).
+      Tests: tests/test_landmark.py (27 tests) all green, including determinism, refusal, and scale-state cases.
+    acceptance: "measured against a ground-truth model with a stated error metric and threshold, not by eye"
+    dependencies: "learned monocular/multi-view model or multi-view capture of the structure; real landmark photo set + surveyed dimensions for ground-truth measurement"
+    verification:
+      - "tests/test_landmark.py: 27 passed, 0 failed (dome/arch/tower fitting, refusals, determinism, relative vs measured scale, error report)"
+    open: >-
+      REAL-DATA VERIFICATION BLOCKED: no real landmark photo set or surveyed ground-truth dimensions exist in
+      this environment. All verification is synthetic. Cannot advance to VERIFIED until user supplies a real
+      landmark capture + measured dimensions for the acceptance-criterion error report.
+
+  - id: GATE-01
+    name: release gate - real photos -> persisted world -> correction -> V2 diff (docs/implementation/RELEASE_GATE_PLAN.md)
+    status: PARTIAL
+    basis: "Phase 1 of 6 done 2026-10-16 (branch claude/gate-p1-geometries): world.geometries regression NOT REPRODUCED; httpx pin d2dfacc fixes the real TestClient breakage. Phases 2-6 pending."
+    verification:
+      - "pytest 4 plan files -> 24 passed; -k geometr non-slow -> 165 passed, 3 skipped"
+      - "real COLMAP via API: V1 6 geoms / V2 10 geoms, 0 dangling refs, digests identical after restart; test_B 1 passed"
+      - "non-slow baseline with httpx<0.28: 0 failed (2815 passed + 151 re-run of affected files), 28 skipped"
+      - "Phase 2: validate_reconstruction_output (<2 cameras, NaN/Inf pose/point) wired into vertical_slice; 7 new tests + 1 API test; SIX window real COLMAP 6/6 registered, 1132 sparse pts, 0.295 px, 101 s; test_B/D/D2 passed"
+    done_2026_10_16_final: "Gate passed twice consecutively on 994af9c (3 passed each); non-slow 2976 passed/0 failed; slow journeys 28/28; frontend tsc/contract 17/17/build green. See RELEASE_GATE_PLAN.md Appendix C."
+    remaining:
+      - "Phase 1 reopens if the user supplies the original geometries symptom"
+      - "Phases 2-6: output validation, contract baseline, test_release_gate.py (x2), integration, Studio walkthrough"

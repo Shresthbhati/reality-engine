@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useMemo, useEffect, useSyncExternalStore } from "react";
 import {
   Globe,
@@ -523,7 +524,7 @@ interface SpatialAnchor {
         style={{ borderColor: "var(--border)" }}
       >
         <div className="flex items-center justify-between">
-          <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+          <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
             Spatial World
           </label>
           <span className="text-[10px] font-mono text-[var(--accent)] px-1.5 py-0.2 rounded bg-[var(--accent)]/10 border border-[var(--accent)]/20">
@@ -534,15 +535,15 @@ interface SpatialAnchor {
           <select
             value={activeWorldId}
             onChange={(e) => onSelectWorld(e.target.value)}
-            className="w-full h-8 pl-2.5 pr-7 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-xs text-white font-medium appearance-none focus:border-[var(--accent)] focus:outline-none cursor-pointer truncate"
+            className="w-full h-8 pl-2.5 pr-7 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-xs text-[var(--text-primary)] font-medium appearance-none focus:border-[var(--accent)] focus:outline-none cursor-pointer truncate"
           >
             {worlds.map((w) => (
-              <option key={w.id} value={w.id} className="bg-[var(--bg-elevated)] text-white">
+              <option key={w.id} value={w.id} className="bg-[var(--bg-elevated)] text-[var(--text-primary)]">
                 {w.name}
               </option>
             ))}
           </select>
-          <ChevronDown className="w-3.5 h-3.5 text-neutral-400 absolute right-2.5 top-2.5 pointer-events-none" />
+          <ChevronDown className="w-3.5 h-3.5 text-[var(--text-secondary)] absolute right-2.5 top-2.5 pointer-events-none" />
         </div>
       </div>
 
@@ -627,7 +628,7 @@ interface SpatialAnchor {
               className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 hierarchyView === "tree"
                   ? "bg-[var(--accent)]/20 text-[var(--accent)] font-medium border border-[var(--accent)]/30"
-                  : "text-neutral-400 hover:text-white"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
               Tree View
@@ -638,7 +639,7 @@ interface SpatialAnchor {
               className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 hierarchyView === "storeys"
                   ? "bg-[var(--accent)]/20 text-[var(--accent)] font-medium border border-[var(--accent)]/30"
-                  : "text-neutral-400 hover:text-white"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
               Storeys ({levelsList.length})
@@ -649,7 +650,7 @@ interface SpatialAnchor {
               className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 hierarchyView === "rooms"
                   ? "bg-[var(--accent)]/20 text-[var(--accent)] font-medium border border-[var(--accent)]/30"
-                  : "text-neutral-400 hover:text-white"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
               Rooms ({roomsList.length})
@@ -660,7 +661,7 @@ interface SpatialAnchor {
               className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap cursor-pointer ${
                 hierarchyView === "corridors"
                   ? "bg-[var(--accent)]/20 text-[var(--accent)] font-medium border border-[var(--accent)]/30"
-                  : "text-neutral-400 hover:text-white"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
               Corridors ({corridorsList.length})
@@ -696,7 +697,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "worlds" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Spatial Worlds ({worlds.length})</span>
               <span className="text-[var(--accent)]">WorldIR</span>
             </div>
@@ -711,13 +712,13 @@ interface SpatialAnchor {
                     className={`p-2.5 rounded-lg border transition-colors cursor-pointer space-y-1.5 ${
                       isActive
                         ? "bg-[var(--bg-elevated)] border-[var(--accent)] shadow-sm"
-                        : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
+                        : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-[var(--border)]"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <Globe className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
-                        <span className="font-semibold text-white truncate text-xs">
+                        <span className="font-semibold text-[var(--text-primary)] truncate text-xs">
                           {w.name}
                         </span>
                       </div>
@@ -727,11 +728,11 @@ interface SpatialAnchor {
                         </span>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-1 text-[10px] text-neutral-400 font-mono">
+                    <div className="grid grid-cols-2 gap-1 text-[10px] text-[var(--text-secondary)] font-mono">
                       <span>Sessions: {w.sessionCount ?? 0}</span>
                       <span>Evidence: {w.evidenceCount ?? 0}</span>
                     </div>
-                    <div className="text-[10px] text-neutral-500 truncate pt-1 border-t border-neutral-800">
+                    <div className="text-[10px] text-[var(--text-tertiary)] truncate pt-1 border-t border-[var(--border-subtle)]">
                       ID: {w.id}
                     </div>
                   </div>
@@ -746,13 +747,13 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "hierarchy" && hierarchyView === "storeys" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Storeys & Levels ({levelsList.length})</span>
               {activeLevelFilter !== null && (
                 <button
                   type="button"
                   onClick={() => handleFilterLevelAction(null)}
-                  className="text-amber-400 hover:underline text-[10px] cursor-pointer"
+                  className="text-[var(--warning)] hover:underline text-[10px] cursor-pointer"
                 >
                   Reset Filter
                 </button>
@@ -761,7 +762,7 @@ interface SpatialAnchor {
 
             <div className="space-y-2">
               {levelsList.length === 0 ? (
-                <p className="text-[11px] text-neutral-500 leading-relaxed">
+                <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
                   No storeys recorded. This reconstruction produced no interior space
                   graph and no level entities, so there is no canonical level structure
                   to show.
@@ -774,23 +775,23 @@ interface SpatialAnchor {
                     key={lvl.id}
                     className={`p-2.5 rounded-lg border space-y-2 ${
                       isFiltered
-                        ? "bg-[var(--bg-elevated)] border-[#38bdf8]"
+                        ? "bg-[var(--bg-elevated)] border-[var(--info)]"
                         : "bg-[var(--bg-elevated)] border-[var(--border)]"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <Layers className="w-3.5 h-3.5 text-[#38bdf8] shrink-0" />
-                        <span className="font-semibold text-white truncate text-xs">
+                        <Layers className="w-3.5 h-3.5 text-[var(--info)] shrink-0" />
+                        <span className="font-semibold text-[var(--text-primary)] truncate text-xs">
                           {lvl.name}
                         </span>
                       </div>
-                      <span className="text-[10px] text-[#38bdf8] font-mono px-1.5 py-0.2 rounded bg-[#38bdf8]/10">
+                      <span className="text-[10px] text-[var(--info)] font-mono px-1.5 py-0.2 rounded bg-[var(--info)]/10">
                         Elev {lvl.elevationY.toFixed(1)}m
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between text-[10px] text-neutral-400">
+                    <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)]">
                       <span>{lvl.elementCount} elements on level</span>
                       <button
                         type="button"
@@ -799,8 +800,8 @@ interface SpatialAnchor {
                         }
                         className={`px-2 py-0.5 rounded text-[10px] border transition-colors cursor-pointer ${
                           isFiltered
-                            ? "bg-[#38bdf8] text-black font-semibold border-[#38bdf8]"
-                            : "bg-[#38bdf8]/10 text-[#38bdf8] hover:bg-[#38bdf8]/20 border-[#38bdf8]/30"
+                            ? "bg-[var(--info)] text-[var(--bg-base)] font-semibold border-[var(--info)]"
+                            : "bg-[var(--info)]/10 text-[var(--info)] hover:bg-[var(--info)]/20 border-[var(--info)]/30"
                         }`}
                       >
                         {isFiltered ? "Active Filter" : "Filter 3D View"}
@@ -813,8 +814,8 @@ interface SpatialAnchor {
 
             {/* Embedded Level Hierarchy Tree */}
             {hierarchyTree && (
-              <div className="space-y-2 pt-2 border-t border-neutral-800">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+              <div className="space-y-2 pt-2 border-t border-[var(--border-subtle)]">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                   Level Spatial Structure
                 </div>
                 {hierarchyTree.spaces.length > 0 && (
@@ -833,7 +834,7 @@ interface SpatialAnchor {
                             className={`flex items-center justify-between p-1.5 rounded transition-colors cursor-pointer ${
                               isSelected
                                 ? "bg-[var(--bg-elevated)] text-[var(--accent)]"
-                                : "hover:bg-neutral-800/60 text-neutral-300"
+                                : "hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
                             }`}
                           >
                             <div className="flex items-center gap-1.5 min-w-0">
@@ -843,7 +844,7 @@ interface SpatialAnchor {
                                   ev.stopPropagation();
                                   toggleNode(space.id);
                                 }}
-                                className="text-neutral-500 hover:text-white"
+                                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                               >
                                 {isExpanded ? (
                                   <ChevronDown className="w-3 h-3" />
@@ -854,13 +855,13 @@ interface SpatialAnchor {
                               <Building className="w-3.5 h-3.5 text-[var(--success)] shrink-0" />
                               <span className="truncate">{space.name || space.id}</span>
                             </div>
-                            <span className="text-[10px] text-neutral-500 font-mono">
+                            <span className="text-[10px] text-[var(--text-tertiary)] font-mono">
                               {elements.length} elems
                             </span>
                           </div>
 
                           {isExpanded && (
-                            <div className="pl-4 space-y-0.5 border-l border-neutral-800 ml-2">
+                            <div className="pl-4 space-y-0.5 border-l border-[var(--border-subtle)] ml-2">
                               {elements.map((e) => (
                                 <HierarchyElementRow
                                   key={e.id}
@@ -889,7 +890,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "hierarchy" && hierarchyView === "rooms" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Reconstructed Rooms ({roomsList.length})</span>
               {onOpenRoomConstruction && (
                 <button
@@ -926,13 +927,13 @@ interface SpatialAnchor {
                       className={`p-2.5 rounded-lg border transition-all cursor-pointer space-y-2 ${
                         isSelected
                           ? "bg-[var(--bg-elevated)] border-[var(--accent)] shadow-md shadow-[var(--accent)]/10"
-                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
+                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-[var(--border)]"
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <Building className="w-3.5 h-3.5 text-[#3b82f6] shrink-0" />
-                          <span className="font-semibold text-white truncate text-xs">
+                          <Building className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+                          <span className="font-semibold text-[var(--text-primary)] truncate text-xs">
                             {room.name || room.id}
                           </span>
                         </div>
@@ -942,30 +943,30 @@ interface SpatialAnchor {
                       </div>
 
                       {/* Dimensions & Boundaries */}
-                      <div className="grid grid-cols-2 gap-1 text-[10px] text-neutral-400 pt-1 border-t border-neutral-800">
+                      <div className="grid grid-cols-2 gap-1 text-[10px] text-[var(--text-secondary)] pt-1 border-t border-[var(--border-subtle)]">
                         <div>
-                          <span className="text-neutral-500">Size: </span>
-                          <span className="text-neutral-200">
+                          <span className="text-[var(--text-tertiary)]">Size: </span>
+                          <span className="text-[var(--text-primary)]">
                             {dims
                               ? `${dims.length.toFixed(1)} × ${dims.width.toFixed(1)} m`
                               : "—"}
                           </span>
                         </div>
                         <div>
-                          <span className="text-neutral-500">Height: </span>
-                          <span className="text-neutral-200">
+                          <span className="text-[var(--text-tertiary)]">Height: </span>
+                          <span className="text-[var(--text-primary)]">
                             {dims ? `${dims.height.toFixed(1)} m` : "—"}
                           </span>
                         </div>
                         <div>
-                          <span className="text-neutral-500">Walls: </span>
-                          <span className="text-neutral-200">
+                          <span className="text-[var(--text-tertiary)]">Walls: </span>
+                          <span className="text-[var(--text-primary)]">
                             {metrics.boundaryCount} bound
                           </span>
                         </div>
                         <div>
-                          <span className="text-neutral-500">Openings: </span>
-                          <span className="text-neutral-200">
+                          <span className="text-[var(--text-tertiary)]">Openings: </span>
+                          <span className="text-[var(--text-primary)]">
                             {metrics.openingCount} doors/win
                           </span>
                         </div>
@@ -973,15 +974,15 @@ interface SpatialAnchor {
 
                       {/* Low Confidence Warning */}
                       {isLowConf && (
-                        <div className="flex items-center gap-1.5 p-1.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-sans">
+                        <div className="flex items-center gap-1.5 p-1.5 rounded bg-[var(--warning-subtle)] border border-[var(--warning)] text-[var(--warning)] text-[10px] font-sans">
                           <AlertTriangle className="w-3 h-3 shrink-0" />
                           <span>Room inferred with low confidence ({(conf * 100).toFixed(0)}%)</span>
                         </div>
                       )}
 
                       {/* Actions */}
-                      <div className="flex items-center justify-between pt-1 border-t border-neutral-800 text-[10px]">
-                        <span className="text-neutral-500">
+                      <div className="flex items-center justify-between pt-1 border-t border-[var(--border-subtle)] text-[10px]">
+                        <span className="text-[var(--text-tertiary)]">
                           Conf: {conf !== null ? `${(conf * 100).toFixed(0)}%` : "Not available"}
                         </span>
                         <div className="flex items-center gap-1.5">
@@ -991,7 +992,7 @@ interface SpatialAnchor {
                               ev.stopPropagation();
                               handleIsolateSpace(room.id);
                             }}
-                            className="px-2 py-0.5 rounded bg-[#3b82f6]/20 text-[#3b82f6] hover:bg-[#3b82f6]/30 border border-[#3b82f6]/40 cursor-pointer"
+                            className="px-2 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent)]/30 border border-[var(--accent)]/40 cursor-pointer"
                           >
                             Isolate
                           </button>
@@ -1001,7 +1002,7 @@ interface SpatialAnchor {
                               ev.stopPropagation();
                               onFrameEntity(room.id);
                             }}
-                            className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800"
+                            className="p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
                             title="Frame in Viewport [F]"
                           >
                             <Maximize2 className="w-3 h-3" />
@@ -1015,26 +1016,26 @@ interface SpatialAnchor {
             ) : (
               <div className="space-y-3">
                 {wallsList.length > 0 ? (
-                  <div className="p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-xs font-sans space-y-2">
-                    <div className="flex items-center gap-2 text-amber-400 font-semibold">
+                  <div className="p-3 rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] text-xs font-sans space-y-2">
+                    <div className="flex items-center gap-2 text-[var(--warning)] font-semibold">
                       <AlertTriangle className="w-4 h-4 shrink-0" />
                       <span>Wall geometry available; room topology unresolved</span>
                     </div>
-                    <p className="text-[11px] text-neutral-300 leading-relaxed">
+                    <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
                       Detected {wallsList.length} planar wall segments in point cloud reconstruction, but space boundary loop has not yet been resolved into closed 3D room volumes.
                     </p>
                     {onOpenRoomConstruction && (
                       <button
                         type="button"
                         onClick={onOpenRoomConstruction}
-                        className="px-3 py-1.5 rounded bg-amber-500 text-black font-semibold text-xs hover:bg-amber-400 transition-colors cursor-pointer w-full text-center"
+                        className="px-3 py-1.5 rounded bg-[var(--warning)] text-[var(--bg-base)] font-semibold text-xs hover:bg-[var(--warning)] transition-colors cursor-pointer w-full text-center"
                       >
                         Open Room Construction Workflow
                       </button>
                     )}
                   </div>
                 ) : (
-                  <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 font-sans">
+                  <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-[var(--text-secondary)] font-sans">
                     No room volumes or wall boundaries reconstructed yet.
                   </div>
                 )}
@@ -1048,7 +1049,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "hierarchy" && hierarchyView === "corridors" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Circulation Corridors ({corridorsList.length})</span>
             </div>
 
@@ -1071,34 +1072,34 @@ interface SpatialAnchor {
                       className={`p-2.5 rounded-lg border transition-all cursor-pointer space-y-2 ${
                         isSelected
                           ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
-                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
+                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-[var(--border)]"
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <Workflow className="w-3.5 h-3.5 text-[#06b6d4] shrink-0" />
-                          <span className="font-semibold text-white truncate text-xs">
+                          <Workflow className="w-3.5 h-3.5 text-[var(--info)] shrink-0" />
+                          <span className="font-semibold text-[var(--text-primary)] truncate text-xs">
                             {corridor.name || corridor.id}
                           </span>
                         </div>
-                        <span className="text-[10px] font-mono text-[#06b6d4] px-1.5 py-0.5 rounded bg-[#06b6d4]/10">
+                        <span className="text-[10px] font-mono text-[var(--info)] px-1.5 py-0.5 rounded bg-[var(--info)]/10">
                           {lengthM} m route
                         </span>
                       </div>
 
-                      <div className="flex justify-between text-[10px] text-neutral-400 pt-1 border-t border-neutral-800">
+                      <div className="flex justify-between text-[10px] text-[var(--text-secondary)] pt-1 border-t border-[var(--border-subtle)]">
                         <span>Openings: {metrics.openingCount}</span>
                         <span>Boundaries: {metrics.boundaryCount}</span>
                       </div>
 
-                      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-neutral-800 text-[10px]">
+                      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-[var(--border-subtle)] text-[10px]">
                         <button
                           type="button"
                           onClick={(ev) => {
                             ev.stopPropagation();
                             handleIsolateSpace(corridor.id);
                           }}
-                          className="px-2 py-0.5 rounded bg-[#06b6d4]/20 text-[#06b6d4] hover:bg-[#06b6d4]/30 border border-[#06b6d4]/40 cursor-pointer"
+                          className="px-2 py-0.5 rounded bg-[var(--info)]/20 text-[var(--info)] hover:bg-[var(--info)]/30 border border-[var(--info)]/40 cursor-pointer"
                         >
                           Isolate
                         </button>
@@ -1108,7 +1109,7 @@ interface SpatialAnchor {
                             ev.stopPropagation();
                             onFrameEntity(corridor.id);
                           }}
-                          className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800"
+                          className="p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
                         >
                           <Maximize2 className="w-3 h-3" />
                         </button>
@@ -1118,12 +1119,12 @@ interface SpatialAnchor {
                 })}
               </div>
             ) : (
-              <div className="p-3 rounded-lg border border-neutral-800 bg-[var(--bg-surface)] text-xs font-sans space-y-1.5">
-                <div className="text-neutral-300 font-semibold flex items-center gap-1.5">
-                  <Workflow className="w-3.5 h-3.5 text-neutral-500" />
+              <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-xs font-sans space-y-1.5">
+                <div className="text-[var(--text-secondary)] font-semibold flex items-center gap-1.5">
+                  <Workflow className="w-3.5 h-3.5 text-[var(--text-tertiary)]" />
                   <span>No Circulation Corridors Segmented</span>
                 </div>
-                <p className="text-[11px] text-neutral-400 leading-relaxed">
+                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
                   Reconstruction currently represents direct space interconnects or open-plan circulation. No dedicated circulation corridor entities found in WorldIR.
                 </p>
               </div>
@@ -1136,7 +1137,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "evidence" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Calibrated Viewpoints ({effectiveEvidence.length})</span>
               <span className="text-[var(--accent)] font-mono">Multi-View SfM</span>
             </div>
@@ -1153,7 +1154,7 @@ interface SpatialAnchor {
             )}
 
             {effectiveEvidence.length === 0 ? (
-              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 font-sans">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-[var(--text-secondary)] font-sans">
                 No calibrated camera evidence available.
               </div>
             ) : (
@@ -1167,16 +1168,16 @@ interface SpatialAnchor {
                       className={`group p-2 rounded border transition-colors cursor-pointer flex items-center justify-between ${
                         isSelected
                           ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
-                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
+                          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-[var(--border)]"
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <Camera className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
                         <div className="min-w-0">
-                          <div className="font-mono text-xs font-medium text-neutral-200 truncate group-hover:text-white">
+                          <div className="font-mono text-xs font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--text-primary)]">
                             {ev.name}
                           </div>
-                          <div className="flex items-center gap-1.5 text-[10px] text-neutral-400 font-mono">
+                          <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-secondary)] font-mono">
                             <span>{ev.status}</span>
                             {ev.residual && (
                               <>
@@ -1198,7 +1199,7 @@ interface SpatialAnchor {
                           );
                         }}
                         title="Frame Camera Viewpoint"
-                        className="p-1 rounded text-neutral-400 hover:text-[var(--accent)] hover:bg-neutral-800 transition-colors"
+                        className="p-1 rounded text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--bg-elevated)] transition-colors"
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
@@ -1215,7 +1216,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "sessions" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Attached Sessions ({sessions.length})</span>
               <span className="text-[var(--accent)] font-mono">Capture Ingestion</span>
             </div>
@@ -1232,9 +1233,9 @@ interface SpatialAnchor {
             )}
 
             {sessions.length === 0 ? (
-              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-2 font-sans">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-[var(--text-secondary)] space-y-2 font-sans">
                 <p>No capture sessions attached to this World yet.</p>
-                <p className="text-[11px] text-neutral-500">
+                <p className="text-[11px] text-[var(--text-tertiary)]">
                   Attach an existing session or start a new mobile capture.
                 </p>
               </div>
@@ -1244,17 +1245,17 @@ interface SpatialAnchor {
                   <div
                     key={s.id}
                     onClick={() => onSelectSession?.(s.id)}
-                    className="p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] hover:border-neutral-700 transition-colors cursor-pointer space-y-1"
+                    className="p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--border)] transition-colors cursor-pointer space-y-1"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-xs text-white hover:text-[var(--accent)]">
+                      <span className="font-semibold text-xs text-[var(--text-primary)] hover:text-[var(--accent)]">
                         {s.name}
                       </span>
-                      <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-neutral-800 text-neutral-300">
+                      <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
                         {s.locationSource || "WGS84"}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono">
+                    <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] font-mono">
                       <span>{s.capturedAt ? s.capturedAt.slice(0, 10) : "Recent"}</span>
                       <span>{s.evidenceCount ?? 0} items</span>
                     </div>
@@ -1270,15 +1271,15 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "places" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Spatial Anchors ({effectivePlaces.length})</span>
               <span className="text-[var(--accent)] font-mono">ENU Coordinate Frame</span>
             </div>
 
             {effectivePlaces.length === 0 ? (
-              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-1.5 font-sans">
-                <p className="font-medium text-white">No spatial anchors registered</p>
-                <p className="text-[11px] text-neutral-500">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-[var(--text-secondary)] space-y-1.5 font-sans">
+                <p className="font-medium text-[var(--text-primary)]">No spatial anchors registered</p>
+                <p className="text-[11px] text-[var(--text-tertiary)]">
                   Spatial anchors/places can be added to anchor POIs or coordinate pins within this ENU frame.
                 </p>
               </div>
@@ -1299,15 +1300,15 @@ interface SpatialAnchor {
                     className="p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--accent)]/50 transition-colors cursor-pointer space-y-1"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-white font-medium">
+                      <div className="flex items-center gap-1.5 text-[var(--text-primary)] font-medium">
                         <MapPin className="w-3.5 h-3.5 text-[var(--accent)]" />
                         <span>{pl.name}</span>
                       </div>
-                      <Crosshair className="w-3 h-3 text-neutral-500 hover:text-white" />
+                      <Crosshair className="w-3 h-3 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" />
                     </div>
-                    <div className="flex justify-between text-[10px] text-neutral-400">
+                    <div className="flex justify-between text-[10px] text-[var(--text-secondary)]">
                       <span>Pos: [{pl.position.map((v: number) => v.toFixed(1)).join(", ")}] m</span>
-                      <span className="text-neutral-500">{pl.createdAt}</span>
+                      <span className="text-[var(--text-tertiary)]">{pl.createdAt}</span>
                     </div>
                   </div>
                 ))}
@@ -1321,7 +1322,7 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "bookmarks" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Spatial Bookmarks ({bookmarks.length})</span>
               <button
                 type="button"
@@ -1334,9 +1335,9 @@ interface SpatialAnchor {
             </div>
 
             {bookmarks.length === 0 ? (
-              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-2 font-sans">
-                <p className="font-medium text-white">No spatial bookmarks saved</p>
-                <p className="text-[11px] text-neutral-500">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-[var(--text-secondary)] space-y-2 font-sans">
+                <p className="font-medium text-[var(--text-primary)]">No spatial bookmarks saved</p>
+                <p className="text-[11px] text-[var(--text-tertiary)]">
                   Frame any vantage point in the 3D viewport and bookmark it to quickly return to key viewpoints or inspection angles.
                 </p>
                 <button
@@ -1357,7 +1358,7 @@ interface SpatialAnchor {
                     className="p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--accent)]/50 transition-colors cursor-pointer space-y-1"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-white font-medium">
+                      <div className="flex items-center gap-1.5 text-[var(--text-primary)] font-medium">
                         <Bookmark className="w-3.5 h-3.5 text-[var(--accent)]" />
                         <span>{bm.name}</span>
                       </div>
@@ -1369,7 +1370,7 @@ interface SpatialAnchor {
                             handleFlyToBookmark(bm);
                           }}
                           title="Fly to camera pose"
-                          className="p-1 text-neutral-400 hover:text-[var(--accent)] cursor-pointer"
+                          className="p-1 text-[var(--text-secondary)] hover:text-[var(--accent)] cursor-pointer"
                         >
                           <Crosshair className="w-3 h-3" />
                         </button>
@@ -1380,15 +1381,15 @@ interface SpatialAnchor {
                             handleDeleteBookmark(bm.id);
                           }}
                           title="Delete bookmark"
-                          className="p-1 text-neutral-500 hover:text-red-400 cursor-pointer"
+                          className="p-1 text-[var(--text-tertiary)] hover:text-[var(--error)] cursor-pointer"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
                     </div>
-                    <div className="flex justify-between text-[10px] text-neutral-400 font-mono">
+                    <div className="flex justify-between text-[10px] text-[var(--text-secondary)] font-mono">
                       <span>Pos: [{bm.position.map((v) => v.toFixed(1)).join(", ")}]</span>
-                      <span className="text-neutral-500">{bm.createdAt}</span>
+                      <span className="text-[var(--text-tertiary)]">{bm.createdAt}</span>
                     </div>
                   </div>
                 ))}
@@ -1402,10 +1403,18 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "versions" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>WorldStore Lineage</span>
               <span className="text-[var(--accent)] font-mono">Immutable Snapshots</span>
             </div>
+
+            <Link
+              href={`/worlds/${encodeURIComponent(activeWorldId)}/proposals`}
+              className="w-full py-1.5 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--border)] text-[var(--accent)] border border-[var(--accent)]/30 transition-colors flex items-center justify-center gap-1.5 font-sans"
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>Review change proposals</span>
+            </Link>
 
             {onCompareVersions && versions.length > 0 && versions[0]?.parentVersionId && (
               <button
@@ -1419,9 +1428,9 @@ interface SpatialAnchor {
             )}
 
             {versions.length === 0 ? (
-              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-1.5 font-sans">
-                <p className="font-medium text-white">No version snapshots recorded yet</p>
-                <p className="text-[11px] text-neutral-500">
+              <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-[var(--text-secondary)] space-y-1.5 font-sans">
+                <p className="font-medium text-[var(--text-primary)]">No version snapshots recorded yet</p>
+                <p className="text-[11px] text-[var(--text-tertiary)]">
                   Reconstruction or correction commit required to create an initial WorldStore version snapshot.
                 </p>
               </div>
@@ -1436,10 +1445,10 @@ interface SpatialAnchor {
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span
                           className={`w-2 h-2 rounded-full ${
-                            v.isCurrent ? "bg-[var(--accent)] animate-pulse" : "bg-neutral-600"
+                            v.isCurrent ? "bg-[var(--accent)] animate-pulse" : "bg-[var(--border)]"
                           }`}
                         />
-                        <span className="font-mono text-xs font-semibold text-white truncate">
+                        <span className="font-mono text-xs font-semibold text-[var(--text-primary)] truncate">
                           {v.label}
                         </span>
                       </div>
@@ -1449,10 +1458,10 @@ interface SpatialAnchor {
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-neutral-400 line-clamp-2 font-sans">
+                    <p className="text-[11px] text-[var(--text-secondary)] line-clamp-2 font-sans">
                       {v.changeSummary}
                     </p>
-                    <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-1 border-t border-neutral-800">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-[var(--text-tertiary)] pt-1 border-t border-[var(--border-subtle)]">
                       <span>{v.createdAt} · ID: {v.id}</span>
                       {onCompareVersions && v.parentVersionId && (
                         <button
@@ -1476,13 +1485,13 @@ interface SpatialAnchor {
         {/* ============================================================ */}
         {section === "query" && (
           <div className="p-3 space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               <span>Spatial Query Engine</span>
               {activeQuery && (
                 <button
                   type="button"
                   onClick={handleClearQuery}
-                  className="text-neutral-400 hover:text-white text-[11px] font-mono underline"
+                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-[11px] font-mono underline"
                 >
                   Clear
                 </button>
@@ -1496,16 +1505,16 @@ interface SpatialAnchor {
                 value={filterText}
                 onChange={(e) => handleApplyQuery(undefined, undefined, e.target.value)}
                 placeholder="Query ID, semantic label, type..."
-                className="w-full h-8 pl-8 pr-2.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-xs text-white placeholder-neutral-500 focus:border-[var(--accent)] focus:outline-none font-mono"
+                className="w-full h-8 pl-8 pr-2.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)] text-xs text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:border-[var(--accent)] focus:outline-none font-mono"
               />
-              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 text-[var(--text-secondary)] absolute left-2.5 top-2.5 pointer-events-none" />
             </div>
 
             {/* Confidence Threshold */}
             <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-neutral-400">
+              <div className="flex justify-between text-[11px] text-[var(--text-secondary)]">
                 <span>Min Confidence:</span>
-                <span className="font-mono text-white">{(minConfFilter * 100).toFixed(0)}%</span>
+                <span className="font-mono text-[var(--text-primary)]">{(minConfFilter * 100).toFixed(0)}%</span>
               </div>
               <input
                 type="range"
@@ -1519,7 +1528,7 @@ interface SpatialAnchor {
             </div>
 
             {/* Matching Result Count */}
-            <div className="pt-2 border-t border-[var(--border)] text-[11px] font-mono text-neutral-400 flex justify-between">
+            <div className="pt-2 border-t border-[var(--border)] text-[11px] font-mono text-[var(--text-secondary)] flex justify-between">
               <span>Matching Entities:</span>
               <span className="text-[var(--accent)] font-semibold">{filteredEntities.length}</span>
             </div>
@@ -1530,10 +1539,10 @@ interface SpatialAnchor {
                 <div
                   key={e.id}
                   onClick={() => onSelectEntity(e.id)}
-                  className="p-1.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)] hover:border-neutral-700 transition-colors flex items-center justify-between text-xs cursor-pointer"
+                  className="p-1.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)] hover:border-[var(--border)] transition-colors flex items-center justify-between text-xs cursor-pointer"
                 >
-                  <span className="font-mono text-neutral-200 truncate">{e.id}</span>
-                  <span className="text-[10px] font-mono text-neutral-400">
+                  <span className="font-mono text-[var(--text-primary)] truncate">{e.id}</span>
+                  <span className="text-[10px] font-mono text-[var(--text-secondary)]">
                     {e.type} · {((e.confidence ?? 0) * 100).toFixed(0)}%
                   </span>
                 </div>
@@ -1571,7 +1580,7 @@ function HierarchyElementRow({
       className={`group p-1.5 rounded border transition-colors cursor-pointer flex items-center justify-between text-[11px] font-mono ${
         isSelected
           ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
-          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-neutral-700"
+          : "bg-[var(--bg-elevated)] border-[var(--border)] hover:border-[var(--border)]"
       }`}
     >
       <div className="flex items-center gap-1.5 min-w-0">
@@ -1579,13 +1588,13 @@ function HierarchyElementRow({
           className="w-2 h-2 rounded-full shrink-0"
           style={{ background: `#${hexColor}` }}
         />
-        <span className="text-neutral-200 truncate group-hover:text-white">
+        <span className="text-[var(--text-primary)] truncate group-hover:text-[var(--text-primary)]">
           {entity.name || entity.id}
         </span>
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
-        <span className="text-[10px] text-neutral-500 font-mono-num">
+        <span className="text-[10px] text-[var(--text-tertiary)] font-mono-num">
           {conf !== null ? `${(conf * 100).toFixed(0)}%` : "Not available"}
         </span>
         <button
@@ -1595,7 +1604,7 @@ function HierarchyElementRow({
             onFrame();
           }}
           title="Frame Entity [F]"
-          className="p-0.5 text-neutral-400 hover:text-[var(--accent)] rounded"
+          className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--accent)] rounded"
         >
           <Maximize2 className="w-3 h-3" />
         </button>
@@ -1623,8 +1632,8 @@ function NavTabButton({
       onClick={onClick}
       className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors shrink-0 cursor-pointer ${
         active
-          ? "text-[var(--accent)] bg-[rgba(34,184,255,0.12)] font-semibold border border-[var(--accent)]/30"
-          : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"
+          ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-semibold border border-[var(--accent)]/30"
+          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
       }`}
     >
       <Icon className="w-3.5 h-3.5" />
@@ -1632,7 +1641,7 @@ function NavTabButton({
       {count !== undefined && (
         <span
           className={`text-[10px] px-1 py-0.2 rounded font-mono ${
-            active ? "bg-[var(--accent)]/20 text-[var(--accent)]" : "bg-neutral-800 text-neutral-400"
+            active ? "bg-[var(--accent)]/20 text-[var(--accent)]" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
           }`}
         >
           {count}
@@ -1882,9 +1891,9 @@ function HierarchyExplorer({
 
   if (entitiesList.length === 0) {
     return (
-      <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-neutral-400 space-y-2 font-sans m-3">
-        <p className="text-white font-medium">No spatial entities registered</p>
-        <p className="text-[11px] text-neutral-500">
+      <div className="p-4 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-center text-xs text-[var(--text-secondary)] space-y-2 font-sans m-3">
+        <p className="text-[var(--text-primary)] font-medium">No spatial entities registered</p>
+        <p className="text-[11px] text-[var(--text-tertiary)]">
           Ingest imagery or execute room reconstruction to populate the canonical spatial hierarchy.
         </p>
       </div>
@@ -1906,7 +1915,7 @@ function HierarchyExplorer({
         className={`rounded border transition-colors ${
           isSelected
             ? "border-[var(--accent)] bg-[var(--accent)]/10"
-            : "border-[#3b82f6]/20 bg-[#3b82f6]/5"
+            : "border-[var(--accent)]/20 bg-[var(--accent)]/5"
         }`}
       >
         <div
@@ -1914,7 +1923,7 @@ function HierarchyExplorer({
             onSelectEntity(room.id);
             onFrameEntity(room.id);
           }}
-          className="flex items-center justify-between p-1 hover:bg-[#3b82f6]/10 cursor-pointer"
+          className="flex items-center justify-between p-1 hover:bg-[var(--accent)]/10 cursor-pointer"
         >
           <div className="flex items-center gap-1 min-w-0">
             <button
@@ -1923,7 +1932,7 @@ function HierarchyExplorer({
                 e.stopPropagation();
                 toggle(roomKey);
               }}
-              className="p-0.5 text-neutral-400 hover:text-white cursor-pointer"
+              className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
             >
               {isRoomExpanded ? (
                 <ChevronDown className="w-2.5 h-2.5" />
@@ -1931,15 +1940,15 @@ function HierarchyExplorer({
                 <ChevronRight className="w-2.5 h-2.5" />
               )}
             </button>
-            <Building className="w-3 h-3 text-[#3b82f6] shrink-0" />
-            <span className="text-white truncate">
+            <Building className="w-3 h-3 text-[var(--accent)] shrink-0" />
+            <span className="text-[var(--text-primary)] truncate">
               {room.name || room.id}
             </span>
           </div>
 
           <div className="flex items-center gap-1 shrink-0 text-[10px]">
             {area && (
-              <span className="text-neutral-400 font-mono">
+              <span className="text-[var(--text-secondary)] font-mono">
                 {area.toFixed(1)}m²
               </span>
             )}
@@ -1950,7 +1959,7 @@ function HierarchyExplorer({
                 onFrameEntity(room.id);
               }}
               title="Frame Room [F]"
-              className="p-0.5 text-neutral-400 hover:text-[var(--accent)]"
+              className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--accent)]"
             >
               <Maximize2 className="w-2.5 h-2.5" />
             </button>
@@ -1958,10 +1967,10 @@ function HierarchyExplorer({
         </div>
 
         {isRoomExpanded && (
-          <div className="pl-4 pr-1 pb-1 pt-1 space-y-1 border-t border-[#3b82f6]/15 text-[10px]">
+          <div className="pl-4 pr-1 pb-1 pt-1 space-y-1 border-t border-[var(--accent)]/15 text-[10px]">
             {walls.length > 0 && (
               <div>
-                <span className="text-neutral-500 uppercase tracking-wider text-[8px] block">
+                <span className="text-[var(--text-tertiary)] uppercase tracking-wider text-[8px] block">
                   Walls ({walls.length})
                 </span>
                 <div className="flex flex-wrap gap-1 mt-0.5">
@@ -1975,7 +1984,7 @@ function HierarchyExplorer({
                       }}
                       className={`px-1 py-0.2 rounded border font-mono truncate max-w-[100px] cursor-pointer ${
                         selectedEntityId === w.id
-                          ? "bg-[var(--warning)] text-black border-[var(--warning)]"
+                          ? "bg-[var(--warning)] text-[var(--bg-base)] border-[var(--warning)]"
                           : "bg-[var(--warning)]/15 text-[var(--warning)] border-[var(--warning)]/30 hover:bg-[var(--warning)]/25"
                       }`}
                     >
@@ -1988,7 +1997,7 @@ function HierarchyExplorer({
 
             {doors.length > 0 && (
               <div>
-                <span className="text-neutral-500 uppercase tracking-wider text-[8px] block">
+                <span className="text-[var(--text-tertiary)] uppercase tracking-wider text-[8px] block">
                   Doors ({doors.length})
                 </span>
                 <div className="flex flex-wrap gap-1 mt-0.5">
@@ -2002,8 +2011,8 @@ function HierarchyExplorer({
                       }}
                       className={`px-1 py-0.2 rounded border font-mono truncate max-w-[100px] cursor-pointer ${
                         selectedEntityId === d.id
-                          ? "bg-[#10b981] text-black border-[#10b981]"
-                          : "bg-[#10b981]/15 text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/25"
+                          ? "bg-[var(--sage)] text-[var(--bg-base)] border-[var(--sage)]"
+                          : "bg-[var(--sage)]/15 text-[var(--sage)] border-[var(--sage)]/30 hover:bg-[var(--sage)]/25"
                       }`}
                     >
                       {d.id}
@@ -2015,7 +2024,7 @@ function HierarchyExplorer({
 
             {windows.length > 0 && (
               <div>
-                <span className="text-neutral-500 uppercase tracking-wider text-[8px] block">
+                <span className="text-[var(--text-tertiary)] uppercase tracking-wider text-[8px] block">
                   Windows ({windows.length})
                 </span>
                 <div className="flex flex-wrap gap-1 mt-0.5">
@@ -2029,8 +2038,8 @@ function HierarchyExplorer({
                       }}
                       className={`px-1 py-0.2 rounded border font-mono truncate max-w-[100px] cursor-pointer ${
                         selectedEntityId === win.id
-                          ? "bg-[#06b6d4] text-black border-[#06b6d4]"
-                          : "bg-[#06b6d4]/15 text-[#06b6d4] border-[#06b6d4]/30 hover:bg-[#06b6d4]/25"
+                          ? "bg-[var(--info)] text-[var(--bg-base)] border-[var(--info)]"
+                          : "bg-[var(--info)]/15 text-[var(--info)] border-[var(--info)]/30 hover:bg-[var(--info)]/25"
                       }`}
                     >
                       {win.id}
@@ -2057,7 +2066,7 @@ function HierarchyExplorer({
         className={`rounded border transition-colors ${
           isSelected
             ? "border-[var(--accent)] bg-[var(--accent)]/10"
-            : "border-[#06b6d4]/20 bg-[#06b6d4]/5"
+            : "border-[var(--info)]/20 bg-[var(--info)]/5"
         }`}
       >
         <div
@@ -2065,7 +2074,7 @@ function HierarchyExplorer({
             onSelectEntity(corridor.id);
             onFrameEntity(corridor.id);
           }}
-          className="flex items-center justify-between p-1 hover:bg-[#06b6d4]/10 cursor-pointer"
+          className="flex items-center justify-between p-1 hover:bg-[var(--info)]/10 cursor-pointer"
         >
           <div className="flex items-center gap-1 min-w-0">
             <button
@@ -2074,7 +2083,7 @@ function HierarchyExplorer({
                 e.stopPropagation();
                 toggle(cKey);
               }}
-              className="p-0.5 text-neutral-400 hover:text-white cursor-pointer"
+              className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
             >
               {isCExpanded ? (
                 <ChevronDown className="w-2.5 h-2.5" />
@@ -2082,8 +2091,8 @@ function HierarchyExplorer({
                 <ChevronRight className="w-2.5 h-2.5" />
               )}
             </button>
-            <Workflow className="w-3 h-3 text-[#06b6d4] shrink-0" />
-            <span className="text-white truncate">
+            <Workflow className="w-3 h-3 text-[var(--info)] shrink-0" />
+            <span className="text-[var(--text-primary)] truncate">
               {corridor.name || corridor.id}
             </span>
           </div>
@@ -2096,7 +2105,7 @@ function HierarchyExplorer({
                 onFrameEntity(corridor.id);
               }}
               title="Frame Corridor [F]"
-              className="p-0.5 text-neutral-400 hover:text-[var(--accent)]"
+              className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--accent)]"
             >
               <Maximize2 className="w-2.5 h-2.5" />
             </button>
@@ -2104,8 +2113,8 @@ function HierarchyExplorer({
         </div>
 
         {isCExpanded && openings.length > 0 && (
-          <div className="pl-4 pr-1 pb-1 pt-1 space-y-1 border-t border-[#06b6d4]/15 text-[10px]">
-            <span className="text-neutral-500 uppercase tracking-wider text-[8px] block">
+          <div className="pl-4 pr-1 pb-1 pt-1 space-y-1 border-t border-[var(--info)]/15 text-[10px]">
+            <span className="text-[var(--text-tertiary)] uppercase tracking-wider text-[8px] block">
               Openings ({openings.length})
             </span>
             <div className="flex flex-wrap gap-1">
@@ -2117,7 +2126,7 @@ function HierarchyExplorer({
                     onSelectEntity(op.id);
                     onFrameEntity(op.id);
                   }}
-                  className="px-1 py-0.2 rounded border border-[#10b981]/30 bg-[#10b981]/15 text-[#10b981] font-mono text-[9px] cursor-pointer"
+                  className="px-1 py-0.2 rounded border border-[var(--sage)]/30 bg-[var(--sage)]/15 text-[var(--sage)] font-mono text-[9px] cursor-pointer"
                 >
                   {op.id}
                 </button>
@@ -2141,12 +2150,12 @@ function HierarchyExplorer({
         className={`flex items-center justify-between p-1 rounded border transition-colors cursor-pointer ${
           isSelected
             ? "border-[var(--accent)] bg-[var(--accent)]/10"
-            : "border-[#a855f7]/20 bg-[#a855f7]/5 hover:bg-[#a855f7]/10"
+            : "border-[var(--purple)]/20 bg-[var(--purple)]/5 hover:bg-[var(--purple)]/10"
         }`}
       >
         <div className="flex items-center gap-1.5 min-w-0">
-          <Layers className="w-3 h-3 text-[#a855f7] shrink-0" />
-          <span className="text-white truncate">
+          <Layers className="w-3 h-3 text-[var(--purple)] shrink-0" />
+          <span className="text-[var(--text-primary)] truncate">
             {stair.name || stair.id}
           </span>
         </div>
@@ -2157,7 +2166,7 @@ function HierarchyExplorer({
             onFrameEntity(stair.id);
           }}
           title="Frame Stair [F]"
-          className="p-0.5 text-neutral-400 hover:text-[var(--accent)]"
+          className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--accent)]"
         >
           <Maximize2 className="w-2.5 h-2.5" />
         </button>
@@ -2167,12 +2176,12 @@ function HierarchyExplorer({
 
   return (
     <div className="p-3 space-y-3 font-mono text-xs select-none">
-      <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+      <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
         <span className="flex items-center gap-1.5">
           <Network className="w-3.5 h-3.5 text-[var(--accent)]" />
           <span>World Hierarchy</span>
         </span>
-        <span className="text-neutral-500 font-mono">
+        <span className="text-[var(--text-tertiary)] font-mono">
           {entitiesList.length} entities
         </span>
       </div>
@@ -2196,7 +2205,7 @@ function HierarchyExplorer({
                   e.stopPropagation();
                   toggle("building");
                 }}
-                className="p-0.5 text-neutral-400 hover:text-white cursor-pointer"
+                className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
               >
                 {expanded.building ? (
                   <ChevronDown className="w-3.5 h-3.5" />
@@ -2205,7 +2214,7 @@ function HierarchyExplorer({
                 )}
               </button>
               <Building className="w-3.5 h-3.5 text-[var(--warning)] shrink-0" />
-              <span className="font-semibold text-white truncate">
+              <span className="font-semibold text-[var(--text-primary)] truncate">
                 {buildingEntity?.name || worldIR?.name || "Building Envelope"}
               </span>
             </div>
@@ -2222,7 +2231,7 @@ function HierarchyExplorer({
                     onFrameEntity(buildingEntity.id);
                   }}
                   title="Frame Building [F]"
-                  className="p-1 text-neutral-400 hover:text-white"
+                  className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 >
                   <Maximize2 className="w-3 h-3" />
                 </button>
@@ -2235,13 +2244,13 @@ function HierarchyExplorer({
             <div className="pl-4 pr-2 pb-2 space-y-2 border-t border-[var(--warning)]/20 pt-2">
               {levels.length === 0 ? (
                 <div className="space-y-2">
-                  <div className="p-2 rounded bg-neutral-900/60 border border-neutral-800 text-[10px] text-neutral-400">
+                  <div className="p-2 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[10px] text-[var(--text-secondary)]">
                     No storeys or levels registered in canonical WorldIR.
                   </div>
 
                   {rooms.length > 0 && (
                     <div className="space-y-1">
-                      <span className="text-[9px] text-[#3b82f6] uppercase tracking-wider block font-semibold">
+                      <span className="text-[9px] text-[var(--accent)] uppercase tracking-wider block font-semibold">
                         Rooms ({rooms.length})
                       </span>
                       <div className="space-y-1 pl-1">
@@ -2252,7 +2261,7 @@ function HierarchyExplorer({
 
                   {corridors.length > 0 && (
                     <div className="space-y-1">
-                      <span className="text-[9px] text-[#06b6d4] uppercase tracking-wider block font-semibold">
+                      <span className="text-[9px] text-[var(--info)] uppercase tracking-wider block font-semibold">
                         Corridors ({corridors.length})
                       </span>
                       <div className="space-y-1 pl-1">
@@ -2263,7 +2272,7 @@ function HierarchyExplorer({
 
                   {stairs.length > 0 && (
                     <div className="space-y-1">
-                      <span className="text-[9px] text-[#a855f7] uppercase tracking-wider block font-semibold">
+                      <span className="text-[9px] text-[var(--purple)] uppercase tracking-wider block font-semibold">
                         Vertical Circulation ({stairs.length})
                       </span>
                       <div className="space-y-1 pl-1">
@@ -2302,7 +2311,7 @@ function HierarchyExplorer({
                               e.stopPropagation();
                               toggle(lvlKey);
                             }}
-                            className="p-0.5 text-neutral-400 hover:text-white cursor-pointer"
+                            className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
                           >
                             {isLvlExpanded ? (
                               <ChevronDown className="w-3 h-3" />
@@ -2311,12 +2320,12 @@ function HierarchyExplorer({
                             )}
                           </button>
                           <Layers className="w-3.5 h-3.5 text-[var(--purple)] shrink-0" />
-                          <span className="font-semibold text-neutral-200 truncate">
+                          <span className="font-semibold text-[var(--text-primary)] truncate">
                             {lvl.name}
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1 text-[10px] text-neutral-400 shrink-0">
+                        <div className="flex items-center gap-1 text-[10px] text-[var(--text-secondary)] shrink-0">
                           <span>
                             {lvlRooms.length}R · {lvlCorridors.length}C
                           </span>
@@ -2328,7 +2337,7 @@ function HierarchyExplorer({
                                 onFrameEntity(lvl.entity!.id);
                               }}
                               title="Frame Level [F]"
-                              className="p-0.5 text-neutral-400 hover:text-white"
+                              className="p-0.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                             >
                               <Maximize2 className="w-2.5 h-2.5" />
                             </button>
@@ -2342,7 +2351,7 @@ function HierarchyExplorer({
                           {/* 1. ROOMS OF THIS LEVEL */}
                           {lvlRooms.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-[9px] text-[#3b82f6] uppercase tracking-wider block font-semibold">
+                              <span className="text-[9px] text-[var(--accent)] uppercase tracking-wider block font-semibold">
                                 Rooms ({lvlRooms.length})
                               </span>
                               <div className="space-y-1 pl-1">
@@ -2354,7 +2363,7 @@ function HierarchyExplorer({
                           {/* 2. CORRIDORS OF THIS LEVEL */}
                           {lvlCorridors.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-[9px] text-[#06b6d4] uppercase tracking-wider block font-semibold">
+                              <span className="text-[9px] text-[var(--info)] uppercase tracking-wider block font-semibold">
                                 Corridors ({lvlCorridors.length})
                               </span>
                               <div className="space-y-1 pl-1">
@@ -2366,7 +2375,7 @@ function HierarchyExplorer({
                           {/* 3. STAIRS OF THIS LEVEL */}
                           {lvlStairs.length > 0 && (
                             <div className="space-y-1">
-                              <span className="text-[9px] text-[#a855f7] uppercase tracking-wider block font-semibold">
+                              <span className="text-[9px] text-[var(--purple)] uppercase tracking-wider block font-semibold">
                                 Vertical Circulation ({lvlStairs.length})
                               </span>
                               <div className="space-y-1 pl-1">
@@ -2383,13 +2392,13 @@ function HierarchyExplorer({
 
               {/* UNASSIGNED SPACES & CIRCULATIONS (when levels exist but some spaces are unassigned) */}
               {levels.length > 0 && (unassignedRooms.length > 0 || unassignedCorridors.length > 0 || unassignedStairs.length > 0) && (
-                <div className="rounded border border-neutral-700/50 bg-neutral-900/30 p-1.5 space-y-2">
-                  <span className="text-[9px] text-neutral-400 uppercase tracking-wider block font-semibold">
+                <div className="rounded border border-[var(--border)] bg-[var(--bg-surface)] p-1.5 space-y-2">
+                  <span className="text-[9px] text-[var(--text-secondary)] uppercase tracking-wider block font-semibold">
                     Unassigned Spaces & Circulations
                   </span>
                   {unassignedRooms.length > 0 && (
                     <div className="space-y-1">
-                      <span className="text-[8px] text-neutral-500 uppercase tracking-wider block">
+                      <span className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider block">
                         Rooms ({unassignedRooms.length})
                       </span>
                       <div className="space-y-1 pl-1">
@@ -2399,7 +2408,7 @@ function HierarchyExplorer({
                   )}
                   {unassignedCorridors.length > 0 && (
                     <div className="space-y-1">
-                      <span className="text-[8px] text-neutral-500 uppercase tracking-wider block">
+                      <span className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider block">
                         Corridors ({unassignedCorridors.length})
                       </span>
                       <div className="space-y-1 pl-1">
@@ -2409,7 +2418,7 @@ function HierarchyExplorer({
                   )}
                   {unassignedStairs.length > 0 && (
                     <div className="space-y-1">
-                      <span className="text-[8px] text-neutral-500 uppercase tracking-wider block">
+                      <span className="text-[8px] text-[var(--text-tertiary)] uppercase tracking-wider block">
                         Stairs ({unassignedStairs.length})
                       </span>
                       <div className="space-y-1 pl-1">
@@ -2422,8 +2431,8 @@ function HierarchyExplorer({
 
               {/* UNASSIGNED STRUCTURAL ELEMENTS (if any) */}
               {unassignedWalls.length > 0 && (
-                <div className="rounded border border-neutral-800 bg-neutral-900/40 p-1.5 space-y-1">
-                  <span className="text-[9px] text-neutral-500 uppercase tracking-wider block font-semibold">
+                <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-1.5 space-y-1">
+                  <span className="text-[9px] text-[var(--text-tertiary)] uppercase tracking-wider block font-semibold">
                     Unenclosed Walls ({unassignedWalls.length})
                   </span>
                   <div className="flex flex-wrap gap-1">
@@ -2435,13 +2444,13 @@ function HierarchyExplorer({
                           onSelectEntity(w.id);
                           onFrameEntity(w.id);
                         }}
-                        className="px-1 py-0.2 rounded border border-neutral-700 bg-neutral-800 text-neutral-300 font-mono text-[9px] hover:text-white cursor-pointer"
+                        className="px-1 py-0.2 rounded border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-mono text-[9px] hover:text-[var(--text-primary)] cursor-pointer"
                       >
                         {w.id}
                       </button>
                     ))}
                     {unassignedWalls.length > 15 && (
-                      <span className="text-[9px] text-neutral-500 py-0.2">
+                      <span className="text-[9px] text-[var(--text-tertiary)] py-0.2">
                         +{unassignedWalls.length - 15} more
                       </span>
                     )}
@@ -2490,39 +2499,29 @@ export function BuildingTopologyInspector({
   onSelectEntity: (id: string | null) => void;
   onFrameEntity: (id: string) => void;
 }) {
-  const [graphData, setGraphData] = useState<SpaceGraphData | null>(null);
-  const [loading, setLoading] = useState(Boolean(worldIR?.id));
-
-  // A new world id restarts the read: reset status during render, not in the effect.
-  const [loadedFor, setLoadedFor] = useState(worldIR?.id);
-  if (loadedFor !== worldIR?.id) {
-    setLoadedFor(worldIR?.id);
-    if (!worldIR?.id) setGraphData(null);
-    setLoading(Boolean(worldIR?.id));
-  }
+  const [graphState, setGraphState] = useState<{ id: string; data: SpaceGraphData | null } | null>(null);
+  const graphWorldId = worldIR?.id;
+  const graphSettled = graphState?.id === graphWorldId;
+  const graphData = graphSettled && graphState ? graphState.data : null;
+  const loading = !!graphWorldId && !graphSettled;
 
   useEffect(() => {
-    if (!worldIR?.id) return;
+    if (!graphWorldId) return;
     let isCancelled = false;
 
-    fetch(`/api/worlds/${encodeURIComponent(worldIR.id)}/space-graph`)
+    fetch(`/api/worlds/${encodeURIComponent(graphWorldId)}/space-graph`)
       .then((res) => (res.ok ? res.json() : null))
+      .then((data) => (data && data.nodes ? (data as SpaceGraphData) : null))
+      // On failure fall back to local derivation from entitiesList
+      .catch(() => null)
       .then((data) => {
-        if (!isCancelled && data && data.nodes) {
-          setGraphData(data as SpaceGraphData);
-        }
-      })
-      .catch(() => {
-        // Fallback to local derivation from entitiesList
-      })
-      .finally(() => {
-        if (!isCancelled) setLoading(false);
+        if (!isCancelled) setGraphState({ id: graphWorldId, data });
       });
 
     return () => {
       isCancelled = true;
     };
-  }, [worldIR?.id]);
+  }, [graphWorldId]);
 
   // Fallback / enhanced derivation from entitiesList
   const derivedData = useMemo(() => {
@@ -2625,12 +2624,12 @@ export function BuildingTopologyInspector({
       <div className="flex items-center justify-between border-b border-[var(--accent)]/20 pb-2">
         <div className="flex items-center gap-1.5">
           <Workflow className="w-4 h-4 text-[var(--accent)]" />
-          <span className="font-semibold text-white uppercase tracking-wider text-[11px]">
+          <span className="font-semibold text-[var(--text-primary)] uppercase tracking-wider text-[11px]">
             Spatial Topology
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {loading && <span className="text-[10px] text-neutral-500 animate-pulse">Syncing...</span>}
+          {loading && <span className="text-[10px] text-[var(--text-tertiary)] animate-pulse">Syncing...</span>}
           <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">
             Graph View
           </span>
@@ -2639,21 +2638,21 @@ export function BuildingTopologyInspector({
 
       {/* Network Metrics KPIs */}
       <div className="grid grid-cols-4 gap-1.5 text-center">
-        <div className="p-1.5 rounded bg-neutral-900 border border-neutral-800">
-          <div className="text-[10px] text-neutral-400">Rooms</div>
-          <div className="text-sm font-semibold text-[#3b82f6]">{derivedData.rooms.length}</div>
+        <div className="p-1.5 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+          <div className="text-[10px] text-[var(--text-secondary)]">Rooms</div>
+          <div className="text-sm font-semibold text-[var(--accent)]">{derivedData.rooms.length}</div>
         </div>
-        <div className="p-1.5 rounded bg-neutral-900 border border-neutral-800">
-          <div className="text-[10px] text-neutral-400">Routes</div>
-          <div className="text-sm font-semibold text-[#06b6d4]">{derivedData.corridors.length}</div>
+        <div className="p-1.5 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+          <div className="text-[10px] text-[var(--text-secondary)]">Routes</div>
+          <div className="text-sm font-semibold text-[var(--info)]">{derivedData.corridors.length}</div>
         </div>
-        <div className="p-1.5 rounded bg-neutral-900 border border-neutral-800">
-          <div className="text-[10px] text-neutral-400">Stairs</div>
-          <div className="text-sm font-semibold text-[#a855f7]">{derivedData.stairs.length}</div>
+        <div className="p-1.5 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+          <div className="text-[10px] text-[var(--text-secondary)]">Stairs</div>
+          <div className="text-sm font-semibold text-[var(--purple)]">{derivedData.stairs.length}</div>
         </div>
-        <div className="p-1.5 rounded bg-neutral-900 border border-neutral-800">
-          <div className="text-[10px] text-neutral-400">Portals</div>
-          <div className="text-sm font-semibold text-[#10b981]">{derivedData.openings.length}</div>
+        <div className="p-1.5 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+          <div className="text-[10px] text-[var(--text-secondary)]">Portals</div>
+          <div className="text-sm font-semibold text-[var(--sage)]">{derivedData.openings.length}</div>
         </div>
       </div>
 
@@ -2674,7 +2673,7 @@ export function BuildingTopologyInspector({
           {(selectedEntity.type === "room" || selectedEntity.type === "space") && (
             <div className="space-y-2 text-[10px]">
               <div>
-                <span className="text-neutral-400 block mb-1">Adjacent Rooms:</span>
+                <span className="text-[var(--text-secondary)] block mb-1">Adjacent Rooms:</span>
                 {selectedRelations.adjacentRooms.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
                     {selectedRelations.adjacentRooms.map((adj) => (
@@ -2685,19 +2684,19 @@ export function BuildingTopologyInspector({
                           onSelectEntity(adj.id);
                           onFrameEntity(adj.id);
                         }}
-                        className="px-1.5 py-0.5 rounded border border-[#3b82f6]/40 bg-[#3b82f6]/15 text-[#3b82f6] hover:bg-[#3b82f6]/25 cursor-pointer truncate max-w-[120px]"
+                        className="px-1.5 py-0.5 rounded border border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent)] hover:bg-[var(--accent)]/25 cursor-pointer truncate max-w-[120px]"
                       >
                         {adj.name || adj.id}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <span className="text-neutral-500 italic">No direct wall adjacencies detected</span>
+                  <span className="text-[var(--text-tertiary)] italic">No direct wall adjacencies detected</span>
                 )}
               </div>
 
               <div>
-                <span className="text-neutral-400 block mb-1">Connected Corridors:</span>
+                <span className="text-[var(--text-secondary)] block mb-1">Connected Corridors:</span>
                 {selectedRelations.connectedCorridors.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
                     {selectedRelations.connectedCorridors.map((c) => (
@@ -2708,14 +2707,14 @@ export function BuildingTopologyInspector({
                           onSelectEntity(c.id);
                           onFrameEntity(c.id);
                         }}
-                        className="px-1.5 py-0.5 rounded border border-[#06b6d4]/40 bg-[#06b6d4]/15 text-[#06b6d4] hover:bg-[#06b6d4]/25 cursor-pointer truncate max-w-[120px]"
+                        className="px-1.5 py-0.5 rounded border border-[var(--info)]/40 bg-[var(--info)]/15 text-[var(--info)] hover:bg-[var(--info)]/25 cursor-pointer truncate max-w-[120px]"
                       >
                         {c.name || c.id}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <span className="text-neutral-500 italic">No corridor route connection</span>
+                  <span className="text-[var(--text-tertiary)] italic">No corridor route connection</span>
                 )}
               </div>
             </div>
@@ -2724,7 +2723,7 @@ export function BuildingTopologyInspector({
           {/* Corridor Specific Topology */}
           {selectedEntity.type === "corridor" && (
             <div className="space-y-2 text-[10px]">
-              <span className="text-neutral-400 block mb-1">Connected Room Destinations:</span>
+              <span className="text-[var(--text-secondary)] block mb-1">Connected Room Destinations:</span>
               {selectedRelations.corridorRooms.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {selectedRelations.corridorRooms.map((rm) => (
@@ -2735,14 +2734,14 @@ export function BuildingTopologyInspector({
                         onSelectEntity(rm.id);
                         onFrameEntity(rm.id);
                       }}
-                      className="px-1.5 py-0.5 rounded border border-[#3b82f6]/40 bg-[#3b82f6]/15 text-[#3b82f6] hover:bg-[#3b82f6]/25 cursor-pointer truncate max-w-[120px]"
+                      className="px-1.5 py-0.5 rounded border border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent)] hover:bg-[var(--accent)]/25 cursor-pointer truncate max-w-[120px]"
                     >
                       {rm.name || rm.id}
                     </button>
                   ))}
                 </div>
               ) : (
-                <span className="text-neutral-500 italic">No connected room endpoints</span>
+                <span className="text-[var(--text-tertiary)] italic">No connected room endpoints</span>
               )}
             </div>
           )}
@@ -2750,12 +2749,12 @@ export function BuildingTopologyInspector({
           {/* Stair Specific Topology */}
           {(selectedEntity.type === "stairs" || selectedEntity.type === "stair") && (
             <div className="space-y-2 text-[10px]">
-              <span className="text-neutral-400 block mb-1">Spanned Vertical Levels:</span>
+              <span className="text-[var(--text-secondary)] block mb-1">Spanned Vertical Levels:</span>
               {selectedRelations.stairLevels.length > 0 ? (
                 <div className="flex items-center gap-1.5">
                   {selectedRelations.stairLevels.map((lvlId, idx) => (
                     <span key={lvlId} className="flex items-center gap-1">
-                      {idx > 0 && <span className="text-[#a855f7]">⮂</span>}
+                      {idx > 0 && <span className="text-[var(--purple)]">⮂</span>}
                       <button
                         type="button"
                         onClick={() => {
@@ -2770,7 +2769,7 @@ export function BuildingTopologyInspector({
                   ))}
                 </div>
               ) : (
-                <span className="text-neutral-500 italic">No level transitions registered</span>
+                <span className="text-[var(--text-tertiary)] italic">No level transitions registered</span>
               )}
             </div>
           )}
@@ -2778,7 +2777,7 @@ export function BuildingTopologyInspector({
           {/* General Inbound & Outbound Relationships */}
           {selectedRelations.directTargetIds.length > 0 && (
             <div className="pt-1.5 border-t border-[var(--accent)]/10">
-              <span className="text-neutral-500 uppercase text-[9px] block mb-1">
+              <span className="text-[var(--text-tertiary)] uppercase text-[9px] block mb-1">
                 Linked Entities ({selectedRelations.directTargetIds.length})
               </span>
               <div className="flex flex-wrap gap-1">
@@ -2790,7 +2789,7 @@ export function BuildingTopologyInspector({
                       onSelectEntity(tid);
                       onFrameEntity(tid);
                     }}
-                    className="px-1 py-0.2 rounded border border-neutral-700 bg-neutral-800 text-neutral-300 hover:text-white text-[9px] cursor-pointer"
+                    className="px-1 py-0.2 rounded border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-[9px] cursor-pointer"
                   >
                     {tid}
                   </button>
@@ -2800,17 +2799,17 @@ export function BuildingTopologyInspector({
           )}
         </div>
       ) : (
-        <div className="p-2.5 rounded-lg border border-neutral-800 bg-neutral-900/40 text-neutral-400 text-[11px] flex items-center gap-2">
-          <Eye className="w-4 h-4 text-neutral-500 shrink-0" />
+        <div className="p-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] text-[11px] flex items-center gap-2">
+          <Eye className="w-4 h-4 text-[var(--text-tertiary)] shrink-0" />
           <span>Select any room, corridor, or stair to reveal its spatial relationships.</span>
         </div>
       )}
 
       {/* 2. SECTION: ROOM ADJACENCIES & REACHABILITY */}
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
           <span>Room Adjacencies ({derivedData.rooms.length})</span>
-          <span className="text-[#3b82f6]">Interior</span>
+          <span className="text-[var(--accent)]">Interior</span>
         </div>
         <div className="space-y-1">
           {derivedData.rooms.map((room) => {
@@ -2830,13 +2829,13 @@ export function BuildingTopologyInspector({
                 className={`p-2 rounded border transition-colors cursor-pointer space-y-1 ${
                   isSelected
                     ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
-                    : "bg-[var(--bg-elevated)] border-neutral-800 hover:border-neutral-700"
+                    : "bg-[var(--bg-elevated)] border-[var(--border-subtle)] hover:border-[var(--border)]"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Building className="w-3.5 h-3.5 text-[#3b82f6] shrink-0" />
-                    <span className="font-semibold text-white truncate text-[11px]">
+                    <Building className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+                    <span className="font-semibold text-[var(--text-primary)] truncate text-[11px]">
                       {room.name || room.id}
                     </span>
                   </div>
@@ -2846,7 +2845,7 @@ export function BuildingTopologyInspector({
                       e.stopPropagation();
                       onFrameEntity(room.id);
                     }}
-                    className="p-0.5 text-neutral-500 hover:text-white"
+                    className="p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                   >
                     <Maximize2 className="w-3 h-3" />
                   </button>
@@ -2863,7 +2862,7 @@ export function BuildingTopologyInspector({
                         onSelectEntity(adjId);
                         onFrameEntity(adjId);
                       }}
-                      className="px-1 py-0.2 rounded border border-[#3b82f6]/30 bg-[#3b82f6]/10 text-[#3b82f6] text-[9px] hover:bg-[#3b82f6]/20 cursor-pointer"
+                      className="px-1 py-0.2 rounded border border-[var(--accent)]/30 bg-[var(--accent)]/10 text-[var(--accent)] text-[9px] hover:bg-[var(--accent)]/20 cursor-pointer"
                     >
                       adj: {adjId}
                     </button>
@@ -2877,13 +2876,13 @@ export function BuildingTopologyInspector({
                         onSelectEntity(c.id);
                         onFrameEntity(c.id);
                       }}
-                      className="px-1 py-0.2 rounded border border-[#06b6d4]/30 bg-[#06b6d4]/10 text-[#06b6d4] text-[9px] hover:bg-[#06b6d4]/20 cursor-pointer"
+                      className="px-1 py-0.2 rounded border border-[var(--info)]/30 bg-[var(--info)]/10 text-[var(--info)] text-[9px] hover:bg-[var(--info)]/20 cursor-pointer"
                     >
                       route: {c.name || c.id}
                     </button>
                   ))}
                   {adjs.length === 0 && connectedCorrs.length === 0 && (
-                    <span className="text-neutral-500 text-[9px] italic">Isolated room enclosure</span>
+                    <span className="text-[var(--text-tertiary)] text-[9px] italic">Isolated room enclosure</span>
                   )}
                 </div>
               </div>
@@ -2894,9 +2893,9 @@ export function BuildingTopologyInspector({
 
       {/* 3. SECTION: CORRIDOR CIRCULATION ROUTES */}
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
           <span>Corridor Circulation Routes ({derivedData.corridors.length})</span>
-          <span className="text-[#06b6d4]">Routes</span>
+          <span className="text-[var(--info)]">Routes</span>
         </div>
         <div className="space-y-1">
           {derivedData.corridors.map((c) => {
@@ -2913,17 +2912,17 @@ export function BuildingTopologyInspector({
                 className={`p-2 rounded border transition-colors cursor-pointer space-y-1 ${
                   isSelected
                     ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
-                    : "bg-[var(--bg-elevated)] border-neutral-800 hover:border-neutral-700"
+                    : "bg-[var(--bg-elevated)] border-[var(--border-subtle)] hover:border-[var(--border)]"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Workflow className="w-3.5 h-3.5 text-[#06b6d4] shrink-0" />
-                    <span className="font-semibold text-white truncate text-[11px]">
+                    <Workflow className="w-3.5 h-3.5 text-[var(--info)] shrink-0" />
+                    <span className="font-semibold text-[var(--text-primary)] truncate text-[11px]">
                       {c.name || c.id}
                     </span>
                   </div>
-                  <span className="text-[9px] text-[#06b6d4] font-mono">
+                  <span className="text-[9px] text-[var(--info)] font-mono">
                     {connectedRooms.length} room{connectedRooms.length === 1 ? "" : "s"}
                   </span>
                 </div>
@@ -2938,13 +2937,13 @@ export function BuildingTopologyInspector({
                         onSelectEntity(rmId);
                         onFrameEntity(rmId);
                       }}
-                      className="px-1 py-0.2 rounded border border-[#06b6d4]/30 bg-[#06b6d4]/10 text-[#06b6d4] text-[9px] hover:bg-[#06b6d4]/20 cursor-pointer"
+                      className="px-1 py-0.2 rounded border border-[var(--info)]/30 bg-[var(--info)]/10 text-[var(--info)] text-[9px] hover:bg-[var(--info)]/20 cursor-pointer"
                     >
                       room: {rmId}
                     </button>
                   ))}
                   {connectedRooms.length === 0 && (
-                    <span className="text-neutral-500 text-[9px] italic">No room egress points</span>
+                    <span className="text-[var(--text-tertiary)] text-[9px] italic">No room egress points</span>
                   )}
                 </div>
               </div>
@@ -2955,9 +2954,9 @@ export function BuildingTopologyInspector({
 
       {/* 4. SECTION: VERTICAL TRANSITIONS (STAIRS) */}
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
           <span>Vertical Level Transitions ({derivedData.stairs.length})</span>
-          <span className="text-[#a855f7]">Stairs</span>
+          <span className="text-[var(--purple)]">Stairs</span>
         </div>
         <div className="space-y-1">
           {derivedData.stairs.map((stair) => {
@@ -2975,13 +2974,13 @@ export function BuildingTopologyInspector({
                 className={`p-2 rounded border transition-colors cursor-pointer space-y-1.5 ${
                   isSelected
                     ? "bg-[var(--bg-elevated)] border-[var(--accent)]"
-                    : "bg-[var(--bg-elevated)] border-neutral-800 hover:border-neutral-700"
+                    : "bg-[var(--bg-elevated)] border-[var(--border-subtle)] hover:border-[var(--border)]"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Layers className="w-3.5 h-3.5 text-[#a855f7] shrink-0" />
-                    <span className="font-semibold text-white truncate text-[11px]">
+                    <Layers className="w-3.5 h-3.5 text-[var(--purple)] shrink-0" />
+                    <span className="font-semibold text-[var(--text-primary)] truncate text-[11px]">
                       {stair.name || stair.id}
                     </span>
                   </div>
@@ -2991,7 +2990,7 @@ export function BuildingTopologyInspector({
                       e.stopPropagation();
                       onFrameEntity(stair.id);
                     }}
-                    className="p-0.5 text-neutral-500 hover:text-white"
+                    className="p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                   >
                     <Maximize2 className="w-3 h-3" />
                   </button>
@@ -3001,7 +3000,7 @@ export function BuildingTopologyInspector({
                   {levels.length > 0 ? (
                     levels.map((lvl, idx) => (
                       <span key={lvl} className="flex items-center gap-1">
-                        {idx > 0 && <span className="text-[#a855f7]">⮂</span>}
+                        {idx > 0 && <span className="text-[var(--purple)]">⮂</span>}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -3016,7 +3015,7 @@ export function BuildingTopologyInspector({
                       </span>
                     ))
                   ) : (
-                    <span className="text-neutral-500 text-[9px] italic">No level bounds set</span>
+                    <span className="text-[var(--text-tertiary)] text-[9px] italic">No level bounds set</span>
                   )}
                 </div>
               </div>
@@ -3027,9 +3026,9 @@ export function BuildingTopologyInspector({
 
       {/* 5. SECTION: OPENINGS & PORTALS */}
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
           <span>Portals & Openings ({derivedData.openings.length})</span>
-          <span className="text-[#10b981]">Doors & Windows</span>
+          <span className="text-[var(--sage)]">Doors & Windows</span>
         </div>
         <div className="flex flex-wrap gap-1">
           {derivedData.openings.slice(0, 20).map((op) => {
@@ -3044,8 +3043,8 @@ export function BuildingTopologyInspector({
                 }}
                 className={`px-1.5 py-0.5 rounded border font-mono text-[9px] truncate max-w-[120px] cursor-pointer ${
                   isSelected
-                    ? "bg-[#10b981] text-black border-[#10b981]"
-                    : "bg-[#10b981]/15 text-[#10b981] border-[#10b981]/30 hover:bg-[#10b981]/25"
+                    ? "bg-[var(--sage)] text-[var(--bg-base)] border-[var(--sage)]"
+                    : "bg-[var(--sage)]/15 text-[var(--sage)] border-[var(--sage)]/30 hover:bg-[var(--sage)]/25"
                 }`}
               >
                 {op.id}
@@ -3053,7 +3052,7 @@ export function BuildingTopologyInspector({
             );
           })}
           {derivedData.openings.length > 20 && (
-            <span className="text-[10px] text-neutral-500 py-0.5">
+            <span className="text-[10px] text-[var(--text-tertiary)] py-0.5">
               +{derivedData.openings.length - 20} more
             </span>
           )}

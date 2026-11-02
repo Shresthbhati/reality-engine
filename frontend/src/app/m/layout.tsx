@@ -7,7 +7,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#050b16",
+  themeColor: "#171918",
 };
 
 export default function MobileLayout({ children }: { children: React.ReactNode }) {

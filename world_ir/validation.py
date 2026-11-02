@@ -21,6 +21,19 @@ that self-check does not perform:
     pre-stamp worlds stay loadable while new drops are flagged;
   - coordinate-frame consistency for transforms that reference entities.
 
+Blueprint invariants 1-7 (docs/blueprint/11_WORLDIR_CONTRACT.md section 3) are
+enforced by `_check_invariants`, each failure an ERROR with an `invariant_N_*`
+code so a commit gate (`validate_world_ir(...).is_valid()`) blocks on it. They
+map onto this WorldIR as follows (this schema has no Space/Opening/Surface
+records of its own):
+  evidence_state -> `custom_properties["evidence_state"]` when set, else the
+                    entity's `Provenance` (GENERATED == PRIOR_GENERATED);
+  Surface        -> WALL/FLOOR/CEILING entities (and `world.surfaces`);
+  Opening        -> DOOR/WINDOW/OPENING entities; Space -> ROOM/CORRIDOR;
+  observation_id -> `entity.observations`, `custom_properties["observation_ids"]`
+                    or an association decision in the world's ledger;
+  bounds         -> the union of the entity's geometry bounds (world frame).
+
 Severity matters: ERROR blocks the world compiler's gate (and any
 consumer that refuses corrupted state); WARNING is reported and
 returned, never silently swallowed.
@@ -35,10 +48,11 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List
+from typing import Dict, List, Optional, Set, Tuple
 
 from provenance import Provenance
 from world_ir import WorldIR
+from world_ir.observations import AssociationState, LEDGER_KEY, ledger_of
 from world_ir.schema_v1 import EntityType, RelationshipKind
 
 
@@ -74,6 +88,13 @@ class WorldValidationReport:
 
     def messages(self) -> List[str]:
         return [str(i) for i in self.issues]
+
+    def render(self) -> str:
+        """Readable multi-line report for a blocked commit: errors first, then warnings."""
+        if not self.issues:
+            return "world validation: OK"
+        head = "world validation: " + ("OK with warnings" if self.is_valid() else f"BLOCKED, {len(self.errors)} error(s)")
+        return "\n".join([head, *(f"  {i}" for i in (*self.errors, *self.warnings))])
 
 
 def _iter_bounds(geometry):
@@ -342,6 +363,208 @@ def _check_single_storey_membership(world: WorldIR, issues: List[ValidationIssue
             ))
 
 
+_STRONG_STATES = {"OBSERVED", "PARTIALLY_OBSERVED"}
+_WEAK_STATES = {"INFERRED", "GENERATED", "PRIOR_GENERATED"}
+VALID_EVIDENCE_STATES = (
+    {p.value for p in Provenance}
+    | {"OBSERVED", "PARTIALLY_OBSERVED", "OCCLUDED", "UNOBSERVED", "INFERRED", "PRIOR_GENERATED", "CONFLICTED", "UNKNOWN"}
+)
+_SURFACE_TYPES = {EntityType.WALL, EntityType.FLOOR, EntityType.CEILING}
+_OPENING_TYPES = {EntityType.DOOR, EntityType.WINDOW, EntityType.OPENING}
+_SPACE_TYPES = {EntityType.ROOM, EntityType.CORRIDOR}
+_METRIC_UNITS = {"m", "m2", "m3", "mm", "cm", "km", "meter", "meters", "metre", "metres"}
+_RELATIVE_SCALE_STATES = {"", "relative", "unknown"}
+_DUPLICATE_IOU = 0.5
+#: Invariant 7, "each Surface references a Space": the current compiler emits floor/ceiling planes that no room lists
+#: (observed: a compiled world with a room but an unlisted floor plane). Blocking on that would make real captures
+#: uncommittable, so it is a WARNING until the hierarchy (blueprint 5.1) links them. Flip to True to make it block.
+SURFACE_WITHOUT_SPACE_BLOCKS = False
+#: Invariant 6 on architectural surfaces (wall/floor/ceiling): the real South Building capture compiles three
+#: overlapping floor patches (AABB IoU 50-69%), and thin plane boxes make IoU a weak duplicate signal. Surface
+#: duplicates are a WARNING until plane merging lands; every other class blocks. Flip to True to block surfaces too.
+SURFACE_DUPLICATE_BLOCKS = False
+#: association states that explicitly say two entities are NOT one thing (exempt from the duplicate guard)
+_DISTINCT_STATES = {AssociationState.DIFFERENT_ENTITY, AssociationState.PHYSICAL_INTERSECTION}
+
+
+def _err(issues: List[ValidationIssue], code: str, message: str) -> None:
+    issues.append(ValidationIssue(ValidationSeverity.ERROR, code, message))
+
+
+def _props(entity) -> dict:
+    return entity.custom_properties if isinstance(entity.custom_properties, dict) else {}
+
+
+def _entity_states(entity) -> Set[str]:
+    """Every evidence-state claim the entity makes, as upper-case strings."""
+    states = set()
+    if isinstance(entity.provenance, Provenance):
+        states.add(entity.provenance.value)
+    if isinstance(_props(entity).get("evidence_state"), str):
+        states.add(_props(entity)["evidence_state"].upper())
+    if entity.statement_state is not None:
+        states.add(getattr(entity.statement_state, "value", str(entity.statement_state)).upper())
+    return states
+
+
+def _entity_aabb(world: WorldIR, entity) -> Optional[Tuple[Tuple[float, ...], Tuple[float, ...]]]:
+    lo, hi = None, None
+    for gid in entity.geometry_ids:
+        g = world.geometries.get(gid)
+        if g is None or g.bounds_min is None or g.bounds_max is None:
+            continue
+        gl, gh = (g.bounds_min.x, g.bounds_min.y, g.bounds_min.z), (g.bounds_max.x, g.bounds_max.y, g.bounds_max.z)
+        if not all(math.isfinite(v) for v in gl + gh):
+            continue
+        lo = gl if lo is None else tuple(min(a, b) for a, b in zip(lo, gl))
+        hi = gh if hi is None else tuple(max(a, b) for a, b in zip(hi, gh))
+    return None if lo is None else (lo, hi)
+
+
+def _iou(a, b) -> float:
+    inter = 1.0
+    for i in range(3):
+        inter *= max(0.0, min(a[1][i], b[1][i]) - max(a[0][i], b[0][i]))
+    vol = lambda box: math.prod(max(0.0, box[1][i] - box[0][i]) for i in range(3))
+    union = vol(a) + vol(b) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _metric_unit_paths(value, path: str):
+    if isinstance(value, dict):
+        unit = value.get("unit")
+        if isinstance(unit, str) and unit.strip().lower() in _METRIC_UNITS:
+            yield path, unit
+        for k, v in value.items():
+            yield from _metric_unit_paths(v, f"{path}.{k}")
+    elif isinstance(value, (list, tuple)):
+        for n, v in enumerate(value):
+            yield from _metric_unit_paths(v, f"{path}[{n}]")
+
+
+def _linked(world: WorldIR, a_id: str, a, predicate) -> bool:
+    """True if `a` has a relationship (either direction) with an entity satisfying `predicate`."""
+    for rel in a.relationships:
+        t = world.entities.get(rel.target_id)
+        if t is not None and predicate(t):
+            return True
+    return any(predicate(o) and any(r.target_id == a_id for r in o.relationships) for o in world.entities.values())
+
+
+def _check_invariants(world: WorldIR, issues: List[ValidationIssue]) -> None:
+    ids = sorted(world.entities)
+    try:
+        ledger_obs, ledger_dec = ledger_of(world)
+    except (KeyError, TypeError, ValueError) as exc:
+        _err(issues, "invariant_5_ledger_unreadable", f"{LEDGER_KEY} in world.metadata cannot be read: {exc!r}")
+        ledger_obs, ledger_dec = (), ()
+    obs_ids = {o.observation_id for o in ledger_obs} | set(world.observations)
+    decided_entities = {d.entity_id for d in ledger_dec if d.entity_id}
+
+    # 1. every Entity/Surface has an evidence_state from the vocabulary
+    for eid in ids:
+        e = world.entities[eid]
+        if not isinstance(e.provenance, Provenance):
+            _err(issues, "invariant_1_no_evidence_state", f"entity {eid} has no valid evidence state (provenance={e.provenance!r})")
+        if "evidence_state" in _props(e) and str(_props(e)["evidence_state"]).upper() not in VALID_EVIDENCE_STATES:
+            _err(issues, "invariant_1_no_evidence_state", f"entity {eid} evidence_state {_props(e)['evidence_state']!r} is not a known state")
+    for sid in sorted(world.surfaces):
+        state = (world.surfaces[sid].custom_attributes or {}).get("evidence_state")
+        if not isinstance(state, str) or state.upper() not in VALID_EVIDENCE_STATES:
+            _err(issues, "invariant_1_no_evidence_state", f"surface {sid} has no valid evidence_state (got {state!r})")
+
+    # 2. OBSERVED / PARTIALLY_OBSERVED entities cite at least one observation
+    for eid in ids:
+        e = world.entities[eid]
+        strong = _entity_states(e) & _STRONG_STATES
+        if strong and not (e.observations or _props(e).get("observation_ids") or eid in decided_entities):
+            _err(issues, "invariant_2_observed_without_observation", f"entity {eid} is {sorted(strong)[0]} but cites no observation_id")
+
+    # 3. INFERRED / PRIOR_GENERATED is never also OBSERVED
+    for eid in ids:
+        states = _entity_states(world.entities[eid])
+        if states & _STRONG_STATES and states & _WEAK_STATES:
+            _err(issues, "invariant_3_inferred_labelled_observed",
+                 f"entity {eid} is labelled both {sorted(states & _STRONG_STATES)} and {sorted(states & _WEAK_STATES)}")
+
+    # 4. metric units only when the world's scale is not relative
+    scale = world.metadata.get("scale") if isinstance(world.metadata, dict) else None
+    scale_state = str(scale.get("state") or "").lower() if isinstance(scale, dict) else ""
+    if scale_state in _RELATIVE_SCALE_STATES:
+        for eid in ids:
+            for path, unit in _metric_unit_paths(_props(world.entities[eid]), "custom_properties"):
+                _err(issues, "invariant_4_metric_unit_in_relative_world",
+                     f"entity {eid} {path} uses metric unit {unit!r} but the world scale is "
+                     f"{scale_state or 'undeclared'} (relative worlds use model units)")
+
+    # 5. ids unique (key == id, no duplicates) and every referenced id exists
+    #    (entity/geometry/material/surface/component/relationship references: world.validate() -> "structural")
+    for label, table in (("entity", world.entities), ("geometry", world.geometries), ("material", world.materials),
+                         ("surface", world.surfaces), ("component", world.components), ("observation", world.observations)):
+        for key in sorted(table):
+            if getattr(table[key], "id", key) != key:
+                _err(issues, "invariant_5_id_mismatch", f"{label} stored under key {key!r} has id {table[key].id!r}")
+    seen_obs: Set[str] = set()
+    for o in ledger_obs:
+        if o.observation_id in seen_obs:
+            _err(issues, "invariant_5_duplicate_id", f"ledger observation id {o.observation_id!r} appears twice")
+        seen_obs.add(o.observation_id)
+    for d in ledger_dec:
+        if d.observation_id not in seen_obs:
+            _err(issues, "invariant_5_dangling_reference", f"association decision cites unknown observation {d.observation_id!r}")
+    for eid in ids:
+        for oid in _props(world.entities[eid]).get("observation_ids") or ():
+            if oid not in obs_ids:
+                _err(issues, "invariant_5_dangling_reference", f"entity {eid} cites unknown observation {oid!r}")
+
+    # 6. duplicate guard: same class, >50% bounds IoU, no decision saying they differ
+    distinct: Set[frozenset] = set()
+    for d in ledger_dec:
+        if d.state in _DISTINCT_STATES and d.entity_id:
+            distinct.update(frozenset((d.entity_id, other)) for other, _ in d.candidates)
+    for eid in ids:
+        distinct.update(frozenset((eid, other)) for other in _props(world.entities[eid]).get("distinct_from") or ())
+    groups: Dict[tuple, list] = {}
+    for eid in ids:
+        e = world.entities[eid]
+        box = _entity_aabb(world, e)
+        if box is not None:
+            groups.setdefault((e.type, tuple(sorted(e.semantic_labels))), []).append((eid, box))
+    for (etype, _labels), members in groups.items():
+        severity = (ValidationSeverity.ERROR if etype not in _SURFACE_TYPES or SURFACE_DUPLICATE_BLOCKS
+                    else ValidationSeverity.WARNING)
+        for i in range(len(members)):
+            for j in range(i + 1, len(members)):
+                (a, ba), (b, bb) = members[i], members[j]
+                iou = _iou(ba, bb)
+                if iou > _DUPLICATE_IOU and frozenset((a, b)) not in distinct:
+                    issues.append(ValidationIssue(
+                        severity, "invariant_6_duplicate_entity",
+                        f"entities {a} and {b} are the same class and overlap {iou:.0%} (IoU) with no "
+                        "DIFFERENT_ENTITY / PHYSICAL_INTERSECTION decision"))
+
+    # 7. each Opening references a Surface; each Surface references a Space
+    #    Enforced once the world models that level at all (task 5.1 adds the hierarchy): a compiled world with planes
+    #    but no rooms yet (partial capture) would otherwise be un-committable.
+    is_surface = lambda t: t.type in _SURFACE_TYPES
+    is_space = lambda t: t.type in _SPACE_TYPES
+    has_surfaces = any(is_surface(e) for e in world.entities.values())
+    has_spaces = any(is_space(e) for e in world.entities.values())
+    for eid in ids:
+        e = world.entities[eid]
+        cp = _props(e)
+        if e.type in _OPENING_TYPES and has_surfaces:
+            host = cp.get("host_wall_id") or cp.get("surface_id")
+            if not ((host in world.entities and is_surface(world.entities[host])) or _linked(world, eid, e, is_surface)):
+                _err(issues, "invariant_7_opening_without_surface", f"opening {eid} ({e.type.value}) references no surface (wall/floor/ceiling)")
+        elif e.type in _SURFACE_TYPES and has_spaces:
+            in_boundary = any(eid in (_props(r).get("boundary_element_ids") or ()) for r in world.entities.values() if is_space(r))
+            if not ((cp.get("space_id") or cp.get("room_id")) in world.entities or in_boundary or _linked(world, eid, e, is_space)):
+                issues.append(ValidationIssue(
+                    ValidationSeverity.ERROR if SURFACE_WITHOUT_SPACE_BLOCKS else ValidationSeverity.WARNING,
+                    "invariant_7_surface_without_space", f"surface {eid} ({e.type.value}) references no space (room/corridor)"))
+
+
 def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     """Full validation: structural self-check + geometric/provenance
     depth. Deterministic issue ordering (sorted entity/geometry ids,
@@ -365,5 +588,6 @@ def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     _check_reconstruction_trace(world, issues)
     _check_interior_boundary_references(world, issues)
     _check_single_storey_membership(world, issues)
+    _check_invariants(world, issues)
 
     return WorldValidationReport(issues=issues)

@@ -23,6 +23,12 @@ export default function ActivityPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [loadedFilter, setLoadedFilter] = useState(filter);
+  if (loadedFilter !== filter) {
+    setLoadedFilter(filter);
+    setLoading(true);
+  }
+
   useEffect(() => {
     let active = true;
     getActivity()

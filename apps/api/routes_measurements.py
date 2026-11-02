@@ -34,10 +34,26 @@ class MeasurementIn(BaseModel):
     value: float | None = None
     #: only when the data supplied one; ignored for authored geometry (exactly 0).
     uncertainty: float | None = None
+    #: a tape measurement of the same quantity (length kinds only); marks the dimension VERIFIED.
+    verified_value: float | None = None
 
 
-def _row(m: WorldMeasurement) -> dict:
+def _row(m: WorldMeasurement, scale_dimension_state: str | None = None) -> dict:
+    scale_state = m.scale_state
+    verified = m.verified_value is not None
+    requested = m.state or ("VERIFIED" if verified else "RECONSTRUCTED" if scale_state == "unknown" else "MEASURED")
+    dim = measure.make_dimension(
+        m.verified_value if verified else m.value,
+        state=requested, basis=("tape measurement confirmed by user" if verified else m.method),
+        scale_state=scale_state, scale_dimension_state=None if verified else scale_dimension_state,
+        uncertainty_m=None if verified else m.uncertainty, kind=m.kind)
     return {
+        # D1: the shared dimension shape; the flat keys below stay for existing consumers.
+        "dimension": dim,
+        "state": dim["state"],
+        "basis": dim["basis"],
+        "uncertainty_m": dim["uncertainty_m"],
+        "verified_value": m.verified_value,
         "id": m.id,
         "world_id": m.world_id,
         "kind": m.kind,
@@ -51,6 +67,18 @@ def _row(m: WorldMeasurement) -> dict:
     }
 
 
+async def _scale_dimension_state(db: AsyncSession, world_id: str) -> str | None:
+    """metadata.scale.dimension_state of the world's current version (ESTIMATED after an accepted prior); None if
+    the world has no readable version -- then there is no cap to apply."""
+    from apps.api.routes_worlds import _load_world_or_409, _version_row
+
+    try:
+        scale = ((_load_world_or_409(await _version_row(db, world_id, None)).metadata or {}).get("scale") or {})
+    except HTTPException:
+        return None
+    return scale.get("dimension_state")
+
+
 async def _require_world(db: AsyncSession, world_id: str) -> World:
     w = await db.get(World, world_id)
     if w is None:
@@ -61,13 +89,14 @@ async def _require_world(db: AsyncSession, world_id: str) -> World:
 @measurements.get("")
 async def list_measurements(world_id: str, db: AsyncSession = Depends(get_db)) -> list[dict]:
     await _require_world(db, world_id)
+    cap = await _scale_dimension_state(db, world_id)
     res = await db.execute(
         select(WorldMeasurement)
         .where(WorldMeasurement.world_id == world_id)
         .order_by(WorldMeasurement.created_at, WorldMeasurement.id)
         .limit(MAX_PER_WORLD)
     )
-    return [_row(m) for m in res.scalars()]
+    return [_row(m, cap) for m in res.scalars()]
 
 
 @measurements.post("", status_code=201)
@@ -103,6 +132,16 @@ async def create_measurement(
     else:
         uncertainty = float(body.uncertainty)
 
+    verified = body.verified_value
+    if verified is not None:
+        if body.kind in measure.AREA_KINDS or body.scale_state == "unknown":
+            raise HTTPException(422, "a tape-verified value needs a length kind in a metric or authored world")
+        if not math.isfinite(verified) or (verified <= 0 and body.kind != "elevation_difference"):
+            raise HTTPException(422, "verified_value must be a finite positive number")
+    cap = await _scale_dimension_state(db, world_id)
+    state = "VERIFIED" if verified is not None else measure.effective_state(
+        "RECONSTRUCTED" if body.scale_state == "unknown" else "MEASURED", body.scale_state, cap)
+
     count = (
         await db.execute(
             select(func.count()).select_from(WorldMeasurement).where(WorldMeasurement.world_id == world_id)
@@ -121,11 +160,13 @@ async def create_measurement(
         uncertainty=uncertainty,
         method=method,
         scale_state=body.scale_state,
+        state=state,
+        verified_value=verified,
     )
     db.add(m)
     await db.commit()
     await db.refresh(m)
-    return _row(m)
+    return _row(m, cap)
 
 
 @measurements.delete("/{measurement_id}")

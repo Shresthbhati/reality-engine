@@ -56,6 +56,9 @@ class WorldStoreError(ValueError):
 _VERSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
+_ARTIFACT_URI_RE = re.compile(rb"artifact://([0-9a-f]{64})")
+
+
 def _validate_version_id(version_id: str) -> None:
     if not _VERSION_ID_RE.match(version_id):
         raise WorldStoreError(
@@ -367,6 +370,62 @@ class WorldStore:
     def quarantined_versions(self) -> list[str]:
         qdir = self._root / "quarantine"
         return sorted(p.stem for p in qdir.glob("v-*.json")) if qdir.is_dir() else []
+
+    # ---- retention ----
+
+    def prune_quarantine(
+        self,
+        *,
+        max_age: float = 30 * 86400,
+        keep_last: int = 20,
+        dry_run: bool = True,
+        now: float | None = None,
+    ) -> dict:
+        """Retention for quarantined (never-adopted) versions and the blobs nothing references any more.
+
+        Removes a quarantined record only if it is older than ``max_age`` seconds (record mtime) AND not among the
+        newest ``keep_last`` quarantined records AND not the parent of any live version AND has no pending adoption
+        intent. Live versions (HEAD and its whole lineage) are never touched. Afterwards, ``artifacts/`` blobs that no
+        retained record (live or quarantined) references -- by ``artifact_uri`` or by an ``artifact://<sha256>``
+        geometry uri inside a retained world -- and that are also older than ``max_age`` are deleted (the age floor
+        protects a blob ``put()`` just before its record is written). ``dry_run`` (the default) reports only.
+        Idempotent. Returns ``{"quarantine_removed", "blobs_removed", "dry_run"}``."""
+        if max_age < 0 or keep_last < 0:
+            raise WorldStoreError("max_age and keep_last must be >= 0")
+        now = time.time() if now is None else now
+        qdir = self._root / "quarantine"
+        intents = self._root / "adoption-intents"
+        with _SequenceLock(self._root):
+            live = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in self._versions_dir.glob("v-*.json")}
+            protected = {r["parent"] for r in live.values() if r.get("parent")}
+            quarantined = sorted(((p.stat().st_mtime, p) for p in qdir.glob("v-*.json")), reverse=True) \
+                if qdir.is_dir() else []
+            removable = []
+            for rank, (mtime, p) in enumerate(quarantined):
+                if (rank >= keep_last and now - mtime >= max_age and p.stem not in protected
+                        and not (intents / f"{p.stem}.json").exists()):
+                    removable.append(p)
+            removable_ids = {p.stem for p in removable}
+            records = list(live.values()) + [
+                json.loads(p.read_text(encoding="utf-8")) for _, p in quarantined if p.stem not in removable_ids]
+            referenced: set[str] = set()
+            for rec in records:
+                referenced.add(rec["artifact_hash"])
+                try:
+                    referenced.update(m.decode() for m in _ARTIFACT_URI_RE.findall(self._store.get(rec["artifact_uri"])))
+                except Exception:   # noqa: BLE001 -- an unreadable retained world: its own digest stays protected
+                    pass
+            blobs = []
+            for f in self._store.root.glob("??/*.bin"):
+                if f.stem not in referenced and now - f.stat().st_mtime >= max_age:
+                    blobs.append(f)
+            if not dry_run:
+                for p in removable:
+                    p.unlink(missing_ok=True)
+                for f in blobs:
+                    f.unlink(missing_ok=True)
+        return {"quarantine_removed": sorted(removable_ids), "blobs_removed": sorted(f.stem for f in blobs),
+                "dry_run": dry_run}
 
     # ---- integrity ----
 

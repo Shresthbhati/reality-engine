@@ -18,9 +18,19 @@
 export const DEFAULT_API_BASE_URL = "http://localhost:8100";
 
 export function apiBaseUrl(): string {
-  const raw = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  // The desktop shell picks a free port at launch, which a build-time NEXT_PUBLIC_ value cannot know: its preload
+  // script sets this global before the page runs. Absent in a normal browser, so dev/web builds are unchanged.
+  const injected = typeof window !== "undefined" ? (window as { __REALITY_API_BASE__?: string }).__REALITY_API_BASE__ : undefined;
+  const raw = (injected ?? process.env.NEXT_PUBLIC_API_BASE_URL)?.trim();
   const base = raw && raw.length > 0 ? raw : DEFAULT_API_BASE_URL;
   return base.replace(/\/+$/, "");
+}
+
+/** Optional bearer token (`NEXT_PUBLIC_API_TOKEN`) for an API started with REALITY_API_TOKEN. NEXT_PUBLIC_ values are
+ *  visible to the browser, so this suits a local/trusted setup only. */
+function authHeaders(): Record<string, string> {
+  const token = process.env.NEXT_PUBLIC_API_TOKEN?.trim();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export type ApiErrorCode =
@@ -141,7 +151,7 @@ async function perform<T>(path: string, init: RequestInit, options: RequestOptio
 
   let res: Response;
   try {
-    res = await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
+    res = await fetch(url, { ...init, headers: { ...authHeaders(), ...(init.headers as Record<string, string> | undefined) }, signal: controller.signal, cache: "no-store" });
   } catch (err) {
     const aborted = (err as Error).name === "AbortError";
     throw new ApiError({

@@ -18,9 +18,12 @@ real backend or a hand-built fixture, same as how
 caring whether COLMAP or a synthetic fixture produced it.
 
 Honesty rules:
-  - A relative (non-metric) depth map cannot honestly produce a metric
-    3D hypothesis -- `lift_region_to_3d` refuses (`LiftingError`) rather
-    than silently treating relative depth values as meters.
+  - Scale gate (blueprint 3.3): a relative (monocular) depth map does NOT
+    raise -- it yields a hypothesis with `depth_source=RELATIVE` and the wide
+    `sigma_m` the ledger assigns to relative depth, and its `metric_extents_m`
+    is None (no metric dimensions) unless the caller says the world's
+    `scale_state` is no longer "relative". Relative values are never
+    silently treated as meters.
   - Too few mask pixels with valid (positive, finite) depth -> returns
     `None`, the expected "insufficient evidence" outcome, not an
     exception and not a fabricated hypothesis from a handful of points.
@@ -39,6 +42,7 @@ from typing import List, Optional, Tuple
 
 from provenance import Provenance, Uncertainty
 from engine.math.math3 import Vec3
+from world_ir.observations import DepthSource, sigma_for
 from perception.depth.interface import DepthMap
 from perception.segmentation.interface import SegmentedRegion
 from reconstruction.calibration.camera import PinholeCamera
@@ -83,6 +87,12 @@ class ObjectHypothesis3D:
     #: caller/test that builds a hypothesis by hand keeps working
     #: unchanged; only lift_region_to_3d() populates it for real.
     points: "Tuple[Vec3, ...]" = field(default_factory=tuple)
+    #: Where the depth came from (scale gate). Hand-built hypotheses predate this field and were metric by assumption.
+    depth_source: DepthSource = DepthSource.METRIC
+    #: 1-sigma position error (m for metric depth) from camera range + depth source; None when not computed (hand-built).
+    sigma_m: Optional[float] = None
+    #: (dx, dy, dz) of the bounds in metres. None = no metric dimensions (relative depth, scale_state still "relative").
+    metric_extents_m: Optional[Tuple[float, float, float]] = None
 
     def to_dict(self) -> dict:
         return {
@@ -98,6 +108,9 @@ class ObjectHypothesis3D:
             "uncertainty": self.uncertainty.to_dict(),
             "provenance": self.provenance.value,
             "points": [[p.x, p.y, p.z] for p in self.points],
+            "depth_source": self.depth_source.value,
+            "sigma_m": self.sigma_m,
+            "metric_extents_m": None if self.metric_extents_m is None else list(self.metric_extents_m),
         }
 
 
@@ -106,24 +119,22 @@ def lift_region_to_3d(
     depth: DepthMap,
     camera: PinholeCamera,
     min_valid_fraction: float = DEFAULT_MIN_VALID_DEPTH_FRACTION,
+    scale_state: str = "relative",
 ) -> Optional[ObjectHypothesis3D]:
     """Lift one 2D mask into a 3D object hypothesis, or None when there
     isn't enough valid-depth evidence to honestly produce one.
 
     Raises LiftingError when the inputs themselves are invalid: mismatched
-    evidence_id, mismatched mask/depth-map dimensions, or a non-metric
-    (relative) depth map -- these are misuse, not "insufficient evidence".
+    evidence_id or mismatched mask/depth-map dimensions -- misuse, not
+    "insufficient evidence". `scale_state` is the world's scale state; it only
+    matters for a relative depth map (see the module docstring).
     """
     if region.evidence_id != depth.evidence_id:
         raise LiftingError(
             f"region.evidence_id ({region.evidence_id!r}) != depth.evidence_id "
             f"({depth.evidence_id!r}) -- refusing to lift a mask against the wrong frame's depth"
         )
-    if depth.unit != "meters":
-        raise LiftingError(
-            f"depth map for {depth.evidence_id} is unit={depth.unit!r} (relative), not 'meters' -- "
-            "lifting a relative depth map would silently invent metric scale"
-        )
+    metric_depth = depth.unit == "meters"
     if len(region.mask) != depth.height or (region.mask and len(region.mask[0]) != depth.width):
         raise LiftingError(
             f"mask dimensions {len(region.mask)}x{len(region.mask[0]) if region.mask else 0} "
@@ -162,6 +173,15 @@ def lift_region_to_3d(
 
     confidence = max(0.0, min(1.0, region.confidence * valid_fraction))
 
+    depth_source = DepthSource.METRIC if metric_depth else DepthSource.RELATIVE
+    cam = camera.extrinsics.position
+    sigma_m = sigma_for(depth_source, math.dist((centroid.x, centroid.y, centroid.z), (cam.x, cam.y, cam.z)))
+    # no metric dimensions from relative depth until the world has a scale (scale_state != "relative")
+    has_scale = metric_depth or scale_state != "relative"
+    extents = (
+        (bounds_max.x - bounds_min.x, bounds_max.y - bounds_min.y, bounds_max.z - bounds_min.z) if has_scale else None
+    )
+
     return ObjectHypothesis3D(
         region_id=region.region_id,
         evidence_id=region.evidence_id,
@@ -174,7 +194,11 @@ def lift_region_to_3d(
         confidence=confidence,
         uncertainty=Uncertainty(
             confidence=confidence,
-            note=f"{n}/{mask_pixel_count} mask pixels had valid depth (segmentation confidence {region.confidence:.2f})",
+            note=f"{n}/{mask_pixel_count} mask pixels had valid depth (segmentation confidence {region.confidence:.2f})"
+            + ("" if metric_depth else "; relative depth: positions are in relative units"),
         ),
         points=tuple(points),
+        depth_source=depth_source,
+        sigma_m=sigma_m,
+        metric_extents_m=extents,
     )

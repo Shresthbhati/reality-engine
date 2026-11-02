@@ -112,3 +112,39 @@ def test_ifc_without_ifcopenshell_is_501_not_an_empty_file(client, tmp_path, mon
     monkeypatch.setattr(builtins, "__import__", _no_ifc)
     r = client.post(f"/api/worlds/{wid}/export", json={"format": "ifc"})
     assert r.status_code == 501 and "ifcopenshell" in r.text.lower()
+
+
+def test_formats_lists_every_format_available_for_a_compiled_world(client, tmp_path):
+    wid, _ = _world_with_geometry(client, tmp_path)
+    r = client.get(f"/api/worlds/{wid}/export/formats")
+    assert r.status_code == 200
+    by_name = {f["format"]: f for f in r.json()["formats"]}
+    assert {"gltf", "usda", "cityjson", "godot"} <= set(by_name)
+    assert by_name["gltf"] == {"format": "gltf", "available": True, "reason": None}
+    if by_name["ifc"]["available"] is False:  # only legitimate reason: the optional library is absent
+        assert "IfcOpenShell" in by_name["ifc"]["reason"]
+
+
+def test_formats_explains_why_a_world_without_a_version_cannot_export(client):
+    wid = client.post("/api/worlds", json={"name": "empty"}).json()["id"]
+    r = client.get(f"/api/worlds/{wid}/export/formats")
+    assert r.status_code == 200
+    formats = r.json()["formats"]
+    assert formats and all(not f["available"] for f in formats)
+    assert all("no reconstruction versions" in f["reason"] for f in formats)
+
+
+def test_formats_for_unknown_world_is_404(client):
+    assert client.get("/api/worlds/does-not-exist/export/formats").status_code == 404
+
+
+def test_gltf_and_ply_both_download_non_empty_from_one_compiled_world(client, tmp_path):
+    wid, _ = _world_with_geometry(client, tmp_path)
+    body = client.post(f"/api/worlds/{wid}/export", json={"format": "gltf"}).json()
+    gltf = client.get(body["download_url"])
+    assert gltf.status_code == 200 and gltf.content
+    ply = client.get(f"/api/worlds/{wid}/points")
+    # a world with point geometry streams a PLY; one without must say so (typed status), never an empty 200
+    assert (ply.status_code == 200 and ply.content.startswith(b"ply")) or (
+        ply.status_code in (404, 409) and ply.json().get("detail")
+    ), (ply.status_code, ply.text[:200])

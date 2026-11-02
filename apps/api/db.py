@@ -55,11 +55,34 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 
 async def init_db() -> None:
-    """Create tables. In production this is replaced by migrations; for the
-    dev slice, metadata.create_all is deterministic and idempotent."""
+    """Create missing tables and add missing nullable columns (idempotent). The schema history lives in
+    apps/api/migrations (``alembic -c apps/api/alembic.ini upgrade head``); this path stays so tests and a fresh
+    dev run need no extra step, and reaches the same schema."""
     get_engine()
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_add_missing_columns)
+
+
+def _add_missing_columns(sync_conn) -> None:
+    """create_all never alters an existing table. Add every model column an existing table lacks (all such columns
+    are nullable: D1 measurement fields, doc-13 lifecycle fields). Idempotent; this is the same end state
+    ``alembic upgrade head`` reaches, so a DB touched by either path is accepted by the other (migrations/README.md)."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(sync_conn)
+    present = set(insp.get_table_names())
+    for table in Base.metadata.sorted_tables:
+        if table.name not in present:
+            continue
+        have = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in have:
+                continue
+            if not col.nullable and col.default is None and col.server_default is None:
+                raise RuntimeError(f"cannot auto-add NOT NULL column {table.name}.{col.name}; write a migration")
+            ddl = col.type.compile(dialect=sync_conn.dialect)
+            sync_conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}'))
 
 
 async def dispose_db() -> None:

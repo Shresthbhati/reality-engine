@@ -30,6 +30,17 @@ MIN_COVERAGE_DEG = 15.0
 MIN_STRUCTURE_POINTS = 300
 
 
+def min_registered_fraction(env: Optional[Mapping[str, str]] = None) -> float:
+    """The registration threshold. ``REALITY_DENSE_MIN_REGISTERED_FRACTION`` (a number in (0, 1]) overrides the
+    experimental default so an operator can change it with measurements; anything else falls back to the default."""
+    env = os.environ if env is None else env
+    try:
+        value = float(env.get("REALITY_DENSE_MIN_REGISTERED_FRACTION", ""))
+    except ValueError:
+        return MIN_REGISTERED_FRACTION
+    return value if 0.0 < value <= 1.0 else MIN_REGISTERED_FRACTION
+
+
 def dense_auto_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
     """Is evidence-driven dense escalation part of the normal product path? Yes, unless an operator opts OUT.
 
@@ -51,12 +62,13 @@ def dense_readiness(result, n_input: int, coverage_deg: Optional[float] = None) 
     points = list(getattr(result, "points", None) or [])
     registered = len(poses)
     fraction = registered / n_input if n_input else 0.0
+    needed = min_registered_fraction()
     tracks = [len(getattr(p, "source_evidence_ids", None) or []) for p in points]
     median_track = float(median(tracks)) if tracks else 0.0
 
     checks = [
-        ("registration", fraction >= MIN_REGISTERED_FRACTION,
-         f"{registered} of {n_input} photographs registered ({fraction:.0%}; needs >= {MIN_REGISTERED_FRACTION:.0%})"),
+        ("registration", fraction >= needed,
+         f"{registered} of {n_input} photographs registered ({fraction:.0%}; needs >= {needed:.0%})"),
         ("geometric support", median_track >= MIN_MEDIAN_TRACK_LENGTH,
          f"median structure point is seen by {median_track:g} cameras (needs >= {MIN_MEDIAN_TRACK_LENGTH})"),
         ("coverage", coverage_deg is not None and coverage_deg >= MIN_COVERAGE_DEG,

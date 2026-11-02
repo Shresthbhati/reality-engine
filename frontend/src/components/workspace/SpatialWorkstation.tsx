@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import WorldNavPanel, { type SpatialQueryFilter } from "@/components/navigation/WorldNavPanel";
-import World3DViewport from "@/components/viewport/World3DViewport";
+import World3DViewportBase from "@/components/viewport/World3DViewport";
 import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
@@ -11,18 +11,21 @@ import RoomConstructionModal from "@/components/workspace/RoomConstructionModal"
 import BuildModal from "@/components/workspace/BuildModal";
 import GeneratedPanel from "@/components/workspace/GeneratedPanel";
 import CompleteInteriorPanel from "@/components/workspace/CompleteInteriorPanel";
+import SceneTree from "@/components/workspace/SceneTree";
+import InsightsPanel from "@/components/workspace/InsightsPanel";
+import ActionsMenu from "@/components/workspace/ActionsMenu";
 import PhotoDropZone from "@/components/reconstruct/PhotoDropZone";
 import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStatusBar";
 import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
 import QueryPanel from "@/components/workspace/QueryPanel";
 import ExportPanel from "@/components/workspace/ExportPanel";
 import MapPlotView from "@/components/map/MapPlotView";
-import { 
-  useWorlds, 
-  useSessions, 
-  useEvidence, 
-  useWorldIR, 
-  useWorldPoints, 
+import {
+  useWorlds,
+  useSessions,
+  useEvidence,
+  useWorldIR,
+  useWorldPoints,
   useWorldCameras,
   useWorldVersions,
   useWorldStatus,
@@ -31,26 +34,43 @@ import {
   type CreateReconstructionResult,
 } from "@/lib/api";
 import { commitWorldCorrection } from "@/lib/api/worlds";
+import { downloadArtifact } from "@/lib/api/download";
+import { isApiError } from "@/lib/api/client";
 import { parsePly, parseMeshPly } from "@/lib/viewport/loaders";
+import { parseCaptureQuality, parseStructurePoints } from "@/lib/viewport/structure-points-model";
 import type { MeasurementResult } from "@/lib/viewport/three-scene";
 import type { PlaceRow, WorldVersionRow } from "@/lib/types";
-import { 
-  Loader2, 
-  Box, 
-  Map as MapIcon, 
-  PanelLeftClose, 
-  PanelLeftOpen, 
-  PanelRightClose, 
-  PanelRightOpen,
-  Workflow,
-  Search,
-  Terminal,
-  Download,
-  ImagePlus,
-  Hammer,
-  X,
-} from "lucide-react";
+import { buildFlowSteps } from "@/lib/reconstruct/flow-model";
+import { buildSceneTree, toggleHidden } from "@/lib/workspace/scene-tree-model";
+import { buildInsights, withKnownPhotos } from "@/lib/workspace/insights-model";
+import { Loader2, Box, Map as MapIcon, ImagePlus, X, PanelLeft, PanelRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/**
+ * The viewport agent is adding optional props to World3DViewport. Until they land in its own
+ * interface this local shim types them. TODO: drop the shim once `hiddenEntityIds` is declared on
+ * World3DViewportProps (also coming: `mode`, `onModeChange`, `cutaway`, which the workstation does not drive).
+ */
+const World3DViewport = World3DViewportBase as React.ComponentType<
+  React.ComponentProps<typeof World3DViewportBase> & { hiddenEntityIds?: Set<string> }
+>;
+
+type Layout = "mobile" | "tablet" | "desktop";
+type MobilePane = "scene" | "view" | "details";
+
+function subscribeLayout(cb: () => void) {
+  const qs = [window.matchMedia("(min-width: 768px)"), window.matchMedia("(min-width: 1024px)")];
+  qs.forEach((q) => q.addEventListener("change", cb));
+  return () => qs.forEach((q) => q.removeEventListener("change", cb));
+}
+function layoutSnapshot(): Layout {
+  if (window.matchMedia("(min-width: 1024px)").matches) return "desktop";
+  return window.matchMedia("(min-width: 768px)").matches ? "tablet" : "mobile";
+}
+/** <768 mobile (segmented switcher), 768-1023 tablet (slide-over drawers), >=1024 desktop (3 columns). */
+function useLayout(): Layout {
+  return useSyncExternalStore(subscribeLayout, layoutSnapshot, () => "desktop");
+}
 
 interface SpatialWorkstationProps {
   worldId?: string;
@@ -60,9 +80,19 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const router = useRouter();
   
   // Workspace UI State
+  const layout = useLayout();
   const [navOpen, setNavOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [bottomOpen, setBottomOpen] = useState(true);
+  // tablet: which panel is slid over the viewport; mobile: which pane is showing
+  const [drawer, setDrawer] = useState<"scene" | "inspector" | null>(null);
+  const [mobilePane, setMobilePane] = useState<MobilePane>("view");
+  const [browseOpen, setBrowseOpen] = useState(false);
+  // null = follow the default (insights strip open only when there is something in it)
+  // Timeline / telemetry bar: off by default so the viewport keeps the space.
+  const [bottomOpen, setBottomOpen] = useState(false);
+  const [insightsPref, setInsightsPref] = useState<boolean | null>(null);
+  // Entities hidden from the viewport through the Scene tree eye toggles.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"3d" | "map">("3d");
@@ -71,6 +101,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
   const [isolateSpaceId, setIsolateSpaceId] = useState<string | null>(null);
@@ -103,6 +134,12 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const { data: pointsBuffer } = useWorldPoints(worldId || null, selectedVersionId, modelVersionKey);
   const { data: camerasPayload } = useWorldCameras(worldId || null, selectedVersionId, modelVersionKey);
   const { data: versionsData = [], refetch: refetchVersions } = useWorldVersions(worldId || null, modelVersionKey);
+
+  // Capture-quality verdict and structure points belong to the CURRENT version's report: not passed when an older version is inspected.
+  const currentModel = reconStatus?.model ?? null;
+  const viewingCurrent = selectedVersionId === null || selectedVersionId === currentModel?.version_id;
+  const captureQuality = useMemo(() => (viewingCurrent ? parseCaptureQuality(currentModel?.capture_quality) : null), [viewingCurrent, currentModel?.capture_quality]);
+  const structurePoints = useMemo(() => (viewingCurrent ? parseStructurePoints(currentModel?.structure_points) : []), [viewingCurrent, currentModel?.structure_points]);
 
   // Derived 3D artifacts
   const points = useMemo(() => {
@@ -169,6 +206,14 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     return worldIR.entities[selectedEntityId] || null;
   }, [worldIR, selectedEntityId]);
 
+  // Scene tree + insights come from the WorldIR of the active world only (never a stale one).
+  const sceneWorld = worldIR && worldIR.id === worldId ? worldIR : null;
+  const sceneTree = useMemo(() => buildSceneTree(sceneWorld), [sceneWorld]);
+  const insightsModel = useMemo(
+    () => withKnownPhotos(buildInsights(sceneWorld), new Set(evidence.map((ev) => ev.id))),
+    [sceneWorld, evidence],
+  );
+
   // Spatial query filtering calculation
   const queryMatchingIds = useMemo(() => {
     if (!activeQuery || !worldIR?.entities) return null;
@@ -199,6 +244,10 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     if (id !== null) {
       setInspectorOpen(true);
     }
+  }, []);
+
+  const handleToggleHidden = useCallback((leafIds: string[]) => {
+    setHiddenIds((prev) => toggleHidden(prev, leafIds));
   }, []);
 
   const handleSelectEvidence = useCallback((id: string | null) => {
@@ -276,20 +325,12 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       filename = `report-${worldId}.json`;
     }
 
+    setExportError(null);
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
+      // same-origin Next proxy route: pass it absolute so downloadArtifact doesn't re-point it at the API host
+      await downloadArtifact(`${window.location.origin}${url}`, filename);
     } catch (e) {
-      console.error("Export error", e);
+      setExportError(isApiError(e) ? e.describe() : `Export of ${format} failed.`);
     }
   }, [worldId]);
 
@@ -302,6 +343,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     setActiveQuery(null);
     setSelectedVersionId(null);
     setAddPhotosOpen(false);
+    setHiddenIds(new Set());
+    setBrowseOpen(false);
   }
 
   // Global Keyboard Shortcuts and Custom Event Listeners
@@ -313,11 +356,15 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       }
       
       if (e.key === "[") {
-        setNavOpen(prev => !prev);
+        if (layout === "desktop") setNavOpen(prev => !prev);
+        else if (layout === "tablet") setDrawer(d => (d === "scene" ? null : "scene"));
+        else setMobilePane(p => (p === "scene" ? "view" : "scene"));
       } else if (e.key === "]") {
-        setInspectorOpen(prev => !prev);
+        if (layout === "desktop") setInspectorOpen(prev => !prev);
+        else if (layout === "tablet") setDrawer(d => (d === "inspector" ? null : "inspector"));
+        else setMobilePane(p => (p === "details" ? "view" : "details"));
       } else if (e.key === "\\") {
-        setBottomOpen(prev => !prev);
+        setInsightsPref(prev => !(prev ?? insightsModel.hasInsights));
       } else if (e.key === "Escape") {
         handleClearSelection();
       } else if (e.key.toLowerCase() === "f" && selectedEntityId) {
@@ -378,14 +425,14 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       window.removeEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
       window.removeEventListener("trigger-export", handleTriggerExportEvent as EventListener);
     };
-  }, [selectedEntityId, handleClearSelection, handleFrameEntity, handleExport]);
+  }, [selectedEntityId, layout, insightsModel.hasInsights, handleClearSelection, handleFrameEntity, handleExport]);
 
   // First-ever world: the only thing to do is to drop photos.
   if (!propWorldId && !worldsLoading && worlds.length === 0) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center bg-[var(--bg-base)] p-6 text-[var(--text-primary)]">
-        <h1 className="mb-1 text-xl font-semibold text-white">Create a reconstruction</h1>
-        <p className="mb-6 max-w-lg text-center text-xs text-neutral-400">
+        <h1 className="mb-1 text-xl font-semibold text-[var(--text-primary)]">Create a reconstruction</h1>
+        <p className="mb-6 max-w-lg text-center text-xs text-[var(--text-secondary)]">
           Give Reality Engine photographs of a real place. It builds the best spatial model the
           evidence supports, tells you what it is unsure about, and improves the same model as you add more.
         </p>
@@ -402,7 +449,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       <div className="flex h-full w-full items-center justify-center bg-[var(--bg-base)] text-[var(--text-primary)] select-none">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-7 w-7 animate-spin text-[var(--accent)]" />
-          <p className="text-xs font-mono text-neutral-400">Consuming canonical WorldIR stream...</p>
+          <p className="text-xs font-mono text-[var(--text-secondary)]">Consuming canonical WorldIR stream...</p>
         </div>
       </div>
     );
@@ -415,246 +462,179 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const activeMesh = isWorldMatching ? mesh : null;
   const has3DContent = Boolean(activeWorldIR && (Object.keys(activeWorldIR.entities || {}).length > 0 || activePoints));
 
+  // ONE primary action: the guided flow's current step (add photos / retry / set scale), else Add evidence.
+  const flowCta = buildFlowSteps(reconStatus).find((st) => st.current)?.cta;
+  const primary: { label: string; run: () => void } =
+    flowCta?.kind === "retry" && reconStatus?.job
+      ? { label: flowCta.label, run: () => void retryReconstruction(reconStatus.job!.session_id).then(refreshStatus, refreshStatus) }
+      : flowCta?.kind === "set_scale"
+        ? { label: flowCta.label, run: () => window.dispatchEvent(new CustomEvent("reconstruction-expand")) }
+        : { label: "Add evidence", run: () => setAddPhotosOpen(true) };
+
+  const toggleScene = () => {
+    if (layout === "desktop") setNavOpen((v) => !v);
+    else setDrawer((d) => (d === "scene" ? null : "scene"));
+  };
+  const toggleInspector = () => {
+    if (layout === "desktop") setInspectorOpen((v) => !v);
+    else setDrawer((d) => (d === "inspector" ? null : "inspector"));
+  };
+  // phones: collapsed unless asked for, so the viewport keeps the screen
+  const insightsOpen = insightsPref ?? (layout !== "mobile" && insightsModel.hasInsights);
+  const sceneOn = layout === "desktop" ? navOpen : drawer === "scene";
+  const inspectorOn = layout === "desktop" ? inspectorOpen : drawer === "inspector";
+
+  const sceneEl = (
+    <SceneTree
+      tree={sceneTree}
+      selectedEntityId={selectedEntityId}
+      hiddenIds={hiddenIds}
+      onSelect={(id) => {
+        handleSelectEntity(id);
+        if (layout === "tablet") setDrawer(null);
+        if (layout === "mobile") setMobilePane("view");
+      }}
+      onToggleVisibility={handleToggleHidden}
+      onBrowse={() => setBrowseOpen(true)}
+      onClose={layout === "tablet" ? () => setDrawer(null) : undefined}
+      loading={isIrLoading}
+    />
+  );
+
+  const inspectorEl = (
+    <AdaptiveInspector
+      world={worldIR}
+      worldId={worldId}
+      activeVersion={currentVersionId ?? undefined}
+      selectedEntityId={selectedEntityId}
+      onSelectEntity={handleSelectEntity}
+      onFrameEntity={handleFrameEntity}
+      onTraceEvidence={handleTraceEvidence}
+      onCommitCorrection={handleCommitCorrection}
+      onOpenDiff={handleOpenDiff}
+      onOpenRoomConstruction={() => setConstructionModalOpen(true)}
+      onExport={handleExport}
+      loadError={!worldIR && irError ? irError.message : null}
+      onRetryLoad={refetchIr}
+    />
+  );
+
+  const showCentre = layout !== "mobile" || mobilePane === "view";
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)] select-none">
-      {/* Sleek Persistent Studio Header */}
-      <header className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-[var(--border)] bg-[var(--bg-surface)] z-30">
-        {/* Left: Studio Identity & Active World Info */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
-            <span className="text-xs font-semibold text-white tracking-wide">Reality Studio</span>
-          </div>
-
-          <span className="text-neutral-700">/</span>
-
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xs font-medium text-neutral-200 truncate max-w-[200px] sm:max-w-[300px]">
-              {currentWorldRow?.name ?? "No World Selected"}
-            </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 border border-neutral-700 shrink-0">
-              {String(worldIR?.coordinate_frame || worldIR?.coordinate_system || "frame unrecorded")}
-            </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30 shrink-0">
-              {reconStatus?.versions.find((v) => v.id === (selectedVersionId ?? reconStatus.model?.version_id))?.label
-                ?? currentVersionId ?? "no version"}
-            </span>
-          </div>
+      <header className="z-30 flex h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg-surface)] px-3">
+        {/* Left: studio identity, world, version */}
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="hidden shrink-0 text-xs font-semibold tracking-wide text-[var(--text-primary)] sm:inline">Reality Studio</span>
+          <span className="hidden text-[var(--text-tertiary)] sm:inline">/</span>
+          <span className="max-w-[160px] truncate text-xs font-medium text-[var(--text-primary)] sm:max-w-[260px]">
+            {currentWorldRow?.name ?? "No World Selected"}
+          </span>
+          <span className="hidden shrink-0 rounded border border-[var(--accent-border)] bg-[var(--accent-subtle)] px-1.5 font-mono text-[10px] text-[var(--accent)] md:inline">
+            {reconStatus?.versions.find((v) => v.id === (selectedVersionId ?? reconStatus.model?.version_id))?.label
+              ?? currentVersionId ?? "no version"}
+          </span>
         </div>
 
-        {/* Center: Viewport Mode Switcher Pill */}
-        <div className="flex items-center p-0.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)]">
-          <button
-            type="button"
-            onClick={() => setViewMode("3d")}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
-              viewMode === "3d"
-                ? "bg-[var(--accent)] text-black font-semibold shadow-sm"
-                : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <Box className="w-3.5 h-3.5" />
-            <span>3D Workspace</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("map")}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors cursor-pointer ${
-              viewMode === "map"
-                ? "bg-[var(--accent)] text-black font-semibold shadow-sm"
-                : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            <MapIcon className="w-3.5 h-3.5" />
-            <span>Geospatial Map</span>
-          </button>
+        {/* Centre: 3D / Map */}
+        <div className="flex items-center rounded border border-[var(--border)] bg-[var(--bg-base)] p-0.5">
+          {([["3d", "3D Studio", Box], ["map", "Map", MapIcon]] as const).map(([mode, label, Icon]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              aria-pressed={viewMode === mode}
+              className={cn(
+                "flex h-6 items-center gap-1.5 rounded px-2.5 text-xs font-medium cursor-pointer",
+                viewMode === mode ? "bg-[var(--accent-subtle)] text-[var(--accent)]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
         </div>
 
-        {/* Right: Quick Studio Controls */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {/* Command Palette Trigger */}
+        {/* Right: panel toggles, the one primary action, the one Actions menu */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {layout !== "mobile" && (
+            <div className="flex items-center rounded border border-[var(--border)] bg-[var(--bg-base)] p-0.5">
+              <button
+                type="button"
+                onClick={toggleScene}
+                aria-label="Toggle scene panel"
+                aria-pressed={sceneOn}
+                title="Scene panel [ [ ]"
+                className={cn("rounded p-1 cursor-pointer", sceneOn ? "text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}
+              >
+                <PanelLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={toggleInspector}
+                aria-label="Toggle inspector"
+                aria-pressed={inspectorOn}
+                title="Inspector [ ] ]"
+                className={cn("rounded p-1 cursor-pointer", inspectorOn ? "text-[var(--accent)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]")}
+              >
+                <PanelRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <button
             type="button"
-            onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true }))}
-            title="Command Palette (⌘K)"
-            className="flex items-center gap-1.5 px-2.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white bg-[var(--bg-elevated)] hover:bg-neutral-800 border border-[var(--border)] transition-colors cursor-pointer"
-          >
-            <Search className="w-3 h-3 text-[var(--accent)]" />
-            <span className="hidden sm:inline">Commands</span>
-            <kbd className="text-[10px] px-1 py-0.2 rounded bg-neutral-900 border border-neutral-700 text-neutral-400 font-mono-num">
-              ⌘K
-            </kbd>
-          </button>
-
-          {/* Primary action: add photographs to this world */}
-          <button
-            type="button"
-            onClick={() => setAddPhotosOpen(true)}
-            title="Add photographs to improve this model"
+            onClick={primary.run}
             data-testid="add-photos"
-            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-semibold bg-[var(--accent)] text-black hover:bg-[var(--accent)] transition-colors cursor-pointer"
+            title={primary.label === "Add evidence" ? "Add photographs to improve this model" : primary.label}
+            className="flex h-7 items-center gap-1 rounded bg-[var(--primary)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--primary-hover)] cursor-pointer"
           >
-            <ImagePlus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Add evidence</span>
+            <ImagePlus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{primary.label}</span>
           </button>
-
-          {/* Procedural Build Launcher (rooms, corridors, cities) */}
-          <button
-            type="button"
-            onClick={() => setBuildModalOpen(true)}
-            title="Build a room, corridor or city"
-            data-testid="open-build"
-            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
-          >
-            <Hammer className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span className="hidden sm:inline">Build</span>
-          </button>
-
-          <GeneratedPanel
-            worldId={worldId}
-            onChanged={() => {
-              Promise.all([refetchIr(), refetchVersions()]);
-            }}
+          <ActionsMenu
+            onAddEvidence={() => setAddPhotosOpen(true)}
+            onBuild={() => setBuildModalOpen(true)}
+            onGenerated={() => window.dispatchEvent(new Event("open-generated-panel"))}
+            onCompleteInterior={() => window.dispatchEvent(new Event("open-complete-interior"))}
+            onConstruction={() => setConstructionModalOpen(true)}
+            onQuery={() => setQueryPanelOpen(true)}
+            onExport={() => setExportPanelOpen(true)}
+            onBrowse={() => setBrowseOpen(true)}
+            onCommands={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true }))}
+            onToggleScene={toggleScene}
+            onToggleInspector={toggleInspector}
+            onToggleInsights={() => setInsightsPref(!insightsOpen)}
+            onToggleTimeline={() => setBottomOpen((v) => !v)}
           />
-
-          <CompleteInteriorPanel
-            worldId={worldId}
-            onChanged={() => {
-              Promise.all([refetchIr(), refetchVersions()]);
-            }}
-          />
-
-          {/* Room Construction Launcher */}
-          <button
-            type="button"
-            onClick={() => setConstructionModalOpen(true)}
-            title="Room Construction Pipeline"
-            className="flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-[var(--border)] transition-colors cursor-pointer"
-          >
-            <Workflow className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span className="hidden sm:inline">Construction</span>
-          </button>
-
-          {/* Spatial Query Launcher */}
-          <button
-            type="button"
-            onClick={() => setQueryPanelOpen((v) => !v)}
-            title="Spatial Query"
-            className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
-              queryPanelOpen
-                ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40"
-                : "bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[var(--border)]"
-            }`}
-          >
-            <Search className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span className="hidden sm:inline">Query</span>
-          </button>
-
-          {/* Export Launcher */}
-          <button
-            type="button"
-            onClick={() => setExportPanelOpen((v) => !v)}
-            title="Export World"
-            className={`flex items-center gap-1 px-2.5 h-7 rounded text-xs font-medium border transition-colors cursor-pointer ${
-              exportPanelOpen
-                ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40"
-                : "bg-[var(--bg-elevated)] hover:bg-neutral-800 text-neutral-300 hover:text-white border-[var(--border)]"
-            }`}
-          >
-            <Download className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span className="hidden sm:inline">Export</span>
-          </button>
-
-          {/* Quick Layout Toggles */}
-          <div className="flex items-center p-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border)]">
-            <button
-              type="button"
-              onClick={() => setNavOpen(v => !v)}
-              title={navOpen ? "Collapse Navigation Panel [ [ ]" : "Expand Navigation Panel [ [ ]"}
-              className={`p-1 rounded transition-colors ${
-                navOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              {navOpen ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setBottomOpen(v => !v)}
-              title={bottomOpen ? "Collapse Bottom Telemetry [ \\ ]" : "Expand Bottom Telemetry [ \\ ]"}
-              className={`p-1 rounded transition-colors ${
-                bottomOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              <Terminal className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setInspectorOpen(v => !v)}
-              title={inspectorOpen ? "Collapse Inspector [ ] ]" : "Expand Inspector [ ] ]"}
-              className={`p-1 rounded transition-colors ${
-                inspectorOpen ? "text-[var(--accent)] bg-neutral-800" : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              {inspectorOpen ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
-            </button>
-          </div>
+          {/* Dialog hosts: opened from the Actions menu */}
+          <GeneratedPanel hideTrigger worldId={worldId} onChanged={() => { Promise.all([refetchIr(), refetchVersions()]); }} />
+          <CompleteInteriorPanel hideTrigger worldId={worldId} onChanged={() => { Promise.all([refetchIr(), refetchVersions()]); }} />
         </div>
       </header>
 
-      {/* Main Persistent Workspace (Panels + Viewport) */}
-      <div className="flex flex-1 min-h-0 overflow-hidden relative">
-        {/* Left Nav Panel */}
-        <div 
-          className={cn(
-            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-r border-[var(--border)] z-20",
-            navOpen ? "w-[280px]" : "w-0 overflow-hidden border-r-0"
-          )}
-        >
-          {navOpen && (
-            <WorldNavPanel
-              worlds={worlds || []}
-              activeWorldId={worldId}
-              onSelectWorld={handleSelectWorld}
-              worldIR={worldIR}
-              sessions={sessions}
-              evidence={evidence || []}
-              places={places}
-              versions={versions}
-              selectedEntityId={selectedEntityId}
-              onSelectEntity={handleSelectEntity}
-              onFrameEntity={handleFrameEntity}
-              selectedEvidenceId={selectedEvidenceId}
-              onSelectEvidence={handleSelectEvidence}
-              onCompareVersions={handleOpenDiff}
-              onSelectSession={(sid) => router.push(`/sessions/${sid}`)}
-              onSelectPlace={(place) => {
-                window.dispatchEvent(
-                  new CustomEvent("frame-position", {
-                    detail: { x: place.position[0], y: place.position[1], z: place.position[2] },
-                  })
-                );
-              }}
-              activeQuery={activeQuery}
-              onUpdateQuery={setActiveQuery}
-              onOpenRoomConstruction={() => setConstructionModalOpen(true)}
-              onExport={handleExport}
-            />
-          )}
-        </div>
-        
-        {/* Center Viewport */}
-        <div className="flex-1 relative h-full min-w-0 bg-[var(--bg-base)] overflow-hidden">
+      {/* Studio: Scene tree | viewport | inspector */}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {layout === "desktop" && navOpen && (
+          <aside aria-label="Scene" className="z-20 h-full w-[248px] shrink-0 border-r border-[var(--border)]">{sceneEl}</aside>
+        )}
+        {layout === "mobile" && mobilePane === "scene" && <div className="h-full w-full">{sceneEl}</div>}
+
+        <main className={cn("relative h-full min-w-0 flex-1 overflow-hidden bg-[var(--bg-base)]", !showCentre && "hidden")}>
           {viewMode === "3d" ? (
             <World3DViewport
               world={activeWorldIR}
               points={activePoints}
               cameras={activeCameras}
               mesh={activeMesh}
+              structurePoints={structurePoints}
+              captureQuality={captureQuality}
               selectedEntityId={selectedEntityId}
               onSelectEntity={handleSelectEntity}
               highlightedEvidenceId={selectedEvidenceId}
               onSelectEvidence={setSelectedEvidenceId}
               queryMatchingIds={queryMatchingIds}
+              hiddenEntityIds={hiddenIds}
               isLoading={isIrLoading}
               hasNoWorldData={!has3DContent}
               onMeasurementChange={setMeasurement}
@@ -680,11 +660,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           )}
 
           {!has3DContent && viewMode === "3d" && (
-            <NoGeometryExplanation
-              status={reconStatus}
-              worldId={worldId || null}
-              onCreated={handlePhotosCreated}
-            />
+            <NoGeometryExplanation status={reconStatus} worldId={worldId || null} onCreated={handlePhotosCreated} />
           )}
 
           {queryPanelOpen && (
@@ -697,40 +673,107 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             />
           )}
 
-          {exportPanelOpen && (
-            <ExportPanel worldId={worldId} onClose={() => setExportPanelOpen(false)} />
+          {exportPanelOpen && <ExportPanel worldId={worldId} onClose={() => setExportPanelOpen(false)} />}
+
+          {exportError && (
+            <div
+              role="alert"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-md px-3 py-2 text-xs shadow-xl"
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--error)", color: "var(--error)" }}
+            >
+              <span>{exportError}</span>
+              <button type="button" onClick={() => setExportError(null)} aria-label="Dismiss export error">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
-        </div>
-        
-        {/* Right Adaptive Inspector */}
-        <div 
-          className={cn(
-            "h-full flex-shrink-0 transition-all duration-200 ease-in-out border-l border-[var(--border)] z-20",
-            inspectorOpen ? "w-[340px]" : "w-0 overflow-hidden border-l-0"
-          )}
-        >
-          {inspectorOpen && (
-            <AdaptiveInspector
-              world={worldIR}
-              worldId={worldId}
-              activeVersion={currentVersionId ?? undefined}
-              selectedEntityId={selectedEntityId}
-              onSelectEntity={handleSelectEntity}
-              onFrameEntity={handleFrameEntity}
-              onTraceEvidence={handleTraceEvidence}
-              onCommitCorrection={handleCommitCorrection}
-              onOpenDiff={handleOpenDiff}
-              onOpenRoomConstruction={() => setConstructionModalOpen(true)}
-              onExport={handleExport}
-              loadError={!worldIR && irError ? irError.message : null}
-              onRetryLoad={refetchIr}
-            />
-          )}
-        </div>
+        </main>
+
+        {layout === "desktop" && inspectorOpen && (
+          <aside aria-label="Inspector" className="z-20 h-full w-[320px] shrink-0 border-l border-[var(--border)]">{inspectorEl}</aside>
+        )}
+        {layout === "mobile" && mobilePane === "details" && <div className="h-full w-full">{inspectorEl}</div>}
+
+        {/* Tablet: slide-over drawers */}
+        {layout === "tablet" && drawer && (
+          <>
+            <button type="button" aria-label="Close panel" onClick={() => setDrawer(null)} className="absolute inset-0 z-30 cursor-default bg-[var(--bg-base)]/70" />
+            <aside
+              aria-label={drawer === "scene" ? "Scene" : "Inspector"}
+              className={cn(
+                "absolute inset-y-0 z-40 w-[320px] max-w-[85%] border-[var(--border)] bg-[var(--bg-base)]",
+                drawer === "scene" ? "left-0 border-r" : "right-0 border-l",
+              )}
+            >
+              {drawer === "scene" ? sceneEl : inspectorEl}
+            </aside>
+          </>
+        )}
+
+        {/* Worlds, sessions, evidence, versions, places, queries (the previous navigation panel) */}
+        {browseOpen && (
+          <>
+            <button type="button" aria-label="Close browser" onClick={() => setBrowseOpen(false)} className="absolute inset-0 z-40 cursor-default bg-[var(--bg-base)]/70" />
+            <aside aria-label="Worlds and data" className="absolute inset-y-0 left-0 z-50 flex w-[340px] max-w-full flex-col border-r border-[var(--border)] bg-[var(--bg-base)]">
+              <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3">
+                <h2 className="text-xs font-semibold text-[var(--text-primary)]">Worlds, sessions, evidence</h2>
+                <button type="button" onClick={() => setBrowseOpen(false)} aria-label="Close" className="rounded p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <WorldNavPanel
+                  worlds={worlds || []}
+                  activeWorldId={worldId}
+                  onSelectWorld={(id) => {
+                    setBrowseOpen(false);
+                    handleSelectWorld(id);
+                  }}
+                  worldIR={worldIR}
+                  sessions={sessions}
+                  evidence={evidence || []}
+                  places={places}
+                  versions={versions}
+                  selectedEntityId={selectedEntityId}
+                  onSelectEntity={handleSelectEntity}
+                  onFrameEntity={handleFrameEntity}
+                  selectedEvidenceId={selectedEvidenceId}
+                  onSelectEvidence={handleSelectEvidence}
+                  onCompareVersions={handleOpenDiff}
+                  onSelectSession={(sid) => router.push(`/sessions/${sid}`)}
+                  onSelectPlace={(place) => {
+                    window.dispatchEvent(
+                      new CustomEvent("frame-position", {
+                        detail: { x: place.position[0], y: place.position[1], z: place.position[2] },
+                      })
+                    );
+                  }}
+                  activeQuery={activeQuery}
+                  onUpdateQuery={setActiveQuery}
+                  onOpenRoomConstruction={() => setConstructionModalOpen(true)}
+                  onExport={handleExport}
+                />
+              </div>
+            </aside>
+          </>
+        )}
       </div>
 
-      {/* Reconstruction state, evidence quality, versions and guidance */}
-      <div className="flex-shrink-0 border-t border-[var(--border)] z-30">
+      {/* Reconstruction insights: real findings + supporting photographs */}
+      {showCentre && (
+        <InsightsPanel
+          model={insightsModel}
+          worldId={worldId}
+          open={insightsOpen}
+          onOpenChange={setInsightsPref}
+          onSelectEntity={handleSelectEntity}
+          onSelectEvidence={handleSelectEvidence}
+          onOpenEvidence={() => router.push("/evidence")}
+        />
+      )}
+
+      {/* Reconstruction state, versions, scale */}
+      <div className="z-30 max-h-[14vh] shrink-0 overflow-y-auto md:max-h-[24vh] border-t border-[var(--border)]">
         <ReconstructionStatusBar
           status={reconStatus}
           error={statusError}
@@ -745,12 +788,35 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           onRetry={(sessionId) => {
             void retryReconstruction(sessionId).then(refreshStatus, refreshStatus);
           }}
+          onScaleChanged={refreshStatus}
         />
       </div>
 
+      {/* Mobile: Scene | View | Details */}
+      {layout === "mobile" && (
+        <div role="tablist" aria-label="Workspace panes" className="z-30 grid h-11 shrink-0 grid-cols-3 border-t border-[var(--border)] bg-[var(--bg-surface)]">
+          {([["scene", "Scene"], ["view", "View"], ["details", "Details"]] as const).map(([pane, label]) => (
+            <button
+              key={pane}
+              type="button"
+              role="tab"
+              aria-selected={mobilePane === pane}
+              onClick={() => setMobilePane(pane)}
+              data-testid={`mobile-pane-${pane}`}
+              className={cn(
+                "text-xs font-medium cursor-pointer",
+                mobilePane === pane ? "border-t-2 border-[var(--accent)] text-[var(--accent)]" : "border-t-2 border-transparent text-[var(--text-secondary)]",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {addPhotosOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/80 p-4"
           role="dialog"
           aria-modal="true"
           aria-label="Add photographs"
@@ -760,19 +826,19 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               type="button"
               onClick={() => setAddPhotosOpen(false)}
               aria-label="Close"
-              className="absolute right-2 top-2 rounded p-1 text-neutral-400 hover:text-white"
+              className="absolute right-2 top-2 rounded p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
             >
               <X className="h-4 w-4" />
             </button>
-            <h2 className="mb-3 text-sm font-semibold text-white">Add photographs to this model</h2>
+            <h2 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">Add photographs to this model</h2>
             <PhotoDropZone worldId={worldId || null} onCreated={handlePhotosCreated} />
           </div>
         </div>
       )}
 
-      {/* Bottom Context Bar */}
-      {bottomOpen && (
-        <div className="h-auto flex-shrink-0 border-t border-[var(--border)] z-30">
+      {/* Bottom context bar (selection, measurement, version) */}
+      {layout !== "mobile" && bottomOpen && (
+        <div className="z-30 h-auto max-h-[30vh] shrink-0 overflow-y-auto border-t border-[var(--border)]">
           <BottomContextBar
             world={worldIR}
             selectedEntity={selectedEntity}

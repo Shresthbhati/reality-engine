@@ -102,12 +102,42 @@ def _load_gray(item: EvidenceItem, w: int, h: int):
         import cv2
 
         u = urlparse(item.source_uri)
-        if u.scheme not in ("file", ""):
+        if u.scheme == "file":
+            path = url2pathname(unquote(u.path))
+        elif u.scheme and len(u.scheme) > 1:      # s3://, https:// ... not a local file
             return None
-        path = url2pathname(unquote(u.path)) if u.scheme == "file" else item.source_uri
+        else:                                      # bare path, or a Windows drive letter parsed as a scheme
+            path = item.source_uri
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         return None if img is None else cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
     except Exception:  # noqa: BLE001 -- an unreadable photo just means no opening search
+        return None
+
+
+def _load_rgb(item: EvidenceItem, w: int, h: int):
+    """The photograph as uint8 RGB at the depth map's size, or None if not locally readable.
+
+    M1: the bootstrap used to discard the source pixels, so every surface it produced was colourless and the viewer
+    fell back to grey. Sampling the same pixel the point came from is an observation, not an inference."""
+    try:
+        from urllib.parse import unquote, urlparse
+        from urllib.request import url2pathname
+
+        import cv2
+
+        u = urlparse(item.source_uri)
+        if u.scheme == "file":
+            path = url2pathname(unquote(u.path))
+        elif u.scheme and len(u.scheme) > 1:      # s3://, https:// ... not a local file
+            return None
+        else:                                      # bare path, or a Windows drive letter parsed as a scheme
+            path = item.source_uri
+        bgr = cv2.imread(path, cv2.IMREAD_COLOR)
+        if bgr is None:
+            return None
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        return cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA)
+    except Exception:  # noqa: BLE001 -- an unreadable photo just means points carry no colour
         return None
 
 
@@ -183,10 +213,12 @@ def bootstrap_single_image(
         confidence=CONFIDENCE_CEILING,
         note="monocular relative depth (learned prior), assumed camera; not a measurement",
     )
+    rgb = _load_rgb(item, w, h)
+    colors = [tuple(int(c) for c in rgb[v, u]) for u, v in pix] if rgb is not None else [None] * len(pts)
     rec_points = [
         ReconstructedPoint(position=p, track_id=f"bs:{i:05d}", source_evidence_ids=[item.id],
-                           uncertainty=point_unc)
-        for i, p in enumerate(pts)
+                           uncertainty=point_unc, color=c)
+        for i, (p, c) in enumerate(zip(pts, colors))
     ]
     pose = ReconstructedCameraPose(
         evidence_id=item.id, position=(0.0, 0.0, 0.0), rotation=(1.0, 0.0, 0.0, 0.0),

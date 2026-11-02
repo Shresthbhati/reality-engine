@@ -115,6 +115,40 @@ def _validate_payload(payload: bytes, extension: str) -> None:
         raise CorruptEvidenceError(
             f"payload too small to be real evidence ({len(payload)} bytes < {MIN_PAYLOAD_BYTES})"
         )
+    if extension == ".webp":
+        if not (payload.startswith(b"RIFF") and len(payload) >= 12 and payload[8:12] == b"WEBP"):
+            raise CorruptEvidenceError(
+                "payload with extension .webp does not start with RIFF....WEBP -- corrupt or mislabeled"
+            )
+        return
+    if extension in (".mp4", ".mov", ".m4v", ".heic", ".heif"):
+        if not (len(payload) >= 8 and payload[4:8] == b"ftyp"):
+            raise CorruptEvidenceError(
+                f"payload with extension {extension} does not carry ftyp box -- corrupt or mislabeled"
+            )
+        return
+    if extension == ".glb":
+        if not payload.startswith(b"glTF"):
+            raise CorruptEvidenceError(
+                "payload with extension .glb does not start with magic bytes b'glTF' -- corrupt or mislabeled"
+            )
+        return
+    if extension == ".gltf":
+        stripped = payload.lstrip()
+        if not (stripped.startswith(b"{") and b'"asset"' in payload):
+            raise CorruptEvidenceError(
+                "payload with extension .gltf is not a valid JSON glTF container -- corrupt or mislabeled"
+            )
+        return
+    if extension == ".obj":
+        head = payload[:512].decode("utf-8", errors="ignore")
+        lines = [line.strip() for line in head.splitlines() if line.strip()]
+        valid_obj = any(line.startswith(("#", "v ", "vn ", "vt ", "f ", "g ", "o ", "mtllib")) for line in lines)
+        if not valid_obj:
+            raise CorruptEvidenceError(
+                "payload with extension .obj does not contain Wavefront OBJ records -- corrupt or mislabeled"
+            )
+        return
     needle = None
     for ext, magic in _MAGIC_CHECKS:
         if ext == extension:

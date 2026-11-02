@@ -89,6 +89,32 @@ the world is labeled `metric-by-alignment`. Unanchored worlds stay
 `relative` with unit-less distances. There is no code path that invents
 a scale factor.
 
+**Amendment 2026-10-31 (user decision, option 2 -- suggest, user accepts; plan item D2b in `docs/superpowers/plans/2026-10-30-room-reconstruction-fidelity.md`).**
+Scale is NEVER applied without the user's consent. Besides the camera baseline,
+two more `ScaleReference` methods exist, both in model space and both gated:
+
+- `known_length` -- the user states the real length of one edge / two picked
+  points. Treated as a measurement (state MEASURED). Several known lengths are
+  combined by median and must agree within `RATIO_SPREAD_MAX` (5 %), otherwise
+  they are refused. API: `POST /api/worlds/{id}/scale` with
+  `{method:"known_length", distance_m, point_a, point_b}` (or `model_length`).
+- `prior_accepted_by_user` -- when the world is RELATIVE and a door with a
+  measured height was fitted, the engine SUGGESTS a typical size
+  (`GET /api/worlds/{id}/scale/suggestion`: door 2.0-2.1 m, midpoint 2.05 m, the
+  object it came from, implied m/unit). Nothing changes until the user accepts
+  (`POST .../scale` with `method:"prior_accepted_by_user"`, `source_entity_id`).
+  Rejecting (`POST .../scale/suggestion/reject`) leaves the world RELATIVE. No
+  door => no suggestion; a default is never offered.
+
+A prior-based scale is ALWAYS labelled ESTIMATED (`scale_basis =
+"prior_accepted_by_user"`, `dimension_state = "ESTIMATED"` in the world's
+`metadata.scale` and the version report `stages.scale`); every dimension of
+that world inherits ESTIMATED, never MEASURED (plan D1 reads these keys). Any
+real measurement (camera baseline or known length) replaces the prior: trust
+order is camera baseline > known length > accepted prior. A model-space length
+is tied to the model unit it was measured in by a camera-pair fingerprint; if a
+rebuild changes the unit the reference is refused rather than misapplied.
+
 ## Decision 024 — Camera-envelope filtering for meshing
 
 **Status: ACCEPTED**
@@ -178,6 +204,7 @@ Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an 
    means the `citydb` CLI runs, never that a database was reached. Contract tests against a fake CLI are not real
    3DCityDB verification; that stays external.
 
+<<<<<<< HEAD
 ## Decision — Axis convention
 
 **Status: ACCEPTED**
@@ -188,3 +215,29 @@ Right-handed, Y-up is the canonical world frame (`ARCHITECTURE.md`, `docs/MODULE
 `origin` stay local) and convert once, in `_entity`, with the rotation (x, y, z) -> (x, z, -y), so height is world +Y and
 local +y is world -Z. **Latent inconsistency, not fixed here:** `exporters/boxes.py` states "WorldIR is Z-up", which
 contradicts this decision; reconcile it separately (exporters were deliberately left untouched).
+
+## Decision — Site composer is manual placement, not registration
+
+**Status: PROPOSED (feature at FOUNDATION; recorded 2026-10-31)**
+
+A Site groups several already-reconstructed worlds and records a `SitePlacement` (position/rotation on a metric grid)
+that the USER chose. It never infers where a world belongs, and a placement is never presented as registered or
+geo-referenced. Automatic cross-source / geo-registration remains the MISSING item in
+`docs/future/registration/CROSS_SOURCE_REGISTRATION.md` (it needs a measurable residual and a valid correspondence
+set, which manual placement does not provide). Material hypotheses (plan M3) are likewise kept ESTIMATED with
+`asserted=False` and are deliberately not mapped to physics materials.
+=======
+
+## Quality bands (2026-10-13)
+
+A model score is not a probability (master document 14.2), so the product shows coarse bands.
+
+- **Entity band** (`apps/api/place_summary.py::entity_band`): `unknown` when provenance is UNKNOWN or confidence is missing or not
+  a number; `weak` when provenance is CONFLICT or confidence is below 0.5; `fair` from 0.5 up to 0.75; `good` from 0.75.
+  A conflict is never good, whatever its score. Not measured is never shown as good or bad.
+- **Place band** (`band_and_reason`): `unknown` with no model; `weak` when fewer than half of the photographs are placed or the
+  engine fell back below multi-view; `good` when the build was graded SUCCESS and at least 80% of photographs are placed;
+  otherwise `fair`. The reason is returned with the band so the UI can say why.
+- There is **no per-point band**: the stored point cloud carries no per-point confidence.
+- The thresholds (0.5, 0.75, 0.8) are tolerances, not calibrated constants.
+>>>>>>> 4027b5c

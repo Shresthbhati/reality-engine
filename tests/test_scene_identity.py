@@ -282,3 +282,22 @@ def test_gained_camera_without_independent_verified_links_is_not_trusted():
     assert trace.best.registered_images == 4 and "independently verified" in trace.attempts[1].decision
     no_grouping = reconstruct_group(photos(ids), factory(result(ids[:4]), result(ids)), max_retries=1)
     assert no_grouping.best.registered_images == 4          # unverifiable gain is never adopted blind
+
+
+def test_make_pair_verifier_creates_lightglue_verifier_when_available(tmp_path):
+    from PIL import Image
+    from reconstruction.scene_identity import make_pair_verifier, MatcherPairVerifier
+
+    rng = np.random.default_rng(123)
+    arr = (rng.random((120, 160, 3)) * 255).astype(np.uint8)
+    p1 = tmp_path / "img1.png"
+    p2 = tmp_path / "img2.png"
+    Image.fromarray(arr).save(p1)
+    Image.fromarray(arr).save(p2)
+    paths = {"img1": p1, "img2": p2}
+
+    verifier = make_pair_verifier(paths, matcher_name="auto")
+    assert isinstance(verifier, MatcherPairVerifier)
+    ev = verifier("img1", "img2")
+    assert ev.matches > 0 and ev.inliers > 0
+    assert ev.a == "img1" and ev.b == "img2"

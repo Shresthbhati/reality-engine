@@ -1,0 +1,343 @@
+.................................................................s.s.sss [  1%]
+ss..sss..s.sss......s..ss..s.ssss...ss.................................. [  3%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+..
+union_find : {'pair_precision': 0.10638297872340426, 'pair_recall': 1.0, 'wrong_merge_rate': 0.8936170212765957, 'wrong_split_rate': 0.0, 'duplicate_entity_rate': -0.875}
+association: {'pair_precision': 1.0, 'pair_recall': 1.0, 'wrong_merge_rate': 0.0, 'wrong_split_rate': 0.0, 'duplicate_entity_rate': 0.0}
+...................................................................... [ 11%]
+........................................................................ [ 13%]
+....................................................sssssss............. [ 15%]
+.......s................................................................ [ 16%]
+........................................................................ [ 18%]
+........F...F........................................................... [ 20%]
+.............F....FF.................................................... [ 22%]
+........................................................................ [ 24%]
+...................................................................ssss. [ 26%]
+........................................................................ [ 28%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+...................................................................s.... [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+......................................................................EE [ 43%]
+EEEEEEEEEEE............................................................. [ 45%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 58%]
+........................................................................ [ 60%]
+........................................................................ [ 62%]
+..............F......................................................... [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 69%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+........................................................................ [ 77%]
+........................................................................ [ 78%]
+........................................................................ [ 80%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+............................xx....xx.x.................................. [ 86%]
+...........................s............................................ [ 88%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+............                                                             [100%]
+============================== warnings summary ===============================
+..\..\..\..\..\..\..\AppData\Roaming\Python\Python314\site-packages\starlette\testclient.py:31
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\starlette\testclient.py:31: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    [], typing.ContextManager[anyio.abc.BlockingPortal]
+
+..\..\..\..\..\..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\routing.py:211: 206 warnings
+tests/test_api_clean_start.py: 103 warnings
+tests/test_api_dense_cpu.py: 618 warnings
+tests/test_api_geo.py: 824 warnings
+tests/test_api_site_compose.py: 515 warnings
+tests/test_api_sites.py: 1133 warnings
+tests/test_api_world_artifacts.py: 1133 warnings
+tests/test_application_api.py: 7725 warnings
+tests/test_artifact_integrity.py: 1133 warnings
+tests/test_assistant_tools.py: 1751 warnings
+tests/test_commit_validation_contract.py: 1236 warnings
+tests/test_completion_mode.py: 1236 warnings
+tests/test_dimension_state.py: 412 warnings
+tests/test_evidence_firewall.py: 412 warnings
+tests/test_export_route.py: 1442 warnings
+tests/test_frontend_backend_contract.py: 309 warnings
+tests/test_job_timestamps.py: 103 warnings
+tests/test_measurements.py: 927 warnings
+tests/test_procedural_templates.py: 103 warnings
+tests/test_reality_studio_primary_journey.py: 103 warnings
+tests/test_reconstruction_lifecycle_semantics.py: 927 warnings
+tests/test_reconstruction_reliability.py: 1545 warnings
+tests/test_scale_suggestion.py: 824 warnings
+tests/test_space_graph_api.py: 103 warnings
+tests/test_upload_integrity_contract.py: 2987 warnings
+tests/test_verification_status.py: 103 warnings
+tests/test_world_cameras_route.py: 309 warnings
+tests/test_world_intent.py: 1030 warnings
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\fastapi\routing.py:211: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    is_coroutine = asyncio.iscoroutinefunction(dependant.call)
+
+apps\api\main.py:55: 1 warning
+tests/test_api_clean_start.py: 1 warning
+tests/test_api_dense_cpu.py: 6 warnings
+tests/test_api_geo.py: 8 warnings
+tests/test_api_site_compose.py: 5 warnings
+tests/test_api_sites.py: 11 warnings
+tests/test_api_world_artifacts.py: 11 warnings
+tests/test_application_api.py: 75 warnings
+tests/test_artifact_integrity.py: 11 warnings
+tests/test_assistant_tools.py: 17 warnings
+tests/test_commit_validation_contract.py: 12 warnings
+tests/test_completion_mode.py: 12 warnings
+tests/test_dimension_state.py: 4 warnings
+tests/test_evidence_firewall.py: 4 warnings
+tests/test_export_route.py: 14 warnings
+tests/test_frontend_backend_contract.py: 3 warnings
+tests/test_job_timestamps.py: 1 warning
+tests/test_measurements.py: 9 warnings
+tests/test_procedural_templates.py: 1 warning
+tests/test_reality_studio_primary_journey.py: 1 warning
+tests/test_reconstruction_lifecycle_semantics.py: 9 warnings
+tests/test_reconstruction_reliability.py: 15 warnings
+tests/test_scale_suggestion.py: 8 warnings
+tests/test_space_graph_api.py: 1 warning
+tests/test_upload_integrity_contract.py: 29 warnings
+tests/test_verification_status.py: 1 warning
+tests/test_world_cameras_route.py: 3 warnings
+tests/test_world_intent.py: 10 warnings
+  C:\Users\shres\OneDrive\Desktop\codes\reality-engine\.claude\worktrees\reality-engine-docs-merge-da520d\apps\api\main.py:55: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+..\..\..\..\..\..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\applications.py:4495: 2 warnings
+tests/test_api_clean_start.py: 2 warnings
+tests/test_api_dense_cpu.py: 12 warnings
+tests/test_api_geo.py: 16 warnings
+tests/test_api_site_compose.py: 10 warnings
+tests/test_api_sites.py: 22 warnings
+tests/test_api_world_artifacts.py: 22 warnings
+tests/test_application_api.py: 150 warnings
+tests/test_artifact_integrity.py: 22 warnings
+tests/test_assistant_tools.py: 34 warnings
+tests/test_commit_validation_contract.py: 24 warnings
+tests/test_completion_mode.py: 24 warnings
+tests/test_dimension_state.py: 8 warnings
+tests/test_evidence_firewall.py: 8 warnings
+tests/test_export_route.py: 28 warnings
+tests/test_frontend_backend_contract.py: 6 warnings
+tests/test_job_timestamps.py: 2 warnings
+tests/test_measurements.py: 18 warnings
+tests/test_procedural_templates.py: 2 warnings
+tests/test_reality_studio_primary_journey.py: 2 warnings
+tests/test_reconstruction_lifecycle_semantics.py: 18 warnings
+tests/test_reconstruction_reliability.py: 30 warnings
+tests/test_scale_suggestion.py: 16 warnings
+tests/test_space_graph_api.py: 2 warnings
+tests/test_upload_integrity_contract.py: 58 warnings
+tests/test_verification_status.py: 2 warnings
+tests/test_world_cameras_route.py: 6 warnings
+tests/test_world_intent.py: 20 warnings
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\fastapi\applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+apps\api\main.py:86: 1 warning
+tests/test_api_clean_start.py: 1 warning
+tests/test_api_dense_cpu.py: 6 warnings
+tests/test_api_geo.py: 8 warnings
+tests/test_api_site_compose.py: 5 warnings
+tests/test_api_sites.py: 11 warnings
+tests/test_api_world_artifacts.py: 11 warnings
+tests/test_application_api.py: 75 warnings
+tests/test_artifact_integrity.py: 11 warnings
+tests/test_assistant_tools.py: 17 warnings
+tests/test_commit_validation_contract.py: 12 warnings
+tests/test_completion_mode.py: 12 warnings
+tests/test_dimension_state.py: 4 warnings
+tests/test_evidence_firewall.py: 4 warnings
+tests/test_export_route.py: 14 warnings
+tests/test_frontend_backend_contract.py: 3 warnings
+tests/test_job_timestamps.py: 1 warning
+tests/test_measurements.py: 9 warnings
+tests/test_procedural_templates.py: 1 warning
+tests/test_reality_studio_primary_journey.py: 1 warning
+tests/test_reconstruction_lifecycle_semantics.py: 9 warnings
+tests/test_reconstruction_reliability.py: 15 warnings
+tests/test_scale_suggestion.py: 8 warnings
+tests/test_space_graph_api.py: 1 warning
+tests/test_upload_integrity_contract.py: 29 warnings
+tests/test_verification_status.py: 1 warning
+tests/test_world_cameras_route.py: 3 warnings
+tests/test_world_intent.py: 10 warnings
+  C:\Users\shres\OneDrive\Desktop\codes\reality-engine\.claude\worktrees\reality-engine-docs-merge-da520d\apps\api\main.py:86: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+tests/test_api_auth.py: 6 warnings
+tests/test_api_clean_start.py: 5 warnings
+tests/test_api_dense_cpu.py: 28 warnings
+tests/test_api_geo.py: 42 warnings
+tests/test_api_site_compose.py: 80 warnings
+tests/test_api_sites.py: 125 warnings
+tests/test_api_world_artifacts.py: 73 warnings
+tests/test_application_api.py: 889 warnings
+tests/test_artifact_integrity.py: 84 warnings
+tests/test_assistant_tools.py: 182 warnings
+tests/test_commit_validation_contract.py: 264 warnings
+tests/test_completion_mode.py: 97 warnings
+tests/test_dimension_state.py: 29 warnings
+tests/test_evidence_firewall.py: 53 warnings
+tests/test_export_route.py: 90 warnings
+tests/test_frontend_backend_contract.py: 28 warnings
+tests/test_job_timestamps.py: 4 warnings
+tests/test_measurements.py: 77 warnings
+tests/test_procedural_templates.py: 4 warnings
+tests/test_proposals_e2e.py: 6 warnings
+tests/test_reality_studio_primary_journey.py: 13 warnings
+tests/test_reconstruction_lifecycle_semantics.py: 238 warnings
+tests/test_reconstruction_reliability.py: 579 warnings
+tests/test_scale_suggestion.py: 52 warnings
+tests/test_space_graph_api.py: 9 warnings
+tests/test_upload_integrity_contract.py: 176 warnings
+tests/test_verification_status.py: 4 warnings
+tests/test_world_cameras_route.py: 16 warnings
+tests/test_world_intent.py: 63 warnings
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\starlette\_utils.py:40: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    return asyncio.iscoroutinefunction(obj) or (
+
+tests/test_api_clean_start.py: 1 warning
+tests/test_api_dense_cpu.py: 6 warnings
+tests/test_api_geo.py: 8 warnings
+tests/test_api_site_compose.py: 5 warnings
+tests/test_api_sites.py: 11 warnings
+tests/test_api_world_artifacts.py: 11 warnings
+tests/test_application_api.py: 75 warnings
+tests/test_artifact_integrity.py: 11 warnings
+tests/test_assistant_tools.py: 17 warnings
+tests/test_commit_validation_contract.py: 12 warnings
+tests/test_completion_mode.py: 12 warnings
+tests/test_dimension_state.py: 4 warnings
+tests/test_evidence_firewall.py: 4 warnings
+tests/test_export_route.py: 14 warnings
+tests/test_frontend_backend_contract.py: 3 warnings
+tests/test_job_timestamps.py: 1 warning
+tests/test_measurements.py: 9 warnings
+tests/test_procedural_templates.py: 1 warning
+tests/test_proposals_e2e.py: 1 warning
+tests/test_reality_studio_primary_journey.py: 1 warning
+tests/test_reconstruction_lifecycle_semantics.py: 9 warnings
+tests/test_reconstruction_reliability.py: 17 warnings
+tests/test_scale_suggestion.py: 8 warnings
+tests/test_space_graph_api.py: 1 warning
+tests/test_upload_integrity_contract.py: 29 warnings
+tests/test_verification_status.py: 1 warning
+tests/test_world_cameras_route.py: 3 warnings
+tests/test_world_intent.py: 10 warnings
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\starlette\_utils.py:41: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    callable(obj) and asyncio.iscoroutinefunction(obj.__call__)
+
+tests/test_api_clean_start.py: 1 warning
+tests/test_api_dense_cpu.py: 6 warnings
+tests/test_api_geo.py: 8 warnings
+tests/test_api_site_compose.py: 5 warnings
+tests/test_api_sites.py: 11 warnings
+tests/test_api_world_artifacts.py: 11 warnings
+tests/test_application_api.py: 75 warnings
+tests/test_artifact_integrity.py: 11 warnings
+tests/test_assistant_tools.py: 17 warnings
+tests/test_commit_validation_contract.py: 12 warnings
+tests/test_completion_mode.py: 12 warnings
+tests/test_dimension_state.py: 4 warnings
+tests/test_evidence_firewall.py: 4 warnings
+tests/test_export_route.py: 14 warnings
+tests/test_frontend_backend_contract.py: 3 warnings
+tests/test_job_timestamps.py: 1 warning
+tests/test_measurements.py: 9 warnings
+tests/test_procedural_templates.py: 1 warning
+tests/test_proposals_e2e.py: 1 warning
+tests/test_reality_studio_primary_journey.py: 1 warning
+tests/test_reconstruction_lifecycle_semantics.py: 9 warnings
+tests/test_reconstruction_reliability.py: 17 warnings
+tests/test_scale_suggestion.py: 8 warnings
+tests/test_space_graph_api.py: 1 warning
+tests/test_upload_integrity_contract.py: 29 warnings
+tests/test_verification_status.py: 1 warning
+tests/test_world_cameras_route.py: 3 warnings
+tests/test_world_intent.py: 10 warnings
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py:690: DeprecationWarning: The 'app' shortcut is now deprecated. Use the explicit style 'transport=WSGITransport(app=...)' instead.
+    warnings.warn(message, DeprecationWarning)
+
+tests/test_cli_compile.py: 12 warnings
+tests/test_depth_exr.py: 1 warning
+tests/test_depth_frames.py: 18 warnings
+tests/test_sensor_identity.py: 2 warnings
+  C:\Users\shres\OneDrive\Desktop\codes\reality-engine\.claude\worktrees\reality-engine-docs-merge-da520d\evidence\depth_frames.py:346: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+    pixels = list(img.getdata())
+
+tests/test_midas_backend.py::TestMiDaSDepthBackendIntegration::test_real_model_load_and_inference
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\timm\models\layers\__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+    warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+
+tests/test_midas_backend.py::TestMiDaSDepthBackendIntegration::test_real_model_load_and_inference
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\torch\jit\_script.py:1485: FutureWarning: `torch.jit.script` is not supported in Python 3.14+ and may break. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+tests/test_reconstruction_lifecycle_semantics.py::test_timeout_can_never_grade_success
+tests/test_reconstruction_reliability.py::test_unregistrable_input_fails_without_output
+tests/test_reconstruction_reliability.py::test_single_photo_is_never_refused_for_its_count_and_never_faked
+tests/test_reconstruction_reliability.py::test_malformed_reconstruction_output_fails_the_job_and_leaves_head_untouched
+  C:\Users\shres\AppData\Roaming\Python\Python314\site-packages\timm\models\_factory.py:175: UserWarning: Mapping deprecated model name vit_base_resnet50_384 to current vit_base_r50_s16_384.orig_in21k_ft_in1k.
+    model = create_fn(
+
+tests/test_sensor_streams.py::TestDepthParsing::test_cross_validated_against_pillow_encoded_png
+  C:\Users\shres\OneDrive\Desktop\codes\reality-engine\.claude\worktrees\reality-engine-docs-merge-da520d\tests\test_sensor_streams.py:527: DeprecationWarning: 'mode' parameter for changing data types is deprecated and will be removed in Pillow 13 (2026-10-15)
+    img = pil_image.fromarray(arr, mode="I;16")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_colmap_coverage.py::TestMultiModelMerge::test_multi_model_results_are_rigidly_merged_not_dropped
+FAILED tests/test_colmap_coverage.py::TestMergeDiagnostics::test_real_submodel_still_merges
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_compile_through_pipeline_populates_session_world
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_recompile_is_idempotent
+FAILED tests/test_compile_command.py::TestCompileWorldCommand::test_studio_compile_reconstruction_convenience
+FAILED tests/test_packaging_smoke.py::test_every_top_level_package_is_declared_for_packaging
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_successful_backend_response_preserves_the_items_contract
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_world_id_filter_is_forwarded_to_the_backend
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_backend_errors_stay_errors[backendClientError-422]
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_backend_errors_stay_errors[backendServerError-500]
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_unparseable_backend_error_body_still_fails_loudly
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_transport_failures_answer_503_never_an_empty_success[timeout]
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_transport_failures_answer_503_never_an_empty_success[unreachable]
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_no_scenario_throws
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_a_200_with_an_empty_or_invalid_body_is_a_502_not_an_empty_list[emptyBody200]
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_a_200_with_an_empty_or_invalid_body_is_a_502_not_an_empty_list[nonJsonBody200]
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_a_200_with_an_empty_or_invalid_body_is_a_502_not_an_empty_list[worldsEmptyBody200]
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_a_200_with_an_empty_or_invalid_body_is_a_502_not_an_empty_list[worldsNonJsonBody200]
+ERROR tests/test_frontend_sessions_proxy_contract.py::test_a_genuinely_empty_world_list_is_still_an_honest_success
+6 failed, 3766 passed, 39 skipped, 80 deselected, 5 xfailed, 34311 warnings, 13 errors in 1600.73s (0:26:40)

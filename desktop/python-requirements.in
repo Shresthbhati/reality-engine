@@ -1,0 +1,13 @@
+# Direct runtime dependencies of the packaged API (apps/api). Versions match the set verified on the dev box.
+# Heavy optional dependencies are deliberately ABSENT: torch/torchvision (perception), COLMAP (external binary), GPU libs,
+# ifcopenshell (IFC export answers 501 without it), OpenEXR. The API reports them unavailable via /api/system/verification.
+numpy==2.5.3
+scipy==1.18.1
+pillow==12.3.0
+opencv-python-headless==5.0.0.93
+fastapi==0.109.0
+uvicorn==0.27.0
+sqlalchemy[asyncio]==2.1.4
+aiosqlite==0.22.1
+python-multipart==0.0.6
+httpx==0.27.2

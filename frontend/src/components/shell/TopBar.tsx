@@ -2,31 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import {
-  Search,
-  Bell,
-  User,
-  Globe,
-  CloudUpload,
-  Cpu,
-  Compass,
-  GitCompare,
-  BarChart3,
-  Share2,
-  type LucideIcon,
-} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Search, Bell, Box, ChevronRight, Download } from "lucide-react";
 import type { WorldRow } from "@/lib/types";
-import { MODE_TABS, NOT_AVAILABLE_TITLE, activeModeId } from "@/lib/shell/shell-logic";
+import { EXPORT_HREF, statusText, type ConnectionState } from "@/lib/shell/shell-logic";
 import NotificationsPanel from "./NotificationsPanel";
 
-const MODE_ICONS: Record<string, LucideIcon> = {
-  ingest: CloudUpload,
-  process: Cpu,
-  explore: Compass,
-  compare: GitCompare,
-  analyze: BarChart3,
-  export: Share2,
+const DOT_COLOR: Record<ConnectionState, string> = {
+  online: "var(--success)",
+  offline: "var(--error)",
+  checking: "var(--text-tertiary)",
 };
 
 interface TopBarProps {
@@ -35,13 +20,14 @@ interface TopBarProps {
   worlds: WorldRow[] | null;
   worldsError: string | null;
   currentWorldId: string | null;
+  connection: ConnectionState;
 }
 
-export default function TopBar({ onOpenSearch, worlds, worldsError, currentWorldId }: TopBarProps) {
-  const pathname = usePathname();
+const iconBtn = "w-9 h-9 rounded-md items-center justify-center transition-colors hover:bg-[var(--bg-hover)]";
+
+export default function TopBar({ onOpenSearch, worlds, worldsError, currentWorldId, connection }: TopBarProps) {
   const router = useRouter();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const activeMode = activeModeId(pathname);
 
   const switcherTitle = worldsError
     ? `Worlds could not be loaded: ${worldsError}`
@@ -53,111 +39,72 @@ export default function TopBar({ onOpenSearch, worlds, worldsError, currentWorld
 
   return (
     <header
-      className="h-14 shrink-0 flex items-center gap-3 px-3 border-b relative"
-      style={{ background: "var(--bg-surface)", borderColor: "var(--border)" }}
+      className="h-12 shrink-0 flex items-center gap-2 md:gap-3 px-3 border-b relative"
+      style={{ background: "var(--bg-sidebar)", borderColor: "var(--border)" }}
     >
-      <Link href="/" aria-label="Reality Engine home" className="flex items-center gap-2.5 shrink-0 rounded-md">
+      <Link href="/" aria-label="Reality Engine home" className="flex items-center gap-2 shrink-0 rounded-md">
         <span
           aria-hidden="true"
-          className="w-9 h-9 rounded-md flex items-center justify-center text-sm font-bold tracking-tight"
+          className="w-7 h-7 rounded-md flex items-center justify-center"
           style={{ background: "var(--accent-subtle)", border: "1px solid var(--accent-border)", color: "var(--accent)" }}
         >
-          RE
+          <Box className="w-4 h-4" />
         </span>
-        <span className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-            Reality Engine
-          </span>
-          <span className="hidden lg:block text-[11px]" style={{ color: "var(--text-secondary)" }}>
-            Real places. Persistent digital worlds.
-          </span>
+        <span className="hidden md:inline text-xs font-semibold tracking-[0.16em]" style={{ color: "var(--text-primary)" }}>
+          REALITY ENGINE
         </span>
       </Link>
 
-      <nav aria-label="Modes" className="flex items-center gap-1 shrink-0 ml-1">
-        {MODE_TABS.map((tab) => {
-          const Icon = MODE_ICONS[tab.id];
-          const active = tab.id === activeMode;
-          const cls = "flex items-center gap-1.5 h-9 px-2.5 rounded-md border text-sm font-medium transition-colors";
-          if (tab.href === null) {
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                disabled
-                title={NOT_AVAILABLE_TITLE}
-                aria-label={`${tab.label} (${NOT_AVAILABLE_TITLE.toLowerCase()})`}
-                className={`${cls} cursor-not-allowed opacity-50`}
-                style={{ color: "var(--text-secondary)", borderColor: "transparent" }}
-              >
-                <Icon className="w-4 h-4" aria-hidden="true" />
-                <span className="hidden xl:inline">{tab.label}</span>
-              </button>
-            );
-          }
-          return (
-            <Link
-              key={tab.id}
-              href={tab.href}
-              title={tab.label}
-              aria-label={tab.label}
-              aria-current={active ? "page" : undefined}
-              className={`${cls} hover:bg-[var(--bg-hover)]`}
-              style={{
-                color: active ? "var(--accent)" : "var(--text-secondary)",
-                background: active ? "var(--accent-subtle)" : undefined,
-                borderColor: active ? "var(--accent)" : "transparent",
-              }}
-            >
-              <Icon className="w-4 h-4" aria-hidden="true" />
-              <span className="hidden xl:inline">{tab.label}</span>
-            </Link>
-          );
-        })}
+      <nav aria-label="Breadcrumb" className={`${currentWorldId ? "hidden md:flex" : "hidden"} items-center gap-1.5 min-w-0 text-sm ml-2`}>
+        <Link href="/worlds" className="shrink-0 hover:underline" style={{ color: "var(--text-secondary)" }}>
+          Worlds
+        </Link>
+        <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-tertiary)" }} aria-hidden="true" />
+        <label className="min-w-0 flex items-center">
+          <span className="sr-only">Switch world</span>
+          <select
+            value={currentWorldId ?? ""}
+            disabled={!worlds || worlds.length === 0}
+            title={switcherTitle}
+            onChange={(e) => {
+              if (e.target.value) router.push(`/worlds/${encodeURIComponent(e.target.value)}`);
+            }}
+            className="h-8 max-w-48 xl:max-w-64 px-1.5 rounded-md text-sm truncate bg-transparent hover:bg-[var(--bg-hover)] disabled:opacity-60"
+            style={{ border: "1px solid transparent", color: "var(--text-primary)" }}
+          >
+            <option value="">
+              {worldsError ? "Worlds unavailable" : worlds === null ? "Loading…" : worlds.length === 0 ? "No worlds yet" : "Choose a world"}
+            </option>
+            {(worlds ?? []).map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </nav>
 
-      <button
-        type="button"
-        onClick={onOpenSearch}
-        aria-label="Search (Ctrl K)"
-        className="flex-1 min-w-0 max-w-md ml-auto flex items-center gap-2 h-9 px-3 rounded-md text-sm transition-colors"
-        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-tertiary)" }}
+      <span
+        className="hidden md:flex items-center gap-1.5 text-xs shrink-0"
+        role="status"
+        aria-live="polite"
+        style={{ color: "var(--text-secondary)" }}
       >
-        <Search className="w-4 h-4 shrink-0" aria-hidden="true" />
-        <span className="truncate">Search evidence, locations, sessions…</span>
-        <kbd
-          className="ml-auto shrink-0 text-xs font-mono-num px-1.5 py-0.5 rounded"
-          style={{ background: "var(--bg-base)", border: "1px solid var(--border)" }}
-        >
-          Ctrl K
-        </kbd>
-      </button>
+        <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: DOT_COLOR[connection] }} />
+        {statusText(connection)}
+      </span>
 
-      <label className="relative shrink-0 flex items-center">
-        <span className="sr-only">Switch world</span>
-        <Globe className="w-4 h-4 absolute left-2.5 pointer-events-none" style={{ color: "var(--accent)" }} aria-hidden="true" />
-        <select
-          value={currentWorldId ?? ""}
-          disabled={!worlds || worlds.length === 0}
-          title={switcherTitle}
-          onChange={(e) => {
-            if (e.target.value) router.push(`/worlds/${encodeURIComponent(e.target.value)}`);
-          }}
-          className="h-9 w-36 xl:w-48 pl-8 pr-2 rounded-md text-sm truncate disabled:opacity-60"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+      <div className="flex items-center gap-1 ml-auto shrink-0">
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          title="Search (Ctrl K)"
+          aria-label="Search (Ctrl K)"
+          className={`${iconBtn} flex`}
+          style={{ color: "var(--text-secondary)" }}
         >
-          <option value="">
-            {worldsError ? "Worlds unavailable" : worlds === null ? "Loading…" : worlds.length === 0 ? "No worlds" : "Select world"}
-          </option>
-          {(worlds ?? []).map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="flex items-center gap-1 shrink-0">
+          <Search className="w-4 h-4" aria-hidden="true" />
+        </button>
         <button
           type="button"
           title="Notifications"
@@ -165,22 +112,22 @@ export default function TopBar({ onOpenSearch, worlds, worldsError, currentWorld
           aria-haspopup="true"
           aria-expanded={notificationsOpen}
           onClick={() => setNotificationsOpen((v) => !v)}
-          className="w-9 h-9 rounded-md flex items-center justify-center transition-colors hover:bg-[var(--bg-hover)]"
+          className={`${iconBtn} hidden md:flex`}
           style={{ color: "var(--text-secondary)" }}
         >
           <Bell className="w-4 h-4" aria-hidden="true" />
         </button>
         <NotificationsPanel open={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
-        {/* There is no sign-in yet, so no name or initials are invented. */}
-        <span
-          className="w-8 h-8 rounded-full flex items-center justify-center"
-          style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
-          title="Local session (no account system yet)"
-          role="img"
-          aria-label="Local session"
+        <Link
+          href={EXPORT_HREF}
+          title="Export and reports"
+          aria-label="Export"
+          className="ml-1 h-8 px-3 rounded-md inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:bg-[var(--primary-hover)]"
+          style={{ background: "var(--primary)", color: "var(--text-primary)" }}
         >
-          <User className="w-4 h-4" aria-hidden="true" />
-        </span>
+          <Download className="w-4 h-4" aria-hidden="true" />
+          <span>Export</span>
+        </Link>
       </div>
     </header>
   );

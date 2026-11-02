@@ -36,8 +36,10 @@ Design invariants:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
+import re
 from statistics import median
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from reconstruction.backend.interface import (
     ReconstructedCameraPose,
@@ -53,7 +55,27 @@ __all__ = [
     "ScaledReconstruction",
     "anchor_metric_scale",
     "unscaled",
+    "KNOWN_LENGTH",
+    "PRIOR_ACCEPTED",
+    "DEVICE_DEPTH",
+    "MODEL_SPACE_METHODS",
+    "DOOR_HEIGHT_RANGE_M",
+    "RATIO_SPREAD_MAX",
+    "ScaleSuggestion",
+    "suggest_scale_from_world",
+    "gate_ratios",
+    "consolidate_references",
+    "basis_from_note",
+    "dimension_state_for_basis",
 ]
+
+#: Scale methods whose length is given in MODEL space (a length measured in the
+#: reconstruction's own units) instead of between two camera positions.
+KNOWN_LENGTH = "known_length"                 # user states the real length of an edge / two picked points
+PRIOR_ACCEPTED = "prior_accepted_by_user"     # engine-suggested typical size, explicitly accepted (ESTIMATED)
+#: metric depth from a LiDAR / structured-light sensor (F2): a measured scale, never an estimate
+DEVICE_DEPTH = "device_depth"
+MODEL_SPACE_METHODS = (KNOWN_LENGTH, PRIOR_ACCEPTED)
 
 
 class ScaleState:
@@ -76,6 +98,13 @@ class ScaleReference:
     distance_m: float
     #: How the distance was measured, recorded into provenance verbatim.
     method: str = "manual_measurement"
+    #: KNOWN_LENGTH / PRIOR_ACCEPTED only: the same length in the reconstruction's own
+    #: (pre-scale) model units. ``distance_m / model_distance`` is the scale.
+    model_distance: Optional[float] = None
+    #: Model-space references only: the pre-scale model separation of the (evidence_id_a,
+    #: evidence_id_b) cameras when the reference was recorded. If a rebuild changed the model
+    #: unit, that separation no longer matches and the reference is refused, never misapplied.
+    unit_check_sep: Optional[float] = None
 
     def __post_init__(self) -> None:
         if self.evidence_id_a == self.evidence_id_b:
@@ -83,11 +112,34 @@ class ScaleReference:
                 "scale reference pair must be two DIFFERENT evidence ids, "
                 f"got {self.evidence_id_a!r} twice"
             )
-        if not (self.distance_m > 0.0) or self.distance_m != self.distance_m:
+        if not (self.distance_m > 0.0) or self.distance_m != self.distance_m or self.distance_m == float("inf"):
             raise ScaleAnchoringError(
                 f"scale reference distance must be positive and finite, "
                 f"got {self.distance_m!r}"
             )
+        if self.method in MODEL_SPACE_METHODS:
+            md = self.model_distance
+            if md is None or not (md > 0.0) or md != md or md == float("inf"):
+                raise ScaleAnchoringError(
+                    f"{self.method} needs a positive finite model_distance, got {md!r}"
+                )
+            if self.unit_check_sep is not None and not (self.unit_check_sep > 0.0):
+                raise ScaleAnchoringError("unit_check_sep must be positive")
+        elif self.model_distance is not None:
+            raise ScaleAnchoringError(
+                f"model_distance is only valid for {MODEL_SPACE_METHODS}, not {self.method!r}"
+            )
+
+    @property
+    def meters_per_unit(self) -> Optional[float]:
+        return self.distance_m / self.model_distance if self.model_distance else None
+
+    def describe(self) -> str:
+        if self.method == KNOWN_LENGTH:
+            return f"a known length of {self.distance_m:g} m picked in the model"
+        if self.method == PRIOR_ACCEPTED:
+            return f"an accepted typical size of {self.distance_m:g} m (ESTIMATED, not measured)"
+        return f"{self.distance_m:g} m between two photographs ({self.method})"
 
 
 class ScaleAnchoringError(ValueError):
@@ -103,6 +155,10 @@ class ScaleDiagnostics:
     ratio_count: int                 # independent pairwise ratios used
     ratio_spread: float              # (p90-p10)/median of candidate ratios
     note: str
+    #: Which reference method produced the scale; None unless METRIC.
+    basis: Optional[str] = None
+    #: MEASURED (a distance the user gave) or ESTIMATED (accepted typical-size prior); None unless METRIC.
+    dimension_state: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -111,6 +167,8 @@ class ScaleDiagnostics:
             "ratio_count": self.ratio_count,
             "ratio_spread": self.ratio_spread,
             "note": self.note,
+            "basis": self.basis,
+            "dimension_state": self.dimension_state,
         }
 
 
@@ -168,9 +226,22 @@ def anchor_metric_scale(
             "a zero baseline"
         )
 
-    # Scale from the single measured pair (one baseline = one ratio); the
-    # spread gate below validates it against the model's own rigidity.
-    meters_per_unit = reference.distance_m / model_sep
+    if reference.model_distance is not None:
+        # Model-space reference (known length / accepted prior): the scale is real/model for that
+        # length. Gate: the model unit must be the one the length was measured in.
+        if reference.unit_check_sep is not None:
+            drift = abs(model_sep - reference.unit_check_sep) / reference.unit_check_sep
+            if drift > RATIO_SPREAD_MAX:
+                raise ScaleAnchoringError(
+                    f"model unit changed since this {reference.method} was recorded (reference cameras "
+                    f"{reference.evidence_id_a!r}/{reference.evidence_id_b!r} are now {model_sep:.6g} apart, "
+                    f"were {reference.unit_check_sep:.6g}); measure again in the current model"
+                )
+        meters_per_unit = reference.meters_per_unit
+    else:
+        # Scale from the single measured pair (one baseline = one ratio); the
+        # spread gate below validates it against the model's own rigidity.
+        meters_per_unit = reference.distance_m / model_sep
 
     # Rigidity gate: with the scale applied, every pairwise camera
     # separation must match the model's own proportions -- i.e. the
@@ -198,12 +269,21 @@ def anchor_metric_scale(
     else:
         spread = 0.0
 
-    note = (
-        f"metric scale from {reference.method}: "
-        f"{reference.evidence_id_a}<->{reference.evidence_id_b} measured "
-        f"{reference.distance_m:.4f} m / model {model_sep:.4f} units = "
-        f"{meters_per_unit:.6f} m/unit"
-    )
+    if reference.model_distance is not None:
+        note = (
+            f"metric scale from {reference.method}: "
+            f"{reference.distance_m:.4f} m / model {reference.model_distance:.4f} units = "
+            f"{meters_per_unit:.6f} m/unit"
+            + (" -- ESTIMATED from a typical size the user accepted; replaced by any real measurement"
+               if reference.method == PRIOR_ACCEPTED else "")
+        )
+    else:
+        note = (
+            f"metric scale from {reference.method}: "
+            f"{reference.evidence_id_a}<->{reference.evidence_id_b} measured "
+            f"{reference.distance_m:.4f} m / model {model_sep:.4f} units = "
+            f"{meters_per_unit:.6f} m/unit"
+        )
 
     scaled_poses = [
         ReconstructedCameraPose(
@@ -236,6 +316,8 @@ def anchor_metric_scale(
         ratio_count=1,
         ratio_spread=spread,
         note=note,
+        basis=reference.method,
+        dimension_state=dimension_state_for_basis(reference.method),
     )
     return ScaledReconstruction(
         result=scaled,
@@ -265,3 +347,143 @@ def unscaled(result: ReconstructionResult) -> ScaledReconstruction:
             ),
         ),
     )
+
+
+# --------------------------------------------------------------------------- state labels + gating
+
+
+def dimension_state_for_basis(basis: Optional[str]) -> Optional[str]:
+    """Dimension state a metric world inherits from how its scale was obtained: a prior the user
+    accepted is ESTIMATED; any measured distance is MEASURED. (Plan D1 reads this.)"""
+    if not basis:
+        return None
+    return "ESTIMATED" if basis == PRIOR_ACCEPTED else "MEASURED"
+
+
+_NOTE_BASIS = re.compile(r"^metric scale from (.+?): ")
+
+
+def basis_from_note(note: Optional[str]) -> Optional[str]:
+    """The reference method recorded in an anchoring note (``anchor_metric_scale`` writes it)."""
+    m = _NOTE_BASIS.match(note or "")
+    return m.group(1) if m else None
+
+
+def gate_ratios(ratios: Sequence[float]) -> Tuple[float, float]:
+    """(median, spread) of independent metres-per-unit ratios; raises when they disagree by more than
+    RATIO_SPREAD_MAX. spread = (max-min)/median (stricter than a percentile band; n is small here)."""
+    vals = [r for r in ratios if r and r > 0.0 and math.isfinite(r)]
+    if not vals:
+        raise ScaleAnchoringError("no usable scale ratios")
+    med = median(vals)
+    spread = (max(vals) - min(vals)) / med
+    if spread > RATIO_SPREAD_MAX:
+        raise ScaleAnchoringError(
+            f"scale measurements disagree: {len(vals)} ratios span {spread:.1%} of their median "
+            f"(limit {RATIO_SPREAD_MAX:.0%}); check the distances you entered"
+        )
+    return med, spread
+
+
+def consolidate_references(refs: Iterable[ScaleReference]) -> Tuple[List[ScaleReference], List[str]]:
+    """Order references by trust and collapse model-space ones, so the pipeline's first-success loop
+    does the right thing:  camera baselines  >  known lengths (median, spread-gated)  >  accepted prior.
+    A prior is dropped as soon as any real measurement exists ("a later real measurement replaces the
+    ESTIMATED prior"). Returns (ordered refs, human-readable notes about anything dropped)."""
+    refs = list(refs)
+    notes: List[str] = []
+    out: List[ScaleReference] = [r for r in refs if r.method not in MODEL_SPACE_METHODS]
+    known = [r for r in refs if r.method == KNOWN_LENGTH]
+    priors = [r for r in refs if r.method == PRIOR_ACCEPTED]
+    if known:
+        try:
+            gate_ratios([r.meters_per_unit for r in known])
+            # ponytail: even count -> the lower-middle measurement stands in for the median
+            out.append(sorted(known, key=lambda r: r.meters_per_unit)[(len(known) - 1) // 2])
+        except ScaleAnchoringError as exc:
+            notes.append(f"known-length references dropped: {exc}")
+    if priors and not out:
+        out.append(priors[-1])
+    elif priors:
+        notes.append("accepted typical-size scale replaced by a real measurement")
+    return out, notes
+
+
+# --------------------------------------------------------------------------- suggestion from priors
+
+#: Typical height of an interior door opening, metres. Basis: the common 2040 mm (EU/IN) and
+#: 2032 mm (US 6'8") standard door heights; stock doors fall in 1.98-2.10 m. We use 2.0-2.1 m and
+#: suggest the midpoint. A SUGGESTION only: never applied without the user's explicit accept
+#: (Decision 023 amendment).
+DOOR_HEIGHT_RANGE_M = (2.0, 2.1)
+#: Multiple detected doors must agree in model height (max-min over median), or no suggestion is made.
+DOOR_HEIGHT_AGREEMENT_MAX = 0.25
+#: kind -> (typical_min_m, typical_max_m, basis). Door only for now; a ceiling prior is too loose
+#: (2.4-3.0 m, +-12 %) to be an honest suggestion -- add kinds here, nowhere else.
+STANDARD_OBJECTS = {
+    "door": (DOOR_HEIGHT_RANGE_M[0], DOOR_HEIGHT_RANGE_M[1],
+             "standard interior door height (2040 mm EU/IN, 2032 mm US)"),
+}
+
+
+@dataclass(frozen=True)
+class ScaleSuggestion:
+    source_entity_id: str
+    source_kind: str
+    measured_model_units: float
+    typical_range_m: Tuple[float, float]
+    suggested_value_m: float
+    implied_scale: float          # metres per model unit if accepted
+    basis: str
+    n_candidates: int
+
+    def to_dict(self) -> dict:
+        return {
+            "source_entity_id": self.source_entity_id,
+            "source_kind": self.source_kind,
+            "measured_model_units": self.measured_model_units,
+            "typical_range_m": list(self.typical_range_m),
+            "suggested_value_m": self.suggested_value_m,
+            "implied_scale": self.implied_scale,
+            "basis": self.basis,
+            "n_candidates": self.n_candidates,
+            "dimension_state_if_accepted": "ESTIMATED",
+        }
+
+
+def suggest_scale_from_world(world) -> Optional[ScaleSuggestion]:
+    """Suggest a metres-per-unit from a detected standard object in a RELATIVE compiled WorldIR.
+
+    Returns None -- never a default -- when the world is already metric, or no door with a MEASURED
+    height (an opening fitted from points) exists, or several doors disagree. Reads only; applies nothing.
+    """
+    state = ((getattr(world, "metadata", None) or {}).get("scale") or {}).get("state")
+    if state not in (None, ScaleState.RELATIVE, ScaleState.UNKNOWN):
+        return None
+    cands: List[Tuple[float, str]] = []
+    for eid in sorted(world.entities):
+        ent = world.entities[eid]
+        if str(getattr(ent.type, "value", ent.type)) != "door":
+            continue
+        props = getattr(ent, "custom_properties", None) or {}
+        # promotion.py also writes a 2.1 DEFAULT height for openings without a fit; only an opening
+        # fitted from points (it carries bounds) has a measured height.
+        if "bounds_min" not in props or "bounds_max" not in props:
+            continue
+        try:
+            h = float(props.get("height_m"))
+            sill = float(props.get("sill_height_m") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if not (h > 0.0) or not math.isfinite(h) or sill > 0.15 * h:
+            continue                       # not a floor-to-head door opening
+        cands.append((h, eid))
+    if not cands:
+        return None
+    heights = [h for h, _ in cands]
+    if (max(heights) - min(heights)) / median(heights) > DOOR_HEIGHT_AGREEMENT_MAX:
+        return None
+    h, eid = sorted(cands)[(len(cands) - 1) // 2]
+    lo, hi, basis = STANDARD_OBJECTS["door"]
+    mid = (lo + hi) / 2.0
+    return ScaleSuggestion(eid, "door", h, (lo, hi), mid, mid / h, basis, len(cands))

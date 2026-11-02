@@ -183,6 +183,24 @@ class TestCorruptionHandling:
                 _las(), kind=EvidenceKind.POINT_CLOUD, source=_CAM, source_uri="s/las.png"
             )
 
+    def test_webp_magic_validation(self):
+        builder = _builder()
+        valid_webp = b"RIFF\x14\x00\x00\x00WEBPVP8L\x00\x00\x00\x00"
+        aid = builder.add_payload(valid_webp, kind=EvidenceKind.PHOTO, source=_CAM, source_uri="c/p.webp")
+        assert aid.startswith("ev-")
+
+        with pytest.raises(CorruptEvidenceError, match="RIFF....WEBP"):
+            _builder().add_payload(b"RIFF\x00\x00\x00\x00MISL\x00\x00\x00\x00", kind=EvidenceKind.PHOTO, source=_CAM, source_uri="c/bad.webp")
+
+    def test_mp4_ftyp_box_validation(self):
+        builder = _builder()
+        valid_mp4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2mp41"
+        aid = builder.add_payload(valid_mp4, kind=EvidenceKind.VIDEO, source=_CAM, source_uri="c/v.mp4")
+        assert aid.startswith("ev-")
+
+        with pytest.raises(CorruptEvidenceError, match="ftyp box"):
+            _builder().add_payload(b"\x00\x00\x00\x18notypbad\x00\x00\x02\x00", kind=EvidenceKind.VIDEO, source=_CAM, source_uri="c/bad.mp4")
+
 
 # -------------------------------------------------- duplicate detection
 

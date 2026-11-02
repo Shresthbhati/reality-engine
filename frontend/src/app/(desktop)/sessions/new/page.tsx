@@ -98,7 +98,7 @@ export default function CreateSessionPage() {
         {error && (
           <div
             className="text-xs rounded-md px-2.5 py-2"
-            style={{ background: "var(--error-subtle, #3a1f1f)", border: "1px solid var(--error-border, #7a3030)", color: "var(--error, #e57373)" }}
+            style={{ background: "var(--error-subtle)", border: "1px solid var(--error)", color: "var(--error)" }}
           >
             {error}
           </div>

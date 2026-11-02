@@ -263,3 +263,32 @@ def measure_distance(a: MergedObjectCandidate, b: MergedObjectCandidate) -> Meas
         distance, confidence,
         precision_note="documented confidence heuristic (endpoint)",
     )
+
+
+#: Measurement provenance -> dimension state (plan D1; extends P0.16's measured/reconstructed/inferred).
+_PROVENANCE_STATE = {
+    Provenance.OBSERVED: "MEASURED",
+    Provenance.RECONSTRUCTED: "RECONSTRUCTED",
+}
+
+
+def to_dimension(m: Measurement, world_metadata: Optional[dict] = None, *, kind: str = "distance") -> dict:
+    """A Measurement as the shared ``{value, unit, state, basis, uncertainty_m}`` dimension.
+
+    Anything not OBSERVED/RECONSTRUCTED (ESTIMATED, INFERRED, CONFLICT, GENERATED, UNKNOWN) is ESTIMATED. The unit is
+    "m" only if ``world_metadata`` says the world is metric -- the Measurement's own "meter" is not trusted for that.
+    """
+    from world_ir.measure import dimension_from_metadata
+    basis = m.precision_note or f"provenance {m.provenance.name}"
+    return dimension_from_metadata(
+        m.value, world_metadata or {}, state=_PROVENANCE_STATE.get(m.provenance, "ESTIMATED"),
+        basis=basis, uncertainty_m=m.precision, kind=kind)
+
+
+def measure_dimensions_as_dimensions(candidate: MergedObjectCandidate,
+                                     world_metadata: Optional[dict] = None) -> Dict[str, dict]:
+    """``measure_dimensions`` with every value in the dimension shape (volume gets a cubic unit)."""
+    out = {k: to_dimension(m, world_metadata) for k, m in measure_dimensions(candidate).items()}
+    vol = out["volume_m3"]
+    vol["unit"] = "m3" if vol["unit"] == "m" else "model_units3"
+    return out

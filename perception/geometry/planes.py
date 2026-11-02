@@ -36,7 +36,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+
+import numpy as np
 from typing import Dict, List, Sequence, Tuple
+
+import numpy as np
 
 from engine.core.rng import DeterministicRNG
 from provenance import Uncertainty
@@ -727,6 +731,17 @@ def _offset_bands(
     return bands
 
 
+def inlier_mask(xs, ys, zs, normal, d, tolerance):
+    """Boolean mask of points within ``tolerance`` of the plane ``normal . p + d = 0``.
+
+    This was a per-point Python loop and dominated the pipeline on large models (measured: 61k points -> about a
+    minute per detect_planes call, which ran several times per build). It is evaluated in the SAME operation order as
+    the former scalar expression, ``abs(((n0*x + n1*y) + n2*z) + d) <= tolerance``, with plain elementwise IEEE-double
+    numpy operations (no fused or reordered reductions), so every inlier decision -- including points exactly at the
+    tolerance -- is identical to the scalar implementation (pinned by tests/test_plane_detection_scale.py)."""
+    return np.abs(normal[0] * xs + normal[1] * ys + normal[2] * zs + d) <= tolerance
+
+
 def detect_planes(
     result: ReconstructionResult,
     seed: int,
@@ -753,14 +768,17 @@ def detect_planes(
         rng = DeterministicRNG(seed, name=f"plane-ransac/{plane_seq}")
         remaining_sorted = sorted(remaining_ids)
 
+        # Vectorised with the SAME elementwise arithmetic order as the scalar form (n0*x + n1*y + n2*z + d), so the
+        # inlier sets are identical; the per-point Python loop made dense clouds unusable (500 RANSAC rounds x N).
+        _xyz = np.asarray([positions_by_id[pid] for pid in remaining_sorted], dtype=float).reshape(-1, 3)
+        _ids = np.asarray(remaining_sorted, dtype=object)
+
+        def _inlier_mask(normal, d):
+            dist = normal[0] * _xyz[:, 0] + normal[1] * _xyz[:, 1] + normal[2] * _xyz[:, 2] + d
+            return np.abs(dist) <= distance_tolerance_m
+
         def _collect(normal, d) -> List[str]:
-            return [
-                pid for pid in remaining_sorted
-                if abs(normal[0] * positions_by_id[pid][0]
-                       + normal[1] * positions_by_id[pid][1]
-                       + normal[2] * positions_by_id[pid][2]
-                       + d) <= distance_tolerance_m
-            ]
+            return _ids[_inlier_mask(normal, d)].tolist()
 
         # ---- consensus ----
         best_normal = None
@@ -782,11 +800,12 @@ def detect_planes(
             except ValueError:
                 continue
 
-            inliers = _collect(normal, d)
+            mask = _inlier_mask(normal, d)
             # Strictly-greater keeps the first-encountered best on ties,
-            # which the seeded rng makes deterministic.
-            if len(inliers) > len(best_inliers):
-                best_normal, best_d, best_inliers = normal, d, inliers
+            # which the seeded rng makes deterministic. Only a winning candidate materialises its id list.
+            if int(np.count_nonzero(mask)) > len(best_inliers):
+                best_normal, best_d = normal, d
+                best_inliers = [remaining_sorted[i] for i in np.flatnonzero(mask)]
 
         if best_normal is None or len(best_inliers) < min_inliers:
             break
@@ -865,3 +884,37 @@ def detect_planes(
         unassigned_point_ids=unassigned,
         points_total=len(result.points),
     )
+
+
+def plane_centroids(
+    result: ReconstructionResult, planes: Sequence[DetectedPlane]
+) -> Dict[str, Tuple[float, float, float]]:
+    """Mean 3D position of each plane's own real inlier points.
+
+    A DetectedPlane's (normal, d) describes an infinite plane with no
+    spatial extent -- it says nothing about WHERE on that plane the real
+    structure actually sits. The centroid is that missing spatial
+    location, computed from the plane's own inlier point positions. It
+    exists to let orientation.classify_planes pick the camera that
+    actually observed THIS plane (nearest to it in full 3D) rather than
+    the mean of every camera in the capture, which is essential once a
+    capture spans more than one room or storey: a camera in a distant
+    room can otherwise look like a better orientation reference than the
+    plane's own local cameras merely by chance proximity along one axis.
+    Planes whose inlier ids are not found in `result` (should not happen
+    for a PlaneDetection produced from the same `result`) are omitted,
+    not guessed.
+    """
+    positions_by_id = {p.track_id: p.position for p in result.points}
+    centroids: Dict[str, Tuple[float, float, float]] = {}
+    for plane in planes:
+        positions = [positions_by_id[pid] for pid in plane.inlier_ids if pid in positions_by_id]
+        if not positions:
+            continue
+        n = len(positions)
+        centroids[plane.plane_id] = (
+            sum(p[0] for p in positions) / n,
+            sum(p[1] for p in positions) / n,
+            sum(p[2] for p in positions) / n,
+        )
+    return centroids

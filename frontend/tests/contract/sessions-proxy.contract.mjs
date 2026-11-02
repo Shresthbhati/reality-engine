@@ -85,6 +85,29 @@ async function probe(GET, behaviour, search = "") {
 }
 
 const { GET } = await import(ROUTE);
+const { GET: GET_WORLDS } = await import(new URL("../../src/app/api/worlds/route.ts", import.meta.url).href);
+
+/** The worlds listing route takes no request; same observation shape as probe(). */
+async function probeWorlds(behaviour) {
+  stubFetch(behaviour);
+  let outcome;
+  try {
+    const response = await GET_WORLDS();
+    const text = await response.text();
+    let body = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
+    }
+    outcome = { status: response.status, body, raw: text };
+  } catch (error) {
+    outcome = { threw: true, message: String(error && error.message) };
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  return { ...outcome, requests: seen.map((s) => s.url) };
+}
 
 const results = {
   success: await probe(
@@ -108,6 +131,12 @@ const results = {
     GET,
     async () => new Response("<html>502 Bad Gateway</html>", { status: 502 }),
   ),
+  // A 200 whose body is empty or not JSON is a broken backend, not "no sessions" / "no worlds".
+  emptyBody200: await probe(GET, async () => new Response("", { status: 200 })),
+  nonJsonBody200: await probe(GET, async () => new Response("<html>gateway</html>", { status: 200 })),
+  worldsEmptyBody200: await probeWorlds(async () => new Response("", { status: 200 })),
+  worldsNonJsonBody200: await probeWorlds(async () => new Response("<html>gateway</html>", { status: 200 })),
+  worldsSuccess: await probeWorlds(async () => jsonResponse(200, { items: [] })),
   // AbortSignal.timeout fires as a rejection from fetch.
   timeout: await probe(GET, async () => {
     throw Object.assign(new Error("The operation was aborted due to timeout"), {

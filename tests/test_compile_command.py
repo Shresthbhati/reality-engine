@@ -38,10 +38,12 @@ class TestCompileWorldCommand:
         command_result = processor.execute(CompileWorldCommand(result=result))
 
         # World populated and version bumped (one event per command).
-        # 4 walls + 2 floors + 1 ceiling + 1 room, plus the storey and building the topology stage promotes
+        # Evidence planes (4 walls + 2 floors + 1 ceiling) PLUS the interior-semantics shell derived from the room
+        # (4 room walls + 1 floor slab + 1 ceiling slab) + 1 room. Storey/building are opt-in
+        # (CompileOptions.promote_building defaults to False), so none are promoted here.
         from collections import Counter
         assert Counter(e.type.value for e in world.entities.values()) == {
-            "wall": 4, "floor": 2, "ceiling": 1, "room": 1, "storey": 1, "building": 1}
+            "wall": 8, "floor": 3, "ceiling": 2, "room": 1}
         assert command_result.world_version == world.version == 2  # 1 -> 2
         room = next(e for e in world.entities.values() if e.type is EntityType.ROOM)
         assert room.custom_properties["floor_area_m2"] == pytest.approx(5.625)
@@ -119,7 +121,7 @@ class TestCompileWorldCommand:
         processor.execute(CompileWorldCommand(result=result))
         second = {eid: dict(e.custom_properties) for eid, e in world.entities.items()}
         assert first == second
-        assert len(world.entities) == 10   # 8 structural + storey + building (topology stage)  # overwritten, not duplicated
+        assert len(world.entities) == 14   # 7 evidence planes + room + 4 room walls + 2 slabs; overwritten, not duplicated
 
     def test_studio_compile_reconstruction_convenience(self):
         from engine.studio.session import StudioSession
@@ -128,7 +130,7 @@ class TestCompileWorldCommand:
         studio = StudioSession(world, actor_id="user-1")
         command_result = studio.compile_reconstruction(_result_with_cameras(), CompileOptions(seed=7))
 
-        assert len(world.entities) == 10   # 8 structural + storey + building (topology stage)
+        assert len(world.entities) == 14   # 7 evidence planes + room + 4 room walls + 2 slabs
         assert world.version == 2
         room = next(e for e in world.entities.values() if e.type is EntityType.ROOM)
         assert room.provenance is Provenance.INFERRED

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
+import { BACKEND_URL, backendFetch } from "@/lib/api/backend";
 
 /**
  * Thin proxy to the FastAPI contract
@@ -17,7 +17,7 @@ export async function POST(
   void request;
 
   try {
-    const response = await fetch(
+    const response = await backendFetch(
       `${BACKEND_URL}/api/sessions/${encodeURIComponent(sessionId)}/reconstruct`,
       {
         method: "POST",

@@ -148,3 +148,148 @@ def unit_for(kind: str, scale_state: str) -> str:
         raise MeasureError(f"scale_state must be one of {', '.join(SCALE_STATES)}")
     base = "m" if scale_state in ("metric", "authored") else "model_units"
     return base + ("2" if kind in AREA_KINDS else "")
+
+
+# ---- dimension state (plan D1) ----------------------------------------------
+# Extends the measured/reconstructed/inferred distinction (backlog P0.16); it is not a second vocabulary.
+#: weakest -> strongest.
+DIMENSION_STATES = ("ESTIMATED", "RECONSTRUCTED", "MEASURED", "VERIFIED")
+
+
+def scale_state_of(world_metadata: Any) -> str:
+    """'metric' | 'unknown' from a WorldIR ``metadata`` dict (metadata.scale.state). RELATIVE/missing => 'unknown'."""
+    scale = (world_metadata or {}).get("scale") if isinstance(world_metadata, dict) else None
+    state = str((scale or {}).get("state") or "").lower()
+    return "metric" if state == "metric" else "unknown"
+
+
+def effective_state(requested: str, scale_state: str, scale_dimension_state: str | None = None) -> str:
+    """Cap a requested state by what the world can honestly support.
+
+    A world without a metric scale has no metric evidence, so nothing is MEASURED (cap RECONSTRUCTED); an accepted
+    typical-size prior (metadata.scale.dimension_state == ESTIMATED) caps everything but a user tape VERIFY at ESTIMATED.
+    """
+    if requested not in DIMENSION_STATES:
+        raise MeasureError(f"state must be one of {', '.join(DIMENSION_STATES)}")
+    if requested == "VERIFIED":
+        if scale_state == "unknown":
+            raise MeasureError("a tape-verified dimension needs a metric scale; this world is in model units")
+        return requested
+    cap = "RECONSTRUCTED" if scale_state == "unknown" else None
+    if scale_dimension_state == "ESTIMATED":
+        cap = "ESTIMATED"
+    if cap and DIMENSION_STATES.index(requested) > DIMENSION_STATES.index(cap):
+        return cap
+    return requested
+
+
+def make_dimension(
+    value: float,
+    *,
+    state: str,
+    basis: str,
+    scale_state: str,
+    scale_dimension_state: str | None = None,
+    uncertainty_m: float | None = None,
+    kind: str = "distance",
+) -> dict:
+    """The one dimension shape: {value, unit, state, basis, uncertainty_m}.
+
+    ``unit`` is "m"/"m2" only for a metric/authored world, else "model_units"/"model_units2" (never metres for a
+    RELATIVE world). ``state`` is capped by ``effective_state``. ``uncertainty_m`` stays None unless the data supplied one
+    (it is in the dimension's own unit; the name is the plan's).
+    """
+    if not math.isfinite(value):
+        raise MeasureError("a dimension value must be finite")
+    if uncertainty_m is not None and (not math.isfinite(uncertainty_m) or uncertainty_m < 0):
+        raise MeasureError("uncertainty must be a finite number >= 0 (or omitted)")
+    return {
+        "value": float(value),
+        "unit": unit_for(kind, scale_state),
+        "state": effective_state(state, scale_state, scale_dimension_state),
+        "basis": basis,
+        "uncertainty_m": None if uncertainty_m is None else float(uncertainty_m),
+    }
+
+
+def dimension_from_metadata(value: float, world_metadata: Any, *, state: str, basis: str,
+                            uncertainty_m: float | None = None, kind: str = "distance") -> dict:
+    """make_dimension reading the world's scale state + dimension_state from WorldIR ``metadata``.
+
+    The entry point for room_semantics / room_layout: pass the dimension, the world's ``metadata`` dict, the state the
+    geometry supports (inferred/layout-closed => ESTIMATED, derived => RECONSTRUCTED, direct metric evidence => MEASURED).
+    """
+    scale = (world_metadata or {}).get("scale") if isinstance(world_metadata, dict) else None
+    return make_dimension(value, state=state, basis=basis, scale_state=scale_state_of(world_metadata),
+                          scale_dimension_state=(scale or {}).get("dimension_state"),
+                          uncertainty_m=uncertainty_m, kind=kind)
+
+
+#: which dimension state a property of an entity with this provenance can honestly claim
+_STATE_FOR_PROVENANCE = {
+    "OBSERVED": "MEASURED",
+    "RECONSTRUCTED": "RECONSTRUCTED",
+    "INFERRED": "ESTIMATED",
+    "ESTIMATED": "ESTIMATED",
+    "GENERATED": "ESTIMATED",
+    "CONFLICT": "ESTIMATED",
+    "UNKNOWN": "ESTIMATED",
+}
+
+
+def _dimension_basis_and_state(entity: Any, key: str) -> tuple[str, str]:
+    """(state, basis) for one ``*_m`` / ``*_m2`` property, from the entity's own provenance and the property's own
+    measurement basis. Never upgrades a labelled default to a measurement."""
+    cp = getattr(entity, "custom_properties", None) or {}
+    prov = getattr(getattr(entity, "provenance", None), "value", None) or str(getattr(entity, "provenance", ""))
+    state = _STATE_FOR_PROVENANCE.get(str(prov).upper(), "ESTIMATED")
+    if key in ("thickness_m",) and cp.get("thickness_basis") in (None, "default_unmeasured"):
+        return "ESTIMATED", "labelled default: no pipeline stage measures wall/ceiling thickness"
+    if key in ("floor_dimension_u_m", "floor_dimension_v_m", "height_m", "floor_area_m2") and "footprint_method" in cp:
+        return "RECONSTRUCTED", "derived from the measured room footprint"
+    if cp.get("wall_slab"):
+        return state, ("derived from the solved wall slab" if state == "RECONSTRUCTED"
+                       else "inferred wall segment (closes the loop where no point supports it)")
+    if "polygon_slab" in (getattr(entity, "semantic_labels", None) or []):
+        return "RECONSTRUCTED", "derived from the measured room outline"
+    if key.endswith("_m2"):
+        return state, "derived from reconstructed floor/ceiling geometry"
+    return state, "derived from reconstructed geometry"
+
+
+def stamp_world_dimensions(world: Any) -> dict:
+    """Give every ``*_m`` / ``*_m2`` numeric property on every entity the D1 dimension shape.
+
+    Stores ``custom_properties['dimensions'] = {property: {value, unit, state, basis, uncertainty_m}}`` and leaves the
+    flat property in place, so existing readers keep working. Idempotent: re-run it after a scale becomes known to
+    upgrade units/states. A user-VERIFIED value already stored for the same value is preserved (F6).
+
+    Returns ``{'dimensions': n, 'with_state': n, 'entities': n}`` for the caller's report.
+    """
+    scale_meta = (getattr(world, "metadata", None) or {}).get("scale") or {}
+    meta = {"scale": scale_meta}
+    total = stated = entities = 0
+    for entity in (getattr(world, "entities", None) or {}).values():
+        cp = getattr(entity, "custom_properties", None)
+        if not isinstance(cp, dict):
+            continue
+        existing = cp.get("dimensions") if isinstance(cp.get("dimensions"), dict) else {}
+        dims = dict(existing)
+        for key, value in list(cp.items()):
+            if key == "uncertainty_m" or not isinstance(value, (int, float)) or isinstance(value, bool):
+                continue
+            if not key.endswith(("_m", "_m2")):
+                continue
+            prev = existing.get(key)
+            if isinstance(prev, dict) and prev.get("state") == "VERIFIED" and prev.get("value") == float(value):
+                dims[key] = prev          # a tape-verified value survives a rebuild (F6)
+                continue
+            state, basis = _dimension_basis_and_state(entity, key)
+            dims[key] = dimension_from_metadata(float(value), meta, state=state, basis=basis,
+                                                kind="area" if key.endswith("_m2") else "distance")
+        if dims:
+            cp["dimensions"] = dims
+            total += len(dims)
+            stated += sum(1 for d in dims.values() if isinstance(d, dict) and d.get("state"))
+            entities += 1
+    return {"dimensions": total, "with_state": stated, "entities": entities}

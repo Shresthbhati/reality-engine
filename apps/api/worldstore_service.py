@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.models import World, WorldVersion, utcnow
 from apps.api.storage import store_bytes
 from world_ir.world_v1 import WorldIR
-from worldstore.store import WorldStore, _atomic_write_text
+from worldstore.store import WorldStore, WorldStoreError, _atomic_write_text
 
 log = logging.getLogger(__name__)
 
@@ -320,6 +320,26 @@ async def commit_version(
     return row
 
 
+async def nearest_report(db: AsyncSession, version_id: str | None, max_hops: int = 256) -> dict:
+    """The reconstruction report that describes `version_id`'s content.
+
+    A correction commit creates a version row with no report of its own (nothing was reconstructed), but its content
+    still derives from the nearest ancestor that has one. Rebuild arbitration and the status read the HEAD report;
+    reading only the HEAD row made every corrected world look like it had no history, so a degraded rebuild was
+    accepted over it and the status lost its model. Walks parents; {} when no ancestor has a report."""
+    seen: set[str] = set()
+    vid = version_id
+    while vid and vid not in seen and len(seen) < max_hops:
+        seen.add(vid)
+        row = await db.get(WorldVersion, vid)
+        if row is None:
+            return {}
+        if row.report:
+            return dict(row.report)
+        vid = row.parent_version_id
+    return {}
+
+
 async def get_current_worldir(db: AsyncSession, world_id: str) -> WorldIR | None:
     w = await db.get(World, world_id)
     if w is None or not w.current_version_id:
@@ -443,21 +463,117 @@ def list_scale_references(world_id: str) -> list[dict]:
 
 
 def add_scale_reference(world_id: str, evidence_id_a: str, evidence_id_b: str, distance_m: float,
-                        method: str = "manual_measurement") -> dict:
-    """Record one measured distance between two capture positions. The same pair replaces its earlier entry
-    (a corrected measurement); every other reference is kept. Validation is the scale module's own
-    (two different ids, positive finite distance) -- this never invents or rounds a value."""
-    from reconstruction.scale import ScaleReference
+                        method: str = "manual_measurement", model_distance: float | None = None,
+                        unit_check_sep: float | None = None) -> dict:
+    """Record one scale fact. Camera baseline: the same pair replaces its earlier entry (a corrected
+    measurement). Model-space (known_length / prior_accepted_by_user): the camera pair only fingerprints
+    the model unit; a new prior replaces the old one, known lengths accumulate (they are median-gated
+    when applied). Validation is the scale module's own -- this never invents or rounds a value."""
+    from reconstruction.scale import MODEL_SPACE_METHODS, PRIOR_ACCEPTED, ScaleReference
 
-    ScaleReference(evidence_id_a, evidence_id_b, float(distance_m), method)      # raises ScaleAnchoringError
+    ScaleReference(evidence_id_a, evidence_id_b, float(distance_m), method,
+                   model_distance, unit_check_sep)                                  # raises ScaleAnchoringError
     ref = {"evidence_id_a": evidence_id_a, "evidence_id_b": evidence_id_b, "distance_m": float(distance_m),
            "method": method, "recorded_at": utcnow().isoformat()}
-    pair = frozenset((evidence_id_a, evidence_id_b))
-    refs = [r for r in list_scale_references(world_id)
-            if frozenset((r.get("evidence_id_a"), r.get("evidence_id_b"))) != pair] + [ref]
+    if method in MODEL_SPACE_METHODS:
+        ref["model_distance"] = float(model_distance)
+        if unit_check_sep is not None:
+            ref["unit_check_sep"] = float(unit_check_sep)
+        refs = [r for r in list_scale_references(world_id)
+                if not (method == PRIOR_ACCEPTED and r.get("method") == PRIOR_ACCEPTED)] + [ref]
+    else:
+        pair = frozenset((evidence_id_a, evidence_id_b))
+        refs = [r for r in list_scale_references(world_id)
+                if r.get("method") in MODEL_SPACE_METHODS
+                or frozenset((r.get("evidence_id_a"), r.get("evidence_id_b"))) != pair] + [ref]
     path = _scale_ref_path(world_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(refs, indent=1, sort_keys=True), encoding="utf-8")
     os.replace(tmp, path)
     return ref
+
+
+def _scale_rejected_path(world_id: str) -> Path:
+    return worldstore_root() / "scale-references" / f"{world_id}.rejected.json"
+
+
+def list_rejected_suggestions(world_id: str) -> list[str]:
+    """Suggestion keys the user rejected for this world (a rejection changes nothing else)."""
+    try:
+        data = json.loads(_scale_rejected_path(world_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(k) for k in data] if isinstance(data, list) else []
+
+
+def reject_scale_suggestion(world_id: str, key: str) -> None:
+    keys = list_rejected_suggestions(world_id)
+    if key not in keys:
+        keys.append(key)
+    path = _scale_rejected_path(world_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(keys), encoding="utf-8")
+
+
+# ------------------------------------------------------------------------- permanent delete (purge)
+
+
+def purge_world_store(world_id: str) -> dict:
+    """Permanently remove one world's WorldStore versions, its per-world side files, and ONLY the store blobs
+    nothing else references.
+
+    Versions are matched by the ``world_id`` inside each record (live and quarantined). A blob (the world JSON or an
+    ``artifact://<sha256>`` geometry it names) is deleted only if no remaining record -- of any world, live or
+    quarantined -- still names it, so a duplicated world's shared geometry survives. Runs under the store's sequence
+    lock. Returns ``{"versions_removed", "blobs_removed", "blobs_kept_shared"}``."""
+    import re
+    import shutil
+
+    from worldstore.store import _ARTIFACT_URI_RE, _SequenceLock, _validate_version_id
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", world_id):
+        raise ValueError(f"unsafe world id: {world_id!r}")
+    store = get_store()
+    root = store._root
+
+    def read(p: Path) -> dict:
+        return json.loads(p.read_text(encoding="utf-8"))
+
+    def blob_refs(rec: dict) -> set[str]:
+        refs = {rec["artifact_hash"]}
+        try:
+            refs.update(m.decode() for m in _ARTIFACT_URI_RE.findall(store._store.get(rec["artifact_uri"])))
+        except Exception:   # noqa: BLE001 -- unreadable world: its own digest is still protected / collected
+            pass
+        return refs
+
+    qdir = root / "quarantine"
+    with _SequenceLock(root):
+        live = {p: read(p) for p in store._versions_dir.glob("v-*.json")}
+        quar = {p: read(p) for p in qdir.glob("v-*.json")} if qdir.is_dir() else {}
+        doomed = {p: r for d in (live, quar) for p, r in d.items() if r.get("world_id") == world_id}
+        candidates: set[str] = set()
+        for rec in doomed.values():
+            candidates |= blob_refs(rec)
+        keep: set[str] = set()
+        for d in (live, quar):
+            for p, rec in d.items():
+                if p not in doomed:
+                    keep |= blob_refs(rec)
+        removed_ids = sorted(p.stem for p in doomed)
+        for p in doomed:
+            _validate_version_id(p.stem)
+            p.unlink(missing_ok=True)
+        if removed_ids:
+            seq = root / "sequence.json"
+            _atomic_write_text(seq, json.dumps([v for v in store._read_sequence(seq) if v not in set(removed_ids)]))
+        blobs_removed = []
+        for digest in sorted(candidates - keep):
+            store._store._path_for(digest).unlink(missing_ok=True)
+            blobs_removed.append(digest)
+    shutil.rmtree(root / "colmap-sessions" / world_id, ignore_errors=True)
+    (root / "scale-references" / f"{world_id}.json").unlink(missing_ok=True)
+    (root / "scale-references" / f"{world_id}.rejected.json").unlink(missing_ok=True)
+    return {"versions_removed": removed_ids, "blobs_removed": blobs_removed,
+            "blobs_kept_shared": sorted(candidates & keep)}

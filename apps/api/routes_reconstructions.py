@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import jobs as jobrunner
+from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.models import (
     ActivityEvent,
@@ -40,9 +41,10 @@ from apps.api.reconstruction_state import (
     derive_state,
     failure_message,
 )
-from apps.api.routes_misc import _classify, _read_bounded_upload, _safe_filename
+from apps.api.routes_misc import _read_bounded_upload, _safe_filename, vet_upload
 from apps.api.storage import store_bytes
 from evidence.image_check import DECLARABLE_CLASSES, inspect_image
+from reconstruction.capture_quality import summarize_stored
 
 reconstructions = APIRouter(prefix="/api/reconstructions", tags=["reconstructions"])
 world_status = APIRouter(prefix="/api/worlds", tags=["reconstructions"])
@@ -51,19 +53,34 @@ MAX_FILES_PER_REQUEST = 300
 #: frames kept from one video (evenly spaced in time; the video itself is
 #: also stored as evidence). "Never blindly process every frame."
 VIDEO_FRAME_BUDGET = 24
-_VIDEO_EXT = (".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm")
+
+
+def _pick_video_frames(path: str, candidates):
+    """(selected_candidates, selection_label): sharp, well-spaced keyframes (capture_quality.pick_keyframes); falls
+    back to the repo's uniform-time policy if scoring fails or leaves fewer than 2 frames."""
+    from evidence.frames import UniformTimeSamplingStrategy
+    from reconstruction import capture_quality as cq
+
+    try:
+        scores = cq.score_video_frames(path, len(candidates), VIDEO_FRAME_BUDGET)
+        idx = cq.pick_keyframes(scores, VIDEO_FRAME_BUDGET)
+        if len(idx) >= 2:
+            return [candidates[i] for i in idx], f"sharpness_ranked_windows(target={VIDEO_FRAME_BUDGET})"
+    except Exception:  # cv2 missing / decode trouble: the old policy still works
+        pass
+    return (UniformTimeSamplingStrategy(target_count=VIDEO_FRAME_BUDGET).select(candidates),
+            f"uniform_time_sampling(target={VIDEO_FRAME_BUDGET})")
 
 
 async def _video_frames(path, fname: str, evidence_class: str | None):
     """(frames, problem): sample the video with the repo's frame-selection policy
     and return decodable frames as (name, jpeg_bytes, digest, facts_dict, extra_meta).
     ``problem`` is a human reason when the video cannot yield usable frames."""
-    from evidence.frames import UniformTimeSamplingStrategy
     from evidence.importers import _enumerate_video_candidates, _extract_selected_frames
 
     try:
         candidates, container = await asyncio.to_thread(_enumerate_video_candidates, str(path))
-        selected = UniformTimeSamplingStrategy(target_count=VIDEO_FRAME_BUDGET).select(candidates)
+        selected, selection = await asyncio.to_thread(_pick_video_frames, str(path), candidates)
         extracted = await asyncio.to_thread(_extract_selected_frames, str(path), selected)
     except Exception as exc:  # corrupt/unsupported container, no cv2, ...
         return [], f"video could not be read ({type(exc).__name__}: {exc})"
@@ -78,7 +95,7 @@ async def _video_frames(path, fname: str, evidence_class: str | None):
         cand = by_index[idx]
         frames.append((f"{stem}#frame-{idx:06d}.jpg", jpeg, digest, facts.to_dict(), {
             "source_video": fname, "frame_index": idx, "video_timestamp_s": cand.timestamp_s,
-            "fps": container.get("fps"), "selection": f"uniform_time_sampling(target={VIDEO_FRAME_BUDGET})",
+            "fps": container.get("fps"), "selection": selection,
         }))
     if not frames:
         return [], "no decodable frames could be extracted from the video"
@@ -93,6 +110,10 @@ async def create_reconstruction(
     evidence_class: str | None = Form(default=None),
     latitude: float | None = Form(default=None),
     longitude: float | None = Form(default=None),
+    dense_cpu: bool = Form(default=False),
+    plane_sweep_max_views: int | None = Form(default=None, ge=2, le=8),
+    plane_sweep_stride: int | None = Form(default=None, ge=1, le=8),
+    plane_sweep_planes: int | None = Form(default=None, ge=8, le=128),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Build (or improve) a world from photographs.
@@ -110,6 +131,8 @@ async def create_reconstruction(
     if (latitude is None) != (longitude is None):
         raise HTTPException(422, "latitude and longitude must be given together")
 
+    dense_cfg = {"enabled": True, "max_views": plane_sweep_max_views, "stride": plane_sweep_stride,
+                 "planes": plane_sweep_planes}
     accepted: list[tuple[str, str | None, bytes, str, str, dict, dict]] = []
     rejected: list[dict] = []
     for f in files:
@@ -118,9 +141,11 @@ async def create_reconstruction(
         if not data:
             rejected.append({"name": fname, "reason": "empty file"})
             continue
-        kind = _classify(fname, f.content_type)
-        if kind == "dataset" and fname.lower().endswith(_VIDEO_EXT):
-            kind = "video"
+        try:
+            kind = vet_upload(fname, f.content_type, data)
+        except ValueError as exc:
+            rejected.append({"name": fname, "reason": str(exc)})
+            continue
         digest, path = store_bytes(data)
         if kind == "photo":
             facts = inspect_image(path, evidence_class)
@@ -146,6 +171,21 @@ async def create_reconstruction(
             "message": "none of the files is a usable photograph",
             "rejected": rejected,
         })
+
+    # F1: warn before reconstructing. Never blocks: a failure here must not stop the upload.
+    capture_quality = None
+    try:
+        from reconstruction import capture_quality as cq
+
+        qa = await asyncio.to_thread(cq.assess_capture, [(a[0], a[2]) for a in photos])
+        if qa.get("available"):
+            for a in photos:
+                a[6]["capture_quality"] = qa["photos"].get(a[0])
+            capture_quality = {"summary": qa["summary"], "provisional_note": qa["provisional_note"],
+                               "photos": {k: {"verdict": v["verdict"], "reasons": v["reasons"]}
+                                          for k, v in qa["photos"].items()}}
+    except Exception:
+        capture_quality = None
 
     now = datetime.now(timezone.utc)
     if world_id:
@@ -213,8 +253,11 @@ async def create_reconstruction(
     )).scalars().first()
     if queued is not None:
         job, coalesced = queued, True
+        if dense_cpu:       # the queued run reads the union of evidence, so it must also honour this opt-in
+            job.payload = {**(job.payload or {}), "dense_cpu": dense_cfg}
     else:
-        job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", session.id)
+        job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", session.id,
+                                    payload={"dense_cpu": dense_cfg} if dense_cpu else None)
         coalesced = False
     session.status = "processing"
     session.processing_started_at = utcnow()
@@ -223,6 +266,7 @@ async def create_reconstruction(
         "world_id": world.id, "session_id": session.id, "job_id": job.id,
         "evidence": ev_out, "rejected": rejected, "coalesced": coalesced,
         "created_world": world_id is None,
+        "capture_quality": capture_quality,
     }
 
 
@@ -280,7 +324,8 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
         select(WorldVersion).where(WorldVersion.world_id == world_id)
     )).scalars().all()
     head = next((v for v in versions if v.id == world.current_version_id), None)
-    report = dict(head.report or {}) if head is not None else {}
+    # a corrected version carries no report of its own: it is described by the nearest ancestor that has one
+    report = await worldstore_service.nearest_report(db, head.id) if head is not None else {}
     ev_report = report.get("evidence") or {}
 
     failure_kind = (job.payload or {}).get("failure_kind") if job is not None else None
@@ -309,6 +354,8 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             # attempts / waiting|registered / ever registered: a photo that could not be
             # placed is "waiting" and is retried on every rebuild, never discarded
             "registration": (ev.metadata_json or {}).get("registration"),
+            # pre-reconstruction check (provisional thresholds): {verdict, reasons, metrics, overlap} | None
+            "capture_quality": (ev.metadata_json or {}).get("capture_quality"),
         })
 
     failure = None
@@ -342,9 +389,15 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             # worlds report level 4/5). "sparse" always carries WHY dense is absent.
             "dense": _dense_state(report.get("attempts") or []),
             "scale": ((report.get("stages") or {}).get("scale") or {}),
+            # Plan F3: CPU plane-sweep dense geometry (status disabled|skipped|ran|refused + why) and
+            # Plan F2: device-depth scale estimate (or why refused); None when the run predates them
+            "plane_sweep": ((report.get("stages") or {}).get("plane_sweep")),
+            "device_depth_scale": ((report.get("stages") or {}).get("device_depth_scale")),
             # which entities kept their previous id (matched by measured spatial continuity) and which are only
             # related (split / merge / ambiguous) -- identity is never forced
             "identity": report.get("identity"),
+            "capture_quality": report.get("capture_quality"),
+            "structure_points": report.get("structure_points", []),
             "images_used": len(ev_report.get("input_ids") or []),
             "images_registered": len(ev_report.get("registered_ids") or []),
             # what this version changed relative to its predecessor (measured, see world_delta)
@@ -376,6 +429,38 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "excluded": ev_report.get("excluded", []),
         },
         "guidance": report.get("guidance", []),
+        "capture_quality": summarize_stored(e["capture_quality"] for e in evidence if e["type"] == "photo"),
         "versions": _rows_to_versions(list(versions), world.current_version_id),
         "failure": failure,
     }
+
+
+@world_status.get("/{world_id}/capture-coverage")
+async def get_capture_coverage(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Which walls of the reconstructed room were seen / seen weakly / not seen, with "take N more photos" hints.
+
+    Read-only: consumes the current WorldIR room footprint (``footprint_polygon_xyz_m``) and the registered camera
+    poses. Extra photos go through POST /api/reconstructions with this world_id (the existing refining path)."""
+    from apps.api.routes_worlds import world_cameras
+    from apps.api.worldstore_service import get_current_worldir
+    from reconstruction.capture_quality import wall_coverage
+
+    if await db.get(World, world_id) is None:
+        raise HTTPException(404, "World not found")
+    world = await get_current_worldir(db, world_id)
+    if world is None:
+        return {"available": False, "reason": "this world has no reconstructed model yet", "walls": [], "hints": []}
+    best = None
+    for ent in (world.entities or {}).values():
+        cp = getattr(ent, "custom_properties", None) or {}
+        poly = cp.get("footprint_polygon_xyz_m")
+        if poly and not cp.get("superseded_by") and (best is None or (cp.get("floor_area_m2") or 0) > best[1]):
+            best = (cp, cp.get("floor_area_m2") or 0, poly)
+    if best is None:
+        return {"available": False, "reason": "no measured room footprint in the current model", "walls": [],
+                "hints": []}
+    cams = (await world_cameras(world_id, None, db))["cameras"]
+    if not cams:
+        return {"available": False, "reason": "no registered camera poses for the current model", "walls": [],
+                "hints": []}
+    return wall_coverage(best[2], cams, best[0].get("footprint_basis"))

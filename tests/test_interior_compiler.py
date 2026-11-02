@@ -93,19 +93,34 @@ class TestInteriorCompilerPipeline:
 
         world, diag = compile_reconstruction_to_world(result, options)
 
+        # EXACT counts measured on the canonical two-storey fixture (seed 42, deterministic): a `>=` here would let a
+        # duplicate room, a phantom wall or a lost storey pass silently (plan S1, 2026-10-30).
         # 1. Plane classification & promotion
-        assert diag.planes_total > 5
+        assert diag.planes_total == 12
         wall_entities = [e for e in world.entities.values() if e.type == EntityType.WALL]
         floor_entities = [e for e in world.entities.values() if e.type == EntityType.FLOOR]
         ceiling_entities = [e for e in world.entities.values() if e.type == EntityType.CEILING]
-        assert len(wall_entities) >= 4
-        assert len(floor_entities) >= 1
-        assert len(ceiling_entities) >= 1
+        # S3: the room's primary representation is a solid slab per wall; the promoted planes remain as evidence.
+        # Two rooms => 8 slabs + 8 evidence planes, 2 floor slabs + 2 evidence floors, 2 ceiling slabs + 2 evidence ceilings.
+        wall_slabs = [e for e in wall_entities if e.custom_properties.get("wall_slab")]
+        floor_slabs = [e for e in floor_entities if "polygon_slab" in e.semantic_labels]
+        ceiling_slabs = [e for e in ceiling_entities if "polygon_slab" in e.semantic_labels]
+        assert len(wall_slabs) == 8, [e.id for e in wall_slabs]
+        assert len(floor_slabs) == 2 and len(ceiling_slabs) == 2
+        assert len(wall_entities) == 16 and len(floor_entities) == 4 and len(ceiling_entities) == 4
+        # F7: both storeys are measured independently, so neither room is a fragment of the other
+        for room in (e for e in world.entities.values() if e.type == EntityType.ROOM):
+            assert room.custom_properties.get("footprint_polygon_xyz_m"), room.id
+            assert "superseded_by" not in room.custom_properties, room.id
+            assert room.custom_properties.get("floor_height_m") is not None, room.id
 
-        # 2. Rooms
-        assert diag.rooms_detected >= 2
+        # 2. Rooms: two physical rooms -> exactly two ROOM entities, unique ids, and the diagnostics agree
+        assert diag.rooms_detected == 2
         rooms = [e for e in world.entities.values() if e.type == EntityType.ROOM]
-        assert len(rooms) >= 2
+        assert len(rooms) == 2
+        assert len({r.id for r in rooms}) == len(rooms), "duplicate ROOM entity ids"
+        detected = {c["room_id"] for c in diag.room_candidates if c["status"] == "detected"}
+        assert {r.id for r in rooms} == detected, "ROOM entities and detected room candidates disagree"
 
         # 3. Building Envelope & Storeys
         buildings = [e for e in world.entities.values() if e.type == EntityType.BUILDING]
@@ -113,31 +128,25 @@ class TestInteriorCompilerPipeline:
         bld = buildings[0]
         assert bld.provenance == Provenance.INFERRED
         assert "n_storeys" in bld.custom_properties
-        # HONEST STOREY COUNT (adversarial-sprint correction): this fixture's
-        # upper-level floor plane is absorbed by RANSAC into a tilted junk
-        # sheet (x/z full-span at y~1.6) together with cross-room wall-row
-        # points, so the upper room's floor is NOT measured. The earlier
-        # >= 2 assertion passed only through a phantom 36 m2 "room" the
-        # junk sheet seeded across the whole plan -- fabricated structure.
-        # The enclosure gates now refuse it: exactly the measured one
-        # storey survives, and the missing floor is a segmentation
-        # problem recorded here, not enclosure logic to relax.
-        assert bld.custom_properties["n_storeys"] >= 1
+        # History: an earlier version of this fixture lost the upper floor to a RANSAC junk sheet and a `>= 2` check
+        # passed only through a phantom 36 m2 room. The honest, measured result today is two storeys and two rooms
+        # (2 floors + 2 ceilings detected); the exact equality below makes any phantom or lost level fail loudly.
+        assert bld.custom_properties["n_storeys"] == 2
 
         storeys = [e for e in world.entities.values() if e.type == EntityType.STOREY]
-        assert len(storeys) >= 1
+        assert len(storeys) == 2
+        # every room is contained by exactly one storey (no orphan, no double ownership)
+        owners = [r.target_id for st in storeys for r in st.relationships if r.kind == RelationshipKind.CONTAINS]
+        for room in rooms:
+            assert owners.count(room.id) == 1, (room.id, owners)
 
         # 4. InteriorSpaceGraph attached to world metadata
-        # (same honest-count correction as the storey asserts above:
-        # the space graph indexes the enclosure-gated room graph, whose
-        # upper-level room is refused until the junk-sheet absorption
-        # is fixed upstream -- the phantom storey no longer counts)
         assert "interior_space_graph" in world.metadata
         sg_dict = world.metadata["interior_space_graph"]
         assert "rooms" in sg_dict
         assert "levels" in sg_dict
-        assert len(sg_dict["levels"]) >= 1
-        assert len(sg_dict["rooms"]) >= 1
+        assert len(sg_dict["levels"]) == 2
+        assert len(sg_dict["rooms"]) == 2
 
     def test_corridor_inference_and_topology(self):
         """Test Pillar B & C: Measured corridor completion and canonical topology graph."""

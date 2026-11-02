@@ -110,10 +110,12 @@ class ImporterCapabilityError(RuntimeError):
     """An optional decoder (Pillow/OpenCV) is not installed."""
 
 
-_PHOTO_EXTS = {".jpg", ".jpeg", ".png"}
-_VIDEO_EXTS = {".avi", ".mp4", ".mov", ".mkv"}
+_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".heic", ".heif"}
+_VIDEO_EXTS = {".avi", ".mp4", ".mov", ".mkv", ".m4v", ".ts"}
 _LAS_EXTS = {".las", ".laz"}
-_KNOWN_EXTS = _PHOTO_EXTS | _VIDEO_EXTS | _LAS_EXTS
+_POINT_CLOUD_EXTS = {".las", ".laz", ".ply", ".pcd", ".e57"}
+_MESH_EXTS = {".obj", ".gltf", ".glb"}
+_KNOWN_EXTS = _PHOTO_EXTS | _VIDEO_EXTS | _POINT_CLOUD_EXTS | _MESH_EXTS
 
 #: Perceptual-hash agreement threshold: hamming distance over the 64-bit
 #: dhash at or below this counts as a near-duplicate. 10/64 ≈ 16% of bits
@@ -196,6 +198,23 @@ def _decode_photo_exif(payload: bytes) -> Tuple[Dict[str, object], Optional[floa
         exif = image.getexif()
     except Exception:
         return sensor, acquired_at, gps_meta
+
+    # Equirectangular / 360-degree panorama detection (Phase 2 Task 2.4)
+    try:
+        width, height = image.size
+        if height > 0 and abs(width / height - 2.0) <= 0.02:
+            sensor["is_360"] = True
+            sensor["projection"] = "equirectangular"
+        raw_info = getattr(image, "info", {}) or {}
+        xmp = raw_info.get("xmp") or raw_info.get("XML:com.adobe.xmp")
+        if isinstance(xmp, (bytes, str)):
+            xmp_str = xmp.decode("utf-8", errors="ignore") if isinstance(xmp, bytes) else xmp
+            if "equirectangular" in xmp_str.lower() or "usepanoramaviewer" in xmp_str.lower():
+                sensor["is_360"] = True
+                sensor["projection"] = "equirectangular"
+    except Exception:
+        pass
+
     if not exif:
         return sensor, acquired_at, gps_meta
 
@@ -599,6 +618,106 @@ def _import_las(
     )
 
 
+def _parse_ply_header(payload: bytes) -> Dict[str, object]:
+    meta: Dict[str, object] = {"format": "ply"}
+    try:
+        header_text = payload[:1024].decode("ascii", errors="ignore")
+        for line in header_text.splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 3 and parts[0] == "element" and parts[1] == "vertex":
+                meta["vertex_count"] = int(parts[2])
+                break
+    except Exception:
+        pass
+    return meta
+
+
+def _parse_pcd_header(payload: bytes) -> Dict[str, object]:
+    meta: Dict[str, object] = {"format": "pcd"}
+    try:
+        header_text = payload[:1024].decode("ascii", errors="ignore")
+        for line in header_text.splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 2 and parts[0].upper() == "POINTS":
+                meta["point_count"] = int(parts[1])
+                break
+    except Exception:
+        pass
+    return meta
+
+
+def _import_point_cloud(
+    builder: DeterministicPackageBuilder,
+    source,
+    path: str,
+    report: FolderImportReport,
+) -> None:
+    ext = _extension_of(path)
+    if ext in (".las", ".laz"):
+        _import_las(builder, source, path, report)
+        return
+
+    payload = _read_bytes(path)
+    existing = builder.asset_id_for_payload(payload)
+    if existing is not None:
+        report.duplicates_skipped.append((path, existing))
+        return
+
+    sensor: Dict[str, object] = {}
+    if ext == ".ply":
+        sensor = _parse_ply_header(payload)
+    elif ext == ".pcd":
+        sensor = _parse_pcd_header(payload)
+    elif ext == ".e57":
+        sensor = {"format": "e57"}
+
+    asset_id = builder.add_payload(
+        payload,
+        kind=EvidenceKind.POINT_CLOUD,
+        source=source,
+        source_uri=path,
+        sensor_metadata=sensor,
+        quality={"measured": 0.0},
+    )
+    report.imported.append(
+        ImportedAsset(path=path, asset_id=asset_id, kind=EvidenceKind.POINT_CLOUD, acquired_at=None)
+    )
+
+
+def _import_mesh(
+    builder: DeterministicPackageBuilder,
+    source,
+    path: str,
+    report: FolderImportReport,
+) -> None:
+    payload = _read_bytes(path)
+    existing = builder.asset_id_for_payload(payload)
+    if existing is not None:
+        report.duplicates_skipped.append((path, existing))
+        return
+
+    ext = _extension_of(path)
+    meta: Dict[str, object] = {"role": "mesh", "mesh_format": ext.lstrip(".")}
+    if ext == ".obj":
+        try:
+            head = payload[:4096].decode("utf-8", errors="ignore")
+            meta["vertices_preview_count"] = head.count("\nv ") + (1 if head.startswith("v ") else 0)
+        except Exception:
+            pass
+
+    asset_id = builder.add_payload(
+        payload,
+        kind=EvidenceKind.OTHER,
+        source=source,
+        source_uri=path,
+        sensor_metadata=meta,
+        quality={"measured": 0.0},
+    )
+    report.imported.append(
+        ImportedAsset(path=path, asset_id=asset_id, kind=EvidenceKind.OTHER, acquired_at=None)
+    )
+
+
 def _import_video(
     builder: DeterministicPackageBuilder,
     source,
@@ -728,9 +847,14 @@ def import_file(
         _import_photo(builder, source, path, report, {})
         imported = [a for a in report.imported if a.path == path]
         return imported[-1]
-    if extension in _LAS_EXTS:
+    if extension in _POINT_CLOUD_EXTS:
         before = {a.asset_id for a in report.imported}
-        _import_las(builder, source, path, report)
+        _import_point_cloud(builder, source, path, report)
+        imported = [a for a in report.imported if a.asset_id not in before]
+        return imported[-1]
+    if extension in _MESH_EXTS:
+        before = {a.asset_id for a in report.imported}
+        _import_mesh(builder, source, path, report)
         imported = [a for a in report.imported if a.asset_id not in before]
         return imported[-1]
     if extension in _VIDEO_EXTS:
@@ -809,8 +933,10 @@ def import_folder(
         try:
             if extension in _PHOTO_EXTS:
                 _import_photo(builder, use_source, path, report, pixel_hashes)
-            elif extension in _LAS_EXTS:
-                _import_las(builder, use_source, path, report)
+            elif extension in _POINT_CLOUD_EXTS:
+                _import_point_cloud(builder, use_source, path, report)
+            elif extension in _MESH_EXTS:
+                _import_mesh(builder, use_source, path, report)
             elif extension in _VIDEO_EXTS:
                 _import_video(
                     builder, use_source, path, report,

@@ -1,0 +1,16 @@
+{
+  "name": "reality-engine-desktop",
+  "productName": "Reality Engine",
+  "version": "0.1.0",
+  "description": "Reality Engine offline desktop app (Electron shell around the local API and Studio UI)",
+  "private": true,
+  "main": "src/main.js",
+  "author": "Reality Engine",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}

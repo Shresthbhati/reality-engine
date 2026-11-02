@@ -25,6 +25,7 @@ from apps.api.models import (
     World,
     WorldVersion,
     new_id,
+    utcnow,
 )
 from world_ir.diff import diff_worlds
 from world_ir.schema_v1 import EntityType, Relationship, RelationshipKind, Provenance
@@ -39,6 +40,8 @@ def _worldstore_root() -> Path:
 
 
 worlds = APIRouter(prefix="/api/worlds", tags=["worlds"])
+
+WORLD_STATUSES = ("active", "archived", "trashed")
 
 
 class WorldIn(BaseModel):
@@ -81,30 +84,39 @@ async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db)) -> dic
     return {"id": w.id, "name": w.name}
 
 
+def _world_out(w: World, session_count: int | None = None) -> dict:
+    out = {
+        "id": w.id,
+        "name": w.name,
+        "description": w.description,
+        "status": w.status,
+        "latitude": w.latitude,
+        "longitude": w.longitude,
+        "current_version_id": w.current_version_id,
+        "archived_at": w.archived_at.isoformat() if w.archived_at else None,
+        "deleted_at": w.deleted_at.isoformat() if w.deleted_at else None,
+        "thumbnail_uri": w.thumbnail_uri,
+        "scale_state": w.scale_state,
+        "created_at": w.created_at.isoformat() if w.created_at else None,
+    }
+    if session_count is not None:
+        out["session_count"] = session_count
+    return out
+
+
 @worlds.get("")
-async def list_worlds(db: AsyncSession = Depends(get_db)) -> dict:
-    res = await db.execute(select(World).order_by(World.updated_at.desc()).limit(200))
+async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)) -> dict:
+    """``?status=active|archived|trashed`` (default active): archived and trashed worlds are hidden from the default list."""
+    if status not in WORLD_STATUSES:
+        raise HTTPException(422, f"status must be one of {', '.join(WORLD_STATUSES)}")
+    res = await db.execute(
+        select(World).where(World.status == status).order_by(World.updated_at.desc()).limit(200))
     ses_counts = dict(
         (await db.execute(
             select(Session.world_id, func.count()).group_by(Session.world_id)
         )).all()
     )
-    return {
-        "items": [
-            {
-                "id": w.id,
-                "name": w.name,
-                "description": w.description,
-                "status": w.status,
-                "latitude": w.latitude,
-                "longitude": w.longitude,
-                "current_version_id": w.current_version_id,
-                "session_count": ses_counts.get(w.id, 0),
-                "created_at": w.created_at.isoformat() if w.created_at else None,
-            }
-            for w in res.scalars().all()
-        ]
-    }
+    return {"items": [_world_out(w, ses_counts.get(w.id, 0)) for w in res.scalars().all()]}
 
 
 @worlds.get("/{world_id}")
@@ -115,17 +127,142 @@ async def get_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     session_count = (await db.execute(
         select(func.count()).select_from(Session).where(Session.world_id == world_id)
     )).scalar_one()
-    return {
-        "id": w.id,
-        "name": w.name,
-        "description": w.description,
-        "status": w.status,
-        "latitude": w.latitude,
-        "longitude": w.longitude,
-        "current_version_id": w.current_version_id,
-        "session_count": session_count,
-        "created_at": w.created_at.isoformat() if w.created_at else None,
-    }
+    return _world_out(w, session_count)
+
+
+class WorldPatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+async def _world_or_404(db: AsyncSession, world_id: str) -> World:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    return w
+
+
+@worlds.patch("/{world_id}")
+async def patch_world(world_id: str, body: WorldPatch, db: AsyncSession = Depends(get_db)) -> dict:
+    """Rename / edit the description. Identity (id, versions, sessions) is untouched. A trashed world must be restored first."""
+    from apps.api.validation import require_json_size, require_name
+    from apps.api.world_lifecycle import record_event
+
+    w = await _world_or_404(db, world_id)
+    if w.status == "trashed":
+        raise HTTPException(409, "World is in the trash; restore it before editing")
+    changed = {}
+    if body.name is not None:
+        new = require_name(body.name, "world name")
+        if new != w.name:
+            changed["name"] = {"from": w.name, "to": new}
+            w.name = new
+    if "description" in body.model_fields_set:
+        new_d = require_json_size(body.description, "description")
+        if new_d != w.description:
+            changed["description"] = True
+            w.description = new_d
+    if not changed:
+        raise HTTPException(422, "nothing to change: send a different name and/or description")
+    record_event(db, "updated", w, f"World '{w.name}' edited ({', '.join(changed)})", {"changed": changed})
+    await db.commit()
+    return _world_out(w)
+
+
+@worlds.post("/{world_id}/duplicate", status_code=201)
+async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Copy-on-write duplicate: a new world carrying the source's metadata and its CURRENT version's content. The
+    WorldIR JSON is re-saved under the new world id (version rows are keyed by world), but geometry, points and
+    cameras are content-addressed blobs that both worlds reference -- no file copies. Sessions/evidence are not
+    copied (the duplicate shares the reconstruction, not the capture history)."""
+    from worldstore.store import WorldStoreError
+
+    from apps.api import worldstore_service
+    from apps.api.world_lifecycle import record_event
+
+    src = await _world_or_404(db, world_id)
+    if src.status == "trashed":
+        raise HTTPException(409, "World is in the trash; restore it before duplicating")
+    src_row = None
+    if src.current_version_id:
+        src_row = await worldstore_service.get_current_version_row(db, world_id)
+        if src_row is None:
+            raise HTTPException(409, f"Current version '{src.current_version_id}' has no usable version record")
+    new = World(id=new_id("wld"), name=f"{src.name} (copy)"[:200], description=src.description, status="active",
+                owner_id=src.owner_id, team_id=src.team_id, latitude=src.latitude, longitude=src.longitude,
+                coverage=src.coverage, thumbnail_uri=src.thumbnail_uri, scale_state=src.scale_state)
+    db.add(new)
+    record_event(db, "duplicated", new, f"World '{src.name}' duplicated as '{new.name}'", {"source_world_id": src.id})
+    try:
+        if src_row is not None:
+            wir = worldstore_service.get_store().load_version(src_row.id)
+            row = await worldstore_service.commit_version(
+                db, world_id=new.id, world=wir, parent=None,
+                source_session_ids=list(src_row.source_session_ids or []), report=src_row.report)
+            row.label = f"Duplicate of {src.name} @ {src_row.id}"[:200]
+            row.points_artifact_uri, row.cameras_artifact_uri = src_row.points_artifact_uri, src_row.cameras_artifact_uri
+        await db.commit()
+    except (WorldStoreError, worldstore_service.ConcurrentModificationError,
+            worldstore_service.AdoptionVerificationError) as exc:
+        await db.rollback()
+        raise HTTPException(409, f"Could not duplicate: {exc}") from exc
+    except Exception:
+        await db.rollback()
+        raise
+    await db.refresh(new)
+    return {**_world_out(new), "duplicated_from": src.id}
+
+
+@worlds.post("/{world_id}/archive")
+async def archive_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    from apps.api.world_lifecycle import record_event
+
+    w = await _world_or_404(db, world_id)
+    if w.status == "trashed":
+        raise HTTPException(409, "World is in the trash; restore it first")
+    if w.status == "archived":
+        return _world_out(w)                       # idempotent: already archived, no new event
+    w.status, w.archived_at = "archived", utcnow()
+    record_event(db, "archived", w, f"World '{w.name}' archived")
+    await db.commit()
+    return _world_out(w)
+
+
+@worlds.post("/{world_id}/restore")
+async def restore_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    from apps.api.world_lifecycle import record_event
+
+    w = await _world_or_404(db, world_id)
+    if w.status == "active":
+        raise HTTPException(409, "World is already active")
+    was = w.status
+    w.status, w.archived_at, w.deleted_at = "active", None, None
+    record_event(db, "restored", w, f"World '{w.name}' restored from {was}", {"from": was})
+    await db.commit()
+    return _world_out(w)
+
+
+@worlds.delete("/{world_id}")
+async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession = Depends(get_db)):
+    """Soft delete (default): cancel the world's queued/running jobs FIRST, then status=trashed, deleted_at=now; the
+    trash sweep purges it after 30 days. ``?permanent=true`` purges now: rows, WorldStore versions and only the blobs
+    nothing else references (409 while a job is still stopping)."""
+    from apps.api.world_lifecycle import JobsStillRunning, cancel_world_jobs, purge_world, record_event
+
+    w = await _world_or_404(db, world_id)
+    if permanent:
+        try:
+            return {"permanently_deleted": True, **await purge_world(db, w)}
+        except JobsStillRunning as exc:
+            raise HTTPException(409, str(exc)) from exc
+    if w.status == "trashed":
+        raise HTTPException(409, "World is already in the trash; use ?permanent=true to delete it for good")
+    jobs = await cancel_world_jobs(db, w.id)
+    w.status, w.deleted_at = "trashed", utcnow()
+    record_event(db, "trashed", w, f"World '{w.name}' moved to trash",
+                 {"jobs_cancelled": jobs["cancelled"], "jobs_cancel_requested": jobs["cancel_requested"]})
+    await db.commit()
+    return {**_world_out(w), "jobs_cancelled": jobs["cancelled"], "jobs_cancel_requested": jobs["cancel_requested"]}
 
 
 @worlds.get("/{world_id}/versions")
@@ -502,6 +639,17 @@ def _decode_point_payload(raw: bytes) -> list[tuple[float, float, float]]:
     return out
 
 
+def _keep_registered_cameras(cameras: list, world) -> list:
+    """Only photographs the version registered. The job records per photograph whether it registered
+    (metadata.evidence.used[].registered); a level-0 fusion's per-entity camera poses are display layout and carry no
+    registration. Worlds with no such record are returned unchanged rather than emptied."""
+    used = ((getattr(world, "metadata", None) or {}).get("evidence") or {}).get("used")
+    if not used:
+        return cameras
+    registered = {u.get("evidence_id") for u in used if u.get("registered")}
+    return [c for c in cameras if c.get("evidence_id") in registered]
+
+
 @worlds.get("/{world_id}/cameras")
 async def world_cameras(
     world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
@@ -549,6 +697,7 @@ async def world_cameras(
                                 "rotation_wxyz": [float(c) for c in cam.get("rotation_wxyz", [1.0, 0.0, 0.0, 0.0])]})
         if image_size is None and isinstance(payload.get("image_size"), (list, tuple)):
             image_size = [int(v) for v in payload["image_size"]]
+    cameras = _keep_registered_cameras(cameras, world)
     return {
         "frame": "world (meters, +Y up after frame canonicalization)",
         "rotation_convention": "camera-to-world quaternion (w, x, y, z)",
@@ -615,6 +764,9 @@ _COMMIT_MUTABLE_FIELDS = (
     "boundary_element_ids",
     "connected_level_ids",
     "connected_room_ids",
+    # F6: a typed real dimension. Applied to the world (entity + replayable registry + VERIFIED state), never to an
+    # arbitrary entity attribute -- handled explicitly below, not by setattr.
+    "user_correction",
 )
 _MAX_COMMIT_CHANGES = 32
 _MAX_COMMIT_VALUE_BYTES = 16 * 1024
@@ -625,6 +777,40 @@ class CommitRequest(BaseModel):
     changes: dict
     parent_version_id: str | None = None
     commit_message: str | None = None
+
+
+def _assert_all_finite(value, field: str) -> None:
+    """A literal NaN/Infinity in a stored world is not valid JSON: the browser's JSON.parse rejects the whole
+    /worldir response. Python's json accepts the tokens on the way in, so every number is checked here."""
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise HTTPException(422, f"field '{field}' contains a non-finite number (NaN/Infinity)")
+    elif isinstance(value, dict):
+        for v in value.values():
+            _assert_all_finite(v, field)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _assert_all_finite(v, field)
+
+
+def _validate_transform(value: dict) -> dict:
+    """{position: {x,y,z}, rotation: {w,x,y,z}} -- finite real numbers, a unit quaternion, nothing else."""
+    if set(value) != {"position", "rotation"}:
+        raise HTTPException(422, "field 'transform' must be exactly {position: {x,y,z}, rotation: {w,x,y,z}}")
+    out: dict = {}
+    for part, axes in (("position", "xyz"), ("rotation", "wxyz")):
+        sub = value[part]
+        if not isinstance(sub, dict) or set(sub) != set(axes):
+            raise HTTPException(422, f"transform.{part} must have exactly the numeric keys {list(axes)}")
+        for a in axes:
+            v = sub[a]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise HTTPException(422, f"transform.{part}.{a} must be a finite number")
+        out[part] = {a: float(sub[a]) for a in axes}
+    norm = math.sqrt(sum(out["rotation"][a] ** 2 for a in "wxyz"))
+    if abs(norm - 1.0) > 1e-3:
+        raise HTTPException(422, f"transform.rotation must be a unit quaternion (norm {norm:.4g})")
+    return out
 
 
 def _validate_commit_changes(changes: dict) -> dict:
@@ -652,6 +838,7 @@ def _validate_commit_changes(changes: dict) -> dict:
             raise HTTPException(
                 413, f"field '{key}' exceeds {_MAX_COMMIT_VALUE_BYTES} bytes"
             )
+        _assert_all_finite(value, key)
         if key == "name":
             if not isinstance(value, str) or not value or len(value) > 300:
                 raise HTTPException(
@@ -690,7 +877,7 @@ def _validate_commit_changes(changes: dict) -> dict:
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):
                 raise HTTPException(422, f"field '{key}' must be an object")
-            validated[key] = dict(value)
+            validated[key] = _validate_transform(value) if key == "transform" else dict(value)
         elif key == "relationships":
             if not isinstance(value, list) or len(value) > 100:
                 raise HTTPException(
@@ -775,6 +962,18 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
     worldir.id = w.id
     base_snapshot = worldir.to_dict()
     for key, value in validated.items():
+        if key == "user_correction":
+            from world_ir.corrections import CorrectionError, make_correction, record_correction
+
+            if not isinstance(value, dict) or value.get("entity_id") != body.entity_id:
+                raise HTTPException(422, "user_correction.entity_id must match the committed entity")
+            try:
+                record = make_correction(worldir, body.entity_id, str(value.get("property")),
+                                         value.get("value"), str(value.get("note") or ""))
+                record_correction(worldir, record)
+            except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
         if key == "name":
             entity.name = value
         elif key == "type":
@@ -784,7 +983,15 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         elif key == "semantic_labels":
             entity.semantic_labels = value
         elif key == "custom_properties":
-            entity.custom_properties = value
+            # `reconstruction` is the pipeline's own build trace (session, backend, level): a correction may add or
+            # change anything else, but it may not erase or rewrite the provenance of what the engine built.
+            new_props = dict(value)
+            trace = (entity.custom_properties or {}).get("reconstruction")
+            if trace is not None:
+                if "reconstruction" in new_props and new_props["reconstruction"] != trace:
+                    raise HTTPException(422, "custom_properties.reconstruction is pipeline-owned and cannot be rewritten")
+                new_props["reconstruction"] = trace
+            entity.custom_properties = new_props
         elif key == "transform":
             entity.transform = value
         elif key == "relationships":
@@ -985,7 +1192,9 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
             type="world.committed",
             entity_type="world",
             entity_id=w.id,
-            summary=f"Committed correction to {body.entity_id}: {body.commit_message or 'no message'}",
+            summary=(f"Verified {validated['user_correction'].get('property')} on {body.entity_id}: "
+                     f"{validated['user_correction'].get('value')}" if "user_correction" in validated
+                     else f"Committed correction to {body.entity_id}: {body.commit_message or 'no message'}"),
         )
     )
 
@@ -1242,24 +1451,112 @@ async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Dep
 
 
 class ScaleIn(BaseModel):
-    evidence_id_a: str
-    evidence_id_b: str
-    distance_m: float
+    """One scale fact. ``method`` selects the contract:
+
+    * camera baseline (default ``manual_measurement`` or any free text): evidence_id_a/b + distance_m.
+    * ``known_length``: distance_m (real length, metres) + either ``point_a``/``point_b`` (viewer/world
+      coordinates of the two picked points) or ``model_length`` (the same length in model units).
+      Evidence ids are optional (the server fingerprints the model unit itself).
+    * ``prior_accepted_by_user``: ``source_entity_id`` from GET /scale/suggestion; ``distance_m`` optional
+      (defaults to the suggested value; must lie in the suggestion's typical range). The server recomputes
+      the model length from the world -- the client cannot supply it.
+    """
+
+    evidence_id_a: str | None = None
+    evidence_id_b: str | None = None
+    distance_m: float | None = None
     method: str = "manual_measurement"
+    point_a: list[float] | None = None
+    point_b: list[float] | None = None
+    model_length: float | None = None
+    source_entity_id: str | None = None
+
+
+def _head_scale_context(row: WorldVersion) -> tuple[dict, float, str | None, str | None, float | None]:
+    """(world metadata scale, metres-per-unit of the current version or 1.0, cam_a, cam_b, their pre-scale
+    separation) -- the camera pair fingerprints the model unit for model-space references."""
+    world = _load_world_or_409(row)
+    scale = dict((world.metadata or {}).get("scale") or {})
+    # Displayed units per solver unit. Metric: metres per unit. Relative: the working unit the structure was found in
+    # (reconstruction.scene_scale), so a length picked in the viewer is converted back to the solver units references
+    # are recorded and applied in.
+    mpu = (float(scale.get("meters_per_unit") or 1.0) if scale.get("state") == "metric"
+           else float(scale.get("provisional_unit_k") or 1.0))
+    cams = (row.report or {}).get("cameras") or {}
+    ids = sorted(k for k, v in cams.items() if isinstance(v, (list, tuple)) and len(v) == 3)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            sep = math.dist(cams[a], cams[b]) / mpu
+            if sep > 0.0:
+                return scale, mpu, a, b, sep
+    return scale, mpu, None, None, None
+
+
+def _suggestion_key(sug) -> str:
+    return f"{sug.source_entity_id}:{sug.measured_model_units:.6g}"
+
+
+@worlds.get("/{world_id}/scale/suggestion")
+async def get_scale_suggestion(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """A typical-size scale suggestion from a detected standard object (a door), for a RELATIVE world.
+
+    Nothing is applied. ``suggestion`` is null -- never a default -- when the world is already metric or no
+    door with a measured height exists. Accept = POST /scale with method=prior_accepted_by_user; reject =
+    POST /scale/suggestion/reject."""
+    from apps.api import worldstore_service as wss
+    from reconstruction.scale import suggest_scale_from_world
+
+    row = await _version_row(db, world_id, None)
+    world = _load_world_or_409(row)
+    meta = (world.metadata or {}).get("scale") or {}
+    state = meta.get("state") or "relative"
+    sug = suggest_scale_from_world(world)
+    out = {"world_id": world_id, "scale_state": state, "suggestion": None, "rejected": False,
+           "dimension_state": meta.get("dimension_state"), "scale_basis": meta.get("scale_basis"), "reason": None}
+    if sug is None:
+        out["reason"] = ("the world already has a metric scale" if state == "metric"
+                         else "no door with a measured height was detected, so there is nothing to suggest")
+        return out
+    out["suggestion"] = sug.to_dict()
+    out["rejected"] = _suggestion_key(sug) in wss.list_rejected_suggestions(world_id)
+    return out
+
+
+class RejectIn(BaseModel):
+    source_entity_id: str
+
+
+@worlds.post("/{world_id}/scale/suggestion/reject")
+async def reject_scale_suggestion(world_id: str, body: RejectIn, db: AsyncSession = Depends(get_db)) -> dict:
+    """Decline the current suggestion. Changes nothing about the world: it stays RELATIVE."""
+    from apps.api import worldstore_service as wss
+    from reconstruction.scale import suggest_scale_from_world
+
+    row = await _version_row(db, world_id, None)
+    sug = suggest_scale_from_world(_load_world_or_409(row))
+    if sug is None or sug.source_entity_id != body.source_entity_id:
+        raise HTTPException(409, "that suggestion is no longer current")
+    wss.reject_scale_suggestion(world_id, _suggestion_key(sug))
+    return {"world_id": world_id, "rejected": True, "scale_state": "unchanged"}
 
 
 @worlds.post("/{world_id}/scale", status_code=202)
 async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depends(get_db)) -> dict:
-    """Anchor the world's scale to a distance the user measured between two of its photographs.
+    """Anchor the world's scale to a distance the user measured between two of its photographs, a length
+    they know in the model (``known_length``), or a typical size they explicitly accepted
+    (``prior_accepted_by_user``, always labelled ESTIMATED).
 
-    Never assumes meters: the reference (two evidence ids + measured metres + method) is recorded, and a
-    reconstruction of the SAME world is queued that applies it through the existing scale anchoring. The
-    result is a new version of the same world whose report states the scale source and ratio spread; if the
-    two photographs cannot be placed, the world stays RELATIVE and the report says why."""
+    Never assumes meters: the reference is recorded, and a reconstruction of the SAME world is queued that
+    applies it through the existing scale anchoring. The result is a new version of the same world whose
+    report states the scale source and ratio spread; if the reference cannot be applied, the world stays
+    RELATIVE and the report says why."""
     from apps.api import jobs as jobrunner
     from apps.api import worldstore_service as wss
     from apps.api.models import Job, Session as _Session
-    from reconstruction.scale import ScaleAnchoringError
+    from reconstruction.scale import (
+        KNOWN_LENGTH, MODEL_SPACE_METHODS, PRIOR_ACCEPTED, ScaleAnchoringError, ScaleReference, gate_ratios,
+        suggest_scale_from_world,
+    )
 
     w = await db.get(World, world_id)
     if w is None:
@@ -1271,21 +1568,104 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
         known = set((await db.execute(
             select(Evidence.id).where(Evidence.session_id.in_([s.id for s in sessions]), Evidence.type == "photo")
         )).scalars().all())
-    for eid in (body.evidence_id_a, body.evidence_id_b):
-        if eid not in known:
-            raise HTTPException(422, f"evidence '{eid}' is not a photograph of this world")
+    model_space = body.method in MODEL_SPACE_METHODS
+    if not model_space:
+        if body.evidence_id_a is None or body.evidence_id_b is None or body.distance_m is None:
+            raise HTTPException(422, "evidence_id_a, evidence_id_b and distance_m are required")
+        for eid in (body.evidence_id_a, body.evidence_id_b):
+            if eid not in known:
+                raise HTTPException(422, f"evidence '{eid}' is not a photograph of this world")
     busy = (await db.execute(
         select(Job.id).where(Job.entity_type == "session", Job.entity_id.in_([s.id for s in sessions]),
                              Job.status.in_(("queued", "running"))).limit(1)
     )).scalars().first()
     if busy:
         raise HTTPException(409, f"a reconstruction is in progress (job {busy}); apply the scale when it finishes")
+    model_distance = unit_check = None
+    a, b = body.evidence_id_a, body.evidence_id_b
+    distance_m = body.distance_m
+    if model_space:
+        row = await _version_row(db, world_id, None)
+        scale, mpu, ca, cb, csep = _head_scale_context(row)
+        if ca is None:
+            raise HTTPException(422, "this world has no registered camera pair to tie the length to")
+        a, b, unit_check = ca, cb, csep
+        if body.method == PRIOR_ACCEPTED:
+            sug = suggest_scale_from_world(_load_world_or_409(row))
+            if scale.get("state") == "metric":
+                raise HTTPException(409, "the world already has a metric scale; a typical-size estimate "
+                                         "never replaces it")
+            if sug is None or sug.source_entity_id != body.source_entity_id:
+                raise HTTPException(409, "that suggestion is not current (or none exists); fetch it again")
+            distance_m = sug.suggested_value_m if distance_m is None else distance_m
+            lo, hi = sug.typical_range_m
+            if not (lo <= distance_m <= hi):
+                raise HTTPException(422, f"accepted size must lie in the typical range {lo}-{hi} m")
+            model_distance = sug.measured_model_units / mpu     # displayed (working) units -> solver units
+        else:  # KNOWN_LENGTH
+            if distance_m is None:
+                raise HTTPException(422, "distance_m (the real length) is required")
+            if body.point_a is not None and body.point_b is not None:
+                if len(body.point_a) != 3 or len(body.point_b) != 3:
+                    raise HTTPException(422, "points must be [x, y, z]")
+                model_distance = math.dist(body.point_a, body.point_b) / mpu
+            elif body.model_length is not None:
+                model_distance = body.model_length / mpu
+            else:
+                raise HTTPException(422, "give point_a and point_b, or model_length")
+        try:
+            ScaleReference(a, b, float(distance_m), body.method, model_distance, unit_check)
+            if body.method == KNOWN_LENGTH:          # the new length must agree with the ones already given
+                earlier = [r for r in wss.list_scale_references(world_id)
+                           if r.get("method") == KNOWN_LENGTH and r.get("model_distance")]
+                gate_ratios([r["distance_m"] / r["model_distance"] for r in earlier]
+                            + [float(distance_m) / model_distance])
+        except ScaleAnchoringError as exc:
+            raise HTTPException(422, str(exc)) from exc
     try:
-        ref = wss.add_scale_reference(world_id, body.evidence_id_a, body.evidence_id_b, body.distance_m, body.method)
+        ref = wss.add_scale_reference(world_id, a, b, distance_m, body.method, model_distance, unit_check)
     except ScaleAnchoringError as exc:
         raise HTTPException(422, str(exc)) from exc
     job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", sessions[0].id)
     await db.commit()
     return {"world_id": world_id, "job_id": job.id, "reference": ref,
+            "dimension_state_after": "ESTIMATED" if body.method == PRIOR_ACCEPTED else "MEASURED",
             "note": "the same world will be re-evaluated with this measured distance; a new version is created "
                     "only if the authoritative geometry changes"}
+
+
+@worlds.get("/{world_id}/thumbnail")
+async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession = Depends(get_db)):
+    """A 480 px JPEG of one of the place's own photographs (a placed one when the model has them). `v` is only a
+    cache-buster the client sets to the current version id."""
+    import asyncio
+    from fastapi.responses import FileResponse
+    from apps.api import place_summary
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    ev = await place_summary.pick_thumbnail_source(db, w)
+    if ev is None:
+        raise HTTPException(404, "This place has no photographs yet, so there is nothing to show")
+    path = place_summary.thumbnail_path(w, ev)
+    rendered = await asyncio.to_thread(place_summary.render_thumbnail, ev, path)
+    if rendered is None:
+        raise HTTPException(404, "The photograph could not be read, so no thumbnail was made")
+    return FileResponse(rendered, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@worlds.get("/{world_id}/quality")
+async def world_quality(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Per-entity quality bands plus the place-level summary the viewer's quality card shows (B-07)."""
+    from apps.api import place_summary
+
+    row = await _version_row(db, world_id, version)
+    world_row = await db.get(World, world_id)
+    world = _load_world_or_409(row)
+    card = (await place_summary.summaries(db, [world_row]))[world_id]
+    out = place_summary.quality_view(world, card, row.report)
+    out["version_id"] = row.id
+    return out

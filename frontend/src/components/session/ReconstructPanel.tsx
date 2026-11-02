@@ -33,9 +33,12 @@ export default function ReconstructPanel({
 
   function pollJob(jobId: string) {
     if (pollRef.current) clearInterval(pollRef.current);
+    let failures = 0;
     pollRef.current = setInterval(async () => {
       try {
         const latest = await getJob(jobId);
+        failures = 0;
+        setError(null);
         setJob(latest);
         if (
           latest.status === "succeeded" ||
@@ -48,8 +51,17 @@ export default function ReconstructPanel({
             router.push(`/worlds/${worldId}`);
           }
         }
-      } catch {
-        // Transient polling failure -- keep the last known status, try again.
+      } catch (err) {
+        // A few failed polls are transient; a sustained outage must not leave "Reconstructing…" on screen forever.
+        failures += 1;
+        if (failures >= 5) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setError(
+            `Lost contact with the API while the job was running (${isApiError(err) ? err.describe() : "request failed"}). ` +
+              "The reconstruction may still be running; reload to check its status.",
+          );
+          setJob(null);
+        }
       }
     }, 2000);
   }
@@ -97,14 +109,21 @@ export default function ReconstructPanel({
       </button>
 
       {job?.status === "succeeded" && (
-        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--success, #2ecc71)" }}>
+        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--success)" }}>
           <CheckCircle2 className="w-3.5 h-3.5" />
           Reconstruction complete — opening World…
         </p>
       )}
 
-      {job?.status === "partial" && (
-        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning, #e6a23c)" }}>
+      {job?.status === "partial" && job.payload?.adopted === false && (
+        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning)" }}>
+          <XCircle className="w-3.5 h-3.5" />
+          This rebuild was not adopted — the World keeps its current version. Opening World…
+        </p>
+      )}
+
+      {job?.status === "partial" && job.payload?.adopted !== false && (
+        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning)" }}>
           <CheckCircle2 className="w-3.5 h-3.5" />
           Reconstruction partially complete — opening World…
         </p>
@@ -118,14 +137,14 @@ export default function ReconstructPanel({
       )}
 
       {job?.status === "failed" && (
-        <p className="flex items-start gap-1.5 text-xs" style={{ color: "var(--error, #e57373)" }}>
+        <p className="flex items-start gap-1.5 text-xs" style={{ color: "var(--error)" }}>
           <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{job.error ?? "Reconstruction failed."}</span>
         </p>
       )}
 
       {error && (
-        <p className="text-xs" style={{ color: "var(--error, #e57373)" }}>
+        <p className="text-xs" style={{ color: "var(--error)" }}>
           {error}
         </p>
       )}

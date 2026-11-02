@@ -275,6 +275,19 @@ def promote_component_to_entity(
     props["segment_ids"] = segment_ids
     props["confidence_tier"] = tier.value
 
+    # Spatial standard deviation (sigma) of the fit, in meters -- the
+    # measured spatial uncertainty that Studio renders as
+    # custom_properties.uncertainty_sigma_m. RMS residual is a spatial
+    # dispersion measure; never invented, so fits without one (window,
+    # roof) leave the row absent and the Studio's honest empty state
+    # takes over.
+    rms = getattr(fit, "rms_residual_m", None)
+    if rms is None:
+        cyl = getattr(fit, "cylinder", None)
+        rms = getattr(cyl, "rms_residual_m", None) if cyl is not None else None
+    if isinstance(rms, (int, float)) and rms >= 0:
+        props["uncertainty_sigma_m"] = float(rms)
+
     entity = Entity(
         id=entity_id,
         type=entity_type,

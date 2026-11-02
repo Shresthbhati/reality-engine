@@ -4,35 +4,13 @@ WALL/FLOOR/CEILING ontology types in this repo; before this pass the
 extended EntityType vocabulary existed but, per
 docs/REALITY_ENGINE_AUDIT.md, "no code anywhere in this repo assigns
 these types automatically").
-
-How it decides (no LLM, no ML, no guessing):
-  - FLOOR: horizontal-ish plane whose normal points UP (toward the side
-    the cameras were on -- cameras are above floors and below ceilings in
-    any real capture).
-  - CEILING: horizontal-ish plane whose normal points DOWN (away from the
-    camera side -- a ceiling's visible face faces the floor).
-  - WALL: near-vertical plane (normal within WALL_NORMAL_TILT_RAD of the
-    horizontal plane; flip sign so the normal faces the cameras, which is
-    the face people photograph).
-  - UNKNOWN: everything else (sloped, degenerate, or unclassifiable).
-    Unclassifiable is an answer here, not a failure: a tilted roof plane
-    is honestly UNKNOWN rather than mislabeled.
-
-`up` is a caller-supplied parameter defaulting to +Z with the documented
-constraint that callers who have a real gravity vector (IMU, geodetic
-up, or a known-convention world frame) pass it. When up is None the
-classification is explicitly impossible for horizontal-vs-vertical
-disambiguation... except via camera positions, which is exactly what the
-floor/ceiling camera-side rule uses -- so the None case only downgrades
-WALL detection confidence and still refuses to guess, reported as
-UNKNOWN, never silently treated as +Z.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from provenance import Uncertainty
 from .planes import DetectedPlane, flip_normal_toward
@@ -52,13 +30,7 @@ class OrientationError(ValueError):
 
 @dataclass(frozen=True)
 class OrientedPlane:
-    """A DetectedPlane plus its classified role and a camera-facing normal.
-
-    normal is flipped toward `camera_side` (the mean camera position when
-    available) so "normal points at the observer" is true for the planes
-    people actually photograph; d is negated along with it so the plane
-    equation normal . p + d = 0 stays equivalent.
-    """
+    """A DetectedPlane plus its classified role and a camera-facing normal."""
 
     plane: DetectedPlane
     role: str  # "floor" | "ceiling" | "wall" | "unknown"
@@ -73,19 +45,9 @@ def classify_plane(
     camera_positions: Sequence[Tuple[float, float, float]],
     up: Optional[Tuple[float, float, float]] = None,
     observer_positions: Optional[Sequence[Tuple[float, float, float]]] = None,
+    plane_centroid: Optional[Tuple[float, float, float]] = None,
 ) -> OrientedPlane:
-    """Classify one plane against camera positions and an up vector.
-
-    camera_positions must be non-empty: without any camera there is no
-    camera-side to orient toward and no floor/ceiling disambiguation, and
-    guessing either would violate the no-fabrication rule.
-
-    up=None is the honest-unavailable case: horizontal/vertical
-    classification is still possible ONLY via the up-down camera rule,
-    which itself needs `up` to define "horizontal" -- so with up=None
-    every plane is UNKNOWN with an explanatory note. This is a refusal to
-    guess, surfaced, not a crash.
-    """
+    """Classify one plane against camera positions and an up vector."""
     if not camera_positions:
         raise OrientationError(
             "classify_plane requires at least one camera position -- "
@@ -98,15 +60,33 @@ def classify_plane(
     raw_normal = (plane.normal[0] / n_len, plane.normal[1] / n_len, plane.normal[2] / n_len)
     raw_d = plane.d / n_len  # keep n . p + d = 0 the same zero-set after normalizing
 
-    # Which side of the plane were the cameras on? The cameras that OBSERVED it, when that is known: the mean over
-    # every camera is only right when all cameras share one storey. In a stacked capture the mean sits between the
-    # levels, so a slab's underside (a ceiling) and its top (a floor) would swap roles.
-    side_cams = list(observer_positions) if observer_positions else list(camera_positions)
-    camera_side = (
-        sum(c[0] for c in side_cams) / len(side_cams),
-        sum(c[1] for c in side_cams) / len(side_cams),
-        sum(c[2] for c in side_cams) / len(side_cams),
-    )
+    # Which side of the plane were the cameras on?
+    # 1. Observers: cameras that observed the plane
+    # 2. Centroid: closest camera to plane's inlier centroid
+    # 3. Global: centroid of all cameras
+    if observer_positions:
+        side_cams = list(observer_positions)
+        camera_side = (
+            sum(c[0] for c in side_cams) / len(side_cams),
+            sum(c[1] for c in side_cams) / len(side_cams),
+            sum(c[2] for c in side_cams) / len(side_cams),
+        )
+    elif plane_centroid is not None and len(camera_positions) > 1:
+        camera_side = min(
+            camera_positions,
+            key=lambda c: (
+                (c[0] - plane_centroid[0]) ** 2
+                + (c[1] - plane_centroid[1]) ** 2
+                + (c[2] - plane_centroid[2]) ** 2
+            ),
+        )
+    else:
+        side_cams = list(camera_positions)
+        camera_side = (
+            sum(c[0] for c in side_cams) / len(side_cams),
+            sum(c[1] for c in side_cams) / len(side_cams),
+            sum(c[2] for c in side_cams) / len(side_cams),
+        )
 
     if up is None:
         return OrientedPlane(
@@ -141,8 +121,6 @@ def classify_plane(
         )
     if abs(math.pi - tilt) <= HORIZONTAL_NORMAL_TILT_RAD:
         # Normal points down => cameras below the visible face => ceiling.
-        # Flip to camera-facing (down-facing normal already faces the
-        # cameras in a normal room capture, so normal/d stay as flipped).
         return OrientedPlane(
             plane=plane, role="ceiling", normal=normal, d=d,
             tilt_from_role_rad=abs(math.pi - tilt),
@@ -173,9 +151,7 @@ def classify_plane(
 
 
 def observer_positions_by_plane(planes, result) -> dict:
-    """plane_id -> positions of the registered cameras that observed the plane's inlier points (points carry the
-    evidence ids that produced them). A plane with no known observing pose is absent: callers fall back to the
-    global camera mean, never to a guess."""
+    """plane_id -> positions of the registered cameras that observed the plane's inlier points."""
     pose_of = {c.evidence_id: c.position for c in result.camera_poses}
     seen_by = {p.track_id: p.source_evidence_ids for p in result.points}
     out = {}
@@ -192,11 +168,19 @@ def classify_planes(
     camera_positions: Sequence[Tuple[float, float, float]],
     up: Optional[Tuple[float, float, float]] = None,
     observers: Optional[dict] = None,
+    plane_centroids: Optional[Dict[str, Tuple[float, float, float]]] = None,
 ) -> List[OrientedPlane]:
-    """Classify every plane; deterministic (input order preserved). ``observers`` (plane_id -> observing camera
-    positions, see observer_positions_by_plane) makes floor/ceiling per-plane instead of global."""
+    """Classify every plane; deterministic (input order preserved)."""
     observers = observers or {}
-    return [classify_plane(p, camera_positions, up, observers.get(p.plane_id)) for p in planes]
+    plane_centroids = plane_centroids or {}
+    return [
+        classify_plane(
+            p, camera_positions, up,
+            observer_positions=observers.get(p.plane_id),
+            plane_centroid=plane_centroids.get(p.plane_id),
+        )
+        for p in planes
+    ]
 
 
 def _as_unit(v: Tuple[float, float, float]) -> Tuple[float, float, float]:

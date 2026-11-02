@@ -119,9 +119,17 @@ export interface WorldStatus {
     attempts: { level: number; name: string; outcome: string; detail: string }[];
     /** sparse vs dense, with the reason dense is absent */
     dense?: { state: "dense" | "sparse"; detail: string };
-    scale: { state?: string; meters_per_unit?: number | null };
+    scale: { state?: string; meters_per_unit?: number | null; scale_basis?: string | null; dimension_state?: string | null };
+    /** opt-in CPU plane-sweep dense geometry: disabled | skipped | ran | refused, with the reason */
+    plane_sweep?: { status: string; note?: string; reason?: string; [k: string]: unknown } | null;
+    /** device-depth metric scale estimate (or why it was refused); null when no device depth exists */
+    device_depth_scale?: { [k: string]: unknown } | null;
     images_used: number;
     images_registered: number;
+    /** capture-quality verdict for this version (absent on versions that predate it); parse with parseCaptureQuality */
+    capture_quality?: unknown;
+    /** room corners / opening corners / dimension-defining points in the point cloud's frame; parse with parseStructurePoints */
+    structure_points?: unknown;
     /** measured statements about what this version changed versus the previous one */
     changes?: string[];
     verdict?: "ACCEPT" | "ACCEPT_WITH_UNCERTAINTY" | null;
@@ -207,15 +215,23 @@ export interface WorldStatus {
 /** Drop photos into the engine. No worldId => a new world; with worldId => refine that world. */
 export function createReconstruction(
   files: File[],
-  opts: { worldId?: string | null; evidenceClass?: string | null; latitude?: number; longitude?: number } = {},
+  opts: {
+    worldId?: string | null; name?: string | null; evidenceClass?: string | null; latitude?: number; longitude?: number;
+    denseCpu?: boolean; planeSweepMaxViews?: number; planeSweepStride?: number; planeSweepPlanes?: number;
+  } = {},
 ): Promise<CreateReconstructionResult> {
   const fields: Record<string, string> = {};
   if (opts.worldId) fields.world_id = opts.worldId;
+  if (opts.name) fields.name = opts.name;
   if (opts.evidenceClass) fields.evidence_class = opts.evidenceClass;
   if (opts.latitude !== undefined && opts.longitude !== undefined) {
     fields.latitude = String(opts.latitude);
     fields.longitude = String(opts.longitude);
   }
+  if (opts.denseCpu) fields.dense_cpu = "true";
+  if (opts.planeSweepMaxViews !== undefined) fields.plane_sweep_max_views = String(opts.planeSweepMaxViews);
+  if (opts.planeSweepStride !== undefined) fields.plane_sweep_stride = String(opts.planeSweepStride);
+  if (opts.planeSweepPlanes !== undefined) fields.plane_sweep_planes = String(opts.planeSweepPlanes);
   return apiPostFiles<CreateReconstructionResult>("/api/reconstructions", "files", files, fields);
 }
 

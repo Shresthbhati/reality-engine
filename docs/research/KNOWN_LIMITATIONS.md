@@ -1,43 +1,17 @@
-# Known Limitations — Reality Engine Capability-Fusion Investigation
+# Known limitations (observed)
 
-These are real, observed limitations recorded honestly (not hidden). They are split into (1) pre-existing Reality Engine limitations confirmed against the code/tests, and (2) limitations of this investigation session. Pre-existing failures were NOT introduced by this session and are NOT "fixed" to appear healthy.
-
-## 1. Pre-existing Reality Engine limitations (confirmed vs code/tests)
-
-Source: re-runs of test subsets this session plus the repo's `test_results.txt` (baseline: 35 failed, 75 passed in 41.73s).
-
-| Area | Failure | Evidence | Status |
-|---|---|---|---|
-| Room inference (`test_room_inference.py`) | `AttributeError: 'PlaneSummary' object has no attribute 'plane'` in `evidence/promote_rooms.py::_wall_lines_in_floor` | Multiple TestDetectRooms / TestPromoteRoom tests fail | Pre-existing, unfixable within this session's scope without a real plane-fixture dataset |
-| World compiler (`test_world_compiler.py`) | TestCompilerEndToEnd / TestValidationGate assertions fail | Downstream of the room-inference `plane` attribute error | Pre-existing, cascades from room inference |
-| Compile command (`test_compile_command.py`) | 3 failures: `assert 10 == 8` (compiler produces 10 entities, tests expect 8) | TestCompileWorldCommand tests | Pre-existing entity-count mismatch |
-| Reconstruction orchestrator (`test_reconstruction_orchestrator.py`) | TestEndToEnd failures | Downstream of compiler/plane pipeline | Pre-existing |
-| WorldIR v2 (`test_world_ir_v2.py`) | 4 failures: `WorldIR` has no attribute `temporal_history`; external-reference round-trip issues | test_world_ir_v2.py | Pre-existing v2 schema gaps |
-| WorldStore concurrency (`test_world_store_concurrency.py`) | Hangs: multi-process race spawns subprocesses that exceed the 30s command timeout | `test_world_store_concurrency.py::TestConcurrentMultiProcessWriters` (and lock tests) | Environment-dependent; in-process thread tests pass |
-| Artifact integrity (`test_artifact_integrity.py`) | 11 fixture-related errors | Fixture setup issues | Pre-existing |
-
-**None of these were introduced or changed by this session.** Per the mission's honesty rule, they are documented here rather than concealed or papered over.
-
-## 2. Investigation-session limitations (environment / scope)
-
-| Limitation | Detail | Blocker | Unblock condition |
-|---|---|---|---|
-| Neural depth (MiDaS / Depth Anything V2) cannot run | `MiDaSDepthBackend`/`SAMSegmentationBackend` written but blocked at runtime — checkpoints not cached and cannot be downloaded (PyPI `files.pythonhosted.org` unreachable; `pip install` times out); torch is CPU-only; no GPU | No weights, no GPU, no PyPI access | GPU + cached/checkpointed weights + PyPI access + per-checkpoint license review |
-| Open3D python package unavailable | `codes/Open3D` cloned (MIT, `b6c5e19`) but `pip install open3d` fails (PyPI unreachable); cannot use ICP/registration/meshing at runtime | PyPI unreachable | PyPI access + open3d wheel |
-| REA live binary analysis blocked | REA cloned (MIT, `b22b0ef`); no Ghidra/IDA/Hopper/Frida installed; Node 26.8.1 below REA's 26.12.1 minimum so full `npm ci && build` not attempted | No commercial providers; Node version | Ghidra/IDA/Hopper (BYOS) + supported Node; used as source-level research only |
-| No model weights / datasets downloaded | Per mission rules, no weights or large datasets auto-downloaded; none justified by a specific runnable experiment | Policy + no PyPI | A specific, justified experiment with licensed weights |
-| Full test suite not run in one shot | 30s per-shell-call timeout + hanging concurrency test prevented a clean full `pytest tests` run; run in fast subsets instead | Command timeout + concurrency hang | Longer command window or excluding the hanging test |
-
-## 3. Scope-deferred (not limitations of built code, but of current charter)
-
-- SLAM/VIO (ORB_SLAM3, VINS-Fusion, OpenVINS rejected on GPLv3 + no robotics slice; GTSAM deferred).
-- BIM/CAD (IFC/USD deferred; license mix to verify).
-- Geospatial visualization (CesiumJS/3D Tiles/MapLibre/GDAL/PROJ deferred).
-- Multi-session pose-graph alignment / loop closure / co-observation resolver (deferred; not a defined slice).
-
-## 4. What this session did NOT do (honesty boundary)
-- Did not clone every candidate repository (only REA, COLMAP, Open3D; others deferred with reasons).
-- Did not run REA's compiled runtime (blocked, documented).
-- Did not download any model weights or datasets (blocked by policy and network).
-- Did not run COLMAP on a real dataset (no dataset; binary available but no directed capture; deferred to a benchmark with a legal small dataset).
-- Did not add new RE source code (no gap justified a rewrite; existing components are real and tested).
+- torch is a CPU build: SAM takes ~29 s/image (vit_b, 16 pts/side); RTX 4050 unused by torch. COLMAP has no CUDA.
+- 3D Tiles: box geometry only; single LOD (no geometric-error ladder); not opened in CesiumJS.
+- WorldIR up-axis is documented inconsistently: exporters/boxes.py says Z-up, exporters/godot/profile.py says Y-up.
+- Pose graph: scipy backend, dense-ish for large graphs (finite-difference Jacobian with sparsity); no IMU, no loop
+  detection, not wired into WorldIR/registration; priors are isotropic position-only.
+- Baseline: 2 room-geometry tests failing (contract disagreement), 1 flaky WorldStore concurrency test.
+- Stale docs: docs/implementation/PENDING_IMPLEMENTATION.md (last reconciled 2026-09-14) understates exporters and
+  overstates SAM breakage.
+- Worktree lacks datasets/ (present only in the main checkout); real-photo tests/benchmarks must point there.
+- cross_session.align_session can accept a grossly wrong alignment (measured 4.3 m off at rmse 0.55 m on a ~10 m scene).
+  Pose-graph refinement only helps when other alignments corroborate the rest; a lone 3-session loop is "ambiguous".
+- Rotation sigma for session alignments is a heuristic (sigma_t / 10 m); ICP does not measure it.
+- The refined registration is recorded on a WorldIR (`metadata.registration.cross_session`) by a library call only;
+  no API route persists it into a world version, and nothing applies the transforms to the world's geometry.
+- /api/registration/* are stateless: callers supply the alignments; the API does not run ICP on stored sessions.

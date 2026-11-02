@@ -58,9 +58,8 @@ class TestCompilerEndToEnd:
         # 7 planes: ceiling, floor, slab(as floor), 4 walls.
         assert diag.planes_total == 7
         assert diag.planes_by_role == {"ceiling": 1, "floor": 2, "wall": 4}
-        # All 7 structure entities + 1 room + the city-scale hierarchy
-        # containers this scene promotes into (1 storey + 1 building).
-        assert len(diag.entities_created) == 10
+        # 7 structure plane entities + 1 room + solid room layout (4 wall slabs, 1 floor slab, 1 ceiling slab).
+        assert len(diag.entities_created) == 14
         assert diag.rooms_detected == 1
         room_entities = [e for e in world.entities.values() if e.type is EntityType.ROOM]
         assert len(room_entities) == 1
@@ -76,9 +75,12 @@ class TestCompilerEndToEnd:
         # containers) -- those are correctly additive, not a sign a plane
         # went missing, and the old len(entities_created)-based formula
         # broke the moment STOREY/BUILDING entities were added.
+        # Only the entities promoted FROM an input plane count here; the solid slabs derived from the solved room
+        # layout are additive geometry, not input planes.
         promoted_plane_entities = sum(
             1 for eid in diag.entities_created
-            if world.entities[eid].type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING)
+            if eid.startswith("struct-plane-")
+            and world.entities[eid].type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING)
         )
         assert diag.planes_total == promoted_plane_entities + len(diag.planes_unpromoted)
 
@@ -86,7 +88,12 @@ class TestCompilerEndToEnd:
         world, diag = _compiled_world()
         for entity in world.entities.values():
             if entity.type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING):
-                assert entity.provenance is Provenance.INFERRED
+                # planes promoted from the reconstruction are INFERRED; the solid slabs solved from the measured
+                # footprint are RECONSTRUCTED geometry (a real slab, not a plane hypothesis)
+                expected = (Provenance.RECONSTRUCTED
+                            if entity.custom_properties.get("created_by") == "room_layout"
+                            else Provenance.INFERRED)
+                assert entity.provenance is expected, (entity.id, entity.provenance)
             elif entity.type is EntityType.ROOM:
                 assert entity.provenance is Provenance.INFERRED
         # The world as a whole records its derivation without upgrading

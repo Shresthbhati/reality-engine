@@ -209,7 +209,7 @@ def test_evidence_delete_removes_record_and_keeps_artifact(client):
     """
     up = client.post(
         "/api/uploads",
-        files={"file": ("frame.jpg", b"jpeg-bytes-for-delete-test", "image/jpeg")},
+        files={"file": ("frame.jpg", b"\xff\xd8\xff\xe0jpeg-bytes-for-delete-test", "image/jpeg")},
     ).json()
     evidence_id = up["evidence_id"]
 
@@ -260,6 +260,9 @@ def _valid_jpeg(seed: int = 0) -> bytes:
 
 
 def _upload_photo(client, sid, name, payload):
+    # upload vetting refuses non-JPEG bytes labelled image/jpeg: placeholder bodies get a real JPEG signature
+    if not payload.startswith(b"\xff\xd8\xff"):
+        payload = b"\xff\xd8\xff\xe0" + payload
     r = client.post(
         f"/api/uploads?session_id={sid}",
         files={"file": (name, payload, "image/jpeg")},
@@ -464,6 +467,7 @@ def _seed_compiled_world(client, tmp_path, monkeypatch, name="Commit world"):
     wir.entities["opening-001"] = Entity(
         id="opening-001", type=EntityType.DOOR, name="Door 1",
         provenance=Provenance.INFERRED, confidence=0.75,
+        custom_properties={"host_wall_id": "wall-001"},  # invariant 7: an opening names its host surface
     )
     wir.entities["corridor-001"] = Entity(
         id="corridor-001", type=EntityType.CORRIDOR, name="Corridor 1",
@@ -1134,7 +1138,7 @@ def test_triple_post_single_pipeline(client, tmp_path, monkeypatch):
     wid = client.post("/api/worlds", json={"name": "Triple world"}).json()["id"]
     _attach(client, wid, sid)
     for i in range(2):
-        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here-%d" % i)
 
     async def _noop(_db):
         return None
@@ -1157,7 +1161,7 @@ def test_reconstruct_duplicate_in_progress_409(client, tmp_path, monkeypatch):
     wid = client.post("/api/worlds", json={"name": "Dup world"}).json()["id"]
     assert client.post(f"/api/worlds/{wid}/attach/{sid}").status_code == 200
     for i in range(2):
-        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here-%d" % i)
     first = client.post(f"/api/sessions/{sid}/reconstruct")
     assert first.status_code == 200
     second = client.post(f"/api/sessions/{sid}/reconstruct")
@@ -1390,7 +1394,7 @@ def test_reconstruct_partial_on_skipped_evidence(client, tmp_path, monkeypatch):
     wid = client.post("/api/worlds", json={"name": "Partial world"}).json()["id"]
     _attach(client, wid, sid)
     for i in range(2):
-        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here-%d" % i)
 
     async def _add_ghost():
         import apps.api.db as db_mod
@@ -1492,7 +1496,7 @@ def test_cancel_running_job(client, tmp_path, monkeypatch):
     wid = client.post("/api/worlds", json={"name": "Cancel world"}).json()["id"]
     _attach(client, wid, sid)
     for i in range(2):
-        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here")
+        _upload_photo(client, sid, f"frame_{i}.jpg", b"jpeg-bytes-here-%d" % i)
 
     job_id = client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"]
     try:

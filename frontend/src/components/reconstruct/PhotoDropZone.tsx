@@ -48,6 +48,7 @@ export interface PhotoDropZoneProps {
   /** Given: the photos join this world and rebuild it. Omitted: a new world is created. */
   worldId?: string | null;
   onCreated: (result: CreateReconstructionResult) => void;
+  onFiles?: (picked: File[]) => void;
   /** Smaller layout for use beside an existing model. */
   compact?: boolean;
   className?: string;
@@ -61,7 +62,7 @@ const EVIDENCE_CLASS_OPTIONS = [
   { value: "historical_photo", label: "Historical photographs" },
 ] as const;
 
-export default function PhotoDropZone({ worldId, onCreated, compact = false, className }: PhotoDropZoneProps) {
+export default function PhotoDropZone({ worldId, onCreated, onFiles, compact = false, className }: PhotoDropZoneProps) {
   const photosRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -83,6 +84,10 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
             ? "No files were selected."
             : "None of those files look like images. Drop photographs (JPEG, PNG, HEIC, WebP, TIFF).",
         );
+        return;
+      }
+      if (onFiles) {
+        onFiles(images);
         return;
       }
       setBusy(`Uploading ${images.length} photo${images.length === 1 ? "" : "s"}…`);
@@ -109,7 +114,7 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
         setBusy(null);
       }
     },
-    [worldId, evidenceClass, onCreated],
+    [worldId, evidenceClass, onCreated, onFiles],
   );
 
   const onDrop = useCallback(

@@ -140,15 +140,20 @@ def run_progressive(
     attempts: List[dict] = []
     vs = None
 
+    import time as _time
+
     if len(eligible) >= 2:
         if vertical_slice_fn is None:
             from engine.pipeline.vertical_slice import vertical_slice as vertical_slice_fn  # noqa: PLC0415
+        _t0 = _time.perf_counter()
         try:
             vs = vertical_slice_fn([i.item for i in eligible], vs_options)
             attempts.append({"level": 2, "name": LEVEL_NAMES[2], "outcome": "succeeded",
+                             "elapsed_s": round(_time.perf_counter() - _t0, 3),
                              "detail": f"{vs.cameras_registered}/{vs.cameras_input} cameras registered"})
         except Exception as exc:  # noqa: BLE001 -- recorded, then a lower level is tried
             attempts.append({"level": 2, "name": LEVEL_NAMES[2], "outcome": "failed",
+                             "elapsed_s": round(_time.perf_counter() - _t0, 3),
                              "detail": f"{type(exc).__name__}: {exc}"[:400]})
             vs = None
 
@@ -205,6 +210,7 @@ def run_progressive(
         prior = set(prior_ids)
         ordered = sorted(eligible, key=lambda c: c.item.id not in prior)  # earliest evidence first (stable)
         boots = []
+        _boot_t0 = _time.perf_counter()
         for k, cand in enumerate(ordered):
             try:
                 boots.append((cand, bootstrap_single_image(
@@ -222,6 +228,7 @@ def run_progressive(
         boot = boots[0][1] if len(boots) == 1 else fuse_single_views([(c.item, r) for c, r in boots])
         used = [c for c, _ in boots]
         attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "succeeded",
+                         "elapsed_s": round(_time.perf_counter() - _boot_t0, 3),
                          "detail": (f"single-view hypothesis from {used[0].name}" if len(used) == 1 else
                                     f"{len(used)} independent single-view hypotheses fused (unregistered)")})
         world, level = boot.world, 0

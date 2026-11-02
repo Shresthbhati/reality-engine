@@ -135,13 +135,19 @@ def _room_entity(
         name=f"room {index:03d}",
         geometry_ids=[geom_id] if has_geometry else [],
         custom_properties={
-            "boundary_element_ids": list(room.boundary_element_ids),
+            "boundary_element_ids": [eid for eid in room.boundary_element_ids if eid in world.entities],
             "bounds_min": list(room.bounds_min),
             "bounds_max": list(room.bounds_max),
             "dimensions_m": dims,
             "floor_area_m2": room.floor_area_m2,
             "openings": openings,
             "adjacent_room_ids": list(room.adjacent_room_ids),
+            # what the evidence supports, as measured by the room graph: a room whose capture missed walls is
+            # 'partial', and a missing ceiling is 'missing' -- these must travel with the entity, not stay behind
+            "status": room.status,
+            "boundary_completeness": room.boundary_completeness,
+            "ceiling_evidence": room.ceiling_evidence,
+            "notes": list(room.notes),
         },
         confidence=parts_conf,
         provenance=Provenance.INFERRED,
@@ -242,17 +248,23 @@ def promote_building_topology(
     # a partial promotion would leave a half-wired graph).
     room_by_id = {r.room_id: r for r in rooms}
     room_parts: Dict[str, List[str]] = {}
+    missing_parts: Dict[str, List[str]] = {}
     for room in rooms:
         missing = [
             eid for eid in room.boundary_element_ids if eid not in world.entities
         ]
         if missing:
+            # A RoomGraph may list planes that were correctly refused promotion (furniture tops, sub-room sheets).
+            # Those are not room boundary, so they are excluded here and recorded -- refusing the whole building made
+            # every single-room capture lose its BUILDING/STOREY, and silently dropping them would hide a real loss.
+            missing_parts[room.room_id] = missing
+        room_parts[room.room_id] = [eid for eid in room.boundary_element_ids if eid in world.entities]
+        if not room_parts[room.room_id]:
             raise TopologyError(
-                f"room {room.room_id} boundary parts missing from world: "
-                f"{missing[:5]} -- promote the planes first "
-                "(evidence.promote_planes.promote_plane_to_entity)"
+                f"room {room.room_id} has no promoted boundary parts (missing: {missing[:5]}) -- promote planes first"
             )
-        room_parts[room.room_id] = list(room.boundary_element_ids)
+    if missing_parts:
+        world.metadata.setdefault("topology", {})["excluded_boundary_parts"] = missing_parts
 
     rooms_sorted = sorted(rooms, key=lambda r: r.room_id)
     room_ids: List[str] = []
@@ -260,7 +272,7 @@ def promote_building_topology(
     for room in rooms_sorted:
         confs = [
             world.entities.get(eid).confidence
-            for eid in room.boundary_element_ids
+            for eid in room_parts[room.room_id]
         ]
         parts_conf[room.room_id] = min(confs) if confs else 0.0
 
@@ -316,8 +328,10 @@ def promote_building_topology(
         existing_contains = {
             r.target_id for r in rent.relationships if r.kind == RelationshipKind.CONTAINS
         }
-        for eid in room.boundary_element_ids:
+        for eid in room_parts[room.room_id]:
             part_ent = world.entities.get(eid)
+            if part_ent is None:      # filtered above; defensive (a concurrent mutation must not crash the promotion)
+                continue
             if eid not in existing_contains:
                 rent.relationships.append(
                     _contains_edge(eid, conf, "room_boundary_membership")

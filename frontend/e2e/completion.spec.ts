@@ -32,6 +32,7 @@ async function head(request: APIRequestContext, id: string): Promise<string> {
 test("no reconstructed shell: the honest 422 text is shown and nothing is proposed", async ({ page }) => {
   // The seeded world only holds GENERATED rooms/cities, which never count as a shell.
   await page.goto(`/worlds/${seed().worldId}`);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-complete").click();
   const dialog = page.getByRole("dialog", { name: "Complete interior" });
   await dialog.getByRole("button", { name: "Propose", exact: true }).click();
@@ -43,6 +44,7 @@ test("propose -> labelled diff -> accept as GENERATED; name clash 409 verbatim; 
   const id = await shellWorld(request);
   const name = `flat${Date.now()}`;
   await page.goto(`/worlds/${id}`);
+  await page.getByTestId("open-actions").click();
   await page.getByTestId("open-complete").click();
   const dialog = page.getByRole("dialog", { name: "Complete interior" });
   await expect(dialog.getByTestId("complete-empty")).toBeVisible();

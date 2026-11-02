@@ -11,7 +11,6 @@ Complete WorldIR implementation with schema v1:
 # Legacy (foundation layer)
 from .coordinates import Frame, Transform
 from .entity import Entity as EntityLegacy, EntityRegistry
-from .world import WorldIR as WorldIRLegacy
 from .serialization import save_world, load_world, WORLD_SAVE_FORMAT_VERSION
 
 # V1 (complete schema)
@@ -38,7 +37,6 @@ __all__ = [
     "Transform",
     # Legacy (for backward compatibility)
     "EntityRegistry",
-    "WorldIRLegacy",
     "EntityLegacy",
     # Serialization
     "save_world",

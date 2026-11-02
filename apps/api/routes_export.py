@@ -34,6 +34,9 @@ _MEDIA_TYPES = {
     "sdf": "application/xml",
     "tscn": "text/plain",
     "unreal": "application/x-python",
+    "floorplan_svg": "image/svg+xml",
+    "floorplan_dxf": "image/vnd.dxf",
+    "room_report_pdf": "application/pdf",
 }
 # profile bundles (multi-file, may hold binary) are stored as one JSON document; see _bundle_json
 _MEDIA_TYPES.update({name: "application/json" for name in reality.EXPORT_PROFILES})
@@ -57,6 +60,38 @@ def _bundle_json(files: dict) -> dict:
         except UnicodeDecodeError:
             out[name] = {"encoding": "base64", "content": base64.b64encode(data).decode("ascii")}
     return out
+
+
+@export.get("/formats")
+async def export_formats(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Which formats this world can export right now. An unavailable format
+    carries the one-line reason (no version yet, optional library missing) so
+    the UI can disable it with an explanation instead of failing on click."""
+    import importlib.util
+
+    world_reason: str | None = None
+    try:
+        await _version_row(db, world_id, version)
+    except HTTPException as exc:
+        if exc.detail == "World not found":
+            raise
+        world_reason = str(exc.detail)
+
+    def reason_for(name: str) -> str | None:
+        if world_reason:
+            return world_reason
+        if name == "ifc" and importlib.util.find_spec("ifcopenshell") is None:
+            return "IfcOpenShell is not installed on this server"
+        return None
+
+    names = sorted(reality.EXPORT_FORMATS | reality.EXPORT_PROFILES)
+    return {
+        "formats": [
+            {"format": n, "available": reason_for(n) is None, "reason": reason_for(n)} for n in names
+        ]
+    }
 
 
 @export.post("")

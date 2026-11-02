@@ -5,7 +5,7 @@
  * authoritative for immutable computational versions, referenced here by
  * `current_version_id` only.
  */
-import { apiGet, apiPost } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
 import { toWorldRow } from "./adapters";
 import type {
   ApiList,
@@ -13,12 +13,13 @@ import type {
   WorldCoverageDto,
   WorldDto,
   WorldIRDto,
-  CamerasPayload,
   WorldDiffDto,
   CommitRequest,
   CommitResponse,
 } from "./types";
 import type { WorldRow } from "@/lib/types";
+// the real /cameras shape (position_m / rotation_wxyz), not a second hand-written DTO
+import type { CamerasPayload } from "@/types/worldir";
 
 export async function listWorlds(): Promise<{ rows: WorldRow[]; dtos: WorldDto[] }> {
   const data = await apiGet<ApiList<WorldDto>>("/api/worlds");
@@ -84,3 +85,12 @@ export async function commitWorldCorrection(
   return apiPost<CommitResponse>(`/api/worlds/${encodeURIComponent(worldId)}/commit`, payload);
 }
 
+
+export function renameWorld(worldId: string, name: string): Promise<{ id: string; name: string }> {
+  return apiPatch<{ id: string; name: string }>(`/api/worlds/${encodeURIComponent(worldId)}`, { name });
+}
+
+/** Refused with a 409 ApiError while a build is running. */
+export function deleteWorld(worldId: string): Promise<void> {
+  return apiDelete<void>(`/api/worlds/${encodeURIComponent(worldId)}`);
+}

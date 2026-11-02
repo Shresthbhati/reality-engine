@@ -997,9 +997,29 @@ def build_room_graph(
             notes=notes,
         ))
 
-    # Adjacency: shared boundary element -> adjacent rooms (computed
-    # before construction: the records are frozen).
+    # Adjacency: shared boundary walls + door openings spanning between rooms
     adjacency: Dict[str, List[str]] = {r.room_id: [] for r in rooms}
+    room_openings_updated: Dict[str, List[RoomOpening]] = {r.room_id: [] for r in rooms}
+
+    for room in rooms:
+        updated_openings: List[RoomOpening] = []
+        for opening in room.openings:
+            connected_spaces = set(opening.connected_space_ids)
+            for other in rooms:
+                if other.room_id == room.room_id:
+                    continue
+                if opening.wall_element_id in other.boundary_element_ids:
+                    connected_spaces.add(other.room_id)
+            if opening.kind in ("doorway", "door", "opening"):
+                for cid in connected_spaces:
+                    if cid != room.room_id and cid not in adjacency[room.room_id]:
+                        adjacency[room.room_id].append(cid)
+            if connected_spaces != set(opening.connected_space_ids):
+                updated_openings.append(replace(opening, connected_space_ids=tuple(sorted(connected_spaces))))
+            else:
+                updated_openings.append(opening)
+        room_openings_updated[room.room_id] = updated_openings
+
     for room in rooms:
         for other in rooms:
             if other.room_id == room.room_id:
@@ -1007,14 +1027,19 @@ def build_room_graph(
             shared = set(room.boundary_element_ids) & set(other.boundary_element_ids)
             if shared and other.room_id not in adjacency[room.room_id]:
                 adjacency[room.room_id].append(other.room_id)
-    # Rebuild carries ONLY the adjacency: every measured provenance
-    # field (status, confidence, boundary_completeness, ceiling_evidence,
-    # notes) must survive -- a rebuild through the constructor would
-    # reset them to their perfect defaults and report partial captures
-    # as full-confidence rooms (the exact false certainty this seam
-    # exists to prevent).
+            for o in room_openings_updated[other.room_id]:
+                if o.kind in ("doorway", "door", "opening") and room.room_id in o.connected_space_ids:
+                    if other.room_id not in adjacency[room.room_id]:
+                        adjacency[room.room_id].append(other.room_id)
+
+    # Rebuild carries adjacency and opening connected spaces: every measured provenance
+    # field (status, confidence, boundary_completeness, ceiling_evidence, notes) must survive.
     rooms = [
-        replace(r, adjacent_room_ids=tuple(sorted(adjacency[r.room_id])))
+        replace(
+            r,
+            openings=tuple(room_openings_updated[r.room_id]),
+            adjacent_room_ids=tuple(sorted(adjacency[r.room_id])),
+        )
         for r in rooms
     ]
 

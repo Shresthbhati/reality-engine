@@ -26,6 +26,13 @@ JSON + persisted artifacts + report. Backend injection via
   ingests the cloud through the content-addressed ArtifactStore into
   WorldIR geometry with dense provenance. Real GPU dense run on the
   committed real-photo dataset recorded 2026-09-21.
+- Metric depth sidecars (iPhone/iPad LiDAR or any metric sensor, 16-bit PNG + declared scale) → metric scale with no tape measure + dense unprojection; a synthetic RGB-D capture is verified, a physical device is not yet.
+- CPU plane-sweep dense geometry (opt-in, no CUDA): admits a pixel only when one depth clearly wins the photometric match, and refuses blank walls instead of filling them.
+- Solid walls / floors / ceilings from the solved room layout, with openings carved; rooms can be joined through shared doorways.
+- 2D floor plan export (SVG + DXF) and a room report with wall areas net of openings.
+- User corrections (wall drag, door/window mark, typed dimension) stored as VERIFIED evidence and carried across rebuilds.
+- Dimensions carry a state (MEASURED / RECONSTRUCTED / ESTIMATED / VERIFIED); a relative world can be scaled by one known length, or by an accepted door-height suggestion that is always labelled ESTIMATED. Checked only against synthetic ground truth.
+- Room colours (lighting-normalised) and a texture atlas on the room shell; material labels are ESTIMATED hypotheses, never asserted, and are not used by physics. Viewer and inspector support is unit-tested, not browser-verified.
 - Monocular depth (MiDaS) → fused point cloud (provenance per view)
 - Poisson surface mesh from oriented fused points (CPU COLMAP
   mesher; auto depth/trim adaptation; camera-envelope outlier
@@ -80,7 +87,12 @@ Next.js 16 + Three.js viewer with:
 
 ## Explicitly NOT capabilities yet
 
-- Sensor depth ingestion (16-bit PNG sidecars) — spec written
+- Physical LiDAR device verification — the RGB-D path is verified on synthetic data only
+- Accuracy on a REAL room: every dimension/fidelity check runs on synthetic fixtures; no real photos or tape measurements exist yet
+- Learned door/window/furniture detector (blocked on a user decision; openings come from geometry only)
+- Curved or ornamented landmark architecture from a single image: FOUNDATION landed (`perception/architecture/landmark.py`: dome/arch/tower fits from single-image 3D points with measured residuals, honest refusals, relative-vs-measured scale); REAL-DATA VERIFICATION BLOCKED — no real landmark photo set or surveyed ground-truth dimensions exist yet; all verification synthetic (`tests/test_landmark.py`, 27 passed)
+- Automatic cross-source or geo-registration: the Site composer (FOUNDATION) is manual placement of worlds on a metric grid
+- Learned single-image room-layout model — the fusion/projection path exists, no model weights are shipped (choice open)
 - Time sync / VIO / cross-source registration — specs written
 - Co-observation landmark resolver — identified gap
 - Uncertainty propagation — schema exists, propagation not

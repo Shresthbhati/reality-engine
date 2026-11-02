@@ -61,6 +61,14 @@ export interface WorldDto {
   current_version_id: string | null;
   session_count: number;
   created_at: string | null;
+  /** Place-card summary (GET /api/worlds). Optional: older servers omit them. */
+  photo_count?: number;
+  placed_count?: number;
+  quality_band?: "good" | "fair" | "weak" | "unknown";
+  scale_state?: string | null;
+  active_job?: { id: string; status: string; stage: string | null; progress: number | null } | null;
+  updated_at?: string | null;
+  thumbnail_url?: string | null;
 }
 
 export interface WorldCoverageDto {
@@ -243,17 +251,6 @@ export interface WorldIRObservationDto {
   metadata?: Record<string, unknown>;
 }
 
-/** Cameras payload for /api/worlds/{id}/cameras */
-export interface CamerasPayload {
-  cameras: Array<{
-    entity_id: string;
-    position: { x: number; y: number; z: number };
-    rotation: { w: number; x: number; y: number; z: number };
-    provenance: string;
-    confidence: number;
-  }>;
-}
-
 /** A single field's before/after value, as world_ir.diff.FieldChange.to_dict() emits it. */
 export interface FieldChangeDto {
   field: string;
@@ -300,4 +297,6 @@ export interface CommitResponse {
   world_id: string;
   entity_id: string;
   changed_fields: string[];
+  /** true when a byte-identical retry returned the current version instead of minting a new one */
+  duplicate: boolean;
 }

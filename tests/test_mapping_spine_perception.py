@@ -217,6 +217,9 @@ def test_perception_stage_runs_fake_detector(
         intrinsics=(64.0, 64.0, 32.0, 32.0),
         image_size=(64, 64),
         perception_model="fake",
+        # pinned: the two cameras are 0.5 m apart and lift the same pixel, so the two hypotheses sit exactly 0.5 m
+        # apart -- one object only under the legacy "<= 0.5 m" gate (see the association variant below)
+        object_resolver="union_find",
     )
 
     class _Evidence:
@@ -245,6 +248,88 @@ def test_perception_stage_runs_fake_detector(
     assert len(ent) == 1
     assert ent[0].semantic_labels == ["chair"]
     assert ent[0].observations, "promoted entity must carry provenance observations"
+
+
+def test_perception_stage_association_resolver_reports_its_decisions(
+    synthetic_registered_result, monkeypatch
+):
+    """Same fixture, default (association) resolver: the two lifted points are 0.5 m apart, which with MVS-grade
+    uncertainty (~6 cm at 2 m) is two objects -- and the stage says how it decided."""
+    from engine.pipeline import vertical_slice as vs
+
+    result, intr, maps = synthetic_registered_result
+    options = VerticalSliceOptions(
+        intrinsics=(64.0, 64.0, 32.0, 32.0), image_size=(64, 64), perception_model="fake",
+    )
+
+    class _Evidence:
+        def __init__(self, eid):
+            self.evidence_id = eid
+            self.source_uri = f"file://{eid}.jpg"
+
+    import perception.detection.maskrcnn_backend as mb
+    monkeypatch.setattr(mb, "MaskRCNNDetector", _FakeDetector)
+
+    world = _empty_world()
+    facts = vs._perception_stage(result, world, [_Evidence("IMG_A"), _Evidence("IMG_B")], maps, options)
+
+    assert facts["status"] == "ran" and facts["hypotheses_lifted"] == 2
+    assert facts["candidates_merged"] == 2
+    assert facts["resolution"]["resolver"] == "association"
+    assert facts["resolution"]["decisions"] == {"DIFFERENT_ENTITY": 2}
+    assert facts["entities_promoted"] == 2
+    for e in (e for e in world.entities.values() if e.id.startswith("entity-object")):
+        a = e.custom_properties["association"]
+        assert a["resolver"] == "association" and a["observations"] == 1 and a["images"] == 1
+        assert a["ambiguous_with"] == []
+
+
+def test_perception_stage_records_a_multi_photo_merge_on_the_entity(synthetic_registered_result, monkeypatch):
+    """Both cameras at the same pose lift the same point: one entity, and its record says two photos agreed."""
+    import dataclasses
+
+    from engine.pipeline import vertical_slice as vs
+
+    result, intr, maps = synthetic_registered_result
+    result.camera_poses[1] = dataclasses.replace(result.camera_poses[1], position=(0.0, 0.0, 0.0))
+    options = VerticalSliceOptions(
+        intrinsics=(64.0, 64.0, 32.0, 32.0), image_size=(64, 64), perception_model="fake",
+    )
+
+    class _Evidence:
+        def __init__(self, eid):
+            self.evidence_id = eid
+            self.source_uri = f"file://{eid}.jpg"
+
+    import perception.detection.maskrcnn_backend as mb
+    monkeypatch.setattr(mb, "MaskRCNNDetector", _FakeDetector)
+
+    world = _empty_world()
+    facts = vs._perception_stage(result, world, [_Evidence("IMG_A"), _Evidence("IMG_B")], maps, options)
+
+    assert facts["candidates_merged"] == 1
+    (ent,) = [e for e in world.entities.values() if e.id.startswith("entity-object")]
+    a = ent.custom_properties["association"]
+    assert (a["observations"], a["images"], a["decision"], a["ambiguous_with"]) == (2, 2, "SAME_ENTITY_CONFIRMED", [])
+
+
+def test_perception_stage_rejects_an_unknown_resolver(synthetic_registered_result, monkeypatch):
+    from engine.pipeline import vertical_slice as vs
+
+    result, intr, maps = synthetic_registered_result
+    options = VerticalSliceOptions(
+        intrinsics=(64.0, 64.0, 32.0, 32.0), image_size=(64, 64), perception_model="fake", object_resolver="nope",
+    )
+
+    class _Evidence:
+        def __init__(self, eid):
+            self.evidence_id = eid
+            self.source_uri = f"file://{eid}.jpg"
+
+    import perception.detection.maskrcnn_backend as mb
+    monkeypatch.setattr(mb, "MaskRCNNDetector", _FakeDetector)
+    with pytest.raises(vs.VerticalSliceError, match="object_resolver"):
+        vs._perception_stage(result, _empty_world(), [_Evidence("IMG_A"), _Evidence("IMG_B")], maps, options)
 
 
 def test_perception_stage_skips_without_metric_depth(

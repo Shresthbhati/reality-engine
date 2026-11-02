@@ -50,7 +50,15 @@ class ColmapSession:
             return None
         return data if isinstance(data, dict) and data.get("version") == MANIFEST_VERSION else None
 
+    def _heal(self) -> None:
+        """commit() swaps directories in two steps; a fault or kill between them leaves the committed model
+        in ``previous/`` and no ``current/``. Put it back: the world must never lose its committed model."""
+        previous = self.root / "previous"
+        if not self.current.exists() and previous.is_dir():
+            os.replace(previous, self.current)
+
     def committed_manifest(self) -> Optional[dict]:
+        self._heal()
         return self._read(self.current)
 
     # --------------------------------------------------------------- lifecycle
@@ -66,6 +74,7 @@ class ColmapSession:
         """
         self.discard()
         self.root.mkdir(parents=True, exist_ok=True)
+        self._heal()
         manifest = self._read(self.current)
         wanted = set(wanted_image_names)
         usable = (
@@ -97,11 +106,16 @@ class ColmapSession:
         if self._read(self.staging) is None:
             self.discard()
             return False
+        self._heal()
         previous = self.root / "previous"
         shutil.rmtree(previous, ignore_errors=True)
         if self.current.exists():
             os.replace(self.current, previous)
-        os.replace(self.staging, self.current)
+        try:
+            os.replace(self.staging, self.current)
+        except BaseException:
+            self._heal()        # a kill skips this; the next begin()/committed_manifest() heals instead
+            raise
         shutil.rmtree(previous, ignore_errors=True)
         return True
 

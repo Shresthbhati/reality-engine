@@ -6,7 +6,7 @@
  * enqueues PROCESS_EVIDENCE. The returned ids are the only source of truth
  * about what happened.
  */
-import { apiDelete, apiGet, apiPostForm, withQuery } from "./client";
+import { apiBaseUrl, apiDelete, apiGet, apiPostForm, withQuery } from "./client";
 import { toEvidenceRow } from "./adapters";
 import type { ApiList, EvidenceDto, LocationDto, UploadResult } from "./types";
 import type { EvidenceRow } from "@/lib/types";
@@ -32,7 +32,7 @@ export async function getEvidence(
 
 /** Absolute URL for the stored artifact; the browser streams it, nothing is copied. */
 export function evidenceArtifactUrl(id: string): string {
-  const base = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8100").replace(/\/+$/, "");
+  const base = apiBaseUrl();
   return `${base}/api/evidence/${encodeURIComponent(id)}/artifact`;
 }
 

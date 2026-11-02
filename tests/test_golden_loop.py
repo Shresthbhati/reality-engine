@@ -169,6 +169,56 @@ def test_full_golden_loop(tmp_path: Path):
     blender_content = blender_out.read_text(encoding="utf-8")
     assert len(blender_content) > 0
 
+    # 21b: EXPORT WORLD (GLB binary)
+    glb_out = tmp_path / "scene.glb"
+    res_glb = subprocess.run(
+        ["python", "-m", "apps.cli.main", "export", str(world_path), "--format", "glb", "-o", str(glb_out)],
+        capture_output=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert res_glb.returncode == 0
+    assert glb_out.exists() and glb_out.stat().st_size > 12
+
+    # 21c: EXPORT WORLD (OBJ with MTL)
+    obj_out = tmp_path / "scene.obj"
+    res_obj = subprocess.run(
+        ["python", "-m", "apps.cli.main", "export", str(world_path), "--format", "obj", "-o", str(obj_out)],
+        capture_output=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert res_obj.returncode == 0
+    assert obj_out.exists() and len(obj_out.read_text(encoding="utf-8")) > 0
+
+    # 21d: EXPORT WORLD (PLY)
+    ply_out = tmp_path / "scene.ply"
+    res_ply = subprocess.run(
+        ["python", "-m", "apps.cli.main", "export", str(world_path), "--format", "ply", "-o", str(ply_out)],
+        capture_output=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert res_ply.returncode == 0
+    assert ply_out.exists() and ply_out.stat().st_size > 0
+
+    # 21e: EXPORT WORLD (STL)
+    stl_out = tmp_path / "scene.stl"
+    res_stl = subprocess.run(
+        ["python", "-m", "apps.cli.main", "export", str(world_path), "--format", "stl", "-o", str(stl_out)],
+        capture_output=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert res_stl.returncode == 0
+    assert stl_out.exists() and stl_out.stat().st_size > 0
+
+    # 21f: EXPORT WORLD (IFC BIM)
+    ifc_out = tmp_path / "scene.ifc"
+    res_ifc = subprocess.run(
+        ["python", "-m", "apps.cli.main", "export", str(world_path), "--format", "ifc", "-o", str(ifc_out)],
+        capture_output=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert res_ifc.returncode == 0
+    assert ifc_out.exists() and len(ifc_out.read_text(encoding="utf-8")) > 0
+
     # 22: BUILD OFFLINE VIEWER
     viewer_out = tmp_path / "viewer.html"
     viewer_result = subprocess.run(

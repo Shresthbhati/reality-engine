@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Optional
 
 from world_ir.artifact_store import ArtifactNotFoundError, ArtifactStore
 from world_ir.geometry_data import PointCloudData
-from world_ir.schema_v1 import GeometryType
+from world_ir.schema_v1 import GeometryType, RelationshipKind
 
 from exporters.report import ExportReport, content_hash
 
@@ -126,6 +126,70 @@ def _real_points_mesh(
     }
 
 
+def _resolve_material(
+    world: "WorldIR",
+    entity,
+    gltf: dict,
+    material_map: dict[str, int],
+) -> Optional[int]:
+    """Resolve or create a glTF PBR material for an entity (Task 9.1)."""
+    mat_id = getattr(entity, "material_id", None)
+    if not mat_id and hasattr(entity, "custom_properties") and isinstance(entity.custom_properties, dict):
+        mat_id = entity.custom_properties.get("material_id") or entity.custom_properties.get("material")
+
+    mat = world.materials.get(mat_id) if (mat_id and hasattr(world, "materials") and mat_id in world.materials) else None
+
+    if mat is not None:
+        if mat.id in material_map:
+            return material_map[mat.id]
+        rgb = mat.color_rgb or [0.8, 0.8, 0.8]
+        if any(c > 1.0 for c in rgb):
+            rgb = [c / 255.0 for c in rgb]
+        props = mat.properties if isinstance(mat.properties, dict) else {}
+        metallic = float(props.get("metallic", 0.0))
+        roughness = float(props.get("roughness", 0.7))
+        mat_def = {
+            "name": mat.name or mat.id,
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [float(rgb[0]), float(rgb[1]), float(rgb[2]), 1.0],
+                "metallicFactor": metallic,
+                "roughnessFactor": roughness,
+            },
+        }
+        gltf.setdefault("materials", []).append(mat_def)
+        mat_idx = len(gltf["materials"]) - 1
+        material_map[mat.id] = mat_idx
+        return mat_idx
+
+    # Check appearance in custom_properties
+    cp = getattr(entity, "custom_properties", None)
+    if isinstance(cp, dict):
+        app = cp.get("appearance")
+        if isinstance(app, dict) and "color_rgb" in app:
+            rgb_raw = app["color_rgb"]
+            if isinstance(rgb_raw, (list, tuple)) and len(rgb_raw) >= 3:
+                key = f"anon_{entity.id}"
+                if key in material_map:
+                    return material_map[key]
+                rgb = [float(c) for c in rgb_raw[:3]]
+                if any(c > 1.0 for c in rgb):
+                    rgb = [c / 255.0 for c in rgb]
+                mat_def = {
+                    "name": f"Material_{entity.id}",
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [rgb[0], rgb[1], rgb[2], 1.0],
+                        "metallicFactor": 0.0,
+                        "roughnessFactor": 0.7,
+                    },
+                }
+                gltf.setdefault("materials", []).append(mat_def)
+                mat_idx = len(gltf["materials"]) - 1
+                material_map[key] = mat_idx
+                return mat_idx
+
+    return None
+
+
 def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> dict:
     """Build a glTF 2.0 JSON structure (as a plain dict) from `world`.
 
@@ -190,6 +254,8 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
     }
 
     tail_buffer = bytearray()  # additional real-mesh bytes, appended after the cube buffer
+    material_map: dict[str, int] = {}
+    entity_id_to_node_idx: dict[str, int] = {}
 
     for entity in world.entities.values():
         if not entity.transform or "position" not in entity.transform:
@@ -252,6 +318,20 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
                 # keep the next accessor 4-byte aligned
                 tail_buffer.extend(b"\x00" * ((-len(tail_buffer)) % 4))
 
+        # Material binding (Task 9.1)
+        mat_idx = _resolve_material(world, entity, gltf, material_map)
+        if mat_idx is not None:
+            if mesh_index == 0:
+                mesh_index = len(gltf["meshes"])
+                gltf["meshes"].append({
+                    "primitives": [
+                        {"attributes": {"POSITION": 0}, "indices": 1, "mode": 4, "material": mat_idx}
+                    ]
+                })
+            else:
+                for prim in gltf["meshes"][mesh_index]["primitives"]:
+                    prim["material"] = mat_idx
+
         node_index = len(gltf["nodes"])
         gltf["nodes"].append(
             {
@@ -260,7 +340,28 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
                 "translation": [pos["x"], pos["y"], pos["z"]],
             }
         )
-        gltf["scenes"][0]["nodes"].append(node_index)
+        entity_id_to_node_idx[entity.id] = node_index
+
+    # Build hierarchy: parent-child links (Task 9.1)
+    child_node_indices: set[int] = set()
+    for eid, n_idx in entity_id_to_node_idx.items():
+        e = world.entities[eid]
+        pid = getattr(e, "parent_id", None)
+        if not pid:
+            for rel in getattr(e, "relationships", ()):
+                if getattr(rel, "kind", None) is RelationshipKind.PART_OF and rel.target_id in entity_id_to_node_idx:
+                    pid = rel.target_id
+                    break
+        if pid and pid in entity_id_to_node_idx:
+            parent_idx = entity_id_to_node_idx[pid]
+            if parent_idx != n_idx:
+                parent_node = gltf["nodes"][parent_idx]
+                parent_node.setdefault("children", []).append(n_idx)
+                child_node_indices.add(n_idx)
+
+    # Top-level root nodes
+    root_nodes = [idx for idx in range(len(gltf["nodes"])) if idx not in child_node_indices]
+    gltf["scenes"][0]["nodes"] = root_nodes
 
     if tail_buffer:
         full_bytes = buffer_bytes + bytes(tail_buffer)
@@ -388,3 +489,33 @@ def export_to_gltf_with_report(
         content_hash=content_hash(json.dumps(gltf, sort_keys=True)),
     )
     return gltf, report
+
+
+def export_to_glb(world: "WorldIR", artifact_store: Optional[ArtifactStore] = None) -> bytes:
+    """Export world to binary glTF 2.0 (GLB) container with embedded JSON and BIN chunks (Task 9.1)."""
+    gltf = export_to_gltf(world, artifact_store)
+    uri = gltf["buffers"][0]["uri"]
+    raw_bin = base64.b64decode(uri.split(",", 1)[1])
+    gltf_glb = json.loads(json.dumps(gltf))
+    del gltf_glb["buffers"][0]["uri"]
+    json_bytes = json.dumps(gltf_glb, separators=(",", ":")).encode("utf-8")
+
+    json_pad = (-len(json_bytes)) % 4
+    json_bytes += b" " * json_pad
+
+    bin_pad = (-len(raw_bin)) % 4
+    bin_bytes = raw_bin + b"\x00" * bin_pad
+
+    total_len = 12 + (8 + len(json_bytes)) + (8 + len(bin_bytes))
+
+    header = struct.pack("<4sII", b"glTF", 2, total_len)
+    chunk0_hdr = struct.pack("<II", len(json_bytes), 0x4E4F534A)
+    chunk1_hdr = struct.pack("<II", len(bin_bytes), 0x004E4942)
+
+    return header + chunk0_hdr + json_bytes + chunk1_hdr + bin_bytes
+
+
+def write_glb_file(world: "WorldIR", path: str, artifact_store: Optional[ArtifactStore] = None) -> None:
+    """Export `world` to binary GLB 2.0 and write to `path`."""
+    with open(path, "wb") as f:
+        f.write(export_to_glb(world, artifact_store))

@@ -95,6 +95,21 @@ def _export_citygml(world, artifact_store=None):
     return export_to_citygml_with_report(world)
 
 
+def _export_glb(world, artifact_store=None):
+    from exporters.gltf.exporter import export_to_glb, _classify_entities
+    data = export_to_glb(world, artifact_store)
+    exported, skipped, reasons = _classify_entities(world)
+    return data, ExportReport(
+        format="glb",
+        world_id=world.id,
+        world_version=world.version,
+        entities_exported=exported,
+        entities_skipped=skipped,
+        skip_reasons=reasons,
+        content_hash=content_hash(data),
+    )
+
+
 def _export_ifc(world, artifact_store=None):
     """IFC4 through the IfcOpenShell bridge. The bridge writes a FILE, so this adapter writes to a temporary one and
     returns its bytes. ``ImportError`` (IfcOpenShell missing) and ``IFCBridgeError`` (nothing exportable) propagate:
@@ -121,6 +136,7 @@ def _export_ifc(world, artifact_store=None):
 #: bridge writes a file, so ``_export_ifc`` round-trips it through a temporary one.
 _EXPORTERS = {
     "gltf": export_to_gltf_with_report,
+    "glb": _export_glb,
     "usda": export_to_usda_with_report,
     "blender": export_to_blender_script_with_report,
     "cityjson": _export_cityjson,

@@ -8,7 +8,7 @@ from world_ir.artifact_store import MemoryArtifactStore
 from world_ir.geometry_data import PointCloudData
 from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType
 from world_ir.world_v1 import WorldIR
-from exporters.usd.exporter import export_to_usda, write_usda_file, _sanitize_prim_name
+from exporters.usd.exporter import export_to_usda, write_usda_file, _sanitize_prim_name, validate_usda
 
 
 def _build_world() -> WorldIR:
@@ -248,3 +248,233 @@ def test_mesh_geometry_without_resolvable_artifact_falls_back_to_cube():
     assert "def Mesh" not in usda
     assert "def Points" not in usda
     assert usda.count("def Cube") == 1
+
+
+# ---------------------------------------------------------------- Phase 9 Task 9.6 tests
+
+
+def test_usd_materials_and_usdshade_bindings():
+    from world_ir.schema_v1 import Material
+
+    world = WorldIR()
+    mat = Material(
+        id="mat-wood",
+        name="OakWood",
+        color_rgb=(0.6, 0.4, 0.2),
+        properties={"roughness": 0.45, "metallic": 0.1},
+    )
+    world.materials[mat.id] = mat
+
+    box_geom = Geometry(id="geom-box", type=GeometryType.BOX)
+    box_entity = Entity(
+        id="ent-box",
+        name="OakTable",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 1.0, "y": 2.0, "z": 0.0}},
+        geometry_ids=["geom-box"],
+        material_ids=["mat-wood"],
+    )
+    world.geometries[box_geom.id] = box_geom
+    world.entities[box_entity.id] = box_entity
+
+    usda = export_to_usda(world)
+    assert 'def Scope "Materials"' in usda
+    assert 'def Material "OakWood"' in usda
+    assert 'def Shader "PBRShader"' in usda
+    assert 'uniform token info:id = "UsdPreviewSurface"' in usda
+    assert "color3f inputs:diffuseColor = (0.6, 0.4, 0.2)" in usda
+    assert "float inputs:roughness = 0.45" in usda
+    assert "float inputs:metallic = 0.1" in usda
+    assert "rel material:binding = </World/Materials/OakWood>" in usda
+
+    valid, errors = validate_usda(usda)
+    assert valid, f"Validation failed: {errors}"
+
+
+def test_usd_stage_hierarchy_nesting():
+    world = WorldIR()
+
+    bldg = Entity(
+        id="bldg-1",
+        name="Building_A",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
+    )
+    story = Entity(
+        id="story-1",
+        name="GroundFloor",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
+        custom_properties={"parent_id": "bldg-1"},
+    )
+    room = Entity(
+        id="room-101",
+        name="Lobby",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 2.0, "y": 0.0, "z": 0.0}},
+        custom_properties={"parent_id": "story-1"},
+    )
+
+    box_geom = Geometry(id="geom-wall", type=GeometryType.PLANE)
+    wall = Entity(
+        id="wall-south",
+        name="SouthWall",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 2.0, "y": -3.0, "z": 1.5}},
+        geometry_ids=["geom-wall"],
+        custom_properties={"parent_id": "room-101"},
+    )
+
+    world.geometries[box_geom.id] = box_geom
+    world.entities[bldg.id] = bldg
+    world.entities[story.id] = story
+    world.entities[room.id] = room
+    world.entities[wall.id] = wall
+
+    usda = export_to_usda(world)
+
+    # Validate hierarchy nesting
+    assert 'def Xform "bldg_1"' in usda
+    assert 'def Xform "story_1"' in usda
+    assert 'def Xform "room_101"' in usda
+    assert 'def Cube "wall_south"' in usda
+
+    # Verify structural ordering: Building opens before Story, Story before Room, Room before Wall
+    idx_bldg = usda.index('def Xform "bldg_1"')
+    idx_story = usda.index('def Xform "story_1"')
+    idx_room = usda.index('def Xform "room_101"')
+    idx_wall = usda.index('def Cube "wall_south"')
+    assert idx_bldg < idx_story < idx_room < idx_wall
+
+    valid, errors = validate_usda(usda)
+    assert valid, f"Validation failed: {errors}"
+
+
+def test_usd_mesh_with_normals_and_geom_subsets():
+    from reconstruction.meshing.mesh import MeshData
+
+    store = MemoryArtifactStore()
+    world = WorldIR()
+
+    vertices = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
+    faces = [(0, 1, 2)]
+    normals = [(0.0, 0.0, 1.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0)]
+
+    mesh_payload = MeshData(
+        vertices=tuple(vertices),
+        faces=tuple(faces),
+        normals=tuple(normals),
+    ).to_bytes()
+
+    uri, digest = store.put(mesh_payload)
+    geom = Geometry(
+        id="geom-mesh",
+        type=GeometryType.MESH,
+        data_uri=uri,
+        data_hash=digest,
+    )
+    geom.subsets = [
+        {"name": "front_faces", "indices": [0], "material_path": "/World/Materials/OakWood"}
+    ]
+    entity = Entity(
+        id="ent-mesh",
+        name="WallPanel",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
+        geometry_ids=["geom-mesh"],
+    )
+
+    world.geometries[geom.id] = geom
+    world.entities[entity.id] = entity
+
+    usda = export_to_usda(world, artifact_store=store)
+    assert 'def Mesh "ent_mesh"' in usda
+    assert "normal3f[] normals = [(0.0, 0.0, 1.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0)]" in usda
+    assert 'def GeomSubset "front_faces"' in usda
+    assert 'uniform token elementType = "face"' in usda
+    assert "int[] indices = [0]" in usda
+    assert "rel material:binding = </World/Materials/OakWood>" in usda
+
+    valid, errors = validate_usda(usda)
+    assert valid, f"Validation failed: {errors}"
+
+
+def test_usd_physics_rigid_body_schema():
+    world = WorldIR()
+    box_geom = Geometry(id="geom-box", type=GeometryType.BOX)
+    entity = Entity(
+        id="ent-physics-crate",
+        name="HeavyCrate",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 0.0, "y": 0.0, "z": 1.0}},
+        geometry_ids=["geom-box"],
+        custom_properties={"mass": 42.5, "rigid_body": True, "collision": True},
+    )
+    world.geometries[box_geom.id] = box_geom
+    world.entities[entity.id] = entity
+
+    usda = export_to_usda(world)
+    assert 'prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "PhysicsCollisionAPI"]' in usda
+    assert "bool physics:rigidBodyEnabled = true" in usda
+    assert "bool physics:collisionEnabled = true" in usda
+    assert "float physics:mass = 42.5" in usda
+
+    valid, errors = validate_usda(usda)
+    assert valid, f"Validation failed: {errors}"
+
+
+def test_usd_camera_prim_export():
+    world = WorldIR()
+    cam_entity = Entity(
+        id="cam-front-01",
+        name="FrontCamera",
+        type=EntityType.SENSOR,
+        transform={
+            "position": {"x": 0.0, "y": -5.0, "z": 1.7},
+            "rotation": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0},
+        },
+        custom_properties={
+            "sensor_type": "camera",
+            "focal_length": 50.0,
+            "horizontal_aperture": 36.0,
+            "vertical_aperture": 24.0,
+        },
+    )
+    world.entities[cam_entity.id] = cam_entity
+
+    usda = export_to_usda(world)
+    assert 'def Camera "cam_front_01"' in usda
+    assert "float focalLength = 50.0" in usda
+    assert "float horizontalAperture = 36.0" in usda
+    assert "float verticalAperture = 24.0" in usda
+    assert "double3 xformOp:translate = (0.0, -5.0, 1.7)" in usda
+    assert "quatf xformOp:orient = (1.0, 0.0, 0.0, 0.0)" in usda
+    assert 'uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]' in usda
+
+    valid, errors = validate_usda(usda)
+    assert valid, f"Validation failed: {errors}"
+
+
+def test_validate_usda_syntax_and_catches_errors():
+    valid_usda = '#usda 1.0\n\ndef Xform "World"\n{\n    def Cube "Box"\n    {\n        double size = 2\n    }\n}\n'
+    valid, errors = validate_usda(valid_usda)
+    assert valid
+    assert len(errors) == 0
+
+    # Test error 1: Missing header
+    invalid_header = 'def Xform "World"\n{\n}\n'
+    valid, errors = validate_usda(invalid_header)
+    assert not valid
+    assert any("Missing required header" in e for e in errors)
+
+    # Test error 2: Unbalanced braces
+    invalid_braces = '#usda 1.0\n\ndef Xform "World"\n{\n'
+    valid, errors = validate_usda(invalid_braces)
+    assert not valid
+    assert any("Unbalanced braces" in e for e in errors)
+
+    # Test error 3: Invalid prim identifier
+    invalid_prim = '#usda 1.0\n\ndef Xform "123bad name"\n{\n}\n'
+    valid, errors = validate_usda(invalid_prim)
+    assert not valid
+    assert any("Invalid prim" in e for e in errors)

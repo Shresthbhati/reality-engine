@@ -40,6 +40,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from typing import Dict, List, Sequence, Tuple
 
+import numpy as np
+
 from engine.core.rng import DeterministicRNG
 from provenance import Uncertainty
 from reconstruction.backend.interface import ReconstructionResult
@@ -729,6 +731,17 @@ def _offset_bands(
     return bands
 
 
+def inlier_mask(xs, ys, zs, normal, d, tolerance):
+    """Boolean mask of points within ``tolerance`` of the plane ``normal . p + d = 0``.
+
+    This was a per-point Python loop and dominated the pipeline on large models (measured: 61k points -> about a
+    minute per detect_planes call, which ran several times per build). It is evaluated in the SAME operation order as
+    the former scalar expression, ``abs(((n0*x + n1*y) + n2*z) + d) <= tolerance``, with plain elementwise IEEE-double
+    numpy operations (no fused or reordered reductions), so every inlier decision -- including points exactly at the
+    tolerance -- is identical to the scalar implementation (pinned by tests/test_plane_detection_scale.py)."""
+    return np.abs(normal[0] * xs + normal[1] * ys + normal[2] * zs + d) <= tolerance
+
+
 def detect_planes(
     result: ReconstructionResult,
     seed: int,
@@ -784,11 +797,12 @@ def detect_planes(
             except ValueError:
                 continue
 
-            inliers = _collect(normal, d)
+            mask = _inlier_mask(normal, d)
             # Strictly-greater keeps the first-encountered best on ties,
-            # which the seeded rng makes deterministic.
-            if len(inliers) > len(best_inliers):
-                best_normal, best_d, best_inliers = normal, d, inliers
+            # which the seeded rng makes deterministic. Only a winning candidate materialises its id list.
+            if int(np.count_nonzero(mask)) > len(best_inliers):
+                best_normal, best_d = normal, d
+                best_inliers = [remaining_sorted[i] for i in np.flatnonzero(mask)]
 
         if best_normal is None or len(best_inliers) < min_inliers:
             break

@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import or_, select
+from sqlalchemy import event, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import (
@@ -127,6 +127,10 @@ def _assert_reconstruction_traced(world) -> None:
         )
 
 
+#: Diagnostic finding types that mean the reconstruction itself is untrustworthy (see _stage_facts_degraded).
+_INTEGRITY_FINDINGS = frozenset({"WEAKLY_BRIDGED_GROUP", "NON_FINITE_GEOMETRY", "DANGLING_OBSERVATION", "UNKNOWN_CAMERA"})
+
+
 def _stage_facts_degraded(stage_facts: dict) -> list[str]:
     """Optional-stage outcomes that are neither clean runs nor honest
     config-skips: evidence of degradation for PARTIAL grading."""
@@ -139,6 +143,21 @@ def _stage_facts_degraded(stage_facts: dict) -> list[str]:
             # decisions about an optional stage, not damage -- grading them degraded made every normal run "partial"
             if status is not None and status not in ("ran", "skipped", "disabled", "rejected", "equivalent"):
                 degraded.append(f"{stage} stage status {status!r}")
+    # Diagnostics never fail a build, but a build whose diagnostics are missing is not a clean result, and neither is
+    # one carrying a finding that says the model itself cannot be trusted. Only INTEGRITY findings degrade the job:
+    # a camera group whose placement is unverified (it was measured 104-129 deg wrong on real data), non-finite
+    # numbers, and dangling or unknown camera references. A thinly supported single camera is reported but does not
+    # change the grade -- that has always graded as before, and unregistered photographs already make a run partial.
+    # None = single-image fallback (no multi-view model to analyse), which is partial by construction anyway.
+    diag = stage_facts.get("reconstruction_diagnostics")
+    if isinstance(diag, dict):
+        if "error" in diag:
+            degraded.append(f"reconstruction diagnostics unavailable ({diag['error']})")
+        else:
+            integrity = [d["type"] for d in diag.get("diagnostics", [])
+                         if d.get("severity") == "error" and d.get("type") in _INTEGRITY_FINDINGS]
+            if integrity:
+                degraded.append(f"{len(integrity)} reconstruction integrity finding(s) (e.g. {integrity[0]})")
     return degraded
 
 
@@ -883,6 +902,10 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 "registration_status": prog.registration_status,
                 "points": len(prog.points),
                 "colmap_session": prog.stage_facts.get("colmap_session"),
+                # per-camera support and structured findings; None for the single-image fallback (no multi-view result)
+                "diagnostics": prog.stage_facts.get("reconstruction_diagnostics"),
+                # what the bounded correction loop would do (recommendation only; nothing was applied to this version)
+                "correction_plan": prog.stage_facts.get("correction_plan"),
             },
             "scale": {"state": prog.scale_state, "meters_per_unit": prog.meters_per_unit,
                       "references": [{"evidence_id_a": b.evidence_id_a, "evidence_id_b": b.evidence_id_b,
@@ -1193,6 +1216,7 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     job.status = JOB_RUNNING
     job.worker_id = WORKER_ID
     job.attempts += 1
+    job.progress = 0.0  # a retry starts over; progress is monotonic within one attempt
     job.started_at = utcnow()
     job.heartbeat_at = utcnow()
     await db.commit()
@@ -1288,6 +1312,10 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         else:
             job.status = JOB_QUEUED
             job.stage = None
+    if job.status in TERMINAL_STAGE:
+        job.stage = TERMINAL_STAGE[job.status]
+        if job.status in (JOB_SUCCEEDED, JOB_PARTIAL):
+            job.progress = 100.0
     try:
         await db.commit()
     finally:

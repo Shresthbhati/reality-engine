@@ -1,5 +1,6 @@
-"use client";
+import NewPlaceFlow from "@/components/simple/NewPlaceFlow";
 
+<<<<<<< HEAD
 import { Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -71,4 +72,9 @@ export default function CreateReconstructionPage() {
       <CreateReconstruction />
     </Suspense>
   );
+=======
+/** The primary product action: give the engine photographs, get a place. */
+export default function NewPlacePage() {
+  return <NewPlaceFlow />;
+>>>>>>> 4027b5c
 }

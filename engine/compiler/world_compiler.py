@@ -259,6 +259,16 @@ def _refine_room_detection(detection, result, up, budget_s):
     except Exception:  # noqa: BLE001 -- refinement is an improvement step, never a failure path
         return detection
 
+def corridor_properties(corridor, world) -> dict:
+    """The corridor's custom_properties, with boundary_element_ids limited to parts that exist in world."""
+    props = corridor.to_dict()
+    not_promoted = [b for b in corridor.boundary_element_ids if b not in world.entities]
+    if not_promoted:
+        props["boundary_element_ids"] = [b for b in corridor.boundary_element_ids if b in world.entities]
+        props["boundary_elements_not_promoted"] = not_promoted
+    return props
+
+
 
 def compile_reconstruction_to_world(
     result,
@@ -680,17 +690,7 @@ def compile_reconstruction_to_world(
                     bounds_min=Vector3(c_bmin[0], c_bmin[1], c_bmin[2]),
                     bounds_max=Vector3(c_bmax[0], c_bmax[1], c_bmax[2]),
                 )
-                c_props = c.to_dict()
-                # A corridor can be detected over planes that were never promoted (demoted as undersized or left
-                # unclassified). Referencing them would leave dangling boundary ids the validator rightly rejects, so
-                # only promoted boundaries are listed; the rest are recorded, not hidden.
-                missing_boundary = [b for b in c_props.get("boundary_element_ids", []) if b not in world.entities]
-                if missing_boundary:
-                    c_props["boundary_element_ids"] = [b for b in c_props["boundary_element_ids"] if b in world.entities]
-                    c_props["unpromoted_boundary_element_ids"] = missing_boundary
-                    interior_warnings.append(
-                        f"corridor {cid}: {len(missing_boundary)} boundary plane(s) were not promoted and are not "
-                        f"listed as its boundary: {missing_boundary}")
+                c_props = corridor_properties(c, world)
                 c_ent = Entity(
                     id=cid,
                     type=EntityType.CORRIDOR,

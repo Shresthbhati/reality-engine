@@ -5,7 +5,7 @@
  * authoritative for immutable computational versions, referenced here by
  * `current_version_id` only.
  */
-import { apiGet, apiPost } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
 import { toWorldRow } from "./adapters";
 import type {
   ApiList,
@@ -85,3 +85,12 @@ export async function commitWorldCorrection(
   return apiPost<CommitResponse>(`/api/worlds/${encodeURIComponent(worldId)}/commit`, payload);
 }
 
+
+export function renameWorld(worldId: string, name: string): Promise<{ id: string; name: string }> {
+  return apiPatch<{ id: string; name: string }>(`/api/worlds/${encodeURIComponent(worldId)}`, { name });
+}
+
+/** Refused with a 409 ApiError while a build is running. */
+export function deleteWorld(worldId: string): Promise<void> {
+  return apiDelete<void>(`/api/worlds/${encodeURIComponent(worldId)}`);
+}

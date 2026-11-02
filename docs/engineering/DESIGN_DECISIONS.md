@@ -204,6 +204,7 @@ Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an 
    means the `citydb` CLI runs, never that a database was reached. Contract tests against a fake CLI are not real
    3DCityDB verification; that stays external.
 
+<<<<<<< HEAD
 ## Decision — Axis convention
 
 **Status: ACCEPTED**
@@ -225,3 +226,18 @@ geo-referenced. Automatic cross-source / geo-registration remains the MISSING it
 `docs/future/registration/CROSS_SOURCE_REGISTRATION.md` (it needs a measurable residual and a valid correspondence
 set, which manual placement does not provide). Material hypotheses (plan M3) are likewise kept ESTIMATED with
 `asserted=False` and are deliberately not mapped to physics materials.
+=======
+
+## Quality bands (2026-10-13)
+
+A model score is not a probability (master document 14.2), so the product shows coarse bands.
+
+- **Entity band** (`apps/api/place_summary.py::entity_band`): `unknown` when provenance is UNKNOWN or confidence is missing or not
+  a number; `weak` when provenance is CONFLICT or confidence is below 0.5; `fair` from 0.5 up to 0.75; `good` from 0.75.
+  A conflict is never good, whatever its score. Not measured is never shown as good or bad.
+- **Place band** (`band_and_reason`): `unknown` with no model; `weak` when fewer than half of the photographs are placed or the
+  engine fell back below multi-view; `good` when the build was graded SUCCESS and at least 80% of photographs are placed;
+  otherwise `fair`. The reason is returned with the band so the UI can say why.
+- There is **no per-point band**: the stored point cloud carries no per-point confidence.
+- The thresholds (0.5, 0.75, 0.8) are tolerances, not calibrated constants.
+>>>>>>> 4027b5c

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -358,6 +359,7 @@ def vertical_slice(
     except UnvalidatableReconstructionError as exc:
         raise VerticalSliceError(f"reconstruction output is invalid ({exc}) -- not compiling") from exc
 
+    _lap("reconstruction")
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None
     unit_k, unit_facts = 1.0, None     # the RELATIVE working unit (reconstruction.scene_scale); 1.0 = solver units
@@ -409,6 +411,7 @@ def vertical_slice(
             )
             scale_note = scale_note + " | " + scale_error
 
+    _lap("scale")
     # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) ----
     from reconstruction.frame import FrameCanonicalizationError
 
@@ -444,6 +447,7 @@ def vertical_slice(
         result, world, evidence_items, metric_depth_maps, options
     )
 
+    _lap("perception")
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
     mesh_facts = _mesh_stage(result, world, options, scale_state)
 
@@ -485,6 +489,7 @@ def vertical_slice(
     detail_facts = _detail_stage(result, world, options, scale_state)
     lap("detail")
 
+    _lap("fusion_and_detail")
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,
@@ -519,6 +524,30 @@ def vertical_slice(
     world.metadata["fusion"] = {
         k: v for k, v in fusion_facts.items() if k != "fused"
     }
+
+    # Structured findings about the multi-view result (per-camera support, unregistered photographs, invalid numbers)
+    # for a later correction engine. Analysis only; it can never fail or change the build.
+    try:
+        from reconstruction.diagnostics import analyze as _analyze_reconstruction
+
+        reconstruction_diagnostics = _analyze_reconstruction(
+            result.points, result.camera_poses, [item.id for item in evidence_items])
+    except Exception as exc:  # noqa: BLE001 -- recorded, never raised
+        reconstruction_diagnostics = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # What the bounded correction loop WOULD do with this model. Recommendation only: the build keeps the uncorrected
+    # result until a correction has been shown to help on real data and is wired in deliberately.
+    try:
+        from reconstruction.correction import correct as _correct
+
+        _, _record = _correct(result, [item.id for item in evidence_items])
+        correction_plan = {"applied": False, "selected": _record["selected"], "attempts": [
+            {k: a.get(k) for k in ("diagnostic", "action", "status", "reasons", "removed")} for a in _record["attempts"]],
+            "evidence_requests": _record["evidence_requests"]}
+    except Exception as exc:  # noqa: BLE001 -- recorded, never raised
+        correction_plan = {"applied": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    _lap("diagnostics_and_correction_plan")
 
     return VerticalSliceResult(
         world=world,
@@ -559,6 +588,9 @@ def vertical_slice(
             "dense_structure": structure_facts,
             "plane_sweep": plane_sweep_facts,
             "dense_gate": dense_gate_facts,
+            "reconstruction_diagnostics": reconstruction_diagnostics,
+            "correction_plan": correction_plan,
+            "stage_timings_s": stage_timings,
             # how the sparse model was actually produced (full / incremental / reused, counts, timings);
             # empty for backends without a persistent session
             "colmap_session": dict(getattr(backend, "last_run_info", None) or {}) or None,

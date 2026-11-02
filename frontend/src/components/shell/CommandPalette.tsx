@@ -9,7 +9,6 @@ import {
   Globe,
   ShieldCheck,
   Workflow,
-  FileText,
   Zap,
   Box,
   Eye,
@@ -173,7 +172,6 @@ const COMMANDS: Command[] = [
   { label: "Create Capture Session", href: "/sessions/new", icon: Camera },
   { label: "Create Spatial World", href: "/worlds/new", icon: Globe },
   { label: "Attach Evidence", href: "/evidence", icon: ShieldCheck },
-  { label: "Open Reports", href: "/reports", icon: FileText },
 ];
 
 

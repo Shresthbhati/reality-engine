@@ -1569,6 +1569,25 @@ export class WorldSceneController {
     }
   }
 
+  /**
+   * Colour entities by quality band (good / fair / weak / unknown), or restore their type colours with null.
+   * The band colours are the app's status colours; "unknown" is a neutral grey, never green or red.
+   */
+  public setBandOverlay(bands: Record<string, string> | null) {
+    const BAND_COLORS: Record<string, number> = { good: 0x2ecc71, fair: 0xf5a623, weak: 0xe74c3c, unknown: 0x8a8fa3 };
+    for (const [id, mesh] of this.entityMeshes) {
+      const mat = mesh.material as THREE.MeshLambertMaterial;
+      const band = bands?.[id];
+      const hex = band && band in BAND_COLORS ? BAND_COLORS[band] : mesh.userData.baseColor;
+      mat.color.setHex(hex);
+      // the edge lines are children of the mesh; they follow the fill so the outline never disagrees with it
+      for (const child of mesh.children) {
+        const lineMat = (child as THREE.LineSegments).material as THREE.LineBasicMaterial | undefined;
+        if (lineMat && "color" in lineMat) lineMat.color.setHex(hex);
+      }
+    }
+  }
+
   public setWallsVisibility(visible: boolean) {
     this.setLayerVisibility({ walls: visible });
   }

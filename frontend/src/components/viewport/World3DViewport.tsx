@@ -88,6 +88,7 @@ interface World3DViewportProps {
   hasNoWorldData?: boolean;
   onMeasurementChange?: (measurement: MeasurementResult | null) => void;
   onOpenRoomConstruction?: () => void;
+<<<<<<< HEAD
   /** Needed to save/list measurements; without it measuring still works but cannot persist. */
   worldId?: string | null;
   mode?: ViewMode;
@@ -117,6 +118,16 @@ function IconButton({
       {children}
     </button>
   );
+=======
+  /** Engineer overlays (stats, layer toggles, compass, empty/failed explanations). Default on; Simple mode turns it off. */
+  chrome?: boolean;
+  /** Layer visibility the scene starts with (merged over the defaults). */
+  initialLayers?: Partial<ViewportLayers>;
+  /** Entity id -> quality band. When set, entities are coloured by band instead of by type. */
+  bandOverlay?: Record<string, string> | null;
+  /** Increment to frame the whole model. */
+  frameSignal?: number;
+>>>>>>> 4027b5c
 }
 
 export default function World3DViewport({
@@ -135,12 +146,19 @@ export default function World3DViewport({
   hasNoWorldData = false,
   onMeasurementChange,
   onOpenRoomConstruction,
+<<<<<<< HEAD
   worldId,
   mode: modeProp,
   onModeChange,
   hiddenEntityIds,
   cutaway: cutawayProp,
   onCutawayChange,
+=======
+  chrome = true,
+  initialLayers,
+  bandOverlay = null,
+  frameSignal = 0,
+>>>>>>> 4027b5c
 }: World3DViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<WorldSceneController | null>(null);
@@ -162,7 +180,11 @@ export default function World3DViewport({
     uncertainty: false,
     walls: true,
     topology: true,
+<<<<<<< HEAD
     shell: true,
+=======
+    ...initialLayers,
+>>>>>>> 4027b5c
   });
   const [modeState, setModeState] = useState<ViewMode>("realistic");
   const mode = modeProp ?? modeState;
@@ -288,6 +310,21 @@ export default function World3DViewport({
   useEffect(() => {
     controllerRef.current?.setShowDimensions(showDims && metersKnown);
   }, [showDims, metersKnown, world, points, cameras, mesh, structurePoints, unplaced]);
+
+  // Quality overlay: colour entities by band. Re-applied after every scene rebuild, cleared when off.
+  useEffect(() => {
+    controllerRef.current?.setBandOverlay(bandOverlay);
+  }, [bandOverlay, world, points, cameras, mesh]);
+
+  // The first layers (e.g. cameras off in Simple mode) must reach the scene, which starts from its own defaults.
+  useEffect(() => {
+    if (initialLayers) controllerRef.current?.setLayerVisibility({ ...layers });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [world]);
+
+  useEffect(() => {
+    if (frameSignal > 0) controllerRef.current?.frameAll();
+  }, [frameSignal]);
 
   // Sync spatial query filtering
   useEffect(() => {
@@ -472,6 +509,8 @@ export default function World3DViewport({
       if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         handleFrameAll();
+      } else if (!chrome && e.key !== "Escape") {
+        return; // the layer/measure shortcuts belong to the engineer overlays
       } else if (e.key === "1") {
         toggleLayer("points");
       } else if (e.key === "2") {
@@ -506,6 +545,7 @@ export default function World3DViewport({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+<<<<<<< HEAD
   }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, changeCutaway, cutaway, isMeasuring, isolatedSpaceId, onSelectEntity]);
 
   // Scale bar + axis gizmo (derived from the camera the controller reports)
@@ -517,6 +557,24 @@ export default function World3DViewport({
     <div className="flex h-full w-full select-none flex-col overflow-hidden bg-[var(--bg-base)]">
       {/* Mode tabs: Realistic | Wireframe | Confidence. One canonical world, three materials. */}
       <div className="flex shrink-0 items-center justify-center px-3 py-2" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+=======
+  }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, isMeasuring, isolatedSpaceId, onSelectEntity, chrome]);
+
+  return (
+    <div className="relative w-full h-full overflow-hidden select-none bg-[#08090b]">
+      {/* 3D Canvas Mount Point */}
+      <div
+        ref={containerRef}
+        className={`w-full h-full ${
+          isMeasuring ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing"
+        }`}
+      />
+
+      {chrome && (
+      <>
+      {/* Floating Viewport HUD: Top Left Stats */}
+      <div className="absolute top-3 left-3 z-10 flex items-center gap-2 pointer-events-none">
+>>>>>>> 4027b5c
         <div
           role="group"
           aria-label="Viewport mode"
@@ -909,6 +967,60 @@ export default function World3DViewport({
           ) : null}
         </div>
 
+<<<<<<< HEAD
+=======
+        {/* Camera Views & Framing */}
+        <div
+          className="flex items-center gap-1 p-1 rounded-md backdrop-blur-md"
+          style={{
+            background: "rgba(14, 16, 19, 0.85)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => handlePreset("isometric")}
+            title="Isometric View"
+            aria-label="Isometric camera view"
+            className="p-1.5 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handlePreset("top")}
+            title="Top-down View"
+            aria-label="Top-down camera view"
+            className="px-1.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            TOP
+          </button>
+          <button
+            type="button"
+            onClick={() => handlePreset("front")}
+            title="Front View"
+            aria-label="Front camera view"
+            className="px-1.5 h-7 rounded text-xs font-mono text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            FRNT
+          </button>
+          <button
+            type="button"
+            onClick={handleFrameAll}
+            title="Frame Selection / All [F]"
+            aria-label="Frame selection or entire world"
+            className="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-[#00e5ff] hover:bg-[rgba(0,229,255,0.12)] transition-colors cursor-pointer"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            <span>[F]</span>
+          </button>
+        </div>
+      </div>
+
+      </>
+      )}
+
+>>>>>>> 4027b5c
       {/* WebGL Context Loss Banner Overlay */}
       {isContextLost && (
         <div
@@ -943,7 +1055,7 @@ export default function World3DViewport({
       )}
 
       {/* Explicit Failed Reconstruction State Overlay */}
-      {!isLoading && isReconFailed && (
+      {chrome && !isLoading && isReconFailed && (
         <div
           className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/92 pointer-events-auto"
           role="alert"
@@ -1002,8 +1114,13 @@ export default function World3DViewport({
       )}
 
       {/* Explicit Empty State when no world data exists (honest, never fake) */}
+<<<<<<< HEAD
       {!isLoading && !isReconFailed && !unplaced && (hasNoWorldData || (!world && stats.points === 0)) && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/90 pointer-events-auto">
+=======
+      {chrome && !isLoading && !isReconFailed && (hasNoWorldData || (!world && stats.points === 0)) && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/90 pointer-events-auto">
+>>>>>>> 4027b5c
           <div className="w-14 h-14 rounded-full flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 mb-4 shadow-inner">
             <Box className="w-7 h-7 text-[var(--accent)]" />
           </div>
@@ -1029,7 +1146,74 @@ export default function World3DViewport({
         </div>
       )}
 
+<<<<<<< HEAD
+=======
+      {chrome && (
+      <>
+      {/* Bottom overlay: View navigation hint */}
+      <div className="absolute bottom-3 left-3 z-10 pointer-events-none text-[11px] font-mono text-neutral-500">
+        Left-click: Orbit · Right-click: Pan · Scroll: Zoom · Click entity to inspect · [M] Measure · [G] Grid
       </div>
+
+      {/* Coordinate Orientation Compass & ENU Frame Gizmo */}
+      <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 pointer-events-auto">
+        {/* Uncertainty Heatmap Legend when active */}
+        {layers.uncertainty && (
+          <div className="px-2.5 py-1.5 rounded-md backdrop-blur-md bg-[#0e1013]/90 border border-neutral-800 text-[10px] font-mono text-neutral-300 flex items-center gap-2 shadow-lg">
+            <span className="text-neutral-400">Confidence:</span>
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-[#e74c3c]" title="Low / Uncertain (0.0)" />
+              <span className="text-neutral-500">0%</span>
+              <div className="w-12 h-1.5 rounded-full bg-gradient-to-r from-[#e74c3c] via-[#f5a623] to-[#2ecc71]" />
+              <span className="text-neutral-500">100%</span>
+              <span className="w-2 h-2 rounded-full bg-[#2ecc71]" title="High / Confident (1.0)" />
+            </div>
+          </div>
+        )}
+
+        {/* Orientation Compass Widget */}
+        <div
+          className="p-1.5 rounded-lg backdrop-blur-md bg-[#0e1013]/90 border border-[#1f222b] shadow-xl flex items-center gap-2 text-[10px] font-mono select-none"
+          title="Metric ENU Coordinate Orientation. Click North to align view."
+        >
+          {/* Circular Compass Dial */}
+          <button
+            type="button"
+            onClick={() => handlePreset("top")}
+            aria-label="Re-align camera to True North"
+            title="Re-align camera to True North (Top-down)"
+            className="w-8 h-8 rounded-full border border-neutral-700 bg-[#151821] hover:border-[#00e5ff] relative flex items-center justify-center transition-all cursor-pointer group"
+          >
+            {/* North needle rotated by -cameraAngles.azimuthDeg */}
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-between p-1 transition-transform duration-100 ease-out"
+              style={{ transform: `rotate(${-cameraAngles.azimuthDeg}deg)` }}
+            >
+              <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[8px] border-b-[#e74c3c]" />
+              <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[8px] border-t-neutral-600" />
+            </div>
+            <span className="text-[8px] font-bold text-neutral-300 group-hover:text-[#00e5ff] z-10">
+              N
+            </span>
+          </button>
+
+          <div className="flex flex-col pr-1">
+            <div className="flex items-center gap-1.5 text-neutral-300">
+              <span className="font-semibold text-white">ENU Frame</span>
+              <span className="text-neutral-500">·</span>
+              <span className="text-[#00e5ff] font-mono">{cameraAngles.azimuthDeg}°</span>
+            </div>
+            <div className="text-[9px] text-neutral-400 flex items-center gap-1 mt-0.5">
+              <span className="text-[#e74c3c]" title="East (+X)">+X:E</span>
+              <span className="text-[#3b82f6]" title="North (+Z)">+Z:N</span>
+              <span className="text-[#2ecc71]" title="Up (+Y)">+Y:Up</span>
+            </div>
+          </div>
+        </div>
+>>>>>>> 4027b5c
+      </div>
+      </>
+      )}
     </div>
   );
 }

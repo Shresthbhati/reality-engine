@@ -216,13 +216,13 @@ export interface WorldStatus {
 export function createReconstruction(
   files: File[],
   opts: {
-    worldId?: string | null; evidenceClass?: string | null; latitude?: number; longitude?: number;
-    /** opt in to the CPU plane-sweep dense stage (off by default) and tune it */
+    worldId?: string | null; name?: string | null; evidenceClass?: string | null; latitude?: number; longitude?: number;
     denseCpu?: boolean; planeSweepMaxViews?: number; planeSweepStride?: number; planeSweepPlanes?: number;
   } = {},
 ): Promise<CreateReconstructionResult> {
   const fields: Record<string, string> = {};
   if (opts.worldId) fields.world_id = opts.worldId;
+  if (opts.name) fields.name = opts.name;
   if (opts.evidenceClass) fields.evidence_class = opts.evidenceClass;
   if (opts.latitude !== undefined && opts.longitude !== undefined) {
     fields.latitude = String(opts.latitude);

@@ -80,6 +80,10 @@ def coverage_degrees(camera_poses: Sequence[tuple], scene_center: Optional[tuple
             "count": len(vals)}
 
 
+#: Failure details that come from the engine's own post-registration stages, not from the evidence.
+_INTERNAL_STAGE_FAILURES = ("world compile stage failed", "compiled world failed validation")
+
+
 def build_guidance(
     *,
     level: int,
@@ -201,11 +205,21 @@ def build_guidance(
     # ---- what the engine tried and could not do ----
     for a in attempts:
         if a.get("outcome") == "failed" and a.get("level", 0) >= 1:
+            detail = str(a.get("detail", ""))
+            if any(marker in detail for marker in _INTERNAL_STAGE_FAILURES):
+                # The photographs WERE placed; one of our own checks on the built model failed. Blaming the photos
+                # here would send the user to retake pictures that were fine (observed: a 128-photo capture that
+                # registered 128 of 128 was reported as "photos share too little of the same scene").
+                message = ("The photos were processed, but an internal check stopped the 3D model from being "
+                           "built. This is not a problem with your photos. "
+                           "Showing the strongest result that was possible; your photos are kept.")
+            else:
+                message = ("We couldn't establish reliable multi-view geometry from these photos, usually "
+                           "because neighbouring photos share too little of the same scene. "
+                           "Showing the strongest result that was possible; your photos are kept.")
             out.append({
                 "kind": "engine_note",
-                "message": ("We couldn't establish reliable multi-view geometry from these photos, usually "
-                            "because neighbouring photos share too little of the same scene. "
-                            "Showing the strongest result that was possible; your photos are kept."),
+                "message": message,
                 "basis": f"attempt at level {a['level']} ({a.get('name')}) failed: {a.get('detail', 'no detail')}"[:500],
             })
     if not out:

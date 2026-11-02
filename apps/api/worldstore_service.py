@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.models import World, WorldVersion, utcnow
 from apps.api.storage import store_bytes
 from world_ir.world_v1 import WorldIR
-from worldstore.store import WorldStore, _atomic_write_text
+from worldstore.store import WorldStore, WorldStoreError, _atomic_write_text
 
 log = logging.getLogger(__name__)
 

@@ -735,7 +735,12 @@ def _detail_stage(result, world, options, scale_state: str = "unknown"):
         report = run_detail_pipeline(
             result,
             cameras,
-            voxel_size=voxel,
+            # Pass None so the pipeline derives the voxel from the scale
+            # state itself (metric default vs. scene-extent fraction) and
+            # records an honest basis in summary["voxel"]["basis"]. The
+            # legacy recorded voxel_size/voxel_basis above are kept for the
+            # facts dict (test_detail_refinement contract).
+            voxel_size=None,
             up=options.up,
             build_world_ir=True,
             world=world,
@@ -946,7 +951,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
 
         cam_pos = {p.evidence_id: tuple(float(v) for v in p.position) for p in result.camera_poses}
         # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
-        candidates, assoc = resolve_hypotheses(hypotheses, DepthSource.MVS, cam_pos, model="mask_rcnn@coco", license="BSD-3-Clause")
+        candidates, assoc = resolve_hypotheses(hypotheses, DepthSource.MVS, cam_pos, model="mask_rcnn@coco", license="BSD-3-Clause", world=world)
         resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
         resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
     else:

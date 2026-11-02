@@ -133,8 +133,8 @@ def build_switchboard(plate: PlateObservation, modules: Sequence[ModuleObservati
         id=entity_id, type=EntityType.STRUCTURE, name=cls.label, semantic_labels=_classes(cls.id),
         component_ids=[mid for mid, *_ in placed], provenance=Provenance.RECONSTRUCTED, confidence=float(plate.confidence),
         observations=_observations(plate.evidence_ids, plate.confidence),
-        relationships=([Relationship(RelationshipKind.ATTACHED_TO, plate.host_wall_id, plate.confidence,
-                                     Provenance.INFERRED, {"relation": "mounted_on"})] if plate.host_wall_id else []),
+        relationships=([Relationship(RelationshipKind.ATTACHED_TO, plate.host_wall_id, confidence=plate.confidence,
+                                     provenance=Provenance.INFERRED, metadata={"relation": "mounted_on"})] if plate.host_wall_id else []),
         custom_properties={
             "entity_class": cls.id, "kind": "switchboard", "geometry_strategy": "hybrid",
             "parametric": {"shape": "plate", "frame": frame},
@@ -156,8 +156,8 @@ def build_switchboard(plate: PlateObservation, modules: Sequence[ModuleObservati
             id=mid, type=EntityType.STRUCTURE, name=mc.label, semantic_labels=_classes(mc.id),
             provenance=Provenance.RECONSTRUCTED, confidence=float(m.confidence),
             observations=_observations(m.evidence_ids, m.confidence),
-            relationships=[Relationship(RelationshipKind.PART_OF, entity_id, m.confidence, Provenance.INFERRED,
-                                        {"relation": "module_of"})],
+            relationships=[Relationship(RelationshipKind.PART_OF, entity_id, confidence=m.confidence, provenance=Provenance.INFERRED,
+                                        metadata={"relation": "module_of"})],
             custom_properties={
                 "entity_class": mc.id, "kind": mc.id.rsplit(".", 1)[-1], "geometry_strategy": mc.geometry,
                 "parametric": {"shape": "module", "frame": frame, "plate_uv": [a, b]},

@@ -213,3 +213,91 @@ class TemporalHistory:
         return TemporalHistory.from_events(
             [TemporalEvent.from_dict(e) for e in data]
         )
+
+
+# ---------------------------------------------------------------------------
+# Contract hierarchy (blueprint 11 sec 1; build task 5.1)
+# ---------------------------------------------------------------------------
+# World -> Building -> Floor -> Space -> Surface -> Opening, with Entities placed in a Space. This is a typed
+# LINKS layer over the existing STOREY/ROOM/WALL/DOOR entities (validation.py maps Space/Surface/Opening onto
+# them); it stores no geometry and nothing is derived or invented: an empty Hierarchy means "not recorded".
+
+HIERARCHY_LEVELS = ("building", "floor", "space", "surface", "opening")
+#: required parent level for each level (a building has no parent: it hangs off the World).
+_PARENT_LEVEL = {"building": None, "floor": "building", "space": "floor", "surface": "space", "opening": "surface"}
+
+
+@dataclass(frozen=True)
+class HierarchyNode:
+    """One Building/Floor/Space/Surface/Opening record. `entity_id` names the existing entity this node is a view
+    over (storey, room, wall, door ...); None when the contract record has no entity yet (e.g. implicit building)."""
+
+    id: str
+    level: str                       # one of HIERARCHY_LEVELS
+    parent_id: Optional[str] = None  # node id of the level above; None only for a building
+    entity_id: Optional[str] = None
+    kind: Optional[str] = None       # contract kind: room|corridor|stair|outdoor, wall|floor|ceiling, door|window|passage
+    evidence_state: Optional[str] = None  # None = not classified, never a default
+    confidence: Optional[float] = None
+    coverage: Optional[float] = None      # surfaces: observed fraction 0..1
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+    @staticmethod
+    def from_dict(data: dict) -> "HierarchyNode":
+        return HierarchyNode(**{k: data.get(k) for k in HierarchyNode.__dataclass_fields__ if k in data})
+
+
+@dataclass
+class Hierarchy:
+    nodes: Dict[str, HierarchyNode] = field(default_factory=dict)
+    #: entity_id -> space node id, for entities (sofa, TV ...) that live in a Space.
+    entity_space: Dict[str, str] = field(default_factory=dict)
+
+    def __bool__(self) -> bool:
+        return bool(self.nodes or self.entity_space)
+
+    def add(self, node: HierarchyNode) -> HierarchyNode:
+        if node.id in self.nodes:
+            raise ValueError(f"duplicate hierarchy node id {node.id!r}")
+        self.nodes[node.id] = node
+        return node
+
+    def children(self, node_id: str) -> List[HierarchyNode]:
+        return [n for _, n in sorted(self.nodes.items()) if n.parent_id == node_id]
+
+    def problems(self, entity_ids) -> List[str]:
+        """Structural problems only (levels, parents, dangling entity links) -- reported, never repaired."""
+        out: List[str] = []
+        for nid, n in sorted(self.nodes.items()):
+            if n.level not in HIERARCHY_LEVELS:
+                out.append(f"node {nid}: unknown level {n.level!r}")
+                continue
+            want = _PARENT_LEVEL[n.level]
+            parent = self.nodes.get(n.parent_id) if n.parent_id else None
+            if want is None:
+                if n.parent_id:
+                    out.append(f"node {nid}: a building has no parent node")
+            elif parent is None:
+                out.append(f"node {nid}: missing {want} parent {n.parent_id!r}")
+            elif parent.level != want:
+                out.append(f"node {nid}: {n.level} parent must be a {want}, got {parent.level}")
+            if n.entity_id and n.entity_id not in entity_ids:
+                out.append(f"node {nid}: unknown entity {n.entity_id!r}")
+        for eid, sid in sorted(self.entity_space.items()):
+            if eid not in entity_ids:
+                out.append(f"entity_space: unknown entity {eid!r}")
+            if sid not in self.nodes or self.nodes[sid].level != "space":
+                out.append(f"entity_space: {eid!r} -> {sid!r} is not a space node")
+        return out
+
+    def to_dict(self) -> dict:
+        return {"nodes": {k: v.to_dict() for k, v in sorted(self.nodes.items())},
+                "entity_space": dict(sorted(self.entity_space.items()))}
+
+    @staticmethod
+    def from_dict(data: Optional[dict]) -> "Hierarchy":
+        data = data or {}
+        return Hierarchy(nodes={k: HierarchyNode.from_dict(v) for k, v in data.get("nodes", {}).items()},
+                         entity_space=dict(data.get("entity_space", {})))

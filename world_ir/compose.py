@@ -264,10 +264,10 @@ def _container(eid, etype, name, wid=None) -> Entity:
 
 
 def _link(parent: Entity, child: Entity):
-    parent.relationships.append(Relationship(RelationshipKind.CONTAINS, child.id, 0.5, Provenance.INFERRED,
-                                             {"derived_from": "compose"}))
-    child.relationships.append(Relationship(RelationshipKind.PART_OF, parent.id, 0.5, Provenance.INFERRED,
-                                            {"derived_from": "compose"}))
+    parent.relationships.append(Relationship(RelationshipKind.CONTAINS, child.id, confidence=0.5, provenance=Provenance.INFERRED,
+                                             metadata={"derived_from": "compose"}))
+    child.relationships.append(Relationship(RelationshipKind.PART_OF, parent.id, confidence=0.5, provenance=Provenance.INFERRED,
+                                            metadata={"derived_from": "compose"}))
 
 
 def _add_containers(out: WorldIR, sources, kind: str, name: str, warn: list):

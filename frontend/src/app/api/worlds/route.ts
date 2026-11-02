@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { BACKEND_URL, backendFetch } from "@/lib/api/backend";
+import { BACKEND_URL, backendFetch } from "../../../lib/api/backend.ts";
 
 /**
  * Thin proxy to the FastAPI contract `GET/POST /api/worlds`

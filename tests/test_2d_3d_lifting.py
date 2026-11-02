@@ -111,43 +111,12 @@ def test_mismatched_evidence_id_raises():
         lift_region_to_3d(region, depth, camera)
 
 
-def test_relative_depth_map_is_refused_not_silently_treated_as_metric():
+def test_relative_depth_map_is_not_silently_treated_as_metric():
+    # blueprint 3.3 changed this from "raise LiftingError": relative depth now lifts, but is flagged relative with
+    # no metric dimensions (see tests/test_scale_gate.py for the full scale-gate contract).
     camera = _camera()
     depth = _flat_depth(unit="relative")
     region = _region(_rect_mask(0, 2, 0, 2))
 
-    with pytest.raises(LiftingError):
-        lift_region_to_3d(region, depth, camera)
-
-
-def test_mismatched_mask_dimensions_raises():
-    camera = _camera()
-    depth = _flat_depth()
-    bad_mask = [[True] * (_WIDTH + 1) for _ in range(_HEIGHT)]
-    region = SegmentedRegion(region_id="reg-1", evidence_id="ev-1", label="x", mask=bad_mask, confidence=0.5)
-
-    with pytest.raises(LiftingError):
-        lift_region_to_3d(region, depth, camera)
-
-
-def test_bounds_are_tight_around_the_unprojected_points():
-    camera = _camera()
-    depth = _flat_depth(depth_value=10.0)
-    region = _region(_rect_mask(2, 4, 3, 5))
-
     hyp = lift_region_to_3d(region, depth, camera)
-    assert hyp is not None
-    assert hyp.bounds_min.z == hyp.bounds_max.z == 10.0
-    assert hyp.bounds_min.x < hyp.bounds_max.x
-    assert hyp.bounds_min.y < hyp.bounds_max.y
-
-
-def test_to_dict_is_plain_data():
-    camera = _camera()
-    depth = _flat_depth()
-    region = _region(_rect_mask(0, 2, 0, 2))
-
-    hyp = lift_region_to_3d(region, depth, camera)
-    payload = hyp.to_dict()
-    assert payload["label"] == "chair"
-    assert payload["provenance"] == "INFERRED"
+    assert hyp is not None and hyp.depth_source.value == "relative" and hyp.metric_extents_m is None

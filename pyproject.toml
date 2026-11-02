@@ -48,6 +48,7 @@ include = [
     "evidence*", "reconstruction*", "perception*", "exporters*",
     "sdk*", "apps*", "uncertainty*", "worldstore*",
     "registration*", "trajectories*", "procedural*", "synthetic*", "geo*",
+    "assistant*",
 ]
 
 [tool.pytest.ini_options]

@@ -1886,12 +1886,24 @@ tasks:
 
   - id: LAND-01
     name: landmark / curved-structure reconstruction from a single image (domes, arches, towers, facade ornament)
-    status: MISSING
+    status: PARTIAL
     basis: >-
-      The pipeline reconstructs planar rooms (walls/floor/ceiling/openings); it cannot recover curved or ornamented
-      exterior architecture from one photo. Not promised.
+      FOUNDATION landed: perception/architecture/landmark.py fits single-image 3D point clusters to curved
+      landmark kinds (dome via sphere fit, arch via circle cross-section, tower via vertical cylinder fit) with
+      measured residuals (rms/max), honest FitRefused when evidence is insufficient, deterministic output,
+      relative-vs-measured scale handling (single-image scale is relative unless a trusted baseline is supplied),
+      and a LandmarkErrorReport structure for the acceptance-criterion measurement against ground truth.
+      WorldIR already carries DOME/ARCH entity types and SPHERE/CYLINDER/CAPSULE/IMPLICIT/MESH geometry types;
+      the ArchitectureRegistry already registers arch/dome (SPHERE), arch/arch (CIRCLE), tower (CYLINDER).
+      Tests: tests/test_landmark.py (27 tests) all green, including determinism, refusal, and scale-state cases.
     acceptance: "measured against a ground-truth model with a stated error metric and threshold, not by eye"
-    dependencies: "learned monocular/multi-view model or multi-view capture of the structure; curved-surface primitives in WorldIR"
+    dependencies: "learned monocular/multi-view model or multi-view capture of the structure; real landmark photo set + surveyed dimensions for ground-truth measurement"
+    verification:
+      - "tests/test_landmark.py: 27 passed, 0 failed (dome/arch/tower fitting, refusals, determinism, relative vs measured scale, error report)"
+    open: >-
+      REAL-DATA VERIFICATION BLOCKED: no real landmark photo set or surveyed ground-truth dimensions exist in
+      this environment. All verification is synthetic. Cannot advance to VERIFIED until user supplies a real
+      landmark capture + measured dimensions for the acceptance-criterion error report.
 
   - id: GATE-01
     name: release gate - real photos -> persisted world -> correction -> V2 diff (docs/implementation/RELEASE_GATE_PLAN.md)

@@ -54,6 +54,12 @@ class World(Base):
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     coverage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     current_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: lifecycle (doc 13): status is active | archived | trashed; the timestamps record when.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    thumbnail_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    #: NULL until a scale state has been recorded for the world; never guessed.
+    scale_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -81,6 +87,8 @@ class WorldVersion(Base):
     report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     points_artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cameras_artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_by_job_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -227,6 +235,8 @@ class Job(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)
     priority: Mapped[int] = mapped_column(Integer, default=0)
+    #: per-stage counters (e.g. {"images": 24, "registered": 21}); NULL until a stage reports.
+    stage_counts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     progress: Mapped[float | None] = mapped_column(Float, nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -251,6 +261,25 @@ class WorldIntent(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class CaptureRequest(Base):
+    """Listing/status mirror of a WorldIR CaptureRequest (doc 11): the extra photo the system needs.
+    WorldIR stays authoritative; this row exists so requests can be listed and filtered without loading a world."""
+
+    __tablename__ = "capture_requests"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    reason: Mapped[str] = mapped_column(String(300))
+    target_region: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    target_ids: Mapped[list] = mapped_column(JSON, default=list)
+    suggested_poses: Mapped[list] = mapped_column(JSON, default=list)
+    expected_gain: Mapped[float | None] = mapped_column(Float, nullable=True)
+    instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)  # open | satisfied | dismissed
+    created_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Notification(Base):

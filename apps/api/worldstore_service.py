@@ -514,3 +514,66 @@ def reject_scale_suggestion(world_id: str, key: str) -> None:
     path = _scale_rejected_path(world_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(keys), encoding="utf-8")
+
+
+# ------------------------------------------------------------------------- permanent delete (purge)
+
+
+def purge_world_store(world_id: str) -> dict:
+    """Permanently remove one world's WorldStore versions, its per-world side files, and ONLY the store blobs
+    nothing else references.
+
+    Versions are matched by the ``world_id`` inside each record (live and quarantined). A blob (the world JSON or an
+    ``artifact://<sha256>`` geometry it names) is deleted only if no remaining record -- of any world, live or
+    quarantined -- still names it, so a duplicated world's shared geometry survives. Runs under the store's sequence
+    lock. Returns ``{"versions_removed", "blobs_removed", "blobs_kept_shared"}``."""
+    import re
+    import shutil
+
+    from worldstore.store import _ARTIFACT_URI_RE, _SequenceLock, _validate_version_id
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", world_id):
+        raise ValueError(f"unsafe world id: {world_id!r}")
+    store = get_store()
+    root = store._root
+
+    def read(p: Path) -> dict:
+        return json.loads(p.read_text(encoding="utf-8"))
+
+    def blob_refs(rec: dict) -> set[str]:
+        refs = {rec["artifact_hash"]}
+        try:
+            refs.update(m.decode() for m in _ARTIFACT_URI_RE.findall(store._store.get(rec["artifact_uri"])))
+        except Exception:   # noqa: BLE001 -- unreadable world: its own digest is still protected / collected
+            pass
+        return refs
+
+    qdir = root / "quarantine"
+    with _SequenceLock(root):
+        live = {p: read(p) for p in store._versions_dir.glob("v-*.json")}
+        quar = {p: read(p) for p in qdir.glob("v-*.json")} if qdir.is_dir() else {}
+        doomed = {p: r for d in (live, quar) for p, r in d.items() if r.get("world_id") == world_id}
+        candidates: set[str] = set()
+        for rec in doomed.values():
+            candidates |= blob_refs(rec)
+        keep: set[str] = set()
+        for d in (live, quar):
+            for p, rec in d.items():
+                if p not in doomed:
+                    keep |= blob_refs(rec)
+        removed_ids = sorted(p.stem for p in doomed)
+        for p in doomed:
+            _validate_version_id(p.stem)
+            p.unlink(missing_ok=True)
+        if removed_ids:
+            seq = root / "sequence.json"
+            _atomic_write_text(seq, json.dumps([v for v in store._read_sequence(seq) if v not in set(removed_ids)]))
+        blobs_removed = []
+        for digest in sorted(candidates - keep):
+            store._store._path_for(digest).unlink(missing_ok=True)
+            blobs_removed.append(digest)
+    shutil.rmtree(root / "colmap-sessions" / world_id, ignore_errors=True)
+    (root / "scale-references" / f"{world_id}.json").unlink(missing_ok=True)
+    (root / "scale-references" / f"{world_id}.rejected.json").unlink(missing_ok=True)
+    return {"versions_removed": removed_ids, "blobs_removed": blobs_removed,
+            "blobs_kept_shared": sorted(candidates & keep)}

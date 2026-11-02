@@ -467,6 +467,7 @@ def _seed_compiled_world(client, tmp_path, monkeypatch, name="Commit world"):
     wir.entities["opening-001"] = Entity(
         id="opening-001", type=EntityType.DOOR, name="Door 1",
         provenance=Provenance.INFERRED, confidence=0.75,
+        custom_properties={"host_wall_id": "wall-001"},  # invariant 7: an opening names its host surface
     )
     wir.entities["corridor-001"] = Entity(
         id="corridor-001", type=EntityType.CORRIDOR, name="Corridor 1",

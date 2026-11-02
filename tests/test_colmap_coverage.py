@@ -129,7 +129,7 @@ def _helix_points(n=60, scale=1.0):
             position=(scale * math.cos(th), scale * math.sin(th), scale * 0.15 * th),
             track_id=f"h{i:03d}",
             source_evidence_ids=[],
-            uncertainty=SimpleNamespace(confidence=0.8),
+            uncertainty=SimpleNamespace(confidence=0.8), color=None,
         ))
     return pts
 
@@ -149,7 +149,7 @@ def _make_result(names, theta0=0.0, spread=2 * math.pi, jitter=0.0):
             position=(p[0] * 0.1, p[1] * 0.1, 0.4 * i),
             track_id=f"t-{n}",
             source_evidence_ids=[n],
-            uncertainty=SimpleNamespace(confidence=0.8),
+            uncertainty=SimpleNamespace(confidence=0.8), color=None,
         ))
     return ReconstructionResult(points=points, camera_poses=poses, registration_status="partial")
 
@@ -162,7 +162,7 @@ def _submodel(names, gauge_R=None, gauge_t=None, point_scale=1.0):
         points = [
             SimpleNamespace(position=p.position, track_id=p.track_id,
                             source_evidence_ids=p.source_evidence_ids,
-                            uncertainty=SimpleNamespace(confidence=0.8))
+                            uncertainty=SimpleNamespace(confidence=0.8), color=None)
             for p in _helix_points(scale=point_scale)
         ]
         return ReconstructionResult(points=points,
@@ -175,7 +175,7 @@ def _submodel(names, gauge_R=None, gauge_t=None, point_scale=1.0):
         p2 = gR @ np.array(p.position) + gt
         points.append(SimpleNamespace(position=tuple(p2), track_id=p.track_id,
                                       source_evidence_ids=p.source_evidence_ids,
-                                      uncertainty=SimpleNamespace(confidence=0.8)))
+                                      uncertainty=SimpleNamespace(confidence=0.8), color=None))
     poses = []
     for pose in base.camera_poses:
         c2 = gR @ np.array(pose.position) + gt
@@ -347,13 +347,13 @@ def _tiny_submodel(names, gauge_R, gauge_t, theta0=0.0):
         poses.append(SimpleNamespace(
             evidence_id=n, position=tuple(c2),
             rotation=_mat_to_quat(gR @ _quat_to_mat(_ring_pose(n, theta=th).rotation)),
-            uncertainty=SimpleNamespace(confidence=0.8),
+            uncertainty=SimpleNamespace(confidence=0.8), color=None,
         ))
         h = _helix_points(n=60)[i * 7]
         p2 = gR @ np.array(h.position) + gt
         points.append(SimpleNamespace(
             position=tuple(p2), track_id=h.track_id,
-            source_evidence_ids=[n], uncertainty=SimpleNamespace(confidence=0.8),
+            source_evidence_ids=[n], uncertainty=SimpleNamespace(confidence=0.8), color=None,
         ))
     return ReconstructionResult(points=points, camera_poses=poses,
                                 registration_status="partial")

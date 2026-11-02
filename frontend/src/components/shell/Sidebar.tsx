@@ -16,7 +16,6 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-<<<<<<< HEAD
 import { RAIL_ITEMS, MOBILE_PRIMARY_IDS, isEntryActive, type NavEntry } from "@/lib/shell/shell-logic";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -35,54 +34,15 @@ export default function Sidebar() {
   const pathname = usePathname();
   const main = RAIL_ITEMS.filter((e) => e.id !== "settings");
   const bottom = RAIL_ITEMS.filter((e) => e.id === "settings");
-=======
-import { cn } from "@/lib/utils";
-import { NAV } from "@/lib/copy";
-import { useProMode } from "@/lib/prefs";
-
-// Simple mode: what a consumer thinks in (places and photos). Home is the library of places.
-const PRIMARY_NAV = [
-  { href: "/", label: NAV.home, icon: Home },
-  { href: "/reconstruct", label: NAV.newPlace, icon: ImagePlus },
-] as const;
-
-// Pro mode adds the engine's own organising objects.
-const PRO_NAV = [
-  { href: "/worlds", label: NAV.places, icon: Globe },
-  { href: "/sessions", label: NAV.sessions, icon: Camera },
-  { href: "/evidence", label: NAV.evidence, icon: ShieldCheck },
-] as const;
-
-const SECONDARY_NAV = [
-  { href: "/settings", label: NAV.settings, icon: Settings },
-] as const;
-
-export default function Sidebar({
-  collapsed,
-  onToggle,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-}) {
-  const pathname = usePathname();
-  const pro = useProMode();
-  const primary = pro ? [...PRIMARY_NAV, ...PRO_NAV] : PRIMARY_NAV;
->>>>>>> 4027b5c
 
   return (
     <aside
       className="hidden md:flex w-[68px] shrink-0 h-full flex-col border-r"
       style={{ background: "var(--bg-sidebar)", borderColor: "var(--border)" }}
     >
-<<<<<<< HEAD
       <nav aria-label="Primary" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 px-1.5 py-3">
         {main.map((e) => (
           <RailItem key={e.id} entry={e} active={isEntryActive(e, pathname)} />
-=======
-      <nav aria-label="Primary" className="flex-1 flex flex-col gap-0.5 px-2 py-3">
-        {primary.map((item) => (
-          <SidebarLink key={item.href} item={item} collapsed={collapsed} active={pathname === item.href} />
->>>>>>> 4027b5c
         ))}
       </nav>
       <nav aria-label="Secondary" className="flex flex-col gap-1 px-1.5 py-3">

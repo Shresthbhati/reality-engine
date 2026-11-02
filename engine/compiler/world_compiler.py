@@ -210,6 +210,23 @@ class CompileDiagnostics:
         return "\n".join(lines)
 
 
+def corridor_properties(corridor, world) -> dict:
+    """The corridor's ``custom_properties``, with ``boundary_element_ids`` limited to parts that exist in ``world``.
+
+    The informational boundary list must agree with the CONTAINS edges, which only exist for parts that were actually
+    promoted. A boundary plane can be classified yet NOT promoted (sub-room-scale undersized sheets are deliberately
+    skipped); listing it anyway left a dangling reference that the validation gate (correctly) rejected and failed the
+    whole multi-view build -- observed on a 128-photo model (corridor-room-003 -> struct-plane-036 / struct-plane-245),
+    which then fell back to a 128x single-image depth bootstrap. The gate is unchanged; the data is made honest: list
+    what exists and record what was not promoted."""
+    props = corridor.to_dict()
+    not_promoted = [b for b in corridor.boundary_element_ids if b not in world.entities]
+    if not_promoted:
+        props["boundary_element_ids"] = [b for b in corridor.boundary_element_ids if b in world.entities]
+        props["boundary_elements_not_promoted"] = not_promoted
+    return props
+
+
 def compile_reconstruction_to_world(
     result,
     options: Optional[CompileOptions] = None,
@@ -622,12 +639,13 @@ def compile_reconstruction_to_world(
                     bounds_min=Vector3(c_bmin[0], c_bmin[1], c_bmin[2]),
                     bounds_max=Vector3(c_bmax[0], c_bmax[1], c_bmax[2]),
                 )
+                c_props = corridor_properties(c, world)
                 c_ent = Entity(
                     id=cid,
                     type=EntityType.CORRIDOR,
                     name=f"Corridor {c.corridor_id.rsplit('-', 1)[-1]}",
                     geometry_ids=[c_geom_id],
-                    custom_properties=c.to_dict(),
+                    custom_properties=c_props,
                     provenance=Provenance.INFERRED,
                     confidence=c.confidence,
                 )

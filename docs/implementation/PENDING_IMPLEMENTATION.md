@@ -283,15 +283,18 @@ source record.
 
 ## P4.20 — WorldStore
 
-**Status: MISSING → spec in [`../future/worldstore/WORLDSTORE.md`](../future/worldstore/WORLDSTORE.md)**
-SQLite first; PostgreSQL later. Binary data lives in ArtifactStore,
-never in relational rows. Requires: world versions, entity history,
-immutable evidence, transactions.
+**Status: IMPLEMENTED (file-backed; reconciled 2026-10-13, was stale "MISSING").** `worldstore/store.py`: immutable
+versions, parent lineage, artifact integrity verification, survives restart; `worldstore/tiles.py`: tiled saves. The API
+commits versions through `apps/api/worldstore_service.py`. Evidence: `tests/test_worldstore_tiles.py`,
+`tests/test_detail_worldstore.py` (33 passed with the incremental/packaging tests below, 2026-10-13). NOT implemented:
+the SQLite/PostgreSQL relational store in the spec (`../future/worldstore/WORLDSTORE.md`) and entity-history queries.
 
 ## P4.21 — Incremental compilation
 
-**Status: MISSING → [`../future/worldstore/INCREMENTAL_COMPILATION.md`](../future/worldstore/INCREMENTAL_COMPILATION.md)**
-Dependency graph + invalidations + regional recompilation + versioning.
+**Status: PARTIAL (reconciled 2026-10-13, was stale "MISSING").** WorldIR incremental updates and localized
+recompilation exist (`world_ir/incremental.py`; `tests/test_incremental.py`, `tests/test_world_ir_incremental.py`,
+`tests/test_incremental_world_e2e.py`, `tests/test_true_localized_incremental_acceptance.py`). The product path still
+rebuilds each version from the union of all evidence (see CE-02). Spec: [`../future/worldstore/INCREMENTAL_COMPILATION.md`](../future/worldstore/INCREMENTAL_COMPILATION.md).
 
 ---
 
@@ -301,6 +304,8 @@ Dependency graph + invalidations + regional recompilation + versioning.
 evidence browsers, uncertainty + provenance visualization, timeline,
 diff/branch views, simulation controls. Architectural rule: Studio is a
 client of WorldIR/WorldStore; it never becomes the reconstruction engine.
+
+**Plan (2026-10-13; Phases 0, 1 and 2 done, see its section 11):** [`../future/studio/STUDIO_CONSUMER_UX_PLAN.md`](../future/studio/STUDIO_CONSUMER_UX_PLAN.md) -- consumer UX redesign (UX-01..12) and missing backend (B-00..12), phased with acceptance criteria.
 
 ---
 
@@ -324,7 +329,10 @@ client of WorldIR/WorldStore; it never becomes the reconstruction engine.
 
 ## P7.29 — CI
 
-**Status: MISSING.** No GitHub workflows exist. Evidence: unit CI, deterministic CLI E2E CI, marked real-model tests separated (weights/network never required for green), packaging smoke test.
+**Status: PARTIAL (reconciled 2026-10-13, was stale "MISSING").** `.github/workflows/ci.yml` runs a Python matrix,
+editable install, console-script check, package-import check, targeted pytest steps, a CLI vertical-slice test and
+ruff/mypy (non-blocking). Not verified here: a green run on GitHub, real-model tests separated from the default run, and
+a wheel build + clean-venv install in CI (`tests/test_packaging_smoke.py` passes locally).
 
 ---
 

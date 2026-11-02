@@ -42,6 +42,14 @@ interface World3DViewportProps {
   hasNoWorldData?: boolean;
   onMeasurementChange?: (measurement: MeasurementResult | null) => void;
   onOpenRoomConstruction?: () => void;
+  /** Engineer overlays (stats, layer toggles, compass, empty/failed explanations). Default on; Simple mode turns it off. */
+  chrome?: boolean;
+  /** Layer visibility the scene starts with (merged over the defaults). */
+  initialLayers?: Partial<ViewportLayers>;
+  /** Entity id -> quality band. When set, entities are coloured by band instead of by type. */
+  bandOverlay?: Record<string, string> | null;
+  /** Increment to frame the whole model. */
+  frameSignal?: number;
 }
 
 export default function World3DViewport({
@@ -58,6 +66,10 @@ export default function World3DViewport({
   hasNoWorldData = false,
   onMeasurementChange,
   onOpenRoomConstruction,
+  chrome = true,
+  initialLayers,
+  bandOverlay = null,
+  frameSignal = 0,
 }: World3DViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<WorldSceneController | null>(null);
@@ -71,6 +83,7 @@ export default function World3DViewport({
     uncertainty: false,
     walls: true,
     topology: true,
+    ...initialLayers,
   });
 
   const [gridVisible, setGridVisible] = useState(true);
@@ -141,6 +154,21 @@ export default function World3DViewport({
       setStats(controller.getStatistics());
     }
   }, [world, points, cameras, mesh]);
+
+  // Quality overlay: colour entities by band. Re-applied after every scene rebuild, cleared when off.
+  useEffect(() => {
+    controllerRef.current?.setBandOverlay(bandOverlay);
+  }, [bandOverlay, world, points, cameras, mesh]);
+
+  // The first layers (e.g. cameras off in Simple mode) must reach the scene, which starts from its own defaults.
+  useEffect(() => {
+    if (initialLayers) controllerRef.current?.setLayerVisibility({ ...layers });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [world]);
+
+  useEffect(() => {
+    if (frameSignal > 0) controllerRef.current?.frameAll();
+  }, [frameSignal]);
 
   // Sync spatial query filtering
   useEffect(() => {
@@ -306,6 +334,8 @@ export default function World3DViewport({
       if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         handleFrameAll();
+      } else if (!chrome && e.key !== "Escape") {
+        return; // the layer/measure shortcuts belong to the engineer overlays
       } else if (e.key === "1") {
         toggleLayer("points");
       } else if (e.key === "2") {
@@ -338,7 +368,7 @@ export default function World3DViewport({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, isMeasuring, isolatedSpaceId, onSelectEntity]);
+  }, [handleFrameAll, toggleLayer, toggleGrid, toggleMeasure, isMeasuring, isolatedSpaceId, onSelectEntity, chrome]);
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none bg-[#08090b]">
@@ -350,6 +380,8 @@ export default function World3DViewport({
         }`}
       />
 
+      {chrome && (
+      <>
       {/* Floating Viewport HUD: Top Left Stats */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2 pointer-events-none">
         <div
@@ -659,6 +691,9 @@ export default function World3DViewport({
         </div>
       </div>
 
+      </>
+      )}
+
       {/* WebGL Context Loss Banner Overlay */}
       {isContextLost && (
         <div
@@ -693,7 +728,7 @@ export default function World3DViewport({
       )}
 
       {/* Explicit Failed Reconstruction State Overlay */}
-      {!isLoading && isReconFailed && (
+      {chrome && !isLoading && isReconFailed && (
         <div
           className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/92 pointer-events-auto"
           role="alert"
@@ -724,7 +759,7 @@ export default function World3DViewport({
       )}
 
       {/* Explicit Empty State when no world data exists (honest, never fake) */}
-      {!isLoading && !isReconFailed && (hasNoWorldData || (!world && stats.points === 0)) && (
+      {chrome && !isLoading && !isReconFailed && (hasNoWorldData || (!world && stats.points === 0)) && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[#08090b]/90 pointer-events-auto">
           <div className="w-14 h-14 rounded-full flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 mb-4 shadow-inner">
             <Box className="w-7 h-7 text-[#00e5ff]" />
@@ -751,6 +786,8 @@ export default function World3DViewport({
         </div>
       )}
 
+      {chrome && (
+      <>
       {/* Bottom overlay: View navigation hint */}
       <div className="absolute bottom-3 left-3 z-10 pointer-events-none text-[11px] font-mono text-neutral-500">
         Left-click: Orbit · Right-click: Pan · Scroll: Zoom · Click entity to inspect · [M] Measure · [G] Grid
@@ -812,6 +849,8 @@ export default function World3DViewport({
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

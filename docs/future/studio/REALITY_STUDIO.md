@@ -1,5 +1,7 @@
 # Reality Studio
 
+> **2026-10-13:** UI/UX and backend completion plan: [`STUDIO_CONSUMER_UX_PLAN.md`](STUDIO_CONSUMER_UX_PLAN.md). It supersedes the capability list below for UI work.
+
 Status: PARTIAL (viewer app exists; Studio as editing/management
 surface is MISSING) (2026-09-14)
 

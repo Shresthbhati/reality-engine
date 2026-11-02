@@ -19,6 +19,8 @@ export * from "./worldir";
 export * from "./reconstructions";
 export * from "./version-evidence";
 export * from "./reconstruction-decision";
+export * from "./checks";
+export * from "./quality";
 export * from "./hooks";
 
 /**

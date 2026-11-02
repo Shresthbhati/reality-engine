@@ -11,26 +11,93 @@
 
   --border: #1f222b;
   --border-subtle: #171921;
+  /* Boundaries of controls (inputs, outlined buttons) must reach 3:1 (WCAG 1.4.11); --border is for decoration only. */
+  --border-strong: #606679;
 
   --text-primary: #f0f1f6;
   --text-secondary: #9296a6;
-  --text-tertiary: #5b6070;
+  --text-tertiary: #8a8fa3;
 
-  --accent: #00e5ff;
-  --accent-subtle: rgba(0, 229, 255, 0.12);
-  --accent-border: rgba(0, 229, 255, 0.35);
+  --accent: #4fd1e0;
+  --accent-subtle: rgba(79, 209, 224, 0.12);
+  --accent-border: rgba(79, 209, 224, 0.4);
 
   --success: #2ecc71;
   --success-subtle: rgba(46, 204, 113, 0.12);
   --warning: #f5a623;
   --warning-subtle: rgba(245, 166, 35, 0.12);
   --error: #e74c3c;
+  --on-error: #0e1013;
   --error-subtle: rgba(231, 76, 60, 0.12);
   --info: #3d8ef7;
   --info-subtle: rgba(61, 142, 247, 0.12);
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Light theme. Dark is the default; data-theme="light"|"dark" (Settings > Appearance) overrides the OS setting.
+   The two light blocks below must stay identical -- CSS cannot share one rule across a media query and an attribute. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-base: #f6f7f9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #eef0f4;
+  --bg-hover: rgba(0, 0, 0, 0.05);
+
+  --border: #d6d9e2;
+  --border-subtle: #e6e8ee;
+  --border-strong: #868ca0;
+  --on-error: #ffffff;
+
+  --text-primary: #14161c;
+  --text-secondary: #464b5a;
+  --text-tertiary: #646a7a;
+
+  --accent: #00708a;
+  --accent-subtle: rgba(0, 112, 138, 0.1);
+  --accent-border: rgba(0, 112, 138, 0.4);
+
+  --success: #176f3c;
+  --success-subtle: rgba(23, 111, 60, 0.1);
+  --warning: #8a5000;
+  --warning-subtle: rgba(138, 80, 0, 0.1);
+  --error: #b02f22;
+  --error-subtle: rgba(176, 47, 34, 0.1);
+  --info: #1f6fd1;
+  --info-subtle: rgba(31, 111, 209, 0.1);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg-base: #f6f7f9;
+    --bg-surface: #ffffff;
+    --bg-elevated: #eef0f4;
+    --bg-hover: rgba(0, 0, 0, 0.05);
+
+    --border: #d6d9e2;
+    --border-subtle: #e6e8ee;
+    --border-strong: #868ca0;
+    --on-error: #ffffff;
+
+    --text-primary: #14161c;
+    --text-secondary: #464b5a;
+    --text-tertiary: #646a7a;
+
+    --accent: #00708a;
+    --accent-subtle: rgba(0, 112, 138, 0.1);
+    --accent-border: rgba(0, 112, 138, 0.4);
+
+    --success: #176f3c;
+    --success-subtle: rgba(23, 111, 60, 0.1);
+    --warning: #8a5000;
+    --warning-subtle: rgba(138, 80, 0, 0.1);
+    --error: #b02f22;
+    --error-subtle: rgba(176, 47, 34, 0.1);
+    --info: #1f6fd1;
+    --info-subtle: rgba(31, 111, 209, 0.1);
+  }
 }
 
 * {
@@ -89,4 +156,38 @@ body {
 [data-reduce-motion="true"] *::after {
   animation-duration: 0.001ms !important;
   transition-duration: 0.001ms !important;
+}
+
+/* Interface polish (design-engineering details) */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
+}
+
+/* Tactile press on controls that opt in; transitions name their properties (never `all`). */
+.btn-press {
+  transition-property: transform, opacity, background-color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+.btn-press:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Neutral inset outline so a photo's edge does not dissolve into the surface (black/white alpha, never brand-tinted). */
+.photo-outline {
+  outline: 1px solid rgba(0, 0, 0, 0.12);
+  outline-offset: -1px;
+}
+:root[data-theme="dark"] .photo-outline {
+  outline-color: rgba(255, 255, 255, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .photo-outline {
+    outline-color: rgba(255, 255, 255, 0.12);
+  }
 }

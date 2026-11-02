@@ -177,3 +177,17 @@ Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an 
 6. **3DCityDB availability is three-valued** (`probe_citydb`: AVAILABLE / UNAVAILABLE / FAILED) and probe-only: AVAILABLE
    means the `citydb` CLI runs, never that a database was reached. Contract tests against a fake CLI are not real
    3DCityDB verification; that stays external.
+
+
+## Quality bands (2026-10-13)
+
+A model score is not a probability (master document 14.2), so the product shows coarse bands.
+
+- **Entity band** (`apps/api/place_summary.py::entity_band`): `unknown` when provenance is UNKNOWN or confidence is missing or not
+  a number; `weak` when provenance is CONFLICT or confidence is below 0.5; `fair` from 0.5 up to 0.75; `good` from 0.75.
+  A conflict is never good, whatever its score. Not measured is never shown as good or bad.
+- **Place band** (`band_and_reason`): `unknown` with no model; `weak` when fewer than half of the photographs are placed or the
+  engine fell back below multi-view; `good` when the build was graded SUCCESS and at least 80% of photographs are placed;
+  otherwise `fair`. The reason is returned with the band so the UI can say why.
+- There is **no per-point band**: the stored point cloud carries no per-point confidence.
+- The thresholds (0.5, 0.75, 0.8) are tolerances, not calibrated constants.

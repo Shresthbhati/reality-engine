@@ -39,7 +39,8 @@ the authoritative status and PENDING_IMPLEMENTATION for the backlog.
 | Deterministic compiler (hash-stable outputs) | IMPLEMENTED | artifact hashes stable across runs |
 | Multi-source session manifest | IMPLEMENTED | MultiSourceSession + full CLI |
 | Provenance (per-artifact records) | IMPLEMENTED | Per-entity provenance enum; queryable graph not yet built |
-| WorldStore / incremental compilation | IMPLEMENTED | Versioned immutable lineage + integrity + CLI save/load/list/verify |
+| WorldStore (file-backed) | IMPLEMENTED | Versioned immutable lineage + integrity + CLI save/load/list/verify; `tests/test_worldstore_tiles.py` |
+| Incremental compilation | PARTIAL | WorldIR incremental update + localized recompile tested; product path still rebuilds from all evidence (CE-02) |
 | Registration (GNSS/ICP/point-to-plane) | IMPLEMENTED | GNSS + ICP + point-to-plane + covariance + CLI |
 | Trajectories (model/TUM/VIO) | IMPLEMENTED | Model, TUM, VIO federation, sync, diagnostics |
 | Spatial index acceleration | IMPLEMENTED | Uniform grid + per-cell BVH (100k entities benchmarked) |
@@ -48,7 +49,7 @@ the authoritative status and PENDING_IMPLEMENTATION for the backlog.
 | **API backend (FastAPI)** | **IMPLEMENTED** | **apps/api/ with 10 modules; 12 REST endpoints; SQLite + async worker** |
 | **Exporters (gltf/blender/usda/cityjson/citygml)** | **IMPLEMENTED** | **13 exporter modules with real-geometry paths + reports** |
 | **Competitive benchmark suite** | **IMPLEMENTED** | **13 benchmark modules** |
-| CI | **IMPLEMENTED** | **.github/workflows/ci.yml — multi-Python matrix, wheel build, 28+ test files** |
+| CI | PARTIAL | `.github/workflows/ci.yml` exists (matrix, targeted pytest, ruff/mypy non-blocking); green GitHub run and clean-venv wheel install not verified |
 | Uncertainty propagation | PARTIAL | Schema fields exist; first-order propagation not implemented |
 | **Uncertainty visualization in Studio** | **MISSING** | **No Studio UI for uncertainty** |
 

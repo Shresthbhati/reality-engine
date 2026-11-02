@@ -2,18 +2,51 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.db import get_db
-from apps.api.models import ActivityEvent, Job, Notification
+from apps.api.db import get_db, get_sessionmaker
+from apps.api.models import ActivityEvent, Evidence, Job, Notification
 from apps.api.models import utcnow
 
 
 
 jobs = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+_TERMINAL = ("succeeded", "partial", "failed", "cancelled")
+
+
+def _sse(event: str, data: dict) -> str:
+    return "\n".join((f"event: {event}", f"data: {json.dumps(data)}", "", ""))
+
+
+async def _photos_total(db: AsyncSession, j: Job) -> int | None:
+    """How many photographs the job is working on (session jobs only); None when not applicable."""
+    if j.entity_type != "session":
+        return None
+    n = (await db.execute(
+        select(func.count()).select_from(Evidence).where(Evidence.session_id == j.entity_id, Evidence.type == "photo")
+    )).scalar_one()
+    return int(n)
+
+
+async def _progress_view(db: AsyncSession, j: Job) -> dict:
+    """The fields a client needs to draw progress. `progress` is stage-weighted (coarse, monotonic, 100 only on
+    success/partial); `photos_placed` is known only after the run, so it is None while building -- never guessed."""
+    placed = (j.payload or {}).get("cameras_registered") if j.status in _TERMINAL else None
+    return {
+        "status": j.status,
+        "stage": j.stage,
+        "progress": j.progress,
+        "photos_total": await _photos_total(db, j),
+        "photos_placed": placed,
+        "terminal": j.status in _TERMINAL,
+    }
 
 
 @jobs.get("")
@@ -57,12 +90,42 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
         "error": j.error,
         "worker_id": j.worker_id,
         "cancel_requested": j.cancel_requested,
+        **{k: v for k, v in (await _progress_view(db, j)).items() if k not in ("status", "stage")},
         "entity_type": j.entity_type,
         "entity_id": j.entity_id,
         # Stage outputs (e.g. a reconstruction's world/version ids) so
         # terminal jobs carry their real result, not just a status.
         "payload": j.payload,
     }
+
+
+@jobs.get("/{job_id}/events")
+async def job_events(job_id: str, interval: float = 1.0) -> StreamingResponse:
+    """Server-Sent Events: one `progress` event whenever status/stage/progress changes, then the stream closes after
+    the terminal event. Clients that cannot use SSE poll GET /api/jobs/{id}, which carries the same fields."""
+    interval = min(max(interval, 0.05), 10.0)
+    maker = get_sessionmaker()
+    async with maker() as db:
+        if await db.get(Job, job_id) is None:
+            raise HTTPException(404, "Job not found")
+
+    async def stream():
+        last = None
+        while True:
+            async with maker() as db:
+                j = await db.get(Job, job_id)
+                if j is None:
+                    yield _sse("gone", {})
+                    return
+                view = await _progress_view(db, j)
+            if view != last:
+                last = view
+                yield _sse("progress", view)
+            if view["terminal"]:
+                return
+            await asyncio.sleep(interval)
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
 @jobs.post("/{job_id}/cancel", status_code=200)

@@ -155,3 +155,34 @@ def test_a_failed_or_refused_dense_run_keeps_the_sparse_level_and_says_why(tmp_p
 
     off = _progressive(tmp_path / "c", {"dense_mvs": {"status": "skipped"}})             # dense_auto off: no gate at all
     assert off.level == 2 and not [a for a in off.attempts if a["level"] == 3]
+
+
+def test_registration_threshold_is_configurable_and_invalid_values_fall_back():
+    from engine.pipeline.dense_gate import MIN_REGISTERED_FRACTION, min_registered_fraction
+
+    assert min_registered_fraction({}) == MIN_REGISTERED_FRACTION
+    assert min_registered_fraction({"REALITY_DENSE_MIN_REGISTERED_FRACTION": "0.6"}) == 0.6
+    for bad in ("0", "-1", "1.5", "abc", "nan", ""):
+        assert min_registered_fraction({"REALITY_DENSE_MIN_REGISTERED_FRACTION": bad}) == MIN_REGISTERED_FRACTION, bad
+
+
+def test_a_partially_registered_model_escalates_only_when_the_operator_lowers_the_threshold(monkeypatch):
+    from types import SimpleNamespace
+
+    from engine.pipeline.dense_gate import dense_readiness
+
+    poses = [SimpleNamespace(evidence_id=f"e{i}") for i in range(22)]
+    points = [SimpleNamespace(source_evidence_ids=["a", "b", "c", "d"]) for _ in range(500)]
+    result = SimpleNamespace(camera_poses=poses, points=points)
+
+    monkeypatch.delenv("REALITY_DENSE_MIN_REGISTERED_FRACTION", raising=False)
+    default = dense_readiness(result, 32, coverage_deg=90.0)
+    assert default["escalate"] is False
+    assert "registration" in " ".join(default["reasons"])
+
+    monkeypatch.setenv("REALITY_DENSE_MIN_REGISTERED_FRACTION", "0.6")
+    relaxed = dense_readiness(result, 32, coverage_deg=90.0)
+    assert relaxed["escalate"] is True
+    assert relaxed["criteria"]["registration"]["passed"] is True
+    # every OTHER criterion still has to pass: lowering one threshold never skips the rest
+    assert dense_readiness(result, 32, coverage_deg=5.0)["escalate"] is False

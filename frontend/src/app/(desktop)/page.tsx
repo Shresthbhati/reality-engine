@@ -1,12 +1,6 @@
-import SpatialWorkstation from "@/components/workspace/SpatialWorkstation";
+import PlaceLibrary from "@/components/simple/PlaceLibrary";
 
-/**
- * Reality Engine Desktop Spatial Studio:
- *
- * Persistent spatial workspace centered on the 3D reconstructed representation
- * of the World, integrating World navigation, Adaptive Inspector, and
- * Contextual Timeline/Diagnostics.
- */
-export default function DesktopRootPage() {
-  return <SpatialWorkstation />;
+/** Home: the user's places, or the way to make the first one. The engineer workstation lives at /worlds/[id]. */
+export default function HomePage() {
+  return <PlaceLibrary />;
 }

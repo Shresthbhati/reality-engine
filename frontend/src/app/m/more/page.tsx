@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SHOW_UNFINISHED } from "@/lib/unfinished";
 import { ShieldCheck, Globe, Users, Bell, UserCircle, HelpCircle, ChevronRight, type LucideIcon } from "lucide-react";
 
 export default function MobileMorePage() {
@@ -12,7 +13,7 @@ export default function MobileMorePage() {
       <div className="rounded-md overflow-hidden" style={{ border: "1px solid var(--border)" }}>
         <MenuRow href="/m/evidence" icon={ShieldCheck} label="Evidence" />
         <MenuRow href="/m/worlds" icon={Globe} label="Worlds" />
-        <MenuRow href="/m/team" icon={Users} label="Team" />
+        {SHOW_UNFINISHED && <MenuRow href="/m/team" icon={Users} label="Team" />}
         <MenuRow href="/m" icon={Bell} label="Notifications" />
         <MenuRow icon={UserCircle} label="Account" disabled />
         <MenuRow icon={HelpCircle} label="Help" disabled last />

@@ -230,3 +230,76 @@ async def evidence_artifact(evidence_id: str, db: AsyncSession = Depends(get_db)
         # client bytes (paths, quotes, CRLF) that must never reach headers.
         filename=_safe_filename(ev.name),
     )
+
+
+# ----------------------------------------------------------------------------------------------- pre-flight check
+_CHECK_MAX_FILES = 300
+_SOFT_RATIO = 0.4  # a photo is "relatively soft" below this fraction of the set's median sharpness
+_MIN_GOOD_SET = 8  # fewer usable photographs than this -> suggest more angles
+
+
+@uploads.post("/check")
+async def check_uploads(files: list[UploadFile]) -> dict:
+    """Tell the user what is wrong with a set of photographs BEFORE uploading it. Nothing is stored.
+
+    Per file: decodable?, size, relative sharpness, exact duplicate of an earlier file in the set, GPS present, and
+    whether it looks like a photograph at all. Sharpness is a ranking inside the set, not a calibrated blur score, so
+    `relatively_soft` is only reported for sets of 3+ usable photographs and says so. Advisory: the caller never has
+    to obey it."""
+    import asyncio
+    import hashlib
+    import statistics
+    import tempfile
+    from pathlib import Path
+
+    from evidence.image_check import GEOMETRY_CLASSES, inspect_image
+
+    if not files:
+        raise HTTPException(422, "no files to check")
+    if len(files) > _CHECK_MAX_FILES:
+        raise HTTPException(413, f"at most {_CHECK_MAX_FILES} files can be checked at once")
+
+    rows: list[dict] = []
+    first_seen: dict[str, str] = {}
+    with tempfile.TemporaryDirectory(prefix="re-check-") as tmp:
+        for i, f in enumerate(files):
+            name = _safe_filename(f.filename)
+            data = await _read_bounded_upload(f)
+            digest = hashlib.sha256(data).hexdigest()
+            kind = _classify(name, f.content_type)
+            row: dict = {"name": name, "size": len(data), "kind": kind, "sha256": digest,
+                         "duplicate_of": first_seen.get(digest), "decodable": None, "width": None, "height": None,
+                         "sharpness": None, "has_gps": False, "looks_like_photo": None, "too_small": False,
+                         "problem": None}
+            first_seen.setdefault(digest, name)
+            if kind == "photo":
+                path = Path(tmp) / f"{i}.bin"
+                path.write_bytes(data)
+                facts = await asyncio.to_thread(inspect_image, path, None)
+                row.update(decodable=facts.ok or facts.width > 0, width=facts.width or None,
+                           height=facts.height or None, sharpness=facts.sharpness, has_gps=facts.gps is not None)
+                if facts.ok:
+                    row["looks_like_photo"] = facts.evidence_class in GEOMETRY_CLASSES
+                else:
+                    row["too_small"] = facts.width > 0 and "too small" in (facts.reason or "")
+                    row["decodable"] = facts.width > 0
+                    row["problem"] = facts.reason
+            rows.append(row)
+
+    sharp = [r["sharpness"] for r in rows if r["sharpness"] is not None and r["duplicate_of"] is None]
+    median = statistics.median(sharp) if len(sharp) >= 3 else None
+    for r in rows:
+        r["relatively_soft"] = bool(median and r["sharpness"] is not None and r["sharpness"] < _SOFT_RATIO * median)
+
+    def usable(r: dict) -> bool:
+        return r["kind"] == "photo" and r["decodable"] and not r["too_small"] and r["looks_like_photo"] is not False \
+            and r["duplicate_of"] is None
+
+    n_usable = sum(1 for r in rows if usable(r))
+    n_flagged = sum(1 for r in rows if r["relatively_soft"] or r["duplicate_of"] or r["too_small"]
+                    or r["decodable"] is False or r["looks_like_photo"] is False)
+    verdict = "no_usable_photos" if n_usable == 0 else "add_angles" if n_usable < _MIN_GOOD_SET else \
+        "has_problems" if n_flagged else "good"
+    return {"files": rows, "summary": {"total": len(rows), "usable": n_usable, "flagged": n_flagged,
+                                       "soft_threshold": None if median is None else _SOFT_RATIO * median,
+                                       "verdict": verdict}}

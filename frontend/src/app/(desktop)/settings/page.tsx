@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
+import { setProMode, setTheme, useProMode, useTheme, type ThemePref } from "@/lib/prefs";
 
 const SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: "Ctrl/⌘ + K", action: "Open search and commands" },
@@ -22,6 +23,8 @@ function readReduceMotion(): boolean {
 
 export default function SettingsPage() {
   const [reduceMotion, setReduceMotion] = useState(readReduceMotion);
+  const theme = useTheme();
+  const pro = useProMode();
 
   const toggleReduceMotion = () => {
     const next = !reduceMotion;
@@ -41,11 +44,48 @@ export default function SettingsPage() {
 
       <div className="flex flex-col gap-8 px-6 py-6 max-w-xl">
         <Section title="Appearance">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                Theme
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                System follows your device setting.
+              </p>
+            </div>
+            <div role="radiogroup" aria-label="Theme" className="flex rounded-md overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+              {(["system", "light", "dark"] as ThemePref[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === t}
+                  onClick={() => setTheme(t)}
+                  className="px-3 h-8 text-xs font-medium capitalize"
+                  style={{
+                    background: theme === t ? "var(--accent-subtle)" : "transparent",
+                    color: theme === t ? "var(--accent)" : "var(--text-secondary)",
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
           <ToggleRow
             label="Reduce motion"
             description="Minimizes transitions and animations across the app, independent of your OS setting."
             checked={reduceMotion}
             onChange={toggleReduceMotion}
+          />
+        </Section>
+
+        <Section title="Mode">
+          <ToggleRow
+            label="Pro mode"
+            description="Shows the engineer workstation, sessions, evidence and technical details such as version hashes and coordinate frames."
+            checked={pro}
+            onChange={() => setProMode(!pro)}
           />
         </Section>
 
@@ -79,7 +119,7 @@ export default function SettingsPage() {
 
         <Section title="Data">
           <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
-            No backend is connected — Worlds, Sessions, Evidence, Analysis, Results, and Reports are all empty until a real data source is wired in.
+            Places and photos are stored by the Reality Engine API running on this machine.
           </p>
         </Section>
       </div>

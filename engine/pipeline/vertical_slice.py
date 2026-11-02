@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -242,6 +243,15 @@ def vertical_slice(
     never returns a fabricated world."""
     options = options or VerticalSliceOptions()
 
+    # Wall-clock seconds per stage (monotonic), recorded in stage_facts["stage_timings_s"] so a slow run says WHERE.
+    stage_timings: Dict[str, float] = {}
+    _lap_at = [time.monotonic()]
+
+    def _lap(name: str) -> None:
+        now = time.monotonic()
+        stage_timings[name] = round(now - _lap_at[0], 2)
+        _lap_at[0] = now
+
     if len(evidence_items) < 2:
         raise VerticalSliceError(
             f"vertical slice needs >= 2 image evidence items, got {len(evidence_items)}"
@@ -294,6 +304,7 @@ def vertical_slice(
             f"{len(result.points)} points) -- not compiling"
         )
 
+    _lap("reconstruction")
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None
     scale_error: Optional[str] = None
@@ -329,6 +340,7 @@ def vertical_slice(
             )
             scale_note = scale_note + " | " + scale_error
 
+    _lap("scale")
     # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) ----
     from reconstruction.frame import FrameCanonicalizationError
 
@@ -337,9 +349,11 @@ def vertical_slice(
     except FrameCanonicalizationError as exc:
         raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
 
+    _lap("frame")
     # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
     depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options, scale_state)
 
+    _lap("depth")
     # ---- stage 3: compile to validated WorldIR ----
     compile_options = CompileOptions(
         seed=options.seed, up=options.up, artifact_store=options.artifact_store
@@ -349,14 +363,17 @@ def vertical_slice(
     except Exception as exc:  # noqa: BLE001
         raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
 
+    _lap("compile")
     # ---- stage 3.5: semantic perception -> object entities (optional) ----
     perception_facts = _perception_stage(
         result, world, evidence_items, metric_depth_maps, options
     )
 
+    _lap("perception")
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
     mesh_facts = _mesh_stage(result, world, options, scale_state)
 
+    _lap("mesh")
     # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
     # Runs BEFORE fusion so dense points can participate in cross-source fusion
     dense_options, dense_gate_facts, dense_tmp = options, None, None
@@ -374,12 +391,14 @@ def vertical_slice(
 
             shutil.rmtree(dense_tmp, ignore_errors=True)       # the fused cloud was ingested into the artifact store
 
+    _lap("dense")
     # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
     # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
     detail_facts = _detail_stage(result, world, options, scale_state)
 
+    _lap("fusion_and_detail")
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,
@@ -401,6 +420,30 @@ def vertical_slice(
     world.metadata["fusion"] = {
         k: v for k, v in fusion_facts.items() if k != "fused"
     }
+
+    # Structured findings about the multi-view result (per-camera support, unregistered photographs, invalid numbers)
+    # for a later correction engine. Analysis only; it can never fail or change the build.
+    try:
+        from reconstruction.diagnostics import analyze as _analyze_reconstruction
+
+        reconstruction_diagnostics = _analyze_reconstruction(
+            result.points, result.camera_poses, [item.id for item in evidence_items])
+    except Exception as exc:  # noqa: BLE001 -- recorded, never raised
+        reconstruction_diagnostics = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # What the bounded correction loop WOULD do with this model. Recommendation only: the build keeps the uncorrected
+    # result until a correction has been shown to help on real data and is wired in deliberately.
+    try:
+        from reconstruction.correction import correct as _correct
+
+        _, _record = _correct(result, [item.id for item in evidence_items])
+        correction_plan = {"applied": False, "selected": _record["selected"], "attempts": [
+            {k: a.get(k) for k in ("diagnostic", "action", "status", "reasons", "removed")} for a in _record["attempts"]],
+            "evidence_requests": _record["evidence_requests"]}
+    except Exception as exc:  # noqa: BLE001 -- recorded, never raised
+        correction_plan = {"applied": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    _lap("diagnostics_and_correction_plan")
 
     return VerticalSliceResult(
         world=world,
@@ -435,6 +478,9 @@ def vertical_slice(
             "detail": detail_facts,
             "dense_mvs": dense_mvs_facts,
             "dense_gate": dense_gate_facts,
+            "reconstruction_diagnostics": reconstruction_diagnostics,
+            "correction_plan": correction_plan,
+            "stage_timings_s": stage_timings,
             # how the sparse model was actually produced (full / incremental / reused, counts, timings);
             # empty for backends without a persistent session
             "colmap_session": dict(getattr(backend, "last_run_info", None) or {}) or None,

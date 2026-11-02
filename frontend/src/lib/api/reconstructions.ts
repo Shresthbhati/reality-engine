@@ -207,10 +207,11 @@ export interface WorldStatus {
 /** Drop photos into the engine. No worldId => a new world; with worldId => refine that world. */
 export function createReconstruction(
   files: File[],
-  opts: { worldId?: string | null; evidenceClass?: string | null; latitude?: number; longitude?: number } = {},
+  opts: { worldId?: string | null; name?: string | null; evidenceClass?: string | null; latitude?: number; longitude?: number } = {},
 ): Promise<CreateReconstructionResult> {
   const fields: Record<string, string> = {};
   if (opts.worldId) fields.world_id = opts.worldId;
+  if (opts.name) fields.name = opts.name;
   if (opts.evidenceClass) fields.evidence_class = opts.evidenceClass;
   if (opts.latitude !== undefined && opts.longitude !== undefined) {
     fields.latitude = String(opts.latitude);

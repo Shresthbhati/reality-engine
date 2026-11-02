@@ -13,17 +13,24 @@ import {
   PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NAV } from "@/lib/copy";
+import { useProMode } from "@/lib/prefs";
 
+// Simple mode: what a consumer thinks in (places and photos). Home is the library of places.
 const PRIMARY_NAV = [
-  { href: "/reconstruct", label: "Create reconstruction", icon: ImagePlus },
-  { href: "/", label: "Home", icon: Home },
-  { href: "/worlds", label: "Worlds", icon: Globe },
-  { href: "/sessions", label: "Sessions", icon: Camera },
-  { href: "/evidence", label: "Evidence", icon: ShieldCheck },
+  { href: "/", label: NAV.home, icon: Home },
+  { href: "/reconstruct", label: NAV.newPlace, icon: ImagePlus },
+] as const;
+
+// Pro mode adds the engine's own organising objects.
+const PRO_NAV = [
+  { href: "/worlds", label: NAV.places, icon: Globe },
+  { href: "/sessions", label: NAV.sessions, icon: Camera },
+  { href: "/evidence", label: NAV.evidence, icon: ShieldCheck },
 ] as const;
 
 const SECONDARY_NAV = [
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings", label: NAV.settings, icon: Settings },
 ] as const;
 
 export default function Sidebar({
@@ -34,6 +41,8 @@ export default function Sidebar({
   onToggle: () => void;
 }) {
   const pathname = usePathname();
+  const pro = useProMode();
+  const primary = pro ? [...PRIMARY_NAV, ...PRO_NAV] : PRIMARY_NAV;
 
   return (
     <aside
@@ -44,7 +53,7 @@ export default function Sidebar({
       style={{ background: "var(--bg-surface)", borderColor: "var(--border)" }}
     >
       <nav aria-label="Primary" className="flex-1 flex flex-col gap-0.5 px-2 py-3">
-        {PRIMARY_NAV.map((item) => (
+        {primary.map((item) => (
           <SidebarLink key={item.href} item={item} collapsed={collapsed} active={pathname === item.href} />
         ))}
       </nav>

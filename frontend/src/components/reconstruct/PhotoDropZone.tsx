@@ -48,6 +48,8 @@ export interface PhotoDropZoneProps {
   /** Given: the photos join this world and rebuild it. Omitted: a new world is created. */
   worldId?: string | null;
   onCreated: (result: CreateReconstructionResult) => void;
+  /** Given: picked images are handed over (for the pre-upload check) instead of being uploaded here. */
+  onFiles?: (files: File[]) => void;
   /** Smaller layout for use beside an existing model. */
   compact?: boolean;
   className?: string;
@@ -61,7 +63,7 @@ const EVIDENCE_CLASS_OPTIONS = [
   { value: "historical_photo", label: "Historical photographs" },
 ] as const;
 
-export default function PhotoDropZone({ worldId, onCreated, compact = false, className }: PhotoDropZoneProps) {
+export default function PhotoDropZone({ worldId, onCreated, onFiles, compact = false, className }: PhotoDropZoneProps) {
   const photosRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -83,6 +85,10 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
             ? "No files were selected."
             : "None of those files look like images. Drop photographs (JPEG, PNG, HEIC, WebP, TIFF).",
         );
+        return;
+      }
+      if (onFiles) {
+        onFiles(images);
         return;
       }
       setBusy(`Uploading ${images.length} photo${images.length === 1 ? "" : "s"}…`);
@@ -109,7 +115,7 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
         setBusy(null);
       }
     },
-    [worldId, evidenceClass, onCreated],
+    [worldId, evidenceClass, onCreated, onFiles],
   );
 
   const onDrop = useCallback(
@@ -151,22 +157,22 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
         className={cn(
           "relative rounded-xl border-2 border-dashed text-center transition-colors",
           compact ? "px-4 py-5" : "px-6 py-12",
-          dragging ? "border-[#00e5ff] bg-[#00e5ff]/10" : "border-[#2a2f3a] bg-[#0c0d12] hover:border-[#3a4150]",
+          dragging ? "border-[var(--accent)] bg-[var(--accent-subtle)]" : "border-[var(--border)] bg-[var(--bg-surface)] hover:border-[var(--text-tertiary)]",
         )}
       >
         {busy ? (
           <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
-            <Loader2 className="h-7 w-7 animate-spin text-[#00e5ff]" />
-            <p className="text-sm text-neutral-200">{busy}</p>
+            <Loader2 className="h-7 w-7 animate-spin text-[var(--accent)]" />
+            <p className="text-sm text-[var(--text-primary)]">{busy}</p>
           </div>
         ) : (
           <>
-            <UploadCloud className={cn("mx-auto text-[#00e5ff]", compact ? "h-6 w-6" : "h-10 w-10")} aria-hidden />
-            <p className={cn("mt-3 font-semibold text-white", compact ? "text-sm" : "text-lg")}>
+            <UploadCloud className={cn("mx-auto text-[var(--accent)]", compact ? "h-6 w-6" : "h-10 w-10")} aria-hidden />
+            <p className={cn("mt-3 font-semibold text-[var(--text-primary)]", compact ? "text-sm" : "text-lg")}>
               {refining ? "Drop more photos to improve this model" : "Drop photos here to build a model"}
             </p>
             {!compact && (
-              <p className="mx-auto mt-1 max-w-md text-xs text-neutral-400">
+              <p className="mx-auto mt-1 max-w-md text-xs text-[var(--text-secondary)]">
                 One photograph gives a rough model. More views from different positions make it better.
                 You never need to set anything up first.
               </p>
@@ -175,28 +181,28 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
               <button
                 type="button"
                 onClick={() => photosRef.current?.click()}
-                className="inline-flex items-center gap-1.5 rounded-md bg-[#00e5ff] px-3 py-1.5 text-xs font-semibold text-black hover:bg-[#33ebff]"
+                className="inline-flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[var(--bg-base)] hover:opacity-90"
               >
                 <ImagePlus className="h-4 w-4" aria-hidden /> Select photos
               </button>
               <button
                 type="button"
                 onClick={() => folderRef.current?.click()}
-                className="inline-flex items-center gap-1.5 rounded-md border border-[#2a2f3a] bg-[#151821] px-3 py-1.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+                className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
               >
                 <FolderUp className="h-4 w-4" aria-hidden /> Upload folder
               </button>
               <button
                 type="button"
                 onClick={() => cameraRef.current?.click()}
-                className="inline-flex items-center gap-1.5 rounded-md border border-[#2a2f3a] bg-[#151821] px-3 py-1.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+                className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
               >
                 <Camera className="h-4 w-4" aria-hidden /> Take photo
               </button>
             </div>
             {!compact && (
-              <details className="mx-auto mt-4 max-w-xs text-left text-[11px] text-neutral-400">
-                <summary className="cursor-pointer select-none text-center hover:text-neutral-200">
+              <details className="mx-auto mt-4 max-w-xs text-left text-[11px] text-[var(--text-secondary)]">
+                <summary className="cursor-pointer select-none text-center hover:text-[var(--text-primary)]">
                   Not ordinary photographs?
                 </summary>
                 <label className="mt-2 block">
@@ -204,7 +210,7 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
                   <select
                     value={evidenceClass}
                     onChange={(e) => setEvidenceClass(e.target.value)}
-                    className="w-full rounded border border-[#2a2f3a] bg-[#0c0d12] px-2 py-1 text-xs text-neutral-200"
+                    className="w-full rounded border border-[var(--border)] bg-[var(--bg-surface)] px-2 py-1 text-xs text-[var(--text-primary)]"
                   >
                     {EVIDENCE_CLASS_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -244,12 +250,12 @@ export default function PhotoDropZone({ worldId, onCreated, compact = false, cla
       />
 
       {error && (
-        <div role="alert" className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+        <div role="alert" className="mt-3 rounded-md border border-[var(--error)] bg-[var(--error-subtle)] px-3 py-2 text-xs text-[var(--error)]">
           {error}
         </div>
       )}
       {notes.length > 0 && (
-        <ul className="mt-2 space-y-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+        <ul className="mt-2 space-y-0.5 rounded-md border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-[11px] text-[var(--warning)]">
           {notes.slice(0, 6).map((n) => (
             <li key={n}>{n}</li>
           ))}

@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.models import World, WorldVersion, utcnow
 from apps.api.storage import store_bytes
 from world_ir.world_v1 import WorldIR
-from worldstore.store import WorldStore, _atomic_write_text
+from worldstore.store import WorldStore, WorldStoreError, _atomic_write_text
 
 log = logging.getLogger(__name__)
 
@@ -461,3 +461,37 @@ def add_scale_reference(world_id: str, evidence_id_a: str, evidence_id_b: str, d
     tmp.write_text(json.dumps(refs, indent=1, sort_keys=True), encoding="utf-8")
     os.replace(tmp, path)
     return ref
+
+
+# ------------------------------------------------------------------------- deleting a place
+
+
+def delete_world_state(world_id: str, version_ids: list[str]) -> dict:
+    """Remove what belongs to ONE world outside the database.
+
+    Version records are QUARANTINED (the store's own idiom: nothing observed is destroyed, an operator can restore the
+    record), the derived COLMAP session and the user's scale references are removed. Content-addressed artifacts and
+    uploaded photographs are shared and immutable by project rule, so they stay until a store-wide garbage collection
+    (ponytail: not built; disk space is not reclaimed by deleting a place)."""
+    import shutil
+
+    store = get_store()
+    quarantined = 0
+    for vid in version_ids:
+        try:
+            store.quarantine_version(vid)
+            quarantined += 1
+        except WorldStoreError:
+            pass  # already quarantined or never written to this store
+    root = worldstore_root().resolve()
+    colmap = (root / "colmap-sessions" / world_id).resolve()
+    removed_colmap = False
+    if colmap.is_dir() and colmap.parent == (root / "colmap-sessions").resolve():
+        shutil.rmtree(colmap)
+        removed_colmap = True
+    refs = _scale_ref_path(world_id)
+    removed_refs = False
+    if refs.exists():
+        refs.unlink()
+        removed_refs = True
+    return {"versions_quarantined": quarantined, "colmap_removed": removed_colmap, "scale_references_removed": removed_refs}

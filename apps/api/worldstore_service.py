@@ -320,6 +320,26 @@ async def commit_version(
     return row
 
 
+async def nearest_report(db: AsyncSession, version_id: str | None, max_hops: int = 256) -> dict:
+    """The reconstruction report that describes `version_id`'s content.
+
+    A correction commit creates a version row with no report of its own (nothing was reconstructed), but its content
+    still derives from the nearest ancestor that has one. Rebuild arbitration and the status read the HEAD report;
+    reading only the HEAD row made every corrected world look like it had no history, so a degraded rebuild was
+    accepted over it and the status lost its model. Walks parents; {} when no ancestor has a report."""
+    seen: set[str] = set()
+    vid = version_id
+    while vid and vid not in seen and len(seen) < max_hops:
+        seen.add(vid)
+        row = await db.get(WorldVersion, vid)
+        if row is None:
+            return {}
+        if row.report:
+            return dict(row.report)
+        vid = row.parent_version_id
+    return {}
+
+
 async def get_current_worldir(db: AsyncSession, world_id: str) -> WorldIR | None:
     w = await db.get(World, world_id)
     if w is None or not w.current_version_id:

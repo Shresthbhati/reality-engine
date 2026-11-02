@@ -29,6 +29,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import time
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -381,17 +382,43 @@ def diagnose_counts(n_input: int, registered_ids: Sequence[str], n_points: int, 
         ["mean_reprojection_error_px", "components", "camera_coverage"])
 
 
+_PATH_TOO_LONG = re.compile(r"WorkspacePathTooLong: COLMAP workspace path is (\d+) characters \(limit (\d+)\)")
+
+
+def _workspace_path_failure(attempts: Optional[Sequence[dict]]) -> Optional[Tuple[int, int]]:
+    """(characters, limit) when a multi-view attempt failed ONLY because COLMAP's workspace path is too long: a setup
+    problem that says nothing about the photos."""
+    for a in attempts or ():
+        if a.get("outcome") == "failed":
+            m = _PATH_TOO_LONG.search(str(a.get("detail", "")))
+            if m:
+                return int(m.group(1)), int(m.group(2))
+    return None
+
+
 def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, *,
-                    n_duplicates_dropped: int = 0, structure: Optional[Dict[str, int]] = None) -> dict:
+                    n_duplicates_dropped: int = 0, structure: Optional[Dict[str, int]] = None,
+                    attempts: Optional[Sequence[dict]] = None) -> dict:
     """Plain-language verdict on whether the photos could be placed in one shared 3D space.
 
     Pairwise 2D matching cannot tell a consistent set from an inconsistent one (measured: an inconsistent set
     passed the 2D gate with 31/45 verified pairs), so this is judged from the multi-view result itself. The causes
-    listed are candidates -- the check cannot tell which one applies."""
+    listed are candidates -- the check cannot tell which one applies. `attempts` (the progressive attempts) lets it
+    separate "the photos did not register" from "multi-view never ran" (workspace path too long)."""
     d = diagnose_counts(n_input, registered_ids, n_points)
     state = {ReconOutcome.SUCCESS: "sufficient", ReconOutcome.PARTIAL: "partial"}.get(d.outcome, "insufficient")
     out = {"state": state, "n_input": n_input, "registered": d.registered_images, "points": n_points,
            "duplicates_dropped": n_duplicates_dropped, "reasons": list(d.reasons), "advice": []}
+    path_failure = _workspace_path_failure(attempts)
+    if path_failure and state == "insufficient":
+        chars, limit = path_failure
+        out["cause"] = "workspace_path_too_long"
+        out["reasons"].append(f"COLMAP workspace path is {chars} characters (limit {limit})")
+        out["message"] = (f"Multi-view reconstruction could not start: its workspace path is {chars} characters, over the "
+                          f"{limit} that Windows allows. This is a setup problem, not a problem with the photos, which "
+                          "were not judged.")
+        out["advice"] = ["Point WORLDSTORE_ROOT at a shorter folder (for example C:\\rr\\ws) and rebuild this world."]
+        return out
     if state == "sufficient" and structure is not None:
         # placing cameras is not building a room: the verdict also needs a closed room (a room entity, or a floor
         # with at least three walls) -- otherwise it is only partial, and says what is missing

@@ -324,6 +324,7 @@ def vertical_slice(
 
     # ---- stage 1: reconstruction (real COLMAP through the orchestrator) ----
     from reconstruction.orchestrator import ReconstructionOrchestrator
+    from reconstruction.validation import UnvalidatableReconstructionError, validate_reconstruction_output
 
     if options.reconstruction_backend is not None:
         backend = options.reconstruction_backend
@@ -352,6 +353,10 @@ def vertical_slice(
             f"(status={result.registration_status!r}, "
             f"{len(result.points)} points) -- not compiling"
         )
+    try:
+        validate_reconstruction_output(result)
+    except UnvalidatableReconstructionError as exc:
+        raise VerticalSliceError(f"reconstruction output is invalid ({exc}) -- not compiling") from exc
 
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None
@@ -653,6 +658,25 @@ def _auto_dense_options(result, n_input: int, options):
             dict(facts, decision="escalated to dense MVS: every measured criterion passed"), scratch)
 
 
+#: Detail voxel size for a world with NO metric anchor, as a fraction of the scene's bounding-box diagonal.
+#: Measured on the real South Building scene (docs/engineering/DETAIL_CALIBRATION.md): ROI count has a cliff
+#: between 2% and 4% of the extent, so 1.5% stays on the detail side of it. EXPERIMENTAL (one dataset).
+RELATIVE_DETAIL_VOXEL_FRACTION = 0.015
+
+
+def _detail_voxel(result, options, scale_state):
+    """(voxel_size, basis). An absolute size only means something in meters; in a relative-scale world it is
+    derived from the scene's own extent instead of silently assuming 1 unit = 1 m."""
+    if scale_state != "relative" or len(result.points) < 2:
+        return options.detail_voxel_size_m, "options.detail_voxel_size_m (metric / unspecified scale)"
+    lo, hi = _cloud_bounds(result.points)
+    diag = sum((h - l) ** 2 for l, h in zip(lo, hi)) ** 0.5
+    if not diag > 0:
+        return options.detail_voxel_size_m, "options.detail_voxel_size_m (degenerate extent)"
+    return (RELATIVE_DETAIL_VOXEL_FRACTION * diag,
+            f"{RELATIVE_DETAIL_VOXEL_FRACTION:.1%} of the scene extent (relative-scale world: model units, not meters)")
+
+
 def _detail_stage(result, world, options, scale_state: str = "unknown"):
     """Optional P7-06 detail chain: measured evidence quality -> detail
     discovery -> ROI work orders -> local refinement (tier-driven,
@@ -706,11 +730,12 @@ def _detail_stage(result, world, options, scale_state: str = "unknown"):
             "note": f"optional detail dependencies unavailable: {exc}",
         }
 
+    voxel, voxel_basis = _detail_voxel(result, options, scale_state)
     try:
         report = run_detail_pipeline(
             result,
             cameras,
-            voxel_size=options.detail_voxel_size_m,
+            voxel_size=voxel,
             up=options.up,
             build_world_ir=True,
             world=world,
@@ -728,6 +753,9 @@ def _detail_stage(result, world, options, scale_state: str = "unknown"):
         "quality": report.quality.to_dict(),
         "summary": dict(report.summary),
         "n_candidates": len(report.candidates),
+        "voxel_size": voxel,
+        "voxel_basis": voxel_basis,
+        "budget_units": "model-unit mm/px: GSD level bands are NOT metric" if scale_state == "relative" else "metric",
         "rois": [r.to_dict() for r in report.rois],
         "outcomes": [o.to_dict() for o in report.outcomes],
         "note": (
@@ -907,6 +935,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
                 hypotheses.append(hyp)
 
     resolution = {"resolver": options.object_resolver}
+    assoc = None
     if options.object_resolver == "union_find":
         candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
     elif options.object_resolver == "association":
@@ -923,11 +952,31 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     else:
         raise VerticalSliceError(f"unknown object_resolver {options.object_resolver!r}: expected 'association' or 'union_find'")
 
+    entity_ids = {c.candidate_id: f"entity-object-{i:03d}" for i, c in enumerate(candidates)}
+    tracks, track_to_entity = {}, {}
+    if assoc is not None:
+        tracks = {t.entity_id: t for t in assoc.entities}
+        for c in candidates:
+            first = c.source_hypotheses[0]
+            track_to_entity[assoc.assignment[f"{first.evidence_id}|{first.region_id}"]] = entity_ids[c.candidate_id]
+
     promoted = 0
-    for i, cand in enumerate(candidates):
-        promote_object_to_entity(
-            cand, world, entity_id=f"entity-object-{i:03d}"
-        )
+    for cand in candidates:
+        promoted_obj = promote_object_to_entity(cand, world, entity_id=entity_ids[cand.candidate_id])
+        if assoc is not None:
+            # why this is one entity (viewer: identity line). `ambiguous_with` is mapped from the engine's track ids to the
+            # ids these entities actually carry in the world.
+            first = cand.source_hypotheses[0]
+            track = tracks[assoc.assignment[f"{first.evidence_id}|{first.region_id}"]]
+            ambiguous_with = [track_to_entity[t] for t in track.ambiguous_with if t in track_to_entity]
+            promoted_obj.entity.custom_properties["association"] = {
+                "resolver": "association",
+                "observations": cand.observation_count,
+                "images": len({h.evidence_id for h in cand.source_hypotheses}),
+                "decision": "AMBIGUOUS" if ambiguous_with else (
+                    "SAME_ENTITY_CONFIRMED" if cand.observation_count > 1 else "DIFFERENT_ENTITY"),
+                "ambiguous_with": ambiguous_with,
+            }
         promoted += 1
 
     # Final gate: the world must still be valid after mutation.

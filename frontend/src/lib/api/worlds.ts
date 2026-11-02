@@ -13,12 +13,13 @@ import type {
   WorldCoverageDto,
   WorldDto,
   WorldIRDto,
-  CamerasPayload,
   WorldDiffDto,
   CommitRequest,
   CommitResponse,
 } from "./types";
 import type { WorldRow } from "@/lib/types";
+// the real /cameras shape (position_m / rotation_wxyz), not a second hand-written DTO
+import type { CamerasPayload } from "@/types/worldir";
 
 export async function listWorlds(): Promise<{ rows: WorldRow[]; dtos: WorldDto[] }> {
   const data = await apiGet<ApiList<WorldDto>>("/api/worlds");

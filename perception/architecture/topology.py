@@ -142,6 +142,12 @@ def _room_entity(
             "floor_area_m2": room.floor_area_m2,
             "openings": openings,
             "adjacent_room_ids": list(room.adjacent_room_ids),
+            # what the evidence supports, as measured by the room graph: a room whose capture missed walls is
+            # 'partial', and a missing ceiling is 'missing' -- these must travel with the entity, not stay behind
+            "status": room.status,
+            "boundary_completeness": room.boundary_completeness,
+            "ceiling_evidence": room.ceiling_evidence,
+            "notes": list(room.notes),
         },
         confidence=parts_conf,
         provenance=Provenance.INFERRED,

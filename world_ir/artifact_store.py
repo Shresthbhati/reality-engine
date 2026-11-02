@@ -17,7 +17,9 @@ supplied by the caller, never fetched.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict
@@ -118,9 +120,18 @@ class FileArtifactStore(ArtifactStore):
             # link and write outside the store: drop the link, then
             # write the real blob. Local tamper never escapes the root.
             path.unlink()
-        if not path.exists():  # content-addressed: identical bytes, no rewrite
+        # Content-addressed: identical intact bytes are not rewritten. An existing blob that no longer hashes to its
+        # name (a torn write from a disk-full/crash, or later corruption) is NOT trusted -- it is replaced, or every
+        # retry of the same content would point at a rotten blob forever.
+        # ponytail: re-hashes an existing blob on duplicate puts; fine for world-sized payloads.
+        if not path.exists() or _digest(path.read_bytes()) != digest:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
+            tmp = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex[:8]}")
+            try:
+                tmp.write_bytes(data)          # a torn write only ever damages the temp file
+                os.replace(tmp, path)          # atomic: readers see the old blob or the whole new one
+            finally:
+                tmp.unlink(missing_ok=True)
         return self.uri_for(digest), digest
 
     def get(self, data_uri: str) -> bytes:

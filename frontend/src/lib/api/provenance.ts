@@ -1,4 +1,4 @@
-import { apiGet } from "./client";
+import { apiGet, isApiError } from "./client";
 
 export interface EntityEvidenceRef {
   evidence_id: string;
@@ -29,7 +29,10 @@ export async function fetchEntityProvenance(
     return await apiGet<EntityProvenance>(
       `/api/worlds/${encodeURIComponent(worldId)}/entities/${encodeURIComponent(entityId)}/provenance`,
     );
-  } catch {
-    return null;
+  } catch (err) {
+    // 404 is the only honest "nothing to trace". Network failures and 5xx must reach the caller: swallowing them
+    // rendered an API outage as "no evidence linked to this entity".
+    if (isApiError(err) && err.status === 404) return null;
+    throw err;
   }
 }

@@ -34,6 +34,7 @@ import type { Entity, Geometry, WorldIR } from "@/types/worldir";
 import {
   buildEntityEvidence, fmtConfidence, NOT_RECORDED,
 } from "@/lib/viewport/inspector-evidence-model";
+import { buildIdentityEvidence } from "@/lib/viewport/identity-model";
 import { buildConfidenceFacets, readConfidence, roomMembers, TONE_TOKEN } from "@/lib/inspector/confidence-model";
 import {
   allDimensionRows, anyUncalibrated, countWorld, describeWorldCounts, displayName, entityKind, fmtValue,
@@ -68,6 +69,9 @@ interface AdaptiveInspectorProps {
   loadError?: string | null;
   onRetryLoad?: () => void;
 }
+
+/** Entities with recorded confidence below this are flagged in the inspector. */
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
 
 type InspectorTab = "overview" | "dimensions" | "materials" | "evidence";
 const TABS: ReadonlyArray<{ id: InspectorTab; label: string }> = [
@@ -274,6 +278,7 @@ function EntityDetails({
   const [committedVersionResult, setCommittedVersionResult] = useState<{
     version_id: string;
     parent_version_id?: string;
+    duplicate?: boolean;
   } | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -378,6 +383,7 @@ function EntityDetails({
         setCommittedVersionResult({
           version_id: res.version_id,
           parent_version_id: (res as { parent_version_id?: string }).parent_version_id,
+          duplicate: (res as { duplicate?: boolean }).duplicate === true,
         });
       }
       setCommittedSuccess(true);
@@ -579,11 +585,17 @@ function EntityDetails({
 
       {/* Post-Commit WorldStore Version Banner */}
       {committedVersionResult && (
-        <div className="p-3 rounded-lg border border-[var(--success)]/40 bg-[var(--success-subtle)] space-y-2 text-xs">
+        <div className={`p-3 rounded-lg border space-y-2 text-xs ${
+          committedVersionResult.duplicate
+            ? "border-[var(--warning)]/40 bg-[var(--warning-subtle)]"
+            : "border-[var(--success)]/40 bg-[var(--success-subtle)]"
+        }`}>
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[var(--success)] font-semibold">
-              <Check className="w-3.5 h-3.5" />
-              <span>Correction saved</span>
+            <span className={`flex items-center gap-1.5 font-semibold ${
+              committedVersionResult.duplicate ? "text-[var(--warning)]" : "text-[var(--success)]"
+            }`}>
+              {committedVersionResult.duplicate ? <AlertTriangle className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+              <span>{committedVersionResult.duplicate ? "No change: identical to the current version" : "Correction saved"}</span>
             </span>
             <button
               type="button"
@@ -597,12 +609,12 @@ function EntityDetails({
             </button>
           </div>
           <div className="text-[11px] font-mono text-[var(--text-primary)] space-y-0.5">
-            <div>Version: <span className="text-[var(--accent)] font-semibold">{committedVersionResult.version_id}</span></div>
-            {committedVersionResult.parent_version_id && (
+            <div>{committedVersionResult.duplicate ? "Current version" : "Version"}: <span className="text-[var(--accent)] font-semibold">{committedVersionResult.version_id}</span></div>
+            {!committedVersionResult.duplicate && committedVersionResult.parent_version_id && (
               <div className="text-[10px] text-[var(--text-secondary)]">Parent: {committedVersionResult.parent_version_id}</div>
             )}
           </div>
-          {onOpenDiff && (
+          {onOpenDiff && !committedVersionResult.duplicate && (
             <button
               type="button"
               onClick={() => onOpenDiff(committedVersionResult.parent_version_id, committedVersionResult.version_id)}
@@ -1180,6 +1192,7 @@ function EntityDetails({
 
         {tab === "evidence" && (
           <div className="space-y-5">
+            <IdentityLine cp={entity.custom_properties} />
             <section aria-label="Supporting photographs">
               <SectionTitle>Supporting photographs</SectionTitle>
               {provenanceLoading ? (
@@ -1546,6 +1559,41 @@ function EntityDetails({
                 {conf !== null ? `${conf.toFixed(3)} (${(conf * 100).toFixed(1)}%)` : "Not available"}
               </span>
             </div>
+            {conf !== null && (
+              <div
+                role="meter"
+                aria-label="Entity confidence"
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={conf}
+                className="h-1.5 rounded bg-neutral-800 overflow-hidden"
+              >
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${Math.min(1, Math.max(0, conf)) * 100}%`,
+                    background: conf < LOW_CONFIDENCE_THRESHOLD ? "#f5a623" : "#35d07f",
+                  }}
+                />
+              </div>
+            )}
+            {conf !== null && conf < LOW_CONFIDENCE_THRESHOLD && (
+              <div className="text-[10px] text-[#f5a623] flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Low confidence (below {LOW_CONFIDENCE_THRESHOLD * 100}%) - treat as unverified.
+              </div>
+            )}
+            {typeof entity.uncertainty?.confidence === "number" && entity.uncertainty.confidence !== conf && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Uncertainty Record</span>
+                <span className="font-mono text-white">
+                  {(entity.uncertainty.confidence * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+            {typeof entity.uncertainty?.note === "string" && entity.uncertainty.note && (
+              <div className="text-[10px] text-neutral-400">Note: {entity.uncertainty.note}</div>
+            )}
             {typeof (entity.custom_properties?.inlier_fraction ?? entity.custom_properties?.inlier_ratio) === "number" && (
               <div className="flex justify-between">
                 <span className="text-[var(--text-secondary)]">Inlier Fraction</span>
@@ -1585,6 +1633,24 @@ function EntityDetails({
         </Disclosure>
       </div>
     </>
+  );
+}
+
+/** One line on why this is one item: how many photos agreed, or that the engine could not tell it from another. */
+function IdentityLine({ cp }: { cp: Record<string, unknown> | undefined }) {
+  const id = buildIdentityEvidence(cp);
+  if (id.state === "not_recorded") return null;
+  const ambiguous = id.state === "ambiguous";
+  const Icon = ambiguous ? AlertTriangle : Check;
+  return (
+    <p
+      role="status"
+      className="flex items-center gap-1.5 text-[12px]"
+      style={{ color: ambiguous ? "var(--warning)" : "var(--text-secondary)" }}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {id.text}
+    </p>
   );
 }
 

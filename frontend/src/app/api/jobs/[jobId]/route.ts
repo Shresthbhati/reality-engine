@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.REALITY_BACKEND_URL || "http://localhost:8100";
+import { BACKEND_URL, backendFetch } from "@/lib/api/backend";
 
 export async function GET(
   request: NextRequest,
@@ -9,7 +9,7 @@ export async function GET(
   const { jobId } = await context.params;
   
   try {
-    const response = await fetch(`${BACKEND_URL}/api/jobs/${jobId}`, {
+    const response = await backendFetch(`${BACKEND_URL}/api/jobs/${jobId}`, {
       signal: AbortSignal.timeout(5000),
     });
     

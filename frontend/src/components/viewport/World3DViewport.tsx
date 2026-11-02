@@ -61,7 +61,7 @@ import {
   type ViewMode,
 } from "@/lib/viewport/view-model";
 import { resolveUnitContext } from "@/lib/viewport/measure-model";
-import { isUnplaced, type CaptureQuality, type StructurePoint } from "@/lib/viewport/structure-points-model";
+import { captureTitle, isUnplaced, type CaptureQuality, type StructurePoint } from "@/lib/viewport/structure-points-model";
 import MeasurementPanel from "./MeasurementPanel";
 
 const NO_SHELL_REASON =
@@ -984,7 +984,7 @@ export default function World3DViewport({
             <AlertTriangle className="w-7 h-7 text-amber-400" />
           </div>
           <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
-            The photos could not be placed in one 3D space
+            {captureTitle(captureQuality)}
           </h3>
           {captureQuality.message && (
             <p className="text-xs text-neutral-300 max-w-lg mb-3 leading-relaxed" data-testid="capture-insufficient-message">

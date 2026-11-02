@@ -26,6 +26,8 @@ export interface CaptureQuality {
   reasons: string[];
   advice: string[];
   message: string;
+  /** Set when the verdict is about setup, not the photos (e.g. "workspace_path_too_long"); null otherwise. */
+  cause?: string | null;
 }
 
 /** With no structure points the dense cloud is shown decimated to at most this many points. */
@@ -72,11 +74,25 @@ export function parseCaptureQuality(raw: unknown): CaptureQuality | null {
     reasons: strings(o.reasons),
     advice: strings(o.advice),
     message: typeof o.message === "string" ? o.message : "",
+    cause: typeof o.cause === "string" && o.cause ? o.cause : null,
   };
 }
 
 /** The photos could not be placed in one 3D space: per-photo geometry must not be drawn as a room. */
 export const isUnplaced = (q: CaptureQuality | null | undefined): boolean => q?.state === "insufficient";
+
+/** Multi-view reconstruction never ran for a setup reason: the photos were not judged and must not be blamed. */
+export const isSetupFailure = (q: CaptureQuality | null | undefined): boolean => q?.cause === "workspace_path_too_long";
+
+/** Headline for the "not placed" overlay. */
+export const captureTitle = (q: CaptureQuality | null | undefined): string =>
+  isSetupFailure(q) ? "Reconstruction could not start" : "The photos could not be placed in one 3D space";
+
+/** Short badge label for the capture verdict. */
+export function captureBadge(q: CaptureQuality): string {
+  if (isSetupFailure(q)) return "Setup problem";
+  return { sufficient: "Capture sufficient", partial: "Capture partial", insufficient: "Not placed in 3D" }[q.state];
+}
 
 /** Which point layer to build. The full cloud only on request; otherwise structure points, else a decimated cloud. */
 export function choosePointDisplay(o: { structureCount: number; fullCloud: boolean; totalPoints: number }): PointDisplayMode {

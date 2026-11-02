@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import jobs as jobrunner
+from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.models import (
     ActivityEvent,
@@ -40,7 +41,7 @@ from apps.api.reconstruction_state import (
     derive_state,
     failure_message,
 )
-from apps.api.routes_misc import _classify, _read_bounded_upload, _safe_filename
+from apps.api.routes_misc import _read_bounded_upload, _safe_filename, vet_upload
 from apps.api.storage import store_bytes
 from evidence.image_check import DECLARABLE_CLASSES, inspect_image
 from reconstruction.capture_quality import summarize_stored
@@ -52,7 +53,6 @@ MAX_FILES_PER_REQUEST = 300
 #: frames kept from one video (evenly spaced in time; the video itself is
 #: also stored as evidence). "Never blindly process every frame."
 VIDEO_FRAME_BUDGET = 24
-_VIDEO_EXT = (".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm")
 
 
 def _pick_video_frames(path: str, candidates):
@@ -141,9 +141,11 @@ async def create_reconstruction(
         if not data:
             rejected.append({"name": fname, "reason": "empty file"})
             continue
-        kind = _classify(fname, f.content_type)
-        if kind == "dataset" and fname.lower().endswith(_VIDEO_EXT):
-            kind = "video"
+        try:
+            kind = vet_upload(fname, f.content_type, data)
+        except ValueError as exc:
+            rejected.append({"name": fname, "reason": str(exc)})
+            continue
         digest, path = store_bytes(data)
         if kind == "photo":
             facts = inspect_image(path, evidence_class)
@@ -322,7 +324,8 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
         select(WorldVersion).where(WorldVersion.world_id == world_id)
     )).scalars().all()
     head = next((v for v in versions if v.id == world.current_version_id), None)
-    report = dict(head.report or {}) if head is not None else {}
+    # a corrected version carries no report of its own: it is described by the nearest ancestor that has one
+    report = await worldstore_service.nearest_report(db, head.id) if head is not None else {}
     ev_report = report.get("evidence") or {}
 
     failure_kind = (job.payload or {}).get("failure_kind") if job is not None else None

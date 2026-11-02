@@ -1811,7 +1811,7 @@ tasks:
         (pipe-deadlock regression), tests/test_world_diff.py"
       - "frontend tsc --noEmit + next build --webpack + real-browser run"
     remaining:
-      - "ENGINEERING: audit the Observation/Relationship constructor confidence defaults (1.0); producers are fixed, the defaults were left for a dedicated pass (PROD.3)"
+      - "ENGINEERING: DONE 2026-10-04 (commit f698f49): Observation/Relationship/CausalRelation constructor and from_dict defaults are 0.5 / Provenance.UNKNOWN (never 1.0 / OBSERVED); producers pass confidence explicitly; tests/test_confidence_defaults.py asserts defaults and that no producer omits confidence (registry entry PROD.3, also in docs/implementation/PENDING_IMPLEMENTATION.md)."
       - "EXTERNAL DATA (UNVERIFIED): no real corridor or real room photograph dataset exists in the repo; the 4 indoor photos outside it have unverified provenance and were not used"
     done_2026_10_03: "per-version evidence panel: the status API carries each version's evidence_ids / registered_ids (the version's own record, null for versions that predate it); the Studio shows, for an inspected earlier version, each photo as placed / waiting / added after it plus a one-line summary, and relabels the changes block as the CURRENT version's. Verified in the real browser against a two-version world (V1: 3 photos used, 3 placed, 1 added since); 5 contract tests (frontend/tests/contract/version-evidence.test.mts) + tests/test_reconstruction_reliability.py::test_status_versions_carry_what_each_version_was_built_from."
     done_2026_10_03_prototype: >-
@@ -1892,3 +1892,17 @@ tasks:
       exterior architecture from one photo. Not promised.
     acceptance: "measured against a ground-truth model with a stated error metric and threshold, not by eye"
     dependencies: "learned monocular/multi-view model or multi-view capture of the structure; curved-surface primitives in WorldIR"
+
+  - id: GATE-01
+    name: release gate - real photos -> persisted world -> correction -> V2 diff (docs/implementation/RELEASE_GATE_PLAN.md)
+    status: PARTIAL
+    basis: "Phase 1 of 6 done 2026-10-16 (branch claude/gate-p1-geometries): world.geometries regression NOT REPRODUCED; httpx pin d2dfacc fixes the real TestClient breakage. Phases 2-6 pending."
+    verification:
+      - "pytest 4 plan files -> 24 passed; -k geometr non-slow -> 165 passed, 3 skipped"
+      - "real COLMAP via API: V1 6 geoms / V2 10 geoms, 0 dangling refs, digests identical after restart; test_B 1 passed"
+      - "non-slow baseline with httpx<0.28: 0 failed (2815 passed + 151 re-run of affected files), 28 skipped"
+      - "Phase 2: validate_reconstruction_output (<2 cameras, NaN/Inf pose/point) wired into vertical_slice; 7 new tests + 1 API test; SIX window real COLMAP 6/6 registered, 1132 sparse pts, 0.295 px, 101 s; test_B/D/D2 passed"
+    done_2026_10_16_final: "Gate passed twice consecutively on 994af9c (3 passed each); non-slow 2976 passed/0 failed; slow journeys 28/28; frontend tsc/contract 17/17/build green. See RELEASE_GATE_PLAN.md Appendix C."
+    remaining:
+      - "Phase 1 reopens if the user supplies the original geometries symptom"
+      - "Phases 2-6: output validation, contract baseline, test_release_gate.py (x2), integration, Studio walkthrough"

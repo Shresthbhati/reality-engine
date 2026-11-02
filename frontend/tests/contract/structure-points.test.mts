@@ -8,8 +8,11 @@ import assert from "node:assert/strict";
 
 import {
   DECIMATED_CAP,
+  captureBadge,
+  captureTitle,
   choosePointDisplay,
   decimatePoints,
+  isSetupFailure,
   isUnplaced,
   parseCaptureQuality,
   parseStructurePoints,
@@ -93,4 +96,28 @@ test("parseCaptureQuality reads the verdict; an absent or unrecognised one is nu
   assert.equal(sparse.registered, 0);
   assert.equal(sparse.points, 0);
   assert.equal(sparse.message, "");
+});
+
+test("a setup failure is titled as such, and photo verdicts keep the photo wording", () => {
+  const setup = parseCaptureQuality({
+    state: "insufficient", cause: "workspace_path_too_long",
+    message: "Multi-view reconstruction could not start: its workspace path is 262 characters.",
+    advice: ["Point WORLDSTORE_ROOT at a shorter folder"],
+  })!;
+  assert.equal(setup.cause, "workspace_path_too_long");
+  assert.equal(isSetupFailure(setup), true);
+  assert.equal(isUnplaced(setup), true); // still not drawn as a room
+  assert.equal(captureTitle(setup), "Reconstruction could not start");
+  assert.equal(captureBadge(setup), "Setup problem");
+
+  const photos = parseCaptureQuality({ state: "insufficient", message: "Only 0 of 10 photos." })!;
+  assert.equal(photos.cause, null);
+  assert.equal(isSetupFailure(photos), false);
+  assert.equal(captureTitle(photos), "The photos could not be placed in one 3D space");
+  assert.equal(captureBadge(photos), "Not placed in 3D");
+  assert.equal(captureBadge(parseCaptureQuality({ state: "partial" })!), "Capture partial");
+  assert.equal(captureBadge(parseCaptureQuality({ state: "sufficient" })!), "Capture sufficient");
+  assert.equal(captureTitle(null), "The photos could not be placed in one 3D space");
+  // an unknown cause string is carried but never treated as a setup failure
+  assert.equal(isSetupFailure(parseCaptureQuality({ state: "insufficient", cause: "mystery" })), false);
 });

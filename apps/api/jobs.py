@@ -388,12 +388,13 @@ def _scene_gate(world_id: str, eval_inputs, sessions_of: dict) -> dict:
     cannot run (no OpenCV, unreadable image) that is recorded as ``state: unavailable`` and nothing is excluded.
     """
     from apps.api import worldstore_service
-    from reconstruction.scene_identity import SceneRegistry, SiftPairVerifier, group_images
+    from reconstruction.scene_identity import SceneRegistry, make_pair_verifier, group_images
 
     try:
         ids = [ei.item.id for ei in eval_inputs if ei.facts.geometry_eligible]
-        grouping = group_images(ids, SiftPairVerifier({ei.item.id: ei.path for ei in eval_inputs}),
-                                declared_sessions=sessions_of)
+        paths = {ei.item.id: ei.path for ei in eval_inputs}
+        verifier = make_pair_verifier(paths, matcher_name="auto")
+        grouping = group_images(ids, verifier, declared_sessions=sessions_of)
         registry = SceneRegistry(worldstore_service.worldstore_root() / "scene-groups")
         groups = registry.record_grouping(world_id, grouping)
         last = registry.load(world_id).get("last_valid")

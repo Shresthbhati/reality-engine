@@ -4,8 +4,10 @@ import { useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useREStore } from '@/store/re-store';
 import type { WorkspaceId } from '@/types/reality-engine';
+import { useIsMobile } from '@/lib/use-media-query';
 import TitleBar from './TitleBar';
 import WorkspaceSwitcher from './WorkspaceSwitcher';
+import MobileBottomNav from './MobileBottomNav';
 import StatusBar from './StatusBar';
 import CommandPalette from './CommandPalette';
 import { ToastContainer } from '@/components/ui/toast';
@@ -137,6 +139,7 @@ const RE_CSS_VARS = `
 export default function AppShell() {
   const loadWorldFromBackend = useREStore((s) => s.loadWorldFromBackend);
   const activeWorkspace = useREStore((s) => s.activeWorkspace);
+  const isMobile = useIsMobile();
 
   // Initialize workstation: attempt real WorldIR backend mount, fallback to demo mode
   useEffect(() => {
@@ -152,23 +155,26 @@ export default function AppShell() {
         className="flex flex-col"
         style={{
           width: '100vw',
-          height: '100vh',
+          height: '100dvh',
           overflow: 'hidden',
           background: 'var(--re-bg-base)',
           fontFamily: 'Inter, system-ui, sans-serif',
         }}
       >
         {/* ── Top chrome */}
-        <TitleBar />
-        <WorkspaceSwitcher />
+        <div style={isMobile ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
+          <TitleBar />
+        </div>
+        {/* Desktop top-tab workspace switcher; mobile uses the bottom nav instead */}
+        {!isMobile && <WorkspaceSwitcher />}
 
         {/* ── Workspace area */}
-        <main className="flex flex-1 overflow-hidden">
+        <main className="flex flex-1 overflow-hidden min-w-0">
           <ActiveWorkspace id={activeWorkspace} />
         </main>
 
         {/* ── Bottom chrome */}
-        <StatusBar />
+        {isMobile ? <MobileBottomNav /> : <StatusBar />}
 
         {/* ── Overlays */}
         <CommandPalette />

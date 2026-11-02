@@ -27,6 +27,8 @@ import EvidencePanel from '@/components/workspaces/studio/EvidencePanel';
 import WorldNavPanel from '@/components/shell/WorldNavPanel';
 import ContextInspectorPanel from '@/components/shell/ContextInspectorPanel';
 import ContextualBottomDrawer from '@/components/shell/ContextualBottomDrawer';
+import MobileSheet from '@/components/shell/MobileSheet';
+import { useIsMobile } from '@/lib/use-media-query';
 import {
   Activity,
   Layers,
@@ -82,6 +84,9 @@ export default function ViewerApp() {
   const [showProvenanceDrawer, setShowProvenanceDrawer] = useState(false);
   const [leftTab, setLeftTab] = useState<'nav' | 'entities'>('nav');
   const [rightTab, setRightTab] = useState<'inspector' | 'details'>('inspector');
+  const isMobile = useIsMobile();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
 
   // Global Keyboard Shortcuts (Professional Workstation Standards)
   useEffect(() => {
@@ -220,8 +225,8 @@ export default function ViewerApp() {
           })}
         </div>
 
-        {/* Floating Overlays Triggers (Detail Coverage & Evidence Trace) */}
-        <div className="flex items-center gap-2">
+        {/* Floating Overlays Triggers (Detail Coverage & Evidence Trace) — desktop only, mobile uses the FAB sheets */}
+        <div className="hidden md:flex items-center gap-2">
           <button
             type="button"
             onClick={() => setShowCoverageOverlay(!showCoverageOverlay)}
@@ -255,7 +260,49 @@ export default function ViewerApp() {
 
       {/* ── 3. Main Workstation Resizable Grid ─────────────────────────── */}
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
-        {bottomDrawerOpen ? (
+        {isMobile ? (
+          // ── Mobile layout: full-bleed viewport, floating FABs open World Nav /
+          // Context Inspector as bottom sheets instead of permanent side panels.
+          <div className="flex-1 w-full h-full min-h-0 relative bg-[#08090b] overflow-hidden">
+            <Viewport3D />
+
+            {/* Active Scale & View Mode HUD */}
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-mono">
+              <span className="text-[#00e5ff] font-bold">SCALE: {activeScaleLevel}</span>
+              <span className="text-[#54596b]">•</span>
+              <span className="text-[#2ecc71] font-bold">MODE: {reconstructionViewMode}</span>
+            </div>
+
+            {/* Floating contextual controls (not permanent chrome) */}
+            <div className="absolute bottom-4 left-4 z-30 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Open world navigation"
+                className="flex items-center justify-center w-12 h-12 rounded-full bg-[#101217]/95 border border-[#1f222b] text-[#9296a6] hover:text-[#00e5ff] hover:border-[#00e5ff]/50 shadow-2xl backdrop-blur-md transition-colors"
+              >
+                <PanelLeft className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="absolute bottom-4 right-4 z-30 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => setMobileInspectorOpen(true)}
+                aria-label="Open context inspector"
+                className="flex items-center justify-center w-12 h-12 rounded-full bg-[#101217]/95 border border-[#1f222b] text-[#9296a6] hover:text-[#00e5ff] hover:border-[#00e5ff]/50 shadow-2xl backdrop-blur-md transition-colors"
+              >
+                <PanelRight className="w-5 h-5" />
+              </button>
+            </div>
+
+            <MobileSheet open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} title="World Navigation">
+              <WorldNavPanel />
+            </MobileSheet>
+            <MobileSheet open={mobileInspectorOpen} onClose={() => setMobileInspectorOpen(false)} title="Context Inspector">
+              <ContextInspectorPanel />
+            </MobileSheet>
+          </div>
+        ) : bottomDrawerOpen ? (
           <Group orientation="vertical">
             {/* Top Row: Navigation/Outliner | 3D Viewport | Context Inspector */}
             <Panel defaultSize={74} minSize={40}>
@@ -458,7 +505,7 @@ export default function ViewerApp() {
         )}
 
         {/* ── Floating Overlay 1: Spatial Detail Coverage Breakdown ────── */}
-        {showCoverageOverlay && (
+        {!isMobile && showCoverageOverlay && (
           <div className="absolute top-14 right-80 z-40 w-96 rounded-xl bg-[#101218]/95 backdrop-blur-xl border border-[#2ecc71]/40 shadow-2xl p-3.5 font-mono space-y-3">
             <div className="flex items-center justify-between border-b border-white/10 pb-2">
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#2ecc71]">
@@ -539,7 +586,7 @@ export default function ViewerApp() {
         )}
 
         {/* ── Floating Overlay 2: Evidence-to-Detail Provenance Inspector ── */}
-        {showProvenanceDrawer && selectedDetailProvenance && (
+        {!isMobile && showProvenanceDrawer && selectedDetailProvenance && (
           <div className="absolute top-14 right-80 z-40 w-[420px] rounded-xl bg-[#101218]/95 backdrop-blur-xl border border-[#a855f7]/40 shadow-2xl p-4 font-mono space-y-3">
             <div className="flex items-center justify-between border-b border-white/10 pb-2">
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#a855f7]">
@@ -618,8 +665,8 @@ export default function ViewerApp() {
         )}
       </div>
 
-      {/* ── 4. Minimal Docking Tab Bar (28px) ─────────────────────────── */}
-      <div className="h-7 border-t border-[#1f222b] bg-[#0d0e12] px-2 flex items-center justify-between shrink-0 select-none text-[11px] font-mono">
+      {/* ── 4. Minimal Docking Tab Bar (28px) — desktop only; mobile uses MobileBottomNav ── */}
+      <div className="hidden md:flex h-7 border-t border-[#1f222b] bg-[#0d0e12] px-2 items-center justify-between shrink-0 select-none text-[11px] font-mono">
         <div className="flex items-center gap-1">
           {bottomTabs.map((tab) => {
             const isActive = bottomDrawerOpen && bottomDrawerTab === tab.id;

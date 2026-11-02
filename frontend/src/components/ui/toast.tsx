@@ -42,7 +42,7 @@ function ToastItem({ notification }: { notification: UINotification }) {
 
   return (
     <div
-      className={`w-80 flex items-start gap-3 p-3.5 rounded-xl border bg-[#101217]/95 backdrop-blur-md shadow-2xl transition-all animate-in slide-in-from-bottom-2 duration-150 ${BORDER_MAP[notification.type]}`}
+      className={`w-full sm:w-80 flex items-start gap-3 p-3.5 rounded-xl border bg-[#101217]/95 backdrop-blur-md shadow-2xl transition-all animate-in slide-in-from-bottom-2 duration-150 ${BORDER_MAP[notification.type]}`}
       role="alert"
     >
       <div className="pt-0.5">{ICON_MAP[notification.type]}</div>
@@ -98,7 +98,11 @@ export function ToastContainer() {
 
   return (
     <div
-      className="fixed bottom-8 right-4 z-50 flex flex-col gap-2 pointer-events-auto max-h-[70vh] overflow-hidden"
+      className="fixed z-50 flex flex-col gap-2 pointer-events-auto max-h-[70vh] overflow-hidden left-4 right-4 sm:left-auto sm:right-4"
+      style={{
+        // Clear the mobile bottom nav (~52px) and safe-area inset; desktop keeps the original offset.
+        bottom: 'max(2rem, calc(60px + env(safe-area-inset-bottom, 0px)))',
+      }}
       aria-live="polite"
     >
       {notifications.slice(-5).map((n) => (

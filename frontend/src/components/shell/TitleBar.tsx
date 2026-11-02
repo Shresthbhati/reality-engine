@@ -54,7 +54,7 @@ export default function TitleBar() {
   return (
     <header className="flex flex-col shrink-0 select-none bg-[#0a0b0e] border-b border-[#1f222b] text-[#ededf2]">
       {/* ── Main Top Bar (44px) ── */}
-      <div className="h-11 px-3 flex items-center justify-between gap-3">
+      <div className="h-11 px-3 flex items-center justify-between gap-3 min-w-0">
         {/* LEFT: Branding & Logo */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="w-6 h-6 rounded-lg bg-[#00e5ff]/10 border border-[#00e5ff]/40 flex items-center justify-center text-[#00e5ff] shadow-[0_0_12px_rgba(0,229,255,0.2)]">
@@ -88,8 +88,8 @@ export default function TitleBar() {
           </div>
         </div>
 
-        {/* CENTER: Global Modes Switcher */}
-        <div className="flex items-center gap-1 bg-[#101217] p-1 rounded-lg border border-[#1f222b] shadow-inner">
+        {/* CENTER: Global Modes Switcher — hidden on phone widths; reachable via command palette */}
+        <div className="hidden md:flex items-center gap-1 bg-[#101217] p-1 rounded-lg border border-[#1f222b] shadow-inner">
           <span className="text-[9px] font-mono font-bold tracking-wider text-[#54596b] px-2 uppercase hidden lg:inline">
             Global Modes:
           </span>
@@ -123,16 +123,19 @@ export default function TitleBar() {
           >
             <Search className="w-3.5 h-3.5 text-[#54596b]" />
             <span className="text-[11px] hidden md:inline text-[#54596b]">Search…</span>
-            <kbd className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-[#54596b]">
+            <kbd className="hidden sm:inline text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-[#54596b]">
               Ctrl+K
             </kbd>
           </button>
 
           {/* Active World Selector */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#14161f] border border-[#1f222b] text-[11px] font-mono text-[#f0f1f6]">
-            <Globe2 className="w-3.5 h-3.5 text-[#00e5ff]" />
-            <span className="max-w-[120px] truncate">{activeWorldLabel}</span>
-            <ChevronDown className="w-3 h-3 text-[#54596b]" />
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#14161f] border border-[#1f222b] text-[11px] font-mono text-[#f0f1f6] min-w-0"
+            title={activeWorldLabel}
+          >
+            <Globe2 className="w-3.5 h-3.5 text-[#00e5ff] shrink-0" />
+            <span className="hidden sm:inline max-w-[120px] truncate">{activeWorldLabel}</span>
+            <ChevronDown className="hidden sm:inline w-3 h-3 text-[#54596b]" />
           </div>
 
           {/* Engine Connectivity Status Badge */}

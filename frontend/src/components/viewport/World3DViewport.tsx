@@ -367,14 +367,16 @@ export default function World3DViewport({
     const handlePreviewCorrection = (e: Event) => {
       const customEvent = e as CustomEvent<{
         entityId: string;
-        type: string;
+        type?: string;
         confidence?: number | null;
+        transform?: { position?: { x: number; y: number; z: number } };
       }>;
       if (customEvent.detail) {
         controllerRef.current?.setCorrectionPreview(
           customEvent.detail.entityId,
           customEvent.detail.type,
-          customEvent.detail.confidence
+          customEvent.detail.confidence,
+          customEvent.detail.transform
         );
       }
     };

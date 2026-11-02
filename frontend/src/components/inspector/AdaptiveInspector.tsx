@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { getStudioHistory } from "@/lib/viewport/history-stack";
 import { fetchEntityProvenance, type EntityProvenance } from "@/lib/api/provenance";
 import {
   Armchair,
@@ -210,6 +211,31 @@ function EntityDetails({
       : null;
 
   const pos = entity.transform?.position;
+  const [posX, setPosX] = useState(pos?.x !== undefined ? String(pos.x) : "");
+  const [posY, setPosY] = useState(pos?.y !== undefined ? String(pos.y) : "");
+  const [posZ, setPosZ] = useState(pos?.z !== undefined ? String(pos.z) : "");
+
+  useEffect(() => {
+    setPosX(pos?.x !== undefined ? String(pos.x) : "");
+    setPosY(pos?.y !== undefined ? String(pos.y) : "");
+    setPosZ(pos?.z !== undefined ? String(pos.z) : "");
+  }, [entity.id, pos?.x, pos?.y, pos?.z]);
+
+  useEffect(() => {
+    const handleHistory = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.item?.entityId === entity.id) {
+        const after = customEvent.detail.action === "undo" ? customEvent.detail.item.before : customEvent.detail.item.after;
+        if (after && typeof after === "object" && "x" in after) {
+          setPosX(String(after.x));
+          setPosY(String(after.y));
+          setPosZ(String(after.z));
+        }
+      }
+    };
+    window.addEventListener("history-state-changed", handleHistory);
+    return () => window.removeEventListener("history-state-changed", handleHistory);
+  }, [entity.id]);
   const observations = entity.observations || [];
   const relationships = entity.relationships || [];
 
@@ -362,6 +388,40 @@ function EntityDetails({
         payload = {
           connected_level_ids: editedConnectedLevelIds,
         };
+      } else if (mode === "transform") {
+        const x = Number(posX);
+        const y = Number(posY);
+        const z = Number(posZ);
+        if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+          payload = {
+            transform: {
+              ...(entity.transform || {}),
+              position: { x, y, z },
+            },
+            ...confidenceChange,
+          };
+          const prevPos = pos ? { x: pos.x, y: pos.y, z: pos.z } : { x: 0, y: 0, z: 0 };
+          getStudioHistory().push({
+            type: "transform",
+            description: `Move ${entity.id} to (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`,
+            entityId: entity.id,
+            before: prevPos,
+            after: { x, y, z },
+            apply: (st: { x: number; y: number; z: number }) => {
+              setPosX(String(st.x));
+              setPosY(String(st.y));
+              setPosZ(String(st.z));
+              window.dispatchEvent(
+                new CustomEvent("preview-correction", {
+                  detail: {
+                    entityId: entity.id,
+                    transform: { position: st },
+                  },
+                })
+              );
+            },
+          });
+        }
       } else {
         payload = {
           type: editedType,
@@ -652,6 +712,17 @@ function EntityDetails({
 
           {/* Submode Selection Tabs */}
           <div className="flex items-center gap-1 border-b border-[var(--border-subtle)] pb-2 overflow-x-auto text-[10px]">
+            <button
+              type="button"
+              onClick={() => setCorrectionTab("transform")}
+              className={`px-2 py-0.5 rounded font-mono transition-colors cursor-pointer ${
+                correctionTab === "transform"
+                  ? "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 font-semibold"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Position & Geometry
+            </button>
             {(entity.type === "room" || entity.id.startsWith("room")) && (
               <>
                 <button
@@ -746,6 +817,90 @@ function EntityDetails({
           </div>
 
           {/* 1. ROOM BOUNDARY CORRECTION */}
+          {correctionTab === "transform" && (
+            <div className="space-y-3 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                  Position (metres)
+                </span>
+                <span className="text-[10px] text-[var(--text-tertiary)] font-mono">
+                  XYZ offset
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(["X", "Y", "Z"] as const).map((axis) => {
+                  const val = axis === "X" ? posX : axis === "Y" ? posY : posZ;
+                  const setVal = axis === "X" ? setPosX : axis === "Y" ? setPosY : setPosZ;
+                  return (
+                    <div key={axis} className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-semibold text-[var(--text-secondary)]">{axis}</span>
+                        <div className="flex gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setVal((v) => (Number(v || 0) - 0.1).toFixed(2))}
+                            className="px-1 text-[9px] rounded bg-[var(--surface-hover)] hover:bg-[var(--surface-active)] cursor-pointer"
+                            title="-0.1m"
+                          >
+                            -
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setVal((v) => (Number(v || 0) + 0.1).toFixed(2))}
+                            className="px-1 text-[9px] rounded bg-[var(--surface-hover)] hover:bg-[var(--surface-active)] cursor-pointer"
+                            title="+0.1m"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={val}
+                        onChange={(e) => setVal(e.target.value)}
+                        className="w-full h-7 px-1.5 rounded bg-[var(--bg-surface)] border border-[var(--border)] text-xs text-[var(--text-primary)] font-mono focus:border-[var(--accent)] focus:outline-none"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const x = Number(posX || 0);
+                    const y = Number(posY || 0);
+                    const z = Number(posZ || 0);
+                    window.dispatchEvent(
+                      new CustomEvent("preview-correction", {
+                        detail: {
+                          entityId: entity.id,
+                          transform: { position: { x, y, z } },
+                        },
+                      })
+                    );
+                  }}
+                  className="flex-1 h-7 rounded text-xs font-semibold bg-[var(--accent)]/15 text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors cursor-pointer"
+                >
+                  Preview Transform
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPosX(pos?.x !== undefined ? String(pos.x) : "");
+                    setPosY(pos?.y !== undefined ? String(pos.y) : "");
+                    setPosZ(pos?.z !== undefined ? String(pos.z) : "");
+                    window.dispatchEvent(new CustomEvent("clear-correction-preview"));
+                  }}
+                  className="px-2 h-7 rounded text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          )}
+
           {correctionTab === "boundary" && (
             <div className="space-y-2.5">
               <div>

@@ -43,7 +43,8 @@ import type { PlaceRow, WorldVersionRow } from "@/lib/types";
 import { buildFlowSteps } from "@/lib/reconstruct/flow-model";
 import { buildSceneTree, toggleHidden } from "@/lib/workspace/scene-tree-model";
 import { buildInsights, withKnownPhotos } from "@/lib/workspace/insights-model";
-import { Loader2, Box, Map as MapIcon, ImagePlus, X, PanelLeft, PanelRight } from "lucide-react";
+import { Loader2, Box, Map as MapIcon, ImagePlus, X, PanelLeft, PanelRight, Undo2, Redo2 } from "lucide-react";
+import { getStudioHistory } from "@/lib/viewport/history-stack";
 import { cn } from "@/lib/utils";
 
 /**
@@ -347,6 +348,38 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     setBrowseOpen(false);
   }
 
+  // Undo/Redo studio history state
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const [undoDesc, setUndoDesc] = useState<string | null>(null);
+  const [redoDesc, setRedoDesc] = useState<string | null>(null);
+
+  useEffect(() => {
+    const history = getStudioHistory();
+    const update = () => {
+      setCanUndo(history.canUndo());
+      setCanRedo(history.canRedo());
+      setUndoDesc(history.peekUndo()?.description ?? null);
+      setRedoDesc(history.peekRedo()?.description ?? null);
+    };
+    update();
+    return history.subscribe(update);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const item = getStudioHistory().undo();
+    if (item) {
+      window.dispatchEvent(new CustomEvent("history-state-changed", { detail: { action: "undo", item } }));
+    }
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const item = getStudioHistory().redo();
+    if (item) {
+      window.dispatchEvent(new CustomEvent("history-state-changed", { detail: { action: "redo", item } }));
+    }
+  }, []);
+
   // Global Keyboard Shortcuts and Custom Event Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -369,6 +402,16 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
         handleClearSelection();
       } else if (e.key.toLowerCase() === "f" && selectedEntityId) {
         handleFrameEntity(selectedEntityId);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        handleRedo();
       }
     };
 
@@ -592,6 +635,28 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <ImagePlus className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{primary.label}</span>
           </button>
+          <div className="flex items-center gap-0.5 border-r border-[var(--border)] pr-1.5 mr-1">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={!canUndo}
+              title={canUndo && undoDesc ? `Undo: ${undoDesc} (Ctrl+Z)` : "Undo (Ctrl+Z)"}
+              aria-label="Undo"
+              className="flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={!canRedo}
+              title={canRedo && redoDesc ? `Redo: ${redoDesc} (Ctrl+Y)` : "Redo (Ctrl+Y)"}
+              aria-label="Redo"
+              className="flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+            >
+              <Redo2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <ActionsMenu
             onAddEvidence={() => setAddPhotosOpen(true)}
             onBuild={() => setBuildModalOpen(true)}

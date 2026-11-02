@@ -110,8 +110,8 @@ class ImporterCapabilityError(RuntimeError):
     """An optional decoder (Pillow/OpenCV) is not installed."""
 
 
-_PHOTO_EXTS = {".jpg", ".jpeg", ".png"}
-_VIDEO_EXTS = {".avi", ".mp4", ".mov", ".mkv"}
+_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".heic", ".heif"}
+_VIDEO_EXTS = {".avi", ".mp4", ".mov", ".mkv", ".m4v", ".ts"}
 _LAS_EXTS = {".las", ".laz"}
 _KNOWN_EXTS = _PHOTO_EXTS | _VIDEO_EXTS | _LAS_EXTS
 

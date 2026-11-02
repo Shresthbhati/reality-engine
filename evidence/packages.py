@@ -115,6 +115,18 @@ def _validate_payload(payload: bytes, extension: str) -> None:
         raise CorruptEvidenceError(
             f"payload too small to be real evidence ({len(payload)} bytes < {MIN_PAYLOAD_BYTES})"
         )
+    if extension == ".webp":
+        if not (payload.startswith(b"RIFF") and len(payload) >= 12 and payload[8:12] == b"WEBP"):
+            raise CorruptEvidenceError(
+                "payload with extension .webp does not start with RIFF....WEBP -- corrupt or mislabeled"
+            )
+        return
+    if extension in (".mp4", ".mov", ".m4v", ".heic", ".heif"):
+        if not (len(payload) >= 8 and payload[4:8] == b"ftyp"):
+            raise CorruptEvidenceError(
+                f"payload with extension {extension} does not carry ftyp box -- corrupt or mislabeled"
+            )
+        return
     needle = None
     for ext, magic in _MAGIC_CHECKS:
         if ext == extension:

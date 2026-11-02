@@ -516,6 +516,15 @@ def vertical_slice(
         world.metadata["dimension_stamp"] = stamp_world_dimensions(world)
     except Exception as exc:  # noqa: BLE001 -- never lose the world over a labelling pass
         world.metadata["dimension_stamp"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # Tasks 6.6 & 7.2: Infer evidence-grounded spatial relationships (ATTACHED_TO, RESTS_ON, CONTAINS)
+    try:
+        from perception.spatial_reasoning import infer_spatial_relationships
+
+        spatial_res = infer_spatial_relationships(world)
+        world.metadata["spatial_reasoning"] = spatial_res.to_dict()
+    except Exception as exc:  # noqa: BLE001 -- resilient analysis pass
+        world.metadata["spatial_reasoning"] = {"error": f"{type(exc).__name__}: {exc}"}
     world.metadata["reconstruction"] = {
         "backend": run.diagnostics.backend_name,
         "registration_status": result.registration_status,

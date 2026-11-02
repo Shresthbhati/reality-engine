@@ -129,12 +129,12 @@ export default function ExportPanel({
       </div>
 
       {loadError && (
-        <p role="alert" className="text-xs" style={{ color: "var(--error)" }}>
+        <p role="alert" className="text-xs" style={{ color: "var(--error, #e57373)" }}>
           {loadError}
         </p>
       )}
       {error && (
-        <p role="alert" className="text-xs" style={{ color: "var(--error)" }}>
+        <p role="alert" className="text-xs" style={{ color: "var(--error, #e57373)" }}>
           {error}
         </p>
       )}

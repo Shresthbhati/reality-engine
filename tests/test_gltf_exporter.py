@@ -1,3 +1,4 @@
+import json
 """Tests for the minimal glTF 2.0 exporter (exporters/gltf/exporter.py)."""
 
 import base64
@@ -6,7 +7,8 @@ import struct
 from world_ir.artifact_store import MemoryArtifactStore
 from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType
 from world_ir.world_v1 import WorldIR
-from exporters.gltf.exporter import export_to_gltf
+from world_ir.schema_v1 import Material, Relationship, RelationshipKind
+from exporters.gltf.exporter import export_to_gltf, export_to_glb
 
 
 def _build_world() -> WorldIR:
@@ -199,3 +201,102 @@ def test_mesh_geometry_without_resolvable_artifact_falls_back_to_cube():
     gltf = export_to_gltf(world, artifact_store=store)
     assert len(gltf["meshes"]) == 1  # only the shared placeholder cube
     assert gltf["nodes"][0]["mesh"] == 0
+
+
+def test_gltf_hierarchy_preservation():
+    """Parent-child relationships in WorldIR must be reflected as glTF node children."""
+    world = WorldIR()
+    g_room = Geometry(id="g_room", type=GeometryType.BOX)
+    g_chair = Geometry(id="g_chair", type=GeometryType.BOX)
+    world.geometries["g_room"] = g_room
+    world.geometries["g_chair"] = g_chair
+
+    e_room = Entity(
+        id="room-1",
+        name="Conference Room",
+        type=EntityType.ROOM,
+        transform={"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
+        geometry_ids=["g_room"],
+    )
+    e_chair = Entity(
+        id="chair-1",
+        name="Office Chair",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 2.0, "y": 1.0, "z": 0.5}},
+        geometry_ids=["g_chair"],
+        relationships=[Relationship(kind=RelationshipKind.PART_OF, target_id="room-1")],
+    )
+    world.entities["room-1"] = e_room
+    world.entities["chair-1"] = e_chair
+
+    gltf = export_to_gltf(world)
+    assert len(gltf["nodes"]) == 2
+
+    # Room is root in scene
+    room_idx = [i for i, n in enumerate(gltf["nodes"]) if n["name"] == "Conference Room"][0]
+    chair_idx = [i for i, n in enumerate(gltf["nodes"]) if n["name"] == "Office Chair"][0]
+
+    assert gltf["scenes"][0]["nodes"] == [room_idx]
+    assert chair_idx in gltf["nodes"][room_idx]["children"]
+
+
+def test_gltf_material_preservation():
+    """Entities with assigned materials export PBR metallic roughness materials."""
+    world = WorldIR()
+    geom = Geometry(id="g_wood", type=GeometryType.BOX)
+    world.geometries["g_wood"] = geom
+
+    mat = Material(
+        id="mat_wood",
+        name="Oak Wood",
+        color_rgb=[180, 120, 60],
+        properties={"metallic": 0.05, "roughness": 0.65},
+    )
+    world.materials["mat_wood"] = mat
+
+    entity = Entity(
+        id="e_desk",
+        name="Wooden Desk",
+        type=EntityType.STRUCTURE,
+        transform={"position": {"x": 1.0, "y": 1.0, "z": 0.0}},
+        geometry_ids=["g_wood"],
+        custom_properties={"material_id": "mat_wood"},
+    )
+    world.entities["e_desk"] = entity
+
+    gltf = export_to_gltf(world)
+    assert "materials" in gltf
+    assert len(gltf["materials"]) == 1
+    m = gltf["materials"][0]
+    assert m["name"] == "Oak Wood"
+    pbr = m["pbrMetallicRoughness"]
+    assert len(pbr["baseColorFactor"]) == 4
+    # RGB normalized from 0..255
+    assert abs(pbr["baseColorFactor"][0] - 180 / 255.0) < 1e-3
+    assert pbr["metallicFactor"] == 0.05
+    assert pbr["roughnessFactor"] == 0.65
+
+
+def test_glb_export_binary_container():
+    """export_to_glb produces valid binary container with magic, version, and chunks."""
+    world = _build_world()
+    glb_bytes = export_to_glb(world)
+
+    assert len(glb_bytes) >= 20
+    magic, version, total_len = struct.unpack("<4sII", glb_bytes[:12])
+    assert magic == b"glTF"
+    assert version == 2
+    assert total_len == len(glb_bytes)
+
+    # Chunk 0 (JSON)
+    json_len, chunk0_type = struct.unpack("<II", glb_bytes[12:20])
+    assert chunk0_type == 0x4E4F534A
+    json_data = glb_bytes[20:20 + json_len].decode("utf-8").strip()
+    parsed_json = json.loads(json_data)
+    assert "asset" in parsed_json
+
+    # Chunk 1 (BIN)
+    chunk1_offset = 20 + json_len
+    bin_len, chunk1_type = struct.unpack("<II", glb_bytes[chunk1_offset:chunk1_offset + 8])
+    assert chunk1_type == 0x004E4942
+    assert chunk1_offset + 8 + bin_len == total_len

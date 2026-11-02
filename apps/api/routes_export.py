@@ -25,6 +25,7 @@ export = APIRouter(prefix="/api/worlds/{world_id}/export", tags=["export"])
 
 _MEDIA_TYPES = {
     "gltf": "model/gltf+json",
+    "glb": "model/gltf-binary",
     "usda": "text/plain",
     "blender": "application/x-python",
     "cityjson": "application/json",

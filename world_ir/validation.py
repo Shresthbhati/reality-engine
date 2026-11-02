@@ -451,6 +451,161 @@ def _linked(world: WorldIR, a_id: str, a, predicate) -> bool:
     return any(predicate(o) and any(r.target_id == a_id for r in o.relationships) for o in world.entities.values())
 
 
+def _check_cross_entity_consistency(world: WorldIR, issues: List[ValidationIssue]) -> None:
+    """Automated cross-entity consistency checks (Task 7.5):
+    - Circular support relationships (e.g. A SUPPORTS B and B SUPPORTS A)
+    - Vertical resting consistency (RESTS_ON / SUPPORTS geometric alignment)
+    - Containment disjointness (CONTAINS targets located far outside parent)
+    - Opening height consistency (opening top/bottom bounds relative to host wall)
+    - Attachment disconnection (ATTACHED_TO entities separated by > 2.0m)
+    """
+    ids = sorted(world.entities)
+
+    # 1. Check for cyclic vertical support
+    support_edges: Dict[str, Set[str]] = {}
+    for eid in ids:
+        e = world.entities[eid]
+        for rel in e.relationships:
+            if rel.kind is RelationshipKind.SUPPORTS and rel.target_id in world.entities:
+                support_edges.setdefault(eid, set()).add(rel.target_id)
+            elif rel.kind is RelationshipKind.RESTS_ON and rel.target_id in world.entities:
+                support_edges.setdefault(rel.target_id, set()).add(eid)
+
+    visited: Set[str] = set()
+    rec_stack: Set[str] = set()
+    cycles_found: Set[Tuple[str, str]] = set()
+
+    def _dfs_cycle(node: str, path: List[str]):
+        visited.add(node)
+        rec_stack.add(node)
+        for neighbour in sorted(support_edges.get(node, ())):
+            if neighbour not in visited:
+                _dfs_cycle(neighbour, path + [neighbour])
+            elif neighbour in rec_stack:
+                cycle_pair = tuple(sorted([node, neighbour]))
+                if cycle_pair not in cycles_found:
+                    cycles_found.add(cycle_pair)
+                    issues.append(ValidationIssue(
+                        ValidationSeverity.ERROR,
+                        "cross_entity_cyclic_support",
+                        f"cyclic vertical support relationship detected between {node} and {neighbour}",
+                    ))
+        rec_stack.remove(node)
+
+    for eid in sorted(support_edges):
+        if eid not in visited:
+            _dfs_cycle(eid, [eid])
+
+    # 2. Check vertical support alignment & horizontal overlap
+    for supporter_id, targets in sorted(support_edges.items()):
+        supporter = world.entities[supporter_id]
+        box_s = _entity_aabb(world, supporter)
+        for target_id in sorted(targets):
+            target = world.entities[target_id]
+            box_t = _entity_aabb(world, target)
+            if box_s is not None and box_t is not None:
+                lo_s, hi_s = box_s
+                lo_t, hi_t = box_t
+                # Supported entity bottom significantly below supporter base (e.g. sunk > 0.25m)
+                if lo_t[2] < lo_s[2] - 0.25:
+                    issues.append(ValidationIssue(
+                        ValidationSeverity.WARNING,
+                        "cross_entity_vertical_support_inconsistent",
+                        f"entity {target_id} rests on {supporter_id} but sits {lo_s[2] - lo_t[2]:.2f}m below its base",
+                    ))
+                # Supported entity bottom floating far above supporter top (> 0.5m)
+                elif lo_t[2] > hi_s[2] + 0.50:
+                    issues.append(ValidationIssue(
+                        ValidationSeverity.WARNING,
+                        "cross_entity_vertical_support_inconsistent",
+                        f"entity {target_id} rests on {supporter_id} but floats {lo_t[2] - hi_s[2]:.2f}m above its top",
+                    ))
+                # Horizontal separation (dx or dy > 0.5m)
+                dx = max(0.0, max(lo_s[0], lo_t[0]) - min(hi_s[0], hi_t[0]))
+                dy = max(0.0, max(lo_s[1], lo_t[1]) - min(hi_s[1], hi_t[1]))
+                if dx > 0.5 or dy > 0.5:
+                    issues.append(ValidationIssue(
+                        ValidationSeverity.WARNING,
+                        "cross_entity_vertical_support_inconsistent",
+                        f"entity {target_id} rests on {supporter_id} but they are horizontally separated by {max(dx, dy):.2f}m",
+                    ))
+
+    # 3. Check Opening vs Host Wall bounds
+    for eid in ids:
+        e = world.entities[eid]
+        if e.type in _OPENING_TYPES:
+            host_id = _props(e).get("host_wall_id")
+            if not host_id:
+                for rel in e.relationships:
+                    if rel.kind is RelationshipKind.ATTACHED_TO and rel.target_id in world.entities:
+                        if world.entities[rel.target_id].type is EntityType.WALL:
+                            host_id = rel.target_id
+                            break
+            if host_id and host_id in world.entities:
+                host = world.entities[host_id]
+                box_op = _entity_aabb(world, e)
+                box_w = _entity_aabb(world, host)
+                if box_op is not None and box_w is not None:
+                    lo_op, hi_op = box_op
+                    lo_w, hi_w = box_w
+                    if hi_op[2] > hi_w[2] + 0.20:
+                        issues.append(ValidationIssue(
+                            ValidationSeverity.WARNING,
+                            "cross_entity_opening_exceeds_wall_height",
+                            f"opening {eid} top ({hi_op[2]:.2f}m) exceeds host wall {host_id} top ({hi_w[2]:.2f}m)",
+                        ))
+                    if lo_op[2] < lo_w[2] - 0.20:
+                        issues.append(ValidationIssue(
+                            ValidationSeverity.WARNING,
+                            "cross_entity_opening_exceeds_wall_height",
+                            f"opening {eid} bottom ({lo_op[2]:.2f}m) extends below host wall {host_id} base ({lo_w[2]:.2f}m)",
+                        ))
+
+    # 4. Check Containment consistency
+    for eid in ids:
+        e = world.entities[eid]
+        box_p = _entity_aabb(world, e)
+        for rel in e.relationships:
+            if rel.kind is RelationshipKind.CONTAINS and rel.target_id in world.entities:
+                child = world.entities[rel.target_id]
+                box_c = _entity_aabb(world, child)
+                if box_p is not None and box_c is not None:
+                    lo_p, hi_p = box_p
+                    lo_c, hi_c = box_c
+                    margin = 0.5
+                    is_disjoint = (
+                        lo_c[0] > hi_p[0] + margin or hi_c[0] < lo_p[0] - margin or
+                        lo_c[1] > hi_p[1] + margin or hi_c[1] < lo_p[1] - margin or
+                        lo_c[2] > hi_p[2] + margin or hi_c[2] < lo_p[2] - margin
+                    )
+                    if is_disjoint:
+                        issues.append(ValidationIssue(
+                            ValidationSeverity.WARNING,
+                            "cross_entity_containment_disjoint",
+                            f"entity {rel.target_id} is CONTAINS-owned by {eid} but its geometry is disjoint from {eid}",
+                        ))
+
+    # 5. Check Attachment proximity
+    for eid in ids:
+        e = world.entities[eid]
+        box_a = _entity_aabb(world, e)
+        for rel in e.relationships:
+            if rel.kind is RelationshipKind.ATTACHED_TO and rel.target_id in world.entities:
+                target = world.entities[rel.target_id]
+                box_b = _entity_aabb(world, target)
+                if box_a is not None and box_b is not None:
+                    dx = max(0.0, max(box_a[0][0], box_b[0][0]) - min(box_a[1][0], box_b[1][0]))
+                    dy = max(0.0, max(box_a[0][1], box_b[0][1]) - min(box_a[1][1], box_b[1][1]))
+                    dz = max(0.0, max(box_a[0][2], box_b[0][2]) - min(box_a[1][2], box_b[1][2]))
+                    dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+                    if dist > 2.0:
+                        issues.append(ValidationIssue(
+                            ValidationSeverity.WARNING,
+                            "cross_entity_attachment_disconnected",
+                            f"entity {eid} claims ATTACHED_TO {rel.target_id} but they are {dist:.2f}m apart",
+                        ))
+
+
 def _check_invariants(world: WorldIR, issues: List[ValidationIssue]) -> None:
     ids = sorted(world.entities)
     try:
@@ -588,6 +743,7 @@ def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     _check_reconstruction_trace(world, issues)
     _check_interior_boundary_references(world, issues)
     _check_single_storey_membership(world, issues)
+    _check_cross_entity_consistency(world, issues)
     _check_invariants(world, issues)
 
     return WorldValidationReport(issues=issues)

@@ -10,7 +10,7 @@
  *    exact (0); everything else reads "not estimated".
  */
 
-export type MeasureKind = "distance" | "height" | "area" | "elevation_difference";
+export type MeasureKind = "distance" | "height" | "area" | "elevation_difference" | "angle";
 export type Vec3 = [number, number, number];
 export type ScaleBasis = "metric" | "authored" | "unknown";
 
@@ -32,6 +32,7 @@ export const MEASURE_TOOLS: MeasureToolDef[] = [
   { kind: "road_width", label: "Road Width", unavailable: NOT_YET, hint: "" },
   { kind: "building_footprint", label: "Building Footprint", unavailable: NOT_YET, hint: "" },
   { kind: "elevation_difference", label: "Elevation Difference", unavailable: null, hint: "Click 2 points (signed)" },
+  { kind: "angle", label: "Angle", unavailable: null, hint: "Click 3 points (ray 1, vertex, ray 2)" },
 ];
 
 export const KIND_LABEL: Record<MeasureKind, string> = {
@@ -39,6 +40,7 @@ export const KIND_LABEL: Record<MeasureKind, string> = {
   height: "Height",
   area: "Area",
   elevation_difference: "Elevation Difference",
+  angle: "Angle",
 };
 
 /** D1 dimension state (extends the measured/reconstructed/inferred provenance distinction). */
@@ -120,6 +122,7 @@ export function resolveUnitContext(world: WorldLike | null | undefined): UnitCon
 }
 
 export function unitFor(kind: MeasureKind, ctx: Pick<UnitContext, "lengthUnit" | "areaUnit">): string {
+  if (kind === "angle") return "°";
   return kind === "area" ? ctx.areaUnit : ctx.lengthUnit;
 }
 
@@ -128,6 +131,8 @@ export function unitLabelFromRow(unit: string): string {
   switch (unit) {
     case "m": return "m";
     case "m2": return "m²";
+    case "deg": return "°";
+    case "°": return "°";
     case "model_units2": return "model units²";
     default: return "model units";
   }
@@ -151,6 +156,7 @@ export const POINTS_NEEDED: Record<MeasureKind, number> = {
   height: 2,
   elevation_difference: 2,
   area: 3,
+  angle: 3,
 };
 
 export function computePreview(kind: MeasureKind, pts: Vec3[]): number | null {
@@ -159,6 +165,18 @@ export function computePreview(kind: MeasureKind, pts: Vec3[]): number | null {
   if (kind === "distance") return Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
   if (kind === "height") return Math.abs(b[1] - a[1]);
   if (kind === "elevation_difference") return b[1] - a[1];
+  if (kind === "angle") {
+    if (pts.length < 3) return null;
+    const [p1, p2, p3] = pts;
+    const v1 = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
+    const v2 = [p3[0] - p2[0], p3[1] - p2[1], p3[2] - p2[2]];
+    const l1 = Math.hypot(v1[0], v1[1], v1[2]);
+    const l2 = Math.hypot(v2[0], v2[1], v2[2]);
+    if (l1 === 0 || l2 === 0) return 0;
+    const dot = (v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]) / (l1 * l2);
+    const clamped = Math.max(-1, Math.min(1, dot));
+    return (Math.acos(clamped) * 180) / Math.PI;
+  }
   // Newell polygon area (valid for the planar polygons the viewport builds).
   let nx = 0, ny = 0, nz = 0;
   for (let i = 0; i < pts.length; i++) {

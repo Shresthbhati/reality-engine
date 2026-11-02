@@ -134,7 +134,7 @@ async def create_measurement(
 
     verified = body.verified_value
     if verified is not None:
-        if body.kind in measure.AREA_KINDS or body.scale_state == "unknown":
+        if body.kind in measure.AREA_KINDS or body.kind == "angle" or body.scale_state == "unknown":
             raise HTTPException(422, "a tape-verified value needs a length kind in a metric or authored world")
         if not math.isfinite(verified) or (verified <= 0 and body.kind != "elevation_difference"):
             raise HTTPException(422, "verified_value must be a finite positive number")

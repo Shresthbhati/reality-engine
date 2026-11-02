@@ -14,11 +14,11 @@ from __future__ import annotations
 import math
 from typing import Any, Sequence
 
-KINDS = ("distance", "height", "area", "elevation_difference")
+KINDS = ("distance", "height", "area", "elevation_difference", "angle")
 #: kinds whose value is an area (unit squared); the rest are lengths.
 AREA_KINDS = frozenset({"area"})
-POINTS_MIN = {"distance": 2, "height": 2, "elevation_difference": 2, "area": 3}
-POINTS_MAX = {"distance": 2, "height": 2, "elevation_difference": 2, "area": 64}
+POINTS_MIN = {"distance": 2, "height": 2, "elevation_difference": 2, "area": 3, "angle": 3}
+POINTS_MAX = {"distance": 2, "height": 2, "elevation_difference": 2, "area": 64, "angle": 3}
 VERTICAL_AXIS = 1
 #: magnitudes beyond this are never a real coordinate; rejects overflow-in-waiting values.
 COORD_LIMIT = 1e9
@@ -56,6 +56,19 @@ def validate_points(kind: str, points: Any) -> list[Point]:
                 raise MeasureError(f"point {i} has a non-finite or out-of-range coordinate")
         clean.append((float(p[0]), float(p[1]), float(p[2])))
     return clean
+
+
+def angle(a: Point, b: Point, c: Point) -> float:
+    """Angle in degrees at vertex b formed by rays ba and bc (0.0 to 180.0 deg)."""
+    v1 = (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+    v2 = (c[0] - b[0], c[1] - b[1], c[2] - b[2])
+    l1 = math.sqrt(v1[0] * v1[0] + v1[1] * v1[1] + v1[2] * v1[2])
+    l2 = math.sqrt(v2[0] * v2[0] + v2[1] * v2[1] + v2[2] * v2[2])
+    if l1 == 0.0 or l2 == 0.0:
+        raise MeasureError("degenerate angle: coincident vertex and ray endpoint")
+    dot = (v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]) / (l1 * l2)
+    clamped = max(-1.0, min(1.0, dot))
+    return math.degrees(math.acos(clamped))
 
 
 def distance(a: Point, b: Point) -> float:
@@ -130,6 +143,8 @@ def compute(kind: str, points: Any) -> float:
         return abs(vertical_delta(pts[0], pts[1]))
     if kind == "elevation_difference":
         return vertical_delta(pts[0], pts[1])
+    if kind == "angle":
+        return angle(pts[0], pts[1], pts[2])
     return polygon_area(pts)
 
 
@@ -146,6 +161,8 @@ def unit_for(kind: str, scale_state: str) -> str:
     """'m' / 'm2' only for metric or authored worlds; an unknown/relative scale is NEVER labelled metres."""
     if scale_state not in SCALE_STATES:
         raise MeasureError(f"scale_state must be one of {', '.join(SCALE_STATES)}")
+    if kind == "angle":
+        return "deg"
     base = "m" if scale_state in ("metric", "authored") else "model_units"
     return base + ("2" if kind in AREA_KINDS else "")
 

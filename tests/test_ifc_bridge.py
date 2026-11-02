@@ -148,3 +148,46 @@ class TestIfcExport:
         for gid in ids1.values():
             assert len(gid) == 22
             ifcopenshell.guid.expand(gid)  # raises if malformed
+
+    def test_exports_room_as_ifc_space(self, tmp_path):
+        world = WorldIR()
+        room_geom = Geometry(
+            id="geom-room",
+            type=GeometryType.BOX,
+            bounds_min=Vector3(0.0, 0.0, 0.0),
+            bounds_max=Vector3(5.0, 4.0, 2.8),
+        )
+        world.geometries["geom-room"] = room_geom
+        world.entities["room-1"] = Entity(
+            id="room-1", name="Master Bedroom", type=EntityType.ROOM,
+            geometry_ids=["geom-room"],
+        )
+        out = tmp_path / "room.ifc"
+        report = export_world_to_ifc(world, out)
+        assert "room-1" in report["written"]
+        f = ifcopenshell.open(str(out))
+        spaces = f.by_type("IfcSpace")
+        assert len(spaces) == 1
+        assert spaces[0].Name == "room-1 Master Bedroom"
+        assert len(f.by_type("IfcExtrudedAreaSolid")) == 1
+
+    def test_exports_mesh_geometry(self, tmp_path):
+        world = WorldIR()
+        mesh_geom = Geometry(
+            id="geom-table",
+            type=GeometryType.MESH,
+            bounds_min=Vector3(1.0, 1.0, 0.0),
+            bounds_max=Vector3(2.5, 1.8, 0.75),
+        )
+        world.geometries["geom-table"] = mesh_geom
+        world.entities["table-1"] = Entity(
+            id="table-1", name="Dining Table", type=EntityType.STRUCTURE,
+            geometry_ids=["geom-table"],
+        )
+        out = tmp_path / "mesh.ifc"
+        report = export_world_to_ifc(world, out)
+        assert "table-1" in report["written"]
+        f = ifcopenshell.open(str(out))
+        proxies = f.by_type("IfcBuildingElementProxy")
+        assert len(proxies) == 1
+        assert "Dining Table" in (proxies[0].Name or "")

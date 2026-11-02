@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildEntityEvidence, buildDimensionEvidence, buildColourEvidence, isEvidenceTarget,
+  buildEntityEvidence, buildDimensionEvidence, buildColourEvidence, buildHypothesesEvidence,
+  hasConflictingHypotheses, isEvidenceTarget,
   fmtUncertainty, fmtConfidence, NOT_RECORDED,
 } from "../../src/lib/viewport/inspector-evidence-model.ts";
 
@@ -53,4 +54,32 @@ test("evidence targets", () => {
   for (const t of ["wall", "door", "window", "floor", "ceiling"]) assert.equal(isEvidenceTarget(t), true);
   assert.equal(isEvidenceTarget("furniture"), false);
   assert.equal(isEvidenceTarget(undefined), false);
+});
+
+test("hypotheses: preserves candidate alternatives and surfaces conflicts", () => {
+  const ev = buildEntityEvidence({
+    id: "obj-1",
+    type: "structure",
+    custom_properties: {
+      hypotheses: {
+        type: {
+          active_id: "h1",
+          has_conflict: true,
+          candidates: [
+            { id: "h1", source_engine: "sam2", value: "chair", confidence: 0.85, evidence_count: 3, is_active: true },
+            { id: "h2", source_engine: "mask_rcnn", value: "table", confidence: 0.72, evidence_count: 2, is_active: false },
+          ],
+        },
+      },
+    },
+  });
+
+  assert.equal(ev.hypotheses.length, 1);
+  assert.equal(ev.hypotheses[0].domain, "type");
+  assert.equal(ev.hypotheses[0].hasConflict, true);
+  assert.equal(ev.hypotheses[0].activeId, "h1");
+  assert.equal(ev.hypotheses[0].candidates.length, 2);
+  assert.equal(ev.hypotheses[0].candidates[0].value, "chair");
+  assert.equal(ev.hypotheses[0].candidates[0].isActive, true);
+  assert.equal(hasConflictingHypotheses(ev), true);
 });

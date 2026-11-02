@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import type { Entity, Geometry, WorldIR } from "@/types/worldir";
 import {
-  buildEntityEvidence, fmtConfidence, NOT_RECORDED,
+  buildEntityEvidence, fmtConfidence, NOT_RECORDED, type DomainHypothesesEvidence,
 } from "@/lib/viewport/inspector-evidence-model";
 import { buildIdentityEvidence } from "@/lib/viewport/identity-model";
 import { buildConfidenceFacets, readConfidence, roomMembers, TONE_TOKEN } from "@/lib/inspector/confidence-model";
@@ -1193,6 +1193,7 @@ function EntityDetails({
         {tab === "evidence" && (
           <div className="space-y-5">
             <IdentityLine cp={entity.custom_properties} />
+            <HypothesesSection hypotheses={evidence.hypotheses} />
             <section aria-label="Supporting photographs">
               <SectionTitle>Supporting photographs</SectionTitle>
               {provenanceLoading ? (
@@ -1637,6 +1638,54 @@ function EntityDetails({
 }
 
 /** One line on why this is one item: how many photos agreed, or that the engine could not tell it from another. */
+function HypothesesSection({ hypotheses }: { hypotheses: DomainHypothesesEvidence[] }) {
+  if (!hypotheses || hypotheses.length === 0) return null;
+  return (
+    <section aria-label="Alternative interpretations" className="space-y-2">
+      <SectionTitle>Alternative Interpretations</SectionTitle>
+      <div className="space-y-2.5">
+        {hypotheses.map((dom) => (
+          <div
+            key={dom.domain}
+            className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2.5 text-[12px]"
+          >
+            <div className="flex items-center justify-between pb-1.5 border-b border-[var(--border-subtle)]">
+              <span className="font-medium capitalize text-[var(--text-primary)]">{dom.domain} candidates</span>
+              {dom.hasConflict && (
+                <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500">
+                  <AlertTriangle className="h-3 w-3" />
+                  Conflict
+                </span>
+              )}
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {dom.candidates.map((cand) => (
+                <li
+                  key={cand.id}
+                  className={`flex items-center justify-between rounded px-2 py-1 ${
+                    cand.isActive
+                      ? "bg-[var(--accent-subtle)] font-medium text-[var(--text-primary)]"
+                      : "text-[var(--text-secondary)]"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {cand.isActive && <Check className="h-3.5 w-3.5 text-[var(--accent)]" />}
+                    <span className="truncate">{cand.value}</span>
+                    <span className="text-[10px] text-[var(--text-tertiary)] font-mono">({cand.sourceEngine})</span>
+                  </div>
+                  <span className="font-mono text-[11px] text-[var(--text-tertiary)]">
+                    {Math.round(cand.confidence * 100)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function IdentityLine({ cp }: { cp: Record<string, unknown> | undefined }) {
   const id = buildIdentityEvidence(cp);
   if (id.state === "not_recorded") return null;

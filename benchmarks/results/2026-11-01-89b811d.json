@@ -1,0 +1,106 @@
+{
+  "schema": "reality-engine.benchmark/1",
+  "git_sha": "89b811d",
+  "date": "2026-11-01",
+  "platform": {
+    "python": "3.14.7",
+    "os": "Windows-11-10.0.26300-SP0"
+  },
+  "runs": {
+    "south_building": {
+      "dataset": "south_building",
+      "images_available": 32,
+      "images_used": 32,
+      "max_images_flag": null,
+      "pipeline": "apps.api POST /api/reconstructions -> job worker (apps/api/jobs.py) -> real COLMAP/MiDaS",
+      "status": "ok",
+      "world_state": "PARTIALLY_COMPLETE",
+      "model_level": "semantic/topological refinement",
+      "pipeline_attempts": [
+        {
+          "level": 2,
+          "name": "sparse photogrammetric reconstruction",
+          "outcome": "succeeded",
+          "elapsed_s": 80.978,
+          "detail": "23/32 cameras registered"
+        },
+        {
+          "level": 3,
+          "name": "dense reconstruction",
+          "outcome": "skipped",
+          "detail": "registration: 23 of 32 photographs registered (72%; needs >= 80%)"
+        }
+      ],
+      "pipeline_report_stage_keys": [
+        "compile",
+        "depth",
+        "device_depth_scale",
+        "mesh",
+        "perception",
+        "plane_sweep",
+        "reconstruction",
+        "scale",
+        "timings_s"
+      ],
+      "metrics": {
+        "registration_ratio": {
+          "value": 0.7188,
+          "registered": 23,
+          "total": 32
+        },
+        "mean_reprojection_error_px": {
+          "value": null,
+          "reason": "the COLMAP backend computes it (reconstruction/backend/colmap_backend.py) but the API status/report routes do not surface it, so it is not observable through the product path"
+        },
+        "entity_counts_by_type": {
+          "value": {
+            "corridor": 1,
+            "wall": 13,
+            "ceiling": 3
+          },
+          "total": 17
+        },
+        "duplicate_entity_count": {
+          "value": null,
+          "reason": "no ground-truth entity identities for this dataset and the pipeline reports no duplicate-candidate list for this run; duplicate rate is not measurable"
+        },
+        "runtime_s": {
+          "value": {
+            "total_wall": 182.589,
+            "upload": 3.004,
+            "pipeline_job": 176.102
+          },
+          "per_stage_s": {
+            "sparse_reconstruction": 80.16,
+            "scale_and_frame": 0.23,
+            "depth_and_layout": 0.01,
+            "compile": 0.58,
+            "perception_and_mesh": 0.0,
+            "dense_mvs": 0.0,
+            "dense_structure": 0.0,
+            "plane_sweep_and_fusion": 0.0,
+            "detail": 0.0,
+            "colmap_substages": {
+              "extract_match": 70.38,
+              "mapper": 9.67,
+              "total": 80.1
+            }
+          },
+          "per_stage_note": null
+        },
+        "peak_ram_mib": {
+          "value": 3265.9
+        },
+        "peak_vram_mib": {
+          "value": 3244.0,
+          "baseline_before_run_mib": 3174.0,
+          "note": "whole-device nvidia-smi memory.used peak (includes other GPU processes)"
+        }
+      }
+    },
+    "living_room": {
+      "status": "dataset not found",
+      "reason": "dataset not found: C:\\Users\\shres\\OneDrive\\Desktop\\codes\\reality-engine\\.claude\\worktrees\\reality-engine-docs-merge-da520d\\datasets\\living_room"
+    }
+  }
+}

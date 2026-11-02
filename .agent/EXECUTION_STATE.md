@@ -25,7 +25,7 @@ PARTIAL; M3 EXPERIMENTAL (ESTIMATED, asserted=False, confidence <= 0.4, not wire
 PARTIAL; F2 IMPLEMENTED (synthetic RGB-D); F3 PARTIAL (dense_cpu API fields exist, no real job run with dense_cpu=true);
 F4 PARTIAL/BLOCKED (fusion half only, no learned layout model); F6/F7/F8 IMPLEMENTED (synthetic worlds).
 New registry rows: SITE-1 Site composer FOUNDATION (manual placement only, being built by other agents, unverified);
-LAND-1 landmark/curved-structure reconstruction from one image MISSING (not promised).
+LAND-1 landmark/curved-structure reconstruction from one image PARTIAL (FOUNDATION landed: perception/architecture/landmark.py + tests/test_landmark.py, 27 passed; synthetic only, real-data verification blocked).
 
 Partial work: Site composer (tables Site/SitePlacement, /api/sites, frontend /sites) in progress elsewhere; re-verify the
 files exist and tests run before moving it past FOUNDATION.
@@ -44,6 +44,30 @@ stretched; photo list shows view ids not thumbnails.
 Exact next priority: (1) get the full python suite to a clean recorded result; (2) browser-verify V1/V2 and the guided
 flow; (3) exercise scale-suggestion accept end to end; (4) ask the user for the O1/O2 detector decision and for real-room
 photos + tape measurements, then enable the real-room dimension gate.
+
+## 2026-11-01 (this session) -- LAND-01 foundation: landmark/curved-structure from single image
+
+Worktree: `claude/reality-engine-docs-merge-da520d` (commit 89b811d). Python 3.14.2, pytest 9.1.1.
+
+Landed:
+- `perception/architecture/landmark.py` — single-image curved-structure reconstruction:
+  - `fit_dome` / `fit_arch` / `fit_tower` over REAL 3D points with measured rms/max residuals
+  - `fit_landmark` auto-detects kind (tower→dome→arch priority) or honors kind_hint; returns kind=="none" with refusal_reason when unsupported (never guesses)
+  - relative-vs-measured scale: single-image scale is RELATIVE unless a trusted baseline_m is supplied
+  - `LandmarkErrorReport` + `report_error()` for the acceptance-criterion ground-truth measurement
+  - Deterministic (pure float math, no RNG, no clocks); honest FitRefused on insufficient/degenerate support
+- `tests/test_landmark.py` — 27 tests, all passed: dome/arch/tower fitting, refusals (flat patch, insufficient points, shallow arc, full sphere), determinism, relative vs measured scale, error report
+
+Registry updates (same change):
+- `.agent/TASKS.yaml`: LAND-01 MISSING → PARTIAL (27-test verification named)
+- `docs/implementation/PENDING_IMPLEMENTATION.md`: LAND-1 MISSING → PARTIAL
+- `docs/implementation/CAPABILITIES.md`: landmark architecture moved from "NOT yet" to FOUNDATION/synthetic
+- `.agent/EXECUTION_STATE.md`: LAND-1 MISSING → PARTIAL
+
+Verification: `tests/test_landmark.py` 27 passed / 0 failed; regression sweep 177 passed / 0 failed across landmark, parametric, canonical interior, camera calibration, association, backend selection, clock, and API site/artifact tests.
+
+BLOCKED (cannot advance to VERIFIED without user input):
+- Real landmark photo set + surveyed ground-truth dimensions required for the acceptance-criterion error report. All verification is synthetic.
 
 ## 2026-10-02/03 -- Final engineering/verification sprint (worktree reality-engine-final-sprint-2b170d)
 

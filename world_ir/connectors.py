@@ -116,10 +116,10 @@ def make_connector(kind: str, from_point_xz, to_point_xz, width_m: float | None 
                              _strip(a, b, sidewalk_width_m, off), sidewalk_width_m))
         st = add(f"{cid}/street", EntityType.STREET, name or "Street (generated)", _strip(a, b, width), width,
                  street_name=name or None)
-        st.relationships = [Relationship(RelationshipKind.CONTAINS, p.id, MAX_CONFIDENCE, Provenance.GENERATED)
+        st.relationships = [Relationship(RelationshipKind.CONTAINS, p.id, confidence=MAX_CONFIDENCE, provenance=Provenance.GENERATED)
                             for p in parts]
         for p in parts:
-            p.relationships.append(Relationship(RelationshipKind.PART_OF, st.id, MAX_CONFIDENCE, Provenance.GENERATED))
+            p.relationships.append(Relationship(RelationshipKind.PART_OF, st.id, confidence=MAX_CONFIDENCE, provenance=Provenance.GENERATED))
         # the STREET entity is a named container of the strips, not extra surface: no geometry of its own
         st.geometry_ids = []
         out.geometries.pop()

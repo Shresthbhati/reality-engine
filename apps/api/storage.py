@@ -56,3 +56,52 @@ def resolve_artifact(uri: str) -> Path | None:
     if not path.exists():
         return None
     return path
+
+
+# --------------------------------------------------------------------------- reference-checked blob GC
+
+
+def blob_digest(uri: str | None) -> str | None:
+    """The sha256 digest of a ``sha256://`` URI, or None for anything else (including malformed digests)."""
+    if not uri or not uri.startswith("sha256://"):
+        return None
+    digest = uri.removeprefix("sha256://")
+    return digest if digest and all(c in "0123456789abcdef" for c in digest) else None
+
+
+async def referenced_blob_digests(db) -> set[str]:
+    """Every ``sha256://`` digest any row still references (uploads, evidence, version points/cameras, thumbnails).
+    A blob is garbage only if it is absent here -- add a column to this list whenever a new table stores a blob URI."""
+    from sqlalchemy import select
+
+    from apps.api.models import Evidence, Upload, World, WorldVersion
+
+    found: set[str] = set()
+    for col in (Upload.artifact_uri, Evidence.artifact_uri, WorldVersion.points_artifact_uri,
+                WorldVersion.cameras_artifact_uri, World.thumbnail_uri):
+        for (uri,) in (await db.execute(select(col).where(col.like("sha256://%")).distinct())).all():
+            d = blob_digest(uri)
+            if d:
+                found.add(d)
+    return found
+
+
+async def gc_blobs(db, candidates: set[str]) -> dict:
+    """Delete the candidate blobs that no row references any more; blobs that are still referenced survive.
+
+    Call it AFTER the rows that held the candidates were deleted and the transaction committed (so a rollback never
+    costs a file). Only candidates are ever considered -- an unreferenced blob nobody asked about (an export, an
+    in-flight upload) is left alone. Returns ``{"removed": [...], "kept_shared": [...]}``.
+    ponytail: an upload of identical bytes racing between the reference check and the unlink could lose its blob;
+    close with a per-digest lock if concurrent purge + re-upload of the same photo ever matters."""
+    still_used = await referenced_blob_digests(db)
+    removed, kept = [], []
+    for digest in sorted(candidates):
+        if digest in still_used:
+            kept.append(digest)
+            continue
+        path = resolve_artifact(f"sha256://{digest}")
+        if path is not None:
+            path.unlink(missing_ok=True)
+        removed.append(digest)
+    return {"removed": removed, "kept_shared": kept}

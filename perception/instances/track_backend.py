@@ -1,9 +1,10 @@
 """Concrete ITrackBackend implementation using epipolar + appearance
 multi-view identity (P7-01).
 
-This backend reuses the existing merge_hypotheses infrastructure
-(cameras + appearance gates) to associate regions across views into
-InstanceTracks -- the same real-world object seen from multiple frames.
+This backend associates regions across views into InstanceTracks -- the same
+real-world object seen from multiple frames -- with the gated Hungarian
+association (`association.resolve_hypotheses`; appearance only as a small score
+term inside the geometric gate). The legacy union-find resolver is not used.
 """
 
 from __future__ import annotations
@@ -14,11 +15,13 @@ from typing import Dict, List, Optional
 from perception.instances.interface import ITrackBackend, InstanceTrack
 from perception.segmentation.interface import SegmentationResult, SegmentedRegion
 from perception.instances.lifting import lift_region_to_3d, ObjectHypothesis3D
-from perception.instances.object_resolution import merge_hypotheses, MergedObjectCandidate
+from perception.instances.association import resolve_hypotheses
+from perception.instances.object_resolution import MergedObjectCandidate
 from perception.instances.appearance import compute_color_histogram, AppearanceDescriptor
 from perception.instances.epipolar import epipolar_consistent
 from reconstruction.calibration.camera import PinholeCamera
 from provenance import Uncertainty
+from world_ir.observations import DepthSource
 
 
 @dataclass
@@ -39,7 +42,7 @@ class MultiViewIdentityTrackBackend(ITrackBackend):
     merging, exposed as a tracking interface. It:
     - Lifts each region to 3D using metric depth + registered camera
     - Computes appearance descriptors for each region
-    - Uses merge_hypotheses with cameras+appearance gates
+    - Uses association.resolve_hypotheses (Hungarian; positional + appearance terms)
     - Converts MergedObjectCandidate -> InstanceTrack
     """
 
@@ -109,15 +112,18 @@ class MultiViewIdentityTrackBackend(ITrackBackend):
         if not hypotheses:
             return []
 
-        # Multi-view merge with epipolar + appearance gates
-        candidates = merge_hypotheses(
-            hypotheses,
-            self.distance_threshold_m,
-            cameras=cameras,
-            appearance=appearance_by_region,
-            appearance_similarity_min=self.appearance_similarity_min,
-            epipolar_tolerance_px=self.epipolar_tolerance_px,
-        )
+        # Hungarian association. Uncertainty (not a fixed metre threshold) gates the distance, so
+        # `distance_threshold_m` / `epipolar_tolerance_px` are accepted for compatibility but no longer used; no epipolar
+        # check is run (decisions record geom_verified=None). Appearance histograms become embeddings.
+        embeddings = {
+            f"{h.evidence_id}|{h.region_id}": appearance_by_region[h.region_id].histogram
+            for h in hypotheses if h.region_id in appearance_by_region
+        }
+        cam_pos = {
+            ev: (cam.extrinsics.position.x, cam.extrinsics.position.y, cam.extrinsics.position.z)
+            for ev, cam in cameras.items()
+        }
+        candidates, _ = resolve_hypotheses(hypotheses, DepthSource.METRIC, cam_pos, appearance=embeddings)
 
         # Convert to InstanceTrack
         tracks = []

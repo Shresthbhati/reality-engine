@@ -90,7 +90,7 @@ Next.js 16 + Three.js viewer with:
 - Physical LiDAR device verification — the RGB-D path is verified on synthetic data only
 - Accuracy on a REAL room: every dimension/fidelity check runs on synthetic fixtures; no real photos or tape measurements exist yet
 - Learned door/window/furniture detector (blocked on a user decision; openings come from geometry only)
-- Curved or ornamented landmark architecture (domes, arches, towers, facade ornament) from a single image: planar rooms only
+- Curved or ornamented landmark architecture from a single image: FOUNDATION landed (`perception/architecture/landmark.py`: dome/arch/tower fits from single-image 3D points with measured residuals, honest refusals, relative-vs-measured scale); REAL-DATA VERIFICATION BLOCKED — no real landmark photo set or surveyed ground-truth dimensions exist yet; all verification synthetic (`tests/test_landmark.py`, 27 passed)
 - Automatic cross-source or geo-registration: the Site composer (FOUNDATION) is manual placement of worlds on a metric grid
 - Learned single-image room-layout model — the fusion/projection path exists, no model weights are shipped (choice open)
 - Time sync / VIO / cross-source registration — specs written

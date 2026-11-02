@@ -25,6 +25,7 @@ from apps.api.models import (
     World,
     WorldVersion,
     new_id,
+    utcnow,
 )
 from world_ir.diff import diff_worlds
 from world_ir.schema_v1 import EntityType, Relationship, RelationshipKind, Provenance
@@ -39,6 +40,8 @@ def _worldstore_root() -> Path:
 
 
 worlds = APIRouter(prefix="/api/worlds", tags=["worlds"])
+
+WORLD_STATUSES = ("active", "archived", "trashed")
 
 
 class WorldIn(BaseModel):
@@ -81,30 +84,39 @@ async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db)) -> dic
     return {"id": w.id, "name": w.name}
 
 
+def _world_out(w: World, session_count: int | None = None) -> dict:
+    out = {
+        "id": w.id,
+        "name": w.name,
+        "description": w.description,
+        "status": w.status,
+        "latitude": w.latitude,
+        "longitude": w.longitude,
+        "current_version_id": w.current_version_id,
+        "archived_at": w.archived_at.isoformat() if w.archived_at else None,
+        "deleted_at": w.deleted_at.isoformat() if w.deleted_at else None,
+        "thumbnail_uri": w.thumbnail_uri,
+        "scale_state": w.scale_state,
+        "created_at": w.created_at.isoformat() if w.created_at else None,
+    }
+    if session_count is not None:
+        out["session_count"] = session_count
+    return out
+
+
 @worlds.get("")
-async def list_worlds(db: AsyncSession = Depends(get_db)) -> dict:
-    res = await db.execute(select(World).order_by(World.updated_at.desc()).limit(200))
+async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)) -> dict:
+    """``?status=active|archived|trashed`` (default active): archived and trashed worlds are hidden from the default list."""
+    if status not in WORLD_STATUSES:
+        raise HTTPException(422, f"status must be one of {', '.join(WORLD_STATUSES)}")
+    res = await db.execute(
+        select(World).where(World.status == status).order_by(World.updated_at.desc()).limit(200))
     ses_counts = dict(
         (await db.execute(
             select(Session.world_id, func.count()).group_by(Session.world_id)
         )).all()
     )
-    return {
-        "items": [
-            {
-                "id": w.id,
-                "name": w.name,
-                "description": w.description,
-                "status": w.status,
-                "latitude": w.latitude,
-                "longitude": w.longitude,
-                "current_version_id": w.current_version_id,
-                "session_count": ses_counts.get(w.id, 0),
-                "created_at": w.created_at.isoformat() if w.created_at else None,
-            }
-            for w in res.scalars().all()
-        ]
-    }
+    return {"items": [_world_out(w, ses_counts.get(w.id, 0)) for w in res.scalars().all()]}
 
 
 @worlds.get("/{world_id}")
@@ -115,17 +127,142 @@ async def get_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     session_count = (await db.execute(
         select(func.count()).select_from(Session).where(Session.world_id == world_id)
     )).scalar_one()
-    return {
-        "id": w.id,
-        "name": w.name,
-        "description": w.description,
-        "status": w.status,
-        "latitude": w.latitude,
-        "longitude": w.longitude,
-        "current_version_id": w.current_version_id,
-        "session_count": session_count,
-        "created_at": w.created_at.isoformat() if w.created_at else None,
-    }
+    return _world_out(w, session_count)
+
+
+class WorldPatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+async def _world_or_404(db: AsyncSession, world_id: str) -> World:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    return w
+
+
+@worlds.patch("/{world_id}")
+async def patch_world(world_id: str, body: WorldPatch, db: AsyncSession = Depends(get_db)) -> dict:
+    """Rename / edit the description. Identity (id, versions, sessions) is untouched. A trashed world must be restored first."""
+    from apps.api.validation import require_json_size, require_name
+    from apps.api.world_lifecycle import record_event
+
+    w = await _world_or_404(db, world_id)
+    if w.status == "trashed":
+        raise HTTPException(409, "World is in the trash; restore it before editing")
+    changed = {}
+    if body.name is not None:
+        new = require_name(body.name, "world name")
+        if new != w.name:
+            changed["name"] = {"from": w.name, "to": new}
+            w.name = new
+    if "description" in body.model_fields_set:
+        new_d = require_json_size(body.description, "description")
+        if new_d != w.description:
+            changed["description"] = True
+            w.description = new_d
+    if not changed:
+        raise HTTPException(422, "nothing to change: send a different name and/or description")
+    record_event(db, "updated", w, f"World '{w.name}' edited ({', '.join(changed)})", {"changed": changed})
+    await db.commit()
+    return _world_out(w)
+
+
+@worlds.post("/{world_id}/duplicate", status_code=201)
+async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Copy-on-write duplicate: a new world carrying the source's metadata and its CURRENT version's content. The
+    WorldIR JSON is re-saved under the new world id (version rows are keyed by world), but geometry, points and
+    cameras are content-addressed blobs that both worlds reference -- no file copies. Sessions/evidence are not
+    copied (the duplicate shares the reconstruction, not the capture history)."""
+    from worldstore.store import WorldStoreError
+
+    from apps.api import worldstore_service
+    from apps.api.world_lifecycle import record_event
+
+    src = await _world_or_404(db, world_id)
+    if src.status == "trashed":
+        raise HTTPException(409, "World is in the trash; restore it before duplicating")
+    src_row = None
+    if src.current_version_id:
+        src_row = await worldstore_service.get_current_version_row(db, world_id)
+        if src_row is None:
+            raise HTTPException(409, f"Current version '{src.current_version_id}' has no usable version record")
+    new = World(id=new_id("wld"), name=f"{src.name} (copy)"[:200], description=src.description, status="active",
+                owner_id=src.owner_id, team_id=src.team_id, latitude=src.latitude, longitude=src.longitude,
+                coverage=src.coverage, thumbnail_uri=src.thumbnail_uri, scale_state=src.scale_state)
+    db.add(new)
+    record_event(db, "duplicated", new, f"World '{src.name}' duplicated as '{new.name}'", {"source_world_id": src.id})
+    try:
+        if src_row is not None:
+            wir = worldstore_service.get_store().load_version(src_row.id)
+            row = await worldstore_service.commit_version(
+                db, world_id=new.id, world=wir, parent=None,
+                source_session_ids=list(src_row.source_session_ids or []), report=src_row.report)
+            row.label = f"Duplicate of {src.name} @ {src_row.id}"[:200]
+            row.points_artifact_uri, row.cameras_artifact_uri = src_row.points_artifact_uri, src_row.cameras_artifact_uri
+        await db.commit()
+    except (WorldStoreError, worldstore_service.ConcurrentModificationError,
+            worldstore_service.AdoptionVerificationError) as exc:
+        await db.rollback()
+        raise HTTPException(409, f"Could not duplicate: {exc}") from exc
+    except Exception:
+        await db.rollback()
+        raise
+    await db.refresh(new)
+    return {**_world_out(new), "duplicated_from": src.id}
+
+
+@worlds.post("/{world_id}/archive")
+async def archive_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    from apps.api.world_lifecycle import record_event
+
+    w = await _world_or_404(db, world_id)
+    if w.status == "trashed":
+        raise HTTPException(409, "World is in the trash; restore it first")
+    if w.status == "archived":
+        return _world_out(w)                       # idempotent: already archived, no new event
+    w.status, w.archived_at = "archived", utcnow()
+    record_event(db, "archived", w, f"World '{w.name}' archived")
+    await db.commit()
+    return _world_out(w)
+
+
+@worlds.post("/{world_id}/restore")
+async def restore_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    from apps.api.world_lifecycle import record_event
+
+    w = await _world_or_404(db, world_id)
+    if w.status == "active":
+        raise HTTPException(409, "World is already active")
+    was = w.status
+    w.status, w.archived_at, w.deleted_at = "active", None, None
+    record_event(db, "restored", w, f"World '{w.name}' restored from {was}", {"from": was})
+    await db.commit()
+    return _world_out(w)
+
+
+@worlds.delete("/{world_id}")
+async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession = Depends(get_db)):
+    """Soft delete (default): cancel the world's queued/running jobs FIRST, then status=trashed, deleted_at=now; the
+    trash sweep purges it after 30 days. ``?permanent=true`` purges now: rows, WorldStore versions and only the blobs
+    nothing else references (409 while a job is still stopping)."""
+    from apps.api.world_lifecycle import JobsStillRunning, cancel_world_jobs, purge_world, record_event
+
+    w = await _world_or_404(db, world_id)
+    if permanent:
+        try:
+            return {"permanently_deleted": True, **await purge_world(db, w)}
+        except JobsStillRunning as exc:
+            raise HTTPException(409, str(exc)) from exc
+    if w.status == "trashed":
+        raise HTTPException(409, "World is already in the trash; use ?permanent=true to delete it for good")
+    jobs = await cancel_world_jobs(db, w.id)
+    w.status, w.deleted_at = "trashed", utcnow()
+    record_event(db, "trashed", w, f"World '{w.name}' moved to trash",
+                 {"jobs_cancelled": jobs["cancelled"], "jobs_cancel_requested": jobs["cancel_requested"]})
+    await db.commit()
+    return {**_world_out(w), "jobs_cancelled": jobs["cancelled"], "jobs_cancel_requested": jobs["cancel_requested"]}
 
 
 @worlds.get("/{world_id}/versions")

@@ -1,0 +1,205 @@
+{
+  "branches": {},
+  "causal_relations": [],
+  "components": {},
+  "coordinate_frame": "world",
+  "created_at": 1.0,
+  "entities": {
+    "door-1": {
+      "component_ids": [],
+      "confidence": 0.8,
+      "custom_properties": {
+        "evidence_state": "OBSERVED"
+      },
+      "geometry_ids": [],
+      "id": "door-1",
+      "material_ids": [],
+      "name": "door-1",
+      "observations": [],
+      "provenance": "OBSERVED",
+      "relationships": [
+        {
+          "confidence": 0.8,
+          "kind": "part_of",
+          "metadata": {},
+          "provenance": "OBSERVED",
+          "target_id": "wall-1"
+        },
+        {
+          "confidence": 0.8,
+          "kind": "connects",
+          "metadata": {},
+          "provenance": "OBSERVED",
+          "target_id": "room-b"
+        }
+      ],
+      "semantic_labels": [],
+      "statement_state": null,
+      "surface_ids": [],
+      "temporal_events": [],
+      "transform": null,
+      "type": "door",
+      "uncertainty": {
+        "confidence": 0.0
+      }
+    },
+    "room-a": {
+      "component_ids": [],
+      "confidence": 0.8,
+      "custom_properties": {
+        "evidence_state": "OBSERVED"
+      },
+      "geometry_ids": [],
+      "id": "room-a",
+      "material_ids": [],
+      "name": "room-a",
+      "observations": [],
+      "provenance": "OBSERVED",
+      "relationships": [
+        {
+          "confidence": 0.8,
+          "kind": "part_of",
+          "metadata": {},
+          "provenance": "OBSERVED",
+          "target_id": "storey-0"
+        }
+      ],
+      "semantic_labels": [],
+      "statement_state": null,
+      "surface_ids": [],
+      "temporal_events": [],
+      "transform": null,
+      "type": "room",
+      "uncertainty": {
+        "confidence": 0.0
+      }
+    },
+    "room-b": {
+      "component_ids": [],
+      "confidence": 0.8,
+      "custom_properties": {
+        "evidence_state": "INFERRED"
+      },
+      "geometry_ids": [],
+      "id": "room-b",
+      "material_ids": [],
+      "name": "room-b",
+      "observations": [],
+      "provenance": "OBSERVED",
+      "relationships": [
+        {
+          "confidence": 0.8,
+          "kind": "part_of",
+          "metadata": {},
+          "provenance": "OBSERVED",
+          "target_id": "storey-0"
+        }
+      ],
+      "semantic_labels": [],
+      "statement_state": null,
+      "surface_ids": [],
+      "temporal_events": [],
+      "transform": null,
+      "type": "room",
+      "uncertainty": {
+        "confidence": 0.0
+      }
+    },
+    "storey-0": {
+      "component_ids": [],
+      "confidence": 0.8,
+      "custom_properties": {},
+      "geometry_ids": [],
+      "id": "storey-0",
+      "material_ids": [],
+      "name": "storey-0",
+      "observations": [],
+      "provenance": "OBSERVED",
+      "relationships": [
+        {
+          "confidence": 0.8,
+          "kind": "contains",
+          "metadata": {},
+          "provenance": "OBSERVED",
+          "target_id": "room-a"
+        },
+        {
+          "confidence": 0.8,
+          "kind": "contains",
+          "metadata": {},
+          "provenance": "OBSERVED",
+          "target_id": "room-b"
+        }
+      ],
+      "semantic_labels": [],
+      "statement_state": null,
+      "surface_ids": [],
+      "temporal_events": [],
+      "transform": null,
+      "type": "storey",
+      "uncertainty": {
+        "confidence": 0.0
+      }
+    },
+    "wall-1": {
+      "component_ids": [],
+      "confidence": 0.8,
+      "custom_properties": {
+        "evidence_state": "OBSERVED"
+      },
+      "geometry_ids": [],
+      "id": "wall-1",
+      "material_ids": [],
+      "name": "wall-1",
+      "observations": [],
+      "provenance": "OBSERVED",
+      "relationships": [
+        {
+          "confidence": 0.8,
+          "kind": "part_of",
+          "metadata": {},
+          "provenance": "OBSERVED",
+          "target_id": "room-a"
+        }
+      ],
+      "semantic_labels": [],
+      "statement_state": null,
+      "surface_ids": [],
+      "temporal_events": [],
+      "transform": null,
+      "type": "wall",
+      "uncertainty": {
+        "confidence": 0.0
+      }
+    }
+  },
+  "environment": {},
+  "geometries": {},
+  "global_confidence": 0.5,
+  "global_provenance": "UNKNOWN",
+  "global_uncertainty": {
+    "confidence": 0.0
+  },
+  "id": "world-fixture-v1",
+  "main_branch_id": "branch-main-world-fixture-v1",
+  "materials": {},
+  "metadata": {},
+  "modified_at": 1.0,
+  "name": "pre-hierarchy fixture",
+  "observations": {},
+  "physics": {},
+  "scenarios": {},
+  "schema_version": 1,
+  "surfaces": {},
+  "temporal_events": {},
+  "temporal_state": {
+    "current_time": 0.0,
+    "date_time": null,
+    "season": "unknown",
+    "simulation_states": [],
+    "time_of_day": 0.5,
+    "weather": "clear"
+  },
+  "transforms": {},
+  "version": 1
+}

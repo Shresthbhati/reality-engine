@@ -13,6 +13,7 @@ import hashlib
 import logging
 import os
 import tempfile
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1317,6 +1318,19 @@ async def _emit_completion(db: AsyncSession, job: Job) -> None:
             )
 
 
+TRASH_SWEEP_INTERVAL_SECONDS = 24 * 3600
+
+
+async def sweep_trash(db: AsyncSession) -> int:
+    """Permanently delete worlds that have sat in the trash for 30+ days (see apps/api/world_lifecycle.py)."""
+    from apps.api.world_lifecycle import purge_expired_trash
+
+    purged = await purge_expired_trash(db)
+    if purged:
+        log.info("trash sweep purged %d world(s): %s", len(purged), [p["id"] for p in purged])
+    return len(purged)
+
+
 async def worker_loop(poll_seconds: float = 1.0) -> None:
     """Background worker. Started with the API process."""
     from apps.api.db import get_sessionmaker
@@ -1332,8 +1346,13 @@ async def worker_loop(poll_seconds: float = 1.0) -> None:
             await recover_orphaned_jobs(db)
     except Exception:
         log.exception("startup recovery failed")
+    next_trash_sweep = 0.0
     while True:
         try:
+            if time.monotonic() >= next_trash_sweep:
+                next_trash_sweep = time.monotonic() + TRASH_SWEEP_INTERVAL_SECONDS
+                async with maker() as db:
+                    await sweep_trash(db)
             async with maker() as db:
                 await reap_stale_jobs(db)
                 # Check for dead workers periodically

@@ -25,7 +25,7 @@ from .schema_v1 import (
     TemporalEvent, CausalRelation, Observation
 )
 from .coordinates import Frame, Transform
-from .v2_extensions import TemporalHistory, TopologyGraph
+from .v2_extensions import Hierarchy, TemporalHistory, TopologyGraph
 
 
 @dataclass
@@ -228,6 +228,10 @@ class WorldIR:
     # world without the key loads with an empty history -- never a fabricated one.
     temporal_history: TemporalHistory = field(default_factory=TemporalHistory)
 
+    # Contract hierarchy (blueprint 11 sec 1, task 5.1, additive): typed Building/Floor/Space/Surface/Opening links over
+    # the existing entities. Empty = not recorded; omitted from serialization so older worlds stay byte-identical.
+    hierarchy: Hierarchy = field(default_factory=Hierarchy)
+
     def __post_init__(self) -> None:
         if not self.main_branch_id:
             self.main_branch_id = f"branch-main-{self.id}"
@@ -242,6 +246,8 @@ class WorldIR:
         d = self._to_dict_v1()
         if self.temporal_history.events:
             d["temporal_history"] = self.temporal_history.to_dict()
+        if self.hierarchy:
+            d["hierarchy"] = self.hierarchy.to_dict()
         return d
 
     def _to_dict_v1(self) -> dict:
@@ -354,6 +360,7 @@ class WorldIR:
             environment=data.get("environment", {}),
             physics=data.get("physics", {}),
             temporal_history=TemporalHistory.from_dict(data.get("temporal_history", [])),
+            hierarchy=Hierarchy.from_dict(data.get("hierarchy")),
         )
 
     def to_json(self, indent: int = 2) -> str:
@@ -449,5 +456,7 @@ class WorldIR:
         for scenario_id, scenario in self.scenarios.items():
             if scenario.branch_id and scenario.branch_id not in self.branches:
                 issues.append(f"Scenario {scenario_id} references unknown branch {scenario.branch_id}")
+
+        issues.extend(f"Hierarchy {p}" for p in self.hierarchy.problems(self.entities))
 
         return issues

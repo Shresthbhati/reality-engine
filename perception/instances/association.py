@@ -36,6 +36,7 @@ from world_ir.observations import (
     AssociationState,
     DepthSource,
     Observation,
+    attach_ledger,
     sigma_for,
 )
 
@@ -92,6 +93,8 @@ class AssociationResult:
     entities: Tuple[EntityTrack, ...]
     decisions: Tuple[AssociationDecision, ...]
     assignment: Dict[str, str]  # observation_id -> entity_id
+    #: the ledger this run produced: one Observation per input, one AssociationDecision per observation
+    observations: Tuple[Observation, ...] = ()
 
 
 def _unit(v: Optional[Sequence[float]]) -> Optional[np.ndarray]:
@@ -248,7 +251,7 @@ def associate(
                     o.observation_id, AssociationState.DIFFERENT_ENTITY, new.entity_id, 0.0,
                     "no existing entity passed the label/distance/normal gates: new entity"))
 
-    return AssociationResult(tuple(entities), tuple(decisions), assignment)
+    return AssociationResult(tuple(entities), tuple(decisions), assignment, tuple(observations))
 
 
 def observation_from_hypothesis(
@@ -257,6 +260,9 @@ def observation_from_hypothesis(
 ) -> Observation:
     """Lift an `ObjectHypothesis3D` into the ledger. Its uncertainty comes from the depth source and the distance to the
     camera (a monocular-depth lift is therefore matched loosely, a metric one tightly)."""
+    # a hypothesis lifted from relative depth is relative whatever the caller claims (scale gate, blueprint 3.3)
+    if getattr(h, "depth_source", None) is DepthSource.RELATIVE:
+        depth_source = DepthSource.RELATIVE
     pos = (h.position.x, h.position.y, h.position.z)
     rng = float(np.linalg.norm(np.asarray(pos) - np.asarray(camera_position)))
     return Observation(
@@ -273,10 +279,14 @@ def resolve_hypotheses(
     camera_positions: Optional[Dict[str, Tuple[float, float, float]]] = None,
     model: str = "unknown@unknown",
     license: str = "unknown",
+    appearance: Optional[Dict[str, Sequence[float]]] = None,
+    world=None,
 ):
-    """Drop-in for `merge_hypotheses`: same `MergedObjectCandidate` output, but identity comes from `associate()` (no
-    transitive chaining, AMBIGUOUS kept apart). Returns (candidates, AssociationResult) so callers can report the
-    decisions. `camera_positions` (evidence_id -> xyz) sets each observation's range, hence its uncertainty."""
+    """The object-resolution path (Hungarian, no transitive chaining, AMBIGUOUS kept apart): same `MergedObjectCandidate`
+    output as the legacy `merge_hypotheses`. Returns (candidates, AssociationResult) so callers can report the
+    decisions. `camera_positions` (evidence_id -> xyz) sets each observation's range, hence its uncertainty.
+    `appearance` maps "evidence_id|region_id" -> embedding. When `world` is given, the observations and EVERY association
+    decision are stored in its ledger (`world_ir.observations.attach_ledger`), so they are saved with the version."""
     from perception.instances.object_resolution import MergedObjectCandidate
 
     camera_positions = camera_positions or {}
@@ -287,7 +297,9 @@ def resolve_hypotheses(
         o = dataclasses.replace(o, observation_id=f"{h.evidence_id}|{h.region_id}")  # region ids are not unique across images
         by_obs[o.observation_id] = h
         observations.append(o)
-    result = associate(observations)
+    result = associate(observations, appearance)
+    if world is not None:
+        attach_ledger(world, result.observations, result.decisions)
 
     groups: Dict[str, list] = {}
     for oid, eid in result.assignment.items():

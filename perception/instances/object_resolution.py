@@ -13,6 +13,13 @@ missing stage, sitting between per-frame lifting and WorldIR promotion
 produces a fused *candidate*, not a WorldIR entity, matching how
 `evidence/promote_planes.py` sits downstream of pure plane detection).
 
+DEPRECATED (blueprint 3.2): the union-find merge below is the LEGACY resolver. The
+only supported resolver is `perception.instances.association` (gated Hungarian,
+no transitive chaining, every decision recorded in the ledger) -- use
+`resolve_objects()` here or `association.resolve_hypotheses()`. `merge_hypotheses`
+is kept only so old callers/tests can opt in to the old behaviour explicitly; it
+is never the default anywhere and warns on every call.
+
 Merge criterion (deterministic, geometry + semantics, "same class is
 necessary but never sufficient" -- the same rule `world_ir/entity_reid.py`
 already applies for cross-session matching):
@@ -33,6 +40,7 @@ explicit about only using label + 3D proximity.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -115,6 +123,14 @@ def _distance(a: Vec3, b: Vec3) -> float:
     return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2) ** 0.5
 
 
+def resolve_objects(hypotheses: List[ObjectHypothesis3D], **kwargs):
+    """The default object-resolution entry point: gated Hungarian association (see `association.resolve_hypotheses`,
+    same keyword arguments). Returns (candidates, AssociationResult)."""
+    from perception.instances.association import resolve_hypotheses
+
+    return resolve_hypotheses(hypotheses, **kwargs)
+
+
 def merge_hypotheses(
     hypotheses: List[ObjectHypothesis3D],
     distance_threshold_m: float = DEFAULT_MERGE_DISTANCE_M,
@@ -123,7 +139,9 @@ def merge_hypotheses(
     appearance_similarity_min: float = DEFAULT_APPEARANCE_SIMILARITY_MIN,
     epipolar_tolerance_px: float = DEFAULT_EPIPOLAR_TOLERANCE_PX,
 ) -> List[MergedObjectCandidate]:
-    """Cluster same-label, spatially-close hypotheses into candidates.
+    """DEPRECATED legacy union-find resolver (transitive chaining merges distinct neighbours); use `resolve_objects`.
+
+    Cluster same-label, spatially-close hypotheses into candidates.
 
     Same-label + 3D proximity is the base gate (as before) but is not
     sufficient identity on its own -- per
@@ -155,6 +173,11 @@ def merge_hypotheses(
     the same input list always produces the same output regardless of
     the caller's original ordering.
     """
+    warnings.warn(
+        "merge_hypotheses is the legacy union-find resolver and is deprecated: it chains A~B, B~C into one object. "
+        "Use perception.instances.object_resolution.resolve_objects (gated Hungarian association).",
+        DeprecationWarning, stacklevel=2,
+    )
     if distance_threshold_m < 0:
         raise ValueError(f"distance_threshold_m must be non-negative, got {distance_threshold_m}")
     if not hypotheses:

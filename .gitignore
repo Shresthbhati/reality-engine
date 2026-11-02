@@ -43,3 +43,9 @@ security_audit_report.json
 
 # stray COLMAP database written to the cwd by ad-hoc colmap runs
 /db.db
+
+# Claude mem database and SQLite files
+.claude/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

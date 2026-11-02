@@ -205,23 +205,24 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Dict[str, str]]:
         entity = world.entities[entity_id]
         ifc_class = _ENTITY_IFC_CLASS.get(
             entity.type, "IfcBuildingElementProxy")
-        # The semantic container classes (IfcBuilding/IfcSpace) need
-        # their own spatial aggregation; elements with geometry are
-        # this bridge's scope.
-        if ifc_class in {"IfcBuilding", "IfcSpace"}:
+        # The semantic container class IfcBuilding represents the overall root.
+        # IfcSpace (rooms) is aggregated into IfcBuildingStorey via aggregate.assign_object.
+        if ifc_class == "IfcBuilding":
             skipped[entity_id] = (
-                f"semantic container class {ifc_class} (spatial "
-                "aggregation not built in this bridge pass)")
+                f"semantic container class {ifc_class} (building root "
+                "already represents spatial container)")
             continue
         geometry = None
         for gid in entity.geometry_ids:
             g = world.geometries.get(gid)
-            if g is not None and g.type in {GeometryType.BOX,
-                                            GeometryType.PLANE}:
+            if g is not None and g.bounds_min is not None and g.bounds_max is not None:
                 geometry = g
                 break
         if geometry is None:
-            skipped[entity_id] = "no BOX/PLANE geometry attached"
+            if not entity.geometry_ids:
+                skipped[entity_id] = "no geometry attached"
+            else:
+                skipped[entity_id] = "geometry has no real bounds_min/bounds_max"
             continue
         extent = _bounds_extent(geometry)
         if extent is None:
@@ -236,8 +237,12 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Dict[str, str]]:
         # WorldIR entity id, so re-exporting the same world re-mints
         # the same IFC GlobalIds (traceable across exports).
         element.GlobalId = _deterministic_guid(f"{world.id}/entity/{entity.id}")
-        ifc_api.run("spatial.assign_container", model,
-                    products=[element], relating_structure=storey)
+        if ifc_class == "IfcSpace":
+            ifc_api.run("aggregate.assign_object", model,
+                        products=[element], relating_object=storey)
+        else:
+            ifc_api.run("spatial.assign_container", model,
+                        products=[element], relating_structure=storey)
 
         dx, dy, dz = extent
         # The solid sits at the bounds' minimum corner: profile drawn

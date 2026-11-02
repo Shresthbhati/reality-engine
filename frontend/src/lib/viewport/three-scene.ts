@@ -442,8 +442,12 @@ export class WorldSceneController {
       line.renderOrder = 990;
       group.add(line);
       const c = new THREE.Vector3();
-      pts.forEach((p) => c.add(p));
-      c.multiplyScalar(1 / pts.length);
+      if (it.kind === "angle" && pts.length >= 2) {
+        c.copy(pts[1]); // position at angle vertex
+      } else {
+        pts.forEach((p) => c.add(p));
+        c.multiplyScalar(1 / pts.length);
+      }
       group.add(this.makeLabelSprite(it.label, c, selected));
     }
   }
@@ -544,10 +548,10 @@ export class WorldSceneController {
       group.add(line);
     }
     const triples = pts.map((p) => [p.x, p.y, p.z] as Vec3);
-    const need = this.measureTool === "area" ? 3 : 2;
-    const complete = this.measureTool === "area" ? this.measureDone : pts.length >= 2;
+    const need = this.measureTool === "area" || this.measureTool === "angle" ? 3 : 2;
+    const complete = this.measureTool === "area" ? this.measureDone : pts.length >= (this.measureTool === "angle" ? 3 : 2);
     this.onMeasurePointsCallback?.(triples.length ? { tool: this.measureTool, points: triples, done: complete && triples.length >= need } : null);
-    if (this.measureTool !== "area" && pts.length >= 1) {
+    if (this.measureTool !== "area" && this.measureTool !== "angle" && pts.length >= 1) {
       // Legacy two-point result (bottom bar). distance 0 until the second point is placed.
       const a = pts[0], b = pts[1] ?? pts[0];
       this.onMeasureCallback?.({
@@ -2589,7 +2593,7 @@ export class WorldSceneController {
 
   private handleMeasurementPoint(pt: THREE.Vector3) {
     if (!this.measurementGroup) return;
-    if (this.measureDone || (this.measureTool !== "area" && this.measurePts.length >= 2)) {
+    if (this.measureDone || (this.measureTool !== "area" && this.measurePts.length >= (this.measureTool === "angle" ? 3 : 2))) {
       this.clearMeasurement();
     }
     this.measurePts.push(pt.clone());

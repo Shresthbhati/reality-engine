@@ -60,6 +60,7 @@ test("stored row units map without inventing metres", () => {
   assert.equal(unitLabelFromRow("model_units"), "model units");
   assert.equal(unitLabelFromRow("model_units2"), "model units²");
   assert.equal(unitLabelFromRow("m2"), "m²");
+  assert.equal(unitLabelFromRow("deg"), "°");
   assert.equal(formatValue(Number.NaN, "m"), "—");
   assert.equal(formatUncertainty(0.02, "m"), "Uncertainty: ± 0.020 m");
 });
@@ -70,6 +71,8 @@ test("preview math matches the server rules", () => {
   assert.equal(computePreview("elevation_difference", [[0, 5, 0], [9, 2, 9]]), -3);
   assert.ok(Math.abs((computePreview("area", [[0, 0, 0], [4, 0, 0], [4, 0, 3], [0, 0, 3]]) ?? 0) - 12) < 1e-9);
   assert.equal(computePreview("area", [[0, 0, 0], [1, 0, 0]]), null);
+  assert.equal(computePreview("angle", [[1, 0, 0], [0, 0, 0], [0, 1, 0]]), 90);
+  assert.equal(computePreview("angle", [[1, 0, 0], [0, 0, 0]]), null);
 });
 
 test("unavailable tools are disabled with the honest title; available ones are not", () => {

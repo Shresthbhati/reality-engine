@@ -212,3 +212,18 @@ def test_invalid_input_rejected(client, world_id):
 def test_point_cap_is_413(client, world_id):
     pts = [[math.cos(i / 10), 0, math.sin(i / 10)] for i in range(measure.POINTS_MAX["area"] + 1)]
     assert _post(client, world_id, kind="area", points=pts).status_code == 413
+
+def test_angle_orthogonal_and_acute_and_degenerate():
+    # 90 degrees at origin: ray1 along X, vertex at origin, ray2 along Y
+    assert measure.compute("angle", [[1, 0, 0], [0, 0, 0], [0, 1, 0]]) == pytest.approx(90.0)
+    # 180 degrees: straight line
+    assert measure.compute("angle", [[-1, 0, 0], [0, 0, 0], [1, 0, 0]]) == pytest.approx(180.0)
+    # 45 degrees:
+    assert measure.compute("angle", [[1, 0, 0], [0, 0, 0], [1, 1, 0]]) == pytest.approx(45.0)
+    # unit for angle is deg regardless of scale
+    assert measure.unit_for("angle", "metric") == "deg"
+    assert measure.unit_for("angle", "unknown") == "deg"
+    assert measure.unit_for("angle", "authored") == "deg"
+    # degenerate: coincident points
+    with pytest.raises(MeasureError, match="degenerate"):
+        measure.compute("angle", [[0, 0, 0], [0, 0, 0], [1, 0, 0]])

@@ -13,6 +13,10 @@ import {
   Map as MapIcon,
   Globe,
   Gamepad2,
+  FileText,
+  FileCode,
+  Layers,
+  Grid,
 } from "lucide-react";
 import {
   exportWorld,
@@ -25,13 +29,20 @@ import { isApiError } from "@/lib/api/client";
 
 const FORMATS: { value: ExportFormat; label: string; ext: string; Icon: ComponentType<{ className?: string }> }[] = [
   { value: "gltf", label: "glTF", ext: "gltf", Icon: Box },
+  { value: "glb", label: "GLB", ext: "glb", Icon: Box },
   { value: "usda", label: "USD", ext: "usda", Icon: Package },
+  { value: "obj", label: "OBJ", ext: "obj", Icon: FileCode },
+  { value: "ply", label: "PLY", ext: "ply", Icon: Layers },
+  { value: "stl", label: "STL", ext: "stl", Icon: Grid },
   { value: "ifc", label: "IFC", ext: "ifc", Icon: Building2 },
   { value: "blender", label: "Blender", ext: "py", Icon: Code2 },
   { value: "cityjson", label: "CityJSON", ext: "json", Icon: FileJson },
   { value: "citygml", label: "CityGML", ext: "gml", Icon: Globe },
   { value: "geojson", label: "GeoJSON", ext: "geojson", Icon: MapIcon },
   { value: "godot", label: "Godot", ext: "json", Icon: Gamepad2 },
+  { value: "floorplan_svg", label: "SVG Plan", ext: "svg", Icon: FileText },
+  { value: "floorplan_dxf", label: "DXF Plan", ext: "dxf", Icon: FileCode },
+  { value: "room_report_pdf", label: "Room PDF", ext: "pdf", Icon: FileText },
 ];
 
 /** Real export via sdk.reality.export() (apps/api/routes_export.py) -- no
@@ -92,20 +103,20 @@ export default function ExportPanel({
 
   return (
     <div
-      className="absolute top-4 right-4 z-20 w-72 rounded-lg p-4 flex flex-col gap-3 shadow-xl"
+      className="absolute top-4 right-4 z-20 w-80 max-h-[85vh] overflow-y-auto rounded-lg p-4 flex flex-col gap-3 shadow-xl"
       style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
     >
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold flex items-center gap-1.5" style={{ color: "var(--text-primary)" }}>
           <Download className="w-3.5 h-3.5" />
-          Export
+          Export Formats
         </h3>
         <button type="button" onClick={onClose} aria-label="Close">
           <X className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {FORMATS.map(({ value, label, ext, Icon }) => {
           const s = status[value];
           const reason = loadError ?? (s && !s.available ? s.reason : null);
@@ -118,7 +129,7 @@ export default function ExportPanel({
               disabled={disabled}
               title={reason ?? `Export ${label}`}
               aria-label={reason ? `${label} unavailable: ${reason}` : `Export ${label}`}
-              className="flex flex-col items-center justify-center gap-1 h-16 rounded-md text-[11px] disabled:opacity-35 transition-colors"
+              className="flex flex-col items-center justify-center gap-1 h-16 rounded-md text-[11px] disabled:opacity-35 transition-colors cursor-pointer"
               style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
             >
               {running === value ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}

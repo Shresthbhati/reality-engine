@@ -208,7 +208,7 @@ export class WorldSceneController {
   private selectedEntityId: string | null = null;
   private isolatedSpaceId: string | null = null;
   private activeLevelIndex: number | null = null;
-  private previewCorrection: { entityId: string; type: string; confidence?: number } | null = null;
+  private previewCorrection: { entityId: string; type?: string; confidence?: number; originalPosition?: THREE.Vector3 } | null = null;
   private robustExtent = 1.0;
   private animationFrameId: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -2126,24 +2126,41 @@ export class WorldSceneController {
 
   public setCorrectionPreview(
     entityId: string,
-    previewType: string,
-    previewConfidence?: number | null
+    previewType?: string,
+    previewConfidence?: number | null,
+    previewTransform?: { position?: { x: number; y: number; z: number } }
   ) {
-    this.previewCorrection = {
-      entityId,
-      type: previewType,
-      // null means "no confidence recorded" -- preserved as absence rather
-      // than collapsed to 0.5, so nothing downstream invents a value.
-      confidence: typeof previewConfidence === "number" ? previewConfidence : undefined,
-    };
     const mesh = this.entityMeshes.get(entityId);
     if (!mesh) return;
 
-    const mat = mesh.material as THREE.MeshLambertMaterial;
-    const newColor = TYPE_COLORS[previewType.toLowerCase()] || TYPE_COLORS.default;
-    mat.color.setHex(newColor);
-    mat.emissive.setHex(newColor);
-    mat.emissiveIntensity = 0.5;
+    if (!this.previewCorrection || this.previewCorrection.entityId !== entityId) {
+      this.previewCorrection = {
+        entityId,
+        type: previewType,
+        confidence: typeof previewConfidence === "number" ? previewConfidence : undefined,
+        originalPosition: mesh.position.clone(),
+      };
+    } else {
+      if (previewType !== undefined) this.previewCorrection.type = previewType;
+      if (previewConfidence !== undefined) {
+        this.previewCorrection.confidence = typeof previewConfidence === "number" ? previewConfidence : undefined;
+      }
+    }
+
+    if (previewType) {
+      const mat = mesh.material as THREE.MeshLambertMaterial;
+      const newColor = TYPE_COLORS[previewType.toLowerCase()] || TYPE_COLORS.default;
+      mat.color.setHex(newColor);
+      mat.emissive.setHex(newColor);
+      mat.emissiveIntensity = 0.5;
+    }
+
+    if (previewTransform?.position) {
+      mesh.position.set(previewTransform.position.x, previewTransform.position.y, previewTransform.position.z);
+      if (this.layers.selectionOutline && this.selectedEntityId === entityId) {
+        this.layers.selectionOutline.position.copy(mesh.position);
+      }
+    }
   }
 
   public clearCorrectionPreview() {
@@ -2155,6 +2172,12 @@ export class WorldSceneController {
         mat.color.setHex(mesh.userData.baseColor);
         mat.emissive.setHex(isSel ? 0x00e5ff : 0x000000);
         mat.emissiveIntensity = isSel ? 0.6 : 0;
+        if (this.previewCorrection.originalPosition) {
+          mesh.position.copy(this.previewCorrection.originalPosition);
+          if (this.layers.selectionOutline && this.selectedEntityId === this.previewCorrection.entityId) {
+            this.layers.selectionOutline.position.copy(mesh.position);
+          }
+        }
       }
       this.previewCorrection = null;
     }

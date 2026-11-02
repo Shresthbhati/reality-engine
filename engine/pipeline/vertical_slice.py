@@ -294,12 +294,15 @@ def vertical_slice(
     import time as _time
 
     clock: Dict[str, float] = {}      # seconds per stage, written to the report so slowness is never invisible
+    stage_timings = clock
     _mark = [_time.perf_counter()]
 
     def lap(name: str) -> None:
         now = _time.perf_counter()
         clock[name] = round(now - _mark[0], 2)
         _mark[0] = now
+
+    _lap = lap
 
     if len(evidence_items) < 2:
         raise VerticalSliceError(
@@ -424,6 +427,7 @@ def vertical_slice(
         scale_note = scale_note + f" | {unit_facts['basis']}"
 
     lap("scale_and_frame")
+    _lap("frame")
     # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
     depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options, scale_state)
 
@@ -431,6 +435,7 @@ def vertical_slice(
     layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
 
     lap("depth_and_layout")
+    _lap("depth")
     # ---- stage 3: compile to validated WorldIR ----
     compile_options = CompileOptions(
         seed=options.seed, up=options.up, artifact_store=options.artifact_store,
@@ -442,6 +447,7 @@ def vertical_slice(
         raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
 
     lap("compile")
+    _lap("compile")
     # ---- stage 3.5: semantic perception -> object entities (optional) ----
     perception_facts = _perception_stage(
         result, world, evidence_items, metric_depth_maps, options
@@ -450,6 +456,7 @@ def vertical_slice(
     _lap("perception")
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
     mesh_facts = _mesh_stage(result, world, options, scale_state)
+    _lap("mesh")
 
     lap("perception_and_mesh")
     # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
@@ -471,6 +478,7 @@ def vertical_slice(
             shutil.rmtree(dense_tmp, ignore_errors=True)       # the fused cloud was ingested into the artifact store
 
     lap("dense_mvs")
+    _lap("dense")
     # ---- stage 3.655: structure from the DENSE cloud (adopted only when it finds strictly more) ----
     structure_facts = None
     if (dense_mvs_facts or {}).get("status") == "ran" and (perception_facts or {}).get("status") in (None, "skipped", "disabled") \

@@ -81,3 +81,36 @@ def test_no_measured_room_is_an_error_not_an_empty_file():
         export_to_floorplan_svg_with_report(WorldIR())
     with pytest.raises(ValueError, match="measured footprint"):
         report_to_pdf(build_room_report(WorldIR()))
+
+
+def test_multi_room_connected_layout_export():
+    from world_ir import Entity, EntityType
+
+    world = _world(metric=True)
+    room1 = world.entities['room-plane-000']
+    props2 = copy.deepcopy(room1.custom_properties)
+    props2['footprint_polygon_m'] = [[x + 4.0, y] for x, y in props2['footprint_polygon_m']]
+    props2['connected_room_ids'] = ['room-plane-000']
+    room2 = Entity(
+        id='room-plane-001',
+        type=EntityType.ROOM,
+        name='Bedroom 2',
+        custom_properties=props2,
+        provenance=room1.provenance,
+    )
+    world.entities['room-plane-001'] = room2
+
+    report = build_room_report(world)
+    assert len(report['rooms']) == 2
+
+    svg, svg_rep = export_to_floorplan_svg_with_report(world)
+    assert len(svg_rep.entities_exported) >= 2
+    assert '<polygon' in svg
+
+    dxf, dxf_rep = export_to_floorplan_dxf_with_report(world)
+    assert len(dxf_rep.entities_exported) >= 2
+    assert 'SECTION' in dxf and 'EOF' in dxf
+
+    pdf, pdf_rep = export_to_room_report_pdf_with_report(world)
+    assert pdf.startswith(b'%PDF-1.4')
+    assert pdf_rep.format == 'room_report_pdf'

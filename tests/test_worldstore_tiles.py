@@ -58,6 +58,21 @@ class TestManifestContract:
         assert handle.manifest.world_id == "w-abc"
         assert handle.manifest.coordinate_frame == world.coordinate_frame.value
 
+    def test_manifest_carries_world_version_and_occupancy_metadata(self, tmp_path):
+        store = WorldStore(tmp_path)
+        world = _abc_world()
+        world.version = 3
+        save_version_tiled(store, world, parent=None, version_id="v-1", tile_size=10.0)
+        manifest = open_version(store, "v-1").manifest
+
+        assert manifest.world_version == 3
+        summary = manifest.occupancy_summary()
+        assert summary["tile_count"] == 3  # tiles A, B, C
+        assert summary["total_entity_count"] == 3  # a, b, c
+        assert summary["unlocalized_entity_count"] == 0
+        assert summary["max_tile_occupancy"] == 1
+        assert summary["min_tile_occupancy"] == 1
+
     def test_opening_a_non_tiled_version_raises_explicit_error(self, tmp_path):
         store = WorldStore(tmp_path)
         world = _abc_world()

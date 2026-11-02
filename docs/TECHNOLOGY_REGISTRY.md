@@ -183,3 +183,41 @@ Usage discipline: original camera/video bytes are never re-encoded
 (only hash/validate/derive-metadata); JPEG re-encode is used exclusively
 for DERIVED frame previews extracted from videos, which are labelled
 derived in `sensor_metadata` via their `source_video_asset_id` linkage.
+
+
+---
+
+## Formal Technology Portfolio & State Machine (Updated 2026-11-02)
+
+### Lifecycle States
+```
+DISCOVERED → UNDER_EVALUATION → APPROVED → INTEGRATED → BENCHMARKED
+                                    ↓
+                               REJECTED (with reason)
+```
+
+### Capability Portfolio Status
+
+| Capability | Technology | License | State | Hardware / Performance | Notes |
+|---|---|---|---|---|---|
+| **Feature Matching** | LightGlue + DISK | Apache-2.0 | **BENCHMARKED** | CUDA fp16 / 0.74s per pair | 2,636 verified inliers, 95% inlier ratio. Integrated in `reconstruction/matching/lightglue.py`. |
+| **Feature Matching (Classical)** | SIFT (OpenCV) | Apache-2.0 | **BENCHMARKED** | CPU / 0.45s per pair | ~40 inliers, 55% inlier ratio. Baseline fallback in `reconstruction/matching/sift.py`. |
+| **Monocular Depth** | Depth Anything V2 Small | Apache-2.0 | **BENCHMARKED** | CUDA fp16 / ~0.08s per image | ViT-S architecture (~25M params). Integrated in `perception/depth/depth_anything_backend.py`. |
+| **Monocular Depth (Fallback)** | MiDaS (Intel ISL) | MIT | **BENCHMARKED** | CUDA / CPU | DPT-Hybrid & small variants. Integrated in `perception/depth/midAS_backend.py`. |
+| **Cross-View Association** | Gated Hungarian Resolver | Custom/Proprietary | **BENCHMARKED** | CPU / 16 tests pass | 100% precision vs 10% for naive union-find. Integrated in `perception/instances/association.py`. |
+| **Geometric Refinement** | Robust Constrained EM Fit | Custom/Proprietary | **BENCHMARKED** | CPU / 8 tests pass | Non-Manhattan skew support + bootstrap uncertainty. `reconstruction/refine/room_refine.py`. |
+| **Camera Reconstruction** | COLMAP | BSD-3 | **INTEGRATED** | CPU / Subprocess | Sparse & dense reconstruction backend. Integrated in `reconstruction/backend/colmap_backend.py`. |
+| **Instance Segmentation** | SAM (Meta) | Apache-2.0 | **INTEGRATED** | CUDA / ViT-B | Integrated in `perception/segmentation/sam_backend.py`. |
+| **Mesh Processing** | Trimesh | MIT | **APPROVED** | CPU | Multi-format geometry and topological repair. |
+| **Geometric Operations** | Shapely | BSD-3 | **APPROVED** | CPU | Polygon intersections, offsets, and spatial checks. |
+| **Spatial Graphs** | NetworkX | BSD-3 | **APPROVED** | CPU | Adjacency graphs and topological networks. |
+| **2D Floorplan Export** | Floorplan Engine | Custom/Proprietary | **BENCHMARKED** | CPU / 6 tests pass | Generates SVG, DXF, and PDF with dimension states. `exporters/floorplan.py`. |
+| **Video Ingestion** | Video Frames Engine | Custom/Proprietary | **BENCHMARKED** | CPU / 7 tests pass | Keyframe extraction and deduplication. `reconstruction/video_frames.py`. |
+
+### Rejected Technologies List
+
+| Candidate | License | Reason for Rejection |
+|---|---|---|
+| **PyMeshLab** | GPL v3 | Viral copyleft license incompatible with commercial distribution in proprietary environments. Replaced by `trimesh` (MIT). |
+| **Ultralytics YOLO** | AGPL v3 | Network-triggered viral license incompatible with proprietary SaaS/commercial deployment. Replaced by open-vocabulary / Apache-2.0 alternatives. |
+| **MASt3R** | CC BY-NC 4.0 | Non-commercial restriction on model weights. Refused unless explicit research flag `REALITY_ALLOW_NC_MODELS=1` is provided. |

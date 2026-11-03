@@ -11,7 +11,16 @@ from reconstruction.backend.interface import (
     ReconstructedPoint,
 )
 from reconstruction.meshing.mesh import MeshData
-from reconstruction.meshing.repair import clean_and_repair_mesh, mesh_to_trimesh, trimesh_to_mesh
+from reconstruction.meshing.repair import (
+    clean_and_repair_mesh,
+    mesh_to_trimesh,
+    trimesh_to_mesh,
+    check_mesh_manifold,
+    remove_non_manifold_geometry,
+    fill_mesh_holes_neumann,
+    simplify_planar_facets,
+    repair_watertight_and_decimate,
+)
 from reconstruction.completeness import measure_reconstruction_completeness
 
 
@@ -101,3 +110,127 @@ def test_measure_reconstruction_completeness():
     assert metrics.scale_state == "metric"
     assert metrics.scale_reliability == "tape_verified"
     assert 0.0 < metrics.completeness_score <= 1.0
+
+
+def test_mesh_repair_sharp_corner_preservation_and_reduction():
+    # Construct a dense subdivided box
+    import trimesh
+    box = trimesh.creation.box(extents=(2.0, 2.0, 2.0))
+    # Subdivide 2 times: 192 faces
+    dense_box = box.subdivide().subdivide()
+    input_mesh = trimesh_to_mesh(dense_box)
+
+    assert len(input_mesh.faces) == 192
+
+    repaired, stats = repair_watertight_and_decimate(
+        input_mesh,
+        fill_holes=True,
+        sharp_edge_threshold_deg=30.0,
+        planar_threshold_deg=5.0,
+        target_planar_reduction=0.85,
+    )
+
+    # Verify watertight manifold with 0 non-manifold edges
+    assert stats["watertight"] is True
+    assert stats["non_manifold_edges"] == 0
+    assert stats["is_manifold"] is True
+
+    # Verify planar face reduction exceeds 85% requirement
+    assert stats["planar_reduction_ratio"] >= 0.85
+    assert stats["target_met"] is True
+    assert len(repaired.faces) <= 24  # Reduced from 192 down to minimal facet triangles
+
+    # Verify sharp 90-degree corner vertices are strictly preserved
+    repaired_verts = np.array(repaired.vertices)
+    expected_corners = [
+        [-1.0, -1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, 1.0, 1.0],
+        [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0],
+    ]
+    for corner in expected_corners:
+        dists = np.linalg.norm(repaired_verts - np.array(corner), axis=1)
+        assert np.min(dists) < 1e-5, f"Corner {corner} was lost during decimation"
+
+
+def test_mesh_repair_non_manifold_edge_resolution():
+    # Construct a non-manifold mesh: two triangles sharing an edge plus a third flap triangle
+    verts = (
+        (0.0, 0.0, 0.0),  # 0
+        (1.0, 0.0, 0.0),  # 1
+        (0.0, 1.0, 0.0),  # 2
+        (1.0, 1.0, 0.0),  # 3
+        (0.5, 0.0, 1.0),  # 4 (flap)
+    )
+    # Edge (0, 1) is shared by face (0, 1, 2), (1, 0, 3), and flap (0, 1, 4)
+    faces = (
+        (0, 1, 2),
+        (1, 0, 3),
+        (0, 1, 4),  # 3rd face incident on edge (0, 1) -> non-manifold
+    )
+    mesh = MeshData(vertices=verts, faces=faces)
+
+    report_before = check_mesh_manifold(mesh)
+    assert report_before.is_manifold is False
+    assert report_before.non_manifold_edges == 1
+
+    clean, stats = remove_non_manifold_geometry(mesh)
+    report_after = check_mesh_manifold(clean)
+
+    assert report_after.non_manifold_edges == 0
+    assert report_after.is_manifold is True
+    assert stats["non_manifold_edges_resolved"] == 1
+    assert len(clean.faces) == 2
+
+
+def test_mesh_repair_neumann_hole_filling():
+    # Open cube: 10 triangles (5 faces), missing top face (boundary loop of 4 vertices)
+    verts = (
+        (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0),  # 0..3 bottom
+        (0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (1.0, 1.0, 1.0), (0.0, 1.0, 1.0),  # 4..7 top
+    )
+    faces = (
+        # bottom
+        (0, 1, 2), (0, 2, 3),
+        # front
+        (0, 5, 1), (0, 4, 5),
+        # back
+        (3, 2, 6), (3, 6, 7),
+        # left
+        (0, 3, 7), (0, 7, 4),
+        # right
+        (1, 5, 6), (1, 6, 2),
+        # missing top (4, 5, 6, 7)
+    )
+    open_mesh = MeshData(vertices=verts, faces=faces)
+
+    report_before = check_mesh_manifold(open_mesh)
+    assert report_before.is_watertight is False
+    assert report_before.boundary_edges == 4
+    assert report_before.boundary_loops == 1
+
+    closed_mesh, holes_filled = fill_mesh_holes_neumann(open_mesh)
+    assert holes_filled == 1
+
+    report_after = check_mesh_manifold(closed_mesh)
+    assert report_after.is_watertight is True
+    assert report_after.boundary_edges == 0
+    assert report_after.non_manifold_edges == 0
+
+
+def test_mesh_repair_degenerate_triangle_culling():
+    verts = (
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.5, 0.0, 0.0),  # collinear with 0 and 1
+    )
+    faces = (
+        (0, 1, 2),
+        (0, 3, 1),  # collinear triangle (0 area)
+        (0, 0, 1),  # identical vertices
+    )
+    mesh = MeshData(vertices=verts, faces=faces)
+    clean, stats = remove_non_manifold_geometry(mesh)
+
+    assert stats["degenerate_faces_removed"] == 2
+    assert len(clean.faces) == 1
+    assert clean.faces[0] == (0, 1, 2)

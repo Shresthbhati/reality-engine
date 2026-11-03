@@ -134,6 +134,8 @@ def _resolve_material(
 ) -> Optional[int]:
     """Resolve or create a glTF PBR material for an entity (Task 9.1)."""
     mat_id = getattr(entity, "material_id", None)
+    if not mat_id and getattr(entity, "material_ids", None):
+        mat_id = entity.material_ids[0]
     if not mat_id and hasattr(entity, "custom_properties") and isinstance(entity.custom_properties, dict):
         mat_id = entity.custom_properties.get("material_id") or entity.custom_properties.get("material")
 

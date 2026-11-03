@@ -64,6 +64,7 @@ for router in (health, sessions, uploads, quality, evidence, reconstructions, wo
     app.include_router(router)
 
 
+@app.get('/health', tags=['health'])
 @app.get('/healthz', tags=['health'])
 async def healthz_check() -> dict:
     from apps.api.models import utcnow

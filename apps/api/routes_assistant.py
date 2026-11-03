@@ -28,6 +28,7 @@ from apps.api.routes_procedural import (
     _find_spec, _generate_and_commit,
 )
 from assistant import tools
+from assistant.copilot_engine import RealityCopilotEngine
 from procedural import spec_store
 from world_ir.diff import diff_worlds
 
@@ -239,3 +240,21 @@ async def confirm(world_id: str, body: ConfirmIn, db: AsyncSession = Depends(get
     await db.commit()
     return {"plan_id": plan.id, "status": "confirmed", "version_id": result["version_id"],
             "entity_ids_added": result["entity_ids_added"], "preview": plan.preview}
+
+
+class AskIn(BaseModel):
+    query: Any
+
+
+@assistant.post("/ask")
+async def ask_copilot(world_id: str, body: AskIn, db: AsyncSession = Depends(get_db)) -> dict:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    current = await worldstore_service.get_current_worldir(db, world_id)
+    if current is None:
+        raise HTTPException(422, "world has no committed version to query")
+    scale_state = await _scale_state(db, world_id)
+    engine = RealityCopilotEngine(world=current, scale_state=scale_state)
+    response = engine.ask(body.query)
+    return response.to_dict()

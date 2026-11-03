@@ -143,11 +143,95 @@ federation_candidates:  # NOT bound yet — obligations apply when bound
 
 models:
 
-  - model: MiDaS DPT_Hybrid
-    license: Apache-2.0 (code+weights per upstream)
-    acquisition: torch.hub download at first use (network — never in CI)
-    checksum: not pinned yet (model registry strengthening is P0-40/§40)
+  - model: midas_dpt_hybrid
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 1200.0
+    status: active
+    acquisition: torch.hub download at first use
+    checksum: unpinned
     verify: record sha256 in the model registry when acquisition lands
+
+  - model: midas_small
+    license: MIT
+    commercial_ok: true
+    measured_vram_mb: 350.0
+    status: active
+    acquisition: torch.hub download at first use
+    checksum: unpinned
+    verify: record sha256 in the model registry
+
+  - model: maskrcnn_resnet50_fpn
+    license: BSD-3-Clause
+    commercial_ok: true
+    measured_vram_mb: 900.0
+    status: active
+    acquisition: torchvision download at first use
+    checksum: bf2d0c1e
+    verify: torchvision checksum match
+
+  - model: sam_vit_h
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 2500.0
+    status: active
+    acquisition: direct checkpoint download
+    checksum: a7bf3b02f3ebf1267abb613ffec9f445bc47bc52968b1ddf35e446fa6613f92a
+    verify: sha256 match
+
+  - model: sam_vit_b
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 950.0
+    status: active
+    acquisition: direct checkpoint download
+    checksum: 01ec64d29a2fca3fce371c1464b3a06070fbf0231936c5b964344407b8b4088a
+    verify: sha256 match
+
+  - model: lightglue_aliked
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 450.0
+    status: candidate
+    acquisition: torch.hub download cvg/LightGlue
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: dedode
+    license: MIT
+    commercial_ok: true
+    measured_vram_mb: 600.0
+    status: candidate
+    acquisition: torch.hub download Parskatt/DeDoDe
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: xfeat
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 350.0
+    status: candidate
+    acquisition: github clone verlab/accelerated_features
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: metric3d_v2
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 1800.0
+    status: candidate
+    acquisition: torch.hub download YvanYin/Metric3D
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: depth_anything_v2
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 1100.0
+    status: candidate
+    acquisition: torch.hub download Depth-Anything/Depth-Anything-V2
+    checksum: unpinned
+    verify: record sha256 in model registry
 
 # Rule: before ANY new source/model is vendored or bundled, add its row
 # here with the verified license text path. An empty row is a bug.

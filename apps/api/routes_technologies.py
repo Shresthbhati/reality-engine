@@ -67,8 +67,11 @@ def list_technologies(
                 "description": s.descriptor.description,
                 "reality_engine_role": s.descriptor.reality_engine_role,
                 "available": s.available,
+                "classification": s.classification.value,
+                "verification_status": s.verification_status.value,
                 "binary_found": s.binary_found,
                 "module_found": s.module_found,
+                "internal_module": s.internal_module,
                 "notes": s.notes,
                 "target_metrics": list(s.descriptor.target_metrics),
             }
@@ -105,8 +108,11 @@ def get_technology(
         "python_modules": list(desc.python_modules),
         "discovery": {
             "available": status.available,
+            "classification": status.classification.value,
+            "verification_status": status.verification_status.value,
             "binary_found": status.binary_found,
             "module_found": status.module_found,
+            "internal_module": status.internal_module,
             "notes": status.notes,
             "has_adapter": status.has_adapter,
         },

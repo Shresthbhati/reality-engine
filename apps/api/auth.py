@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 
 log = logging.getLogger("reality.api.auth")
 
-OPEN_PATHS = frozenset({"/api/health"})
+OPEN_PATHS = frozenset({"/api/health", "/healthz"})
 # "testclient" is Starlette's TestClient peer name; it is not a routable address, so real clients can't spoof it.
 _LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 _warned = False

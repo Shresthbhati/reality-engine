@@ -20,6 +20,7 @@ from apps.api.db import get_db
 from apps.api.auth import AuthContext, Role, enforce_project_isolation, get_auth_context
 from apps.api.models import (
     ActivityEvent,
+    CaptureRequest,
     Evidence,
     Location,
     Session,
@@ -330,6 +331,125 @@ async def attach_session(
     s.world_id = w.id
     await db.commit()
     return {"session_id": s.id, "world_id": w.id}
+
+
+class CaptureRequestStatusUpdate(BaseModel):
+    status: str  # "open" | "satisfied" | "dismissed"
+
+
+@worlds.get("/{world_id}/capture-requests")
+async def list_capture_requests(
+    world_id: str,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """List world-space CaptureRequests for unobserved or occluded regions (Blueprint 11, Task 6.1)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+
+    query = select(CaptureRequest).where(CaptureRequest.world_id == world_id)
+    if status:
+        query = query.where(CaptureRequest.status == status)
+    query = query.order_by(CaptureRequest.created_at.desc())
+
+    res = await db.execute(query)
+    rows = res.scalars().all()
+
+    if rows:
+        items = [
+            {
+                "id": r.id,
+                "world_id": r.world_id,
+                "reason": r.reason,
+                "target_region": r.target_region,
+                "target_ids": r.target_ids or [],
+                "suggested_poses": r.suggested_poses or [],
+                "expected_gain": r.expected_gain,
+                "instruction": r.instruction,
+                "status": r.status,
+                "created_version": r.created_version,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+        return {"items": items, "count": len(items)}
+
+    # If status filter was specified or requests already exist in DB, return empty list
+    count_any = await db.scalar(select(func.count(CaptureRequest.id)).where(CaptureRequest.world_id == world_id))
+    if (count_any or 0) > 0 or status is not None:
+        return {"items": [], "count": 0}
+
+    # If no DB rows exist yet, generate from the authoritative current WorldIR
+    store = WorldStore(_worldstore_root())
+    vrow = await _version_row(db, world_id, None, auth)
+    if vrow is None:
+        return {"items": [], "count": 0, "reason": "No reconstruction version available yet"}
+
+    try:
+        world = _load_worldir(store, vrow.version_id)
+    except Exception as exc:
+        log.warning("could not load WorldIR for capture requests: %s", exc)
+        return {"items": [], "count": 0, "reason": str(exc)}
+
+    from engine.pipeline.guidance import generate_world_capture_requests
+    generated = generate_world_capture_requests(world, world_id=world_id)
+
+    # Persist generated requests to DB
+    for req in generated:
+        db_req = CaptureRequest(
+            id=req["id"],
+            world_id=world_id,
+            reason=req["reason"],
+            target_region=req["target_region"],
+            target_ids=req["target_ids"],
+            suggested_poses=req["suggested_poses"],
+            expected_gain=req["expected_gain"],
+            instruction=req["instruction"],
+            status=req["status"],
+            created_version=req["created_version"],
+        )
+        db.add(db_req)
+
+    if generated:
+        try:
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            log.warning("failed to persist capture requests to DB: %s", exc)
+
+    return {"items": generated, "count": len(generated)}
+
+
+@worlds.patch("/{world_id}/capture-requests/{request_id}")
+async def update_capture_request_status(
+    world_id: str,
+    request_id: str,
+    body: CaptureRequestStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Update status of a CaptureRequest (open | satisfied | dismissed)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+
+    req = await db.get(CaptureRequest, request_id)
+    if req is None or req.world_id != world_id:
+        raise HTTPException(404, "CaptureRequest not found")
+
+    if body.status not in ("open", "satisfied", "dismissed"):
+        raise HTTPException(422, f"invalid status {body.status!r}; expected open, satisfied, or dismissed")
+
+    req.status = body.status
+    await db.commit()
+    await db.refresh(req)
+
+    return {
+        "id": req.id,
+        "world_id": req.world_id,
+        "status": req.status,
+        "reason": req.reason,
+    }
 
 
 @worlds.get("/{world_id}/coverage")

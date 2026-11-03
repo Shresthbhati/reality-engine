@@ -1,3 +1,9 @@
+from engine.compiler.building_envelope import (
+    BuildingEnvelopeReport,
+    BuildingStoreyLevel,
+    LevelClassification,
+    reconstruct_building_envelope,
+)
 from engine.compiler.incremental_adapter import (
     IncrementalUpdatePackage,
     ReconstructionAdapterError,
@@ -22,4 +28,8 @@ __all__ = [
     "ReconstructionAdapterError",
     "adapt_reconstruction_to_incremental_update",
     "apply_reconstruction_update",
+    "LevelClassification",
+    "BuildingStoreyLevel",
+    "BuildingEnvelopeReport",
+    "reconstruct_building_envelope",
 ]

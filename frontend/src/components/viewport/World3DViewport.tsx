@@ -37,6 +37,7 @@ import {
   Compass,
   History,
   Globe,
+  Cpu,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -73,6 +74,7 @@ import { StoreySelector } from "@/components/studio/StoreySelector";
 import type { StoreyLevelItem } from "@/lib/studio/storey-model";
 import { TemporalDiffSlider } from "@/components/studio/TemporalDiffSlider";
 import { SpatialIntelligencePanel } from "@/components/studio/SpatialIntelligencePanel";
+import { TechnologiesPanel } from "@/components/studio/TechnologiesPanel";
 import type { SpatialIntelligenceSummary } from "@/lib/studio/spatial-intelligence-model";
 import type { TemporalDiffSummary } from "@/lib/studio/temporal-model";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "@/lib/studio/transform-types";
@@ -271,6 +273,7 @@ export default function World3DViewport({
   }, [spatialIntelligenceProp, world]);
 
   const [showSpatialIntelligence, setShowSpatialIntelligence] = useState(false);
+  const [showTechnologies, setShowTechnologies] = useState(false);
 
   const handleGizmoModeChange = useCallback((m: TransformGizmoMode) => {
     setGizmoMode(m);
@@ -923,6 +926,13 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* 50 Technologies Evaluation Overlay */}
+        {showTechnologies && (
+          <div className="absolute top-14 right-3 z-30 w-[420px] max-w-[calc(100%-2rem)] pointer-events-auto">
+            <TechnologiesPanel onClose={() => setShowTechnologies(false)} />
+          </div>
+        )}
+
         {/* Top right: XYZ axis gizmo */}
         {axes && (
           <svg
@@ -1021,6 +1031,13 @@ export default function World3DViewport({
                 onClick={() => setShowSpatialIntelligence((v) => !v)}
               >
                 <Globe className="w-4 h-4 text-emerald-400" />
+              </IconButton>
+              <IconButton
+                label="50 Open-Source Technologies Catalog & Benchmarking"
+                active={showTechnologies}
+                onClick={() => setShowTechnologies((v) => !v)}
+              >
+                <Cpu className="w-4 h-4 text-indigo-400" />
               </IconButton>
             </>
           )}

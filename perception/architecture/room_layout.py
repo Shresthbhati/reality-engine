@@ -282,7 +282,7 @@ def wall_pieces(length: float, height: float, openings: Sequence[dict]) -> List[
         if s1 - s0 > 1e-4 and v1 - v0 > 1e-4:
             holes.append((s0, s1, v0, v1))
     cuts = sorted({0.0, length, *[c for h in holes for c in h[:2]]})
-    out = []
+    raw_pieces = []
     for s0, s1 in zip(cuts, cuts[1:]):
         if s1 - s0 < 1e-4:
             continue
@@ -291,11 +291,30 @@ def wall_pieces(length: float, height: float, openings: Sequence[dict]) -> List[
         v = 0.0
         for h0, h1 in spans:
             if h0 > v + 1e-4:
-                out.append((s0, s1, v, h0))
+                raw_pieces.append((s0, s1, v, h0))
             v = max(v, h1)
         if height > v + 1e-4:
-            out.append((s0, s1, v, height))
-    return out
+            raw_pieces.append((s0, s1, v, height))
+
+    if not raw_pieces:
+        return []
+
+    from collections import defaultdict
+    by_span = defaultdict(list)
+    for s0, s1, v0, v1 in raw_pieces:
+        by_span[(round(v0, 6), round(v1, 6))].append((s0, s1, v0, v1))
+    merged = []
+    for (v0, v1), slist in by_span.items():
+        slist.sort(key=lambda x: x[0])
+        cur_s0, cur_s1 = slist[0][0], slist[0][1]
+        for s0, s1, _, _ in slist[1:]:
+            if abs(s0 - cur_s1) < 1e-4:
+                cur_s1 = max(cur_s1, s1)
+            else:
+                merged.append((cur_s0, cur_s1, v0, v1))
+                cur_s0, cur_s1 = s0, s1
+        merged.append((cur_s0, cur_s1, v0, v1))
+    return sorted(merged, key=lambda x: (x[0], x[2]))
 
 
 _BOX_QUADS = ((0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7))

@@ -215,6 +215,7 @@ class TestValidationGate:
             type=EntityType.UNKNOWN,
             provenance=Provenance.OBSERVED,
             confidence=0.9,
+            observations=(f"obs-{entity_id}",),
         )
         defaults.update(kwargs)
         return Entity(**defaults)

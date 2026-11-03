@@ -42,6 +42,7 @@ class Frame(str, Enum):
     WGS84 = "WGS84"
     ECEF = "ECEF"
     ENGINE_LOCAL = "engine-local"
+    STOREY_LOCAL = "storey-local"
 
 
 def _mat_mul(a: Mat4, b: Mat4) -> Mat4:
@@ -192,3 +193,27 @@ class CoordinateRegistry:
                     next_frontier.append((b, composed))
             frontier = next_frontier
         return None
+
+
+def make_rigid_transform(
+    source_frame: Frame,
+    target_frame: Frame,
+    rotation_3x3: Sequence[Sequence[float]] | None = None,
+    translation_xyz: Sequence[float] | None = None,
+    uncertainty: Optional[Uncertainty] = None,
+) -> Transform:
+    """Construct a Transform from a 3x3 rotation matrix and 3D translation vector."""
+    r = rotation_3x3 if rotation_3x3 is not None else ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+    t = translation_xyz if translation_xyz is not None else (0.0, 0.0, 0.0)
+    matrix: Mat4 = (
+        (float(r[0][0]), float(r[0][1]), float(r[0][2]), float(t[0])),
+        (float(r[1][0]), float(r[1][1]), float(r[1][2]), float(t[1])),
+        (float(r[2][0]), float(r[2][1]), float(r[2][2]), float(t[2])),
+        (0.0, 0.0, 0.0, 1.0),
+    )
+    return Transform(
+        source_frame=source_frame,
+        target_frame=target_frame,
+        matrix=matrix,
+        uncertainty=uncertainty or Uncertainty(confidence=1.0),
+    )

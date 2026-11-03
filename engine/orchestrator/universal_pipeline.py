@@ -98,6 +98,7 @@ class UniversalPipelineOptions:
     seed: int = 42
     enable_spatial_reasoning: bool = True
     enable_materials: bool = True
+    enable_fine_grained_perception: bool = True
     enable_validation_gate: bool = True
     max_images: Optional[int] = None
     backends: Optional[Sequence[Any]] = None
@@ -243,6 +244,17 @@ class UniversalPipeline:
                 "storeys_created": envelope_res.total_storeys,
                 "total_gfa_m2": round(envelope_res.gross_floor_area_m2, 2),
             }
+
+            # Step 6.5: Fine-Grained Perception & Multi-View Component Recognition (Rule 5 & 6)
+            if getattr(opts, "enable_fine_grained_perception", True):
+                t0 = time.perf_counter()
+                from perception.fine_grained import FineGrainedPerceptionEngine
+                fine_engine = FineGrainedPerceptionEngine()
+                world, perc_summary = fine_engine.process_observations_and_promote(
+                    raw_observations=[],
+                    world=world,
+                )
+                telemetry["stages"]["fine_grained_perception"] = perc_summary.to_dict()
 
             # Step 7: Material Appearance Hypotheses
             if opts.enable_materials:

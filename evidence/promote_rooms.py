@@ -110,6 +110,7 @@ WALL_TOP_TOLERANCE_M = 0.25
 #: steps; still bounded, so a wall nowhere near its claimed corner is
 #: rejected.
 CORNER_REACH_FRACTION = 0.6
+CORNER_REACH_MIN_M = 0.45
 
 #: Two lines are the same boundary line (co-planar wall patches) when
 #: their directions differ by at most this many degrees AND their
@@ -255,7 +256,7 @@ class _WallLine:
         return self.point[0] * self.direction[1] - self.point[1] * self.direction[0]
 
     def covers(self, parameter: float) -> bool:
-        margin = CORNER_REACH_FRACTION * max(self.span(), 1e-9)
+        margin = max(CORNER_REACH_FRACTION * max(self.span(), 1e-9), CORNER_REACH_MIN_M)
         return self.support_lo - margin <= parameter <= self.support_hi + margin
 
 
@@ -337,7 +338,12 @@ def _merge_coplanar_lines(lines: List[_WallLine]) -> List[_WallLine]:
                 angle_diff = math.degrees(abs(line.angle() - other.angle()))
                 if angle_diff > LINE_MERGE_ANGLE_DEG:
                     continue
-                if abs(line.offset() - other.offset()) > LINE_MERGE_OFFSET_M:
+                # True perpendicular distance from other.point to line
+                perp_dist = abs(
+                    (other.point[0] - line.point[0]) * line.direction[1]
+                    - (other.point[1] - line.point[1]) * line.direction[0]
+                )
+                if perp_dist > LINE_MERGE_OFFSET_M:
                     continue
                 # Parameterize other's endpoints on line's axis.
                 d = line.direction
@@ -346,6 +352,9 @@ def _merge_coplanar_lines(lines: List[_WallLine]) -> List[_WallLine]:
                     1.0 if (other.direction[0] * d[0] + other.direction[1] * d[1]) >= 0 else -1.0
                 )
                 lo, hi = min(t_other_lo, t_other_hi), max(t_other_lo, t_other_hi)
+                # Check for overlapping or abutting support
+                if lo > line.support_hi + 0.50 or hi < line.support_lo - 0.50:
+                    continue
                 union_lo, union_hi = min(line.support_lo, lo), max(line.support_hi, hi)
                 line = _WallLine(
                     point=line.point,
@@ -475,11 +484,11 @@ def _trace_convex_ring(
 
 #: The non-convex search is a DFS over line orderings; bound it so a
 #: pathological line soup fails (None) instead of exploding.
-MAX_CONCAVE_LINES = 10
+MAX_CONCAVE_LINES = 24
 
 #: A traced non-convex ring must enclose at least this fraction of its
 #: bounding box (rejects degenerate slivers / spiky self-folds).
-MIN_RING_BBOX_FILL = 0.2
+MIN_RING_BBOX_FILL = 0.08
 
 
 def _cross2(o, a, b) -> float:
@@ -550,17 +559,34 @@ def _flip(line: _WallLine) -> _WallLine:
     )
 
 
-def _trace_concave_ring(lines: List[_WallLine]) -> Optional[_Ring]:
-    """Trace a simple (possibly non-convex, e.g. L/U-shaped) ring.
 
-    Searches cyclic orderings of directed lines where every consecutive
-    pair meets at a support-reachable corner, each wall is traversed
-    forward (exit corner after entry corner), every line is used exactly
-    once, and the result is a simple CCW polygon of sane area. Among
-    valid rings the one with the least wall length lacking inlier
-    support wins (tie-break: fewer vertices, larger area). Rings that
-    need a wall used twice, or a line that is not a ring edge (interior
-    partition), are not handled -> None.
+def _is_polygon_non_manhattan(ring: _Ring) -> bool:
+    """Check if any adjacent wall pair forms a non-orthogonal angle (not within 5 deg of 90 deg)."""
+    n = len(ring.vertices)
+    if n < 3:
+        return False
+    for i in range(n):
+        p0 = ring.vertices[i - 1]
+        p1 = ring.vertices[i]
+        p2 = ring.vertices[(i + 1) % n]
+        v1 = (p0[0] - p1[0], p0[1] - p1[1])
+        v2 = (p2[0] - p1[0], p2[1] - p1[1])
+        len1 = math.hypot(v1[0], v1[1])
+        len2 = math.hypot(v2[0], v2[1])
+        if len1 < 1e-6 or len2 < 1e-6:
+            continue
+        dot = (v1[0] * v2[0] + v1[1] * v2[1]) / (len1 * len2)
+        dot = max(-1.0, min(1.0, dot))
+        angle_deg = math.degrees(math.acos(abs(dot)))
+        if abs(angle_deg - 90.0) > 5.0 and abs(angle_deg) > 5.0:
+            return True
+    return False
+
+
+def _trace_concave_ring(lines: List[_WallLine]) -> Optional[_Ring]:
+    """Trace a simple (possibly non-convex, e.g. L/U-shaped, bay window, acute alcove) ring.
+
+    Uses spatial-adjacency pruning to bound search depth across arbitrary wall angles.
     """
     n = len(lines)
     if n < MIN_WALLS or n > MAX_CONCAVE_LINES:
@@ -579,8 +605,23 @@ def _trace_concave_ring(lines: List[_WallLine]) -> Optional[_Ring]:
             return None
         return c
 
+    cand_lines: List[Tuple[int, _WallLine]] = []
+    for idx in range(n):
+        cand_lines.append((idx, base[idx]))
+        cand_lines.append((idx, _flip(base[idx])))
+
+    adj: Dict[int, List[Tuple[int, Tuple[float, float]]]] = {i: [] for i in range(2 * n)}
+    for i in range(2 * n):
+        idx_a, line_a = cand_lines[i]
+        for j in range(2 * n):
+            idx_b, line_b = cand_lines[j]
+            if idx_a == idx_b:
+                continue
+            c = corner(line_a, line_b)
+            if c is not None:
+                adj[i].append((j, c))
+
     def finish(seq: List[_WallLine], corners: list) -> None:
-        # corners[i] = corner(seq[i], seq[i+1]); close seq[-1] -> seq[0].
         close = corner(seq[-1], seq[0])
         if close is None:
             return
@@ -601,25 +642,32 @@ def _trace_concave_ring(lines: List[_WallLine]) -> Optional[_Ring]:
                 segment_wall_ids=tuple("|".join(l.wall_plane_ids) for l in seq),
             ))
 
-    def dfs(seq, used, corners):
+    visited_states = 0
+    MAX_STATES = 50000
+
+    def dfs(seq: List[_WallLine], used: set, corners: list, curr_ci: int):
+        nonlocal visited_states
+        visited_states += 1
+        if visited_states > MAX_STATES:
+            return
         if len(seq) == n:
             finish(seq, corners)
             return
-        for idx in range(1, n):
-            if idx in used:
-                continue
-            for cand in (base[idx], _flip(base[idx])):
-                c = corner(seq[-1], cand)
-                if c is None:
-                    continue
-                if corners and (
-                    _parameter_on(seq[-1], c) <= _parameter_on(seq[-1], corners[-1]) + 1e-9
-                ):
-                    continue
-                dfs(seq + [cand], used | {idx}, corners + [c])
 
-    for first in (base[0], _flip(base[0])):
-        dfs([first], {0}, [])
+        for next_ci, c in adj[curr_ci]:
+            next_orig_idx, cand_b = cand_lines[next_ci]
+            if next_orig_idx in used:
+                continue
+            if corners and (
+                _parameter_on(seq[-1], c) <= _parameter_on(seq[-1], corners[-1]) + 1e-9
+            ):
+                continue
+            dfs(seq + [cand_b], used | {next_orig_idx}, corners + [c], next_ci)
+
+    for start_ci in (0, 1):
+        first_line = cand_lines[start_ci][1]
+        dfs([first_line], {0}, [], start_ci)
+
     return best[0][1] if best[0] else None
 
 
@@ -1058,6 +1106,8 @@ def promote_room_to_entity(
     )
     for key, measurement in measurements:
         entity.custom_properties[key] = measurement.value
+    entity.custom_properties["boundary_polygon_2d"] = [list(v) for v in room.ring.vertices]
+    entity.custom_properties["is_non_manhattan"] = _is_polygon_non_manhattan(room.ring)
     entity.observations.append(Observation(
         id=f"obs-room-{entity_id}",
         sensor_type="room_inference",
@@ -1070,6 +1120,7 @@ def promote_room_to_entity(
             "floor_area_m2": area,
             "floor_dimensions_m": [dim_u, dim_v],
             "height_m": height,
+            "is_non_manhattan": _is_polygon_non_manhattan(room.ring),
             "notes": list(room.notes),
         },
     ))

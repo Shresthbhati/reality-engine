@@ -258,3 +258,32 @@ async def ask_copilot(world_id: str, body: AskIn, db: AsyncSession = Depends(get
     engine = RealityCopilotEngine(world=current, scale_state=scale_state)
     response = engine.ask(body.query)
     return response.to_dict()
+
+
+class CapturePlanIn(BaseModel):
+    max_recommendations: int = 5
+    camera_height_m: float = 1.6
+    camera_fov_deg: float = 65.0
+
+
+@assistant.post("/capture-plan")
+async def plan_capture(
+    world_id: str,
+    body: Optional[CapturePlanIn] = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    current = await worldstore_service.get_current_worldir(db, world_id)
+    if current is None:
+        raise HTTPException(422, "world has no committed version to query")
+    params = body or CapturePlanIn()
+    from planning.capture_planner import plan_next_best_view_capture
+    result = plan_next_best_view_capture(
+        world=current,
+        max_recommendations=params.max_recommendations,
+        camera_height_m=params.camera_height_m,
+        camera_fov_deg=params.camera_fov_deg,
+    )
+    return result.to_dict()

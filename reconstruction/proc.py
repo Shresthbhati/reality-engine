@@ -302,3 +302,47 @@ def run_owned(
                     live.discard(proc)
                     if not live:
                         _owned.pop(owner, None)
+
+
+class WorkerSandbox:
+    """Isolated execution sandbox for worker jobs (Task E12-1).
+
+    Guarantees:
+    1. Scoped ephemeral workspace per job under a designated sandbox root.
+    2. Path traversal protection: rejects any relative or absolute paths escaping the sandbox root.
+    3. Deterministic cleanup upon exit or failure.
+    """
+
+    def __init__(self, job_id: str, base_dir: str | None = None):
+        from pathlib import Path
+        self.job_id = job_id
+        root = Path(base_dir or os.environ.get("REALITY_SANDBOX_ROOT", "./data/sandboxes")).resolve()
+        self.sandbox_dir = root / job_id
+        self._active = False
+
+    def __enter__(self) -> WorkerSandbox:
+        self.sandbox_dir.mkdir(parents=True, exist_ok=True)
+        self._active = True
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup()
+
+    def resolve_path(self, rel_path: str) -> Path:
+        """Safely resolve path within sandbox; raises ValueError if path escapes."""
+        from pathlib import Path
+        candidate = (self.sandbox_dir / rel_path).resolve()
+        try:
+            candidate.relative_to(self.sandbox_dir)
+        except ValueError:
+            raise ValueError(f"Path traversal detected: {rel_path} escapes sandbox {self.sandbox_dir}")
+        return candidate
+
+    def cleanup(self) -> None:
+        if self.sandbox_dir.exists():
+            import shutil
+            try:
+                shutil.rmtree(self.sandbox_dir, ignore_errors=True)
+            except Exception as e:
+                log.warning("Failed to clean up sandbox %s: %s", self.sandbox_dir, e)
+        self._active = False

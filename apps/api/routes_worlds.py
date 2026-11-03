@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
+from apps.api.auth import AuthContext, Role, enforce_project_isolation, get_auth_context
 from apps.api.models import (
     ActivityEvent,
     Evidence,
@@ -53,7 +54,7 @@ class WorldIn(BaseModel):
 
 
 @worlds.post("", status_code=201)
-async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     from apps.api.validation import (
         require_json_size,
         require_latitude,
@@ -68,6 +69,8 @@ async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db)) -> dic
         latitude=require_latitude(body.latitude) if body.latitude is not None else None,
         longitude=require_longitude(body.longitude) if body.longitude is not None else None,
         coverage=require_json_size(body.coverage, "coverage"),
+        owner_id=auth.user_id,
+        team_id=auth.tenant_id if auth.tenant_id != "default" else None,
     )
     db.add(w)
     db.add(
@@ -105,12 +108,14 @@ def _world_out(w: World, session_count: int | None = None) -> dict:
 
 
 @worlds.get("")
-async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)) -> dict:
+async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """``?status=active|archived|trashed`` (default active): archived and trashed worlds are hidden from the default list."""
     if status not in WORLD_STATUSES:
         raise HTTPException(422, f"status must be one of {', '.join(WORLD_STATUSES)}")
-    res = await db.execute(
-        select(World).where(World.status == status).order_by(World.updated_at.desc()).limit(200))
+    stmt = select(World).where(World.status == status)
+    if auth.role != Role.ADMIN and auth.tenant_id != "default":
+        stmt = stmt.where(World.team_id == auth.tenant_id)
+    res = await db.execute(stmt.order_by(World.updated_at.desc()).limit(200))
     ses_counts = dict(
         (await db.execute(
             select(Session.world_id, func.count()).group_by(Session.world_id)
@@ -120,10 +125,11 @@ async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)
 
 
 @worlds.get("/{world_id}")
-async def get_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_world(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     session_count = (await db.execute(
         select(func.count()).select_from(Session).where(Session.world_id == world_id)
     )).scalar_one()
@@ -139,6 +145,7 @@ async def _world_or_404(db: AsyncSession, world_id: str) -> World:
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     return w
 
 
@@ -276,6 +283,7 @@ async def list_world_versions(world_id: str, db: AsyncSession = Depends(get_db))
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     try:
         from apps.api import worldstore_service
 
@@ -324,6 +332,7 @@ async def world_coverage(world_id: str, db: AsyncSession = Depends(get_db)) -> d
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     res = await db.execute(
         select(Location).where(
             Location.entity_type == "session",
@@ -362,6 +371,7 @@ async def _version_row(
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     if version_id is not None:
         row = await db.get(WorldVersion, version_id)
         if row is None or row.world_id != world_id:
@@ -718,6 +728,7 @@ async def get_world_diff(world_id: str, base: str | None = None, head: str | Non
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     
     store_path = _worldstore_root()
     if not store_path.exists():
@@ -942,6 +953,7 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
 
     # Load current WorldIR
     worldir = await _load_worldir_from_store(w)
@@ -1340,6 +1352,7 @@ async def get_world_space_graph(
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
 
     worldir = await _load_worldir_from_store(w, version_id)
     if worldir is None:
@@ -1366,6 +1379,7 @@ async def query_world_spaces(
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
 
     worldir = await _load_worldir_from_store(w, version_id)
     if worldir is None:
@@ -1432,6 +1446,7 @@ async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Dep
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     sids = (await db.execute(select(_Session.id).where(_Session.world_id == world_id))).scalars().all()
     busy = (await db.execute(
         select(Job.id).where(Job.entity_type == "session", Job.entity_id.in_(sids),
@@ -1561,6 +1576,7 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     sessions = (await db.execute(
         select(_Session).where(_Session.world_id == world_id).order_by(_Session.created_at.desc()))).scalars().all()
     known = set()
@@ -1645,6 +1661,7 @@ async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession 
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
     ev = await place_summary.pick_thumbnail_source(db, w)
     if ev is None:
         raise HTTPException(404, "This place has no photographs yet, so there is nothing to show")

@@ -1,5 +1,10 @@
-"""Architectural element classification and structural perception."""
+"""Architectural element classification, structural perception, and multi-room topology."""
 
+from perception.architecture.shared_walls import (
+    SharedWallConsolidation,
+    SharedWallDeduplicationReport,
+    deduplicate_shared_walls,
+)
 from perception.architecture.structural_network import (
     StructuralAnalysisReport,
     StructuralBay,
@@ -8,8 +13,11 @@ from perception.architecture.structural_network import (
 )
 
 __all__ = [
-    "StructuralRole",
-    "StructuralBay",
+    "SharedWallConsolidation",
+    "SharedWallDeduplicationReport",
     "StructuralAnalysisReport",
+    "StructuralBay",
+    "StructuralRole",
     "analyze_structural_system",
+    "deduplicate_shared_walls",
 ]

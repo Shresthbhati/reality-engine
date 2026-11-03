@@ -84,7 +84,7 @@ rate on the living room is 0 for the v1 class set.
 | 3.2 | Association is the only resolver path | 3.1 | `perception/instances/object_resolution.py`, `association.py` | Hungarian is the default everywhere; union-find removed (or behind an explicit non-default flag with a deprecation note); every decision stored | grep shows no default union-find; A4 test | [12](12_PIPELINE.md) S9 | DONE (uncommitted, verified 2026-11-01) |
 | 3.3 | Scale gate in lifting | 3.1 | `perception/instances/lifting.py` | relative depth yields `depth_source=relative` + wide sigma; no metric dimensions unless scale_state ≠ relative | unit test with relative depth | P10 | DONE (uncommitted, verified 2026-11-01) |
 | 3.4 | Validator invariants 1–7 | 3.1 | `world_ir/validation.py` | a commit is blocked on invariant failure with a readable report | one unit test per invariant | [11](11_WORLDIR_CONTRACT.md) §3 | DONE (uncommitted, verified 2026-11-01) |
-| 3.5 | Entity evidence in the inspector | 3.2 | API provenance route, inspector component | selecting an entity shows its source photos with masks + its association decisions | Playwright + screenshot | [14](14_FRONTEND_UX.md) | TODO |
+| 3.5 | Entity evidence in the inspector | 3.2 | API provenance route, inspector component | selecting an entity shows its source photos with masks + its association decisions | Playwright + screenshot | [14](14_FRONTEND_UX.md) | DONE (feat/task-3-5-entity-evidence-inspector, verified 2026-11-04) |
 | 3.6 | Identity scenarios pass | 3.2–3.4 | `tests/scenarios/` | A1, A2, A3, A4, A5 pass on real or synthetic data | pytest + benchmark JSON diff vs Phase 2 | [18](18_VALIDATION_AND_BENCHMARKS.md) | TODO |
 
 ## Phase 4 — Better matching and depth (adopt only if measured better)

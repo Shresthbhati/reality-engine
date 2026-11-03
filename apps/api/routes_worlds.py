@@ -141,11 +141,12 @@ class WorldPatch(BaseModel):
     description: str | None = None
 
 
-async def _world_or_404(db: AsyncSession, world_id: str) -> World:
+async def _world_or_404(db: AsyncSession, world_id: str, auth: AuthContext | None = None) -> World:
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
+    if auth is not None:
+        enforce_project_isolation(w, auth)
     return w
 
 
@@ -273,7 +274,11 @@ async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession 
 
 
 @worlds.get("/{world_id}/versions")
-async def list_world_versions(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def list_world_versions(
+    world_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
     """Application mirror of WorldStore lineage. Reconciled against the
     on-disk store on every read (writers outside this process, or a
     version orphaned by a failed commit, must not drift silently from
@@ -451,30 +456,64 @@ async def entity_provenance(
     if entity is None:
         raise HTTPException(404, f"Entity '{entity_id}' not found in version '{row.id}'")
 
+    from world_ir.observations import ledger_of
+
+    all_obs, all_decisions = ledger_of(world)
+    entity_decisions = [d.to_dict() for d in all_decisions if d.entity_id == entity_id]
+    relevant_obs_ids = {d.observation_id for d in all_decisions if d.entity_id == entity_id}
+
     observation_matches: list[dict] = []
     for obs in getattr(entity, "observations", None) or []:
+        obs_id = getattr(obs, "id", None) or getattr(obs, "observation_id", None)
+        if obs_id:
+            relevant_obs_ids.add(obs_id)
         ev = None
-        if obs.data_hash:
+        if getattr(obs, "data_hash", None):
             res = await db.execute(select(Evidence).where(Evidence.checksum == obs.data_hash))
             ev = res.scalar_one_or_none()
-        if ev is None and obs.data_uri:
+        if ev is None and getattr(obs, "data_uri", None):
             res = await db.execute(select(Evidence).where(Evidence.artifact_uri == obs.data_uri))
             ev = res.scalar_one_or_none()
         if ev is not None:
             observation_matches.append({
-                "observation_id": obs.id,
+                "observation_id": obs_id,
                 "evidence_id": ev.id,
                 "evidence_name": ev.name,
                 "evidence_type": ev.type,
+                "mask_uri": getattr(obs, "mask_uri", None),
+                "bbox_px": list(obs.bbox_px) if getattr(obs, "bbox_px", None) else None,
             })
 
-    if observation_matches:
+    entity_observations = [
+        o.to_dict() for o in all_obs if o.observation_id in relevant_obs_ids
+    ]
+
+    for obs_item in entity_observations:
+        img_id = obs_item.get("image_id")
+        if img_id:
+            res = await db.execute(
+                select(Evidence).where((Evidence.id == img_id) | (Evidence.name == img_id))
+            )
+            ev = res.scalar_one_or_none()
+            if ev is not None and not any(m.get("evidence_id") == ev.id for m in observation_matches):
+                observation_matches.append({
+                    "observation_id": obs_item.get("observation_id"),
+                    "evidence_id": ev.id,
+                    "evidence_name": ev.name,
+                    "evidence_type": ev.type,
+                    "mask_uri": obs_item.get("mask_uri"),
+                    "bbox_px": obs_item.get("bbox_px"),
+                })
+
+    if observation_matches or entity_decisions:
         return {
             "entity_id": entity_id,
             "version_id": row.id,
             "provenance": entity.provenance.value if entity.provenance else None,
-            "trace_level": "observation",
+            "trace_level": "observation" if observation_matches else "session",
             "evidence": observation_matches,
+            "association_decisions": entity_decisions,
+            "observations": entity_observations,
         }
 
     session_ids = row.source_session_ids or []
@@ -492,6 +531,8 @@ async def entity_provenance(
             "trace_level": "session",
             "source_session_ids": session_ids,
             "evidence": session_evidence,
+            "association_decisions": entity_decisions,
+            "observations": entity_observations,
         }
 
     return {
@@ -500,6 +541,8 @@ async def entity_provenance(
         "provenance": entity.provenance.value if entity.provenance else None,
         "trace_level": "none",
         "evidence": [],
+        "association_decisions": entity_decisions,
+        "observations": entity_observations,
         "reason": "This version has no source capture sessions (procedurally generated, or predates session tracking).",
     }
 

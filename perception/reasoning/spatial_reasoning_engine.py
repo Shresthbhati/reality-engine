@@ -276,6 +276,8 @@ class ClearanceAccessibilityEngine:
                 # Skip if it is the parent wall hosting the door
                 if "door" in obs_ent.name.lower():
                     continue
+                if obs_ent.type == EntityType.WALL and o_min[0] <= d_min[0] + 0.1 and o_max[0] >= d_max[0] - 0.1:
+                    continue
 
                 ox = max(0.0, min(env_max[0], o_max[0]) - max(env_min[0], o_min[0]))
                 oy = max(0.0, min(env_max[1], o_max[1]) - max(env_min[1], o_min[1]))

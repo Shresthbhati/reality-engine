@@ -109,7 +109,7 @@ and every surface has an evidence state.
 | 5.1 | Contract hierarchy in WorldIR | 3.4 | `world_ir/schema_v1.py` / `v2_extensions.py`, serialization migration | World→Building→Floor→Space→Surface/Opening/Entity stored; old versions still load | round-trip + old-fixture load test | [11](11_WORLDIR_CONTRACT.md) | DONE (uncommitted, verified 2026-11-01; hierarchy is an optional typed layer, populated by 5.2) |
 | 5.2 | Architecture → contract | 5.1 | output adapters in `perception/architecture/` | planes/rooms/openings become Space/Surface/Opening with evidence states | A1, A6, A14 tests | [12](12_PIPELINE.md) S6 | DONE (feat/task-5-2-architecture-contract-adapters, verified 2026-11-04) |
 | 5.3 | Ray-cast coverage | 5.2 | `engine/pipeline/guidance.py` (or a new `coverage.py` beside it) | each Surface gets a coverage fraction + OBSERVED/OCCLUDED/UNOBSERVED | test on a synthetic room with a known hidden region | [12](12_PIPELINE.md) S13 | DONE (feat/task-5-3-raycast-surface-coverage, verified 2026-11-04) |
-| 5.4 | Topology revalidation after merges | 5.2 | `perception/architecture/topology.py` | merged topology is rechecked geometrically; failures flagged, not hidden | unit test with a bad merge | [20](20_REUSE_MAP.md) | TODO |
+| 5.4 | Topology revalidation after merges | 5.2 | `perception/architecture/topology.py` | merged topology is rechecked geometrically; failures flagged, not hidden | unit test with a bad merge | [20](20_REUSE_MAP.md) | DONE (feat/task-5-4-topology-revalidation, verified 2026-11-04) |
 
 ## Phase 6 — Guided capture and incremental updates
 

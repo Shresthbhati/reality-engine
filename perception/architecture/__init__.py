@@ -19,6 +19,11 @@ from perception.architecture.structural_network import (
     StructuralRole,
     analyze_structural_system,
 )
+from perception.architecture.topology import (
+    TopologyRevalidationReport,
+    TopologyValidationIssue,
+    revalidate_merged_topology,
+)
 
 __all__ = [
     "ContractAdaptationResult",
@@ -28,11 +33,14 @@ __all__ = [
     "StructuralBay",
     "StructuralRole",
     "SurfaceSpan",
+    "TopologyRevalidationReport",
+    "TopologyValidationIssue",
     "WallContinuityResult",
     "adapt_architecture_to_contract",
     "analyze_structural_system",
     "classify_glazing_opening",
     "deduplicate_shared_walls",
     "evaluate_wall_continuity_under_occlusion",
+    "revalidate_merged_topology",
 ]
 

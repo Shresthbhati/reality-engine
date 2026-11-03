@@ -51,7 +51,10 @@ from reconstruction.backend.interface import (
 from reconstruction.batch import MemoryBudget
 from reconstruction.orchestrator import ReconstructionOrchestrator
 from reconstruction.scale import (
+    MetricScaleFusionEngine,
     ScaleAnchoringError,
+    ScaleDiagnostics,
+    ScaledReconstruction,
     ScaleReference,
     ScaleState,
     anchor_metric_scale,
@@ -366,29 +369,53 @@ class UniversalPipeline:
         recon: ReconstructionResult,
         opts: UniversalPipelineOptions,
         evidence_items: Optional[List[EvidenceItem]] = None,
-    ) -> tuple[ReconstructionResult, ScaleState]:
-        """Anchor metric scale if reference is provided; preserve honest RELATIVE otherwise."""
-        if opts.scale_reference is not None:
-            ref = opts.scale_reference
-            # Remap filenames or paths to item IDs if needed
-            if evidence_items:
-                name_to_id = {}
-                for item in evidence_items:
-                    name_to_id[item.id] = item.id
-                    if item.source_uri:
-                        name_to_id[Path(item.source_uri).name] = item.id
-                        name_to_id[str(item.source_uri)] = item.id
-                id_a = name_to_id.get(ref.evidence_id_a, ref.evidence_id_a)
-                id_b = name_to_id.get(ref.evidence_id_b, ref.evidence_id_b)
-                if id_a != ref.evidence_id_a or id_b != ref.evidence_id_b:
-                    ref = dataclasses.replace(ref, evidence_id_a=id_a, evidence_id_b=id_b)
-            try:
-                scaled = anchor_metric_scale(recon, ref)
-                return scaled, ScaleState.METRIC
-            except ScaleAnchoringError:
-                return unscaled(recon), ScaleState.RELATIVE
+    ) -> tuple[ScaledReconstruction, ScaleState]:
+        """Anchor metric scale via multi-way fusion engine if evidence exists; preserve honest RELATIVE otherwise."""
+        engine = MetricScaleFusionEngine(target_error_max_pct=1.5)
+        references = [opts.scale_reference] if opts.scale_reference else None
 
-        # Check if reconstruction already carries metric points
+        # Remap filenames or paths to item IDs if needed
+        if references and evidence_items:
+            name_to_id = {}
+            for item in evidence_items:
+                name_to_id[item.id] = item.id
+                if item.source_uri:
+                    name_to_id[Path(item.source_uri).name] = item.id
+                    name_to_id[str(item.source_uri)] = item.id
+            remapped_refs = []
+            for ref in references:
+                if hasattr(ref, "evidence_id_a") and hasattr(ref, "evidence_id_b"):
+                    id_a = name_to_id.get(ref.evidence_id_a, ref.evidence_id_a)
+                    id_b = name_to_id.get(ref.evidence_id_b, ref.evidence_id_b)
+                    if id_a != ref.evidence_id_a or id_b != ref.evidence_id_b:
+                        ref = dataclasses.replace(ref, evidence_id_a=id_a, evidence_id_b=id_b)
+                remapped_refs.append(ref)
+            references = remapped_refs
+
+        scaled_result, diag = engine.fuse(
+            recon,
+            world=None,
+            evidence_items=evidence_items,
+            references=references,
+        )
+
+        if diag.consensus_reached and diag.fused_meters_per_unit is not None:
+            scale_diag = ScaleDiagnostics(
+                state=ScaleState.METRIC,
+                meters_per_unit=diag.fused_meters_per_unit,
+                ratio_count=diag.inlier_count,
+                ratio_spread=diag.ratio_spread,
+                note=diag.notes[0] if diag.notes else "metric scale fused",
+                basis=diag.primary_basis,
+                dimension_state="MEASURED",
+            )
+            return ScaledReconstruction(
+                result=scaled_result,
+                state=ScaleState.METRIC,
+                meters_per_unit=diag.fused_meters_per_unit,
+                diagnostics=scale_diag,
+            ), ScaleState.METRIC
+
         return unscaled(recon), ScaleState.RELATIVE
 
     @classmethod

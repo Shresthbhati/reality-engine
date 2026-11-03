@@ -15,7 +15,9 @@ export type ExportFormat =
   | "godot"
   | "floorplan_svg"
   | "floorplan_dxf"
-  | "room_report_pdf";
+  | "room_report_pdf"
+  | "floorplan_pdf"
+  | "multisheet_floorplan_pdf";
 
 export interface ExportResult {
   version_id: string;

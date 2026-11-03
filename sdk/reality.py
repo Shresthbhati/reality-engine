@@ -54,6 +54,7 @@ from exporters.cityjson.exporter import export_to_cityjson_with_report
 from exporters.floorplan import (
     export_to_floorplan_dxf_with_report,
     export_to_floorplan_svg_with_report,
+    export_to_multisheet_floorplan_pdf_with_report,
     export_to_room_report_pdf_with_report,
 )
 from exporters.gis.exporter import export_to_geojson_with_report
@@ -167,6 +168,8 @@ _EXPORTERS = {
     "floorplan_svg": export_to_floorplan_svg_with_report,
     "floorplan_dxf": export_to_floorplan_dxf_with_report,
     "room_report_pdf": export_to_room_report_pdf_with_report,
+    "multisheet_floorplan_pdf": export_to_multisheet_floorplan_pdf_with_report,
+    "floorplan_pdf": export_to_multisheet_floorplan_pdf_with_report,
     # Standard 3D mesh formats (Task 9.3)
     "obj": export_to_obj_with_report,
     "ply": export_to_ply_with_report,

@@ -156,8 +156,89 @@ def test_a11_no_shared_features_is_rejected_never_force_merged():
 
 # ------------------------------------------------------------------ A12
 def test_a12_missing_wall_added_later_leaves_the_rest_unchanged():
-    pytest.skip("not covered: needs a two-pass synthetic room (wall withheld, then added) diffed through "
-                "world_delta/WorldStore; no fixture withholds a single wall")
+    """Missing wall added later leaves the rest of the world unchanged (Scenario A12).
+    A two-pass synthetic room where 1 wall is withheld in Pass 1, then added in Pass 2.
+    Untouched entities preserve stable IDs, transforms, and geometries.
+    """
+    from engine.pipeline.incremental_ingest import run_incremental_ingest
+    from world_ir import WorldIR, Entity, EntityType, Geometry, GeometryType, Relationship, RelationshipKind
+
+    # Baseline world: 3 walls (north, south, east) + floor + table inside room-01
+    base_world = WorldIR(id="wld-a12", name="A12 Room")
+    base_world.version = 1
+
+    wall_n = Entity(id="wall-north", name="North Wall", type=EntityType.WALL)
+    wall_s = Entity(id="wall-south", name="South Wall", type=EntityType.WALL)
+    wall_e = Entity(id="wall-east", name="East Wall", type=EntityType.WALL)
+    floor = Entity(id="floor-01", name="Main Floor", type=EntityType.FLOOR)
+    table = Entity(
+        id="table-01",
+        name="Coffee Table",
+        type=EntityType.STRUCTURE,
+        relationships=[Relationship(kind=RelationshipKind.RESTS_ON, target_id="floor-01")],
+    )
+    geom_table = Geometry(id="geom-table", type=GeometryType.BOX)
+    table.geometry_ids = ["geom-table"]
+
+    room = Entity(
+        id="room-01",
+        name="Living Room",
+        type=EntityType.ROOM,
+        custom_properties={"boundary_element_ids": ["wall-north", "wall-south", "wall-east"]},
+        relationships=[
+            Relationship(kind=RelationshipKind.CONTAINS, target_id="wall-north"),
+            Relationship(kind=RelationshipKind.CONTAINS, target_id="wall-south"),
+            Relationship(kind=RelationshipKind.CONTAINS, target_id="wall-east"),
+        ],
+    )
+
+    base_world.entities = {
+        wall_n.id: wall_n,
+        wall_s.id: wall_s,
+        wall_e.id: wall_e,
+        floor.id: floor,
+        table.id: table,
+        room.id: room,
+    }
+    base_world.geometries = {geom_table.id: geom_table}
+
+    # Pass 2: Missing West Wall added later
+    wall_w = Entity(
+        id="wall-west",
+        name="West Wall",
+        type=EntityType.WALL,
+        relationships=[Relationship(kind=RelationshipKind.PART_OF, target_id="room-01")],
+    )
+    geom_wall_w = Geometry(id="geom-wall-west", type=GeometryType.BOX)
+    wall_w.geometry_ids = ["geom-wall-west"]
+
+    ingest_res = run_incremental_ingest(
+        base_world=base_world,
+        new_entities=[wall_w],
+        new_geometries=[geom_wall_w],
+    )
+
+    # 1. New wall is added
+    assert "wall-west" in ingest_res.changed_entity_ids
+    assert "wall-west" in ingest_res.diff.added_entity_ids
+    assert ingest_res.new_world.version == 2
+
+    # 2. Room is in affected closure because wall-west is PART_OF room-01
+    assert "room-01" in ingest_res.affected_entity_ids
+
+    # 3. All untouched entities (North, South, East walls, Floor, Table) are reused and unchanged
+    assert "wall-north" in ingest_res.reused_entity_ids
+    assert "wall-south" in ingest_res.reused_entity_ids
+    assert "wall-east" in ingest_res.reused_entity_ids
+    assert "floor-01" in ingest_res.reused_entity_ids
+    assert "table-01" in ingest_res.reused_entity_ids
+
+    # Verify identical entity objects and unmodified diff status
+    assert "wall-north" not in ingest_res.diff.modified_entity_ids
+    assert "wall-south" not in ingest_res.diff.modified_entity_ids
+    assert "wall-east" not in ingest_res.diff.modified_entity_ids
+    assert "table-01" not in ingest_res.diff.modified_entity_ids
+    assert ingest_res.new_world.entities["table-01"].geometry_ids == ["geom-table"]
 
 
 # ------------------------------------------------------------------ A13

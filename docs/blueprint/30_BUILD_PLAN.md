@@ -120,7 +120,7 @@ updates only the affected region.
 |----|------|---------|-------|-----------|--------|------|--------|
 | 6.1 | World-space CaptureRequests | 5.3 | `engine/pipeline/guidance.py`, `capture_requests` table | requests carry target region, suggested poses, instruction text and expected gain | API response on the living room | [11](11_WORLDIR_CONTRACT.md) | DONE (feat/task-6-1-world-space-capture-requests, verified 2026-11-04) |
 | 6.2 | Register new photos into an existing world | 3.6 | `registration/`, `apps/api/jobs.py` | new images register against the existing model; non-matching photos are refused with a reason (A11, A19) | scenario tests | [12](12_PIPELINE.md) incremental | DONE (feat/task-6-2-incremental-photo-registration, verified 2026-11-04) |
-| 6.3 | Incremental update on ingest | 6.2 | `world_ir/incremental.py`, pipeline | only the affected closure recomputes; new version + diff; untouched entities keep IDs + geometry | A12 test + diff output | P6 | TODO |
+| 6.3 | Incremental update on ingest | 6.2 | `world_ir/incremental.py`, pipeline | only the affected closure recomputes; new version + diff; untouched entities keep IDs + geometry | A12 test + diff output | P6 | DONE (feat/task-6-3-incremental-update-on-ingest, verified 2026-11-04) |
 | 6.4 | Capture UI | 6.1, 6.3 | Capture screen, request cards, version diff view | the user sees a request, adds a photo and sees what changed | Playwright + screenshots | [14](14_FRONTEND_UX.md) | TODO |
 
 ## Phase 7 — Evidence, confidence and the three views

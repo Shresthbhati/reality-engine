@@ -1,0 +1,26 @@
+{
+  "benchmark": "depth_midas_vs_metric3d",
+  "evidence_id": "ev_room_01",
+  "midas_relative": {
+    "model": "midas_dpt_hybrid",
+    "unit": "relative",
+    "scale_state": "relative",
+    "depth_range": [
+      0.21739130885479366,
+      0.4482748227818257
+    ],
+    "requires_scale_anchor": true
+  },
+  "metric3d": {
+    "model": "metric3d_v2",
+    "unit": "meters",
+    "scale_state": "estimated",
+    "depth_range_meters": [
+      2.230774402618408,
+      4.599999904632568
+    ],
+    "mean_depth_meters": 3.425104477549127,
+    "requires_scale_anchor": false
+  },
+  "metric_scale_fidelity": "grounded_in_meters"
+}

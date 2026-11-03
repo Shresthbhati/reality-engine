@@ -97,7 +97,7 @@ licence, and VRAM within budget.
 | 4.1 | Registry entries for all current models | 0.1 | `perception/model_registry.py`, `.agent/LICENSES.yaml` | every backend has licence, commercial_ok, measured VRAM and status | registry dump | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-4-1-model-registry-and-licenses, verified 2026-11-04) |
 | 4.2 | One-model-at-a-time scheduler | 4.1 | `perception/` stage runner, `perception/device.py` | peak VRAM ≤ budget on the living-room set; CPU fallback works | benchmark JSON peak VRAM | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-4-2-one-model-at-a-time-scheduler, verified 2026-11-04) |
 | 4.3 | ALIKED+LightGlue behind `IMatcher` | 2.1, 4.1 | `reconstruction/matching/` | registered ratio / inlier ratio vs SIFT recorded; default switched only if better | benchmark diff | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-4-3-aliked-lightglue-matcher, verified 2026-11-04) |
-| 4.4 | Metric depth candidate | 2.1, 4.1 | `perception/depth/` | one metric model behind the depth interface; scale_state `estimated` when used; benchmarked vs MiDaS | benchmark diff + measured-room error (if 2.3 is done) | [15](15_ML_MODEL_STRATEGY.md) | TODO |
+| 4.4 | Metric depth candidate | 2.1, 4.1 | `perception/depth/` | one metric model behind the depth interface; scale_state `estimated` when used; benchmarked vs MiDaS | benchmark diff + measured-room error (if 2.3 is done) | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-4-4-metric-depth-candidate, verified 2026-11-04) |
 
 ## Phase 5 — Architecture and coverage
 

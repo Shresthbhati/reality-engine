@@ -25,6 +25,7 @@ To eliminate complacency and circular claims, every subsystem in Reality Engine 
 
 | Subsystem / Capability | Current Level | Verified Implementation Evidence | Known Gaps to Reach L5 |
 |---|---|---|---|
+| **Autonomous Universal Pipeline** | **L3** | `engine/orchestrator/universal_pipeline.py` provides single-call autonomous reconstruction (`reality.reconstruct`) coordinating media ingestion, reconstruction backends, scale anchoring, compiler, spatial reasoning, material hypotheses, validation gate, and export. Tested in `test_universal_pipeline.py`. | Multi-node distributed queue execution for civil site scale. |
 | **Universal Image Ingestion** | **L4** | `evidence/importers.py` decodes EXIF, GPS coordinates, timestamps, and orientation across JPEG, PNG, WebP, TIFF, HEIC. Tested on real camera captures. | Needs automated RAW format (.CR3, .DNG) decoding without external LibRaw dependency. |
 | **Video Processing & Keyframes** | **L3** | `evidence/video.py` implements `SceneAwareFrameSelectionStrategy` extracting keyframes across scene cuts. Verified on synthetic and test MP4 files. | Needs GPU-accelerated NVDEC video decoding for 4K 60fps drone captures. |
 | **360° / Panoramas** | **L3** | Equirectangular 2:1 aspect ratio auto-detection and GPano XMP tag parsing in `importers.py`. Tested in `test_panoramic_ingest.py`. | Cubemap re-projection pipeline for seamless multi-view feature matching. |

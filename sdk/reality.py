@@ -40,6 +40,12 @@ from engine.compiler.world_compiler import (
     WorldValidationGateError,
     compile_reconstruction_to_world,
 )
+from engine.orchestrator.universal_pipeline import (
+    PipelineMode,
+    UniversalPipeline,
+    UniversalPipelineOptions,
+    UniversalPipelineResult,
+)
 from engine.scene_graph.graph import SceneGraph
 from engine.scene_graph.spatial_index import SpatialIndex
 from exporters.blender.exporter import export_to_blender_script_with_report
@@ -72,15 +78,21 @@ __all__ = [
     "CompileInputError",
     "CompileOptions",
     "MemoryArtifactStore",
+    "PipelineMode",
+    "UniversalPipeline",
+    "UniversalPipelineOptions",
+    "UniversalPipelineResult",
     "UnsupportedExportFormatError",
     "WorldValidationGateError",
     "compile_world_from_reconstruction",
     "diff",
     "export",
+    "reconstruct",
     "scene_graph",
     "spatial_index",
     "validate",
 ]
+
 
 def _export_cityjson(world, artifact_store=None):
     """CityJSON has no artifact payloads (it serializes real-bounds
@@ -234,6 +246,22 @@ EXPORT_FORMATS = frozenset(_EXPORTERS)
 
 #: game-ready profile names (multi-file bundles, content is ``{filename: bytes}``); see exporters/profiles.py
 EXPORT_PROFILES = frozenset(PROFILES)
+
+
+def reconstruct(
+    media: Any,
+    options: Optional[UniversalPipelineOptions] = None,
+    **kwargs,
+) -> UniversalPipelineResult:
+    """Universal intelligent spatial reconstruction entry point.
+
+    Accepts raw photos on disk, video files, pre-built EvidencePackages, or
+    evidence item lists, and returns a fully validated, editable WorldIR with
+    zero required technological configuration.
+    """
+    if options is None:
+        options = UniversalPipelineOptions(**kwargs) if kwargs else None
+    return UniversalPipeline.reconstruct(media, options)
 
 
 def export_profile(world: WorldIR, name: str, artifact_store: Optional[ArtifactStore] = None):

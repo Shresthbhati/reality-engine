@@ -39,6 +39,16 @@ from apps.api.routes_worlds import worlds
 from reconstruction.proc import recover_orphaned_jobs
 
 app = FastAPI(title="Reality Engine API", version="0.1.0")
+
+
+@app.middleware("http")
+async def security_headers_middleware(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 # Added before CORS so CORS stays outermost (401 responses still carry CORS headers).
 app.middleware("http")(auth_middleware)
 app.add_middleware(

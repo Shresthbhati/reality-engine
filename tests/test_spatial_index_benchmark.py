@@ -259,5 +259,26 @@ def main():
     print("\nAll benchmarks completed successfully!")
 
 
+def test_spatial_index_correctness():
+    random.seed(42)
+    world = _make_world_with_entities(500)
+    idx_accel = SpatialIndex(world)
+    idx_flat = _BruteForceIndex(world)
+    q = (10.0, 5.0, 0.0)
+    nearest_accel = idx_accel.nearest(q, k=5)
+    nearest_flat = idx_flat.nearest(q, k=5)
+    accel_ids = [e.id for e, _ in nearest_accel]
+    flat_ids = [e.id for e, _ in nearest_flat]
+    assert accel_ids == flat_ids
+
+
+def test_spatial_index_accelerated_performance():
+    random.seed(42)
+    result_accel = run_benchmark(1000, use_accel=True)
+    result_flat = run_benchmark(1000, use_accel=False)
+    assert result_accel.nearest_time_s < result_flat.nearest_time_s
+    assert result_accel.build_time_s < 0.1
+
+
 if __name__ == "__main__":
     main()

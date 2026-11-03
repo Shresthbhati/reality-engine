@@ -56,6 +56,7 @@ def test_health_and_preflight_stay_open(monkeypatch):
     monkeypatch.setenv("REALITY_API_TOKEN", TOKEN)
     c = client("10.0.0.5")
     assert c.get("/api/health").status_code == 200
+    assert c.get("/healthz").status_code == 200
     r = c.options(PROTECTED, headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"})
     assert r.status_code == 200
 

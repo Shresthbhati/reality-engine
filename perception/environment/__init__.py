@@ -1,4 +1,4 @@
-"""Outdoor and environmental perception (Master Development Plan Task 6.7)."""
+"""Outdoor and environmental perception (Master Development Plan Task 6.7 & Wave 2 Block 14)."""
 
 from .outdoor import (
     FootpathFit,
@@ -19,6 +19,16 @@ from .outdoor import (
     fit_tree,
     promote_outdoor_entity,
 )
+from .urban_profiler import (
+    CarriagewayProfile,
+    CurbProfile,
+    PedestrianCrossing,
+    SidewalkProfile,
+    StreetCorridorProfile,
+    StreetProfileRefused,
+    profile_street_corridor,
+    promote_street_corridor,
+)
 
 __all__ = [
     "FootpathFit",
@@ -38,4 +48,12 @@ __all__ = [
     "fit_street_furniture",
     "fit_tree",
     "promote_outdoor_entity",
+    "CarriagewayProfile",
+    "CurbProfile",
+    "PedestrianCrossing",
+    "SidewalkProfile",
+    "StreetCorridorProfile",
+    "StreetProfileRefused",
+    "profile_street_corridor",
+    "promote_street_corridor",
 ]

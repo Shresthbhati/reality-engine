@@ -6,17 +6,24 @@ Pure, deterministic geometric point cloud operations using NumPy and SciPy KDTre
    - Deterministic: sorted iteration by integer voxel coordinates.
 2. Statistical Outlier Removal (SOR):
    - Computes mean distance to k-nearest neighbors via KDTree.
-   - Filters noise points exceeding $\\mu + \\alpha \\cdot \\sigma$.
+   - Filters noise points exceeding mu + alpha * sigma.
 3. Radius Outlier Removal (ROR):
    - Filters isolated points with fewer than min_neighbors within search radius.
 4. Normal Estimation:
    - Fits local surface tangent planes via covariance eigenvectors of k-neighborhoods.
    - Canonicalizes orientation towards camera viewpoints or world up.
+5. Chamfer Distance & F-Score Evaluation:
+   - Computes bidirectional Chamfer distance CD(S1, S2).
+   - Evaluates precision, recall, and harmonic F-Score at distance threshold tau.
+6. PLY Point Cloud Serialization:
+   - Exports points, colors, and normals to standard ASCII or binary little-endian PLY.
 """
 
 from __future__ import annotations
 
 import math
+import struct
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -172,7 +179,7 @@ def radius_outlier_removal(
 def estimate_point_normals(
     points: np.ndarray,
     k_neighbors: int = 15,
-    view_point: Optional[Sequence[float]] = None,
+    view_point: Optional[Union[Sequence[float], np.ndarray]] = None,
     world_up: Sequence[float] = (0.0, 0.0, 1.0),
 ) -> np.ndarray:
     """Estimate surface normal vectors via local covariance eigenvectors.
@@ -180,7 +187,7 @@ def estimate_point_normals(
     Args:
         points: (N, 3) point coordinates.
         k_neighbors: Neighborhood size for PCA plane fit.
-        view_point: Optional camera 3D center (x, y, z) to orient normals toward.
+        view_point: Optional camera 3D center (x, y, z) or (N, 3) per-point viewpoints to orient normals toward.
         world_up: Fallback orientation reference if view_point is omitted.
 
     Returns:
@@ -196,7 +203,16 @@ def estimate_point_normals(
     _, idxs = tree.query(pts, k=k)
 
     normals = np.zeros((n, 3), dtype=np.float64)
-    v_pt = np.asarray(view_point, dtype=np.float64) if view_point is not None else None
+    v_pts = None
+    if view_point is not None:
+        v_arr = np.asarray(view_point, dtype=np.float64)
+        if v_arr.ndim == 1:
+            v_pts = np.tile(v_arr, (n, 1))
+        elif v_arr.shape == (n, 3):
+            v_pts = v_arr
+        else:
+            raise ValueError(f"view_point must have shape (3,) or ({n}, 3), got {v_arr.shape}")
+
     up = np.asarray(world_up, dtype=np.float64)
 
     for i in range(n):
@@ -215,9 +231,9 @@ def estimate_point_normals(
             normal = up
 
         # Canonicalize orientation
-        if v_pt is not None:
+        if v_pts is not None:
             # Point toward camera: normal . (camera - point) >= 0
-            to_cam = v_pt - pts[i]
+            to_cam = v_pts[i] - pts[i]
             if np.dot(normal, to_cam) < 0.0:
                 normal = -normal
         else:
@@ -228,3 +244,193 @@ def estimate_point_normals(
         normals[i] = normal
 
     return normals
+
+
+def chamfer_distance(
+    points_a: np.ndarray,
+    points_b: np.ndarray,
+    return_components: bool = False,
+) -> Union[float, Tuple[float, float, float]]:
+    """Compute the bidirectional Chamfer Distance between two point clouds:
+
+        CD(A, B) = (1 / |A|) * sum_{x in A} min_{y in B} ||x - y||_2
+                 + (1 / |B|) * sum_{y in B} min_{x in A} ||x - y||_2
+
+    Args:
+        points_a: (N, 3) float array of 3D points.
+        points_b: (M, 3) float array of 3D points.
+        return_components: If True, returns (cd_total, d_a_to_b, d_b_to_a).
+
+    Returns:
+        Chamfer distance (in same units as input, e.g. meters), or tuple of components.
+    """
+    pts_a = np.asarray(points_a, dtype=np.float64)
+    pts_b = np.asarray(points_b, dtype=np.float64)
+
+    if len(pts_a) == 0 or len(pts_b) == 0:
+        val = float("inf")
+        return (val, val, val) if return_components else val
+
+    tree_b = KDTree(pts_b)
+    dists_a_to_b, _ = tree_b.query(pts_a, k=1)
+    mean_a_to_b = float(np.mean(dists_a_to_b))
+
+    tree_a = KDTree(pts_a)
+    dists_b_to_a, _ = tree_a.query(pts_b, k=1)
+    mean_b_to_a = float(np.mean(dists_b_to_a))
+
+    cd_total = mean_a_to_b + mean_b_to_a
+    if return_components:
+        return cd_total, mean_a_to_b, mean_b_to_a
+    return cd_total
+
+
+def f_score_tau(
+    points_pred: np.ndarray,
+    points_gt: np.ndarray,
+    tau: float = 0.01,
+) -> Tuple[float, float, float]:
+    """Compute Precision, Recall, and harmonic F-Score at distance threshold tau.
+
+    Args:
+        points_pred: (N, 3) predicted point coordinates.
+        points_gt: (M, 3) ground truth point coordinates.
+        tau: Distance threshold in meters (default 0.01m = 10mm).
+
+    Returns:
+        (precision, recall, f_score) in range [0.0, 1.0].
+    """
+    pts_p = np.asarray(points_pred, dtype=np.float64)
+    pts_g = np.asarray(points_gt, dtype=np.float64)
+
+    if len(pts_p) == 0 or len(pts_g) == 0:
+        return 0.0, 0.0, 0.0
+
+    tree_g = KDTree(pts_g)
+    dists_p, _ = tree_g.query(pts_p, k=1)
+    precision = float(np.mean(dists_p <= tau))
+
+    tree_p = KDTree(pts_p)
+    dists_g, _ = tree_p.query(pts_g, k=1)
+    recall = float(np.mean(dists_g <= tau))
+
+    if precision + recall > 1e-12:
+        f_score = 2.0 * (precision * recall) / (precision + recall)
+    else:
+        f_score = 0.0
+
+    return precision, recall, f_score
+
+
+def compute_point_cloud_density(
+    points: np.ndarray,
+    bounding_volume_m3: Optional[float] = None,
+) -> float:
+    """Compute point cloud density in points per cubic meter.
+
+    Args:
+        points: (N, 3) point coordinates.
+        bounding_volume_m3: Optional explicit volume in m^3. If omitted, computes from AABB.
+
+    Returns:
+        Density in points / m^3.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    if len(pts) == 0:
+        return 0.0
+
+    if bounding_volume_m3 is not None and bounding_volume_m3 > 0:
+        return float(len(pts)) / float(bounding_volume_m3)
+
+    bmin = np.min(pts, axis=0)
+    bmax = np.max(pts, axis=0)
+    extents = np.maximum(bmax - bmin, 0.01)
+    volume = float(extents[0] * extents[1] * extents[2])
+    return float(len(pts)) / volume if volume > 0 else 0.0
+
+
+def export_point_cloud_ply(
+    path: Union[str, Path],
+    points: np.ndarray,
+    colors: Optional[np.ndarray] = None,
+    normals: Optional[np.ndarray] = None,
+    binary: bool = True,
+) -> None:
+    """Export points, colors, and normals to standard PLY format.
+
+    Args:
+        path: Output file path.
+        points: (N, 3) point coordinates float32 or float64.
+        colors: Optional (N, 3) or (N, 4) uint8 colors.
+        normals: Optional (N, 3) float32/float64 normals.
+        binary: If True, writes binary_little_endian PLY; else writes ASCII PLY.
+    """
+    pts = np.asarray(points, dtype=np.float32)
+    n = len(pts)
+    has_colors = colors is not None and len(colors) == n
+    has_normals = normals is not None and len(normals) == n
+
+    cols = np.asarray(colors, dtype=np.uint8) if has_colors else None
+    norms = np.asarray(normals, dtype=np.float32) if has_normals else None
+
+    target_path = Path(path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    header_lines = [
+        "ply",
+        "format binary_little_endian 1.0" if binary else "format ascii 1.0",
+        f"element vertex {n}",
+        "property float x",
+        "property float y",
+        "property float z",
+    ]
+    if has_normals:
+        header_lines.extend([
+            "property float nx",
+            "property float ny",
+            "property float nz",
+        ])
+    if has_colors:
+        header_lines.extend([
+            "property uchar red",
+            "property uchar green",
+            "property uchar blue",
+        ])
+
+    header_lines.append("end_header\n")
+    header = "\n".join(header_lines).encode("ascii")
+
+    if binary:
+        with open(target_path, "wb") as f:
+            f.write(header)
+            # Build structured record array
+            dtype_fields = [("x", "<f4"), ("y", "<f4"), ("z", "<f4")]
+            if has_normals:
+                dtype_fields.extend([("nx", "<f4"), ("ny", "<f4"), ("nz", "<f4")])
+            if has_colors:
+                dtype_fields.extend([("red", "u1"), ("green", "u1"), ("blue", "u1")])
+
+            vertex_data = np.empty(n, dtype=dtype_fields)
+            vertex_data["x"] = pts[:, 0]
+            vertex_data["y"] = pts[:, 1]
+            vertex_data["z"] = pts[:, 2]
+            if has_normals and norms is not None:
+                vertex_data["nx"] = norms[:, 0]
+                vertex_data["ny"] = norms[:, 1]
+                vertex_data["nz"] = norms[:, 2]
+            if has_colors and cols is not None:
+                vertex_data["red"] = cols[:, 0]
+                vertex_data["green"] = cols[:, 1]
+                vertex_data["blue"] = cols[:, 2]
+
+            vertex_data.tofile(f)
+    else:
+        with open(target_path, "w", encoding="ascii") as f:
+            f.write("\n".join(header_lines))
+            for i in range(n):
+                line_parts = [f"{pts[i, 0]:.6f}", f"{pts[i, 1]:.6f}", f"{pts[i, 2]:.6f}"]
+                if has_normals and norms is not None:
+                    line_parts.extend([f"{norms[i, 0]:.6f}", f"{norms[i, 1]:.6f}", f"{norms[i, 2]:.6f}"])
+                if has_colors and cols is not None:
+                    line_parts.extend([str(int(cols[i, 0])), str(int(cols[i, 1])), str(int(cols[i, 2]))])
+                f.write(" ".join(line_parts) + "\n")

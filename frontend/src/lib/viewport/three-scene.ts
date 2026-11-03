@@ -17,6 +17,9 @@ import { shouldAutoFrame } from "./autoframe";
 import { buildOutdoor, derivePalette, emptyOutdoorResult, meshBounds, partMesh, type OutdoorPart, type OutdoorResult } from "./outdoor-model";
 import type { MeasureKind, Vec3 } from "./measure-model";
 import { STRUCTURE_COLORS, choosePointDisplay, decimatePoints, type PointDisplayMode, type StructurePoint } from "./structure-points-model";
+import { TransformGizmoController } from "../studio/transform-gizmo.ts";
+import { extractRoomBoundariesFromWorld } from "../studio/room-boundary-snap.ts";
+import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "../studio/transform-types.ts";
 
 export interface ViewportLayers {
   points: boolean;
@@ -242,6 +245,11 @@ export class WorldSceneController {
     shell: true,
   };
 
+  private transformGizmo: TransformGizmoController | null = null;
+  private transformGizmoEnabled = true;
+  private transformMode: TransformGizmoMode = "translate";
+  private gizmoSnapConfig: SnapConfig = DEFAULT_SNAP_CONFIG;
+
   private onSelectCallback?: (id: string | null) => void;
   private onHoverCallback?: (id: string | null) => void;
   private onMeasureCallback?: (res: MeasurementResult | null) => void;
@@ -335,6 +343,7 @@ export class WorldSceneController {
     this.mouse = new THREE.Vector2();
 
     this.setupEvents();
+    this.initTransformGizmo();
     this.startLoop();
   }
 
@@ -350,6 +359,70 @@ export class WorldSceneController {
     this.onMeasureCallback = callbacks.onMeasure;
     this.onCameraChangeCallback = callbacks.onCameraChange;
     this.onContextLossChangeCallback = callbacks.onContextLossChange;
+  }
+
+  private initTransformGizmo() {
+    try {
+      this.transformGizmo = new TransformGizmoController({
+        scene: this.scene,
+        camera: this.camera,
+        domElement: this.renderer.domElement,
+        orbitControls: this.controls,
+        snapConfig: this.gizmoSnapConfig,
+        onTransformChange: (entityId, state) => {
+          if (this.layers.selectionOutline && this.selectedEntityId === entityId) {
+            this.layers.selectionOutline.position.set(...state.position);
+            this.layers.selectionOutline.rotation.set(...state.rotation);
+            this.layers.selectionOutline.scale.set(...state.scale);
+          }
+          if (this.world && this.world.entities && this.world.entities[entityId]) {
+            const ent = this.world.entities[entityId];
+            if (!ent.transform) {
+              ent.transform = {};
+            }
+            ent.transform.position = { x: state.position[0], y: state.position[1], z: state.position[2] };
+            ent.transform.scale = { x: state.scale[0], y: state.scale[1], z: state.scale[2] };
+          }
+        },
+      });
+      this.transformGizmo.setMode(this.transformMode);
+      if (this.world) {
+        this.transformGizmo.setRoomBoundaries(extractRoomBoundariesFromWorld(this.world));
+      }
+    } catch (e) {
+      console.warn("Failed to initialize TransformGizmoController:", e);
+    }
+  }
+
+  public setTransformMode(mode: TransformGizmoMode) {
+    this.transformMode = mode;
+    this.transformGizmo?.setMode(mode);
+  }
+
+  public getTransformMode(): TransformGizmoMode {
+    return this.transformMode;
+  }
+
+  public setGizmoSnapConfig(config: Partial<SnapConfig>) {
+    this.gizmoSnapConfig = { ...this.gizmoSnapConfig, ...config };
+    this.transformGizmo?.setSnapConfig(config);
+  }
+
+  public getGizmoSnapConfig(): SnapConfig {
+    return { ...this.gizmoSnapConfig };
+  }
+
+  public setTransformGizmoEnabled(enabled: boolean) {
+    this.transformGizmoEnabled = enabled;
+    if (!enabled) {
+      this.transformGizmo?.detach();
+    } else if (this.selectedEntityId && this.entityMeshes.has(this.selectedEntityId)) {
+      this.transformGizmo?.attach(this.selectedEntityId, this.entityMeshes.get(this.selectedEntityId)!);
+    }
+  }
+
+  public getTransformGizmo(): TransformGizmoController | null {
+    return this.transformGizmo;
   }
 
   public setGridVisible(visible: boolean) {
@@ -579,6 +652,9 @@ export class WorldSceneController {
     }
     this.isolatedSpaceId = null;
     this.world = world;
+    if (this.transformGizmo && world) {
+      this.transformGizmo.setRoomBoundaries(extractRoomBoundariesFromWorld(world));
+    }
     this.pointsData = points;
     this.camerasData = cameras;
     this.meshData = mesh;
@@ -1367,6 +1443,12 @@ export class WorldSceneController {
 
   public setPointerTool(tool: PointerTool) {
     this.selectionEnabled = tool === "select";
+    if (tool !== "select" && this.transformGizmo) {
+      this.transformGizmo.detach();
+    } else if (tool === "select" && this.selectedEntityId && this.transformGizmo && this.transformGizmoEnabled) {
+      const mesh = this.entityMeshes.get(this.selectedEntityId);
+      if (mesh) this.transformGizmo.attach(this.selectedEntityId, mesh);
+    }
     this.controls.mouseButtons.LEFT = tool === "pan" ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
   }
 
@@ -2255,6 +2337,14 @@ export class WorldSceneController {
     this.applyOutdoorMode(); // recolours the selected outdoor part and redraws its outline
     if (updateCamera && id && !this.entityMeshes.has(id)) this.flyToEntity(id);
     this.renderSpatialTopology(id);
+    if (this.transformGizmo && this.transformGizmoEnabled) {
+      if (id && this.entityMeshes.has(id) && this.selectionEnabled) {
+        const mesh = this.entityMeshes.get(id)!;
+        this.transformGizmo.attach(id, mesh);
+      } else {
+        this.transformGizmo.detach();
+      }
+    }
     this.refreshShellVisibility(); // a selected (cut-away) wall is revealed
     this.onSelectCallback?.(id);
   }
@@ -2517,6 +2607,10 @@ export class WorldSceneController {
         return;
       }
 
+      if (this.transformGizmo && this.transformGizmo.isInteracting()) {
+        return;
+      }
+
       const rect = dom.getBoundingClientRect();
       this.mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
@@ -2728,6 +2822,10 @@ export class WorldSceneController {
     }
     this.disposeGroupChildren(this.annotationGroup);
     if (this.annotationGroup) this.root.remove(this.annotationGroup);
+    if (this.transformGizmo) {
+      this.transformGizmo.dispose();
+      this.transformGizmo = null;
+    }
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement) {

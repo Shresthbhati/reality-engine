@@ -63,6 +63,8 @@ import {
 import { resolveUnitContext } from "@/lib/viewport/measure-model";
 import { captureTitle, isUnplaced, type CaptureQuality, type StructurePoint } from "@/lib/viewport/structure-points-model";
 import MeasurementPanel from "./MeasurementPanel";
+import TransformGizmoToolbar from "@/components/studio/TransformGizmoToolbar";
+import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "@/lib/studio/transform-types";
 
 const NO_SHELL_REASON =
   "No reconstructed room shell yet (no measured footprint). Only legacy bounding boxes can be drawn, so the view modes are unavailable.";
@@ -186,6 +188,29 @@ export default function World3DViewport({
   // the view modes apply to the room shell AND to map-imported / generated outdoor parts
   const hasModes = hasShell || outdoorInfo !== null;
   const [tool, setTool] = useState<PointerTool>("select");
+  const [gizmoMode, setGizmoMode] = useState<TransformGizmoMode>("translate");
+  const [snapConfig, setSnapConfig] = useState<SnapConfig>(DEFAULT_SNAP_CONFIG);
+
+  const handleGizmoModeChange = useCallback((m: TransformGizmoMode) => {
+    setGizmoMode(m);
+    controllerRef.current?.setTransformMode(m);
+  }, []);
+
+  const handleSnapConfigChange = useCallback((c: Partial<SnapConfig>) => {
+    setSnapConfig((prev) => {
+      const next = { ...prev, ...c };
+      controllerRef.current?.setGizmoSnapConfig(next);
+      return next;
+    });
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    controllerRef.current?.getTransformGizmo()?.undo();
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    controllerRef.current?.getTransformGizmo()?.redo();
+  }, []);
   const [ortho, setOrtho] = useState(false);
   const [showDims, setShowDims] = useState(true);
   const [layersOpen, setLayersOpen] = useState(false);
@@ -734,6 +759,21 @@ export default function World3DViewport({
             </div>
           )}
         </div>
+
+        {/* Interactive 3D Transform Gizmo Toolbar */}
+        {selectedEntityId && tool === "select" && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+            <TransformGizmoToolbar
+              mode={gizmoMode}
+              onModeChange={handleGizmoModeChange}
+              snapConfig={snapConfig}
+              onSnapConfigChange={handleSnapConfigChange}
+              selectedEntityId={selectedEntityId}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+            />
+          </div>
+        )}
 
         {/* Interactive Measurement HUD Card */}
         {isMeasuring && (

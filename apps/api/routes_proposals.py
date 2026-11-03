@@ -126,3 +126,73 @@ async def reject(world_id: str, proposal_id: str, body: RejectIn, db: AsyncSessi
         raise HTTPException(409, str(exc)) from exc
     except ProposalError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+
+# ---------------------------------------------------------------------------
+# Standalone Proposals Pipeline Router (for direct proposals workflow / tests)
+# ---------------------------------------------------------------------------
+
+from typing import Any, Dict
+from worldstore.proposals import (
+    ProposalStatus,
+    get_default_pipeline,
+    reset_default_pipeline,
+)
+
+pipeline_router = APIRouter(prefix="/proposals", tags=["proposals_pipeline"])
+
+
+class ProposalIn(BaseModel):
+    kind: str
+    payload: Dict[str, Any] = {}
+    created_by: str = "system"
+
+
+class ReviewIn(BaseModel):
+    reviewer: str = "reviewer"
+    reason: str = ""
+
+
+@pipeline_router.post("")
+def submit_pipeline_proposal(body: ProposalIn):
+    p = get_default_pipeline().submit(body.kind, body.payload, body.created_by)
+    return {"proposal_id": p.proposal_id, "status": p.status.value}
+
+
+@pipeline_router.get("")
+def list_pipeline_proposals(status: Optional[str] = None):
+    st = ProposalStatus(status) if status else None
+    out = []
+    for p in get_default_pipeline().list(st):
+        out.append({"proposal_id": p.proposal_id, "kind": p.kind,
+                    "status": p.status.value, "created_by": p.created_by})
+    return {"proposals": out}
+
+
+@pipeline_router.get("/{proposal_id}")
+def get_pipeline_proposal(proposal_id: str):
+    p = get_default_pipeline().get(proposal_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="proposal not found")
+    return {"proposal_id": p.proposal_id, "kind": p.kind, "status": p.status.value,
+            "payload": p.payload, "reviewed_by": p.reviewed_by,
+            "review_reason": p.review_reason}
+
+
+@pipeline_router.post("/{proposal_id}/approve")
+def approve_pipeline_proposal(proposal_id: str, body: ReviewIn):
+    try:
+        p = get_default_pipeline().approve(proposal_id, body.reviewer, body.reason)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"proposal_id": p.proposal_id, "status": p.status.value}
+
+
+@pipeline_router.post("/{proposal_id}/reject")
+def reject_pipeline_proposal(proposal_id: str, body: ReviewIn):
+    try:
+        p = get_default_pipeline().reject(proposal_id, body.reviewer, body.reason)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"proposal_id": p.proposal_id, "status": p.status.value}

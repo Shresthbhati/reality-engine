@@ -29,6 +29,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
+from engine.compiler.building_envelope import reconstruct_building_envelope
+from engine.core.resource_governor import (
+    GovernedExecution,
+    compute_governor_policy,
+    probe_system_resources,
+)
+from evidence.cad_importer import import_cad_floorplan_file, promote_cad_floorplan
+from perception.reasoning.physical_plausibility import validate_physical_plausibility
+from perception.style.analyzer import analyze_world_design_style
+from planning.completeness import evaluate_scene_completeness
 from engine.compiler.world_compiler import (
     CompileDiagnostics,
     CompileOptions,
@@ -158,6 +168,8 @@ class UniversalPipeline:
         hw_device = select_device()
         telemetry["device"] = hw_device.device
         telemetry["cuda_available"] = hw_device.is_gpu
+        gov_policy = compute_governor_policy(target_budget_s=30.0)
+        telemetry["governor_policy"] = gov_policy.to_dict()
 
         # Step 2: Working directory setup
         temp_dir_obj = None
@@ -222,6 +234,13 @@ class UniversalPipeline:
                 "mode": opts.mode.value,
             }
 
+            # Building envelope & storeys grouping
+            envelope_res = reconstruct_building_envelope(world)
+            telemetry["stages"]["building_envelope"] = {
+                "storeys_created": envelope_res.total_storeys,
+                "total_gfa_m2": round(envelope_res.gross_floor_area_m2, 2),
+            }
+
             # Step 7: Material Appearance Hypotheses
             if opts.enable_materials:
                 t0 = time.perf_counter()
@@ -239,6 +258,29 @@ class UniversalPipeline:
                     "runtime_s": round(time.perf_counter() - t0, 3),
                     "edges_created": spatial_inference.total_edges_created,
                 }
+
+            # Step 8.1: Design Style Analysis
+            style_analysis = analyze_world_design_style(world)
+            telemetry["stages"]["design_style"] = {
+                "primary_style": style_analysis.primary_style.value,
+                "confidence": round(style_analysis.confidence, 3),
+            }
+
+            # Step 8.2: Physical Plausibility & Collision Analysis
+            plausibility_report = validate_physical_plausibility(world)
+            telemetry["stages"]["physical_plausibility"] = {
+                "is_plausible": plausibility_report.is_plausible,
+                "collisions_count": len(plausibility_report.collisions),
+                "floating_count": len(plausibility_report.floating_entities),
+                "auto_fix_proposals": len(plausibility_report.fix_proposals),
+            }
+
+            # Step 8.3: Completeness Evaluation
+            completeness_report = evaluate_scene_completeness(world)
+            telemetry["stages"]["completeness"] = {
+                "overall_completeness_pct": round(completeness_report.overall_completeness_pct, 1),
+                "rooms_evaluated": len(completeness_report.room_reports),
+            }
 
             # Step 9: Validation Gate
             t0 = time.perf_counter()

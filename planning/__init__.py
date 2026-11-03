@@ -1,23 +1,27 @@
-"""Planning and capture intelligence: next-best-view planning and reconstruction completeness."""
+"""Planning subsystem (capture, trajectory, completeness)."""
 
-from planning.capture_planner import (
+from .capture_planner import (
     CameraPose,
+    CapturePlanResult,
     RecommendedViewpoint,
     SurfacePatch,
     plan_next_best_view_capture,
 )
-from planning.completeness import (
+from .completeness import (
     RoomCompletenessReport,
     SceneCompletenessReport,
     evaluate_reconstruction_completeness,
+    evaluate_scene_completeness,
 )
 
 __all__ = [
-    "SurfacePatch",
     "CameraPose",
+    "CapturePlanResult",
     "RecommendedViewpoint",
-    "plan_next_best_view_capture",
     "RoomCompletenessReport",
     "SceneCompletenessReport",
+    "SurfacePatch",
     "evaluate_reconstruction_completeness",
+    "evaluate_scene_completeness",
+    "plan_next_best_view_capture",
 ]

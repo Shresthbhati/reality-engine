@@ -282,3 +282,8 @@ def evaluate_reconstruction_completeness(world: WorldIR) -> SceneCompletenessRep
     world.metadata["completeness"] = scene_report.to_dict()
 
     return scene_report
+
+
+# Alias for whole-scene completeness evaluation
+evaluate_scene_completeness = evaluate_reconstruction_completeness
+

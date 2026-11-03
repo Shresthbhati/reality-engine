@@ -65,12 +65,12 @@ def analyze_scene_style(
     # 1. Collect entities in scope
     entities = list(world.entities.values())
     if room_id:
-        entities = [e for e in entities if e.id == room_id or e.parent_id == room_id]
+        entities = [e for e in entities if e.id == room_id or e.custom_properties.get("room_id") == room_id]
 
     # 2. Extract material distribution from entities and world materials
     material_counts: Dict[str, int] = {}
     for mat in world.materials.values():
-        cat = mat.category.lower() if hasattr(mat, "category") and mat.category else "unknown"
+        cat = mat.class_name.lower() if hasattr(mat, "class_name") and mat.class_name else "unknown"
         if cat != "unknown":
             material_counts[cat] = material_counts.get(cat, 0) + 1
 
@@ -100,107 +100,92 @@ def analyze_scene_style(
         elif "conduit" in c_class or "duct" in c_class:
             exposed_conduit_found = True
 
-    # Check tags as well
-    tags_lower = [t.lower() for t in visual_tags]
-    if any("carved" in t or "ornate" in t for t in tags_lower):
-        ornament_score += 3
-    if any("minimal" in t or "flush" in t for t in tags_lower):
-        ornament_score -= 2
-
-    if ornament_score <= 0:
-        ornament_level = OrnamentationLevel.NONE_MINIMAL
-    elif ornament_score <= 2:
-        ornament_level = OrnamentationLevel.LOW_RESTRAINED
-    elif ornament_score <= 4:
-        ornament_level = OrnamentationLevel.MODERATE
-    elif ornament_score <= 7:
+    if ornament_score >= 4 or any("ornate" in t.lower() for t in visual_tags):
         ornament_level = OrnamentationLevel.HIGH_ELABORATE
+    elif ornament_score >= 2 or any("decorative" in t.lower() for t in visual_tags):
+        ornament_level = OrnamentationLevel.MODERATE
+    elif exposed_conduit_found or any("minimal" in t.lower() or "clean" in t.lower() for t in visual_tags):
+        ornament_level = OrnamentationLevel.NONE_MINIMAL
     else:
-        ornament_level = OrnamentationLevel.HIGHLY_DECORATIVE
+        ornament_level = OrnamentationLevel.LOW_RESTRAINED
 
-    # 4. Measure window-to-wall ratio if geometry bounds are present
+    # 4. Measure window-to-wall ratio if wall and window areas exist
     total_wall_area = 0.0
     total_window_area = 0.0
     for e in entities:
-        e_type = str(e.type).lower() if hasattr(e, "type") else ""
-        c_class = str(e.custom_properties.get("entity_class", "")).lower()
-        dims = e.custom_properties.get("dimensions_m")
-        if dims and len(dims) >= 2:
-            area = float(dims[0]) * float(dims[1])
-            if "wall" in e_type or "wall" in c_class:
-                total_wall_area += area
-            elif "window" in e_type or "window" in c_class:
-                total_window_area += area
+        if "wall" in str(e.type).lower() or "wall" in str(e.custom_properties.get("entity_class", "")).lower():
+            area = float(e.custom_properties.get("area_m2") or e.custom_properties.get("length_m", 3.0) * e.custom_properties.get("height_m", 2.8))
+            total_wall_area += area
+        elif "window" in str(e.type).lower() or "window" in str(e.custom_properties.get("entity_class", "")).lower():
+            area = float(e.custom_properties.get("area_m2") or e.custom_properties.get("width_m", 1.2) * e.custom_properties.get("height_m", 1.5))
+            total_window_area += area
 
-    wwr: Optional[float] = None
-    if total_wall_area > 0.0:
-        wwr = min(1.0, total_window_area / total_wall_area)
+    wwr = (total_window_area / total_wall_area) if total_wall_area > 0.0 else None
 
-    # 5. Score against all style profiles
-    scores: Dict[DesignStyle, float] = {}
-    matched_features_map: Dict[DesignStyle, List[str]] = {}
+    # 5. Score candidate styles against measured cues
+    tags_lower = {t.strip().lower() for t in visual_tags}
+    raw_scores: Dict[DesignStyle, float] = {s: 0.0 for s in DesignStyle}
+    matched_features_map: Dict[DesignStyle, List[str]] = {s: [] for s in DesignStyle}
 
     for style, profile in STYLE_PROFILES.items():
         score = 0.0
-        matches: List[str] = []
-
-        # Material overlap
-        for mat in top_materials:
-            if mat in profile.dominant_materials:
+        # Material matches
+        for m in top_materials:
+            if m in profile.dominant_materials:
                 score += 3.0
-                matches.append(f"Dominant material match: {mat}")
-            elif mat in profile.secondary_materials:
+                matched_features_map[style].append(f"Dominant material match: {m}")
+            elif m in profile.secondary_materials:
                 score += 1.5
-                matches.append(f"Secondary material match: {mat}")
+                matched_features_map[style].append(f"Secondary material match: {m}")
 
-        # Ornamentation compatibility
-        if ornament_level == profile.ornamentation:
-            score += 2.5
-            matches.append(f"Ornamentation level matches {profile.ornamentation.value}")
-        elif abs(list(OrnamentationLevel).index(ornament_level) - list(OrnamentationLevel).index(profile.ornamentation)) == 1:
-            score += 1.0
+        # Ornamentation agreement
+        if profile.ornamentation == ornament_level:
+            score += 2.0
+            matched_features_map[style].append(f"Ornamentation match: {ornament_level.value}")
 
-        # WWR compatibility
-        if wwr is not None:
-            min_r, max_r = profile.window_to_wall_ratio
-            if min_r <= wwr <= max_r:
-                score += 2.0
-                matches.append(f"Window-to-wall ratio {wwr:.2f} within range [{min_r}, {max_r}]")
-
-        # Specific feature triggers
-        if exposed_conduit_found and style == DesignStyle.INDUSTRIAL:
+        # Geometric & semantic cues
+        if style == DesignStyle.INDUSTRIAL and exposed_conduit_found:
             score += 4.0
-            matches.append("Exposed conduit/infrastructure detected")
-        if arch_found and style in (DesignStyle.MEDITERRANEAN, DesignStyle.GOTHIC, DesignStyle.TRADITIONAL_INDIAN):
+            matched_features_map[style].append("Exposed mechanical conduits/ducts detected")
+
+        if style in (DesignStyle.GOTHIC, DesignStyle.CLASSICAL, DesignStyle.TRADITIONAL_INDIAN) and arch_found:
             score += 3.0
-            matches.append("Arched architectural opening detected")
-        if moulding_found and style in (DesignStyle.CLASSICAL, DesignStyle.ART_DECO, DesignStyle.TRADITIONAL_INDIAN):
-            score += 2.5
-            matches.append("Architectural mouldings/cornices present")
+            matched_features_map[style].append("Arched openings and structural geometry")
 
-        # Visual tag keyword boost
+        if style in (DesignStyle.TRADITIONAL_INDIAN, DesignStyle.SOUTH_INDIAN_VERNACULAR, DesignStyle.CLASSICAL) and moulding_found:
+            score += 2.0
+            matched_features_map[style].append("Carved decorative mouldings and woodwork")
+
+        if style in (DesignStyle.MINIMALIST, DesignStyle.CONTEMPORARY) and ornament_level == OrnamentationLevel.NONE_MINIMAL:
+            score += 3.0
+            matched_features_map[style].append("Flush planar unadorned surfaces")
+
+        # Explicit visual tag and distinguishing feature boost
         for tag in tags_lower:
-            for feat in profile.distinguishing_features:
-                if feat.lower() in tag or tag in feat.lower():
-                    score += 2.0
-                    matches.append(f"Visual feature match: '{feat}'")
+            if tag in style.value:
+                score += 5.0
+                matched_features_map[style].append(f"Visual prior tag match: '{tag}'")
+            elif any(tag in feat.lower() or any(w in feat.lower() for w in tag.split() if len(w) > 3) for feat in profile.distinguishing_features):
+                score += 4.0
+                matched_features_map[style].append(f"Distinguishing feature match: '{tag}'")
+            elif any(tag in p.lower() for p in profile.typical_palette):
+                score += 2.0
+                matched_features_map[style].append(f"Palette match: '{tag}'")
 
-        scores[style] = max(0.0, score)
-        matched_features_map[style] = matches
+        raw_scores[style] = score
 
     # Normalize scores
-    total_score = sum(scores.values())
-    if total_score > 0.0:
-        normalized_scores = {s.value: v / total_score for s, v in scores.items()}
+    total_score = sum(raw_scores.values())
+    if total_score > 0:
+        normalized_scores = {s.value: raw_scores[s] / total_score for s in DesignStyle}
     else:
-        normalized_scores = {s.value: 1.0 / len(scores) for s in scores}
+        normalized_scores = {s.value: 1.0 / len(DesignStyle) for s in DesignStyle}
 
-    # Rank styles
-    sorted_styles = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    sorted_styles = sorted(raw_scores.items(), key=lambda x: x[1], reverse=True)
     best_style, best_raw = sorted_styles[0]
     second_style, second_raw = sorted_styles[1]
 
-    confidence = min(0.95, normalized_scores[best_style.value] * 1.8) if best_raw > 0 else 0.20
+    confidence = min(0.95, max(0.55, normalized_scores[best_style.value] * 2.2)) if best_raw > 2.0 else 0.20
     second_conf = min(0.80, normalized_scores[second_style.value] * 1.8) if second_raw > 0 else 0.0
 
     notes: List[str] = [
@@ -223,3 +208,7 @@ def analyze_scene_style(
         evidence_notes=notes,
         style_scores=normalized_scores,
     )
+
+
+# Alias for whole-world analysis
+analyze_world_design_style = analyze_scene_style

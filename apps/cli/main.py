@@ -30,6 +30,10 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from evidence.importers import import_folder
 from evidence.multi_source import MultiSourceSession
 from evidence.packages import DeterministicPackageBuilder, EvidencePackage
@@ -1046,6 +1050,7 @@ def cmd_inspect(args: argparse.Namespace) -> int:
             "provenance": entity.provenance.value,
             "confidence": entity.confidence,
             "geometry_ids": list(entity.geometry_ids),
+            "custom_properties": dict(entity.custom_properties),
             "relationships": [
                 {
                     "kind": rel.kind.value,
@@ -1063,11 +1068,21 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         by_type[entity.type.value] = by_type.get(entity.type.value, 0) + 1
     payload = {
         "world_id": world.id,
+        "coordinate_frame": world.coordinate_frame.value,
+        "transforms": len(world.transforms),
         "entities": len(world.entities),
         "geometries": len(world.geometries),
         "by_type": by_type,
         "global_provenance": world.global_provenance.value,
     }
+    for key in ("georeference", "design_style", "building_envelope", "scene_completeness", "physical_plausibility"):
+        if key in world.metadata:
+            payload[key] = world.metadata[key]
+    if "lighting" in world.environment:
+        payload["lighting"] = {
+            "dominant_light_direction": world.environment["lighting"].get("dominant_light_direction"),
+            "ambient_irradiance_rgb": world.environment["lighting"].get("ambient_irradiance_rgb"),
+        }
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 

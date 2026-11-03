@@ -36,6 +36,7 @@ import {
   MoveHorizontal,
   Compass,
   History,
+  Globe,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -71,6 +72,8 @@ import type { CapturePlanSummary } from "@/lib/studio/capture-plan-model";
 import { StoreySelector } from "@/components/studio/StoreySelector";
 import type { StoreyLevelItem } from "@/lib/studio/storey-model";
 import { TemporalDiffSlider } from "@/components/studio/TemporalDiffSlider";
+import { SpatialIntelligencePanel } from "@/components/studio/SpatialIntelligencePanel";
+import type { SpatialIntelligenceSummary } from "@/lib/studio/spatial-intelligence-model";
 import type { TemporalDiffSummary } from "@/lib/studio/temporal-model";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "@/lib/studio/transform-types";
 
@@ -123,6 +126,8 @@ interface World3DViewportProps {
   /** Multi-epoch temporal diff between baseline and current state. */
   temporalDiff?: TemporalDiffSummary | null;
   onSelectTemporalEntity?: (entityId: string) => void;
+  /** Spatial intelligence summary (georeference, building envelope, architectural style, physics, lighting). */
+  spatialIntelligence?: SpatialIntelligenceSummary | null;
 }
 
 function IconButton({
@@ -176,6 +181,7 @@ export default function World3DViewport({
   onSelectStorey: onSelectStoreyProp,
   temporalDiff: temporalDiffProp,
   onSelectTemporalEntity: onSelectTemporalEntityProp,
+  spatialIntelligence: spatialIntelligenceProp,
   chrome = true,
   initialLayers = null,
   bandOverlay = null,
@@ -232,6 +238,39 @@ export default function World3DViewport({
 
   const [showTemporalDiff, setShowTemporalDiff] = useState(false);
   const [temporalSplitRatio, setTemporalSplitRatio] = useState(0.5);
+
+  const resolvedSpatialIntelligence = useMemo<SpatialIntelligenceSummary | null>(() => {
+    if (spatialIntelligenceProp) return spatialIntelligenceProp;
+    if (!world) return null;
+    const meta = (world.metadata ?? {}) as any;
+    const georef = meta.georeference ?? null;
+    const style = meta.design_style ?? null;
+    const env = (world.environment ?? {}) as any;
+    const lighting = env.lighting ?? null;
+    const plausibility = meta.physical_plausibility ?? null;
+    const completeness = meta.scene_completeness ?? null;
+    const envelope = meta.building_envelope ?? null;
+    const sharedWalls = meta.shared_walls ?? null;
+    const transforms = world.transforms ?? {};
+
+    if (!georef && !style && !lighting && !plausibility && !completeness && !envelope && Object.keys(transforms).length === 0) {
+      return null;
+    }
+    return {
+      world_id: world.id,
+      coordinate_frame: String((world as any).coordinate_frame || world.coordinate_system || "WORLD"),
+      transforms_count: Object.keys(transforms).length,
+      georeference: georef,
+      design_style: style,
+      building_envelope: envelope,
+      physical_plausibility: plausibility,
+      scene_completeness: completeness,
+      lighting: lighting,
+      shared_walls: sharedWalls,
+    };
+  }, [spatialIntelligenceProp, world]);
+
+  const [showSpatialIntelligence, setShowSpatialIntelligence] = useState(false);
 
   const handleGizmoModeChange = useCallback((m: TransformGizmoMode) => {
     setGizmoMode(m);
@@ -875,6 +914,15 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Spatial Intelligence Overlay */}
+        {showSpatialIntelligence && resolvedSpatialIntelligence && (
+          <div
+            className={`absolute top-14 ${showStoreys && resolvedStoreys && resolvedStoreys.length > 0 ? "left-48" : "left-3"} z-20 w-[360px] max-w-[calc(100%-2rem)] pointer-events-auto`}
+          >
+            <SpatialIntelligencePanel summary={resolvedSpatialIntelligence} />
+          </div>
+        )}
+
         {/* Top right: XYZ axis gizmo */}
         {axes && (
           <svg
@@ -961,6 +1009,18 @@ export default function World3DViewport({
                 onClick={() => setShowTemporalDiff((v) => !v)}
               >
                 <History className="w-4 h-4 text-emerald-400" />
+              </IconButton>
+            </>
+          )}
+          {resolvedSpatialIntelligence && (
+            <>
+              <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
+              <IconButton
+                label="Spatial Intelligence (georeference, style, envelope, physics)"
+                active={showSpatialIntelligence}
+                onClick={() => setShowSpatialIntelligence((v) => !v)}
+              >
+                <Globe className="w-4 h-4 text-emerald-400" />
               </IconButton>
             </>
           )}

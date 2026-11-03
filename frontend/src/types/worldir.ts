@@ -135,6 +135,7 @@ export interface WorldIR {
   created_at?: number;
   modified_at?: number;
   coordinate_system?: string;
+  coordinate_frame?: string;
   entities: Record<string, Entity>;
   geometries?: Record<string, Geometry>;
   metadata?: WorldMetadata;

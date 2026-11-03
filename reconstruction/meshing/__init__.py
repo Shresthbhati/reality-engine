@@ -1,14 +1,17 @@
-"""Surface reconstruction (P0.11-P0.13): oriented point cloud -> MeshData.
+"""Surface reconstruction and mesh processing."""
 
-Mature backend first: the configured COLMAP binary's CPU poisson_mesher
-(surface.py). Preprocessing (downsample, outlier filter, camera-oriented
-normals) is deterministic scipy code (preprocess.py) so the same input
-cloud always yields the same oriented cloud -- the mesher itself is
-allowed nondeterministic thread scheduling, but its output is hashed as
-a real artifact either way.
-"""
-
+from .lod import DEFAULT_LOD_TIERS, LODTier, attach_lods_to_world, generate_mesh_lods
 from .mesh import MeshData, mesh_summary
 from .repair import clean_and_repair_mesh, mesh_to_trimesh, trimesh_to_mesh
 
-__all__ = ["MeshData", "mesh_summary", "clean_and_repair_mesh", "mesh_to_trimesh", "trimesh_to_mesh"]
+__all__ = [
+    "MeshData",
+    "mesh_summary",
+    "clean_and_repair_mesh",
+    "mesh_to_trimesh",
+    "trimesh_to_mesh",
+    "LODTier",
+    "DEFAULT_LOD_TIERS",
+    "generate_mesh_lods",
+    "attach_lods_to_world",
+]

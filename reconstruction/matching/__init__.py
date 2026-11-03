@@ -36,7 +36,7 @@ def is_lightglue_available() -> tuple[bool, str]:
 
 def available_matchers() -> Dict[str, str]:
     """name -> 'available' or the reason it is not."""
-    out = {"sift": "available"}
+    out = {"sift": "available", "xfeat": "available", "dedode": "available"}
     lg_ok, lg_msg = is_lightglue_available()
     out["lightglue"] = lg_msg
     for name, (reason, nc) in _NOT_IMPLEMENTED.items():
@@ -57,6 +57,16 @@ def get_matcher(name: str, paths: Dict[str, Path], **kwargs) -> IMatcher:
         from reconstruction.matching.lightglue import LightGlueMatcher
 
         return LightGlueMatcher(paths, **kwargs)
+
+    if name in ("xfeat", "xfeat@accelerated_features"):
+        from reconstruction.matching.xfeat import XFeatMatcher
+
+        return XFeatMatcher(paths, **kwargs)
+
+    if name in ("dedode", "dedode@v2"):
+        from reconstruction.matching.dedode import DeDoDeMatcher
+
+        return DeDoDeMatcher(paths, **kwargs)
 
     if name in _NOT_IMPLEMENTED:
         reason, nc = _NOT_IMPLEMENTED[name]

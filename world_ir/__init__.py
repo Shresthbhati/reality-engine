@@ -17,7 +17,7 @@ from .serialization import save_world, load_world, WORLD_SAVE_FORMAT_VERSION
 # V1 (complete schema)
 from .schema_v1 import (
     # Core types
-    Vector3, Quaternion, Measurement, Observation,
+    Vector3, Quaternion, Measurement, Observation, ConfidenceVector,
     # Data structures
     PhysicalProperties, Material, Geometry, Surface,
     Component, Relationship, TemporalEvent, CausalRelation, Entity,
@@ -66,6 +66,7 @@ __all__ = [
     "Quaternion",
     "Measurement",
     "Observation",
+    "ConfidenceVector",
     "PhysicalProperties",
     "Material",
     "Geometry",

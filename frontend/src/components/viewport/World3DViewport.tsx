@@ -34,6 +34,8 @@ import {
   Scissors,
   Download,
   MoveHorizontal,
+  Compass,
+  History,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -64,6 +66,12 @@ import { resolveUnitContext } from "@/lib/viewport/measure-model";
 import { captureTitle, isUnplaced, type CaptureQuality, type StructurePoint } from "@/lib/viewport/structure-points-model";
 import MeasurementPanel from "./MeasurementPanel";
 import TransformGizmoToolbar from "@/components/studio/TransformGizmoToolbar";
+import { CapturePlanPanel } from "@/components/studio/CapturePlanPanel";
+import type { CapturePlanSummary } from "@/lib/studio/capture-plan-model";
+import { StoreySelector } from "@/components/studio/StoreySelector";
+import type { StoreyLevelItem } from "@/lib/studio/storey-model";
+import { TemporalDiffSlider } from "@/components/studio/TemporalDiffSlider";
+import type { TemporalDiffSummary } from "@/lib/studio/temporal-model";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "@/lib/studio/transform-types";
 
 const NO_SHELL_REASON =
@@ -105,6 +113,16 @@ interface World3DViewportProps {
   hiddenEntityIds?: Set<string>;
   cutaway?: boolean;
   onCutawayChange?: (on: boolean) => void;
+  /** Next-best-view capture plan recommendations. */
+  capturePlan?: CapturePlanSummary | null;
+  onSelectCaptureViewpoint?: (viewpointId: string) => void;
+  /** Multi-storey building vertical levels. */
+  storeys?: StoreyLevelItem[] | null;
+  activeStoreyId?: string | "all";
+  onSelectStorey?: (storeyId: string | "all") => void;
+  /** Multi-epoch temporal diff between baseline and current state. */
+  temporalDiff?: TemporalDiffSummary | null;
+  onSelectTemporalEntity?: (entityId: string) => void;
 }
 
 function IconButton({
@@ -151,6 +169,13 @@ export default function World3DViewport({
   hiddenEntityIds,
   cutaway: cutawayProp,
   onCutawayChange,
+  capturePlan: capturePlanProp,
+  onSelectCaptureViewpoint: onSelectCaptureViewpointProp,
+  storeys: storeysProp,
+  activeStoreyId: activeStoreyIdProp,
+  onSelectStorey: onSelectStoreyProp,
+  temporalDiff: temporalDiffProp,
+  onSelectTemporalEntity: onSelectTemporalEntityProp,
   chrome = true,
   initialLayers = null,
   bandOverlay = null,
@@ -190,6 +215,23 @@ export default function World3DViewport({
   const [tool, setTool] = useState<PointerTool>("select");
   const [gizmoMode, setGizmoMode] = useState<TransformGizmoMode>("translate");
   const [snapConfig, setSnapConfig] = useState<SnapConfig>(DEFAULT_SNAP_CONFIG);
+
+  // Studio Intelligence state fallbacks (from props or world.metadata)
+  const resolvedCapturePlan = capturePlanProp ?? ((world?.metadata as any)?.capture_plan as CapturePlanSummary | null) ?? null;
+  const resolvedStoreys = storeysProp ?? ((world?.metadata as any)?.storeys as StoreyLevelItem[] | null) ?? ((world?.metadata as any)?.vertical_topology?.storeys as StoreyLevelItem[] | null) ?? null;
+  const resolvedTemporalDiff = temporalDiffProp ?? ((world?.metadata as any)?.temporal_diff as TemporalDiffSummary | null) ?? null;
+
+  const [showCapturePlan, setShowCapturePlan] = useState(false);
+  const [selectedCaptureViewpointId, setSelectedCaptureViewpointId] = useState<string | null>(null);
+  const [showCameraCones, setShowCameraCones] = useState(true);
+
+  const [showStoreys, setShowStoreys] = useState(false);
+  const [activeStoreyIdState, setActiveStoreyIdState] = useState<string | "all">("all");
+  const activeStorey = activeStoreyIdProp ?? activeStoreyIdState;
+  const [isolateStorey, setIsolateStorey] = useState(false);
+
+  const [showTemporalDiff, setShowTemporalDiff] = useState(false);
+  const [temporalSplitRatio, setTemporalSplitRatio] = useState(0.5);
 
   const handleGizmoModeChange = useCallback((m: TransformGizmoMode) => {
     setGizmoMode(m);
@@ -785,6 +827,54 @@ export default function World3DViewport({
           />
         )}
 
+        {/* Multi-Storey Building Level Selector Overlay */}
+        {showStoreys && resolvedStoreys && (
+          <div className="absolute top-20 left-4 z-20 w-56 pointer-events-auto">
+            <StoreySelector
+              storeys={resolvedStoreys}
+              activeStoreyId={activeStorey}
+              onSelectStorey={(id) => {
+                setActiveStoreyIdState(id);
+                onSelectStoreyProp?.(id);
+              }}
+              isolateActiveStorey={isolateStorey}
+              onToggleIsolate={setIsolateStorey}
+            />
+          </div>
+        )}
+
+        {/* Next-Best-View Intelligent Capture Planner Overlay */}
+        {showCapturePlan && resolvedCapturePlan && (
+          <div className="absolute top-20 right-14 z-20 w-80 max-h-[75vh] overflow-y-auto pointer-events-auto">
+            <CapturePlanPanel
+              plan={resolvedCapturePlan}
+              selectedViewpointId={selectedCaptureViewpointId}
+              onSelectViewpoint={(id) => {
+                setSelectedCaptureViewpointId(id);
+                onSelectCaptureViewpointProp?.(id);
+              }}
+              showCameraCones={showCameraCones}
+              onToggleCameraCones={setShowCameraCones}
+            />
+          </div>
+        )}
+
+        {/* Multi-Epoch Temporal Diff Comparison Slider Overlay */}
+        {showTemporalDiff && resolvedTemporalDiff && (
+          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-20 w-[480px] max-w-[calc(100%-2rem)] pointer-events-auto">
+            <TemporalDiffSlider
+              diff={resolvedTemporalDiff}
+              splitRatio={temporalSplitRatio}
+              onSplitRatioChange={setTemporalSplitRatio}
+              selectedEntityId={selectedEntityId}
+              onSelectEntity={(id) => {
+                onSelectEntity(id);
+                onSelectTemporalEntityProp?.(id);
+              }}
+            />
+          </div>
+        )}
+
         {/* Top right: XYZ axis gizmo */}
         {axes && (
           <svg
@@ -838,6 +928,42 @@ export default function World3DViewport({
           <IconButton label="Measure [M]" active={isMeasuring} onClick={toggleMeasure}>
             <Ruler className="w-4 h-4" />
           </IconButton>
+          {resolvedStoreys && resolvedStoreys.length > 0 && (
+            <>
+              <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
+              <IconButton
+                label="Storey levels selector"
+                active={showStoreys}
+                onClick={() => setShowStoreys((v) => !v)}
+              >
+                <Layers className="w-4 h-4 text-indigo-400" />
+              </IconButton>
+            </>
+          )}
+          {resolvedCapturePlan && resolvedCapturePlan.recommended_viewpoints.length > 0 && (
+            <>
+              <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
+              <IconButton
+                label="Next-best-view capture plan"
+                active={showCapturePlan}
+                onClick={() => setShowCapturePlan((v) => !v)}
+              >
+                <Compass className="w-4 h-4 text-amber-400" />
+              </IconButton>
+            </>
+          )}
+          {resolvedTemporalDiff && resolvedTemporalDiff.changes.length > 0 && (
+            <>
+              <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
+              <IconButton
+                label="Temporal epoch diffing"
+                active={showTemporalDiff}
+                onClick={() => setShowTemporalDiff((v) => !v)}
+              >
+                <History className="w-4 h-4 text-emerald-400" />
+              </IconButton>
+            </>
+          )}
         </div>
 
         {/* Bottom centre: compact toolbar */}

@@ -444,6 +444,209 @@ def cmd_compile(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """One-command universal autonomous pipeline.
+
+    Accepts raw photos or an existing capture dataset directory, automatically runs
+    multi-view SfM, scale calibration, depth completion, 3D OMBB, material classification,
+    vertical topology, next-best-view capture planning, optional terrain fusion,
+    and automatic multi-format export.
+    """
+    from datetime import datetime, timezone
+    from engine.pipeline.artifacts import (
+        write_cameras_json,
+        write_exports,
+        write_mesh_ply_from_artifact,
+        write_points_ply,
+    )
+    from engine.pipeline.dataset import DatasetError, load_capture_dataset
+    from engine.pipeline.vertical_slice import (
+        VerticalSliceError,
+        VerticalSliceOptions,
+        vertical_slice,
+    )
+    from evidence.session import EvidenceItem, EvidenceKind
+    from provenance import Provenance
+    from PIL import Image
+
+    in_path = Path(args.input).resolve()
+    out = Path(args.output).resolve() if args.output else in_path / "pipeline_out"
+    out.mkdir(parents=True, exist_ok=True)
+
+    # 1. Dataset ingestion / discovery
+    manifest_path = in_path / "manifest.json"
+    if manifest_path.exists():
+        try:
+            items, refs, intrinsics, image_size = load_capture_dataset(in_path)
+        except DatasetError as exc:
+            _eprint(f"run rejected: {exc}")
+            return 1
+    else:
+        # Discover raw images directly in the directory
+        img_extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+        discovered_files = [p for p in sorted(in_path.iterdir()) if p.suffix.lower() in img_extensions] if in_path.is_dir() else []
+        if not discovered_files:
+            _eprint(f"run rejected: no images or manifest.json found in {in_path}")
+            return 1
+        
+        items = []
+        image_size = (1920, 1080)
+        for i, img_p in enumerate(discovered_files):
+            try:
+                with Image.open(img_p) as im:
+                    w, h = im.size
+                    if i == 0:
+                        image_size = (w, h)
+            except Exception:
+                w, h = image_size
+            items.append(
+                EvidenceItem(
+                    id=f"img_{i:03d}",
+                    kind=EvidenceKind.PHOTO,
+                    source_uri=img_p.resolve().as_uri(),
+                    captured_at=time.time(),
+                    metadata={"width_px": w, "height_px": h},
+                    provenance=Provenance.OBSERVED,
+                )
+            )
+        refs = []
+        intrinsics = None
+
+    store = FileArtifactStore(out / "artifacts")
+    backend = _resolve_test_backend()
+    options = VerticalSliceOptions(
+        measured_baselines=refs,
+        intrinsics=intrinsics,
+        image_size=image_size,
+        colmap_binary=args.colmap_binary,
+        depth_model=None if args.no_depth else "DPT_Hybrid",
+        mesh_enabled=not args.no_mesh,
+        artifact_store=store,
+        reconstruction_backend=backend,
+    )
+
+    started = time.perf_counter()
+    report: dict = {
+        "input": str(in_path),
+        "images_ingested": len(items),
+        "scale_references": len(refs),
+        "stages": {},
+    }
+
+    try:
+        result = vertical_slice(items, options)
+    except VerticalSliceError as exc:
+        report["status"] = "FAILED"
+        report["error"] = str(exc)
+        report["runtime_s"] = round(time.perf_counter() - started, 2)
+        (out / "report.json").write_text(json.dumps(report, indent=2))
+        _eprint(f"run failed: {exc}")
+        return 1
+
+    # 2. Optional Terrain Elevation & Surface Fusion
+    if getattr(args, "terrain", None):
+        terrain_path = Path(args.terrain).resolve()
+        if terrain_path.exists():
+            from geo.terrain import (
+                generate_terrain_mesh_from_grid,
+                generate_terrain_mesh_from_point_cloud,
+                fuse_terrain_into_world,
+                TerrainElevationGrid,
+            )
+            import numpy as np
+
+            if terrain_path.suffix.lower() == ".json":
+                t_data = json.loads(terrain_path.read_text(encoding="utf-8"))
+                grid_arr = np.array(t_data.get("elevation", [[0.0, 0.0], [0.0, 0.0]]), dtype=np.float64)
+                bounds = tuple(t_data.get("bounds", (0.0, 0.0, 10.0, 10.0)))
+                t_grid = TerrainElevationGrid(elevation=grid_arr, bounds=bounds, resolution_m=float(t_data.get("resolution_m", 1.0)))
+                t_mesh = generate_terrain_mesh_from_grid(t_grid, add_skirt=True)
+                fuse_terrain_into_world(result.world, t_mesh)
+            elif terrain_path.suffix.lower() in (".xyz", ".ply", ".npy"):
+                pts = np.load(str(terrain_path)) if terrain_path.suffix.lower() == ".npy" else np.loadtxt(str(terrain_path))
+                t_mesh = generate_terrain_mesh_from_point_cloud(pts, cell_size_m=2.0, add_skirt=True)
+                fuse_terrain_into_world(result.world, t_mesh)
+
+    # 3. Optional Multi-format Exports
+    exports_generated = {}
+    if getattr(args, "export", None):
+        exports_dir = out / "exports"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        for fmt in args.export:
+            try:
+                content, exp_report = reality.export(result.world, fmt, artifact_store=store)
+                ext = "ifc" if fmt == "ifc" else "pdf" if "pdf" in fmt else "gltf" if fmt == "gltf" else "usda" if fmt == "usda" else fmt
+                dest_file = exports_dir / f"model.{ext}"
+                if isinstance(content, bytes):
+                    dest_file.write_bytes(content)
+                elif isinstance(content, dict):
+                    dest_file.write_text(json.dumps(content, indent=2), encoding="utf-8")
+                else:
+                    dest_file.write_text(str(content), encoding="utf-8")
+                exports_generated[fmt] = str(dest_file)
+            except Exception as exp_err:
+                _eprint(f"warning: export {fmt} failed: {exp_err}")
+
+    runtime = round(time.perf_counter() - started, 2)
+    report["status"] = (
+        "SUCCESS" if result.registration_status == "success" else "PARTIAL_SUCCESS"
+    )
+    report["runtime_s"] = runtime
+    report["stages"] = {
+        "reconstruction": {
+            "backend": result.stage_facts.get("backend"),
+            "cameras_registered": result.cameras_registered,
+            "cameras_input": result.cameras_input,
+            "registration_status": result.registration_status,
+            "points": result.points_total,
+        },
+        "scale": {
+            "state": result.scale_state,
+            "meters_per_unit": result.meters_per_unit,
+        },
+        "depth": result.stage_facts.get("depth"),
+        "perception": result.stage_facts.get("perception"),
+        "mesh": result.stage_facts.get("mesh"),
+        "compile": {
+            "entities": len(result.world.entities),
+            "measurements": result.compile.measurements_count,
+            "relationships": result.compile.relationships_count,
+        },
+    }
+    report["world_id"] = result.world_id
+    report["outputs"] = {
+        "world": str(out / "worldir.json"),
+        "report": str(out / "report.json"),
+        "points_ply": str(out / "points.ply"),
+        "cameras": str(out / "cameras.json"),
+        "artifacts": str(out / "artifacts"),
+        "exports": exports_generated,
+    }
+
+    world_dict = result.world.to_dict()
+    (out / "worldir.json").write_text(json.dumps(world_dict, indent=2))
+    (out / "report.json").write_text(json.dumps(report, indent=2))
+    write_points_ply(out / "points.ply", result.points)
+    write_mesh_ply_from_artifact(out, store, result.stage_facts.get("mesh"))
+    write_cameras_json(
+        out / "cameras.json", result.camera_poses, result.scale_state,
+        options.image_size,
+    )
+    write_exports(world_dict, store, out)
+
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2))
+    else:
+        print(result.summary_text())
+        print(f"world -> {out / 'worldir.json'}")
+        if exports_generated:
+            for fmt, path in exports_generated.items():
+                print(f"export ({fmt}) -> {path}")
+        print(f"report -> {out / 'report.json'}")
+    return 0
+
+
 def cmd_verification(args: argparse.Namespace) -> int:
     """Print the verification registry (what is verified, against what, and what is still pending) and, with
     --runtime, whether this machine can run each dependency right now."""
@@ -982,6 +1185,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_compile.add_argument("--no-depth", action="store_true", help="skip the depth stage")
     p_compile.add_argument("--no-mesh", action="store_true", help="skip surface reconstruction")
     p_compile.set_defaults(func=cmd_compile)
+
+    p_run = sub.add_parser(
+        "run",
+        help="autonomous universal pipeline: input photos/dataset -> calibrate -> reconstruct -> compile -> export",
+    )
+    p_run.add_argument("input", help="folder of photos or capture dataset")
+    p_run.add_argument(
+        "-o", "--output", default=None,
+        help="output directory (default: <input>/pipeline_out)",
+    )
+    p_run.add_argument("--export", action="append", default=[], help="export format(s): ifc, gltf, multisheet_floorplan_pdf, usda, etc.")
+    p_run.add_argument("--terrain", default=None, help="optional DEM elevation grid (JSON) or point cloud (NPY/PLY)")
+    p_run.add_argument("--colmap-binary", default="colmap")
+    p_run.add_argument("--no-depth", action="store_true", help="skip the depth stage")
+    p_run.add_argument("--no-mesh", action="store_true", help="skip surface reconstruction")
+    p_run.add_argument("--json", action="store_true", help="machine-readable JSON output")
+    p_run.set_defaults(func=cmd_run)
 
     p_verification = sub.add_parser(
         "verification",

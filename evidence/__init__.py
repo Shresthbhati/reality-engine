@@ -1,4 +1,4 @@
-"""Evidence layer: Sessions, Datasets, and session merging (spec §3-6).
+"""Evidence layer: Sessions, Datasets, and session merging (spec §3-6 & Wave 3 Block 17).
 
 The foundational unit downstream reconstruction/WorldIR work must trace
 back to. See docs/CAPABILITY_MATRIX.md for what's built on top of this
@@ -35,6 +35,14 @@ from .video import (
     detect_scene_transitions_from_frames,
     extract_video_keyframes,
 )
+from .cad_importer import (
+    CadFloorPlan,
+    CadImportRefused,
+    CadRoomAnnotation,
+    import_cad_floorplan_file,
+    parse_dxf_text,
+    promote_cad_floorplan,
+)
 
 __all__ = [
     "promote_measurement_to_entity",
@@ -67,4 +75,10 @@ __all__ = [
     "compute_frame_difference",
     "detect_scene_transitions_from_frames",
     "extract_video_keyframes",
+    "CadFloorPlan",
+    "CadImportRefused",
+    "CadRoomAnnotation",
+    "import_cad_floorplan_file",
+    "parse_dxf_text",
+    "promote_cad_floorplan",
 ]

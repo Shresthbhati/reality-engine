@@ -1,3 +1,12 @@
+from engine.compiler.geometry_compiler import (
+    BoundaryRepresentation,
+    CompiledSolid,
+    GeometryCompiler,
+    GeometryValidationResult,
+    GeometryValidator,
+    OpeningSpecification,
+    compile_and_attach_geometry,
+)
 from engine.compiler.building_envelope import (
     BuildingEnvelopeReport,
     BuildingStoreyLevel,
@@ -32,4 +41,11 @@ __all__ = [
     "BuildingStoreyLevel",
     "BuildingEnvelopeReport",
     "reconstruct_building_envelope",
+    "BoundaryRepresentation",
+    "CompiledSolid",
+    "GeometryCompiler",
+    "GeometryValidationResult",
+    "GeometryValidator",
+    "OpeningSpecification",
+    "compile_and_attach_geometry",
 ]

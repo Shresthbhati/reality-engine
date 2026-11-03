@@ -288,6 +288,16 @@ def adapt_architecture_to_contract(
             cp["evidence_state"] = ev_state
             sf_ent.custom_properties = cp
 
+        # Populate multi-dimensional ConfidenceVector (Task 7.1)
+        if hasattr(sf_ent, "confidence_vector") and sf_ent.confidence_vector is not None:
+            cov_fraction = cp.get("coverage_fraction")
+            sf_ent.confidence_vector.classification = sf_ent.confidence
+            sf_ent.confidence_vector.orientation = 1.0
+            sf_ent.confidence_vector.position = sf_ent.confidence
+            sf_ent.confidence_vector.topology = 1.0
+            if cov_fraction is not None:
+                sf_ent.confidence_vector.completeness = float(cov_fraction)
+
         coverage = cp.get("coverage")
         if coverage is None:
             # Measured extent or inlier coverage fraction

@@ -129,7 +129,7 @@ updates only the affected region.
 
 | ID | Task | Depends | Files | Done when | Verify | Read | Status |
 |----|------|---------|-------|-----------|--------|------|--------|
-| 7.1 | ConfidenceVector populated | 3.6 | association + validation stages | every entity has the vector; `null` where unmeasured | unit test; API sample | [11](11_WORLDIR_CONTRACT.md) | TODO |
+| 7.1 | ConfidenceVector populated | 3.6 | association + validation stages | every entity has the vector; `null` where unmeasured | unit test; API sample | [11](11_WORLDIR_CONTRACT.md) | DONE (feat/task-7-1-confidence-vector-populated, verified 2026-11-04) |
 | 7.2 | Real / Wireframe / Evidence views | 5.3, 7.1 | viewport components | toggles switch modes on the same scene graph; legend for evidence colours | screenshots of all three | [14](14_FRONTEND_UX.md) | TODO |
 | 7.3 | Measurement with honest scale | 7.2 | measure tool, `apps/api/routes_measurements.py` | shows value/unit/uncertainty/scale state; "Set scale" turns relative into calibrated | e2e + screenshot | P10 | TODO |
 

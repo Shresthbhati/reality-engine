@@ -50,7 +50,7 @@ from world_ir.world_v1 import WorldIR
 #: silent-miss this module's docstring already promises not to have.
 _ENTITY_SCALAR_FIELDS = (
     "type", "name", "transform", "provenance", "confidence",
-    "uncertainty", "statement_state",
+    "confidence_vector", "uncertainty", "statement_state",
 )
 _ENTITY_LIST_FIELDS = (
     "geometry_ids", "material_ids", "surface_ids", "component_ids",

@@ -667,6 +667,33 @@ async def entity_provenance(
     }
 
 
+@worlds.get("/{world_id}/entities/{entity_id}/confidence")
+async def entity_confidence(
+    world_id: str,
+    entity_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Retrieve multi-dimensional ConfidenceVector for an entity (Blueprint Task 7.1)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+    entity = world.entities.get(entity_id)
+    if entity is None:
+        raise HTTPException(404, f"Entity '{entity_id}' not found in version '{row.id}'")
+
+    cv = getattr(entity, "confidence_vector", None)
+    return {
+        "world_id": world_id,
+        "entity_id": entity_id,
+        "version_id": row.id,
+        "scalar_confidence": entity.confidence,
+        "confidence_vector": cv.to_dict() if cv is not None else None,
+    }
+
+
 @worlds.get("/{world_id}/report")
 async def world_report(
     world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)

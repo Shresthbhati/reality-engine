@@ -124,11 +124,16 @@ def _reassign_relationship_guids(model, world_id: str) -> None:
     created implicitly by the API with random GUIDs; their seeds use
     the (already deterministic) GlobalIds of the objects they relate,
     so the assignment order and values are stable."""
+    # Deterministic GUIDs for all property sets
+    for pset in sorted(model.by_type("IfcPropertySet"), key=lambda p: (str(getattr(p, "Name", "")), p.id())):
+        pset.GlobalId = _deterministic_guid(f"{world_id}/pset/{pset.Name}/{pset.id()}")
+
     rels = (
         list(model.by_type("IfcRelAggregates"))
         + list(model.by_type("IfcRelContainedInSpatialStructure"))
         + list(model.by_type("IfcRelVoidsElement"))
         + list(model.by_type("IfcRelFillsElement"))
+        + list(model.by_type("IfcRelDefinesByProperties"))
     )
 
     def _key(rel):
@@ -137,6 +142,7 @@ def _reassign_relationship_guids(model, world_id: str) -> None:
             or getattr(rel, "RelatingStructure", None)
             or getattr(rel, "RelatingBuildingElement", None)
             or getattr(rel, "RelatingOpeningElement", None)
+            or getattr(rel, "RelatingPropertyDefinition", None)
         )
         related = (
             getattr(rel, "RelatedObjects", None)
@@ -328,6 +334,147 @@ def _make_slab_opening_solid(builder, ws: dict, op: dict, wall_geom: Geometry):
         return _make_opening_solid(builder, wall_geom, wall_geom)
 
 
+
+def _resolve_ifc_class(entity: Entity) -> str:
+    entity_class = entity.custom_properties.get("entity_class", "")
+    if isinstance(entity_class, str) and entity_class:
+        ec = entity_class.lower()
+        if ec.startswith("electrical.socket") or ec.startswith("electrical.plug"):
+            return "IfcOutlet"
+        if ec.startswith("electrical.switch"):
+            return "IfcSwitchingDevice"
+        if ec.startswith("electrical.light"):
+            return "IfcLightFixture"
+        if ec.startswith("plumbing"):
+            return "IfcSanitaryTerminal"
+        if ec.startswith("furniture"):
+            return "IfcFurnishingElement"
+    t_val = entity.type.value if hasattr(entity.type, "value") else str(entity.type)
+    return _ENTITY_IFC_CLASS.get(t_val, "IfcBuildingElementProxy")
+
+
+def _enrich_element_property_sets(ifc_api, model, element, entity: Entity, extent: Tuple[float, float, float]) -> None:
+    """Enrich IFC element with buildingSMART standard property sets (Epic E10-1)."""
+    ifc_class = element.is_a()
+    name = entity.name or entity.id
+    props = entity.custom_properties
+
+    # 1. Pset_WallCommon
+    if ifc_class == "IfcWall":
+        p_wall = ifc_api.run("pset.add_pset", model, product=element, name="Pset_WallCommon")
+        ifc_api.run("pset.edit_pset", model, pset=p_wall, properties={
+            "Reference": name,
+            "LoadBearing": bool(props.get("load_bearing", True)),
+            "IsExternal": bool(props.get("is_external", False)),
+            "ExtendToStructure": True,
+            "FireRating": str(props.get("fire_rating", "Unrated")),
+            "GrossSideArea": float(round(max(extent[0], extent[1]) * extent[2], 3)),
+            "NominalThickness": float(round(min(extent[0], extent[1]), 3)),
+        })
+
+    # 2. Pset_SpaceCommon (Rooms)
+    elif ifc_class == "IfcSpace":
+        p_space = ifc_api.run("pset.add_pset", model, product=element, name="Pset_SpaceCommon")
+        area = float(round(extent[0] * extent[1], 3))
+        volume = float(round(extent[0] * extent[1] * extent[2], 3))
+        ifc_api.run("pset.edit_pset", model, pset=p_space, properties={
+            "Reference": name,
+            "IsExternal": bool(props.get("is_external", False)),
+            "GrossFloorArea": area,
+            "NetFloorArea": area,
+            "GrossVolume": volume,
+            "Height": float(round(extent[2], 3)),
+        })
+
+    # 3. Pset_DoorCommon
+    elif ifc_class == "IfcDoor":
+        p_door = ifc_api.run("pset.add_pset", model, product=element, name="Pset_DoorCommon")
+        ifc_api.run("pset.edit_pset", model, pset=p_door, properties={
+            "Reference": name,
+            "IsExternal": bool(props.get("is_external", False)),
+            "FireRating": str(props.get("fire_rating", "Unrated")),
+            "AcousticRating": str(props.get("acoustic_rating", "Unrated")),
+            "SecurityRating": str(props.get("security_rating", "Unrated")),
+        })
+
+    # 4. Pset_WindowCommon
+    elif ifc_class == "IfcWindow":
+        p_win = ifc_api.run("pset.add_pset", model, product=element, name="Pset_WindowCommon")
+        ifc_api.run("pset.edit_pset", model, pset=p_win, properties={
+            "Reference": name,
+            "IsExternal": bool(props.get("is_external", True)),
+            "FireRating": str(props.get("fire_rating", "Unrated")),
+            "AcousticRating": str(props.get("acoustic_rating", "Unrated")),
+            "GlazingArea": float(round(max(extent[0], extent[1]) * extent[2], 3)),
+        })
+
+    # 5. Pset_SlabCommon
+    elif ifc_class == "IfcSlab":
+        p_slab = ifc_api.run("pset.add_pset", model, product=element, name="Pset_SlabCommon")
+        is_floor = (getattr(entity.type, "value", entity.type) == EntityType.FLOOR.value)
+        ifc_api.run("pset.edit_pset", model, pset=p_slab, properties={
+            "Reference": name,
+            "LoadBearing": bool(props.get("load_bearing", is_floor)),
+            "IsExternal": bool(props.get("is_external", False)),
+            "GrossArea": float(round(extent[0] * extent[1], 3)),
+            "Thickness": float(round(extent[2], 3)),
+        })
+
+    # 6. Pset_ColumnCommon
+    elif ifc_class == "IfcColumn":
+        p_col = ifc_api.run("pset.add_pset", model, product=element, name="Pset_ColumnCommon")
+        ifc_api.run("pset.edit_pset", model, pset=p_col, properties={
+            "Reference": name,
+            "LoadBearing": True,
+            "IsExternal": bool(props.get("is_external", False)),
+        })
+
+    # 7. Pset_BeamCommon
+    elif ifc_class == "IfcBeam":
+        p_beam = ifc_api.run("pset.add_pset", model, product=element, name="Pset_BeamCommon")
+        ifc_api.run("pset.edit_pset", model, pset=p_beam, properties={
+            "Reference": name,
+            "LoadBearing": True,
+            "IsExternal": bool(props.get("is_external", False)),
+        })
+
+    # 8. Pset_OutletCommon
+    elif ifc_class == "IfcOutlet":
+        p_out = ifc_api.run("pset.add_pset", model, product=element, name="Pset_OutletCommon")
+        ifc_api.run("pset.edit_pset", model, pset=p_out, properties={
+            "Reference": name,
+            "NominalVoltage": float(props.get("voltage", 230.0)),
+            "NumberOfGangs": int(props.get("gangs", 1)),
+        })
+
+    # 9. Pset_SwitchCommon
+    elif ifc_class == "IfcSwitchingDevice":
+        p_sw = ifc_api.run("pset.add_pset", model, product=element, name="Pset_SwitchCommon")
+        ifc_api.run("pset.edit_pset", model, pset=p_sw, properties={
+            "Reference": name,
+            "SwitchFunction": str(props.get("function", "LIGHTING")),
+            "NumberOfGangs": int(props.get("gangs", 1)),
+        })
+
+    # 10. Pset_SanitaryTerminalTypeCommon
+    elif ifc_class == "IfcSanitaryTerminal":
+        p_san = ifc_api.run("pset.add_pset", model, product=element, name="Pset_SanitaryTerminalTypeCommon")
+        term_type = "SINK" if "sink" in (entity.name or entity.id).lower() else "TOILET"
+        ifc_api.run("pset.edit_pset", model, pset=p_san, properties={
+            "Reference": name,
+            "SanitaryTerminalType": str(props.get("terminal_type", term_type)),
+        })
+
+    # 11. RealityEngine_Metadata
+    meta = ifc_api.run("pset.add_pset", model, product=element, name="RealityEngine_Metadata")
+    ifc_api.run("pset.edit_pset", model, pset=meta, properties={
+        "EntityId": str(entity.id),
+        "EntityType": str(getattr(entity.type, "value", str(entity.type))),
+        "Provenance": str(getattr(entity.provenance, "value", str(entity.provenance))),
+        "Confidence": float(round(entity.confidence, 3)),
+    })
+
+
 def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
     """Write `world`'s architectural entities to a real IFC4 file.
 
@@ -375,8 +522,7 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
 
     for entity_id in sorted(world.entities):
         entity = world.entities[entity_id]
-        ifc_class = _ENTITY_IFC_CLASS.get(
-            entity.type, "IfcBuildingElementProxy")
+        ifc_class = _resolve_ifc_class(entity)
         if ifc_class == "IfcBuilding":
             skipped[entity_id] = (
                 f"semantic container class {ifc_class} (building root "
@@ -423,6 +569,7 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
                                                     items=solid)
         ifc_api.run("geometry.assign_representation", model,
                     product=element, representation=representation)
+        _enrich_element_property_sets(ifc_api, model, element, entity, extent)
         written.append(entity_id)
         created_products[entity_id] = element
         entity_geoms[entity_id] = geometry

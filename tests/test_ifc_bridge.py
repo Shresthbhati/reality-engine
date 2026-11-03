@@ -191,3 +191,122 @@ class TestIfcExport:
         proxies = f.by_type("IfcBuildingElementProxy")
         assert len(proxies) == 1
         assert "Dining Table" in (proxies[0].Name or "")
+
+    def test_pset_wall_common_enrichment(self, tmp_path):
+        world = WorldIR()
+        geom = Geometry(
+            id="g-w",
+            type=GeometryType.BOX,
+            bounds_min=Vector3(0.0, 0.0, 0.0),
+            bounds_max=Vector3(5.0, 0.2, 2.8),
+            provenance=Provenance.OBSERVED,
+        )
+        world.geometries["g-w"] = geom
+        world.entities["w-1"] = Entity(
+            id="w-1",
+            name="Exterior Wall",
+            type=EntityType.WALL,
+            geometry_ids=["g-w"],
+            confidence=0.95,
+            provenance=Provenance.OBSERVED,
+            custom_properties={"is_external": True, "load_bearing": True, "fire_rating": "FR-60"},
+        )
+        out = tmp_path / "wall_pset.ifc"
+        export_world_to_ifc(world, out)
+        f = ifcopenshell.open(str(out))
+        wall = f.by_type("IfcWall")[0]
+
+        psets = {rel.RelatingPropertyDefinition.Name: rel.RelatingPropertyDefinition
+                 for rel in getattr(wall, "IsDefinedBy", []) if rel.is_a("IfcRelDefinesByProperties")}
+        assert "Pset_WallCommon" in psets
+        p_wall = psets["Pset_WallCommon"]
+        props = {p.Name: p.NominalValue.wrappedValue for p in p_wall.HasProperties}
+        assert props["Reference"] == "Exterior Wall"
+        assert props["IsExternal"] is True
+        assert props["LoadBearing"] is True
+        assert props["FireRating"] == "FR-60"
+        assert props["NominalThickness"] == 0.2
+        assert props["GrossSideArea"] == 14.0  # 5.0 * 2.8
+
+    def test_pset_space_common_enrichment(self, tmp_path):
+        world = WorldIR()
+        geom = Geometry(
+            id="g-s",
+            type=GeometryType.BOX,
+            bounds_min=Vector3(0.0, 0.0, 0.0),
+            bounds_max=Vector3(4.0, 5.0, 2.7),
+            provenance=Provenance.RECONSTRUCTED,
+        )
+        world.geometries["g-s"] = geom
+        world.entities["r-1"] = Entity(
+            id="r-1",
+            name="Living Room",
+            type=EntityType.ROOM,
+            geometry_ids=["g-s"],
+            confidence=0.91,
+            provenance=Provenance.RECONSTRUCTED,
+        )
+        out = tmp_path / "space_pset.ifc"
+        export_world_to_ifc(world, out)
+        f = ifcopenshell.open(str(out))
+        space = f.by_type("IfcSpace")[0]
+
+        psets = {rel.RelatingPropertyDefinition.Name: rel.RelatingPropertyDefinition
+                 for rel in getattr(space, "IsDefinedBy", []) if rel.is_a("IfcRelDefinesByProperties")}
+        assert "Pset_SpaceCommon" in psets
+        p_space = psets["Pset_SpaceCommon"]
+        props = {p.Name: p.NominalValue.wrappedValue for p in p_space.HasProperties}
+        assert props["Reference"] == "Living Room"
+        assert props["GrossFloorArea"] == 20.0  # 4 * 5
+        assert props["GrossVolume"] == 54.0     # 4 * 5 * 2.7
+        assert props["Height"] == 2.7
+
+    def test_mep_and_fixture_property_sets(self, tmp_path):
+        world = WorldIR()
+        # 1. Outlet
+        g1 = Geometry(id="g-sock", type=GeometryType.BOX, bounds_min=Vector3(1, 0, 1), bounds_max=Vector3(1.1, 0.1, 1.1))
+        world.geometries["g-sock"] = g1
+        world.entities["sock-1"] = Entity(
+            id="sock-1", name="Duplex Socket", type=EntityType.STRUCTURE,
+            geometry_ids=["g-sock"], confidence=0.89,
+            custom_properties={"entity_class": "electrical.socket", "gangs": 2, "voltage": 230.0},
+        )
+        # 2. Sink
+        g2 = Geometry(id="g-sink", type=GeometryType.BOX, bounds_min=Vector3(2, 0, 1), bounds_max=Vector3(2.8, 0.6, 1.8))
+        world.geometries["g-sink"] = g2
+        world.entities["sink-1"] = Entity(
+            id="sink-1", name="Kitchen Sink", type=EntityType.STRUCTURE,
+            geometry_ids=["g-sink"], confidence=0.94,
+            custom_properties={"entity_class": "plumbing.sink"},
+        )
+        out = tmp_path / "mep_pset.ifc"
+        export_world_to_ifc(world, out)
+        f = ifcopenshell.open(str(out))
+
+        # Check IfcOutlet
+        outlets = f.by_type("IfcOutlet")
+        assert len(outlets) == 1
+        psets_sock = {rel.RelatingPropertyDefinition.Name: rel.RelatingPropertyDefinition
+                      for rel in getattr(outlets[0], "IsDefinedBy", []) if rel.is_a("IfcRelDefinesByProperties")}
+        assert "Pset_OutletCommon" in psets_sock
+        props_sock = {p.Name: p.NominalValue.wrappedValue for p in psets_sock["Pset_OutletCommon"].HasProperties}
+        assert props_sock["NumberOfGangs"] == 2
+        assert props_sock["NominalVoltage"] == 230.0
+
+        # Check IfcSanitaryTerminal
+        sinks = f.by_type("IfcSanitaryTerminal")
+        assert len(sinks) == 1
+        psets_sink = {rel.RelatingPropertyDefinition.Name: rel.RelatingPropertyDefinition
+                      for rel in getattr(sinks[0], "IsDefinedBy", []) if rel.is_a("IfcRelDefinesByProperties")}
+        assert "Pset_SanitaryTerminalTypeCommon" in psets_sink
+        props_sink = {p.Name: p.NominalValue.wrappedValue for p in psets_sink["Pset_SanitaryTerminalTypeCommon"].HasProperties}
+        assert props_sink["SanitaryTerminalType"] == "SINK"
+
+    def test_property_sets_byte_determinism(self, tmp_path):
+        world = _world()
+        p1 = tmp_path / "run1.ifc"
+        p2 = tmp_path / "run2.ifc"
+        export_world_to_ifc(world, p1)
+        export_world_to_ifc(world, p2)
+        assert p1.read_bytes() == p2.read_bytes()
+

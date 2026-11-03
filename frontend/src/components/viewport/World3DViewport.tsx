@@ -195,8 +195,10 @@ export default function World3DViewport({
   // Latest callbacks, so the controller is created once and never torn down by an unstable parent callback.
   const onSelectRef = useRef(onSelectEntity);
   const onMeasureRef = useRef(onMeasurementChange);
-  onSelectRef.current = onSelectEntity;
-  onMeasureRef.current = onMeasurementChange;
+  useEffect(() => {
+    onSelectRef.current = onSelectEntity;
+    onMeasureRef.current = onMeasurementChange;
+  }, [onSelectEntity, onMeasurementChange]);
 
   const unplaced = isUnplaced(captureQuality);
   const [layers, setLayers] = useState<ViewportLayers>({
@@ -212,7 +214,7 @@ export default function World3DViewport({
     shell: true,
     ...(initialLayers ?? {}),
   });
-  const [modeState, setModeState] = useState<ViewMode>("realistic");
+  const [modeState, setModeState] = useState<ViewMode>(() => (typeof window !== "undefined" ? loadStoredMode() : "realistic"));
   const mode = modeProp ?? modeState;
   const [cutawayState, setCutawayState] = useState(true);
   const cutaway = cutawayProp ?? cutawayState;
@@ -225,9 +227,9 @@ export default function World3DViewport({
   const [snapConfig, setSnapConfig] = useState<SnapConfig>(DEFAULT_SNAP_CONFIG);
 
   // Studio Intelligence state fallbacks (from props or world.metadata)
-  const resolvedCapturePlan = capturePlanProp ?? ((world?.metadata as any)?.capture_plan as CapturePlanSummary | null) ?? null;
-  const resolvedStoreys = storeysProp ?? ((world?.metadata as any)?.storeys as StoreyLevelItem[] | null) ?? ((world?.metadata as any)?.vertical_topology?.storeys as StoreyLevelItem[] | null) ?? null;
-  const resolvedTemporalDiff = temporalDiffProp ?? ((world?.metadata as any)?.temporal_diff as TemporalDiffSummary | null) ?? null;
+  const resolvedCapturePlan = capturePlanProp ?? ((world?.metadata as Record<string, unknown> | undefined)?.capture_plan as CapturePlanSummary | null) ?? null;
+  const resolvedStoreys = storeysProp ?? ((world?.metadata as Record<string, unknown> | undefined)?.storeys as StoreyLevelItem[] | null) ?? (((world?.metadata as Record<string, unknown> | undefined)?.vertical_topology as Record<string, unknown> | undefined)?.storeys as StoreyLevelItem[] | null) ?? null;
+  const resolvedTemporalDiff = temporalDiffProp ?? ((world?.metadata as Record<string, unknown> | undefined)?.temporal_diff as TemporalDiffSummary | null) ?? null;
 
   const [showCapturePlan, setShowCapturePlan] = useState(false);
   const [selectedCaptureViewpointId, setSelectedCaptureViewpointId] = useState<string | null>(null);
@@ -244,10 +246,10 @@ export default function World3DViewport({
   const resolvedSpatialIntelligence = useMemo<SpatialIntelligenceSummary | null>(() => {
     if (spatialIntelligenceProp) return spatialIntelligenceProp;
     if (!world) return null;
-    const meta = (world.metadata ?? {}) as any;
+    const meta = (world.metadata ?? {}) as Record<string, unknown>;
     const georef = meta.georeference ?? null;
     const style = meta.design_style ?? null;
-    const env = (world.environment ?? {}) as any;
+    const env = (world.environment ?? {}) as Record<string, unknown>;
     const lighting = env.lighting ?? null;
     const plausibility = meta.physical_plausibility ?? null;
     const completeness = meta.scene_completeness ?? null;
@@ -260,7 +262,7 @@ export default function World3DViewport({
     }
     return {
       world_id: world.id,
-      coordinate_frame: String((world as any).coordinate_frame || world.coordinate_system || "WORLD"),
+      coordinate_frame: String((world as unknown as Record<string, unknown>).coordinate_frame || world.coordinate_system || "WORLD"),
       transforms_count: Object.keys(transforms).length,
       georeference: georef,
       design_style: style,
@@ -269,7 +271,7 @@ export default function World3DViewport({
       scene_completeness: completeness,
       lighting: lighting,
       shared_walls: sharedWalls,
-    };
+    } as unknown as SpatialIntelligenceSummary;
   }, [spatialIntelligenceProp, world]);
 
   const [showSpatialIntelligence, setShowSpatialIntelligence] = useState(false);
@@ -354,10 +356,7 @@ export default function World3DViewport({
     };
   }, []);
 
-  // Remember the chosen mode (storage failures are swallowed inside view-model)
-  useEffect(() => {
-    if (modeProp === undefined) setModeState(loadStoredMode());
-  }, [modeProp]);
+  // mode derives from modeProp ?? modeState
 
   const changeMode = useCallback((next: ViewMode) => {
     setModeState(next);

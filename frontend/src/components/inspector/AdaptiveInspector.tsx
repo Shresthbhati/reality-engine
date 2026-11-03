@@ -216,9 +216,12 @@ function EntityDetails({
   const [posZ, setPosZ] = useState(pos?.z !== undefined ? String(pos.z) : "");
 
   useEffect(() => {
-    setPosX(pos?.x !== undefined ? String(pos.x) : "");
-    setPosY(pos?.y !== undefined ? String(pos.y) : "");
-    setPosZ(pos?.z !== undefined ? String(pos.z) : "");
+    const frame = requestAnimationFrame(() => {
+      setPosX(pos?.x !== undefined ? String(pos.x) : "");
+      setPosY(pos?.y !== undefined ? String(pos.y) : "");
+      setPosZ(pos?.z !== undefined ? String(pos.z) : "");
+    });
+    return () => cancelAnimationFrame(frame);
   }, [entity.id, pos?.x, pos?.y, pos?.z]);
 
   useEffect(() => {

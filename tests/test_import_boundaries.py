@@ -105,6 +105,18 @@ KNOWN_VIOLATIONS: dict[tuple[str, str], str] = {
     ("registration.registration", "reconstruction.calibration.transforms"): "registration uses reconstruction camera/transform/result types (sibling coupling)",
     ("uncertainty.propagation", "reconstruction.calibration.transforms"): "core-layer uncertainty imports RigidTransform from reconstruction.calibration",
     ("world_ir.frame_graph", "reconstruction.calibration.camera"): "world_ir.frame_graph imports quat_to_matrix from reconstruction.calibration",
+    ("apps.api.routes_worlds", "perception.reasoning.physical_plausibility"): "API imports perception directly instead of via engine/pipeline",
+    ("apps.api.routes_worlds", "perception.style.analyzer"): "API imports perception directly instead of via engine/pipeline",
+    ("exporters.mesh.obj", "reconstruction.meshing.mesh"): "exporters take reconstruction's MeshData instead of a world_ir/neutral mesh type",
+    ("exporters.mesh.ply", "reconstruction.meshing.mesh"): "exporters take reconstruction's MeshData instead of a world_ir/neutral mesh type",
+    ("exporters.mesh.stl", "reconstruction.meshing.mesh"): "exporters take reconstruction's MeshData instead of a world_ir/neutral mesh type",
+    ("perception.fixtures.detector", "reconstruction.calibration.camera"): "perception consumes reconstruction result/camera types (shared types live in the wrong layer)",
+    ("perception.fixtures.patch_extractor", "reconstruction.calibration.camera"): "perception consumes reconstruction result/camera types (shared types live in the wrong layer)",
+    ("perception.instances.association", "reconstruction.calibration.camera"): "perception consumes reconstruction result/camera types (shared types live in the wrong layer)",
+    ("perception.segmentation.oneformer_backend", "evidence.session"): "perception consumes evidence.session items (sibling coupling)",
+    ("reconstruction.mvs.dense_cloud", "perception.depth.interface"): "reconstruction consumes perception depth/plane types (sibling coupling)",
+    ("reconstruction.scale.metric_anchor", "evidence.session"): "reconstruction consumes evidence.session items (sibling coupling)",
+    ("reconstruction.scale.metric_anchor", "evidence.session_grouping"): "reconstruction consumes evidence.session items (sibling coupling)",
 }
 
 

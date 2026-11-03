@@ -216,9 +216,12 @@ function EntityDetails({
   const [posZ, setPosZ] = useState(pos?.z !== undefined ? String(pos.z) : "");
 
   useEffect(() => {
-    setPosX(pos?.x !== undefined ? String(pos.x) : "");
-    setPosY(pos?.y !== undefined ? String(pos.y) : "");
-    setPosZ(pos?.z !== undefined ? String(pos.z) : "");
+    const frame = requestAnimationFrame(() => {
+      setPosX(pos?.x !== undefined ? String(pos.x) : "");
+      setPosY(pos?.y !== undefined ? String(pos.y) : "");
+      setPosZ(pos?.z !== undefined ? String(pos.z) : "");
+    });
+    return () => cancelAnimationFrame(frame);
   }, [entity.id, pos?.x, pos?.y, pos?.z]);
 
   useEffect(() => {
@@ -1377,13 +1380,20 @@ function EntityDetails({
                           </button>
                           <div className="flex items-center justify-between gap-2 text-[11px]">
                             <span className="truncate font-mono text-[var(--text-secondary)]" title={ev.evidence_name}>{ev.evidence_name}</span>
-                            <a
-                              href={`/evidence/${ev.evidence_id}`}
-                              onClick={() => onTraceEvidence?.(ev.evidence_id)}
-                              className="shrink-0 text-[var(--accent)] hover:underline"
-                            >
-                              Open
-                            </a>
+                            <div className="flex items-center gap-1.5">
+                              {ev.mask_uri && (
+                                <span className="rounded bg-[var(--accent)]/15 px-1 py-0.5 text-[9px] font-mono text-[var(--accent)]" title="Instance mask recorded">
+                                  mask
+                                </span>
+                              )}
+                              <a
+                                href={`/evidence/${ev.evidence_id}`}
+                                onClick={() => onTraceEvidence?.(ev.evidence_id)}
+                                className="shrink-0 text-[var(--accent)] hover:underline"
+                              >
+                                Open
+                              </a>
+                            </div>
                           </div>
                         </li>
                       );
@@ -1404,6 +1414,41 @@ function EntityDetails({
                 </ul>
               )}
             </section>
+
+            {provenance?.association_decisions && provenance.association_decisions.length > 0 && (
+              <section aria-label="Why is this one object?" data-testid="association-decisions" className="space-y-2">
+                <SectionTitle>Why is this one object?</SectionTitle>
+                <p className="text-[11px] text-[var(--text-tertiary)]">
+                  Multi-view identity decisions linking 2D observations to this physical entity:
+                </p>
+                <div className="space-y-2">
+                  {provenance.association_decisions.map((dec, i) => (
+                    <div
+                      key={dec.observation_id || i}
+                      className="rounded border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-2.5 text-[11px] space-y-1"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[var(--accent)] font-medium">
+                          {dec.state}
+                        </span>
+                        <span className="text-[var(--text-secondary)]">
+                          {(dec.probability * 100).toFixed(1)}% match
+                        </span>
+                      </div>
+                      <p className="text-[var(--text-primary)]">{dec.reason}</p>
+                      {(dec.dist_m !== undefined && dec.dist_m !== null) && (
+                        <div className="text-[10px] text-[var(--text-tertiary)] flex gap-3">
+                          <span>Dist: {dec.dist_m.toFixed(3)}m</span>
+                          {dec.iou3d !== undefined && dec.iou3d !== null && (
+                            <span>3D IoU: {(dec.iou3d * 100).toFixed(1)}%</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
       {evidence.isTarget && (
         <section className="space-y-2" aria-label={`Evidence for ${title}`} data-testid="entity-evidence">

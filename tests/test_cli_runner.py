@@ -186,3 +186,57 @@ def test_reality_run_empty_folder_fails_honestly(tmp_path: Path, monkeypatch):
         "-o", str(tmp_path / "out_fail"),
     ])
     assert code == 1
+
+
+
+def test_reality_inspect_world_and_entity(tmp_path: Path, capsys):
+    """Verify reality inspect CLI outputs full world metadata and entity custom properties."""
+    from world_ir.world_v1 import WorldIR
+    from world_ir.schema_v1 import Entity, EntityType
+    from world_ir.coordinates import Frame
+    from provenance import Provenance
+
+    world = WorldIR()
+    world.coordinate_frame = Frame.ENU
+    world.metadata["georeference"] = {"status": "georeferenced", "frame": "ENU"}
+    world.metadata["design_style"] = {"style": "MODERN_MINIMALIST", "confidence": 0.9}
+    world.environment["lighting"] = {
+        "dominant_light_direction": [0.0, 0.0, 1.0],
+        "ambient_irradiance_rgb": [0.4, 0.4, 0.4],
+    }
+
+    ent = Entity(
+        id="wall-test-01",
+        name="North Wall",
+        type=EntityType.WALL,
+        provenance=Provenance.RECONSTRUCTED,
+        confidence=0.95,
+        custom_properties={"spatial_lod": "L2_POLYGONAL", "measurements": {"thickness_m": 0.2}},
+    )
+    world.entities[ent.id] = ent
+
+    world_path = tmp_path / "test_inspect_world.json"
+    world_path.write_text(json.dumps(world.to_dict()), encoding="utf-8")
+
+    # Test world summary inspection
+    code = main(["inspect", str(world_path)])
+    assert code == 0
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    assert summary["world_id"] == world.id
+    assert summary["coordinate_frame"] == "ENU"
+    assert summary["entities"] == 1
+    assert "georeference" in summary
+    assert "design_style" in summary
+    assert "lighting" in summary
+
+    # Test single entity inspection
+    code = main(["inspect", str(world_path), "--entity", "wall-test-01"])
+    assert code == 0
+    captured = capsys.readouterr()
+    ent_info = json.loads(captured.out)
+    assert ent_info["id"] == "wall-test-01"
+    assert ent_info["type"] == "wall"
+    assert "custom_properties" in ent_info
+    assert ent_info["custom_properties"]["spatial_lod"] == "L2_POLYGONAL"
+    assert ent_info["custom_properties"]["measurements"]["thickness_m"] == 0.2

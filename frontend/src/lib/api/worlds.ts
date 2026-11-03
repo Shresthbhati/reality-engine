@@ -21,8 +21,9 @@ import type { WorldRow } from "@/lib/types";
 // the real /cameras shape (position_m / rotation_wxyz), not a second hand-written DTO
 import type { CamerasPayload } from "@/types/worldir";
 
-export async function listWorlds(): Promise<{ rows: WorldRow[]; dtos: WorldDto[] }> {
-  const data = await apiGet<ApiList<WorldDto>>("/api/worlds");
+export async function listWorlds(status: "active" | "archived" | "trash" = "active"): Promise<{ rows: WorldRow[]; dtos: WorldDto[] }> {
+  const url = status === "active" ? "/api/worlds" : `/api/worlds?status=${encodeURIComponent(status)}`;
+  const data = await apiGet<ApiList<WorldDto>>(url);
   return { rows: data.items.map((d) => toWorldRow(d)), dtos: data.items };
 }
 
@@ -91,6 +92,22 @@ export function renameWorld(worldId: string, name: string): Promise<{ id: string
 }
 
 /** Refused with a 409 ApiError while a build is running. */
+export function duplicateWorld(worldId: string): Promise<{ id: string; name: string }> {
+  return apiPost<{ id: string; name: string }>(`/api/worlds/${encodeURIComponent(worldId)}/duplicate`);
+}
+
+export function archiveWorld(worldId: string): Promise<{ id: string; status: string }> {
+  return apiPost<{ id: string; status: string }>(`/api/worlds/${encodeURIComponent(worldId)}/archive`);
+}
+
+export function restoreWorld(worldId: string): Promise<{ id: string; status: string }> {
+  return apiPost<{ id: string; status: string }>(`/api/worlds/${encodeURIComponent(worldId)}/restore`);
+}
+
 export function deleteWorld(worldId: string): Promise<void> {
   return apiDelete<void>(`/api/worlds/${encodeURIComponent(worldId)}`);
+}
+
+export function purgeWorld(worldId: string): Promise<void> {
+  return apiDelete<void>(`/api/worlds/${encodeURIComponent(worldId)}?permanent=true`);
 }

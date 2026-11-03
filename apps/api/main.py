@@ -36,6 +36,7 @@ from apps.api.routes_sessions import health, sessions
 from apps.api.routes_sites import sites
 from apps.api.routes_system import system
 from apps.api.routes_worlds import worlds
+from apps.api.routes_technologies import technologies_router
 from reconstruction.proc import recover_orphaned_jobs
 
 app = FastAPI(title="Reality Engine API", version="0.1.0")
@@ -59,10 +60,11 @@ app.add_middleware(
 )
 
 # `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
-for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant):
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router):
     app.include_router(router)
 
 
+@app.get('/health', tags=['health'])
 @app.get('/healthz', tags=['health'])
 async def healthz_check() -> dict:
     from apps.api.models import utcnow

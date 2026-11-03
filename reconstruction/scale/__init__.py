@@ -1,4 +1,4 @@
-"""Reconstruction scale package (incorporating Epic E02-1 Metric Scale Fusion Engine)."""
+"""Reconstruction scale package (incorporating Epic E02-1 Metric Scale Fusion Engine and Georeferencing)."""
 
 from .base import (
     DEVICE_DEPTH,
@@ -28,11 +28,26 @@ from .metric_anchor import (
     ScaleConstraint,
     ScaleConstraintType,
 )
+from .georeferencing import (
+    GeodeticPoint,
+    GeoreferenceDiagnostics,
+    GeoreferenceResult,
+    align_georeference_ransac,
+    ecef_to_lla,
+    enu_to_lla,
+    georeference_world_from_gnss,
+    lla_to_ecef,
+    lla_to_enu,
+    solve_umeyama_sim3,
+)
 
 __all__ = [
     "DEVICE_DEPTH",
     "DOOR_HEIGHT_RANGE_M",
     "ENTITY_DIMENSION_PRIORS",
+    "GeodeticPoint",
+    "GeoreferenceDiagnostics",
+    "GeoreferenceResult",
     "KNOWN_LENGTH",
     "MODEL_SPACE_METHODS",
     "MetricFusionDiagnostics",
@@ -47,11 +62,18 @@ __all__ = [
     "ScaleReference",
     "ScaleState",
     "ScaleSuggestion",
+    "align_georeference_ransac",
     "anchor_metric_scale",
     "basis_from_note",
     "consolidate_references",
     "dimension_state_for_basis",
+    "ecef_to_lla",
+    "enu_to_lla",
     "gate_ratios",
+    "georeference_world_from_gnss",
+    "lla_to_ecef",
+    "lla_to_enu",
+    "solve_umeyama_sim3",
     "suggest_scale_from_world",
     "unscaled",
 ]

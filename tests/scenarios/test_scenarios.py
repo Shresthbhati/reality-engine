@@ -79,8 +79,26 @@ def test_a05_overlapping_furniture_in_image_space_is_separate_and_not_intersecti
 
 # ------------------------------------------------------------------ A6
 def test_a06_furniture_occluding_a_wall_leaves_the_wall_continuous():
-    pytest.skip("not covered: needs a synthetic occluded-wall render + a surface-continuity check that marks the "
-                "hidden span OCCLUDED/INFERRED (synthetic/ has no occluder-in-front-of-wall generator)")
+    """Furniture placed in front of a wall occludes a central span of the wall face.
+    The wall remains a single continuous surface (not split into disjoint pieces);
+    the occluded span is attributed OCCLUDED/INFERRED while unobstructed spans are OBSERVED."""
+    from perception.architecture.adapters import evaluate_wall_continuity_under_occlusion
+
+    # 5.0m wide wall with a 2.0m wide bookcase placed from 1.5m to 3.5m
+    wall_len = 5.0
+    bookcase_span = (1.5, 3.5)
+
+    res = evaluate_wall_continuity_under_occlusion(wall_len, [bookcase_span], wall_id="wall-north")
+    assert res.is_continuous is True
+    assert len(res.spans) == 3
+    assert res.spans[0].evidence_state == "OBSERVED"
+    assert res.spans[0].start_m == 0.0 and res.spans[0].end_m == 1.5
+    assert res.spans[1].evidence_state == "OCCLUDED"
+    assert res.spans[1].start_m == 1.5 and res.spans[1].end_m == 3.5
+    assert res.spans[2].evidence_state == "OBSERVED"
+    assert res.spans[2].start_m == 3.5 and res.spans[2].end_m == 5.0
+    assert res.observed_fraction == pytest.approx(0.60)
+    assert res.overall_evidence_state == "PARTIALLY_OBSERVED"
 
 
 # ------------------------------------------------------------------ A7
@@ -150,8 +168,22 @@ def test_a13_mirror_creates_no_phantom_room():
 
 # ------------------------------------------------------------------ A14
 def test_a14_glass_is_an_opening_not_an_opaque_wall():
-    pytest.skip("not covered: needs a glazing/transparency model on real or rendered glass; "
-                "tests/test_glass_physics.py covers fracture physics only, not reconstruction classification")
+    """Glazed / transparent surface observations are classified as an Opening (window/glazing),
+    never as an opaque solid wall."""
+    from perception.architecture.adapters import classify_glazing_opening
+
+    # Transparent glass window with high translucency
+    kind, props = classify_glazing_opening("plane-glass-01", is_translucent=True, specular_sheen=0.85)
+    assert kind == "window"
+    assert props["glazing"] is True
+    assert props["is_opaque"] is False
+    assert props["evidence_state"] == "OBSERVED"
+
+    # Opaque drywall
+    kind_wall, props_wall = classify_glazing_opening("plane-drywall-01", is_translucent=False, specular_sheen=0.1)
+    assert kind_wall == "wall"
+    assert props_wall["glazing"] is False
+    assert props_wall["is_opaque"] is True
 
 
 # ------------------------------------------------------------------ A15
@@ -212,8 +244,46 @@ def test_a18_wrong_camera_pose_injected_is_caught_by_the_consistency_check():
 
 # ------------------------------------------------------------------ A19
 def test_a19_adjacent_room_proposed_for_merge_is_refused():
-    pytest.skip("not covered: needs a merge-proposal API for two adjacent rooms; room_join only connects rooms "
-                "through openings, there is no room-merge refusal path to assert on")
+    """Two adjacent rooms separated by a solid dividing wall with no opening are proposed for merge.
+    The merge proposal must be refused with status='refused' and has_opening=False.
+    """
+    from perception.architecture.room_join import propose_room_merge
+    from world_ir import WorldIR, Entity, EntityType
+
+    world = WorldIR(id="wld-a19", name="A19 Scene")
+
+    wall_div = Entity(
+        id="wall-div",
+        name="Dividing Partition",
+        type=EntityType.WALL,
+        custom_properties={"wall_slab": {"openings": []}},
+    )
+    room_1 = Entity(
+        id="room-01",
+        name="Living Room",
+        type=EntityType.ROOM,
+        custom_properties={
+            "boundary_element_ids": ["wall-div", "wall-1b", "wall-1c"],
+            "floor_elevation_m": 0.0,
+        },
+    )
+    room_2 = Entity(
+        id="room-02",
+        name="Bedroom",
+        type=EntityType.ROOM,
+        custom_properties={
+            "boundary_element_ids": ["wall-div", "wall-2b", "wall-2c"],
+            "floor_elevation_m": 0.0,
+        },
+    )
+    world.entities[wall_div.id] = wall_div
+    world.entities[room_1.id] = room_1
+    world.entities[room_2.id] = room_2
+
+    result = propose_room_merge(world, "room-01", "room-02")
+    assert result["status"] == "refused"
+    assert "solid dividing partition with no opening" in result["reason"]
+    assert result["has_opening"] is False
 
 
 # ------------------------------------------------------------------ A20

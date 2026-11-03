@@ -24,9 +24,12 @@ function parseJson(text: string): unknown {
   }
 }
 
-export async function GET() {
+export async function GET(request?: NextRequest) {
   try {
-    const backendRes = await backendFetch(`${BACKEND_URL}/api/worlds`, {
+    const searchParams = request?.url ? new URL(request.url).searchParams : null;
+    const qs = searchParams?.toString();
+    const url = qs ? `${BACKEND_URL}/api/worlds?${qs}` : `${BACKEND_URL}/api/worlds`;
+    const backendRes = await backendFetch(url, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(10000),
     });

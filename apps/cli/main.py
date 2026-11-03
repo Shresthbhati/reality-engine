@@ -30,6 +30,10 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from evidence.importers import import_folder
 from evidence.multi_source import MultiSourceSession
 from evidence.packages import DeterministicPackageBuilder, EvidencePackage
@@ -1046,6 +1050,7 @@ def cmd_inspect(args: argparse.Namespace) -> int:
             "provenance": entity.provenance.value,
             "confidence": entity.confidence,
             "geometry_ids": list(entity.geometry_ids),
+            "custom_properties": dict(entity.custom_properties),
             "relationships": [
                 {
                     "kind": rel.kind.value,
@@ -1063,13 +1068,26 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         by_type[entity.type.value] = by_type.get(entity.type.value, 0) + 1
     payload = {
         "world_id": world.id,
+        "coordinate_frame": world.coordinate_frame.value,
+        "transforms": len(world.transforms),
         "entities": len(world.entities),
         "geometries": len(world.geometries),
         "by_type": by_type,
         "global_provenance": world.global_provenance.value,
     }
+    for key in ("georeference", "design_style", "building_envelope", "scene_completeness", "physical_plausibility"):
+        if key in world.metadata:
+            payload[key] = world.metadata[key]
+    if "lighting" in world.environment:
+        payload["lighting"] = {
+            "dominant_light_direction": world.environment["lighting"].get("dominant_light_direction"),
+            "ambient_irradiance_rgb": world.environment["lighting"].get("ambient_irradiance_rgb"),
+        }
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
+
+
+from apps.cli.cmd_techs import cmd_techs_list, cmd_techs_inspect, cmd_techs_benchmark
 
 
 def cmd_viewer(args: argparse.Namespace) -> int:
@@ -1337,6 +1355,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_viewer.add_argument("--mesh", default=None, help="mesh.ply artifact path")
     p_viewer.add_argument("-o", "--output", required=True, help="viewer HTML output path")
     p_viewer.set_defaults(func=cmd_viewer)
+
+    p_techs = sub.add_parser("techs", help="inspect, list, and benchmark the 50 open-source technologies")
+    techs_sub = p_techs.add_subparsers(dest="techs_command", required=True)
+
+    p_techs_list = techs_sub.add_parser("list", help="list evaluated technologies with subsystem, license, and discovery status")
+    p_techs_list.add_argument("--subsystem", default=None, help="filter by subsystem name")
+    p_techs_list.add_argument("--priority", type=int, default=None, help="filter by max priority tier (1, 2, 3)")
+    p_techs_list.add_argument("--json", action="store_true", help="output as JSON")
+    p_techs_list.set_defaults(func=cmd_techs_list)
+
+    p_techs_inspect = techs_sub.add_parser("inspect", help="show capability metadata and adapter state for one technology")
+    p_techs_inspect.add_argument("tech_id", help="technology ID slug (e.g. yolox, teaser_plus_plus, manifold)")
+    p_techs_inspect.add_argument("--json", action="store_true", help="output as JSON")
+    p_techs_inspect.set_defaults(func=cmd_techs_inspect)
+
+    p_techs_bench = techs_sub.add_parser("benchmark", help="run evaluation benchmarks and measure latency, VRAM, and accuracy")
+    p_techs_bench.add_argument("--tech", default=None, help="benchmark a single technology by ID")
+    p_techs_bench.add_argument("--subsystem", default=None, help="benchmark all technologies in a subsystem")
+    p_techs_bench.add_argument("--markdown", "--report", action="store_true", help="output comprehensive markdown audit report")
+    p_techs_bench.add_argument("--json", action="store_true", help="output as JSON")
+    p_techs_bench.set_defaults(func=cmd_techs_benchmark)
 
     return parser
 

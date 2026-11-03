@@ -229,8 +229,11 @@ export default function ReconstructionStatusBar({
   const hasModel = Boolean(status?.has_model);
   useEffect(() => {
     if (!hasModel || new URLSearchParams(window.location.search).get("step") !== "scale") return;
-    setExpandedPref(true);
-    const t = setTimeout(() => document.querySelector('[data-testid="scale-card"]')?.scrollIntoView({ block: "nearest" }), 80);
+
+    const t = setTimeout(() => {
+      setExpandedPref(true);
+      document.querySelector('[data-testid="scale-card"]')?.scrollIntoView({ block: "nearest" });
+    }, 80);
     return () => clearTimeout(t);
   }, [hasModel]);
 
@@ -238,6 +241,7 @@ export default function ReconstructionStatusBar({
   useEffect(() => {
     const open = () => {
       setExpandedPref(true);
+  
       setTimeout(() => document.querySelector('[data-testid="scale-card"]')?.scrollIntoView({ block: "nearest" }), 50);
     };
     window.addEventListener("reconstruction-expand", open);

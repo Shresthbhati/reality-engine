@@ -36,6 +36,8 @@ import {
   MoveHorizontal,
   Compass,
   History,
+  Globe,
+  Cpu,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -71,6 +73,9 @@ import type { CapturePlanSummary } from "@/lib/studio/capture-plan-model";
 import { StoreySelector } from "@/components/studio/StoreySelector";
 import type { StoreyLevelItem } from "@/lib/studio/storey-model";
 import { TemporalDiffSlider } from "@/components/studio/TemporalDiffSlider";
+import { SpatialIntelligencePanel } from "@/components/studio/SpatialIntelligencePanel";
+import { TechnologiesPanel } from "@/components/studio/TechnologiesPanel";
+import type { SpatialIntelligenceSummary } from "@/lib/studio/spatial-intelligence-model";
 import type { TemporalDiffSummary } from "@/lib/studio/temporal-model";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "@/lib/studio/transform-types";
 
@@ -123,6 +128,8 @@ interface World3DViewportProps {
   /** Multi-epoch temporal diff between baseline and current state. */
   temporalDiff?: TemporalDiffSummary | null;
   onSelectTemporalEntity?: (entityId: string) => void;
+  /** Spatial intelligence summary (georeference, building envelope, architectural style, physics, lighting). */
+  spatialIntelligence?: SpatialIntelligenceSummary | null;
 }
 
 function IconButton({
@@ -176,6 +183,7 @@ export default function World3DViewport({
   onSelectStorey: onSelectStoreyProp,
   temporalDiff: temporalDiffProp,
   onSelectTemporalEntity: onSelectTemporalEntityProp,
+  spatialIntelligence: spatialIntelligenceProp,
   chrome = true,
   initialLayers = null,
   bandOverlay = null,
@@ -187,8 +195,10 @@ export default function World3DViewport({
   // Latest callbacks, so the controller is created once and never torn down by an unstable parent callback.
   const onSelectRef = useRef(onSelectEntity);
   const onMeasureRef = useRef(onMeasurementChange);
-  onSelectRef.current = onSelectEntity;
-  onMeasureRef.current = onMeasurementChange;
+  useEffect(() => {
+    onSelectRef.current = onSelectEntity;
+    onMeasureRef.current = onMeasurementChange;
+  }, [onSelectEntity, onMeasurementChange]);
 
   const unplaced = isUnplaced(captureQuality);
   const [layers, setLayers] = useState<ViewportLayers>({
@@ -204,7 +214,7 @@ export default function World3DViewport({
     shell: true,
     ...(initialLayers ?? {}),
   });
-  const [modeState, setModeState] = useState<ViewMode>("realistic");
+  const [modeState, setModeState] = useState<ViewMode>(() => (typeof window !== "undefined" ? loadStoredMode() : "realistic"));
   const mode = modeProp ?? modeState;
   const [cutawayState, setCutawayState] = useState(true);
   const cutaway = cutawayProp ?? cutawayState;
@@ -217,9 +227,9 @@ export default function World3DViewport({
   const [snapConfig, setSnapConfig] = useState<SnapConfig>(DEFAULT_SNAP_CONFIG);
 
   // Studio Intelligence state fallbacks (from props or world.metadata)
-  const resolvedCapturePlan = capturePlanProp ?? ((world?.metadata as any)?.capture_plan as CapturePlanSummary | null) ?? null;
-  const resolvedStoreys = storeysProp ?? ((world?.metadata as any)?.storeys as StoreyLevelItem[] | null) ?? ((world?.metadata as any)?.vertical_topology?.storeys as StoreyLevelItem[] | null) ?? null;
-  const resolvedTemporalDiff = temporalDiffProp ?? ((world?.metadata as any)?.temporal_diff as TemporalDiffSummary | null) ?? null;
+  const resolvedCapturePlan = capturePlanProp ?? ((world?.metadata as Record<string, unknown> | undefined)?.capture_plan as CapturePlanSummary | null) ?? null;
+  const resolvedStoreys = storeysProp ?? ((world?.metadata as Record<string, unknown> | undefined)?.storeys as StoreyLevelItem[] | null) ?? (((world?.metadata as Record<string, unknown> | undefined)?.vertical_topology as Record<string, unknown> | undefined)?.storeys as StoreyLevelItem[] | null) ?? null;
+  const resolvedTemporalDiff = temporalDiffProp ?? ((world?.metadata as Record<string, unknown> | undefined)?.temporal_diff as TemporalDiffSummary | null) ?? null;
 
   const [showCapturePlan, setShowCapturePlan] = useState(false);
   const [selectedCaptureViewpointId, setSelectedCaptureViewpointId] = useState<string | null>(null);
@@ -232,6 +242,40 @@ export default function World3DViewport({
 
   const [showTemporalDiff, setShowTemporalDiff] = useState(false);
   const [temporalSplitRatio, setTemporalSplitRatio] = useState(0.5);
+
+  const resolvedSpatialIntelligence = useMemo<SpatialIntelligenceSummary | null>(() => {
+    if (spatialIntelligenceProp) return spatialIntelligenceProp;
+    if (!world) return null;
+    const meta = (world.metadata ?? {}) as Record<string, unknown>;
+    const georef = meta.georeference ?? null;
+    const style = meta.design_style ?? null;
+    const env = (world.environment ?? {}) as Record<string, unknown>;
+    const lighting = env.lighting ?? null;
+    const plausibility = meta.physical_plausibility ?? null;
+    const completeness = meta.scene_completeness ?? null;
+    const envelope = meta.building_envelope ?? null;
+    const sharedWalls = meta.shared_walls ?? null;
+    const transforms = world.transforms ?? {};
+
+    if (!georef && !style && !lighting && !plausibility && !completeness && !envelope && Object.keys(transforms).length === 0) {
+      return null;
+    }
+    return {
+      world_id: world.id,
+      coordinate_frame: String((world as unknown as Record<string, unknown>).coordinate_frame || world.coordinate_system || "WORLD"),
+      transforms_count: Object.keys(transforms).length,
+      georeference: georef,
+      design_style: style,
+      building_envelope: envelope,
+      physical_plausibility: plausibility,
+      scene_completeness: completeness,
+      lighting: lighting,
+      shared_walls: sharedWalls,
+    } as unknown as SpatialIntelligenceSummary;
+  }, [spatialIntelligenceProp, world]);
+
+  const [showSpatialIntelligence, setShowSpatialIntelligence] = useState(false);
+  const [showTechnologies, setShowTechnologies] = useState(false);
 
   const handleGizmoModeChange = useCallback((m: TransformGizmoMode) => {
     setGizmoMode(m);
@@ -312,10 +356,7 @@ export default function World3DViewport({
     };
   }, []);
 
-  // Remember the chosen mode (storage failures are swallowed inside view-model)
-  useEffect(() => {
-    if (modeProp === undefined) setModeState(loadStoredMode());
-  }, [modeProp]);
+  // mode derives from modeProp ?? modeState
 
   const changeMode = useCallback((next: ViewMode) => {
     setModeState(next);
@@ -875,6 +916,22 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Spatial Intelligence Overlay */}
+        {showSpatialIntelligence && resolvedSpatialIntelligence && (
+          <div
+            className={`absolute top-14 ${showStoreys && resolvedStoreys && resolvedStoreys.length > 0 ? "left-48" : "left-3"} z-20 w-[360px] max-w-[calc(100%-2rem)] pointer-events-auto`}
+          >
+            <SpatialIntelligencePanel summary={resolvedSpatialIntelligence} />
+          </div>
+        )}
+
+        {/* 50 Technologies Evaluation Overlay */}
+        {showTechnologies && (
+          <div className="absolute top-14 right-3 z-30 w-[420px] max-w-[calc(100%-2rem)] pointer-events-auto">
+            <TechnologiesPanel onClose={() => setShowTechnologies(false)} />
+          </div>
+        )}
+
         {/* Top right: XYZ axis gizmo */}
         {axes && (
           <svg
@@ -961,6 +1018,25 @@ export default function World3DViewport({
                 onClick={() => setShowTemporalDiff((v) => !v)}
               >
                 <History className="w-4 h-4 text-emerald-400" />
+              </IconButton>
+            </>
+          )}
+          {resolvedSpatialIntelligence && (
+            <>
+              <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
+              <IconButton
+                label="Spatial Intelligence (georeference, style, envelope, physics)"
+                active={showSpatialIntelligence}
+                onClick={() => setShowSpatialIntelligence((v) => !v)}
+              >
+                <Globe className="w-4 h-4 text-emerald-400" />
+              </IconButton>
+              <IconButton
+                label="50 Open-Source Technologies Catalog & Benchmarking"
+                active={showTechnologies}
+                onClick={() => setShowTechnologies((v) => !v)}
+              >
+                <Cpu className="w-4 h-4 text-indigo-400" />
               </IconButton>
             </>
           )}

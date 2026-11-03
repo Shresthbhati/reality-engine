@@ -188,3 +188,43 @@ def test_universal_pipeline_scale_anchoring_and_export(tmp_path):
     loaded = store.load_version(version_id)
     assert loaded.id == result.world.id
     assert len(loaded.entities) == len(result.world.entities)
+
+
+
+def test_universal_pipeline_with_gnss_georeferencing(tmp_path):
+    """Test that the universal pipeline automatically detects GNSS metadata and georeferences the world."""
+    from evidence.session import EvidenceItem, EvidenceKind
+    from world_ir.coordinates import Frame
+
+    # Create 4 synthetic evidence items with GNSS metadata
+    evidence_items = []
+    ref_lat, ref_lon, ref_alt = 37.7749, -122.4194, 20.0
+
+    for i in range(4):
+        item = EvidenceItem(
+            id=f"gps_item_{i:02d}",
+            kind=EvidenceKind.PHOTO,
+            source_uri=f"file:///dummy/gps_{i:02d}.jpg",
+            metadata={
+                "latitude_deg": ref_lat + float(i) * 0.0001,
+                "longitude_deg": ref_lon + float(i) * 0.0001,
+                "altitude_m": ref_alt + float(i) * 0.5,
+            },
+        )
+        evidence_items.append(item)
+
+    backend = MockReconstructionBackend()
+    options = UniversalPipelineOptions(
+        backends=[backend],
+        enable_spatial_reasoning=True,
+    )
+
+    result = UniversalPipeline.reconstruct(evidence_items, options=options)
+
+    # Verify georeferencing was triggered and registered
+    assert "georeferencing" in result.telemetry["stages"]
+    assert result.telemetry["stages"]["georeferencing"]["success"] is True
+    assert result.world.coordinate_frame == Frame.ENU
+    assert "world_to_enu" in result.world.transforms
+    assert "georeference" in result.world.metadata
+    assert result.world.metadata["georeference"]["status"] == "georeferenced"

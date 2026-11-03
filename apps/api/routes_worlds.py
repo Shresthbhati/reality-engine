@@ -20,6 +20,7 @@ from apps.api.db import get_db
 from apps.api.auth import AuthContext, Role, enforce_project_isolation, get_auth_context
 from apps.api.models import (
     ActivityEvent,
+    CaptureRequest,
     Evidence,
     Location,
     Session,
@@ -141,11 +142,12 @@ class WorldPatch(BaseModel):
     description: str | None = None
 
 
-async def _world_or_404(db: AsyncSession, world_id: str) -> World:
+async def _world_or_404(db: AsyncSession, world_id: str, auth: AuthContext | None = None) -> World:
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
+    if auth is not None:
+        enforce_project_isolation(w, auth)
     return w
 
 
@@ -273,7 +275,11 @@ async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession 
 
 
 @worlds.get("/{world_id}/versions")
-async def list_world_versions(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def list_world_versions(
+    world_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
     """Application mirror of WorldStore lineage. Reconciled against the
     on-disk store on every read (writers outside this process, or a
     version orphaned by a failed commit, must not drift silently from
@@ -327,8 +333,127 @@ async def attach_session(
     return {"session_id": s.id, "world_id": w.id}
 
 
+class CaptureRequestStatusUpdate(BaseModel):
+    status: str  # "open" | "satisfied" | "dismissed"
+
+
+@worlds.get("/{world_id}/capture-requests")
+async def list_capture_requests(
+    world_id: str,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """List world-space CaptureRequests for unobserved or occluded regions (Blueprint 11, Task 6.1)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+
+    query = select(CaptureRequest).where(CaptureRequest.world_id == world_id)
+    if status:
+        query = query.where(CaptureRequest.status == status)
+    query = query.order_by(CaptureRequest.created_at.desc())
+
+    res = await db.execute(query)
+    rows = res.scalars().all()
+
+    if rows:
+        items = [
+            {
+                "id": r.id,
+                "world_id": r.world_id,
+                "reason": r.reason,
+                "target_region": r.target_region,
+                "target_ids": r.target_ids or [],
+                "suggested_poses": r.suggested_poses or [],
+                "expected_gain": r.expected_gain,
+                "instruction": r.instruction,
+                "status": r.status,
+                "created_version": r.created_version,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+        return {"items": items, "count": len(items)}
+
+    # If status filter was specified or requests already exist in DB, return empty list
+    count_any = await db.scalar(select(func.count(CaptureRequest.id)).where(CaptureRequest.world_id == world_id))
+    if (count_any or 0) > 0 or status is not None:
+        return {"items": [], "count": 0}
+
+    # If no DB rows exist yet, generate from the authoritative current WorldIR
+    store = WorldStore(_worldstore_root())
+    vrow = await _version_row(db, world_id, None, auth)
+    if vrow is None:
+        return {"items": [], "count": 0, "reason": "No reconstruction version available yet"}
+
+    try:
+        world = _load_worldir(store, vrow.version_id)
+    except Exception as exc:
+        log.warning("could not load WorldIR for capture requests: %s", exc)
+        return {"items": [], "count": 0, "reason": str(exc)}
+
+    from engine.pipeline.guidance import generate_world_capture_requests
+    generated = generate_world_capture_requests(world, world_id=world_id)
+
+    # Persist generated requests to DB
+    for req in generated:
+        db_req = CaptureRequest(
+            id=req["id"],
+            world_id=world_id,
+            reason=req["reason"],
+            target_region=req["target_region"],
+            target_ids=req["target_ids"],
+            suggested_poses=req["suggested_poses"],
+            expected_gain=req["expected_gain"],
+            instruction=req["instruction"],
+            status=req["status"],
+            created_version=req["created_version"],
+        )
+        db.add(db_req)
+
+    if generated:
+        try:
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            log.warning("failed to persist capture requests to DB: %s", exc)
+
+    return {"items": generated, "count": len(generated)}
+
+
+@worlds.patch("/{world_id}/capture-requests/{request_id}")
+async def update_capture_request_status(
+    world_id: str,
+    request_id: str,
+    body: CaptureRequestStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Update status of a CaptureRequest (open | satisfied | dismissed)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+
+    req = await db.get(CaptureRequest, request_id)
+    if req is None or req.world_id != world_id:
+        raise HTTPException(404, "CaptureRequest not found")
+
+    if body.status not in ("open", "satisfied", "dismissed"):
+        raise HTTPException(422, f"invalid status {body.status!r}; expected open, satisfied, or dismissed")
+
+    req.status = body.status
+    await db.commit()
+    await db.refresh(req)
+
+    return {
+        "id": req.id,
+        "world_id": req.world_id,
+        "status": req.status,
+        "reason": req.reason,
+    }
+
+
 @worlds.get("/{world_id}/coverage")
-async def world_coverage(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def world_coverage(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
@@ -364,14 +489,15 @@ async def world_coverage(world_id: str, db: AsyncSession = Depends(get_db)) -> d
 
 
 async def _version_row(
-    db: AsyncSession, world_id: str, version_id: str | None
+    db: AsyncSession, world_id: str, version_id: str | None, auth: AuthContext | None = None
 ) -> WorldVersion:
     """The mirror row for the world's effective version (current unless
     ?version= overrides). 404 world / 404 version / explicit None."""
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
+    if auth is not None:
+        enforce_project_isolation(w, auth)
     if version_id is not None:
         row = await db.get(WorldVersion, version_id)
         if row is None or row.world_id != world_id:
@@ -423,6 +549,7 @@ async def world_worldir(
 async def entity_provenance(
     world_id: str, entity_id: str, version: str | None = None,
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Trace an entity back to the Evidence it was built from.
 
@@ -449,30 +576,64 @@ async def entity_provenance(
     if entity is None:
         raise HTTPException(404, f"Entity '{entity_id}' not found in version '{row.id}'")
 
+    from world_ir.observations import ledger_of
+
+    all_obs, all_decisions = ledger_of(world)
+    entity_decisions = [d.to_dict() for d in all_decisions if d.entity_id == entity_id]
+    relevant_obs_ids = {d.observation_id for d in all_decisions if d.entity_id == entity_id}
+
     observation_matches: list[dict] = []
     for obs in getattr(entity, "observations", None) or []:
+        obs_id = getattr(obs, "id", None) or getattr(obs, "observation_id", None)
+        if obs_id:
+            relevant_obs_ids.add(obs_id)
         ev = None
-        if obs.data_hash:
+        if getattr(obs, "data_hash", None):
             res = await db.execute(select(Evidence).where(Evidence.checksum == obs.data_hash))
             ev = res.scalar_one_or_none()
-        if ev is None and obs.data_uri:
+        if ev is None and getattr(obs, "data_uri", None):
             res = await db.execute(select(Evidence).where(Evidence.artifact_uri == obs.data_uri))
             ev = res.scalar_one_or_none()
         if ev is not None:
             observation_matches.append({
-                "observation_id": obs.id,
+                "observation_id": obs_id,
                 "evidence_id": ev.id,
                 "evidence_name": ev.name,
                 "evidence_type": ev.type,
+                "mask_uri": getattr(obs, "mask_uri", None),
+                "bbox_px": list(obs.bbox_px) if getattr(obs, "bbox_px", None) else None,
             })
 
-    if observation_matches:
+    entity_observations = [
+        o.to_dict() for o in all_obs if o.observation_id in relevant_obs_ids
+    ]
+
+    for obs_item in entity_observations:
+        img_id = obs_item.get("image_id")
+        if img_id:
+            res = await db.execute(
+                select(Evidence).where((Evidence.id == img_id) | (Evidence.name == img_id))
+            )
+            ev = res.scalar_one_or_none()
+            if ev is not None and not any(m.get("evidence_id") == ev.id for m in observation_matches):
+                observation_matches.append({
+                    "observation_id": obs_item.get("observation_id"),
+                    "evidence_id": ev.id,
+                    "evidence_name": ev.name,
+                    "evidence_type": ev.type,
+                    "mask_uri": obs_item.get("mask_uri"),
+                    "bbox_px": obs_item.get("bbox_px"),
+                })
+
+    if observation_matches or entity_decisions:
         return {
             "entity_id": entity_id,
             "version_id": row.id,
             "provenance": entity.provenance.value if entity.provenance else None,
-            "trace_level": "observation",
+            "trace_level": "observation" if observation_matches else "session",
             "evidence": observation_matches,
+            "association_decisions": entity_decisions,
+            "observations": entity_observations,
         }
 
     session_ids = row.source_session_ids or []
@@ -490,6 +651,8 @@ async def entity_provenance(
             "trace_level": "session",
             "source_session_ids": session_ids,
             "evidence": session_evidence,
+            "association_decisions": entity_decisions,
+            "observations": entity_observations,
         }
 
     return {
@@ -498,6 +661,8 @@ async def entity_provenance(
         "provenance": entity.provenance.value if entity.provenance else None,
         "trace_level": "none",
         "evidence": [],
+        "association_decisions": entity_decisions,
+        "observations": entity_observations,
         "reason": "This version has no source capture sessions (procedurally generated, or predates session tracking).",
     }
 
@@ -723,7 +888,7 @@ class DiffRequest(BaseModel):
 
 
 @worlds.get("/{world_id}/diff")
-async def get_world_diff(world_id: str, base: str | None = None, head: str | None = None, db: AsyncSession = Depends(get_db)):
+async def get_world_diff(world_id: str, base: str | None = None, head: str | None = None, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """Compute structural diff between two WorldIR versions."""
     w = await db.get(World, world_id)
     if w is None:
@@ -941,7 +1106,7 @@ def _validate_commit_changes(changes: dict) -> dict:
 
 
 @worlds.post("/{world_id}/commit")
-async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncSession = Depends(get_db)):
+async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """Apply a correction to a world entity and persist as new WorldStore version.
 
     Failure contract: validation failures (422/413), stale parents (409),
@@ -1347,6 +1512,7 @@ async def get_world_space_graph(
     world_id: str,
     version_id: str | None = None,
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Retrieve the authoritative InteriorSpaceGraph for a world."""
     w = await db.get(World, world_id)
@@ -1374,6 +1540,7 @@ async def query_world_spaces(
     level_b: str | None = None,
     version_id: str | None = None,
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Query topological connectivity and spatial metrics within a world."""
     w = await db.get(World, world_id)
@@ -1438,7 +1605,7 @@ class RollbackIn(BaseModel):
 
 
 @worlds.post("/{world_id}/rollback")
-async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """Move HEAD back to an earlier version (history stays immutable; see worldstore_service.rollback_head)."""
     from apps.api import worldstore_service as wss
     from apps.api.models import Job, Session as _Session
@@ -1556,7 +1723,7 @@ async def reject_scale_suggestion(world_id: str, body: RejectIn, db: AsyncSessio
 
 
 @worlds.post("/{world_id}/scale", status_code=202)
-async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """Anchor the world's scale to a distance the user measured between two of its photographs, a length
     they know in the model (``known_length``), or a typical size they explicitly accepted
     (``prior_accepted_by_user``, always labelled ESTIMATED).
@@ -1651,7 +1818,7 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
 
 
 @worlds.get("/{world_id}/thumbnail")
-async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession = Depends(get_db)):
+async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """A 480 px JPEG of one of the place's own photographs (a placed one when the model has them). `v` is only a
     cache-buster the client sets to the current version id."""
     import asyncio
@@ -1686,3 +1853,60 @@ async def world_quality(
     out = place_summary.quality_view(world, card, row.report)
     out["version_id"] = row.id
     return out
+
+
+@worlds.get("/{world_id}/spatial-intelligence")
+async def get_world_spatial_intelligence(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Consolidated spatial intelligence endpoint: coordinate frame, georeference, style, envelope, plausibility, lighting."""
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+
+    from perception.reasoning.physical_plausibility import validate_physical_plausibility
+    from perception.style.analyzer import analyze_world_design_style
+    from engine.compiler.building_envelope import reconstruct_building_envelope
+    from planning.completeness import evaluate_scene_completeness
+
+    style_meta = world.metadata.get("design_style")
+    if not style_meta:
+        style_rep = analyze_world_design_style(world)
+        style_meta = {
+            "primary_style": style_rep.primary_style.value,
+            "confidence": round(style_rep.confidence, 3),
+            "ornamentation": style_rep.ornamentation.value,
+        }
+
+    envelope_meta = world.metadata.get("building_envelope")
+    if not envelope_meta:
+        env_rep = reconstruct_building_envelope(world)
+        envelope_meta = {
+            "total_storeys": env_rep.total_storeys,
+            "gross_floor_area_m2": round(env_rep.gross_floor_area_m2, 2),
+            "building_height_m": round(env_rep.building_height_m, 2),
+            "footprint_area_m2": round(env_rep.footprint_polygon.area, 2) if env_rep.footprint_polygon else 0.0,
+        }
+
+    plausibility_meta = world.metadata.get("physical_plausibility")
+    if not plausibility_meta:
+        plaus_rep = validate_physical_plausibility(world)
+        plausibility_meta = plaus_rep.to_dict()
+
+    completeness_meta = world.metadata.get("scene_completeness")
+    if not completeness_meta:
+        comp_rep = evaluate_scene_completeness(world)
+        completeness_meta = comp_rep.to_dict()
+
+    return {
+        "world_id": world.id,
+        "version_id": row.id,
+        "coordinate_frame": world.coordinate_frame.value,
+        "transforms_count": len(world.transforms),
+        "georeference": world.metadata.get("georeference"),
+        "design_style": style_meta,
+        "building_envelope": envelope_meta,
+        "physical_plausibility": plausibility_meta,
+        "scene_completeness": completeness_meta,
+        "lighting": world.environment.get("lighting"),
+        "shared_walls": world.metadata.get("shared_walls"),
+    }

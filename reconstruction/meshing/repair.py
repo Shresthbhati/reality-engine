@@ -19,7 +19,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
-import trimesh
+try:
+    import trimesh
+except ImportError:
+    trimesh = None
 
 from reconstruction.meshing.mesh import MeshData, Tri, Vert
 
@@ -39,8 +42,10 @@ class ManifoldReport:
     total_faces: int
 
 
-def mesh_to_trimesh(mesh: MeshData) -> trimesh.Trimesh:
+def mesh_to_trimesh(mesh: MeshData) -> Any:
     """Convert MeshData into a trimesh.Trimesh object."""
+    if trimesh is None:
+        raise RuntimeError("trimesh is not installed")
     vertices = np.array(mesh.vertices, dtype=np.float64) if mesh.vertices else np.empty((0, 3), dtype=np.float64)
     faces = np.array(mesh.faces, dtype=np.int64) if mesh.faces else np.empty((0, 3), dtype=np.int64)
     normals = np.array(mesh.normals, dtype=np.float64) if mesh.normals else None
@@ -48,7 +53,7 @@ def mesh_to_trimesh(mesh: MeshData) -> trimesh.Trimesh:
 
 
 def trimesh_to_mesh(
-    tm: trimesh.Trimesh,
+    tm: Any,
     units: str = "meter",
     frame: str = "world",
 ) -> MeshData:
@@ -423,6 +428,8 @@ def simplify_planar_facets(
     if len(mesh.faces) == 0:
         return mesh, {"planar_reduction_ratio": 0.0, "preserved_sharp_edges": 0}
 
+    if trimesh is None:
+        return mesh, {"planar_reduction_ratio": 0.0, "preserved_sharp_edges": 0}
     tm = mesh_to_trimesh(mesh)
     initial_faces = len(tm.faces)
     initial_verts = len(tm.vertices)
@@ -649,6 +656,16 @@ def clean_and_repair_mesh(
 
     # Use robust non-manifold geometry cleaner first
     clean_mesh, _ = remove_non_manifold_geometry(mesh)
+    if trimesh is None:
+        return clean_mesh, {
+            "initial_vertices": initial_vertices,
+            "initial_faces": initial_faces,
+            "final_vertices": len(clean_mesh.vertices),
+            "final_faces": len(clean_mesh.faces),
+            "watertight": False,
+            "holes_filled": 0,
+            "simplified": False,
+        }
     tm = mesh_to_trimesh(clean_mesh)
 
     tm.process(validate=True)

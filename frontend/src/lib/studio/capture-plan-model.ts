@@ -40,7 +40,7 @@ export interface CapturePlanUIState {
  */
 export function formatCompassHeading(yawDeg: number): string {
   // Normalize to 0 .. 360
-  let norm = ((yawDeg % 360) + 360) % 360;
+  const norm = ((yawDeg % 360) + 360) % 360;
   const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
   const index = Math.round(norm / 45) % 8;
   return directions[index];

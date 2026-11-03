@@ -84,7 +84,7 @@ rate on the living room is 0 for the v1 class set.
 | 3.2 | Association is the only resolver path | 3.1 | `perception/instances/object_resolution.py`, `association.py` | Hungarian is the default everywhere; union-find removed (or behind an explicit non-default flag with a deprecation note); every decision stored | grep shows no default union-find; A4 test | [12](12_PIPELINE.md) S9 | DONE (uncommitted, verified 2026-11-01) |
 | 3.3 | Scale gate in lifting | 3.1 | `perception/instances/lifting.py` | relative depth yields `depth_source=relative` + wide sigma; no metric dimensions unless scale_state ≠ relative | unit test with relative depth | P10 | DONE (uncommitted, verified 2026-11-01) |
 | 3.4 | Validator invariants 1–7 | 3.1 | `world_ir/validation.py` | a commit is blocked on invariant failure with a readable report | one unit test per invariant | [11](11_WORLDIR_CONTRACT.md) §3 | DONE (uncommitted, verified 2026-11-01) |
-| 3.5 | Entity evidence in the inspector | 3.2 | API provenance route, inspector component | selecting an entity shows its source photos with masks + its association decisions | Playwright + screenshot | [14](14_FRONTEND_UX.md) | TODO |
+| 3.5 | Entity evidence in the inspector | 3.2 | API provenance route, inspector component | selecting an entity shows its source photos with masks + its association decisions | Playwright + screenshot | [14](14_FRONTEND_UX.md) | DONE (feat/task-3-5-entity-evidence-inspector, verified 2026-11-04) |
 | 3.6 | Identity scenarios pass | 3.2–3.4 | `tests/scenarios/` | A1, A2, A3, A4, A5 pass on real or synthetic data | pytest + benchmark JSON diff vs Phase 2 | [18](18_VALIDATION_AND_BENCHMARKS.md) | TODO |
 
 ## Phase 4 — Better matching and depth (adopt only if measured better)
@@ -94,10 +94,10 @@ licence, and VRAM within budget.
 
 | ID | Task | Depends | Files | Done when | Verify | Read | Status |
 |----|------|---------|-------|-----------|--------|------|--------|
-| 4.1 | Registry entries for all current models | 0.1 | `perception/model_registry.py`, `.agent/LICENSES.yaml` | every backend has licence, commercial_ok, measured VRAM and status | registry dump | [15](15_ML_MODEL_STRATEGY.md) | TODO |
-| 4.2 | One-model-at-a-time scheduler | 4.1 | `perception/` stage runner, `perception/device.py` | peak VRAM ≤ budget on the living-room set; CPU fallback works | benchmark JSON peak VRAM | [15](15_ML_MODEL_STRATEGY.md) | TODO |
-| 4.3 | ALIKED+LightGlue behind `IMatcher` | 2.1, 4.1 | `reconstruction/matching/` | registered ratio / inlier ratio vs SIFT recorded; default switched only if better | benchmark diff | [15](15_ML_MODEL_STRATEGY.md) | TODO |
-| 4.4 | Metric depth candidate | 2.1, 4.1 | `perception/depth/` | one metric model behind the depth interface; scale_state `estimated` when used; benchmarked vs MiDaS | benchmark diff + measured-room error (if 2.3 is done) | [15](15_ML_MODEL_STRATEGY.md) | TODO |
+| 4.1 | Registry entries for all current models | 0.1 | `perception/model_registry.py`, `.agent/LICENSES.yaml` | every backend has licence, commercial_ok, measured VRAM and status | registry dump | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-4-1-model-registry-and-licenses, verified 2026-11-04) |
+| 4.2 | One-model-at-a-time scheduler | 4.1 | `perception/` stage runner, `perception/device.py` | peak VRAM ≤ budget on the living-room set; CPU fallback works | benchmark JSON peak VRAM | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-4-2-one-model-at-a-time-scheduler, verified 2026-11-04) |
+| 4.3 | ALIKED+LightGlue behind `IMatcher` | 2.1, 4.1 | `reconstruction/matching/` | registered ratio / inlier ratio vs SIFT recorded; default switched only if better | benchmark diff | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-4-3-aliked-lightglue-matcher, verified 2026-11-04) |
+| 4.4 | Metric depth candidate | 2.1, 4.1 | `perception/depth/` | one metric model behind the depth interface; scale_state `estimated` when used; benchmarked vs MiDaS | benchmark diff + measured-room error (if 2.3 is done) | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-4-4-metric-depth-candidate, verified 2026-11-04) |
 
 ## Phase 5 — Architecture and coverage
 
@@ -107,9 +107,9 @@ and every surface has an evidence state.
 | ID | Task | Depends | Files | Done when | Verify | Read | Status |
 |----|------|---------|-------|-----------|--------|------|--------|
 | 5.1 | Contract hierarchy in WorldIR | 3.4 | `world_ir/schema_v1.py` / `v2_extensions.py`, serialization migration | World→Building→Floor→Space→Surface/Opening/Entity stored; old versions still load | round-trip + old-fixture load test | [11](11_WORLDIR_CONTRACT.md) | DONE (uncommitted, verified 2026-11-01; hierarchy is an optional typed layer, populated by 5.2) |
-| 5.2 | Architecture → contract | 5.1 | output adapters in `perception/architecture/` | planes/rooms/openings become Space/Surface/Opening with evidence states | A1, A6, A14 tests | [12](12_PIPELINE.md) S6 | TODO |
-| 5.3 | Ray-cast coverage | 5.2 | `engine/pipeline/guidance.py` (or a new `coverage.py` beside it) | each Surface gets a coverage fraction + OBSERVED/OCCLUDED/UNOBSERVED | test on a synthetic room with a known hidden region | [12](12_PIPELINE.md) S13 | TODO |
-| 5.4 | Topology revalidation after merges | 5.2 | `perception/architecture/topology.py` | merged topology is rechecked geometrically; failures flagged, not hidden | unit test with a bad merge | [20](20_REUSE_MAP.md) | TODO |
+| 5.2 | Architecture → contract | 5.1 | output adapters in `perception/architecture/` | planes/rooms/openings become Space/Surface/Opening with evidence states | A1, A6, A14 tests | [12](12_PIPELINE.md) S6 | DONE (feat/task-5-2-architecture-contract-adapters, verified 2026-11-04) |
+| 5.3 | Ray-cast coverage | 5.2 | `engine/pipeline/guidance.py` (or a new `coverage.py` beside it) | each Surface gets a coverage fraction + OBSERVED/OCCLUDED/UNOBSERVED | test on a synthetic room with a known hidden region | [12](12_PIPELINE.md) S13 | DONE (feat/task-5-3-raycast-surface-coverage, verified 2026-11-04) |
+| 5.4 | Topology revalidation after merges | 5.2 | `perception/architecture/topology.py` | merged topology is rechecked geometrically; failures flagged, not hidden | unit test with a bad merge | [20](20_REUSE_MAP.md) | DONE (feat/task-5-4-topology-revalidation, verified 2026-11-04) |
 
 ## Phase 6 — Guided capture and incremental updates
 
@@ -118,8 +118,8 @@ updates only the affected region.
 
 | ID | Task | Depends | Files | Done when | Verify | Read | Status |
 |----|------|---------|-------|-----------|--------|------|--------|
-| 6.1 | World-space CaptureRequests | 5.3 | `engine/pipeline/guidance.py`, `capture_requests` table | requests carry target region, suggested poses, instruction text and expected gain | API response on the living room | [11](11_WORLDIR_CONTRACT.md) | TODO |
-| 6.2 | Register new photos into an existing world | 3.6 | `registration/`, `apps/api/jobs.py` | new images register against the existing model; non-matching photos are refused with a reason (A11, A19) | scenario tests | [12](12_PIPELINE.md) incremental | TODO |
+| 6.1 | World-space CaptureRequests | 5.3 | `engine/pipeline/guidance.py`, `capture_requests` table | requests carry target region, suggested poses, instruction text and expected gain | API response on the living room | [11](11_WORLDIR_CONTRACT.md) | DONE (feat/task-6-1-world-space-capture-requests, verified 2026-11-04) |
+| 6.2 | Register new photos into an existing world | 3.6 | `registration/`, `apps/api/jobs.py` | new images register against the existing model; non-matching photos are refused with a reason (A11, A19) | scenario tests | [12](12_PIPELINE.md) incremental | DONE (feat/task-6-2-incremental-photo-registration, verified 2026-11-04) |
 | 6.3 | Incremental update on ingest | 6.2 | `world_ir/incremental.py`, pipeline | only the affected closure recomputes; new version + diff; untouched entities keep IDs + geometry | A12 test + diff output | P6 | TODO |
 | 6.4 | Capture UI | 6.1, 6.3 | Capture screen, request cards, version diff view | the user sees a request, adds a photo and sees what changed | Playwright + screenshots | [14](14_FRONTEND_UX.md) | TODO |
 

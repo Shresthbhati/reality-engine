@@ -6,6 +6,33 @@ export interface EntityEvidenceRef {
   evidence_type: string;
   observation_id?: string;
   session_id?: string;
+  mask_uri?: string | null;
+  bbox_px?: number[] | null;
+}
+
+export interface AssociationDecisionRef {
+  observation_id: string;
+  state: string;
+  entity_id: string | null;
+  probability: number;
+  reason: string;
+  dist_m?: number | null;
+  mahalanobis_sq?: number | null;
+  normal_diff_deg?: number | null;
+  iou3d?: number | null;
+  geom_verified?: boolean | null;
+  candidates?: [string, number][];
+}
+
+export interface EntityObservationRef {
+  observation_id: string;
+  image_id: string;
+  label: string;
+  mask_uri?: string | null;
+  bbox_px?: number[] | null;
+  confidence?: number | null;
+  visibility?: string | null;
+  depth_source?: string | null;
 }
 
 export interface EntityProvenance {
@@ -16,6 +43,8 @@ export interface EntityProvenance {
   evidence: EntityEvidenceRef[];
   source_session_ids?: string[];
   reason?: string;
+  association_decisions?: AssociationDecisionRef[];
+  observations?: EntityObservationRef[];
 }
 
 /** Traces an entity back to the real Evidence it was compiled from --

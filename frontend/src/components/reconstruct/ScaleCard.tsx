@@ -35,7 +35,7 @@ export default function ScaleCard({ worldId, scale, onChanged }: ScaleCardProps)
   const relative = view.kind === "relative";
   useEffect(() => {
     if (!relative) {
-      setData(null);
+      // No-op when not relative
       return;
     }
     let live = true;

@@ -1,7 +1,46 @@
-"""Architectural element classification (P7-03).
+"""Architectural element classification, structural perception, and multi-room topology."""
 
-See classify.py for scope: wall/floor/ceiling/doorway from plane
-geometry. Stairs/columns/beams/roofs and outdoor elements are
-explicitly out of scope -- no detector in this repo produces the
-evidence they would need.
-"""
+from perception.architecture.adapters import (
+    ContractAdaptationResult,
+    SurfaceSpan,
+    WallContinuityResult,
+    adapt_architecture_to_contract,
+    classify_glazing_opening,
+    evaluate_wall_continuity_under_occlusion,
+)
+from perception.architecture.shared_walls import (
+    SharedWallConsolidation,
+    SharedWallDeduplicationReport,
+    deduplicate_shared_walls,
+)
+from perception.architecture.structural_network import (
+    StructuralAnalysisReport,
+    StructuralBay,
+    StructuralRole,
+    analyze_structural_system,
+)
+from perception.architecture.topology import (
+    TopologyRevalidationReport,
+    TopologyValidationIssue,
+    revalidate_merged_topology,
+)
+
+__all__ = [
+    "ContractAdaptationResult",
+    "SharedWallConsolidation",
+    "SharedWallDeduplicationReport",
+    "StructuralAnalysisReport",
+    "StructuralBay",
+    "StructuralRole",
+    "SurfaceSpan",
+    "TopologyRevalidationReport",
+    "TopologyValidationIssue",
+    "WallContinuityResult",
+    "adapt_architecture_to_contract",
+    "analyze_structural_system",
+    "classify_glazing_opening",
+    "deduplicate_shared_walls",
+    "evaluate_wall_continuity_under_occlusion",
+    "revalidate_merged_topology",
+]
+

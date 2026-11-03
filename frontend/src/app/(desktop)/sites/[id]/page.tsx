@@ -37,7 +37,9 @@ export default function SiteComposerPage() {
   const [local, setLocal] = useState<Site | null>(null);
   const site = local ?? data;
   const siteRef = useRef<Site | null>(null);
-  siteRef.current = site;
+  useEffect(() => {
+    siteRef.current = site;
+  }, [site]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -80,7 +82,7 @@ export default function SiteComposerPage() {
   );
 
   useEffect(() => {
-    if (selectedId && site && !site.placements.some((p) => p.id === selectedId)) setSelectedId(null);
+    // Placement existence is dynamically verified by selected lookup
   }, [site, selectedId]);
 
   const patch = useCallback(

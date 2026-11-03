@@ -328,7 +328,7 @@ async def attach_session(
 
 
 @worlds.get("/{world_id}/coverage")
-async def world_coverage(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def world_coverage(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
@@ -364,14 +364,15 @@ async def world_coverage(world_id: str, db: AsyncSession = Depends(get_db)) -> d
 
 
 async def _version_row(
-    db: AsyncSession, world_id: str, version_id: str | None
+    db: AsyncSession, world_id: str, version_id: str | None, auth: AuthContext | None = None
 ) -> WorldVersion:
     """The mirror row for the world's effective version (current unless
     ?version= overrides). 404 world / 404 version / explicit None."""
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
+    if auth is not None:
+        enforce_project_isolation(w, auth)
     if version_id is not None:
         row = await db.get(WorldVersion, version_id)
         if row is None or row.world_id != world_id:
@@ -423,6 +424,7 @@ async def world_worldir(
 async def entity_provenance(
     world_id: str, entity_id: str, version: str | None = None,
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Trace an entity back to the Evidence it was built from.
 
@@ -723,7 +725,7 @@ class DiffRequest(BaseModel):
 
 
 @worlds.get("/{world_id}/diff")
-async def get_world_diff(world_id: str, base: str | None = None, head: str | None = None, db: AsyncSession = Depends(get_db)):
+async def get_world_diff(world_id: str, base: str | None = None, head: str | None = None, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """Compute structural diff between two WorldIR versions."""
     w = await db.get(World, world_id)
     if w is None:
@@ -941,7 +943,7 @@ def _validate_commit_changes(changes: dict) -> dict:
 
 
 @worlds.post("/{world_id}/commit")
-async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncSession = Depends(get_db)):
+async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """Apply a correction to a world entity and persist as new WorldStore version.
 
     Failure contract: validation failures (422/413), stale parents (409),
@@ -1347,6 +1349,7 @@ async def get_world_space_graph(
     world_id: str,
     version_id: str | None = None,
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Retrieve the authoritative InteriorSpaceGraph for a world."""
     w = await db.get(World, world_id)
@@ -1374,6 +1377,7 @@ async def query_world_spaces(
     level_b: str | None = None,
     version_id: str | None = None,
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Query topological connectivity and spatial metrics within a world."""
     w = await db.get(World, world_id)
@@ -1438,7 +1442,7 @@ class RollbackIn(BaseModel):
 
 
 @worlds.post("/{world_id}/rollback")
-async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def rollback_world(world_id: str, body: RollbackIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """Move HEAD back to an earlier version (history stays immutable; see worldstore_service.rollback_head)."""
     from apps.api import worldstore_service as wss
     from apps.api.models import Job, Session as _Session
@@ -1556,7 +1560,7 @@ async def reject_scale_suggestion(world_id: str, body: RejectIn, db: AsyncSessio
 
 
 @worlds.post("/{world_id}/scale", status_code=202)
-async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """Anchor the world's scale to a distance the user measured between two of its photographs, a length
     they know in the model (``known_length``), or a typical size they explicitly accepted
     (``prior_accepted_by_user``, always labelled ESTIMATED).
@@ -1651,7 +1655,7 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
 
 
 @worlds.get("/{world_id}/thumbnail")
-async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession = Depends(get_db)):
+async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """A 480 px JPEG of one of the place's own photographs (a placed one when the model has them). `v` is only a
     cache-buster the client sets to the current version id."""
     import asyncio
@@ -1686,3 +1690,60 @@ async def world_quality(
     out = place_summary.quality_view(world, card, row.report)
     out["version_id"] = row.id
     return out
+
+
+@worlds.get("/{world_id}/spatial-intelligence")
+async def get_world_spatial_intelligence(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Consolidated spatial intelligence endpoint: coordinate frame, georeference, style, envelope, plausibility, lighting."""
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+
+    from perception.reasoning.physical_plausibility import validate_physical_plausibility
+    from perception.style.analyzer import analyze_world_design_style
+    from engine.compiler.building_envelope import reconstruct_building_envelope
+    from planning.completeness import evaluate_scene_completeness
+
+    style_meta = world.metadata.get("design_style")
+    if not style_meta:
+        style_rep = analyze_world_design_style(world)
+        style_meta = {
+            "primary_style": style_rep.primary_style.value,
+            "confidence": round(style_rep.confidence, 3),
+            "ornamentation": style_rep.ornamentation.value,
+        }
+
+    envelope_meta = world.metadata.get("building_envelope")
+    if not envelope_meta:
+        env_rep = reconstruct_building_envelope(world)
+        envelope_meta = {
+            "total_storeys": env_rep.total_storeys,
+            "gross_floor_area_m2": round(env_rep.gross_floor_area_m2, 2),
+            "building_height_m": round(env_rep.building_height_m, 2),
+            "footprint_area_m2": round(env_rep.footprint_polygon.area, 2) if env_rep.footprint_polygon else 0.0,
+        }
+
+    plausibility_meta = world.metadata.get("physical_plausibility")
+    if not plausibility_meta:
+        plaus_rep = validate_physical_plausibility(world)
+        plausibility_meta = plaus_rep.to_dict()
+
+    completeness_meta = world.metadata.get("scene_completeness")
+    if not completeness_meta:
+        comp_rep = evaluate_scene_completeness(world)
+        completeness_meta = comp_rep.to_dict()
+
+    return {
+        "world_id": world.id,
+        "version_id": row.id,
+        "coordinate_frame": world.coordinate_frame.value,
+        "transforms_count": len(world.transforms),
+        "georeference": world.metadata.get("georeference"),
+        "design_style": style_meta,
+        "building_envelope": envelope_meta,
+        "physical_plausibility": plausibility_meta,
+        "scene_completeness": completeness_meta,
+        "lighting": world.environment.get("lighting"),
+        "shared_walls": world.metadata.get("shared_walls"),
+    }

@@ -244,8 +244,46 @@ def test_a18_wrong_camera_pose_injected_is_caught_by_the_consistency_check():
 
 # ------------------------------------------------------------------ A19
 def test_a19_adjacent_room_proposed_for_merge_is_refused():
-    pytest.skip("not covered: needs a merge-proposal API for two adjacent rooms; room_join only connects rooms "
-                "through openings, there is no room-merge refusal path to assert on")
+    """Two adjacent rooms separated by a solid dividing wall with no opening are proposed for merge.
+    The merge proposal must be refused with status='refused' and has_opening=False.
+    """
+    from perception.architecture.room_join import propose_room_merge
+    from world_ir import WorldIR, Entity, EntityType
+
+    world = WorldIR(id="wld-a19", name="A19 Scene")
+
+    wall_div = Entity(
+        id="wall-div",
+        name="Dividing Partition",
+        type=EntityType.WALL,
+        custom_properties={"wall_slab": {"openings": []}},
+    )
+    room_1 = Entity(
+        id="room-01",
+        name="Living Room",
+        type=EntityType.ROOM,
+        custom_properties={
+            "boundary_element_ids": ["wall-div", "wall-1b", "wall-1c"],
+            "floor_elevation_m": 0.0,
+        },
+    )
+    room_2 = Entity(
+        id="room-02",
+        name="Bedroom",
+        type=EntityType.ROOM,
+        custom_properties={
+            "boundary_element_ids": ["wall-div", "wall-2b", "wall-2c"],
+            "floor_elevation_m": 0.0,
+        },
+    )
+    world.entities[wall_div.id] = wall_div
+    world.entities[room_1.id] = room_1
+    world.entities[room_2.id] = room_2
+
+    result = propose_room_merge(world, "room-01", "room-02")
+    assert result["status"] == "refused"
+    assert "solid dividing partition with no opening" in result["reason"]
+    assert result["has_opening"] is False
 
 
 # ------------------------------------------------------------------ A20

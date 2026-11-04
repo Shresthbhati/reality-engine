@@ -23,6 +23,7 @@ from typing import List, Optional, Sequence, Tuple
 
 Vert = Tuple[float, float, float]
 Tri = Tuple[int, int, int]
+UV = Tuple[float, float]
 
 _MAGIC = b"RESMESH1"  # Reality Engine Mesh, format v1
 
@@ -35,6 +36,7 @@ class MeshData:
     vertices: Tuple[Vert, ...]
     faces: Tuple[Tri, ...]
     normals: Optional[Tuple[Vert, ...]] = None
+    uvs: Optional[Tuple[UV, ...]] = None
     units: str = "meter"
     frame: str = "world"
 
@@ -42,6 +44,11 @@ class MeshData:
         if self.normals is not None and len(self.normals) != len(self.vertices):
             raise ValueError(
                 f"normals ({len(self.normals)}) must be per-vertex "
+                f"({len(self.vertices)})"
+            )
+        if self.uvs is not None and len(self.uvs) != len(self.vertices):
+            raise ValueError(
+                f"uvs ({len(self.uvs)}) must be per-vertex "
                 f"({len(self.vertices)})"
             )
         n = len(self.vertices)
@@ -82,15 +89,19 @@ class MeshData:
         vertices [then normals], then uint32 LE face indices. float64
         because these are reconstructed coordinates that must survive a
         hash-identical round trip (same reasoning as PointCloudData)."""
+        flags = (1 if self.normals else 0) | (2 if self.uvs else 0)
         parts = [
             _MAGIC,
-            struct.pack("<III", len(self.vertices), len(self.faces), 1 if self.normals else 0),
+            struct.pack("<III", len(self.vertices), len(self.faces), flags),
         ]
         for v in self.vertices:
             parts.append(struct.pack("<3d", *v))
         if self.normals is not None:
             for n in self.normals:
                 parts.append(struct.pack("<3d", *n))
+        if self.uvs is not None:
+            for uv in self.uvs:
+                parts.append(struct.pack("<2d", float(uv[0]), float(uv[1])))
         for f in self.faces:
             parts.append(struct.pack("<3I", *f))
         return b"".join(parts)
@@ -99,7 +110,9 @@ class MeshData:
     def from_bytes(data: bytes) -> "MeshData":
         if data[:8] != _MAGIC:
             raise ValueError(f"not a MeshData payload (bad magic {data[:8]!r})")
-        nv, nf, has_normals = struct.unpack_from("<III", data, 8)
+        nv, nf, flags = struct.unpack_from("<III", data, 8)
+        has_normals = bool(flags & 1)
+        has_uvs = bool(flags & 2)
         off = 20
         vertices: List[Vert] = []
         for _ in range(nv):
@@ -111,6 +124,12 @@ class MeshData:
             for _ in range(nv):
                 normals.append(struct.unpack_from("<3d", data, off))
                 off += 24
+        uvs: Optional[List[UV]] = None
+        if has_uvs:
+            uvs = []
+            for _ in range(nv):
+                uvs.append(struct.unpack_from("<2d", data, off))
+                off += 16
         faces: List[Tri] = []
         for _ in range(nf):
             faces.append(struct.unpack_from("<3I", data, off))
@@ -119,6 +138,7 @@ class MeshData:
             vertices=tuple(vertices),
             faces=tuple(faces),
             normals=tuple(normals) if normals is not None else None,
+            uvs=tuple(uvs) if uvs is not None else None,
         )
 
     # -- PLY (binary little endian) ----------------------------------------
@@ -275,6 +295,7 @@ def mesh_summary(mesh: MeshData) -> dict:
         "extent_m": [round(e, 4) for e in extent],
         "watertight": mesh.is_watertight_ish(),
         "has_normals": mesh.normals is not None,
+        "has_uvs": mesh.uvs is not None,
         "units": mesh.units,
         "frame": mesh.frame,
     }

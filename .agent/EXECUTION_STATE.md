@@ -1951,3 +1951,61 @@ test_confidence_defaults.py); the external-corridor/room-data item remains EXTER
 
 Rules: never mark work complete without execution evidence; update this file and `.agent/TASKS.yaml` at the end of
 every session; put sprint detail in a new file under `docs/archive/execution-history/`, not here.
+
+## 2026-11-04 -- Build plan execution (Tasks 11.2, 11.3, 0.4, 0.5, 0.6b, 10.2)
+
+Branch: feat/task-11-2-world-package-zip (based on main cb7cd393). Python 3.14.2, pytest 9.1.1.
+
+Completed (all verified with execution evidence):
+
+1. **Task 11.2 — World package export/import (versioned zip)** — DONE (6fec4885)
+   - GET /api/worlds/{id}/export/package + POST /api/worlds/import/package endpoints
+   - export_world_package_zip / import_world_package_zip in world_ir/serialization with checksum validation,
+     format-version gating, artifact enclosure, corruption/tamper rejection
+   - Fixed serialization bug: WorldVersion model object not JSON-serializable → now returns version.id
+   - Verified: tests/test_world_package_export_import_task11_2.py 4/4 passed; 18 existing API tests pass (no regressions)
+
+2. **Task 11.3 — Resumable chunked uploads** — DONE (65891d3e)
+   - POST /api/uploads/resumable/{start,chunk,finalize}: resume from last acknowledged offset
+   - Storage helpers: staging_root(), stage_chunk() (offset-validated append), assemble_staged(), clear_staged()
+   - Content validated on finalize; unsupported types rejected with staging cleaned up
+   - Existing one-shot POST /api/uploads untouched
+   - Verified: tests/test_resumable_upload.py 4/4 passed; existing API tests pass
+
+3. **Task 0.4 — One-command launcher** — DONE (verified)
+   - start.bat → launch_ui.bat starts API (8100) + UI (3100); /api/health returns {"status":"ok"}
+   - Smoke-tested live API
+
+4. **Task 0.5 — Record baseline** — DONE (646ec6a2)
+   - Backend pytest: 4350 passed, 38 failed, 10 skipped, 5 xfailed, 17 errors in 27m40s
+   - 17 errors = pre-existing frontend-bridge contract setup failures (environment)
+   - 38 failures = pre-existing (missing ML weights, torch-hub, stale expectations)
+   - Frontend build: SUCCESS
+   - Recorded in IMPLEMENTATION_STATUS.md
+
+5. **Task 0.6b — engine/pipeline facade** — DONE (402450be)
+   - engine/pipeline/facade.py with wrappers over space graph, scale suggestion/symbols, plausibility, style, capture quality
+   - routes_worlds.py and routes_reconstructions.py now import via facade instead of perception/reconstruction directly
+   - Removed 6 stale KNOWN_VIOLATIONS entries; test_import_boundaries.py 2/2 passed
+
+6. **Task 10.2 — Material classification as attributes** — DONE (7e1a7c26)
+   - material_label + material_confidence on EntityAttributes, inferred from tags/color/class priors
+   - attach_to_entity stamps material + material_confidence into custom_properties
+   - Fixed stale test referencing removed classify_and_attach_entity_material
+   - Verified: tests/test_material_attributes_task10_2.py 5/5 passed
+
+Environment changes:
+- Installed pyproj, kornia (torch/torchvision already present at 2.14.1+cu130)
+
+Blockers: none new. Pre-existing: O1/O2 detector decision (user), real-room fixture (user data).
+
+Exact next priorities (build plan order):
+1. Task 0.6a — Move shared types to neutral module (TODO)
+2. Task 0.6c — Fix upward imports (TODO)
+3. Task 11.4 — Navigation consolidation (TODO)
+4. Task 12.1 — Living-room demo end-to-end (TODO)
+5. Task 12.3 — Mark capabilities VERIFIED (TODO)
+6. Task 12.2 — Measured-room accuracy (BLOCKED: needs user tape-measured photos)
+
+Rules: never mark work complete without execution evidence; update this file and `.agent/TASKS.yaml` at the end of
+every session; put sprint detail in a new file under `docs/archive/execution-history/`, not here.

@@ -4,7 +4,6 @@ import pytest
 
 from perception.entities.attributes import (
     EntityAttributes,
-    classify_and_attach_entity_material,
     infer_entity_attributes,
 )
 from world_ir.schema_v1 import Entity, EntityType
@@ -67,7 +66,7 @@ def test_architectural_class_prior_fallback():
     assert attr_socket.material_confidence == pytest.approx(0.80)
 
 
-def test_classify_and_attach_entity_material_and_entity_properties():
+def test_infer_and_attach_entity_material_and_entity_properties():
     entity = Entity(
         id="ent-chair-01",
         type=EntityType.STRUCTURE,
@@ -75,9 +74,10 @@ def test_classify_and_attach_entity_material_and_entity_properties():
         semantic_labels=["wooden_chair", "dining"],
     )
 
-    # Attach material attributes
-    attrs = classify_and_attach_entity_material(entity)
+    # Infer material attributes then attach to the entity
+    attrs = infer_entity_attributes(class_id="furniture.chair", visual_tags=["wooden", "dining"])
     assert attrs.material_label == "wood"
+    attrs.attach_to_entity(entity)
 
     # Verify custom_properties and Entity properties
     assert entity.custom_properties.get("material") == "wood"
@@ -98,7 +98,6 @@ def test_entity_attributes_serialization_roundtrip_with_material():
     )
 
     d = attr.to_dict()
-    assert d["material"] == "wood"
     assert d["material_label"] == "wood"
     assert d["material_confidence"] == 0.85
 

@@ -509,7 +509,7 @@ class FrameGraph:
         first_frame = trajectory.frames[0]
         pose = first_frame.pose
         if hasattr(pose, "from_frame"):                       # a real RigidTransform (rotation Quat + translation Vec3)
-            from reconstruction.calibration.camera import quat_to_matrix
+            from world_ir.camera import quat_to_matrix
 
             r = quat_to_matrix(pose.rotation.normalized())
             t = pose.translation

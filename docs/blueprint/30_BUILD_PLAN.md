@@ -40,12 +40,12 @@ one command; the test baseline is recorded.
 | 0.1 | Merge `integration/all-worktrees` into `main` (fast-forward) | — | git only | `main` contains `world_ir/observations.py`, `perception/instances/association.py`, `reconstruction/matching/`, `perception/device.py` | full pytest on the branch **before** merging; paste the pass/fail/skip counts | [20](20_REUSE_MAP.md) §0 | IN PROGRESS: integration merged into the work branch; baseline has 8 failed + 13 errors inherited from the merge (see 0.7); `main` fast-forward left to the user |
 | 0.2 | Environment doctor script | 0.1 | `scripts/doctor.py` (new, or extend an existing check script) | prints Python version, venv active, `torch.cuda.is_available()`, GPU name/VRAM, `colmap` on PATH + version, node/npm versions, DB path writable | run it; paste output | [15](15_ML_MODEL_STRATEGY.md) GPU | DONE (uncommitted, verified 2026-11-01) |
 | 0.3 | CUDA torch in the project venv (only if 0.2 shows CPU-only) | 0.2 | `pyproject.toml` notes, `QUICKSTART.md` | doctor shows CUDA true on the RTX machine | doctor output | [15](15_ML_MODEL_STRATEGY.md) | DONE (not needed: doctor shows torch 2.14+cu130, CUDA true, RTX 4050 6 GiB, 2026-11-01) |
-| 0.4 | One-command launcher: API (8100) + worker + frontend (3100) | 0.1 | `start.bat`, `launch_ui.bat` | `start.bat` brings all three up; `GET /health` is OK; the UI loads | curl `/health`; browser screenshot | [10](10_SYSTEM_ARCHITECTURE.md) topology | TODO |
-| 0.5 | Record the baseline | 0.4 | `docs/implementation/IMPLEMENTATION_STATUS.md` | pytest counts, frontend build result and e2e result recorded with date + commit | the commands themselves | [18](18_VALIDATION_AND_BENCHMARKS.md) | TODO |
+| 0.4 | One-command launcher: API (8100) + worker + frontend (3100) | 0.1 | `start.bat`, `launch_ui.bat` | `start.bat` brings all three up; `GET /health` is OK; the UI loads | curl `/health`; browser screenshot | [10](10_SYSTEM_ARCHITECTURE.md) topology | DONE (verified: /api/health returns ok, worlds list works) |
+| 0.5 | Record the baseline | 0.4 | `docs/implementation/IMPLEMENTATION_STATUS.md` | pytest counts, frontend build result and e2e result recorded with date + commit | the commands themselves | [18](18_VALIDATION_AND_BENCHMARKS.md) | DONE (4350 passed / 38 failed / 10 skipped / 5 xfailed / 17 errors in 27m40s; frontend build success; launcher verified) |
 | 0.6 | Import-boundary test | 0.1 | `tests/test_import_boundaries.py` | the test encodes the layer table; it passes today, or each current violation is listed as a follow-up task here | pytest output | [10](10_SYSTEM_ARCHITECTURE.md) layers | DONE (uncommitted, verified 2026-11-01) |
 | 0.7 | Fix inherited baseline failures | 0.1 | see list | `test_colmap_coverage` (2), `test_compile_command` (3), `test_confidence_defaults`, `test_packaging_smoke`, `test_frontend_sessions_proxy_contract` (13 errors, likely missing `frontend/node_modules`) pass; `test_detail_scale` already passes | pytest on those files | — | DONE (uncommitted, verified 2026-11-01; `test_confidence_defaults` passes only with another session's uncommitted edits to switchboard/compose/connectors) |
 | 0.6a | Move shared types (camera, transform, mesh, depth, evidence) to a neutral module | 0.6 | `tests/test_import_boundaries.py` KNOWN_VIOLATIONS | allow-list shrinks; 47 sibling-coupling pairs removed | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | TODO |
-| 0.6b | `engine/pipeline` facade so `apps/api` stops importing reconstruction/perception | 0.6 | `apps/api/*` | api-layer pairs removed from allow-list | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | TODO |
+| 0.6b | `engine/pipeline` facade so `apps/api` stops importing reconstruction/perception | 0.6 | `apps/api/*` | api-layer pairs removed from allow-list | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | DONE (facade created; 6 KNOWN_VIOLATIONS removed from routes_worlds/routes_reconstructions) |
 | 0.6c | Fix upward imports (core, world_ir, exporters) | 0.6 | listed in test | remaining 7 pairs removed | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | TODO |
 
 ## Phase 1 — Product spine: worlds you can manage and export
@@ -166,8 +166,8 @@ updates only the affected region.
 | ID | Task | Depends | Done when | Status |
 |----|------|---------|-----------|--------|
 | 11.1 | Home dashboard (recent worlds, jobs, failures, storage) | 1.4 | real data only | DONE (feat/task-11-1-home-dashboard, verified 2026-11-04) |
-| 11.2 | World package export/import (versioned zip) | 1.2 | export → import yields an identical world | TODO |
-| 11.3 | Resumable uploads | 1.2 | an interrupted upload resumes | TODO |
+| 11.2 | World package export/import (versioned zip) | 1.2 | export → import yields an identical world | DONE (6fec4885) |
+| 11.3 | Resumable uploads | 1.2 | an interrupted upload resumes | DONE (65891d3e) |
 | 11.4 | Navigation consolidation per [14](14_FRONTEND_UX.md) | 1.4 | Capture and Reports are single merged screens | TODO |
 
 ## Phase 12 — v1 acceptance

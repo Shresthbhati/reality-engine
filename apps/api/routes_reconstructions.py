@@ -44,7 +44,7 @@ from apps.api.reconstruction_state import (
 from apps.api.routes_misc import _read_bounded_upload, _safe_filename, vet_upload
 from apps.api.storage import store_bytes
 from evidence.image_check import DECLARABLE_CLASSES, inspect_image
-from reconstruction.capture_quality import summarize_stored
+from engine.pipeline.facade import summarize_capture_quality
 
 reconstructions = APIRouter(prefix="/api/reconstructions", tags=["reconstructions"])
 world_status = APIRouter(prefix="/api/worlds", tags=["reconstructions"])
@@ -59,11 +59,10 @@ def _pick_video_frames(path: str, candidates):
     """(selected_candidates, selection_label): sharp, well-spaced keyframes (capture_quality.pick_keyframes); falls
     back to the repo's uniform-time policy if scoring fails or leaves fewer than 2 frames."""
     from evidence.frames import UniformTimeSamplingStrategy
-    from reconstruction import capture_quality as cq
+    from engine.pipeline.facade import score_and_pick_video_frames
 
     try:
-        scores = cq.score_video_frames(path, len(candidates), VIDEO_FRAME_BUDGET)
-        idx = cq.pick_keyframes(scores, VIDEO_FRAME_BUDGET)
+        scores, idx = score_and_pick_video_frames(path, len(candidates), VIDEO_FRAME_BUDGET)
         if len(idx) >= 2:
             return [candidates[i] for i in idx], f"sharpness_ranked_windows(target={VIDEO_FRAME_BUDGET})"
     except Exception:  # cv2 missing / decode trouble: the old policy still works
@@ -175,9 +174,9 @@ async def create_reconstruction(
     # F1: warn before reconstructing. Never blocks: a failure here must not stop the upload.
     capture_quality = None
     try:
-        from reconstruction import capture_quality as cq
+        from engine.pipeline.facade import assess_capture_quality
 
-        qa = await asyncio.to_thread(cq.assess_capture, [(a[0], a[2]) for a in photos])
+        qa = await asyncio.to_thread(assess_capture_quality, [(a[0], a[2]) for a in photos])
         if qa.get("available"):
             for a in photos:
                 a[6]["capture_quality"] = qa["photos"].get(a[0])
@@ -429,7 +428,7 @@ async def get_world_status(world_id: str, db: AsyncSession = Depends(get_db)) ->
             "excluded": ev_report.get("excluded", []),
         },
         "guidance": report.get("guidance", []),
-        "capture_quality": summarize_stored(e["capture_quality"] for e in evidence if e["type"] == "photo"),
+        "capture_quality": summarize_capture_quality(e["capture_quality"] for e in evidence if e["type"] == "photo"),
         "versions": _rows_to_versions(list(versions), world.current_version_id),
         "failure": failure,
     }
@@ -443,7 +442,7 @@ async def get_capture_coverage(world_id: str, db: AsyncSession = Depends(get_db)
     poses. Extra photos go through POST /api/reconstructions with this world_id (the existing refining path)."""
     from apps.api.routes_worlds import world_cameras
     from apps.api.worldstore_service import get_current_worldir
-    from reconstruction.capture_quality import wall_coverage
+    from engine.pipeline.facade import wall_coverage_for_world
 
     if await db.get(World, world_id) is None:
         raise HTTPException(404, "World not found")
@@ -463,4 +462,4 @@ async def get_capture_coverage(world_id: str, db: AsyncSession = Depends(get_db)
     if not cams:
         return {"available": False, "reason": "no registered camera poses for the current model", "walls": [],
                 "hints": []}
-    return wall_coverage(best[2], cams, best[0].get("footprint_basis"))
+    return wall_coverage_for_world(best[2], cams, best[0].get("footprint_basis"))

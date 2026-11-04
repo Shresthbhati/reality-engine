@@ -25,7 +25,7 @@ export const MODE_TABS: NavEntry[] = [
   { id: "process", label: "Process", href: "/sessions", matches: ["/sessions"] },
   { id: "explore", label: "Explore", href: "/worlds", matches: ["/worlds", "/evidence"] },
   { id: "compare", label: "Compare", href: null },
-  { id: "analyze", label: "Analyze", href: "/analysis", matches: ["/analysis", "/results"] },
+  { id: "analyze", label: "Analyze", href: "/reports", matches: ["/reports", "/results", "/analysis"] },
   { id: "export", label: "Export", href: "/reports", matches: ["/reports"] },
 ];
 

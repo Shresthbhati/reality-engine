@@ -19,7 +19,7 @@ from perception.instances.association import resolve_hypotheses
 from perception.instances.object_resolution import MergedObjectCandidate
 from perception.instances.appearance import compute_color_histogram, AppearanceDescriptor
 from perception.instances.epipolar import epipolar_consistent
-from reconstruction.calibration.camera import PinholeCamera
+from world_ir.camera import PinholeCamera
 from provenance import Uncertainty
 from world_ir.observations import DepthSource
 

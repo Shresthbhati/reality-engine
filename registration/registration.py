@@ -30,7 +30,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from engine.math import Quat, Vec3
-from reconstruction.calibration.transforms import RigidTransform
+from world_ir.camera import RigidTransform
 
 
 class RegistrationError(ValueError):

@@ -12,9 +12,14 @@ Complete WorldIR implementation with schema v1:
 # Legacy (foundation layer)
 from .coordinates import Frame, Transform
 from .entity import Entity as EntityLegacy, EntityRegistry
-from .serialization import save_world, load_world, WORLD_SAVE_FORMAT_VERSION
+from .serialization import (
+    save_world,
+    load_world,
+    export_world_package_zip,
+    import_world_package_zip,
+    WORLD_SAVE_FORMAT_VERSION,
+)
 
-# V1 (complete schema)
 from .schema_v1 import (
     # Core types
     Vector3, Quaternion, Measurement, Observation, ConfidenceVector,
@@ -27,6 +32,7 @@ from .schema_v1 import (
 )
 from .world_v1 import WorldIR, Branch, Scenario, SimulationState, TemporalState
 from .geo import GeoAnchor
+from .geometry_data import MeshData, PointCloudData
 from .diff import diff_worlds, WorldDiff, EntityDiff, GeometryDiff, ChangeKind
 from .temporal import (
     TemporalChangeKind,
@@ -82,6 +88,16 @@ __all__ = [
     "EntityType",
     "RelationshipKind",
     "TemporalEventType",
+    # Camera
+    "CameraIntrinsics",
+    "CameraExtrinsics",
+    "PinholeCamera",
+    "CameraIntrinsicsError",
+    "quat_to_matrix",
+    "matrix_to_quat",
+    # Geometry data
+    "MeshData",
+    "PointCloudData",
     # V1 World
     "WorldIR",
     "GeoAnchor",

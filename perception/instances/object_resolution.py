@@ -51,7 +51,7 @@ from perception.instances.epipolar import (
     epipolar_consistent,
 )
 from perception.instances.lifting import ObjectHypothesis3D
-from reconstruction.calibration.camera import PinholeCamera
+from world_ir.camera import PinholeCamera
 
 #: Minimum appearance-histogram similarity (see perception/instances/
 #: appearance.py) required to merge two hypotheses when descriptors are

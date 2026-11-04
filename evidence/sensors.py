@@ -437,7 +437,7 @@ class SensorDescriptor:
         # geometry roundtrips with its geometry intact.
         intrinsics = None
         if data.get("intrinsics") is not None:
-            from reconstruction.calibration.camera import CameraIntrinsics, CameraIntrinsicsError
+            from world_ir.camera import CameraIntrinsics, CameraIntrinsicsError
 
             try:
                 intrinsics = CameraIntrinsics.from_dict(data["intrinsics"])
@@ -445,7 +445,7 @@ class SensorDescriptor:
                 raise SensorIdentityError(f"{declared_path}: invalid 'intrinsics': {exc}") from exc
         extrinsics = None
         if data.get("extrinsics") is not None:
-            from reconstruction.calibration.camera import CameraExtrinsics
+            from world_ir.camera import CameraExtrinsics
 
             try:
                 extrinsics = CameraExtrinsics.from_dict(data["extrinsics"])
@@ -793,7 +793,7 @@ def parse_calibration_json(path: str) -> CalibrationRecord:
     enforces this; not reimplemented here). Raises SensorParseError on
     any malformed content; raises OSError if the file cannot be
     opened."""
-    from reconstruction.calibration.camera import (
+    from world_ir.camera import (
         CameraExtrinsics,
         CameraIntrinsics,
         CameraIntrinsicsError,

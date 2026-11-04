@@ -34,7 +34,7 @@ from scipy.optimize import linear_sum_assignment
 
 from engine.math import Vec3
 from perception.instances.epipolar import epipolar_consistent
-from reconstruction.calibration.camera import PinholeCamera
+from world_ir.camera import PinholeCamera
 from world_ir.observations import (
     AssociationDecision,
     AssociationState,

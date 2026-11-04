@@ -11,7 +11,7 @@ from pathlib import Path
 
 log = logging.getLogger("reality.api.worlds")
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -86,6 +86,71 @@ async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db), auth: 
     await db.commit()
     await db.refresh(w)
     return {"id": w.id, "name": w.name}
+
+
+@worlds.post("/import/package", status_code=201)
+async def import_world_package(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Import a world from an uploaded versioned .zip package archive (Task 11.2).
+
+    Validates package integrity, manifest format, checksums, and restores enclosed artifacts.
+    Registers the world in WorldStore and database.
+    """
+    from apps.api.storage import storage_root
+    from apps.api.worldstore_service import commit_version, worldstore_root
+    from world_ir.serialization import (
+        WorldFormatVersionError,
+        WorldPackageError,
+        import_world_package_zip,
+    )
+
+    content = await file.read()
+    artifact_store = FileArtifactStore(worldstore_root() / "pipeline-artifacts")
+
+    try:
+        imported_world = import_world_package_zip(content, artifact_store=artifact_store)
+    except (WorldPackageError, WorldFormatVersionError) as exc:
+        raise HTTPException(422, f"Invalid world package: {exc}") from exc
+
+    existing = await db.get(World, imported_world.id)
+    target_id = imported_world.id if existing is None else new_id("wld")
+    imported_world.id = target_id
+
+    w = World(
+        id=target_id,
+        name=imported_world.name or f"Imported World {target_id[:8]}",
+        description=f"Imported from package archive {file.filename or ''}",
+        owner_id=auth.user_id,
+        team_id=auth.tenant_id if auth.tenant_id != "default" else None,
+    )
+    db.add(w)
+    await db.commit()
+    await db.refresh(w)
+
+    version = await commit_version(db, world_id=w.id, world=imported_world, parent=None)
+
+    db.add(
+        ActivityEvent(
+            id=new_id("act"),
+            type="world.imported",
+            entity_type="world",
+            entity_id=w.id,
+            summary=f"World '{w.name}' imported from package archive",
+        )
+    )
+    await db.commit()
+
+    return {
+        "id": w.id,
+        "name": w.name,
+        "version_id": version.id,
+        "entity_count": len(imported_world.entities),
+        "geometry_count": len(imported_world.geometries),
+        "status": "imported",
+    }
 
 
 def _world_out(w: World, session_count: int | None = None) -> dict:
@@ -1704,8 +1769,8 @@ async def query_world_spaces(
         raise HTTPException(404, "WorldIR not available for this world/version")
 
     graph_dict = _get_worldir_space_graph(worldir)
-    from perception.architecture.space_graph import InteriorSpaceGraph
-    graph = InteriorSpaceGraph.from_dict(graph_dict)
+    from engine.pipeline.facade import create_interior_space_graph
+    graph = create_interior_space_graph(graph_dict)
 
     if corridor_id:
         return {
@@ -1837,13 +1902,13 @@ async def get_scale_suggestion(world_id: str, db: AsyncSession = Depends(get_db)
     door with a measured height exists. Accept = POST /scale with method=prior_accepted_by_user; reject =
     POST /scale/suggestion/reject."""
     from apps.api import worldstore_service as wss
-    from reconstruction.scale import suggest_scale_from_world
 
     row = await _version_row(db, world_id, None)
     world = _load_world_or_409(row)
     meta = (world.metadata or {}).get("scale") or {}
     state = meta.get("state") or "relative"
-    sug = suggest_scale_from_world(world)
+    from engine.pipeline.facade import suggest_scale_for_world
+    sug = suggest_scale_for_world(world)
     out = {"world_id": world_id, "scale_state": state, "suggestion": None, "rejected": False,
            "dimension_state": meta.get("dimension_state"), "scale_basis": meta.get("scale_basis"), "reason": None}
     if sug is None:
@@ -1863,10 +1928,9 @@ class RejectIn(BaseModel):
 async def reject_scale_suggestion(world_id: str, body: RejectIn, db: AsyncSession = Depends(get_db)) -> dict:
     """Decline the current suggestion. Changes nothing about the world: it stays RELATIVE."""
     from apps.api import worldstore_service as wss
-    from reconstruction.scale import suggest_scale_from_world
 
     row = await _version_row(db, world_id, None)
-    sug = suggest_scale_from_world(_load_world_or_409(row))
+    sug = suggest_scale_for_world(_load_world_or_409(row))
     if sug is None or sug.source_entity_id != body.source_entity_id:
         raise HTTPException(409, "that suggestion is no longer current")
     wss.reject_scale_suggestion(world_id, _suggestion_key(sug))
@@ -1886,10 +1950,13 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
     from apps.api import jobs as jobrunner
     from apps.api import worldstore_service as wss
     from apps.api.models import Job, Session as _Session
-    from reconstruction.scale import (
-        KNOWN_LENGTH, MODEL_SPACE_METHODS, PRIOR_ACCEPTED, ScaleAnchoringError, ScaleReference, gate_ratios,
-        suggest_scale_from_world,
+    from engine.pipeline.facade import (
+        ScaleAnchoringError, ScaleReference, gate_ratios, scale_symbols, suggest_scale_for_world,
     )
+    _SYM = scale_symbols()
+    KNOWN_LENGTH = _SYM["KNOWN_LENGTH"]
+    MODEL_SPACE_METHODS = _SYM["MODEL_SPACE_METHODS"]
+    PRIOR_ACCEPTED = _SYM["PRIOR_ACCEPTED"]
 
     w = await db.get(World, world_id)
     if w is None:
@@ -1925,7 +1992,7 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
             raise HTTPException(422, "this world has no registered camera pair to tie the length to")
         a, b, unit_check = ca, cb, csep
         if body.method == PRIOR_ACCEPTED:
-            sug = suggest_scale_from_world(_load_world_or_409(row))
+            sug = suggest_scale_for_world(_load_world_or_409(row))
             if scale.get("state") == "metric":
                 raise HTTPException(409, "the world already has a metric scale; a typical-size estimate "
                                          "never replaces it")
@@ -2014,14 +2081,13 @@ async def get_world_spatial_intelligence(
     row = await _version_row(db, world_id, version)
     world = _load_world_or_409(row)
 
-    from perception.reasoning.physical_plausibility import validate_physical_plausibility
-    from perception.style.analyzer import analyze_world_design_style
+    from engine.pipeline.facade import validate_world_plausibility, analyze_world_style
     from engine.compiler.building_envelope import reconstruct_building_envelope
     from planning.completeness import evaluate_scene_completeness
 
     style_meta = world.metadata.get("design_style")
     if not style_meta:
-        style_rep = analyze_world_design_style(world)
+        style_rep = analyze_world_style(world)
         style_meta = {
             "primary_style": style_rep.primary_style.value,
             "confidence": round(style_rep.confidence, 3),
@@ -2040,7 +2106,7 @@ async def get_world_spatial_intelligence(
 
     plausibility_meta = world.metadata.get("physical_plausibility")
     if not plausibility_meta:
-        plaus_rep = validate_physical_plausibility(world)
+        plaus_rep = validate_world_plausibility(world)
         plausibility_meta = plaus_rep.to_dict()
 
     completeness_meta = world.metadata.get("scene_completeness")

@@ -33,7 +33,7 @@ export default function CreateReportPage() {
           {RESULTS.length === 0 ? (
             <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
               No completed Results are available to include yet.{" "}
-              <Link href="/analysis" className="font-medium hover:underline" style={{ color: "var(--accent)" }}>
+              <Link href="/reports" className="font-medium hover:underline" style={{ color: "var(--accent)" }}>
                 View Analysis
               </Link>
             </p>

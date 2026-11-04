@@ -150,6 +150,58 @@ SUBTYPES_BY_CLASS: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Tag -> material label hints, used when visual tags carry material evidence.
+MATERIAL_BY_TAG: Dict[str, str] = {
+    "oak": "wood",
+    "wood_grain": "wood",
+    "wooden": "wood",
+    "timber": "wood",
+    "leather": "leather",
+    "chrome": "metal",
+    "metal": "metal",
+    "steel": "metal",
+    "aluminium": "metal",
+    "brass": "metal",
+    "copper": "metal",
+    "fabric": "fabric",
+    "cloth": "fabric",
+    "upholstery": "fabric",
+    "plastic": "plastic",
+    "pvc": "plastic",
+    "acrylic": "plastic",
+    "glass": "glass",
+    "glazing": "glass",
+    "ceramic": "ceramic",
+    "porcelain": "ceramic",
+    "concrete": "concrete",
+    "stone": "stone",
+    "marble": "stone",
+    "granite": "stone",
+}
+
+# Class_id -> default material label (taxonomy prior when no tags/color evidence).
+MATERIAL_BY_CLASS: Dict[str, str] = {
+    "furniture.sofa": "fabric",
+    "furniture.armchair": "fabric",
+    "furniture.lounge": "fabric",
+    "fixtures/electrical/socket": "plastic",
+    "fixtures/electrical/switch": "plastic",
+    "fixtures/plumbing/pipe": "metal",
+    "fixtures/plumbing/faucet": "metal",
+    "fixtures/electrical/outlet": "plastic",
+}
+
+# RGB region -> material label hints for optical color evidence.
+def _material_from_color(color_rgb: Tuple[float, float, float]) -> Optional[str]:
+    r, g, b = color_rgb
+    # Warm brown/tan -> wood
+    if r > 100 and 60 < g < 130 and 20 < b < 80 and r > g > b:
+        return "wood"
+    # Cool sky-blue / translucent -> glass or plastic
+    if b > g > r and b > 200:
+        return "glass"
+    return None
+
 
 @dataclass
 class EntityAttributes:
@@ -165,6 +217,8 @@ class EntityAttributes:
     dimensions_m: Optional[Tuple[float, float, float]] = None  # (width, height, depth)
     clearance_m: Optional[float] = None                       # Required operational clearance
     confidence: float = 1.0
+    material_label: Optional[str] = None                      # inferred material class
+    material_confidence: Optional[float] = None               # confidence in the material label
     uncertainty_notes: List[str] = field(default_factory=list)
     custom_properties: Dict[str, Any] = field(default_factory=dict)
 
@@ -180,6 +234,8 @@ class EntityAttributes:
         }
         if self.material_label:
             out["material_label"] = self.material_label
+        if self.material_confidence is not None:
+            out["material_confidence"] = round(self.material_confidence, 3)
         if self.finish:
             out["finish"] = self.finish
         if self.color_rgb:
@@ -211,6 +267,7 @@ class EntityAttributes:
             mounting=MountingType(data.get("mounting", MountingType.UNKNOWN.value)),
             state=OperationalState(data.get("state", OperationalState.UNKNOWN.value)),
             material_label=data.get("material_label"),
+            material_confidence=data.get("material_confidence"),
             finish=data.get("finish"),
             color_rgb=color,
             dimensions_m=dims,
@@ -225,6 +282,10 @@ class EntityAttributes:
         if entity.custom_properties is None:
             entity.custom_properties = {}
         entity.custom_properties["attributes"] = self.to_dict()
+        if self.material_label is not None:
+            entity.custom_properties["material"] = self.material_label
+        if self.material_confidence is not None:
+            entity.custom_properties["material_confidence"] = self.material_confidence
         if self.subtype:
             entity.custom_properties["subtype"] = self.subtype
         if self.mechanism != MechanismType.UNKNOWN:
@@ -238,6 +299,7 @@ def infer_entity_attributes(
     dimensions_m: Optional[Tuple[float, float, float]] = None,
     visual_tags: Sequence[str] = (),
     host_type: Optional[str] = None,
+    color_rgb: Optional[Tuple[float, float, float]] = None,
     measured_confidence: float = 0.85,
 ) -> EntityAttributes:
     """Infer fine-grained attributes using category rules, visual tags, and host relationships.
@@ -316,6 +378,26 @@ def infer_entity_attributes(
         elif class_id == "furniture.chair":
             clearance = 0.60  # Pull-out space
 
+    # 6. Material inference: tags > optical color > class prior, never fabricated.
+    material_label: Optional[str] = None
+    material_confidence: Optional[float] = None
+    for tag in tags_lower:
+        if tag in MATERIAL_BY_TAG:
+            material_label = MATERIAL_BY_TAG[tag]
+            material_confidence = 0.85
+            notes.append(f"Material '{material_label}' inferred from visual tag '{tag}'")
+            break
+    if material_label is None and color_rgb is not None:
+        color_material = _material_from_color(color_rgb)
+        if color_material is not None:
+            material_label = color_material
+            material_confidence = 0.50
+            notes.append(f"Material '{material_label}' inferred from optical color evidence")
+    if material_label is None and class_id in MATERIAL_BY_CLASS:
+        material_label = MATERIAL_BY_CLASS[class_id]
+        material_confidence = 0.70 if class_id == "furniture.sofa" else 0.80
+        notes.append(f"Material '{material_label}' inferred from class prior for '{class_id}'")
+
     return EntityAttributes(
         class_id=class_id,
         subtype=detected_subtype,
@@ -324,6 +406,8 @@ def infer_entity_attributes(
         state=state,
         dimensions_m=dimensions_m,
         clearance_m=clearance,
+        material_label=material_label,
+        material_confidence=material_confidence,
         confidence=measured_confidence if detected_subtype else max(0.5, measured_confidence - 0.2),
         uncertainty_notes=notes,
     )

@@ -22,7 +22,7 @@ from perception.detection.interface import ImageDetection
 from perception.entities import taxonomy
 from perception.fixtures.patch_extractor import OrthorectifiedPatchExtractor, WallPatch
 from provenance import Provenance, Uncertainty
-from reconstruction.calibration.camera import PinholeCamera
+from world_ir.camera import PinholeCamera
 from world_ir.schema_v1 import (
     Entity,
     EntityType,

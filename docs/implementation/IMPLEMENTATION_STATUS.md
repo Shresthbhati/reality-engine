@@ -33,6 +33,7 @@ the authoritative status and PENDING_IMPLEMENTATION for the backlog.
 | ArtifactStore (sha256, content-addressed) | IMPLEMENTED | roundtrip + hash tests |
 | Mesh artifacts in WorldIR (MESH type) | IMPLEMENTED | pipeline writes `Geometry(type=MESH,data_uri,data_hash)` |
 | glTF MESH payload export | IMPLEMENTED | real-data export verified |
+| World package export/import | IMPLEMENTED | Versioned .zip package with checksum validation; export→import yields identical world (`tests/test_world_package_export_import_task11_2.py`, 4 passed) |
 | Viewer mesh layer | IMPLEMENTED | build_viewer + main.js mesh layer |
 | CLI `reality compile` (one-command path) | IMPLEMENTED | `test_cli_compile.py` fake-backend E2E |
 | CLI (session/source/orchestrator) | IMPLEMENTED | Full CLI with ingest/session/compile/reconstruct/validate/diff/export/register/query/store/inspect/viewer |

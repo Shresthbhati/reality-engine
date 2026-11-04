@@ -36,6 +36,7 @@ from reconstruction.scale import (
 )
 from reconstruction.scale.base import ScaleSuggestion
 from world_ir.world_v1 import WorldIR
+from reconstruction.calibration.camera import camera_from_pose
 
 
 def create_interior_space_graph(graph_dict: dict) -> InteriorSpaceGraph:
@@ -103,3 +104,8 @@ def score_and_pick_video_frames(
 def wall_coverage_for_world(polygon_xyz: Any, cameras: Any, basis: Any = None) -> Any:
     """Compute wall coverage from a room footprint polygon and camera poses."""
     return wall_coverage(polygon_xyz, cameras, basis)
+
+
+def camera_from_pose_for_world(intrinsics: Any, pose: Any) -> PinholeCamera:
+    """Build a PinholeCamera from a backend camera pose."""
+    return camera_from_pose(intrinsics, pose)

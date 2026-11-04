@@ -154,7 +154,7 @@ class PhotoView:
 def views_from_photos(poses: Sequence, items_by_id: Dict[str, object],
                       depth_by_id: Optional[Dict[str, np.ndarray]] = None) -> Tuple[List[SurfaceView], List[str], List[str]]:
     """(views, intrinsics sources, skipped reasons). Poses without a readable photo are skipped -- never guessed."""
-    from reconstruction.calibration.camera import camera_from_pose
+    from engine.pipeline.facade import camera_from_pose_for_world as camera_from_pose
 
     views: List[SurfaceView] = []
     sources: List[str] = []

@@ -460,7 +460,7 @@ def views_from_poses(poses: Sequence, intrinsics, images_by_evidence_id: Dict[st
                      depth_by_evidence_id: Optional[Dict[str, np.ndarray]] = None) -> List[SurfaceView]:
     """Build ``SurfaceView``s from backend camera poses (``ReconstructedCameraPose``) + decoded photos. Poses without a
     photo are skipped, never guessed."""
-    from reconstruction.calibration.camera import camera_from_pose
+    from engine.pipeline.facade import camera_from_pose_for_world as camera_from_pose
 
     out = []
     for p in poses:

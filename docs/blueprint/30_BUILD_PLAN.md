@@ -167,7 +167,7 @@ updates only the affected region.
 |----|------|---------|-----------|--------|
 | 11.1 | Home dashboard (recent worlds, jobs, failures, storage) | 1.4 | real data only | DONE (feat/task-11-1-home-dashboard, verified 2026-11-04) |
 | 11.2 | World package export/import (versioned zip) | 1.2 | export → import yields an identical world | DONE (6fec4885) |
-| 11.3 | Resumable uploads | 1.2 | an interrupted upload resumes | TODO |
+| 11.3 | Resumable uploads | 1.2 | an interrupted upload resumes | DONE (65891d3e) |
 | 11.4 | Navigation consolidation per [14](14_FRONTEND_UX.md) | 1.4 | Capture and Reports are single merged screens | TODO |
 
 ## Phase 12 — v1 acceptance

@@ -68,11 +68,13 @@ class SceneGraph:
     # ---- the item-59 example queries, answered as ordinary graph lookups ----
 
     def contents_of(self, container_id: str) -> List[Entity]:
-        """'Which objects are inside Room 4?' -- entities with a PART_OF or
-        CONTAINS edge pointing at container_id, or that container_id
+        """'Which objects are inside Room 4?' -- entities with a PART_OF,
+        INSIDE, or CONTAINS edge pointing at container_id, or that container_id
         declares CONTAINS toward."""
         contained_ids: Set[str] = set()
         for edge in self.edges_to(container_id, RelationshipKind.PART_OF):
+            contained_ids.add(edge.source_id)
+        for edge in self.edges_to(container_id, RelationshipKind.INSIDE):
             contained_ids.add(edge.source_id)
         for edge in self.edges_from(container_id, RelationshipKind.CONTAINS):
             contained_ids.add(edge.target_id)
@@ -84,6 +86,10 @@ class SceneGraph:
             container = self.world.entities.get(edge.target_id)
             if container is not None:
                 return container
+        for edge in self.edges_from(entity_id, RelationshipKind.INSIDE):
+            container = self.world.entities.get(edge.target_id)
+            if container is not None:
+                return container
         for edge in self.edges_to(entity_id, RelationshipKind.CONTAINS):
             container = self.world.entities.get(edge.source_id)
             if container is not None:
@@ -92,11 +98,38 @@ class SceneGraph:
 
     def supporters_of(self, entity_id: str) -> List[Entity]:
         """'What is holding this up?' -- entities with a SUPPORTS/RESTS_ON
-        edge targeting entity_id. Generalizes Inspector.find_supporting()
-        (which returns ids) to return resolved Entity objects."""
+        edge targeting entity_id, or that entity_id points to via SUPPORTED_BY/RESTS_ON.
+        Generalizes Inspector.find_supporting() to return resolved Entity objects."""
         ids = {e.source_id for e in self.edges_to(entity_id, RelationshipKind.SUPPORTS)}
         ids |= {e.source_id for e in self.edges_to(entity_id, RelationshipKind.RESTS_ON)}
+        ids |= {e.target_id for e in self.edges_from(entity_id, RelationshipKind.SUPPORTED_BY)}
+        ids |= {e.target_id for e in self.edges_from(entity_id, RelationshipKind.RESTS_ON)}
         return [self.world.entities[eid] for eid in ids if eid in self.world.entities]
+
+    def supported_by(self, entity_id: str) -> List[Entity]:
+        """Direct alias for supporters_of: what supports entity_id."""
+        return self.supporters_of(entity_id)
+
+    def mounted_on(self, entity_id: str) -> List[Entity]:
+        """What wall or surface entity is this mounted on?"""
+        ids = {e.target_id for e in self.edges_from(entity_id, RelationshipKind.MOUNTED_ON)}
+        ids |= {e.source_id for e in self.edges_to(entity_id, RelationshipKind.ATTACHED_TO)}
+        return [self.world.entities[eid] for eid in ids if eid in self.world.entities]
+
+    def parts_of(self, container_id: str) -> List[Entity]:
+        """Subcomponents and elements that are PART_OF this container/entity."""
+        ids = {e.source_id for e in self.edges_to(container_id, RelationshipKind.PART_OF)}
+        return [self.world.entities[eid] for eid in ids if eid in self.world.entities]
+
+    def infer_geometric_relationships(self, options=None):
+        """Infer geometric relationships across all entities in the world."""
+        from .geometric_relationships import infer_geometric_relationships
+        return infer_geometric_relationships(self.world, options)
+
+    def compute_and_apply_relationships(self, options=None) -> int:
+        """Infer geometric relationships and apply them directly to entities in the world."""
+        from .geometric_relationships import apply_geometric_relationships
+        return apply_geometric_relationships(self.world, options)
 
     def unknown_relationship_entities(self) -> List[Entity]:
         """'Which surfaces are marked UNKNOWN?' -- generalized: any entity

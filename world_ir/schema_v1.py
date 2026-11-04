@@ -118,8 +118,13 @@ class RelationshipKind(str, Enum):
     CONTAINS = "contains"  # Conceptual containment
     OVERLAPS = "overlaps"  # Spatial overlap
     SUPPORTS = "supports"  # Load-bearing
+    SUPPORTED_BY = "supported_by"  # Gravity/load supported by another entity (inverse of supports)
     CROSSES = "crosses"  # Spatial intersection (without support)
     RESTS_ON = "rests_on"  # Gravity support
+    MOUNTED_ON = "mounted_on"  # Wall or vertical surface mounted (e.g. TV, switch, mirror)
+    INSIDE = "inside"  # Geometrically enclosed within a room, space, or container
+    EMBEDDED_IN = "embedded_in"  # Embedded within wall/floor (e.g. conduit, junction box)
+    OCCLUDES = "occludes"  # Line-of-sight occlusion between entities
     CONNECTS = "connects"  # Functional connection (doorway connects spaces, stair connects levels)
     UNKNOWN = "unknown"
 

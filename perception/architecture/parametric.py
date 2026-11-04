@@ -743,3 +743,398 @@ def fit_circle(
         n_points=n,
         confidence=_confidence_from_residual(rms),
     )
+
+
+# ===========================================================================
+# S10: Parametric Object Templates (table, cabinet, sofa, chair, bed, TV, console)
+# ===========================================================================
+
+SUPPORTED_OBJECT_TEMPLATES = {
+    "table",
+    "cabinet",
+    "sofa",
+    "chair",
+    "bed",
+    "tv",
+    "media_console",
+}
+
+
+@dataclass(frozen=True)
+class ParametricComponent:
+    name: str
+    box_min: Point3
+    box_max: Point3
+    geometry_type: str = "box"
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "box_min": list(self.box_min),
+            "box_max": list(self.box_max),
+            "geometry_type": self.geometry_type,
+        }
+
+
+@dataclass(frozen=True)
+class ParametricObjectFit:
+    template: str
+    class_path: str
+    center: Point3
+    dimensions: Vec3  # (width, depth, height) in metres
+    rotation_rad: float  # yaw rotation around Z/up in radians
+    components: List[ParametricComponent]
+    rms_residual_m: float
+    confidence: float
+    n_points: int
+
+    @property
+    def template_name(self) -> str:
+        return self.template
+
+    @property
+    def entity_class(self) -> str:
+        return self.class_path
+
+    @property
+    def residual_rms(self) -> float:
+        return self.rms_residual_m
+
+    @property
+    def yaw_rad(self) -> float:
+        return self.rotation_rad
+
+    @property
+    def width(self) -> float:
+        return self.dimensions[0]
+
+    @property
+    def depth(self) -> float:
+        return self.dimensions[1]
+
+    @property
+    def height(self) -> float:
+        return self.dimensions[2]
+
+    def bounding_box(self) -> Tuple[Point3, Point3]:
+        cx, cy, cz = self.center
+        w, d, h = self.dimensions
+        b_min = (cx - w * 0.5, cy - d * 0.5, cz - h * 0.5)
+        b_max = (cx + w * 0.5, cy + d * 0.5, cz + h * 0.5)
+        return b_min, b_max
+
+    def to_dict(self) -> dict:
+        return {
+            "template": self.template,
+            "template_name": self.template,
+            "class_path": self.class_path,
+            "entity_class": self.class_path,
+            "center": list(self.center),
+            "dimensions": list(self.dimensions),
+            "rotation_rad": self.rotation_rad,
+            "components": [c.to_dict() for c in self.components],
+            "rms_residual_m": self.rms_residual_m,
+            "residual_rms": self.rms_residual_m,
+            "confidence": self.confidence,
+            "n_points": self.n_points,
+        }
+
+
+def _extract_points(
+    points_or_observations: Any,
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> Tuple[List[Point3], Point3, Vec3, float]:
+    """Extract points, center, dimensions, and principal yaw angle."""
+    pts: List[Point3] = []
+
+    if isinstance(points_or_observations, (list, tuple, np.ndarray)):
+        for item in points_or_observations:
+            if hasattr(item, "world_pos") and isinstance(item.world_pos, (tuple, list)):
+                pts.append((float(item.world_pos[0]), float(item.world_pos[1]), float(item.world_pos[2])))
+                if hasattr(item, "bounds_min") and item.bounds_min and hasattr(item, "bounds_max") and item.bounds_max:
+                    pts.append((float(item.bounds_min[0]), float(item.bounds_min[1]), float(item.bounds_min[2])))
+                    pts.append((float(item.bounds_max[0]), float(item.bounds_max[1]), float(item.bounds_max[2])))
+            elif (isinstance(item, (list, tuple, np.ndarray)) or hasattr(item, "__len__")) and len(item) == 3:
+                pts.append((float(item[0]), float(item[1]), float(item[2])))
+
+    if not pts and bounds:
+        b0, b1 = bounds
+        pts = [b0, b1, (b0[0], b1[1], b0[2]), (b1[0], b0[1], b1[2])]
+
+    if len(pts) < 2:
+        raise FitRefused(f"at least 2 support points or non-degenerate bounds required, got {len(pts)}")
+
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    zs = [p[2] for p in pts]
+
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    min_z, max_z = min(zs), max(zs)
+
+    w = max(0.01, max_x - min_x)
+    d = max(0.01, max_y - min_y)
+    h = max(0.01, max_z - min_z)
+
+    center = ((min_x + max_x) * 0.5, (min_y + max_y) * 0.5, (min_z + max_z) * 0.5)
+
+    # Orientation estimation in plan (XY)
+    yaw = 0.0
+    if len(pts) >= 4:
+        try:
+            cov, _ = _covariance([(p[0], p[1], 0.0) for p in pts])
+            eigs = _eigen_symmetric_3x3(cov)
+            major = eigs[2][1]
+            yaw = math.atan2(major[1], major[0])
+        except Exception:
+            yaw = 0.0
+
+    return pts, center, (w, d, h), yaw
+
+
+def fit_table_template(
+    points_or_observations: Any,
+    class_path: str = "furniture/tables/dining_table",
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> ParametricObjectFit:
+    pts, center, (w, d, h), yaw = _extract_points(points_or_observations, bounds)
+    b0, b1 = (center[0] - w * 0.5, center[1] - d * 0.5, center[2] - h * 0.5), (center[0] + w * 0.5, center[1] + d * 0.5, center[2] + h * 0.5)
+
+    # Components: top + 4 legs
+    top_t = min(0.05, h * 0.1)
+    leg_t = min(0.06, min(w, d) * 0.08)
+
+    top = ParametricComponent(
+        name="top",
+        box_min=(b0[0], b0[1], b1[2] - top_t),
+        box_max=(b1[0], b1[1], b1[2]),
+    )
+    legs = [
+        ParametricComponent("leg_fl", (b0[0], b0[1], b0[2]), (b0[0] + leg_t, b0[1] + leg_t, b1[2] - top_t)),
+        ParametricComponent("leg_fr", (b1[0] - leg_t, b0[1], b0[2]), (b1[0], b0[1] + leg_t, b1[2] - top_t)),
+        ParametricComponent("leg_bl", (b0[0], b1[1] - leg_t, b0[2]), (b0[0] + leg_t, b1[1], b1[2] - top_t)),
+        ParametricComponent("leg_br", (b1[0] - leg_t, b1[1] - leg_t, b0[2]), (b1[0], b1[1], b1[2] - top_t)),
+    ]
+
+    rms = _compute_box_residuals(pts, b0, b1)
+    return ParametricObjectFit("table", class_path, center, (w, d, h), yaw, [top] + legs, rms, _confidence_from_residual(rms), len(pts))
+
+
+def fit_cabinet_template(
+    points_or_observations: Any,
+    class_path: str = "furniture/storage/cabinet",
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> ParametricObjectFit:
+    pts, center, (w, d, h), yaw = _extract_points(points_or_observations, bounds)
+    b0, b1 = (center[0] - w * 0.5, center[1] - d * 0.5, center[2] - h * 0.5), (center[0] + w * 0.5, center[1] + d * 0.5, center[2] + h * 0.5)
+
+    plinth_h = min(0.1, h * 0.1)
+    door_t = 0.02
+    body = ParametricComponent("body", (b0[0], b0[1], b0[2] + plinth_h), (b1[0], b1[1] - door_t, b1[2]))
+    doors = [
+        ParametricComponent("door_left", (b0[0], b1[1] - door_t, b0[2] + plinth_h), (center[0], b1[1], b1[2])),
+        ParametricComponent("door_right", (center[0], b1[1] - door_t, b0[2] + plinth_h), (b1[0], b1[1], b1[2])),
+    ]
+    shelf = ParametricComponent("shelf", (b0[0], b0[1], center[2]), (b1[0], b1[1] - door_t, center[2] + 0.02))
+    plinth = ParametricComponent("plinth", (b0[0] + 0.02, b0[1] + 0.02, b0[2]), (b1[0] - 0.02, b1[1] - 0.02, b0[2] + plinth_h))
+
+    rms = _compute_box_residuals(pts, b0, b1)
+    return ParametricObjectFit("cabinet", class_path, center, (w, d, h), yaw, [body, plinth, shelf] + doors, rms, _confidence_from_residual(rms), len(pts))
+
+
+def fit_sofa_template(
+    points_or_observations: Any,
+    class_path: str = "furniture/seating/sofa",
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> ParametricObjectFit:
+    pts, center, (w, d, h), yaw = _extract_points(points_or_observations, bounds)
+    b0, b1 = (center[0] - w * 0.5, center[1] - d * 0.5, center[2] - h * 0.5), (center[0] + w * 0.5, center[1] + d * 0.5, center[2] + h * 0.5)
+
+    seat_h = h * 0.45
+    arm_w = min(0.2, w * 0.12)
+    back_d = min(0.25, d * 0.25)
+    leg_h = min(0.12, h * 0.15)
+
+    frame = ParametricComponent("frame", (b0[0], b0[1], b0[2] + leg_h), (b1[0], b1[1], b0[2] + seat_h * 0.6))
+    seat = ParametricComponent("seat_cushion", (b0[0] + arm_w, b0[1], b0[2] + seat_h * 0.6), (b1[0] - arm_w, b1[1] - back_d, b0[2] + seat_h))
+    back = ParametricComponent("back_cushion", (b0[0] + arm_w, b1[1] - back_d, b0[2] + seat_h * 0.6), (b1[0] - arm_w, b1[1], b1[2]))
+    arm_l = ParametricComponent("armrest_left", (b0[0], b0[1], b0[2] + leg_h), (b0[0] + arm_w, b1[1], b0[2] + h * 0.75))
+    arm_r = ParametricComponent("armrest_right", (b1[0] - arm_w, b0[1], b0[2] + leg_h), (b1[0], b1[1], b0[2] + h * 0.75))
+
+    legs = [
+        ParametricComponent("leg_fl", (b0[0], b0[1], b0[2]), (b0[0] + 0.05, b0[1] + 0.05, b0[2] + leg_h)),
+        ParametricComponent("leg_fr", (b1[0] - 0.05, b0[1], b0[2]), (b1[0], b0[1] + 0.05, b0[2] + leg_h)),
+        ParametricComponent("leg_bl", (b0[0], b1[1] - 0.05, b0[2]), (b0[0] + 0.05, b1[1], b0[2] + leg_h)),
+        ParametricComponent("leg_br", (b1[0] - 0.05, b1[1] - 0.05, b0[2]), (b1[0], b1[1], b0[2] + leg_h)),
+    ]
+
+    comps = [frame, seat, back, arm_l, arm_r] + legs
+    if "sectional" in class_path.lower():
+        # Add chaise extension component
+        chaise = ParametricComponent("chaise", (b0[0], b0[1] - d * 0.5, b0[2] + leg_h), (b0[0] + arm_w * 2.5, b0[1], b0[2] + seat_h))
+        comps.append(chaise)
+
+    rms = _compute_box_residuals(pts, b0, b1)
+    return ParametricObjectFit("sofa", class_path, center, (w, d, h), yaw, comps, rms, _confidence_from_residual(rms), len(pts))
+
+
+def fit_chair_template(
+    points_or_observations: Any,
+    class_path: str = "furniture/seating/chair",
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> ParametricObjectFit:
+    pts, center, (w, d, h), yaw = _extract_points(points_or_observations, bounds)
+    b0, b1 = (center[0] - w * 0.5, center[1] - d * 0.5, center[2] - h * 0.5), (center[0] + w * 0.5, center[1] + d * 0.5, center[2] + h * 0.5)
+
+    seat_h = h * 0.48
+    seat_t = 0.04
+    leg_t = min(0.04, min(w, d) * 0.08)
+
+    seat = ParametricComponent("seat", (b0[0], b0[1], b0[2] + seat_h - seat_t), (b1[0], b1[1], b0[2] + seat_h))
+    back = ParametricComponent("backrest", (b0[0], b1[1] - 0.04, b0[2] + seat_h), (b1[0], b1[1], b1[2]))
+    legs = [
+        ParametricComponent("leg_fl", (b0[0], b0[1], b0[2]), (b0[0] + leg_t, b0[1] + leg_t, b0[2] + seat_h - seat_t)),
+        ParametricComponent("leg_fr", (b1[0] - leg_t, b0[1], b0[2]), (b1[0], b0[1] + leg_t, b0[2] + seat_h - seat_t)),
+        ParametricComponent("leg_bl", (b0[0], b1[1] - leg_t, b0[2]), (b0[0] + leg_t, b1[1], b0[2] + seat_h - seat_t)),
+        ParametricComponent("leg_br", (b1[0] - leg_t, b1[1] - leg_t, b0[2]), (b1[0], b1[1], b0[2] + seat_h - seat_t)),
+    ]
+
+    comps = [seat, back] + legs
+    if "armchair" in class_path.lower():
+        arm_w = min(0.08, w * 0.15)
+        arm_l = ParametricComponent("armrest_left", (b0[0], b0[1], b0[2] + seat_h), (b0[0] + arm_w, b1[1], b0[2] + h * 0.7))
+        arm_r = ParametricComponent("armrest_right", (b1[0] - arm_w, b0[1], b0[2] + seat_h), (b1[0], b1[1], b0[2] + h * 0.7))
+        comps.extend([arm_l, arm_r])
+
+    rms = _compute_box_residuals(pts, b0, b1)
+    return ParametricObjectFit("chair", class_path, center, (w, d, h), yaw, comps, rms, _confidence_from_residual(rms), len(pts))
+
+
+def fit_bed_template(
+    points_or_observations: Any,
+    class_path: str = "furniture/sleeping/bed",
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> ParametricObjectFit:
+    pts, center, (w, d, h), yaw = _extract_points(points_or_observations, bounds)
+    b0, b1 = (center[0] - w * 0.5, center[1] - d * 0.5, center[2] - h * 0.5), (center[0] + w * 0.5, center[1] + d * 0.5, center[2] + h * 0.5)
+
+    leg_h = min(0.2, h * 0.2)
+    mattress_h = (h - leg_h) * 0.5
+    headboard_t = 0.08
+
+    frame = ParametricComponent("frame", (b0[0], b0[1], b0[2] + leg_h), (b1[0], b1[1] - headboard_t, b0[2] + leg_h + 0.1))
+    mattress = ParametricComponent("mattress", (b0[0] + 0.02, b0[1] + 0.02, b0[2] + leg_h + 0.1), (b1[0] - 0.02, b1[1] - headboard_t - 0.02, b0[2] + leg_h + 0.1 + mattress_h))
+    headboard = ParametricComponent("headboard", (b0[0], b1[1] - headboard_t, b0[2]), (b1[0], b1[1], b1[2]))
+    legs = [
+        ParametricComponent("leg_fl", (b0[0], b0[1], b0[2]), (b0[0] + 0.06, b0[1] + 0.06, b0[2] + leg_h)),
+        ParametricComponent("leg_fr", (b1[0] - 0.06, b0[1], b0[2]), (b1[0], b0[1] + 0.06, b0[2] + leg_h)),
+        ParametricComponent("leg_bl", (b0[0], b1[1] - 0.06, b0[2]), (b0[0] + 0.06, b1[1], b0[2] + leg_h)),
+        ParametricComponent("leg_br", (b1[0] - 0.06, b1[1] - 0.06, b0[2]), (b1[0], b1[1], b0[2] + leg_h)),
+    ]
+
+    rms = _compute_box_residuals(pts, b0, b1)
+    return ParametricObjectFit("bed", class_path, center, (w, d, h), yaw, [frame, mattress, headboard] + legs, rms, _confidence_from_residual(rms), len(pts))
+
+
+def fit_tv_template(
+    points_or_observations: Any,
+    class_path: str = "electronics/display/tv",
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> ParametricObjectFit:
+    pts, center, (w, d, h), yaw = _extract_points(points_or_observations, bounds)
+    b0, b1 = (center[0] - w * 0.5, center[1] - d * 0.5, center[2] - h * 0.5), (center[0] + w * 0.5, center[1] + d * 0.5, center[2] + h * 0.5)
+
+    bezel = 0.02
+    stand_h = h * 0.15
+    screen = ParametricComponent("screen", (b0[0] + bezel, b0[1], b0[2] + stand_h + bezel), (b1[0] - bezel, b1[1], b1[2] - bezel))
+    frame = ParametricComponent("frame", (b0[0], b0[1], b0[2] + stand_h), (b1[0], b1[1], b1[2]))
+    stand = ParametricComponent("stand", (center[0] - w * 0.15, center[1] - d * 0.4, b0[2]), (center[0] + w * 0.15, center[1] + d * 0.4, b0[2] + stand_h))
+
+    rms = _compute_box_residuals(pts, b0, b1)
+    return ParametricObjectFit("tv", class_path, center, (w, d, h), yaw, [frame, screen, stand], rms, _confidence_from_residual(rms), len(pts))
+
+
+def fit_media_console_template(
+    points_or_observations: Any,
+    class_path: str = "furniture/storage/media_console",
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> ParametricObjectFit:
+    pts, center, (w, d, h), yaw = _extract_points(points_or_observations, bounds)
+    b0, b1 = (center[0] - w * 0.5, center[1] - d * 0.5, center[2] - h * 0.5), (center[0] + w * 0.5, center[1] + d * 0.5, center[2] + h * 0.5)
+
+    leg_h = min(0.12, h * 0.25)
+    body = ParametricComponent("body", (b0[0], b0[1], b0[2] + leg_h), (b1[0], b1[1], b1[2]))
+    open_shelf = ParametricComponent("shelf", (center[0] - w * 0.25, b0[1] + 0.02, b0[2] + leg_h + 0.02), (center[0] + w * 0.25, b1[1] - 0.02, b1[2] - 0.02))
+    door_left = ParametricComponent("door_left", (b0[0] + 0.01, b1[1] - 0.02, b0[2] + leg_h + 0.01), (center[0] - w * 0.25, b1[1], b1[2] - 0.01))
+    door_right = ParametricComponent("door_right", (center[0] + w * 0.25, b1[1] - 0.02, b0[2] + leg_h + 0.01), (b1[0] - 0.01, b1[1], b1[2] - 0.01))
+    legs = [
+        ParametricComponent("leg_fl", (b0[0], b0[1], b0[2]), (b0[0] + 0.04, b0[1] + 0.04, b0[2] + leg_h)),
+        ParametricComponent("leg_fr", (b1[0] - 0.04, b0[1], b0[2]), (b1[0], b0[1] + 0.04, b0[2] + leg_h)),
+        ParametricComponent("leg_bl", (b0[0], b1[1] - 0.04, b0[2]), (b0[0] + 0.04, b1[1], b0[2] + leg_h)),
+        ParametricComponent("leg_br", (b1[0] - 0.04, b1[1] - 0.04, b0[2]), (b1[0], b1[1], b0[2] + leg_h)),
+    ]
+
+    comps = [body, open_shelf, door_left, door_right] + legs
+    rms = _compute_box_residuals(pts, b0, b1)
+    return ParametricObjectFit("media_console", class_path, center, (w, d, h), yaw, comps, rms, _confidence_from_residual(rms), len(pts))
+
+
+def _compute_box_residuals(pts: Sequence[Point3], b0: Point3, b1: Point3) -> float:
+    """Compute RMS distance from points to the surface of the bounding box."""
+    if not pts:
+        return 0.0
+    dists = []
+    for p in pts:
+        dx = max(0.0, b0[0] - p[0], p[0] - b1[0])
+        dy = max(0.0, b0[1] - p[1], p[1] - b1[1])
+        dz = max(0.0, b0[2] - p[2], p[2] - b1[2])
+        dists.append(math.sqrt(dx * dx + dy * dy + dz * dz))
+    return math.sqrt(sum(d * d for d in dists) / len(dists))
+
+
+def fit_parametric_object(
+    points_or_observations: Any,
+    class_path: Optional[str] = None,
+    bounds: Optional[Tuple[Point3, Point3]] = None,
+) -> ParametricObjectFit:
+    """Universal dispatcher: fit an architectural furniture template based on class path."""
+    if isinstance(points_or_observations, str) and not isinstance(class_path, str):
+        # Swapped arguments: fit_parametric_object(class_path, points)
+        class_path, points_or_observations = points_or_observations, class_path
+
+    cp = (class_path or "fallback/unknown_object").lower()
+
+    if "table" in cp or "desk" in cp:
+        return fit_table_template(points_or_observations, class_path, bounds)
+    elif "cabinet" in cp or "wardrobe" in cp or "shelf" in cp or "storage" in cp:
+        if "media" in cp or "console" in cp:
+            return fit_media_console_template(points_or_observations, class_path, bounds)
+        return fit_cabinet_template(points_or_observations, class_path, bounds)
+    elif "sofa" in cp or "couch" in cp:
+        return fit_sofa_template(points_or_observations, class_path, bounds)
+    elif "chair" in cp or "armchair" in cp or "seating" in cp:
+        return fit_chair_template(points_or_observations, class_path, bounds)
+    elif "bed" in cp or "sleeping" in cp:
+        return fit_bed_template(points_or_observations, class_path, bounds)
+    elif "tv" in cp or "monitor" in cp or "display" in cp:
+        return fit_tv_template(points_or_observations, class_path, bounds)
+    elif "media" in cp or "console" in cp:
+        return fit_media_console_template(points_or_observations, class_path, bounds)
+    else:
+        # Default box template
+        pts, center, (w, d, h), yaw = _extract_points(points_or_observations, bounds)
+        b0 = (center[0] - w * 0.5, center[1] - d * 0.5, center[2] - h * 0.5)
+        b1 = (center[0] + w * 0.5, center[1] + d * 0.5, center[2] + h * 0.5)
+        comp = ParametricComponent("bounding_box", b0, b1)
+        rms = _compute_box_residuals(pts, b0, b1)
+        return ParametricObjectFit(
+            template="generic_box",
+            class_path=class_path or "fallback/unknown_object",
+            center=center,
+            dimensions=(w, d, h),
+            rotation_rad=yaw,
+            components=[comp],
+            rms_residual_m=rms,
+            confidence=_confidence_from_residual(rms),
+            n_points=len(pts),
+        )

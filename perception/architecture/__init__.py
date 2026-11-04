@@ -8,6 +8,19 @@ from perception.architecture.adapters import (
     classify_glazing_opening,
     evaluate_wall_continuity_under_occlusion,
 )
+from perception.architecture.parametric import (
+    FitRefused,
+    ParametricComponent,
+    ParametricObjectFit,
+    fit_bed_template,
+    fit_cabinet_template,
+    fit_chair_template,
+    fit_media_console_template,
+    fit_parametric_object,
+    fit_sofa_template,
+    fit_table_template,
+    fit_tv_template,
+)
 from perception.architecture.shared_walls import (
     SharedWallConsolidation,
     SharedWallDeduplicationReport,
@@ -27,6 +40,9 @@ from perception.architecture.topology import (
 
 __all__ = [
     "ContractAdaptationResult",
+    "FitRefused",
+    "ParametricComponent",
+    "ParametricObjectFit",
     "SharedWallConsolidation",
     "SharedWallDeduplicationReport",
     "StructuralAnalysisReport",
@@ -41,6 +57,14 @@ __all__ = [
     "classify_glazing_opening",
     "deduplicate_shared_walls",
     "evaluate_wall_continuity_under_occlusion",
+    "fit_bed_template",
+    "fit_cabinet_template",
+    "fit_chair_template",
+    "fit_media_console_template",
+    "fit_parametric_object",
+    "fit_sofa_template",
+    "fit_table_template",
+    "fit_tv_template",
     "revalidate_merged_topology",
 ]
 

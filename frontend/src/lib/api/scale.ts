@@ -37,11 +37,16 @@ export function rejectScaleSuggestion(worldId: string, sourceEntityId: string) {
 
 /**
  * Known-length method (backend contract; the viewer point picker that calls it is wired separately):
- * two picked points in viewer/world coordinates + their real distance in metres.
+ * two picked points in viewer/world coordinates + their real distance in metres, or model_length.
  */
 export function setKnownLengthScale(
   worldId: string,
-  body: { distance_m: number; point_a: [number, number, number]; point_b: [number, number, number] },
+  body: {
+    distance_m: number;
+    point_a?: [number, number, number];
+    point_b?: [number, number, number];
+    model_length?: number;
+  },
 ) {
   return apiPost<{ job_id: string; dimension_state_after: string }>(base(worldId), { method: "known_length", ...body });
 }

@@ -78,6 +78,8 @@ export interface UnitContext {
   state: DimensionState;
   /** Known uncertainty (same unit as the value), or null = not estimated. */
   uncertainty: number | null;
+  /** Honest scale calibration state (Task 7.3) */
+  scaleCalibrationState: "METRIC_CALIBRATED" | "UNSCALED_RELATIVE";
 }
 
 interface WorldLike {
@@ -96,6 +98,7 @@ export function resolveUnitContext(world: WorldLike | null | undefined): UnitCon
       badge: null,
       state: world?.metadata?.scale?.dimension_state === "ESTIMATED" ? "ESTIMATED" : "MEASURED",
       uncertainty: null,
+      scaleCalibrationState: "METRIC_CALIBRATED",
     };
   }
   const entities = Object.values(world?.entities ?? {});
@@ -108,6 +111,7 @@ export function resolveUnitContext(world: WorldLike | null | undefined): UnitCon
       badge: null,
       state: "MEASURED",
       uncertainty: 0,
+      scaleCalibrationState: "METRIC_CALIBRATED",
     };
   }
   return {
@@ -118,6 +122,7 @@ export function resolveUnitContext(world: WorldLike | null | undefined): UnitCon
     badge: "scale unknown",
     state: "RECONSTRUCTED",
     uncertainty: null,
+    scaleCalibrationState: "UNSCALED_RELATIVE",
   };
 }
 

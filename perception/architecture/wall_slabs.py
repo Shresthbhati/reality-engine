@@ -61,7 +61,7 @@ def _store_mesh(world, artifact_store, gid: str, verts, faces, conf: float, prov
     geom = Geometry(id=gid, type=GeometryType.BOX, bounds_min=Vector3(*map(float, lo)), bounds_max=Vector3(*map(float, hi)),
                     provenance=prov, confidence=conf)
     if artifact_store is not None:
-        from reconstruction.meshing.mesh import MeshData
+        from world_ir.geometry_data import MeshData
 
         mesh = MeshData(vertices=tuple(map(tuple, v.tolist())), faces=tuple(tuple(int(i) for i in f) for f in faces))
         geom.type = GeometryType.MESH

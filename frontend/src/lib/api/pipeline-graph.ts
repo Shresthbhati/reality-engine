@@ -39,6 +39,7 @@ export interface PipelineFact {
 export interface PipelineNode {
   id: string;
   label: string;
+  blueprint_label?: string;
   /** the `job.stage` values that mean "the runner is in this node" */
   stages: readonly string[];
   status: NodeStatus;
@@ -75,15 +76,16 @@ interface NodeDef {
   id: string;
   label: string;
   stages: readonly string[];
+  blueprint_label?: string;
 }
 
 /** Order and names mirror the `job.stage = ...` assignments in apps/api/jobs.py (reconstruct job). */
 export const PIPELINE_DEFS: readonly NodeDef[] = [
-  { id: "backend", label: "Backend check", stages: ["checking_reconstruction_backend"] },
-  { id: "evidence", label: "Resolve evidence", stages: ["resolving_evidence"] },
-  { id: "analyze", label: "Analyze evidence", stages: ["analyzing_evidence"] },
-  { id: "reconstruct", label: "Reconstruct", stages: ["building_rough_model", "reconstructing", "refining"] },
-  { id: "commit", label: "Commit version", stages: ["committing_version"] },
+  { id: "backend", label: "Backend check", stages: ["checking_reconstruction_backend"], blueprint_label: "Checking photos" },
+  { id: "evidence", label: "Resolve evidence", stages: ["resolving_evidence"], blueprint_label: "Checking photos" },
+  { id: "analyze", label: "Analyze evidence", stages: ["analyzing_evidence"], blueprint_label: "Finding photos of the same place" },
+  { id: "reconstruct", label: "Reconstruct", stages: ["building_rough_model", "reconstructing", "refining"], blueprint_label: "Calculating camera positions" },
+  { id: "commit", label: "Commit version", stages: ["committing_version"], blueprint_label: "Saving the world" },
 ];
 
 export function nodeIndexForStage(stage: string | null | undefined): number {
@@ -150,6 +152,7 @@ export function buildPipelineNodes(inp: PipelineInputs): PipelineNode[] {
   const nodes: PipelineNode[] = PIPELINE_DEFS.map((d) => ({
     id: d.id,
     label: d.label,
+    blueprint_label: d.blueprint_label,
     stages: d.stages,
     status: "not-run" as NodeStatus,
     detail: null,

@@ -12,6 +12,11 @@ Guarantees:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from perception.materials.classifier import (
+    MaterialCategory,
+    MaterialEvidence,
+    classify_material,
+)
 from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -160,6 +165,7 @@ class EntityAttributes:
     mounting: MountingType = MountingType.UNKNOWN
     state: OperationalState = OperationalState.UNKNOWN
     material_label: Optional[str] = None
+    material_confidence: Optional[float] = None
     finish: Optional[str] = None
     color_rgb: Optional[Tuple[float, float, float]] = None
     dimensions_m: Optional[Tuple[float, float, float]] = None  # (width, height, depth)
@@ -179,7 +185,10 @@ class EntityAttributes:
             "confidence": round(self.confidence, 3),
         }
         if self.material_label:
+            out["material"] = self.material_label
             out["material_label"] = self.material_label
+        if self.material_confidence is not None:
+            out["material_confidence"] = round(self.material_confidence, 3)
         if self.finish:
             out["finish"] = self.finish
         if self.color_rgb:
@@ -210,7 +219,8 @@ class EntityAttributes:
             mechanism=MechanismType(data.get("mechanism", MechanismType.UNKNOWN.value)),
             mounting=MountingType(data.get("mounting", MountingType.UNKNOWN.value)),
             state=OperationalState(data.get("state", OperationalState.UNKNOWN.value)),
-            material_label=data.get("material_label"),
+            material_label=data.get("material") or data.get("material_label"),
+            material_confidence=float(data["material_confidence"]) if data.get("material_confidence") is not None else None,
             finish=data.get("finish"),
             color_rgb=color,
             dimensions_m=dims,
@@ -231,6 +241,47 @@ class EntityAttributes:
             entity.custom_properties["mechanism"] = self.mechanism.value
         if self.mounting != MountingType.UNKNOWN:
             entity.custom_properties["mounting"] = self.mounting.value
+        if self.material_label:
+            entity.custom_properties["material"] = self.material_label
+            entity.custom_properties["material_label"] = self.material_label
+            if self.material_confidence is not None:
+                entity.custom_properties["material_confidence"] = self.material_confidence
+
+
+
+MATERIAL_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "wood": ("wood", "timber", "oak", "walnut", "pine", "plywood", "mdf"),
+    "metal": ("metal", "steel", "aluminum", "iron", "brass", "chrome", "copper"),
+    "glass": ("glass", "glazing", "mirrored", "transparent"),
+    "fabric": ("fabric", "cloth", "textile", "linen", "velvet", "upholstered"),
+    "leather": ("leather", "faux-leather", "suede"),
+    "plastic": ("plastic", "pvc", "acrylic", "polymer"),
+    "stone": ("stone", "marble", "granite", "slate"),
+    "concrete": ("concrete", "cement"),
+    "plaster": ("plaster", "drywall", "gypsum"),
+    "tile": ("tile", "ceramic", "porcelain"),
+    "brick": ("brick", "masonry"),
+}
+
+CLASS_MATERIAL_PRIORS: Dict[str, Tuple[str, float]] = {
+    "furniture.sofa": ("fabric", 0.70),
+    "furniture.bed": ("fabric", 0.70),
+    "furniture.table": ("wood", 0.65),
+    "furniture.cabinet": ("wood", 0.65),
+    "furniture.chair": ("wood", 0.60),
+    "furniture.desk": ("wood", 0.65),
+    "opening.window": ("glass", 0.90),
+    "opening.door": ("wood", 0.65),
+    "fixtures/electrical/socket": ("plastic", 0.80),
+    "fixtures/electrical/switch": ("plastic", 0.80),
+    "electrical.switchboard.module.switch": ("plastic", 0.80),
+    "electrical.switchboard.module.socket": ("plastic", 0.80),
+    "fixtures/plumbing/faucet": ("metal", 0.85),
+    "fixtures/plumbing/sink": ("ceramic", 0.80),
+    "envelope.wall": ("plaster", 0.75),
+    "envelope.floor": ("wood", 0.60),
+    "envelope.ceiling": ("plaster", 0.80),
+}
 
 
 def infer_entity_attributes(
@@ -239,6 +290,8 @@ def infer_entity_attributes(
     visual_tags: Sequence[str] = (),
     host_type: Optional[str] = None,
     measured_confidence: float = 0.85,
+    color_rgb: Optional[Tuple[float, float, float]] = None,
+    material_hint: Optional[str] = None,
 ) -> EntityAttributes:
     """Infer fine-grained attributes using category rules, visual tags, and host relationships.
     
@@ -316,14 +369,81 @@ def infer_entity_attributes(
         elif class_id == "furniture.chair":
             clearance = 0.60  # Pull-out space
 
+    # 6. Material classification
+    resolved_material: Optional[str] = None
+    material_conf: Optional[float] = None
+
+    # Check material hint or visual tags first
+    candidate_tags = list(tags_lower)
+    if material_hint:
+        candidate_tags.append(material_hint.strip().lower())
+
+    for mat_cat, keywords in MATERIAL_KEYWORDS.items():
+        if any(kw in tag for kw in keywords for tag in candidate_tags):
+            resolved_material = mat_cat
+            material_conf = 0.88
+            notes.append(f"Material {resolved_material} identified from visual tags")
+            break
+
+    # If no tag match, try optical classification if color_rgb is available
+    if not resolved_material and color_rgb is not None:
+        try:
+            ev = MaterialEvidence(color_rgb=color_rgb, surface_kind=class_id)
+            classifications = classify_material(ev)
+            if classifications and classifications[0].score >= 0.40:
+                top = classifications[0]
+                resolved_material = top.category.value if hasattr(top.category, "value") else str(top.category)
+                material_conf = top.score
+                notes.append(f"Material {resolved_material} classified from optical evidence (score={top.score:.2f})")
+        except Exception:
+            pass
+
+    # Fallback: architectural class prior
+    if not resolved_material:
+        for prior_class, (prior_mat, p_conf) in CLASS_MATERIAL_PRIORS.items():
+            if class_id == prior_class or class_id.startswith(prior_class):
+                resolved_material = prior_mat
+                material_conf = p_conf
+                notes.append(f"Material {resolved_material} inferred from class prior ({prior_class})")
+                break
+
     return EntityAttributes(
         class_id=class_id,
         subtype=detected_subtype,
         mechanism=mechanism,
         mounting=mounting,
         state=state,
+        material_label=resolved_material,
+        material_confidence=material_conf,
+        color_rgb=color_rgb,
         dimensions_m=dimensions_m,
         clearance_m=clearance,
         confidence=measured_confidence if detected_subtype else max(0.5, measured_confidence - 0.2),
         uncertainty_notes=notes,
     )
+
+
+def classify_and_attach_entity_material(
+    entity: Entity,
+    color_rgb: Optional[Tuple[float, float, float]] = None,
+    visual_tags: Sequence[str] = (),
+    material_hint: Optional[str] = None,
+) -> EntityAttributes:
+    """Classify material for an entity and attach material + material_confidence attributes (Blueprint 30 Task 10.2)."""
+    class_id = getattr(entity, "class_path", None) or getattr(entity, "type", "misc.object")
+    if hasattr(class_id, "value"):
+        class_id = class_id.value
+
+    combined_tags = list(visual_tags)
+    if hasattr(entity, "semantic_labels") and entity.semantic_labels:
+        combined_tags.extend(entity.semantic_labels)
+
+    attrs = infer_entity_attributes(
+        class_id=str(class_id),
+        visual_tags=combined_tags,
+        color_rgb=color_rgb,
+        material_hint=material_hint,
+    )
+    attrs.attach_to_entity(entity)
+    return attrs
+

@@ -7,6 +7,7 @@ from perception.entities.attributes import (
     OperationalState,
     SUBTYPES_BY_CLASS,
     infer_entity_attributes,
+    classify_and_attach_entity_material,
 )
 from perception.entities.taxonomy import (
     CATEGORIES,
@@ -38,4 +39,5 @@ __all__ = [
     "OperationalState",
     "SUBTYPES_BY_CLASS",
     "infer_entity_attributes",
+    "classify_and_attach_entity_material",
 ]

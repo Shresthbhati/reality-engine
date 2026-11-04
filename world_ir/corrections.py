@@ -170,3 +170,273 @@ def carry_corrections(world, records: Iterable[dict]) -> dict:
     if report["applied"] or report["skipped"]:
         world.metadata["correction_carry"] = {"applied": len(report["applied"]), "skipped": len(report["skipped"])}
     return report
+
+
+def reclassify_entity(
+    world,
+    entity_id: str,
+    new_class: str,
+    note: str = "",
+    user_id: str = "",
+) -> dict:
+    """User correction: reclassify an entity to a new ontology class.
+
+    Writes a user-basis decision and updates semantic labels, entity_class, and name.
+    """
+    ent = (getattr(world, "entities", None) or {}).get(entity_id)
+    if ent is None:
+        raise CorrectionError(f"entity '{entity_id}' not found in world")
+    if not new_class or not isinstance(new_class, str):
+        raise CorrectionError("new_class must be a non-empty string")
+
+    old_class = (ent.custom_properties or {}).get("entity_class") or (
+        ent.semantic_labels[0] if ent.semantic_labels else "unknown"
+    )
+    clean_class = new_class.strip()
+
+    cp = getattr(ent, "custom_properties", None) or {}
+    cp = dict(cp)
+    cp["entity_class"] = clean_class
+    cp["classification_basis"] = "user"
+
+    decision = {
+        "kind": "reclassify",
+        "basis": "user",
+        "entity_id": entity_id,
+        "old_class": old_class,
+        "new_class": clean_class,
+        "note": note.strip() or None,
+        "user_id": user_id or "user",
+        "timestamp": time.time(),
+    }
+    cp["user_decision"] = decision
+    ent.custom_properties = cp
+
+    # Update semantic labels
+    labels = [clean_class]
+    for part in clean_class.split("/"):
+        if part and part not in labels:
+            labels.append(part)
+    ent.semantic_labels = labels
+
+    # Update friendly display name
+    leaf_name = clean_class.split("/")[-1].replace("_", " ").title()
+    ent.name = leaf_name
+
+    # Record in world metadata
+    decisions = list(world.metadata.get("user_decisions") or [])
+    decisions.append(decision)
+    world.metadata["user_decisions"] = decisions
+
+    return decision
+
+
+def _get_box(ent) -> Optional[Tuple[List[float], List[float]]]:
+    cp = getattr(ent, "custom_properties", None) or {}
+    if "bounding_box" in cp and isinstance(cp["bounding_box"], (list, tuple)) and len(cp["bounding_box"]) == 2:
+        return [list(cp["bounding_box"][0]), list(cp["bounding_box"][1])]
+    if "bounds" in cp and isinstance(cp["bounds"], (list, tuple)) and len(cp["bounds"]) == 2:
+        return [list(cp["bounds"][0]), list(cp["bounds"][1])]
+    anchor = _anchor_of(ent)
+    if anchor is not None:
+        return [
+            [anchor[0] - 0.5, anchor[1] - 0.5, anchor[2] - 0.5],
+            [anchor[0] + 0.5, anchor[1] + 0.5, anchor[2] + 0.5],
+        ]
+    return [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]
+
+
+def split_entity(
+    world,
+    entity_id: str,
+    split_axis: str = "x",
+    split_ratio: float = 0.5,
+    note: str = "",
+    user_id: str = "",
+) -> Tuple[Any, Any, dict]:
+    """User correction: split an entity into two distinct entities along an axis.
+
+    Writes a user-basis decision, replaces source entity with two sub-entities, and records provenance.
+    """
+    ent = (getattr(world, "entities", None) or {}).get(entity_id)
+    if ent is None:
+        raise CorrectionError(f"entity '{entity_id}' not found in world")
+
+    axis = split_axis.lower()
+    if axis not in ("x", "y", "z"):
+        raise CorrectionError(f"invalid split_axis '{split_axis}'; allowed: 'x', 'y', 'z'")
+    if not (0.05 <= split_ratio <= 0.95):
+        raise CorrectionError(f"split_ratio {split_ratio} must be between 0.05 and 0.95")
+
+    axis_idx = {"x": 0, "y": 1, "z": 2}[axis]
+    box = _get_box(ent)
+    b_min, b_max = list(box[0]), list(box[1])
+
+    split_coord = b_min[axis_idx] + split_ratio * (b_max[axis_idx] - b_min[axis_idx])
+
+    # Box 1: [b_min, split_coord on axis]
+    box1_max = list(b_max)
+    box1_max[axis_idx] = split_coord
+    box1 = (tuple(b_min), tuple(box1_max))
+
+    # Box 2: [split_coord on axis, b_max]
+    box2_min = list(b_min)
+    box2_min[axis_idx] = split_coord
+    box2 = (tuple(box2_min), tuple(b_max))
+
+    from world_ir.schema_v1 import Entity as WEntity, Provenance as WProv
+
+    id1 = f"{entity_id}_part1"
+    id2 = f"{entity_id}_part2"
+
+    cp1 = dict(ent.custom_properties or {})
+    cp1["bounding_box"] = [list(box1[0]), list(box1[1])]
+    cp1["split_from"] = entity_id
+    cp1["decision_basis"] = "user"
+
+    cp2 = dict(ent.custom_properties or {})
+    cp2["bounding_box"] = [list(box2[0]), list(box2[1])]
+    cp2["split_from"] = entity_id
+    cp2["decision_basis"] = "user"
+
+    ent1 = WEntity(
+        id=id1,
+        type=ent.type,
+        name=f"{ent.name} (Part 1)",
+        semantic_labels=list(ent.semantic_labels),
+        provenance=WProv.RECONSTRUCTED,
+        confidence=float(ent.confidence),
+        custom_properties=cp1,
+        observations=list(ent.observations),
+    )
+    ent2 = WEntity(
+        id=id2,
+        type=ent.type,
+        name=f"{ent.name} (Part 2)",
+        semantic_labels=list(ent.semantic_labels),
+        provenance=WProv.RECONSTRUCTED,
+        confidence=float(ent.confidence),
+        custom_properties=cp2,
+        observations=list(ent.observations),
+    )
+
+    # Rewire existing relationships in the world
+    for other in world.entities.values():
+        if other.id == entity_id:
+            continue
+        for rel in other.relationships:
+            if rel.target_id == entity_id:
+                rel.target_id = id1
+
+    # Replace in world
+    del world.entities[entity_id]
+    world.entities[id1] = ent1
+    world.entities[id2] = ent2
+
+    decision = {
+        "kind": "split",
+        "basis": "user",
+        "source_entity_id": entity_id,
+        "created_entity_ids": [id1, id2],
+        "split_axis": axis,
+        "split_ratio": float(split_ratio),
+        "note": note.strip() or None,
+        "user_id": user_id or "user",
+        "timestamp": time.time(),
+    }
+    decisions = list(world.metadata.get("user_decisions") or [])
+    decisions.append(decision)
+    world.metadata["user_decisions"] = decisions
+
+    return ent1, ent2, decision
+
+
+def merge_entities(
+    world,
+    primary_entity_id: str,
+    secondary_entity_ids: Sequence[str],
+    new_name: Optional[str] = None,
+    note: str = "",
+    user_id: str = "",
+) -> Tuple[Any, dict]:
+    """User correction: merge multiple entities into one primary entity.
+
+    Combines bounds, observations, subcomponents, and rewires all relationships.
+    Writes a user-basis decision.
+    """
+    primary = (getattr(world, "entities", None) or {}).get(primary_entity_id)
+    if primary is None:
+        raise CorrectionError(f"primary entity '{primary_entity_id}' not found in world")
+
+    secondaries = []
+    for sid in secondary_entity_ids:
+        sec = (getattr(world, "entities", None) or {}).get(sid)
+        if sec is None:
+            raise CorrectionError(f"secondary entity '{sid}' not found in world")
+        if sid != primary_entity_id:
+            secondaries.append(sec)
+
+    if not secondaries:
+        raise CorrectionError("at least one secondary entity must be provided to merge")
+
+    # Union bounding boxes
+    all_ents = [primary] + secondaries
+    boxes = [_get_box(e) for e in all_ents]
+    min_x = min(b[0][0] for b in boxes)
+    min_y = min(b[0][1] for b in boxes)
+    min_z = min(b[0][2] for b in boxes)
+    max_x = max(b[1][0] for b in boxes)
+    max_y = max(b[1][1] for b in boxes)
+    max_z = max(b[1][2] for b in boxes)
+
+    cp = dict(primary.custom_properties or {})
+    cp["bounding_box"] = [[min_x, min_y, min_z], [max_x, max_y, max_z]]
+    cp["merged_from"] = [s.id for s in secondaries]
+    cp["decision_basis"] = "user"
+    primary.custom_properties = cp
+
+    if new_name:
+        primary.name = new_name.strip()
+
+    # Merge observations and components
+    seen_obs_ids = {o.id for o in primary.observations}
+    for sec in secondaries:
+        for obs in sec.observations:
+            if obs.id not in seen_obs_ids:
+                primary.observations.append(obs)
+                seen_obs_ids.add(obs.id)
+        for cid in sec.component_ids:
+            if cid not in primary.component_ids:
+                primary.component_ids.append(cid)
+        for gid in sec.geometry_ids:
+            if gid not in primary.geometry_ids:
+                primary.geometry_ids.append(gid)
+
+    # Rewire all external relationships targeting any secondary entity to primary
+    sec_ids = {s.id for s in secondaries}
+    for other in world.entities.values():
+        if other.id in sec_ids:
+            continue
+        for rel in other.relationships:
+            if rel.target_id in sec_ids:
+                rel.target_id = primary_entity_id
+
+    # Remove secondaries from world
+    for sec in secondaries:
+        if sec.id in world.entities:
+            del world.entities[sec.id]
+
+    decision = {
+        "kind": "merge",
+        "basis": "user",
+        "primary_entity_id": primary_entity_id,
+        "merged_entity_ids": list(sec_ids),
+        "note": note.strip() or None,
+        "user_id": user_id or "user",
+        "timestamp": time.time(),
+    }
+    decisions = list(world.metadata.get("user_decisions") or [])
+    decisions.append(decision)
+    world.metadata["user_decisions"] = decisions
+
+    return primary, decision

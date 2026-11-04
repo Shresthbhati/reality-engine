@@ -21,7 +21,7 @@ export const NOT_AVAILABLE_TITLE = "Not available yet";
 
 /** Top-bar mode tabs, honestly mapped to what exists today. */
 export const MODE_TABS: NavEntry[] = [
-  { id: "ingest", label: "Ingest", href: "/reconstruct" },
+  { id: "ingest", label: "Capture", href: "/capture", matches: ["/capture", "/reconstruct"] },
   { id: "process", label: "Process", href: "/sessions", matches: ["/sessions"] },
   { id: "explore", label: "Explore", href: "/worlds", matches: ["/worlds", "/evidence"] },
   { id: "compare", label: "Compare", href: null },
@@ -34,7 +34,7 @@ export const RAIL_ITEMS: NavEntry[] = [
   { id: "home", label: "Home", href: "/" },
   { id: "worlds", label: "3D Studio", href: "/worlds", matches: ["/worlds"] },
   { id: "sites", label: "Sites", href: "/sites", matches: ["/sites"] },
-  { id: "ingest", label: "Ingest", href: "/reconstruct" },
+  { id: "ingest", label: "Capture", href: "/capture", matches: ["/capture", "/reconstruct"] },
   { id: "evidence", label: "Evidence", href: "/evidence", matches: ["/evidence"] },
   { id: "sessions", label: "Sessions", href: "/sessions", matches: ["/sessions"] },
   { id: "reports", label: "Reports", href: "/reports", matches: ["/reports"] },

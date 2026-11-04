@@ -21,6 +21,7 @@ import {
   type MeasureKind,
   type Vec3,
 } from "@/lib/viewport/measure-model";
+import { setKnownLengthScale } from "@/lib/api/scale";
 import {
   createMeasurement,
   deleteMeasurement,
@@ -74,6 +75,11 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showSetScale, setShowSetScale] = useState(false);
+  const [knownDistM, setKnownDistM] = useState<string>("");
+  const [scaleBusy, setScaleBusy] = useState(false);
+  const [scaleSuccess, setScaleSuccess] = useState<string | null>(null);
+
 
   useEffect(() => {
     const c = getController();
@@ -155,6 +161,40 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
   }, [saved, selected]);
   const maxCount = Math.max(1, ...profile.bins.map((b) => b.count));
 
+  const handleSetScale = useCallback(async () => {
+    if (!worldId) return;
+    const dist = parseFloat(knownDistM);
+    if (!Number.isFinite(dist) || dist <= 0) {
+      setError("Please enter a valid positive physical length in metres.");
+      return;
+    }
+    setScaleBusy(true);
+    setError(null);
+    setScaleSuccess(null);
+    try {
+      const modelLength = (live && preview !== null) ? preview : (selected ? selected.value : undefined);
+      const pointA = (live && live.points.length >= 2) ? live.points[0] : (selected && selected.points?.length >= 2) ? selected.points[0] as Vec3 : undefined;
+      const pointB = (live && live.points.length >= 2) ? live.points[1] : (selected && selected.points?.length >= 2) ? selected.points[1] as Vec3 : undefined;
+
+      const payload: { distance_m: number; model_length?: number; point_a?: [number, number, number]; point_b?: [number, number, number] } = {
+        distance_m: dist,
+        model_length: modelLength,
+        point_a: pointA,
+        point_b: pointB,
+      };
+
+      const res = await setKnownLengthScale(worldId, payload);
+      setScaleSuccess(`Scale calibration job queued (${res.job_id}). Scene converting to metric scale.`);
+      setShowSetScale(false);
+      setKnownDistM("");
+    } catch (e) {
+      setError(`Scale calibration failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setScaleBusy(false);
+    }
+  }, [worldId, knownDistM, live, preview, selected]);
+
+
   return (
     <div
       className="absolute top-14 left-3 z-20 w-[310px] max-h-[calc(100%-5rem)] overflow-y-auto rounded-lg text-xs pointer-events-auto"
@@ -165,14 +205,21 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
         <div className="flex items-center gap-2 font-semibold text-[var(--accent)]">
           <Ruler className="w-3.5 h-3.5" />
           <span>Measurement Mode</span>
-          {ctx.badge && (
-            <span
-              className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-500/15 border border-amber-500/40 text-amber-300"
-              title="This world has no verified metric scale. Values are in model units and are not metres."
-            >
-              {ctx.badge}
-            </span>
-          )}
+          <span
+            data-testid="scale-calibration-badge"
+            className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+              ctx.scaleCalibrationState === "METRIC_CALIBRATED"
+                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                : "bg-amber-500/15 border-amber-500/40 text-amber-300"
+            }`}
+            title={
+              ctx.scaleCalibrationState === "METRIC_CALIBRATED"
+                ? "Calibrated metric scale. Measurements are in physical metres."
+                : "Unscaled relative scene. Measurements are in model units."
+            }
+          >
+            {ctx.scaleCalibrationState === "METRIC_CALIBRATED" ? "Metric Calibrated" : "Unscaled Relative"}
+          </span>
         </div>
         <button type="button" onClick={onClose} aria-label="Close measurement mode" className="text-neutral-400 hover:text-white cursor-pointer">
           <X className="w-3.5 h-3.5" />
@@ -246,6 +293,52 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
           <div className="text-neutral-500">{MEASURE_TOOLS.find((t) => t.kind === tool)?.hint}</div>
         )}
         {error && <div className="text-red-300" role="alert">{error}</div>}
+      </div>
+
+      <div className="px-3 py-2 border-t border-[var(--border)] space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wider text-neutral-500">Scale Calibration</span>
+          <button
+            type="button"
+            data-testid="set-scale-toggle"
+            onClick={() => { setShowSetScale((v) => !v); setError(null); }}
+            className="text-[10px] font-medium text-[var(--accent)] hover:underline cursor-pointer"
+          >
+            {showSetScale ? "Cancel" : "Set scale"}
+          </button>
+        </div>
+        {showSetScale && (
+          <div className="rounded border border-[var(--border)] p-2 space-y-2 bg-[var(--bg-base)]" data-testid="set-scale-panel">
+            <div className="text-[11px] text-neutral-300">
+              Calibrate relative scale to metric by entering the physical ground-truth length for the current or selected distance:
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-neutral-400">Length (m):</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={knownDistM}
+                onChange={(e) => setKnownDistM(e.target.value)}
+                placeholder="e.g. 2.05"
+                data-testid="known-distance-input"
+                className="w-24 px-2 py-0.5 rounded border border-[var(--border)] bg-[var(--bg-surface)] text-white text-xs font-mono"
+              />
+              <button
+                type="button"
+                disabled={scaleBusy || !knownDistM || !worldId}
+                onClick={handleSetScale}
+                data-testid="apply-scale-button"
+                className="px-2 py-1 rounded bg-[var(--accent)] text-black font-semibold text-xs disabled:opacity-40 cursor-pointer"
+              >
+                {scaleBusy ? "Applying..." : "Calibrate"}
+              </button>
+            </div>
+          </div>
+        )}
+        {scaleSuccess && (
+          <div className="text-emerald-300 text-[11px]" role="status">{scaleSuccess}</div>
+        )}
       </div>
 
       {selected && (

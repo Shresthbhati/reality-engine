@@ -25,7 +25,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from evidence.frames import FrameCandidate, IFrameSelectionStrategy, UniformTimeSamplingStrategy
+from evidence.frames import FrameCandidate, IFrameSelectionStrategy, InformationGainSelectionStrategy, UniformTimeSamplingStrategy
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,36 @@ class SceneTransition:
             "delta_score": round(self.delta_score, 4),
             "is_cut": self.is_cut,
         }
+
+
+@dataclass(frozen=True)
+class VideoIngestResult:
+    """Outcome of video keyframe ingestion (Blueprint 16 & 30 Task 9.2)."""
+
+    video_path: str
+    duration_s: float
+    total_frames: int
+    fps: float
+    keyframe_count: int
+    keyframes: List[Dict[str, Any]]
+    strategy_used: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "video_path": self.video_path,
+            "duration_s": round(self.duration_s, 3),
+            "total_frames": self.total_frames,
+            "fps": round(self.fps, 2),
+            "keyframe_count": self.keyframe_count,
+            "keyframes": self.keyframes,
+            "strategy_used": self.strategy_used,
+        }
+
+    def summary(self) -> str:
+        return (
+            f"Extracted {self.keyframe_count} keyframes from {self.total_frames} frames "
+            f"({self.duration_s:.1f}s @ {self.fps:.1f}fps) using {self.strategy_used}"
+        )
 
 
 def compute_frame_difference(frame_a: np.ndarray, frame_b: np.ndarray) -> float:
@@ -285,6 +315,154 @@ def extract_video_keyframes(
             })
 
         return results
+
+    finally:
+        cap.release()
+
+
+
+def ingest_video_to_keyframes(
+    video_path: Union[Path, str],
+    output_dir: Union[Path, str],
+    target_min: int = 100,
+    target_max: int = 300,
+    strategy: Optional[IFrameSelectionStrategy] = None,
+    image_format: str = "jpg",
+    sample_hz: float = 4.0,
+) -> VideoIngestResult:
+    """Ingest a video capture into sharp, information-rich keyframes for reconstruction.
+
+    Fulfills Blueprint 16 & 30 Task 9.2:
+    - Reconstructs a walk-around video like a photo set.
+    - Selects frames by information gain (motion, parallax, novelty, sharpness).
+    - Eliminates static pauses and blurry turns.
+    - Accurately reports keyframe count and presentation timestamps.
+
+    Args:
+        video_path: Path to source video file (MP4, MOV, MKV, etc.).
+        output_dir: Target directory to write extracted keyframe images.
+        target_min: Minimum desired keyframes (scaled if video has fewer).
+        target_max: Maximum keyframe budget.
+        strategy: Optional custom IFrameSelectionStrategy (defaults to InformationGainSelectionStrategy).
+        image_format: Output image format ("jpg" or "png").
+        sample_hz: Probing frequency for motion/sharpness analysis.
+    """
+    v_path = Path(video_path)
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cap = cv2.VideoCapture(str(v_path))
+    if not cap.isOpened():
+        raise IOError(f"Could not open video file: {v_path}")
+
+    try:
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = float(cap.get(cv2.CAP_PROP_FPS))
+        if fps <= 0.0:
+            fps = 25.0
+        duration_s = float(total_frames) / fps if total_frames > 0 else 0.0
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        if total_frames <= 0:
+            return VideoIngestResult(
+                video_path=str(v_path),
+                duration_s=0.0,
+                total_frames=0,
+                fps=fps,
+                keyframe_count=0,
+                keyframes=[],
+                strategy_used="none",
+            )
+
+        # Step 1: Probe candidate frames at sample_hz (or every frame if short)
+        step = max(1, int(round(fps / sample_hz))) if sample_hz > 0 else 1
+        candidate_indices = list(range(0, total_frames, step))
+        if (total_frames - 1) not in candidate_indices:
+            candidate_indices.append(total_frames - 1)
+
+        candidates: List[FrameCandidate] = []
+        prev_thumb = None
+
+        for idx in candidate_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            t_s = float(idx) / fps
+
+            # Low-res thumbnail for fast motion and sharpness analysis
+            thumb = cv2.resize(frame, (160, 90))
+            gray = cv2.cvtColor(thumb, cv2.COLOR_BGR2GRAY)
+            sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+            motion_delta = 0.0
+            if prev_thumb is not None:
+                motion_delta = compute_frame_difference(prev_thumb, thumb)
+            prev_thumb = thumb
+
+            candidates.append(
+                FrameCandidate(
+                    frame_index=idx,
+                    timestamp_s=t_s,
+                    width=width,
+                    height=height,
+                    sharpness=sharpness,
+                    motion_delta=motion_delta,
+                )
+            )
+
+        # Step 2: Apply strategy
+        if strategy is None:
+            # Scale target bounds proportionally if video is shorter than 5 minutes
+            actual_min = min(len(candidates), max(2, min(target_min, len(candidates))))
+            actual_max = max(actual_min, min(target_max, len(candidates)))
+            strategy = InformationGainSelectionStrategy(
+                target_min=actual_min,
+                target_max=actual_max,
+                min_gap_s=0.20,
+                max_gap_s=3.0,
+                min_motion_delta=0.02,
+            )
+
+        selected_candidates = strategy.select(candidates)
+
+        # Step 3: Decode and save selected keyframes
+        keyframes: List[Dict[str, Any]] = []
+        for c in selected_candidates:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, c.frame_index)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+
+            frame_filename = f"keyframe_{c.frame_index:06d}_{c.timestamp_s:.2f}s.{image_format}"
+            frame_path = out_dir / frame_filename
+
+            # Full-res sharpness measurement
+            gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            full_sharpness = float(cv2.Laplacian(gray_full, cv2.CV_64F).var())
+
+            cv2.imwrite(str(frame_path), frame)
+
+            keyframes.append({
+                "frame_index": c.frame_index,
+                "timestamp_s": round(c.timestamp_s, 3),
+                "file_path": str(frame_path),
+                "width": c.width,
+                "height": c.height,
+                "sharpness": round(full_sharpness, 2),
+                "motion_delta": round(c.motion_delta, 4),
+            })
+
+        return VideoIngestResult(
+            video_path=str(v_path),
+            duration_s=duration_s,
+            total_frames=total_frames,
+            fps=fps,
+            keyframe_count=len(keyframes),
+            keyframes=keyframes,
+            strategy_used=strategy.name,
+        )
 
     finally:
         cap.release()

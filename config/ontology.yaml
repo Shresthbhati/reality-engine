@@ -1,0 +1,495 @@
+# REALITY ENGINE — ENTITY ONTOLOGY (v1)
+# Specification: docs/blueprint/17_ONTOLOGY.md
+version: "1.0.0"
+
+classes:
+  # ---- Architecture --------------------------------------------------------
+  - path: architecture/wall
+    label: Wall
+    parent: null
+    prompts: ["wall", "interior wall"]
+    geometry: plane
+    mobility: fixed
+    min_pixels: 2000
+    attach: []
+
+  - path: architecture/floor
+    label: Floor
+    parent: null
+    prompts: ["floor", "flooring", "hardwood floor", "tiled floor"]
+    geometry: plane
+    mobility: fixed
+    min_pixels: 2000
+    attach: []
+
+  - path: architecture/ceiling
+    label: Ceiling
+    parent: null
+    prompts: ["ceiling", "plaster ceiling"]
+    geometry: plane
+    mobility: fixed
+    min_pixels: 2000
+    attach: []
+
+  - path: architecture/door
+    label: Door
+    parent: null
+    prompts: ["door", "doorway", "interior door"]
+    geometry: "parametric:door"
+    components: [opening, leaf, frame]
+    mobility: fixed
+    min_pixels: 1200
+    typical_dims_m: {w: [0.7, 1.2], d: [0.04, 0.15], h: [1.9, 2.4]}
+    attach:
+      - rests_on: architecture/floor
+      - hosted_by: architecture/wall
+
+  - path: architecture/window
+    label: Window
+    parent: null
+    prompts: ["window", "glass window"]
+    geometry: "parametric:window"
+    components: [opening, frame, glazing]
+    mobility: fixed
+    min_pixels: 1000
+    typical_dims_m: {w: [0.5, 3.0], d: [0.05, 0.25], h: [0.8, 2.2]}
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: architecture/passage
+    label: Passage
+    parent: null
+    prompts: ["passage", "open doorway", "archway"]
+    geometry: "parametric:opening"
+    components: [opening]
+    mobility: fixed
+    min_pixels: 1200
+    typical_dims_m: {w: [0.8, 2.5], d: [0.1, 0.4], h: [2.0, 2.6]}
+    attach:
+      - hosted_by: architecture/wall
+      - rests_on: architecture/floor
+
+  - path: architecture/column
+    label: Column
+    parent: null
+    prompts: ["column", "pillar", "structural pillar"]
+    geometry: proxy_box
+    mobility: fixed
+    min_pixels: 1000
+    typical_dims_m: {w: [0.2, 0.8], d: [0.2, 0.8], h: [2.2, 4.0]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: architecture/skirting
+    label: Skirting
+    parent: null
+    prompts: ["skirting board", "baseboard"]
+    geometry: "parametric:profile"
+    mobility: fixed
+    min_pixels: 400
+    typical_dims_m: {w: [0.5, 6.0], d: [0.01, 0.03], h: [0.06, 0.18]}
+    attach:
+      - hosted_by: architecture/wall
+      - rests_on: architecture/floor
+
+  # ---- Furniture -----------------------------------------------------------
+  - path: furniture/seating/sofa
+    label: Sofa
+    parent: null
+    prompts: ["sofa", "couch", "living room sofa"]
+    geometry: "parametric:sofa"
+    components: [frame, seat_cushion, back_cushion, armrest, leg]
+    mobility: movable
+    min_pixels: 1500
+    typical_dims_m: {w: [1.4, 2.8], d: [0.7, 1.2], h: [0.7, 1.0]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/seating/sofa/sectional
+    label: Sectional sofa
+    parent: furniture/seating/sofa
+    prompts: ["sectional sofa", "L-shaped sofa", "corner couch"]
+    geometry: "parametric:sofa"
+    components: [frame, seat_cushion, back_cushion, armrest, leg, chaise]
+    mobility: movable
+    min_pixels: 2000
+    typical_dims_m: {w: [1.6, 3.5], d: [0.8, 2.0], h: [0.7, 1.0]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/seating/armchair
+    label: Armchair
+    parent: null
+    prompts: ["armchair", "accent chair", "lounge chair"]
+    geometry: "parametric:chair"
+    components: [seat, backrest, armrest, leg]
+    mobility: movable
+    min_pixels: 1000
+    typical_dims_m: {w: [0.7, 1.1], d: [0.7, 1.1], h: [0.7, 1.0]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/seating/chair
+    label: Chair
+    parent: null
+    prompts: ["chair", "dining chair", "side chair"]
+    geometry: "parametric:chair"
+    components: [seat, backrest, leg]
+    mobility: movable
+    min_pixels: 800
+    typical_dims_m: {w: [0.4, 0.6], d: [0.4, 0.6], h: [0.7, 1.0]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/tables/coffee_table
+    label: Coffee table
+    parent: null
+    prompts: ["coffee table", "low table"]
+    geometry: "parametric:table"
+    components: [top, leg]
+    mobility: movable
+    min_pixels: 1000
+    typical_dims_m: {w: [0.6, 1.5], d: [0.4, 0.9], h: [0.35, 0.55]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/tables/side_table
+    label: Side table
+    parent: null
+    prompts: ["side table", "end table", "nightstand"]
+    geometry: "parametric:table"
+    components: [top, leg]
+    mobility: movable
+    min_pixels: 600
+    typical_dims_m: {w: [0.35, 0.65], d: [0.35, 0.65], h: [0.45, 0.7]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/tables/dining_table
+    label: Dining table
+    parent: null
+    prompts: ["dining table", "kitchen table"]
+    geometry: "parametric:table"
+    components: [top, leg]
+    mobility: movable
+    min_pixels: 1500
+    typical_dims_m: {w: [1.2, 2.6], d: [0.7, 1.2], h: [0.72, 0.78]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/tables/desk
+    label: Desk
+    parent: null
+    prompts: ["desk", "work desk", "office desk"]
+    geometry: "parametric:table"
+    components: [top, leg, drawer]
+    mobility: movable
+    min_pixels: 1200
+    typical_dims_m: {w: [1.0, 2.0], d: [0.5, 0.9], h: [0.72, 0.78]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/sleeping/bed
+    label: Bed
+    parent: null
+    prompts: ["bed", "double bed", "single bed"]
+    geometry: "parametric:bed"
+    components: [frame, mattress, headboard, leg]
+    mobility: movable
+    min_pixels: 2000
+    typical_dims_m: {w: [0.9, 2.2], d: [1.8, 2.2], h: [0.4, 1.2]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/storage/cabinet
+    label: Cabinet
+    parent: null
+    prompts: ["cabinet", "storage cabinet", "credenza", "sideboard"]
+    geometry: "parametric:cabinet"
+    components: [body, door, drawer, shelf, leg]
+    mobility: movable
+    min_pixels: 1200
+    typical_dims_m: {w: [0.6, 2.0], d: [0.35, 0.6], h: [0.6, 1.8]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/storage/shelf
+    label: Shelf
+    parent: null
+    prompts: ["bookshelf", "wall shelf", "shelving unit"]
+    geometry: "parametric:cabinet"
+    components: [frame, shelf]
+    mobility: movable
+    min_pixels: 1000
+    typical_dims_m: {w: [0.5, 1.8], d: [0.25, 0.45], h: [0.8, 2.2]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/storage/media_console
+    label: Media console
+    parent: null
+    prompts: ["media console", "tv unit", "tv stand"]
+    geometry: "parametric:cabinet"
+    components: [body, door, shelf, leg]
+    mobility: movable
+    min_pixels: 1200
+    typical_dims_m: {w: [1.0, 2.4], d: [0.35, 0.55], h: [0.35, 0.65]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: furniture/storage/wardrobe
+    label: Wardrobe
+    parent: null
+    prompts: ["wardrobe", "closet", "armoire"]
+    geometry: "parametric:cabinet"
+    components: [body, door, shelf]
+    mobility: movable
+    min_pixels: 2000
+    typical_dims_m: {w: [0.8, 2.4], d: [0.5, 0.7], h: [1.8, 2.4]}
+    attach:
+      - rests_on: architecture/floor
+
+  # ---- Soft / Decor --------------------------------------------------------
+  - path: decor/floor/rug
+    label: Rug
+    parent: null
+    prompts: ["rug", "carpet", "area rug"]
+    geometry: plane
+    mobility: movable
+    min_pixels: 1500
+    typical_dims_m: {w: [1.0, 3.5], d: [1.0, 4.0], h: [0.005, 0.03]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: decor/window/curtain
+    label: Curtain
+    parent: null
+    prompts: ["curtain", "drapes", "window curtain"]
+    geometry: mesh
+    mobility: movable
+    min_pixels: 1000
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: decor/window/blind
+    label: Blind
+    parent: null
+    prompts: ["window blind", "roller blind", "venetian blind"]
+    geometry: "parametric:blind"
+    mobility: movable
+    min_pixels: 800
+    attach:
+      - hosted_by: architecture/window
+
+  - path: decor/soft/cushion
+    label: Cushion
+    parent: null
+    prompts: ["cushion", "throw pillow", "pillow"]
+    geometry: proxy_box
+    mobility: movable
+    min_pixels: 300
+    typical_dims_m: {w: [0.3, 0.6], d: [0.3, 0.6], h: [0.1, 0.25]}
+    attach:
+      - rests_on: furniture/seating/sofa
+
+  - path: decor/soft/throw
+    label: Throw
+    parent: null
+    prompts: ["throw blanket", "blanket"]
+    geometry: mesh
+    mobility: movable
+    min_pixels: 400
+    attach:
+      - rests_on: furniture/seating/sofa
+
+  - path: decor/wall/wall_art
+    label: Wall art
+    parent: null
+    prompts: ["wall art", "painting", "picture frame", "poster"]
+    geometry: plane
+    mobility: movable
+    min_pixels: 500
+    typical_dims_m: {w: [0.3, 2.0], d: [0.02, 0.08], h: [0.3, 1.5]}
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: decor/wall/mirror
+    label: Mirror
+    parent: null
+    prompts: ["mirror", "wall mirror"]
+    geometry: plane
+    mobility: movable
+    min_pixels: 500
+    typical_dims_m: {w: [0.4, 1.5], d: [0.02, 0.08], h: [0.4, 2.0]}
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: decor/object/vase
+    label: Vase
+    parent: null
+    prompts: ["vase", "flower vase"]
+    geometry: proxy_box
+    mobility: movable
+    min_pixels: 200
+    typical_dims_m: {w: [0.1, 0.35], d: [0.1, 0.35], h: [0.15, 0.6]}
+    attach:
+      - rests_on: furniture/tables/coffee_table
+
+  - path: decor/lighting/lamp
+    label: Lamp
+    parent: null
+    prompts: ["lamp", "floor lamp", "table lamp", "desk lamp"]
+    geometry: mesh
+    mobility: movable
+    min_pixels: 400
+    typical_dims_m: {w: [0.2, 0.6], d: [0.2, 0.6], h: [0.3, 1.8]}
+    attach:
+      - rests_on: architecture/floor
+
+  # ---- Electronics ---------------------------------------------------------
+  - path: electronics/display/tv
+    label: TV
+    parent: null
+    prompts: ["television", "tv", "flat screen tv"]
+    geometry: proxy_box
+    mobility: movable
+    min_pixels: 1000
+    typical_dims_m: {w: [0.8, 1.8], d: [0.05, 0.15], h: [0.5, 1.1]}
+    attach:
+      - mounted_on: architecture/wall
+      - rests_on: furniture/storage/media_console
+
+  - path: electronics/display/monitor
+    label: Monitor
+    parent: null
+    prompts: ["computer monitor", "monitor"]
+    geometry: proxy_box
+    mobility: movable
+    min_pixels: 600
+    typical_dims_m: {w: [0.5, 0.9], d: [0.05, 0.15], h: [0.35, 0.6]}
+    attach:
+      - rests_on: furniture/tables/desk
+
+  - path: electronics/audio/speaker
+    label: Speaker
+    parent: null
+    prompts: ["speaker", "audio speaker", "smart speaker"]
+    geometry: proxy_box
+    mobility: movable
+    min_pixels: 250
+    typical_dims_m: {w: [0.1, 0.35], d: [0.1, 0.35], h: [0.15, 0.5]}
+    attach:
+      - rests_on: furniture/storage/shelf
+
+  # ---- Fixtures ------------------------------------------------------------
+  - path: fixtures/lighting/ceiling_light
+    label: Ceiling light
+    parent: null
+    prompts: ["ceiling light", "pendant light", "chandelier"]
+    geometry: mesh
+    mobility: fixed
+    min_pixels: 400
+    typical_dims_m: {w: [0.2, 1.0], d: [0.2, 1.0], h: [0.1, 0.8]}
+    attach:
+      - hosted_by: architecture/ceiling
+
+  - path: fixtures/lighting/wall_light
+    label: Wall light
+    parent: null
+    prompts: ["wall light", "sconce"]
+    geometry: mesh
+    mobility: fixed
+    min_pixels: 300
+    typical_dims_m: {w: [0.1, 0.4], d: [0.1, 0.3], h: [0.15, 0.5]}
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: fixtures/electrical/switch
+    label: Switch
+    parent: null
+    prompts: ["light switch", "wall switch"]
+    geometry: proxy_box
+    mobility: fixed
+    min_pixels: 100
+    typical_dims_m: {w: [0.07, 0.12], d: [0.01, 0.04], h: [0.07, 0.12]}
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: fixtures/electrical/socket
+    label: Socket
+    parent: null
+    prompts: ["electrical socket", "power outlet", "wall socket"]
+    geometry: proxy_box
+    mobility: fixed
+    min_pixels: 100
+    typical_dims_m: {w: [0.07, 0.15], d: [0.01, 0.04], h: [0.07, 0.12]}
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: fixtures/hvac/vent
+    label: Vent
+    parent: null
+    prompts: ["air vent", "hvac vent", "exhaust vent"]
+    geometry: plane
+    mobility: fixed
+    min_pixels: 150
+    typical_dims_m: {w: [0.15, 0.6], d: [0.02, 0.08], h: [0.15, 0.4]}
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: fixtures/hvac/radiator
+    label: Radiator
+    parent: null
+    prompts: ["radiator", "heating radiator"]
+    geometry: proxy_box
+    mobility: fixed
+    min_pixels: 800
+    typical_dims_m: {w: [0.5, 1.8], d: [0.08, 0.2], h: [0.4, 0.9]}
+    attach:
+      - hosted_by: architecture/wall
+
+  - path: fixtures/hvac/ac_unit
+    label: AC unit
+    parent: null
+    prompts: ["ac unit", "air conditioner", "split ac"]
+    geometry: proxy_box
+    mobility: fixed
+    min_pixels: 800
+    typical_dims_m: {w: [0.7, 1.2], d: [0.2, 0.35], h: [0.25, 0.4]}
+    attach:
+      - hosted_by: architecture/wall
+
+  # ---- Plants --------------------------------------------------------------
+  - path: plants/indoor/potted_plant
+    label: Potted plant
+    parent: null
+    prompts: ["potted plant", "houseplant"]
+    geometry: mesh
+    components: [plant, pot]
+    mobility: movable
+    min_pixels: 400
+    typical_dims_m: {w: [0.2, 1.2], d: [0.2, 1.2], h: [0.3, 1.8]}
+    attach:
+      - rests_on: architecture/floor
+
+  - path: plants/indoor/plant
+    label: Plant
+    parent: null
+    prompts: ["plant", "indoor greenery"]
+    geometry: mesh
+    mobility: movable
+    min_pixels: 300
+    typical_dims_m: {w: [0.2, 1.0], d: [0.2, 1.0], h: [0.2, 1.5]}
+    attach:
+      - rests_on: architecture/floor
+
+  # ---- Fallback ------------------------------------------------------------
+  - path: fallback/unknown_object
+    label: Unknown object
+    parent: null
+    prompts: ["object", "item", "furniture"]
+    geometry: proxy_box
+    mobility: movable
+    min_pixels: 0
+    typical_dims_m: null
+    attach: []

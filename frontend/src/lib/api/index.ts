@@ -27,6 +27,7 @@ export * from "./checks";
 export * from "./quality";
 export * from "./hooks";
 export * from "./capture-requests";
+export * from "./corrections";
 
 /**
  * The row shapes the API layer emits are the UI's view model; re-exported here

@@ -967,6 +967,9 @@ _COMMIT_MUTABLE_FIELDS = (
     "boundary_element_ids",
     "connected_level_ids",
     "connected_room_ids",
+    "reclassify",
+    "split",
+    "merge",
     # F6: a typed real dimension. Applied to the world (entity + replayable registry + VERIFIED state), never to an
     # arbitrary entity attribute -- handled explicitly below, not by setattr.
     "user_correction",
@@ -1077,6 +1080,18 @@ def _validate_commit_changes(changes: dict) -> dict:
                     422, "field 'semantic_labels' must be a list of at most 100 strings"
                 )
             validated[key] = list(value)
+        elif key == "reclassify":
+            if not isinstance(value, (dict, str)):
+                raise HTTPException(422, "field 'reclassify' must be a string or object")
+            validated[key] = value
+        elif key == "split":
+            if not isinstance(value, dict):
+                raise HTTPException(422, "field 'split' must be an object")
+            validated[key] = value
+        elif key == "merge":
+            if not isinstance(value, (dict, list)):
+                raise HTTPException(422, "field 'merge' must be a list or object")
+            validated[key] = value
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):
                 raise HTTPException(422, f"field '{key}' must be an object")
@@ -1175,6 +1190,35 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
                 record = make_correction(worldir, body.entity_id, str(value.get("property")),
                                          value.get("value"), str(value.get("note") or ""))
                 record_correction(worldir, record)
+            except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "reclassify":
+            from world_ir.corrections import CorrectionError, reclassify_entity
+            try:
+                new_class = value.get("new_class") if isinstance(value, dict) else str(value)
+                note = value.get("note", "") if isinstance(value, dict) else ""
+                reclassify_entity(worldir, body.entity_id, new_class, note, auth.user_id)
+            except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "split":
+            from world_ir.corrections import CorrectionError, split_entity
+            try:
+                axis = value.get("split_axis", "x") if isinstance(value, dict) else "x"
+                ratio = float(value.get("split_ratio", 0.5)) if isinstance(value, dict) else 0.5
+                note = value.get("note", "") if isinstance(value, dict) else ""
+                split_entity(worldir, body.entity_id, axis, ratio, note, auth.user_id)
+            except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "merge":
+            from world_ir.corrections import CorrectionError, merge_entities
+            try:
+                sec_ids = value.get("secondary_entity_ids", []) if isinstance(value, dict) else list(value)
+                name = value.get("new_name") if isinstance(value, dict) else None
+                note = value.get("note", "") if isinstance(value, dict) else ""
+                merge_entities(worldir, body.entity_id, sec_ids, new_name=name, note=note, user_id=auth.user_id)
             except CorrectionError as exc:
                 raise HTTPException(422, str(exc)) from exc
             continue
@@ -1420,6 +1464,86 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         "changed_fields": list(validated.keys()),
         "duplicate": False,
     }
+
+
+class ReclassifyCorrectionIn(BaseModel):
+    entity_id: str
+    new_class: str
+    note: str | None = None
+    parent_version_id: str | None = None
+
+
+class SplitCorrectionIn(BaseModel):
+    entity_id: str
+    split_axis: str = "x"
+    split_ratio: float = 0.5
+    note: str | None = None
+    parent_version_id: str | None = None
+
+
+class MergeCorrectionIn(BaseModel):
+    primary_entity_id: str
+    secondary_entity_ids: list[str]
+    new_name: str | None = None
+    note: str | None = None
+    parent_version_id: str | None = None
+
+
+@worlds.post("/{world_id}/corrections/reclassify")
+async def api_reclassify_entity(
+    world_id: str,
+    body: ReclassifyCorrectionIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """User correction: reclassify entity to new ontology class."""
+    commit_req = CommitRequest(
+        entity_id=body.entity_id,
+        changes={"reclassify": {"new_class": body.new_class, "note": body.note}},
+        parent_version_id=body.parent_version_id,
+        commit_message=f"Reclassify {body.entity_id} to {body.new_class}",
+    )
+    res = await commit_world_correction(world_id, commit_req, db, auth)
+    res["operation"] = "reclassify"
+    return res
+
+
+@worlds.post("/{world_id}/corrections/split")
+async def api_split_entity(
+    world_id: str,
+    body: SplitCorrectionIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """User correction: split entity into two along axis."""
+    commit_req = CommitRequest(
+        entity_id=body.entity_id,
+        changes={"split": {"split_axis": body.split_axis, "split_ratio": body.split_ratio, "note": body.note}},
+        parent_version_id=body.parent_version_id,
+        commit_message=f"Split {body.entity_id} along {body.split_axis}",
+    )
+    res = await commit_world_correction(world_id, commit_req, db, auth)
+    res["operation"] = "split"
+    return res
+
+
+@worlds.post("/{world_id}/corrections/merge")
+async def api_merge_entities(
+    world_id: str,
+    body: MergeCorrectionIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """User correction: merge secondary entities into primary entity."""
+    commit_req = CommitRequest(
+        entity_id=body.primary_entity_id,
+        changes={"merge": {"secondary_entity_ids": body.secondary_entity_ids, "new_name": body.new_name, "note": body.note}},
+        parent_version_id=body.parent_version_id,
+        commit_message=f"Merge {body.secondary_entity_ids} into {body.primary_entity_id}",
+    )
+    res = await commit_world_correction(world_id, commit_req, db, auth)
+    res["operation"] = "merge"
+    return res
 
 
 async def _load_worldir_from_store(world: World, version_id: str | None = None) -> WorldIR | None:

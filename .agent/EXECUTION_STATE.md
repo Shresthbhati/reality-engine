@@ -2009,3 +2009,35 @@ Exact next priorities (build plan order):
 
 Rules: never mark work complete without execution evidence; update this file and `.agent/TASKS.yaml` at the end of
 every session; put sprint detail in a new file under `docs/archive/execution-history/`, not here.
+
+## 2026-11-04 -- Build plan execution continued (Task 0.6a shared types)
+
+Branch: feat/task-11-2-world-package-zip. Python 3.14.2, pytest 9.1.1.
+
+Completed (all verified with execution evidence):
+
+7. **Task 0.6a — Move shared types to neutral module (camera types)** — DONE (3012d43c)
+   - Created world_ir/camera.py with CameraIntrinsics, CameraExtrinsics, PinholeCamera,
+     quat_to_matrix, matrix_to_quat, CameraIntrinsicsError
+   - reconstruction.calibration.camera.py re-exports from world_ir.camera (backward compat)
+   - reconstruction.calibration.transforms.py imports camera types from world_ir.camera
+   - 9 perception modules import camera types from world_ir.camera instead of reconstruction.calibration.camera
+   - Removed 14 KNOWN_VIOLATIONS entries (camera-related perception→reconstruction imports)
+   - test_import_boundaries.py: 2/2 passed
+   - 484 backend tests passed, 1 pre-existing failure (test_capture_quality, unrelated to changes)
+   - Verified: test_import_boundaries.py 2/2 passed; API tests pass; no regressions
+
+Environment changes: none new.
+
+Blockers: none new. Pre-existing: O1/O2 detector decision (user), real-room fixture (user data).
+
+Exact next priorities (build plan order):
+1. Task 0.6c — Fix upward imports (TODO - remaining KNOWN_VIOLATIONS entries)
+2. Task 0.6a continued — Move more shared types (transform, mesh, depth, evidence) to world_ir (TODO)
+3. Task 11.4 — Navigation consolidation (TODO)
+4. Task 12.1 — Living-room demo end-to-end (TODO)
+5. Task 12.3 — Mark capabilities VERIFIED (TODO)
+6. Task 12.2 — Measured-room accuracy (BLOCKED: needs user tape-measured photos)
+
+Rules: never mark work complete without execution evidence; update this file and `.agent/TASKS.yaml` at the end of
+every session; put sprint detail in a new file under `docs/archive/execution-history/`, not here.

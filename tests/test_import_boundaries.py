@@ -95,7 +95,6 @@ KNOWN_VIOLATIONS: dict[tuple[str, str], str] = {
     ("registration.landmarks", "reconstruction.calibration.transforms"): "registration uses reconstruction camera/transform/result types (sibling coupling)",
     ("registration.registration", "reconstruction.calibration.transforms"): "registration uses reconstruction camera/transform/result types (sibling coupling)",
     ("uncertainty.propagation", "reconstruction.calibration.transforms"): "core-layer uncertainty imports RigidTransform from reconstruction.calibration",
-    ("world_ir.frame_graph", "reconstruction.calibration.camera"): "world_ir.frame_graph imports quat_to_matrix from reconstruction.calibration",
     ("exporters.mesh.obj", "reconstruction.meshing.mesh"): "exporters take reconstruction's MeshData instead of a world_ir/neutral mesh type",
     ("exporters.mesh.ply", "reconstruction.meshing.mesh"): "exporters take reconstruction's MeshData instead of a world_ir/neutral mesh type",
     ("exporters.mesh.stl", "reconstruction.meshing.mesh"): "exporters take reconstruction's MeshData instead of a world_ir/neutral mesh type",

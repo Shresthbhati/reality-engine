@@ -35,6 +35,54 @@ def store_bytes(data: bytes) -> tuple[str, Path]:
     return digest, path
 
 
+def staging_root() -> Path:
+    """Directory for in-flight resumable upload chunks (not yet content-addressed)."""
+    root = storage_root()
+    staging = root / "staging"
+    staging.mkdir(parents=True, exist_ok=True)
+    return staging
+
+
+def stage_chunk(upload_id: str, offset: int, data: bytes) -> int:
+    """Append ``data`` to the staged partial upload for ``upload_id`` at ``offset``.
+
+    Returns the new offset (bytes staged so far). Raises ``ValueError`` if the
+    staged file does not exist or the offset does not match (client and server
+    out of sync — resume from the returned offset instead).
+    """
+    stage = staging_root() / f"{upload_id}.partial"
+    if not stage.exists():
+        raise ValueError(f"no staged upload for {upload_id}")
+    current = stage.stat().st_size
+    if offset != current:
+        raise ValueError(f"offset {offset} does not match staged size {current}")
+    if offset == 0 and current == 0:
+        # Fresh staging file.
+        with stage.open("wb") as fh:
+            fh.write(data)
+            return len(data)
+    with stage.open("ab") as fh:
+        fh.write(data)
+        return fh.tell()
+
+
+def assemble_staged(upload_id: str) -> tuple[str, Path]:
+    """Finalize a staged partial upload: hash and return (digest, path) without
+    yet moving it into the content-addressed store. The caller persists the
+    digest/URI and clears staging."""
+    stage = staging_root() / f"{upload_id}.partial"
+    if not stage.exists():
+        raise ValueError(f"no staged upload for {upload_id}")
+    data = stage.read_bytes()
+    return hashlib.sha256(data).hexdigest(), stage
+
+
+def clear_staging(upload_id: str) -> None:
+    """Remove staged bytes for ``upload_id`` (no-op if none)."""
+    stage = staging_root() / f"{upload_id}.partial"
+    stage.unlink(missing_ok=True)
+
+
 def resolve_artifact(uri: str) -> Path | None:
     """Resolve a sha256:// URI to a file path, validating the layout.
     Returns None for unknown/unresolvable artifacts.

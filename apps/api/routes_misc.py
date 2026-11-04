@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +25,14 @@ from apps.api.models import (
     utcnow,
 )
 from apps.api.routes_sessions import _latest_location, _location_out
-from apps.api.storage import resolve_artifact, store_bytes
+from apps.api.storage import (
+    resolve_artifact,
+    store_bytes,
+    stage_chunk,
+    assemble_staged,
+    clear_staging,
+    staging_root,
+)
 
 
 def _evidence_dict(ev: Evidence) -> dict:
@@ -235,6 +241,141 @@ async def create_upload(
     job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id)
     await db.commit()
     return {"upload_id": up.id, "evidence_id": ev.id, "job_id": job.id, "checksum": digest}
+
+
+@uploads.post("/resumable/start", status_code=201)
+async def resumable_start(
+    filename: str = Form(...),
+    mime_type: str | None = Form(None),
+    total_size: int = Form(...),
+    session_id: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Begin a resumable upload: create a pending Upload row and an empty
+    staging file. Returns the upload_id to pair with /resumable/chunk and
+    /resumable/{id}/finalize. Content is validated on finalize, not here."""
+    if total_size <= 0:
+        raise HTTPException(400, "total_size must be positive")
+    if session_id:
+        limit = _max_files_per_session()
+        stored = (await db.execute(
+            select(func.count()).select_from(Upload).where(Upload.session_id == session_id)
+        )).scalar_one()
+        if stored >= limit:
+            raise HTTPException(
+                413, f"session already holds {stored} uploads (limit {limit})"
+            )
+    up = Upload(
+        id=new_id("upl"),
+        session_id=session_id,
+        status="pending",
+        filename=_safe_filename(filename),
+        mime_type=mime_type,
+        size=total_size,
+        checksum=None,
+        artifact_uri=None,
+        completed_at=None,
+    )
+    db.add(up)
+    await db.flush()
+    # Initialize an empty staging file so the first chunk lands at offset 0.
+    (staging_root() / f"{up.id}.partial").write_bytes(b"")
+    await db.commit()
+    return {"upload_id": up.id, "offset": 0, "total_size": total_size}
+
+
+@uploads.post("/resumable/chunk", status_code=200)
+async def resumable_chunk(
+    upload_id: str = Form(...),
+    offset: int = Form(...),
+    total_size: int = Form(...),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Append one chunk to a staged resumable upload. Returns the new offset.
+
+    The client sends chunks in order; on interruption it resumes from the last
+    acknowledged offset returned by this endpoint."""
+    up = await db.get(Upload, upload_id)
+    if up is None:
+        raise HTTPException(404, "Upload not found")
+    if up.status != "pending":
+        raise HTTPException(409, f"Upload {upload_id} is already {up.status}")
+    data = await file.read()
+    if offset + len(data) > total_size:
+        raise HTTPException(400, "chunk exceeds declared total_size")
+    new_offset = stage_chunk(upload_id, offset, data)
+    return {"upload_id": upload_id, "offset": new_offset, "total_size": total_size}
+
+
+@uploads.post("/resumable/{upload_id}/finalize", status_code=201)
+async def resumable_finalize(
+    upload_id: str, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Finish a staged resumable upload: hash the staged bytes, store them
+    content-addressed, complete the Upload row, and create Evidence + job."""
+    up = await db.get(Upload, upload_id)
+    if up is None:
+        raise HTTPException(404, "Upload not found")
+    if up.status != "pending":
+        raise HTTPException(409, f"Upload {upload_id} is already {up.status}")
+    stage = staging_root() / f"{upload_id}.partial"
+    if not stage.exists():
+        raise HTTPException(409, f"Upload {upload_id} has no staged chunks")
+    data = stage.read_bytes()
+    if len(data) != up.size:
+        raise HTTPException(
+            409, f"staged {len(data)} bytes but upload declared {up.size} bytes"
+        )
+    try:
+        kind = vet_upload(up.filename, up.mime_type, data)
+    except ValueError as exc:
+        clear_staging(upload_id)
+        raise HTTPException(415, str(exc)) from exc
+    digest, _ = store_bytes(data)
+    up.status = "completed"
+    up.checksum = digest
+    up.artifact_uri = f"sha256://{digest}"
+    up.completed_at = utcnow()
+    await db.flush()
+    ev = Evidence(
+        id=new_id("ev"),
+        name=up.filename,
+        type=kind,
+        session_id=up.session_id,
+        upload_id=up.id,
+        processing_state="uploaded",
+        mime_type=up.mime_type,
+        size=up.size,
+        checksum=digest,
+        artifact_uri=up.artifact_uri,
+    )
+    db.add(ev)
+    if up.session_id:
+        s = await db.get(Session, up.session_id)
+        if s is not None:
+            s.uploaded_at = utcnow()
+            if s.status == "created":
+                s.status = "uploaded"
+    db.add(
+        ActivityEvent(
+            id=new_id("act"),
+            type="evidence.created",
+            entity_type="evidence",
+            entity_id=ev.id,
+            summary=f"Evidence '{ev.name}' uploaded (resumable)",
+        )
+    )
+    await db.commit()
+    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id)
+    await db.commit()
+    clear_staging(upload_id)
+    return {
+        "upload_id": up.id,
+        "evidence_id": ev.id,
+        "job_id": job.id,
+        "checksum": digest,
+    }
 
 
 @evidence.get("")

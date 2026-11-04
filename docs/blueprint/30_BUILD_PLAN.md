@@ -139,7 +139,7 @@ updates only the affected region.
 
 | ID | Task | Depends | Files | Done when | Verify | Read | Status |
 |----|------|---------|-------|-----------|--------|------|--------|
-| 8.1 | Ontology file + loader | 3.2 | `config/ontology.yaml`, loader in `perception/` | v1 class set from [17](17_ONTOLOGY.md); unknown → `unknown_object` | loader test | [17](17_ONTOLOGY.md) | TODO |
+| 8.1 | Ontology file + loader | 3.2 | `config/ontology.yaml`, loader in `perception/` | v1 class set from [17](17_ONTOLOGY.md); unknown → `unknown_object` | loader test | [17](17_ONTOLOGY.md) | DONE (feat/task-8-1-ontology-file-loader, verified 2026-11-04) |
 | 8.2 | Open-vocab detector via the registry | 4.1, 8.1 | `perception/detection/` | prompts come from the ontology; output = Observations only | per-class precision/recall on the living room | [15](15_ML_MODEL_STRATEGY.md) | TODO |
 | 8.3 | Parametric object templates | 8.1 | `perception/architecture/parametric.py` | table, cabinet, sofa, chair, bed, TV and media console fitted from observations, with components | geometry error vs measured objects (if 2.3 is done) | [12](12_PIPELINE.md) S10 | TODO |
 | 8.4 | Relationships | 8.3 | `engine/scene_graph/`, topology | supported_by / mounted_on / part_of / inside computed geometrically | unit tests | [11](11_WORLDIR_CONTRACT.md) | TODO |

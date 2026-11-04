@@ -26,6 +26,7 @@ from .schema_v1 import (
     TemporalEventType
 )
 from .world_v1 import WorldIR, Branch, Scenario, SimulationState, TemporalState
+from .geo import GeoAnchor
 from .diff import diff_worlds, WorldDiff, EntityDiff, GeometryDiff, ChangeKind
 from .temporal import (
     TemporalChangeKind,
@@ -83,6 +84,7 @@ __all__ = [
     "TemporalEventType",
     # V1 World
     "WorldIR",
+    "GeoAnchor",
     "Branch",
     "Scenario",
     "SimulationState",

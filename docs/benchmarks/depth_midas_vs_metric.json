@@ -1,5 +1,5 @@
 {
-  "benchmark": "depth_midas_vs_metric3d",
+  "benchmark": "depth_midas_vs_heuristic_prior",
   "evidence_id": "ev_room_01",
   "midas_relative": {
     "model": "midas_dpt_hybrid",
@@ -11,8 +11,8 @@
     ],
     "requires_scale_anchor": true
   },
-  "metric3d": {
-    "model": "metric3d_v2",
+  "heuristic_prior": {
+    "model": "heuristic_depth_prior",
     "unit": "meters",
     "scale_state": "estimated",
     "depth_range_meters": [
@@ -20,7 +20,9 @@
       4.599999904632568
     ],
     "mean_depth_meters": 3.425104477549127,
-    "requires_scale_anchor": false
+    "requires_scale_anchor": false,
+    "confidence": 0.5,
+    "note": "scene-statistics prior, not learned model inference"
   },
-  "metric_scale_fidelity": "grounded_in_meters"
+  "metric_scale_fidelity": "heuristic_estimate"
 }

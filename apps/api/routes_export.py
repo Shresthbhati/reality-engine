@@ -9,7 +9,7 @@ points.ply/cameras.json already are (apps/api/storage.py).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -159,3 +159,27 @@ async def download_export(world_id: str, content_hash: str, format: str) -> File
     # them into Content-Disposition (header-injection hardening).
     filename = _safe_filename(f"{world_id}.{format}")
     return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@export.get("/package")
+async def export_package(
+    world_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Export the version's WorldIR as a versioned .zip package archive (Task 11.2)."""
+    from apps.api.routes_misc import _safe_filename
+    from world_ir.serialization import export_world_package_zip
+
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+
+    artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+    zip_bytes = export_world_package_zip(world, artifact_store=artifact_store)
+    filename = _safe_filename(f"{world_id}_v{world.version}.zip")
+
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

@@ -11,7 +11,7 @@ from pathlib import Path
 
 log = logging.getLogger("reality.api.worlds")
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -86,6 +86,71 @@ async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db), auth: 
     await db.commit()
     await db.refresh(w)
     return {"id": w.id, "name": w.name}
+
+
+@worlds.post("/import/package", status_code=201)
+async def import_world_package(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Import a world from an uploaded versioned .zip package archive (Task 11.2).
+
+    Validates package integrity, manifest format, checksums, and restores enclosed artifacts.
+    Registers the world in WorldStore and database.
+    """
+    from apps.api.storage import storage_root
+    from apps.api.worldstore_service import commit_version, worldstore_root
+    from world_ir.serialization import (
+        WorldFormatVersionError,
+        WorldPackageError,
+        import_world_package_zip,
+    )
+
+    content = await file.read()
+    artifact_store = FileArtifactStore(worldstore_root() / "pipeline-artifacts")
+
+    try:
+        imported_world = import_world_package_zip(content, artifact_store=artifact_store)
+    except (WorldPackageError, WorldFormatVersionError) as exc:
+        raise HTTPException(422, f"Invalid world package: {exc}") from exc
+
+    existing = await db.get(World, imported_world.id)
+    target_id = imported_world.id if existing is None else new_id("wld")
+    imported_world.id = target_id
+
+    w = World(
+        id=target_id,
+        name=imported_world.name or f"Imported World {target_id[:8]}",
+        description=f"Imported from package archive {file.filename or ''}",
+        owner_id=auth.user_id,
+        team_id=auth.tenant_id if auth.tenant_id != "default" else None,
+    )
+    db.add(w)
+    await db.commit()
+    await db.refresh(w)
+
+    version = await commit_version(db, world_id=w.id, world=imported_world, parent=None)
+
+    db.add(
+        ActivityEvent(
+            id=new_id("act"),
+            type="world.imported",
+            entity_type="world",
+            entity_id=w.id,
+            summary=f"World '{w.name}' imported from package archive",
+        )
+    )
+    await db.commit()
+
+    return {
+        "id": w.id,
+        "name": w.name,
+        "version_id": version.id,
+        "entity_count": len(imported_world.entities),
+        "geometry_count": len(imported_world.geometries),
+        "status": "imported",
+    }
 
 
 def _world_out(w: World, session_count: int | None = None) -> dict:

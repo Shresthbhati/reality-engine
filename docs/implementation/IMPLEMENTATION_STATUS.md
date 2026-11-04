@@ -9,6 +9,15 @@ the authoritative status and PENDING_IMPLEMENTATION for the backlog.
 > **Note:** This file is now subsidiary to REALITY_ENGINE_CURRENT_STATUS.md.
 > Where they disagree, the latter is authoritative.
 
+## Baseline (recorded 2026-11-04, task 0.5)
+
+Backend pytest suite (excluding tests/integration and tests/scenarios):
+- **4350 passed, 38 failed, 10 skipped, 5 xfailed, 17 errors** in 27m40s (1660.02s)
+- 17 errors are pre-existing `test_frontend_bridge_proxies_a_real_api_contract` setup failures (environment, not code)
+- 38 failures are pre-existing (missing ML weights, torch-hub cache, stale expectations)
+- Frontend build: **SUCCESS** (`npm --prefix frontend run build`, `.next/` produced)
+- One-command launcher: **VERIFIED** (`launch_ui.bat --no-browser`, `/api/health` returns `{"status":"ok"}`)
+
 ## Canonical pipeline (vertical slice)
 
 | Stage | Component | Status | Evidence |

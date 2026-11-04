@@ -51,7 +51,7 @@ from registration.registration import (
     _kabsch,
     _matrix_to_quat,
 )
-from reconstruction.calibration.transforms import RigidTransform
+from world_ir.camera import RigidTransform
 
 
 @dataclass(frozen=True)

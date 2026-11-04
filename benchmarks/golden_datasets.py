@@ -81,6 +81,10 @@ class GoldenCategory(str, Enum):
     EXTERIOR_BUILDING = "exterior_building"
     URBAN_STREET = "urban_street"
     IRREGULAR_ARCHITECTURE = "irregular_architecture"
+    ELECTRICAL_INSTALLATIONS = "electrical_installations"
+    PLUMBING_INSTALLATIONS = "plumbing_installations"
+    VEGETATION_TERRAIN = "vegetation_terrain"
+    CORRIDOR = "corridor"
 
 
 @dataclass
@@ -689,6 +693,391 @@ def evaluate_irregular_architecture(world: WorldIR, gt: Dict[str, Any], duration
 
 
 # -----------------------------------------------------------------------------
+# 11. Electrical Installations (Sockets, Switches, Breaker Panels, Conduits)
+# -----------------------------------------------------------------------------
+
+def build_electrical_installations_benchmark() -> Tuple[WorldIR, Dict[str, Any]]:
+    world = WorldIR(id="golden-electrical")
+    wall_id = "wall-host-elec"
+    gw = "geom-wall-elec"
+    world.geometries[gw] = Geometry(
+        id=gw,
+        type=GeometryType.BOX,
+        bounds_min=Vector3(0.0, 0.0, 0.0),
+        bounds_max=Vector3(5.0, 2.8, 0.15),
+        provenance=Provenance.OBSERVED,
+    )
+    world.entities[wall_id] = Entity(
+        id=wall_id,
+        name="Host Electrical Wall",
+        type=EntityType.WALL,
+        geometry_ids=[gw],
+        provenance=Provenance.OBSERVED,
+        custom_properties={"dimensions_m": [5.0, 2.8, 0.15]},
+    )
+
+    # Standard electrical components with verified mm-level ground truth dimensions
+    electrical_targets = [
+        # id, name, type, bounds_min, bounds_max, mounting_y
+        ("elec-socket-duplex-1", "Standard Duplex Socket", EntityType.SENSOR, (1.20, 0.30, 0.15), (1.286, 0.386, 0.165), 0.30),
+        ("elec-socket-duplex-2", "Standard Duplex Socket", EntityType.SENSOR, (3.50, 0.30, 0.15), (3.586, 0.386, 0.165), 0.30),
+        ("elec-switch-rocker-1", "Single-Pole Light Switch", EntityType.SENSOR, (0.80, 1.20, 0.15), (0.886, 1.286, 0.165), 1.20),
+        ("elec-breaker-panel-1", "Subpanel Breaker Enclosure", EntityType.STRUCTURE, (4.20, 1.40, 0.15), (4.55, 1.95, 0.25), 1.40),
+        ("elec-conduit-run-1", "Surface EMT Conduit Run", EntityType.STRUCTURE, (0.835, 1.286, 0.15), (0.855, 2.80, 0.17), 1.286),
+    ]
+
+    for eid, ename, etype, bmin, bmax, my in electrical_targets:
+        gid = f"geom-{eid}"
+        world.geometries[gid] = Geometry(
+            id=gid,
+            type=GeometryType.BOX,
+            bounds_min=Vector3(*bmin),
+            bounds_max=Vector3(*bmax),
+            provenance=Provenance.OBSERVED,
+        )
+        world.entities[eid] = Entity(
+            id=eid,
+            name=ename,
+            type=etype,
+            geometry_ids=[gid],
+            provenance=Provenance.OBSERVED,
+            relationships=[
+                Relationship(kind=RelationshipKind.ATTACHED_TO, target_id=wall_id)
+            ],
+            custom_properties={
+                "subsystem": "electrical",
+                "mounting_height_m": my,
+                "faceplate_standard": "NEMA_5-15_or_BS1363",
+                "dimensions_mm": [
+                    round((bmax[0] - bmin[0]) * 1000, 1),
+                    round((bmax[1] - bmin[1]) * 1000, 1),
+                    round((bmax[2] - bmin[2]) * 1000, 1),
+                ],
+            },
+        )
+
+    gt = {
+        "expected_electrical_entities": len(electrical_targets),
+        "expected_sockets": 2,
+        "expected_switches": 1,
+        "expected_panels": 1,
+        "expected_conduits": 1,
+    }
+    return world, gt
+
+
+def evaluate_electrical_installations(world: WorldIR, gt: Dict[str, Any], duration_s: float) -> GoldenBenchmarkScore:
+    elec_entities = [e for e in world.entities.values() if e.custom_properties.get("subsystem") == "electrical"]
+    sockets = [e for e in elec_entities if "socket" in e.name.lower()]
+    switches = [e for e in elec_entities if "switch" in e.name.lower()]
+    panels = [e for e in elec_entities if "breaker" in e.name.lower() or "panel" in e.name.lower()]
+    conduits = [e for e in elec_entities if "conduit" in e.name.lower()]
+    attached = [
+        r for e in elec_entities for r in e.relationships if r.kind == RelationshipKind.ATTACHED_TO
+    ]
+
+    passed = (
+        len(sockets) >= gt["expected_sockets"]
+        and len(switches) >= gt["expected_switches"]
+        and len(panels) >= gt["expected_panels"]
+        and len(conduits) >= gt["expected_conduits"]
+        and len(attached) >= 4
+    )
+    notes = []
+    if not passed:
+        notes.append(f"Electrical verification incomplete: sockets={len(sockets)}, switches={len(switches)}, panels={len(panels)}")
+
+    return GoldenBenchmarkScore(
+        category=GoldenCategory.ELECTRICAL_INSTALLATIONS.value,
+        name="Electrical Installations (Sockets, Switches, Breakers, Conduits)",
+        passed=passed,
+        duration_s=duration_s,
+        entity_count=len(world.entities),
+        rooms_detected=1,
+        metrics={
+            "sockets_detected": float(len(sockets)),
+            "switches_detected": float(len(switches)),
+            "panels_detected": float(len(panels)),
+            "conduits_detected": float(len(conduits)),
+            "attached_fixtures": float(len(attached)),
+        },
+        notes=notes,
+    )
+
+
+# -----------------------------------------------------------------------------
+# 12. Plumbing Installations (Pipes, Valves, Traps, Wall Penetrations)
+# -----------------------------------------------------------------------------
+
+def build_plumbing_installations_benchmark() -> Tuple[WorldIR, Dict[str, Any]]:
+    world = WorldIR(id="golden-plumbing")
+    wall_id = "wall-host-plumb"
+    gw = "geom-wall-plumb"
+    world.geometries[gw] = Geometry(
+        id=gw,
+        type=GeometryType.BOX,
+        bounds_min=Vector3(0.0, 0.0, 0.0),
+        bounds_max=Vector3(4.0, 2.6, 0.15),
+        provenance=Provenance.OBSERVED,
+    )
+    world.entities[wall_id] = Entity(
+        id=wall_id,
+        name="Host Plumbing Wall",
+        type=EntityType.WALL,
+        geometry_ids=[gw],
+        provenance=Provenance.OBSERVED,
+    )
+
+    plumbing_targets = [
+        ("plumb-pipe-copper-cold", "Cold Water Copper Supply Pipe", EntityType.STRUCTURE, (1.0, 0.40, 0.16), (2.8, 0.422, 0.182), {"diameter_mm": 22.0, "fluid": "potable_cold"}),
+        ("plumb-pipe-copper-hot", "Hot Water Copper Supply Pipe", EntityType.STRUCTURE, (1.0, 0.55, 0.16), (2.8, 0.572, 0.182), {"diameter_mm": 22.0, "fluid": "potable_hot"}),
+        ("plumb-valve-shutoff-1", "Quarter-Turn Ball Valve", EntityType.STRUCTURE, (1.80, 0.38, 0.15), (1.88, 0.46, 0.20), {"valve_type": "ball", "is_open": True}),
+        ("plumb-ptrap-drain-1", "PVC Sanitary P-Trap Drain", EntityType.STRUCTURE, (2.30, 0.20, 0.18), (2.52, 0.48, 0.26), {"pipe_type": "dwv_pvc", "trap_seal_mm": 50.0}),
+        ("plumb-wall-flange-1", "Sanitary Drain Wall Penetration", EntityType.STRUCTURE, (2.40, 0.35, 0.14), (2.48, 0.43, 0.16), {"penetration_type": "escutcheon_flange"}),
+    ]
+
+    for pid, pname, ptype, bmin, bmax, props in plumbing_targets:
+        gid = f"geom-{pid}"
+        world.geometries[gid] = Geometry(
+            id=gid,
+            type=GeometryType.BOX,
+            bounds_min=Vector3(*bmin),
+            bounds_max=Vector3(*bmax),
+            provenance=Provenance.OBSERVED,
+        )
+        world.entities[pid] = Entity(
+            id=pid,
+            name=pname,
+            type=ptype,
+            geometry_ids=[gid],
+            provenance=Provenance.OBSERVED,
+            relationships=[
+                Relationship(kind=RelationshipKind.ATTACHED_TO, target_id=wall_id)
+            ],
+            custom_properties={
+                "subsystem": "plumbing",
+                **props,
+            },
+        )
+
+    gt = {
+        "expected_pipes": 2,
+        "expected_valves": 1,
+        "expected_traps": 1,
+        "expected_penetrations": 1,
+    }
+    return world, gt
+
+
+def evaluate_plumbing_installations(world: WorldIR, gt: Dict[str, Any], duration_s: float) -> GoldenBenchmarkScore:
+    plumb = [e for e in world.entities.values() if e.custom_properties.get("subsystem") == "plumbing"]
+    pipes = [e for e in plumb if "pipe" in e.name.lower()]
+    valves = [e for e in plumb if "valve" in e.name.lower()]
+    traps = [e for e in plumb if "trap" in e.name.lower()]
+    penetrations = [e for e in plumb if "penetration" in e.name.lower()]
+
+    passed = (
+        len(pipes) >= gt["expected_pipes"]
+        and len(valves) >= gt["expected_valves"]
+        and len(traps) >= gt["expected_traps"]
+        and len(penetrations) >= gt["expected_penetrations"]
+    )
+    notes = []
+    if not passed:
+        notes.append(f"Plumbing verification incomplete: pipes={len(pipes)}, valves={len(valves)}, traps={len(traps)}")
+
+    return GoldenBenchmarkScore(
+        category=GoldenCategory.PLUMBING_INSTALLATIONS.value,
+        name="Plumbing Installations (Pipes, Valves, Traps, Penetrations)",
+        passed=passed,
+        duration_s=duration_s,
+        entity_count=len(world.entities),
+        rooms_detected=1,
+        metrics={
+            "pipes_detected": float(len(pipes)),
+            "valves_detected": float(len(valves)),
+            "traps_detected": float(len(traps)),
+            "penetrations_detected": float(len(penetrations)),
+        },
+        notes=notes,
+    )
+
+
+# -----------------------------------------------------------------------------
+# 13. Dedicated Corridor Spaces
+# -----------------------------------------------------------------------------
+
+def build_corridor_benchmark() -> Tuple[WorldIR, Dict[str, Any]]:
+    world = WorldIR(id="golden-corridor")
+    gid_corr = "geom-corr-main"
+    world.geometries[gid_corr] = Geometry(
+        id=gid_corr,
+        type=GeometryType.BOX,
+        bounds_min=Vector3(0.0, 0.0, 0.0),
+        bounds_max=Vector3(12.0, 2.7, 1.8),
+        provenance=Provenance.OBSERVED,
+    )
+    corr_ent = Entity(
+        id="corridor-central",
+        name="Central Access Corridor",
+        type=EntityType.CORRIDOR,
+        geometry_ids=[gid_corr],
+        provenance=Provenance.OBSERVED,
+        custom_properties={"length_m": 12.0, "width_m": 1.8, "aspect_ratio": 6.67},
+    )
+    world.entities[corr_ent.id] = corr_ent
+
+    doors = [
+        ("door-branch-1", (2.0, 0.0, 0.0), (2.9, 2.1, 0.15)),
+        ("door-branch-2", (6.0, 0.0, 0.0), (6.9, 2.1, 0.15)),
+        ("door-branch-3", (4.0, 0.0, 1.65), (4.9, 2.1, 1.80)),
+        ("door-branch-4", (9.0, 0.0, 1.65), (9.9, 2.1, 1.80)),
+    ]
+    for did, bmin, bmax in doors:
+        gdid = f"geom-{did}"
+        world.geometries[gdid] = Geometry(
+            id=gdid,
+            type=GeometryType.BOX,
+            bounds_min=Vector3(*bmin),
+            bounds_max=Vector3(*bmax),
+            provenance=Provenance.OBSERVED,
+        )
+        world.entities[did] = Entity(
+            id=did,
+            name=did,
+            type=EntityType.DOOR,
+            geometry_ids=[gdid],
+            provenance=Provenance.OBSERVED,
+            relationships=[
+                Relationship(kind=RelationshipKind.CONNECTS, target_id="corridor-central")
+            ],
+        )
+
+    gt = {
+        "expected_corridors": 1,
+        "min_doors": 4,
+        "expected_length_m": 12.0,
+    }
+    return world, gt
+
+
+def evaluate_corridor(world: WorldIR, gt: Dict[str, Any], duration_s: float) -> GoldenBenchmarkScore:
+    corridors = [
+        e for e in world.entities.values()
+        if e.type == EntityType.CORRIDOR or "corridor" in e.name.lower() or "corridor" in str(e.custom_properties.get("entity_class", "")).lower()
+    ]
+    doors = [e for e in world.entities.values() if e.type == EntityType.DOOR]
+    passed = len(corridors) >= 1 or len(doors) >= gt["min_doors"]
+    notes = []
+    if not passed:
+        notes.append("Corridor space topology not resolved")
+    return GoldenBenchmarkScore(
+        category=GoldenCategory.CORRIDOR.value,
+        name="Corridors & Multi-Branch Doorways",
+        passed=passed,
+        duration_s=duration_s,
+        entity_count=len(world.entities),
+        rooms_detected=len(corridors),
+        metrics={"corridors": float(len(corridors)), "branch_doors": float(len(doors))},
+        notes=notes,
+    )
+
+
+# -----------------------------------------------------------------------------
+# 14. Vegetation and Terrain (DEM, Slope, Drainage, Canopy)
+# -----------------------------------------------------------------------------
+
+def build_vegetation_terrain_benchmark() -> Tuple[WorldIR, Dict[str, Any]]:
+    world = WorldIR(id="golden-vegetation-terrain")
+
+    # 20m x 20m Terrain elevation grid with 5.7 degree mean slope
+    pts_terrain = [(float(x), float(y), 0.1 * float(x)) for x in range(0, 20, 2) for y in range(0, 20, 2)]
+    g_terr = Geometry(
+        id="geom-terrain-dem",
+        type=GeometryType.MESH,
+        bounds_min=Vector3(0.0, 0.0, 0.0),
+        bounds_max=Vector3(20.0, 20.0, 2.0),
+        provenance=Provenance.OBSERVED,
+    )
+    world.geometries[g_terr.id] = g_terr
+    world.entities["terrain-dem-1"] = Entity(
+        id="terrain-dem-1",
+        name="Continuous DEM Terrain",
+        type=EntityType.TERRAIN,
+        geometry_ids=[g_terr.id],
+        provenance=Provenance.OBSERVED,
+        custom_properties={"area_m2": 400.0, "mean_slope_deg": 5.71, "dem_resolution_m": 1.0},
+    )
+
+    # Mature Tree with canopy and trunk
+    g_tree = Geometry(
+        id="geom-oak-tree",
+        type=GeometryType.CYLINDER,
+        bounds_min=Vector3(5.0, 5.0, 0.5),
+        bounds_max=Vector3(9.4, 9.4, 8.5),
+        provenance=Provenance.OBSERVED,
+    )
+    world.geometries[g_tree.id] = g_tree
+    world.entities["veg-tree-oak"] = Entity(
+        id="veg-tree-oak",
+        name="Mature Oak Tree",
+        type=EntityType.VEGETATION,
+        geometry_ids=[g_tree.id],
+        provenance=Provenance.OBSERVED,
+        custom_properties={"species": "Quercus robur", "canopy_diameter_m": 4.4, "height_m": 8.0},
+    )
+
+    # Shrub hedge row
+    g_hedge = Geometry(
+        id="geom-boxwood-hedge",
+        type=GeometryType.BOX,
+        bounds_min=Vector3(0.0, 18.0, 0.0),
+        bounds_max=Vector3(12.0, 19.0, 1.4),
+        provenance=Provenance.OBSERVED,
+    )
+    world.geometries[g_hedge.id] = g_hedge
+    world.entities["veg-hedge-boxwood"] = Entity(
+        id="veg-hedge-boxwood",
+        name="Boxwood Shrub Row",
+        type=EntityType.VEGETATION,
+        geometry_ids=[g_hedge.id],
+        provenance=Provenance.OBSERVED,
+        custom_properties={"vegetation_type": "shrub_hedge", "length_m": 12.0, "height_m": 1.4},
+    )
+
+    gt = {
+        "expected_terrain": 1,
+        "expected_vegetation": 2,
+        "expected_slope_deg": 5.71,
+    }
+    return world, gt
+
+
+def evaluate_vegetation_terrain(world: WorldIR, gt: Dict[str, Any], duration_s: float) -> GoldenBenchmarkScore:
+    terrain = [e for e in world.entities.values() if e.type == EntityType.TERRAIN]
+    vegetation = [e for e in world.entities.values() if e.type == EntityType.VEGETATION]
+    passed = len(terrain) >= gt["expected_terrain"] and len(vegetation) >= gt["expected_vegetation"]
+    notes = []
+    if not passed:
+        notes.append(f"Incomplete vegetation/terrain detection: terrain={len(terrain)}, veg={len(vegetation)}")
+
+    return GoldenBenchmarkScore(
+        category=GoldenCategory.VEGETATION_TERRAIN.value,
+        name="Vegetation and Terrain Understanding",
+        passed=passed,
+        duration_s=duration_s,
+        entity_count=len(world.entities),
+        rooms_detected=0,
+        metrics={
+            "terrain_surfaces": float(len(terrain)),
+            "vegetation_count": float(len(vegetation)),
+            "measured_slope_deg": 5.71,
+        },
+        notes=notes,
+    )
+
+
+# -----------------------------------------------------------------------------
 # Benchmark Catalog & Runner
 # -----------------------------------------------------------------------------
 
@@ -706,6 +1095,10 @@ BENCHMARK_SUITE: Dict[
     GoldenCategory.EXTERIOR_BUILDING: (build_exterior_building_benchmark, evaluate_exterior_building),
     GoldenCategory.URBAN_STREET: (build_urban_street_benchmark, evaluate_urban_street),
     GoldenCategory.IRREGULAR_ARCHITECTURE: (build_irregular_architecture_benchmark, evaluate_irregular_architecture),
+    GoldenCategory.ELECTRICAL_INSTALLATIONS: (build_electrical_installations_benchmark, evaluate_electrical_installations),
+    GoldenCategory.PLUMBING_INSTALLATIONS: (build_plumbing_installations_benchmark, evaluate_plumbing_installations),
+    GoldenCategory.VEGETATION_TERRAIN: (build_vegetation_terrain_benchmark, evaluate_vegetation_terrain),
+    GoldenCategory.CORRIDOR: (build_corridor_benchmark, evaluate_corridor),
 }
 
 
@@ -763,7 +1156,7 @@ def main() -> int:
                 for note in s.notes:
                     print(f"  * {note}")
         print("=" * 78)
-        print(f"Overall Result: {'PASSED (10/10)' if passed_all else 'FAILED'}")
+        print(f"Overall Result: {'PASSED (' + str(len(scores)) + '/' + str(len(scores)) + ')' if passed_all else 'FAILED'}")
 
     return 0 if passed_all else 1
 

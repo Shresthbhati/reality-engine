@@ -23,6 +23,10 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import numpy as np
 
 from provenance import Provenance
+from engine.verification.classification import (
+    ExecutionClassification,
+    validate_observation_provenance,
+)
 from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, Vector3
 from world_ir.world_v1 import WorldIR
 
@@ -152,10 +156,18 @@ def validate_physical_plausibility(
     containment_violations: List[ContainmentRecord] = []
     fix_proposals: List[AutoFixProposal] = []
 
-    # 1. Audit provenance: count observed vs inferred
+    # 1. Audit provenance: count observed vs inferred and enforce invariant
     observed_count = 0
     inferred_count = 0
     for ent in world.entities.values():
+        exec_cls_str = ent.custom_properties.get("execution_classification")
+        if exec_cls_str:
+            try:
+                exec_cls = ExecutionClassification(exec_cls_str)
+                validate_observation_provenance(exec_cls, ent.provenance)
+            except ValueError as err:
+                raise ValueError(f"Entity '{ent.id}' violates physical provenance rules: {err}") from err
+
         if ent.provenance in (Provenance.OBSERVED, Provenance.RECONSTRUCTED):
             observed_count += 1
         elif ent.provenance in (Provenance.INFERRED, Provenance.ESTIMATED, Provenance.GENERATED):

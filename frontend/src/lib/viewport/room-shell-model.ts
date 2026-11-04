@@ -19,6 +19,15 @@ export type ShellKind =
   | "window_frame"
   | "furniture";
 
+export type EvidenceState =
+  | "OBSERVED"
+  | "PARTIAL"
+  | "OCCLUDED"
+  | "INFERRED"
+  | "PRIOR_GENERATED"
+  | "CONFLICTED"
+  | "UNKNOWN";
+
 export interface ShellPart {
   id: string;
   kind: ShellKind;
@@ -36,6 +45,8 @@ export interface ShellPart {
   /** entity provenance straight from the WorldIR (OBSERVED / INFERRED / ESTIMATED ...); null = not stated */
   provenance: string | null;
   confidenceState: "scored" | "unknown" | "unobserved";
+  /** Blueprint 14 Evidence state classification */
+  evidenceState?: EvidenceState;
   /** M2: image-projected atlas for this part's entity (perception/materials/surface_appearance.py). Absent = flat/striped fallback. */
   texture?: ShellTexture;
 }
@@ -351,18 +362,62 @@ function textureFor(world: WorldIR, p: RawPart): ShellTexture | undefined {
   return { uri: proj.uri, hash: proj.hash, uvs };
 }
 
+
+export const EVIDENCE_PALETTE: Record<EvidenceState, V3> = {
+  OBSERVED: [16, 185, 129],
+  PARTIAL: [245, 158, 11],
+  OCCLUDED: [139, 92, 246],
+  INFERRED: [59, 130, 246],
+  PRIOR_GENERATED: [14, 165, 233],
+  CONFLICTED: [239, 68, 68],
+  UNKNOWN: [107, 114, 128],
+};
+
+export function resolveEvidenceState(
+  evidenceState?: string | null,
+  provenance?: string | null,
+  confidence?: number | null,
+): EvidenceState {
+  const raw = (evidenceState || provenance || '').toUpperCase().trim();
+  if (raw === 'OBSERVED' || raw === 'RECONSTRUCTED' || raw === 'MEASURED') {
+    if (typeof confidence === 'number' && confidence < 0.5) return 'PARTIAL';
+    return 'OBSERVED';
+  }
+  if (raw === 'PARTIAL' || raw === 'PARTIALLY_OBSERVED') return 'PARTIAL';
+  if (raw === 'OCCLUDED' || raw === 'UNOBSERVED') return 'OCCLUDED';
+  if (raw === 'INFERRED' || raw === 'ESTIMATED') return 'INFERRED';
+  if (raw === 'GENERATED' || raw === 'PRIOR_GENERATED' || raw === 'SYNTHESIZED') return 'PRIOR_GENERATED';
+  if (raw === 'CONFLICTED' || raw === 'DISPUTED') return 'CONFLICTED';
+  if (typeof confidence === 'number') {
+    if (confidence >= 0.75) return 'OBSERVED';
+    if (confidence >= 0.45) return 'PARTIAL';
+    if (confidence > 0) return 'CONFLICTED';
+  }
+  return 'UNKNOWN';
+}
+
 function annotate(world: WorldIR, raw: RawPart[]): ShellPart[] {
   return raw.map((p) => {
     const e = world.entities[p.entityId];
     const c = typeof e?.confidence === "number" ? e.confidence
       : typeof e?.uncertainty?.confidence === "number" ? e.uncertainty.confidence : null;
     const provenance = typeof e?.provenance === "string" ? e.provenance : null;
+    const cpr = (e?.custom_properties ?? {}) as Props;
+    const rawEvState = typeof cpr.evidence_state === "string" ? cpr.evidence_state : null;
+    const evState = resolveEvidenceState(rawEvState, provenance, c);
     const unobserved = provenance !== null && UNOBSERVED.has(provenance.toUpperCase());
     const texture = textureFor(world, p);
     // Not-captured entities read as such: generated = translucent, map-imported = slightly muted.
-    const cpr = (e?.custom_properties ?? {}) as Props;
     const origin = cpr.generated_by ? 0.45 : cpr.imported === true || cpr.source === "OpenStreetMap" ? 0.7 : 1;
-    return { ...p, opacity: Math.min(p.opacity, origin), confidence: c, provenance, confidenceState: unobserved ? "unobserved" : c === null ? "unknown" : "scored", ...(texture ? { texture } : {}) };
+    return {
+      ...p,
+      opacity: Math.min(p.opacity, origin),
+      confidence: c,
+      provenance,
+      evidenceState: evState,
+      confidenceState: unobserved ? "unobserved" : c === null ? "unknown" : "scored",
+      ...(texture ? { texture } : {}),
+    };
   });
 }
 
@@ -579,6 +634,11 @@ export function partMaterial(part: ShellPart, mode: ShellRenderMode, pal: Confid
     // a textured part is not "colour not measured": the flat colour only shows through where the atlas has no texel
     return { color: part.color, hatch: !part.colorMeasured && !textured, opacity: part.opacity, textured };
   }
+  if (part.evidenceState && part.evidenceState in EVIDENCE_PALETTE && part.confidenceState !== "scored") {
+    const evColor = EVIDENCE_PALETTE[part.evidenceState];
+    const isHatched = part.evidenceState === "INFERRED" || part.evidenceState === "PRIOR_GENERATED" || isEstimated(part);
+    return { color: evColor, hatch: isHatched, opacity: part.opacity, textured: false };
+  }
   const color = part.confidenceState === "unobserved" ? CONF_UNOBSERVED
     : part.confidenceState === "unknown" || part.confidence === null ? pal.unknown
     : confidenceRamp(part.confidence, pal);
@@ -590,12 +650,13 @@ export interface LegendItem { label: string; color: V3; hatch: boolean }
 export function legendFor(mode: ShellRenderMode): LegendItem[] {
   if (mode === "confidence") {
     return [
-      { label: "High confidence", color: DEFAULT_CONF_PALETTE.high, hatch: false },
-      { label: "Medium", color: DEFAULT_CONF_PALETTE.mid, hatch: false },
-      { label: "Low", color: DEFAULT_CONF_PALETTE.low, hatch: false },
-      { label: "Confidence not stated", color: CONF_UNKNOWN, hatch: false },
-      { label: "Not observed", color: CONF_UNOBSERVED, hatch: false },
-      { label: "Striped = inferred / estimated", color: [200, 200, 200], hatch: true },
+      { label: "Observed", color: EVIDENCE_PALETTE.OBSERVED, hatch: false },
+      { label: "Partial", color: EVIDENCE_PALETTE.PARTIAL, hatch: false },
+      { label: "Occluded", color: EVIDENCE_PALETTE.OCCLUDED, hatch: false },
+      { label: "Inferred", color: EVIDENCE_PALETTE.INFERRED, hatch: true },
+      { label: "Prior / Generated", color: EVIDENCE_PALETTE.PRIOR_GENERATED, hatch: true },
+      { label: "Conflicted", color: EVIDENCE_PALETTE.CONFLICTED, hatch: false },
+      { label: "Unknown", color: EVIDENCE_PALETTE.UNKNOWN, hatch: false },
     ];
   }
   if (mode === "wireframe") return [];

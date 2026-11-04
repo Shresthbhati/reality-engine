@@ -184,3 +184,117 @@ def join_rooms_through_openings(world) -> dict:
             report["warnings"].append(f"{a.id} <-> {b.id}: already connected")
     world.metadata["room_joins"] = report
     return report
+
+
+
+# ---------------------------------------------------------------------------
+# Room merge proposal and refusal (Blueprint Task 6.2, Scenario A19)
+# ---------------------------------------------------------------------------
+
+
+def propose_room_merge(
+    world,
+    room_a_id: str,
+    room_b_id: str,
+) -> dict:
+    """Evaluate a proposal to merge two adjacent rooms into a single space.
+
+    Refuses (status='refused') when:
+    - The rooms are separated by a solid dividing wall with no opening.
+    - The rooms have incompatible floor elevations (> 0.15m step).
+    - The rooms are non-adjacent.
+
+    Accepts (status='accepted') only when the separating partition has been removed
+    or represents an open passage without a solid physical barrier.
+    """
+    entities = world.entities if hasattr(world.entities, "values") else {}
+    room_a = entities.get(room_a_id)
+    room_b = entities.get(room_b_id)
+
+    if room_a is None or room_b is None:
+        return {
+            "status": "refused",
+            "reason": f"room {room_a_id if room_a is None else room_b_id!r} not found in world",
+            "room_a": room_a_id,
+            "room_b": room_b_id,
+        }
+
+    cp_a = room_a.custom_properties or {}
+    cp_b = room_b.custom_properties or {}
+
+    # Check floor elevations
+    elev_a = float(cp_a.get("floor_elevation_m") or cp_a.get("elevation_m", 0.0))
+    elev_b = float(cp_b.get("floor_elevation_m") or cp_b.get("elevation_m", 0.0))
+    if abs(elev_a - elev_b) > 0.15:
+        return {
+            "status": "refused",
+            "reason": f"adjacent rooms {room_a_id!r} and {room_b_id!r} have incompatible floor elevation step ({abs(elev_a - elev_b):.2f}m > 0.15m); cannot merge into a single level space",
+            "room_a": room_a_id,
+            "room_b": room_b_id,
+            "elevation_step_m": abs(elev_a - elev_b),
+        }
+
+    walls_a = set(cp_a.get("boundary_element_ids") or [])
+    walls_b = set(cp_b.get("boundary_element_ids") or [])
+
+    shared_walls = walls_a & walls_b
+
+    # If no shared walls recorded in boundary, search walls with wall_slab
+    if not shared_walls:
+        wa_list = [_wall(world, entities[wid]) for wid in walls_a if wid in entities and entities[wid].type == EntityType.WALL]
+        wb_list = [_wall(world, entities[wid]) for wid in walls_b if wid in entities and entities[wid].type == EntityType.WALL]
+        for wa in wa_list:
+            if not wa:
+                continue
+            for wb in wb_list:
+                if not wb:
+                    continue
+                match = _parallel_overlap(wa, wb)
+                if match is not None:
+                    shared_walls.add(wa["entity"].id)
+                    shared_walls.add(wb["entity"].id)
+
+    if not shared_walls and room_b_id not in (cp_a.get("adjacent_room_ids") or []):
+        return {
+            "status": "refused",
+            "reason": f"rooms {room_a_id!r} and {room_b_id!r} are non-adjacent and share no partition boundary",
+            "room_a": room_a_id,
+            "room_b": room_b_id,
+        }
+
+    # Check whether shared partition wall has openings
+    has_opening = False
+    for wid in shared_walls:
+        wall_ent = entities.get(wid)
+        if wall_ent is not None:
+            w_cp = wall_ent.custom_properties or {}
+            slab = w_cp.get("wall_slab") or {}
+            openings = slab.get("openings") or []
+            if openings:
+                has_opening = True
+                break
+            # Check relationships for openings
+            for rel in wall_ent.relationships:
+                if rel.kind == RelationshipKind.CONTAINS:
+                    target = entities.get(rel.target_id)
+                    if target and target.type in (EntityType.DOOR, EntityType.WINDOW, EntityType.OPENING):
+                        has_opening = True
+                        break
+
+    if not has_opening:
+        return {
+            "status": "refused",
+            "reason": f"rooms {room_a_id!r} and {room_b_id!r} are separated by a solid dividing partition with no opening; distinct architectural spaces cannot be merged",
+            "room_a": room_a_id,
+            "room_b": room_b_id,
+            "has_shared_wall": True,
+            "has_opening": False,
+        }
+
+    return {
+        "status": "accepted",
+        "room_a": room_a_id,
+        "room_b": room_b_id,
+        "has_shared_wall": bool(shared_walls),
+        "has_opening": True,
+    }

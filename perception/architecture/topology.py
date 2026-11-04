@@ -41,6 +41,7 @@ output.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -711,3 +712,226 @@ def storey_connectivity(building, stair_links) -> List[Tuple[str, str]]:
             for b in storey_ids[i + 1:]:
                 edges.add((min(a, b), max(a, b)))
     return sorted(edges)
+
+
+# ---------------------------------------------------------------------------
+# Topology revalidation after merges (Blueprint 20, Task 5.4)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TopologyValidationIssue:
+    """A geometric or structural issue discovered during topology revalidation."""
+    severity: str  # "ERROR" | "WARNING"
+    code: str
+    message: str
+    element_ids: List[str] = field(default_factory=list)
+
+
+@dataclass
+class TopologyRevalidationReport:
+    """Outcome of revalidating merged architectural topology."""
+    is_valid: bool
+    issues: List[TopologyValidationIssue] = field(default_factory=list)
+    checked_rooms: int = 0
+    checked_walls: int = 0
+    checked_openings: int = 0
+
+    @property
+    def error_count(self) -> int:
+        return sum(1 for i in self.issues if i.severity == "ERROR")
+
+    @property
+    def warning_count(self) -> int:
+        return sum(1 for i in self.issues if i.severity == "WARNING")
+
+
+def _segments_intersect_2d(p1, p2, p3, p4, tol=1e-5) -> bool:
+    """Check if line segment p1-p2 and p3-p4 strictly cross in 2D (excluding shared endpoints)."""
+    def ccw(a, b, c):
+        return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
+
+    # If they share an endpoint within tolerance, they meet at a corner, not a penetration
+    for a in (p1, p2):
+        for b in (p3, p4):
+            if math.hypot(a[0] - b[0], a[1] - b[1]) <= tol:
+                return False
+
+    return (ccw(p1, p3, p4) != ccw(p2, p3, p4)) and (ccw(p1, p2, p3) != ccw(p1, p2, p4))
+
+
+def revalidate_merged_topology(
+    world,
+    *,
+    closure_tolerance_m: float = 0.15,
+) -> TopologyRevalidationReport:
+    """Geometrically revalidate architectural topology after merges.
+
+    Verifies that merged rooms, shared walls, and openings remain geometrically
+    consistent and manifold:
+    1. Room boundary closure: walls of each room must form a continuous closed perimeter.
+    2. Wall penetration: non-adjacent walls within a room must not cross/penetrate each other.
+    3. Room area: rooms must not collapse into zero/negative/degenerate geometry.
+    4. Opening containment: openings must not exceed the physical bounds of their host walls.
+    5. Elevation consistency: rooms sharing a partition must not have incompatible floor heights.
+
+    Failures are flagged in the report and metadata, NEVER hidden or silently dropped.
+    """
+    issues: List[TopologyValidationIssue] = []
+    entities = world.entities if hasattr(world.entities, "values") else {}
+
+    room_ents = [e for e in entities.values() if e.type in (EntityType.ROOM, EntityType.CORRIDOR)]
+    wall_ents = [e for e in entities.values() if e.type == EntityType.WALL]
+    opening_ents = [e for e in entities.values() if e.type in (EntityType.DOOR, EntityType.WINDOW, EntityType.OPENING)]
+
+    # 1. Room Boundary Closure and Geometry
+    for room in room_ents:
+        cp = room.custom_properties or {}
+        b_ids = cp.get("boundary_element_ids") or []
+        room_walls = [entities[eid] for eid in b_ids if eid in entities and entities[eid].type == EntityType.WALL]
+
+        if not room_walls:
+            # Check if wall entities reference this room
+            room_walls = [
+                w for w in wall_ents
+                if (w.custom_properties or {}).get("room_id") == room.id
+                or (w.custom_properties or {}).get("space_id") == room.id
+            ]
+
+        # Extract 2D line segments for room walls
+        segments: List[Tuple[str, Tuple[float, float], Tuple[float, float]]] = []
+        for w in room_walls:
+            wcp = w.custom_properties or {}
+            if "start_point" in wcp and "end_point" in wcp:
+                p1 = (float(wcp["start_point"][0]), float(wcp["start_point"][1]))
+                p2 = (float(wcp["end_point"][0]), float(wcp["end_point"][1]))
+            else:
+                bmin = wcp.get("bounds_min")
+                bmax = wcp.get("bounds_max")
+                if bmin and bmax:
+                    # Diagonal or principal horizontal span
+                    dx = abs(bmax[0] - bmin[0])
+                    dy = abs(bmax[1] - bmin[1])
+                    if dx >= dy:
+                        p1 = (bmin[0], (bmin[1] + bmax[1]) * 0.5)
+                        p2 = (bmax[0], (bmin[1] + bmax[1]) * 0.5)
+                    else:
+                        p1 = ((bmin[0] + bmax[0]) * 0.5, bmin[1])
+                        p2 = ((bmin[0] + bmax[0]) * 0.5, bmax[1])
+                else:
+                    continue
+            segments.append((w.id, p1, p2))
+
+        # Check for unclosed boundary
+        if len(segments) >= 3:
+            # Verify each endpoint connects to at least one other endpoint
+            for i, (wid, p1, p2) in enumerate(segments):
+                has_conn_p1 = False
+                has_conn_p2 = False
+                for j, (_, q1, q2) in enumerate(segments):
+                    if i == j:
+                        continue
+                    if math.hypot(p1[0] - q1[0], p1[1] - q1[1]) <= closure_tolerance_m or math.hypot(p1[0] - q2[0], p1[1] - q2[1]) <= closure_tolerance_m:
+                        has_conn_p1 = True
+                    if math.hypot(p2[0] - q1[0], p2[1] - q1[1]) <= closure_tolerance_m or math.hypot(p2[0] - q2[0], p2[1] - q2[1]) <= closure_tolerance_m:
+                        has_conn_p2 = True
+
+                if not (has_conn_p1 and has_conn_p2):
+                    issues.append(TopologyValidationIssue(
+                        severity="ERROR",
+                        code="unclosed_room_boundary",
+                        message=f"room {room.id!r} has unclosed boundary at wall {wid!r} (endpoint gap > {closure_tolerance_m}m)",
+                        element_ids=[room.id, wid],
+                    ))
+
+        # Check for penetrating/self-intersecting walls within room
+        for i in range(len(segments)):
+            w1_id, p1, p2 = segments[i]
+            for j in range(i + 1, len(segments)):
+                w2_id, q1, q2 = segments[j]
+                if _segments_intersect_2d(p1, p2, q1, q2, tol=closure_tolerance_m):
+                    issues.append(TopologyValidationIssue(
+                        severity="ERROR",
+                        code="penetrating_walls",
+                        message=f"walls {w1_id!r} and {w2_id!r} penetrate/cross each other in room {room.id!r}",
+                        element_ids=[room.id, w1_id, w2_id],
+                    ))
+
+        # Check for degenerate room area
+        floor_area = cp.get("floor_area_m2") or cp.get("area_m2")
+        if floor_area is not None and float(floor_area) <= 0.05:
+            issues.append(TopologyValidationIssue(
+                severity="ERROR",
+                code="degenerate_room_area",
+                message=f"room {room.id!r} has degenerate floor area ({floor_area} m2 <= 0.05 m2)",
+                element_ids=[room.id],
+            ))
+
+    # 2. Opening Containment in Host Wall
+    for op in opening_ents:
+        op_cp = op.custom_properties or {}
+        host_id = op_cp.get("host_wall_id") or op_cp.get("surface_id")
+        if not host_id or host_id not in entities:
+            issues.append(TopologyValidationIssue(
+                severity="ERROR",
+                code="dangling_opening",
+                message=f"opening {op.id!r} references missing host wall {host_id!r}",
+                element_ids=[op.id],
+            ))
+            continue
+
+        host_ent = entities[host_id]
+        host_cp = host_ent.custom_properties or {}
+        host_bmin = host_cp.get("bounds_min")
+        host_bmax = host_cp.get("bounds_max")
+        
+        op_width = op_cp.get("width_m")
+        if op_width and host_bmin and host_bmax:
+            host_len = math.hypot(host_bmax[0] - host_bmin[0], host_bmax[1] - host_bmin[1])
+            if float(op_width) > (host_len + closure_tolerance_m):
+                issues.append(TopologyValidationIssue(
+                    severity="ERROR",
+                    code="opening_exceeds_host_wall",
+                    message=f"opening {op.id!r} width ({op_width}m) exceeds host wall {host_id!r} length ({host_len:.2f}m)",
+                    element_ids=[op.id, host_id],
+                ))
+
+    # 3. Elevation Consistency Across Shared Walls
+    for i in range(len(room_ents)):
+        r1 = room_ents[i]
+        r1_cp = r1.custom_properties or {}
+        r1_elev = r1_cp.get("floor_elevation_m") or r1_cp.get("elevation_m", 0.0)
+        r1_walls = set(r1_cp.get("boundary_element_ids") or [])
+
+        for j in range(i + 1, len(room_ents)):
+            r2 = room_ents[j]
+            r2_cp = r2.custom_properties or {}
+            r2_elev = r2_cp.get("floor_elevation_m") or r2_cp.get("elevation_m", 0.0)
+            r2_walls = set(r2_cp.get("boundary_element_ids") or [])
+
+            shared = r1_walls & r2_walls
+            if shared and abs(float(r1_elev) - float(r2_elev)) > 0.30:
+                issues.append(TopologyValidationIssue(
+                    severity="ERROR",
+                    code="elevation_step_without_stair",
+                    message=f"adjacent rooms {r1.id!r} and {r2.id!r} share wall but have incompatible floor step ({abs(float(r1_elev) - float(r2_elev)):.2f}m > 0.30m)",
+                    element_ids=[r1.id, r2.id] + list(shared),
+                ))
+
+    is_valid = not any(i.severity == "ERROR" for i in issues)
+
+    if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+        world.metadata["topology_revalidation"] = {
+            "is_valid": is_valid,
+            "error_count": sum(1 for i in issues if i.severity == "ERROR"),
+            "warning_count": sum(1 for i in issues if i.severity == "WARNING"),
+            "issues": [i.message for i in issues],
+        }
+
+    return TopologyRevalidationReport(
+        is_valid=is_valid,
+        issues=issues,
+        checked_rooms=len(room_ents),
+        checked_walls=len(wall_ents),
+        checked_openings=len(opening_ents),
+    )

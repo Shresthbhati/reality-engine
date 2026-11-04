@@ -1,8 +1,8 @@
-"""Learned feature matcher: DISK + LightGlue (Apache 2.0 via Kornia).
+"""Learned feature matcher: DISK / ALIKED + LightGlue (Apache 2.0 via Kornia).
 
-Uses learned dense feature detector DISK (Michal Tyszkiewicz et al.) and deep
-transformer-based matcher LightGlue (Philipp Lindenberger & Paul-Edouard Sarlin)
-to establish robust, dense correspondences across wide baselines and viewpoint variations.
+Uses learned feature detectors (DISK or ALIKED) and deep transformer-based
+matcher LightGlue (Philipp Lindenberger & Paul-Edouard Sarlin) to establish
+robust, dense correspondences across wide baselines and viewpoint variations.
 
 Both models and checkpoints are licensed under Apache 2.0 (commercial-friendly).
 Runs on CUDA with fp16 when available (via perception.device.select_device),
@@ -21,7 +21,6 @@ from reconstruction.matching.interface import MatchResult
 
 
 class LightGlueMatcher:
-    name = "lightglue@disk"
     license = "Apache-2.0"
     non_commercial = False
 
@@ -31,20 +30,23 @@ class LightGlueMatcher:
         max_side: int = 960,
         ransac_px: float = 1.0,
         device: Optional[str] = None,
+        features: str = "disk",
     ):
         self.paths = dict(paths)
         self.max_side = max_side
         self.ransac_px = ransac_px
         self._custom_device = device
+        self.features = features.lower()
+        self.name = f"lightglue@{self.features}"
 
-        self._disk = None
+        self._detector = None
         self._matcher = None
         self._device = None
-        # eid -> (keypoints_np, descriptors_tensor, (width, height))
-        self._feat: Dict[str, Tuple[np.ndarray, "torch.Tensor", Tuple[int, int]]] = {}
+        # eid -> (keypoints_np, keypoints_tensor, descriptors_tensor, (width, height))
+        self._feat: Dict[str, Tuple[np.ndarray, "torch.Tensor", "torch.Tensor", Tuple[int, int]]] = {}
 
     def _ensure_models(self):
-        if self._disk is not None:
+        if self._detector is not None:
             return
 
         import torch
@@ -57,9 +59,12 @@ class LightGlueMatcher:
             dev_info = select_device()
             self._device = torch.device(dev_info.device)
 
-        # Load DISK feature extractor and LightGlue matcher (both Apache 2.0)
-        self._disk = kf.DISK.from_pretrained("depth").to(self._device).eval()
-        self._matcher = kf.LightGlue(features="disk").to(self._device).eval()
+        if self.features == "aliked":
+            self._detector = kf.ALIKED.from_pretrained("aliked-n16").to(self._device).eval()
+            self._matcher = kf.LightGlue(features="aliked").to(self._device).eval()
+        else:
+            self._detector = kf.DISK.from_pretrained("depth").to(self._device).eval()
+            self._matcher = kf.LightGlue(features="disk").to(self._device).eval()
 
     def _features(self, eid: str):
         if eid not in self._feat:
@@ -84,30 +89,39 @@ class LightGlueMatcher:
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             t_img = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).float().to(self._device) / 255.0
 
-            # DISK U-Net requires input dimensions divisible by 16; pad if needed
-            pad_h = (16 - (h % 16)) % 16
-            pad_w = (16 - (w % 16)) % 16
-            if pad_h > 0 or pad_w > 0:
-                t_img = torch.nn.functional.pad(t_img, (0, pad_w, 0, pad_h), mode="replicate")
-
-            with torch.no_grad():
-                features = self._disk(t_img)[0]
-                kpts = features.keypoints  # (N, 2) in (x, y) coordinates
-                descs = features.descriptors  # (N, D)
-
-                # Filter out any keypoints detected in the padded region
+            if self.features == "aliked":
+                with torch.no_grad():
+                    feat = self._detector(t_img)[0]
+                    kpts = feat.keypoints
+                    descs = feat.descriptors
+                    kpts_np = kpts.cpu().numpy().astype(np.float32)
+                    if scale < 1.0:
+                        kpts_np /= np.float32(scale)
+                    self._feat[eid] = (kpts_np, kpts, descs, (w, h))
+            else:
+                # DISK U-Net requires input dimensions divisible by 16; pad if needed
+                pad_h = (16 - (h % 16)) % 16
+                pad_w = (16 - (w % 16)) % 16
                 if pad_h > 0 or pad_w > 0:
-                    valid = (kpts[:, 0] < float(w)) & (kpts[:, 1] < float(h))
-                    kpts = kpts[valid]
-                    descs = descs[valid]
+                    t_img = torch.nn.functional.pad(t_img, (0, pad_w, 0, pad_h), mode="replicate")
 
-                # Store keypoints as float32 numpy array and descriptors on device
-                kpts_np = kpts.cpu().numpy().astype(np.float32)
-                # Rescale keypoints back to original resolution if scaled
-                if scale < 1.0:
-                    kpts_np /= np.float32(scale)
+                with torch.no_grad():
+                    features = self._detector(t_img)[0]
+                    kpts = features.keypoints  # (N, 2) in (x, y) coordinates
+                    descs = features.descriptors  # (N, D)
 
-                self._feat[eid] = (kpts_np, kpts, descs, (w, h))
+                    # Filter out any keypoints detected in the padded region
+                    if pad_h > 0 or pad_w > 0:
+                        valid = (kpts[:, 0] < float(w)) & (kpts[:, 1] < float(h))
+                        kpts = kpts[valid]
+                        descs = descs[valid]
+
+                    # Store keypoints as float32 numpy array and descriptors on device
+                    kpts_np = kpts.cpu().numpy().astype(np.float32)
+                    if scale < 1.0:
+                        kpts_np /= np.float32(scale)
+
+                    self._feat[eid] = (kpts_np, kpts, descs, (w, h))
 
         return self._feat[eid]
 
@@ -175,3 +189,14 @@ class LightGlueMatcher:
         keep = mask.ravel().astype(bool)
         n_inliers = int(keep.sum())
         return result(n_matches, n_inliers, p1[keep], p2[keep])
+
+
+class ALIKEDLightGlueMatcher(LightGlueMatcher):
+    """ALIKED local features + LightGlue matcher behind IMatcher."""
+    name = "lightglue@aliked"
+    license = "Apache-2.0"
+    non_commercial = False
+
+    def __init__(self, paths: Dict[str, Path], **kwargs):
+        kwargs["features"] = "aliked"
+        super().__init__(paths, **kwargs)

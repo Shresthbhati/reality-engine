@@ -17,7 +17,7 @@ from .serialization import save_world, load_world, WORLD_SAVE_FORMAT_VERSION
 # V1 (complete schema)
 from .schema_v1 import (
     # Core types
-    Vector3, Quaternion, Measurement, Observation,
+    Vector3, Quaternion, Measurement, Observation, ConfidenceVector,
     # Data structures
     PhysicalProperties, Material, Geometry, Surface,
     Component, Relationship, TemporalEvent, CausalRelation, Entity,
@@ -26,6 +26,7 @@ from .schema_v1 import (
     TemporalEventType
 )
 from .world_v1 import WorldIR, Branch, Scenario, SimulationState, TemporalState
+from .geo import GeoAnchor
 from .diff import diff_worlds, WorldDiff, EntityDiff, GeometryDiff, ChangeKind
 from .temporal import (
     TemporalChangeKind,
@@ -66,6 +67,7 @@ __all__ = [
     "Quaternion",
     "Measurement",
     "Observation",
+    "ConfidenceVector",
     "PhysicalProperties",
     "Material",
     "Geometry",
@@ -82,6 +84,7 @@ __all__ = [
     "TemporalEventType",
     # V1 World
     "WorldIR",
+    "GeoAnchor",
     "Branch",
     "Scenario",
     "SimulationState",

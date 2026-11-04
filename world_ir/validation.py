@@ -744,6 +744,34 @@ def validate_world_ir(world: WorldIR) -> WorldValidationReport:
     _check_interior_boundary_references(world, issues)
     _check_single_storey_membership(world, issues)
     _check_cross_entity_consistency(world, issues)
+    _check_confidence_vectors(world, issues)
     _check_invariants(world, issues)
 
     return WorldValidationReport(issues=issues)
+
+
+def _check_confidence_vectors(world: WorldIR, issues: List[ValidationIssue]) -> None:
+    """Validate ConfidenceVector on each entity (Task 7.1).
+    Every dimension must be either None or a float in [0.0, 1.0].
+    """
+    for entity_id in sorted(world.entities):
+        entity = world.entities[entity_id]
+        cv = getattr(entity, "confidence_vector", None)
+        if cv is None:
+            continue
+        for dim in (
+            "classification", "identity", "position", "orientation",
+            "dimensions", "geometry", "completeness", "material",
+            "colour", "topology", "cross_view",
+        ):
+            val = getattr(cv, dim, None)
+            if val is not None:
+                if not isinstance(val, (int, float)) or math.isnan(val) or not (0.0 <= float(val) <= 1.0):
+                    issues.append(ValidationIssue(
+                        severity=ValidationSeverity.ERROR,
+                        code="invalid_confidence_vector_value",
+                        message=(
+                            f"entity {entity_id} confidence_vector.{dim} ({val}) "
+                            "must be None or float in [0.0, 1.0]"
+                        ),
+                    ))

@@ -37,6 +37,14 @@ function CreateReconstruction() {
         Give Reality Engine photographs of a real place. It builds the best spatial model the evidence
         supports, says plainly what it is unsure about, and improves the same model as you add more views.
       </p>
+      {worldId && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-xs text-sky-200 w-full max-w-xl">
+          <span>This world has intelligent capture requests to resolve occlusions and low-coverage surfaces.</span>
+          <Link href={`/capture?world=${worldId}`} className="shrink-0 font-semibold underline hover:text-white">
+            View Requests &rarr;
+          </Link>
+        </div>
+      )}
       <div className="mb-6 w-full max-w-4xl">
         {worldId && loading ? (
           <p className="text-center text-xs text-neutral-400" role="status">Reading this world&apos;s state…</p>

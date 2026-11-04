@@ -39,9 +39,15 @@ async def _progress_view(db: AsyncSession, j: Job) -> dict:
     """The fields a client needs to draw progress. `progress` is stage-weighted (coarse, monotonic, 100 only on
     success/partial); `photos_placed` is known only after the run, so it is None while building -- never guessed."""
     placed = (j.payload or {}).get("cameras_registered") if j.status in _TERMINAL else None
+    counts = (j.payload or {}).get("counts") or (j.payload or {}).get("compile") or {}
+    failure_reason = None
+    if j.status == "failed":
+        failure_reason = j.error or (j.payload or {}).get("reason") or (j.payload or {}).get("error")
     return {
         "status": j.status,
         "stage": j.stage,
+        "stage_counts": counts,
+        "failure_reason": failure_reason,
         "progress": j.progress,
         "photos_total": await _photos_total(db, j),
         "photos_placed": placed,
@@ -64,6 +70,8 @@ async def list_jobs(status: str | None = None, db: AsyncSession = Depends(get_db
                 "entity_id": j.entity_id,
                 "status": j.status,
                 "stage": j.stage,
+                "stage_counts": (j.payload or {}).get("counts") or (j.payload or {}).get("compile") or {},
+                "failure_reason": (j.error or (j.payload or {}).get("reason")) if j.status == "failed" else None,
                 "attempts": j.attempts,
                 "error": j.error,
                 "worker_id": j.worker_id,

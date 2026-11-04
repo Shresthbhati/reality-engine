@@ -138,9 +138,16 @@ export default function PipelineGraph({ worldId, compact = false }: { worldId: s
               data-status={n.status}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-                  {n.label}
-                </span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                    {n.label}
+                  </span>
+                  {n.blueprint_label && (
+                    <span className="text-[10px] text-[var(--text-tertiary)] truncate leading-tight">
+                      {n.blueprint_label}
+                    </span>
+                  )}
+                </div>
                 <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide" style={{ color: STATUS_COLOR[n.status] }}>
                   <StatusIcon status={n.status} />
                   {STATUS_LABEL[n.status]}

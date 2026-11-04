@@ -80,6 +80,12 @@ JOB_FAILED = "failed"
 JOB_CANCELLED = "cancelled"
 
 TERMINAL_STATES = frozenset({JOB_PARTIAL, JOB_SUCCEEDED, JOB_FAILED, JOB_CANCELLED})
+TERMINAL_STAGE: dict[str, str] = {
+    JOB_SUCCEEDED: "complete",
+    JOB_PARTIAL: "partial",
+    JOB_FAILED: "failed",
+    JOB_CANCELLED: "cancelled",
+}
 
 
 class _JobCancelled(RuntimeError):

@@ -214,7 +214,6 @@ export default function World3DViewport({
     shell: true,
     ...(initialLayers ?? {}),
   });
-  const [legendOpen, setLegendOpen] = useState(true);
   const [modeState, setModeState] = useState<ViewMode>(() => (typeof window !== "undefined" ? loadStoredMode() : "realistic"));
   const mode = modeProp ?? modeState;
   const [cutawayState, setCutawayState] = useState(true);
@@ -1137,43 +1136,28 @@ export default function World3DViewport({
         {/* Bottom left: legend / honest no-shell notice */}
         {!hasNoWorldData && !unplaced && (!hasModes || legend.length > 0) && (
           <div
-            className="absolute bottom-3 left-3 z-10 max-w-[240px] rounded-md px-2.5 py-2 text-[11px] leading-snug pointer-events-auto"
+            className="absolute bottom-3 left-3 z-10 max-w-[240px] rounded-md px-2.5 py-2 text-[11px] leading-snug pointer-events-none"
             style={PANEL}
             data-testid="render-mode-legend"
           >
             {!hasModes ? (
               <span className="text-[var(--warning)]">{NO_SHELL_REASON}</span>
             ) : (
-              <div>
-                <div className="flex items-center justify-between pb-1 mb-1 border-b border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">
-                  <span>{mode === "confidence" ? "Evidence Legend" : "View Legend"}</span>
-                  <button
-                    type="button"
-                    onClick={() => setLegendOpen((v) => !v)}
-                    className="hover:text-[var(--text-primary)] cursor-pointer text-[10px] lowercase"
-                    aria-label={legendOpen ? "Collapse legend" : "Expand legend"}
-                  >
-                    {legendOpen ? "hide" : "show"}
-                  </button>
-                </div>
-                {legendOpen && (
-                  <ul className="space-y-1">
-                    {legend.map((item) => (
-                      <li key={item.label} className="flex items-center gap-2 text-[var(--text-secondary)]">
-                        <span
-                          className="inline-block h-3 w-5 shrink-0 rounded-sm border border-[var(--border)]"
-                          style={{
-                            background: item.hatch
-                              ? `repeating-linear-gradient(45deg, rgb(${item.color.join(",")}) 0 3px, rgba(0,0,0,0.55) 3px 5px)`
-                              : `rgb(${item.color.join(",")})`,
-                          }}
-                        />
-                        {item.label}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <ul className="space-y-1">
+                {legend.map((item) => (
+                  <li key={item.label} className="flex items-center gap-2 text-[var(--text-secondary)]">
+                    <span
+                      className="inline-block h-3 w-5 shrink-0 rounded-sm border border-[var(--border)]"
+                      style={{
+                        background: item.hatch
+                          ? `repeating-linear-gradient(45deg, rgb(${item.color.join(",")}) 0 3px, rgba(0,0,0,0.55) 3px 5px)`
+                          : `rgb(${item.color.join(",")})`,
+                      }}
+                    />
+                    {item.label}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

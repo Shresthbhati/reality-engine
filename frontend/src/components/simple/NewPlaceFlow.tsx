@@ -17,7 +17,7 @@ import {
   type JobView,
 } from "@/lib/api";
 import { BUILD, BUILD_STEPS, CHECK, HOME, HOME_STEPS, photosPlaced } from "@/lib/copy";
-import { WORKING_STEPS, buildOutcome, buildStep, fileProblems, formatElapsed, suggestName, verdictMessage } from "@/lib/places";
+import { WORKING_STEPS, buildOutcome, buildStep, getStageLabel, fileProblems, formatElapsed, suggestName, verdictMessage } from "@/lib/places";
 import PhotoDropZone from "@/components/reconstruct/PhotoDropZone";
 
 /** Preview URLs for picked files. Created in the effect (not memoised) so a dev-mode remount cannot leave revoked URLs. */
@@ -378,7 +378,15 @@ function BuildStep({ files, created, onFailedToStart }: { files: File[]; created
                   ) : (
                     <CircleDashed className="h-4 w-4" aria-hidden />
                   )}
-                  {BUILD_STEPS[s]}
+                  <span>
+                    {BUILD_STEPS[s]}
+                    {active && job?.stage ? ` — ${getStageLabel(job.stage)}` : ""}
+                  </span>
+                  {active && job?.stage_counts && Object.keys(job.stage_counts).length > 0 && (
+                    <span className="text-[11px] opacity-75" style={{ color: "var(--accent)" }}>
+                      ({Object.entries(job.stage_counts).map(([k, v]) => `${v} ${k}`).join(", ")})
+                    </span>
+                  )}
                 </li>
               );
             })}
@@ -422,7 +430,11 @@ function BuildStep({ files, created, onFailedToStart }: { files: File[]; created
 
       {(outcome === "failed" || outcome === "cancelled") && (
         <div className="mt-4 text-sm" role="alert">
-          {failure && <p style={{ color: "var(--error)" }}>{failure}</p>}
+          {(failure || job?.failure_reason || job?.error) && (
+            <p className="font-medium" style={{ color: "var(--error)" }}>
+              {failure || job?.failure_reason || job?.error}
+            </p>
+          )}
           <p className="mt-2" style={{ color: "var(--text-secondary)" }}>
             {BUILD.failedSafe}
           </p>

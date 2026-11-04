@@ -48,7 +48,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from engine.math import Vec3
 from reconstruction.backend.interface import ReconstructionResult
-from reconstruction.calibration.camera import PinholeCamera
+from world_ir.camera import PinholeCamera
 
 #: Detail-tier thresholds (documented, overridable per call). GSD in
 #: mm/px; min_views_for_fine = minimum distinct cameras observing a

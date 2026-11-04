@@ -20,7 +20,6 @@ from .serialization import (
     WORLD_SAVE_FORMAT_VERSION,
 )
 
-# V1 (complete schema)
 from .schema_v1 import (
     # Core types
     Vector3, Quaternion, Measurement, Observation, ConfidenceVector,
@@ -88,6 +87,13 @@ __all__ = [
     "EntityType",
     "RelationshipKind",
     "TemporalEventType",
+    # Camera
+    "CameraIntrinsics",
+    "CameraExtrinsics",
+    "PinholeCamera",
+    "CameraIntrinsicsError",
+    "quat_to_matrix",
+    "matrix_to_quat",
     # V1 World
     "WorldIR",
     "GeoAnchor",

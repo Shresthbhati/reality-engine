@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple, Union
 import cv2
 import numpy as np
 
-from reconstruction.calibration.camera import (
+from world_ir.camera import (
     CameraIntrinsics,
     PinholeCamera,
     quat_to_matrix,

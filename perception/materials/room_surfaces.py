@@ -111,7 +111,7 @@ def surfaces_from_world(world) -> Tuple[List[PlanarSurface], Dict[str, object], 
 
 
 def _intrinsics_for(item, image: np.ndarray):
-    from reconstruction.calibration.camera import CameraIntrinsics
+    from world_ir.camera import CameraIntrinsics
 
     h, w = image.shape[:2]
     meta = (getattr(item, "metadata", None) or {})

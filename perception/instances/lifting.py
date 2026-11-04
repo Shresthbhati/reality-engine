@@ -45,7 +45,7 @@ from engine.math.math3 import Vec3
 from world_ir.observations import DepthSource, sigma_for
 from perception.depth.interface import DepthMap
 from perception.segmentation.interface import SegmentedRegion
-from reconstruction.calibration.camera import PinholeCamera
+from world_ir.camera import PinholeCamera
 
 #: Minimum fraction of a mask's pixels that must carry valid (positive,
 #: finite) depth for a hypothesis to be honestly produced. Below this,

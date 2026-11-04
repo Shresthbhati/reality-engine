@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from reconstruction.calibration.camera import PinholeCamera, quat_to_matrix
+from world_ir.camera import PinholeCamera, quat_to_matrix
 
 LIGHTING_NOTE = ("approximate under capture lighting: per-view white balance and exposure are normalised across the "
                  "photo set, but the absolute illuminant is unknown, so this is not the surface albedo")

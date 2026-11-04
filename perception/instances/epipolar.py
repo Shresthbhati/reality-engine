@@ -28,7 +28,7 @@ import math
 from typing import Tuple
 
 from engine.math import Vec3
-from reconstruction.calibration.camera import PinholeCamera
+from world_ir.camera import PinholeCamera
 
 #: Point-to-epipolar-line distance (approx. pixels, scaled by camera
 #: B's focal length) at or under which two detections are treated as

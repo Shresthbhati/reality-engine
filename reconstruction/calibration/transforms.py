@@ -50,10 +50,6 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, Tuple
 
 from engine.math import Quat, Vec3
-from reconstruction.calibration.camera import (
-    CameraIntrinsics,
-    PinholeCamera,
-)
 
 
 class CalibrationTransformError(ValueError):
@@ -436,6 +432,7 @@ class CalibrationEntry:
 
     @staticmethod
     def from_dict(data: dict) -> "CalibrationEntry":
+        from reconstruction.calibration.camera import CameraIntrinsics
         return CalibrationEntry(
             sensor_id=data["sensor_id"],
             sensor_type=data["sensor_type"],

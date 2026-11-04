@@ -44,6 +44,11 @@ from .video import (
     extract_video_keyframes,
     ingest_video_to_keyframes,
 )
+from .geo_anchor import (
+    extract_gps_from_image_path,
+    extract_geo_anchor_from_evidence,
+    attach_geo_anchor_to_world,
+)
 from .cad_importer import (
     CadFloorPlan,
     CadImportRefused,

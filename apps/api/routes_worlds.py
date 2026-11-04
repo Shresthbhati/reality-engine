@@ -20,6 +20,7 @@ from apps.api.db import get_db
 from apps.api.auth import AuthContext, Role, enforce_project_isolation, get_auth_context
 from apps.api.models import (
     ActivityEvent,
+    CaptureRequest,
     Evidence,
     Location,
     Session,
@@ -141,11 +142,12 @@ class WorldPatch(BaseModel):
     description: str | None = None
 
 
-async def _world_or_404(db: AsyncSession, world_id: str) -> World:
+async def _world_or_404(db: AsyncSession, world_id: str, auth: AuthContext | None = None) -> World:
     w = await db.get(World, world_id)
     if w is None:
         raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
+    if auth is not None:
+        enforce_project_isolation(w, auth)
     return w
 
 
@@ -273,7 +275,11 @@ async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession 
 
 
 @worlds.get("/{world_id}/versions")
-async def list_world_versions(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def list_world_versions(
+    world_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
     """Application mirror of WorldStore lineage. Reconciled against the
     on-disk store on every read (writers outside this process, or a
     version orphaned by a failed commit, must not drift silently from
@@ -325,6 +331,125 @@ async def attach_session(
     s.world_id = w.id
     await db.commit()
     return {"session_id": s.id, "world_id": w.id}
+
+
+class CaptureRequestStatusUpdate(BaseModel):
+    status: str  # "open" | "satisfied" | "dismissed"
+
+
+@worlds.get("/{world_id}/capture-requests")
+async def list_capture_requests(
+    world_id: str,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """List world-space CaptureRequests for unobserved or occluded regions (Blueprint 11, Task 6.1)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+
+    query = select(CaptureRequest).where(CaptureRequest.world_id == world_id)
+    if status:
+        query = query.where(CaptureRequest.status == status)
+    query = query.order_by(CaptureRequest.created_at.desc())
+
+    res = await db.execute(query)
+    rows = res.scalars().all()
+
+    if rows:
+        items = [
+            {
+                "id": r.id,
+                "world_id": r.world_id,
+                "reason": r.reason,
+                "target_region": r.target_region,
+                "target_ids": r.target_ids or [],
+                "suggested_poses": r.suggested_poses or [],
+                "expected_gain": r.expected_gain,
+                "instruction": r.instruction,
+                "status": r.status,
+                "created_version": r.created_version,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+        return {"items": items, "count": len(items)}
+
+    # If status filter was specified or requests already exist in DB, return empty list
+    count_any = await db.scalar(select(func.count(CaptureRequest.id)).where(CaptureRequest.world_id == world_id))
+    if (count_any or 0) > 0 or status is not None:
+        return {"items": [], "count": 0}
+
+    # If no DB rows exist yet, generate from the authoritative current WorldIR
+    store = WorldStore(_worldstore_root())
+    vrow = await _version_row(db, world_id, None, auth)
+    if vrow is None:
+        return {"items": [], "count": 0, "reason": "No reconstruction version available yet"}
+
+    try:
+        world = _load_worldir(store, vrow.version_id)
+    except Exception as exc:
+        log.warning("could not load WorldIR for capture requests: %s", exc)
+        return {"items": [], "count": 0, "reason": str(exc)}
+
+    from engine.pipeline.guidance import generate_world_capture_requests
+    generated = generate_world_capture_requests(world, world_id=world_id)
+
+    # Persist generated requests to DB
+    for req in generated:
+        db_req = CaptureRequest(
+            id=req["id"],
+            world_id=world_id,
+            reason=req["reason"],
+            target_region=req["target_region"],
+            target_ids=req["target_ids"],
+            suggested_poses=req["suggested_poses"],
+            expected_gain=req["expected_gain"],
+            instruction=req["instruction"],
+            status=req["status"],
+            created_version=req["created_version"],
+        )
+        db.add(db_req)
+
+    if generated:
+        try:
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            log.warning("failed to persist capture requests to DB: %s", exc)
+
+    return {"items": generated, "count": len(generated)}
+
+
+@worlds.patch("/{world_id}/capture-requests/{request_id}")
+async def update_capture_request_status(
+    world_id: str,
+    request_id: str,
+    body: CaptureRequestStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Update status of a CaptureRequest (open | satisfied | dismissed)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+
+    req = await db.get(CaptureRequest, request_id)
+    if req is None or req.world_id != world_id:
+        raise HTTPException(404, "CaptureRequest not found")
+
+    if body.status not in ("open", "satisfied", "dismissed"):
+        raise HTTPException(422, f"invalid status {body.status!r}; expected open, satisfied, or dismissed")
+
+    req.status = body.status
+    await db.commit()
+    await db.refresh(req)
+
+    return {
+        "id": req.id,
+        "world_id": req.world_id,
+        "status": req.status,
+        "reason": req.reason,
+    }
 
 
 @worlds.get("/{world_id}/coverage")
@@ -451,30 +576,64 @@ async def entity_provenance(
     if entity is None:
         raise HTTPException(404, f"Entity '{entity_id}' not found in version '{row.id}'")
 
+    from world_ir.observations import ledger_of
+
+    all_obs, all_decisions = ledger_of(world)
+    entity_decisions = [d.to_dict() for d in all_decisions if d.entity_id == entity_id]
+    relevant_obs_ids = {d.observation_id for d in all_decisions if d.entity_id == entity_id}
+
     observation_matches: list[dict] = []
     for obs in getattr(entity, "observations", None) or []:
+        obs_id = getattr(obs, "id", None) or getattr(obs, "observation_id", None)
+        if obs_id:
+            relevant_obs_ids.add(obs_id)
         ev = None
-        if obs.data_hash:
+        if getattr(obs, "data_hash", None):
             res = await db.execute(select(Evidence).where(Evidence.checksum == obs.data_hash))
             ev = res.scalar_one_or_none()
-        if ev is None and obs.data_uri:
+        if ev is None and getattr(obs, "data_uri", None):
             res = await db.execute(select(Evidence).where(Evidence.artifact_uri == obs.data_uri))
             ev = res.scalar_one_or_none()
         if ev is not None:
             observation_matches.append({
-                "observation_id": obs.id,
+                "observation_id": obs_id,
                 "evidence_id": ev.id,
                 "evidence_name": ev.name,
                 "evidence_type": ev.type,
+                "mask_uri": getattr(obs, "mask_uri", None),
+                "bbox_px": list(obs.bbox_px) if getattr(obs, "bbox_px", None) else None,
             })
 
-    if observation_matches:
+    entity_observations = [
+        o.to_dict() for o in all_obs if o.observation_id in relevant_obs_ids
+    ]
+
+    for obs_item in entity_observations:
+        img_id = obs_item.get("image_id")
+        if img_id:
+            res = await db.execute(
+                select(Evidence).where((Evidence.id == img_id) | (Evidence.name == img_id))
+            )
+            ev = res.scalar_one_or_none()
+            if ev is not None and not any(m.get("evidence_id") == ev.id for m in observation_matches):
+                observation_matches.append({
+                    "observation_id": obs_item.get("observation_id"),
+                    "evidence_id": ev.id,
+                    "evidence_name": ev.name,
+                    "evidence_type": ev.type,
+                    "mask_uri": obs_item.get("mask_uri"),
+                    "bbox_px": obs_item.get("bbox_px"),
+                })
+
+    if observation_matches or entity_decisions:
         return {
             "entity_id": entity_id,
             "version_id": row.id,
             "provenance": entity.provenance.value if entity.provenance else None,
-            "trace_level": "observation",
+            "trace_level": "observation" if observation_matches else "session",
             "evidence": observation_matches,
+            "association_decisions": entity_decisions,
+            "observations": entity_observations,
         }
 
     session_ids = row.source_session_ids or []
@@ -492,6 +651,8 @@ async def entity_provenance(
             "trace_level": "session",
             "source_session_ids": session_ids,
             "evidence": session_evidence,
+            "association_decisions": entity_decisions,
+            "observations": entity_observations,
         }
 
     return {
@@ -500,7 +661,36 @@ async def entity_provenance(
         "provenance": entity.provenance.value if entity.provenance else None,
         "trace_level": "none",
         "evidence": [],
+        "association_decisions": entity_decisions,
+        "observations": entity_observations,
         "reason": "This version has no source capture sessions (procedurally generated, or predates session tracking).",
+    }
+
+
+@worlds.get("/{world_id}/entities/{entity_id}/confidence")
+async def entity_confidence(
+    world_id: str,
+    entity_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Retrieve multi-dimensional ConfidenceVector for an entity (Blueprint Task 7.1)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+    entity = world.entities.get(entity_id)
+    if entity is None:
+        raise HTTPException(404, f"Entity '{entity_id}' not found in version '{row.id}'")
+
+    cv = getattr(entity, "confidence_vector", None)
+    return {
+        "world_id": world_id,
+        "entity_id": entity_id,
+        "version_id": row.id,
+        "scalar_confidence": entity.confidence,
+        "confidence_vector": cv.to_dict() if cv is not None else None,
     }
 
 
@@ -777,6 +967,9 @@ _COMMIT_MUTABLE_FIELDS = (
     "boundary_element_ids",
     "connected_level_ids",
     "connected_room_ids",
+    "reclassify",
+    "split",
+    "merge",
     # F6: a typed real dimension. Applied to the world (entity + replayable registry + VERIFIED state), never to an
     # arbitrary entity attribute -- handled explicitly below, not by setattr.
     "user_correction",
@@ -887,6 +1080,18 @@ def _validate_commit_changes(changes: dict) -> dict:
                     422, "field 'semantic_labels' must be a list of at most 100 strings"
                 )
             validated[key] = list(value)
+        elif key == "reclassify":
+            if not isinstance(value, (dict, str)):
+                raise HTTPException(422, "field 'reclassify' must be a string or object")
+            validated[key] = value
+        elif key == "split":
+            if not isinstance(value, dict):
+                raise HTTPException(422, "field 'split' must be an object")
+            validated[key] = value
+        elif key == "merge":
+            if not isinstance(value, (dict, list)):
+                raise HTTPException(422, "field 'merge' must be a list or object")
+            validated[key] = value
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):
                 raise HTTPException(422, f"field '{key}' must be an object")
@@ -985,6 +1190,35 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
                 record = make_correction(worldir, body.entity_id, str(value.get("property")),
                                          value.get("value"), str(value.get("note") or ""))
                 record_correction(worldir, record)
+            except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "reclassify":
+            from world_ir.corrections import CorrectionError, reclassify_entity
+            try:
+                new_class = value.get("new_class") if isinstance(value, dict) else str(value)
+                note = value.get("note", "") if isinstance(value, dict) else ""
+                reclassify_entity(worldir, body.entity_id, new_class, note, auth.user_id)
+            except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "split":
+            from world_ir.corrections import CorrectionError, split_entity
+            try:
+                axis = value.get("split_axis", "x") if isinstance(value, dict) else "x"
+                ratio = float(value.get("split_ratio", 0.5)) if isinstance(value, dict) else 0.5
+                note = value.get("note", "") if isinstance(value, dict) else ""
+                split_entity(worldir, body.entity_id, axis, ratio, note, auth.user_id)
+            except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "merge":
+            from world_ir.corrections import CorrectionError, merge_entities
+            try:
+                sec_ids = value.get("secondary_entity_ids", []) if isinstance(value, dict) else list(value)
+                name = value.get("new_name") if isinstance(value, dict) else None
+                note = value.get("note", "") if isinstance(value, dict) else ""
+                merge_entities(worldir, body.entity_id, sec_ids, new_name=name, note=note, user_id=auth.user_id)
             except CorrectionError as exc:
                 raise HTTPException(422, str(exc)) from exc
             continue
@@ -1230,6 +1464,86 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         "changed_fields": list(validated.keys()),
         "duplicate": False,
     }
+
+
+class ReclassifyCorrectionIn(BaseModel):
+    entity_id: str
+    new_class: str
+    note: str | None = None
+    parent_version_id: str | None = None
+
+
+class SplitCorrectionIn(BaseModel):
+    entity_id: str
+    split_axis: str = "x"
+    split_ratio: float = 0.5
+    note: str | None = None
+    parent_version_id: str | None = None
+
+
+class MergeCorrectionIn(BaseModel):
+    primary_entity_id: str
+    secondary_entity_ids: list[str]
+    new_name: str | None = None
+    note: str | None = None
+    parent_version_id: str | None = None
+
+
+@worlds.post("/{world_id}/corrections/reclassify")
+async def api_reclassify_entity(
+    world_id: str,
+    body: ReclassifyCorrectionIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """User correction: reclassify entity to new ontology class."""
+    commit_req = CommitRequest(
+        entity_id=body.entity_id,
+        changes={"reclassify": {"new_class": body.new_class, "note": body.note}},
+        parent_version_id=body.parent_version_id,
+        commit_message=f"Reclassify {body.entity_id} to {body.new_class}",
+    )
+    res = await commit_world_correction(world_id, commit_req, db, auth)
+    res["operation"] = "reclassify"
+    return res
+
+
+@worlds.post("/{world_id}/corrections/split")
+async def api_split_entity(
+    world_id: str,
+    body: SplitCorrectionIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """User correction: split entity into two along axis."""
+    commit_req = CommitRequest(
+        entity_id=body.entity_id,
+        changes={"split": {"split_axis": body.split_axis, "split_ratio": body.split_ratio, "note": body.note}},
+        parent_version_id=body.parent_version_id,
+        commit_message=f"Split {body.entity_id} along {body.split_axis}",
+    )
+    res = await commit_world_correction(world_id, commit_req, db, auth)
+    res["operation"] = "split"
+    return res
+
+
+@worlds.post("/{world_id}/corrections/merge")
+async def api_merge_entities(
+    world_id: str,
+    body: MergeCorrectionIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """User correction: merge secondary entities into primary entity."""
+    commit_req = CommitRequest(
+        entity_id=body.primary_entity_id,
+        changes={"merge": {"secondary_entity_ids": body.secondary_entity_ids, "new_name": body.new_name, "note": body.note}},
+        parent_version_id=body.parent_version_id,
+        commit_message=f"Merge {body.secondary_entity_ids} into {body.primary_entity_id}",
+    )
+    res = await commit_world_correction(world_id, commit_req, db, auth)
+    res["operation"] = "merge"
+    return res
 
 
 async def _load_worldir_from_store(world: World, version_id: str | None = None) -> WorldIR | None:

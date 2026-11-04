@@ -100,6 +100,33 @@ def _get_entity_area(world: WorldIR, entity: Entity) -> float:
     return 0.0
 
 
+def _calculate_observed_fraction(world: WorldIR, entity: Entity) -> float:
+    """Calculate honest observed fraction based on direct evidence, confidence, and unobserved spans."""
+    obs_frac = entity.custom_properties.get("observed_fraction")
+    if obs_frac is not None:
+        return max(0.0, min(1.0, float(obs_frac)))
+
+    # If unobserved spans are documented, calculate exact complement
+    unobserved_spans = entity.custom_properties.get("unobserved_spans_m")
+    dims = entity.custom_properties.get("dimensions_m")
+    if unobserved_spans and dims and len(dims) >= 1 and dims[0] > 0:
+        total_len = float(dims[0])
+        unobs_len = sum(abs(float(b) - float(a)) for a, b in unobserved_spans)
+        return max(0.0, min(1.0, 1.0 - (unobs_len / total_len)))
+
+    if entity.provenance == Provenance.OBSERVED:
+        confidence = entity.uncertainty.confidence if (entity.uncertainty and entity.uncertainty.confidence) else 1.0
+        return max(0.0, min(1.0, float(confidence)))
+    elif entity.provenance == Provenance.RECONSTRUCTED:
+        confidence = entity.uncertainty.confidence if (entity.uncertainty and entity.uncertainty.confidence) else 0.90
+        return max(0.0, min(1.0, float(confidence)))
+    elif entity.provenance == Provenance.INFERRED:
+        # Strictly unobserved inferred element
+        return 0.0
+    else:
+        return 0.0
+
+
 def evaluate_reconstruction_completeness(world: WorldIR) -> SceneCompletenessReport:
     """Compute exhaustive environmental completeness metrics across all WorldIR rooms and entities."""
     room_entities: List[Entity] = []
@@ -127,31 +154,19 @@ def evaluate_reconstruction_completeness(world: WorldIR) -> SceneCompletenessRep
     room_reports: List[RoomCompletenessReport] = []
     missing_elements: List[str] = []
 
-    # 1. Evaluate coverage per wall
+    # 1. Evaluate coverage per wall using honest direct evidence
     for w in wall_entities:
-        obs_frac = w.custom_properties.get("observed_fraction")
-        if obs_frac is not None:
-            frac = float(obs_frac)
-        elif w.provenance in (Provenance.OBSERVED, Provenance.RECONSTRUCTED):
-            frac = 0.95
-        elif w.provenance == Provenance.INFERRED:
-            frac = 0.35
-        else:
-            frac = 0.50
-        coverage_heatmap[w.id] = max(0.0, min(1.0, frac))
+        coverage_heatmap[w.id] = _calculate_observed_fraction(world, w)
 
-    # 2. Evaluate coverage per floor and ceiling
+    # 2. Evaluate coverage per floor, ceiling, and other entities
     for fl in floor_entities:
-        frac = 0.95 if fl.provenance in (Provenance.OBSERVED, Provenance.RECONSTRUCTED) else 0.40
-        coverage_heatmap[fl.id] = frac
+        coverage_heatmap[fl.id] = _calculate_observed_fraction(world, fl)
 
     for cl in ceiling_entities:
-        frac = 0.90 if cl.provenance in (Provenance.OBSERVED, Provenance.RECONSTRUCTED) else 0.30
-        coverage_heatmap[cl.id] = frac
+        coverage_heatmap[cl.id] = _calculate_observed_fraction(world, cl)
 
     for oth in other_entities:
-        frac = 0.90 if oth.provenance in (Provenance.OBSERVED, Provenance.RECONSTRUCTED) else 0.40
-        coverage_heatmap[oth.id] = frac
+        coverage_heatmap[oth.id] = _calculate_observed_fraction(world, oth)
 
     # 3. Analyze room-by-room completeness
     total_scene_area = 0.0

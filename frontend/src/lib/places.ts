@@ -32,6 +32,67 @@ export function stepLabel(step: BuildStepId): string {
   return BUILD_STEPS[step];
 }
 
+/**
+ * 14 Pipeline Stages and their honest user-facing labels defined in docs/blueprint/12_PIPELINE.md (P13).
+ * No fabricated progress or invented stages.
+ */
+export const BLUEPRINT_STAGE_LABELS: Record<string, string> = {
+  // S1: Checking photos
+  verifying_artifact: "Checking photos",
+  checking_reconstruction_backend: "Checking photos",
+  resolving_evidence: "Checking photos",
+  s1_ingest: "Checking photos",
+
+  // S2: Finding photos of the same place
+  analyzing_evidence: "Finding photos of the same place",
+  s2_grouping: "Finding photos of the same place",
+
+  // S3: Calculating camera positions
+  building_rough_model: "Calculating camera positions",
+  reconstructing: "Calculating camera positions",
+  refining: "Calculating camera positions",
+  s3_sfm: "Calculating camera positions",
+
+  // S4: Working out real-world scale
+  s4_scale: "Working out real-world scale",
+  scaling: "Working out real-world scale",
+
+  // S5-S6: Building room geometry
+  s5_dense: "Building room geometry",
+  s6_architecture: "Building room geometry",
+  dense_geometry: "Building room geometry",
+  room_geometry: "Building room geometry",
+
+  // S7-S10: Recognising and reconstructing objects
+  s7_perception: "Recognising and reconstructing objects",
+  s8_lifting: "Recognising and reconstructing objects",
+  s9_association: "Recognising and reconstructing objects",
+  s10_objects: "Recognising and reconstructing objects",
+  perception: "Recognising and reconstructing objects",
+
+  // S11-S12: Checking the result
+  s11_diagnostics: "Checking the result",
+  s12_plausibility: "Checking the result",
+  checking_result: "Checking the result",
+
+  // S13: Finding what's missing
+  s13_completeness: "Finding what's missing",
+  coverage_planning: "Finding what's missing",
+
+  // S14: Saving the world
+  committing_version: "Saving the world",
+  s14_saving: "Saving the world",
+  saving: "Saving the world",
+};
+
+export function getStageLabel(stage: string | null | undefined): string {
+  if (!stage) return "Preparing";
+  return (
+    BLUEPRINT_STAGE_LABELS[stage] ??
+    stage.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
 export type BuildOutcome = "building" | "ready" | "partial" | "failed" | "cancelled";
 
 export function buildOutcome(job: { status: string }): BuildOutcome {
@@ -87,6 +148,7 @@ export interface PlaceCardView {
   quality: { band: QualityBand; label: string } | null;
   notRealSize: boolean;
   building: { step: string; percent: number } | null;
+  stageLabel?: string | null;
   updated: string | null;
 }
 
@@ -101,6 +163,7 @@ export function cardView(p: PlaceCardInput, now: number): PlaceCardView {
     quality: hasModel && band !== "unknown" ? { band, label: QUALITY[band] } : null,
     notRealSize: hasModel && p.scale_state === "relative",
     building: job ? { step: stepLabel(buildStep(job)), percent: Math.round(job.progress ?? 0) } : null,
+    stageLabel: job?.stage ? getStageLabel(job.stage) : null,
     updated: relativeTime(p.updated_at ?? p.created_at, now),
   };
 }

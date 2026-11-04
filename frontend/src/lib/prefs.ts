@@ -3,18 +3,27 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Per-viewer preferences (theme, Pro mode). Browser storage only: nothing here is shared or must persist reliably,
- * and every read/write tolerates blocked storage.
+ * Per-viewer preferences (theme, Pro mode, density, processing).
+ * Browser storage only: tolerates blocked storage gracefully.
  */
 export type ThemePref = "system" | "light" | "dark";
+export type DensityPref = "comfortable" | "compact";
+
+export interface ProcessingPref {
+  gpuAcceleration: boolean;
+  maxImageDimension: number;
+  denseFusion: boolean;
+}
 
 const THEME_KEY = "re-theme";
 const PRO_KEY = "re-pro-mode";
+const DENSITY_KEY = "re-density";
+const PROCESSING_KEY = "re-processing-pref";
 const EVENT = "re-prefs-change";
 
 function read(key: string): string | null {
   try {
-    return window.localStorage.getItem(key);
+    return typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
   } catch {
     return null;
   }
@@ -22,14 +31,19 @@ function read(key: string): string | null {
 
 function write(key: string, value: string) {
   try {
-    window.localStorage.setItem(key, value);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(key, value);
+    }
   } catch {
-    // Blocked storage: the preference applies to this page load only.
+    // Blocked storage: preference applies to this page load only.
   }
-  window.dispatchEvent(new Event(EVENT));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(EVENT));
+  }
 }
 
 function subscribe(cb: () => void) {
+  if (typeof window === "undefined") return () => {};
   window.addEventListener(EVENT, cb);
   window.addEventListener("storage", cb);
   return () => {
@@ -45,6 +59,7 @@ export function getTheme(): ThemePref {
 
 /** Applies the theme to <html>. "system" removes the attribute so the OS setting decides. */
 export function applyTheme(theme: ThemePref) {
+  if (typeof document === "undefined") return;
   if (theme === "system") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.setAttribute("data-theme", theme);
 }
@@ -62,7 +77,53 @@ export function setProMode(on: boolean) {
   write(PRO_KEY, String(on));
 }
 
-/** Pro mode shows the engineer workstation and technical terms. Server render and first paint are Simple mode. */
 export function useProMode(): boolean {
   return useSyncExternalStore(subscribe, () => read(PRO_KEY) === "true", () => false);
+}
+
+export function getDensity(): DensityPref {
+  const v = read(DENSITY_KEY);
+  return v === "compact" ? "compact" : "comfortable";
+}
+
+export function setDensity(density: DensityPref) {
+  write(DENSITY_KEY, density);
+  if (typeof document !== "undefined") {
+    document.documentElement.setAttribute("data-density", density);
+  }
+}
+
+export function useDensity(): DensityPref {
+  return useSyncExternalStore(subscribe, getDensity, () => "comfortable" as DensityPref);
+}
+
+const DEFAULT_PROCESSING: ProcessingPref = {
+  gpuAcceleration: true,
+  maxImageDimension: 2048,
+  denseFusion: true,
+};
+
+export function getProcessingPref(): ProcessingPref {
+  const raw = read(PROCESSING_KEY);
+  if (!raw) return DEFAULT_PROCESSING;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      gpuAcceleration: Boolean(parsed.gpuAcceleration ?? true),
+      maxImageDimension: Number(parsed.maxImageDimension ?? 2048),
+      denseFusion: Boolean(parsed.denseFusion ?? true),
+    };
+  } catch {
+    return DEFAULT_PROCESSING;
+  }
+}
+
+export function setProcessingPref(pref: Partial<ProcessingPref>) {
+  const current = getProcessingPref();
+  const updated = { ...current, ...pref };
+  write(PROCESSING_KEY, JSON.stringify(updated));
+}
+
+export function useProcessingPref(): ProcessingPref {
+  return useSyncExternalStore(subscribe, getProcessingPref, () => DEFAULT_PROCESSING);
 }

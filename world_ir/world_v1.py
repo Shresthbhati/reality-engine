@@ -26,6 +26,7 @@ from .schema_v1 import (
 )
 from .coordinates import Frame, Transform
 from .v2_extensions import Hierarchy, TemporalHistory, TopologyGraph
+from .geo import GeoAnchor
 
 
 @dataclass
@@ -231,6 +232,8 @@ class WorldIR:
     # Contract hierarchy (blueprint 11 sec 1, task 5.1, additive): typed Building/Floor/Space/Surface/Opening links over
     # the existing entities. Empty = not recorded; omitted from serialization so older worlds stay byte-identical.
     hierarchy: Hierarchy = field(default_factory=Hierarchy)
+    # Geo anchor (Blueprint 11 & 16, Task 9.3, additive): anchors local metric frame to WGS84
+    geo_anchor: Optional[GeoAnchor] = None
 
     def __post_init__(self) -> None:
         if not self.main_branch_id:
@@ -248,6 +251,8 @@ class WorldIR:
             d["temporal_history"] = self.temporal_history.to_dict()
         if self.hierarchy:
             d["hierarchy"] = self.hierarchy.to_dict()
+        if self.geo_anchor is not None:
+            d["geo_anchor"] = self.geo_anchor.to_dict()
         return d
 
     def _to_dict_v1(self) -> dict:
@@ -301,6 +306,8 @@ class WorldIR:
         }
         if self.temporal_history.events:
             d["temporal_history"] = self.temporal_history.to_dict()
+        if self.geo_anchor is not None:
+            d["geo_anchor"] = self.geo_anchor.to_dict()
         return d
 
     @staticmethod
@@ -361,6 +368,7 @@ class WorldIR:
             physics=data.get("physics", {}),
             temporal_history=TemporalHistory.from_dict(data.get("temporal_history", [])),
             hierarchy=Hierarchy.from_dict(data.get("hierarchy")),
+            geo_anchor=GeoAnchor.from_dict(data["geo_anchor"]) if data.get("geo_anchor") else None,
         )
 
     def to_json(self, indent: int = 2) -> str:
@@ -387,6 +395,35 @@ class WorldIR:
         """Containment + connectivity DERIVED from the current entity
         relationships -- computed on demand, never stale, never stored."""
         return TopologyGraph.from_registry(list(self.entities.values()))
+
+
+    def compute_bounds(self) -> tuple[Optional[tuple[float, float, float]], Optional[tuple[float, float, float]]]:
+        """Compute axis-aligned bounding box enclosing all valid geometries."""
+        min_x = min_y = min_z = float("inf")
+        max_x = max_y = max_z = float("-inf")
+        found = False
+        for g in self.geometries.values():
+            if g.bounds_min and g.bounds_max:
+                found = True
+                min_x = min(min_x, g.bounds_min.x)
+                min_y = min(min_y, g.bounds_min.y)
+                min_z = min(min_z, g.bounds_min.z)
+                max_x = max(max_x, g.bounds_max.x)
+                max_y = max(max_y, g.bounds_max.y)
+                max_z = max(max_z, g.bounds_max.z)
+        if not found:
+            return None, None
+        return (min_x, min_y, min_z), (max_x, max_y, max_z)
+
+    def geographic_bounds_geojson(self) -> Optional[dict[str, Any]]:
+        """Compute the world's bounding box as a GeoJSON Polygon Feature in WGS84."""
+        if self.geo_anchor is None:
+            return None
+        b_min, b_max = self.compute_bounds()
+        if b_min is None or b_max is None:
+            b_min = (-5.0, -5.0, 0.0)
+            b_max = (5.0, 5.0, 3.0)
+        return self.geo_anchor.bounding_box_to_geojson_polygon(b_min, b_max)
 
     def validate(self) -> list[str]:
         """Validate world consistency and return list of issues."""

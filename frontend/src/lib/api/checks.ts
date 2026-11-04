@@ -36,6 +36,8 @@ export interface JobView {
   id: string;
   status: string;
   stage: string | null;
+  stage_counts?: Record<string, number> | null;
+  failure_reason?: string | null;
   progress: number | null;
   photos_total: number | null;
   photos_placed: number | null;

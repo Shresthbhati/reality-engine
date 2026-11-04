@@ -118,8 +118,13 @@ class RelationshipKind(str, Enum):
     CONTAINS = "contains"  # Conceptual containment
     OVERLAPS = "overlaps"  # Spatial overlap
     SUPPORTS = "supports"  # Load-bearing
+    SUPPORTED_BY = "supported_by"  # Gravity/load supported by another entity (inverse of supports)
     CROSSES = "crosses"  # Spatial intersection (without support)
     RESTS_ON = "rests_on"  # Gravity support
+    MOUNTED_ON = "mounted_on"  # Wall or vertical surface mounted (e.g. TV, switch, mirror)
+    INSIDE = "inside"  # Geometrically enclosed within a room, space, or container
+    EMBEDDED_IN = "embedded_in"  # Embedded within wall/floor (e.g. conduit, junction box)
+    OCCLUDES = "occludes"  # Line-of-sight occlusion between entities
     CONNECTS = "connects"  # Functional connection (doorway connects spaces, stair connects levels)
     UNKNOWN = "unknown"
 
@@ -570,6 +575,60 @@ class CausalRelation:
         )
 
 
+@dataclass
+class ConfidenceVector:
+    """Multi-dimensional confidence vector (Blueprint 11, Task 7.1).
+
+    Each dimension is a float in [0.0, 1.0] representing measured confidence,
+    or None when that dimension was not measured. None represents 'not measured'
+    -- never fabricated or defaulted to 0.5.
+    """
+    classification: Optional[float] = None
+    identity: Optional[float] = None
+    position: Optional[float] = None
+    orientation: Optional[float] = None
+    dimensions: Optional[float] = None
+    geometry: Optional[float] = None
+    completeness: Optional[float] = None
+    material: Optional[float] = None
+    colour: Optional[float] = None
+    topology: Optional[float] = None
+    cross_view: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "classification": self.classification,
+            "identity": self.identity,
+            "position": self.position,
+            "orientation": self.orientation,
+            "dimensions": self.dimensions,
+            "geometry": self.geometry,
+            "completeness": self.completeness,
+            "material": self.material,
+            "colour": self.colour,
+            "topology": self.topology,
+            "cross_view": self.cross_view,
+        }
+
+    @staticmethod
+    def from_dict(data: Optional[dict]) -> "ConfidenceVector":
+        if not data or not isinstance(data, dict):
+            return ConfidenceVector()
+        return ConfidenceVector(
+            classification=data.get("classification"),
+            identity=data.get("identity"),
+            position=data.get("position"),
+            orientation=data.get("orientation"),
+            dimensions=data.get("dimensions"),
+            geometry=data.get("geometry"),
+            completeness=data.get("completeness"),
+            material=data.get("material"),
+            colour=data.get("colour"),
+            topology=data.get("topology"),
+            cross_view=data.get("cross_view"),
+        )
+
+
 # ===== Entity =====
 
 def _load_external_references(raw) -> tuple:
@@ -596,6 +655,7 @@ class Entity:
     temporal_events: list[TemporalEvent] = field(default_factory=list)
     provenance: Provenance = Provenance.UNKNOWN
     confidence: float = 0.5
+    confidence_vector: ConfidenceVector = field(default_factory=ConfidenceVector)
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
     custom_properties: dict = field(default_factory=dict)
     # WorldIR 2.0 (P9-01): additive, optional statement-state classification
@@ -607,6 +667,23 @@ class Entity:
     # WorldIR 2.0 (P9-01, additive): typed links to resources the world does not own (images, COLMAP models,
     # reports). Empty = v1 behavior; serialized only when non-empty so v1 dicts stay byte-identical.
     external_references: tuple = ()
+
+    @property
+    def material(self) -> Optional[str]:
+        """Material classification attribute (Blueprint 11 & Task 10.2)."""
+        attrs = self.custom_properties.get("attributes")
+        if isinstance(attrs, dict) and attrs.get("material"):
+            return str(attrs["material"])
+        return self.custom_properties.get("material") or self.custom_properties.get("material_label")
+
+    @property
+    def material_confidence(self) -> Optional[float]:
+        """Material classification confidence [0..1] (Blueprint 11 & Task 10.2)."""
+        attrs = self.custom_properties.get("attributes")
+        if isinstance(attrs, dict) and attrs.get("material_confidence") is not None:
+            return float(attrs["material_confidence"])
+        conf = self.custom_properties.get("material_confidence")
+        return float(conf) if conf is not None else None
 
     def to_dict(self) -> dict:
         # Coerce type to EntityType enum if a raw string was passed at construction.
@@ -633,6 +710,7 @@ class Entity:
             "temporal_events": [e.to_dict() for e in self.temporal_events],
             "provenance": self.provenance.value,
             "confidence": self.confidence,
+            "confidence_vector": self.confidence_vector.to_dict() if self.confidence_vector else None,
             "uncertainty": self.uncertainty.to_dict(),
             "custom_properties": self.custom_properties,
             "statement_state": self.statement_state.value if self.statement_state else None,
@@ -663,6 +741,7 @@ class Entity:
             temporal_events=[TemporalEvent.from_dict(e) for e in data.get("temporal_events", [])],
             provenance=Provenance(data.get("provenance", Provenance.UNKNOWN.value)),
             confidence=data.get("confidence", 0.5),
+            confidence_vector=ConfidenceVector.from_dict(data.get("confidence_vector")),
             uncertainty=Uncertainty.from_dict(data.get("uncertainty", {})),
             custom_properties=data.get("custom_properties", {}),
             statement_state=StatementState(raw_state) if raw_state else None,

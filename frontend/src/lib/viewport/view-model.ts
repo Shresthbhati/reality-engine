@@ -7,19 +7,19 @@ import type { ShellKind, ShellRenderMode } from "./room-shell-model";
 
 export type ViewMode = "realistic" | "wireframe" | "confidence";
 export const VIEW_MODES: ReadonlyArray<{ id: ViewMode; label: string }> = [
-  { id: "realistic", label: "Realistic" },
+  { id: "realistic", label: "Real" },
   { id: "wireframe", label: "Wireframe" },
-  { id: "confidence", label: "Confidence" },
+  { id: "confidence", label: "Evidence" },
 ];
 
 /** The three modes are materials over ONE canonical shell: realistic = measured colours/atlas, never beautified. */
-export function viewModeToRender(mode: ViewMode): ShellRenderMode {
-  return mode === "wireframe" ? "wireframe" : mode === "confidence" ? "confidence" : "solid";
+export function viewModeToRender(mode: ViewMode | string): ShellRenderMode {
+  return mode === "wireframe" ? "wireframe" : (mode === "confidence" || mode === "evidence") ? "confidence" : "solid";
 }
 
-export function renderToViewMode(mode: ShellRenderMode): ViewMode {
+export function renderToViewMode(mode: ShellRenderMode | string): ViewMode {
   // "both" is folded away: it no longer has its own tab, so it reads as realistic.
-  return mode === "wireframe" ? "wireframe" : mode === "confidence" ? "confidence" : "realistic";
+  return mode === "wireframe" ? "wireframe" : (mode === "confidence" || mode === "evidence") ? "confidence" : "realistic";
 }
 
 const MODE_KEY = "re.viewport.mode";
@@ -29,6 +29,7 @@ type StorageLike = Pick<Storage, "getItem" | "setItem">;
 export function loadStoredMode(storage?: StorageLike | null): ViewMode {
   try {
     const v = (storage ?? (typeof localStorage !== "undefined" ? localStorage : null))?.getItem(MODE_KEY);
+    if (v === "evidence") return "confidence";
     return v === "wireframe" || v === "confidence" || v === "realistic" ? v : "realistic";
   } catch {
     return "realistic";

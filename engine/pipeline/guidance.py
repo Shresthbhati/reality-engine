@@ -229,3 +229,120 @@ def build_guidance(
             "basis": "no specific gap was measured",
         })
     return out
+
+
+
+# ---------------------------------------------------------------------------
+# World-space CaptureRequests (Blueprint 11, Task 6.1)
+# ---------------------------------------------------------------------------
+
+
+def generate_world_capture_requests(
+    world,
+    coverage_report=None,
+    *,
+    world_id: str = "",
+    min_coverage_threshold: float = 0.80,
+    standoff_m: float = 2.0,
+) -> List[dict]:
+    """Generate world-space CaptureRequests for unobserved or occluded surfaces (Blueprint 11, Task 6.1).
+
+    Each request carries:
+    - id: unique string
+    - reason: explanation of the coverage deficit
+    - target_region: bounds {bounds_min, bounds_max, center}
+    - target_ids: list of affected surface entity IDs
+    - suggested_poses: list of [{position: [x,y,z], look_at: [x,y,z], distance_m: d}]
+    - expected_gain: float in [0..1]
+    - instruction: actionable natural language capture directive
+    - status: "open"
+    - created_version: version_id of world
+    """
+    from uuid import uuid4
+    from world_ir.schema_v1 import EntityType
+
+    requests: List[dict] = []
+    surface_types = {EntityType.WALL, EntityType.FLOOR, EntityType.CEILING}
+    entities = world.entities if hasattr(world.entities, "values") else {}
+    surfaces = [e for e in entities.values() if e.type in surface_types]
+
+    for sf in surfaces:
+        cp = sf.custom_properties or {}
+        cov = cp.get("coverage")
+        if cov is None:
+            ev_state = cp.get("evidence_state", "UNOBSERVED")
+            cov = 1.0 if ev_state == "OBSERVED" else 0.0
+        else:
+            cov = float(cov)
+
+        if cov >= min_coverage_threshold:
+            continue
+
+        bmin = cp.get("bounds_min")
+        bmax = cp.get("bounds_max")
+        if not bmin or not bmax:
+            if sf.geometry_ids and hasattr(world, "geometries"):
+                geom = world.geometries.get(sf.geometry_ids[0])
+                if geom and geom.bounds_min and geom.bounds_max:
+                    bmin = [geom.bounds_min.x, geom.bounds_min.y, geom.bounds_min.z]
+                    bmax = [geom.bounds_max.x, geom.bounds_max.y, geom.bounds_max.z]
+
+        if not bmin or not bmax:
+            bmin = [-1.0, -1.0, 0.0]
+            bmax = [1.0, 1.0, 2.5]
+
+        center = [
+            float((bmin[0] + bmax[0]) * 0.5),
+            float((bmin[1] + bmax[1]) * 0.5),
+            float((bmin[2] + bmax[2]) * 0.5),
+        ]
+
+        normal = cp.get("normal", [0.0, 0.0, 1.0])
+        norm_len = math.hypot(normal[0], normal[1])
+        if norm_len > 1e-6:
+            nx, ny = normal[0] / norm_len, normal[1] / norm_len
+        else:
+            nx, ny = 0.0, 1.0
+
+        suggested_cam_pos = [
+            float(center[0] + nx * standoff_m),
+            float(center[1] + ny * standoff_m),
+            float(max(1.2, center[2])),
+        ]
+
+        expected_gain = round(max(0.1, min(1.0, 1.0 - cov)), 2)
+        ev_state = cp.get("evidence_state", "UNOBSERVED")
+
+        if ev_state == "OCCLUDED":
+            instruction = f"Step sideways to bypass foreground occlusion and capture {sf.name or sf.id}."
+            reason = f"Surface {sf.name or sf.id} is partially occluded (coverage {cov:.0%})."
+        else:
+            instruction = f"Stand approximately {standoff_m:.1f}m back and capture {sf.name or sf.id}."
+            reason = f"Surface {sf.name or sf.id} is unobserved (coverage {cov:.0%})."
+
+        req_id = f"cr-{uuid4().hex[:12]}"
+        req = {
+            "id": req_id,
+            "world_id": world_id,
+            "reason": reason,
+            "target_region": {
+                "bounds_min": bmin,
+                "bounds_max": bmax,
+                "center": center,
+            },
+            "target_ids": [sf.id],
+            "suggested_poses": [
+                {
+                    "position": suggested_cam_pos,
+                    "look_at": center,
+                    "distance_m": standoff_m,
+                }
+            ],
+            "expected_gain": expected_gain,
+            "instruction": instruction,
+            "status": "open",
+            "created_version": getattr(world, "version_id", "v1") or "v1",
+        }
+        requests.append(req)
+
+    return requests

@@ -225,3 +225,40 @@ def quat_to_matrix(q: Quat) -> Tuple[
         (2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)),
         (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)),
     )
+
+
+def matrix_to_quat(R) -> Quat:
+    """Convert 3x3 rotation matrix to unit Quat(w, x, y, z).
+    Works with tuples, lists, or numpy arrays.
+    """
+    r00, r01, r02 = float(R[0][0]), float(R[0][1]), float(R[0][2])
+    r10, r11, r12 = float(R[1][0]), float(R[1][1]), float(R[1][2])
+    r20, r21, r22 = float(R[2][0]), float(R[2][1]), float(R[2][2])
+
+    trace = r00 + r11 + r22
+    if trace > 0.0:
+        s = 0.5 / math.sqrt(trace + 1.0)
+        w = 0.25 / s
+        x = (r21 - r12) * s
+        y = (r02 - r20) * s
+        z = (r10 - r01) * s
+    elif r00 > r11 and r00 > r22:
+        s = 2.0 * math.sqrt(max(1e-12, 1.0 + r00 - r11 - r22))
+        w = (r21 - r12) / s
+        x = 0.25 * s
+        y = (r01 + r10) / s
+        z = (r02 + r20) / s
+    elif r11 > r22:
+        s = 2.0 * math.sqrt(max(1e-12, 1.0 + r11 - r00 - r22))
+        w = (r02 - r20) / s
+        x = (r01 + r10) / s
+        y = 0.25 * s
+        z = (r12 + r21) / s
+    else:
+        s = 2.0 * math.sqrt(max(1e-12, 1.0 + r22 - r00 - r11))
+        w = (r10 - r01) / s
+        x = (r02 + r20) / s
+        y = (r12 + r21) / s
+        z = 0.25 * s
+
+    return Quat(w, x, y, z).normalized()

@@ -426,6 +426,13 @@ def assemble_interior_scene(
     except Exception as exc:  # noqa: BLE001 -- recorded, the structural world stands
         res.semantics = {"warnings": [f"room semantics failed: {type(exc).__name__}: {exc}"]}
 
+    # ---- stage 8: contract hierarchy adapter (Space, Surface, Opening per Blueprint 11 & 12) ----
+    from perception.architecture.adapters import adapt_architecture_to_contract
+    try:
+        adapt_architecture_to_contract(world)
+    except Exception as exc:  # noqa: BLE001 -- recorded in result warnings
+        res.validation_issues.append(f"contract adaptation failed: {type(exc).__name__}: {exc}")
+
     # ---- validation ----
     report = validate_world_ir(world)
     res.validation_issues = [i.message for i in report.issues]

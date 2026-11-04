@@ -334,14 +334,21 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
                 for prim in gltf["meshes"][mesh_index]["primitives"]:
                     prim["material"] = mat_idx
 
+        node_entry = {
+            "name": entity.name or entity.id,
+            "mesh": mesh_index,
+            "translation": [float(pos["x"]), float(pos["y"]), float(pos["z"])],
+        }
+        if isinstance(entity.transform, dict):
+            rot = entity.transform.get("rotation")
+            if isinstance(rot, dict) and all(k in rot for k in ("x", "y", "z", "w")):
+                node_entry["rotation"] = [float(rot["x"]), float(rot["y"]), float(rot["z"]), float(rot["w"])]
+            scale = entity.transform.get("scale")
+            if isinstance(scale, dict) and all(k in scale for k in ("x", "y", "z")):
+                node_entry["scale"] = [float(scale["x"]), float(scale["y"]), float(scale["z"])]
+
         node_index = len(gltf["nodes"])
-        gltf["nodes"].append(
-            {
-                "name": entity.name or entity.id,
-                "mesh": mesh_index,
-                "translation": [pos["x"], pos["y"], pos["z"]],
-            }
-        )
+        gltf["nodes"].append(node_entry)
         entity_id_to_node_idx[entity.id] = node_index
 
     # Build hierarchy: parent-child links (Task 9.1)

@@ -58,7 +58,6 @@ KNOWN_VIOLATIONS: dict[tuple[str, str], str] = {
     ("evidence.sensors", "perception.depth.interface"): "evidence promoters depend on perception types",
     ("perception.architecture.scene", "evidence.promote_planes"): "perception consumes evidence.session items / promote_planes (sibling coupling)",
     ("perception.architecture.segments", "reconstruction.backend.interface"): "perception consumes reconstruction result/camera types (shared types live in the wrong layer)",
-    ("perception.architecture.wall_slabs", "reconstruction.meshing.mesh"): "perception consumes reconstruction result/camera types (shared types live in the wrong layer)",
     ("perception.contract", "reconstruction.backend.interface"): "perception consumes reconstruction result/camera types (shared types live in the wrong layer)",
     ("perception.contract", "reconstruction.orchestrator"): "perception consumes reconstruction result/camera types (shared types live in the wrong layer)",
     ("perception.depth.interface", "evidence.session"): "perception consumes evidence.session items / promote_planes (sibling coupling)",

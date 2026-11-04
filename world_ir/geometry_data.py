@@ -4,16 +4,9 @@ vertex_count, no actual vertex buffer").
 `Geometry.data_uri`/`data_hash` (world_ir/schema_v1.py) were already
 designed for this -- a reference to a real geometry artifact -- but
 nothing ever wrote one. This module is the payload format
-(`PointCloudData`, a deterministic binary encoding) plus
+(`PointCloudData` and `MeshData`, deterministic binary encodings) plus
 `world_ir.artifact_store.ArtifactStore`, the thing `data_uri` points
 into.
-
-Point clouds first, not meshes: `evidence/promote_planes.py` already has
-real reconstructed inlier positions in hand at promotion time (used
-today only for their bounding box) -- that is real geometry sitting
-unused, not a new capability to build from scratch. A triangulated mesh
-representation is a real, separate, larger follow-on (needs actual
-surface reconstruction, not just point storage).
 """
 
 from __future__ import annotations
@@ -23,8 +16,10 @@ from dataclasses import dataclass
 from typing import Sequence, Tuple
 
 Point = Tuple[float, float, float]
+Triangle = Tuple[int, int, int]
 
 _MAGIC = b"RESPC001"  # Reality Engine Sparse Point Cloud, format v1
+_MESH_MAGIC = b"RESMSH01"  # Reality Engine Surface Mesh, format v1
 
 
 @dataclass(frozen=True)
@@ -60,3 +55,66 @@ class PointCloudData:
     @staticmethod
     def from_positions(positions: Sequence[Point]) -> "PointCloudData":
         return PointCloudData(points=tuple(positions))
+
+
+@dataclass(frozen=True)
+class MeshData:
+    """Deterministic binary encoding of a 3D triangulated surface mesh.
+
+    Vertices are stored as float64 LE coordinates for true metric precision.
+    Triangles are stored as uint32 LE indices.
+    Order is strictly preserved so vertex and face numbering matches B-Rep topology.
+    """
+
+    vertices: Tuple[Point, ...]
+    triangles: Tuple[Triangle, ...]
+
+    def __post_init__(self):
+        if not isinstance(self.vertices, tuple):
+            object.__setattr__(self, "vertices", tuple(self.vertices))
+        if not isinstance(self.triangles, tuple):
+            object.__setattr__(self, "triangles", tuple(self.triangles))
+
+    def to_bytes(self) -> bytes:
+        """Binary encoding: magic (8B), vertex count (uint32 LE), triangle count (uint32 LE),
+        vertex coordinates (V * 3 float64 LE), triangle indices (F * 3 uint32 LE)."""
+        v_body = struct.pack(f"<{len(self.vertices) * 3}d", *(c for v in self.vertices for c in v))
+        f_body = struct.pack(f"<{len(self.triangles) * 3}I", *(idx for f in self.triangles for idx in f))
+        header = _MESH_MAGIC + struct.pack("<II", len(self.vertices), len(self.triangles))
+        return header + v_body + f_body
+
+    @staticmethod
+    def from_bytes(data: bytes) -> "MeshData":
+        if data[:8] != _MESH_MAGIC:
+            raise ValueError(f"not a MeshData payload (bad magic {data[:8]!r})")
+        v_count, f_count = struct.unpack_from("<II", data, 8)
+        offset = 16
+        v_flat = struct.unpack_from(f"<{v_count * 3}d", data, offset)
+        offset += v_count * 3 * 8
+        f_flat = struct.unpack_from(f"<{f_count * 3}I", data, offset)
+        vertices = tuple((v_flat[i], v_flat[i + 1], v_flat[i + 2]) for i in range(0, len(v_flat), 3))
+        triangles = tuple((int(f_flat[i]), int(f_flat[i + 1]), int(f_flat[i + 2])) for i in range(0, len(f_flat), 3))
+        return MeshData(vertices=vertices, triangles=triangles)
+
+    @staticmethod
+    def from_arrays(vertices: Sequence[Point], triangles: Sequence[Triangle]) -> "MeshData":
+        return MeshData(vertices=tuple(vertices), triangles=tuple(triangles))
+
+    def to_ply(self) -> bytes:
+        """Export as standard ASCII Stanford PLY format."""
+        lines = [
+            "ply",
+            "format ascii 1.0",
+            f"element vertex {len(self.vertices)}",
+            "property float x",
+            "property float y",
+            "property float z",
+            f"element face {len(self.triangles)}",
+            "property list uchar int vertex_indices",
+            "end_header",
+        ]
+        for v in self.vertices:
+            lines.append(f"{v[0]:.6f} {v[1]:.6f} {v[2]:.6f}")
+        for f in self.triangles:
+            lines.append(f"3 {f[0]} {f[1]} {f[2]}")
+        return "\n".join(lines).encode("utf-8")

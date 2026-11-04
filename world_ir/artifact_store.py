@@ -20,13 +20,14 @@ import hashlib
 import os
 import re
 import uuid
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from pathlib import Path
 from typing import Dict
 
-
-class ArtifactNotFoundError(KeyError):
-    pass
+from engine.core.artifact_store_interface import (
+    ArtifactNotFoundError as CoreArtifactNotFoundError,
+    ArtifactStoreInterface,
+)
 
 
 #: sha256 hex digest: exactly 64 lowercase hex characters. `digest_of()`
@@ -44,7 +45,7 @@ def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-class ArtifactStore(ABC):
+class ArtifactStore(ArtifactStoreInterface):
     """Content-addressed store: `put(data)` returns a `data_uri` string
     (`artifact://<sha256>`) that `get()` resolves back to the same
     bytes. The digest is also handed back separately so callers can set
@@ -58,6 +59,10 @@ class ArtifactStore(ABC):
     def get(self, data_uri: str) -> bytes:
         """Resolve a data_uri back to its bytes. Raises
         ArtifactNotFoundError if unknown to this store."""
+
+    @abstractmethod
+    def has(self, digest: str) -> bool:
+        """True when the store holds an artifact with this digest."""
 
     @staticmethod
     def uri_for(digest: str) -> str:
@@ -98,6 +103,9 @@ class MemoryArtifactStore(ArtifactStore):
 
     def __len__(self) -> int:
         return len(self._blobs)
+
+    def has(self, digest: str) -> bool:
+        return digest in self._blobs
 
 
 class FileArtifactStore(ArtifactStore):
@@ -143,3 +151,7 @@ class FileArtifactStore(ArtifactStore):
             # way a corrupt blob surfaces as a hash mismatch.
             raise ArtifactNotFoundError(data_uri)
         return path.read_bytes()
+
+    def has(self, digest: str) -> bool:
+        path = self._path_for(digest)
+        return path.is_file() and not path.is_symlink()

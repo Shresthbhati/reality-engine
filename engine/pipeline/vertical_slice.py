@@ -53,6 +53,7 @@ from engine.compiler.world_compiler import (
     compile_reconstruction_to_world,
 )
 from world_ir.artifact_store import ArtifactStore
+from world_ir.camera import PinholeCamera
 from evidence.session import EvidenceItem, EvidenceKind
 from reconstruction.scale import (
     ScaleAnchoringError,
@@ -1004,8 +1005,20 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         from world_ir.observations import DepthSource
 
         cam_pos = {p.evidence_id: tuple(float(v) for v in p.position) for p in result.camera_poses}
+        # Build PinholeCamera objects from the registered poses so the
+        # association resolver can run two-view epipolar geometric
+        # verification (instead of depth-only distance gating).
+        cameras: dict[str, PinholeCamera] = {}
+        for pose in result.camera_poses:
+            try:
+                cameras[pose.evidence_id] = camera_from_pose(intrinsics, pose)
+            except Exception:  # noqa: BLE001 -- one bad camera must not kill the whole association stage
+                pass
         # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
-        candidates, assoc = resolve_hypotheses(hypotheses, DepthSource.MVS, cam_pos, model="mask_rcnn@coco", license="BSD-3-Clause", world=world)
+        candidates, assoc = resolve_hypotheses(
+            hypotheses, DepthSource.MVS, cam_pos, cameras=cameras,
+            model="mask_rcnn@coco", license="BSD-3-Clause", world=world,
+        )
         resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
         resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
     else:

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from world_ir.artifact_store import ArtifactStore, ArtifactNotFoundError
+from engine.core.artifact_store_interface import ArtifactNotFoundError, ArtifactStoreInterface
 
 
 class ProvenanceGraphError(ValueError):
@@ -33,7 +33,7 @@ class ProvenanceGraphError(ValueError):
 
 
 class ProvenanceGraph:
-    def __init__(self, store: ArtifactStore):
+    def __init__(self, store: ArtifactStoreInterface):
         self._store = store
         # digest -> {"kind", "producer", "stage", "tombstone": Optional[str]}
         self._nodes: Dict[str, Dict] = {}
@@ -164,8 +164,8 @@ class ProvenanceGraph:
                     "reason": "artifact missing from store (deleted or lost)",
                 })
                 continue
-            from world_ir.artifact_store import _digest
-            if _digest(data) != digest:
+            import hashlib
+            if hashlib.sha256(data).hexdigest() != digest:
                 failures.append({
                     "artifact": digest,
                     "reason": "hash mismatch: store bytes no longer match "

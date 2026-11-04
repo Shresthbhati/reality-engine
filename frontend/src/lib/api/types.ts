@@ -131,11 +131,27 @@ export interface ActivityDto {
   created_at: string | null;
 }
 
+export interface StorageStatusDto {
+  artifacts_bytes: number;
+  artifacts_count: number;
+  worldstore_bytes: number;
+  database_bytes: number;
+  total_bytes: number;
+}
+
 export interface StatusDto {
   database: string;
   worker: string;
-  counts: { sessions: number; evidence: number; jobs: number };
+  counts: {
+    sessions: number;
+    evidence: number;
+    jobs: number;
+    worlds?: number;
+    jobs_running?: number;
+    jobs_failed?: number;
+  };
   backends: { reconstruction: boolean };
+  storage?: StorageStatusDto;
 }
 
 export interface SessionTrajectoryDto {

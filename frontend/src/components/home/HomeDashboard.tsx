@@ -2,22 +2,30 @@
 
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowRight,
   Box,
   Camera,
+  CheckCircle2,
   CloudUpload,
+  Database,
   FilePlus2,
   FileText,
   Globe,
+  HardDrive,
+  Loader2,
   Play,
   ShieldCheck,
   Sparkles,
+  XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useWorlds, useApi, getStatus } from "@/lib/api";
+import { useWorlds, useApi, getStatus, listJobs } from "@/lib/api";
 import { fetchActivity, type ActivityType } from "@/lib/activity";
 import { relativeTime } from "@/lib/shell/shell-logic";
+import { formatBytes, summarizeJobs, jobDurationText } from "@/lib/dashboard/dashboard-model";
 import type { WorldRow } from "@/lib/types";
+import type { JobDto, StorageStatusDto } from "@/lib/api/types";
 
 const QUICK_START: Array<{ href: string; label: string; hint: string; icon: LucideIcon }> = [
   { href: "/worlds/new", label: "New World", hint: "Create a world from scratch", icon: FilePlus2 },
@@ -38,6 +46,7 @@ const ACTIVITY_ICON: Record<ActivityType, LucideIcon> = {
 export default function HomeDashboard() {
   const worlds = useWorlds();
   const status = useApi(getStatus);
+  const jobs = useApi(listJobs);
   const activity = useApi(() => fetchActivity(6));
 
   const recent = worlds.data
@@ -55,6 +64,12 @@ export default function HomeDashboard() {
             error={worlds.error?.message ?? null}
             onRetry={worlds.refetch}
           />
+          <RecentJobs
+            jobs={jobs.data}
+            loading={jobs.isLoading}
+            error={jobs.error?.message ?? null}
+            onRetry={jobs.refetch}
+          />
           <QuickStart />
         </div>
 
@@ -64,12 +79,21 @@ export default function HomeDashboard() {
             worldsError={worlds.error?.message ?? null}
             sessions={status.data?.counts.sessions ?? null}
             evidence={status.data?.counts.evidence ?? null}
+            jobsRunning={status.data?.counts.jobs_running ?? null}
+            jobsFailed={status.data?.counts.jobs_failed ?? null}
             statusLoading={status.isLoading}
             statusError={status.error?.message ?? null}
             onRetry={() => {
               worlds.refetch();
               status.refetch();
+              jobs.refetch();
             }}
+          />
+          <StorageBreakdown
+            storage={status.data?.storage ?? null}
+            loading={status.isLoading}
+            error={status.error?.message ?? null}
+            onRetry={status.refetch}
           />
           <RecentActivity
             events={activity.data}
@@ -223,7 +247,6 @@ function RecentWorlds({
                   className="block rounded-lg overflow-hidden hover:border-[var(--accent)] transition-colors"
                   style={{ border: "1px solid var(--border)", background: "var(--bg-elevated)" }}
                 >
-                  {/* No preview is rendered for a world yet; an honest placeholder, never a stock image. */}
                   <div
                     className="h-20 flex flex-col items-center justify-center gap-1"
                     style={{ background: "var(--bg-base)", color: "var(--text-tertiary)" }}
@@ -247,6 +270,206 @@ function RecentWorlds({
             );
           })}
         </ul>
+      )}
+    </Panel>
+  );
+}
+
+function RecentJobs({
+  jobs,
+  loading,
+  error,
+  onRetry,
+}: {
+  jobs: JobDto[] | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const summary = summarizeJobs(jobs);
+
+  return (
+    <Panel title="Jobs & Pipeline Execution">
+      {error ? (
+        <ErrorBlock what="Jobs" message={error} onRetry={onRetry} />
+      ) : loading || jobs === null ? (
+        <Muted>Loading pipeline jobs…</Muted>
+      ) : jobs.length === 0 ? (
+        <Muted>No jobs run yet. Starting a reconstruction or export will track progress here.</Muted>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {/* Active jobs banner */}
+          {summary.active.length > 0 && (
+            <div
+              className="rounded-lg p-3 flex flex-col gap-2"
+              style={{ background: "var(--accent-subtle)", border: "1px solid var(--accent)" }}
+            >
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" style={{ color: "var(--accent)" }} />
+                <span className="text-xs font-semibold" style={{ color: "var(--accent)" }}>
+                  {summary.active.length} active job{summary.active.length === 1 ? "" : "s"} running
+                </span>
+              </div>
+              <ul className="flex flex-col gap-1.5 pl-6">
+                {summary.active.map((j) => (
+                  <li key={j.id} className="text-xs flex items-center justify-between">
+                    <span className="font-mono" style={{ color: "var(--text-primary)" }}>
+                      {j.type} ({j.stage ?? "in progress"})
+                    </span>
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      {jobDurationText(j.started_at ?? j.created_at)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Failed jobs banner */}
+          {summary.failed.length > 0 && (
+            <div
+              className="rounded-lg p-3 flex flex-col gap-2"
+              style={{ background: "var(--error-subtle)", border: "1px solid var(--error)" }}
+            >
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: "var(--error)" }} />
+                <span className="text-xs font-semibold" style={{ color: "var(--error)" }}>
+                  {summary.failed.length} failed job{summary.failed.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <ul className="flex flex-col gap-1.5 pl-6">
+                {summary.failed.slice(0, 3).map((j) => (
+                  <li key={j.id} className="text-xs flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-semibold" style={{ color: "var(--text-primary)" }}>
+                        {j.type} [{j.id}]
+                      </span>
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        {relativeTime(j.completed_at ?? j.created_at)}
+                      </span>
+                    </div>
+                    {j.error && (
+                      <span className="text-[11px] truncate" style={{ color: "var(--error)" }}>
+                        {j.error}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Recent list */}
+          <ul className="flex flex-col divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+            {summary.recent.map((j) => {
+              const dur = jobDurationText(j.started_at, j.completed_at);
+              const isRunning = j.status === "running";
+              const isFailed = j.status === "failed";
+              const isSuccess = j.status === "succeeded";
+
+              return (
+                <li key={j.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isRunning ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: "var(--accent)" }} />
+                    ) : isFailed ? (
+                      <XCircle className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--error)" }} />
+                    ) : isSuccess ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--success)" }} />
+                    ) : (
+                      <Box className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-tertiary)" }} />
+                    )}
+                    <span className="font-mono font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                      {j.type}
+                    </span>
+                    <span
+                      className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded shrink-0"
+                      style={{
+                        background: isRunning
+                          ? "var(--accent-subtle)"
+                          : isFailed
+                          ? "var(--error-subtle)"
+                          : isSuccess
+                          ? "var(--success-subtle)"
+                          : "var(--bg-elevated)",
+                        color: isRunning
+                          ? "var(--accent)"
+                          : isFailed
+                          ? "var(--error)"
+                          : isSuccess
+                          ? "var(--success)"
+                          : "var(--text-secondary)",
+                      }}
+                    >
+                      {j.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0" style={{ color: "var(--text-secondary)" }}>
+                    {dur && <span>{dur}</span>}
+                    <span>{relativeTime(j.completed_at ?? j.created_at)}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function StorageBreakdown({
+  storage,
+  loading,
+  error,
+  onRetry,
+}: {
+  storage: StorageStatusDto | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <Panel title="Storage Usage">
+      {error ? (
+        <ErrorBlock what="Storage" message={error} onRetry={onRetry} />
+      ) : loading || storage === null ? (
+        <Muted>Measuring storage…</Muted>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between pb-2 border-b" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="flex items-center gap-2">
+              <HardDrive className="w-4 h-4" style={{ color: "var(--accent)" }} />
+              <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                Total on Disk
+              </span>
+            </div>
+            <span className="text-sm font-semibold font-mono-num" style={{ color: "var(--text-primary)" }}>
+              {formatBytes(storage.total_bytes)}
+            </span>
+          </div>
+
+          <ul className="flex flex-col gap-2 text-xs">
+            <li className="flex items-center justify-between">
+              <span style={{ color: "var(--text-secondary)" }}>Artifacts & Uploads</span>
+              <span className="font-mono-num" style={{ color: "var(--text-primary)" }}>
+                {formatBytes(storage.artifacts_bytes)} ({storage.artifacts_count} files)
+              </span>
+            </li>
+            <li className="flex items-center justify-between">
+              <span style={{ color: "var(--text-secondary)" }}>WorldStore Versions</span>
+              <span className="font-mono-num" style={{ color: "var(--text-primary)" }}>
+                {formatBytes(storage.worldstore_bytes)}
+              </span>
+            </li>
+            <li className="flex items-center justify-between">
+              <span style={{ color: "var(--text-secondary)" }}>Database</span>
+              <span className="font-mono-num" style={{ color: "var(--text-primary)" }}>
+                {formatBytes(storage.database_bytes)}
+              </span>
+            </li>
+          </ul>
+        </div>
       )}
     </Panel>
   );
@@ -283,14 +506,19 @@ function Overview(props: {
   worldsError: string | null;
   sessions: number | null;
   evidence: number | null;
+  jobsRunning: number | null;
+  jobsFailed: number | null;
   statusLoading: boolean;
   statusError: string | null;
   onRetry: () => void;
 }) {
   const error = props.worldsError ?? props.statusError;
-  const stat = (label: string, value: number | null) => (
+  const stat = (label: string, value: number | null, alert?: boolean) => (
     <div className="min-w-0">
-      <p className="text-2xl font-semibold font-mono-num" style={{ color: "var(--text-primary)" }}>
+      <p
+        className="text-2xl font-semibold font-mono-num"
+        style={{ color: alert && value && value > 0 ? "var(--error)" : "var(--text-primary)" }}
+      >
         {value === null ? "—" : value.toLocaleString("en-US")}
       </p>
       <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
@@ -308,7 +536,9 @@ function Overview(props: {
         <div className="grid grid-cols-3 gap-3">
           {stat("Worlds", props.worlds)}
           {stat("Sessions", props.sessions)}
-          {stat("Evidence items", props.evidence)}
+          {stat("Evidence", props.evidence)}
+          {stat("Active jobs", props.jobsRunning)}
+          {stat("Failed jobs", props.jobsFailed, true)}
         </div>
       )}
     </Panel>

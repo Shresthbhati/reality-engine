@@ -105,3 +105,47 @@ async def gc_blobs(db, candidates: set[str]) -> dict:
             path.unlink(missing_ok=True)
         removed.append(digest)
     return {"removed": removed, "kept_shared": kept}
+
+
+def measure_storage_usage() -> dict:
+    """Measure real filesystem storage usage in bytes for artifacts, worldstore, and database (Task 11.1)."""
+    art_root = storage_root()
+    art_bytes = 0
+    art_count = 0
+    if art_root.exists():
+        for p in art_root.rglob("*"):
+            if p.is_file():
+                try:
+                    art_bytes += p.stat().st_size
+                    art_count += 1
+                except (OSError, FileNotFoundError):
+                    pass
+
+    ws_root = Path(os.environ.get("WORLDSTORE_ROOT", "./data/worldstore")).resolve()
+    ws_bytes = 0
+    if ws_root.exists():
+        for p in ws_root.rglob("*"):
+            if p.is_file():
+                try:
+                    ws_bytes += p.stat().st_size
+                except (OSError, FileNotFoundError):
+                    pass
+
+    db_bytes = 0
+    db_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///app.db")
+    if "sqlite" in db_url:
+        path_str = db_url.split("sqlite:///")[-1].split("sqlite+aiosqlite:///")[-1]
+        db_path = Path(path_str).resolve()
+        if db_path.exists() and db_path.is_file():
+            try:
+                db_bytes = db_path.stat().st_size
+            except (OSError, FileNotFoundError):
+                pass
+
+    return {
+        "artifacts_bytes": art_bytes,
+        "artifacts_count": art_count,
+        "worldstore_bytes": ws_bytes,
+        "database_bytes": db_bytes,
+        "total_bytes": art_bytes + ws_bytes + db_bytes,
+    }

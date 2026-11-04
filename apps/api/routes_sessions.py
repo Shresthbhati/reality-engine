@@ -17,9 +17,11 @@ from apps.api.models import (
     Job,
     Location,
     Session,
+    World,
     new_id,
     utcnow,
 )
+from apps.api.storage import measure_storage_usage
 
 # --------------------------------------------------------------------------
 # Schemas (API DTOs — distinct from domain types and UI state)
@@ -106,9 +108,18 @@ async def health_check() -> dict:
 @health.get("/status")
 async def status(db: AsyncSession = Depends(get_db)) -> dict:
     counts = {}
-    for name, model in (("sessions", Session), ("evidence", Evidence), ("jobs", Job)):
+    for name, model in (("sessions", Session), ("evidence", Evidence), ("jobs", Job), ("worlds", World)):
         res = await db.execute(select(func.count()).select_from(model))
         counts[name] = res.scalar_one()
+
+    running_res = await db.execute(select(func.count()).select_from(Job).where(Job.status == "running"))
+    counts["jobs_running"] = running_res.scalar_one()
+
+    failed_res = await db.execute(select(func.count()).select_from(Job).where(Job.status == "failed"))
+    counts["jobs_failed"] = failed_res.scalar_one()
+
+    storage_info = measure_storage_usage()
+
     reconstruction = False
     try:
         import reconstruction.orchestrator  # noqa: F401
@@ -119,6 +130,7 @@ async def status(db: AsyncSession = Depends(get_db)) -> dict:
         "database": "ok",
         "worker": "running",
         "counts": counts,
+        "storage": storage_info,
         "backends": {"reconstruction": reconstruction},
     }
 

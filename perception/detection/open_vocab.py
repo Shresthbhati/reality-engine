@@ -183,6 +183,40 @@ class OpenVocabDetector:
 
         return observations
 
+    def detect_in_crop(
+        self,
+        crop_image: np.ndarray,
+        target_classes: Sequence[str],
+        confidence_threshold: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
+        """Run detection on a single image crop for specific ontology classes."""
+        threshold = confidence_threshold if confidence_threshold is not None else self.confidence_threshold
+        prompts = []
+        for cls_path in target_classes:
+            node = self.ontology.get(cls_path)
+            if node is not None:
+                prompts.extend(node.prompts)
+            else:
+                prompts.append(cls_path.split("/")[-1].replace("_", " "))
+
+        if not prompts:
+            prompts = ["fixture", "switch", "socket"]
+
+        raw_detections = self._backend.detect(crop_image, prompts)
+
+        results = []
+        for det in raw_detections:
+            if det.score < threshold:
+                continue
+            onto_node = self.ontology.resolve_or_unknown(det.label)
+            results.append({
+                "class_path": onto_node.path,
+                "label": det.label,
+                "confidence": float(det.score),
+                "box": tuple(det.box_xyxy),
+            })
+        return results
+
 
 def evaluate_detection_metrics(
     observations: Sequence[Observation],

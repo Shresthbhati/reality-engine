@@ -158,7 +158,7 @@ updates only the affected region.
 | ID | Task | Depends | Done when | Status |
 |----|------|---------|-----------|--------|
 | 10.1 | Texture projection from photos onto meshes | 7.2 | the Real view uses image-derived textures; GLB export carries them | DONE (feat/task-10-1-texture-projection, verified 2026-11-04) |
-| 10.2 | Material classification as attributes | 8.2 | material + confidence on entities | TODO |
+| 10.2 | Material classification as attributes | 8.2 | material + confidence on entities | DONE (feat/task-10-2-material-classification-attributes, verified 2026-11-04) |
 | 10.3 | Completion proposals as PRIOR_GENERATED | 7.2 | hidden parts proposed, visibly marked, never OBSERVED | TODO |
 
 ## Phase 11 — Product polish

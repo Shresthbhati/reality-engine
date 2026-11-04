@@ -668,6 +668,23 @@ class Entity:
     # reports). Empty = v1 behavior; serialized only when non-empty so v1 dicts stay byte-identical.
     external_references: tuple = ()
 
+    @property
+    def material(self) -> Optional[str]:
+        """Material classification attribute (Blueprint 11 & Task 10.2)."""
+        attrs = self.custom_properties.get("attributes")
+        if isinstance(attrs, dict) and attrs.get("material"):
+            return str(attrs["material"])
+        return self.custom_properties.get("material") or self.custom_properties.get("material_label")
+
+    @property
+    def material_confidence(self) -> Optional[float]:
+        """Material classification confidence [0..1] (Blueprint 11 & Task 10.2)."""
+        attrs = self.custom_properties.get("attributes")
+        if isinstance(attrs, dict) and attrs.get("material_confidence") is not None:
+            return float(attrs["material_confidence"])
+        conf = self.custom_properties.get("material_confidence")
+        return float(conf) if conf is not None else None
+
     def to_dict(self) -> dict:
         # Coerce type to EntityType enum if a raw string was passed at construction.
         entity_type = self.type if isinstance(self.type, EntityType) else EntityType(self.type)

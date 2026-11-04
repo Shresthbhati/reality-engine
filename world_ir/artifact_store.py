@@ -30,6 +30,10 @@ from engine.core.artifact_store_interface import (
 )
 
 
+class ArtifactNotFoundError(KeyError, CoreArtifactNotFoundError):
+    """Raised when an artifact is not found in the store."""
+
+
 #: sha256 hex digest: exactly 64 lowercase hex characters. `digest_of()`
 #: enforces this on every incoming data_uri -- a `data_uri` is untrusted
 #: input (it round-trips through WorldIR JSON, which can come from

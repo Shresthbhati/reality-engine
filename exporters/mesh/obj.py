@@ -45,7 +45,7 @@ def _resolve_real_mesh(artifact_store: Optional[ArtifactStore], geometry) -> Opt
         payload = artifact_store.get(geometry.data_uri)
     except ArtifactNotFoundError:
         return None
-    from reconstruction.meshing.mesh import MeshData
+    from world_ir.geometry_data import MeshData
     try:
         mesh = MeshData.from_bytes(payload)
         return list(mesh.vertices), list(mesh.faces)

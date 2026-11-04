@@ -32,6 +32,7 @@ from .schema_v1 import (
 )
 from .world_v1 import WorldIR, Branch, Scenario, SimulationState, TemporalState
 from .geo import GeoAnchor
+from .geometry_data import MeshData, PointCloudData
 from .diff import diff_worlds, WorldDiff, EntityDiff, GeometryDiff, ChangeKind
 from .temporal import (
     TemporalChangeKind,
@@ -94,6 +95,9 @@ __all__ = [
     "CameraIntrinsicsError",
     "quat_to_matrix",
     "matrix_to_quat",
+    # Geometry data
+    "MeshData",
+    "PointCloudData",
     # V1 World
     "WorldIR",
     "GeoAnchor",

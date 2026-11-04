@@ -143,7 +143,7 @@ updates only the affected region.
 | 8.2 | Open-vocab detector via the registry | 4.1, 8.1 | `perception/detection/` | prompts come from the ontology; output = Observations only | per-class precision/recall on the living room | [15](15_ML_MODEL_STRATEGY.md) | DONE (feat/task-8-2-open-vocab-detector, verified 2026-11-04) |
 | 8.3 | Parametric object templates | 8.1 | `perception/architecture/parametric.py` | table, cabinet, sofa, chair, bed, TV and media console fitted from observations, with components | geometry error vs measured objects (if 2.3 is done) | [12](12_PIPELINE.md) S10 | DONE (feat/task-8-3-parametric-object-templates, verified 2026-11-04) |
 | 8.4 | Relationships | 8.3 | `engine/scene_graph/`, topology | supported_by / mounted_on / part_of / inside computed geometrically | unit tests | [11](11_WORLDIR_CONTRACT.md) | DONE (feat/task-8-4-spatial-relationships, verified 2026-11-04) |
-| 8.5 | User corrections | 8.3 | API + inspector | reclassify, split, merge → a user-basis decision + a new version | e2e | [14](14_FRONTEND_UX.md) | TODO |
+| 8.5 | User corrections | 8.3 | API + inspector | reclassify, split, merge → a user-basis decision + a new version | e2e | [14](14_FRONTEND_UX.md) | DONE (feat/task-8-5-user-corrections, verified 2026-11-04) |
 
 ## Phase 9 — Fine detail, video, geo (after the v1 demo works)
 

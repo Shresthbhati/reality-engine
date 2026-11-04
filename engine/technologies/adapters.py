@@ -19,6 +19,11 @@ from engine.technologies.catalog import (
     TechnologyDescriptor,
     TechnologySubsystem,
 )
+from engine.verification.classification import (
+    CapabilityVerificationStatus,
+    ExecutionClassification,
+    validate_observation_provenance,
+)
 from provenance import Provenance, Uncertainty
 from world_ir.coordinates import Frame, Transform
 from world_ir.entity import Entity
@@ -38,7 +43,11 @@ class AdapterExecutionResult:
     diagnostics: Dict[str, Any] = field(default_factory=dict)
     provenance: Provenance = Provenance.RECONSTRUCTED
     confidence: float = 0.90
+    classification: ExecutionClassification = ExecutionClassification.INTERNAL_IMPLEMENTATION
     error_message: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        validate_observation_provenance(self.classification, self.provenance)
 
 
 class BaseTechnologyAdapter:
@@ -109,7 +118,7 @@ class VisualPerceptionAdapter(BaseTechnologyAdapter):
             {"label": "wall", "segmentation_mask": True, "score": 0.95},
         ])
 
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0 + 12.5
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
         return AdapterExecutionResult(
             tech_id=self.tech_id,
             subsystem=self.descriptor.subsystem,
@@ -117,9 +126,10 @@ class VisualPerceptionAdapter(BaseTechnologyAdapter):
             execution_time_ms=elapsed_ms,
             memory_peak_mb=145.0,
             output_data={"detections": simulated_objects},
-            diagnostics={"backend_model": self.descriptor.name, "device": "GPU:0"},
-            provenance=Provenance.ESTIMATED,
-            confidence=0.91,
+            diagnostics={"backend_model": self.descriptor.name, "device": "Host:CPU"},
+            provenance=Provenance.INFERRED,
+            confidence=0.85,
+            classification=ExecutionClassification.SIMULATED,
         )
 
     def promote_to_world_ir(
@@ -254,7 +264,7 @@ class GeometricEstimationAdapter(BaseTechnologyAdapter):
         scale = float(options.get("scale", 1.0))
         rmse = float(options.get("rmse", 0.012))
 
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0 + 8.4
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
         return AdapterExecutionResult(
             tech_id=self.tech_id,
             subsystem=self.descriptor.subsystem,
@@ -269,8 +279,9 @@ class GeometricEstimationAdapter(BaseTechnologyAdapter):
                 "inlier_ratio": 0.985,
             },
             diagnostics={"solver": self.descriptor.name, "iterations": 14},
-            provenance=Provenance.RECONSTRUCTED,
-            confidence=0.98,
+            provenance=Provenance.INFERRED,
+            confidence=0.85,
+            classification=ExecutionClassification.SIMULATED,
         )
 
     def promote_to_world_ir(
@@ -342,7 +353,7 @@ class ReconstructionMappingAdapter(BaseTechnologyAdapter):
         registered_cams = int(options.get("registered_cameras", 25))
         points_count = int(options.get("points_count", 15000))
 
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0 + 45.0
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
         return AdapterExecutionResult(
             tech_id=self.tech_id,
             subsystem=self.descriptor.subsystem,
@@ -356,8 +367,9 @@ class ReconstructionMappingAdapter(BaseTechnologyAdapter):
                 "mean_track_length": 4.8,
             },
             diagnostics={"mapping_pipeline": self.descriptor.name},
-            provenance=Provenance.RECONSTRUCTED,
-            confidence=0.95,
+            provenance=Provenance.INFERRED,
+            confidence=0.85,
+            classification=ExecutionClassification.SIMULATED,
         )
 
     def promote_to_world_ir(
@@ -423,7 +435,7 @@ class Pointcloud3DPerceptionAdapter(BaseTechnologyAdapter):
             {"class": "furniture", "points_count": 3200, "confidence": 0.89},
         ])
 
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0 + 22.0
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
         return AdapterExecutionResult(
             tech_id=self.tech_id,
             subsystem=self.descriptor.subsystem,
@@ -432,8 +444,9 @@ class Pointcloud3DPerceptionAdapter(BaseTechnologyAdapter):
             memory_peak_mb=215.0,
             output_data={"segments": segments, "mean_iou": 0.875},
             diagnostics={"3d_engine": self.descriptor.name},
-            provenance=Provenance.ESTIMATED,
-            confidence=0.94,
+            provenance=Provenance.INFERRED,
+            confidence=0.85,
+            classification=ExecutionClassification.SIMULATED,
         )
 
     def promote_to_world_ir(
@@ -606,7 +619,7 @@ class GeometryCadMeshAdapter(BaseTechnologyAdapter):
         tri_reduction = float(options.get("triangle_reduction_pct", 65.0))
         watertight = bool(options.get("watertight", True))
 
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0 + 15.4
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
         return AdapterExecutionResult(
             tech_id=self.tech_id,
             subsystem=self.descriptor.subsystem,
@@ -622,8 +635,9 @@ class GeometryCadMeshAdapter(BaseTechnologyAdapter):
                 "output_triangles": 9000,
             },
             diagnostics={"mesh_kernel": self.descriptor.name},
-            provenance=Provenance.RECONSTRUCTED,
-            confidence=0.99,
+            provenance=Provenance.INFERRED,
+            confidence=0.85,
+            classification=ExecutionClassification.SIMULATED,
         )
 
     def promote_to_world_ir(
@@ -702,7 +716,7 @@ class GeospatialEnvironmentAdapter(BaseTechnologyAdapter):
         points_streamed = int(options.get("points_streamed", 500000))
         dem_resolution_m = float(options.get("dem_resolution_m", 0.5))
 
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0 + 38.0
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
         return AdapterExecutionResult(
             tech_id=self.tech_id,
             subsystem=self.descriptor.subsystem,
@@ -716,8 +730,9 @@ class GeospatialEnvironmentAdapter(BaseTechnologyAdapter):
                 "terrain_slope_mean_deg": 4.2,
             },
             diagnostics={"gis_engine": self.descriptor.name},
-            provenance=Provenance.RECONSTRUCTED,
-            confidence=0.97,
+            provenance=Provenance.INFERRED,
+            confidence=0.85,
+            classification=ExecutionClassification.SIMULATED,
         )
 
     def promote_to_world_ir(
@@ -783,7 +798,7 @@ class InferenceAccelerationAdapter(BaseTechnologyAdapter):
         speedup_factor = float(options.get("speedup_factor", 2.8))
         vram_allocated_mb = float(options.get("vram_mb", 650.0))
 
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0 + 4.5
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
         return AdapterExecutionResult(
             tech_id=self.tech_id,
             subsystem=self.descriptor.subsystem,
@@ -797,8 +812,9 @@ class InferenceAccelerationAdapter(BaseTechnologyAdapter):
                 "within_rtx4050_bounds": (vram_allocated_mb <= 6144.0),
             },
             diagnostics={"accelerator": self.descriptor.name, "precision": "FP16"},
-            provenance=Provenance.ESTIMATED,
-            confidence=0.99,
+            provenance=Provenance.INFERRED,
+            confidence=0.85,
+            classification=ExecutionClassification.SIMULATED,
         )
 
     def promote_to_world_ir(

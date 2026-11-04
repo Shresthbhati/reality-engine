@@ -131,6 +131,9 @@ def _resolve_material(
     entity,
     gltf: dict,
     material_map: dict[str, int],
+    artifact_store: Optional[ArtifactStore] = None,
+    tail_buffer: Optional[bytearray] = None,
+    base_buffer_len: int = 0,
 ) -> Optional[int]:
     """Resolve or create a glTF PBR material for an entity (Task 9.1)."""
     mat_id = getattr(entity, "material_id", None)
@@ -158,6 +161,45 @@ def _resolve_material(
                 "roughnessFactor": roughness,
             },
         }
+        # Embed texture if available
+        if tail_buffer is not None:
+            img_bytes: Optional[bytes] = None
+            if "texture_bytes" in props and isinstance(props["texture_bytes"], (bytes, bytearray)):
+                img_bytes = bytes(props["texture_bytes"])
+            elif "texture_base64" in props and isinstance(props["texture_base64"], str):
+                try:
+                    img_bytes = base64.b64decode(props["texture_base64"])
+                except Exception:
+                    pass
+            elif "texture_uri" in props and artifact_store:
+                try:
+                    img_bytes = artifact_store.get(props["texture_uri"])
+                except Exception:
+                    pass
+
+            if img_bytes:
+                # 4-byte pad
+                pad = (-len(tail_buffer)) % 4
+                tail_buffer.extend(b"\x00" * pad)
+                img_offset = base_buffer_len + len(tail_buffer)
+                tail_buffer.extend(img_bytes)
+                img_bv_idx = len(gltf["bufferViews"])
+                gltf["bufferViews"].append({
+                    "buffer": 0,
+                    "byteOffset": img_offset,
+                    "byteLength": len(img_bytes),
+                })
+                img_idx = len(gltf.setdefault("images", []))
+                gltf["images"].append({
+                    "bufferView": img_bv_idx,
+                    "mimeType": props.get("texture_mime", "image/png"),
+                })
+                if not gltf.get("samplers"):
+                    gltf["samplers"] = [{"magFilter": 9729, "minFilter": 9987, "wrapS": 10497, "wrapT": 10497}]
+                tex_idx = len(gltf.setdefault("textures", []))
+                gltf["textures"].append({"sampler": 0, "source": img_idx})
+                mat_def["pbrMetallicRoughness"]["baseColorTexture"] = {"index": tex_idx}
+
         gltf.setdefault("materials", []).append(mat_def)
         mat_idx = len(gltf["materials"]) - 1
         material_map[mat.id] = mat_idx
@@ -271,8 +313,9 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
 
         real_mesh = _resolve_real_mesh(artifact_store, geometry)
         if real_mesh is not None and real_mesh[0] and real_mesh[1]:
-            vertices, faces = real_mesh
-            tri = _real_triangles_mesh(vertices, faces, (pos["x"], pos["y"], pos["z"]))
+            vertices, faces = real_mesh[0], real_mesh[1]
+            uvs = real_mesh[2] if len(real_mesh) > 2 else None
+            tri = _real_triangles_mesh(vertices, faces, (pos["x"], pos["y"], pos["z"]), uvs=uvs)
             base_offset = len(buffer_bytes) + len(tail_buffer)
             pv_index = len(gltf["bufferViews"])
             tail_buffer.extend(tri["position_bytes"])
@@ -291,10 +334,24 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
             })
             idx_acc = len(gltf["accessors"])
             gltf["accessors"].append({"bufferView": iv_index, "byteOffset": 0, **tri["index_accessor"]})
+
+            prim_attrs: dict[str, int] = {"POSITION": pos_acc}
+            if tri.get("uv_bytes") and tri.get("uv_accessor"):
+                base_offset = len(buffer_bytes) + len(tail_buffer)
+                uv_index = len(gltf["bufferViews"])
+                tail_buffer.extend(tri["uv_bytes"])
+                gltf["bufferViews"].append({
+                    "buffer": 0, "byteOffset": base_offset,
+                    "byteLength": len(tri["uv_bytes"]), "target": 34962,
+                })
+                uv_acc = len(gltf["accessors"])
+                gltf["accessors"].append({"bufferView": uv_index, "byteOffset": 0, **tri["uv_accessor"]})
+                prim_attrs["TEXCOORD_0"] = uv_acc
+
             mesh_index = len(gltf["meshes"])
             gltf["meshes"].append({
                 "primitives": [{
-                    "attributes": {"POSITION": pos_acc},
+                    "attributes": prim_attrs,
                     "indices": idx_acc, "mode": 4,
                 }]
             })
@@ -321,7 +378,7 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
                 tail_buffer.extend(b"\x00" * ((-len(tail_buffer)) % 4))
 
         # Material binding (Task 9.1)
-        mat_idx = _resolve_material(world, entity, gltf, material_map)
+        mat_idx = _resolve_material(world, entity, gltf, material_map, artifact_store=artifact_store, tail_buffer=tail_buffer, base_buffer_len=len(buffer_bytes))
         if mat_idx is not None:
             if mesh_index == 0:
                 mesh_index = len(gltf["meshes"])
@@ -410,13 +467,14 @@ def _resolve_real_mesh(artifact_store: Optional[ArtifactStore], geometry) -> "tu
         mesh = _MeshData.from_bytes(payload)
     except (ValueError, struct.error):
         return None  # not a MeshData payload this exporter understands
-    return mesh.vertices, mesh.faces
+    return mesh.vertices, mesh.faces, getattr(mesh, "uvs", None)
 
 
 def _real_triangles_mesh(
     vertices: "list[tuple[float, float, float]]",
     faces: "list[tuple[int, int, int]]",
     origin: "tuple[float, float, float]",
+    uvs: "list[tuple[float, float]] | tuple | None" = None,
 ) -> dict:
     """A real glTF TRIANGLES primitive from a reconstructed mesh,
     translated into the entity's local space. Index width follows the
@@ -430,9 +488,24 @@ def _real_triangles_mesh(
         struct.pack(index_fmt, i) for f in faces for i in f
     )
     xs, ys, zs = [v[0] for v in local], [v[1] for v in local], [v[2] for v in local]
+    uv_bytes = b""
+    uv_accessor = None
+    if uvs is not None and len(uvs) == len(local):
+        uv_bytes = b"".join(struct.pack("<2f", float(u), float(v)) for u, v in uvs)
+        u_vals = [float(u) for u, v in uvs]
+        v_vals = [float(v) for u, v in uvs]
+        uv_accessor = {
+            "componentType": _COMPONENT_TYPE_FLOAT,
+            "count": len(uvs),
+            "type": "VEC2",
+            "min": [min(u_vals), min(v_vals)],
+            "max": [max(u_vals), max(v_vals)],
+        }
+
     return {
         "position_bytes": position_bytes,
         "index_bytes": index_bytes,
+        "uv_bytes": uv_bytes,
         "accessor": {
             "componentType": _COMPONENT_TYPE_FLOAT,
             "count": len(local),
@@ -447,6 +520,7 @@ def _real_triangles_mesh(
             "count": len(faces) * 3,
             "type": "SCALAR",
         },
+        "uv_accessor": uv_accessor,
     }
 
 

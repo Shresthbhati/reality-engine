@@ -43,7 +43,7 @@ test("worlds rail + Explore tab are active on a world route; a disabled entry ne
   const worlds = RAIL_ITEMS.find((e) => e.id === "worlds")!;
   assert.equal(isEntryActive(worlds, "/worlds/w-1"), true);
   assert.equal(activeModeId("/worlds/w-1"), "explore");
-  assert.equal(activeModeId("/reports/new"), "export");
+  assert.equal(activeModeId("/reports/new"), "analyze");
   assert.equal(activeModeId("/"), null);
   assert.equal(isEntryActive(MODE_TABS.find((t) => t.id === "compare")!, "/anything"), false);
 });

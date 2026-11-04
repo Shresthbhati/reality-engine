@@ -28,12 +28,21 @@ from .dedup import (
     hash_to_hex,
     hex_to_hash,
 )
+from .frames import (
+    FrameCandidate,
+    FrameSelectionError,
+    IFrameSelectionStrategy,
+    InformationGainSelectionStrategy,
+    UniformTimeSamplingStrategy,
+)
 from .video import (
     SceneAwareFrameSelectionStrategy,
     SceneTransition,
+    VideoIngestResult,
     compute_frame_difference,
     detect_scene_transitions_from_frames,
     extract_video_keyframes,
+    ingest_video_to_keyframes,
 )
 from .cad_importer import (
     CadFloorPlan,

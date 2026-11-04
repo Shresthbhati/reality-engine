@@ -149,7 +149,7 @@ updates only the affected region.
 
 | ID | Task | Depends | Done when | Status |
 |----|------|---------|-----------|--------|
-| 9.1 | High-res crop pass (sockets, switches) using `perception/detail/` + `min_pixels` | 8.2 | sockets/switches detected when resolvable; none claimed below `min_pixels` | TODO |
+| 9.1 | High-res crop pass (sockets, switches) using `perception/detail/` + `min_pixels` | 8.2 | sockets/switches detected when resolvable; none claimed below `min_pixels` | DONE (feat/task-9-1-high-res-crop-pass, verified 2026-11-04) |
 | 9.2 | Video keyframe ingestion (FFmpeg/PyAV, information-gain selection) | 6.3 | a walk-around video reconstructs like a photo set; keyframe count reported | TODO |
 | 9.3 | Geo anchor (EXIF GPS → `World.geo_anchor`, pyproj) | 5.1 | the world shows on a map; local geometry unchanged | TODO |
 

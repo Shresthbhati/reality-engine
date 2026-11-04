@@ -18,18 +18,28 @@ from .adaptive_inspection import (
     perform_adaptive_inspection,
     select_inspection_views,
 )
+from .crop_pass import (
+    CropPassResult,
+    HighResCropPass,
+    ImageCrop,
+    RejectedDetailDetection,
+)
 from .discovery import DetailCandidate, discover_detail
 from .pipeline import DetailPipelineReport, run_detail_pipeline
 from .roi import RegionOfInterest, generate_rois
 
 __all__ = [
     "AdaptiveInspectionReport",
+    "CropPassResult",
     "DetailCandidate",
     "DetailPipelineReport",
     "FastenerInspection",
+    "HighResCropPass",
+    "ImageCrop",
     "InspectionRefused",
     "InspectionViewSelection",
     "RegionOfInterest",
+    "RejectedDetailDetection",
     "apply_adaptive_inspection_to_world",
     "discover_detail",
     "generate_rois",

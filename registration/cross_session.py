@@ -47,7 +47,7 @@ from scipy.spatial import cKDTree
 
 from engine.math import Vec3
 from reconstruction.backend.interface import ReconstructionResult
-from reconstruction.calibration.camera import quat_to_matrix
+from world_ir.camera import quat_to_matrix
 from reconstruction.calibration.transforms import RigidTransform
 from registration.registration import register_icp
 

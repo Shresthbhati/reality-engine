@@ -56,6 +56,12 @@ from engine.core.rigid_transform import (
 from engine.math import Quat, Vec3
 
 
+def _require_finite(value: float, name: str) -> float:
+    if not math.isfinite(value):
+        raise CalibrationTransformError(f"{name} must be finite, got {value!r}")
+    return value
+
+
 # ---------------------------------------------------------------------------
 # WGS84 constants
 # ---------------------------------------------------------------------------
@@ -75,12 +81,6 @@ _WGS84_B_M = _WGS84_A_M * (1.0 - _WGS84_F)
 #: Newton iteration cap for ECEF -> geodetic. Converges to well under
 #: a millimeter in ~4 iterations for any non-polar point.
 _GEODETIC_ITERATIONS = 12
-
-
-def _require_finite(value: float, name: str) -> float:
-    if not math.isfinite(value):
-        raise CalibrationTransformError(f"{name} must be finite, got {value!r}")
-    return value
 
 
 # ---------------------------------------------------------------------------

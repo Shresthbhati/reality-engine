@@ -24,7 +24,9 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 ### assistant
 
 - **`GET /api/assistant/tools`**: List Tools
+- **`POST /api/worlds/{world_id}/assistant/ask`**: Ask Copilot
 - **`POST /api/worlds/{world_id}/assistant/call`**: Call
+- **`POST /api/worlds/{world_id}/assistant/capture-plan`**: Plan Capture
 - **`POST /api/worlds/{world_id}/assistant/confirm`**: Confirm
 
 ### completion
@@ -52,6 +54,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 
 - **`POST /api/worlds/{world_id}/export`**: Export World
 - **`GET /api/worlds/{world_id}/export/formats`**: Export Formats
+- **`GET /api/worlds/{world_id}/export/package`**: Export Package
 - **`GET /api/worlds/{world_id}/export/{content_hash}/download`**: Download Export
 
 ### geo
@@ -62,6 +65,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 
 - **`GET /api/health`**: Health Check
 - **`GET /api/status`**: Status
+- **`GET /health`**: Healthz Check
 - **`GET /healthz`**: Healthz Check
 
 ### intent
@@ -119,6 +123,14 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/worlds/{world_id}/proposals/{proposal_id}/accept`**: Accept
 - **`POST /api/worlds/{world_id}/proposals/{proposal_id}/reject`**: Reject
 
+### proposals_pipeline
+
+- **`GET /proposals`**: List Pipeline Proposals
+- **`POST /proposals`**: Submit Pipeline Proposal
+- **`GET /proposals/{proposal_id}`**: Get Pipeline Proposal
+- **`POST /proposals/{proposal_id}/approve`**: Approve Pipeline Proposal
+- **`POST /proposals/{proposal_id}/reject`**: Reject Pipeline Proposal
+
 ### query
 
 - **`GET /api/worlds/{world_id}/query/container/{entity_id}`**: Query Container
@@ -163,15 +175,25 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 
 - **`GET /api/system/verification`**: Get Verification
 
+### technologies
+
+- **`GET /api/technologies`**: List Technologies
+- **`POST /api/technologies/benchmark`**: Run Benchmark
+- **`GET /api/technologies/{tech_id}`**: Get Technology
+
 ### uploads
 
 - **`POST /api/uploads`**: Create Upload
 - **`POST /api/uploads/check`**: Check Uploads
+- **`POST /api/uploads/resumable/chunk`**: Resumable Chunk
+- **`POST /api/uploads/resumable/start`**: Resumable Start
+- **`POST /api/uploads/resumable/{upload_id}/finalize`**: Resumable Finalize
 
 ### worlds
 
 - **`GET /api/worlds`**: List Worlds
 - **`POST /api/worlds`**: Create World
+- **`POST /api/worlds/import/package`**: Import World Package
 - **`DELETE /api/worlds/{world_id}`**: Delete World
 - **`GET /api/worlds/{world_id}`**: Get World
 - **`PATCH /api/worlds/{world_id}`**: Patch World
@@ -179,10 +201,16 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/artifacts/{sha256}`**: World Artifact
 - **`POST /api/worlds/{world_id}/attach/{session_id}`**: Attach Session
 - **`GET /api/worlds/{world_id}/cameras`**: World Cameras
+- **`GET /api/worlds/{world_id}/capture-requests`**: List Capture Requests
+- **`PATCH /api/worlds/{world_id}/capture-requests/{request_id}`**: Update Capture Request Status
 - **`POST /api/worlds/{world_id}/commit`**: Commit World Correction
+- **`POST /api/worlds/{world_id}/corrections/merge`**: Api Merge Entities
+- **`POST /api/worlds/{world_id}/corrections/reclassify`**: Api Reclassify Entity
+- **`POST /api/worlds/{world_id}/corrections/split`**: Api Split Entity
 - **`GET /api/worlds/{world_id}/coverage`**: World Coverage
 - **`GET /api/worlds/{world_id}/diff`**: Get World Diff
 - **`POST /api/worlds/{world_id}/duplicate`**: Duplicate World
+- **`GET /api/worlds/{world_id}/entities/{entity_id}/confidence`**: Entity Confidence
 - **`GET /api/worlds/{world_id}/entities/{entity_id}/provenance`**: Entity Provenance
 - **`GET /api/worlds/{world_id}/points`**: World Points
 - **`GET /api/worlds/{world_id}/quality`**: World Quality
@@ -194,6 +222,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/scale/suggestion`**: Get Scale Suggestion
 - **`POST /api/worlds/{world_id}/scale/suggestion/reject`**: Reject Scale Suggestion
 - **`GET /api/worlds/{world_id}/space-graph`**: Get World Space Graph
+- **`GET /api/worlds/{world_id}/spatial-intelligence`**: Get World Spatial Intelligence
 - **`GET /api/worlds/{world_id}/thumbnail`**: World Thumbnail
 - **`GET /api/worlds/{world_id}/versions`**: List World Versions
 - **`GET /api/worlds/{world_id}/worldir`**: World Worldir

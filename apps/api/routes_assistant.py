@@ -12,7 +12,7 @@ moved (or the plan expired) confirm answers 409 and marks it stale. Table `assis
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ValidationError

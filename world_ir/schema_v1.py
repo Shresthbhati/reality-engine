@@ -710,11 +710,14 @@ class Entity:
             "temporal_events": [e.to_dict() for e in self.temporal_events],
             "provenance": self.provenance.value,
             "confidence": self.confidence,
-            "confidence_vector": self.confidence_vector.to_dict() if self.confidence_vector else None,
             "uncertainty": self.uncertainty.to_dict(),
             "custom_properties": self.custom_properties,
             "statement_state": self.statement_state.value if self.statement_state else None,
         }
+        # Additive field: an entirely unmeasured vector is omitted so pre-7.1 worlds round-trip unchanged.
+        cv = self.confidence_vector.to_dict() if self.confidence_vector else None
+        if cv and any(v is not None for v in cv.values()):
+            d["confidence_vector"] = cv
         if self.external_references:
             d["external_references"] = [ref.to_dict() for ref in self.external_references]
         return d

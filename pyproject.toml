@@ -12,6 +12,7 @@ dependencies = [
     "scipy>=1.10",
     "pillow>=10.0",
     "opencv-python-headless>=4.8",   # photo quality/contribution measurement, opening detection: imported by core evidence + pipeline code
+    "pyproj>=3.4",                   # geo/osm_context.py imports it unguarded at module level
     "tomli>=2.0; python_version<'3.11'",
 ]
 
@@ -26,6 +27,8 @@ api = [
     "aiosqlite>=0.20.0",
     "python-multipart",
     "httpx",
+    "pydantic>=2.0",              # every apps/api route module
+    "alembic>=1.13",              # apps/api/migrations (Task 1.1)
 ]
 # IFC export (exporters/ifc_bridge.py) needs IfcOpenShell; without it the API answers 501 for format=ifc. Declared so a clean
 # `pip install -e ".[dev]"` exercises the IFC tests instead of silently skipping them.
@@ -34,7 +37,10 @@ export = ["ifcopenshell>=0.8"]
 rgbd = ["OpenEXR>=3.2"]
 # Video-frame tracking backend (perception/instances/track_backend.py); OPTIONAL: its tests skip visibly without it.
 tracking = ["imageio>=2.30"]
-dev = ["pytest>=7.0", "pyyaml>=6.0", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]", "reality-engine[export]", "reality-engine[rgbd]"]
+# Guarded optional imports (each degrades explicitly when absent): mesh repair/topology, resource-governor memory probes.
+meshing = ["trimesh>=4.0", "networkx>=3.0"]
+resources = ["psutil>=5.9"]
+dev = ["pytest>=7.0", "pyyaml>=6.0", "jsonschema>=4.18", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]", "reality-engine[export]", "reality-engine[rgbd]"]
 perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0"]
 # colmap is a C++ binary (colmap/colmap), not a Python package.
 # The CLI expects `colmap` on PATH. No PyPI package exists.
@@ -48,7 +54,7 @@ include = [
     "evidence*", "reconstruction*", "perception*", "exporters*",
     "sdk*", "apps*", "uncertainty*", "worldstore*",
     "registration*", "trajectories*", "procedural*", "synthetic*", "geo*",
-    "assistant*",
+    "assistant*", "planning*",
 ]
 
 [tool.pytest.ini_options]

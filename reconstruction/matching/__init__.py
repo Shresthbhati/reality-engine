@@ -96,4 +96,4 @@ def get_matcher(name: str, paths: Dict[str, Path], **kwargs) -> IMatcher:
             raise MatcherUnavailableError(f"{norm} is non-commercial; set REALITY_ALLOW_NC_MODELS=1 to enable it ({reason})")
         raise MatcherUnavailableError(reason)
 
-    raise ValueError(f"unknown matcher {name!r}; choose from {sorted(available_matchers().keys())}")
+    raise MatcherUnavailableError(f"unknown matcher {name!r}; choose from {sorted(available_matchers().keys())}")

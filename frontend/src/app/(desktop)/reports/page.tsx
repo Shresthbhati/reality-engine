@@ -13,10 +13,8 @@ import {
 import PageHeader from "@/components/ui/PageHeader";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
-import type { ReportStatus } from "@/lib/types";
-import { REPORTS } from "@/lib/data";
-import { getResults, type ResultRow } from "@/lib/api/results";
-import { getAnalysis, type AnalysisRow } from "@/lib/api/analysis";
+import type { AnalysisRow, ReportRow, ReportStatus, ResultRow } from "@/lib/types";
+import { getAnalysis, getReports, getResults } from "@/lib/api/analysis";
 import { isApiError } from "@/lib/api/client";
 
 const REPORT_FILTERS: Array<{ id: ReportStatus | "ALL"; label: string }> = [
@@ -25,51 +23,50 @@ const REPORT_FILTERS: Array<{ id: ReportStatus | "ALL"; label: string }> = [
   { id: "COMPLETED", label: "Completed" },
 ];
 
-const TABS: Array<{ id: string; label: string; icon: React.ElementType }> = [
+const TABS = [
   { id: "reports", label: "Reports", icon: ClipboardList },
   { id: "results", label: "Results", icon: BarChart3 },
   { id: "analysis", label: "Analysis", icon: Workflow },
-];
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+interface Loaded {
+  reports: ReportRow[];
+  results: ResultRow[];
+  analysis: AnalysisRow[];
+  /** Why a resource is empty (e.g. not served by the API yet). */
+  reasons: Record<TabId, string | null>;
+}
 
 export default function ReportsPage() {
-  const [tab, setTab] = useState<TABS[number]["id"]>("reports");
+  const [tab, setTab] = useState<TabId>("reports");
   const [reportFilter, setReportFilter] = useState<ReportStatus | "ALL">("ALL");
-  const [results, setResults] = useState<ResultRow[]>([]);
-  const [analysis, setAnalysis] = useState<AnalysisRow[]>([]);
-  const [loading, setLoading] = useState({ reports: false, results: false, analysis: false });
+  // null until the first load settles; `loading` is derived from it.
+  const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void loadResults();
-    void loadAnalysis();
+    let cancelled = false;
+    Promise.all([getReports(), getResults(), getAnalysis()])
+      .then(([rep, res, ana]) => {
+        if (cancelled) return;
+        setData({
+          reports: rep.items,
+          results: res.items,
+          analysis: ana.items,
+          reasons: { reports: rep.resource.reason, results: res.resource.reason, analysis: ana.resource.reason },
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError(isApiError(err) ? err.describe() : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadResults = async () => {
-    setLoading((p) => ({ ...p, results: true }));
-    try {
-      const data = await getResults();
-      setResults(data.items);
-    } catch (err) {
-      setError(isApiError(err) ? err.describe() : String(err));
-    } finally {
-      setLoading((p) => ({ ...p, results: false }));
-    }
-  };
-
-  const loadAnalysis = async () => {
-    setLoading((p) => ({ ...p, analysis: true }));
-    try {
-      const data = await getAnalysis();
-      setAnalysis(data.items);
-    } catch (err) {
-      setError(isApiError(err) ? err.describe() : String(err));
-    } finally {
-      setLoading((p) => ({ ...p, analysis: false }));
-    }
-  };
-
-  const reports = REPORTS.filter((r) => reportFilter === "ALL" || r.status === reportFilter);
-
+  const loading = data === null && error === null;
   return (
     <div className="flex flex-col h-full">
       <PageHeader
@@ -102,16 +99,39 @@ export default function ReportsPage() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {tab === "reports" && <ReportsTab filter={reportFilter} />}
-        {tab === "results" && <ResultsTab rows={results} loading={loading.results} error={error} />}
-        {tab === "analysis" && <AnalysisTab rows={analysis} loading={loading.analysis} error={error} />}
+        {tab === "reports" && (
+          <ReportsTab
+            rows={data?.reports ?? []}
+            filter={reportFilter}
+            onFilter={setReportFilter}
+            loading={loading}
+            error={error}
+            reason={data?.reasons.reports ?? null}
+          />
+        )}
+        {tab === "results" && <ResultsTab rows={data?.results ?? []} loading={loading} error={error} reason={data?.reasons.results ?? null} />}
+        {tab === "analysis" && <AnalysisTab rows={data?.analysis ?? []} loading={loading} error={error} reason={data?.reasons.analysis ?? null} />}
       </div>
     </div>
   );
 }
 
-function ReportsTab({ filter }: { filter: ReportStatus | "ALL" }) {
-  const rows = REPORTS.filter((r) => filter === "ALL" || r.status === filter);
+function ReportsTab({
+  rows: all,
+  filter,
+  onFilter,
+  loading,
+  error,
+  reason,
+}: {
+  rows: ReportRow[];
+  filter: ReportStatus | "ALL";
+  onFilter: (f: ReportStatus | "ALL") => void;
+  loading: boolean;
+  error: string | null;
+  reason: string | null;
+}) {
+  const rows = all.filter((r) => filter === "ALL" || r.status === filter);
 
   return (
     <div className="flex flex-col h-full">
@@ -120,11 +140,11 @@ function ReportsTab({ filter }: { filter: ReportStatus | "ALL" }) {
           <button
             key={f.id}
             type="button"
-            onClick={() => setReportFilter(f.id)}
+            onClick={() => onFilter(f.id)}
             className="px-2.5 h-7 rounded text-sm font-medium transition-colors"
             style={{
-              color: reportFilter === f.id ? "var(--accent)" : "var(--text-secondary)",
-              background: reportFilter === f.id ? "var(--accent-subtle)" : "transparent",
+              color: filter === f.id ? "var(--accent)" : "var(--text-secondary)",
+              background: filter === f.id ? "var(--accent-subtle)" : "transparent",
             }}
           >
             {f.label}
@@ -132,10 +152,14 @@ function ReportsTab({ filter }: { filter: ReportStatus | "ALL" }) {
         ))}
       </div>
 
-      {rows.length === 0 ? (
+      {loading ? (
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading reports…</p>
+      ) : error ? (
+        <p className="px-6 py-4 text-sm" style={{ color: "var(--error)" }}>{error}</p>
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={FileText}
-          message="No reports yet."
+          message={reason ?? "No reports yet."}
           actionLabel="Create Report"
           actionHref="/reports/new"
         />
@@ -172,7 +196,7 @@ function ReportsTab({ filter }: { filter: ReportStatus | "ALL" }) {
   );
 }
 
-function ResultsTab({ rows, loading, error }: { rows: ResultRow[]; loading: boolean; error: string | null }) {
+function ResultsTab({ rows, loading, error, reason }: { rows: ResultRow[]; loading: boolean; error: string | null; reason: string | null }) {
   if (loading) {
     return <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading results…</p>;
   }
@@ -183,7 +207,7 @@ function ResultsTab({ rows, loading, error }: { rows: ResultRow[]; loading: bool
     return (
       <EmptyState
         icon={BarChart3}
-        message="No results yet."
+        message={reason ?? "No results yet."}
         actionLabel="View Sessions"
         actionHref="/sessions"
       />
@@ -221,7 +245,7 @@ function ResultsTab({ rows, loading, error }: { rows: ResultRow[]; loading: bool
   );
 }
 
-function AnalysisTab({ rows, loading, error }: { rows: AnalysisRow[]; loading: boolean; error: string | null }) {
+function AnalysisTab({ rows, loading, error, reason }: { rows: AnalysisRow[]; loading: boolean; error: string | null; reason: string | null }) {
   if (loading) {
     return <p className="px-6 py-4 text-sm" style={{ color: "var(--text-tertiary)" }}>Loading analysis…</p>;
   }
@@ -232,7 +256,7 @@ function AnalysisTab({ rows, loading, error }: { rows: AnalysisRow[]; loading: b
     return (
       <EmptyState
         icon={Workflow}
-        message="No analysis has been run yet."
+        message={reason ?? "No analysis has been run yet."}
         actionLabel="View Sessions"
         actionHref="/sessions"
       />

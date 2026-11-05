@@ -1928,6 +1928,7 @@ class RejectIn(BaseModel):
 async def reject_scale_suggestion(world_id: str, body: RejectIn, db: AsyncSession = Depends(get_db)) -> dict:
     """Decline the current suggestion. Changes nothing about the world: it stays RELATIVE."""
     from apps.api import worldstore_service as wss
+    from engine.pipeline.facade import suggest_scale_for_world
 
     row = await _version_row(db, world_id, None)
     sug = suggest_scale_for_world(_load_world_or_409(row))

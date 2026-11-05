@@ -7,8 +7,9 @@ from typing import Optional, Sequence, Tuple
 import numpy as np
 
 from engine.math import Quat, Vec3
-from engine.core.rigid_transform import RigidTransform
 from uncertainty.quantity import UNKNOWN, Uncertain
+
+from engine.core.rigid_transform import RigidTransform
 
 #: Central-difference step for numeric pose Jacobians (rotation-vector
 #: radians and translation meters). Small enough for O(h^2) accuracy,

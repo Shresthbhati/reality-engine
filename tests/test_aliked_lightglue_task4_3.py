@@ -66,7 +66,7 @@ def test_aliked_lightglue_matching_execution(synthetic_image_pair):
     assert res.runtime_s > 0
 
 
-def test_matcher_benchmark_diff_sift_vs_aliked(synthetic_image_pair):
+def test_matcher_benchmark_diff_sift_vs_aliked(synthetic_image_pair, tmp_path):
     """Benchmarks SIFT vs ALIKED+LightGlue recording registered / inlier ratio comparison."""
     sift = get_matcher("sift", synthetic_image_pair)
     aliked = get_matcher("aliked", synthetic_image_pair)
@@ -87,9 +87,7 @@ def test_matcher_benchmark_diff_sift_vs_aliked(synthetic_image_pair):
     assert res_aliked.inliers > 0
     assert res_aliked.inlier_ratio >= 0.60
 
-    # Write benchmark diff to reports
-    out_dir = Path("docs/benchmarks")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / "matching_sift_vs_aliked.json"
+    # Timings differ every run: write to tmp_path, never to the tracked docs/benchmarks/ file.
+    out_file = tmp_path / "matching_sift_vs_aliked.json"
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(diff_report, f, indent=2)

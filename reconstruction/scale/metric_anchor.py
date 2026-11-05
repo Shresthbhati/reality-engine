@@ -143,7 +143,9 @@ class MetricScaleFusionEngine:
         min_inlier_weight: float = 0.8,   # Minimum cumulative weight to claim METRIC
         ransac_iterations: int = 100,
         target_error_max_pct: float = 1.5,
+        seed: int = 0,  # RANSAC sampling seed: fixed default so the same constraints always fuse to the same scale
     ):
+        self.seed = seed
         self.inlier_tolerance = inlier_tolerance
         self.min_inlier_weight = min_inlier_weight
         self.ransac_iterations = ransac_iterations
@@ -383,10 +385,11 @@ class MetricScaleFusionEngine:
         best_inlier_mask = None
         best_score = -1.0
 
+        rng = np.random.default_rng(self.seed)
+        p = weights / weights.sum()
         for _ in range(min(self.ransac_iterations, len(valid_cands) * 8)):
             # Sample candidate by weighted probability
-            p = weights / weights.sum()
-            sample_idx = np.random.choice(len(valid_cands), p=p)
+            sample_idx = rng.choice(len(valid_cands), p=p)
             cand_ratio = ratios[sample_idx]
 
             # Inlier gate: relative spread |r - r_cand| / r_cand <= inlier_tolerance

@@ -1,0 +1,13 @@
+[WARNING] entity struct-plane-015 is CONTAINS-owned by room-plane-015 but its geometry is disjoint from room-plane-015
+[WARNING] entities struct-plane-001 and struct-plane-004 are the same class and overlap 59% (IoU) with no DIFFERENT_ENTITY / PHYSICAL_INTERSECTION decision
+[WARNING] surface struct-plane-001 (wall) references no space (room/corridor)
+[WARNING] surface struct-plane-003 (wall) references no space (room/corridor)
+[WARNING] surface struct-plane-004 (wall) references no space (room/corridor)
+[WARNING] surface struct-plane-005 (wall) references no space (room/corridor)
+[WARNING] surface struct-plane-009 (wall) references no space (room/corridor)
+[WARNING] surface struct-plane-011 (wall) references no space (room/corridor)
+[WARNING] surface struct-plane-016 (floor) references no space (room/corridor)
+[WARNING] surface struct-plane-018 (ceiling) references no space (room/corridor)
+[WARNING] surface struct-plane-028 (wall) references no space (room/corridor)
+[WARNING] surface struct-plane-030 (ceiling) references no space (room/corridor)
+valid: True (12 issue(s))

@@ -84,3 +84,29 @@ def test_specs_registry_is_descriptive_not_loaded():
     assert set(REAL_MODEL_SPECS) >= {"colmap", "midas", "sam", "mask_rcnn"}
     for spec in REAL_MODEL_SPECS.values():
         assert spec["adapter"], spec
+
+
+def test_probe_checks_actual_runtime_deps(monkeypatch):
+    """A cached checkpoint is not enough: a missing runtime module must block with a precise reason."""
+    import perception.availability as av
+
+    present = {"torch", "torchvision"}  # timm / transformers / segment_anything absent
+    monkeypatch.setattr(av, "_dependency_ok", lambda m: m in present)
+    monkeypatch.setattr(av, "_first_existing", lambda names: av.Path("fake.pt"))  # weights "cached"
+    monkeypatch.setattr(av, "_hf_cached", lambda *a, **k: True)
+    got = real_models_by_name()
+    assert got["midas"].status == "blocked" and "timm" in got["midas"].reason
+    assert got["sam"].status == "blocked" and "segment_anything" in got["sam"].reason
+    for n in ("depth_anything", "owlvit"):
+        assert got[n].status == "blocked" and "transformers" in got[n].reason
+        assert got[n].remediation
+
+
+def test_hf_models_blocked_on_missing_checkpoint_when_deps_present(monkeypatch):
+    import perception.availability as av
+
+    monkeypatch.setattr(av, "_dependency_ok", lambda m: True)
+    monkeypatch.setattr(av, "_hf_cached", lambda *a, **k: False)
+    got = real_models_by_name()
+    for n in ("depth_anything", "owlvit"):
+        assert got[n].status == "blocked" and "checkpoint" in got[n].reason

@@ -50,6 +50,18 @@ REAL_MODEL_SPECS: Dict[str, Dict[str, str]] = {
         "binary": None,
         "task": "monocular relative depth",
     },
+    "depth_anything": {
+        "adapter": "perception.depth.depth_anything_backend.DepthAnythingV2Backend",
+        "dependency": "transformers",
+        "binary": None,
+        "task": "monocular relative depth (Depth Anything V2 Small)",
+    },
+    "owlvit": {
+        "adapter": "perception.detection.backends.OwlVitDetector",
+        "dependency": "transformers",
+        "binary": None,
+        "task": "open-vocabulary detection",
+    },
     "sam": {
         "adapter": "perception.segmentation.sam_backend.SAMSegmentationBackend",
         "dependency": "torch",
@@ -140,6 +152,15 @@ def _report_midas() -> ModelAvailability:
             remediation="pip install torch torchvision (CPU wheels suffice "
                         "for MiDaS_small)",
         )
+    if not _dependency_ok("timm"):
+        return ModelAvailability(
+            name="midas", status="blocked", adapter=spec["adapter"],
+            task=spec["task"],
+            reason="dependency missing: module 'timm' is not installed; the "
+                   "default DPT_Hybrid torch.hub model imports it "
+                   "(torch.hub.load fails with 'No module named timm')",
+            remediation="pip install timm  (extra: reality-engine[perception])",
+        )
     ckpt = _first_existing(["midas_small", "dpt_hybrid_384.pt",
                             "dpt_large_384.pt", "dpt_hybrid-midas-501f0c75.pt"])
     if ckpt is None:
@@ -158,6 +179,50 @@ def _report_midas() -> ModelAvailability:
         task=spec["task"],
         reason=f"torch importable and checkpoint cached ({ckpt.name})",
     )
+
+
+def _hf_hub_cache() -> Path:
+    import os
+
+    if os.environ.get("HF_HUB_CACHE"):
+        return Path(os.environ["HF_HUB_CACHE"])
+    return Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
+
+
+def _hf_cached(repo_id: str, weight_names: tuple) -> bool:
+    """True when config.json and one of `weight_names` exist in any snapshot of the HF cache (file probe only)."""
+    root = _hf_hub_cache() / ("models--" + repo_id.replace("/", "--")) / "snapshots"
+    if not root.is_dir():
+        return False
+    return any((snap / "config.json").exists() and any((snap / w).exists() for w in weight_names)
+               for snap in root.iterdir())
+
+
+def _report_transformers_model(name: str, repo_id: str, remediation: str) -> ModelAvailability:
+    spec = REAL_MODEL_SPECS[name]
+    base = dict(name=name, adapter=spec["adapter"], task=spec["task"])
+    missing = [m for m in ("torch", "transformers") if not _dependency_ok(m)]
+    if missing:
+        return ModelAvailability(
+            status="blocked", reason=f"dependency missing: {', '.join(missing)} not installed",
+            remediation="pip install torch transformers  (extra: reality-engine[perception])", **base)
+    if not _hf_cached(repo_id, ("model.safetensors", "pytorch_model.bin")):
+        return ModelAvailability(
+            status="blocked",
+            reason=f"dependencies present, but checkpoint {repo_id} is not in the Hugging Face cache",
+            remediation=remediation, **base)
+    return ModelAvailability(status="available", reason=f"torch + transformers importable, {repo_id} cached", **base)
+
+
+def _report_depth_anything() -> ModelAvailability:
+    return _report_transformers_model(
+        "depth_anything", "depth-anything/Depth-Anything-V2-Small-hf",
+        "huggingface-cli download depth-anything/Depth-Anything-V2-Small-hf")
+
+
+def _report_owlvit() -> ModelAvailability:
+    return _report_transformers_model(
+        "owlvit", "google/owlvit-base-patch32", "huggingface-cli download google/owlvit-base-patch32")
 
 
 def _report_sam() -> ModelAvailability:
@@ -256,6 +321,8 @@ def _report_colmap() -> ModelAvailability:
 _REPORTERS = {
     "colmap": _report_colmap,
     "midas": _report_midas,
+    "depth_anything": _report_depth_anything,
+    "owlvit": _report_owlvit,
     "sam": _report_sam,
     "mask_rcnn": _report_mask_rcnn,
 }

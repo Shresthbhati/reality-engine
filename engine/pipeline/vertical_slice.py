@@ -89,6 +89,9 @@ class VerticalSliceOptions:
     #: Trusted camera intrinsics (fx, fy, cx, cy). When set, every
     #: evidence item carries them and COLMAP refinement is pinned.
     intrinsics: Optional[Tuple[float, float, float, float]] = None
+    #: "trusted" = calibrated by the operator: COLMAP is pinned to it. "estimated" = derived from EXIF or from a
+    #: previous COLMAP solve: downstream stages may use it, but COLMAP is NOT pinned and the report says so.
+    intrinsics_trust: str = "trusted"
     image_size: Tuple[int, int] = (1280, 960)
     #: Depth stage: model type passed to MiDaSDepthBackend. None disables
     #: the stage entirely.
@@ -310,7 +313,7 @@ def vertical_slice(
             f"vertical slice needs >= 2 image evidence items, got {len(evidence_items)}"
         )
 
-    if options.intrinsics is not None:
+    if options.intrinsics is not None and options.intrinsics_trust == "trusted":
         evidence_items = [
             dataclasses.replace(
                 item,

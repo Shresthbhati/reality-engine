@@ -1,0 +1,8 @@
+[OK  ] python  3.14.7
+[OK  ] venv    active (C:\Users\shres\OneDrive\Desktop\codes\reality-engine\.venv)
+[OK  ] torch   2.14.1+cu130, cuda available: True
+[OK  ] gpu     NVIDIA GeForce RTX 4050 Laptop GPU, 6.0 GiB VRAM
+[OK  ] colmap  C:\Users\shres\tools\colmap-extracted\bin\colmap.EXE (COLMAP 4.2.0 (Commit be5e291 on 2026-08-31 with CUDA))
+[OK  ] node    v26.8.1 (C:\Program Files\nodejs\node.EXE)
+[OK  ] npm     11.19.0 (C:\Program Files\nodejs\npm.CMD)
+[OK  ] db      C:\Users\shres\OneDrive\Desktop\codes\reality-engine\.claude\worktrees\bold-feynman-0ba202\data\app.db writable

@@ -1,0 +1,23 @@
+sparse_reconstruction    REAL-WORLD VERIFIED      REAL-WORLD VERIFIED (South Building) -- INDOOR ROOM / CORRIDOR PHOTO SET NOT AVAILABLE
+progressive_world        REAL-WORLD VERIFIED      REAL-WORLD VERIFIED (South Building) -- INDOOR ROOM / CORRIDOR PHOTO SET NOT AVAILABLE
+candidate_arbitration    REAL-WORLD VERIFIED      REAL-WORLD VERIFIED (South Building candidates)
+failure_safety           REAL-WORLD VERIFIED      REAL-WORLD VERIFIED (real engine, 8 killed stages)
+dense_reconstruction     REAL-WORLD VERIFIED      REAL-WORLD VERIFIED (South Building, CUDA)
+detail_budget            SYNTHETICALLY VERIFIED   SYNTHETICALLY VERIFIED (thresholds measured on one real dataset) -- CALIBRATION ON MORE THAN ONE REAL DATASET PENDING
+rgbd                     SYNTHETICALLY VERIFIED   SYNTHETIC RGB-D VERIFIED -- PHYSICAL DEVICE VERIFICATION PENDING
+vio                      SYNTHETICALLY VERIFIED   SYNTHETIC VIO PIPELINE VERIFIED -- REAL BACKEND / HARDWARE VERIFICATION PENDING
+indoor_architecture      SYNTHETICALLY VERIFIED   SYNTHETIC INDOOR VERIFIED -- REAL INDOOR DATASET VERIFICATION PENDING
+export_core              REAL-WORLD VERIFIED      REAL-WORLD VERIFIED (a world reconstructed from real photographs, parsed back with independent readers) -- OPENING THE FILES IN BLENDER / USD / BIM VIEWERS NOT VERIFIED
+export_ecosystem         SYNTHETICALLY VERIFIED   SYNTHETICALLY VERIFIED (structure and axis conventions only) -- TARGET RUNTIME ACCEPTANCE (Gazebo, Godot, Unreal, SUMO, habitat-sim) PENDING  [OPTIONAL]
+citydb                   SYNTHETICALLY VERIFIED   SYNTHETICALLY VERIFIED (contract tests against a FAKE citydb CLI) -- REAL 3DCITYDB (PostgreSQL/PostGIS) VERIFICATION PENDING
+
+{'IMPLEMENTED': 0, 'SYNTHETICALLY VERIFIED': 6, 'REAL-WORLD VERIFIED': 6}
+
+runtime availability on this machine:
+  AVAILABLE    colmap
+  AVAILABLE    ifcopenshell (IFC export)
+  AVAILABLE    torch (MiDaS / Mask R-CNN)
+  UNAVAILABLE  3dcitydb (citydb CLI)  (the 3DCityDB `citydb` command-line tool was not found (pass tool=..., set CITYDB_TOOL, or put `citydb` on PATH))
+  UNAVAILABLE  vio:orb_slam3  (none of ('orb_slam3', 'mono_inertial_euroc', 'mono_euroc', 'mono_tum') on PATH)
+  UNAVAILABLE  vio:openvins  (none of ('run_subscribe_msckf', 'openvins') on PATH)
+  UNAVAILABLE  vio:basalt  (none of ('basalt_vio', 'basalt') on PATH)

@@ -7,12 +7,17 @@ Enforces Universal Spatial Intelligence Engineering Directive (Rule 2):
 - Strict provenance invariant: simulated/synthetic output never enters as Provenance.OBSERVED.
 - Real empirical measurement: time.perf_counter(), tracemalloc memory tracing, and mathematical outputs.
 - Rigorous metadata: dataset checksum, ground-truth source, technology version, hardware provider.
-- RTX 4050 6GB upper bound (< 6,144 MB peak VRAM) enforcement.
+- Peak VRAM is reported only when measured (torch.cuda.max_memory_allocated with CUDA actually
+  in use); otherwise it is null with a reason. No hard-coded memory/VRAM/version numbers.
+- A SIMULATED / UNAVAILABLE / FAILED technology never passes a threshold and is never RECOMMENDED.
+- INTERNAL_IMPLEMENTATION numbers describe Reality Engine's own re-implementation, NOT the
+  upstream project's performance.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata as importlib_metadata
 import json
 import math
 import platform
@@ -24,7 +29,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from engine.technologies.adapters import get_adapter_for_technology
+from engine.technologies.adapters import AdapterExecutionResult, get_adapter_for_technology
 from engine.technologies.catalog import (
     ALL_50_TECHNOLOGIES,
     TECHNOLOGIES_BY_ID,
@@ -55,6 +60,34 @@ def _detect_hardware_provider() -> Tuple[str, float]:
     return cpu_info, 0.0
 
 
+SIMULATED_REASON = "simulated: no real upstream execution"
+NOT_MEASURED_VRAM = "not measured: CUDA not used/available"
+INTERNAL_LABEL = "internal re-implementation; not the upstream project's performance"
+
+
+def _resolve_installed_version(python_modules: Tuple[str, ...]) -> Optional[str]:
+    """Real installed package version via importlib.metadata, or None."""
+    try:
+        dist_map = importlib_metadata.packages_distributions()
+    except Exception:
+        dist_map = {}
+    for mod in python_modules:
+        for dist in [*dist_map.get(mod.split(".")[0], []), mod]:
+            try:
+                return importlib_metadata.version(dist)
+            except Exception:
+                continue
+    return None
+
+
+def _cuda_ready() -> bool:
+    try:
+        import torch
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
 def _compute_dataset_checksum(data: Any) -> str:
     """Compute deterministic SHA-256 checksum of benchmark dataset payload."""
     serialized = json.dumps(data, sort_keys=True, default=str).encode("utf-8")
@@ -69,9 +102,10 @@ class BenchmarkMetric:
     value: float
     unit: str
     target_threshold: float
-    passes_threshold: bool
+    passes_threshold: Optional[bool]  # None => not evaluable (simulated / unavailable / failed)
     description: str = ""
     measurement_methodology: str = "Empirical execution measurement"
+    reason: Optional[str] = None
 
 
 @dataclass
@@ -94,13 +128,24 @@ class TechnologyBenchmarkResult:
     hardware_provider: str
     measurement_methodology: str
     execution_time_ms: float
-    memory_peak_mb: float
-    vram_peak_mb: float
-    failure_rate_pct: float
+    memory_peak_mb: float  # tracemalloc peak of the adapter call (Python heap), measured
+    vram_peak_mb: Optional[float]  # None when not measured
+    failure_rate_pct: Optional[float]  # failures / attempts * 100, None if no attempts
     metrics: Dict[str, BenchmarkMetric] = field(default_factory=dict)
-    summary_verdict: str = "QUALIFIED"  # "QUALIFIED" | "RECOMMENDED" | "NEEDS_OPTIMIZATION" | "UNAVAILABLE"
+    # QUALIFIED | RECOMMENDED | NEEDS_OPTIMIZATION | UNAVAILABLE | SIMULATED | NO_MEASUREMENT | FAILED
+    summary_verdict: str = "NO_MEASUREMENT"
     world_ir_promotion_verified: bool = True
     failure_info: Optional[str] = None
+    # Additive honesty fields
+    status: str = "NO_MEASUREMENT"  # MEASURED | NO_MEASUREMENT | SIMULATED | UNAVAILABLE | FAILED
+    passes_threshold: Optional[bool] = None
+    passes_threshold_reason: Optional[str] = None
+    evidence_label: str = ""
+    memory_peak_source: str = "tracemalloc"
+    vram_peak_reason: Optional[str] = None
+    technology_version_source: str = "importlib.metadata"
+    attempts: int = 1
+    failures: int = 0
 
 
 class TechnologyBenchmarkHarness:
@@ -232,15 +277,42 @@ class TechnologyBenchmarkHarness:
         dataset_checksum = _compute_dataset_checksum(payload)
 
         # Start live memory tracing
+        cuda_ready = _cuda_ready()
+        if cuda_ready:
+            import torch
+            torch.cuda.reset_peak_memory_stats()
+        attempts, failures = 1, 0
+        failure_info: Optional[str] = None
         tracemalloc.start()
         t0 = time.perf_counter()
-
-        exec_result = adapter.execute(input_data=payload, options=options)
+        try:
+            exec_result = adapter.execute(input_data=payload, options=options)
+        except Exception as exc:  # recorded as a real failure, not swallowed
+            failures = 1
+            failure_info = f"{type(exc).__name__}: {exc}"
+            exec_result = AdapterExecutionResult(
+                tech_id=tech_id, subsystem=desc.subsystem, success=False,
+                execution_time_ms=0.0, memory_peak_mb=0.0,
+                classification=ExecutionClassification.FAILED, error_message=failure_info,
+            )
         exec_time_ms = (time.perf_counter() - t0) * 1000.0
 
-        current_mem, peak_mem = tracemalloc.get_traced_memory()
+        _, peak_mem = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        measured_mem_mb = max(exec_result.memory_peak_mb, round(peak_mem / (1024.0 * 1024.0), 2))
+        measured_mem_mb = round(peak_mem / (1024.0 * 1024.0), 2)
+
+        vram_mb: Optional[float] = None
+        vram_reason: Optional[str] = NOT_MEASURED_VRAM
+        if cuda_ready:
+            import torch
+            peak_vram = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+            if peak_vram > 0:
+                vram_mb, vram_reason = round(peak_vram, 1), None
+            else:
+                vram_reason = "not measured: adapter allocated no CUDA memory"
+        if not exec_result.success and failures == 0:
+            failures = 1
+            failure_info = exec_result.error_message or "adapter reported success=False"
 
         # Ingest into fresh test world to verify canonical WorldIR promotion
         test_world = WorldIR(id=f"bench_{tech_id}")
@@ -253,8 +325,6 @@ class TechnologyBenchmarkHarness:
         )
 
         metrics: Dict[str, BenchmarkMetric] = {}
-        vram_mb = 0.0
-        failure_rate = 0.0
         classification = exec_result.classification
         verification_status = status.verification_status
 
@@ -275,19 +345,7 @@ class TechnologyBenchmarkHarness:
                     description="Measured mean Sobel spatial image gradient response",
                     measurement_methodology="Direct differentiable convolution on test patch",
                 )
-            else:
-                # Fallback / simulated detection
-                conf = float(exec_result.confidence)
-                metrics["detection_confidence"] = BenchmarkMetric(
-                    name="detection_confidence",
-                    value=conf,
-                    unit="score",
-                    target_threshold=0.80,
-                    passes_threshold=(conf >= 0.80),
-                    description="Calibrated entity detection confidence",
-                    measurement_methodology="Simulated architectural perception model",
-                )
-            vram_mb = min(self.host_vram_mb, 1250.0) if self.host_vram_mb > 0 else 0.0
+            # No else-branch: adapter constant confidence is not a measurement.
 
         elif desc.subsystem == TechnologySubsystem.GEOMETRIC_ESTIMATION:
             if "residual_rmse_m" in out:
@@ -312,7 +370,6 @@ class TechnologyBenchmarkHarness:
                     description="Measured correspondence inlier percentage",
                     measurement_methodology="Geometric verification consensus",
                 )
-            vram_mb = min(self.host_vram_mb, 180.0) if self.host_vram_mb > 0 else 0.0
 
         elif desc.subsystem == TechnologySubsystem.RECONSTRUCTION_MAPPING:
             if "registered_cameras" in out:
@@ -337,7 +394,6 @@ class TechnologyBenchmarkHarness:
                     description="Point cloud registration residual distance",
                     measurement_methodology="LiDAR / SfM odometry point alignment",
                 )
-            vram_mb = min(self.host_vram_mb, 2400.0) if self.host_vram_mb > 0 else 0.0
 
         elif desc.subsystem == TechnologySubsystem.POINTCLOUD_3D_PERCEPTION:
             if "mean_iou" in out:
@@ -351,7 +407,6 @@ class TechnologyBenchmarkHarness:
                     description="3D geometric segment classification IoU",
                     measurement_methodology="RANSAC geometric planar fitting and clustering",
                 )
-            vram_mb = min(self.host_vram_mb, 1850.0) if self.host_vram_mb > 0 else 0.0
 
         elif desc.subsystem == TechnologySubsystem.GEOMETRY_CAD_MESH:
             if "is_manifold" in out:
@@ -376,7 +431,6 @@ class TechnologyBenchmarkHarness:
                     description="Triangle decimation ratio without topological collapse",
                     measurement_methodology="Quadric error metric decimation count",
                 )
-            vram_mb = min(self.host_vram_mb, 220.0) if self.host_vram_mb > 0 else 0.0
 
         elif desc.subsystem == TechnologySubsystem.GEOSPATIAL_ENVIRONMENT:
             if "terrain_slope_mean_deg" in out:
@@ -401,7 +455,6 @@ class TechnologyBenchmarkHarness:
                     description="Point cloud spatial indexing throughput count",
                     measurement_methodology="Streaming tile buffer evaluation",
                 )
-            vram_mb = min(self.host_vram_mb, 350.0) if self.host_vram_mb > 0 else 0.0
 
         elif desc.subsystem == TechnologySubsystem.INFERENCE_ACCELERATION:
             if "speedup_factor" in out:
@@ -426,14 +479,49 @@ class TechnologyBenchmarkHarness:
                     description="Verification that peak memory fits within 6,144 MB RTX 4050 upper limit",
                     measurement_methodology="Model parameter footprint plus activation tensor estimation",
                 )
-            vram_mb = min(self.host_vram_mb, 580.0) if self.host_vram_mb > 0 else 0.0
 
-        all_passed = all(m.passes_threshold for m in metrics.values()) if metrics else True
-        verdict = (
-            "RECOMMENDED"
-            if (all_passed and desc.evaluation_priority == 1)
-            else ("QUALIFIED" if all_passed else "NEEDS_OPTIMIZATION")
+        not_real = classification in (
+            ExecutionClassification.SIMULATED,
+            ExecutionClassification.UNAVAILABLE,
+            ExecutionClassification.FAILED,
         )
+        pass_reason: Optional[str] = None
+        passes: Optional[bool] = None
+        if not_real:
+            pass_reason = (
+                SIMULATED_REASON if classification != ExecutionClassification.FAILED
+                else f"failed: {failure_info or 'execution failed'}"
+            )
+            for m in metrics.values():
+                m.passes_threshold, m.reason = None, pass_reason
+            run_status = verdict = classification.value
+        elif not metrics:
+            run_status = verdict = "NO_MEASUREMENT"
+            pass_reason = "no metrics were measured"
+        else:
+            run_status = "MEASURED"
+            passes = all(m.passes_threshold for m in metrics.values())
+            verdict = (
+                "RECOMMENDED" if (passes and desc.evaluation_priority == 1)
+                else ("QUALIFIED" if passes else "NEEDS_OPTIMIZATION")
+            )
+
+        if classification == ExecutionClassification.INTERNAL_IMPLEMENTATION:
+            label = INTERNAL_LABEL
+        elif not_real:
+            label = SIMULATED_REASON
+        else:
+            label = classification.value
+        installed = _resolve_installed_version(desc.python_modules)
+        if classification in (ExecutionClassification.NATIVE_EXECUTED, ExecutionClassification.WRAPPED_EXECUTED):
+            version = installed
+            version_source = "importlib.metadata" if version else "unresolved"
+        else:
+            # The upstream package did not run, so its version is not this result's version.
+            version = None
+            version_source = (
+                f"not applicable: upstream not executed (installed upstream: {installed or 'none'})"
+            )
 
         return TechnologyBenchmarkResult(
             tech_id=desc.id,
@@ -448,20 +536,29 @@ class TechnologyBenchmarkHarness:
             dataset_checksum=dataset_checksum,
             ground_truth_source=gt_source,
             model_checkpoint=None,
-            technology_version=desc.license_notes or "v1.0.0",
+            technology_version=version,
             hardware_provider=self.hardware_provider,
             measurement_methodology=(
-                "Internal mathematical extraction"
+                "Internal mathematical extraction (internal re-implementation, not upstream)"
                 if classification == ExecutionClassification.INTERNAL_IMPLEMENTATION
-                else "Simulated fallback model"
+                else "Simulated fallback model (simulated: no real upstream execution)"
             ),
             execution_time_ms=round(exec_time_ms, 2),
             memory_peak_mb=round(measured_mem_mb, 2),
-            vram_peak_mb=round(vram_mb, 1),
-            failure_rate_pct=failure_rate,
+            vram_peak_mb=vram_mb,
+            failure_rate_pct=round(100.0 * failures / attempts, 2),
             metrics=metrics,
             summary_verdict=verdict,
             world_ir_promotion_verified=ir_verified,
+            failure_info=failure_info,
+            status=run_status,
+            passes_threshold=passes,
+            passes_threshold_reason=pass_reason,
+            evidence_label=label,
+            vram_peak_reason=vram_reason,
+            technology_version_source=version_source,
+            attempts=attempts,
+            failures=failures,
         )
 
     def benchmark_all_50(self) -> Dict[str, Any]:
@@ -474,6 +571,11 @@ class TechnologyBenchmarkHarness:
         total_time_ms = (time.perf_counter() - t_start) * 1000.0
         recommended_count = sum(1 for r in results if r.summary_verdict == "RECOMMENDED")
         qualified_count = sum(1 for r in results if r.summary_verdict == "QUALIFIED")
+        simulated_count = sum(1 for r in results if r.summary_verdict == "SIMULATED")
+        no_measurement_count = sum(1 for r in results if r.summary_verdict == "NO_MEASUREMENT")
+        by_verdict: Dict[str, int] = {}
+        for r in results:
+            by_verdict[r.summary_verdict] = by_verdict.get(r.summary_verdict, 0) + 1
 
         by_classification: Dict[str, int] = {}
         for r in results:
@@ -485,6 +587,9 @@ class TechnologyBenchmarkHarness:
             "benchmark_runtime_ms": total_time_ms,
             "recommended_count": recommended_count,
             "qualified_count": qualified_count,
+            "simulated_count": simulated_count,
+            "no_measurement_count": no_measurement_count,
+            "by_verdict": by_verdict,
             "by_classification": by_classification,
             "hardware_provider": self.hardware_provider,
             "results": [asdict(r) for r in results],
@@ -503,7 +608,10 @@ class TechnologyBenchmarkHarness:
             f"**Qualified Specialists**: {benchmark_data['qualified_count']}",
             f"**Hardware & Execution Provider**: `{benchmark_data['hardware_provider']}`",
             f"**Benchmark Evaluation Runtime**: {benchmark_data['benchmark_runtime_ms']:.1f} ms",
-            f"**VRAM Safety Guarantee**: Verified < 6,144 MB (RTX 4050 6GB Enforced)",
+            f"**Simulated (no real upstream execution, not evaluated)**: {benchmark_data['simulated_count']}",
+            f"**No measurement**: {benchmark_data['no_measurement_count']}",
+            "**Notes**: VRAM is reported only when measured (otherwise null); INTERNAL_IMPLEMENTATION "
+            "rows describe Reality Engine's own re-implementation, not the upstream project.",
             "",
             "### Execution Classifications Breakdown",
         ]

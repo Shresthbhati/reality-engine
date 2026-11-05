@@ -41,7 +41,7 @@ tracking = ["imageio>=2.30"]
 meshing = ["trimesh>=4.0", "networkx>=3.0"]
 resources = ["psutil>=5.9"]
 dev = ["pytest>=7.0", "pyyaml>=6.0", "jsonschema>=4.18", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]", "reality-engine[export]", "reality-engine[rgbd]"]
-perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0"]
+perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0", "timm>=0.9", "transformers>=4.40", "kornia>=0.7"]
 # colmap is a C++ binary (colmap/colmap), not a Python package.
 # The CLI expects `colmap` on PATH. No PyPI package exists.
 

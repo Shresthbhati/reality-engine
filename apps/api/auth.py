@@ -158,9 +158,15 @@ class TokenBucketRateLimiter:
         self._buckets: dict[str, TokenBucket] = {}
         self._lock = threading.Lock()
 
+    #: Hard cap on tracked keys so a flood of distinct keys cannot grow memory without bound.
+    MAX_BUCKETS = 10_000
+
     def get_bucket(self, key: str, rps: float | None = None, burst: float | None = None) -> TokenBucket:
         with self._lock:
             if key not in self._buckets:
+                if len(self._buckets) >= self.MAX_BUCKETS:
+                    # ponytail: evict oldest-inserted; an LRU only matters if legit clients exceed the cap
+                    self._buckets.pop(next(iter(self._buckets)))
                 self._buckets[key] = TokenBucket(
                     capacity=burst if burst is not None else self.default_burst,
                     refill_rate=rps if rps is not None else self.default_rps,
@@ -209,11 +215,18 @@ async def auth_middleware(request: Request, call_next):
 
     # 1. Rate Limiting Check
     client_host = request.client.host if request.client else "127.0.0.1"
-    tenant_header = request.headers.get("x-tenant-id")
-    rate_key = f"{tenant_header}:{client_host}" if tenant_header else client_host
-    allowed, retry_after = rate_limiter.check(rate_key)
+    # Key on the network peer only: X-Tenant-Id is client-supplied and unauthenticated at this point,
+    # so keying on it would let any caller mint a fresh bucket per request by rotating the header.
+    allowed, retry_after = rate_limiter.check(client_host)
     if not allowed:
         return _rate_limited(retry_after)
+
+    role_header = request.headers.get("x-role", "admin").lower()
+    try:
+        requested_role = Role(role_header)
+    except ValueError:
+        # Fail closed: an unrecognised role must never silently become ADMIN.
+        return JSONResponse({"detail": f"Invalid X-Role {role_header!r}; expected admin, editor or viewer"}, status_code=400)
 
     # 2. Token & Authentication Parsing
     auth_header = request.headers.get("authorization", "")
@@ -229,15 +242,10 @@ async def auth_middleware(request: Request, call_next):
 
         # First check global master API token if configured
         if global_token and hmac.compare_digest(supplied.encode("utf-8"), global_token.encode("utf-8")):
-            role_header = request.headers.get("x-role", "admin").lower()
-            try:
-                role = Role(role_header)
-            except ValueError:
-                role = Role.ADMIN
             auth_ctx = AuthContext(
                 user_id=request.headers.get("x-user-id", "root"),
                 tenant_id=request.headers.get("x-tenant-id", "default"),
-                role=role,
+                role=requested_role,
                 is_authenticated=True,
             )
         else:
@@ -257,15 +265,10 @@ async def auth_middleware(request: Request, call_next):
             _warned = True
             log.warning("REALITY_API_TOKEN is not set: API is unauthenticated (loopback clients only). "
                         "Set it before exposing the API beyond this machine.")
-        role_header = request.headers.get("x-role", "admin").lower()
-        try:
-            role = Role(role_header)
-        except ValueError:
-            role = Role.ADMIN
         auth_ctx = AuthContext(
             user_id=request.headers.get("x-user-id", "local"),
             tenant_id=request.headers.get("x-tenant-id", "default"),
-            role=role,
+            role=requested_role,
             is_authenticated=True,
             is_loopback=True,
         )

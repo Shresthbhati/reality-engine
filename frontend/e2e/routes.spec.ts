@@ -13,16 +13,21 @@ const ROUTES = [
   "/sessions",
   "/sessions/new",
   "/evidence",
-  "/analysis",
-  "/analysis/new",
-  "/results",
-  "/reports",
-  "/reports/new",
   "/reconstruct",
   "/activity",
   "/settings",
-  "/team",
 ];
+
+// Backend-less screens: their layout 404s unless the build sets NEXT_PUBLIC_SHOW_UNFINISHED=1 (lib/unfinished.ts).
+const GATED = ["/analysis", "/analysis/new", "/results", "/reports", "/reports/new", "/team"];
+
+for (const route of GATED) {
+  test(`unfinished route ${route} is not served`, async ({ page }) => {
+    test.skip(process.env.NEXT_PUBLIC_SHOW_UNFINISHED === "1", "build exposes unfinished routes");
+    const res = await page.goto(route);
+    expect(res?.status()).toBe(404);
+  });
+}
 
 for (const route of ROUTES) {
   test(`route ${route.replace(worldId, "<seeded>")} loads healthy`, async ({ page }) => {

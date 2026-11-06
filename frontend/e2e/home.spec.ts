@@ -23,5 +23,5 @@ test("Overview numbers equal what the API reports (no invented figures)", async 
   const overview = page.getByRole("region", { name: "Overview" });
   const val = (label: string) => overview.getByText(label, { exact: true }).locator("xpath=preceding-sibling::p[1]");
   await expect(val("Sessions")).toHaveText(status.counts.sessions.toLocaleString("en-US"));
-  await expect(val("Evidence items")).toHaveText(status.counts.evidence.toLocaleString("en-US"));
+  await expect(val("Evidence")).toHaveText(status.counts.evidence.toLocaleString("en-US"));
 });

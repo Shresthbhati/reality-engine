@@ -4,6 +4,12 @@ import { API_URL, SEED_FILE } from "../playwright.config";
 
 export { API_URL };
 
+/** Studio opens in Simple mode (place viewer). The engineer workstation these specs drive is Pro-mode only. */
+export const PRO_MODE = {
+  cookies: [],
+  origins: [{ origin: "http://localhost:3000", localStorage: [{ name: "re-pro-mode", value: "true" }] }],
+};
+
 export function seed(): { worldId: string; worldName: string } {
   return JSON.parse(fs.readFileSync(SEED_FILE, "utf8"));
 }

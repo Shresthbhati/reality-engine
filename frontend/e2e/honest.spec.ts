@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { API_URL } from "./support";
 
 test("/results says it is not served by the API and shows no rows", async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_SHOW_UNFINISHED !== "1", "/results is 404 unless the build exposes unfinished routes");
   await page.goto("/results");
   await expect(page.getByText(/not served by the Reality Engine API/i)).toBeVisible();
   await expect(page.getByText(/no mock data/i)).toBeVisible();

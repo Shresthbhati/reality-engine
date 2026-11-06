@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { API_URL, seed } from "./support";
+import { API_URL, PRO_MODE, seed } from "./support";
+
+test.use({ storageState: PRO_MODE });
 
 const { worldId } = seed();
 const WORLD = `/worlds/${worldId}`;

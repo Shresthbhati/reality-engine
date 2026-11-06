@@ -11,9 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import worldstore_service
+from apps.api.auth import AuthContext, get_auth_context
 from apps.api.db import get_db
 from apps.api.models import World, new_id
 from apps.api.routes_worlds import _worldstore_root
+from apps.api.tenancy import team_stamp, visible
 from geo import osm_context as osm
 
 geo = APIRouter(prefix="/api/geo", tags=["geo"])
@@ -32,7 +34,9 @@ def _make_client() -> httpx.Client | None:
 
 
 @geo.post("/context")
-async def import_context(body: GeoContextIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def import_context(
+    body: GeoContextIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
     cache = _worldstore_root() / "osm-cache"
     try:
         data, source = await asyncio.to_thread(
@@ -45,9 +49,13 @@ async def import_context(body: GeoContextIn, db: AsyncSession = Depends(get_db))
     elements = data["elements"]
     world = osm.osm_to_world(elements, body.lat, body.lon, name, radius_m=body.radius_m)
 
-    w = (await db.execute(select(World).where(World.name == name))).scalars().first()
+    # Reuse is by name *within the caller's tenant*: another tenant's same-named world must never receive this version.
+    q = select(World).where(World.name == name)
+    if (scope := visible(World, auth)) is not None:
+        q = q.where(scope)
+    w = (await db.execute(q)).scalars().first()
     if w is None:
-        w = World(id=new_id("wld"), name=name, description=f"{osm.ATTRIBUTION} (ODbL). Imported map context, not a capture.",
+        w = World(id=new_id("wld"), owner_id=auth.user_id, team_id=team_stamp(auth), name=name, description=f"{osm.ATTRIBUTION} (ODbL). Imported map context, not a capture.",
                   latitude=body.lat, longitude=body.lon)
         db.add(w)
         await db.commit()

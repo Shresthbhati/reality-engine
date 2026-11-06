@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import jobs as jobrunner
 from apps.api.db import get_db
+from apps.api.auth import AuthContext, get_auth_context
+from apps.api.tenancy import assert_visible, evidence_scope, team_for_session, upload_scope, visible
 from apps.api.models import (
     ActivityEvent,
     Evidence,
@@ -51,8 +53,8 @@ def _evidence_dict(ev: Evidence) -> dict:
     }
 
 
-uploads = APIRouter(prefix="/api/uploads", tags=["uploads"])
-evidence = APIRouter(prefix="/api/evidence", tags=["evidence"])
+uploads = APIRouter(prefix="/api/uploads", tags=["uploads"], dependencies=[Depends(upload_scope)])
+evidence = APIRouter(prefix="/api/evidence", tags=["evidence"], dependencies=[Depends(evidence_scope)])
 
 _TYPE_BY_MIME = {
     "image/jpeg": "photo", "image/png": "photo", "image/heic": "photo",
@@ -178,7 +180,10 @@ async def create_upload(
     file: UploadFile,
     session_id: str | None = None,
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
+    await assert_visible(db, Session, session_id, auth)
+    team_id = await team_for_session(db, session_id, auth)
     data = await _read_bounded_upload(file)
     if not data:
         raise HTTPException(400, "Empty upload")
@@ -198,6 +203,7 @@ async def create_upload(
     digest, _path = store_bytes(data)
     up = Upload(
         id=new_id("upl"),
+        team_id=team_id,
         session_id=session_id,
         status="completed",
         filename=_safe_filename(file.filename),
@@ -211,6 +217,7 @@ async def create_upload(
     await db.flush()
     ev = Evidence(
         id=new_id("ev"),
+        team_id=team_id,
         name=up.filename,
         type=kind,
         session_id=session_id,
@@ -250,12 +257,14 @@ async def resumable_start(
     total_size: int = Form(...),
     session_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Begin a resumable upload: create a pending Upload row and an empty
     staging file. Returns the upload_id to pair with /resumable/chunk and
     /resumable/{id}/finalize. Content is validated on finalize, not here."""
     if total_size <= 0:
         raise HTTPException(400, "total_size must be positive")
+    await assert_visible(db, Session, session_id, auth)
     if session_id:
         limit = _max_files_per_session()
         stored = (await db.execute(
@@ -267,6 +276,7 @@ async def resumable_start(
             )
     up = Upload(
         id=new_id("upl"),
+        team_id=await team_for_session(db, session_id, auth),
         session_id=session_id,
         status="pending",
         filename=_safe_filename(filename),
@@ -291,11 +301,13 @@ async def resumable_chunk(
     total_size: int = Form(...),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Append one chunk to a staged resumable upload. Returns the new offset.
 
     The client sends chunks in order; on interruption it resumes from the last
     acknowledged offset returned by this endpoint."""
+    await assert_visible(db, Upload, upload_id, auth)
     up = await db.get(Upload, upload_id)
     if up is None:
         raise HTTPException(404, "Upload not found")
@@ -340,6 +352,7 @@ async def resumable_finalize(
     await db.flush()
     ev = Evidence(
         id=new_id("ev"),
+        team_id=up.team_id,
         name=up.filename,
         type=kind,
         session_id=up.session_id,
@@ -380,9 +393,11 @@ async def resumable_finalize(
 
 @evidence.get("")
 async def list_evidence(
-    session_id: str | None = None, db: AsyncSession = Depends(get_db)
+    session_id: str | None = None, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
 ) -> dict:
     q = select(Evidence).order_by(Evidence.created_at.desc()).limit(200)
+    if (scope := visible(Evidence, auth)) is not None:
+        q = q.where(scope)
     if session_id:
         q = q.where(Evidence.session_id == session_id)
     res = await db.execute(q)

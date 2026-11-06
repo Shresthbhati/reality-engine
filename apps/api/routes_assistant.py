@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from apps.api import worldstore_service
 from apps.api.db import get_db
+from apps.api.tenancy import world_scope
 from apps.api.models import Base, World, WorldMeasurement, new_id, utcnow
 from apps.api.routes_procedural import (
     _BUILDERS, _PATCH_FIX, ApartmentPatch, BuildingPatch, CityPatch, CorridorPatch, DistrictPatch, RoomPatch,
@@ -33,7 +34,7 @@ from procedural import spec_store
 from world_ir.diff import diff_worlds
 
 assistant_tools = APIRouter(prefix="/api/assistant", tags=["assistant"])
-assistant = APIRouter(prefix="/api/worlds/{world_id}/assistant", tags=["assistant"])
+assistant = APIRouter(prefix="/api/worlds/{world_id}/assistant", tags=["assistant"], dependencies=[Depends(world_scope)])
 
 PLAN_TTL = timedelta(minutes=30)
 _PATCHES = {"room": RoomPatch, "corridor": CorridorPatch, "city": CityPatch,

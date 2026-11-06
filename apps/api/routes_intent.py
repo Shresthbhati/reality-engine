@@ -21,6 +21,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
+from apps.api.auth import AuthContext, get_auth_context
+from apps.api.tenancy import entity_clause, world_scope
 from apps.api.models import Evidence, Job, World, WorldIntent
 
 SCALES = ("interior_space", "building", "street", "neighborhood", "locality", "district", "city")
@@ -29,7 +31,7 @@ CAPABILITIES = ("geometry", "semantic_understanding", "measurement", "evidence_p
 #: a video contributes at most this many sampled frames (routes_reconstructions.VIDEO_FRAME_BUDGET)
 _FRAMES_PER_VIDEO = 24
 
-intent_router = APIRouter(prefix="/api/worlds", tags=["intent"])
+intent_router = APIRouter(prefix="/api/worlds", tags=["intent"], dependencies=[Depends(world_scope)])
 estimate_router = APIRouter(prefix="/api/intent", tags=["intent"])
 
 
@@ -163,11 +165,12 @@ def build_estimate(scale: str, capabilities: list[str], file_count: int, total_b
             "storage": storage, "time": time, "warnings": _warnings(scale, capabilities, file_count, hw)}
 
 
-async def _seconds_per_image(db: AsyncSession) -> list[float]:
-    jobs = (await db.execute(
-        select(Job).where(Job.type == "RECONSTRUCT_SESSION", Job.status.in_(("succeeded", "partial")),
+async def _seconds_per_image(db: AsyncSession, auth: AuthContext) -> list[float]:
+    q = select(Job).where(Job.type == "RECONSTRUCT_SESSION", Job.status.in_(("succeeded", "partial")),
                           Job.started_at.is_not(None), Job.completed_at.is_not(None))
-    )).scalars().all()
+    if (scope := entity_clause(Job.entity_type, Job.entity_id, auth)) is not None:
+        q = q.where(scope)  # only this tenant's own history feeds its estimate
+    jobs = (await db.execute(q)).scalars().all()
     out = []
     for j in jobs:
         n = len((await db.execute(
@@ -180,6 +183,8 @@ async def _seconds_per_image(db: AsyncSession) -> list[float]:
 
 
 @estimate_router.post("/estimate")
-async def estimate(body: EstimateIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def estimate(
+    body: EstimateIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
     return build_estimate(body.scale, body.capabilities, body.file_count, body.total_bytes, body.video_count,
-                          detect_hardware(), await _seconds_per_image(db))
+                          detect_hardware(), await _seconds_per_image(db, auth))

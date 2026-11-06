@@ -26,13 +26,14 @@ from starlette.concurrency import run_in_threadpool
 
 from apps.api import worldstore_service
 from apps.api.db import get_db
+from apps.api.tenancy import world_scope
 from apps.api.models import CompletionProposal, World, WorldMeasurement, new_id
 from apps.api.routes_procedural import ApartmentRoomIn, _generate_and_commit, _name_in_use
 from procedural import layout_solver, spec_store
 from world_ir.schema_v1 import EntityType, Provenance
 from world_ir.world_v1 import WorldIR
 
-completion = APIRouter(prefix="/api/worlds/{world_id}/completion", tags=["completion"])
+completion = APIRouter(prefix="/api/worlds/{world_id}/completion", tags=["completion"], dependencies=[Depends(world_scope)])
 
 _SHELL_TYPES = (EntityType.FLOOR, EntityType.WALL, EntityType.ROOM)
 _SHELL_PROVENANCE = (Provenance.RECONSTRUCTED, Provenance.OBSERVED)

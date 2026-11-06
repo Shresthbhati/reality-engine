@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import worldstore_service
 from apps.api.db import get_db
+from apps.api.auth import AuthContext, enforce_project_isolation, get_auth_context
+from apps.api.tenancy import team_stamp, world_scope
 from apps.api.models import World, WorldVersion
 from world_ir.world_v1 import WorldIR
 from worldstore.proposals import (
@@ -24,7 +26,7 @@ from worldstore.proposals import (
     propose_update, record_acceptance, reject_proposal,
 )
 
-proposals = APIRouter(prefix="/api/worlds/{world_id}/proposals", tags=["proposals"])
+proposals = APIRouter(prefix="/api/worlds/{world_id}/proposals", tags=["proposals"], dependencies=[Depends(world_scope)])
 
 
 class ProposeIn(BaseModel):
@@ -133,6 +135,7 @@ async def reject(world_id: str, proposal_id: str, body: RejectIn, db: AsyncSessi
 # Standalone Proposals Pipeline Router (for direct proposals workflow / tests)
 # ---------------------------------------------------------------------------
 
+from types import SimpleNamespace
 from typing import Any, Dict
 from worldstore.proposals import (
     ProposalStatus,
@@ -154,34 +157,53 @@ class ReviewIn(BaseModel):
     reason: str = ""
 
 
+# The default pipeline is process-global and tenant-blind, so ownership is recorded here at submit time (same lifetime
+# as the pipeline itself). A proposal this route did not see submitted has no recorded owner and stays unowned.
+_PIPELINE_OWNER: dict[str, str | None] = {}
+
+
+def _pipeline_owned(proposal_id: str, auth: AuthContext) -> None:
+    try:
+        enforce_project_isolation(SimpleNamespace(team_id=_PIPELINE_OWNER.get(proposal_id)), auth)
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="proposal not found") from None
+
+
 @pipeline_router.post("")
-def submit_pipeline_proposal(body: ProposalIn):
+def submit_pipeline_proposal(body: ProposalIn, auth: AuthContext = Depends(get_auth_context)):
     p = get_default_pipeline().submit(body.kind, body.payload, body.created_by)
+    _PIPELINE_OWNER[p.proposal_id] = team_stamp(auth)
     return {"proposal_id": p.proposal_id, "status": p.status.value}
 
 
 @pipeline_router.get("")
-def list_pipeline_proposals(status: Optional[str] = None):
+def list_pipeline_proposals(status: Optional[str] = None, auth: AuthContext = Depends(get_auth_context)):
     st = ProposalStatus(status) if status else None
     out = []
     for p in get_default_pipeline().list(st):
+        try:
+            _pipeline_owned(p.proposal_id, auth)
+        except HTTPException:
+            continue
         out.append({"proposal_id": p.proposal_id, "kind": p.kind,
                     "status": p.status.value, "created_by": p.created_by})
     return {"proposals": out}
 
 
 @pipeline_router.get("/{proposal_id}")
-def get_pipeline_proposal(proposal_id: str):
+def get_pipeline_proposal(proposal_id: str, auth: AuthContext = Depends(get_auth_context)):
     p = get_default_pipeline().get(proposal_id)
     if p is None:
         raise HTTPException(status_code=404, detail="proposal not found")
+    _pipeline_owned(proposal_id, auth)
     return {"proposal_id": p.proposal_id, "kind": p.kind, "status": p.status.value,
             "payload": p.payload, "reviewed_by": p.reviewed_by,
             "review_reason": p.review_reason}
 
 
 @pipeline_router.post("/{proposal_id}/approve")
-def approve_pipeline_proposal(proposal_id: str, body: ReviewIn):
+def approve_pipeline_proposal(proposal_id: str, body: ReviewIn, auth: AuthContext = Depends(get_auth_context)):
+    _pipeline_owned(proposal_id, auth)
     try:
         p = get_default_pipeline().approve(proposal_id, body.reviewer, body.reason)
     except Exception as e:
@@ -190,7 +212,8 @@ def approve_pipeline_proposal(proposal_id: str, body: ReviewIn):
 
 
 @pipeline_router.post("/{proposal_id}/reject")
-def reject_pipeline_proposal(proposal_id: str, body: ReviewIn):
+def reject_pipeline_proposal(proposal_id: str, body: ReviewIn, auth: AuthContext = Depends(get_auth_context)):
+    _pipeline_owned(proposal_id, auth)
     try:
         p = get_default_pipeline().reject(proposal_id, body.reviewer, body.reason)
     except Exception as e:

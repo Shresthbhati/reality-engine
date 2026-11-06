@@ -11,12 +11,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db, get_sessionmaker
+from apps.api.auth import AuthContext, get_auth_context
+from apps.api.tenancy import entity_clause, job_scope
 from apps.api.models import ActivityEvent, Evidence, Job, Notification
 from apps.api.models import utcnow
 
 
 
-jobs = APIRouter(prefix="/api/jobs", tags=["jobs"])
+jobs = APIRouter(prefix="/api/jobs", tags=["jobs"], dependencies=[Depends(job_scope)])
 
 _TERMINAL = ("succeeded", "partial", "failed", "cancelled")
 
@@ -56,8 +58,12 @@ async def _progress_view(db: AsyncSession, j: Job) -> dict:
 
 
 @jobs.get("")
-async def list_jobs(status: str | None = None, db: AsyncSession = Depends(get_db)) -> dict:
+async def list_jobs(
+    status: str | None = None, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
     q = select(Job).order_by(Job.created_at.desc()).limit(100)
+    if (scope := entity_clause(Job.entity_type, Job.entity_id, auth)) is not None:
+        q = q.where(scope)
     if status:
         q = q.where(Job.status == status)
     res = await db.execute(q)
@@ -181,10 +187,13 @@ notifications = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
 @notifications.get("")
-async def list_notifications(db: AsyncSession = Depends(get_db)) -> dict:
-    res = await db.execute(
-        select(Notification).order_by(Notification.created_at.desc()).limit(50)
-    )
+async def list_notifications(
+    db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    q = select(Notification).order_by(Notification.created_at.desc()).limit(50)
+    if (scope := entity_clause(Notification.entity_type, Notification.entity_id, auth)) is not None:
+        q = q.where(scope)
+    res = await db.execute(q)
     return {
         "items": [
             {
@@ -206,10 +215,13 @@ activity = APIRouter(prefix="/api/activity", tags=["activity"])
 
 
 @activity.get("")
-async def list_activity(db: AsyncSession = Depends(get_db)) -> dict:
-    res = await db.execute(
-        select(ActivityEvent).order_by(ActivityEvent.created_at.desc()).limit(100)
-    )
+async def list_activity(
+    db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    q = select(ActivityEvent).order_by(ActivityEvent.created_at.desc()).limit(100)
+    if (scope := entity_clause(ActivityEvent.entity_type, ActivityEvent.entity_id, auth)) is not None:
+        q = q.where(scope)
+    res = await db.execute(q)
     return {
         "items": [
             {

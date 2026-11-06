@@ -14,6 +14,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
+from apps.api.auth import AuthContext, get_auth_context
+from apps.api.tenancy import assert_visible, site_scope, team_stamp, visible
 from typing import Literal
 
 from apps.api import worldstore_service
@@ -23,7 +25,7 @@ from world_ir.compose import ComposeError, _up_axis, compose_worlds
 from world_ir.connectors import is_generated, make_connector
 from world_ir.schema_v1 import EntityType
 
-sites = APIRouter(prefix="/api/sites", tags=["sites"])
+sites = APIRouter(prefix="/api/sites", tags=["sites"], dependencies=[Depends(site_scope)])
 
 _F = {"allow_inf_nan": False}
 
@@ -123,21 +125,35 @@ async def _render(db: AsyncSession, site: Site, p: SitePlacement) -> dict:
     return _placement_dict(p, site.grid_cell_m, w.name if w else None, await _world_footprint(db, p.world_id))
 
 
+async def _world_visible(db: AsyncSession, world_id: str, auth: AuthContext) -> bool:
+    """False only for a placed world that exists and belongs to another tenant (its name/footprint must not leak)."""
+    try:
+        await assert_visible(db, World, world_id, auth)
+    except HTTPException:
+        return False
+    return True
+
+
 def _site_dict(s: Site) -> dict:
     return {"id": s.id, "name": s.name, "grid_cell_m": s.grid_cell_m, "created_at": s.created_at.isoformat()}
 
 
 @sites.get("")
-async def list_sites(db: AsyncSession = Depends(get_db)) -> list[dict]:
+async def list_sites(db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> list[dict]:
     counts = dict((await db.execute(select(SitePlacement.site_id, func.count()).group_by(SitePlacement.site_id))).all())
-    rows = (await db.execute(select(Site).order_by(Site.created_at.desc()))).scalars().all()
+    q = select(Site).order_by(Site.created_at.desc())
+    if (scope := visible(Site, auth)) is not None:
+        q = q.where(scope)
+    rows = (await db.execute(q)).scalars().all()
     return [{"id": s.id, "name": s.name, "grid_cell_m": s.grid_cell_m, "placement_count": counts.get(s.id, 0)}
             for s in rows]
 
 
 @sites.post("", status_code=201)
-async def create_site(body: SiteIn, db: AsyncSession = Depends(get_db)) -> dict:
-    s = Site(id=new_id("site"), name=body.name, grid_cell_m=body.grid_cell_m)
+async def create_site(
+    body: SiteIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    s = Site(id=new_id("site"), team_id=team_stamp(auth), name=body.name, grid_cell_m=body.grid_cell_m)
     db.add(s)
     await db.commit()
     await db.refresh(s)
@@ -145,11 +161,11 @@ async def create_site(body: SiteIn, db: AsyncSession = Depends(get_db)) -> dict:
 
 
 @sites.get("/{site_id}")
-async def get_site(site_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_site(site_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     s = await _site_or_404(db, site_id)
     rows = (await db.execute(select(SitePlacement).where(SitePlacement.site_id == site_id)
                              .order_by(SitePlacement.created_at, SitePlacement.id))).scalars().all()
-    placements = [await _render(db, s, p) for p in rows]
+    placements = [await _render(db, s, p) for p in rows if await _world_visible(db, p.world_id, auth)]
     return {**_site_dict(s), "placements": placements, "overlaps": _overlaps(placements),
             "anchor": _anchor_dict(await db.get(SiteAnchor, site_id))}
 
@@ -167,8 +183,11 @@ async def delete_site(site_id: str, db: AsyncSession = Depends(get_db)) -> Respo
 
 
 @sites.post("/{site_id}/placements", status_code=201)
-async def add_placement(site_id: str, body: PlacementIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def add_placement(
+    site_id: str, body: PlacementIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
     s = await _site_or_404(db, site_id)
+    await assert_visible(db, World, body.world_id, auth)
     if await db.get(World, body.world_id) is None:
         raise HTTPException(404, "World not found")
     p = SitePlacement(id=new_id("plc"), site_id=site_id,
@@ -181,10 +200,10 @@ async def add_placement(site_id: str, body: PlacementIn, db: AsyncSession = Depe
 
 @sites.patch("/{site_id}/placements/{placement_id}")
 async def patch_placement(site_id: str, placement_id: str, body: PlacementPatch,
-                          db: AsyncSession = Depends(get_db)) -> dict:
+                          db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     s = await _site_or_404(db, site_id)
     p = await db.get(SitePlacement, placement_id)
-    if p is None or p.site_id != site_id:
+    if p is None or p.site_id != site_id or not await _world_visible(db, p.world_id, auth):
         raise HTTPException(404, "Placement not found")
     for k, v in body.model_dump(exclude_unset=True).items():
         if v is None and k != "label":
@@ -196,10 +215,12 @@ async def patch_placement(site_id: str, placement_id: str, body: PlacementPatch,
 
 
 @sites.delete("/{site_id}/placements/{placement_id}", status_code=204)
-async def delete_placement(site_id: str, placement_id: str, db: AsyncSession = Depends(get_db)) -> Response:
+async def delete_placement(
+    site_id: str, placement_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> Response:
     await _site_or_404(db, site_id)
     p = await db.get(SitePlacement, placement_id)
-    if p is None or p.site_id != site_id:
+    if p is None or p.site_id != site_id or not await _world_visible(db, p.world_id, auth):
         raise HTTPException(404, "Placement not found")
     await db.delete(p)
     await db.commit()
@@ -272,7 +293,9 @@ def _edge_point(centre: tuple[float, float], toward: tuple[float, float],
 
 
 @sites.post("/{site_id}/compose")
-async def compose_site(site_id: str, body: ComposeIn, db: AsyncSession = Depends(get_db)) -> dict:
+async def compose_site(
+    site_id: str, body: ComposeIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
     site = await _site_or_404(db, site_id)
     rows = (await db.execute(select(SitePlacement).where(SitePlacement.site_id == site_id)
                              .order_by(SitePlacement.created_at, SitePlacement.id))).scalars().all()
@@ -286,9 +309,10 @@ async def compose_site(site_id: str, body: ComposeIn, db: AsyncSession = Depends
                                      f"{p.id}); compose supports one placement per world")
         placed[p.world_id] = p.id
         w = await db.get(World, p.world_id)
+        await assert_visible(db, World, p.world_id, auth)  # a placement may reference a world this caller cannot see
         if w is None or not w.current_version_id:
             raise HTTPException(422, f"World '{p.world_id}' (placement {p.id}) has no head version to compose")
-        row = await _version_row(db, p.world_id, None)
+        row = await _version_row(db, p.world_id, None, auth)
         c = _placement_dict(p, site.grid_cell_m, None, None)["center_m"]
         centres[p.id] = (c["x"], c["z"])
         fp = await _world_footprint(db, p.world_id)
@@ -317,7 +341,7 @@ async def compose_site(site_id: str, body: ComposeIn, db: AsyncSession = Depends
     if comp is not None and await db.get(World, comp.world_id) is not None:
         world_id = comp.world_id
     else:
-        w = World(id=new_id("wld"), name=body.name,
+        w = World(id=new_id("wld"), owner_id=auth.user_id, team_id=site.team_id or team_stamp(auth), name=body.name,
                   description=f"Composed {body.kind} from site '{site.name}' ({len(sources)} worlds). Not a capture.")
         db.add(w)
         if comp is None:

@@ -115,6 +115,7 @@ def run_progressive(
     depth_model: str = "DPT_Hybrid",
     vertical_slice_fn: Optional[Callable] = None,
     bootstrap_depth_map=None,
+    furniture_detector=None,
 ) -> ProgressiveResult:
     eligible = [i for i in inputs if i.facts.geometry_eligible]
     excluded = []
@@ -215,7 +216,7 @@ def run_progressive(
             try:
                 boots.append((cand, bootstrap_single_image(
                     cand.item, cand.facts, artifact_store=artifact_store, depth_model=depth_model,
-                    depth_map=bootstrap_depth_map, tag="" if len(ordered) == 1 else f"{k + 1}",
+                    depth_map=bootstrap_depth_map, furniture_detector=furniture_detector, tag="" if len(ordered) == 1 else f"{k + 1}",
                 )))
             except BootstrapUnavailable as exc:
                 attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed",

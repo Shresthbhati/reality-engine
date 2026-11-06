@@ -67,7 +67,7 @@ PROXIED_CONTRACTS = (
     ("sessions/route.ts", "POST", "/api/sessions"),
     ("sessions/[sessionId]/reconstruct/route.ts", "POST", "/api/sessions/{session_id}/reconstruct"),
     ("jobs/[jobId]/route.ts", "GET", "/api/jobs/{job_id}"),
-    ("jobs/ingest/route.ts", "POST", "/api/uploads"),
+    ("worlds/[id]/artifacts/[sha]/route.ts", "GET", "/api/worlds/{world_id}/artifacts/{sha256}"),
 )
 
 
@@ -90,6 +90,31 @@ def test_frontend_bridge_proxies_a_real_api_contract(
         f"apps/api serves {backend_path} with {sorted(api_contract[backend_path])}, "
         f"not {method}"
     )
+
+
+def test_every_proxy_targets_a_path_the_api_serves(api_contract: dict[str, set[str]]):
+    """Read the URL INSIDE each route file, not a hand-written table.
+
+    The table above only proves the API serves what we *say* a route proxies. This reads what the route
+    actually calls, which is how four proxies to non-existent paths (jobs/compile, jobs/ingest,
+    sessions/ingest-mobile, sessions/mobile-tasks) went unnoticed.
+    """
+    import re
+
+    def shape(path: str) -> str:
+        path = re.sub(r"(?<=[^/])\$\{[^}]*\}$", "", path.split("?")[0])  # trailing ${query} suffix, not a path segment
+        return re.sub(r"\$?\{[^}]*\}", "{}", path.rstrip("/"))
+
+    served = {shape(p) for p in api_contract}
+    call = re.compile(r"\$\{BACKEND_URL\}(/api/[^`\"']*)")
+    checked = 0
+    for path in sorted(FRONTEND_API_DIR.rglob("route.ts")):
+        for target in call.findall(path.read_text(encoding="utf-8")):
+            checked += 1
+            assert shape(target) in served, (
+                f"{path.relative_to(FRONTEND_API_DIR)} proxies {target!r}, which apps/api does not serve"
+            )
+    assert checked >= 20, f"expected to inspect the proxy targets, found only {checked}"
 
 
 def test_every_world_route_is_backed_by_the_api():

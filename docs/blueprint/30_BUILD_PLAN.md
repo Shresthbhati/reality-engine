@@ -179,7 +179,7 @@ Spec: [SCENE_COMPLETE_RECONSTRUCTION](../future/perception/SCENE_COMPLETE_RECONS
 
 | ID | Task | Depends | Done when | Status |
 |----|------|---------|-----------|--------|
-| 8.6 | Scene-complete eval set | 8.1 | `benchmarks/scene_complete/` with ≥ 20 AI + ≥ 20 real room photos labelled (class, box, support surface) + a scorer | TODO |
+| 8.6 | Scene-complete eval set | 8.1 | `benchmarks/scene_complete/` with ≥ 20 AI + ≥ 20 real room photos labelled (class, box, support surface) + a scorer | PARTIAL (scorer + runner + label checker + tests done; the 40 labelled photos are missing and need a person: see [README](../../benchmarks/scene_complete/README.md)) |
 | 8.7 | Single-image path: DA-V2 depth, planes on wall/floor/ceiling masks, detector → `furniture_from_detections` | 8.6 | spec M1 acceptance (COCO-class furniture recall ≥ 70 %, floor contact < 5 % room height) | TODO |
 | 8.8 | Open-vocab detector + crop pass called from the API reconstruction path (multi-view and single-image) | 8.7, O1/O2 decision | spec M2 acceptance; fixtures on wall planes | TODO |
 

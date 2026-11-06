@@ -90,7 +90,7 @@ tasks marked *parallel-safe*.
 | T-0.1, T-0.2, T-0.3, T-0.4 | DONE locally | CI core list 336 passed; contract tests 385 passed; docs conflict markers removed repo-wide |
 | 13.1 | PARTIAL | audit + CODEOWNERS committed; owner must delete branches and protect `main` |
 | T-1.1 | DONE locally | one Studio UI (decision recorded), dead proxies/files removed, artifact proxy added; tsc 0, lint 0 errors, build ok, Playwright world/routes/home/shell 34 passed |
-| T-1.2 | DECIDED, not implemented | proxy-only transport; see DESIGN_DECISIONS |
+| T-1.2 | DONE locally | catch-all proxy + same-origin browser base; Playwright 51 passed (dev and production build); token/upload/traversal checked by hand; hosted per-user identity still open (M6) |
 | H-0.1, H-3.1, H-3.2 | OPEN (you) | firm interviews, closed-window photos, tape-measured rooms |
 
 ### M0 — Trustworthy baseline (≈ 1 week)

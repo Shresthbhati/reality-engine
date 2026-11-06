@@ -17,19 +17,29 @@
 
 export const DEFAULT_API_BASE_URL = "http://localhost:8100";
 
+/**
+ * Where requests go (decision "proxy-only browser transport", plan T-1.2):
+ * - In the browser: the SAME ORIGIN (""), i.e. the Next route handlers under `src/app/api` (specific handlers plus the
+ *   catch-all `api/[...path]`), which add the server-side token. No token or backend host is needed in browser code.
+ * - Desktop shell (Electron): it picks a free port at launch, which no build-time value can know, so its preload script
+ *   sets `window.__REALITY_API_BASE__`; that wins and goes direct to the local API.
+ * - On the server (SSR / server components): straight to the backend, `REALITY_BACKEND_URL`, else the legacy
+ *   `NEXT_PUBLIC_API_BASE_URL`, else http://localhost:8100.
+ */
 export function apiBaseUrl(): string {
-  // The desktop shell picks a free port at launch, which a build-time NEXT_PUBLIC_ value cannot know: its preload
-  // script sets this global before the page runs. Absent in a normal browser, so dev/web builds are unchanged.
-  const injected = typeof window !== "undefined" ? (window as { __REALITY_API_BASE__?: string }).__REALITY_API_BASE__ : undefined;
-  const raw = (injected ?? process.env.NEXT_PUBLIC_API_BASE_URL)?.trim();
-  const base = raw && raw.length > 0 ? raw : DEFAULT_API_BASE_URL;
-  return base.replace(/\/+$/, "");
+  if (typeof window !== "undefined") {
+    const injected = (window as { __REALITY_API_BASE__?: string }).__REALITY_API_BASE__?.trim();
+    return injected ? injected.replace(/\/+$/, "") : "";
+  }
+  const raw = (process.env.REALITY_BACKEND_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL)?.trim();
+  return (raw && raw.length > 0 ? raw : DEFAULT_API_BASE_URL).replace(/\/+$/, "");
 }
 
-/** Optional bearer token (`NEXT_PUBLIC_API_TOKEN`) for an API started with REALITY_API_TOKEN. NEXT_PUBLIC_ values are
- *  visible to the browser, so this suits a local/trusted setup only. */
+/** Bearer token for server-side calls only. In the browser this is always empty (the proxy adds the token), and the
+ *  `typeof window` guard lets the bundler drop this branch from client code so no token value is inlined there. */
 function authHeaders(): Record<string, string> {
-  const token = process.env.NEXT_PUBLIC_API_TOKEN?.trim();
+  if (typeof window !== "undefined") return {};
+  const token = (process.env.REALITY_API_TOKEN || process.env.NEXT_PUBLIC_API_TOKEN)?.trim();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -157,7 +167,7 @@ async function perform<T>(path: string, init: RequestInit, options: RequestOptio
     throw new ApiError({
       message: aborted
         ? `The Reality Engine API did not respond within ${Math.round(timeoutMs / 1000)}s (${url}).`
-        : `Reality Engine API unreachable at ${apiBaseUrl()}. Start it with: uvicorn apps.api.main:app --port 8100`,
+        : `Reality Engine API unreachable${apiBaseUrl() ? ` at ${apiBaseUrl()}` : ""}. Start it with: uvicorn apps.api.main:app --port 8100`,
       status: 0,
       code: aborted ? "timeout" : "network_unreachable",
       retryable: true,

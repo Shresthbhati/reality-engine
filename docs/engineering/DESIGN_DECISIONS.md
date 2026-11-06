@@ -253,13 +253,22 @@ Status: accepted by the product owner ("Aa" = option A). Plan task T-1.1 in `doc
 - Consequence: `lib/copy.ts` and `lib/places.ts` (consumer wording and honest job progress) are no longer used by any screen; they
   stay because contract tests cover them. Delete or reuse when the client view is built.
 
-## Decision — Proxy-only browser transport (2026-11-07, implementation pending)
+## Decision — Proxy-only browser transport (2026-11-07, implemented)
 
-Status: accepted direction; implementation is plan task T-1.2 and is a T3 slice.
+Status: accepted and implemented (plan task T-1.2).
 
-- Target: the browser talks only to same-origin Next route handlers, which add the server-side token. Rationale: a hosted product
-  cannot ship `NEXT_PUBLIC_API_TOKEN` to browsers, and one transport removes the "which client do I use" duplication.
-- Not done yet. Needs a design that covers streaming (job SSE), multipart uploads and the Electron shell, all of which
-  currently go direct. Minimal first step: one catch-all handler `app/api/[...path]/route.ts` forwarding any method with the
-  token; explicit handlers keep priority. Must be verified with the Playwright suite before the base URL flips.
-- Until then both transports exist; the new guard test `test_every_proxy_targets_a_path_the_api_serves` keeps the proxies honest.
+- The browser talks only to same-origin Next route handlers. Explicit handlers under `frontend/src/app/api/**` keep priority;
+  the new catch-all `frontend/src/app/api/[...path]/route.ts` forwards every other `/api/**` call (any method, streamed
+  request and response bodies) to the backend with the server-side token (`lib/api/backend.ts`).
+- `apiBaseUrl()` (`lib/api/client.ts`): browser = same origin; Electron = injected `__REALITY_API_BASE__` (direct to the local
+  API, unchanged); server-side rendering = `REALITY_BACKEND_URL`, then legacy `NEXT_PUBLIC_API_BASE_URL`, then :8100. The browser
+  bundle no longer reads `NEXT_PUBLIC_API_TOKEN`; set `REALITY_API_TOKEN` (server only).
+- The catch-all drops client `Authorization`, `Cookie`, hop-by-hop headers and rejects `.`/`..`/encoded-slash path segments.
+- Verified 2026-11-07: Playwright suite 51 passed / 1 skipped in dev and in production-build mode; with a token-protected API
+  the proxy returned 200 without a client token and with a forged one, passed 404/422 through, rejected an encoded traversal
+  with 400, and a real JPEG upload returned 201 and came back byte-identical.
+- Known limits: (1) one shared service token means **no per-user identity reaches the backend**. That is fine for the local
+  single-user product and is the first thing to change for hosted multi-tenant use (M6: forward the user's credential
+  instead of a blanket token). (2) Job-progress SSE has no frontend consumer yet, so streaming of long-lived events through the
+  proxy is untested. (3) In `next dev` the first request compiles the route, so the footer health timeout was raised to 15 s.
+- The new guard `test_every_proxy_targets_a_path_the_api_serves` skips the catch-all by design.

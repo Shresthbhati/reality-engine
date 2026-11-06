@@ -109,6 +109,8 @@ def test_every_proxy_targets_a_path_the_api_serves(api_contract: dict[str, set[s
     call = re.compile(r"\$\{BACKEND_URL\}(/api/[^`\"']*)")
     checked = 0
     for path in sorted(FRONTEND_API_DIR.rglob("route.ts")):
+        if "[..." in path.parent.name:  # the generic catch-all forwards any /api/** path; the backend answers unknown ones 404
+            continue
         for target in call.findall(path.read_text(encoding="utf-8")):
             checked += 1
             assert shape(target) in served, (

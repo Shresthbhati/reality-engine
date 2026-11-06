@@ -83,6 +83,16 @@ the review is, and whether Sonnet can finish it at all.
 Each milestone ends with a **gate**. Nothing in the next milestone starts until the gate passes, except
 tasks marked *parallel-safe*.
 
+### Progress (local branch `claude/m0-baseline`, not pushed; updated 2026-11-07)
+
+| ID | State | Evidence |
+|----|-------|----------|
+| T-0.1, T-0.2, T-0.3, T-0.4 | DONE locally | CI core list 336 passed; contract tests 385 passed; docs conflict markers removed repo-wide |
+| 13.1 | PARTIAL | audit + CODEOWNERS committed; owner must delete branches and protect `main` |
+| T-1.1 | DONE locally | one Studio UI (decision recorded), dead proxies/files removed, artifact proxy added; tsc 0, lint 0 errors, build ok, Playwright world/routes/home/shell 34 passed |
+| T-1.2 | DECIDED, not implemented | proxy-only transport; see DESIGN_DECISIONS |
+| H-0.1, H-3.1, H-3.2 | OPEN (you) | firm interviews, closed-window photos, tape-measured rooms |
+
 ### M0 — Trustworthy baseline (≈ 1 week)
 
 Gate: `main` CI green on 3.10/3.11/3.12; one non-conflicting status document; frontend contract tests in CI.

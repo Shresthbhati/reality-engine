@@ -38,7 +38,6 @@ from evidence.importers import import_folder
 from evidence.multi_source import MultiSourceSession
 from evidence.packages import DeterministicPackageBuilder, EvidencePackage
 from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
-from reconstruction.backend.fake import FakeReconstructionBackend
 from reconstruction.orchestrator import (
     EvidenceValidationError,
     ReconstructionOrchestrationError,
@@ -74,17 +73,8 @@ def _artifacts_dir_for(world_path: str) -> Path:
 
 
 def _default_backends(colmap_binary: str, use_gpu: bool) -> List:
-    """Real backend first, honest-failure fake second.
-
-    The fake backend has no canned data here, so it always declines/fails
-    for real photo folders -- it exists only so the orchestrator's
-    fallback path is exercised the same way tests exercise it, not as a
-    disguised source of invented geometry.
-    """
-    return [
-        ColmapReconstructionBackend(colmap_binary=colmap_binary, use_gpu=use_gpu),
-        FakeReconstructionBackend(),
-    ]
+    """Production backends only; test doubles are never part of the CLI's default chain."""
+    return [ColmapReconstructionBackend(colmap_binary=colmap_binary, use_gpu=use_gpu)]
 
 
 def cmd_ingest(args: argparse.Namespace) -> int:

@@ -26,23 +26,26 @@ const sampleChanges: TemporalEntityChangeItem[] = [
 test("getTemporalChangeColor provides distinct tokens and hex values for each kind", () => {
   const addedCol = getTemporalChangeColor("added");
   assert.equal(addedCol.hex, 0x10b981);
-  assert.ok(addedCol.border.includes("emerald"));
+  assert.ok(addedCol.border.includes("success"));
 
   const removedCol = getTemporalChangeColor("removed");
   assert.equal(removedCol.hex, 0xf43f5e);
-  assert.ok(removedCol.border.includes("rose"));
+  assert.ok(removedCol.border.includes("error"));
 
   const movedCol = getTemporalChangeColor("moved");
   assert.equal(movedCol.hex, 0xf59e0b);
-  assert.ok(movedCol.border.includes("amber"));
+  assert.ok(movedCol.border.includes("warning"));
 
   const renovatedCol = getTemporalChangeColor("renovated");
   assert.equal(renovatedCol.hex, 0x0ea5e9);
-  assert.ok(renovatedCol.border.includes("sky"));
+  assert.ok(renovatedCol.border.includes("info"));
 
   const damagedCol = getTemporalChangeColor("damaged");
   assert.equal(damagedCol.hex, 0xa855f7);
   assert.ok(damagedCol.border.includes("purple"));
+  // each kind still has its own colour token (no two kinds collapsed onto one semantic colour)
+  const borders = ["added", "removed", "moved", "renovated", "damaged"].map((k) => getTemporalChangeColor(k as never).border);
+  assert.equal(new Set(borders).size, borders.length);
 });
 
 test("countChangesByKind aggregates counts across all categories", () => {

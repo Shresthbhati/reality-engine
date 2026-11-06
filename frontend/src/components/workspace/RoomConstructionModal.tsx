@@ -565,7 +565,7 @@ export default function RoomConstructionModal({
                 type="button"
                 onClick={handleRunPipeline}
                 disabled={running}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[var(--primary)] text-[var(--text-primary)] hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-[var(--primary)] text-on-primary hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {running ? (
                   <>

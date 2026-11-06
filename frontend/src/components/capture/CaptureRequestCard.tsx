@@ -30,19 +30,19 @@ export function CaptureRequestCard({
   return (
     <div
       data-testid={`capture-request-card-${request.id}`}
-      className={`rounded-xl border border-zinc-700/80 bg-zinc-900/90 p-4 shadow-lg transition-all hover:border-zinc-500/80 ${className}`}
+      className={`rounded-xl border border-line/80 bg-surface/90 p-4 shadow-lg transition-all hover:border-line-strong/80 ${className}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-400 border border-sky-500/20">
+          <span className="rounded-md bg-info-subtle px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-info border border-info/20">
             {regionType}
           </span>
-          <span className="flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
+          <span className="flex items-center gap-1 rounded-md bg-success-subtle px-2 py-0.5 text-[10px] font-semibold text-success border border-success/20">
             <Sparkles className="h-3 w-3" />
             {gainBadge}
           </span>
           {request.status !== "open" && (
-            <span className="rounded-md bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+            <span className="rounded-md bg-elevated px-2 py-0.5 text-[10px] font-medium text-fg-muted">
               {request.status}
             </span>
           )}
@@ -57,26 +57,26 @@ export function CaptureRequestCard({
               onDismiss(request.id);
             }}
             aria-label="Dismiss capture request"
-            className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            className="rounded p-1 text-fg-muted hover:bg-elevated hover:text-fg"
           >
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      <p className="mt-2 text-sm font-medium text-zinc-100">
+      <p className="mt-2 text-sm font-medium text-fg">
         {request.instruction}
       </p>
 
       {poseGuidance && (
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-zinc-400">
-          <MapPin className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-fg-muted">
+          <MapPin className="h-3.5 w-3.5 text-warning shrink-0" />
           <span>{poseGuidance}</span>
         </div>
       )}
 
       {request.status === "open" && (
-        <div className="mt-4 flex items-center justify-between gap-2 border-t border-zinc-800/80 pt-3">
+        <div className="mt-4 flex items-center justify-between gap-2 border-t border-line-subtle/80 pt-3">
           {onSatisfy && (
             <button
               type="button"
@@ -85,7 +85,7 @@ export function CaptureRequestCard({
                 setUpdating(true);
                 onSatisfy(request.id);
               }}
-              className="flex items-center gap-1 text-xs text-zinc-400 hover:text-emerald-400"
+              className="flex items-center gap-1 text-xs text-fg-muted hover:text-success"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               <span>Mark satisfied</span>
@@ -96,7 +96,7 @@ export function CaptureRequestCard({
             <button
               type="button"
               onClick={() => onAddPhoto(request)}
-              className="ml-auto flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 transition-colors"
+              className="ml-auto flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary shadow-sm hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info transition-colors"
             >
               <Camera className="h-3.5 w-3.5" />
               <span>Add photo</span>

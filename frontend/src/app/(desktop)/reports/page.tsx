@@ -84,12 +84,12 @@ export default function ReportsPage() {
       />
 
       {/* Unified tabs: Reports / Results / Analysis */}
-      <div className="flex border-b border-zinc-800 shrink-0" style={{ borderColor: "var(--border)" }}>
+      <div className="flex border-b border-line-subtle shrink-0" style={{ borderColor: "var(--border)" }}>
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${tab === t.id ? "border-sky-500 text-sky-400" : "border-transparent text-zinc-400 hover:text-zinc-200"}`}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${tab === t.id ? "border-info text-info" : "border-transparent text-fg-muted hover:text-fg"}`}
           >
             <t.icon className="w-4 h-4" />
             <span>{t.label}</span>

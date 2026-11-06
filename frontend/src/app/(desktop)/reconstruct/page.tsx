@@ -38,16 +38,16 @@ function CreateReconstruction() {
         supports, says plainly what it is unsure about, and improves the same model as you add more views.
       </p>
       {worldId && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-xs text-sky-200 w-full max-w-xl">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-info/30 bg-info-subtle px-4 py-2.5 text-xs text-info w-full max-w-xl">
           <span>This world has intelligent capture requests to resolve occlusions and low-coverage surfaces.</span>
-          <Link href={`/capture?world=${worldId}`} className="shrink-0 font-semibold underline hover:text-white">
+          <Link href={`/capture?world=${worldId}`} className="shrink-0 font-semibold underline hover:text-fg">
             View Requests &rarr;
           </Link>
         </div>
       )}
       <div className="mb-6 w-full max-w-4xl">
         {worldId && loading ? (
-          <p className="text-center text-xs text-neutral-400" role="status">Reading this world&apos;s state…</p>
+          <p className="text-center text-xs text-fg-muted" role="status">Reading this world&apos;s state…</p>
         ) : (
         <GuidedFlow
           status={status}

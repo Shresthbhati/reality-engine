@@ -149,7 +149,7 @@ export default function WorldCard({
               e.stopPropagation();
               setMenuOpen(!menuOpen);
             }}
-            className="p-1 rounded-md bg-zinc-900/70 hover:bg-zinc-800 text-zinc-300 transition"
+            className="p-1 rounded-md bg-surface/70 hover:bg-elevated text-fg-muted transition"
             title="World options"
           >
             <MoreVertical className="w-4 h-4" />
@@ -157,12 +157,12 @@ export default function WorldCard({
 
           {menuOpen && (
             <div
-              className="absolute right-0 top-7 w-40 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl py-1 text-xs text-zinc-200 z-20"
+              className="absolute right-0 top-7 w-40 rounded-lg bg-surface border border-line shadow-xl py-1 text-xs text-fg z-20"
               onClick={(e) => e.stopPropagation()}
             >
               <Link
                 href={`/worlds/${world.id}`}
-                className="flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800 transition"
+                className="flex items-center gap-2 px-3 py-1.5 hover:bg-elevated transition"
                 onClick={() => setMenuOpen(false)}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -177,7 +177,7 @@ export default function WorldCard({
                       setMenuOpen(false);
                       setRenaming(true);
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800 text-left transition"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-elevated text-left transition"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                     <span>Rename</span>
@@ -187,7 +187,7 @@ export default function WorldCard({
                     type="button"
                     onClick={handleDuplicate}
                     disabled={isSubmitting}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800 text-left transition"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-elevated text-left transition"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     <span>Duplicate</span>
@@ -197,7 +197,7 @@ export default function WorldCard({
                     type="button"
                     onClick={handleArchive}
                     disabled={isSubmitting}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800 text-left transition"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-elevated text-left transition"
                   >
                     <Archive className="w-3.5 h-3.5" />
                     <span>Archive</span>
@@ -210,14 +210,14 @@ export default function WorldCard({
                   type="button"
                   onClick={handleRestore}
                   disabled={isSubmitting}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800 text-left text-emerald-400 transition"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-elevated text-left text-success transition"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Restore</span>
                 </button>
               )}
 
-              <div className="my-1 border-t border-zinc-800" />
+              <div className="my-1 border-t border-line-subtle" />
 
               <button
                 type="button"
@@ -225,7 +225,7 @@ export default function WorldCard({
                   setMenuOpen(false);
                   setConfirmDelete(true);
                 }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-rose-950/40 text-left text-rose-400 transition"
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-error/40 text-left text-error transition"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>{statusView === "trash" ? "Permanently Delete" : "Delete"}</span>
@@ -243,19 +243,19 @@ export default function WorldCard({
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 autoFocus
-                className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-elevated border border-line-strong rounded px-2 py-0.5 text-xs text-fg focus:outline-none focus:border-accent"
               />
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-2 py-0.5 bg-indigo-600 rounded text-[11px] text-white"
+                className="px-2 py-0.5 bg-accent rounded text-[11px] text-on-primary"
               >
                 Save
               </button>
               <button
                 type="button"
                 onClick={() => setRenaming(false)}
-                className="px-1.5 py-0.5 hover:bg-zinc-700 rounded text-[11px] text-zinc-400"
+                className="px-1.5 py-0.5 hover:bg-line rounded text-[11px] text-fg-muted"
               >
                 Cancel
               </button>
@@ -300,17 +300,17 @@ export default function WorldCard({
           onClick={() => setConfirmDelete(false)}
         >
           <div
-            className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-md w-full p-5 space-y-4 shadow-2xl text-zinc-200"
+            className="bg-surface border border-line rounded-xl max-w-md w-full p-5 space-y-4 shadow-2xl text-fg"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-2.5 text-rose-400 font-semibold text-sm">
+            <div className="flex items-center gap-2.5 text-error font-semibold text-sm">
               <AlertTriangle className="w-5 h-5" />
               <span>
                 {statusView === "trash" ? "Permanently delete world?" : "Delete world?"}
               </span>
             </div>
 
-            <p className="text-xs text-zinc-300 leading-relaxed">
+            <p className="text-xs text-fg-muted leading-relaxed">
               {statusView === "trash" ? (
                 <>
                   Are you sure you want to permanently delete <strong>{world.name}</strong>?
@@ -323,11 +323,11 @@ export default function WorldCard({
               )}
             </p>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-line-subtle">
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="px-3 py-1.5 rounded-lg hover:bg-zinc-800 text-xs text-zinc-300 transition"
+                className="px-3 py-1.5 rounded-lg hover:bg-elevated text-xs text-fg-muted transition"
               >
                 Cancel
               </button>
@@ -335,7 +335,7 @@ export default function WorldCard({
                 type="button"
                 onClick={handleDelete}
                 disabled={isSubmitting}
-                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition disabled:opacity-50"
+                className="px-3 py-1.5 rounded-lg bg-error hover:bg-error text-on-error font-medium text-xs transition disabled:opacity-50"
               >
                 {statusView === "trash" ? "Purge Permanently" : "Move to Trash"}
               </button>

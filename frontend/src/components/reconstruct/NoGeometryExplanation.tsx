@@ -34,7 +34,7 @@ export default function NoGeometryExplanation({
     body = "Your photos are being analysed. The first model appears here as soon as it is ready.";
     showDrop = false;
   } else if (status?.failure) {
-    icon = <AlertTriangle className="h-7 w-7 text-amber-300" aria-hidden />;
+    icon = <AlertTriangle className="h-7 w-7 text-warning" aria-hidden />;
     title = status.state === "NEEDS_MORE_EVIDENCE" ? "Needs more evidence" : "The model could not be built";
     body = status.failure.message ?? "The engine reported a failure without details.";
   } else if (hasEvidence && status && !status.has_model) {
@@ -48,13 +48,13 @@ export default function NoGeometryExplanation({
       data-testid="no-geometry-explanation"
       role="status"
     >
-      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900">
+      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-line-subtle bg-surface">
         {icon}
       </div>
-      <h3 className="text-base font-semibold text-white">{title}</h3>
-      <p className="mt-2 max-w-md text-xs leading-relaxed text-neutral-400">{body}</p>
+      <h3 className="text-base font-semibold text-fg">{title}</h3>
+      <p className="mt-2 max-w-md text-xs leading-relaxed text-fg-muted">{body}</p>
       {status?.evidence_summary.excluded.length ? (
-        <ul className="mt-3 max-w-md space-y-0.5 text-[11px] text-amber-200">
+        <ul className="mt-3 max-w-md space-y-0.5 text-[11px] text-warning">
           {status.evidence_summary.excluded.slice(0, 4).map((x) => (
             <li key={x.evidence_id}>
               {x.name}: {x.reason}

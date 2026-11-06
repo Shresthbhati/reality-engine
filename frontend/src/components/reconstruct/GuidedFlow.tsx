@@ -24,10 +24,10 @@ const STATE_LABEL: Record<FlowStep["state"], string> = {
 
 function Marker({ step }: { step: FlowStep }) {
   const base = "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold";
-  if (step.state === "done") return <span className={cn(base, "border-emerald-400/60 bg-emerald-400/15 text-emerald-300")}><Check className="h-3 w-3" aria-hidden /></span>;
+  if (step.state === "done") return <span className={cn(base, "border-success/60 bg-success-subtle text-success")}><Check className="h-3 w-3" aria-hidden /></span>;
   if (step.state === "active") return <span className={cn(base, "border-[var(--accent)]/60 text-[var(--accent)]")}><Loader2 className="h-3 w-3 animate-spin" aria-hidden /></span>;
-  if (step.state === "unavailable") return <span className={cn(base, "border-neutral-700 text-neutral-500")}><Lock className="h-2.5 w-2.5" aria-hidden /></span>;
-  return <span className={cn(base, step.current ? "border-amber-300 bg-amber-300/15 text-amber-200" : "border-neutral-500 text-neutral-300")}>{step.n}</span>;
+  if (step.state === "unavailable") return <span className={cn(base, "border-line text-fg-subtle")}><Lock className="h-2.5 w-2.5" aria-hidden /></span>;
+  return <span className={cn(base, step.current ? "border-warning bg-warning-subtle text-warning" : "border-line-strong text-fg-muted")}>{step.n}</span>;
 }
 
 /** Linear 5-step flow: photos -> reconstruct -> scale -> review -> measure. State is derived, never stored. */
@@ -48,20 +48,20 @@ export default function GuidedFlow({ status, onCta, compact = false, showTips = 
             title={`${s.title}: ${STATE_LABEL[s.state]}. ${s.reason}`}
             className={cn(
               "min-w-0 rounded-md border px-2 py-1.5",
-              s.current ? "border-amber-300/50 bg-amber-300/5" : "border-[var(--border)]",
+              s.current ? "border-warning/50 bg-warning-subtle" : "border-[var(--border)]",
               s.state === "unavailable" && "opacity-60",
             )}
           >
             <div className="flex items-center gap-1.5">
               <Marker step={s} />
-              <span className={cn("truncate text-[11px] font-semibold", s.state === "unavailable" ? "text-neutral-400" : "text-neutral-100")}>
+              <span className={cn("truncate text-[11px] font-semibold", s.state === "unavailable" ? "text-fg-muted" : "text-fg")}>
                 <span className="sr-only">Step {s.n}, {STATE_LABEL[s.state]}: </span>{s.title}
               </span>
             </div>
             {!compact && (
               <>
-                <p className="mt-1 text-[10px] font-medium uppercase tracking-wider text-neutral-400">{STATE_LABEL[s.state]}</p>
-                <p className="mt-0.5 text-[11px] leading-snug text-neutral-300">{s.reason}</p>
+                <p className="mt-1 text-[10px] font-medium uppercase tracking-wider text-fg-muted">{STATE_LABEL[s.state]}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-fg-muted">{s.reason}</p>
                 {s.cta && onCta && (
                   <button
                     type="button"
@@ -80,10 +80,10 @@ export default function GuidedFlow({ status, onCta, compact = false, showTips = 
       </ol>
 
       {compact && current && (
-        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-300" data-testid="flow-current">
-          <AlertCircle className="h-3 w-3 shrink-0 text-amber-300" aria-hidden />
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-fg-muted" data-testid="flow-current">
+          <AlertCircle className="h-3 w-3 shrink-0 text-warning" aria-hidden />
           <span>
-            <strong className="text-neutral-100">Step {current.n}, {current.title}:</strong> {current.reason}
+            <strong className="text-fg">Step {current.n}, {current.title}:</strong> {current.reason}
           </span>
           {current.cta && onCta && (
             <button
@@ -101,10 +101,10 @@ export default function GuidedFlow({ status, onCta, compact = false, showTips = 
 
       {showTips && (
         <div className="mt-3 rounded-md border border-[var(--border)] p-3" data-testid="capture-tips">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Capture tips</h3>
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">Capture tips</h3>
           <ul className="mt-1 space-y-1">
             {CAPTURE_TIPS.map((t) => (
-              <li key={t} className="text-[11px] leading-relaxed text-neutral-300">
+              <li key={t} className="text-[11px] leading-relaxed text-fg-muted">
                 • {t}
               </li>
             ))}

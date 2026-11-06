@@ -123,7 +123,7 @@ export default function DistrictBuilder({
         type="button"
         onClick={() => void build()}
         disabled={busy || problems.length > 0}
-        className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[var(--primary)] text-[var(--text-primary)] hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
+        className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[var(--primary)] text-on-primary hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
       >
         {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
         {busy ? "Building…" : "Build district"}

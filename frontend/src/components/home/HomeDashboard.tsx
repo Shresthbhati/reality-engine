@@ -192,7 +192,7 @@ function Hero() {
       <div className="flex flex-wrap gap-3 mt-6">
         <Link
           href="/sessions/new"
-          className="flex items-center gap-2 h-11 px-5 rounded-lg text-sm font-semibold text-white hover:bg-[var(--primary-hover)] transition-colors"
+          className="flex items-center gap-2 h-11 px-5 rounded-lg text-sm font-semibold text-on-primary hover:bg-[var(--primary-hover)] transition-colors"
           style={{ background: "var(--primary)" }}
         >
           <Play className="w-4 h-4" aria-hidden="true" /> Create new session <ArrowRight className="w-4 h-4" aria-hidden="true" />
@@ -231,7 +231,7 @@ function RecentWorlds({
           <Muted>No worlds yet. Create one to see it here.</Muted>
           <Link
             href="/worlds/new"
-            className="px-3 h-8 inline-flex items-center rounded-md text-sm font-semibold text-white"
+            className="px-3 h-8 inline-flex items-center rounded-md text-sm font-semibold text-fg"
             style={{ background: "var(--primary)" }}
           >
             New World

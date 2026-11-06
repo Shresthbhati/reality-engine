@@ -1261,7 +1261,7 @@ function EntityDetails({
               className={`flex-1 py-1.5 rounded font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                 committedSuccess
                   ? "bg-[var(--success)] text-[var(--bg-base)]"
-                  : "bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[var(--text-primary)]"
+                  : "bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-on-primary"
               }`}
             >
               {submitting ? (
@@ -1769,33 +1769,33 @@ function EntityDetails({
                 aria-valuemin={0}
                 aria-valuemax={1}
                 aria-valuenow={conf}
-                className="h-1.5 rounded bg-neutral-800 overflow-hidden"
+                className="h-1.5 rounded bg-elevated overflow-hidden"
               >
                 <div
                   className="h-full"
                   style={{
                     width: `${Math.min(1, Math.max(0, conf)) * 100}%`,
-                    background: conf < LOW_CONFIDENCE_THRESHOLD ? "#f5a623" : "#35d07f",
+                    background: conf < LOW_CONFIDENCE_THRESHOLD ? "var(--warning)" : "var(--success)",
                   }}
                 />
               </div>
             )}
             {conf !== null && conf < LOW_CONFIDENCE_THRESHOLD && (
-              <div className="text-[10px] text-[#f5a623] flex items-center gap-1">
+              <div className="text-[10px] text-warning flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 Low confidence (below {LOW_CONFIDENCE_THRESHOLD * 100}%) - treat as unverified.
               </div>
             )}
             {typeof entity.uncertainty?.confidence === "number" && entity.uncertainty.confidence !== conf && (
               <div className="flex justify-between">
-                <span className="text-neutral-400">Uncertainty Record</span>
-                <span className="font-mono text-white">
+                <span className="text-fg-muted">Uncertainty Record</span>
+                <span className="font-mono text-fg">
                   {(entity.uncertainty.confidence * 100).toFixed(1)}%
                 </span>
               </div>
             )}
             {typeof entity.uncertainty?.note === "string" && entity.uncertainty.note && (
-              <div className="text-[10px] text-neutral-400">Note: {entity.uncertainty.note}</div>
+              <div className="text-[10px] text-fg-muted">Note: {entity.uncertainty.note}</div>
             )}
             {typeof (entity.custom_properties?.inlier_fraction ?? entity.custom_properties?.inlier_ratio) === "number" && (
               <div className="flex justify-between">
@@ -1854,7 +1854,7 @@ function HypothesesSection({ hypotheses }: { hypotheses: DomainHypothesesEvidenc
             <div className="flex items-center justify-between pb-1.5 border-b border-[var(--border-subtle)]">
               <span className="font-medium capitalize text-[var(--text-primary)]">{dom.domain} candidates</span>
               {dom.hasConflict && (
-                <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500">
+                <span className="inline-flex items-center gap-1 rounded bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium text-warning">
                   <AlertTriangle className="h-3 w-3" />
                   Conflict
                 </span>
@@ -1970,7 +1970,7 @@ function WorldOverview({
           <button
             type="button"
             onClick={onOpenRoomConstruction}
-            className="cursor-pointer rounded bg-[var(--primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--primary-hover)]"
+            className="cursor-pointer rounded bg-[var(--primary)] px-3.5 py-1.5 text-xs font-medium text-on-primary transition-colors hover:bg-[var(--primary-hover)]"
           >
             Open room construction
           </button>

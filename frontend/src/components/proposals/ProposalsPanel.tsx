@@ -221,7 +221,7 @@ function ProposalDetail({ worldId, proposal, onChanged }: { worldId: string; pro
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" onClick={doAccept} disabled={plan.blockers.length > 0 || busy !== null}
               className="h-9 px-4 rounded-md text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: "var(--primary)", color: "#fff" }}>
+              style={{ background: "var(--primary)", color: "var(--on-primary)" }}>
               {busy === "accept" ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <CheckCircle2 className="w-4 h-4" aria-hidden />}
               Accept {plan.entity_ids.length} change{plan.entity_ids.length === 1 ? "" : "s"}
             </button>

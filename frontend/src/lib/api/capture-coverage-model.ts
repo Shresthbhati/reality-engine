@@ -38,9 +38,9 @@ export const STATUS_LABEL: Record<WallStatus, string> = {
 
 /** Colour-blind-safe-ish palette; status is also carried by dash pattern and text, never colour alone. */
 export const STATUS_STYLE: Record<WallStatus, { stroke: string; dash: string | undefined }> = {
-  seen: { stroke: "#34d399", dash: undefined },
-  weak: { stroke: "#fbbf24", dash: "6 4" },
-  not_seen: { stroke: "#f87171", dash: "2 4" },
+  seen: { stroke: "var(--success)", dash: undefined },
+  weak: { stroke: "var(--warning)", dash: "6 4" },
+  not_seen: { stroke: "var(--error)", dash: "2 4" },
 };
 
 export interface MapGeometry {

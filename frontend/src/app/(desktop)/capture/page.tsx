@@ -104,19 +104,19 @@ function CapturePageInner() {
   const filteredRequests = sortRequestsByGain(filterRequestsByStatus(requests, statusFilter));
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-zinc-950 p-6 text-zinc-100">
+    <div className="flex h-full w-full flex-col overflow-y-auto bg-base p-6 text-fg">
       <PageHeader title="Capture & Guidance" />
-      <p className="mt-1 text-xs text-zinc-400">
+      <p className="mt-1 text-xs text-fg-muted">
         Manage photo capture sessions, fulfill intelligent capture requests, and update existing world models incrementally.
       </p>
 
       {/* World Context Bar */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line-subtle bg-surface/60 p-4">
         <div className="flex items-center gap-3">
-          <Layers className="h-5 w-5 text-sky-400" />
+          <Layers className="h-5 w-5 text-info" />
           <div>
-            <div className="text-xs font-semibold text-zinc-300">Active Target World</div>
-            <div className="text-sm font-mono text-zinc-100">
+            <div className="text-xs font-semibold text-fg-muted">Active Target World</div>
+            <div className="text-sm font-mono text-fg">
               {worldId ? worldId : "No specific world selected (Creating new world)"}
             </div>
           </div>
@@ -126,7 +126,7 @@ function CapturePageInner() {
           {worldId ? (
             <button
               onClick={() => router.push(`/worlds/${worldId}`)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-elevated px-3 py-1.5 text-xs font-medium text-fg hover:bg-line transition-colors"
             >
               <span>Open in 3D Studio</span>
               <ArrowRight className="h-3.5 w-3.5" />
@@ -134,7 +134,7 @@ function CapturePageInner() {
           ) : (
             <button
               onClick={() => router.push("/worlds")}
-              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700 transition-colors"
+              className="rounded-lg border border-line bg-elevated px-3 py-1.5 text-xs font-medium text-fg hover:bg-line transition-colors"
             >
               Choose Existing World
             </button>
@@ -143,13 +143,13 @@ function CapturePageInner() {
       </div>
 
       {/* Primary Navigation Tabs */}
-      <div className="mt-6 flex border-b border-zinc-800">
+      <div className="mt-6 flex border-b border-line-subtle">
         <button
           onClick={() => setActiveTab("requests")}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
             activeTab === "requests"
-              ? "border-sky-500 text-sky-400"
-              : "border-transparent text-zinc-400 hover:text-zinc-200"
+              ? "border-info text-info"
+              : "border-transparent text-fg-muted hover:text-fg"
           }`}
         >
           <Sparkles className="h-4 w-4" />
@@ -160,8 +160,8 @@ function CapturePageInner() {
           onClick={() => setActiveTab("upload")}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
             activeTab === "upload"
-              ? "border-sky-500 text-sky-400"
-              : "border-transparent text-zinc-400 hover:text-zinc-200"
+              ? "border-info text-info"
+              : "border-transparent text-fg-muted hover:text-fg"
           }`}
         >
           <Camera className="h-4 w-4" />
@@ -172,8 +172,8 @@ function CapturePageInner() {
           onClick={() => setActiveTab("sessions")}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
             activeTab === "sessions"
-              ? "border-sky-500 text-sky-400"
-              : "border-transparent text-zinc-400 hover:text-zinc-200"
+              ? "border-info text-info"
+              : "border-transparent text-fg-muted hover:text-fg"
           }`}
         >
           <History className="h-4 w-4" />
@@ -186,15 +186,15 @@ function CapturePageInner() {
         <div className="mt-6">
           <div className="flex items-center justify-between pb-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-400">Status filter:</span>
+              <span className="text-xs text-fg-muted">Status filter:</span>
               {(["open", "satisfied", "dismissed"] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
                   className={`rounded-lg px-2.5 py-1 text-xs capitalize transition-colors ${
                     statusFilter === s
-                      ? "bg-sky-500/20 text-sky-300 font-semibold border border-sky-500/40"
-                      : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                      ? "bg-info-subtle text-info font-semibold border border-info/40"
+                      : "bg-elevated/60 text-fg-muted hover:bg-elevated hover:text-fg"
                   }`}
                 >
                   {s}
@@ -205,7 +205,7 @@ function CapturePageInner() {
             {worldId && (
               <button
                 onClick={() => setReloadTick((t) => t + 1)}
-                className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+                className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${loadingRequests ? "animate-spin" : ""}`} />
                 <span>Refresh</span>
@@ -214,24 +214,24 @@ function CapturePageInner() {
           </div>
 
           {!worldId ? (
-            <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center">
-              <Sparkles className="mx-auto h-8 w-8 text-zinc-500" />
-              <h3 className="mt-2 text-sm font-semibold text-zinc-200">No world selected</h3>
-              <p className="mt-1 text-xs text-zinc-400">
+            <div className="rounded-xl border border-dashed border-line-subtle p-8 text-center">
+              <Sparkles className="mx-auto h-8 w-8 text-fg-subtle" />
+              <h3 className="mt-2 text-sm font-semibold text-fg">No world selected</h3>
+              <p className="mt-1 text-xs text-fg-muted">
                 Select a reconstructed world to inspect its unobserved areas and guidance requests.
               </p>
               <Link
                 href="/worlds"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-400"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary hover:bg-primary-hover"
               >
                 Browse Worlds
               </Link>
             </div>
           ) : filteredRequests.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center">
-              <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-400" />
-              <h3 className="mt-2 text-sm font-semibold text-zinc-200">No {statusFilter} capture requests</h3>
-              <p className="mt-1 text-xs text-zinc-400">
+            <div className="rounded-xl border border-dashed border-line-subtle p-8 text-center">
+              <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
+              <h3 className="mt-2 text-sm font-semibold text-fg">No {statusFilter} capture requests</h3>
+              <p className="mt-1 text-xs text-fg-muted">
                 {statusFilter === "open"
                   ? "All structural surfaces currently have sufficient coverage, or new requests have not yet been generated."
                   : `No requests with status ${statusFilter}.`}
@@ -258,10 +258,10 @@ function CapturePageInner() {
         <div className="mt-6 flex flex-col items-center">
           <div className="w-full max-w-2xl">
             <div className="mb-4 text-center">
-              <h3 className="text-base font-semibold text-zinc-100">
+              <h3 className="text-base font-semibold text-fg">
                 {worldId ? `Add photographs to ${worldId}` : "Create a new spatial reconstruction"}
               </h3>
-              <p className="mt-1 text-xs text-zinc-400">
+              <p className="mt-1 text-xs text-fg-muted">
                 Newly uploaded photographs register against existing geometry via incremental PnP. Only
                 affected regional entities will recompute.
               </p>
@@ -279,25 +279,25 @@ function CapturePageInner() {
       {activeTab === "sessions" && (
         <div className="mt-6">
           {sessions.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center">
-              <Clock className="mx-auto h-8 w-8 text-zinc-500" />
-              <h3 className="mt-2 text-sm font-semibold text-zinc-200">No capture sessions yet</h3>
-              <p className="mt-1 text-xs text-zinc-400">
+            <div className="rounded-xl border border-dashed border-line-subtle p-8 text-center">
+              <Clock className="mx-auto h-8 w-8 text-fg-subtle" />
+              <h3 className="mt-2 text-sm font-semibold text-fg">No capture sessions yet</h3>
+              <p className="mt-1 text-xs text-fg-muted">
                 Upload photos to launch an ingestion session.
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
+            <div className="divide-y divide-line-subtle rounded-xl border border-line-subtle bg-surface/60 overflow-hidden">
               {sessions.map((sess) => (
                 <div
                   key={sess.id}
-                  className="flex items-center justify-between p-4 hover:bg-zinc-800/40 transition-colors"
+                  className="flex items-center justify-between p-4 hover:bg-elevated/40 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <Camera className="h-5 w-5 text-zinc-400" />
+                    <Camera className="h-5 w-5 text-fg-muted" />
                     <div>
-                      <div className="text-sm font-medium text-zinc-100">{sess.name || sess.id}</div>
-                      <div className="text-xs text-zinc-400">
+                      <div className="text-sm font-medium text-fg">{sess.name || sess.id}</div>
+                      <div className="text-xs text-fg-muted">
                         {sess.location ? `${sess.location} · ` : ""}{sess.state}
                       </div>
                     </div>
@@ -305,7 +305,7 @@ function CapturePageInner() {
 
                   <Link
                     href={`/sessions`}
-                    className="flex items-center gap-1 text-xs font-semibold text-sky-400 hover:text-sky-300"
+                    className="flex items-center gap-1 text-xs font-semibold text-info hover:text-info"
                   >
                     <span>View Session</span>
                     <ArrowRight className="h-3.5 w-3.5" />

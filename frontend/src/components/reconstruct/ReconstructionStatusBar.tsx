@@ -28,16 +28,16 @@ import { parseCaptureQuality } from "@/lib/viewport/structure-points-model";
 import { cn } from "@/lib/utils";
 
 const STATE_STYLE: Record<ReconstructionState, string> = {
-  CAPTURING: "border-neutral-600 text-neutral-300",
+  CAPTURING: "border-line-strong text-fg-muted",
   ANALYZING: "border-[var(--accent)]/50 text-[var(--accent)]",
   BUILDING_ROUGH_MODEL: "border-[var(--accent)]/50 text-[var(--accent)]",
   RECONSTRUCTING: "border-[var(--accent)]/50 text-[var(--accent)]",
   REFINING: "border-[var(--accent)]/50 text-[var(--accent)]",
-  PARTIALLY_COMPLETE: "border-amber-400/60 text-amber-300",
-  READY_TO_INSPECT: "border-emerald-400/60 text-emerald-300",
-  NEEDS_MORE_EVIDENCE: "border-amber-400/60 text-amber-300",
-  FAILED: "border-red-400/60 text-red-300",
-  CANCELLED: "border-neutral-500 text-neutral-300",
+  PARTIALLY_COMPLETE: "border-warning/60 text-warning",
+  READY_TO_INSPECT: "border-success/60 text-success",
+  NEEDS_MORE_EVIDENCE: "border-warning/60 text-warning",
+  FAILED: "border-error/60 text-error",
+  CANCELLED: "border-line-strong text-fg-muted",
 };
 
 const LEVEL_SEGMENTS: Record<QualityLevel, number> = { none: 0, low: 1, moderate: 2, good: 3, unknown: 0 };
@@ -63,7 +63,7 @@ function QualityRow({ bar }: { bar: QualityBar }) {
   const unknown = bar.level === "unknown";
   return (
     <div title={bar.basis} className="flex items-center gap-2 text-[11px]">
-      <span className="w-28 shrink-0 text-neutral-400">{bar.name}</span>
+      <span className="w-28 shrink-0 text-fg-muted">{bar.name}</span>
       <div
         className="flex gap-0.5"
         role="img"
@@ -74,12 +74,12 @@ function QualityRow({ bar }: { bar: QualityBar }) {
             key={i}
             className={cn(
               "h-2 w-6 rounded-sm",
-              unknown ? "bg-neutral-800" : i < filled ? "bg-[var(--accent)]" : "bg-neutral-800",
+              unknown ? "bg-elevated" : i < filled ? "bg-[var(--accent)]" : "bg-elevated",
             )}
           />
         ))}
       </div>
-      <span className="text-neutral-300">{unknown ? "not measured" : bar.level}</span>
+      <span className="text-fg-muted">{unknown ? "not measured" : bar.level}</span>
     </div>
   );
 }
@@ -124,10 +124,10 @@ function BuildSummary({ model, title }: { model: NonNullable<WorldStatus["model"
   if (shown.length === 0) return null;
   return (
     <dl className="mt-2 space-y-0.5 text-[11px]" data-testid="how-built">
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{title}</dt>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{title}</dt>
       {shown.map(([k, v]) => (
-        <dd key={k} data-testid={`how-built-${k.toLowerCase()}`} className="leading-relaxed text-neutral-300">
-          <strong className="text-neutral-200">{k}:</strong> {v}
+        <dd key={k} data-testid={`how-built-${k.toLowerCase()}`} className="leading-relaxed text-fg-muted">
+          <strong className="text-fg">{k}:</strong> {v}
         </dd>
       ))}
     </dl>
@@ -137,11 +137,11 @@ function BuildSummary({ model, title }: { model: NonNullable<WorldStatus["model"
 /** What changed in the WORLD between versions (not how many entities the rebuild has). */
 function PhysicalChanges({ physical }: { physical: Physical }) {
   const rows: [string, string[], string][] = [
-    ["Added", physical.added ?? [], "text-emerald-300"],
-    ["Extended", physical.extended ?? [], "text-emerald-300"],
-    ["Refined", physical.refined ?? [], "text-sky-300"],
-    ["Represented differently", physical.represented_differently ?? [], "text-neutral-400"],
-    ["Still uncertain", [...(physical.uncertain ?? []), ...(physical.not_reproduced ?? [])], "text-amber-300"],
+    ["Added", physical.added ?? [], "text-success"],
+    ["Extended", physical.extended ?? [], "text-success"],
+    ["Refined", physical.refined ?? [], "text-info"],
+    ["Represented differently", physical.represented_differently ?? [], "text-fg-muted"],
+    ["Still uncertain", [...(physical.uncertain ?? []), ...(physical.not_reproduced ?? [])], "text-warning"],
   ];
   const open = physical.conflicts?.unresolved ?? 0;
   const touched = (physical.regions ?? []).filter((r) => r.status !== "unchanged" || (r.new_evidence_count ?? 0) > 0);
@@ -155,7 +155,7 @@ function PhysicalChanges({ physical }: { physical: Physical }) {
             data-count={count}
             className={cn(
               "rounded border px-1.5 py-0 text-[10px]",
-              count > 0 ? "border-[var(--border)] text-neutral-200" : "border-[var(--border)] text-neutral-600",
+              count > 0 ? "border-[var(--border)] text-fg" : "border-[var(--border)] text-fg-subtle",
             )}
           >
             {label} {count}
@@ -163,8 +163,8 @@ function PhysicalChanges({ physical }: { physical: Physical }) {
         ))}
       </ul>
       {physical.preserved ? (
-        <p className="text-[11px] text-neutral-300">
-          <strong className="text-neutral-200">Preserved:</strong> {physical.preserved} surface
+        <p className="text-[11px] text-fg-muted">
+          <strong className="text-fg">Preserved:</strong> {physical.preserved} surface
           {physical.preserved === 1 ? "" : "s"} unchanged
         </p>
       ) : null}
@@ -175,13 +175,13 @@ function PhysicalChanges({ physical }: { physical: Physical }) {
             <strong>{label}:</strong> {items.join("; ")}
           </p>
         ))}
-      <p className={cn("text-[11px]", open ? "text-red-300" : "text-neutral-400")}>
+      <p className={cn("text-[11px]", open ? "text-error" : "text-fg-muted")}>
         <strong>Conflicts:</strong> {open ? `${open} unresolved` : "none"}
       </p>
       {touched.length > 0 && (
         <ul className="mt-1 space-y-0.5">
           {touched.map((r) => (
-            <li key={r.id} className="text-[10px] text-neutral-400">
+            <li key={r.id} className="text-[10px] text-fg-muted">
               • {r.summary}
             </li>
           ))}
@@ -250,10 +250,10 @@ export default function ReconstructionStatusBar({
 
   if (!status) {
     return (
-      <div className="flex h-10 items-center gap-2 px-3 text-xs text-neutral-400" role="status">
+      <div className="flex h-10 items-center gap-2 px-3 text-xs text-fg-muted" role="status">
         {error ? (
           <>
-            <AlertTriangle className="h-3.5 w-3.5 text-amber-300" aria-hidden />
+            <AlertTriangle className="h-3.5 w-3.5 text-warning" aria-hidden />
             Reconstruction status unavailable: {error.message}
           </>
         ) : (
@@ -285,7 +285,7 @@ export default function ReconstructionStatusBar({
   const topGuidance = status.guidance[0]?.message ?? null;
 
   return (
-    <section aria-label="Reconstruction status" className="bg-[var(--bg-base)] text-neutral-200">
+    <section aria-label="Reconstruction status" className="bg-[var(--bg-base)] text-fg">
       {/* results summary for the inspected version, read from its WorldIR */}
       {status.has_model && world && (
         <div className="border-b border-[var(--border)]">
@@ -314,7 +314,7 @@ export default function ReconstructionStatusBar({
           {status.state_label}
         </span>
         {model && (
-          <span className="shrink-0 text-neutral-400" data-testid="model-state">
+          <span className="shrink-0 text-fg-muted" data-testid="model-state">
             {copy.label} · {model.images_registered}/{model.images_used} photos placed
           </span>
         )}
@@ -325,8 +325,8 @@ export default function ReconstructionStatusBar({
             className={cn(
               "shrink-0 rounded border px-1.5 py-0 text-[10px] font-medium",
               model.dense.state === "dense"
-                ? "border-emerald-500/40 text-emerald-300"
-                : "border-[var(--border)] text-neutral-400",
+                ? "border-success/40 text-success"
+                : "border-[var(--border)] text-fg-muted",
             )}
           >
             {model.dense.state === "dense" ? "Dense" : "Sparse"}
@@ -350,7 +350,7 @@ export default function ReconstructionStatusBar({
                       "rounded border px-1.5 py-0 text-[10px] font-medium",
                       active
                         ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
-                        : "border-[var(--border)] text-neutral-300 hover:bg-neutral-800",
+                        : "border-[var(--border)] text-fg-muted hover:bg-elevated",
                     )}
                   >
                     {v.label}
@@ -359,15 +359,15 @@ export default function ReconstructionStatusBar({
               })}
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate text-neutral-400" title={topGuidance ?? undefined}>
+        <span className="min-w-0 flex-1 truncate text-fg-muted" title={topGuidance ?? undefined}>
           {viewingOld ? (
-            <span className="text-amber-300">Viewing {inspecting?.label}, an earlier version</span>
+            <span className="text-warning">Viewing {inspecting?.label}, an earlier version</span>
           ) : status.failure ? (
             failureCopy(status)
           ) : status.last_run?.unchanged ? (
-            <span className="text-neutral-300">Already up to date: this model reflects all your photos</span>
+            <span className="text-fg-muted">Already up to date: this model reflects all your photos</span>
           ) : status.last_run && !status.last_run.adopted ? (
-            <span className="text-amber-300">Kept your current model: the new photos did not improve it yet</span>
+            <span className="text-warning">Kept your current model: the new photos did not improve it yet</span>
           ) : (
             topGuidance ?? (status.in_progress ? "Working…" : "")
           )}
@@ -387,7 +387,7 @@ export default function ReconstructionStatusBar({
             type="button"
             onClick={() => onCancel(status.job!.id)}
             data-testid="cancel-reconstruction"
-            className="shrink-0 rounded border border-red-400/40 px-2 py-0 text-[10px] font-medium text-red-300 hover:bg-red-500/10"
+            className="shrink-0 rounded border border-error/40 px-2 py-0 text-[10px] font-medium text-error hover:bg-error-subtle"
           >
             Cancel
           </button>
@@ -396,7 +396,7 @@ export default function ReconstructionStatusBar({
           type="button"
           onClick={() => setExpandedPref(!expanded)}
           aria-expanded={expanded}
-          className="inline-flex shrink-0 items-center gap-1 text-neutral-400 hover:text-white"
+          className="inline-flex shrink-0 items-center gap-1 text-fg-muted hover:text-fg"
         >
           {expanded ? "Hide details" : "Details"}
           {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
@@ -420,15 +420,15 @@ export default function ReconstructionStatusBar({
               {status.state_label}
             </span>
             {model && (
-              <span className="text-[11px] text-neutral-400" data-testid="model-state">
-                Current spatial reconstruction · <strong className="text-neutral-200">{copy.label}</strong>
+              <span className="text-[11px] text-fg-muted" data-testid="model-state">
+                Current spatial reconstruction · <strong className="text-fg">{copy.label}</strong>
               </span>
             )}
           </div>
           {model ? (
             <>
-              <p className="mt-1 text-[11px] leading-relaxed text-neutral-400">{copy.detail}</p>
-              <p className="mt-1 text-[11px] text-neutral-400">
+              <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">{copy.detail}</p>
+              <p className="mt-1 text-[11px] text-fg-muted">
                 {model.images_registered} of {model.images_used} photos placed in the model
                 {model.scale?.state?.toLowerCase() === "relative" ? " · relative scale (no real-world units)" : ""}
               </p>
@@ -437,9 +437,9 @@ export default function ReconstructionStatusBar({
                 className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]"
                 title="Observed = seen directly. Inferred = deduced by the engine. Unknown = not seen, so not guessed."
               >
-                <span className="text-emerald-300">Observed {counts.observed + counts.reconstructed}</span>
-                <span className="text-amber-300">Inferred {counts.inferred}</span>
-                <span className="text-neutral-400">Unknown {counts.unknown}</span>
+                <span className="text-success">Observed {counts.observed + counts.reconstructed}</span>
+                <span className="text-warning">Inferred {counts.inferred}</span>
+                <span className="text-fg-muted">Unknown {counts.unknown}</span>
               </p>
               <BuildSummary
                 model={own?.strategy ? { ...model, strategy: own.strategy, verdict: own.verdict ?? null, dense: own.dense ?? undefined } : model}
@@ -447,13 +447,13 @@ export default function ReconstructionStatusBar({
               />
             </>
           ) : (
-            <p className="mt-1 text-[11px] text-neutral-400">
+            <p className="mt-1 text-[11px] text-fg-muted">
               {status.in_progress ? "The first model appears here as soon as it is ready." : "No model has been built yet."}
             </p>
           )}
           {own && (own.changes?.length ?? 0) > 0 ? (
             <div className="mt-2" data-testid="what-changed">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
                 What changed in {own.label}
                 {prevLabel ? ` (versus ${prevLabel})` : ""}
               </h3>
@@ -466,7 +466,7 @@ export default function ReconstructionStatusBar({
                       data-count={count}
                       className={cn(
                         "rounded border px-1.5 py-0 text-[10px]",
-                        count > 0 ? "border-[var(--border)] text-neutral-200" : "border-[var(--border)] text-neutral-600",
+                        count > 0 ? "border-[var(--border)] text-fg" : "border-[var(--border)] text-fg-subtle",
                       )}
                     >
                       {label} {count}
@@ -476,37 +476,37 @@ export default function ReconstructionStatusBar({
               )}
               <ul className="mt-0.5 space-y-0.5">
                 {own.changes!.map((c) => (
-                  <li key={c} className="text-[11px] leading-relaxed text-neutral-300">
+                  <li key={c} className="text-[11px] leading-relaxed text-fg-muted">
                     • {c}
                   </li>
                 ))}
               </ul>
             </div>
           ) : viewingOld ? (
-            <p className="mt-2 text-[11px] text-neutral-500" data-testid="what-changed-unrecorded">
+            <p className="mt-2 text-[11px] text-fg-subtle" data-testid="what-changed-unrecorded">
               {own?.parent_version_id ? "This version did not record what it changed." : "This is the first version: nothing to compare with."}
             </p>
           ) : null}
           {!viewingOld && model && (model.changes?.length ?? 0) > 0 && (
             <div className="mt-2" data-testid="what-changed">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
                 {viewingOld
                   ? `What changed in ${status.versions.find((v) => v.is_current)?.label ?? "the current version"} (the current version)`
                   : "What changed in this version"}
               </h3>
               {model.physical?.available && <PhysicalChanges physical={model.physical} />}
               <details className="mt-1" open={!model.physical?.available}>
-                <summary className="cursor-pointer text-[10px] text-neutral-500">
+                <summary className="cursor-pointer text-[10px] text-fg-subtle">
                   {model.physical?.available ? "Counts and details" : "Details"}
                 </summary>
               <ul className="mt-0.5 space-y-0.5">
                 {model.changes!.map((c) => (
-                  <li key={c} className="text-[11px] leading-relaxed text-neutral-300">
+                  <li key={c} className="text-[11px] leading-relaxed text-fg-muted">
                     • {c}
                   </li>
                 ))}
                 {(model.uncertainties ?? []).map((u) => (
-                  <li key={u} className="text-[11px] leading-relaxed text-amber-300">
+                  <li key={u} className="text-[11px] leading-relaxed text-warning">
                     • Still uncertain: {u}
                   </li>
                 ))}
@@ -516,12 +516,12 @@ export default function ReconstructionStatusBar({
           )}
           {model && (model.conflicts ?? []).some((c) => c.status === "unresolved") && (
             <div className="mt-2" data-testid="conflicting-evidence">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-red-300">Conflicting evidence</h3>
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-error">Conflicting evidence</h3>
               <ul className="mt-0.5 space-y-0.5">
                 {model.conflicts!
                   .filter((c) => c.status === "unresolved")
                   .map((c) => (
-                    <li key={c.id} className="text-[11px] leading-relaxed text-neutral-300" title={c.summary}>
+                    <li key={c.id} className="text-[11px] leading-relaxed text-fg-muted" title={c.summary}>
                       • Two estimates for where one photo was taken disagree ({c.hypotheses.length} kept). More
                       evidence can settle it.
                     </li>
@@ -533,11 +533,11 @@ export default function ReconstructionStatusBar({
             <div
               role="status"
               data-testid="candidate-not-adopted"
-              className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-200"
+              className="mt-2 rounded border border-warning/40 bg-warning-subtle px-2 py-1.5 text-[11px] text-warning"
             >
               Your new photos are stored, but rebuilding with them did not improve this model, so the current
               version is kept. They will be tried again as more evidence arrives.
-              <ul className="mt-1 space-y-0.5 text-amber-300/90">
+              <ul className="mt-1 space-y-0.5 text-warning/90">
                 {status.last_run.reasons.map((r) => (
                   <li key={r}>• {r}</li>
                 ))}
@@ -547,7 +547,7 @@ export default function ReconstructionStatusBar({
           {status.failure && (
             <div
               role="alert"
-              className="mt-2 rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-200"
+              className="mt-2 rounded border border-error/40 bg-error-subtle px-2 py-1.5 text-[11px] text-error"
             >
               {failureCopy(status)}
               {status.has_model ? " The previous model is still shown." : ""}
@@ -558,11 +558,11 @@ export default function ReconstructionStatusBar({
         {/* evidence quality */}
         <div className="min-w-0 md:w-[28%]">
           <div className="mb-1 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Evidence</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">Evidence</h3>
             <button
               type="button"
               onClick={() => setShowEvidence((v) => !v)}
-              className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-white"
+              className="inline-flex items-center gap-1 text-[11px] text-fg-muted hover:text-fg"
               aria-expanded={showEvidence}
             >
               {status.evidence_summary.count} image{status.evidence_summary.count === 1 ? "" : "s"}
@@ -570,14 +570,14 @@ export default function ReconstructionStatusBar({
             </button>
           </div>
           {status.evidence_summary.headline && (
-            <p className="mb-1.5 text-[11px] text-neutral-300">{status.evidence_summary.headline}</p>
+            <p className="mb-1.5 text-[11px] text-fg-muted">{status.evidence_summary.headline}</p>
           )}
           <div className="space-y-1">
             {status.evidence_summary.quality.map((q) => (
               <QualityRow key={q.name} bar={q} />
             ))}
             {status.evidence_summary.quality.length === 0 && (
-              <p className="text-[11px] text-neutral-500">Quality is measured once the photos are analysed.</p>
+              <p className="text-[11px] text-fg-subtle">Quality is measured once the photos are analysed.</p>
             )}
           </div>
         </div>
@@ -585,8 +585,8 @@ export default function ReconstructionStatusBar({
         {/* guidance */}
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center justify-between gap-2">
-            <h3 className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              <Lightbulb className="h-3 w-3 text-amber-300" aria-hidden /> What would help most
+            <h3 className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+              <Lightbulb className="h-3 w-3 text-warning" aria-hidden /> What would help most
             </h3>
             <button
               type="button"
@@ -603,12 +603,12 @@ export default function ReconstructionStatusBar({
           </div>
           <ul className="space-y-1" data-testid="guidance">
             {status.guidance.slice(0, 4).map((g, i) => (
-              <li key={`${g.kind}-${i}`} title={`Based on: ${g.basis}`} className="text-[11px] leading-relaxed text-neutral-300">
+              <li key={`${g.kind}-${i}`} title={`Based on: ${g.basis}`} className="text-[11px] leading-relaxed text-fg-muted">
                 • {g.message}
               </li>
             ))}
             {status.guidance.length === 0 && (
-              <li className="text-[11px] text-neutral-500">
+              <li className="text-[11px] text-fg-subtle">
                 {status.in_progress ? "Suggestions appear when the model is ready." : "No suggestions yet."}
               </li>
             )}
@@ -619,7 +619,7 @@ export default function ReconstructionStatusBar({
       {/* versions */}
       {status.versions.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] px-3 py-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Versions</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">Versions</span>
           {[...status.versions]
             .sort((a, b) => a.number - b.number)
             .map((v) => {
@@ -637,11 +637,11 @@ export default function ReconstructionStatusBar({
                     "rounded-md border px-2 py-0.5 text-[11px] font-medium",
                     active
                       ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
-                      : "border-[var(--border)] text-neutral-300 hover:bg-neutral-800",
+                      : "border-[var(--border)] text-fg-muted hover:bg-elevated",
                   )}
                 >
                   {v.label}
-                  <span className="ml-1 text-[10px] text-neutral-500">{v.images_used} photos</span>
+                  <span className="ml-1 text-[10px] text-fg-subtle">{v.images_used} photos</span>
                 </button>
               );
             })}
@@ -649,13 +649,13 @@ export default function ReconstructionStatusBar({
             <button
               type="button"
               onClick={() => onCompareVersions(inspecting.parent_version_id ?? undefined, inspecting.id)}
-              className="text-[11px] text-neutral-400 underline-offset-2 hover:text-white hover:underline"
+              className="text-[11px] text-fg-muted underline-offset-2 hover:text-fg hover:underline"
             >
               What changed in {inspecting.label}?
             </button>
           )}
           {viewingOld && (
-            <span className="text-[11px] text-amber-300" role="status">
+            <span className="text-[11px] text-warning" role="status">
               Viewing an earlier version ({inspecting?.label}).{" "}
               <button type="button" className="underline" onClick={() => onSelectVersion(null)}>
                 Back to current
@@ -668,26 +668,26 @@ export default function ReconstructionStatusBar({
       {showEvidence && (
         <>
         {viewingOld && inspecting && (
-          <p className="border-t border-[var(--border)] px-3 py-1 text-[11px] text-amber-300" data-testid="evidence-version-summary">
+          <p className="border-t border-[var(--border)] px-3 py-1 text-[11px] text-warning" data-testid="evidence-version-summary">
             {versionEvidenceSummary(status.evidence, inspecting)}
           </p>
         )}
         <ul className="max-h-40 divide-y divide-[var(--border)] overflow-y-auto border-t border-[var(--border)] text-[11px]">
           {status.evidence.map((e: EvidenceStatus) => (
             <li key={e.id} className="flex items-center gap-3 px-3 py-1">
-              <span className="w-48 shrink-0 truncate text-neutral-200" title={e.name}>
+              <span className="w-48 shrink-0 truncate text-fg" title={e.name}>
                 {e.name}
               </span>
-              <span className="w-32 shrink-0 text-neutral-400" title={e.class_basis ?? undefined}>
+              <span className="w-32 shrink-0 text-fg-muted" title={e.class_basis ?? undefined}>
                 {e.evidence_class ?? "not analysed"}
                 {e.used_for_geometry === false ? " · context only" : ""}
               </span>
               {viewingOld && inspecting ? (
-                <span className="text-neutral-400" data-testid={`evidence-in-${inspecting.label}`}>
+                <span className="text-fg-muted" data-testid={`evidence-in-${inspecting.label}`}>
                   {VERSION_RELATION_COPY[evidenceInVersion(e.id, inspecting)](inspecting.label)}
                 </span>
               ) : (
-              <span className="text-neutral-400">
+              <span className="text-fg-muted">
                 {e.contribution ? CONTRIBUTION_COPY[e.contribution] ?? e.contribution : "waiting for analysis"}
                 {e.registration?.state === "waiting"
                   ? ` · waiting for a photo that connects it (tried ${e.registration.attempts}×, kept)`

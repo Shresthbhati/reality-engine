@@ -426,7 +426,7 @@ function EditForm({
           ) : (
             <div className="flex items-center gap-2">
               <span>Delete {item.name} and {dependents.names.length || "its"} dependent(s)? This cannot be undone here.</span>
-              <button type="button" disabled={busy} onClick={() => void remove(true)} className="h-7 px-2 rounded bg-[var(--error)] text-[var(--text-primary)] disabled:opacity-40 cursor-pointer">
+              <button type="button" disabled={busy} onClick={() => void remove(true)} className="h-7 px-2 rounded bg-[var(--error)] text-on-error disabled:opacity-40 cursor-pointer">
                 Confirm delete all
               </button>
               <button type="button" onClick={() => { setConfirmCascade(false); setDependents(null); }} className="h-7 px-2 rounded border border-[var(--border)] cursor-pointer">
@@ -442,7 +442,7 @@ function EditForm({
           type="button"
           onClick={() => void save()}
           disabled={!canSave}
-          className="flex items-center gap-2 h-8 px-3 rounded-md text-xs font-semibold bg-[var(--primary)] text-[var(--text-primary)] hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
+          className="flex items-center gap-2 h-8 px-3 rounded-md text-xs font-semibold bg-[var(--primary)] text-on-primary hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
         >
           {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save changes
         </button>
@@ -457,7 +457,7 @@ function EditForm({
         ) : (
           <span className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
             Delete {item.name}?
-            <button type="button" disabled={busy} onClick={() => void remove(false)} className="h-7 px-2 rounded bg-[var(--error)] text-[var(--text-primary)] disabled:opacity-40 cursor-pointer">
+            <button type="button" disabled={busy} onClick={() => void remove(false)} className="h-7 px-2 rounded bg-[var(--error)] text-on-error disabled:opacity-40 cursor-pointer">
               Confirm delete
             </button>
             <button type="button" onClick={() => setConfirmDelete(false)} className="h-7 px-2 rounded border border-[var(--border)] cursor-pointer">

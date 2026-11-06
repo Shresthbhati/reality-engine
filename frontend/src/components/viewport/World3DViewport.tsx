@@ -993,7 +993,7 @@ export default function World3DViewport({
                 active={showStoreys}
                 onClick={() => setShowStoreys((v) => !v)}
               >
-                <Layers className="w-4 h-4 text-indigo-400" />
+                <Layers className="w-4 h-4 text-accent" />
               </IconButton>
             </>
           )}
@@ -1005,7 +1005,7 @@ export default function World3DViewport({
                 active={showCapturePlan}
                 onClick={() => setShowCapturePlan((v) => !v)}
               >
-                <Compass className="w-4 h-4 text-amber-400" />
+                <Compass className="w-4 h-4 text-warning" />
               </IconButton>
             </>
           )}
@@ -1017,7 +1017,7 @@ export default function World3DViewport({
                 active={showTemporalDiff}
                 onClick={() => setShowTemporalDiff((v) => !v)}
               >
-                <History className="w-4 h-4 text-emerald-400" />
+                <History className="w-4 h-4 text-success" />
               </IconButton>
             </>
           )}
@@ -1029,14 +1029,14 @@ export default function World3DViewport({
                 active={showSpatialIntelligence}
                 onClick={() => setShowSpatialIntelligence((v) => !v)}
               >
-                <Globe className="w-4 h-4 text-emerald-400" />
+                <Globe className="w-4 h-4 text-success" />
               </IconButton>
               <IconButton
                 label="50 Open-Source Technologies Catalog & Benchmarking"
                 active={showTechnologies}
                 onClick={() => setShowTechnologies((v) => !v)}
               >
-                <Cpu className="w-4 h-4 text-indigo-400" />
+                <Cpu className="w-4 h-4 text-accent" />
               </IconButton>
             </>
           )}
@@ -1190,18 +1190,18 @@ export default function World3DViewport({
           role="alert"
           aria-live="assertive"
         >
-          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-amber-950/40 border border-amber-500/40 text-amber-400 mb-4 shadow-inner">
-            <AlertTriangle className="w-7 h-7 text-amber-400 animate-pulse" />
+          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-warning/40 border border-warning/40 text-warning mb-4 shadow-inner">
+            <AlertTriangle className="w-7 h-7 text-warning animate-pulse" />
           </div>
-          <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
+          <h3 className="text-base font-semibold text-fg mb-2 tracking-wide">
             WebGL Context Lost
           </h3>
-          <p className="text-xs text-neutral-400 max-w-lg mb-4 leading-relaxed">
+          <p className="text-xs text-fg-muted max-w-lg mb-4 leading-relaxed">
             The GPU graphics context was reclaimed or interrupted by the operating system.
             Interaction is temporarily paused to preserve spatial data integrity.
           </p>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-neutral-900 border border-neutral-800 text-xs font-mono text-neutral-300">
-            <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-surface border border-line-subtle text-xs font-mono text-fg-muted">
+            <div className="w-3 h-3 border-2 border-warning border-t-transparent rounded-full animate-spin" />
             <span>Awaiting WebGL context restoration...</span>
           </div>
         </div>
@@ -1211,8 +1211,8 @@ export default function World3DViewport({
       {isLoading && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[var(--bg-base)]/80 backdrop-blur-sm">
           <div className="w-10 h-10 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mb-4" />
-          <p className="text-sm font-medium text-white">{loadingMessage}</p>
-          <span className="text-xs text-neutral-500 mt-1 font-mono">Consuming canonical WorldIR stream</span>
+          <p className="text-sm font-medium text-fg">{loadingMessage}</p>
+          <span className="text-xs text-fg-subtle mt-1 font-mono">Consuming canonical WorldIR stream</span>
         </div>
       )}
 
@@ -1222,13 +1222,13 @@ export default function World3DViewport({
           className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/92 pointer-events-auto"
           role="alert"
         >
-          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-red-950/40 border border-red-500/40 text-red-400 mb-4 shadow-inner">
-            <AlertTriangle className="w-7 h-7 text-red-400" />
+          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-error/40 border border-error/40 text-error mb-4 shadow-inner">
+            <AlertTriangle className="w-7 h-7 text-error" />
           </div>
-          <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
+          <h3 className="text-base font-semibold text-fg mb-2 tracking-wide">
             Spatial Reconstruction Failed
           </h3>
-          <p className="text-xs text-neutral-400 max-w-lg mb-6 leading-relaxed">
+          <p className="text-xs text-fg-muted max-w-lg mb-6 leading-relaxed">
             The canonical reconstruction pipeline did not produce calibrated 3D geometry for this world.
             {(recon as { note?: string } | undefined)?.note
               ? ` Diagnostic reason: ${(recon as { note?: string }).note}`
@@ -1238,7 +1238,7 @@ export default function World3DViewport({
             <button
               type="button"
               onClick={onOpenRoomConstruction}
-              className="flex items-center gap-2 px-4 py-2 rounded-md bg-red-500 hover:bg-red-400 text-black font-semibold text-xs transition-all cursor-pointer shadow-lg shadow-red-500/20"
+              className="flex items-center gap-2 px-4 py-2 rounded-md bg-error hover:bg-error text-on-accent font-semibold text-xs transition-all cursor-pointer shadow-lg shadow-error/20"
             >
               <Workflow className="w-4 h-4" />
               <span>Open Construction Pipeline</span>
@@ -1254,19 +1254,19 @@ export default function World3DViewport({
           role="alert"
           data-testid="capture-insufficient"
         >
-          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-amber-950/40 border border-amber-500/40 text-amber-400 mb-4 shadow-inner">
-            <AlertTriangle className="w-7 h-7 text-amber-400" />
+          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-warning/40 border border-warning/40 text-warning mb-4 shadow-inner">
+            <AlertTriangle className="w-7 h-7 text-warning" />
           </div>
-          <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
+          <h3 className="text-base font-semibold text-fg mb-2 tracking-wide">
             {captureTitle(captureQuality)}
           </h3>
           {captureQuality.message && (
-            <p className="text-xs text-neutral-300 max-w-lg mb-3 leading-relaxed" data-testid="capture-insufficient-message">
+            <p className="text-xs text-fg-muted max-w-lg mb-3 leading-relaxed" data-testid="capture-insufficient-message">
               {captureQuality.message}
             </p>
           )}
           {captureQuality.advice.length > 0 && (
-            <ul className="max-w-lg space-y-1 text-left text-xs text-neutral-300 list-disc pl-5" data-testid="capture-insufficient-advice" aria-label="What to do next">
+            <ul className="max-w-lg space-y-1 text-left text-xs text-fg-muted list-disc pl-5" data-testid="capture-insufficient-advice" aria-label="What to do next">
               {captureQuality.advice.map((a) => (
                 <li key={a}>{a}</li>
               ))}
@@ -1278,22 +1278,22 @@ export default function World3DViewport({
       {/* Explicit Empty State when no world data exists (honest, never fake) */}
       {!isLoading && !isReconFailed && !unplaced && (hasNoWorldData || (!world && stats.points === 0)) && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-base)]/90 pointer-events-auto">
-          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 mb-4 shadow-inner">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center bg-surface border border-line-subtle text-fg-muted mb-4 shadow-inner">
             <Box className="w-7 h-7 text-[var(--accent)]" />
           </div>
-          <h3 className="text-base font-semibold text-white mb-2 tracking-wide">
+          <h3 className="text-base font-semibold text-fg mb-2 tracking-wide">
             No 3D Reconstructed World Available
           </h3>
-          <p className="text-xs text-neutral-400 max-w-lg mb-6 leading-relaxed">
+          <p className="text-xs text-fg-muted max-w-lg mb-6 leading-relaxed">
             Reality Engine never synthesizes fake world geometry. A 3D world is generated via the
-            canonical spatial pipeline: <strong className="text-neutral-200">Capture Session</strong> → <strong className="text-neutral-200">SfM Perception</strong> → <strong className="text-neutral-200">Interior Compilation</strong> → <strong className="text-neutral-200">Reality Studio</strong>.
+            canonical spatial pipeline: <strong className="text-fg">Capture Session</strong> → <strong className="text-fg">SfM Perception</strong> → <strong className="text-fg">Interior Compilation</strong> → <strong className="text-fg">Reality Studio</strong>.
           </p>
           {onOpenRoomConstruction && (
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <button
                 type="button"
                 onClick={onOpenRoomConstruction}
-                className="flex items-center gap-2 px-4 py-2 rounded-md bg-[var(--primary)] text-white font-semibold text-xs hover:bg-[var(--primary-hover)] transition-all cursor-pointer shadow-lg shadow-[var(--primary)]/20"
+                className="flex items-center gap-2 px-4 py-2 rounded-md bg-[var(--primary)] text-on-primary font-semibold text-xs hover:bg-[var(--primary-hover)] transition-all cursor-pointer shadow-lg shadow-[var(--primary)]/20"
               >
                 <Layers className="w-4 h-4" />
                 <span>Construct Space / Compile IR</span>

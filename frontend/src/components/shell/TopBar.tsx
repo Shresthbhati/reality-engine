@@ -125,7 +125,7 @@ export default function TopBar({ onOpenSearch, worlds, worldsError, currentWorld
             title="Export and reports"
             aria-label="Export"
             className="ml-1 h-8 px-3 rounded-md inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:bg-[var(--primary-hover)]"
-            style={{ background: "var(--primary)", color: "var(--text-primary)" }}
+            style={{ background: "var(--primary)", color: "var(--on-primary)" }}
           >
             <Download className="w-4 h-4" aria-hidden="true" />
             <span>Export</span>

@@ -630,7 +630,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             onClick={primary.run}
             data-testid="add-photos"
             title={primary.label === "Add evidence" ? "Add photographs to improve this model" : primary.label}
-            className="flex h-7 items-center gap-1 rounded bg-[var(--primary)] px-2.5 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--primary-hover)] cursor-pointer"
+            className="flex h-7 items-center gap-1 rounded bg-[var(--primary)] px-2.5 text-xs font-semibold text-on-primary hover:bg-[var(--primary-hover)] cursor-pointer"
           >
             <ImagePlus className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{primary.label}</span>

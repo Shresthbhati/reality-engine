@@ -316,7 +316,7 @@ export default function CompleteInteriorPanel({ worldId, onChanged, hideTrigger 
                     type="button"
                     onClick={() => void decide("accept", current.id)}
                     disabled={!pending || deciding !== null}
-                    className="flex-1 flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[var(--primary)] text-[var(--text-primary)] hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
+                    className="flex-1 flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[var(--primary)] text-on-primary hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
                   >
                     {deciding === "accept" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                     Accept as GENERATED

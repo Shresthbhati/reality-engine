@@ -47,10 +47,10 @@ function label(m: SavedMeasurement): string {
 }
 
 const STATE_STYLE: Record<DimensionState, string> = {
-  MEASURED: "bg-emerald-500/15 border-emerald-500/40 text-emerald-300",
-  RECONSTRUCTED: "bg-sky-500/15 border-sky-500/40 text-sky-300",
-  ESTIMATED: "bg-amber-500/15 border-amber-500/40 text-amber-300",
-  VERIFIED: "bg-violet-500/15 border-violet-500/40 text-violet-300",
+  MEASURED: "bg-success-subtle border-success/40 text-success",
+  RECONSTRUCTED: "bg-info-subtle border-info/40 text-info",
+  ESTIMATED: "bg-warning-subtle border-warning/40 text-warning",
+  VERIFIED: "bg-purple-subtle border-purple/40 text-purple",
 };
 
 function StateBadge({ state }: { state: DimensionState }) {
@@ -209,8 +209,8 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
             data-testid="scale-calibration-badge"
             className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
               ctx.scaleCalibrationState === "METRIC_CALIBRATED"
-                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                : "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                ? "bg-success-subtle border-success/40 text-success"
+                : "bg-warning-subtle border-warning/40 text-warning"
             }`}
             title={
               ctx.scaleCalibrationState === "METRIC_CALIBRATED"
@@ -221,7 +221,7 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
             {ctx.scaleCalibrationState === "METRIC_CALIBRATED" ? "Metric Calibrated" : "Unscaled Relative"}
           </span>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close measurement mode" className="text-neutral-400 hover:text-white cursor-pointer">
+        <button type="button" onClick={onClose} aria-label="Close measurement mode" className="text-fg-muted hover:text-fg cursor-pointer">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -241,8 +241,8 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
                 active
                   ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-subtle)] cursor-pointer"
                   : disabled
-                    ? "border-transparent text-neutral-600 cursor-not-allowed"
-                    : "border-transparent hover:text-white hover:bg-neutral-800 cursor-pointer"
+                    ? "border-transparent text-fg-subtle cursor-not-allowed"
+                    : "border-transparent hover:text-fg hover:bg-elevated cursor-pointer"
               }`}
             >
               {t.label}
@@ -260,11 +260,11 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
       </div>
 
       <div className="px-3 py-2 border-t border-[var(--border)] space-y-1.5">
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500">Current</div>
+        <div className="text-[10px] uppercase tracking-wider text-fg-subtle">Current</div>
         {live && live.points.length > 0 ? (
           <>
             <div className="flex items-center gap-2">
-              <div className="text-lg font-bold text-white font-mono">
+              <div className="text-lg font-bold text-fg font-mono">
                 {preview !== null ? formatValue(preview, unitFor(live.tool, ctx)) : `${live.points.length} point(s)…`}
               </div>
               {preview !== null && <StateBadge state={ctx.state} />}
@@ -272,32 +272,32 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
             <div className="text-[11px]">{formatUncertainty(ctx.uncertainty, ctx.lengthUnit)}</div>
             <div className="flex gap-1.5 pt-1">
               {live.tool === "area" && !live.done && (
-                <button type="button" disabled={live.points.length < 3} onClick={() => getController()?.finishMeasurement()} className="px-2 h-6 rounded border border-[var(--border)] hover:text-white disabled:opacity-40 cursor-pointer">
+                <button type="button" disabled={live.points.length < 3} onClick={() => getController()?.finishMeasurement()} className="px-2 h-6 rounded border border-[var(--border)] hover:text-fg disabled:opacity-40 cursor-pointer">
                   Finish
                 </button>
               )}
               {!live.done && (
-                <button type="button" onClick={() => getController()?.undoMeasurementPoint()} className="px-2 h-6 rounded border border-[var(--border)] hover:text-white cursor-pointer">
+                <button type="button" onClick={() => getController()?.undoMeasurementPoint()} className="px-2 h-6 rounded border border-[var(--border)] hover:text-fg cursor-pointer">
                   Undo
                 </button>
               )}
-              <button type="button" disabled={!complete || busy || !worldId} onClick={save} className="px-2 h-6 rounded bg-[var(--accent)] text-black font-semibold disabled:opacity-40 cursor-pointer">
+              <button type="button" disabled={!complete || busy || !worldId} onClick={save} className="px-2 h-6 rounded bg-[var(--accent)] text-on-accent font-semibold disabled:opacity-40 cursor-pointer">
                 Save
               </button>
-              <button type="button" onClick={() => getController()?.clearMeasurement()} className="px-2 h-6 rounded border border-[var(--border)] hover:text-white cursor-pointer">
+              <button type="button" onClick={() => getController()?.clearMeasurement()} className="px-2 h-6 rounded border border-[var(--border)] hover:text-fg cursor-pointer">
                 Reset
               </button>
             </div>
           </>
         ) : (
-          <div className="text-neutral-500">{MEASURE_TOOLS.find((t) => t.kind === tool)?.hint}</div>
+          <div className="text-fg-subtle">{MEASURE_TOOLS.find((t) => t.kind === tool)?.hint}</div>
         )}
-        {error && <div className="text-red-300" role="alert">{error}</div>}
+        {error && <div className="text-error" role="alert">{error}</div>}
       </div>
 
       <div className="px-3 py-2 border-t border-[var(--border)] space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-wider text-neutral-500">Scale Calibration</span>
+          <span className="text-[10px] uppercase tracking-wider text-fg-subtle">Scale Calibration</span>
           <button
             type="button"
             data-testid="set-scale-toggle"
@@ -309,11 +309,11 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
         </div>
         {showSetScale && (
           <div className="rounded border border-[var(--border)] p-2 space-y-2 bg-[var(--bg-base)]" data-testid="set-scale-panel">
-            <div className="text-[11px] text-neutral-300">
+            <div className="text-[11px] text-fg-muted">
               Calibrate relative scale to metric by entering the physical ground-truth length for the current or selected distance:
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-neutral-400">Length (m):</span>
+              <span className="text-[11px] text-fg-muted">Length (m):</span>
               <input
                 type="number"
                 step="0.01"
@@ -322,14 +322,14 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
                 onChange={(e) => setKnownDistM(e.target.value)}
                 placeholder="e.g. 2.05"
                 data-testid="known-distance-input"
-                className="w-24 px-2 py-0.5 rounded border border-[var(--border)] bg-[var(--bg-surface)] text-white text-xs font-mono"
+                className="w-24 px-2 py-0.5 rounded border border-[var(--border)] bg-[var(--bg-surface)] text-fg text-xs font-mono"
               />
               <button
                 type="button"
                 disabled={scaleBusy || !knownDistM || !worldId}
                 onClick={handleSetScale}
                 data-testid="apply-scale-button"
-                className="px-2 py-1 rounded bg-[var(--accent)] text-black font-semibold text-xs disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 rounded bg-[var(--accent)] text-on-accent font-semibold text-xs disabled:opacity-40 cursor-pointer"
               >
                 {scaleBusy ? "Applying..." : "Calibrate"}
               </button>
@@ -337,16 +337,16 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
           </div>
         )}
         {scaleSuccess && (
-          <div className="text-emerald-300 text-[11px]" role="status">{scaleSuccess}</div>
+          <div className="text-success text-[11px]" role="status">{scaleSuccess}</div>
         )}
       </div>
 
       {selected && (
         <div className="px-3 py-2 border-t border-[var(--border)] space-y-1">
-          <div className="text-[10px] uppercase tracking-wider text-neutral-500">Measurement Details</div>
-          <div className="text-white font-semibold">{KIND_LABEL[selected.kind]}</div>
+          <div className="text-[10px] uppercase tracking-wider text-fg-subtle">Measurement Details</div>
+          <div className="text-fg font-semibold">{KIND_LABEL[selected.kind]}</div>
           <div className="flex justify-between gap-3 items-center">
-            <span className="text-neutral-500 shrink-0">State</span>
+            <span className="text-fg-subtle shrink-0">State</span>
             <StateBadge state={stateFor(selected)} />
           </div>
           <Row k="Estimated Value" v={formatValue(selected.value, unitLabelFromRow(selected.unit))} />
@@ -362,12 +362,12 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
       )}
 
       <div className="px-3 py-2 border-t border-[var(--border)]">
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Measurements ({saved.length})</div>
+        <div className="text-[10px] uppercase tracking-wider text-fg-subtle mb-1">Measurements ({saved.length})</div>
         {saved.length === 0 ? (
-          <div className="text-neutral-500">None saved yet.</div>
+          <div className="text-fg-subtle">None saved yet.</div>
         ) : (
           <table className="w-full text-[11px]">
-            <thead className="text-neutral-500 text-left">
+            <thead className="text-fg-subtle text-left">
               <tr><th>Type</th><th>Value</th><th>State</th><th>±</th><th>Created</th><th /></tr>
             </thead>
             <tbody>
@@ -375,7 +375,7 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
                 <tr
                   key={m.id}
                   onClick={() => { setSelectedId(m.id); getController()?.focusMeasurement(m.id); }}
-                  className={`cursor-pointer hover:bg-neutral-800 ${m.id === selectedId ? "text-white bg-[var(--accent-subtle)]" : ""}`}
+                  className={`cursor-pointer hover:bg-elevated ${m.id === selectedId ? "text-fg bg-[var(--accent-subtle)]" : ""}`}
                   title={m.method}
                 >
                   <td>{KIND_LABEL[m.kind]}</td>
@@ -384,7 +384,7 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
                   <td className="font-mono">{m.uncertainty === null ? "n/e" : m.uncertainty === 0 ? "exact" : m.uncertainty.toFixed(2)}</td>
                   <td>{m.created_at ? new Date(m.created_at).toLocaleTimeString() : "—"}</td>
                   <td>
-                    <button type="button" aria-label={`Delete ${m.id}`} onClick={(e) => { e.stopPropagation(); void remove(m.id); }} className="text-neutral-500 hover:text-red-300 cursor-pointer">
+                    <button type="button" aria-label={`Delete ${m.id}`} onClick={(e) => { e.stopPropagation(); void remove(m.id); }} className="text-fg-subtle hover:text-error cursor-pointer">
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </td>
@@ -397,7 +397,7 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
 
       {selected && profile.bins.length > 0 && (
         <div className="px-3 py-2 border-t border-[var(--border)]">
-          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Measurement Profile (saved values, {profile.unit})</div>
+          <div className="text-[10px] uppercase tracking-wider text-fg-subtle mb-1">Measurement Profile (saved values, {profile.unit})</div>
           <div className="flex items-end gap-0.5 h-12">
             {profile.bins.map((b, i) => (
               <div key={i} className="flex-1 bg-[var(--accent)]/60" style={{ height: `${(b.count / maxCount) * 100}%` }} title={`${b.lo.toFixed(2)}–${b.hi.toFixed(2)}: ${b.count}`} />
@@ -412,8 +412,8 @@ export default function MeasurementPanel({ worldId, world, getController, onClos
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between gap-3">
-      <span className="text-neutral-500 shrink-0">{k}</span>
-      <span className="text-right text-neutral-200 break-words min-w-0">{v}</span>
+      <span className="text-fg-subtle shrink-0">{k}</span>
+      <span className="text-right text-fg break-words min-w-0">{v}</span>
     </div>
   );
 }

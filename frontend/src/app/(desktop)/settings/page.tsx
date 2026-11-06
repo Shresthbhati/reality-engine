@@ -213,7 +213,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={handlePurgeTrash}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors hover:bg-neutral-800"
+                className="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors hover:bg-elevated"
                 style={{
                   borderColor: "var(--border)",
                   color: "var(--text-primary)",
@@ -224,7 +224,7 @@ export default function SettingsPage() {
               </button>
             </div>
             {purgedMessage && (
-              <p className="text-xs text-emerald-400 mt-1">{purgedMessage}</p>
+              <p className="text-xs text-success mt-1">{purgedMessage}</p>
             )}
           </div>
         </Section>

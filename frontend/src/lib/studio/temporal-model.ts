@@ -54,18 +54,18 @@ export interface TemporalColorToken {
 export function getTemporalChangeColor(kind: TemporalChangeKind): TemporalColorToken {
   switch (kind) {
     case "added":
-      return { border: "border-emerald-500", bg: "bg-emerald-500/20", text: "text-emerald-400", hex: 0x10b981 };
+      return { border: "border-success", bg: "bg-success-subtle", text: "text-success", hex: 0x10b981 };
     case "removed":
-      return { border: "border-rose-500", bg: "bg-rose-500/20", text: "text-rose-400", hex: 0xf43f5e };
+      return { border: "border-error", bg: "bg-error-subtle", text: "text-error", hex: 0xf43f5e };
     case "moved":
-      return { border: "border-amber-500", bg: "bg-amber-500/20", text: "text-amber-400", hex: 0xf59e0b };
+      return { border: "border-warning", bg: "bg-warning-subtle", text: "text-warning", hex: 0xf59e0b };
     case "renovated":
-      return { border: "border-sky-500", bg: "bg-sky-500/20", text: "text-sky-400", hex: 0x0ea5e9 };
+      return { border: "border-info", bg: "bg-info-subtle", text: "text-info", hex: 0x0ea5e9 };
     case "damaged":
-      return { border: "border-purple-500", bg: "bg-purple-500/20", text: "text-purple-400", hex: 0xa855f7 };
+      return { border: "border-purple", bg: "bg-purple-subtle", text: "text-purple", hex: 0xa855f7 };
     case "unchanged":
     default:
-      return { border: "border-zinc-600", bg: "bg-zinc-800/40", text: "text-zinc-400", hex: 0x71717a };
+      return { border: "border-line-strong", bg: "bg-elevated/40", text: "text-fg-muted", hex: 0x71717a };
   }
 }
 

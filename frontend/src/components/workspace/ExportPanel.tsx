@@ -259,21 +259,21 @@ export default function ExportPanel({
           style={{
             background: "rgba(239, 68, 68, 0.08)",
             borderColor: "rgba(239, 68, 68, 0.3)",
-            color: "#f87171",
+            color: "var(--error)",
           }}
         >
           <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-error" />
             <div className="flex-1">
               <span className="font-semibold block">Export Failed</span>
-              <p className="text-[11px] leading-relaxed text-neutral-300 mt-0.5">{error.message}</p>
+              <p className="text-[11px] leading-relaxed text-fg-muted mt-0.5">{error.message}</p>
             </div>
             {lastAttempt && (
               <button
                 type="button"
                 onClick={() => void handleExport(lastAttempt.format, lastAttempt.ext)}
                 disabled={running !== null}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-red-200 text-[10px] font-medium border border-red-500/30 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 rounded bg-error-subtle hover:bg-error-subtle text-error text-[10px] font-medium border border-error/30 transition-colors"
               >
                 <RefreshCw className="w-3 h-3" />
                 Retry
@@ -291,17 +291,17 @@ export default function ExportPanel({
           style={{
             background: "rgba(245, 158, 11, 0.08)",
             borderColor: "rgba(245, 158, 11, 0.3)",
-            color: "#fbbf24",
+            color: "var(--warning)",
           }}
         >
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+            <AlertCircle className="w-4 h-4 shrink-0 text-warning" />
             <span className="text-[11px]">{loadError}</span>
           </div>
           <button
             type="button"
             onClick={fetchFormats}
-            className="p-1 rounded hover:bg-amber-400/20 text-amber-200 transition-colors"
+            className="p-1 rounded hover:bg-warning-subtle text-warning transition-colors"
             title="Retry format status check"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -316,31 +316,31 @@ export default function ExportPanel({
           style={{
             background: "rgba(16, 185, 129, 0.08)",
             borderColor: "rgba(16, 185, 129, 0.3)",
-            color: "#34d399",
+            color: "var(--success)",
           }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="font-semibold text-emerald-300">{done.title}</span>
+              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+              <span className="font-semibold text-success">{done.title}</span>
             </div>
           </div>
-          <div className="text-[11px] text-neutral-300">
+          <div className="text-[11px] text-fg-muted">
             Exported {done.entitiesExported} entities successfully.
             {done.entitiesSkipped > 0 && ` (${done.entitiesSkipped} skipped due to non-mesh geometry)`}
           </div>
           {done.reasons.length > 0 && (
-            <div className="mt-1 pt-1 border-t border-emerald-500/20">
+            <div className="mt-1 pt-1 border-t border-success/20">
               <button
                 type="button"
                 onClick={() => setDone({ ...done, showDetails: !done.showDetails })}
-                className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-neutral-200 transition-colors"
+                className="flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg transition-colors"
               >
                 <span>{done.showDetails ? "Hide skipped details" : "View skipped reasons"}</span>
                 {done.showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               </button>
               {done.showDetails && (
-                <div className="mt-1 p-1.5 rounded bg-black/40 font-mono text-[10px] text-neutral-400 max-h-24 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                <div className="mt-1 p-1.5 rounded bg-black/40 font-mono text-[10px] text-fg-muted max-h-24 overflow-y-auto whitespace-pre-wrap leading-relaxed">
                   {done.reasons.join("\n")}
                 </div>
               )}

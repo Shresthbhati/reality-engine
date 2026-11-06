@@ -297,6 +297,10 @@ def _check_epipolar(
             continue
 
         cam_a = cameras[ref_o.image_id]
+        # Coincident camera centres give no baseline: the essential matrix is zero, so the test cannot say
+        # "inconsistent", only "unmeasurable". Leave it unrun (None) so the other gates decide.
+        if (cam_a.extrinsics.position - cam_b.extrinsics.position).length() < 1e-9:
+            continue
         if ref_o.bbox_px is not None:
             pix_a = ((ref_o.bbox_px[0] + ref_o.bbox_px[2]) * 0.5, (ref_o.bbox_px[1] + ref_o.bbox_px[3]) * 0.5)
         else:

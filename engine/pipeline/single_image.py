@@ -143,9 +143,15 @@ def _load_rgb(item: EvidenceItem, w: int, h: int):
 
 def _estimate_depth(item: EvidenceItem, model: str):
     try:
-        from perception.depth.midAS_backend import MiDaSDepthBackend
+        if model.startswith("depth_anything"):
+            # Depth Anything V2 Small (Apache-2.0): same normalised-disparity convention as MiDaS, sharper edges
+            from perception.depth.depth_anything_backend import DepthAnythingV2Backend
 
-        maps = MiDaSDepthBackend(model_type=model).estimate_depth([item])
+            maps = DepthAnythingV2Backend().estimate_depth([item])
+        else:
+            from perception.depth.midAS_backend import MiDaSDepthBackend
+
+            maps = MiDaSDepthBackend(model_type=model).estimate_depth([item])
     except Exception as exc:
         raise BootstrapUnavailable(f"monocular depth unavailable: {exc}") from exc
     if not maps:

@@ -60,3 +60,18 @@ def test_no_detector_and_failing_detector_are_recorded_not_faked(tmp_path):
 
     f2 = bootstrap_single_image(item, facts, depth_map=dm, furniture_detector=boom).facts["furniture"]
     assert f2["attempted"] is False and "weights missing" in f2["reason"]
+
+
+def test_depth_anything_model_name_selects_the_depth_anything_backend(tmp_path, monkeypatch):
+    from engine.pipeline import single_image as si
+
+    item, facts, dm = _room(tmp_path)
+    called = {}
+
+    class _Fake:
+        def estimate_depth(self, items):
+            called["n"] = len(items)
+            return [dm]
+
+    monkeypatch.setattr("perception.depth.depth_anything_backend.DepthAnythingV2Backend", _Fake)
+    assert si._estimate_depth(item, "depth_anything_v2") is dm and called["n"] == 1

@@ -204,7 +204,6 @@ Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an 
    means the `citydb` CLI runs, never that a database was reached. Contract tests against a fake CLI are not real
    3DCityDB verification; that stays external.
 
-<<<<<<< HEAD
 ## Decision — Axis convention
 
 **Status: ACCEPTED**
@@ -226,7 +225,7 @@ geo-referenced. Automatic cross-source / geo-registration remains the MISSING it
 `docs/future/registration/CROSS_SOURCE_REGISTRATION.md` (it needs a measurable residual and a valid correspondence
 set, which manual placement does not provide). Material hypotheses (plan M3) are likewise kept ESTIMATED with
 `asserted=False` and are deliberately not mapped to physics materials.
-=======
+
 
 ## Quality bands (2026-10-13)
 
@@ -240,4 +239,27 @@ A model score is not a probability (master document 14.2), so the product shows 
   otherwise `fair`. The reason is returned with the band so the UI can say why.
 - There is **no per-point band**: the stored point cloud carries no per-point confidence.
 - The thresholds (0.5, 0.75, 0.8) are tolerances, not calibrated constants.
->>>>>>> 4027b5c
+
+## Decision — One Studio UI (the workstation); no Simple/Pro switch (2026-11-07)
+
+Status: accepted by the product owner ("Aa" = option A). Plan task T-1.1 in `docs/blueprint/33_TURNAROUND_PLAN.md`.
+
+- The world page renders `SpatialWorkstation` for everyone. The Simple "place viewer" (`components/simple/*`) and the
+  per-viewer Pro-mode preference (`re-pro-mode`, `useProMode`, Settings toggle) are removed.
+- Why: the first customer (architecture and interior design firms) needs measuring, the inspector and evidence in the main
+  view; two UIs for one world was a third noun beside Session and World (audit `32_FRONTEND_AUDIT.md` D1).
+- A simpler presentation for clients comes back later as a **view mode inside the Studio** (plan M4b read-only client link),
+  not as a second app.
+- Consequence: `lib/copy.ts` and `lib/places.ts` (consumer wording and honest job progress) are no longer used by any screen; they
+  stay because contract tests cover them. Delete or reuse when the client view is built.
+
+## Decision — Proxy-only browser transport (2026-11-07, implementation pending)
+
+Status: accepted direction; implementation is plan task T-1.2 and is a T3 slice.
+
+- Target: the browser talks only to same-origin Next route handlers, which add the server-side token. Rationale: a hosted product
+  cannot ship `NEXT_PUBLIC_API_TOKEN` to browsers, and one transport removes the "which client do I use" duplication.
+- Not done yet. Needs a design that covers streaming (job SSE), multipart uploads and the Electron shell, all of which
+  currently go direct. Minimal first step: one catch-all handler `app/api/[...path]/route.ts` forwarding any method with the
+  token; explicit handlers keep priority. Must be verified with the Playwright suite before the base URL flips.
+- Until then both transports exist; the new guard test `test_every_proxy_targets_a_path_the_api_serves` keeps the proxies honest.

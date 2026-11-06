@@ -6,12 +6,10 @@ import {
   DensityPref,
   setDensity,
   setProcessingPref,
-  setProMode,
   setTheme,
   ThemePref,
   useDensity,
   useProcessingPref,
-  useProMode,
   useTheme,
 } from "@/lib/prefs";
 
@@ -36,7 +34,6 @@ export default function SettingsPage() {
   const [reduceMotion, setReduceMotion] = useState(readReduceMotion);
   const [purgedMessage, setPurgedMessage] = useState<string | null>(null);
   const theme = useTheme();
-  const pro = useProMode();
   const density = useDensity();
   const processing = useProcessingPref();
 
@@ -138,16 +135,6 @@ export default function SettingsPage() {
             description="Minimizes transitions and animations across the app, independent of your OS setting."
             checked={reduceMotion}
             onChange={toggleReduceMotion}
-          />
-        </Section>
-
-        {/* Mode Section */}
-        <Section title="Mode">
-          <ToggleRow
-            label="Pro mode"
-            description="Shows the engineer workstation, sessions, evidence and technical details such as version hashes and coordinate frames."
-            checked={pro}
-            onChange={() => setProMode(!pro)}
           />
         </Section>
 

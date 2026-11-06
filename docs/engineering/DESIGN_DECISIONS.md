@@ -272,3 +272,11 @@ Status: accepted and implemented (plan task T-1.2).
   instead of a blanket token). (2) Job-progress SSE has no frontend consumer yet, so streaming of long-lived events through the
   proxy is untested. (3) In `next dev` the first request compiles the route, so the footer health timeout was raised to 15 s.
 - The new guard `test_every_proxy_targets_a_path_the_api_serves` skips the catch-all by design.
+
+## Decision — Light theme shares the dark theme's copper accent (2026-11-07)
+
+Status: accepted by the product owner ("copper is fine"). Plan task U.3.
+
+- Light `--accent` is `#8a4f2a` (was legacy cyan `#00708a`); light and dark now share one brand. `--primary`/`--on-primary` are identical in both themes.
+- Every colour pair is held to WCAG AA by `frontend/tests/contract/design-tokens.test.mts`; change a token value, then run `npm run test:contract`.
+- Components use the token utilities from `globals.css` (`bg-surface`, `text-fg`, `text-success`, ...). The same test fails on any raw palette class (`text-zinc-400`, ...) in `src`.

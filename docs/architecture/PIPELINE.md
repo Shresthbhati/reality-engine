@@ -34,6 +34,10 @@ reality compile ./capture
      fail loudly on invariant violations
 ```
 
+Per-step lifecycle from one uploaded photo to a stored World, with the status of
+each step (working / unintegrated / partial / unavailable / missing):
+[IMAGE_TO_WORLD_LIFECYCLE.md](IMAGE_TO_WORLD_LIFECYCLE.md).
+
 ## Output set (`reality compile`)
 
 ```

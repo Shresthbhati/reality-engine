@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { API_URL, seed } from "./support";
+import { API_URL, PRO_MODE, seed } from "./support";
+
+test.use({ storageState: PRO_MODE });
 
 const { worldId } = seed();
 const WORLD = `/worlds/${worldId}`;
@@ -84,7 +86,7 @@ test("Generated panel: widening a built room changes only that room's floor exte
 
 test("Measure panel opens: Distance enabled, Volume disabled", async ({ page }) => {
   await page.goto(WORLD);
-  await page.getByRole("button", { name: "Toggle measurement mode" }).click();
+  await page.getByRole("button", { name: /^Measure/ }).click();
   const panel = page.getByLabel("Measurement mode", { exact: true });
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("button", { name: "Distance" })).toBeEnabled();
@@ -93,7 +95,7 @@ test("Measure panel opens: Distance enabled, Volume disabled", async ({ page }) 
 
 test("Geospatial Map tab says the local frame is not georeferenced", async ({ page }) => {
   await page.goto(WORLD);
-  await page.getByRole("button", { name: "Geospatial Map" }).click();
+  await page.getByRole("button", { name: "Map", exact: true }).click();
   await expect(page.getByText(/not georeferenced/i).first()).toBeVisible();
 });
 

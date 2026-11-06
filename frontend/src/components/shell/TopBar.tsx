@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, Bell, Box, ChevronRight, Download } from "lucide-react";
 import type { WorldRow } from "@/lib/types";
-import { EXPORT_HREF, statusText, type ConnectionState } from "@/lib/shell/shell-logic";
+import { EXPORT_HREF, isGatedHref, statusText, type ConnectionState } from "@/lib/shell/shell-logic";
+import { SHOW_UNFINISHED } from "@/lib/unfinished";
 import NotificationsPanel from "./NotificationsPanel";
 
 const DOT_COLOR: Record<ConnectionState, string> = {
@@ -118,16 +119,18 @@ export default function TopBar({ onOpenSearch, worlds, worldsError, currentWorld
           <Bell className="w-4 h-4" aria-hidden="true" />
         </button>
         <NotificationsPanel open={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
-        <Link
-          href={EXPORT_HREF}
-          title="Export and reports"
-          aria-label="Export"
-          className="ml-1 h-8 px-3 rounded-md inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:bg-[var(--primary-hover)]"
-          style={{ background: "var(--primary)", color: "var(--text-primary)" }}
-        >
-          <Download className="w-4 h-4" aria-hidden="true" />
-          <span>Export</span>
-        </Link>
+        {(SHOW_UNFINISHED || !isGatedHref(EXPORT_HREF)) && (
+          <Link
+            href={EXPORT_HREF}
+            title="Export and reports"
+            aria-label="Export"
+            className="ml-1 h-8 px-3 rounded-md inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:bg-[var(--primary-hover)]"
+            style={{ background: "var(--primary)", color: "var(--text-primary)" }}
+          >
+            <Download className="w-4 h-4" aria-hidden="true" />
+            <span>Export</span>
+          </Link>
+        )}
       </div>
     </header>
   );

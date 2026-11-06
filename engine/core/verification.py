@@ -190,7 +190,7 @@ def runtime_availability() -> List[Availability]:
     out.append(_module("ifcopenshell", "ifcopenshell (IFC export)"))
     out.append(_module("torch", "torch (MiDaS / Mask R-CNN)"))
     try:
-        from exporters.citydb import probe_citydb
+        from engine.core.citydb_probe import probe_citydb
 
         p = probe_citydb()
         out.append(Availability("3dcitydb (citydb CLI)", p.status, p.detail))

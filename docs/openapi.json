@@ -376,6 +376,139 @@
         }
       }
     },
+    "/api/uploads/resumable/start": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Resumable Start",
+        "description": "Begin a resumable upload: create a pending Upload row and an empty\nstaging file. Returns the upload_id to pair with /resumable/chunk and\n/resumable/{id}/finalize. Content is validated on finalize, not here.",
+        "operationId": "resumable_start_api_uploads_resumable_start_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_resumable_start_api_uploads_resumable_start_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Resumable Start Api Uploads Resumable Start Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/uploads/resumable/chunk": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Resumable Chunk",
+        "description": "Append one chunk to a staged resumable upload. Returns the new offset.\n\nThe client sends chunks in order; on interruption it resumes from the last\nacknowledged offset returned by this endpoint.",
+        "operationId": "resumable_chunk_api_uploads_resumable_chunk_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_resumable_chunk_api_uploads_resumable_chunk_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Resumable Chunk Api Uploads Resumable Chunk Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/uploads/resumable/{upload_id}/finalize": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Resumable Finalize",
+        "description": "Finish a staged resumable upload: hash the staged bytes, store them\ncontent-addressed, complete the Upload row, and create Evidence + job.",
+        "operationId": "resumable_finalize_api_uploads_resumable__upload_id__finalize_post",
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Upload Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Resumable Finalize Api Uploads Resumable  Upload Id  Finalize Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/uploads/check": {
       "post": {
         "tags": [
@@ -1018,6 +1151,50 @@
         }
       }
     },
+    "/api/worlds/import/package": {
+      "post": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Import World Package",
+        "description": "Import a world from an uploaded versioned .zip package archive (Task 11.2).\n\nValidates package integrity, manifest format, checksums, and restores enclosed artifacts.\nRegisters the world in WorldStore and database.",
+        "operationId": "import_world_package_api_worlds_import_package_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_world_package_api_worlds_import_package_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Import World Package Api Worlds Import Package Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}": {
       "get": {
         "tags": [
@@ -1395,6 +1572,131 @@
         }
       }
     },
+    "/api/worlds/{world_id}/capture-requests": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "List Capture Requests",
+        "description": "List world-space CaptureRequests for unobserved or occluded regions (Blueprint 11, Task 6.1).",
+        "operationId": "list_capture_requests_api_worlds__world_id__capture_requests_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Capture Requests Api Worlds  World Id  Capture Requests Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/capture-requests/{request_id}": {
+      "patch": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Update Capture Request Status",
+        "description": "Update status of a CaptureRequest (open | satisfied | dismissed).",
+        "operationId": "update_capture_request_status_api_worlds__world_id__capture_requests__request_id__patch",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureRequestStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Capture Request Status Api Worlds  World Id  Capture Requests  Request Id  Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/coverage": {
       "get": {
         "tags": [
@@ -1553,6 +1855,76 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Entity Provenance Api Worlds  World Id  Entities  Entity Id  Provenance Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/entities/{entity_id}/confidence": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Entity Confidence",
+        "description": "Retrieve multi-dimensional ConfidenceVector for an entity (Blueprint Task 7.1).",
+        "operationId": "entity_confidence_api_worlds__world_id__entities__entity_id__confidence_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Entity Confidence Api Worlds  World Id  Entities  Entity Id  Confidence Get"
                 }
               }
             }
@@ -1847,6 +2219,159 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/corrections/reclassify": {
+      "post": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Api Reclassify Entity",
+        "description": "User correction: reclassify entity to new ontology class.",
+        "operationId": "api_reclassify_entity_api_worlds__world_id__corrections_reclassify_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReclassifyCorrectionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/corrections/split": {
+      "post": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Api Split Entity",
+        "description": "User correction: split entity into two along axis.",
+        "operationId": "api_split_entity_api_worlds__world_id__corrections_split_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SplitCorrectionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/corrections/merge": {
+      "post": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Api Merge Entities",
+        "description": "User correction: merge secondary entities into primary entity.",
+        "operationId": "api_merge_entities_api_worlds__world_id__corrections_merge_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeCorrectionIn"
               }
             }
           }
@@ -2451,6 +2976,67 @@
         }
       }
     },
+    "/api/worlds/{world_id}/spatial-intelligence": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Get World Spatial Intelligence",
+        "description": "Consolidated spatial intelligence endpoint: coordinate frame, georeference, style, envelope, plausibility, lighting.",
+        "operationId": "get_world_spatial_intelligence_api_worlds__world_id__spatial_intelligence_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get World Spatial Intelligence Api Worlds  World Id  Spatial Intelligence Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/proposals": {
       "post": {
         "tags": [
@@ -2710,6 +3296,230 @@
                   "additionalProperties": true,
                   "title": "Response Reject Api Worlds  World Id  Proposals  Proposal Id  Reject Post"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/proposals": {
+      "post": {
+        "tags": [
+          "proposals_pipeline"
+        ],
+        "summary": "Submit Pipeline Proposal",
+        "operationId": "submit_pipeline_proposal_proposals_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/apps__api__routes_proposals__ProposalIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "proposals_pipeline"
+        ],
+        "summary": "List Pipeline Proposals",
+        "operationId": "list_pipeline_proposals_proposals_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/proposals/{proposal_id}": {
+      "get": {
+        "tags": [
+          "proposals_pipeline"
+        ],
+        "summary": "Get Pipeline Proposal",
+        "operationId": "get_pipeline_proposal_proposals__proposal_id__get",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/proposals/{proposal_id}/approve": {
+      "post": {
+        "tags": [
+          "proposals_pipeline"
+        ],
+        "summary": "Approve Pipeline Proposal",
+        "operationId": "approve_pipeline_proposal_proposals__proposal_id__approve_post",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/proposals/{proposal_id}/reject": {
+      "post": {
+        "tags": [
+          "proposals_pipeline"
+        ],
+        "summary": "Reject Pipeline Proposal",
+        "operationId": "reject_pipeline_proposal_proposals__proposal_id__reject_post",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -5175,6 +5985,63 @@
         }
       }
     },
+    "/api/worlds/{world_id}/export/package": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Export Package",
+        "description": "Export the version's WorldIR as a versioned .zip package archive (Task 11.2).",
+        "operationId": "export_package_api_worlds__world_id__export_package_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs": {
       "get": {
         "tags": [
@@ -5598,7 +6465,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ProposalIn"
+                "$ref": "#/components/schemas/apps__api__routes_completion__ProposalIn"
               }
             }
           }
@@ -5961,6 +6828,301 @@
         }
       }
     },
+    "/api/worlds/{world_id}/assistant/ask": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Ask Copilot",
+        "operationId": "ask_copilot_api_worlds__world_id__assistant_ask_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Ask Copilot Api Worlds  World Id  Assistant Ask Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/assistant/capture-plan": {
+      "post": {
+        "tags": [
+          "assistant"
+        ],
+        "summary": "Plan Capture",
+        "operationId": "plan_capture_api_worlds__world_id__assistant_capture_plan_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CapturePlanIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Plan Capture Api Worlds  World Id  Assistant Capture Plan Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/technologies": {
+      "get": {
+        "tags": [
+          "technologies"
+        ],
+        "summary": "List Technologies",
+        "description": "List evaluated open-source technologies with subsystem and availability metadata.",
+        "operationId": "list_technologies_api_technologies_get",
+        "parameters": [
+          {
+            "name": "subsystem",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by subsystem enum",
+              "title": "Subsystem"
+            },
+            "description": "Filter by subsystem enum"
+          },
+          {
+            "name": "available_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Filter to only host-available tools",
+              "default": false,
+              "title": "Available Only"
+            },
+            "description": "Filter to only host-available tools"
+          },
+          {
+            "name": "min_priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by maximum priority tier (1, 2, 3)",
+              "title": "Min Priority"
+            },
+            "description": "Filter by maximum priority tier (1, 2, 3)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Technologies Api Technologies Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/technologies/{tech_id}": {
+      "get": {
+        "tags": [
+          "technologies"
+        ],
+        "summary": "Get Technology",
+        "description": "Inspect full descriptor and live discovery state for a single technology.",
+        "operationId": "get_technology_api_technologies__tech_id__get",
+        "parameters": [
+          {
+            "name": "tech_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tech Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Technology Api Technologies  Tech Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/technologies/benchmark": {
+      "post": {
+        "tags": [
+          "technologies"
+        ],
+        "summary": "Run Benchmark",
+        "description": "Execute benchmark harness and return quantitative performance metrics.",
+        "operationId": "run_benchmark_api_technologies_benchmark_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BenchmarkRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Run Benchmark Api Technologies Benchmark Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -5977,6 +7139,29 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Healthz Check Healthz Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Healthz Check",
+        "operationId": "healthz_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Healthz Check Health Get"
                 }
               }
             }
@@ -6511,6 +7696,18 @@
         ],
         "title": "ApartmentSolveIn"
       },
+      "AskIn": {
+        "properties": {
+          "query": {
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "AskIn"
+      },
       "AttachIn": {
         "properties": {
           "to": {
@@ -6529,12 +7726,42 @@
         ],
         "title": "AttachIn"
       },
+      "BenchmarkRequest": {
+        "properties": {
+          "tech_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tech Id",
+            "description": "Specific technology ID to evaluate"
+          },
+          "subsystem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subsystem",
+            "description": "Subsystem category to evaluate"
+          }
+        },
+        "type": "object",
+        "title": "BenchmarkRequest"
+      },
       "Body_check_uploads_api_uploads_check_post": {
         "properties": {
           "files": {
             "items": {
               "type": "string",
-              "format": "binary"
+              "contentMediaType": "application/octet-stream"
             },
             "type": "array",
             "title": "Files"
@@ -6551,7 +7778,7 @@
           "files": {
             "items": {
               "type": "string",
-              "format": "binary"
+              "contentMediaType": "application/octet-stream"
             },
             "type": "array",
             "title": "Files"
@@ -6666,7 +7893,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -6675,6 +7902,89 @@
           "file"
         ],
         "title": "Body_create_upload_api_uploads_post"
+      },
+      "Body_import_world_package_api_worlds_import_package_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_world_package_api_worlds_import_package_post"
+      },
+      "Body_resumable_chunk_api_uploads_resumable_chunk_post": {
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "title": "Upload Id"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "total_size": {
+            "type": "integer",
+            "title": "Total Size"
+          },
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "upload_id",
+          "offset",
+          "total_size",
+          "file"
+        ],
+        "title": "Body_resumable_chunk_api_uploads_resumable_chunk_post"
+      },
+      "Body_resumable_start_api_uploads_resumable_start_post": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "total_size": {
+            "type": "integer",
+            "title": "Total Size"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "total_size"
+        ],
+        "title": "Body_resumable_start_api_uploads_resumable_start_post"
       },
       "BuildingCoreIn": {
         "properties": {
@@ -6992,6 +8302,40 @@
           "tool"
         ],
         "title": "CallIn"
+      },
+      "CapturePlanIn": {
+        "properties": {
+          "max_recommendations": {
+            "type": "integer",
+            "title": "Max Recommendations",
+            "default": 5
+          },
+          "camera_height_m": {
+            "type": "number",
+            "title": "Camera Height M",
+            "default": 1.6
+          },
+          "camera_fov_deg": {
+            "type": "number",
+            "title": "Camera Fov Deg",
+            "default": 65.0
+          }
+        },
+        "type": "object",
+        "title": "CapturePlanIn"
+      },
+      "CaptureRequestStatusUpdate": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "CaptureRequestStatusUpdate"
       },
       "CityIn": {
         "properties": {
@@ -8313,6 +9657,60 @@
         ],
         "title": "MeasurementIn"
       },
+      "MergeCorrectionIn": {
+        "properties": {
+          "primary_entity_id": {
+            "type": "string",
+            "title": "Primary Entity Id"
+          },
+          "secondary_entity_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Secondary Entity Ids"
+          },
+          "new_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "primary_entity_id",
+          "secondary_entity_ids"
+        ],
+        "title": "MergeCorrectionIn"
+      },
       "OpeningIn": {
         "properties": {
           "wall": {
@@ -8590,86 +9988,6 @@
         ],
         "title": "PoseIn"
       },
-      "ProposalIn": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "default": "interior"
-          },
-          "template": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Template"
-          },
-          "rooms": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/ApartmentRoomIn"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rooms"
-          },
-          "entrance": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entrance"
-          },
-          "adjacency": {
-            "items": {
-              "prefixItems": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "string"
-                }
-              ],
-              "type": "array",
-              "maxItems": 3,
-              "minItems": 3
-            },
-            "type": "array",
-            "title": "Adjacency",
-            "default": []
-          },
-          "seed": {
-            "type": "integer",
-            "title": "Seed",
-            "default": 0
-          },
-          "alternatives": {
-            "type": "integer",
-            "maximum": 3.0,
-            "minimum": 1.0,
-            "title": "Alternatives",
-            "default": 2
-          }
-        },
-        "type": "object",
-        "title": "ProposalIn"
-      },
       "ProposeIn": {
         "properties": {
           "candidate": {
@@ -8690,6 +10008,62 @@
           "candidate"
         ],
         "title": "ProposeIn"
+      },
+      "ReclassifyCorrectionIn": {
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "new_class": {
+            "type": "string",
+            "title": "New Class"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_id",
+          "new_class"
+        ],
+        "title": "ReclassifyCorrectionIn"
+      },
+      "ReviewIn": {
+        "properties": {
+          "reviewer": {
+            "type": "string",
+            "title": "Reviewer",
+            "default": "reviewer"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ReviewIn"
       },
       "RollbackIn": {
         "properties": {
@@ -9173,6 +10547,51 @@
         ],
         "title": "SiteIn"
       },
+      "SplitCorrectionIn": {
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "split_axis": {
+            "type": "string",
+            "title": "Split Axis",
+            "default": "x"
+          },
+          "split_ratio": {
+            "type": "number",
+            "title": "Split Ratio",
+            "default": 0.5
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_id"
+        ],
+        "title": "SplitCorrectionIn"
+      },
       "TransformIn": {
         "properties": {
           "rotation": {
@@ -9225,6 +10644,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",
@@ -9320,6 +10746,110 @@
         },
         "type": "object",
         "title": "WorldPatch"
+      },
+      "apps__api__routes_completion__ProposalIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": "interior"
+          },
+          "template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template"
+          },
+          "rooms": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ApartmentRoomIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rooms"
+          },
+          "entrance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entrance"
+          },
+          "adjacency": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "type": "array",
+              "maxItems": 3,
+              "minItems": 3
+            },
+            "type": "array",
+            "title": "Adjacency",
+            "default": []
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed",
+            "default": 0
+          },
+          "alternatives": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Alternatives",
+            "default": 2
+          }
+        },
+        "type": "object",
+        "title": "ProposalIn"
+      },
+      "apps__api__routes_proposals__ProposalIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload",
+            "default": {}
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By",
+            "default": "system"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ProposalIn"
       },
       "apps__api__routes_proposals__RejectIn": {
         "properties": {

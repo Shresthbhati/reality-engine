@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "check": "python",
+      "status": "OK",
+      "detail": "3.14.7"
+    },
+    {
+      "check": "venv",
+      "status": "OK",
+      "detail": "active (C:\\Users\\shres\\OneDrive\\Desktop\\codes\\reality-engine\\.venv)"
+    },
+    {
+      "check": "torch",
+      "status": "OK",
+      "detail": "2.14.1+cu130, cuda available: True"
+    },
+    {
+      "check": "gpu",
+      "status": "OK",
+      "detail": "NVIDIA GeForce RTX 4050 Laptop GPU, 6.0 GiB VRAM"
+    },
+    {
+      "check": "colmap",
+      "status": "OK",
+      "detail": "C:\\Users\\shres\\tools\\colmap-extracted\\bin\\colmap.EXE (COLMAP 4.2.0 (Commit be5e291 on 2026-08-31 with CUDA))"
+    },
+    {
+      "check": "node",
+      "status": "OK",
+      "detail": "v26.8.1 (C:\\Program Files\\nodejs\\node.EXE)"
+    },
+    {
+      "check": "npm",
+      "status": "OK",
+      "detail": "11.19.0 (C:\\Program Files\\nodejs\\npm.CMD)"
+    },
+    {
+      "check": "db",
+      "status": "OK",
+      "detail": "C:\\Users\\shres\\OneDrive\\Desktop\\codes\\reality-engine\\.claude\\worktrees\\bold-feynman-0ba202\\data\\app.db writable"
+    }
+  ]
+}

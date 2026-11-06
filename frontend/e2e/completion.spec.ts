@@ -1,7 +1,9 @@
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { API_URL, seed } from "./support";
+import { API_URL, PRO_MODE, seed } from "./support";
+
+test.use({ storageState: PRO_MODE });
 
 const root = path.resolve(__dirname, "..", "..");
 const sandbox = path.join(__dirname, "..", "test-results", "e2e");

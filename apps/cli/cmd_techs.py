@@ -135,11 +135,16 @@ def cmd_techs_benchmark(args: argparse.Namespace) -> int:
         print(f"Subsystem:      {result.subsystem}")
         print(f"Latency:        {result.execution_time_ms:.2f} ms")
         print(f"Memory Peak:    {result.memory_peak_mb:.1f} MB")
-        print(f"Peak VRAM:      {result.vram_peak_mb:.1f} MB (RTX 4050 6GB Bound: Pass)")
+        vram = f"{result.vram_peak_mb:.1f} MB" if result.vram_peak_mb is not None else f"null ({result.vram_peak_reason})"
+        print(f"Peak VRAM:      {vram}")
+        print(f"Version:        {result.technology_version or 'null (not installed)'}")
+        print(f"Evidence:       {result.evidence_label}")
         print(f"Verdict:        {result.summary_verdict}")
+        if result.passes_threshold_reason:
+            print(f"Reason:         {result.passes_threshold_reason}")
         print("Metrics:")
         for m_name, m in result.metrics.items():
-            status_flag = "PASS" if m.passes_threshold else "FAIL"
+            status_flag = "N/A" if m.passes_threshold is None else ("PASS" if m.passes_threshold else "FAIL")
             print(f"  - {m.name}: {m.value:.3f} {m.unit} (target: {m.target_threshold} {m.unit}) [{status_flag}]")
         print("=" * 60 + "\n")
         return 0
@@ -157,6 +162,8 @@ def cmd_techs_benchmark(args: argparse.Namespace) -> int:
     print(f"\nEvaluated {benchmark_data['total_evaluated']} / 50 Technologies in {benchmark_data['benchmark_runtime_ms']:.1f} ms")
     print(f"Recommended Core Candidates: {benchmark_data['recommended_count']}")
     print(f"Qualified Specialist Candidates: {benchmark_data['qualified_count']}")
-    print("VRAM Safety: Verified within 6GB VRAM bounds for all evaluated models.")
+    print(f"Simulated (not evaluated, no real upstream execution): {benchmark_data['simulated_count']}")
+    print(f"No measurement: {benchmark_data['no_measurement_count']}")
+    print("VRAM is reported only when measured; see per-technology results.")
     print("Use 'reality techs benchmark --markdown' for the full Markdown audit matrix.\n")
     return 0

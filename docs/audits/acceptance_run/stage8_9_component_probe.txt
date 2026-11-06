@@ -1,0 +1,6 @@
+MaskRCNN (component probe, CPU, 8 images, cached COCO weights): 59.1 s; detections by label: {'bench': 5, 'person': 2, 'backpack': 3} total 10
+images with >=1 det: 2 / 8
+maskrcnn segment() on 2 images -> [('P1180141', 0), ('P1180145', 0)]
+SAM constructed
+timm False segment_anything False
+SAM segment FAILED: SegmentationBackendUnavailableError Missing perception dependencies: segment-anything. Install with: pip install -e .[perception] (and: pip install segment-anything)

@@ -690,12 +690,48 @@ async def entity_provenance(
                     "bbox_px": obs_item.get("bbox_px"),
                 })
 
-    if observation_matches or entity_decisions:
+    # The entity's own recorded support (stamped by the pipeline from the
+    # source evidence of the points that built it) is exact, entity-level
+    # provenance -- stronger than the session-wide list below. Ids may be
+    # Evidence ids or file names; only rows that really exist are returned,
+    # and ids with no row are reported as unresolved, never dropped silently.
+    supporting_ids = [str(i) for i in ((entity.custom_properties or {}).get("supporting_evidence_ids") or [])]
+    supporting: list[dict] = []
+    unresolved: list[str] = []
+    if supporting_ids:
+        res = await db.execute(
+            select(Evidence).where((Evidence.id.in_(supporting_ids)) | (Evidence.name.in_(supporting_ids)))
+        )
+        found = res.scalars().all()
+        supporting = [
+            {"evidence_id": e.id, "evidence_name": e.name, "evidence_type": e.type, "session_id": e.session_id}
+            for e in found
+        ]
+        known = {e.id for e in found} | {e.name for e in found}
+        unresolved = [i for i in supporting_ids if i not in known]
+    cv = getattr(entity, "confidence_vector", None)
+    common = {
+        "supporting_evidence_ids": supporting_ids,
+        "confidence_vector": cv.to_dict() if cv is not None else None,
+    }
+
+    if observation_matches or entity_decisions or supporting:
+        if observation_matches:
+            trace_level = "observation"
+        elif supporting:
+            trace_level = "entity_evidence"
+        else:
+            trace_level = "session"
+        if supporting:
+            have = {m.get("evidence_id") for m in observation_matches}
+            observation_matches = observation_matches + [m for m in supporting if m["evidence_id"] not in have]
         return {
+            **common,
+            "unresolved_evidence_ids": unresolved,
             "entity_id": entity_id,
             "version_id": row.id,
             "provenance": entity.provenance.value if entity.provenance else None,
-            "trace_level": "observation" if observation_matches else "session",
+            "trace_level": trace_level,
             "evidence": observation_matches,
             "association_decisions": entity_decisions,
             "observations": entity_observations,
@@ -710,10 +746,13 @@ async def entity_provenance(
             for e in res.scalars().all()
         ]
         return {
+            **common,
             "entity_id": entity_id,
             "version_id": row.id,
             "provenance": entity.provenance.value if entity.provenance else None,
             "trace_level": "session",
+            "evidence_scope": "session_fallback: entity has no recorded supporting evidence or observations; "
+                              "these are all photos of the source sessions",
             "source_session_ids": session_ids,
             "evidence": session_evidence,
             "association_decisions": entity_decisions,
@@ -721,6 +760,7 @@ async def entity_provenance(
         }
 
     return {
+        **common,
         "entity_id": entity_id,
         "version_id": row.id,
         "provenance": entity.provenance.value if entity.provenance else None,
@@ -1449,9 +1489,18 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
 
     from apps.api import worldstore_service as _wss
 
+    # A correction only changes entities: everything else the parent
+    # version carried (source sessions, cameras/points artifacts, the
+    # compile report) is inherited verbatim -- never dropped, never invented.
+    parent_row = await db.get(WorldVersion, effective_parent)
+    inherit_sessions = list(parent_row.source_session_ids or []) if parent_row is not None else []
+
     adoption_id = _wss.begin_adoption(w.id, effective_parent)
     try:
-        stored = store.save_version(worldir, parent=effective_parent, version_id=adoption_id)
+        stored = store.save_version(
+            worldir, parent=effective_parent, version_id=adoption_id,
+            source_session_ids=inherit_sessions,
+        )
     except WorldStoreError as exc:
         _wss.abandon_adoption(adoption_id)
         msg = str(exc)
@@ -1497,6 +1546,10 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
             artifact_hash=stored.artifact_hash,
             source_session_ids=list(stored.source_session_ids),
             changed_entity_ids=list(stored.changed_entity_ids),
+            changed_geometry_ids=list(stored.changed_geometry_ids),
+            report=dict(parent_row.report) if parent_row is not None and parent_row.report else None,
+            points_artifact_uri=parent_row.points_artifact_uri if parent_row is not None else None,
+            cameras_artifact_uri=parent_row.cameras_artifact_uri if parent_row is not None else None,
         )
     )
     db.add(
@@ -1928,6 +1981,7 @@ class RejectIn(BaseModel):
 async def reject_scale_suggestion(world_id: str, body: RejectIn, db: AsyncSession = Depends(get_db)) -> dict:
     """Decline the current suggestion. Changes nothing about the world: it stays RELATIVE."""
     from apps.api import worldstore_service as wss
+    from engine.pipeline.facade import suggest_scale_for_world
 
     row = await _version_row(db, world_id, None)
     sug = suggest_scale_for_world(_load_world_or_409(row))

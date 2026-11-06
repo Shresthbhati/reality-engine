@@ -46,7 +46,14 @@ def is_lightglue_available() -> tuple[bool, str]:
 
 def available_matchers() -> Dict[str, str]:
     """name -> 'available' or the reason it is not."""
-    out = {"sift": "available", "xfeat": "available", "dedode": "available"}
+    from reconstruction.matching import dedode, xfeat
+
+    from reconstruction.matching.classical import AkazeMatcher, BriskMatcher, OrbMatcher
+
+    out = {"sift": "available", "akaze": AkazeMatcher.probe()[1], "brisk": BriskMatcher.probe()[1],
+           "orb": OrbMatcher.probe()[1]}
+    out["xfeat"] = xfeat.probe()[1]
+    out["dedode"] = dedode.probe()[1]
     lg_ok, lg_msg = is_lightglue_available()
     out["lightglue"] = lg_msg
     out["lightglue@disk"] = lg_msg
@@ -80,12 +87,27 @@ def get_matcher(name: str, paths: Dict[str, Path], **kwargs) -> IMatcher:
 
         return ALIKEDLightGlueMatcher(paths, **kwargs)
 
+    if norm in ("akaze", "akaze@opencv"):
+        from reconstruction.matching.classical import AkazeMatcher
+
+        return AkazeMatcher(paths, **kwargs)
+
+    if norm in ("orb", "orb@opencv"):
+        from reconstruction.matching.classical import OrbMatcher
+
+        return OrbMatcher(paths, **kwargs)
+
+    if norm in ("brisk", "brisk@opencv"):
+        from reconstruction.matching.classical import BriskMatcher
+
+        return BriskMatcher(paths, **kwargs)
+
     if norm in ("xfeat", "xfeat@accelerated_features"):
         from reconstruction.matching.xfeat import XFeatMatcher
 
         return XFeatMatcher(paths, **kwargs)
 
-    if norm in ("dedode", "dedode@v2"):
+    if norm in ("dedode", "dedode@kornia-l-upright+b-upright"):
         from reconstruction.matching.dedode import DeDoDeMatcher
 
         return DeDoDeMatcher(paths, **kwargs)
@@ -96,4 +118,4 @@ def get_matcher(name: str, paths: Dict[str, Path], **kwargs) -> IMatcher:
             raise MatcherUnavailableError(f"{norm} is non-commercial; set REALITY_ALLOW_NC_MODELS=1 to enable it ({reason})")
         raise MatcherUnavailableError(reason)
 
-    raise ValueError(f"unknown matcher {name!r}; choose from {sorted(available_matchers().keys())}")
+    raise MatcherUnavailableError(f"unknown matcher {name!r}; choose from {sorted(available_matchers().keys())}")

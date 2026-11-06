@@ -24,7 +24,7 @@ def mesh_summary(mesh: MeshData) -> dict:
     extent = (mxx - mnx, mxy - mny, mxz - mnz)
     return {
         "vertices": len(mesh.vertices),
-        "faces": len(mesh.triangles),
+        "faces": len(mesh.faces),
         "bounds_min": [mnx, mny, mnz],
         "bounds_max": [mxx, mxy, mxz],
         "extent_m": [round(e, 4) for e in extent],

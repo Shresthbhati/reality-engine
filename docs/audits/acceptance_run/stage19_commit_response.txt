@@ -1,0 +1,2 @@
+{"version_id":"v-7edd4d4be066","world_id":"wld_ae3f2ba8527e","entity_id":"struct-plane-000","changed_fields":["name","semantic_labels"],"duplicate":false}
+HTTP 200

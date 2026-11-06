@@ -16,7 +16,10 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { RAIL_ITEMS, MOBILE_PRIMARY_IDS, isEntryActive, type NavEntry } from "@/lib/shell/shell-logic";
+import { RAIL_ITEMS as ALL_RAIL_ITEMS, MOBILE_PRIMARY_IDS, isEntryActive, visibleNav, type NavEntry } from "@/lib/shell/shell-logic";
+import { SHOW_UNFINISHED } from "@/lib/unfinished";
+
+const RAIL_ITEMS = visibleNav(ALL_RAIL_ITEMS, SHOW_UNFINISHED);
 
 const ICONS: Record<string, LucideIcon> = {
   home: Home,

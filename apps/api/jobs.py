@@ -285,6 +285,108 @@ def _dense_quality_options() -> dict:
     return {"dense_max_image_size": 800, "dense_num_src_images": 4, "dense_geom_consistency": False}
 
 
+def _read_colmap_cameras(model_dir: Path) -> list[dict]:
+    """Camera intrinsics COLMAP itself estimated, from a sparse model's cameras.txt (or cameras.bin).
+    Returns [{model, width, height, params}]; [] when unreadable. Nothing is invented."""
+    import struct
+
+    out: list[dict] = []
+    txt = model_dir / "cameras.txt"
+    try:
+        if txt.is_file():
+            for line in txt.read_text(encoding="utf-8").splitlines():
+                parts = line.split()
+                if not parts or parts[0].startswith("#"):
+                    continue
+                out.append({"model": parts[1], "width": int(parts[2]), "height": int(parts[3]),
+                            "params": [float(v) for v in parts[4:]]})
+            return out
+        binf = model_dir / "cameras.bin"
+        if binf.is_file():
+            names = {0: ("SIMPLE_PINHOLE", 3), 1: ("PINHOLE", 4), 2: ("SIMPLE_RADIAL", 4), 3: ("RADIAL", 5),
+                     4: ("OPENCV", 8), 5: ("OPENCV_FISHEYE", 8), 6: ("FULL_OPENCV", 12), 7: ("FOV", 5),
+                     8: ("SIMPLE_RADIAL_FISHEYE", 4), 9: ("RADIAL_FISHEYE", 5), 10: ("THIN_PRISM_FISHEYE", 12)}
+            data = binf.read_bytes()
+            (n,), off = struct.unpack_from("<Q", data, 0), 8
+            for _ in range(n):
+                _cid, mid, w, h = struct.unpack_from("<iiQQ", data, off)
+                off += 24
+                name, k = names[mid]
+                out.append({"model": name, "width": w, "height": h,
+                            "params": list(struct.unpack_from(f"<{k}d", data, off))})
+                off += 8 * k
+    except (OSError, ValueError, KeyError, IndexError, struct.error):
+        return []
+    return out
+
+
+def _colmap_estimated_intrinsics(session: ColmapSession | None, size: tuple[int, int]):
+    """(fx, fy, cx, cy) from the world's committed sparse model, only when every camera in it agrees (1%), is a
+    pinhole-like (non-fisheye) model and has the images' real size. Else None."""
+    if session is None:
+        return None
+    manifest = session.committed_manifest()
+    if not manifest or not manifest.get("model_dir"):
+        return None
+    cams = _read_colmap_cameras(session.current / str(manifest["model_dir"]))
+    vals = []
+    for c in cams:
+        p, m = c["params"], c["model"]
+        if "FISHEYE" in m or (c["width"], c["height"]) != tuple(size):
+            return None
+        if m in ("PINHOLE", "OPENCV", "FULL_OPENCV") and len(p) >= 4:
+            vals.append((p[0], p[1], p[2], p[3]))
+        elif len(p) >= 3:            # single-focal models: f, cx, cy, ...
+            vals.append((p[0], p[0], p[1], p[2]))
+    if not vals or any(abs(a - b) > 0.01 * abs(a) for v in vals[1:] for a, b in zip(vals[0], v)):
+        return None
+    return vals[0]
+
+
+def _intrinsics_options(facts_list, colmap_session: ColmapSession | None = None) -> tuple[dict, dict]:
+    """Pipeline-option kwargs (image_size, intrinsics) built ONLY from real sources, plus an honest record.
+
+    image_size: the decoded size of the geometry-eligible photographs (the most common size).
+    intrinsics, in priority order, never invented:
+      1. EXIF 35mm-equivalent focal length -> fx=fy=f35*diag_px/43.267, principal point assumed at the centre
+         (needs every photograph to agree on size and focal);
+      2. the intrinsics COLMAP estimated for this world's previous sparse model;
+      3. otherwise left unset -- depth/perception/meshing keep skipping with their explicit reason.
+    Both are trust "estimated" (centre principal point / earlier solve), so COLMAP is not pinned to them."""
+    from collections import Counter
+
+    eligible = [f for f in facts_list if f.geometry_eligible and f.width > 0 and f.height > 0]
+    if not eligible:
+        return {}, {"image_size": None, "intrinsics": None,
+                    "note": "no decoded photographs: image size and intrinsics unset"}
+    sizes = Counter((f.width, f.height) for f in eligible)
+    size = sizes.most_common(1)[0][0]
+    record: dict = {"image_size": list(size), "intrinsics": None}
+    if len(sizes) > 1:
+        record["mixed_image_sizes"] = {f"{w}x{h}": n for (w, h), n in sizes.items()}
+    kwargs: dict = {"image_size": size}
+    if len(sizes) == 1:
+        focals = {f.exif.get("focal_length_35mm") for f in eligible}
+        f35 = next(iter(focals)) if len(focals) == 1 else None
+        found = None
+        if f35 and f35 > 0:
+            fpx = f35 * (size[0] ** 2 + size[1] ** 2) ** 0.5 / 43.267
+            found = ((fpx, fpx, size[0] / 2.0, size[1] / 2.0), "exif_focal_length_35mm",
+                     "principal point assumed at image centre")
+        else:
+            est = _colmap_estimated_intrinsics(colmap_session, size)
+            if est is not None:
+                found = (est, "colmap_estimated_previous_sparse_model", "estimated by COLMAP for this world's earlier solve")
+        if found is not None:
+            kwargs["intrinsics"] = tuple(float(v) for v in found[0])
+            kwargs["intrinsics_trust"] = "estimated"
+            record["intrinsics"] = {"fx": found[0][0], "fy": found[0][1], "cx": found[0][2], "cy": found[0][3],
+                                    "source": found[1], "trust": "estimated", "caveat": found[2]}
+    if record["intrinsics"] is None:
+        record["note"] = "no EXIF focal length or earlier COLMAP intrinsics: intrinsics unset, dependent stages skip"
+    return kwargs, record
+
+
 def _dense_cpu_options(payload) -> dict:
     """VerticalSliceOptions kwargs from the opt-in CPU plane-sweep request on a job payload ({} = current behaviour)."""
     cfg = (payload or {}).get("dense_cpu") if isinstance(payload, dict) else None
@@ -625,6 +727,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             continue            # a malformed stored reference is skipped, never guessed at
     # trust order: camera baselines > known lengths (median, spread-gated) > accepted typical-size prior
     baselines, scale_ref_notes = consolidate_references(baselines)
+    intrinsics_record = None
     if test_backend is not None:
         options = VerticalSliceOptions(
             artifact_store=artifact_store,
@@ -641,8 +744,10 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # Its state advances only when this run's version is adopted (commit below).
         colmap_session = ColmapSession(worldstore_service.worldstore_root() / "colmap-sessions" / world.id)
         holder["session"] = colmap_session
+        intr_kwargs, intrinsics_record = _intrinsics_options([ei.facts for ei in run_inputs], colmap_session)
         options = VerticalSliceOptions(
             artifact_store=artifact_store, colmap_session=colmap_session,
+            **intr_kwargs,
             measured_baselines=tuple(baselines),
             # Level 3 is part of the normal path: dense MVS is attempted only when the measured sparse model justifies
             # it (engine.pipeline.dense_gate), and the result is kept only if it is judged better than the sparse
@@ -869,6 +974,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "status": "SUCCESS" if (prog.level >= 2 and prog.registration_status == "success") else "PARTIAL_SUCCESS",
         "session_id": session.id,
         "images_ingested": len(items),
+        "camera_model": intrinsics_record,
         "scene_identity": scene_info,
         "capture_quality": capture_quality(
             len(items), prog.registered_ids, len(prog.points),

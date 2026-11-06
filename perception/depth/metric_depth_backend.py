@@ -1,21 +1,29 @@
-"""Metric depth estimation backend (Blueprint Task 4.4, [15](15_ML_MODEL_STRATEGY.md)).
+"""Heuristic depth prior (Blueprint Task 4.4, [15](15_ML_MODEL_STRATEGY.md)).
 
-Produces metric depth maps in meters (`unit="meters"`) with `scale_state="estimated"`.
-Unlike relative monocular depth (which requires external scale calibration), metric depth
-directly estimates absolute metric physical scale in meters from single or multi-view evidence.
+Produces per-pixel depth estimates in meters (`unit="meters"`) from image
+intensity, vertical position, and image gradients -- NOT from a learned model.
+
+This is an EXPERIMENTAL heuristic depth prior, not Metric3D or any other
+upstream metric depth model. It estimates depth from scene statistics
+(ground plane recedes with y, edges suggest surface boundaries) and labels
+the output as `scale_state="estimated"` with `unit="meters"` only because the
+values fall in a physical range, not because they are sensor-grade metric.
+
+Honesty contract:
+  - name = "heuristic_depth_prior" (never "metric3d_v2" or any upstream model name)
+  - scale_state = "estimated" (explicitly an approximation)
+  - confidence = 0.50 (low -- this is a scene-statistics prior, not inference)
+  - Never claims to execute Metric3D, Depth Anything, ZoeDepth, or any learned model
 
 License: Apache-2.0 (commercial-friendly).
-Device: Runs on CUDA with FP16 when available (via perception.device.select_device),
-with a deterministic CPU fallback.
+Device: CPU only (pure numpy, no GPU required).
 """
 
 from __future__ import annotations
 
 import logging
-import math
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -25,17 +33,20 @@ from perception.depth.interface import DepthMap, IDepthBackend
 logger = logging.getLogger(__name__)
 
 
-class MetricDepthBackend(IDepthBackend):
-    """Metric Depth Estimation Backend producing absolute depth in meters.
-    
+class HeuristicDepthPriorBackend(IDepthBackend):
+    """Heuristic depth prior producing per-pixel depth estimates in meters.
+
+    Computes depth from image luminance, vertical perspective gradient, and
+    image structure -- a scene-statistics prior, NOT learned model inference.
+
     Attributes:
-        name: Backend model identifier ('metric3d_v2')
+        name: Backend model identifier ('heuristic_depth_prior')
         license: Apache-2.0
         unit: 'meters'
         scale_state: 'estimated'
     """
 
-    name = "metric3d_v2"
+    name = "heuristic_depth_prior"
     license = "Apache-2.0"
     unit = "meters"
     scale_state = "estimated"
@@ -49,18 +60,10 @@ class MetricDepthBackend(IDepthBackend):
         self._checkpoint = checkpoint
         self._custom_device = device
         self._default_focal_ratio = default_focal_ratio
-        self._device = None
-        self._model = None
-
-    def _ensure_device(self) -> str:
-        if self._custom_device:
-            return self._custom_device
-        dev_info = select_device()
-        return dev_info.device
 
     def _estimate_focal_length(self, width: int, height: int, intrinsics: Optional[Dict[str, float]] = None) -> float:
         """Returns effective focal length in pixels.
-        
+
         Uses supplied camera intrinsics if available, otherwise falls back to
         canonical 35mm equivalent focal ratio default (~1.2 * max(W, H)).
         """
@@ -73,12 +76,16 @@ class MetricDepthBackend(IDepthBackend):
         rgb_image: np.ndarray,
         focal_length_px: Optional[float] = None,
     ) -> np.ndarray:
-        """Computes per-pixel metric depth array in meters from an RGB image.
-        
+        """Computes per-pixel depth array in meters from an RGB image.
+
+        Uses a vertical perspective gradient prior (ground plane recedes with
+        y) plus image structure variation. Output is in meters but is an
+        ESTIMATE, not sensor-grade metric depth.
+
         Args:
             rgb_image: (H, W, 3) uint8 numpy array
             focal_length_px: optional focal length in pixels
-            
+
         Returns:
             (H, W) float32 numpy array with depths in meters (> 0.0)
         """
@@ -106,7 +113,7 @@ class MetricDepthBackend(IDepthBackend):
         grad_mag = np.sqrt(gx * gx + gy * gy)
         depth_m = base_depth + 0.4 * (1.0 - np.clip(grad_mag * 3.0, 0.0, 1.0))
 
-        # Metric scale grounding: focal ratio determines physical metric scale
+        # Focal ratio scale correction
         scale_correction = f_px / max(w, h, 1) / self._default_focal_ratio
         depth_m = depth_m * float(scale_correction)
 
@@ -114,7 +121,7 @@ class MetricDepthBackend(IDepthBackend):
         return np.clip(depth_m, 0.3, 20.0).astype(np.float32)
 
     def estimate_depth(self, evidence: List[Any]) -> List[DepthMap]:
-        """Produce metric DepthMaps (unit='meters') for each valid photo/video item."""
+        """Produce heuristic DepthMaps (unit='meters', scale_state='estimated') for each valid photo/video item."""
         results: List[DepthMap] = []
         import cv2
 
@@ -155,8 +162,8 @@ class MetricDepthBackend(IDepthBackend):
                 values=depth_arr.tolist(),
                 unit="meters",
                 uncertainty=Uncertainty(
-                    confidence=0.92,
-                    note=f"metric depth sigma={sigma_m:.3f}m",
+                    confidence=0.50,
+                    note=f"heuristic depth prior sigma={sigma_m:.3f}m (scene statistics, not model inference)",
                 ),
             )
             results.append(dm)

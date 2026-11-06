@@ -11,6 +11,8 @@ import { join } from "node:path";
 import {
   MODE_TABS,
   RAIL_ITEMS,
+  isGatedHref,
+  visibleNav,
   activeModeId,
   connectionState,
   evidenceLabel,
@@ -83,4 +85,16 @@ test("relativeTime is honest about unparseable and recent values", () => {
   assert.equal(relativeTime("2026-10-18T11:59:30Z", now), "just now");
   assert.equal(relativeTime("2026-10-18T10:00:00Z", now), "2 hours ago");
   assert.equal(relativeTime("2026-10-17T12:00:00Z", now), "1 day ago");
+});
+
+test("gated routes (404 without NEXT_PUBLIC_SHOW_UNFINISHED) are hidden from nav, not linked", () => {
+  assert.equal(isGatedHref("/reports"), true);
+  assert.equal(isGatedHref("/reports/new"), true);
+  assert.equal(isGatedHref("/reportsfoo"), false);
+  assert.equal(isGatedHref(null), false);
+  const hidden = visibleNav([...MODE_TABS, ...RAIL_ITEMS], false);
+  assert.ok(hidden.every((e) => !isGatedHref(e.href)), "no visible entry links to a gated route");
+  assert.ok(!hidden.some((e) => ["reports", "analyze", "export"].includes(e.id)));
+  assert.ok(hidden.some((e) => e.id === "worlds") && hidden.some((e) => e.id === "compare"));
+  assert.equal(visibleNav(RAIL_ITEMS, true).length, RAIL_ITEMS.length, "flag set keeps every entry");
 });

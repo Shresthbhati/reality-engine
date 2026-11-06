@@ -224,12 +224,48 @@ models:
     checksum: unpinned
     verify: record sha256 in model registry
 
+  - model: heuristic_depth_prior
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 0.0
+    status: candidate
+    acquisition: internal (perception.depth.metric_depth_backend); no checkpoint, CPU heuristic, not a learned model
+    checksum: n/a
+    verify: not a learned model; must never be reported as measured metric depth
+
   - model: depth_anything_v2
     license: Apache-2.0
     commercial_ok: true
     measured_vram_mb: 1100.0
     status: candidate
     acquisition: torch.hub download Depth-Anything/Depth-Anything-V2
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: owlvit_base_patch32
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 0.0   # not yet measured
+    status: active
+    acquisition: huggingface google/owlvit-base-patch32
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: owlv2_base_patch16
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 0.0   # not yet measured
+    status: candidate
+    acquisition: huggingface google/owlv2-base-patch16-ensemble
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: grounding_dino_tiny
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 0.0   # not yet measured
+    status: candidate
+    acquisition: huggingface IDEA-Research/grounding-dino-tiny
     checksum: unpinned
     verify: record sha256 in model registry
 

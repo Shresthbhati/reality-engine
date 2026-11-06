@@ -88,21 +88,27 @@ export default function ExportPanel({
     showDetails: boolean;
   } | null>(null);
 
+  const [formatsTick, setFormatsTick] = useState(0);
   const fetchFormats = () => {
     setLoadError(null);
-    listExportFormats(worldId)
-      .then((list) => {
-        setStatus(Object.fromEntries(list.map((f) => [f.format, f])));
-      })
-      .catch((err) => {
-        setLoadError(isApiError(err) ? err.describe() : "Could not check export format availability from server.");
-      });
+    setFormatsTick((t) => t + 1);
   };
 
   useEffect(() => {
-    fetchFormats();
-  }, [worldId]);
-
+    let cancelled = false;
+    listExportFormats(worldId)
+      .then((list) => {
+        if (!cancelled) setStatus(Object.fromEntries(list.map((f) => [f.format, f])));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError(isApiError(err) ? err.describe() : "Could not check export format availability from server.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId, formatsTick]);
   const filteredFormats = useMemo(() => {
     if (activeCategory === "all") return ALL_FORMATS;
     return ALL_FORMATS.filter((f) => f.category === activeCategory);

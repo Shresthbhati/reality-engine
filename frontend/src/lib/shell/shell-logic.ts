@@ -47,6 +47,21 @@ export const MOBILE_PRIMARY_IDS = ["home", "worlds", "sites", "ingest", "session
 /** Where the top bar's Export button goes (the existing reports/export flow). */
 export const EXPORT_HREF = "/reports";
 
+/**
+ * Route groups whose layout 404s unless NEXT_PUBLIC_SHOW_UNFINISHED=1 (see lib/unfinished.ts and each
+ * app/(desktop)/<group>/layout.tsx). Navigation must not link to them while they are gated off.
+ */
+export const GATED_PREFIXES = ["/reports", "/results", "/analysis", "/team"];
+
+export function isGatedHref(href: string | null): boolean {
+  return href !== null && GATED_PREFIXES.some((p) => href === p || href.startsWith(`${p}/`));
+}
+
+/** Entries to render: gated destinations are hidden (not disabled-with-404) unless unfinished routes are enabled. */
+export function visibleNav<T extends { href: string | null }>(entries: T[], showUnfinished: boolean): T[] {
+  return showUnfinished ? entries : entries.filter((e) => !isGatedHref(e.href));
+}
+
 function pathMatches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }

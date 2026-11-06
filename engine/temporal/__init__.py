@@ -1,11 +1,20 @@
-"""Temporal tracking for core city construction.
-
-Provides temporal state management for entities across observations.
-"""
+"""Temporal state layer: causal event graph, WorldIR snapshots, branching, non-destructive replay."""
 from engine.temporal.temporal import (
-    TemporalEntityState,
-    TemporalStateTracker,
-    TemporalTransition,
+    BranchManager,
+    BranchRecord,
+    EventGraph,
+    Snapshot,
+    SnapshotStore,
+    replay,
+    restore_world,
 )
 
-__all__ = ["TemporalEntityState", "TemporalStateTracker", "TemporalTransition"]
+__all__ = [
+    "BranchManager",
+    "BranchRecord",
+    "EventGraph",
+    "Snapshot",
+    "SnapshotStore",
+    "replay",
+    "restore_world",
+]

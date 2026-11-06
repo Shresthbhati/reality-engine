@@ -1,0 +1,8 @@
+worldir 200 157064
+points 200 141574
+cameras 200 4729
+versions 200 392
+export/formats 200 1214
+quality 200 4258
+coverage 200 70
+report 200 84182

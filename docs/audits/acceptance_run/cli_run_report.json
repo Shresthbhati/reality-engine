@@ -1,0 +1,51 @@
+{
+  "input": "C:\\Users\\shres\\AppData\\Local\\Temp\\acc2\\capds",
+  "images_ingested": 32,
+  "scale_references": 0,
+  "stages": {
+    "reconstruction": {
+      "backend": "ColmapReconstructionBackend",
+      "cameras_registered": 25,
+      "cameras_input": 32,
+      "registration_status": "partial",
+      "points": 5498
+    },
+    "scale": {
+      "state": "relative",
+      "meters_per_unit": null
+    },
+    "depth": {
+      "status": "skipped",
+      "note": "depth backend failed: No module named 'timm'",
+      "model": "DPT_Hybrid"
+    },
+    "perception": {
+      "status": "skipped",
+      "objects": 0,
+      "note": "no metricized depth maps survived -- object lifting needs metric depth; refusing to lift masks against relative depth"
+    },
+    "mesh": {
+      "status": "skipped",
+      "note": "world is not METRIC-scale -- meshing unit-less points would silently claim meters"
+    },
+    "compile": {
+      "entities": 19,
+      "measurements": 8,
+      "relationships": 0
+    }
+  },
+  "status": "PARTIAL_SUCCESS",
+  "runtime_s": 96.88,
+  "world_id": "world-compiled-seed42",
+  "outputs": {
+    "world": "C:\\Users\\shres\\AppData\\Local\\Temp\\acc2\\cli_out\\worldir.json",
+    "report": "C:\\Users\\shres\\AppData\\Local\\Temp\\acc2\\cli_out\\report.json",
+    "points_ply": "C:\\Users\\shres\\AppData\\Local\\Temp\\acc2\\cli_out\\points.ply",
+    "cameras": "C:\\Users\\shres\\AppData\\Local\\Temp\\acc2\\cli_out\\cameras.json",
+    "artifacts": "C:\\Users\\shres\\AppData\\Local\\Temp\\acc2\\cli_out\\artifacts",
+    "exports": {
+      "gltf": "C:\\Users\\shres\\AppData\\Local\\Temp\\acc2\\cli_out\\exports\\model.gltf",
+      "ifc": "C:\\Users\\shres\\AppData\\Local\\Temp\\acc2\\cli_out\\exports\\model.ifc"
+    }
+  }
+}

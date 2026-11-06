@@ -6,7 +6,7 @@
     "matches": 1017,
     "inliers": 972,
     "inlier_ratio": 0.9558,
-    "runtime_s": 0.2597,
+    "runtime_s": 0.2546,
     "matcher": "sift@opencv"
   },
   "aliked_lightglue": {
@@ -15,7 +15,7 @@
     "matches": 833,
     "inliers": 829,
     "inlier_ratio": 0.9952,
-    "runtime_s": 0.477,
+    "runtime_s": 0.4871,
     "matcher": "lightglue@aliked"
   },
   "inlier_ratio_delta": 0.0394,

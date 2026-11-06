@@ -89,3 +89,31 @@ def test_registry_is_honest_about_unbuilt_and_non_commercial_matchers(monkeypatc
         get_matcher("mast3r", {})
     with pytest.raises(MatcherUnavailableError, match="unknown matcher"):
         get_matcher("nope", {})
+
+
+def test_learned_matchers_never_masquerade_as_classical_fallbacks(monkeypatch, pair):
+    """xfeat/dedode report the true state; absent upstream they raise instead of silently running AKAZE/BRISK."""
+    from reconstruction.matching import dedode, xfeat
+
+    monkeypatch.setattr(xfeat, "probe", lambda: (False, "xfeat repo not cached"))
+    monkeypatch.setattr(dedode, "probe", lambda: (False, "dedode weights not cached"))
+    ms = available_matchers()
+    assert ms["xfeat"] == "xfeat repo not cached" and ms["dedode"] == "dedode weights not cached"
+    for name in ("xfeat", "dedode"):
+        with pytest.raises(MatcherUnavailableError):
+            get_matcher(name, pair)
+
+
+def test_classical_matchers_are_registered_under_their_true_names(pair):
+    ms = available_matchers()
+    assert ms["orb"] == "available"  # present in every OpenCV build
+    for name, expected in (("orb", "orb@opencv"), ("akaze", "akaze@opencv"), ("brisk", "brisk@opencv")):
+        if ms[name] != "available":  # some OpenCV builds (e.g. 5.x) lack AKAZE/BRISK: must say so, not fake it
+            with pytest.raises(MatcherUnavailableError, match="OpenCV"):
+                get_matcher(name, pair)
+            continue
+        m = get_matcher(name, pair)
+        assert m.name == expected
+        r = m.match("a", "b")
+        assert r.matcher == expected and "xfeat" not in r.matcher and "dedode" not in r.matcher
+        assert r.inliers > 0

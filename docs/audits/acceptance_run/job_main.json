@@ -1,0 +1,521 @@
+{
+ "final": {
+  "id": "job_fa9496175eef",
+  "type": "RECONSTRUCT_SESSION",
+  "status": "partial",
+  "stage": "partial",
+  "attempts": 1,
+  "error": null,
+  "worker_id": "worker-2b67a8c2",
+  "cancel_requested": false,
+  "stage_counts": {},
+  "failure_reason": null,
+  "progress": 100.0,
+  "photos_total": 32,
+  "photos_placed": 22,
+  "terminal": true,
+  "entity_type": "session",
+  "entity_id": "ses_b5169d836eeb",
+  "payload": {
+   "world_id": "wld_ae3f2ba8527e",
+   "version_id": "v-610499e3ce2e",
+   "registration_status": "partial",
+   "level": 4,
+   "level_name": "semantic/topological refinement",
+   "model_state": "PARTIAL",
+   "outcome": "partial",
+   "degraded": [
+    "registration 'partial': 22/32 cameras",
+    "validation warning: [warning] cross_entity_containment_disjoint: entity struct-plane-015 is CONTAINS-owned by room-plane-015 but its geometry is disjoint from room-plane-015",
+    "validation warning: [warning] invariant_6_duplicate_entity: entities struct-plane-000 and struct-plane-005 are the same class and overlap 70% (IoU) with no DIFFERENT_ENTITY / PHYSICAL_INTERSECTION decision",
+    "validation warning: [warning] invariant_6_duplicate_entity: entities struct-plane-001 and struct-plane-004 are the same class and overlap 59% (IoU) with no DIFFERENT_ENTITY / PHYSICAL_INTERSECTION decision",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-001 (wall) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-003 (wall) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-004 (wall) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-005 (wall) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-009 (wall) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-011 (wall) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-016 (floor) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-018 (ceiling) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-028 (wall) references no space (room/corridor)",
+    "validation warning: [warning] invariant_7_surface_without_space: surface struct-plane-030 (ceiling) references no space (room/corridor)"
+   ],
+   "validated": true,
+   "adopted": true,
+   "verdict": "ACCEPT",
+   "changes": [
+    "First model built with 22 placed photos.",
+    "10 photos still waiting for a photo that connects them."
+   ],
+   "points": 5396,
+   "points_bytes": 64870,
+   "cameras_registered": 22,
+   "cameras_bytes": 7203,
+   "skipped_evidence": [],
+   "scene_identity": {
+    "state": "ok",
+    "primary_group_id": "sg-7c9fe1f77f",
+    "groups": [
+     {
+      "group_id": "sg-7c9fe1f77f",
+      "members": [
+       "ev_002e1fe7a635",
+       "ev_042b3d96047c",
+       "ev_137910ec71b2",
+       "ev_19f28a69e0e1",
+       "ev_1b50fdf3f12a",
+       "ev_1f62eeba629f",
+       "ev_34937de06b03",
+       "ev_3c287f24a353",
+       "ev_432875a716a0",
+       "ev_4739f6deb1cb",
+       "ev_4912bc1681ca",
+       "ev_4a6389225dc8",
+       "ev_55104aa92f4f",
+       "ev_6a7ae2b00050",
+       "ev_6ba623d656e6",
+       "ev_6bcd8e668bd3",
+       "ev_75e1f20691c1",
+       "ev_77c6ca31a0de",
+       "ev_8738b6157ea8",
+       "ev_8deb55ab8eaa",
+       "ev_91da2a19838a",
+       "ev_948c88555dc3",
+       "ev_955eb54d54d6",
+       "ev_9866d2b4a9ea",
+       "ev_99b94e64bb9e",
+       "ev_a7840ec7844f",
+       "ev_b95f25807a1b",
+       "ev_c7a1ff7393b1",
+       "ev_d3ebc9f644c5",
+       "ev_dbb73f814002",
+       "ev_ec88e242fb5b",
+       "ev_f5a5da6381c2"
+      ]
+     }
+    ],
+    "unlinked": [],
+    "uncertain_links": [
+     {
+      "a": "ev_34937de06b03",
+      "b": "ev_4912bc1681ca",
+      "matches": 18,
+      "inliers": 11,
+      "inlier_ratio": 0.6111
+     },
+     {
+      "a": "ev_34937de06b03",
+      "b": "ev_dbb73f814002",
+      "matches": 24,
+      "inliers": 10,
+      "inlier_ratio": 0.4167
+     },
+     {
+      "a": "ev_34937de06b03",
+      "b": "ev_948c88555dc3",
+      "matches": 27,
+      "inliers": 11,
+      "inlier_ratio": 0.4074
+     },
+     {
+      "a": "ev_34937de06b03",
+      "b": "ev_19f28a69e0e1",
+      "matches": 20,
+      "inliers": 9,
+      "inlier_ratio": 0.45
+     },
+     {
+      "a": "ev_34937de06b03",
+      "b": "ev_1b50fdf3f12a",
+      "matches": 43,
+      "inliers": 11,
+      "inlier_ratio": 0.2558
+     },
+     {
+      "a": "ev_34937de06b03",
+      "b": "ev_6a7ae2b00050",
+      "matches": 39,
+      "inliers": 11,
+      "inlier_ratio": 0.2821
+     },
+     {
+      "a": "ev_34937de06b03",
+      "b": "ev_75e1f20691c1",
+      "matches": 33,
+      "inliers": 10,
+      "inlier_ratio": 0.303
+     },
+     {
+      "a": "ev_042b3d96047c",
+      "b": "ev_dbb73f814002",
+      "matches": 29,
+      "inliers": 11,
+      "inlier_ratio": 0.3793
+     },
+     {
+      "a": "ev_042b3d96047c",
+      "b": "ev_6bcd8e668bd3",
+      "matches": 19,
+      "inliers": 11,
+      "inlier_ratio": 0.5789
+     },
+     {
+      "a": "ev_042b3d96047c",
+      "b": "ev_137910ec71b2",
+      "matches": 30,
+      "inliers": 10,
+      "inlier_ratio": 0.3333
+     },
+     {
+      "a": "ev_042b3d96047c",
+      "b": "ev_6a7ae2b00050",
+      "matches": 24,
+      "inliers": 9,
+      "inlier_ratio": 0.375
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_4a6389225dc8",
+      "matches": 37,
+      "inliers": 11,
+      "inlier_ratio": 0.2973
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_dbb73f814002",
+      "matches": 15,
+      "inliers": 9,
+      "inlier_ratio": 0.6
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_948c88555dc3",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_6bcd8e668bd3",
+      "matches": 16,
+      "inliers": 8,
+      "inlier_ratio": 0.5
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_1b50fdf3f12a",
+      "matches": 29,
+      "inliers": 10,
+      "inlier_ratio": 0.3448
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_91da2a19838a",
+      "matches": 29,
+      "inliers": 11,
+      "inlier_ratio": 0.3793
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_75e1f20691c1",
+      "matches": 28,
+      "inliers": 9,
+      "inlier_ratio": 0.3214
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_55104aa92f4f",
+      "matches": 26,
+      "inliers": 11,
+      "inlier_ratio": 0.4231
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_f5a5da6381c2",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_002e1fe7a635",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_8deb55ab8eaa",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_ec88e242fb5b",
+      "b": "ev_955eb54d54d6",
+      "matches": 21,
+      "inliers": 9,
+      "inlier_ratio": 0.4286
+     },
+     {
+      "a": "ev_4912bc1681ca",
+      "b": "ev_6a7ae2b00050",
+      "matches": 26,
+      "inliers": 11,
+      "inlier_ratio": 0.4231
+     },
+     {
+      "a": "ev_4912bc1681ca",
+      "b": "ev_c7a1ff7393b1",
+      "matches": 21,
+      "inliers": 11,
+      "inlier_ratio": 0.5238
+     },
+     {
+      "a": "ev_4912bc1681ca",
+      "b": "ev_8738b6157ea8",
+      "matches": 15,
+      "inliers": 8,
+      "inlier_ratio": 0.5333
+     },
+     {
+      "a": "ev_4a6389225dc8",
+      "b": "ev_1b50fdf3f12a",
+      "matches": 16,
+      "inliers": 10,
+      "inlier_ratio": 0.625
+     },
+     {
+      "a": "ev_4a6389225dc8",
+      "b": "ev_1f62eeba629f",
+      "matches": 19,
+      "inliers": 11,
+      "inlier_ratio": 0.5789
+     },
+     {
+      "a": "ev_4a6389225dc8",
+      "b": "ev_75e1f20691c1",
+      "matches": 29,
+      "inliers": 9,
+      "inlier_ratio": 0.3103
+     },
+     {
+      "a": "ev_dbb73f814002",
+      "b": "ev_4739f6deb1cb",
+      "matches": 36,
+      "inliers": 11,
+      "inlier_ratio": 0.3056
+     },
+     {
+      "a": "ev_dbb73f814002",
+      "b": "ev_8deb55ab8eaa",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_948c88555dc3",
+      "b": "ev_4739f6deb1cb",
+      "matches": 15,
+      "inliers": 11,
+      "inlier_ratio": 0.7333
+     },
+     {
+      "a": "ev_948c88555dc3",
+      "b": "ev_d3ebc9f644c5",
+      "matches": 15,
+      "inliers": 9,
+      "inlier_ratio": 0.6
+     },
+     {
+      "a": "ev_19f28a69e0e1",
+      "b": "ev_137910ec71b2",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_6bcd8e668bd3",
+      "b": "ev_d3ebc9f644c5",
+      "matches": 15,
+      "inliers": 10,
+      "inlier_ratio": 0.6667
+     },
+     {
+      "a": "ev_6bcd8e668bd3",
+      "b": "ev_3c287f24a353",
+      "matches": 21,
+      "inliers": 9,
+      "inlier_ratio": 0.4286
+     },
+     {
+      "a": "ev_1b50fdf3f12a",
+      "b": "ev_4739f6deb1cb",
+      "matches": 24,
+      "inliers": 11,
+      "inlier_ratio": 0.4583
+     },
+     {
+      "a": "ev_137910ec71b2",
+      "b": "ev_75e1f20691c1",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_137910ec71b2",
+      "b": "ev_d3ebc9f644c5",
+      "matches": 35,
+      "inliers": 10,
+      "inlier_ratio": 0.2857
+     },
+     {
+      "a": "ev_137910ec71b2",
+      "b": "ev_3c287f24a353",
+      "matches": 25,
+      "inliers": 11,
+      "inlier_ratio": 0.44
+     },
+     {
+      "a": "ev_91da2a19838a",
+      "b": "ev_3c287f24a353",
+      "matches": 28,
+      "inliers": 11,
+      "inlier_ratio": 0.3929
+     },
+     {
+      "a": "ev_6ba623d656e6",
+      "b": "ev_6a7ae2b00050",
+      "matches": 15,
+      "inliers": 10,
+      "inlier_ratio": 0.6667
+     },
+     {
+      "a": "ev_1f62eeba629f",
+      "b": "ev_4739f6deb1cb",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_6a7ae2b00050",
+      "b": "ev_4739f6deb1cb",
+      "matches": 16,
+      "inliers": 9,
+      "inlier_ratio": 0.5625
+     },
+     {
+      "a": "ev_6a7ae2b00050",
+      "b": "ev_d3ebc9f644c5",
+      "matches": 23,
+      "inliers": 9,
+      "inlier_ratio": 0.3913
+     },
+     {
+      "a": "ev_6a7ae2b00050",
+      "b": "ev_3c287f24a353",
+      "matches": 21,
+      "inliers": 9,
+      "inlier_ratio": 0.4286
+     },
+     {
+      "a": "ev_c7a1ff7393b1",
+      "b": "ev_3c287f24a353",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_4739f6deb1cb",
+      "b": "ev_99b94e64bb9e",
+      "matches": 36,
+      "inliers": 11,
+      "inlier_ratio": 0.3056
+     },
+     {
+      "a": "ev_8738b6157ea8",
+      "b": "ev_d3ebc9f644c5",
+      "matches": 38,
+      "inliers": 11,
+      "inlier_ratio": 0.2895
+     },
+     {
+      "a": "ev_8738b6157ea8",
+      "b": "ev_3c287f24a353",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_8738b6157ea8",
+      "b": "ev_99b94e64bb9e",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_f5a5da6381c2",
+      "b": "ev_3c287f24a353",
+      "matches": 19,
+      "inliers": 9,
+      "inlier_ratio": 0.4737
+     },
+     {
+      "a": "ev_f5a5da6381c2",
+      "b": "ev_99b94e64bb9e",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_8deb55ab8eaa",
+      "b": "ev_d3ebc9f644c5",
+      "matches": 14,
+      "inliers": 8,
+      "inlier_ratio": 0.5714
+     },
+     {
+      "a": "ev_77c6ca31a0de",
+      "b": "ev_3c287f24a353",
+      "matches": 51,
+      "inliers": 10,
+      "inlier_ratio": 0.1961
+     },
+     {
+      "a": "ev_77c6ca31a0de",
+      "b": "ev_99b94e64bb9e",
+      "matches": 16,
+      "inliers": 9,
+      "inlier_ratio": 0.5625
+     }
+    ],
+    "declared_conflicts": [],
+    "verified_pairs": 402,
+    "excluded": {}
+   }
+  },
+  "created_at": "2026-11-05T16:19:45.542122",
+  "started_at": "2026-11-05T16:19:45.798597",
+  "completed_at": "2026-11-05T16:26:16.554909"
+ },
+ "timeline": [
+  {
+   "t": 0.0,
+   "status": "running",
+   "stage": "analyzing_evidence",
+   "progress": 0.0
+  },
+  {
+   "t": 175.4,
+   "status": "running",
+   "stage": "reconstructing",
+   "progress": 0.0
+  },
+  {
+   "t": 352.2,
+   "status": "partial",
+   "stage": "partial",
+   "progress": 100.0
+  }
+ ]
+}

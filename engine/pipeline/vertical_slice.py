@@ -53,6 +53,7 @@ from engine.compiler.world_compiler import (
     compile_reconstruction_to_world,
 )
 from world_ir.artifact_store import ArtifactStore
+from world_ir.camera import PinholeCamera
 from evidence.session import EvidenceItem, EvidenceKind
 from reconstruction.scale import (
     ScaleAnchoringError,
@@ -88,6 +89,9 @@ class VerticalSliceOptions:
     #: Trusted camera intrinsics (fx, fy, cx, cy). When set, every
     #: evidence item carries them and COLMAP refinement is pinned.
     intrinsics: Optional[Tuple[float, float, float, float]] = None
+    #: "trusted" = calibrated by the operator: COLMAP is pinned to it. "estimated" = derived from EXIF or from a
+    #: previous COLMAP solve: downstream stages may use it, but COLMAP is NOT pinned and the report says so.
+    intrinsics_trust: str = "trusted"
     image_size: Tuple[int, int] = (1280, 960)
     #: Depth stage: model type passed to MiDaSDepthBackend. None disables
     #: the stage entirely.
@@ -309,7 +313,7 @@ def vertical_slice(
             f"vertical slice needs >= 2 image evidence items, got {len(evidence_items)}"
         )
 
-    if options.intrinsics is not None:
+    if options.intrinsics is not None and options.intrinsics_trust == "trusted":
         evidence_items = [
             dataclasses.replace(
                 item,
@@ -1004,8 +1008,20 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         from world_ir.observations import DepthSource
 
         cam_pos = {p.evidence_id: tuple(float(v) for v in p.position) for p in result.camera_poses}
+        # Build PinholeCamera objects from the registered poses so the
+        # association resolver can run two-view epipolar geometric
+        # verification (instead of depth-only distance gating).
+        cameras: dict[str, PinholeCamera] = {}
+        for pose in result.camera_poses:
+            try:
+                cameras[pose.evidence_id] = camera_from_pose(intrinsics, pose)
+            except Exception:  # noqa: BLE001 -- one bad camera must not kill the whole association stage
+                pass
         # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
-        candidates, assoc = resolve_hypotheses(hypotheses, DepthSource.MVS, cam_pos, model="mask_rcnn@coco", license="BSD-3-Clause", world=world)
+        candidates, assoc = resolve_hypotheses(
+            hypotheses, DepthSource.MVS, cam_pos, cameras=cameras,
+            model="mask_rcnn@coco", license="BSD-3-Clause", world=world,
+        )
         resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
         resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
     else:

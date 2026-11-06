@@ -153,19 +153,13 @@ class YoloxDetector:
         ok, reason = self.available()
         if not ok:
             raise DetectorUnavailable(reason)
-        h, w = image_rgb.shape[:2]
-        want = {canonical(q) or q for q in queries} if queries else None
-        out = []
-        candidates = [
-            ("chair", 0.91, (0.2 * w, 0.4 * h, 0.4 * w, 0.8 * h)),
-            ("table", 0.87, (0.35 * w, 0.35 * h, 0.75 * w, 0.7 * h)),
-            ("door", 0.89, (0.05 * w, 0.1 * h, 0.25 * w, 0.9 * h)),
-        ]
-        for label, score, box in candidates:
-            if score < self.threshold or (want is not None and (canonical(label) or label) not in want):
-                continue
-            out.append(ImageDetection(label, float(score), tuple(float(v) for v in box), source=self.name))
-        return out
+        # Real YOLOX inference requires the yolox package + weights.
+        # When the package is installed, implement inference here.
+        # Never return hard-coded demonstration boxes as real detections.
+        raise DetectorUnavailable(
+            "YOLOX real inference not implemented; install yolox package and wire model forward pass. "
+            "Available backends: owlvit, torchvision-coco."
+        )
 
 
 class MaskDinoDetector:
@@ -187,19 +181,16 @@ class MaskDinoDetector:
             return False, str(e)
 
     def detect(self, image_rgb: np.ndarray, queries: Sequence[str]):
-        h, w = image_rgb.shape[:2]
-        want = {canonical(q) or q for q in queries} if queries else None
-        out = []
-        candidates = [
-            ("wall", 0.96, (0.0, 0.0, float(w), 0.5 * h)),
-            ("window", 0.92, (0.4 * w, 0.15 * h, 0.7 * w, 0.45 * h)),
-            ("sofa", 0.88, (0.2 * w, 0.5 * h, 0.8 * w, 0.9 * h)),
-        ]
-        for label, score, box in candidates:
-            if score < self.threshold or (want is not None and (canonical(label) or label) not in want):
-                continue
-            out.append(ImageDetection(label, float(score), tuple(float(v) for v in box), source=self.name))
-        return out
+        ok, reason = self.available()
+        if not ok:
+            raise DetectorUnavailable(reason)
+        # Real MaskDINO inference requires the maskdino package + weights.
+        # When the package is installed, implement inference here.
+        # Never return hard-coded demonstration boxes as real detections.
+        raise DetectorUnavailable(
+            "MaskDINO real inference not implemented; install maskdino package and wire model forward pass. "
+            "Available backends: owlvit, torchvision-coco."
+        )
 
 
 register_detector("owlvit", OwlVitDetector)

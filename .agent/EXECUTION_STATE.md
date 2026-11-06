@@ -3,6 +3,44 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-06 -- Integration + audit sprint (CONTINUATION; read this first)
+
+**Branch:** `claude/integration-2026-11-05` (worktree `.claude/worktrees/bold-feynman-0ba202`). Checkpoint commits
+`7cbdc311`, `4aed118f` plus one local checkpoint of the agents' work. NOT pushed. `origin/main` = `17eb3f40` (#238).
+Recovery refs: `claude/bold-feynman-0ba202` @ `8336921e` (original WIP fixes), user's local tip
+`feat/task-11-2-world-package-zip` @ `2e2750b6` (untouched). Nothing was reset or force-pushed.
+
+**What changed (each with a run test/command; see docs/audits/REALITY_ENGINE_REPAIR_ROADMAP.md section 1):**
+OpenAPI crash; single `RigidTransform` (`engine/core/rigid_transform.py`) and single `MeshData`
+(`world_ir/geometry_data.py`); old-fixture round-trip; honest XFeat/DeDoDe/OneFormer/availability probes;
+honest `engine/technologies` benchmark; correction commit inheritance + per-field provenance + intrinsics plumbing
+(`apps/api/jobs.py`, `routes_worlds.py`, `vertical_slice.py`); auth hardening (`apps/api/auth.py`); frontend
+correction payload (`frontend/src/lib/inspector/pose.ts`) and nav links; deps in `pyproject.toml`.
+
+**Verified (observed):** frontend tsc 0 errors, ESLint 0 errors, contract suite 385/385; focused Python suites
+(matching/availability 24, technologies honesty 12, backend 37, auth 24, frontend-backend contract 21).
+**NOT verified:** full Python suite and `next build` on this branch; CI never run; live COLMAP run of the
+intrinsics change; GPU-contended suites.
+
+**Known open defects:** 5 floorplan/room-report export tests (`test_procedural_export.py`, "needs at least one
+room with a measured footprint"); `jsonschema`/`timm`/`transformers`/`segment-anything` declared but not installed
+in the venv; tenant isolation only in `routes_worlds.py`; `FakeReconstructionBackend` fallback at
+`engine/orchestrator/universal_pipeline.py:444-446`; no code under `apps/` releases VRAM (idle API holds ~5.8 GiB
+after `_scene_gate`, `apps/api/jobs.py` ~490/701; fix = `release_vram()` after the gate, see
+`docs/audits/RTX4050_APPLICATION_COMPATIBILITY.md`); `perception/stage_runner.py` under-reports VRAM peak;
+~37 orphan modules; `engine/technologies/adapters.py` 37 constant adapters; `benchmarks/physics_bench.py` and
+`run_all.py` import deleted `engine.physics`; `perception/stage_runner.py:91` bare `except: pass`.
+
+**Next (in order):** P0 list in the repair roadmap: push branch + get CI green (needs user OK) -> tenant isolation
+-> remove Fake backend fallback -> `release_vram()` after `_scene_gate` + DISK keypoint cap -> install perception
+deps and re-run acceptance journey. Blocked on user: real interior captures + tape measurements, detector choice
+(OWLv2 vs Grounding DINO), permission to push / open PR.
+
+**Commands:**
+`.venv/Scripts/python.exe -m pytest tests/test_auth_hardening.py tests/test_api_inheritance_and_camera_model.py tests/test_technologies_honesty.py tests/test_matching.py -q`
+`cd frontend && npx tsc --noEmit && node --test tests/contract` (after linking node_modules).
+The `.venv` lives in the main checkout, not the worktree.
+
 ## 2026-10-31 -- Room reconstruction fidelity (Phase 7), worktree room-reconstruction-phase-7-dd491b
 
 Plan: docs/superpowers/plans/2026-10-30-room-reconstruction-fidelity.md. Registry updated in the same change:

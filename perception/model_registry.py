@@ -35,6 +35,8 @@ from typing import Dict, Optional
 #: torch/torchvision's default checkpoint cache -- where a plain
 #: weights-API load lands (torch.hub.set_dir's default layout).
 _TORCH_HOME = Path.home() / ".cache" / "torch" / "hub" / "checkpoints"
+#: Hugging Face hub cache (transformers `from_pretrained` layout).
+_HF_HOME = Path.home() / ".cache" / "huggingface" / "hub"
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,7 @@ class ModelSpec:
     name: str
     task: str
     source: str
-    checkpoint: Path
+    checkpoint: Optional[Path]  # None for non-learned (heuristic) entries
     sha256: Optional[str] = None
     framework: str = "torch"
     license: str = ""
@@ -61,7 +63,7 @@ class ModelSpec:
             "name": self.name,
             "task": self.task,
             "source": self.source,
-            "checkpoint": str(self.checkpoint),
+            "checkpoint": str(self.checkpoint) if self.checkpoint is not None else None,
             "framework": self.framework,
             "license": self.license,
             "commercial_ok": self.commercial_ok,
@@ -69,11 +71,11 @@ class ModelSpec:
             "status": self.status,
             "input_contract": self.input_contract,
             "output_contract": self.output_contract,
-            "present": self.checkpoint.exists(),
+            "present": self.checkpoint is not None and self.checkpoint.exists(),
         }
         if self.sha256:
             d["sha256"] = self.sha256
-        if self.checkpoint.exists() and self.sha256:
+        if self.checkpoint is not None and self.checkpoint.exists() and self.sha256:
             d["sha256_verified"] = verify_checkpoint(self.checkpoint, self.sha256)
         return d
 
@@ -238,16 +240,16 @@ _DEFAULT_MODELS = [
         output_contract="Keypoints and 64-d local descriptors",
     ),
     ModelSpec(
-        name="metric3d_v2",
+        name="heuristic_depth_prior",
         task="metric_depth",
-        source="torch.hub:YvanYin/Metric3D",
-        checkpoint=_TORCH_HOME / "metric_depth_vit_small_800k.pth",
+        source="internal:perception.depth.metric_depth_backend",
+        checkpoint=None,
         license="Apache-2.0",
         commercial_ok=True,
-        measured_vram_mb=1800.0,
+        measured_vram_mb=0.0,  # CPU-only numpy heuristic: no model weights, no GPU use
         status="candidate",
-        input_contract="RGB image + camera intrinsics matrix K",
-        output_contract="Metric depth map in meters (H, W)",
+        input_contract="RGB image + optional camera intrinsics",
+        output_contract="Heuristic depth map in meters (H, W), scale_state='estimated'",
     ),
     ModelSpec(
         name="depth_anything_v2",
@@ -260,6 +262,39 @@ _DEFAULT_MODELS = [
         status="candidate",
         input_contract="RGB image (H, W, 3)",
         output_contract="Affinity-aligned relative depth map",
+    ),
+    ModelSpec(
+        name="owlvit_base_patch32",
+        task="open_vocabulary_detection",
+        source="huggingface:google/owlvit-base-patch32",
+        checkpoint=_HF_HOME / "models--google--owlvit-base-patch32",
+        license="Apache-2.0",
+        commercial_ok=True,
+        status="active",  # perception/detection/backends.py OwlVitDetector
+        input_contract="RGB image + text queries",
+        output_contract="Boxes + per-query scores",
+    ),
+    ModelSpec(
+        name="owlv2_base_patch16",
+        task="open_vocabulary_detection",
+        source="huggingface:google/owlv2-base-patch16-ensemble",
+        checkpoint=_HF_HOME / "models--google--owlv2-base-patch16-ensemble",
+        license="Apache-2.0",
+        commercial_ok=True,
+        status="candidate",  # declared; no detector backend registered yet
+        input_contract="RGB image + text queries",
+        output_contract="Boxes + per-query scores",
+    ),
+    ModelSpec(
+        name="grounding_dino_tiny",
+        task="open_vocabulary_detection",
+        source="huggingface:IDEA-Research/grounding-dino-tiny",
+        checkpoint=_HF_HOME / "models--IDEA-Research--grounding-dino-tiny",
+        license="Apache-2.0",
+        commercial_ok=True,
+        status="candidate",  # declared; no detector backend registered yet
+        input_contract="RGB image + text prompt",
+        output_contract="Boxes + phrase labels + scores",
     ),
 ]
 

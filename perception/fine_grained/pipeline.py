@@ -272,6 +272,8 @@ class FineGrainedPerceptionEngine:
                 Relationship(
                     kind=RelationshipKind.ATTACHED_TO,
                     target_id=cluster.host_surface_id,
+                    # Host association is inferred from the fused cluster, so it is no more certain than the cluster.
+                    confidence=cluster.fused_confidence,
                 )
             )
 

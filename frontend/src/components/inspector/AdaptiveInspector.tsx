@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { getStudioHistory } from "@/lib/viewport/history-stack";
+import { buildTransformPayload, positionOf } from "@/lib/inspector/pose";
 import { fetchEntityProvenance, type EntityProvenance } from "@/lib/api/provenance";
 import {
   Armchair,
@@ -210,7 +211,7 @@ function EntityDetails({
       ? entity.confidence
       : null;
 
-  const pos = entity.transform?.position;
+  const pos = positionOf(entity.transform);
   const [posX, setPosX] = useState(pos?.x !== undefined ? String(pos.x) : "");
   const [posY, setPosY] = useState(pos?.y !== undefined ? String(pos.y) : "");
   const [posZ, setPosZ] = useState(pos?.z !== undefined ? String(pos.z) : "");
@@ -373,6 +374,7 @@ function EntityDetails({
     try {
       const mode = overrideMode || correctionTab;
       let payload: Record<string, unknown> = {};
+      let pushUndo: (() => void) | null = null;
 
       if (mode === "boundary") {
         payload = { boundary_element_ids: editedBoundaryIds };
@@ -397,14 +399,13 @@ function EntityDetails({
         const z = Number(posZ);
         if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
           payload = {
-            transform: {
-              ...(entity.transform || {}),
-              position: { x, y, z },
-            },
+            // The API accepts exactly {position, rotation(unit quaternion)}; a real entity transform is matrix-shaped.
+            transform: buildTransformPayload({ x, y, z }, entity.transform),
             ...confidenceChange,
           };
           const prevPos = pos ? { x: pos.x, y: pos.y, z: pos.z } : { x: 0, y: 0, z: 0 };
-          getStudioHistory().push({
+          // Recorded only after the commit succeeds, so a failed commit leaves no undo entry.
+          pushUndo = () => getStudioHistory().push({
             type: "transform",
             description: `Move ${entity.id} to (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`,
             entityId: entity.id,
@@ -442,6 +443,7 @@ function EntityDetails({
       }
 
       const res = await onCommitCorrection(entity.id, payload, commitMessage);
+      pushUndo?.();
       if (res && typeof res === "object" && "version_id" in res) {
         setCommittedVersionResult({
           version_id: res.version_id,

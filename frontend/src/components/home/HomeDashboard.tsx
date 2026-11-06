@@ -22,7 +22,8 @@ import {
 } from "lucide-react";
 import { useWorlds, useApi, getStatus, listJobs } from "@/lib/api";
 import { fetchActivity, type ActivityType } from "@/lib/activity";
-import { relativeTime } from "@/lib/shell/shell-logic";
+import { relativeTime, visibleNav } from "@/lib/shell/shell-logic";
+import { SHOW_UNFINISHED } from "@/lib/unfinished";
 import { formatBytes, summarizeJobs, jobDurationText } from "@/lib/dashboard/dashboard-model";
 import type { WorldRow } from "@/lib/types";
 import type { JobDto, StorageStatusDto } from "@/lib/api/types";
@@ -479,7 +480,7 @@ function QuickStart() {
   return (
     <Panel title="Quick Start">
       <ul className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        {QUICK_START.map(({ href, label, hint, icon: Icon }) => (
+        {visibleNav(QUICK_START, SHOW_UNFINISHED).map(({ href, label, hint, icon: Icon }) => (
           <li key={href} className="min-w-0">
             <Link
               href={href}

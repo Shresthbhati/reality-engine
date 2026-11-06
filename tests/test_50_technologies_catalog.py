@@ -137,8 +137,10 @@ def test_benchmark_harness_comprehensive_evaluation():
     summary = harness.benchmark_all_50()
 
     assert summary["total_evaluated"] == 50
-    assert summary["recommended_count"] >= 10
-    assert summary["qualified_count"] >= 30
+    # Honest counts: only measured (non-simulated) technologies can be recommended/qualified.
+    assert summary["recommended_count"] + summary["qualified_count"] + summary["simulated_count"]         + summary["no_measurement_count"] <= 50
+    assert summary["recommended_count"] >= 1
+    assert summary["simulated_count"] == summary["by_classification"].get("SIMULATED", 0)
     assert len(summary["results"]) == 50
 
     # Ensure markdown report generates cleanly

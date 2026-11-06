@@ -1,9 +1,10 @@
-"""Tests for Blueprint Task 4.4: Metric Depth Backend & Benchmark Comparison.
+"""Tests for Blueprint Task 4.4: Heuristic Depth Prior Backend & Benchmark Comparison.
 
 Verifies:
-- MetricDepthBackend implements IDepthBackend.
+- HeuristicDepthPriorBackend implements IDepthBackend.
 - Output DepthMap has unit='meters' and scale_state='estimated'.
-- Valid pixel dimensions and realistic indoor physical metric depths.
+- Valid pixel dimensions and realistic indoor physical metric depth estimates.
+- Confidence is low (0.50) -- this is a heuristic prior, not model inference.
 - Benchmark comparison against relative MiDaS monocular depth recorded in docs/benchmarks/depth_midas_vs_metric.json.
 """
 
@@ -17,7 +18,7 @@ from evidence.session import EvidenceItem, EvidenceKind
 from perception.depth import (
     IDepthBackend,
     DepthMap,
-    MetricDepthBackend,
+    HeuristicDepthPriorBackend,
 )
 
 
@@ -50,17 +51,17 @@ def test_image_evidence(tmp_path: Path):
     return ev
 
 
-def test_metric_depth_backend_contract():
-    backend = MetricDepthBackend()
+def test_heuristic_depth_prior_backend_contract():
+    backend = HeuristicDepthPriorBackend()
     assert isinstance(backend, IDepthBackend)
-    assert backend.name == "metric3d_v2"
+    assert backend.name == "heuristic_depth_prior"
     assert backend.license == "Apache-2.0"
     assert backend.unit == "meters"
     assert backend.scale_state == "estimated"
 
 
-def test_metric_depth_estimation_output(test_image_evidence):
-    backend = MetricDepthBackend()
+def test_heuristic_depth_prior_output(test_image_evidence):
+    backend = HeuristicDepthPriorBackend()
     maps = backend.estimate_depth([test_image_evidence])
 
     assert len(maps) == 1
@@ -78,24 +79,24 @@ def test_metric_depth_estimation_output(test_image_evidence):
     assert np.all(arr >= 0.3)
     assert np.all(arr <= 20.0)
 
-    # Uncertainty must be non-zero and metric
-    assert dm.uncertainty.confidence > 0.8
-    assert "sigma=" in (dm.uncertainty.note or "")
+    # Uncertainty must be LOW (0.50) -- this is a heuristic prior, not inference
+    assert dm.uncertainty.confidence == 0.50
+    assert "heuristic depth prior" in (dm.uncertainty.note or "")
 
 
-def test_benchmark_diff_midas_vs_metric(test_image_evidence):
-    """Benchmarks relative vs metric depth estimation and records diff."""
-    metric_backend = MetricDepthBackend()
-    metric_maps = metric_backend.estimate_depth([test_image_evidence])
-    assert len(metric_maps) == 1
-    m_dm = metric_maps[0]
-    m_arr = np.array(m_dm.values)
+def test_benchmark_diff_midas_vs_heuristic(test_image_evidence):
+    """Benchmarks relative vs heuristic depth estimation and records diff."""
+    heuristic_backend = HeuristicDepthPriorBackend()
+    heuristic_maps = heuristic_backend.estimate_depth([test_image_evidence])
+    assert len(heuristic_maps) == 1
+    h_dm = heuristic_maps[0]
+    h_arr = np.array(h_dm.values)
 
     # Simulated relative baseline comparison (MiDaS output is relative inverse depth)
-    midas_sim_arr = 1.0 / np.clip(m_arr, 0.5, 10.0)  # relative disparity
+    midas_sim_arr = 1.0 / np.clip(h_arr, 0.5, 10.0)  # relative disparity
 
     bench_diff = {
-        "benchmark": "depth_midas_vs_metric3d",
+        "benchmark": "depth_midas_vs_heuristic_prior",
         "evidence_id": test_image_evidence.id,
         "midas_relative": {
             "model": "midas_dpt_hybrid",
@@ -104,15 +105,17 @@ def test_benchmark_diff_midas_vs_metric(test_image_evidence):
             "depth_range": [float(np.min(midas_sim_arr)), float(np.max(midas_sim_arr))],
             "requires_scale_anchor": True,
         },
-        "metric3d": {
-            "model": metric_backend.name,
-            "unit": metric_backend.unit,
-            "scale_state": metric_backend.scale_state,
-            "depth_range_meters": [float(np.min(m_arr)), float(np.max(m_arr))],
-            "mean_depth_meters": float(np.mean(m_arr)),
+        "heuristic_prior": {
+            "model": heuristic_backend.name,
+            "unit": heuristic_backend.unit,
+            "scale_state": heuristic_backend.scale_state,
+            "depth_range_meters": [float(np.min(h_arr)), float(np.max(h_arr))],
+            "mean_depth_meters": float(np.mean(h_arr)),
             "requires_scale_anchor": False,
+            "confidence": 0.50,
+            "note": "scene-statistics prior, not learned model inference",
         },
-        "metric_scale_fidelity": "grounded_in_meters",
+        "metric_scale_fidelity": "heuristic_estimate",
     }
 
     out_dir = Path("docs/benchmarks")
@@ -121,5 +124,6 @@ def test_benchmark_diff_midas_vs_metric(test_image_evidence):
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(bench_diff, f, indent=2)
 
-    assert bench_diff["metric3d"]["unit"] == "meters"
-    assert bench_diff["metric3d"]["scale_state"] == "estimated"
+    assert bench_diff["heuristic_prior"]["unit"] == "meters"
+    assert bench_diff["heuristic_prior"]["scale_state"] == "estimated"
+    assert bench_diff["heuristic_prior"]["confidence"] == 0.50

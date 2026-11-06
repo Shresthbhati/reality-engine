@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -41,55 +41,51 @@ function CapturePageInner() {
   const worldIdParam = searchParams.get("world") || "";
 
   const [worldId, setWorldId] = useState<string>(worldIdParam);
-  const [requests, setRequests] = useState<CaptureRequestItem[]>([]);
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<"open" | "satisfied" | "dismissed">("open");
-  const [loadingRequests, setLoadingRequests] = useState(false);
-  const [loadingSessions, setLoadingSessions] = useState(false);
   const [activeTab, setActiveTab] = useState<"requests" | "upload" | "sessions">("requests");
-
-  const loadRequests = useCallback(async (wid: string) => {
-    if (!wid) {
-      setRequests([]);
-      return;
-    }
-    setLoadingRequests(true);
-    try {
-      const res = await listCaptureRequests(wid);
-      setRequests(res.items || []);
-    } catch {
-      setRequests([]);
-    } finally {
-      setLoadingRequests(false);
-    }
-  }, []);
-
-  const loadSessions = useCallback(async (wid?: string) => {
-    setLoadingSessions(true);
-    try {
-      const res = await listSessions({ worldId: wid || undefined });
-      setSessions(res.rows || []);
-    } catch {
-      setSessions([]);
-    } finally {
-      setLoadingSessions(false);
-    }
-  }, []);
+  // Bumped by handlers to re-run the loaders; loaded data is tagged with the
+  // key it was fetched for, so "loading" is derived (key mismatch) rather than
+  // set synchronously inside the effect.
+  const [reloadTick, setReloadTick] = useState(0);
+  const loadKey = `${worldId}:${reloadTick}`;
+  const [requestsLoaded, setRequestsLoaded] = useState<{ key: string; items: CaptureRequestItem[] }>({
+    key: "",
+    items: [],
+  });
+  const [sessionsLoaded, setSessionsLoaded] = useState<{ key: string; items: SessionRow[] }>({
+    key: "",
+    items: [],
+  });
+  const requests = worldId ? requestsLoaded.items : [];
+  const sessions = sessionsLoaded.items;
+  const loadingRequests = !!worldId && requestsLoaded.key !== loadKey;
+  const loadingSessions = sessionsLoaded.key !== loadKey;
 
   useEffect(() => {
+    let cancelled = false;
     if (worldId) {
-      void loadRequests(worldId);
-      void loadSessions(worldId);
-    } else {
-      void loadSessions();
+      listCaptureRequests(worldId)
+        .then((res) => res.items || [])
+        .catch(() => [] as CaptureRequestItem[])
+        .then((items) => {
+          if (!cancelled) setRequestsLoaded({ key: loadKey, items });
+        });
     }
-  }, [worldId, loadRequests, loadSessions]);
-
+    listSessions({ worldId: worldId || undefined })
+      .then((res) => res.rows || [])
+      .catch(() => [] as SessionRow[])
+      .then((items) => {
+        if (!cancelled) setSessionsLoaded({ key: loadKey, items });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId, loadKey]);
   const handleDismiss = async (requestId: string) => {
     if (!worldId) return;
     try {
       await updateCaptureRequestStatus(worldId, requestId, "dismissed");
-      void loadRequests(worldId);
+      setReloadTick((t) => t + 1);
     } catch (err) {
       console.error("Failed to dismiss request", err);
     }
@@ -99,7 +95,7 @@ function CapturePageInner() {
     if (!worldId) return;
     try {
       await updateCaptureRequestStatus(worldId, requestId, "satisfied");
-      void loadRequests(worldId);
+      setReloadTick((t) => t + 1);
     } catch (err) {
       console.error("Failed to mark satisfied", err);
     }
@@ -208,7 +204,7 @@ function CapturePageInner() {
 
             {worldId && (
               <button
-                onClick={() => loadRequests(worldId)}
+                onClick={() => setReloadTick((t) => t + 1)}
                 className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${loadingRequests ? "animate-spin" : ""}`} />

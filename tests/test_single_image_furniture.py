@@ -75,3 +75,22 @@ def test_depth_anything_model_name_selects_the_depth_anything_backend(tmp_path, 
 
     monkeypatch.setattr("perception.depth.depth_anything_backend.DepthAnythingV2Backend", _Fake)
     assert si._estimate_depth(item, "depth_anything_v2") is dm and called["n"] == 1
+
+
+def test_open_vocab_detector_dedupes_overlaps_and_rescales(tmp_path):
+    from engine.pipeline.single_image_furniture import open_vocab_furniture_detector
+    from perception.detection.interface import ImageDetection
+
+    p = tmp_path / "big.png"
+    Image.fromarray(np.zeros((480, 640, 3), np.uint8)).save(p)
+    item = EvidenceItem(id="ev-big", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+
+    class _Fake:
+        def detect(self, rgb, queries):
+            return [ImageDetection("sofa", 0.9, (100, 100, 300, 200)),
+                    ImageDetection("couch", 0.6, (105, 100, 300, 205)),     # same object, lower score: dropped
+                    ImageDetection("bed", 0.8, (400, 300, 600, 400))]
+
+    out = open_vocab_furniture_detector(item, 320, 240, backend=_Fake())
+    assert sorted(d.label for d in out) == ["bed", "sofa"]
+    assert out[0].box_xyxy[2] <= 320 and out.backend.startswith("Grounding DINO")

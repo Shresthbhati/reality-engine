@@ -193,7 +193,10 @@ class MaskDinoDetector:
         )
 
 
+from perception.detection.grounding_dino import GroundingDinoDetector  # noqa: E402
+
 register_detector("owlvit", OwlVitDetector)
+register_detector("grounding_dino_tiny", GroundingDinoDetector)
 register_detector("torchvision-coco", TorchvisionCocoDetector)
 register_detector("yolox", YoloxDetector)
 register_detector("maskdino", MaskDinoDetector)

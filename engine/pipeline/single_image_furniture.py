@@ -53,6 +53,63 @@ def maskrcnn_furniture_detector(item, w: int, h: int) -> list:
     ]
 
 
+class DetectionList(list):
+    """Detections plus the name of the backend that produced them (recorded in the facts)."""
+
+    backend = "unspecified"
+
+
+def open_vocab_furniture_detector(item, w: int, h: int, *, backend=None) -> "DetectionList":
+    """Grounding DINO detections for the placer's furniture classes; boxes rescaled to the ``w`` x ``h`` grid.
+
+    Raises ``DetectorUnavailable`` when the weights are not cached (never an empty list for "could not run")."""
+    import numpy as np
+    from PIL import Image
+
+    from perception.detection.interface import get_detector
+    from perception.detection.maskrcnn_backend import _uri_to_path
+    from perception.instances.furniture_from_detections import SIZE_PRIORS, FurnitureDetection
+
+    det = backend or get_detector("grounding_dino_tiny")
+    with Image.open(_uri_to_path(item.source_uri)) as im:
+        rgb = np.asarray(im.convert("RGB"))
+    oh, ow = rgb.shape[:2]
+    queries = sorted({k.replace("_", " ") for k in SIZE_PRIORS})
+    raw = sorted(det.detect(rgb, queries), key=lambda d: -d.score)
+    kept: list = []
+    for d in raw:                       # one object per region: drop a lower-scored box that mostly overlaps a kept one
+        if all(_iou(d.box_xyxy, k.box_xyxy) < 0.7 for k in kept):
+            kept.append(d)
+    sx, sy = w / float(ow), h / float(oh)
+    out = DetectionList(
+        FurnitureDetection(label=d.label, score=d.score, view_id=item.id,
+                           box_xyxy=(d.box_xyxy[0] * sx, d.box_xyxy[1] * sy, d.box_xyxy[2] * sx, d.box_xyxy[3] * sy))
+        for d in kept
+    )
+    out.backend = "Grounding DINO Tiny (open vocabulary)"
+    return out
+
+
+def _iou(a, b) -> float:
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def auto_furniture_detector(item, w: int, h: int) -> "DetectionList":
+    """Open-vocabulary detector when its weights are cached, otherwise Mask R-CNN (COCO). The choice is recorded."""
+    from perception.detection.interface import DetectorUnavailable
+
+    try:
+        return open_vocab_furniture_detector(item, w, h)
+    except DetectorUnavailable:
+        out = DetectionList(maskrcnn_furniture_detector(item, w, h))
+        out.backend = "Mask R-CNN (COCO); open-vocabulary detector unavailable"
+        return out
+
+
 def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f: float, cx: float, cy: float,
                     w: int, h: int, pre: str, confidence_ceiling: float) -> Dict[str, object]:
     """Add furniture entities to ``world``; return a facts dict (what ran, what was rejected and why)."""
@@ -64,7 +121,7 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
     from world_ir.measure import make_dimension
 
     facts: Dict[str, object] = {"attempted": True, "detections": len(detections), "placed": 0,
-                                "method": "Mask R-CNN (COCO) + furniture_from_detections floor-contact placer",
+                                "method": f"{getattr(detections, 'backend', 'supplied detections')} + furniture_from_detections floor-contact placer",
                                 "rejected": []}
     if floor_op is None:
         facts["reason"] = "no floor plane was found: furniture cannot be placed without a floor"
@@ -117,7 +174,7 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
             geometry_ids=[geom.id], provenance=Provenance.INFERRED, confidence=conf,
             uncertainty=Uncertainty(
                 confidence=conf,
-                note=("single-view furniture: COCO detection, floor-contact placement, class-prior size via an "
+                note=("single-view furniture: detector boxes, floor-contact placement, class-prior size via an "
                       f"ASSUMED {ASSUMED_CAMERA_HEIGHT_M:g} m camera height; relative scale, not measured"),
             ),
             observations=[obs],

@@ -432,20 +432,12 @@ class UniversalPipeline:
         if opts.backends:
             backends = list(opts.backends)
         else:
-            # Build preference-ordered backend candidates
-            candidates = []
-            # 1. Real COLMAP backend
-            colmap_backend = ColmapReconstructionBackend(
-                use_gpu=hw_device.is_gpu,
-                quality="medium" if opts.mode == PipelineMode.FAST else "high",
-            )
-            candidates.append(colmap_backend)
-
-            # 2. Test-double fallback for headless / non-COLMAP test environments
-            from reconstruction.backend.fake import FakeReconstructionBackend
-            candidates.append(FakeReconstructionBackend())
-
-            backends = candidates
+            # Production candidates only. Test doubles (FakeReconstructionBackend) must be injected
+            # explicitly via opts.backends; if COLMAP fails the orchestrator raises rather than
+            # letting a stand-in report a result.
+            # ponytail: ColmapReconstructionBackend has no `quality` option (the old kwarg raised
+            # TypeError on every default run); mode->dense_mvs mapping needs a measured decision.
+            backends = [ColmapReconstructionBackend(use_gpu=hw_device.is_gpu)]
 
         orchestrator = ReconstructionOrchestrator(backends)
         recon_run = orchestrator.run(evidence_items)

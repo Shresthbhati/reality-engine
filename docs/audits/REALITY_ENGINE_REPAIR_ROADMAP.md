@@ -27,7 +27,7 @@
 ### P0 — before any feature work
 1. **Get CI green and enforce it.** Push the integration branch, fix what CI reports, then branch protection. `main` has been red since 2026-10-28. Full Python suite and `next build` are **not verified** on this branch.
 2. **Tenant isolation:** only `routes_worlds.py` enforces it; 19 other route modules never read the auth context.
-3. **`engine/orchestrator/universal_pipeline.py:444-446`** appends `FakeReconstructionBackend` as a production fallback behind COLMAP — remove or gate behind an explicit test flag.
+3. ~~`FakeReconstructionBackend` as a production fallback~~ — **resolved 2026-11-06.** Removed from `UniversalPipeline._run_reconstruction` and the CLI `_default_backends`; test doubles are now injected only via explicit `backends=`. `tests/test_no_fake_backend_in_production.py` pins this. Also fixed: the default path passed a nonexistent `quality=` kwarg to `ColmapReconstructionBackend` and raised `TypeError` on every default run (so the fallback was unreachable anyway). Open: mapping `PipelineMode` to `dense_mvs` is a measured decision, not made here.
 4. **GPU lifetime:** acceptance run peaked at 5,902 / 6,141 MiB with a CUDA OOM warning and the idle API held ~5.8 GiB. Release VRAM after each stage (see `RTX4050_APPLICATION_COMPATIBILITY.md`).
 5. **Environment:** `timm`, `transformers`, `segment-anything` are declared in the `perception` extra but not installed in the venv, so depth, OWL-ViT and SAM are unavailable. Install, then re-run the acceptance journey.
 6. Install `jsonschema` (declared in `dev`) — 4 schema-validation tests fail without it.

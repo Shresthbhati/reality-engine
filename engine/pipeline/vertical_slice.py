@@ -882,7 +882,9 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
         else:
             from perception.depth.midAS_backend import MiDaSDepthBackend
             backend = MiDaSDepthBackend(model_type=options.depth_model)
-        depth_maps = backend.estimate_depth(list(evidence_items))
+        from engine.core.device import unloading
+        with unloading(backend):
+            depth_maps = backend.estimate_depth(list(evidence_items))
     except Exception as exc:  # noqa: BLE001 -- model/dep failures are a skip, not a crash
         return {
             "status": "skipped",
@@ -974,7 +976,9 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     depth_by_id = {dm.evidence_id: dm for dm in metric_depth_maps}
 
     try:
-        seg_results = detector.segment(list(evidence_items))
+        from engine.core.device import unloading
+        with unloading(detector):
+            seg_results = detector.segment(list(evidence_items))
     except Exception as exc:  # noqa: BLE001
         return {**skip, "note": f"segmentation failed: {exc}"}
 

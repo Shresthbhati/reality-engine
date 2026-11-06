@@ -22,6 +22,7 @@ from urllib.request import url2pathname
 from provenance import Uncertainty
 
 from evidence.session import EvidenceItem, EvidenceKind
+from engine.core.device import drop_models
 from perception.device import select_device
 
 from .interface import IDepthBackend, DepthMap
@@ -117,6 +118,9 @@ class MiDaSDepthBackend(IDepthBackend):
         self._device = device or select_device().device
         self._model = None
         self._transform = None
+
+    def unload(self) -> None:
+        drop_models(self, "_model", "_transform")
 
     @staticmethod
     def _cuda_available() -> bool:

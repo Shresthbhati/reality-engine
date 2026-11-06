@@ -35,7 +35,7 @@ from apps.api.models import (
 from engine.pipeline import world_delta
 from engine.pipeline.dense_gate import dense_auto_enabled
 from reconstruction.colmap_session import ColmapSession
-from engine.pipeline.single_image_furniture import maskrcnn_furniture_detector
+from engine.pipeline.single_image_furniture import maskrcnn_furniture_detector, unload_furniture_model
 from engine.pipeline.progressive import (
     EvidenceInput,
     InsufficientEvidence,
@@ -773,6 +773,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         )
     )
     world_ir = prog.world
+    unload_furniture_model()  # idle API must not keep the detector resident between jobs
 
     await _throw_if_cancelled(db, job)
 

@@ -348,6 +348,15 @@ compensation, ID-switch/fragmentation diagnostics. Canonical ledger:
 room-boundary-derived openings. Evidence: geometry + segmentation backed
 structural hypotheses with provenance.
 
+## P2.20 — Scene-complete reconstruction (detect and rebuild every visible object)
+
+**Status: MISSING (pieces exist, not wired) → [`../future/perception/SCENE_COMPLETE_RECONSTRUCTION.md`](../future/perception/SCENE_COMPLETE_RECONSTRUCTION.md)**
+Added 2026-11-06. Images that fall to the single-image path (incl. all AI-generated
+rooms) get no object detection at all (`engine/pipeline/single_image.py`), and
+`furniture_from_detections` is not wired. M1 is wiring the existing detector + placer
++ Depth Anything V2 into that path. Evidence to advance: labelled eval set +
+per-tier recall/precision and floor-contact error as specified.
+
 ## P2.17 — Material perception
 
 **Status: MISSING → [`../future/perception/MATERIAL_PERCEPTION.md`](../future/perception/MATERIAL_PERCEPTION.md)**

@@ -93,12 +93,14 @@ tasks marked *parallel-safe*.
 | T-1.2 | DONE locally | catch-all proxy + same-origin browser base; Playwright 51 passed (dev and production build); token/upload/traversal checked by hand; hosted per-user identity still open (M6) |
 | T-1.3 | DONE locally | `tests/test_golden_path_api_to_glb.py` (in CI core list, 8 s; plumbing only, uses the test-backend seam) and `tests/integration/test_golden_path_real_photos.py` (real COLMAP, 6 South Building photos, ~50 s). Real runs on 2026-11-07: 4 of 5 job outcomes `succeeded`, 1 `partial` (cause unknown; the test requires `succeeded`, so expect an occasional flake). Khronos glTF-Validator 2.0.0-dev.3.10: 0 errors, 0 warnings on a synthetic and a real-photo GLB |
 | U.3 | DONE locally | tokens complete in both themes; `@theme` utilities (`bg-surface`, `text-fg`, `text-success`...); 815 raw-palette classes + hex literals moved onto tokens; `tests/contract/design-tokens.test.mts` (WCAG AA both themes + no-raw-palette guard); light theme was broken (dark sidebar under dark text 1.14:1) and is fixed; Playwright 51 passed, dark+light screenshots checked. **Light accent changed from cyan to copper** to share the dark theme's brand (3 values in `globals.css`) |
+| U.4 | DONE locally | Home = New session + Open world + Needs attention + Recent worlds (630 -> 237 lines); attention list derived only from real jobs (`lib/dashboard/attention-model.ts`, 14 contract tests); Playwright: actions, real failed job with backend reason, no overflow at 375 px; screenshots 375/1280/1920 dark+light checked. Removed from Home on purpose: Overview counts, Storage Usage, Jobs table, Activity feed, AI Assistant card, Quick Start |
 | H-0.1, H-3.1, H-3.2 | OPEN (you) | firm interviews, closed-window photos, tape-measured rooms |
 
 **T-1.3 findings (feed into M2):**
 - The real-photo GLB is 4–5 wall planes plus a ~1,090-point sparse cloud: 12 triangles, 0 materials. Valid, but not yet a design deliverable (no floor/ceiling/openings/furniture). This is the real baseline for M3 accuracy work.
 - The exporter emits an orphan mesh (`UNUSED_OBJECT /meshes/0`, Khronos INFO) in both files; tidy in T-2.1.
 - Entity count and point count vary between identical real runs (4 vs 5 entities, 1,091 vs 1,089 points), so exact-value assertions on real output are not safe.
+- **Security finding (blocks hosted launch, task T-6.8):** `GET /api/jobs` returns a failed job's raw Python traceback in `error` (`apps/api/jobs.py`, `traceback.format_exc()[-2000:]`), including absolute server file paths. Home now shows only the final message line; the API should store a clean message and log the traceback.
 
 ### M0 — Trustworthy baseline (≈ 1 week)
 

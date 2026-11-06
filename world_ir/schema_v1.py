@@ -105,6 +105,7 @@ class EntityType(str, Enum):
     CITY = "city"  # Top-level city-scale containment root
     # Interior architectural hierarchy (additive, backward-compatible):
     LEVEL = "level"  # Building vertical level / storey
+    FURNITURE = "furniture"  # Movable floor-standing object (sofa, bed, table...); additive, v1 worlds unaffected
     UNKNOWN = "unknown"
 
 

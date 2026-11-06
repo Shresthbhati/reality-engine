@@ -163,6 +163,8 @@ def bootstrap_single_image(
     target_points: int = 4000,
     depth_map=None,
     tag: str = "",
+    furniture_detector=None,
+    furniture_detections=None,
 ) -> BootstrapResult:
     """Build the LEVEL 0 hypothesis for one photograph.
 
@@ -356,6 +358,26 @@ def bootstrap_single_image(
                 )
         openings_facts["candidates"] = k
 
+    # ---- furniture: COCO detections placed on the solved floor (opt-in: detector or detections supplied) ----
+    furniture_facts: Dict[str, object] = {"attempted": False, "reason": "no furniture detector was supplied"}
+    if furniture_detections is not None or furniture_detector is not None:
+        from engine.pipeline.single_image_furniture import place_furniture
+
+        dets = furniture_detections
+        if dets is None:
+            try:
+                dets = furniture_detector(item, w, h)
+            except Exception as exc:  # noqa: BLE001 -- an unavailable detector is recorded, never a fake empty result
+                dets = None
+                furniture_facts = {"attempted": False, "reason": f"furniture detector unavailable: {exc}"}
+        if dets is not None:
+            floor_ops = [o for o in oriented if o.role == "floor"]
+            floor_op = max(floor_ops, key=lambda o: o.plane.inlier_count) if floor_ops else None
+            furniture_facts = place_furniture(
+                world, obs, item, dets, floor_op=floor_op, pts=pts, f=f, cx=cx, cy=cy, w=w, h=h, pre=pre,
+                confidence_ceiling=CONFIDENCE_CEILING,
+            )
+
     # ---- corridor direction: only when two distinct parallel walls and a floor were all found ----
     corridor = None
     walls_o = [o for o in oriented if o.role == "wall"]
@@ -457,7 +479,7 @@ def bootstrap_single_image(
         "intrinsics_basis": intrinsics_basis, "inverse_depth_offset": INVERSE_DEPTH_OFFSET,
         "confidence_ceiling": CONFIDENCE_CEILING, "gravity_assumption": "camera roughly level (+Y up)",
         "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
-        "openings": openings_facts, "corridor": corridor,
+        "openings": openings_facts, "corridor": corridor, "furniture": furniture_facts,
     }
     world.metadata["reconstruction"] = {
         "backend": "single_image_bootstrap", "registration_status": "partial",
@@ -471,7 +493,7 @@ def bootstrap_single_image(
         "plane_roles": sorted({o.role for o in oriented if o.role != "unknown"}),
         "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
         "depth_model": depth_model, "grid_step": step,
-        "openings": openings_facts, "corridor": corridor,
+        "openings": openings_facts, "corridor": corridor, "furniture": furniture_facts,
     }
     return BootstrapResult(
         world=world, points=tuple(pts),

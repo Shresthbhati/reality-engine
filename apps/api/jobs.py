@@ -35,6 +35,7 @@ from apps.api.models import (
 from engine.pipeline import world_delta
 from engine.pipeline.dense_gate import dense_auto_enabled
 from reconstruction.colmap_session import ColmapSession
+from engine.pipeline.single_image_furniture import maskrcnn_furniture_detector
 from engine.pipeline.progressive import (
     EvidenceInput,
     InsufficientEvidence,
@@ -768,6 +769,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         lambda: run_progressive(
             run_inputs, vs_options=options, prior_ids=prior_ids, artifact_store=artifact_store,
             depth_model=(getattr(options, "depth_model", None) or "DPT_Hybrid"),
+            furniture_detector=maskrcnn_furniture_detector,
         )
     )
     world_ir = prog.world

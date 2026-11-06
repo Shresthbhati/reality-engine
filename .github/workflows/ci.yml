@@ -72,6 +72,7 @@ jobs:
             tests/test_export_reports.py \
             tests/test_export_pipeline_e2e.py \
             tests/test_world_store.py \
+            tests/test_golden_path_api_to_glb.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

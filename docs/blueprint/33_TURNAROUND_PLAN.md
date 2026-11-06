@@ -91,7 +91,13 @@ tasks marked *parallel-safe*.
 | 13.1 | PARTIAL | audit + CODEOWNERS committed; owner must delete branches and protect `main` |
 | T-1.1 | DONE locally | one Studio UI (decision recorded), dead proxies/files removed, artifact proxy added; tsc 0, lint 0 errors, build ok, Playwright world/routes/home/shell 34 passed |
 | T-1.2 | DONE locally | catch-all proxy + same-origin browser base; Playwright 51 passed (dev and production build); token/upload/traversal checked by hand; hosted per-user identity still open (M6) |
+| T-1.3 | DONE locally | `tests/test_golden_path_api_to_glb.py` (in CI core list, 8 s; plumbing only, uses the test-backend seam) and `tests/integration/test_golden_path_real_photos.py` (real COLMAP, 6 South Building photos, ~50 s). Real runs on 2026-11-07: 4 of 5 job outcomes `succeeded`, 1 `partial` (cause unknown; the test requires `succeeded`, so expect an occasional flake). Khronos glTF-Validator 2.0.0-dev.3.10: 0 errors, 0 warnings on a synthetic and a real-photo GLB |
 | H-0.1, H-3.1, H-3.2 | OPEN (you) | firm interviews, closed-window photos, tape-measured rooms |
+
+**T-1.3 findings (feed into M2):**
+- The real-photo GLB is 4–5 wall planes plus a ~1,090-point sparse cloud: 12 triangles, 0 materials. Valid, but not yet a design deliverable (no floor/ceiling/openings/furniture). This is the real baseline for M3 accuracy work.
+- The exporter emits an orphan mesh (`UNUSED_OBJECT /meshes/0`, Khronos INFO) in both files; tidy in T-2.1.
+- Entity count and point count vary between identical real runs (4 vs 5 entities, 1,091 vs 1,089 points), so exact-value assertions on real output are not safe.
 
 ### M0 — Trustworthy baseline (≈ 1 week)
 

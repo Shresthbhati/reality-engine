@@ -194,7 +194,7 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 | U.2 | Library compatibility + licence matrix; one choice per responsibility | U.1 | matrix committed; nothing installed without a row | DONE (docs: [32](32_FRONTEND_AUDIT.md) §8; registry data read 2026-11-06, nothing installed) |
 | U.3 | Shared design tokens (colour, type, spacing, radius) light + dark | U.1 | every component uses tokens; contrast checks pass | DONE locally (tokens + contrast + no-raw-palette guard: tests/contract/design-tokens.test.mts; [33](33_TURNAROUND_PLAN.md)) |
 | U.4 | Home: New Session · Open World + recent + needs-attention | U.3, 11.1 | Playwright + screenshots at 1280 / 1920 / 375 | DONE locally ([33](33_TURNAROUND_PLAN.md); e2e/home.spec.ts) |
-| U.5 | Session: one guided flow with explicit processing states | U.3, 1.6 | states match backend `stage`; no fake % | TODO |
+| U.5 | Session: one guided flow with explicit processing states | U.3, 1.6 | states match backend `stage`; no fake % | DONE locally ([33](33_TURNAROUND_PLAN.md); e2e/session-flow.spec.ts, tests/contract/stage-labels.test.mts) |
 | U.6 | World workspace: viewport-first, hierarchy left, contextual inspector right | U.3 | inspector varies by selection type; screenshots | TODO |
 | U.7 | Session adoption review: new / updated / matched / uncertain / conflicting | U.6, 6.3 | adopting a second session matches rather than duplicates (e2e) | TODO |
 | U.8 | Mobile priorities + WCAG 2.2 AA pass | U.4–U.7 | keyboard + touch walkthrough recorded; axe clean | TODO |

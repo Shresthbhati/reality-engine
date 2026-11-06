@@ -24,14 +24,14 @@ function CreateReconstruction() {
   const { status, loading, refresh } = useWorldStatus(worldId);
   const nav = flowNav(worldId, Boolean(status?.has_model));
   return (
-    <section aria-labelledby="reconstruct-title" className="flex h-full w-full flex-col items-center justify-center overflow-y-auto p-6">
+    <section aria-labelledby="reconstruct-title" className="flex h-full w-full flex-col items-center justify-center-safe overflow-y-auto p-6">
       {nav.back && (
         <div className="mb-3 w-full max-w-4xl">
           <Link href={nav.back.href} className={LINK_CLS} style={{ color: "var(--accent)" }}>&larr; {nav.back.label}</Link>
         </div>
       )}
       <h1 id="reconstruct-title" className="mb-1 text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-        {worldId ? "Add photographs to your world" : "Create a reconstruction"}
+        {worldId ? "Add photographs to your world" : "New session"}
       </h1>
       <p className="mb-6 max-w-lg text-center text-xs" style={{ color: "var(--text-tertiary)" }}>
         Give Reality Engine photographs of a real place. It builds the best spatial model the evidence

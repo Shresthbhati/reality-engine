@@ -10,7 +10,7 @@ test("Home lists the seeded world under Recent Worlds", async ({ page }) => {
 test("Home offers exactly two primary actions: New session and Open world", async ({ page }) => {
   await page.goto("/");
   const header = page.getByRole("banner").last().or(page.locator("header").last());
-  await expect(header.getByRole("link", { name: "New session" })).toHaveAttribute("href", "/sessions/new");
+  await expect(header.getByRole("link", { name: "New session" })).toHaveAttribute("href", "/reconstruct");
   await expect(header.getByRole("link", { name: "Open world" })).toHaveAttribute("href", "/worlds");
   // the removed dashboard cards stay removed (no placeholder content on Home)
   await expect(page.getByRole("region", { name: "AI Assistant" })).toHaveCount(0);

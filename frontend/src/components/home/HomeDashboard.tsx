@@ -50,7 +50,7 @@ function Header() {
       </div>
       <div className="flex flex-col gap-2 sm:flex-row sm:shrink-0">
         <Link
-          href="/sessions/new"
+          href="/reconstruct"
           className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-hover"
         >
           <Play className="h-4 w-4" aria-hidden="true" /> New session
@@ -199,7 +199,7 @@ function RecentWorlds({
         <div className="flex flex-col items-start gap-3">
           <Muted>No worlds yet. Start a session to create your first one.</Muted>
           <Link
-            href="/sessions/new"
+            href="/reconstruct"
             className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-semibold text-on-primary hover:bg-primary-hover"
           >
             New session

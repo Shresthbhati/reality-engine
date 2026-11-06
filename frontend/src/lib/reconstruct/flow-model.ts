@@ -41,7 +41,7 @@ export interface FlowStatusInput {
 }
 
 /** Real job stage names (apps/api/jobs.py `job.stage = ...`) in plain words. Unknown names are shown humanised, as-is. */
-const STAGE_LABEL: Record<string, string> = {
+export const STAGE_LABEL: Record<string, string> = {
   verifying_artifact: "Checking the uploaded files",
   registering: "Registering the world",
   checking_reconstruction_backend: "Checking the reconstruction engine",

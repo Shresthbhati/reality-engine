@@ -349,7 +349,9 @@ def _container_resolution(payload: bytes, path: str) -> Tuple[Optional[int], Opt
         return None, None
     try:
         with Image.open(io.BytesIO(payload)) as image:
-            return int(image.width), int(image.height)
+            w, h = int(image.width), int(image.height)
+            # EXIF orientation 5-8 swaps axes; report the upright size.
+            return (h, w) if image.getexif().get(0x0112) in (5, 6, 7, 8) else (w, h)
     except Exception:
         return None, None
 

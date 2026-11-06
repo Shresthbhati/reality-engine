@@ -102,7 +102,7 @@ class DepthAnythingV2Backend(IDepthBackend):
         _ensure_dependencies()
         import numpy as np
         import torch
-        from PIL import Image
+        from evidence.image_check import open_oriented
 
         image_evidence = [
             e for e in evidence
@@ -130,7 +130,7 @@ class DepthAnythingV2Backend(IDepthBackend):
                 if not src_path.exists():
                     continue
 
-                image = Image.open(src_path).convert("RGB")
+                image = open_oriented(src_path).convert("RGB")
                 orig_w, orig_h = image.size
 
                 inputs = self._processor(images=image, return_tensors="pt").to(self._device)

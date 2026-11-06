@@ -68,10 +68,9 @@ def load_image_rgb(source_uri: str) -> np.ndarray:
     else:
         path = Path(source_uri)
     try:
-        from PIL import Image
+        from evidence.image_check import open_oriented
 
-        with Image.open(path) as im:
-            return np.asarray(im.convert("RGB"), dtype=np.uint8)
+        return np.asarray(open_oriented(path).convert("RGB"), dtype=np.uint8)
     except Exception as exc:  # noqa: BLE001 -- any decode/IO failure is "no colour", reported by the caller
         raise DepthToPointsError(f"cannot read image {source_uri!r} for colour sampling: {exc}") from exc
 

@@ -72,7 +72,9 @@ def unloading(backend):
     try:
         yield backend
     finally:
-        backend.unload()
+        unload = getattr(backend, "unload", None)  # fixture/fake backends hold no model
+        if unload is not None:
+            unload()
 
 
 def drop_models(obj, *attrs: str) -> None:

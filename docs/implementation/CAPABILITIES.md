@@ -5,7 +5,7 @@ Companion to `IMPLEMENTATION_STATUS.md` (component detail) and
 `PENDING_IMPLEMENTATION.md` (what is missing). A capability listed here
 has been executed against real inputs unless marked otherwise.
 
-> **Note:** This file is subsidiary to REALITY_ENGINE_CURRENT_STATUS.md.
+> **Note:** This file is subsidiary to IMPLEMENTATION_STATUS.md.
 > Where they disagree, the latter is authoritative.
 
 ## Compile a capture into a world

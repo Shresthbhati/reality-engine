@@ -3,8 +3,9 @@
 Last reconciled: 2026-10-17 (Provenance and Uncertainty rows re-checked against .agent/TASKS.yaml P10-01/P10-02; other rows last reconciled 2026-09-23).
 Status vocabulary is defined in `PENDING_IMPLEMENTATION.md`; transitions
 require the evidence named there. This file states **what exists and was
-verified**, not what is planned — see REALITY_ENGINE_CURRENT_STATUS.md for
-the authoritative status and PENDING_IMPLEMENTATION for the backlog.
+verified**, not what is planned. This file is the authoritative capability status
+(REALITY_ENGINE_CURRENT_STATUS.md is a superseded 2026-11-03 snapshot); task order
+lives in `docs/blueprint/30_BUILD_PLAN.md` and the backlog in PENDING_IMPLEMENTATION.
 
 > **Note:** This file is now subsidiary to REALITY_ENGINE_CURRENT_STATUS.md.
 > Where they disagree, the latter is authoritative.
@@ -49,14 +50,9 @@ Backend pytest suite (excluding tests/integration and tests/scenarios):
 | CLI (session/source/orchestrator) | IMPLEMENTED | Full CLI with ingest/session/compile/reconstruct/validate/diff/export/register/query/store/inspect/viewer |
 | Deterministic compiler (hash-stable outputs) | IMPLEMENTED | artifact hashes stable across runs |
 | Multi-source session manifest | IMPLEMENTED | MultiSourceSession + full CLI |
-<<<<<<< HEAD
 | Provenance (per-artifact records) | IMPLEMENTED | Per-entity provenance enum + queryable provenance graph (ledger P10-01 DONE; `tests/test_provenance_graph.py`) |
-| WorldStore / incremental compilation | IMPLEMENTED | Versioned immutable lineage + integrity + CLI save/load/list/verify |
-=======
-| Provenance (per-artifact records) | IMPLEMENTED | Per-entity provenance enum; queryable graph not yet built |
-| WorldStore (file-backed) | IMPLEMENTED | Versioned immutable lineage + integrity + CLI save/load/list/verify; `tests/test_worldstore_tiles.py` |
+| WorldStore (file-backed) | IMPLEMENTED | Versioned immutable lineage + integrity + CLI save/load/list/verify; tile manifests; `tests/test_worldstore_tiles.py` |
 | Incremental compilation | PARTIAL | WorldIR incremental update + localized recompile tested; product path still rebuilds from all evidence (CE-02) |
->>>>>>> 4027b5c
 | Registration (GNSS/ICP/point-to-plane) | IMPLEMENTED | GNSS + ICP + point-to-plane + covariance + CLI |
 | Trajectories (model/TUM/VIO) | IMPLEMENTED | Model, TUM, VIO federation, sync, diagnostics |
 | Spatial index acceleration | IMPLEMENTED | Uniform grid + per-cell BVH (100k entities benchmarked) |
@@ -65,8 +61,7 @@ Backend pytest suite (excluding tests/integration and tests/scenarios):
 | **API backend (FastAPI)** | **IMPLEMENTED** | **apps/api/ with 10 modules; 12 REST endpoints; SQLite + async worker** |
 | **Exporters (gltf/blender/usda/cityjson/citygml)** | **IMPLEMENTED** | **13 exporter modules with real-geometry paths + reports** |
 | **Competitive benchmark suite** | **IMPLEMENTED** | **13 benchmark modules** |
-<<<<<<< HEAD
-| CI | **IMPLEMENTED** | **.github/workflows/ci.yml — multi-Python matrix, wheel build, 28+ test files** |
+| CI | PARTIAL | `.github/workflows/ci.yml` (multi-Python matrix, wheel build, fidelity gate). 2026-11-07 audit: E2E green but Core Tests red on `main` @ 45ae43e3 (4 stale `_FakeDetector` doubles in `tests/test_mapping_spine_perception.py`; fixed on `claude/m0-baseline`); clean-venv wheel install not verified |
 | Uncertainty propagation | IMPLEMENTED | Ledger P10-02 DONE; `tests/test_uncertainty_propagation.py` |
 | Uncertainty visualization in Studio | PARTIAL | Inspector "Uncertainty Model" panel (`frontend/src/components/inspector/AdaptiveInspector.tsx`) shows entity confidence (value, % and bar), the engine's `uncertainty` record (confidence/note), a "Low confidence" marker (< 0.5, header chip + panel), and an honest empty state. Data comes from the existing world API (`Entity.to_dict` already emits `confidence` and `uncertainty`; no API change). Spatial sigma/covariance shows only if `custom_properties.uncertainty_sigma_m` exists - no engine writer emits it yet, so that row is empty in practice. Not covered: covariance ellipsoids in the 3D viewport, propagated `Uncertain` quantities. Verified by tsc/lint/build/contract test only; not visually inspected against a live world. |
 
@@ -118,11 +113,6 @@ compiler/geometry/multistorey regression tests 80 passed; broader
 expectations (slab entities are additive, room boundary is an inferred
 BOX, glTF non-cube meshes may be POINTS or TRIANGLES); frontend
 `tsc --noEmit` clean; frontend contract tests pass.
-=======
-| CI | PARTIAL | `.github/workflows/ci.yml` exists (matrix, targeted pytest, ruff/mypy non-blocking); green GitHub run and clean-venv wheel install not verified |
-| Uncertainty propagation | PARTIAL | Schema fields exist; first-order propagation not implemented |
-| **Uncertainty visualization in Studio** | **MISSING** | **No Studio UI for uncertainty** |
->>>>>>> 4027b5c
 
 ## Known environment constraints (this machine)
 

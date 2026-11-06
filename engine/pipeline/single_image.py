@@ -145,7 +145,10 @@ def _estimate_depth(item: EvidenceItem, model: str):
     try:
         from perception.depth.midAS_backend import MiDaSDepthBackend
 
-        maps = MiDaSDepthBackend(model_type=model).estimate_depth([item])
+        from engine.core.device import unloading
+
+        with unloading(MiDaSDepthBackend(model_type=model)) as backend:
+            maps = backend.estimate_depth([item])
     except Exception as exc:
         raise BootstrapUnavailable(f"monocular depth unavailable: {exc}") from exc
     if not maps:

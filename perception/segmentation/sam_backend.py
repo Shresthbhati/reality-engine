@@ -21,6 +21,7 @@ from typing import List, Optional
 from provenance import Uncertainty
 
 from evidence.session import EvidenceItem, EvidenceKind
+from engine.core.device import drop_models
 from perception.device import select_device
 
 from .interface import ISegmentationBackend, SegmentedRegion, SegmentationResult
@@ -127,6 +128,9 @@ class SAMSegmentationBackend(ISegmentationBackend):
             "crop_n_points_downscale_factor": crop_n_points_downscale_factor,
             "min_mask_region_area": min_mask_region_area,
         }
+
+    def unload(self) -> None:
+        drop_models(self, "_mask_generator", "_model")
 
     @staticmethod
     def _cuda_available() -> bool:

@@ -16,7 +16,7 @@ from typing import Any, List, Optional
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
-from engine.core.device import select_device
+from engine.core.device import drop_models, select_device
 from provenance import Uncertainty
 
 from .interface import DepthMap, IDepthBackend
@@ -70,6 +70,9 @@ class DepthAnythingV2Backend(IDepthBackend):
         self._processor = None
         self._model = None
         self._device = None
+
+    def unload(self) -> None:
+        drop_models(self, "_model", "_processor")
 
     def _ensure_model(self) -> None:
         if self._model is not None:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import gc
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Optional
 
@@ -62,6 +63,23 @@ def select_device(min_free_vram_mb: int = DEFAULT_MIN_FREE_VRAM_MB) -> DeviceInf
             f"only {free_mb} MB VRAM free, need {min_free_vram_mb} MB",
         )
     return DeviceInfo("cuda", True, name, free_mb, total_mb, "CUDA available with enough free VRAM")
+
+
+@contextmanager
+def unloading(backend):
+    """Yield ``backend`` and, on success or exception, call its ``unload()`` so the
+    model's VRAM is returned before the next stage loads its own."""
+    try:
+        yield backend
+    finally:
+        backend.unload()
+
+
+def drop_models(obj, *attrs: str) -> None:
+    """Null the named model attributes on ``obj`` and flush the CUDA allocator."""
+    for name in attrs:
+        setattr(obj, name, None)
+    release_vram()
 
 
 def release_vram() -> None:

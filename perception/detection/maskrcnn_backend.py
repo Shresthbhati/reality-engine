@@ -34,6 +34,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
+from engine.core.device import drop_models
 from evidence.session import EvidenceItem
 from provenance import Uncertainty
 
@@ -162,6 +163,9 @@ class MaskRCNNDetector(IDetectorBackend, ISegmentationBackend):
         return out
 
     # ---- IDetectorBackend ----
+    def unload(self) -> None:
+        drop_models(self, "_model")
+
     def detect(self, evidence: List[EvidenceItem]) -> List[DetectionResult]:
         results = []
         for item, pred in self._infer(evidence):

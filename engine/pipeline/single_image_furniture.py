@@ -26,6 +26,13 @@ Detector = Callable[[object, int, int], Sequence]
 _MODEL = None
 
 
+def unload_furniture_model() -> None:
+    global _MODEL
+    if _MODEL is not None:
+        _MODEL.unload()
+        _MODEL = None
+
+
 def maskrcnn_furniture_detector(item, w: int, h: int) -> list:
     """Mask R-CNN detections for ``item``, boxes rescaled to the ``w`` x ``h`` depth grid.
 

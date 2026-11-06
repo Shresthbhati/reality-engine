@@ -173,6 +173,8 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Contract tests (view-model logic + sessions proxy)
+        run: npm run test:contract
       - name: Build
         run: npm run build
 

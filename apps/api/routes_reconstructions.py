@@ -22,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api import jobs as jobrunner
 from apps.api import worldstore_service
 from apps.api.db import get_db
+from apps.api.auth import AuthContext, get_auth_context
+from apps.api.tenancy import assert_visible, team_stamp, world_scope
 from apps.api.models import (
     ActivityEvent,
     Evidence,
@@ -47,7 +49,7 @@ from evidence.image_check import DECLARABLE_CLASSES, inspect_image
 from engine.pipeline.facade import summarize_capture_quality
 
 reconstructions = APIRouter(prefix="/api/reconstructions", tags=["reconstructions"])
-world_status = APIRouter(prefix="/api/worlds", tags=["reconstructions"])
+world_status = APIRouter(prefix="/api/worlds", tags=["reconstructions"], dependencies=[Depends(world_scope)])
 
 MAX_FILES_PER_REQUEST = 300
 #: frames kept from one video (evenly spaced in time; the video itself is
@@ -114,6 +116,7 @@ async def create_reconstruction(
     plane_sweep_stride: int | None = Form(default=None, ge=1, le=8),
     plane_sweep_planes: int | None = Form(default=None, ge=8, le=128),
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Build (or improve) a world from photographs.
 
@@ -121,6 +124,7 @@ async def create_reconstruction(
     that World and its model is rebuilt from ALL of its evidence."""
     from apps.api.validation import require_latitude, require_longitude, require_name
 
+    await assert_visible(db, World, world_id, auth)  # a foreign world is a 404 before any file is read
     if not files:
         raise HTTPException(422, "no files were provided")
     if len(files) > MAX_FILES_PER_REQUEST:
@@ -194,6 +198,8 @@ async def create_reconstruction(
     else:
         world = World(
             id=new_id("wld"),
+            owner_id=auth.user_id,
+            team_id=team_stamp(auth),
             name=require_name(name or f"Reconstruction {now:%Y-%m-%d %H:%M}", "world name"),
             latitude=require_latitude(latitude) if latitude is not None else None,
             longitude=require_longitude(longitude) if longitude is not None else None,
@@ -205,7 +211,7 @@ async def create_reconstruction(
 
     session = Session(
         id=new_id("ses"), name=f"Capture {now:%Y-%m-%d %H:%M:%S}", status="uploaded",
-        world_id=world.id, uploaded_at=utcnow(), captured_at=now,
+        owner_id=auth.user_id, team_id=world.team_id or team_stamp(auth), world_id=world.id, uploaded_at=utcnow(), captured_at=now,
     )
     db.add(session)
     await db.flush()
@@ -213,7 +219,7 @@ async def create_reconstruction(
     gps = None
     ev_out = []
     for fname, mime, data, kind, digest, facts, extra_meta in accepted:
-        up = Upload(id=new_id("upl"), session_id=session.id, status="completed", filename=fname,
+        up = Upload(id=new_id("upl"), team_id=session.team_id, session_id=session.id, status="completed", filename=fname,
                     mime_type=mime, size=len(data), checksum=digest,
                     artifact_uri=f"sha256://{digest}", completed_at=utcnow())
         db.add(up)
@@ -226,7 +232,7 @@ async def create_reconstruction(
         if evidence_class:
             meta["declared_evidence_class"] = evidence_class
         meta.update(extra_meta)
-        ev = Evidence(id=new_id("ev"), name=fname, type=kind, session_id=session.id, upload_id=up.id,
+        ev = Evidence(id=new_id("ev"), team_id=session.team_id, name=fname, type=kind, session_id=session.id, upload_id=up.id,
                       processing_state="processed", mime_type=mime, size=len(data), checksum=digest,
                       artifact_uri=up.artifact_uri, metadata_json=meta, processed_at=utcnow())
         db.add(ev)

@@ -21,6 +21,9 @@ NEW_COLUMNS = {
     "worlds": {"archived_at", "deleted_at", "thumbnail_uri", "scale_state"},
     "world_versions": {"label", "created_by_job_id"},
     "jobs": {"stage_counts"},
+    "uploads": {"team_id"},
+    "evidence": {"team_id"},
+    "sites": {"team_id"},
 }
 
 
@@ -107,5 +110,5 @@ def test_upgrade_is_idempotent_and_init_db_path_still_works(tmp_path, monkeypatc
     command.upgrade(_cfg(db), "head")
     con = sqlite3.connect(db)
     assert con.execute("SELECT name FROM worlds").fetchall() == [("Old house",)]
-    assert con.execute("SELECT version_num FROM alembic_version").fetchall() == [("0002",)]
+    assert con.execute("SELECT version_num FROM alembic_version").fetchall() == [("0003",)]
     con.close()

@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import jobs as jobrunner
 from apps.api.db import get_db
+from apps.api.auth import AuthContext, get_auth_context
+from apps.api.tenancy import session_scope, team_stamp, visible
 from apps.api.models import (
     ActivityEvent,
     Evidence,
@@ -139,7 +141,7 @@ async def status(db: AsyncSession = Depends(get_db)) -> dict:
 # Sessions
 # --------------------------------------------------------------------------
 
-sessions = APIRouter(prefix="/api/sessions", tags=["sessions"])
+sessions = APIRouter(prefix="/api/sessions", tags=["sessions"], dependencies=[Depends(session_scope)])
 
 
 async def _latest_location(db: AsyncSession, entity_type: str, entity_id: str) -> Location | None:
@@ -153,7 +155,9 @@ async def _latest_location(db: AsyncSession, entity_type: str, entity_id: str) -
 
 
 @sessions.post("", response_model=SessionOut, status_code=201)
-async def create_session(body: SessionIn, db: AsyncSession = Depends(get_db)) -> SessionOut:
+async def create_session(
+    body: SessionIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> SessionOut:
     from apps.api.validation import (
         require_finite,
         require_json_size,
@@ -182,6 +186,8 @@ async def create_session(body: SessionIn, db: AsyncSession = Depends(get_db)) ->
         id=new_id("ses"),
         name=name,
         status="created",
+        owner_id=auth.user_id,
+        team_id=team_stamp(auth),
         device_metadata=body.device_metadata,
         coordinate_reference_system=body.coordinate_reference_system,
         captured_at=body.captured_at,
@@ -215,9 +221,11 @@ async def create_session(body: SessionIn, db: AsyncSession = Depends(get_db)) ->
 
 @sessions.get("")
 async def list_sessions(
-    world_id: str | None = None, db: AsyncSession = Depends(get_db)
+    world_id: str | None = None, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
 ) -> dict:
     q = select(Session).order_by(Session.created_at.desc()).limit(200)
+    if (scope := visible(Session, auth)) is not None:
+        q = q.where(scope)
     if world_id:
         q = q.where(Session.world_id == world_id)
     res = await db.execute(q)

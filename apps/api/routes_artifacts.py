@@ -8,10 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
+from apps.api.tenancy import world_scope
 from apps.api.routes_worlds import _load_world_or_409, _version_row, _worldstore_root
 from world_ir.artifact_store import FileArtifactStore
 
-artifacts = APIRouter(prefix="/api/worlds", tags=["worlds"])
+artifacts = APIRouter(prefix="/api/worlds", tags=["worlds"], dependencies=[Depends(world_scope)])
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"

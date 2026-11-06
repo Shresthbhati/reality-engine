@@ -16,12 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import worldstore_service
 from apps.api.db import get_db
+from apps.api.tenancy import world_scope
 from apps.api.routes_worlds import _load_world_or_409, _version_row
 from apps.api.storage import resolve_artifact, store_bytes
 from sdk import reality
 from world_ir.artifact_store import FileArtifactStore
 
-export = APIRouter(prefix="/api/worlds/{world_id}/export", tags=["export"])
+export = APIRouter(prefix="/api/worlds/{world_id}/export", tags=["export"], dependencies=[Depends(world_scope)])
 
 _MEDIA_TYPES = {
     "gltf": "model/gltf+json",

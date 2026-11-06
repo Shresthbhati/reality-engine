@@ -168,6 +168,8 @@ class Upload(Base):
         ForeignKey("sessions.id"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(32), default="pending")
+    #: tenant that owns the upload (inherited from its session); NULL = unowned, as for worlds and sessions.
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     filename: Mapped[str] = mapped_column(String(500))
     mime_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
     size: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -185,6 +187,8 @@ class Evidence(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(300))
     type: Mapped[str] = mapped_column(String(32))  # photo|video|point_cloud|gnss|imu|sensor_log|dataset
+    #: tenant that owns the evidence (inherited from its session); NULL = unowned.
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     session_id: Mapped[str | None] = mapped_column(
         ForeignKey("sessions.id"), nullable=True, index=True
     )
@@ -339,6 +343,8 @@ class Site(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     grid_cell_m: Mapped[float] = mapped_column(Float, default=50.0)
+    #: tenant that owns the site; NULL = unowned.
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

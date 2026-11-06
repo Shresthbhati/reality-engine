@@ -24,12 +24,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
+from apps.api.auth import AuthContext, get_auth_context
+from apps.api.tenancy import evidence_scope, visible
 from apps.api.models import Evidence, EvidenceDecision, Session, World, WorldVersion, utcnow
 from apps.api.storage import resolve_artifact
 from evidence import quality_checks as qc
 from evidence.image_check import inspect_image
 
-quality = APIRouter(prefix="/api/evidence", tags=["evidence-quality"])
+quality = APIRouter(prefix="/api/evidence", tags=["evidence-quality"], dependencies=[Depends(evidence_scope)])
 
 
 _POLICY = {
@@ -96,10 +98,13 @@ def _contribution_for(ev: Evidence, world_id: Optional[str], maps: dict, names: 
     }
 
 
-async def _items(db: AsyncSession, only_id: Optional[str] = None, limit: Optional[int] = 500) -> list[dict]:
-    rows = (await db.execute(
-        select(Evidence).where(Evidence.type == "photo").order_by(Evidence.created_at.asc(), Evidence.id.asc())
-    )).scalars().all()
+async def _items(
+    db: AsyncSession, auth: AuthContext, only_id: Optional[str] = None, limit: Optional[int] = 500
+) -> list[dict]:
+    q = select(Evidence).where(Evidence.type == "photo").order_by(Evidence.created_at.asc(), Evidence.id.asc())
+    if (scope := visible(Evidence, auth)) is not None:
+        q = q.where(scope)
+    rows = (await db.execute(q)).scalars().all()
     if not rows:
         return []
     sessions = {s.id: s for s in (await db.execute(select(Session))).scalars().all()}
@@ -167,12 +172,15 @@ async def _items(db: AsyncSession, only_id: Optional[str] = None, limit: Optiona
 
 
 @quality.get("/quality")
-async def list_quality(db: AsyncSession = Depends(get_db)) -> dict:
-    items = await _items(db)
+async def list_quality(db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
+    items = await _items(db, auth)
     counts = {k: 0 for k in (*qc.DECISIONS, "not_inspected")}
     for i in items:
         counts[i["result"] or "not_inspected"] += 1
-    n_nonphoto = len((await db.execute(select(Evidence.id).where(Evidence.type != "photo"))).all())
+    q = select(Evidence.id).where(Evidence.type != "photo")
+    if (scope := visible(Evidence, auth)) is not None:
+        q = q.where(scope)
+    n_nonphoto = len((await db.execute(q)).all())
     return {
         "items": items,
         "counts": {"total": len(items), **counts},
@@ -182,8 +190,10 @@ async def list_quality(db: AsyncSession = Depends(get_db)) -> dict:
 
 
 @quality.get("/{evidence_id}/quality")
-async def get_quality(evidence_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    items = await _items(db, only_id=evidence_id, limit=None)
+async def get_quality(
+    evidence_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
+) -> dict:
+    items = await _items(db, auth, only_id=evidence_id, limit=None)
     if not items:
         raise HTTPException(404, "Photo evidence not found")
     return {**items[0], "policy": _POLICY}

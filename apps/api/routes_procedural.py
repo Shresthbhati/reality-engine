@@ -19,13 +19,14 @@ from starlette.concurrency import run_in_threadpool
 
 from apps.api import worldstore_service
 from apps.api.db import get_db
+from apps.api.tenancy import world_scope
 from apps.api.models import ActivityEvent, World, new_id
 from procedural.room_grammar import RoomGrammarSpec, WallOpening
 from procedural import building_grammar, district_grammar, layout_solver, spec_store
 from procedural.urban_grammar import CityGrammarSpec, CorridorGrammarSpec
 from world_ir.world_v1 import WorldIR
 
-procedural = APIRouter(prefix="/api/worlds/{world_id}", tags=["procedural"])
+procedural = APIRouter(prefix="/api/worlds/{world_id}", tags=["procedural"], dependencies=[Depends(world_scope)])
 templates_router = APIRouter(prefix="/api/procedural", tags=["procedural"])
 
 

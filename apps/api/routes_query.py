@@ -14,11 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
+from apps.api.tenancy import world_scope
 from apps.api.routes_worlds import _load_world_or_409, _version_row
 from sdk import reality
 from world_ir.schema_v1 import EntityType
 
-query = APIRouter(prefix="/api/worlds/{world_id}/query", tags=["query"])
+query = APIRouter(prefix="/api/worlds/{world_id}/query", tags=["query"], dependencies=[Depends(world_scope)])
 
 
 def _type_predicate(type_filter: str | None):

@@ -17,10 +17,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
+from apps.api.tenancy import world_scope
 from apps.api.models import World, WorldMeasurement, new_id
 from world_ir import measure
 
-measurements = APIRouter(prefix="/api/worlds/{world_id}/measurements", tags=["measurements"])
+measurements = APIRouter(prefix="/api/worlds/{world_id}/measurements", tags=["measurements"], dependencies=[Depends(world_scope)])
 
 MAX_PER_WORLD = 500
 

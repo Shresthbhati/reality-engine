@@ -146,7 +146,7 @@ class MaskRCNNDetector(IDetectorBackend, ISegmentationBackend):
         """Run the model on each decodable image. Returns a list of
         (item, result_dict) for items actually processed -- items that
         fail to decode are skipped, never fabricated."""
-        from PIL import Image
+        from evidence.image_check import open_oriented
         import numpy as np
 
         self._torch.set_grad_enabled(False)
@@ -154,7 +154,7 @@ class MaskRCNNDetector(IDetectorBackend, ISegmentationBackend):
         for item in evidence:
             try:
                 path = _uri_to_path(item.source_uri)
-                img = Image.open(path).convert("RGB")
+                img = open_oriented(path).convert("RGB")
             except Exception:  # noqa: BLE001 -- unreadable item -> skip, record nothing
                 continue
             arr = np.asarray(img, dtype=np.float32) / 255.0
@@ -202,8 +202,7 @@ class MaskRCNNDetector(IDetectorBackend, ISegmentationBackend):
         for item, pred in self._infer(evidence):
             try:
                 path = _uri_to_path(item.source_uri)
-                from PIL import Image
-                width, height = Image.open(path).size
+                width, height = open_oriented(path).size
             except Exception:  # noqa: BLE001
                 continue
             masks_np = pred["masks"].squeeze(1).numpy()  # (N, H_m, W_m)

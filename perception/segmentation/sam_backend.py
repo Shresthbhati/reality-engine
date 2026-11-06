@@ -220,7 +220,7 @@ class SAMSegmentationBackend(ISegmentationBackend):
         _ensure_perception_deps()
         import torch
         import numpy as np
-        from PIL import Image
+        from evidence.image_check import open_oriented
 
         self._load_model()
 
@@ -245,7 +245,7 @@ class SAMSegmentationBackend(ISegmentationBackend):
                     diag.update(status="skipped", reason=f"source file not found: {src_path}")
                     continue
 
-                image = Image.open(src_path).convert("RGB")
+                image = open_oriented(src_path).convert("RGB")
                 image_np = np.array(image)
                 orig_h, orig_w = image_np.shape[:2]
 

@@ -185,7 +185,7 @@ class MiDaSDepthBackend(IDepthBackend):
         _ensure_perception_deps()
         import torch
         import numpy as np
-        from PIL import Image
+        from evidence.image_check import open_oriented
 
         self._load_model()
 
@@ -217,7 +217,7 @@ class MiDaSDepthBackend(IDepthBackend):
                     # Skip evidence items we can't read -- honest failure mode
                     continue
 
-                image = Image.open(src_path).convert("RGB")
+                image = open_oriented(src_path).convert("RGB")
                 orig_w, orig_h = image.size
 
                 # Preprocess

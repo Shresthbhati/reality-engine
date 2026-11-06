@@ -18,6 +18,7 @@ floor_plan, render, infographic, historical_photo, photograph.
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -30,13 +31,59 @@ DECLARABLE_CLASSES = frozenset(
 
 MIN_SIDE_PX = 64
 
+#: Decoded-pixel cap (width*height). Phone cameras reach ~50-200 MP; an
+#: unbounded image otherwise exhausts memory (RGB decode = 3 bytes/px).
+#: Override with REALITY_ENGINE_MAX_IMAGE_PIXELS.
+DEFAULT_MAX_IMAGE_PIXELS = 200_000_000
+_ORIENTATION_TAG = 0x0112
+
+
+class ImageTooLarge(ValueError):
+    """Header-declared pixel count exceeds the cap; raised before decoding."""
+
+
+def max_image_pixels() -> int:
+    try:
+        v = int(os.environ.get("REALITY_ENGINE_MAX_IMAGE_PIXELS", ""))
+        return v if v > 0 else DEFAULT_MAX_IMAGE_PIXELS
+    except ValueError:
+        return DEFAULT_MAX_IMAGE_PIXELS
+
+
+def open_oriented(path, max_pixels: Optional[int] = None):
+    """Open an image for geometry/depth/detection: EXIF orientation applied
+    (so pixels match the upright scene the intrinsics describe) and the
+    pixel cap enforced from the header, before any decode.
+
+    Returns a fully loaded PIL image. Raises ``ImageTooLarge`` over the cap
+    and the usual PIL errors for undecodable files.
+    """
+    from PIL import Image, ImageOps
+
+    cap = max_pixels or max_image_pixels()
+    try:
+        with Image.open(path) as img:
+            w, h = img.size
+            if w * h > cap:
+                raise ImageTooLarge(f"image is {w}x{h} ({w * h:,} px); decoded-pixel cap is {cap:,}")
+            img.load()
+            return ImageOps.exif_transpose(img)
+    except Image.DecompressionBombError as exc:  # Pillow's own 2x-limit backstop (~179 MP)
+        raise ImageTooLarge(f"decompression bomb refused ({exc})") from exc
+
 
 @dataclass(frozen=True)
 class ImageFacts:
     ok: bool
     reason: Optional[str] = None
+    #: ORIENTED size (EXIF orientation applied) -- what depth/detection see.
     width: int = 0
     height: int = 0
+    #: size as stored in the file, and the EXIF orientation tag (1-8) if any.
+    stored_width: int = 0
+    stored_height: int = 0
+    exif_orientation: Optional[int] = None
+    max_pixels: int = DEFAULT_MAX_IMAGE_PIXELS
     evidence_class: str = "unknown"
     class_basis: str = ""
     #: variance of the Laplacian on a downscaled grayscale copy; a relative
@@ -56,6 +103,10 @@ class ImageFacts:
             "reason": self.reason,
             "width": self.width,
             "height": self.height,
+            "stored_width": self.stored_width,
+            "stored_height": self.stored_height,
+            "exif_orientation": self.exif_orientation,
+            "max_pixels": self.max_pixels,
             "evidence_class": self.evidence_class,
             "class_basis": self.class_basis,
             "sharpness": self.sharpness,
@@ -100,14 +151,26 @@ def inspect_image(path: Path | str, declared_class: Optional[str] = None) -> Ima
     """Decode + classify one image file. Never raises: a bad file is a
     result (``ok=False`` with the measured reason)."""
     import numpy as np
-    from PIL import Image, UnidentifiedImageError
+    from PIL import Image, ImageOps, UnidentifiedImageError
 
+    cap = max_image_pixels()
     try:
         with Image.open(path) as img:
+            stored_w, stored_h = img.size
+            if stored_w * stored_h > cap:
+                raise ImageTooLarge(
+                    f"image is {stored_w}x{stored_h} ({stored_w * stored_h:,} px); "
+                    f"decoded-pixel cap is {cap:,} (REALITY_ENGINE_MAX_IMAGE_PIXELS)"
+                )
             img.load()
-            width, height = img.size
-            exif_obj = img.getexif()
-            rgb = img.convert("RGB")
+            exif_obj = img.getexif()  # read before transpose strips the tag
+            orientation = exif_obj.get(_ORIENTATION_TAG) if exif_obj else None
+            rgb = ImageOps.exif_transpose(img).convert("RGB")
+            width, height = rgb.size
+    except ImageTooLarge as exc:
+        return ImageFacts(ok=False, reason=str(exc), max_pixels=cap)
+    except Image.DecompressionBombError as exc:
+        return ImageFacts(ok=False, reason=f"decompression bomb refused ({exc})", max_pixels=cap)
     except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as exc:
         return ImageFacts(ok=False, reason=f"not a decodable image ({type(exc).__name__})")
     except Exception as exc:  # decompression bombs, truncated files
@@ -115,7 +178,8 @@ def inspect_image(path: Path | str, declared_class: Optional[str] = None) -> Ima
 
     if min(width, height) < MIN_SIDE_PX:
         return ImageFacts(
-            ok=False, width=width, height=height,
+            ok=False, width=width, height=height, stored_width=stored_w,
+            stored_height=stored_h, exif_orientation=orientation, max_pixels=cap,
             reason=f"image too small ({width}x{height}); need at least {MIN_SIDE_PX}px per side",
         )
 
@@ -154,7 +218,7 @@ def inspect_image(path: Path | str, declared_class: Optional[str] = None) -> Ima
     if declared_class:
         if declared_class not in DECLARABLE_CLASSES:
             return ImageFacts(
-                ok=False, width=width, height=height,
+                ok=False, width=width, height=height, max_pixels=cap,
                 reason=f"unknown declared evidence class {declared_class!r}",
             )
         evidence_class, basis = declared_class, "declared by uploader"
@@ -168,7 +232,8 @@ def inspect_image(path: Path | str, declared_class: Optional[str] = None) -> Ima
         basis = "decodes with natural colour statistics; no camera EXIF (not verified)"
 
     return ImageFacts(
-        ok=True, width=width, height=height, evidence_class=evidence_class,
+        ok=True, width=width, height=height, stored_width=stored_w, stored_height=stored_h,
+        exif_orientation=orientation, max_pixels=cap, evidence_class=evidence_class,
         class_basis=basis, sharpness=sharpness, exif=exif, gps=gps,
     )
 

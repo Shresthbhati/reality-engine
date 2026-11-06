@@ -49,9 +49,9 @@ Metric scale additionally needs a measurement (known distance, RGB-D/LiDAR, cali
 | Step | Target | Status | Evidence / gap |
 |---|---|---|---|
 | 1 | Receive, record name/size/MIME/time/owner/session/asset id; keep the original | **WORKING** | `POST /api/reconstructions` → evidence rows (acceptance #1: 32 files → 202 in 4.1 s) |
-| 2 | Signature check, size/pixel limits, malformed data, bombs | **PARTIAL** | Magic-byte typing, never extension/MIME (`apps/api/routes_misc.py` `_classify`), `UPLOAD_MAX_BYTES`, per-session file cap, 413 on overflow. **No explicit pixel cap**: decode errors (incl. bombs) become `ok=False` in `evidence/image_check.py:113`, relying on Pillow's default limit |
+| 2 | Signature check, size/pixel limits, malformed data, bombs | **PARTIAL** | Magic-byte typing, never extension/MIME (`apps/api/routes_misc.py` `_classify`), `UPLOAD_MAX_BYTES`, per-session file cap, 413 on overflow. Explicit decoded-pixel cap (`REALITY_ENGINE_MAX_IMAGE_PIXELS`, default 200 MP) checked from the header before decode in `evidence/image_check.py`; refusals become `ok=False` with the measured size and cap (tested in `tests/test_image_orientation_cap.py`). Pillow's own ~179 MP bomb limit remains a backstop |
 | 3 | Decode; record w/h, channels, bit depth, alpha, colour profile | **PARTIAL** | `inspect_image` records width/height only. HEIC/WebP support depends on the Pillow build — not verified |
-| 4 | Apply EXIF orientation, keep original EXIF | **MISSING** in the geometry path | `ImageOps.exif_transpose` is used only in `apps/api/place_summary.py`; `inspect_image` does not, so reported size is pre-rotation. COLMAP reads the raw pixels |
+| 4 | Apply EXIF orientation, keep original EXIF | **PARTIAL** | `inspect_image` and `open_oriented` (`evidence/image_check.py`) apply `ImageOps.exif_transpose`; `ImageFacts.width/height` are the oriented size, with `stored_width/height` and `exif_orientation` recorded. Depth, detection, segmentation and colour-sampling decoders use `open_oriented`; `cv2.imread` already honours EXIF. **Still open:** COLMAP reads the raw file pixels, so SfM sees unrotated images |
 | 5 | Extract camera/lens/focal/exposure/ISO/time/GPS; never invent | **PARTIAL** | `image_check.py` keeps make, model, `focal_length_35mm`, GPS (only if present). The folder importer (`evidence/importers.py::_decode_photo_exif`) reads time and more. Lens/aperture/ISO are not carried into the API evidence row |
 | 6 | Derivatives (thumb, analysis sizes, full-res) with pixel mapping | **MISSING** | Only an internal 256 px copy for statistics; no stored derivative set or coordinate map |
 | 7 | Hash + similarity descriptors; flag but do not auto-drop duplicates | **PARTIAL** | Exact duplicate via sha256 is flagged (`quality_checks.evaluate_checks` "Duplicate" → `rejected`). Perceptual hashes exist (`evidence/dedup.py`: `compute_phash/dhash`) but have **no production caller** — **UNINTEGRATED**. Near-duplicate detection is therefore not active on upload |
@@ -191,7 +191,7 @@ measurements** (roadmap P2-12).
 ## Highest-value gaps to close first (in dependency order)
 
 1. Install `timm`, `transformers`, `segment-anything`, `jsonschema`; re-run the acceptance journey (unblocks depth, detection, segmentation).
-2. Apply EXIF orientation in `inspect_image` and the geometry input (step 4) and add an explicit pixel cap (step 2).
+2. ~~Apply EXIF orientation in `inspect_image` and add an explicit pixel cap~~ done for intake, depth, detection, segmentation; remaining: COLMAP reads raw pixels (step 4).
 3. Wire perceptual-hash near-duplicate flagging (step 7) and time/GPS session grouping (step 31), or delete them.
 4. Surface a per-image prepared-asset record and per-task quality scores (steps 13, 30).
 5. Evidence gate before rooms/corridors are inferred from exteriors (Stage 9).

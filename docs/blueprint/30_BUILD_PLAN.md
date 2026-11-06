@@ -1,6 +1,6 @@
 # 30 — Build plan
 
-The work queue. Take the **first task that is not DONE whose dependencies are
+The work queue (other plans are mapped onto it in [31_UNIFIED_PLAN.md](31_UNIFIED_PLAN.md)). Take the **first task that is not DONE whose dependencies are
 DONE**. Each task is small enough for one agent session and says exactly how
 to prove it works.
 
@@ -37,16 +37,16 @@ one command; the test baseline is recorded.
 
 | ID | Task | Depends | Files | Done when | Verify | Read | Status |
 |----|------|---------|-------|-----------|--------|------|--------|
-| 0.1 | Merge `integration/all-worktrees` into `main` (fast-forward) | — | git only | `main` contains `world_ir/observations.py`, `perception/instances/association.py`, `reconstruction/matching/`, `perception/device.py` | full pytest on the branch **before** merging; paste the pass/fail/skip counts | [20](20_REUSE_MAP.md) §0 | IN PROGRESS: integration merged into the work branch; baseline has 8 failed + 13 errors inherited from the merge (see 0.7); `main` fast-forward left to the user |
+| 0.1 | Merge `integration/all-worktrees` into `main` (fast-forward) | — | git only | `main` contains `world_ir/observations.py`, `perception/instances/association.py`, `reconstruction/matching/`, `perception/device.py` | full pytest on the branch **before** merging; paste the pass/fail/skip counts | [20](20_REUSE_MAP.md) §0 | LANDED (files on main @ b6a59514), not re-verified — see [31](31_UNIFIED_PLAN.md) |
 | 0.2 | Environment doctor script | 0.1 | `scripts/doctor.py` (new, or extend an existing check script) | prints Python version, venv active, `torch.cuda.is_available()`, GPU name/VRAM, `colmap` on PATH + version, node/npm versions, DB path writable | run it; paste output | [15](15_ML_MODEL_STRATEGY.md) GPU | DONE (uncommitted, verified 2026-11-01) |
 | 0.3 | CUDA torch in the project venv (only if 0.2 shows CPU-only) | 0.2 | `pyproject.toml` notes, `QUICKSTART.md` | doctor shows CUDA true on the RTX machine | doctor output | [15](15_ML_MODEL_STRATEGY.md) | DONE (not needed: doctor shows torch 2.14+cu130, CUDA true, RTX 4050 6 GiB, 2026-11-01) |
 | 0.4 | One-command launcher: API (8100) + worker + frontend (3100) | 0.1 | `start.bat`, `launch_ui.bat` | `start.bat` brings all three up; `GET /health` is OK; the UI loads | curl `/health`; browser screenshot | [10](10_SYSTEM_ARCHITECTURE.md) topology | DONE (verified: /api/health returns ok, worlds list works) |
 | 0.5 | Record the baseline | 0.4 | `docs/implementation/IMPLEMENTATION_STATUS.md` | pytest counts, frontend build result and e2e result recorded with date + commit | the commands themselves | [18](18_VALIDATION_AND_BENCHMARKS.md) | DONE (4350 passed / 38 failed / 10 skipped / 5 xfailed / 17 errors in 27m40s; frontend build success; launcher verified) |
 | 0.6 | Import-boundary test | 0.1 | `tests/test_import_boundaries.py` | the test encodes the layer table; it passes today, or each current violation is listed as a follow-up task here | pytest output | [10](10_SYSTEM_ARCHITECTURE.md) layers | DONE (uncommitted, verified 2026-11-01) |
 | 0.7 | Fix inherited baseline failures | 0.1 | see list | `test_colmap_coverage` (2), `test_compile_command` (3), `test_confidence_defaults`, `test_packaging_smoke`, `test_frontend_sessions_proxy_contract` (13 errors, likely missing `frontend/node_modules`) pass; `test_detail_scale` already passes | pytest on those files | — | DONE (uncommitted, verified 2026-11-01; `test_confidence_defaults` passes only with another session's uncommitted edits to switchboard/compose/connectors) |
-| 0.6a | Move shared types (camera, transform, mesh, depth, evidence) to a neutral module | 0.6 | `tests/test_import_boundaries.py` KNOWN_VIOLATIONS | allow-list shrinks; 47 sibling-coupling pairs removed | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | TODO |
+| 0.6a | Move shared types (camera, transform, mesh, depth, evidence) to a neutral module | 0.6 | `tests/test_import_boundaries.py` KNOWN_VIOLATIONS | allow-list shrinks; 47 sibling-coupling pairs removed | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | LANDED (17eb3f40), not re-verified — see [31](31_UNIFIED_PLAN.md) |
 | 0.6b | `engine/pipeline` facade so `apps/api` stops importing reconstruction/perception | 0.6 | `apps/api/*` | api-layer pairs removed from allow-list | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | DONE (facade created; 6 KNOWN_VIOLATIONS removed from routes_worlds/routes_reconstructions) |
-| 0.6c | Fix upward imports (core, world_ir, exporters) | 0.6 | listed in test | remaining 7 pairs removed | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | TODO |
+| 0.6c | Fix upward imports (core, world_ir, exporters) | 0.6 | listed in test | remaining 7 pairs removed | boundary test | [10](10_SYSTEM_ARCHITECTURE.md) | LANDED (17eb3f40), not re-verified — see [31](31_UNIFIED_PLAN.md) |
 
 ## Phase 1 — Product spine: worlds you can manage and export
 
@@ -59,9 +59,9 @@ passes; an exported GLB opens in Blender.
 | 1.2 | World lifecycle API | 1.1 | `apps/api/routes_worlds.py`, `models.py`, migration, `tests/test_world_lifecycle.py` | PATCH, duplicate, archive, restore, delete (soft), purge and the `?status=` filter per [13](13_BACKEND_AND_PERSISTENCE.md); delete cancels running jobs; one activity event per operation | pytest; curl each endpoint | [13](13_BACKEND_AND_PERSISTENCE.md) lifecycle | DONE (uncommitted, verified 2026-11-01) |
 | 1.3 | Trash purge + blob GC | 1.2 | `apps/api/storage.py`, jobs sweep | permanent delete removes rows + versions + unreferenced blobs only; shared blobs survive | test with two worlds sharing a blob | [13](13_BACKEND_AND_PERSISTENCE.md) | DONE (uncommitted, verified 2026-11-01) |
 | 1.4 | World card menu + Trash/Archived views + delete confirmation | 1.2 | `frontend/src/app/(desktop)/worlds/*`, components | Open/Rename/Duplicate/Export/Archive/Delete work against the real API; the confirmation lists what will be deleted | Playwright `worlds-lifecycle.spec`; screenshots at 1280/1920 | [14](14_FRONTEND_UX.md) | TODO |
-| 1.5 | Export fix | 0.4 | `frontend/src/lib/api/export.ts`, `ExportPanel.tsx`, `apps/api/routes_export.py` | one request-path convention; errors shown to the user (not console-only); GLB passes `gltf-validator` and opens in Blender with correct transforms | validator output + Blender screenshot | [13](13_BACKEND_AND_PERSISTENCE.md) | TODO |
-| 1.6 | Honest job progress | 0.4 | `apps/api/jobs.py`, `routes_jobs.py`, progress component | jobs expose `stage` + `stage_counts`; the UI shows the labels from [12](12_PIPELINE.md); failed jobs show the reason; no % unless measured | run a reconstruction; screenshot each state | [12](12_PIPELINE.md) labels | TODO |
-| 1.7 | Settings honesty | 0.4 | `frontend/src/app/(desktop)/settings` | Appearance real; Processing + Data real (or a task opened for them); Account/Workspace/Integrations say "Not available in this version" | screenshot | [13](13_BACKEND_AND_PERSISTENCE.md) settings | TODO |
+| 1.5 | Export fix | 0.4 | `frontend/src/lib/api/export.ts`, `ExportPanel.tsx`, `apps/api/routes_export.py` | one request-path convention; errors shown to the user (not console-only); GLB passes `gltf-validator` and opens in Blender with correct transforms | validator output + Blender screenshot | [13](13_BACKEND_AND_PERSISTENCE.md) | LANDED (13b9a533), not re-verified — see [31](31_UNIFIED_PLAN.md) |
+| 1.6 | Honest job progress | 0.4 | `apps/api/jobs.py`, `routes_jobs.py`, progress component | jobs expose `stage` + `stage_counts`; the UI shows the labels from [12](12_PIPELINE.md); failed jobs show the reason; no % unless measured | run a reconstruction; screenshot each state | [12](12_PIPELINE.md) labels | LANDED (c495f9e3), not re-verified — see [31](31_UNIFIED_PLAN.md) |
+| 1.7 | Settings honesty | 0.4 | `frontend/src/app/(desktop)/settings` | Appearance real; Processing + Data real (or a task opened for them); Account/Workspace/Integrations say "Not available in this version" | screenshot | [13](13_BACKEND_AND_PERSISTENCE.md) settings | LANDED (57dc3b34), not re-verified — see [31](31_UNIFIED_PLAN.md) |
 
 ## Phase 2 — Baseline benchmark (measure before improving)
 
@@ -119,9 +119,9 @@ updates only the affected region.
 | ID | Task | Depends | Files | Done when | Verify | Read | Status |
 |----|------|---------|-------|-----------|--------|------|--------|
 | 6.1 | World-space CaptureRequests | 5.3 | `engine/pipeline/guidance.py`, `capture_requests` table | requests carry target region, suggested poses, instruction text and expected gain | API response on the living room | [11](11_WORLDIR_CONTRACT.md) | DONE (feat/task-6-1-world-space-capture-requests, verified 2026-11-04) |
-| 6.2 | Register new photos into an existing world | 3.6 | `registration/`, `apps/api/jobs.py` | new images register against the existing model; non-matching photos are refused with a reason (A11, A19) | scenario tests | [12](12_PIPELINE.md) incremental | TODO |
-| 6.3 | Incremental update on ingest | 6.2 | `world_ir/incremental.py`, pipeline | only the affected closure recomputes; new version + diff; untouched entities keep IDs + geometry | A12 test + diff output | P6 | TODO |
-| 6.4 | Capture UI | 6.1, 6.3 | Capture screen, request cards, version diff view | the user sees a request, adds a photo and sees what changed | Playwright + screenshots | [14](14_FRONTEND_UX.md) | TODO |
+| 6.2 | Register new photos into an existing world | 3.6 | `registration/`, `apps/api/jobs.py` | new images register against the existing model; non-matching photos are refused with a reason (A11, A19) | scenario tests | [12](12_PIPELINE.md) incremental | LANDED (24c7f13d), not re-verified — see [31](31_UNIFIED_PLAN.md) |
+| 6.3 | Incremental update on ingest | 6.2 | `world_ir/incremental.py`, pipeline | only the affected closure recomputes; new version + diff; untouched entities keep IDs + geometry | A12 test + diff output | P6 | LANDED (fa805817), not re-verified — see [31](31_UNIFIED_PLAN.md) |
+| 6.4 | Capture UI | 6.1, 6.3 | Capture screen, request cards, version diff view | the user sees a request, adds a photo and sees what changed | Playwright + screenshots | [14](14_FRONTEND_UX.md) | LANDED (359d5d76), not re-verified — see [31](31_UNIFIED_PLAN.md) |
 
 ## Phase 7 — Evidence, confidence and the three views
 
@@ -168,7 +168,38 @@ updates only the affected region.
 | 11.1 | Home dashboard (recent worlds, jobs, failures, storage) | 1.4 | real data only | DONE (feat/task-11-1-home-dashboard, verified 2026-11-04) |
 | 11.2 | World package export/import (versioned zip) | 1.2 | export → import yields an identical world | DONE (6fec4885) |
 | 11.3 | Resumable uploads | 1.2 | an interrupted upload resumes | DONE (65891d3e) |
-| 11.4 | Navigation consolidation per [14](14_FRONTEND_UX.md) | 1.4 | Capture and Reports are single merged screens | TODO |
+| 11.4 | Navigation consolidation per [14](14_FRONTEND_UX.md) | 1.4 | Capture and Reports are single merged screens | LANDED (17eb3f40), not re-verified — see [31](31_UNIFIED_PLAN.md) |
+
+## Phase 8b — Wire perception into the product path (added 2026-11-06)
+
+Found 2026-11-06: 8.2, 9.1 and `furniture_from_detections` are not called by `engine/pipeline`,
+`engine/compiler` or `apps/api`, and the single-image path (all AI-generated rooms) runs no detection.
+Spec: [SCENE_COMPLETE_RECONSTRUCTION](../future/perception/SCENE_COMPLETE_RECONSTRUCTION.md).
+**Gate:** an uploaded room photo produces furniture entities in the World.
+
+| ID | Task | Depends | Done when | Status |
+|----|------|---------|-----------|--------|
+| 8.6 | Scene-complete eval set | 8.1 | `benchmarks/scene_complete/` with ≥ 20 AI + ≥ 20 real room photos labelled (class, box, support surface) + a scorer | TODO |
+| 8.7 | Single-image path: DA-V2 depth, planes on wall/floor/ceiling masks, detector → `furniture_from_detections` | 8.6 | spec M1 acceptance (COCO-class furniture recall ≥ 70 %, floor contact < 5 % room height) | TODO |
+| 8.8 | Open-vocab detector + crop pass called from the API reconstruction path (multi-view and single-image) | 8.7, O1/O2 decision | spec M2 acceptance; fixtures on wall planes | TODO |
+
+## Phase U — UI/UX redesign track (added 2026-11-06)
+
+From the pasted UI research + redesign guidelines; the spec is [14_FRONTEND_UX.md](14_FRONTEND_UX.md), to be updated by U.1.
+Session and World stay the only primary concepts; the UI shows backend state only.
+
+| ID | Task | Depends | Done when | Status |
+|----|------|---------|-----------|--------|
+| U.1 | Frontend audit: routes → APIs, installed libs, duplicate components, existing tokens | — | audit table committed; 14 updated with keep/replace per responsibility | TODO |
+| U.2 | Library compatibility + licence matrix; one choice per responsibility | U.1 | matrix committed; nothing installed without a row | TODO |
+| U.3 | Shared design tokens (colour, type, spacing, radius) light + dark | U.1 | every component uses tokens; contrast checks pass | TODO |
+| U.4 | Home: New Session · Open World + recent + needs-attention | U.3, 11.1 | Playwright + screenshots at 1280 / 1920 / 375 | TODO |
+| U.5 | Session: one guided flow with explicit processing states | U.3, 1.6 | states match backend `stage`; no fake % | TODO |
+| U.6 | World workspace: viewport-first, hierarchy left, contextual inspector right | U.3 | inspector varies by selection type; screenshots | TODO |
+| U.7 | Session adoption review: new / updated / matched / uncertain / conflicting | U.6, 6.3 | adopting a second session matches rather than duplicates (e2e) | TODO |
+| U.8 | Mobile priorities + WCAG 2.2 AA pass | U.4–U.7 | keyboard + touch walkthrough recorded; axe clean | TODO |
+
+1.4 (world card menu / Trash) and 11.4 (navigation consolidation) belong to this track.
 
 ## Phase 12 — v1 acceptance
 
@@ -177,6 +208,20 @@ updates only the affected region.
 | 12.1 | Living-room demo end to end | Phases 1–8 | all 12 steps in [00_VISION.md](00_VISION.md) pass in the browser; screenshots + benchmark JSON committed | TODO |
 | 12.2 | Measured-room accuracy report | 2.3, 4.4, 8.3 | dimension error table per room/object committed | TODO |
 | 12.3 | Mark capabilities VERIFIED | 12.1 | `IMPLEMENTATION_STATUS.md` updated with evidence links | TODO |
+
+## Phase 13 — After v1 (capabilities from the 2026-10-28 master plan not covered above)
+
+| ID | Task | Status |
+|----|------|--------|
+| 13.1 | Branch audit + CODEOWNERS | TODO |
+| 13.2 | Give pHash dedup and time/GPS session grouping a production caller | TODO |
+| 13.3 | HEIC, 360° panoramas, point-cloud (PLY/LAS) and mesh (OBJ/glTF) ingestion | TODO |
+| 13.4 | Learned room layout (PolyLayout-class), line detection, non-Manhattan rooms | TODO |
+| 13.5 | Floor plan SVG/PDF export | TODO |
+| 13.6 | SAM 2 behind the segmentation interface (benchmark vs SAM 1) | TODO |
+| 13.7 | Outdoor perception: vegetation, roads, terrain, facades, roofs | TODO |
+| 13.8 | Colour accuracy (ΔE under controlled capture) | TODO |
+| 13.9 | MASt3R (NC flag) and DINOv2 re-ID — adopt only if benchmarks beat current | TODO |
 
 ---
 

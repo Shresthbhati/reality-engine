@@ -24,6 +24,10 @@ MIN_BOX_SHARE = 0.15   # furniture-labelled pixels must cover this much of the b
 HINT_KEEP = 0.6        # the detector's own class is kept when the segmenter finds at least this fraction as many of its pixels
 MIN_MASK_PX = 60
 TRIM_PCT = (2.0, 98.0)
+CELL_M = 0.1            # plan occupancy grid for splitting non-rectangular footprints
+SINGLE_FILL = 0.72      # a footprint filling this much of its bounding rectangle is one rectangle
+MAX_PARTS = 3
+MIN_PART_SHARE = 0.12   # a further rectangle must carry this share of the footprint
 
 
 def class_and_mask(label_map: np.ndarray, id2label: Dict[int, str], box: Sequence[float], hint: Optional[str] = None
@@ -54,8 +58,68 @@ def class_and_mask(label_map: np.ndarray, id2label: Dict[int, str], box: Sequenc
     return best, mask
 
 
+def _max_rect(g: np.ndarray):
+    """Largest all-ones axis-aligned rectangle of a 0/1 grid: ``(area, y0, y1, x0, x1)`` (half-open)."""
+    rows, cols = g.shape
+    run = np.zeros(cols, int)
+    best = (0, 0, 0, 0, 0)
+    for y in range(rows):
+        run = np.where(g[y] > 0, run + 1, 0)
+        stack: list = []
+        for x in range(cols + 1):
+            hgt = int(run[x]) if x < cols else 0
+            start = x
+            while stack and stack[-1][1] >= hgt:
+                s0, h0 = stack.pop()
+                if h0 * (x - s0) > best[0]:
+                    best = (h0 * (x - s0), y - h0 + 1, y + 1, s0, x)
+                start = s0
+            stack.append((start, hgt))
+    return best
+
+
+def split_rectangles(plan: np.ndarray, height: np.ndarray) -> list:
+    """Cover a plan footprint (N x 2 points, metres) with up to MAX_PARTS rectangles: an L-shaped sectional becomes two pieces.
+
+    Each part: ``{centre (a, b), length, width, yaw_rad, height}``. A footprint that fills most of its bounding rectangle is one part.
+    """
+    import cv2
+
+    (ca, cb), _, angle = cv2.minAreaRect(plan.astype(np.float32))
+    ang = math.radians(angle)
+    d1, d2 = np.array([math.cos(ang), math.sin(ang)]), np.array([-math.sin(ang), math.cos(ang)])
+    c = np.array([ca, cb])
+    uv = np.stack([(plan - c) @ d1, (plan - c) @ d2], axis=1)
+    lo = uv.min(0)
+    ij = np.floor((uv - lo) / CELL_M).astype(int)
+    rows, cols = int(ij[:, 1].max()) + 1, int(ij[:, 0].max()) + 1
+    cnt = np.zeros((rows, cols), np.int32)
+    np.add.at(cnt, (ij[:, 1], ij[:, 0]), 1)
+    occ = cv2.morphologyEx((cnt >= 2).astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=2)
+    total = int(occ.sum())
+
+    def part(y0: int, y1: int, x0: int, x1: int) -> dict:
+        centre = c + d1 * (lo[0] + (x0 + x1) / 2 * CELL_M) + d2 * (lo[1] + (y0 + y1) / 2 * CELL_M)
+        lu, lv = (x1 - x0) * CELL_M, (y1 - y0) * CELL_M
+        inside = (ij[:, 0] >= x0) & (ij[:, 0] < x1) & (ij[:, 1] >= y0) & (ij[:, 1] < y1)
+        h = np.percentile(height[inside] if inside.sum() >= 5 else height, 95.0)
+        return {"centre": (float(centre[0]), float(centre[1])), "length": float(max(lu, lv)), "width": float(min(lu, lv)),
+                "yaw_rad": ang if lu >= lv else ang + math.pi / 2, "height": float(h)}
+
+    if total == 0 or total >= SINGLE_FILL * rows * cols:
+        return [part(0, rows, 0, cols)]
+    work, parts = occ.copy(), []
+    for _ in range(MAX_PARTS):
+        area, y0, y1, x0, x1 = _max_rect(work)
+        if area < max(6, MIN_PART_SHARE * total):
+            break
+        parts.append(part(y0, y1, x0, x1))
+        work[y0:y1, x0:x1] = 0
+    return parts or [part(0, rows, 0, cols)]
+
+
 def footprint_from_mask(mask: np.ndarray, depth_m: np.ndarray, f: float, cx: float, cy: float, *, up: Sequence[float],
-                        camera_height_m: float) -> Optional[dict]:
+                        camera_height_m: float, depth_hint_m: float = 0.9) -> Optional[dict]:
     """Oriented plan rectangle, height and centre of the masked pixels; camera frame x right, y DOWN, z forward, ``up`` unit vector.
 
     Returns ``{centre_xz, length_m, width_m, height_m, yaw_rad, n_points}`` (plan axes: a = right, b = forward) or None.
@@ -79,11 +143,36 @@ def footprint_from_mask(mask: np.ndarray, depth_m: np.ndarray, f: float, cx: flo
     plan, height = plan[keep], height[keep]
     if len(plan) < MIN_MASK_PX:
         return None
-    lo, hi = np.percentile(plan, TRIM_PCT, axis=0)
-    inner = np.all((plan >= lo) & (plan <= hi), axis=1)
-    (ca, cb), (rw, rh), angle = cv2.minAreaRect(plan[inner].astype(np.float32))
+    # The footprint is the mask's FLOOR-CONTACT line (its lowest pixel per column, on the floor plane), extended back by the class's
+    # typical depth: the visible top/back surfaces of a sofa form a filled ramp that hides an L, the contact line does not.
+    order = np.lexsort((vs, us))
+    last = np.r_[np.nonzero(np.diff(us[order]))[0], len(order) - 1]
+    cu, cv_ = us[order][last], vs[order][last]
+    ray = np.stack([(cu + 0.5 - cx) / f, (cv_ + 1.0 - cy) / f, np.ones(len(cu))], axis=1)
+    den = ray @ upv
+    t = np.where(den < -0.02, -camera_height_m / np.minimum(den, -1e-9), np.inf)
+    ok = t < 30.0
+    contact = np.stack([(t[:, None] * ray)[ok] @ e1, (t[:, None] * ray)[ok] @ e2], axis=1)
+    if len(contact) < 8:
+        return None
+    away = contact.mean(axis=0)
+    away = away / max(float(np.linalg.norm(away)), 1e-9)  # one direction (the mean view direction): a radial fan would widen the piece
+    occupied = np.vstack([contact + away * dd for dd in np.arange(0.0, depth_hint_m + 1e-9, 0.05)])
+    lo, hi = np.percentile(occupied, TRIM_PCT, axis=0)
+    inner = np.all((occupied >= lo) & (occupied <= hi), axis=1)
+    (ca, cb), (rw, rh), angle = cv2.minAreaRect(occupied[inner].astype(np.float32))
     long_w = rw >= rh
     axis_deg = angle if long_w else angle + 90.0
     floor_pt = ca * e1 + cb * e2 - camera_height_m * upv  # the footprint centre ON the floor, camera frame (y down)
-    return {"floor_point_cam": tuple(float(c) for c in floor_pt), "centre_xz": (float(ca), float(cb)), "length_m": float(max(rw, rh)), "width_m": float(min(rw, rh)),
+    parts = split_rectangles(occupied[inner], np.full(int(inner.sum()), float(np.percentile(height, 95.0))))
+    for q in parts:
+        # the part's own height: the mask points that fall inside its rectangle (else the whole piece's)
+        ang = q["yaw_rad"]
+        dl, dw = np.array([math.cos(ang), math.sin(ang)]), np.array([-math.sin(ang), math.cos(ang)])
+        rel = plan - np.array(q["centre"])
+        within = (np.abs(rel @ dl) <= q["length"] / 2 + 0.15) & (np.abs(rel @ dw) <= q["width"] / 2 + 0.15)
+        if within.sum() >= 20:
+            q["height"] = float(np.percentile(height[within], 95.0))
+        q["floor_point_cam"] = tuple(float(c) for c in q["centre"][0] * e1 + q["centre"][1] * e2 - camera_height_m * upv)
+    return {"parts": parts, "floor_point_cam": tuple(float(c) for c in floor_pt), "centre_xz": (float(ca), float(cb)), "length_m": float(max(rw, rh)), "width_m": float(min(rw, rh)),
             "height_m": float(np.percentile(height, 95.0)), "yaw_rad": math.radians(axis_deg), "n_points": int(len(plan))}

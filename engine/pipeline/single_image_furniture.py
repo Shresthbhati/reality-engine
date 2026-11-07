@@ -90,8 +90,10 @@ def _mask_measure(analysis, box, hint, floor_op, f, cx, cy):
         return None
     n = np.asarray(floor_op.normal, float)
     n = n if n[1] >= 0 else -n
+    from perception.instances.furniture_from_detections import SIZE_PRIORS
+
     fp = footprint_from_mask(got[1], np.asarray(analysis.depth_m, float), f, cx, cy, up=(n[0], -n[1], n[2]),
-                             camera_height_m=abs(float(floor_op.d)))
+                             camera_height_m=abs(float(floor_op.d)), depth_hint_m=SIZE_PRIORS.get(got[0], (0, 0.9, 0))[1])
     return None if fp is None else (got[0], fp, got[1])
 
 
@@ -172,55 +174,70 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
                 for key, v in cp["dimensions"].items()}
         L, W, H = (cp["dimensions"][name]["value"] / s for name in ("length_m", "width_m", "height_m"))
         category, yaw, yaw_basis, flags, mask = cp["category"], cp["yaw_rad"], cp["yaw_basis"], list(e["flags"]), None
+        variants = [dict(pos=pos, L=L, W=W, H=H, yaw=yaw, dims=dims, suffix="")]
         meas = _mask_measure(analysis, e.get("box_xyxy"), category, floor_op, f, cx, cy)
         if meas is not None:
             category, fp, mask = meas
-            fx, fy, fz = fp["floor_point_cam"]
-            pos = {"x": fx, "y": -fy, "z": fz}   # camera frame (y down) -> world (y up); already in the depth map's units
-            L, W, H = fp["length_m"], fp["width_m"], min(2.6, max(0.2, fp["height_m"]))
-            yaw, yaw_basis = fp["yaw_rad"], "measured_from_mask"
+            yaw_basis = "measured_from_mask"
             flags.append("footprint_from_mask")
             from perception.instances.furniture_from_detections import SIZE_PRIORS
 
-            if category in SIZE_PRIORS and max(L, W) > 1.8 * SIZE_PRIORS[category][0]:
-                flags.append("larger_than_class_prior: bounding rectangle of the visible mask, possibly L-shaped or merged pieces")
             kw = dict(state="ESTIMATED", basis=MASK_BASIS, scale_state="metric" if metric else "unknown")
-            dims = {"length_m": make_dimension(L, **kw), "width_m": make_dimension(W, **kw), "height_m": make_dimension(H, **kw)}
-        r = 0.5 * math.hypot(L, W)
-        box = ((pos["x"] - r, pos["y"], pos["z"] - r), (pos["x"] + r, pos["y"] + H, pos["z"] + r))
-        # mirror of the world validator's duplicate rule (same type, bounds IoU > 0.5), with margin: two detectors can
-        # place one object twice, and the validator would then fail the whole job
-        if any(_box_overlap(box, kb) > DUPLICATE_OVERLAP for kb in kept_boxes):
-            facts["rejected"].append({"label": cp["category"], "view_id": item.id,
-                                      "reason": "duplicate: overlaps an already placed item of higher confidence"})
-            continue
-        kept_boxes.append(box)
-        k += 1
-        conf = min(confidence_ceiling, float(e["confidence"]))
-        eid = f"{pre}-furniture-{k:02d}"
-        geom = Geometry(
-            id=f"geom-{eid}", type=GeometryType.BOX, vertex_count=8,
-            bounds_min=Vector3(pos["x"] - r, pos["y"], pos["z"] - r),
-            bounds_max=Vector3(pos["x"] + r, pos["y"] + H, pos["z"] + r),
-            provenance=Provenance.ESTIMATED, confidence=conf, observations=[obs],
-        )
-        world.geometries[geom.id] = geom
-        world.entities[eid] = Entity(
-            id=eid, type=EntityType.FURNITURE, name=e["name"], transform={"position": pos},
-            geometry_ids=[geom.id], semantic_labels=["furniture_candidate"], provenance=Provenance.INFERRED, confidence=conf,
-            uncertainty=Uncertainty(
-                confidence=conf,
-                note=("single-view furniture: COCO detection, floor-contact placement, class-prior size via an "
-                      f"ASSUMED {ASSUMED_CAMERA_HEIGHT_M:g} m camera height; relative scale, not measured"),
-            ),
-            observations=[obs],
-            custom_properties={
-                "category": category, "entity_class": f"furniture.{category}", "dimensions": dims, "yaw_rad": yaw, "yaw_basis": yaw_basis,
-                "flags": flags,
-                **_measured_colour(rgb, e.get("box_xyxy"), mask),
-                "bootstrap": {"role": "furniture", "source": "single_image", "evidence_id": item.id,
-                              "scale": "relative", "meters_per_unit_assumed": round(s, 4)},
-            },
-        )
+            parts = fp["parts"]
+            variants = []
+            for pi_, q in enumerate(parts):
+                fx, fy, fz = q["floor_point_cam"]
+                qh = min(2.6, max(0.2, q["height"]))
+                variants.append(dict(
+                    pos={"x": fx, "y": -fy, "z": fz},  # camera frame (y down) -> world (y up); the depth map's units
+                    L=q["length"], W=q["width"], H=qh, yaw=q["yaw_rad"], suffix=chr(ord("a") + pi_) if len(parts) > 1 else "",
+                    dims={"length_m": make_dimension(q["length"], **kw), "width_m": make_dimension(q["width"], **kw),
+                          "height_m": make_dimension(qh, **kw)}))
+            if len(parts) > 1:
+                flags.append(f"l_shaped_split_into_{len(parts)}_parts")
+            elif category in SIZE_PRIORS and max(variants[0]["L"], variants[0]["W"]) > 1.8 * SIZE_PRIORS[category][0]:
+                flags.append("larger_than_class_prior: bounding rectangle of the visible mask, possibly merged pieces")
+        for v in variants:
+            pos, L, W, H, yaw, dims = v["pos"], v["L"], v["W"], v["H"], v["yaw"], v["dims"]
+            r = 0.5 * math.hypot(L, W)
+            box = ((pos["x"] - r, pos["y"], pos["z"] - r), (pos["x"] + r, pos["y"] + H, pos["z"] + r))
+            # mirror of the world validator's duplicate rule (same type, bounds IoU > 0.5), with margin: two detectors can
+            # place one object twice, and the validator would then fail the whole job (parts of one piece do not overlap)
+            if any(_box_overlap(box, kb) > DUPLICATE_OVERLAP for kb in kept_boxes):
+                facts["rejected"].append({"label": cp["category"], "view_id": item.id,
+                                          "reason": "duplicate: overlaps an already placed item of higher confidence"})
+                continue
+            kept_boxes.append(box)
+            k += 1
+            conf = min(confidence_ceiling, float(e["confidence"]))
+            eid = f"{pre}-furniture-{k:02d}"
+            geom = Geometry(
+                id=f"geom-{eid}", type=GeometryType.BOX, vertex_count=8,
+                bounds_min=Vector3(pos["x"] - r, pos["y"], pos["z"] - r),
+                bounds_max=Vector3(pos["x"] + r, pos["y"] + H, pos["z"] + r),
+                provenance=Provenance.ESTIMATED, confidence=conf, observations=[obs],
+            )
+            world.geometries[geom.id] = geom
+            world.entities[eid] = Entity(
+                id=eid, type=EntityType.FURNITURE, name=e["name"] + (f" ({v['suffix']})" if v["suffix"] else ""),
+                transform={"position": pos},
+                geometry_ids=[geom.id], semantic_labels=["furniture_candidate"], provenance=Provenance.INFERRED, confidence=conf,
+                uncertainty=Uncertainty(
+                    confidence=conf,
+                    note=("single-view furniture: " + ("segmentation-mask footprint over metric depth; visible surfaces only"
+                                                       if meas is not None else
+                                                       "COCO detection, floor-contact placement, class-prior size via an "
+                                                       f"ASSUMED {ASSUMED_CAMERA_HEIGHT_M:g} m camera height; relative scale, not measured")),
+                ),
+                observations=[obs],
+                custom_properties={
+                    "category": category, "entity_class": f"furniture.{category}", "dimensions": dims, "yaw_rad": yaw,
+                    "yaw_basis": yaw_basis, "flags": flags,
+                    **_measured_colour(rgb, e.get("box_xyxy"), mask),
+                    "bootstrap": {"role": "furniture", "source": "single_image", "evidence_id": item.id,
+                                  "scale": "relative", "meters_per_unit_assumed": round(s, 4),
+                                  **({"part": v["suffix"]} if v["suffix"] else {})},
+                },
+            )
     facts["placed"] = k
     return facts

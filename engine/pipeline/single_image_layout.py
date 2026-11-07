@@ -212,9 +212,20 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
         return facts
     area = 0.5 * abs(sum(poly[k][0] * poly[(k + 1) % len(poly)][1] - poly[(k + 1) % len(poly)][0] * poly[k][1] for k in range(len(poly))))
     room_id = f"{pre}-room-01"
+    # a space needs bounds to be exported as IfcSpace: the footprint's corners at the floor and at the ceiling height
+    up_h = np.asarray(up)
+    floor_pts = [px * e1 + py * e2 - cam_h * up_h for px, py in poly]
+    corners = floor_pts + [q + (height or 2.4) * up_h for q in floor_pts]
+    from world_ir import Geometry, GeometryType, Vector3
+
+    lo = [min(float(c[i]) for c in corners) for i in range(3)]
+    hi = [max(float(c[i]) for c in corners) for i in range(3)]
+    geom = Geometry(id=f"geom-{room_id}", type=GeometryType.BOX, vertex_count=8, bounds_min=Vector3(*lo), bounds_max=Vector3(*hi),
+                    provenance=Prov.ESTIMATED, confidence=cap)
+    world.geometries[geom.id] = geom
     world.entities[room_id] = Entity(
         id=room_id, type=EntityType.ROOM, name="Room (visible part)",
-        provenance=Prov.INFERRED, confidence=cap,
+        geometry_ids=[geom.id], provenance=Prov.INFERRED, confidence=cap,
         uncertainty=Uncertainty(confidence=cap, note="one photograph: the walls that were seen plus the camera position; sides and rear are not claimed"),
         custom_properties={
             "footprint_polygon_m": [[round(px, 4), round(py, 4)] for px, py in poly],

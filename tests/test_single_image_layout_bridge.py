@@ -111,3 +111,27 @@ def test_the_layout_world_passes_the_real_world_validator_with_no_errors(bootstr
     room = _of(bootstrap, "room")[0]
     ids = set(room.custom_properties["boundary_element_ids"])
     assert {e.id for e in _of(bootstrap, "floor")} <= ids and {e.id for e in _of(bootstrap, "wall")} >= (ids & {e.id for e in _of(bootstrap, "wall")})
+
+
+def test_ifc_export_has_a_space_for_the_room_and_furnishing_elements_for_furniture(tmp_path, monkeypatch):
+    import ifcopenshell
+
+    from exporters.ifc_bridge import export_world_to_ifc
+    from perception.instances.furniture_from_detections import FurnitureDetection
+
+    monkeypatch.setattr(room, "HFOV", 60.0)
+    depth, masks = room._render(pitch_deg=5.0)
+    p = tmp_path / "room.png"
+    Image.fromarray(np.random.default_rng(1).integers(90, 120, (room.H, room.W, 3), dtype=np.uint8)).save(p)
+    item = EvidenceItem(id="ev-room", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+    sofa = FurnitureDetection(label="couch", score=0.9, box_xyxy=(100, 150, 220, 215), view_id="ev-room")
+    res = bootstrap_single_image(item, inspect_image(p), layout_analysis=SimpleNamespace(depth_m=depth, masks=masks),
+                                 furniture_detections=[sofa])
+    n_furniture = len(_of(res, "furniture"))
+    assert n_furniture >= 1, res.facts["furniture"]
+    out = tmp_path / "r.ifc"
+    export_world_to_ifc(res.world, out)
+    m = ifcopenshell.open(str(out))
+    assert len(m.by_type("IfcSpace")) == 1
+    assert len(m.by_type("IfcFurnishingElement")) == n_furniture
+    assert len(m.by_type("IfcWindow")) == 1 and len(m.by_type("IfcSlab")) == 2

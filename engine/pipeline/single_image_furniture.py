@@ -154,7 +154,7 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
             ),
             observations=[obs],
             custom_properties={
-                "category": cp["category"], "dimensions": dims, "yaw_rad": cp["yaw_rad"], "yaw_basis": cp["yaw_basis"],
+                "category": cp["category"], "entity_class": f"furniture.{cp['category']}", "dimensions": dims, "yaw_rad": cp["yaw_rad"], "yaw_basis": cp["yaw_basis"],
                 "flags": e["flags"],
                 "bootstrap": {"role": "furniture", "source": "single_image", "evidence_id": item.id,
                               "scale": "relative", "meters_per_unit_assumed": round(s, 4)},

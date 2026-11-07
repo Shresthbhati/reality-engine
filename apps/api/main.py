@@ -38,6 +38,7 @@ from apps.api.routes_system import system
 from apps.api.routes_usage import usage
 from apps.api.routes_accounts import router as accounts_router
 from apps.api.routes_history import history as history_router
+from apps.api.routes_design import catalog as catalog_router, design as design_router
 from apps.api.routes_worlds import worlds
 from apps.api.routes_technologies import technologies_router
 from reconstruction.proc import recover_orphaned_jobs
@@ -67,7 +68,7 @@ app.add_middleware(
 )
 
 # `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
-for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, usage, accounts_router, history_router, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router):
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, usage, accounts_router, history_router, catalog_router, design_router, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router):
     app.include_router(router)
 
 

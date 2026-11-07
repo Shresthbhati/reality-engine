@@ -48,6 +48,14 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/completion/proposals/{pid}/diff`**: Proposal Diff
 - **`POST /api/worlds/{world_id}/completion/proposals/{pid}/reject`**: Reject Proposal
 
+### design
+
+- **`GET /api/furniture-catalog`**: Get Catalog
+- **`POST /api/worlds/{world_id}/furniture/{entity_id}/delete`**: Delete Furniture
+- **`POST /api/worlds/{world_id}/furniture/{entity_id}/move`**: Move Furniture
+- **`POST /api/worlds/{world_id}/furniture/{entity_id}/replace`**: Replace Furniture
+- **`POST /api/worlds/{world_id}/furniture/{entity_id}/rotate`**: Rotate Furniture
+
 ### evidence
 
 - **`GET /api/evidence`**: List Evidence

@@ -7059,6 +7059,288 @@
         }
       }
     },
+    "/api/furniture-catalog": {
+      "get": {
+        "tags": [
+          "design"
+        ],
+        "summary": "Get Catalog",
+        "operationId": "get_catalog_api_furniture_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Catalog Api Furniture Catalog Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/furniture/{entity_id}/move": {
+      "post": {
+        "tags": [
+          "design"
+        ],
+        "summary": "Move Furniture",
+        "operationId": "move_furniture_api_worlds__world_id__furniture__entity_id__move_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Move Furniture Api Worlds  World Id  Furniture  Entity Id  Move Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/furniture/{entity_id}/rotate": {
+      "post": {
+        "tags": [
+          "design"
+        ],
+        "summary": "Rotate Furniture",
+        "operationId": "rotate_furniture_api_worlds__world_id__furniture__entity_id__rotate_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Rotate Furniture Api Worlds  World Id  Furniture  Entity Id  Rotate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/furniture/{entity_id}/replace": {
+      "post": {
+        "tags": [
+          "design"
+        ],
+        "summary": "Replace Furniture",
+        "operationId": "replace_furniture_api_worlds__world_id__furniture__entity_id__replace_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Replace Furniture Api Worlds  World Id  Furniture  Entity Id  Replace Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/furniture/{entity_id}/delete": {
+      "post": {
+        "tags": [
+          "design"
+        ],
+        "summary": "Delete Furniture",
+        "operationId": "delete_furniture_api_worlds__world_id__furniture__entity_id__delete_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DeleteIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Furniture Api Worlds  World Id  Furniture  Entity Id  Delete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/intent": {
       "put": {
         "tags": [
@@ -9645,6 +9927,23 @@
         ],
         "title": "DecisionIn"
       },
+      "DeleteIn": {
+        "properties": {
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "title": "DeleteIn"
+      },
       "DistrictDetailIn": {
         "properties": {
           "max_full": {
@@ -10561,6 +10860,46 @@
         ],
         "title": "MergeCorrectionIn"
       },
+      "MoveIn": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "z": {
+            "type": "number",
+            "title": "Z"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "z"
+        ],
+        "title": "MoveIn"
+      },
       "OpeningIn": {
         "properties": {
           "wall": {
@@ -10899,6 +11238,30 @@
         ],
         "title": "ReclassifyCorrectionIn"
       },
+      "ReplaceIn": {
+        "properties": {
+          "catalog_id": {
+            "type": "string",
+            "title": "Catalog Id"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "catalog_id"
+        ],
+        "title": "ReplaceIn"
+      },
       "ReviewIn": {
         "properties": {
           "reviewer": {
@@ -11079,6 +11442,30 @@
         "additionalProperties": false,
         "type": "object",
         "title": "RoomPatch"
+      },
+      "RotateIn": {
+        "properties": {
+          "yaw_rad": {
+            "type": "number",
+            "title": "Yaw Rad"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "yaw_rad"
+        ],
+        "title": "RotateIn"
       },
       "ScaleIn": {
         "properties": {

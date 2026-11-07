@@ -1080,6 +1080,7 @@ _COMMIT_MUTABLE_FIELDS = (
     "merge",
     "connect_room",
     "accept_revisit",
+    "design_edit",   # T-4b.1: {op: move|rotate|delete|replace, ...} on one furniture entity (world_ir.design_edits)
     # F6: a typed real dimension. Applied to the world (entity + replayable registry + VERIFIED state), never to an
     # arbitrary entity attribute -- handled explicitly below, not by setattr.
     "user_correction",
@@ -1210,6 +1211,10 @@ def _validate_commit_changes(changes: dict) -> dict:
             if not isinstance(value, dict) or not all(isinstance(value.get(k), str) and value[k] for k in ("old_room", "new_room")):
                 raise HTTPException(422, "field 'accept_revisit' must be an object with 'old_room' and 'new_room'")
             validated[key] = value
+        elif key == "design_edit":
+            if not isinstance(value, dict) or value.get("op") not in ("move", "rotate", "delete", "replace"):
+                raise HTTPException(422, "field 'design_edit' must be an object with op = move, rotate, delete or replace")
+            validated[key] = value
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):
                 raise HTTPException(422, f"field '{key}' must be an object")
@@ -1334,6 +1339,13 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
             try:
                 connect_rooms(worldir, body.entity_id, value["other_door_id"])
             except RoomConnectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "design_edit":
+            from world_ir.design_edits import DesignEditError, apply as apply_design_edit
+            try:
+                apply_design_edit(worldir, body.entity_id, value)
+            except DesignEditError as exc:
                 raise HTTPException(422, str(exc)) from exc
             continue
         elif key == "split":

@@ -74,6 +74,7 @@ jobs:
             tests/test_world_store.py \
             tests/test_golden_path_api_to_glb.py \
             tests/test_edit_preservation_reprocess.py \
+            tests/test_client_share_link.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

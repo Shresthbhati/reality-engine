@@ -116,6 +116,21 @@ class WorldMeasurement(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class WorldShareLink(Base):
+    """Read-only client share link for a world (T-4b.4). Token-scoped, revocable, no account needed."""
+
+    __tablename__ = "world_share_links"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    token: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Session(Base):
     """A capture Session. First-class: may exist without a World."""
 

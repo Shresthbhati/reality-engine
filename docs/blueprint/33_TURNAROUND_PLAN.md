@@ -203,12 +203,12 @@ that opens on a phone with a simple walk-through view.
 | ID | Task | Tier | Effort | Done when |
 |----|------|------|--------|-----------|
 | T-6.7 | DONE | Shared edit-command API + persistent per-world undo/redo (replace the in-memory 50-entry singleton) | T3 sliced | high | reload → undo still works; undo in world A never touches B (verified by tests/test_furniture_commands_and_undo.py) |
-| T-4b.1 | Move / rotate / delete furniture; replace with an item from a small built-in catalog (glTF, licensed CC0) | T2 | high | edits stored as commands with provenance `generated` |
+| T-4b.1 | DONE | Move / rotate / delete furniture; replace with an item from a small built-in catalog (glTF, licensed CC0) | T2 | high | edits stored as commands with provenance `generated` (PR #268, verified by tests/test_furniture_commands_and_undo.py) |
 | T-4b.2 | DONE | Change surface finish (wall paint colour, floor material) as a derived design layer — the as-built survey is never overwritten | T2 | medium | as-built export unchanged after edits (test: 	est_as_built_export_unchanged_after_surface_finish_edits passed) |
 | T-4b.3 | DONE | Named design options = saved world versions with plain-language labels; compare as-built vs option | T2 | medium | two options exportable side by side (	est_named_design_options_lifecycle_and_side_by_side_export passed) |
 | T-4b.4 | DONE | Read-only client share link (token-scoped, revocable, no account needed) | T2 | medium | security test: link cannot edit or see other worlds (`tests/test_client_share_link.py` passed) |
 | T-4b.2 & T-4b.3 | DONE | Derived surface finish layers (as-built survey never overwritten) & named design options with plain-language labels and side-by-side export (	ests/test_design_options_finish_layer.py) |
-| T-4b.5 | Simple walk mode (eye-height first-person, collide with walls, touch + keyboard) | T5 | high | screenshots 375/1280; works on a phone |
+| T-4b.5 | DONE | Simple walk mode (eye-height first-person, collide with walls, touch + keyboard) | T5 | high | screenshots 375/1280; works on a phone (verified by frontend/tests/contract/walk-mode.test.mts & frontend/e2e/world.spec.ts) |
 | T-4b.6 | DONE | Still renders (PNG) from saved camera views for client decks | T1 | medium | render endpoint returns image for a saved view (`tests/test_camera_views_and_renders.py` passed) |
 
 ### M5 — Capture that a normal person can do (≈ 2–3 weeks, parallel-safe with M4)

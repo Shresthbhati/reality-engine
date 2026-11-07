@@ -20,6 +20,17 @@ import { STRUCTURE_COLORS, choosePointDisplay, decimatePoints, type PointDisplay
 import { TransformGizmoController } from "../studio/transform-gizmo.ts";
 import { extractRoomBoundariesFromWorld } from "../studio/room-boundary-snap.ts";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "../studio/transform-types.ts";
+import {
+  DEFAULT_BODY_RADIUS,
+  DEFAULT_EYE_HEIGHT,
+  DEFAULT_WALK_SPEED,
+  clampPitch,
+  classifyTouchRegion,
+  computeTouchJoystick,
+  computeWalkDelta,
+  resolveWallCollision,
+  type Obstacle,
+} from "./walk-model";
 
 export interface ViewportLayers {
   points: boolean;
@@ -147,7 +158,7 @@ interface OutdoorBatch {
   activePart: number[];
 }
 
-export type PointerTool = "select" | "pan" | "orbit";
+export type PointerTool = "select" | "pan" | "orbit" | "walk";
 export interface CameraInfo {
   azimuthDeg: number;
   elevationDeg: number;
@@ -204,6 +215,22 @@ export class WorldSceneController {
   /** entities whose every shell part is currently hidden (cutaway / explicit hide): their picking proxy is skipped */
   private shellHiddenEntities = new Set<string>();
   private selectionEnabled = true;
+  private pointerTool: PointerTool = "select";
+  private walkYaw = 0;
+  private walkPitch = 0;
+  private isPointerDraggingWalk = false;
+  private lastWalkPointer = { x: 0, y: 0 };
+  private walkKeysDown = { forward: false, backward: false, left: false, right: false };
+  private walkTouchMove: { forward: number; strafe: number } | null = null;
+  private walkTouchState = {
+    moveTouchId: null as number | null,
+    lookTouchId: null as number | null,
+    startMoveX: 0,
+    startMoveY: 0,
+    lastLookX: 0,
+    lastLookY: 0,
+  };
+  private lastWalkFrameTime = 0;
   private dimGroup: THREE.Group | null = null;
   private showDimensions = false;
 
@@ -1444,6 +1471,8 @@ export class WorldSceneController {
   }
 
   public setPointerTool(tool: PointerTool) {
+    const prevTool = this.pointerTool;
+    this.pointerTool = tool;
     this.selectionEnabled = tool === "select";
     if (tool !== "select" && this.transformGizmo) {
       this.transformGizmo.detach();
@@ -1451,7 +1480,119 @@ export class WorldSceneController {
       const mesh = this.entityMeshes.get(this.selectedEntityId);
       if (mesh) this.transformGizmo.attach(this.selectedEntityId, mesh);
     }
-    this.controls.mouseButtons.LEFT = tool === "pan" ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+
+    if (tool === "walk") {
+      this.controls.enabled = false;
+      this.initWalkMode();
+    } else {
+      if (prevTool === "walk") {
+        this.controls.enabled = true;
+        const dir = new THREE.Vector3();
+        this.camera.getWorldDirection(dir);
+        this.controls.target.copy(this.camera.position).addScaledVector(dir, 3.0);
+        this.controls.update();
+      }
+      this.controls.mouseButtons.LEFT = tool === "pan" ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    }
+  }
+
+  public getPointerTool(): PointerTool {
+    return this.pointerTool;
+  }
+
+  private getFloorY(): number {
+    for (const p of this.shellParts) {
+      if (p.kind === "floor" && p.positions.length >= 3) {
+        const pt = this.toScene([p.positions[0], p.positions[1], p.positions[2]]);
+        return pt[1];
+      }
+    }
+    if (this.outdoorBox) {
+      return this.outdoorBox.min.y;
+    }
+    if (this.entityMeshes.size > 0) {
+      const box = new THREE.Box3();
+      for (const mesh of this.entityMeshes.values()) {
+        box.expandByObject(mesh);
+      }
+      return isFinite(box.min.y) ? box.min.y : 0;
+    }
+    return 0;
+  }
+
+  public initWalkMode() {
+    const dir = new THREE.Vector3();
+    this.camera.getWorldDirection(dir);
+    this.walkYaw = Math.atan2(-dir.x, -dir.z);
+    this.walkPitch = clampPitch(Math.asin(Math.max(-1, Math.min(1, dir.y))));
+
+    const floorY = this.getFloorY();
+    this.camera.position.y = floorY + DEFAULT_EYE_HEIGHT;
+    this.updateWalkCameraLook();
+  }
+
+  private updateWalkCameraLook() {
+    const dirX = -Math.sin(this.walkYaw) * Math.cos(this.walkPitch);
+    const dirY = Math.sin(this.walkPitch);
+    const dirZ = -Math.cos(this.walkYaw) * Math.cos(this.walkPitch);
+    const target = new THREE.Vector3(
+      this.camera.position.x + dirX,
+      this.camera.position.y + dirY,
+      this.camera.position.z + dirZ
+    );
+    this.camera.lookAt(target);
+  }
+
+  public getObstacles(): Obstacle[] {
+    const obstacles: Obstacle[] = [];
+    if (this.world) {
+      const rooms = extractRoomBoundariesFromWorld(this.world);
+      for (const room of rooms) {
+        const poly = room.polygon2D;
+        if (poly && poly.length >= 2) {
+          for (let i = 0; i < poly.length; i++) {
+            const p1 = poly[i];
+            const p2 = poly[(i + 1) % poly.length];
+            obstacles.push({
+              p1: [p1[0], p1[1]],
+              p2: [p2[0], p2[1]],
+            });
+          }
+        }
+      }
+    }
+    for (const p of this.shellParts) {
+      if (p.kind === "wall" && p.positions.length >= 6) {
+        for (let i = 0; i < p.positions.length; i += 6) {
+          const a = this.toScene([p.positions[i], p.positions[i + 1], p.positions[i + 2]]);
+          const b = this.toScene([p.positions[i + 3], p.positions[i + 4], p.positions[i + 5]]);
+          obstacles.push({
+            p1: [a[0], a[2]],
+            p2: [b[0], b[2]],
+          });
+        }
+      }
+    }
+    return obstacles;
+  }
+
+  public applyWalkStep(forward: number, strafe: number, deltaSec: number = 0.016): { x: number; z: number; collided: boolean } {
+    if (Math.hypot(forward, strafe) < 0.0001) {
+      return { x: this.camera.position.x, z: this.camera.position.z, collided: false };
+    }
+    const [dx, dz] = computeWalkDelta(forward, strafe, this.walkYaw, DEFAULT_WALK_SPEED, deltaSec);
+    const currX = this.camera.position.x;
+    const currZ = this.camera.position.z;
+    const desiredX = currX + dx;
+    const desiredZ = currZ + dz;
+    const obstacles = this.getObstacles();
+    const resolved = resolveWallCollision(currX, currZ, desiredX, desiredZ, obstacles, DEFAULT_BODY_RADIUS);
+    this.camera.position.x = resolved.x;
+    this.camera.position.z = resolved.z;
+    const floorY = this.getFloorY();
+    this.camera.position.y = floorY + DEFAULT_EYE_HEIGHT;
+    this.updateWalkCameraLook();
+    return resolved;
   }
 
   /** data-frame point -> scene (Y-up) point */
@@ -2595,9 +2736,120 @@ export class WorldSceneController {
       if (this.isContextLost) return;
       // Any pointer interaction cancels running animation
       this.cameraAnimation = null;
+      if (this.pointerTool === "walk" && ev.button === 0) {
+        this.isPointerDraggingWalk = true;
+        this.lastWalkPointer = { x: ev.clientX, y: ev.clientY };
+      }
       if (ev.button !== 0) return;
       pointerDownPos = { x: ev.clientX, y: ev.clientY };
     }, { signal });
+
+    dom.addEventListener("pointermove", (ev) => {
+      if (this.isContextLost) return;
+      if (this.pointerTool === "walk" && this.isPointerDraggingWalk) {
+        const dx = ev.clientX - this.lastWalkPointer.x;
+        const dy = ev.clientY - this.lastWalkPointer.y;
+        this.lastWalkPointer = { x: ev.clientX, y: ev.clientY };
+        const sensitivity = 0.003;
+        this.walkYaw -= dx * sensitivity;
+        this.walkPitch = clampPitch(this.walkPitch - dy * sensitivity);
+        this.updateWalkCameraLook();
+      }
+    }, { signal });
+
+    window.addEventListener("pointerup", () => {
+      this.isPointerDraggingWalk = false;
+    }, { signal });
+    window.addEventListener("pointercancel", () => {
+      this.isPointerDraggingWalk = false;
+    }, { signal });
+
+    window.addEventListener("keydown", (ev: KeyboardEvent) => {
+      if (this.pointerTool !== "walk") return;
+      const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+
+      if (ev.code === "KeyW" || ev.code === "ArrowUp") {
+        this.walkKeysDown.forward = true;
+      } else if (ev.code === "KeyS" || ev.code === "ArrowDown") {
+        this.walkKeysDown.backward = true;
+      } else if (ev.code === "KeyA") {
+        this.walkKeysDown.left = true;
+      } else if (ev.code === "KeyD") {
+        this.walkKeysDown.right = true;
+      } else if (ev.code === "ArrowLeft") {
+        this.walkYaw += 0.05;
+        this.updateWalkCameraLook();
+      } else if (ev.code === "ArrowRight") {
+        this.walkYaw -= 0.05;
+        this.updateWalkCameraLook();
+      }
+    }, { signal });
+
+    window.addEventListener("keyup", (ev: KeyboardEvent) => {
+      if (ev.code === "KeyW" || ev.code === "ArrowUp") {
+        this.walkKeysDown.forward = false;
+      } else if (ev.code === "KeyS" || ev.code === "ArrowDown") {
+        this.walkKeysDown.backward = false;
+      } else if (ev.code === "KeyA") {
+        this.walkKeysDown.left = false;
+      } else if (ev.code === "KeyD") {
+        this.walkKeysDown.right = false;
+      }
+    }, { signal });
+
+    dom.addEventListener("touchstart", (ev: TouchEvent) => {
+      if (this.pointerTool !== "walk") return;
+      const rect = dom.getBoundingClientRect();
+      for (let i = 0; i < ev.changedTouches.length; i++) {
+        const touch = ev.changedTouches[i];
+        const region = classifyTouchRegion(touch.clientX - rect.left, rect.width);
+        if (region === "move" && this.walkTouchState.moveTouchId === null) {
+          this.walkTouchState.moveTouchId = touch.identifier;
+          this.walkTouchState.startMoveX = touch.clientX;
+          this.walkTouchState.startMoveY = touch.clientY;
+        } else if (region === "look" && this.walkTouchState.lookTouchId === null) {
+          this.walkTouchState.lookTouchId = touch.identifier;
+          this.walkTouchState.lastLookX = touch.clientX;
+          this.walkTouchState.lastLookY = touch.clientY;
+        }
+      }
+    }, { signal, passive: true });
+
+    dom.addEventListener("touchmove", (ev: TouchEvent) => {
+      if (this.pointerTool !== "walk") return;
+      for (let i = 0; i < ev.changedTouches.length; i++) {
+        const touch = ev.changedTouches[i];
+        if (touch.identifier === this.walkTouchState.moveTouchId) {
+          const dx = touch.clientX - this.walkTouchState.startMoveX;
+          const dy = touch.clientY - this.walkTouchState.startMoveY;
+          this.walkTouchMove = computeTouchJoystick(dx, dy);
+        } else if (touch.identifier === this.walkTouchState.lookTouchId) {
+          const dx = touch.clientX - this.walkTouchState.lastLookX;
+          const dy = touch.clientY - this.walkTouchState.lastLookY;
+          this.walkTouchState.lastLookX = touch.clientX;
+          this.walkTouchState.lastLookY = touch.clientY;
+          const sensitivity = 0.005;
+          this.walkYaw -= dx * sensitivity;
+          this.walkPitch = clampPitch(this.walkPitch - dy * sensitivity);
+          this.updateWalkCameraLook();
+        }
+      }
+    }, { signal, passive: true });
+
+    const endTouch = (ev: TouchEvent) => {
+      for (let i = 0; i < ev.changedTouches.length; i++) {
+        const touch = ev.changedTouches[i];
+        if (touch.identifier === this.walkTouchState.moveTouchId) {
+          this.walkTouchState.moveTouchId = null;
+          this.walkTouchMove = null;
+        } else if (touch.identifier === this.walkTouchState.lookTouchId) {
+          this.walkTouchState.lookTouchId = null;
+        }
+      }
+    };
+    dom.addEventListener("touchend", endTouch, { signal, passive: true });
+    dom.addEventListener("touchcancel", endTouch, { signal, passive: true });
 
     // Handle clicks only on pointerup if pointer did not drag
     dom.addEventListener("pointerup", (ev) => {
@@ -2725,7 +2977,25 @@ export class WorldSceneController {
         }
       }
 
-      this.controls.update();
+      if (this.pointerTool === "walk") {
+        const now = performance.now();
+        const deltaSec = this.lastWalkFrameTime ? Math.min(0.05, (now - this.lastWalkFrameTime) / 1000) : 0.016;
+        this.lastWalkFrameTime = now;
+
+        let fwd = (this.walkKeysDown.forward ? 1 : 0) - (this.walkKeysDown.backward ? 1 : 0);
+        let strafe = (this.walkKeysDown.right ? 1 : 0) - (this.walkKeysDown.left ? 1 : 0);
+        if (this.walkTouchMove) {
+          fwd += this.walkTouchMove.forward;
+          strafe += this.walkTouchMove.strafe;
+        }
+
+        if (Math.hypot(fwd, strafe) > 0.0001) {
+          this.applyWalkStep(fwd, strafe, deltaSec);
+        }
+      } else {
+        this.lastWalkFrameTime = 0;
+        this.controls.update();
+      }
       if (this.outdoor.parts.length > 0) this.fitDepthRange();
 
       // Emit camera azimuth & elevation for Orientation Compass

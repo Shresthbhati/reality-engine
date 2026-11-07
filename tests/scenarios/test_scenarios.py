@@ -14,15 +14,26 @@ import math
 import pytest
 
 from engine.math import Quat, Vec3
-from perception.instances.association import associate, identity_metrics, overlap_relation, surface_relation
+from perception.instances.association import (
+    associate,
+    identity_metrics,
+    overlap_relation,
+    surface_relation,
+)
 from reconstruction.evaluation import evaluate_absolute_poses
 from reconstruction.scene_identity import PairEvidence, group_images
 from registration.cross_session import align_session
-from world_ir.observations import AssociationState as S
-
 from tests.test_association import _camera, _obs
-from tests.test_pose_evaluation import GT, _apply_gauge, _axis_angle_quat, _poses_from_gt, _Pose, _quat_mul
+from tests.test_pose_evaluation import (
+    GT,
+    _apply_gauge,
+    _axis_angle_quat,
+    _Pose,
+    _poses_from_gt,
+    _quat_mul,
+)
 from tests.test_scene_identity import A_PTS, B_PTS, CAMS_A, CAMS_B, make_scene
+from world_ir.observations import AssociationState as S
 
 
 # ------------------------------------------------------------------ A1
@@ -50,8 +61,58 @@ def test_a02_same_door_in_five_images_is_one_entity_with_five_observations():
 
 # ------------------------------------------------------------------ A3
 def test_a03_window_partly_visible_in_three_images_is_partially_observed():
-    pytest.skip("not covered: needs a per-entity PARTIALLY_OBSERVED coverage state computed from partial "
-                "multi-view window observations (no synthetic partial-window fixture; association has no such state)")
+    """A window partly visible across 3 images resolves into one Entity, PARTIALLY_OBSERVED (Scenario A3)."""
+    from perception.architecture.windows import (
+        VisualWindowEvidence,
+        aggregate_multiview_window_observations,
+    )
+
+    # 3 partial views of the same window (e.g. left 40%, center 50%, right 35%)
+    obs1 = VisualWindowEvidence(
+        evidence_id="win-obs-1",
+        wall_plane_id="wall-south",
+        position=(2.0, 0.0, 1.5),
+        width_m=1.2,
+        height_m=1.4,
+        sill_height_m=0.9,
+        confidence=0.75,
+        observed_fraction=0.40,
+        image_ids=("img01",),
+    )
+    obs2 = VisualWindowEvidence(
+        evidence_id="win-obs-2",
+        wall_plane_id="wall-south",
+        position=(2.02, 0.0, 1.48),
+        width_m=1.22,
+        height_m=1.38,
+        sill_height_m=0.91,
+        confidence=0.78,
+        observed_fraction=0.50,
+        image_ids=("img02",),
+    )
+    obs3 = VisualWindowEvidence(
+        evidence_id="win-obs-3",
+        wall_plane_id="wall-south",
+        position=(1.98, 0.0, 1.52),
+        width_m=1.18,
+        height_m=1.42,
+        sill_height_m=0.89,
+        confidence=0.80,
+        observed_fraction=0.35,
+        image_ids=("img03",),
+    )
+
+    fit, coverage_state = aggregate_multiview_window_observations([obs1, obs2, obs3], window_id="win-01")
+
+    # 1. Exactly ONE window entity is formed (does not fragment into 3 entities)
+    assert fit.kind == "window"
+    assert fit.wall_plane_id == "wall-south"
+    assert len(fit.evidence_ids) == 3
+
+    # 2. Coverage state is PARTIALLY_OBSERVED
+    assert coverage_state == "PARTIALLY_OBSERVED"
+    assert fit.coverage_state == "PARTIALLY_OBSERVED"
+    assert fit.observed_fraction < 1.0
 
 
 # ------------------------------------------------------------------ A4
@@ -161,7 +222,15 @@ def test_a12_missing_wall_added_later_leaves_the_rest_unchanged():
     Untouched entities preserve stable IDs, transforms, and geometries.
     """
     from engine.pipeline.incremental_ingest import run_incremental_ingest
-    from world_ir import WorldIR, Entity, EntityType, Geometry, GeometryType, Relationship, RelationshipKind
+    from world_ir import (
+        Entity,
+        EntityType,
+        Geometry,
+        GeometryType,
+        Relationship,
+        RelationshipKind,
+        WorldIR,
+    )
 
     # Baseline world: 3 walls (north, south, east) + floor + table inside room-01
     base_world = WorldIR(id="wld-a12", name="A12 Room")
@@ -329,7 +398,7 @@ def test_a19_adjacent_room_proposed_for_merge_is_refused():
     The merge proposal must be refused with status='refused' and has_opening=False.
     """
     from perception.architecture.room_join import propose_room_merge
-    from world_ir import WorldIR, Entity, EntityType
+    from world_ir import Entity, EntityType, WorldIR
 
     world = WorldIR(id="wld-a19", name="A19 Scene")
 

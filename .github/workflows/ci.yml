@@ -84,6 +84,8 @@ jobs:
             tests/test_account_lifecycle.py \
             tests/test_s3_artifact_store.py \
             tests/test_durable_job_queue.py \
+            tests/test_closed_windows.py \
+            tests/scenarios/test_scenarios.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

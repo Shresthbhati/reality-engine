@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import event, or_, select
+from sqlalchemy import event, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import (
@@ -1344,9 +1344,15 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     )
     reaped = 0
     for job in result.scalars().all():
-        job.status = JOB_QUEUED
         enter_stage(job, None)
         job.worker_id = None
+        if job.attempts >= job.max_attempts:
+            # a job that keeps killing its worker must not loop the queue forever
+            job.status = JOB_FAILED
+            job.error = f"worker lost while running (attempt {job.attempts} of {job.max_attempts})"
+            job.completed_at = utcnow()
+        else:
+            job.status = JOB_QUEUED
         reaped += 1
     if reaped:
         await db.commit()
@@ -1364,22 +1370,29 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
 
 async def process_next_job(db: AsyncSession) -> Job | None:
     """Claim and run one queued job. Returns the job, or None if queue empty."""
-    result = await db.execute(
-        select(Job)
-        .where(Job.status == JOB_QUEUED)
-        .order_by(Job.priority.desc(), Job.created_at.asc())
-        .limit(1)
-    )
-    job = result.scalar_one_or_none()
+    # Atomic claim: the UPDATE only matches while the row is still queued, so two worker processes can never both take a job.
+    job = None
+    for _ in range(5):
+        cand = (await db.execute(
+            select(Job.id).where(Job.status == JOB_QUEUED).order_by(Job.priority.desc(), Job.created_at.asc()).limit(1)
+        )).scalar_one_or_none()
+        if cand is None:
+            return None
+        now = utcnow()
+        claimed = await db.execute(
+            update(Job).where(Job.id == cand, Job.status == JOB_QUEUED).values(
+                status=JOB_RUNNING, worker_id=WORKER_ID, attempts=Job.attempts + 1,
+                progress=0.0,  # a retry starts over; progress is monotonic within one attempt
+                started_at=now, heartbeat_at=now,
+            ).execution_options(synchronize_session=False)
+        )
+        await db.commit()
+        if claimed.rowcount == 1:
+            job = await db.get(Job, cand, populate_existing=True)
+            break
     if job is None:
         return None
-    job.status = JOB_RUNNING
-    job.worker_id = WORKER_ID
-    job.attempts += 1
-    job.progress = 0.0  # a retry starts over; progress is monotonic within one attempt
-    job.started_at = utcnow()
-    job.heartbeat_at = utcnow()
-    await db.commit()
+    heartbeat = asyncio.create_task(_keep_heartbeat(job.id))
 
     from reconstruction.proc import (
         discard_job,
@@ -1482,10 +1495,27 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         # Ownership cleanup is unconditional: even if the final commit
         # itself raises, the next claim rebinds context and the registry
         # never accumulates dead entries.
+        heartbeat.cancel()
         set_current_job(None)
         unregister_worker(job.id)
         discard_job(job.id)
     return job
+
+
+async def _keep_heartbeat(job_id: str) -> None:
+    """Refresh a running job's heartbeat while its handler works (a stage can outlast the stale horizon), so another worker's
+    reaper never takes a live job. Stops when cancelled; a failed refresh is retried on the next tick."""
+    from apps.api.db import get_sessionmaker
+
+    interval = _stale_after_seconds() / 3.0
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with get_sessionmaker()() as db:
+                await db.execute(update(Job).where(Job.id == job_id, Job.status == JOB_RUNNING).values(heartbeat_at=utcnow()))
+                await db.commit()
+        except Exception:
+            log.warning("heartbeat for job %s failed; retrying next tick", job_id, exc_info=True)
 
 
 async def _emit_completion(db: AsyncSession, job: Job) -> None:

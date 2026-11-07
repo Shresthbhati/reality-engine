@@ -104,7 +104,9 @@ async def _startup() -> None:
     except Exception:
         import logging
         logging.getLogger("reality.api.startup").exception("startup adoption recovery failed")
-    app.state.worker = asyncio.create_task(jobrunner.worker_loop())
+    # Hosted: a separate `python -m apps.api.worker` consumes the queue and the API only enqueues (REALITY_EMBEDDED_WORKER=0).
+    if os.environ.get("REALITY_EMBEDDED_WORKER", "1") != "0":
+        app.state.worker = asyncio.create_task(jobrunner.worker_loop())
 
 
 @app.on_event("shutdown")

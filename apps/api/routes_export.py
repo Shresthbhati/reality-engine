@@ -171,7 +171,7 @@ async def export_world(
     w = await db.get(World, world_id)
     team_id = (w.team_id if w else None) or (auth.tenant_id if auth.tenant_id != "default" else None)
     export_rec = ExportRecord(
-        id=new_id(),
+        id=new_id("exp"),
         tenant_id=team_id,
         world_id=world_id,
         version_id=row.id,
@@ -236,7 +236,7 @@ async def export_package(
     w = await db.get(World, world_id)
     team_id = (w.team_id if w else None) or (auth.tenant_id if auth.tenant_id != "default" else None)
     export_rec = ExportRecord(
-        id=new_id(),
+        id=new_id("exp"),
         tenant_id=team_id,
         world_id=world_id,
         version_id=row.id,

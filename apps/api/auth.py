@@ -121,6 +121,61 @@ def verify_scoped_token(token: str, secret: str | None = None) -> AuthContext | 
 
 
 # -------------------------------------------------------------------------------------------------
+# Read-Only Client Share Link Tokens (T-4b.4)
+# -------------------------------------------------------------------------------------------------
+
+_REVOKED_SHARE_TOKENS: set[str] = set()
+
+
+def revoke_share_token_in_memory(token: str) -> None:
+    """Mark a share token revoked in memory."""
+    _REVOKED_SHARE_TOKENS.add(token.strip())
+
+
+def issue_share_token(
+    world_id: str,
+    share_id: str,
+    expires_at: int | None = None,
+    secret: str | None = None,
+) -> str:
+    """Issue a token-scoped, read-only share token for a specific world (T-4b.4)."""
+    sec = secret or _get_signing_secret()
+    exp_str = str(int(expires_at)) if expires_at is not None else "0"
+    payload = f"{world_id}:{share_id}:{exp_str}"
+    sig = hmac.new(sec.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    return f"sh1:{payload}:{sig}"
+
+
+def verify_share_token(token: str, secret: str | None = None) -> AuthContext | None:
+    """Verify a read-only client share token in constant time. Returns scoped viewer context or None."""
+    token = token.strip()
+    if token in _REVOKED_SHARE_TOKENS:
+        return None
+    parts = token.split(":")
+    if len(parts) != 5 or parts[0] != "sh1":
+        return None
+    _, world_id, share_id, exp_str, sig = parts
+    sec = secret or _get_signing_secret()
+    payload = f"{world_id}:{share_id}:{exp_str}"
+    expected_sig = hmac.new(sec.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(sig.encode("utf-8"), expected_sig.encode("utf-8")):
+        return None
+    try:
+        exp_ts = int(exp_str)
+        if exp_ts > 0 and time.time() > exp_ts:
+            return None  # expired
+    except ValueError:
+        return None
+    return AuthContext(
+        user_id=f"client:{share_id}",
+        tenant_id="shared",
+        role=Role.VIEWER,
+        is_authenticated=True,
+        project_id=world_id,
+    )
+
+
+# -------------------------------------------------------------------------------------------------
 # Token Bucket Rate Limiting
 # -------------------------------------------------------------------------------------------------
 
@@ -240,8 +295,15 @@ async def auth_middleware(request: Request, call_next):
         if scheme.lower() != "bearer":
             return _unauthorized("Invalid authorization scheme; Bearer required")
 
-        # First check global master API token if configured
-        if global_token and hmac.compare_digest(supplied.encode("utf-8"), global_token.encode("utf-8")):
+        # First check client share token (T-4b.4)
+        if supplied.startswith("sh1:"):
+            share_ctx = verify_share_token(supplied)
+            if share_ctx is not None:
+                auth_ctx = share_ctx
+            else:
+                return _unauthorized("Missing, expired, or invalid share token")
+        # Next check global master API token if configured
+        elif global_token and hmac.compare_digest(supplied.encode("utf-8"), global_token.encode("utf-8")):
             auth_ctx = AuthContext(
                 user_id=request.headers.get("x-user-id", "root"),
                 tenant_id=request.headers.get("x-tenant-id", "default"),
@@ -255,23 +317,32 @@ async def auth_middleware(request: Request, call_next):
                 auth_ctx = scoped_ctx
             elif global_token:
                 return _unauthorized("Missing or invalid bearer token")
-    elif global_token:
-        return _unauthorized("Missing or invalid bearer token")
     else:
-        # No REALITY_API_TOKEN set: allow loopback clients only
-        if client_host not in _LOOPBACK:
-            return _unauthorized("REALITY_API_TOKEN is not set; only loopback clients are allowed")
-        if not _warned:
-            _warned = True
-            log.warning("REALITY_API_TOKEN is not set: API is unauthenticated (loopback clients only). "
-                        "Set it before exposing the API beyond this machine.")
-        auth_ctx = AuthContext(
-            user_id=request.headers.get("x-user-id", "local"),
-            tenant_id=request.headers.get("x-tenant-id", "default"),
-            role=requested_role,
-            is_authenticated=True,
-            is_loopback=True,
-        )
+        # Check query parameter share token for browser direct links
+        share_param = request.query_params.get("share_token")
+        if share_param and share_param.startswith("sh1:"):
+            share_ctx = verify_share_token(share_param)
+            if share_ctx is not None:
+                auth_ctx = share_ctx
+            else:
+                return _unauthorized("Missing, expired, or invalid share token")
+        elif global_token:
+            return _unauthorized("Missing or invalid bearer token")
+        else:
+            # No REALITY_API_TOKEN set: allow loopback clients only
+            if client_host not in _LOOPBACK:
+                return _unauthorized("REALITY_API_TOKEN is not set; only loopback clients are allowed")
+            if not _warned:
+                _warned = True
+                log.warning("REALITY_API_TOKEN is not set: API is unauthenticated (loopback clients only). "
+                            "Set it before exposing the API beyond this machine.")
+            auth_ctx = AuthContext(
+                user_id=request.headers.get("x-user-id", "local"),
+                tenant_id=request.headers.get("x-tenant-id", "default"),
+                role=requested_role,
+                is_authenticated=True,
+                is_loopback=True,
+            )
 
     if auth_ctx is None:
         return _unauthorized("Missing or invalid bearer token")
@@ -301,7 +372,13 @@ def get_auth_context(request: Request) -> AuthContext:
 
 def enforce_project_isolation(resource: Any, auth: AuthContext) -> None:
     """Strict project isolation: non-admin users can only access resources belonging to their tenant."""
+    if auth.project_id is not None:
+        resource_id = getattr(resource, "id", None) or getattr(resource, "world_id", None)
+        if resource_id and resource_id != auth.project_id:
+            raise HTTPException(status_code=403, detail="Access forbidden: token is scoped to a different world")
     if auth.role == Role.ADMIN:
+        return
+    if auth.tenant_id == "shared" and auth.project_id:
         return
     team_id = getattr(resource, "team_id", None) or getattr(resource, "tenant_id", None)
     if team_id and team_id != auth.tenant_id:

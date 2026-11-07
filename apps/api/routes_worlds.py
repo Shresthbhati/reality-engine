@@ -17,7 +17,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db import get_db
-from apps.api.auth import AuthContext, Role, enforce_project_isolation, get_auth_context
+from apps.api.auth import (
+    AuthContext,
+    Role,
+    enforce_project_isolation,
+    get_auth_context,
+    issue_share_token,
+    revoke_share_token_in_memory,
+    verify_share_token,
+)
 from apps.api.models import (
     ActivityEvent,
     CaptureRequest,
@@ -25,6 +33,7 @@ from apps.api.models import (
     Location,
     Session,
     World,
+    WorldShareLink,
     WorldVersion,
     new_id,
     utcnow,
@@ -602,10 +611,13 @@ def _load_world_or_409(row: WorldVersion):
 
 @worlds.get("/{world_id}/worldir")
 async def world_worldir(
-    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+    world_id: str,
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """The world's compiled WorldIR (current version unless ?version=)."""
-    row = await _version_row(db, world_id, version)
+    row = await _version_row(db, world_id, version, auth=auth)
     world = _load_world_or_409(row)
     return world.to_dict()
 
@@ -2180,4 +2192,173 @@ async def get_world_spatial_intelligence(
         "scene_completeness": completeness_meta,
         "lighting": world.environment.get("lighting"),
         "shared_walls": world.metadata.get("shared_walls"),
+    }
+
+
+class CreateShareIn(BaseModel):
+    label: str | None = None
+    expires_in_hours: int | None = None
+
+
+@worlds.post("/{world_id}/shares")
+async def create_world_share_link(
+    world_id: str,
+    body: CreateShareIn = CreateShareIn(),
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Create a token-scoped, read-only client share link for this world (T-4b.4)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    if auth.role < Role.EDITOR and not auth.is_loopback:
+        raise HTTPException(403, "Insufficient permissions to create share links")
+
+    share_id = new_id("sh")
+    expires_at = None
+    exp_ts = None
+    if body.expires_in_hours and body.expires_in_hours > 0:
+        from datetime import timedelta
+        expires_at = utcnow() + timedelta(hours=body.expires_in_hours)
+        exp_ts = int(expires_at.timestamp())
+
+    token = issue_share_token(world_id=w.id, share_id=share_id, expires_at=exp_ts)
+    link = WorldShareLink(
+        id=share_id,
+        world_id=w.id,
+        token=token,
+        label=body.label,
+        created_by=auth.user_id,
+        expires_at=expires_at,
+    )
+    db.add(link)
+    await db.commit()
+
+    return {
+        "id": link.id,
+        "world_id": w.id,
+        "token": link.token,
+        "share_url": f"/shared/{link.token}",
+        "label": link.label,
+        "expires_at": link.expires_at.isoformat() if link.expires_at else None,
+        "created_at": link.created_at.isoformat() if link.created_at else None,
+        "revoked": False,
+    }
+
+
+def _is_share_link_active(l: WorldShareLink) -> bool:
+    if l.revoked_at is not None:
+        return False
+    if l.expires_at is None:
+        return True
+    exp = l.expires_at
+    if exp.tzinfo is None:
+        from datetime import timezone
+        exp = exp.replace(tzinfo=timezone.utc)
+    return exp > utcnow()
+
+
+@worlds.get("/{world_id}/shares")
+async def list_world_share_links(
+    world_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """List all client share links for this world (T-4b.4)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+
+    res = await db.execute(
+        select(WorldShareLink).where(WorldShareLink.world_id == world_id).order_by(WorldShareLink.created_at.desc())
+    )
+    links = res.scalars().all()
+    return {
+        "world_id": world_id,
+        "items": [
+            {
+                "id": l.id,
+                "world_id": l.world_id,
+                "token": l.token,
+                "share_url": f"/shared/{l.token}",
+                "label": l.label,
+                "created_at": l.created_at.isoformat() if l.created_at else None,
+                "expires_at": l.expires_at.isoformat() if l.expires_at else None,
+                "revoked_at": l.revoked_at.isoformat() if l.revoked_at else None,
+                "is_active": _is_share_link_active(l),
+            }
+            for l in links
+        ],
+    }
+
+
+@worlds.post("/{world_id}/shares/{share_id}/revoke")
+async def revoke_world_share_link(
+    world_id: str,
+    share_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Revoke an active client share link (T-4b.4)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    if auth.role < Role.EDITOR and not auth.is_loopback:
+        raise HTTPException(403, "Insufficient permissions to revoke share links")
+
+    res = await db.execute(
+        select(WorldShareLink).where(WorldShareLink.id == share_id, WorldShareLink.world_id == world_id)
+    )
+    link = res.scalars().first()
+    if link is None:
+        raise HTTPException(404, "Share link not found")
+
+    link.revoked_at = utcnow()
+    revoke_share_token_in_memory(link.token)
+    await db.commit()
+
+    return {"status": "revoked", "id": share_id, "world_id": world_id}
+
+
+@worlds.get("/shared/access/{token}")
+async def access_shared_world(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Access a shared world using a read-only token without needing an account (T-4b.4)."""
+    auth_ctx = verify_share_token(token)
+    if auth_ctx is None:
+        raise HTTPException(401, "Invalid or expired share token")
+
+    res = await db.execute(select(WorldShareLink).where(WorldShareLink.token == token.strip()))
+    link = res.scalars().first()
+    if link is None or link.revoked_at is not None:
+        raise HTTPException(403, "Share link has been revoked or does not exist")
+    if link.expires_at is not None:
+        exp = link.expires_at
+        if exp.tzinfo is None:
+            from datetime import timezone
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < utcnow():
+            raise HTTPException(401, "Share link has expired")
+
+    w = await db.get(World, link.world_id)
+    if w is None or w.status != "active":
+        raise HTTPException(404, "Shared world not found")
+
+    from apps.api.worldstore_service import get_current_worldir
+    worldir = await get_current_worldir(db, w.id)
+
+    return {
+        "world_id": w.id,
+        "name": w.name,
+        "description": w.description,
+        "read_only": True,
+        "share_id": link.id,
+        "label": link.label,
+        "current_version_id": w.current_version_id,
+        "worldir": worldir.to_dict() if worldir else None,
     }

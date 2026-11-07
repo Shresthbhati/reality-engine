@@ -203,6 +203,86 @@ def test_trajectory_returns_stored_points(client):
     assert pts[1]["longitude"] == -0.1276
 
 
+def test_reconstruction_with_session_and_continuous_locations(client):
+    """T-5.1: POST /api/reconstructions accepts session_id, accuracy, altitude, heading, speed
+    and multiple photo/location fixes accumulate in the session trajectory (N fixes, not 1)."""
+    # 1. First photo upload creates world and session, passing GPS fix with accuracy
+    r1 = client.post(
+        "/api/reconstructions",
+        files=[("files", ("photo1.jpg", _valid_jpeg(1), "image/jpeg"))],
+        data={
+            "latitude": 48.8566,
+            "longitude": 2.3522,
+            "accuracy": 3.2,
+            "altitude": 35.0,
+            "heading": 180.0,
+            "speed": 1.2,
+        },
+    )
+    assert r1.status_code == 202
+    data1 = r1.json()
+    wid = data1["world_id"]
+    sid = data1["session_id"]
+    assert wid is not None
+    assert sid is not None
+
+    # 2. Add continuous location fixes streamed from watchPosition
+    batch = {
+        "points": [
+            {
+                "latitude": 48.8567,
+                "longitude": 2.3523,
+                "altitude": 35.1,
+                "accuracy": 2.9,
+                "heading": 182.0,
+                "speed": 1.3,
+            },
+            {
+                "latitude": 48.8568,
+                "longitude": 2.3524,
+                "altitude": 35.2,
+                "accuracy": 2.5,
+                "heading": 185.0,
+                "speed": 1.1,
+            },
+        ]
+    }
+    r_batch = client.post(f"/api/sessions/{sid}/locations", json=batch)
+    assert r_batch.status_code == 200
+    assert r_batch.json()["added"] == 2
+
+    # 3. Second photo taken in the same capture screen visit joins the SAME session
+    r2 = client.post(
+        "/api/reconstructions",
+        files=[("files", ("photo2.jpg", _valid_jpeg(2), "image/jpeg"))],
+        data={
+            "world_id": wid,
+            "session_id": sid,
+            "latitude": 48.8570,
+            "longitude": 2.3526,
+            "accuracy": 1.8,
+            "altitude": 35.5,
+            "heading": 190.0,
+            "speed": 0.8,
+        },
+    )
+    assert r2.status_code == 202
+    data2 = r2.json()
+    assert data2["world_id"] == wid
+    assert data2["session_id"] == sid
+
+    # 4. GET /api/sessions/{sid}/trajectory returns all N points in chronological order
+    traj = client.get(f"/api/sessions/{sid}/trajectory").json()
+    assert traj["available"] is True
+    assert traj["session_id"] == sid
+    assert traj["count"] >= 4, f"Session must hold N fixes, got {traj.get('count')}"
+    lats = [p["latitude"] for p in traj["points"]]
+    assert 48.8566 in lats
+    assert 48.8567 in lats
+    assert 48.8568 in lats
+    assert 48.8570 in lats
+
+
 def test_reconstruct_fails_with_honest_error_when_no_evidence(client):
     """Reconstruction fails with an honest error when session has no evidence."""
     w = client.post("/api/worlds", json={"name": "Recon World"}).json()

@@ -643,12 +643,14 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     # F6: user-verified corrections from the current version are replayed onto the rebuilt world below. A failure to
     # read the previous version only means no carry-over, never a lost reconstruction.
     prev_corrections: list = []
+    prev_edits: list = []
     try:
         from apps.api.worldstore_service import get_current_worldir as _get_head_world
         _prev_world = await _get_head_world(db, world.id)
         prev_corrections = list(((_prev_world.metadata or {}).get("user_corrections") if _prev_world else []) or [])
+        prev_edits = list(((_prev_world.metadata or {}).get("user_edits") if _prev_world else []) or [])
     except Exception:  # noqa: BLE001 -- enrichment only
-        prev_corrections = []
+        prev_corrections, prev_edits = [], []
     prior_ids = list((head_report.get("evidence") or {}).get("all_ids") or [])
     resolved = []
     skipped_evidence = []
@@ -838,6 +840,14 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             carry_corrections(world_ir, prev_corrections)
         except Exception as exc:  # noqa: BLE001 -- the rebuilt world stands; the failure is visible
             world_ir.metadata["correction_carry"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # ---- T-4.2 / rule 18: accepted manual edits (rename, reclassify, move, properties) are replayed last: the user's value wins ----
+    if prev_edits:
+        try:
+            from world_ir.edit_carry import carry_edits
+            carry_edits(world_ir, prev_edits)
+        except Exception as exc:  # noqa: BLE001 -- the rebuilt world stands; the failure is visible
+            world_ir.metadata["edit_carry"] = {"error": f"{type(exc).__name__}: {exc}"}
 
     # ---- M2: measured colour + planar texture per solid room surface, from the posed photos ----
     # Runs before persistence so the version the UI reads already carries the appearance reference. A failure is

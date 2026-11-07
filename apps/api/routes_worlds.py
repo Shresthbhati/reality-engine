@@ -1317,6 +1317,8 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
                 reclassify_entity(worldir, body.entity_id, new_class, note, auth.user_id)
             except CorrectionError as exc:
                 raise HTTPException(422, str(exc)) from exc
+            from world_ir.edit_carry import record_edit
+            record_edit(worldir, entity, "entity_class", (entity.custom_properties or {}).get("entity_class"))  # survives a rebuild
             continue
         elif key == "accept_revisit":
             from engine.pipeline.room_revisit import RoomRevisitError, accept_revisit
@@ -1354,12 +1356,14 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
             continue
         if key == "name":
             entity.name = value
+            _remember_edit(worldir, entity, "name", value)
         elif key == "type":
             entity.type = value
         elif key == "confidence":
             entity.confidence = value
         elif key == "semantic_labels":
             entity.semantic_labels = value
+            _remember_edit(worldir, entity, "semantic_labels", list(value))
         elif key == "custom_properties":
             # `reconstruction` is the pipeline's own build trace (session, backend, level): a correction may add or
             # change anything else, but it may not erase or rewrite the provenance of what the engine built.
@@ -1369,9 +1373,13 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
                 if "reconstruction" in new_props and new_props["reconstruction"] != trace:
                     raise HTTPException(422, "custom_properties.reconstruction is pipeline-owned and cannot be rewritten")
                 new_props["reconstruction"] = trace
+            changed = {k: v for k, v in new_props.items() if (entity.custom_properties or {}).get(k) != v}
             entity.custom_properties = new_props
+            for k, v in changed.items():
+                _remember_edit(worldir, entity, f"custom_properties.{k}", v)
         elif key == "transform":
             entity.transform = value
+            _remember_edit(worldir, entity, "transform", value)
         elif key == "relationships":
             entity.relationships = [
                 Relationship(
@@ -1793,6 +1801,16 @@ async def api_merge_entities(
     res = await commit_world_correction(world_id, commit_req, db, auth)
     res["operation"] = "merge"
     return res
+
+
+def _remember_edit(worldir, entity, field: str, value) -> None:
+    """Rule 18: an accepted manual edit is recorded so a later reprocess replays it instead of overwriting it.
+    Pipeline-owned fields are not editable here (they are refused above), so a refusal from the registry is ignored."""
+    from world_ir.edit_carry import record_edit
+    try:
+        record_edit(worldir, entity, field, value)
+    except ValueError:
+        pass
 
 
 async def _load_worldir_from_store(world: World, version_id: str | None = None) -> WorldIR | None:

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.db import get_db
 from apps.api.tenancy import world_scope
 from apps.api.routes_worlds import _load_world_or_409, _version_row, _worldstore_root
-from world_ir.artifact_store import FileArtifactStore
+from world_ir.artifact_store import FileArtifactStore, make_artifact_store
 
 artifacts = APIRouter(prefix="/api/worlds", tags=["worlds"], dependencies=[Depends(world_scope)])
 
@@ -47,7 +47,7 @@ async def world_artifact(
     root = _worldstore_root()
     raw = None
     # pipeline-artifacts is where the compile pipeline writes; artifacts is the legacy store.
-    for store in (FileArtifactStore(root / "pipeline-artifacts"), FileArtifactStore(root / "artifacts")):
+    for store in (make_artifact_store(root / "pipeline-artifacts"), FileArtifactStore(root / "artifacts")):
         try:
             raw = store.get(FileArtifactStore.uri_for(sha256))
             break

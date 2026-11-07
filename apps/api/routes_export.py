@@ -20,7 +20,7 @@ from apps.api.tenancy import world_scope
 from apps.api.routes_worlds import _load_world_or_409, _version_row
 from apps.api.storage import resolve_artifact, store_bytes
 from sdk import reality
-from world_ir.artifact_store import FileArtifactStore
+from world_ir.artifact_store import make_artifact_store
 
 export = APIRouter(prefix="/api/worlds/{world_id}/export", tags=["export"], dependencies=[Depends(world_scope)])
 
@@ -140,7 +140,7 @@ async def export_world(
     row = await _version_row(db, world_id, body.version)
     world = _load_world_or_409(row)
 
-    artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+    artifact_store = make_artifact_store(worldstore_service.worldstore_root() / "pipeline-artifacts")
     try:
         if body.format in reality.EXPORT_PROFILES:
             files, report = reality.export_profile(world, body.format, artifact_store=artifact_store)
@@ -213,7 +213,7 @@ async def export_package(
     row = await _version_row(db, world_id, version)
     world = _load_world_or_409(row)
 
-    artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+    artifact_store = make_artifact_store(worldstore_service.worldstore_root() / "pipeline-artifacts")
     zip_bytes = export_world_package_zip(world, artifact_store=artifact_store)
     filename = _safe_filename(f"{world_id}_v{world.version}.zip")
 

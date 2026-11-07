@@ -599,7 +599,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             VerticalSliceOptions,
             vertical_slice,
         )
-        from world_ir.artifact_store import FileArtifactStore
+        from world_ir.artifact_store import make_artifact_store
     except Exception as exc:  # pragma: no cover - depends on optional deps
         raise RuntimeError(f"Reconstruction backend unavailable: {exc}") from exc
 
@@ -731,7 +731,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 else "refining" if prior_ids else "reconstructing")
     job.heartbeat_at = utcnow()
     await db.commit()
-    artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+    artifact_store = make_artifact_store(worldstore_service.worldstore_root() / "pipeline-artifacts")
     # Operator-measured distances between two of this world's photographs (POST /api/worlds/{id}/scale):
     # the ONLY source of metric scale. Without one the world stays RELATIVE -- meters are never assumed.
     from reconstruction.scale import (

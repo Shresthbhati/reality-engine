@@ -34,7 +34,7 @@ from apps.api.models import (
 from world_ir.diff import diff_worlds
 from world_ir.schema_v1 import EntityType, Relationship, RelationshipKind, Provenance
 from world_ir.world_v1 import WorldIR
-from world_ir.artifact_store import FileArtifactStore
+from world_ir.artifact_store import FileArtifactStore, make_artifact_store
 from worldstore.store import WorldStore, WorldStoreError
 
 
@@ -110,7 +110,7 @@ async def import_world_package(
     )
 
     content = await file.read()
-    artifact_store = FileArtifactStore(worldstore_root() / "pipeline-artifacts")
+    artifact_store = make_artifact_store(worldstore_root() / "pipeline-artifacts")
 
     try:
         imported_world = import_world_package_zip(content, artifact_store=artifact_store)
@@ -851,14 +851,14 @@ def _render_points_ply(world) -> bytes | None:
         pts: list[tuple[float, float, float]] = []
         if data_uri:
             if stores is None:
-                from world_ir.artifact_store import FileArtifactStore
+                from world_ir.artifact_store import FileArtifactStore, make_artifact_store
 
                 # Geometry payloads live in the pipeline-artifacts store
                 # the compile pipeline was given; the WorldStore artifacts
                 # store is the legacy location. Consult both so a version
                 # renders regardless of which store its geometries reference.
                 stores = [
-                    FileArtifactStore(_worldstore_root() / "pipeline-artifacts"),
+                    make_artifact_store(_worldstore_root() / "pipeline-artifacts"),
                     FileArtifactStore(_worldstore_root() / "artifacts"),
                 ]
             raw = b""

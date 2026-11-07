@@ -159,3 +159,69 @@ class FileArtifactStore(ArtifactStore):
     def has(self, digest: str) -> bool:
         path = self._path_for(digest)
         return path.is_file() and not path.is_symlink()
+
+
+class S3ArtifactStore(ArtifactStore):
+    """Content-addressed store on any S3-compatible object store (AWS S3, R2, MinIO, B2): ``<prefix><digest[:2]>/<digest>.bin``.
+
+    ``client`` is a boto3 S3 client (injected so tests need no network); ``from_env`` builds a real one. Reads are verified
+    against the digest in the key, so a corrupt or swapped object surfaces as missing, never as wrong bytes.
+    """
+
+    def __init__(self, bucket: str, client, prefix: str = ""):
+        self.bucket, self.client = bucket, client
+        self.prefix = prefix if not prefix or prefix.endswith("/") else prefix + "/"
+
+    @classmethod
+    def from_env(cls, env=None) -> "S3ArtifactStore":
+        env = os.environ if env is None else env
+        bucket = env.get("REALITY_S3_BUCKET")
+        if not bucket:
+            raise ValueError("REALITY_ARTIFACT_STORE=s3 needs REALITY_S3_BUCKET")
+        import boto3                                    # lazy: only hosted deployments need it
+
+        client = boto3.client("s3", endpoint_url=env.get("REALITY_S3_ENDPOINT") or None, region_name=env.get("REALITY_S3_REGION") or None)
+        return cls(bucket, client, env.get("REALITY_S3_PREFIX", ""))
+
+    def _key(self, digest: str) -> str:
+        return f"{self.prefix}{digest[:2]}/{digest}.bin"
+
+    @staticmethod
+    def _missing(exc: Exception) -> bool:
+        code = str(getattr(exc, "response", {}).get("Error", {}).get("Code", ""))
+        return code in ("404", "NoSuchKey", "NotFound")
+
+    def has(self, digest: str) -> bool:
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=self._key(digest))
+            return True
+        except Exception as exc:                        # noqa: BLE001 -- only "not found" means absent; anything else is a real fault
+            if self._missing(exc):
+                return False
+            raise
+
+    def put(self, data: bytes) -> "tuple[str, str]":
+        digest = _digest(data)
+        if not self.has(digest):                        # content-addressed: identical bytes are never re-uploaded
+            self.client.put_object(Bucket=self.bucket, Key=self._key(digest), Body=data)
+        return self.uri_for(digest), digest
+
+    def get(self, data_uri: str) -> bytes:
+        digest = self.digest_of(data_uri)
+        try:
+            data = self.client.get_object(Bucket=self.bucket, Key=self._key(digest))["Body"].read()
+        except Exception as exc:                        # noqa: BLE001
+            if self._missing(exc):
+                raise ArtifactNotFoundError(data_uri) from exc
+            raise
+        if _digest(data) != digest:
+            raise ArtifactNotFoundError(data_uri)       # same honest failure as a corrupt local blob
+        return data
+
+
+def make_artifact_store(local_root: "str | Path", env=None) -> ArtifactStore:
+    """The deployment's artifact store: S3-compatible when ``REALITY_ARTIFACT_STORE=s3``, else the local directory (default)."""
+    env = os.environ if env is None else env
+    if env.get("REALITY_ARTIFACT_STORE", "file").lower() == "s3":
+        return S3ArtifactStore.from_env(env)
+    return FileArtifactStore(local_root)

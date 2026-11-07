@@ -36,7 +36,7 @@ from engine.pipeline import world_delta
 from engine.pipeline.dense_gate import dense_auto_enabled
 from reconstruction.colmap_session import ColmapSession
 from engine.pipeline.single_image_furniture import maskrcnn_furniture_detector, unload_furniture_model
-from engine.pipeline.open_vocab_furniture import combined_furniture_detector, unload_open_vocab_furniture
+from engine.pipeline.open_vocab_furniture import combined_furniture_detector, grounded_fixture_detector, unload_open_vocab_furniture
 from engine.pipeline.single_image_layout import make_layout_analyzer
 from engine.pipeline.progressive import (
     EvidenceInput,
@@ -798,6 +798,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 furniture_detector=(maskrcnn_furniture_detector if os.environ.get("REALITY_OPEN_VOCAB") == "0"
                                     else combined_furniture_detector),
                 layout_analyzer=layout_analyzer,
+                fixture_detector=(None if os.environ.get("REALITY_OPEN_VOCAB") == "0" else grounded_fixture_detector),
             )
         )
     finally:

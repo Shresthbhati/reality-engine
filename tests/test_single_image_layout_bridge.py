@@ -358,3 +358,83 @@ def bootstrap_factory(tmp_path, monkeypatch):
         return bootstrap_single_image(item, inspect_image(p), layout_analysis=an)
 
     return make
+
+
+# ---------------------------------------------------------------------------- fixtures on the walls (T-3.4)
+
+
+def _fixture_world(tmp_path, monkeypatch, detector):
+    import math
+
+    import engine.pipeline.single_image as si
+    from tests.layout_synth import render
+
+    monkeypatch.setattr(si, "ASSUMED_HFOV_DEG", 80.0)
+    view = render(0.0, 0.0, 0.0, 0.0, hfov=80.0)
+    p = tmp_path / "ref.png"
+    Image.fromarray(view.rgb).save(p)
+    item = EvidenceItem(id="ev-ref", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+    an = SimpleNamespace(depth_m=view.depth, masks=view.masks, rgb=view.rgb)
+    return bootstrap_single_image(item, inspect_image(p), layout_analysis=an, fixture_detector=detector), view
+
+
+def _px(view, world_pt, half=7):
+    import math
+
+    h, w = view.depth.shape
+    f = (w / 2) / math.tan(math.radians(80.0) / 2)
+    cam = (np.asarray(world_pt) - view.t_wc) @ view.R_wc
+    u, v = w / 2 + f * cam[0] / cam[2], h / 2 + f * cam[1] / cam[2]
+    return (u - half, v - half, u + half, v + half)
+
+
+def test_detected_fixtures_become_entities_on_their_wall_with_a_height(tmp_path, monkeypatch):
+    from tests.layout_synth import render
+
+    ref = render(0.0, 0.0, 0.0, 0.0, hfov=80.0)
+    dets = [("socket", 0.8, _px(ref, (0.5, 1.5 - 0.30, 3.0))), ("switch", 0.7, _px(ref, (-0.8, 1.5 - 1.2, 3.0))),
+            ("ceiling_light", 0.6, _px(ref, (0.3, -1.1, 1.8)))]
+    res, _ = _fixture_world(tmp_path, monkeypatch, lambda rgb: dets)
+    fx = [e for e in res.world.entities.values() if (e.custom_properties or {}).get("entity_class", "").startswith(("electrical", "hvac"))]
+    assert sorted(e.custom_properties["entity_class"] for e in fx) == ["electrical.light", "electrical.socket", "electrical.switch"]
+    sock = next(e for e in fx if e.custom_properties["entity_class"] == "electrical.socket")
+    assert sock.custom_properties["dimensions"]["height_above_floor_m"]["value"] == pytest.approx(0.30, abs=0.05)
+    host = sock.custom_properties["host_wall_id"]
+    assert res.world.entities[host].type.value == "wall"
+    light = next(e for e in fx if e.custom_properties["entity_class"] == "electrical.light")
+    assert "host_wall_id" not in light.custom_properties and light.custom_properties["host_surface"] == "ceiling"
+    assert res.facts["layout"]["fixtures"]["placed"] == 3
+
+
+def test_fixture_refusals_are_recorded_not_dropped(tmp_path, monkeypatch):
+    from tests.layout_synth import render
+
+    ref = render(0.0, 0.0, 0.0, 0.0, hfov=80.0)
+    res, _ = _fixture_world(tmp_path, monkeypatch, lambda rgb: [("socket", 0.9, _px(ref, (0.5, 1.5 - 2.3, 3.0)))])
+    f = res.facts["layout"]["fixtures"]
+    assert f["placed"] == 0 and "height" in f["refused"][0]["reason"]
+
+
+def test_the_same_socket_seen_twice_is_one_socket(tmp_path, monkeypatch):
+    from tests.layout_synth import render
+
+    ref = render(0.0, 0.0, 0.0, 0.0, hfov=80.0)
+    box = _px(ref, (0.5, 1.5 - 0.30, 3.0))
+    shifted = (box[0] + 1, box[1] + 1, box[2] + 1, box[3] + 1)
+    res, _ = _fixture_world(tmp_path, monkeypatch, lambda rgb: [("socket", 0.8, box), ("socket", 0.6, shifted)])
+    assert res.facts["layout"]["fixtures"]["placed"] == 1
+
+
+def test_fixtures_export_as_ifc_outlets_and_switching_devices(tmp_path, monkeypatch):
+    import ifcopenshell
+
+    from exporters.ifc_bridge import export_world_to_ifc
+    from tests.layout_synth import render
+
+    ref = render(0.0, 0.0, 0.0, 0.0, hfov=80.0)
+    dets = [("socket", 0.8, _px(ref, (0.5, 1.5 - 0.30, 3.0))), ("switch", 0.7, _px(ref, (-0.8, 1.5 - 1.2, 3.0)))]
+    res, _ = _fixture_world(tmp_path, monkeypatch, lambda rgb: dets)
+    out = tmp_path / "f.ifc"
+    export_world_to_ifc(res.world, out)
+    m = ifcopenshell.open(str(out))
+    assert len(m.by_type("IfcOutlet")) == 1 and len(m.by_type("IfcSwitchingDevice")) == 1

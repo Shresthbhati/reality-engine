@@ -122,6 +122,36 @@ def grounded_furniture_detector(item, w: int, h: int) -> list:
     return clean_detections(raw, view_id=item.id, src_size=size, grid_size=(w, h))
 
 
+#: Grounding DINO prompt -> fixture kind (perception.layout.fixtures.KINDS)
+FIXTURE_PROMPTS = {"electrical wall socket": "socket", "light switch": "switch", "radiator": "radiator", "ceiling light": "ceiling_light"}
+FIXTURE_THRESHOLD = 0.30
+FIXTURE_MAX_FRAME_SHARE = 0.25  # a "socket" covering a quarter of the photo is a false positive
+
+
+def grounded_fixture_detector(rgb) -> list:
+    """[(kind, score, (x0, y0, x1, y1) in rgb pixels)] for sockets, switches, radiators and ceiling lights. Raises when the model cannot run."""
+    import numpy as np
+    import torch
+    from PIL import Image
+
+    proc, model, dev = _load()
+    img = Image.fromarray(np.asarray(rgb)).convert("RGB")
+    prompts = list(FIXTURE_PROMPTS)
+    inp = proc(images=[img] * len(prompts), text=[f"{p}." for p in prompts], return_tensors="pt", padding=True).to(dev)
+    with torch.no_grad():
+        out = model(**inp)
+    res = proc.post_process_grounded_object_detection(
+        out, inp.input_ids, threshold=FIXTURE_THRESHOLD, text_threshold=TEXT_THRESHOLD, target_sizes=[img.size[::-1]] * len(prompts))
+    area = float(img.size[0] * img.size[1])
+    found = []
+    for prompt, r in zip(prompts, res):
+        for score, box in zip(r["scores"].tolist(), r["boxes"].tolist()):
+            share = max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1]) / area
+            if MIN_BOX_FRAME_SHARE / 20 <= share <= FIXTURE_MAX_FRAME_SHARE:
+                found.append((FIXTURE_PROMPTS[prompt], float(score), tuple(float(c) for c in box)))
+    return found
+
+
 def merge_detections(gd: Sequence[FurnitureDetection], rcnn: Sequence[FurnitureDetection]) -> List[FurnitureDetection]:
     """Union of two detectors' boxes: one label per physical object. Boxes that overlap are one object whatever each detector
     called it (a coffee table and a dining table cannot be the same spot), so the higher score wins across classes too."""

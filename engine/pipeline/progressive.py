@@ -161,7 +161,8 @@ def _register_extras(ref_cand, ref_an, analyzed):
     return extras, dict(reg.refused)
 
 
-def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_model, furniture_detector, attempts):
+def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_model, furniture_detector, attempts,
+                           fixture_detector=None):
     """Bootstrap the room shell from the single photograph whose layout is best supported; try the next best if the solver
     refuses. Returns ``([(candidate, BootstrapResult)], facts)`` or ``([], facts)`` when no photograph yields a layout."""
     scored = []
@@ -181,7 +182,8 @@ def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_mo
         extras, reg_refused = _register_extras(cand, an, analyzed)
         try:
             boot = bootstrap_single_image(cand.item, cand.facts, artifact_store=artifact_store, depth_model=depth_model,
-                                          furniture_detector=furniture_detector, layout_analysis=an, extra_views=extras)
+                                          furniture_detector=furniture_detector, layout_analysis=an, extra_views=extras,
+                                          fixture_detector=fixture_detector)
         except BootstrapUnavailable as exc:
             attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed", "detail": f"{cand.name}: {exc}"})
             continue
@@ -207,6 +209,7 @@ def run_progressive(
     bootstrap_depth_map=None,
     furniture_detector=None,
     layout_analyzer: Optional[Callable] = None,
+    fixture_detector=None,
 ) -> ProgressiveResult:
     eligible = [i for i in inputs if i.facts.geometry_eligible]
     excluded = []
@@ -260,7 +263,8 @@ def run_progressive(
             prior_set = set(prior_ids)
             pre_boots, pre_pick = _bootstrap_best_layout(
                 sorted(eligible, key=lambda c: c.item.id not in prior_set), layout_analyzer, artifact_store=artifact_store,
-                depth_model=depth_model, furniture_detector=furniture_detector, attempts=attempts)
+                depth_model=depth_model, furniture_detector=furniture_detector, attempts=attempts,
+                fixture_detector=fixture_detector)
             if pre_boots:
                 layout_reason = weakness
                 attempts[[i for i, a in enumerate(attempts) if a["level"] == 2][-1]]["outcome"] = "rejected"
@@ -325,7 +329,7 @@ def run_progressive(
         if layout_analyzer is not None and not boots:
             boots, layout_pick = _bootstrap_best_layout(
                 ordered, layout_analyzer, artifact_store=artifact_store, depth_model=depth_model,
-                furniture_detector=furniture_detector, attempts=attempts)
+                furniture_detector=furniture_detector, attempts=attempts, fixture_detector=fixture_detector)
         for k, cand in enumerate(ordered if not boots else []):
             try:
                 boots.append((cand, bootstrap_single_image(

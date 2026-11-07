@@ -346,6 +346,8 @@ def _resolve_ifc_class(entity: Entity) -> str:
             return "IfcSwitchingDevice"
         if ec.startswith("electrical.light"):
             return "IfcLightFixture"
+        if ec.startswith("hvac.radiator"):
+            return "IfcSpaceHeater"
         if ec.startswith("plumbing"):
             return "IfcSanitaryTerminal"
         if ec.startswith("furniture"):

@@ -191,6 +191,50 @@ def add_layout_openings(world, obs, layout: SurfaceLayout, eid_of_plane: Dict[st
     return facts
 
 
+FIXTURE_CLASS = {"socket": "electrical.socket", "switch": "electrical.switch", "ceiling_light": "electrical.light",
+                 "radiator": "hvac.radiator"}
+FIXTURE_SIZE_M = {"socket": 0.08, "switch": 0.08, "ceiling_light": 0.3, "radiator": 0.6}
+FIXTURE_DUPLICATE_M = 0.15
+
+
+def add_layout_fixtures(world, obs, layout: SurfaceLayout, detections, eid_of_plane: Dict[str, str], *, pre: str,
+                        hfov_deg: float, image_size: Tuple[int, int], confidence_ceiling: float) -> Dict[str, object]:
+    """Sockets, switches, radiators and ceiling lights as entities on their wall/ceiling, with height above the floor."""
+    from perception.layout.fixtures import place_fixtures
+    from world_ir import Entity, EntityType, Geometry, GeometryType, Vector3
+
+    placed, refused = place_fixtures(detections, layout, hfov_deg=hfov_deg, image_size=image_size)
+    cap = min(confidence_ceiling, OPENING_CONFIDENCE_CEILING)
+    kept = []
+    for fx in sorted(placed, key=lambda f: -f.score):
+        if any(k.kind == fx.kind and np.linalg.norm(np.subtract(k.position, fx.position)) < FIXTURE_DUPLICATE_M for k in kept):
+            continue  # the same fixture seen twice
+        host = eid_of_plane.get(f"layout-wall-{fx.wall_index}") if fx.wall_index is not None else None
+        if fx.wall_index is not None and host is None:
+            refused.append({"kind": fx.kind, "reason": "its wall was not promoted"})
+            continue
+        kept.append(fx)
+        x, y, z = _flip(fx.position)
+        half = FIXTURE_SIZE_M[fx.kind] / 2
+        eid = f"{pre}-fixture-{len(kept):02d}"
+        geom = Geometry(id=f"geom-{eid}", type=GeometryType.BOX, vertex_count=8,
+                        bounds_min=Vector3(x - half, y - half, z - half), bounds_max=Vector3(x + half, y + half, z + half),
+                        provenance=Provenance.ESTIMATED, confidence=cap, observations=[obs])
+        world.geometries[geom.id] = geom
+        props = {"entity_class": FIXTURE_CLASS[fx.kind], "host_surface": "wall" if host else "ceiling",
+                 "dimensions": {"height_above_floor_m": _dim(world, fx.h)},
+                 "bootstrap": {"role": "fixture", "source": "single_image_layout", "detector_score": round(fx.score, 3)}}
+        if host:
+            props["host_wall_id"] = host
+        world.entities[eid] = Entity(
+            id=eid, type=EntityType.INFRASTRUCTURE, name=f"{fx.kind.replace('_', ' ').capitalize()} ({props['host_surface']})",
+            transform={"position": {"x": x, "y": y, "z": z}}, geometry_ids=[geom.id], provenance=Provenance.INFERRED,
+            confidence=cap, uncertainty=Uncertainty(confidence=cap, note=f"{fx.kind} detected in the photograph and placed where "
+                                                    f"its ray meets the solved {props['host_surface']}, {fx.h:.2f} m above the floor"),
+            observations=[obs], custom_properties=props)
+    return {"placed": len(kept), "refused": refused}
+
+
 #: monocular metric depth is typically within 10-20 % indoors; the stated +/- is 15 % of the value, labelled as such
 DIM_UNCERTAINTY_FRACTION = 0.15
 DIM_BASIS = "monocular metric depth + surface labels (indoor model, typical error 10-20 %); not a measurement"

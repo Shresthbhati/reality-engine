@@ -170,6 +170,7 @@ def bootstrap_single_image(
     furniture_detections=None,
     layout_analysis=None,
     extra_views=None,
+    fixture_detector=None,
 ) -> BootstrapResult:
     """Build the LEVEL 0 hypothesis for one photograph.
 
@@ -361,6 +362,20 @@ def bootstrap_single_image(
 
         layout_facts["room"] = add_layout_room(world, layout, eid_of_plane, pre=pre, confidence_ceiling=CONFIDENCE_CEILING,
                                                  opening_ids=openings_facts.get("by_opening"))
+        if fixture_detector is not None and getattr(layout_analysis, "rgb", None) is not None:
+            import math as _m
+
+            from engine.pipeline.single_image_layout import add_layout_fixtures
+
+            try:
+                rh, rw = layout_analysis.rgb.shape[:2]
+                sx, sy = w / float(rw), h / float(rh)  # detector boxes are in rgb pixels; the layout grid is the depth grid
+                fx_dets = [(k, s, (b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy)) for k, s, b in fixture_detector(layout_analysis.rgb)]
+                layout_facts["fixtures"] = add_layout_fixtures(
+                    world, obs, layout, fx_dets, eid_of_plane, pre=pre, hfov_deg=_m.degrees(2 * _m.atan(w / (2 * f))),
+                    image_size=(w, h), confidence_ceiling=CONFIDENCE_CEILING)
+            except Exception as exc:  # noqa: BLE001 -- fixtures are an enhancement; the shell stands
+                layout_facts["fixtures"] = {"placed": 0, "refused": [], "reason": f"fixture detector unavailable: {exc}"}
     elif wall_pixels and gray is None:
         openings_facts["reason"] = "photograph not readable from its source_uri"
     elif not wall_pixels:

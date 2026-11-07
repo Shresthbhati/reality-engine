@@ -117,6 +117,7 @@ async def create_reconstruction(
     heading: float | None = Form(default=None),
     speed: float | None = Form(default=None),
     dense_cpu: bool = Form(default=False),
+    filter_duplicates: bool = Form(default=False),
     plane_sweep_max_views: int | None = Form(default=None, ge=2, le=8),
     plane_sweep_stride: int | None = Form(default=None, ge=1, le=8),
     plane_sweep_planes: int | None = Form(default=None, ge=8, le=128),
@@ -165,7 +166,16 @@ async def create_reconstruction(
             if not facts.ok:
                 rejected.append({"name": fname, "reason": facts.reason})
                 continue
-            accepted.append((fname, f.content_type, data, kind, digest, facts.to_dict(), {}))
+            facts_dict = facts.to_dict()
+            ph_int = None
+            try:
+                from evidence.dedup import compute_phash, hash_to_hex
+                ph_int = compute_phash(path)
+                facts_dict["phash"] = hash_to_hex(ph_int)
+            except Exception:
+                pass
+            accepted.append((fname, f.content_type, data, kind, digest, facts_dict,
+                             {"_path": str(path), "_phash": ph_int, "_sharpness": facts.sharpness or 0.0}))
         elif kind == "video":
             frames, problem = await _video_frames(path, fname, evidence_class)
             if problem:
@@ -178,7 +188,43 @@ async def create_reconstruction(
                 accepted.append((fr_name, "image/jpeg", jpeg, "photo", fr_digest, fr_facts, fr_meta))
         else:
             accepted.append((fname, f.content_type, data, kind, digest, {}, {}))
+
     photos = [a for a in accepted if a[3] == "photo"]
+    if photos and len(photos) > 1:
+        try:
+            from evidence.dedup import deduplicate_images
+            photo_items = [(a[0], a[6]["_path"]) for a in photos if a[6].get("_path")]
+            quality_map = {a[0]: a[6].get("_sharpness", 0.0) for a in photos}
+            dedup_res = deduplicate_images(photo_items, hash_type="phash", quality_scores=quality_map)
+            dup_records = {d.duplicate_id: d for d in dedup_res.duplicates}
+            if filter_duplicates and dup_records:
+                filtered_accepted = []
+                for a in accepted:
+                    if a[0] in dup_records:
+                        d = dup_records[a[0]]
+                        rejected.append({
+                            "name": a[0],
+                            "reason": f"near_duplicate of {d.canonical_id} (pHash distance {d.distance})"
+                        })
+                    else:
+                        filtered_accepted.append(a)
+                accepted = filtered_accepted
+                photos = [a for a in accepted if a[3] == "photo"]
+            elif dup_records:
+                for a in photos:
+                    if a[0] in dup_records:
+                        d = dup_records[a[0]]
+                        a[6]["near_duplicate_of"] = d.canonical_id
+                        a[6]["phash_distance"] = d.distance
+        except Exception:
+            pass
+
+    for a in accepted:
+        if isinstance(a[6], dict):
+            a[6].pop("_path", None)
+            a[6].pop("_phash", None)
+            a[6].pop("_sharpness", None)
+
     if not photos:
         raise HTTPException(422, {
             "message": "none of the files is a usable photograph",

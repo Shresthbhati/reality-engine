@@ -245,7 +245,7 @@ async def create_upload(
         )
     )
     await db.commit()
-    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=team_id)
+    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=ev.team_id)
     await db.commit()
     return {"upload_id": up.id, "evidence_id": ev.id, "job_id": job.id, "checksum": digest}
 
@@ -380,7 +380,7 @@ async def resumable_finalize(
         )
     )
     await db.commit()
-    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=team_id)
+    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=ev.team_id)
     await db.commit()
     clear_staging(upload_id)
     return {
@@ -503,9 +503,10 @@ async def check_uploads(files: list[UploadFile]) -> dict:
             digest = hashlib.sha256(data).hexdigest()
             kind = _classify(name, f.content_type)
             row: dict = {"name": name, "size": len(data), "kind": kind, "sha256": digest,
-                         "duplicate_of": first_seen.get(digest), "decodable": None, "width": None, "height": None,
-                         "sharpness": None, "has_gps": False, "looks_like_photo": None, "too_small": False,
-                         "problem": None}
+                         "duplicate_of": first_seen.get(digest), "near_duplicate_of": None,
+                         "near_duplicate_distance": None, "phash": None, "decodable": None,
+                         "width": None, "height": None, "sharpness": None, "has_gps": False,
+                         "looks_like_photo": None, "too_small": False, "problem": None}
             first_seen.setdefault(digest, name)
             if kind == "photo":
                 path = Path(tmp) / f"{i}.bin"
@@ -515,11 +516,46 @@ async def check_uploads(files: list[UploadFile]) -> dict:
                            height=facts.height or None, sharpness=facts.sharpness, has_gps=facts.gps is not None)
                 if facts.ok:
                     row["looks_like_photo"] = facts.evidence_class in GEOMETRY_CLASSES
+                    try:
+                        from evidence.dedup import compute_phash, hash_to_hex
+                        ph_int = await asyncio.to_thread(compute_phash, path)
+                        row["phash"] = hash_to_hex(ph_int)
+                        row["_phash_int"] = ph_int
+                    except Exception:
+                        pass
                 else:
                     row["too_small"] = facts.width > 0 and "too small" in (facts.reason or "")
                     row["decodable"] = facts.width > 0
                     row["problem"] = facts.reason
             rows.append(row)
+
+    # Near-duplicate detection via perceptual hash (pHash)
+    try:
+        from evidence.dedup import DEFAULT_PHASH_THRESHOLD, hamming_distance
+        for i, r in enumerate(rows):
+            if r.get("_phash_int") is None or r.get("duplicate_of") is not None:
+                continue
+            for j in range(i):
+                prev = rows[j]
+                if prev.get("_phash_int") is None:
+                    continue
+                dist = hamming_distance(r["_phash_int"], prev["_phash_int"])
+                if dist <= DEFAULT_PHASH_THRESHOLD:
+                    # Compare sharpness: keep higher sharpness canonical
+                    r_sharp = r.get("sharpness") or 0.0
+                    prev_sharp = prev.get("sharpness") or 0.0
+                    if r_sharp > prev_sharp and prev.get("near_duplicate_of") is None:
+                        prev["near_duplicate_of"] = r["name"]
+                        prev["near_duplicate_distance"] = dist
+                    else:
+                        r["near_duplicate_of"] = prev["name"]
+                        r["near_duplicate_distance"] = dist
+                    break
+    except Exception:
+        pass
+    finally:
+        for r in rows:
+            r.pop("_phash_int", None)
 
     sharp = [r["sharpness"] for r in rows if r["sharpness"] is not None and r["duplicate_of"] is None]
     median = statistics.median(sharp) if len(sharp) >= 3 else None
@@ -531,10 +567,12 @@ async def check_uploads(files: list[UploadFile]) -> dict:
             and r["duplicate_of"] is None
 
     n_usable = sum(1 for r in rows if usable(r))
-    n_flagged = sum(1 for r in rows if r["relatively_soft"] or r["duplicate_of"] or r["too_small"]
+    n_flagged = sum(1 for r in rows if r["relatively_soft"] or r["duplicate_of"] or r.get("near_duplicate_of") or r["too_small"]
                     or r["decodable"] is False or r["looks_like_photo"] is False)
+    near_dups_count = sum(1 for r in rows if r.get("near_duplicate_of") is not None)
     verdict = "no_usable_photos" if n_usable == 0 else "add_angles" if n_usable < _MIN_GOOD_SET else \
         "has_problems" if n_flagged else "good"
     return {"files": rows, "summary": {"total": len(rows), "usable": n_usable, "flagged": n_flagged,
+                                       "near_duplicate_count": near_dups_count,
                                        "soft_threshold": None if median is None else _SOFT_RATIO * median,
                                        "verdict": verdict}}

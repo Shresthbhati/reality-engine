@@ -118,6 +118,7 @@ browser-verified. Backlog rows with remaining work: `PENDING_IMPLEMENTATION.md` 
 | Dimension states MEASURED/RECONSTRUCTED/ESTIMATED/VERIFIED (D1) | PARTIAL | `world_ir/measure.py`, `tests/test_dimension_state.py` |
 | Known-length scale + door-based scale suggestion, user accepts (D2/D2b) | PARTIAL | `tests/test_scale_suggestion.py`; accept path never run end to end |
 | Dimension consistency + gates 2 % L/W/H, 6 cm openings (D3/D4) | EXPERIMENTAL | `tests/test_dimension_gates.py` (synthetic ground truth; real-room variant SKIPPED) |
+| Perceptual pHash deduplication & time/GPS session grouping (Task 13.2) | VERIFIED | `tests/test_task_13_2_dedup_and_session_grouping.py`, `POST /api/uploads/check`, `POST /api/reconstructions` (with `filter_duplicates`), `POST /api/sessions/group`, `POST /api/sessions/{id}/deduplicate` |
 | Learned door/window/furniture detection (O1/O2) | BLOCKED | detector choice needs the user; geometry-only opening host stays |
 | Surface colour + texture atlas (M1/M2), material hypotheses (M3) | PARTIAL / EXPERIMENTAL | `tests/test_room_surfaces.py`, `tests/test_material_hypotheses.py`; hypotheses ESTIMATED, `asserted=False`, confidence <= 0.4, not wired to physics |
 | Viewer room shell + atlas texture + evidence summary (V1/V2) | EXPERIMENTAL | frontend 171/171 contract tests, `tsc --noEmit` exit 0, `tests/test_api_world_artifacts.py`; no browser run |

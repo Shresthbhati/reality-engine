@@ -87,6 +87,7 @@ jobs:
             tests/test_closed_windows.py \
             tests/scenarios/test_scenarios.py \
             tests/test_wall_fixtures_and_elevations.py \
+            tests/test_non_rectangular_rooms.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

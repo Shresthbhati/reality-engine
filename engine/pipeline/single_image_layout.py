@@ -268,6 +268,64 @@ def _hull(points):
     return lower[:-1] + upper[:-1]
 
 
+RING_CORNER_TOL_M = 1.0  # a wall's observed extent may stop this far short of (or overshoot) the corner it meets its neighbour at
+
+
+def _seg_dist(p, a, b) -> float:
+    a, b, p = np.asarray(a, float), np.asarray(b, float), np.asarray(p, float)
+    ab = b - a
+    t = float(np.clip((p - a) @ ab / max(1e-12, float(ab @ ab)), 0.0, 1.0))
+    return float(np.linalg.norm(p - (a + t * ab)))
+
+
+def _segments_cross(p1, p2, p3, p4) -> bool:
+    def o(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    return o(p1, p2, p3) * o(p1, p2, p4) < 0 and o(p3, p4, p1) * o(p3, p4, p2) < 0
+
+
+def _wall_ring(segs) -> Optional[List[Tuple[float, float]]]:
+    """Closed outline from the walls themselves: corners are where neighbouring wall lines meet (L-shapes, notches).
+
+    ``segs`` = [(a, b)] observed wall segments in the plan, camera at the origin. Walls are ordered by their angle around the
+    camera. The outline is accepted only when every neighbouring pair meets at a corner near both segments, the polygon does not
+    cross itself and the camera is inside it; otherwise None (the caller falls back to the visible-part hull).
+    """
+    if len(segs) < 3:
+        return None
+    order = sorted(range(len(segs)), key=lambda i: math.atan2(segs[i][0][1] + segs[i][1][1], segs[i][0][0] + segs[i][1][0]))
+    corners: List[Tuple[float, float]] = []
+    for k, i in enumerate(order):
+        j = order[(k + 1) % len(order)]
+        (a1, b1), (a2, b2) = segs[i], segs[j]
+        d1, d2 = np.subtract(b1, a1), np.subtract(b2, a2)
+        den = d1[0] * d2[1] - d1[1] * d2[0]
+        if abs(den) < 0.17 * np.linalg.norm(d1) * np.linalg.norm(d2):  # near-parallel neighbours do not form a corner
+            return None
+        s = ((a2[0] - a1[0]) * d2[1] - (a2[1] - a1[1]) * d2[0]) / den
+        p = (float(a1[0] + s * d1[0]), float(a1[1] + s * d1[1]))
+        if _seg_dist(p, a1, b1) > RING_CORNER_TOL_M or _seg_dist(p, a2, b2) > RING_CORNER_TOL_M:
+            return None
+        corners.append(p)
+    n = len(corners)
+    area2 = sum(corners[k][0] * corners[(k + 1) % n][1] - corners[(k + 1) % n][0] * corners[k][1] for k in range(n))
+    if abs(area2) < 1e-6:
+        return None
+    for k in range(n):
+        for m in range(k + 2, n):
+            if k == 0 and m == n - 1:
+                continue
+            if _segments_cross(corners[k], corners[(k + 1) % n], corners[m], corners[(m + 1) % n]):
+                return None
+    inside = False
+    for k in range(n):
+        (x1, y1), (x2, y2) = corners[k], corners[(k + 1) % n]
+        if (y1 > 0) != (y2 > 0) and 0 < x1 + (0 - y1) / (y2 - y1) * (x2 - x1):
+            inside = not inside
+    return corners if inside else None
+
+
 def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], *, pre: str,
                     confidence_ceiling: float, opening_ids: Optional[Dict[int, str]] = None) -> Dict[str, object]:
     """A ROOM entity for the part of the room one photograph saw, so the floor plan / report exporters have something to draw.
@@ -304,7 +362,8 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
     if len(walls_used) < 1:
         facts["reason"] = "no promoted wall to bound a room"
         return facts
-    poly = _hull(seg_pts)
+    ring = _wall_ring([((float(a @ e1), float(a @ e2)), (float(b @ e1), float(b @ e2))) for _, _, a, b, _ in walls_used])
+    poly = ring or _hull(seg_pts)
     if len(poly) < 3:
         facts["reason"] = "walls and camera are collinear: no footprint"
         return facts
@@ -328,7 +387,8 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
         custom_properties={
             "footprint_polygon_m": [[round(px, 4), round(py, 4)] for px, py in poly],
             "footprint_basis": {"e1": [float(c) for c in e1], "e2": [float(c) for c in e2]},
-            "footprint_closure": "inferred: convex hull of the observed wall segments and the camera position",
+            "footprint_closure": ("walls meet at their corners: closed outline of the observed walls (non-convex rooms keep their notches)"
+                                  if ring else "inferred: convex hull of the observed wall segments and the camera position"),
             "floor_area_m2": round(area, 3), "height_m": round(height, 3) if height else None,
             # one photo sees one ceiling plane: min == max (the summary card and snapping read these keys)
             **({"ceiling_height_min_m": round(height, 3), "ceiling_height_max_m": round(height, 3)} if height else {}),
@@ -338,7 +398,7 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
                 "layout_dimension_u_m": _dim(world, max(float(q @ e1) for q in floor_pts) - min(float(q @ e1) for q in floor_pts)),
                 "layout_dimension_v_m": _dim(world, max(float(q @ e2) for q in floor_pts) - min(float(q @ e2) for q in floor_pts)),
             },
-            "visible_part_only": True,
+            "visible_part_only": ring is None,
         },
     )
     for i, eid, a, b, wl in walls_used:

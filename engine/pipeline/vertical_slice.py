@@ -450,6 +450,12 @@ def vertical_slice(
     except Exception as exc:  # noqa: BLE001
         raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
 
+    if hasattr(backend, "post_compile_hook"):
+        try:
+            backend.post_compile_hook(world, result, evidence_items)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("backend.post_compile_hook failed: %s", exc)
+
     lap("compile")
     _lap("compile")
     # ---- stage 3.5: semantic perception -> object entities (optional) ----

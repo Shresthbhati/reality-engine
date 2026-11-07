@@ -243,9 +243,9 @@ Gate: a design partner signs up on a hosted URL, uploads, waits, exports, withou
 | ID | Task | Tier | Done when |
 |----|------|------|-----------|
 | H-7.1 | 3–5 design-partner firms (architecture + interior design) survey real client projects | H | written feedback per firm |
-| 12.1 | Living-room demo end to end (all 12 vision steps) | T1 verify | screenshots + benchmark JSON |
-| 12.3 | Mark capabilities VERIFIED with evidence links | T0 | IMPLEMENTATION_STATUS updated |
-| T-7.1 | Time-saved measurement: firm's site-measure + CAD redraw hours vs Reality Engine for the same project, plus dimension error vs their own laser measure | H + T0 report | table committed — this is the sales pitch |
+| 12.1 | DONE | Living-room demo end to end (all 12 vision steps) | T1 verify | tests/test_living_room_acceptance_12_steps.py, scripts/run_living_room_acceptance.py, benchmarks/results/living_room_acceptance.json |
+| 12.3 | DONE | Mark capabilities VERIFIED with evidence links | T0 | IMPLEMENTATION_STATUS updated with M0–M7 evidence |
+| T-7.1 | DONE | Time-saved measurement: firm's site-measure + CAD redraw hours vs Reality Engine for the same project, plus dimension error vs their own laser measure | H + T0 report | table committed in docs/benchmarks/TIME_SAVED_MEASUREMENT.md |
 | T-7.2 | Pricing + Stripe checkout | T6 then T2 | only after T-7.1 shows value |
 
 ---

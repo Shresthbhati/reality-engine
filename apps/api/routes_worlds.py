@@ -465,7 +465,7 @@ async def list_capture_requests(
         return {"items": [], "count": 0, "reason": "No reconstruction version available yet"}
 
     try:
-        world = _load_worldir(store, vrow.version_id)
+        world = store.load_version(vrow.id)
     except Exception as exc:
         log.warning("could not load WorldIR for capture requests: %s", exc)
         return {"items": [], "count": 0, "reason": str(exc)}

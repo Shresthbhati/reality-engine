@@ -205,9 +205,9 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 
 | ID | Task | Depends | Done when | Status |
 |----|------|---------|-----------|--------|
-| 12.1 | Living-room demo end to end | Phases 1–8 | all 12 steps in [00_VISION.md](00_VISION.md) pass in the browser; screenshots + benchmark JSON committed | TODO |
-| 12.2 | Measured-room accuracy report | 2.3, 4.4, 8.3 | dimension error table per room/object committed | TODO |
-| 12.3 | Mark capabilities VERIFIED | 12.1 | `IMPLEMENTATION_STATUS.md` updated with evidence links | TODO |
+| 12.1 | Living-room demo end to end | Phases 1-8 | all 12 steps in [00_VISION.md](00_VISION.md) pass in the browser; screenshots + benchmark JSON committed | DONE |
+| 12.2 | Measured-room accuracy report | 2.3, 4.4, 8.3 | dimension error table per room/object committed | DONE |
+| 12.3 | Mark capabilities VERIFIED | 12.1 | IMPLEMENTATION_STATUS.md updated with evidence links | DONE |
 
 ## Phase 13 — After v1 (capabilities from the 2026-10-28 master plan not covered above)
 

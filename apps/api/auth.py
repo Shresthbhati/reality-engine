@@ -40,6 +40,8 @@ def is_open_path(path: str) -> bool:
         return True
     if path.startswith("/api/auth/invites/"):
         return True
+    if path in ("/api/billing/tiers", "/api/billing/webhook"):
+        return True
     return False
 
 

@@ -30,6 +30,7 @@ All Milestone 0 through Milestone 7 tasks are fully implemented and verified wit
 | **Read-Only Client Presentation Link** | **VERIFIED** | Scoped access tokens, watermark, client feedback comments, audit logging: tests/test_client_link_task10_1.py, tests/test_client_link_audit_task10_3.py |
 | **Guided Mobile Web Capture & Upload Queue** | **VERIFIED** | IndexedDB offline queue, chunked resumable uploads, guided capture: tests/test_mobile_session_capture.py, tests/test_resumable_upload.py |
 | **Multi-Session World Adoption & Change Review** | **VERIFIED** | Rule 18 manual edit protection, 5-state changeset, alignment scoring: tests/test_world_adoption_review.py, frontend/e2e/adoptions.spec.ts |
+| **Pricing & Stripe Checkout Integration (Task T-7.2)** | **VERIFIED** | Solo Architect ($79/mo) and Studio Pro ($249/mo); Stripe Checkout sessions, portal, HMAC-SHA256 webhooks, scan quota: `tests/test_billing_stripe_task7_2.py`, `frontend/src/components/billing/BillingSection.tsx` |
 | **Single-Job Truth & Honest Status Reporting** | **VERIFIED** | Single active job per world, honest stage progress without fake bars: tests/test_api_single_job_truth.py, frontend/e2e/session-flow.spec.ts |
 
 ## Baseline (recorded 2026-11-04, task 0.5)

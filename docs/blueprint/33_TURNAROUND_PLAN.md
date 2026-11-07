@@ -246,7 +246,7 @@ Gate: a design partner signs up on a hosted URL, uploads, waits, exports, withou
 | 12.1 | DONE | Living-room demo end to end (all 12 vision steps) | T1 verify | tests/test_living_room_acceptance_12_steps.py, scripts/run_living_room_acceptance.py, benchmarks/results/living_room_acceptance.json |
 | 12.3 | DONE | Mark capabilities VERIFIED with evidence links | T0 | IMPLEMENTATION_STATUS updated with M0–M7 evidence |
 | T-7.1 | DONE | Time-saved measurement: firm's site-measure + CAD redraw hours vs Reality Engine for the same project, plus dimension error vs their own laser measure | H + T0 report | table committed in docs/benchmarks/TIME_SAVED_MEASUREMENT.md |
-| T-7.2 | Pricing + Stripe checkout | T6 then T2 | only after T-7.1 shows value |
+| T-7.2 | DONE | Pricing + Stripe checkout (Solo Architect $79/mo, Studio Pro $249/mo; Stripe Checkout, Customer Portal, Webhook HMAC-SHA256, scan quotas) | T2 | verified by tests/test_billing_stripe_task7_2.py |
 
 ---
 

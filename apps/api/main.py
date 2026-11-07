@@ -44,6 +44,7 @@ from apps.api.routes_sites import sites
 from apps.api.routes_system import system
 from apps.api.routes_technologies import technologies_router
 from apps.api.routes_usage import router as usage_router
+from apps.api.routes_billing import router as billing_router
 from apps.api.routes_worlds import worlds
 
 log = logging.getLogger("reality.api")
@@ -83,6 +84,7 @@ for router in (health, sessions, uploads, quality, evidence, reconstructions, wo
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(account_router, prefix="/api/account", tags=["account"])
+app.include_router(billing_router)
 
 
 @app.get('/health', tags=['health'])

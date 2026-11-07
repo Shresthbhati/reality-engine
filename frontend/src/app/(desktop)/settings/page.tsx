@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
+import BillingSection from "@/components/billing/BillingSection";
 import {
   DensityPref,
   setDensity,
@@ -181,6 +182,11 @@ export default function SettingsPage() {
               </select>
             </div>
           </div>
+        </Section>
+
+        {/* Subscription & Plans (Task T-7.2) */}
+        <Section title="Subscription & Plans">
+          <BillingSection />
         </Section>
 
         {/* Data Section (Blueprint P14) */}

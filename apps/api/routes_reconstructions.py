@@ -130,6 +130,11 @@ async def create_reconstruction(
     from apps.api.validation import require_finite, require_latitude, require_longitude, require_name
 
     await assert_visible(db, World, world_id, auth)  # a foreign world is a 404 before any file is read
+    if world_id is None and auth.tenant_id != "default":
+        from apps.api.billing_service import check_scan_quota
+        has_quota, quota_reason = await check_scan_quota(db, auth.tenant_id)
+        if not has_quota:
+            raise HTTPException(status_code=402, detail=quota_reason)
     if not files:
         raise HTTPException(422, "no files were provided")
     if len(files) > MAX_FILES_PER_REQUEST:

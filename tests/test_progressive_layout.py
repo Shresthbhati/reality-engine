@@ -69,9 +69,18 @@ def test_a_structureless_multiview_model_is_replaced_by_the_layout(tmp_path, ana
     assert any("room shell built from one photograph" in d for d in res.degraded)  # the other photos are accounted for
 
 
-def test_a_credible_multiview_model_is_left_alone(tmp_path, analyzer):
+def test_a_credible_multiview_model_is_superseded_by_a_working_layout(tmp_path, analyzer):
     res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=400), layout_analyzer=analyzer)
-    assert res.level == 2 and analyzer.calls == []  # not even analysed: no cost when multi-view works
+    assert res.level == 0 and analyzer.calls  # the layout always runs: it alone gives openings, fixtures and furniture
+    assert any(a["level"] == 2 and a["outcome"] == "superseded" for a in res.attempts)
+
+
+def test_a_credible_multiview_model_stands_when_the_layout_models_are_unavailable(tmp_path):
+    def unavailable(item):
+        raise RuntimeError("weights not cached")
+
+    res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=400), layout_analyzer=unavailable)
+    assert res.level == 2
 
 
 def test_layout_models_unavailable_falls_back_to_the_classic_path_and_says_so(tmp_path):

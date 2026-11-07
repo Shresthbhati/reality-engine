@@ -261,13 +261,15 @@ def run_progressive(
             vs = None
 
     layout_reason: Optional[str] = None
+    layout_superseded = False
     pre_boots: list = []
     pre_pick = None
     if vs is not None and layout_analyzer is not None:
         weakness = _multiview_weakness(vs)
-        if weakness:
-            # The weak multi-view model is replaced ONLY after the layout actually succeeded: if the learned models are
-            # unavailable or refuse, the multi-view result stands (a weak model is still better than none).
+        # The learned layout is ALWAYS tried: it is the only path that gives a metric shell, openings, fixtures and furniture, and
+        # multi-view results vary run to run on the same photos. The multi-view model is replaced ONLY after the layout actually
+        # succeeded: if the learned models are unavailable or refuse, the multi-view result stands.
+        if True:
             prior_set = set(prior_ids)
             pre_boots, pre_pick = _bootstrap_best_layout(
                 sorted(eligible, key=lambda c: c.item.id not in prior_set), layout_analyzer, artifact_store=artifact_store,
@@ -275,9 +277,11 @@ def run_progressive(
                 fixture_detector=fixture_detector)
             if pre_boots:
                 layout_reason = weakness
-                attempts[[i for i, a in enumerate(attempts) if a["level"] == 2][-1]]["outcome"] = "rejected"
-                attempts[[i for i, a in enumerate(attempts) if a["level"] == 2][-1]]["detail"] += (
-                    f"; not credible ({weakness}): room shell built from learned single-image layout instead")
+                layout_superseded = weakness is None
+                last2 = attempts[[i for i, a in enumerate(attempts) if a["level"] == 2][-1]]
+                last2["outcome"] = "superseded" if layout_superseded else "rejected"
+                last2["detail"] += ("; superseded by the learned layout (metric shell, openings, fixtures, furniture)" if layout_superseded
+                                    else f"; not credible ({weakness}): room shell built from learned single-image layout instead")
                 vs = None
 
     degraded: List[str] = []
@@ -389,7 +393,8 @@ def run_progressive(
                 built
                 + ("; could not be registered: " + ", ".join(f"{k} ({v.split('(')[0].strip()})" for k, v in refused.items()) if refused else "")
                 + ("" if n_used > 1 or refused else f"; the other {len(eligible) - 1} are kept as evidence but not yet fused into it")
-                + (f" (multi-view reconstruction was not credible: {layout_reason})" if layout_reason else ""))
+                + (f" (multi-view reconstruction was not credible: {layout_reason})" if layout_reason else "")
+                + (" (the multi-view model was credible but is superseded by the learned layout)" if layout_superseded else ""))
         elif len(eligible) == 1:
             degraded.append("single-view hypothesis: partial by construction "
                             "(relative scale, hidden surfaces unknown)")

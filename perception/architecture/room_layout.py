@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
 from perception.architecture.layout_evidence import LAYOUT_BASIS_CONFIDENCE, layout_support
+from perception.architecture.non_rectangular import classify_room_shape, regularise_canted_angles
 
 #: edges within this angle of a dominant direction are snapped to it
 SNAP_TOL_DEG = 8.0
@@ -59,6 +60,7 @@ class LayoutWall:
     observed_fraction: Optional[float]     # None = no wall points were supplied, nothing is claimed
     unobserved_spans_m: Tuple[Tuple[float, float], ...]
     snapped: bool
+    canted: bool = False
     #: Which observation made this wall OBSERVED: "points" (point cloud), "layout_image" (a projected single-image
     #: floor boundary, plan F4) or "points+layout_image"; "none" when it is an inferred closing segment.
     support_basis: str = "none"
@@ -78,6 +80,8 @@ class RoomLayout:
     dominant_angle_deg: Optional[float]
     manhattan_fraction: float              # share of the outline length snapped to the dominant directions
     clockwise: bool = False
+    shape_type: Optional[str] = None
+    shape_details: Optional[Dict[str, Any]] = None
     warnings: List[str] = field(default_factory=list)
 
     def inward(self, wall: LayoutWall) -> Tuple[float, float]:
@@ -103,7 +107,10 @@ def dominant_angle(poly: Sequence[Sequence[float]]) -> Tuple[Optional[float], fl
         tot += length
     if tot < 1e-9 or abs(z) < 1e-9:
         return None, 0.0
-    return math.atan2(z.imag, z.real) / 4.0, abs(z) / tot
+    ang = math.atan2(z.imag, z.real) / 4.0
+    if abs(math.degrees(ang)) <= 1.0:
+        ang = 0.0
+    return ang, abs(z) / tot
 
 
 def _intersect(p1, d1, p2, d2) -> Optional[Tuple[float, float]]:
@@ -176,12 +183,27 @@ def solve_room_layout(
             continue
         ang = math.atan2(q[1] - p[1], q[0] - p[0])
         snapped = False
+        canted = False
         if theta is not None:
             k = round((ang - theta) / (math.pi / 2))
             if abs(math.degrees(ang - theta - k * math.pi / 2)) <= snap_tol_deg:
                 ang, snapped = theta + k * math.pi / 2, True
-        edges.append({"mid": ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2), "dir": (math.cos(ang), math.sin(ang)),
-                      "len": length, "start": p, "snapped": snapped, "h": heights[i]})
+            else:
+                ang, canted = regularise_canted_angles(ang, theta)
+        u_dir = np.array([math.cos(ang), math.sin(ang)], float)
+        n_dir = np.array([-u_dir[1], u_dir[0]], float)
+        mid_pt = np.array([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], float)
+        if wall_points_ab is not None and len(wall_points_ab) > 0 and (snapped or canted):
+            rel = wall_points_ab - mid_pt
+            s = rel @ u_dir
+            off = rel @ n_dir
+            inliers = (np.abs(off) < SUPPORT_BAND_M) & (s > -0.05) & (s < length + 0.05)
+            if np.sum(inliers) >= SUPPORT_MIN_POINTS * 2:
+                delta = float(np.median(off[inliers]))
+                if abs(delta) <= merge_offset_m:
+                    mid_pt = mid_pt + delta * n_dir
+        edges.append({"mid": (float(mid_pt[0]), float(mid_pt[1])), "dir": (float(u_dir[0]), float(u_dir[1])),
+                      "len": length, "start": p, "snapped": snapped, "canted": canted, "h": heights[i]})
     if len(edges) < 3:
         return RoomLayout([], poly, False, theta and math.degrees(theta), 0.0, warnings=["fewer than 3 usable edges"])
 
@@ -205,6 +227,7 @@ def solve_room_layout(
                 mid = tuple((e["mid"][k] * e["len"] + f["mid"][k] * f["len"]) / w for k in (0, 1))
                 merged = {"mid": mid, "dir": e["dir"], "len": w, "start": e["start"],
                           "snapped": e["snapped"] and f["snapped"],
+                          "canted": e.get("canted", False) and f.get("canted", False),
                           "h": e["h"] if e["h"] is not None else f["h"]}
                 j = (i + 1) % len(edges)
                 if j == 0:                       # merged across the seam
@@ -255,15 +278,18 @@ def solve_room_layout(
                                 height_m=None if h is None else float(h), height_basis="measured" if h is not None else "none",
                                 thickness_m=thickness_m, thickness_basis="default_unmeasured", provenance=prov,
                                 confidence=conf, observed_fraction=frac, unobserved_spans_m=spans, snapped=e["snapped"],
+                                canted=e.get("canted", False),
                                 support_basis=basis, layout_support_fraction=lfrac))
         tot_len += length
         snapped_len += length if e["snapped"] else 0.0
     closed = len(walls) >= 3 and all(
         math.hypot(walls[i].b[0] - walls[(i + 1) % len(walls)].a[0], walls[i].b[1] - walls[(i + 1) % len(walls)].a[1]) < 1e-6
         for i in range(len(walls)))
+    shape_meta = classify_room_shape([w.a for w in walls], dominant_angle_deg=None if theta is None else round(math.degrees(theta), 3))
     return RoomLayout(walls=walls, polygon=[w.a for w in walls], closed=closed,
                       dominant_angle_deg=None if theta is None else round(math.degrees(theta), 3),
                       manhattan_fraction=round(snapped_len / tot_len, 4) if tot_len else 0.0, clockwise=clockwise,
+                      shape_type=shape_meta.get("shape_type"), shape_details=shape_meta.get("details"),
                       warnings=warnings)
 
 

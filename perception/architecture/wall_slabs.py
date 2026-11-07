@@ -216,8 +216,11 @@ def _promote_room(world, room: Entity, result, P: np.ndarray, up, wall_planes, a
     cp["layout_dimension_v_m"] = consistency["extent_v_m"]
     cp["layout_height_layers_m"] = consistency["height_layers_m"]
     cp["dimensional_consistency"] = consistency
+    cp["shape_type"] = layout.shape_type
+    cp["shape_details"] = layout.shape_details
     report_room = {"room_id": room.id, "closed": layout.closed, "walls": len(layout.walls),
                    "dominant_angle_deg": layout.dominant_angle_deg, "manhattan_fraction": layout.manhattan_fraction,
+                   "shape_type": layout.shape_type, "shape_details": layout.shape_details,
                    "consistency": consistency,
                    "inferred_walls": [], "openings": [], "unobserved_gaps": [], "skipped_walls": [], "slabs": []}
     report["warnings"].extend(f"{room.id}: dimensional inconsistency: {m['detail']}" for m in consistency["mismatches"])
@@ -284,7 +287,7 @@ def _promote_room(world, room: Entity, result, P: np.ndarray, up, wall_planes, a
             "created_by": CREATED_BY, "room_id": room.id, "length_m": round(L, 4), "height_m": round(w.height_m, 4),
             "thickness_m": w.thickness_m, "thickness_basis": w.thickness_basis, "height_basis": w.height_basis,
             "observed_fraction": w.observed_fraction, "unobserved_spans_m": [list(s) for s in w.unobserved_spans_m],
-            "snapped_to_dominant_axes": w.snapped, "evidence_plane_ids": ev,
+            "snapped_to_dominant_axes": w.snapped, "canted": getattr(w, "canted", False), "evidence_plane_ids": ev,
             "wall_slab": {
                 "start_xyz_m": [round(float(v), 5) for v in origin], "end_xyz_m": [round(float(v), 5) for v in world_pt(np.asarray(w.b), floor_h)],
                 "direction": [round(float(v), 6) for v in dir_w], "outward": [round(float(-v), 6) for v in in_w],

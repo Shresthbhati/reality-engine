@@ -176,7 +176,8 @@ Deferred for this customer: LOD chains, collision proxies, Unity preset, linked 
 | 12.2 | Measured-room accuracy report against the §1 tolerances | T1 | medium | error table per room/element; pass/fail per tolerance |
 | T-3.3 | Accuracy fixes driven by 12.2 (scale from known references, plane fitting, wall-thickness rules, ceiling-height estimation) | T4 | high | 12.2 errors inside tolerance on ≥ 5 of 6 rooms |
 | T-3.4 | DONE | Sockets, switches, light fixtures, radiators placed on host wall planes with measured height above floor (`perception/architecture/fixtures.py`); positions within ±5 cm tolerance verified (`tests/test_wall_fixtures_and_elevations.py` passed) | T1 + T4 | medium | recall reported on 8.6 set; positions within ±5 cm on measured rooms |
-| T-3.5 | Non-rectangular rooms: L-shapes, bay windows, chamfered corners (13.4 subset) | T4 | high | L-shaped measured room within tolerance |
+| T-3.5 | DONE | Non-rectangular rooms: L-shapes, bay windows, chamfered corners (13.4 subset; perception/architecture/non_rectangular.py, 
+oom_layout.py); L-shaped room verified within Section 1 tolerances, canted angle regularisation, shape classification (	ests/test_non_rectangular_rooms.py passed) | T4 | high | L-shaped measured room within tolerance |
 | T-3.2 | Finishes: keep real surface appearance; per-surface material label (paint, tile, wood, concrete) for the schedule | T4 | medium | label accuracy reported on measured rooms |
 
 ### M4 — Rooms join into one apartment; a second visit updates it (≈ 3–4 weeks)

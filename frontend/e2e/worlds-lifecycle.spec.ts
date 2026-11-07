@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import { API_URL } from "./support";
 
 test.describe("World Card Lifecycle and Management (Task 1.4)", () => {
+  test.describe.configure({ mode: "serial" });
+
   let createdWorldId: string;
   const initialWorldName = `Lifecycle Site ${Date.now()}`;
 
@@ -75,7 +77,11 @@ test.describe("World Card Lifecycle and Management (Task 1.4)", () => {
     // Confirm Move to Trash
     const confirmBtn = page.getByTestId("confirm-delete-btn");
     await expect(confirmBtn).toHaveText("Move to Trash");
-    await confirmBtn.click();
+    const [delResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/api/worlds") && r.request().method() === "DELETE"),
+      confirmBtn.click(),
+    ]);
+    expect(delResponse.status()).toBe(200);
 
     // Verify it is no longer listed in active worlds
     await expect(page.locator(`[data-testid="world-card"][data-world-id="${createdWorldId}"]`)).toHaveCount(0);
@@ -104,7 +110,11 @@ test.describe("World Card Lifecycle and Management (Task 1.4)", () => {
 
     const purgeBtn = page.getByTestId("confirm-delete-btn");
     await expect(purgeBtn).toHaveText("Purge Permanently");
-    await purgeBtn.click();
+    const [purgeResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/api/worlds") && r.request().method() === "DELETE"),
+      purgeBtn.click(),
+    ]);
+    expect(purgeResponse.status()).toBe(200);
 
     // Verify world is gone from Trash
     await expect(page.locator(`[data-testid="world-card"][data-world-id="${createdWorldId}"]`)).toHaveCount(0);

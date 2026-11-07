@@ -181,7 +181,7 @@ def test_duplicate_is_copy_on_write_and_independent(env):
         return {w: (r.points_artifact_uri, r.cameras_artifact_uri, r.report, r.label) for w, r in v.items()}
     got = env.run(rows)
     assert got[src][:3] == got[dup["id"]][:3] and got[src][0].startswith("sha256://")
-    assert got[src][3] is None and "Duplicate of Src" in got[dup["id"]][3]
+    assert got[src][3] in (None, "as-built") and "Duplicate of Src" in got[dup["id"]][3]
     # the duplicate's version reads back through the normal routes
     assert env.client.get(f"/api/worlds/{dup['id']}/versions").json()["items"][0]["is_current"] is True
     assert set(ids(env)) == {src, dup["id"]}

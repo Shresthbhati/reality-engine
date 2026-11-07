@@ -89,6 +89,7 @@ jobs:
             tests/test_wall_fixtures_and_elevations.py \
             tests/test_non_rectangular_rooms.py \
             tests/test_surface_finishes.py \
+            tests/test_measured_room_accuracy_report.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

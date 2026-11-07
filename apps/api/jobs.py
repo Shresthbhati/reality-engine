@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import event, or_, select
+from sqlalchemy import event, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import (
@@ -1318,9 +1318,16 @@ _HANDLERS = {
 
 def _stale_after_seconds() -> float:
     try:
-        return max(30.0, float(os.environ.get("JOB_STALE_AFTER_SECONDS", "300")))
+        return max(0.5, float(os.environ.get("JOB_STALE_AFTER_SECONDS", "300")))
     except ValueError:
         return 300.0
+
+
+def _heartbeat_interval_seconds() -> float:
+    try:
+        return max(0.2, float(os.environ.get("JOB_HEARTBEAT_INTERVAL_SECONDS", "5.0")))
+    except ValueError:
+        return 5.0
 
 
 def _job_timeout_seconds() -> float:
@@ -1330,15 +1337,40 @@ def _job_timeout_seconds() -> float:
         return 1800.0
 
 
-async def reap_stale_jobs(db: AsyncSession) -> int:
-    """Recover jobs stranded in 'running' by a crashed worker/restart.
+async def _run_job_heartbeat(job_id: str, interval_seconds: float = 5.0) -> None:
+    """Periodic background task that updates heartbeat_at in the database
+    while a handler runs, preventing false-positive staleness reap of long jobs."""
+    from apps.api.db import get_sessionmaker
+    from reconstruction.proc import worker_heartbeat
 
-    A claimed job heartbeats at claim time; one still 'running' past the
-    staleness horizon belongs to a dead worker and is requeued for pickup
-    instead of wedging its entity forever. Returns the requeued count.
-    Also checks for dead workers and recovers their jobs.
+    maker = get_sessionmaker()
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            async with maker() as hb_db:
+                await hb_db.execute(
+                    update(Job)
+                    .where(Job.id == job_id, Job.status == JOB_RUNNING)
+                    .values(heartbeat_at=utcnow())
+                )
+                await hb_db.commit()
+                worker_heartbeat(job_id)
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            log.debug("Heartbeat pulse skipped/failed for job %s", job_id)
+
+
+async def reap_stale_jobs(db: AsyncSession) -> int:
+    """Recover jobs stranded in 'running' by a crashed worker or restart.
+
+    A claimed job heartbeats at claim time and periodically while running.
+    A job still marked 'running' past the staleness horizon belongs to a
+    dead or crashed worker process and is requeued for pickup (or failed
+    if max_attempts reached), ensuring zero lost jobs on worker crash/restart.
     """
     from datetime import timedelta
+    from reconstruction.proc import get_dead_worker_jobs, recover_orphaned_jobs
 
     cutoff = utcnow() - timedelta(seconds=_stale_after_seconds())
     result = await db.execute(
@@ -1346,52 +1378,122 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     )
     reaped = 0
     for job in result.scalars().all():
-        job.status = JOB_QUEUED
-        job.stage = None
-        job.worker_id = None
+        if job.attempts >= job.max_attempts:
+            job.status = JOB_FAILED
+            job.stage = TERMINAL_STAGE[JOB_FAILED]
+            job.completed_at = utcnow()
+            job.error = f"Worker died or job timed out after {job.attempts} attempt(s)"
+            db.add(
+                JobLog(
+                    id=new_id("log"),
+                    job_id=job.id,
+                    stage="failed",
+                    level="ERROR",
+                    message=job.error,
+                    context_json={"attempts": job.attempts, "reaped": True},
+                )
+            )
+        else:
+            job.status = JOB_QUEUED
+            job.stage = None
+            job.worker_id = None
+            db.add(
+                JobLog(
+                    id=new_id("log"),
+                    job_id=job.id,
+                    stage="recovered",
+                    level="WARNING",
+                    message=f"Recovered stale job from crashed worker (attempt {job.attempts}/{job.max_attempts}); requeued",
+                    context_json={"attempts": job.attempts, "reaped": True},
+                )
+            )
         reaped += 1
     if reaped:
         await db.commit()
-        log.warning("reaped %d stale running job(s) back to queued", reaped)
-    
+        log.warning("reaped %d stale running job(s)", reaped)
+
     # Also check for dead workers
     dead_jobs = get_dead_worker_jobs()
     if dead_jobs:
         log.warning("Found %d dead worker jobs, recovering...", len(dead_jobs))
-        for job_id in dead_jobs:
-            # The actual recovery will be handled by recover_orphaned_jobs
-            pass
+        for dead_id in dead_jobs:
+            dead_res = await db.execute(
+                select(Job).where(Job.id == dead_id, Job.status == JOB_RUNNING)
+            )
+            dead_job = dead_res.scalar_one_or_none()
+            if dead_job:
+                if dead_job.attempts >= dead_job.max_attempts:
+                    dead_job.status = JOB_FAILED
+                    dead_job.stage = TERMINAL_STAGE[JOB_FAILED]
+                    dead_job.completed_at = utcnow()
+                    dead_job.error = f"Worker process died after {dead_job.attempts} attempt(s)"
+                else:
+                    dead_job.status = JOB_QUEUED
+                    dead_job.stage = None
+                    dead_job.worker_id = None
+                reaped += 1
+                await db.commit()
+            await recover_orphaned_jobs(db, dead_id)
     return reaped
 
 
-async def process_next_job(db: AsyncSession) -> Job | None:
-    """Claim and run one queued job. Returns the job, or None if queue empty."""
+async def claim_next_job(db: AsyncSession, worker_id: str | None = None) -> Job | None:
+    """Atomically claim the highest-priority queued job for a worker.
+
+    Uses an atomic compare-and-swap update so multiple concurrent workers
+    competing for jobs never claim the same job. Returns the claimed Job
+    with status=JOB_RUNNING, or None if no queued job is available or if
+    a race was lost to another worker.
+    """
+    effective_worker_id = worker_id or WORKER_ID
     result = await db.execute(
-        select(Job)
+        select(Job.id)
         .where(Job.status == JOB_QUEUED)
         .order_by(Job.priority.desc(), Job.created_at.asc())
         .limit(1)
     )
-    job = result.scalar_one_or_none()
-    if job is None:
+    cand_id = result.scalar_one_or_none()
+    if cand_id is None:
         return None
-    job.status = JOB_RUNNING
-    job.worker_id = WORKER_ID
-    job.attempts += 1
-    job.progress = 0.0  # a retry starts over; progress is monotonic within one attempt
-    job.started_at = utcnow()
-    job.heartbeat_at = utcnow()
+
+    now = utcnow()
+    claim_res = await db.execute(
+        update(Job)
+        .where(Job.id == cand_id, Job.status == JOB_QUEUED)
+        .values(
+            status=JOB_RUNNING,
+            worker_id=effective_worker_id,
+            attempts=Job.attempts + 1,
+            started_at=now,
+            heartbeat_at=now,
+            progress=0.0,
+        )
+    )
+    if claim_res.rowcount == 0:
+        # Another worker claimed it concurrently
+        await db.commit()
+        return None
+
     db.add(
         JobLog(
             id=new_id("log"),
-            job_id=job.id,
+            job_id=cand_id,
             stage="started",
             level="INFO",
-            message=f"Job started on worker {WORKER_ID}",
-            context_json={"worker_id": WORKER_ID, "attempts": job.attempts},
+            message=f"Job claimed and started on worker {effective_worker_id}",
+            context_json={"worker_id": effective_worker_id},
         )
     )
     await db.commit()
+    job = await db.get(Job, cand_id)
+    return job
+
+
+async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Job | None:
+    """Claim and run one queued job. Returns the job, or None if queue empty."""
+    job = await claim_next_job(db, worker_id=worker_id)
+    if job is None:
+        return None
 
     from reconstruction.proc import (
         discard_job,
@@ -1411,6 +1513,12 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     # (propagates into worker threads, so synchronous backends inherit
     # it transparently). Cleared in the finally below.
     set_current_job(job.id)
+
+    # Active heartbeat pulsing while handler runs
+    heartbeat_task = asyncio.create_task(
+        _run_job_heartbeat(job.id, interval_seconds=_heartbeat_interval_seconds())
+    )
+
     try:
         if handler is None:
             raise RuntimeError(f"No handler for job type {job.type}")
@@ -1538,6 +1646,11 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     try:
         await db.commit()
     finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
         # Ownership cleanup is unconditional: even if the final commit
         # itself raises, the next claim rebinds context and the registry
         # never accumulates dead entries.
@@ -1579,8 +1692,9 @@ async def sweep_trash(db: AsyncSession) -> int:
 
 
 async def worker_loop(poll_seconds: float = 1.0) -> None:
-    """Background worker. Started with the API process."""
+    """Background worker. Started with the API process or standalone worker daemon."""
     from apps.api.db import get_sessionmaker
+    from reconstruction.proc import get_dead_worker_jobs, recover_orphaned_jobs
 
     maker = get_sessionmaker()
     # A previous process may have died mid-job: reap once at startup so
@@ -1610,6 +1724,9 @@ async def worker_loop(poll_seconds: float = 1.0) -> None:
                 job = await process_next_job(db)
             if job is None:
                 await asyncio.sleep(poll_seconds)
+        except asyncio.CancelledError:
+            log.info("worker_loop received cancellation")
+            break
         except Exception:
             log.exception("worker loop error")
             await asyncio.sleep(poll_seconds * 2)

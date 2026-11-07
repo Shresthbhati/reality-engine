@@ -183,3 +183,27 @@ def test_obj_materials_are_named_by_surface_too(bootstrap):
     used = {line.split()[1] for line in obj.splitlines() if line.startswith("usemtl")}
     assert {"surface_floor", "surface_wall", "surface_ceiling", "surface_window"} <= used
     assert all(f"newmtl {m}" in mtl for m in used)
+
+
+def test_elements_carry_dimensions_with_state_basis_and_uncertainty(bootstrap):
+    """T-2.2: wall length, room area, ceiling height, opening size: each ESTIMATED with a stated +/- and basis."""
+    from exporters.floorplan import export_to_floorplan_dxf_with_report
+
+    wall = next(w for w in _of(bootstrap, "wall") if w.custom_properties.get("wall_slab"))
+    dims = wall.custom_properties["dimensions"]
+    assert dims["length_m"]["value"] == pytest.approx(wall.custom_properties["length_m"], abs=0.01)
+    assert dims["length_m"]["state"] == "ESTIMATED" and dims["length_m"]["uncertainty_m"] > 0
+    assert "monocular" in dims["length_m"]["basis"]
+    assert dims["height_m"]["value"] == pytest.approx(2.6, abs=0.1)
+
+    rdims = _of(bootstrap, "room")[0].custom_properties["dimensions"]
+    assert {"floor_area_m2", "height_m", "layout_dimension_u_m", "layout_dimension_v_m"} <= set(rdims)
+    assert rdims["height_m"]["value"] == pytest.approx(2.6, abs=0.1)
+
+    (win,) = _of(bootstrap, "window")
+    wd = win.custom_properties["dimensions"]
+    assert wd["width_m"]["value"] == pytest.approx(1.4, abs=0.2) and wd["sill_m"]["value"] == pytest.approx(0.9, abs=0.15)
+    assert wd["width_m"]["uncertainty_m"] > 0
+
+    dxf, _ = export_to_floorplan_dxf_with_report(bootstrap.world)
+    assert "ESTIMATED" in dxf and "not measured" not in dxf  # the plan prints each dimension WITH its state

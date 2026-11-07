@@ -140,7 +140,8 @@ def add_layout_openings(world, obs, layout: SurfaceLayout, eid_of_plane: Dict[st
                 note=(f"{o.kind} segmented in the photograph and projected onto its wall plane: "
                       f"{width:.2f} m wide, sill {o.h_min:.2f} m, head {o.h_max:.2f} m (monocular-depth estimate)")),
             observations=[obs],
-            custom_properties={"host_wall_id": host, "bootstrap": {
+            custom_properties={"host_wall_id": host, "dimensions": {
+                "width_m": _dim(world, width), "height_m": _dim(world, height), "sill_m": _dim(world, o.h_min)}, "bootstrap": {
                 "role": "opening_from_labels", "source": "single_image_layout", "host_entity_id": host,
                 "resolved_kind": True, "kind_basis": "ADE20K semantic label",
                 "dimensions": {"width_m": round(width, 3), "height_m": round(height, 3), "sill_m": round(o.h_min, 3),
@@ -149,6 +150,18 @@ def add_layout_openings(world, obs, layout: SurfaceLayout, eid_of_plane: Dict[st
         )
     facts["candidates"] = k
     return facts
+
+
+#: monocular metric depth is typically within 10-20 % indoors; the stated +/- is 15 % of the value, labelled as such
+DIM_UNCERTAINTY_FRACTION = 0.15
+DIM_BASIS = "monocular metric depth + surface labels (indoor model, typical error 10-20 %); not a measurement"
+
+
+def _dim(world, value: float, *, kind: str = "distance", basis: str = DIM_BASIS) -> dict:
+    from world_ir.measure import dimension_from_metadata
+
+    return dimension_from_metadata(float(value), world.metadata, state="ESTIMATED", basis=basis,
+                                   uncertainty_m=DIM_UNCERTAINTY_FRACTION * abs(float(value)), kind=kind)
 
 
 def _hull(points):
@@ -233,7 +246,13 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
             "footprint_polygon_m": [[round(px, 4), round(py, 4)] for px, py in poly],
             "footprint_basis": {"e1": [float(c) for c in e1], "e2": [float(c) for c in e2]},
             "footprint_closure": "inferred: convex hull of the observed wall segments and the camera position",
-            "floor_area_m2": round(area, 3), "height_m": round(height, 3) if height else None, "dimensions": {},
+            "floor_area_m2": round(area, 3), "height_m": round(height, 3) if height else None,
+            "dimensions": {
+                "floor_area_m2": _dim(world, area, kind="area", basis=DIM_BASIS + "; visible part only (lower bound)"),
+                **({"height_m": _dim(world, height)} if height else {}),
+                "layout_dimension_u_m": _dim(world, max(float(q @ e1) for q in floor_pts) - min(float(q @ e1) for q in floor_pts)),
+                "layout_dimension_v_m": _dim(world, max(float(q @ e2) for q in floor_pts) - min(float(q @ e2) for q in floor_pts)),
+            },
             "visible_part_only": True,
         },
     )
@@ -248,6 +267,7 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
                              "sill_m": round(o.h_min, 3)})
         ent.custom_properties.update({
             "room_id": room_id, "length_m": round(wl.s_max - wl.s_min, 3), "height_m": round(height, 3),
+            "dimensions": {"length_m": _dim(world, wl.s_max - wl.s_min), **({"height_m": _dim(world, height)} if height else {})},
             "thickness_m": 0.1, "thickness_basis": "default_unmeasured", "observed_fraction": 1.0,
             # start/end ON THE FLOOR (the solver's wall line is at camera height), with the wall's direction and up
             "wall_slab": {"start_xyz_m": [float(c) for c in (a - cam_h * up_h)], "end_xyz_m": [float(c) for c in (b - cam_h * up_h)],

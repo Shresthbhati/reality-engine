@@ -9,10 +9,12 @@ Run:  uvicorn apps.api.main:app --port 8100
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from apps.api import jobs as jobrunner
 from apps.api.auth import auth_middleware
@@ -42,7 +44,18 @@ from apps.api.routes_technologies import technologies_router
 from apps.api.routes_usage import router as usage_router
 from apps.api.routes_worlds import worlds
 
+log = logging.getLogger("reality.api")
+
 app = FastAPI(title="Reality Engine API", version="0.1.0")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    log.exception("Unhandled server exception on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal server error occurred. Request ID logged."},
+    )
 
 
 @app.middleware("http")

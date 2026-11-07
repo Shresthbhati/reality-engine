@@ -80,6 +80,7 @@ jobs:
             tests/test_usage_metering.py \
             tests/test_observability_job_logs.py \
             tests/test_furniture_commands_and_undo.py \
+            tests/test_security_dast.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

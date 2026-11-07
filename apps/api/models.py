@@ -390,6 +390,17 @@ class SiteAnchor(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class WorldEditState(Base):
+    """Per-world redo list (T-6.7). Undo/redo move the world's HEAD along its immutable version chain; the versions that were
+    undone are remembered here, newest last, so redo survives a reload. A new edit makes the list stale (checked on use)."""
+
+    __tablename__ = "world_edit_state"
+
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), primary_key=True)
+    redo: Mapped[list] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Account(Base):
     """A person who signs in (hosted use). Belongs to exactly one tenant; the tenant's first account is its owner.
 

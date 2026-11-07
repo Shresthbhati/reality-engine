@@ -158,6 +158,51 @@ def test_trajectory_honest_until_artifacts_exist(client):
     assert traj["points"] == []
 
 
+def test_trajectory_returns_stored_points(client):
+    """T-5.2: Verify GET /api/sessions/{id}/trajectory returns real stored location fixes."""
+    sid = client.post("/api/sessions", json={"name": "Walk Route"}).json()["id"]
+
+    # 1. Post batch of trajectory points (e.g. from watchPosition)
+    batch = {
+        "points": [
+            {
+                "latitude": 51.5074,
+                "longitude": -0.1278,
+                "altitude": 15.2,
+                "accuracy": 3.5,
+                "heading": 90.0,
+                "speed": 1.2,
+                "source": "gnss",
+            },
+            {
+                "latitude": 51.5075,
+                "longitude": -0.1276,
+                "altitude": 15.4,
+                "accuracy": 2.8,
+                "heading": 85.0,
+                "speed": 1.1,
+                "source": "gnss",
+            },
+        ]
+    }
+    r = client.post(f"/api/sessions/{sid}/locations", json=batch)
+    assert r.status_code == 200
+    assert r.json()["added"] == 2
+
+    # 2. Get trajectory and verify stored points
+    traj = client.get(f"/api/sessions/{sid}/trajectory").json()
+    assert traj["available"] is True
+    assert traj["session_id"] == sid
+    assert traj["count"] == 2
+    pts = traj["points"]
+    assert len(pts) == 2
+    assert pts[0]["latitude"] == 51.5074
+    assert pts[0]["longitude"] == -0.1278
+    assert pts[0]["accuracy"] == 3.5
+    assert pts[1]["latitude"] == 51.5075
+    assert pts[1]["longitude"] == -0.1276
+
+
 def test_reconstruct_fails_with_honest_error_when_no_evidence(client):
     """Reconstruction fails with an honest error when session has no evidence."""
     w = client.post("/api/worlds", json={"name": "Recon World"}).json()

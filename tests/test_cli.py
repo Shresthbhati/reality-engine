@@ -234,8 +234,12 @@ class TestExportReconnectsToRealGeometryStore:
 
         assert rc == 0
         gltf = json.loads(out_path.read_text(encoding="utf-8"))
+        cube_mesh_indices = {
+            i for i, m in enumerate(gltf["meshes"])
+            if m["primitives"][0]["attributes"].get("POSITION") == 0
+        }
         mesh_indices_used = {node["mesh"] for node in gltf["nodes"]}
-        assert mesh_indices_used - {0}, "expected at least one real (non-cube) mesh via the reconnected store"
+        assert mesh_indices_used - cube_mesh_indices, "expected at least one real (non-cube) mesh via the reconnected store"
 
     def test_export_gltf_without_artifacts_dir_falls_back_to_cube(self, tmp_path, capsys):
         # A world compiled WITHOUT an artifact store (--no-real-geometry equivalent):
@@ -248,7 +252,11 @@ class TestExportReconnectsToRealGeometryStore:
 
         assert rc == 0
         gltf = json.loads(out_path.read_text(encoding="utf-8"))
-        assert all(node["mesh"] == 0 for node in gltf["nodes"])
+        cube_mesh_indices = {
+            i for i, m in enumerate(gltf["meshes"])
+            if m["primitives"][0]["attributes"].get("POSITION") == 0
+        }
+        assert all(node["mesh"] in cube_mesh_indices for node in gltf["nodes"])
 
     @pytest.mark.parametrize("fmt,suffix", [("usda", ".usda"), ("blender", ".py")])
     def test_export_usda_blender_also_reconnect_to_the_store(self, tmp_path, capsys, fmt, suffix):

@@ -236,3 +236,55 @@ def test_slabs_have_everything_studios_solid_shell_builder_reads(bootstrap):
     fl, ce = (_of(bootstrap, k)[0].custom_properties["slab"] for k in ("floor", "ceiling"))
     rise = np.dot(np.asarray(ce["polygon_xyz_m"][0]) - np.asarray(fl["polygon_xyz_m"][0]), np.asarray(fl["up"]))
     assert rise == pytest.approx(2.6, abs=0.15)
+
+
+# ---------------------------------------------------------------------------- several registered photos (auto-fusion)
+
+
+def _fusion_setup(tmp_path, monkeypatch):
+    import engine.pipeline.single_image as si
+    import tests.test_multiview_layout as mv
+    from tests.layout_synth import relative_pose
+
+    monkeypatch.setattr(si, "ASSUMED_HFOV_DEG", 80.0)  # the synthetic lenses are 80 degrees
+    views = mv._views()
+    ref = views[0]
+    p = tmp_path / "ref.png"
+    Image.fromarray(ref.rgb).save(p)
+    item = EvidenceItem(id="ev-ref", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+    extras = []
+    for i, v in enumerate(views[1:], start=1):
+        R, t = relative_pose(ref, v)
+        extras.append(SimpleNamespace(depth_m=v.depth, masks=v.masks, rgb=v.rgb, R=R, t=t, name=f"v{i}"))
+    return item, inspect_image(p), SimpleNamespace(depth_m=ref.depth, masks=ref.masks), extras
+
+
+def test_registered_extra_photos_add_the_walls_and_the_window_they_see(tmp_path, monkeypatch):
+    item, facts, ref, extras = _fusion_setup(tmp_path, monkeypatch)
+    single = bootstrap_single_image(item, facts, layout_analysis=ref)
+    fused = bootstrap_single_image(item, facts, layout_analysis=ref, extra_views=extras)
+    assert len(_of(fused, "wall")) > len(_of(single, "wall"))
+    assert len(_of(fused, "window")) == 1 and len(_of(fused, "floor")) == 1 and len(_of(fused, "ceiling")) == 1
+    f = fused.facts["layout"]["fusion"]
+    assert f["photos_used"] == 1 + len(extras) and not f["refused"]
+
+
+def test_the_fused_world_still_passes_the_real_validator(tmp_path, monkeypatch):
+    from world_ir.validation import validate_world_ir
+
+    item, facts, ref, extras = _fusion_setup(tmp_path, monkeypatch)
+    fused = bootstrap_single_image(item, facts, layout_analysis=ref, extra_views=extras)
+    errors = [i for i in validate_world_ir(fused.world).issues if str(i.severity.value).lower() == "error"]
+    assert not errors, [(i.code, i.message[:100]) for i in errors]
+
+
+def test_a_mis_registered_extra_photo_is_left_out_and_reported(tmp_path, monkeypatch):
+    import numpy as np
+
+    item, facts, ref, extras = _fusion_setup(tmp_path, monkeypatch)
+    tilt = np.array([[1, 0, 0], [0, np.cos(0.5), -np.sin(0.5)], [0, np.sin(0.5), np.cos(0.5)]])
+    extras[0].R = extras[0].R @ tilt  # a wrong pose: its vertical no longer agrees with the reference
+    fused = bootstrap_single_image(item, facts, layout_analysis=ref, extra_views=extras)
+    f = fused.facts["layout"]["fusion"]
+    assert f["photos_used"] == len(extras)  # the reference + the two good extras
+    assert any("v1" in n and "vertical" in n for n in f["notes"]), f["notes"]

@@ -414,11 +414,19 @@ def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, 
         # ONE photo (the others are not fused into it yet), not "the photos could not be placed in 3D"
         out["state"] = "partial"
         out["source"] = "single_photo_layout"
-        out["registered"] = 1
+        used = int(layout_shell.get("photos_used", 1))
+        refused = layout_shell.get("refused") or {}
+        out["registered"] = used
         out["reasons"].append("multi-view reconstruction could not place the photos together")
-        out["message"] = (f"The room was built from the best single photo ({layout_shell.get('chosen')}) of {n_input}. "
-                          f"The other {max(0, n_input - 1)} could not be placed together in one 3D space, so they are not "
-                          "part of this model yet.")
+        if used > 1:
+            left = n_input - used
+            out["message"] = (f"The room was fused from {used} of {n_input} photos (reference {layout_shell.get('chosen')}), "
+                              "registered by matched features and metric depth."
+                              + (f" {left} could not be placed: {', '.join(refused) if refused else 'left out of the fusion'}." if left else ""))
+        else:
+            out["message"] = (f"The room was built from the best single photo ({layout_shell.get('chosen')}) of {n_input}. "
+                              f"The other {max(0, n_input - 1)} could not be placed together in one 3D space, so they are not "
+                              "part of this model yet.")
         out["advice"] = [
             "For a model built from all photos, take them from different positions in the same room with roughly 60-80% "
             "overlap between neighbouring views, without changing the scene between shots.",

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Mapping, Optional, Tuple
+from typing import List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -127,10 +127,10 @@ def _band(z: np.ndarray, tol: float) -> np.ndarray:
     return tol + DEPTH_TOL_FRACTION * np.abs(z)
 
 
-def _ransac_plane(pts: np.ndarray, rng: np.random.Generator, tol: float, iters: int = 300):
+def _ransac_plane(pts: np.ndarray, rng: np.random.Generator, tol: float, iters: int = 300, z: Optional[np.ndarray] = None):
     if len(pts) < 3:
         return None
-    band = _band(pts[:, 2], tol)
+    band = _band(pts[:, 2] if z is None else z, tol)
     best_mask, best_count = None, 0
     for _ in range(iters):
         i, j, k = rng.choice(len(pts), 3, replace=False)
@@ -202,6 +202,85 @@ def _finalise_wall(wall_pts: np.ndarray, members: np.ndarray, e1: np.ndarray, e2
                 float(np.percentile(s, 1)), float(np.percentile(s, 99)), int(len(members)), rms)
 
 
+@dataclass
+class ViewInput:
+    """One photo's depth + surface masks and its camera pose in the REFERENCE frame (``p_ref = R @ p_cam + t``)."""
+    depth: np.ndarray
+    masks: Mapping[str, np.ndarray]
+    hfov_deg: float = 65.0
+    R: Optional[np.ndarray] = None
+    t: Optional[np.ndarray] = None
+    name: str = "view"
+
+    def pose(self) -> Tuple[np.ndarray, np.ndarray]:
+        return (np.eye(3) if self.R is None else np.asarray(self.R, float)), (np.zeros(3) if self.t is None else np.asarray(self.t, float))
+
+
+#: a non-reference photo whose own floor normal disagrees with the reference's by more than this is mis-registered
+MAX_VERTICAL_DISAGREEMENT_DEG = 8.0
+#: openings on one wall are one when their spans overlap or are separated by less than this, with matching heights
+OPENING_ABUT_M = 0.12
+OPENING_HEIGHT_TOL_M = 0.25
+
+
+def _own_up(depth: np.ndarray, floor_mask: np.ndarray, hfov_deg: float, seed: int) -> Optional[np.ndarray]:
+    """The floor normal of ONE photo in its own camera frame (facing the camera), or None without enough floor."""
+    valid = np.isfinite(depth) & (depth > 0.05) & floor_mask
+    if int(valid.sum()) < MIN_FLOOR_PX:
+        return None
+    pts = backproject(depth, hfov_deg)[valid]
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(pts), min(len(pts), MAX_FIT_POINTS), replace=False)
+    fit = _ransac_plane(pts[idx], rng, PLANE_TOL_M)
+    if fit is None:
+        return None
+    n, d = fit
+    return -n if d < 0 else n
+
+
+def _own_wall_normal(depth: np.ndarray, wall_mask: np.ndarray, hfov_deg: float, seed: int) -> Optional[np.ndarray]:
+    """The dominant wall plane's normal of ONE photo in its own camera frame, or None without enough wall."""
+    valid = np.isfinite(depth) & (depth > 0.05) & wall_mask
+    if int(valid.sum()) < MIN_WALL_SUPPORT_PX * 3:
+        return None
+    pts = backproject(depth, hfov_deg)[valid]
+    z = depth[valid]
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(pts), min(len(pts), MAX_FIT_POINTS), replace=False)
+    fit = _ransac_plane(pts[idx], rng, PLANE_TOL_M, z=z[idx])
+    return None if fit is None else fit[0]
+
+
+#: a wall seen by a photo without floor must still be vertical in the reference frame, within this many degrees
+MAX_WALL_TILT_DEG = 10.0
+
+
+def _merge_openings(ops: List[Opening]) -> List[Opening]:
+    """The same window seen by several photos is ONE window.
+
+    Spans on the same wall and kind merge when they overlap, or abut (a gap under OPENING_ABUT_M) with matching heights: a
+    photo's frame clips a window, so different photos see different fragments of it. The merged span is the UNION (clipping can
+    only underestimate a width); heights are support-weighted.
+    """
+    out: List[Opening] = []
+    for o in ops:
+        for k, m in enumerate(out):
+            if m.kind != o.kind or m.wall_index != o.wall_index:
+                continue
+            gap = max(m.s_min, o.s_min) - min(m.s_max, o.s_max)  # negative when the spans overlap
+            h_overlap = min(m.h_max, o.h_max) - max(m.h_min, o.h_min)
+            similar_height = abs(m.h_min - o.h_min) < OPENING_HEIGHT_TOL_M and abs(m.h_max - o.h_max) < OPENING_HEIGHT_TOL_M
+            if gap <= OPENING_ABUT_M and h_overlap > 0 and similar_height:
+                w1, w2 = m.support_px, o.support_px
+                tot = float(w1 + w2)
+                out[k] = Opening(m.kind, m.wall_index, min(m.s_min, o.s_min), max(m.s_max, o.s_max),
+                                 (m.h_min * w1 + o.h_min * w2) / tot, (m.h_max * w1 + o.h_max * w2) / tot, w1 + w2)
+                break
+        else:
+            out.append(o)
+    return out
+
+
 def solve_layout(
     depth: np.ndarray,
     masks: Mapping[str, np.ndarray],
@@ -209,34 +288,74 @@ def solve_layout(
     seed: int = 0,
 ) -> SurfaceLayout:
     """Solve the room shell visible in one photo. ``masks`` keys: floor, ceiling, wall, window, door (bool HxW)."""
-    rng = np.random.default_rng(seed)
-    h, w = depth.shape
-    pts = backproject(depth, hfov_deg)
-    valid = np.isfinite(depth) & (depth > 0.05)
-    none = np.zeros((h, w), bool)
+    return solve_layout_views([ViewInput(depth, masks, hfov_deg)], seed=seed)
 
-    floor_px = masks.get("floor", none) & valid
-    if int(floor_px.sum()) < MIN_FLOOR_PX:
-        return SurfaceLayout(refused=(f"floor: only {int(floor_px.sum())} labelled pixels (need {MIN_FLOOR_PX}); "
+
+def solve_layout_views(views: Sequence[ViewInput], seed: int = 0) -> SurfaceLayout:
+    """Solve ONE room from several registered photos: their labelled points are pooled in the first photo's frame.
+
+    The first view is the reference (its camera is the origin, wall normals face it). Every other view must agree with the
+    reference about which way is up; one that does not is mis-registered and is left out with a note, never blended in.
+    """
+    rng = np.random.default_rng(seed)
+    ref = views[0]
+    notes: List[str] = []
+    # ---- per-view point clouds in the reference frame, with a vertical-agreement check on every non-reference view ----
+    kept: List[Tuple[ViewInput, np.ndarray, np.ndarray, np.ndarray]] = []  # (view, pts_ref, valid, rays_cam)
+    ref_up = _own_up(ref.depth, ref.masks.get("floor", np.zeros(ref.depth.shape, bool)), ref.hfov_deg, seed)
+    for k, v in enumerate(views):
+        R, t = v.pose()
+        if k > 0 and ref_up is not None:
+            own = _own_up(v.depth, v.masks.get("floor", np.zeros(v.depth.shape, bool)), v.hfov_deg, seed)
+            if own is not None:
+                ang = math.degrees(math.acos(float(np.clip((R @ own) @ ref_up, -1, 1))))
+                if ang > MAX_VERTICAL_DISAGREEMENT_DEG:
+                    notes.append(f"{v.name}: left out, its vertical disagrees with the reference by {ang:.0f} degrees (mis-registered)")
+                    continue
+            else:  # too little floor to verify the vertical: its dominant wall must come out vertical once placed
+                wn = _own_wall_normal(v.depth, v.masks.get("wall", np.zeros(v.depth.shape, bool)), v.hfov_deg, seed)
+                if wn is None:
+                    notes.append(f"{v.name}: left out, neither floor nor wall visible enough to verify its vertical against the reference")
+                    continue
+                tilt = math.degrees(math.asin(float(np.clip(abs((R @ wn) @ ref_up), 0, 1))))
+                if tilt > MAX_WALL_TILT_DEG:
+                    notes.append(f"{v.name}: left out, its wall is {tilt:.0f} degrees off vertical in the reference frame, so its vertical "
+                                 "disagrees with the reference (mis-registered)")
+                    continue
+        cam_pts = backproject(v.depth, v.hfov_deg)
+        valid = np.isfinite(v.depth) & (v.depth > 0.05)
+        kept.append((v, cam_pts @ R.T + t, valid, _rays(*v.depth.shape, v.hfov_deg)))
+
+    def pooled(key: str) -> Tuple[np.ndarray, np.ndarray]:
+        pts, zs = [], []
+        for v, pr, valid, _ in kept:
+            m = v.masks.get(key, np.zeros(v.depth.shape, bool)) & valid
+            pts.append(pr[m])
+            zs.append(v.depth[m])
+        return (np.concatenate(pts), np.concatenate(zs)) if pts else (np.zeros((0, 3)), np.zeros(0))
+
+    floor_pts, floor_z = pooled("floor")
+    if len(floor_pts) < MIN_FLOOR_PX:
+        return SurfaceLayout(refused=(f"floor: only {len(floor_pts)} labelled pixels (need {MIN_FLOOR_PX}); "
                                       "without a floor there is no vertical reference, so no layout is produced",))
-    fit = _ransac_plane(_subsample(pts[floor_px], rng), rng, PLANE_TOL_M)
+    sel = np.arange(len(floor_pts)) if len(floor_pts) <= MAX_FIT_POINTS else rng.choice(len(floor_pts), MAX_FIT_POINTS, replace=False)
+    fit = _ransac_plane(floor_pts[sel], rng, PLANE_TOL_M, z=floor_z[sel])
     if fit is None:
         return SurfaceLayout(refused=("floor: no plane could be fitted to the floor-labelled points",))
     up, d = fit
-    if d < 0:  # the normal must face the camera
+    if d < 0:  # the normal must face the reference camera
         up, d = -up, -d
     tilt = math.degrees(math.acos(float(np.clip(up @ np.array([0.0, -1.0, 0.0]), -1, 1))))
     if tilt > MAX_UP_TILT_DEG:
         return SurfaceLayout(refused=(f"floor: fitted floor is {tilt:.0f} degrees from the camera's vertical "
                                       f"(limit {MAX_UP_TILT_DEG:g}); the floor label is probably wrong",))
 
-    def height_of(p: np.ndarray) -> np.ndarray:  # metres above the floor plane (the camera sits at d)
+    def height_of(p: np.ndarray) -> np.ndarray:  # metres above the floor plane (the reference camera sits at d)
         return p @ up + d
 
-    floor_rms = float(np.sqrt(np.mean(height_of(pts[floor_px]) ** 2)))
+    floor_rms = float(np.sqrt(np.mean(height_of(floor_pts) ** 2)))
     refused: List[str] = []
-    notes: List[str] = []
-    fp = pts[floor_px]
+    fp = floor_pts
     # the tilt is pinned down by the NARROW in-plane extent (second principal axis), not the wide one
     along = (fp - fp.mean(axis=0)) @ np.linalg.svd(fp - fp.mean(axis=0), full_matrices=False)[2][1]
     span = float(np.percentile(along, 98) - np.percentile(along, 2))
@@ -245,9 +364,9 @@ def solve_layout(
 
     # ---- ceiling: a horizontal plane at one height, or nothing ---------------------------------------------------
     room_height: Optional[float] = None
-    ceil_px = masks.get("ceiling", none) & valid
-    if int(ceil_px.sum()) >= MIN_CEILING_PX:
-        hs = height_of(pts[ceil_px])
+    ceil_pts, _ = pooled("ceiling")
+    if len(ceil_pts) >= MIN_CEILING_PX:
+        hs = height_of(ceil_pts)
         med = float(np.median(hs))
         mad = float(np.median(np.abs(hs - med)))
         if mad > CEILING_MAD_M:
@@ -262,14 +381,14 @@ def solve_layout(
     # ---- walls: vertical planes are lines in the horizontal projection -------------------------------------------
     walls: List[Wall] = []
     e1, e2 = _horizontal_basis(up)
-    wall_all = masks.get("wall", none) & valid
-    wall_pts = pts[wall_all]
+    wall_pts, wall_z = pooled("wall")
     if room_height is not None:  # keep points between floor and ceiling (drops hanging clutter)
         hh = height_of(wall_pts)
-        wall_pts = wall_pts[(hh > -0.1) & (hh < room_height + 0.1)]
+        keep_h = (hh > -0.1) & (hh < room_height + 0.1)
+        wall_pts, wall_z = wall_pts[keep_h], wall_z[keep_h]
     if len(wall_pts) >= MIN_WALL_SUPPORT_PX:
         q_all = np.stack([wall_pts @ e1, wall_pts @ e2], axis=-1)
-        band_all = _band(wall_pts[:, 2], PLANE_TOL_M)
+        band_all = _band(wall_z, PLANE_TOL_M)
         keep = np.arange(len(q_all))
         min_support = max(MIN_WALL_SUPPORT_PX, int(WALL_MIN_SHARE * len(q_all)))
         groups: List[np.ndarray] = []
@@ -319,55 +438,61 @@ def solve_layout(
     else:
         notes.append("no wall visible in this photo")
 
-    # ---- openings: geometry from where the pixel RAYS meet the host wall plane ------------------------------------
+    # ---- openings: geometry from where each photo's pixel RAYS meet the host wall plane ---------------------------
     openings: List[Opening] = []
     if walls:
         from scipy import ndimage
 
-        rays = _rays(h, w, hfov_deg)
-        for kind in ("window", "door"):
-            m = masks.get(kind)
-            if m is None or not m.any():
+        found: List[Opening] = []
+        for v, pr, valid, rays_cam in kept:
+            R, t = v.pose()
+            wall_all = v.masks.get("wall", np.zeros(v.depth.shape, bool)) & valid
+            for kind in ("window", "door"):
+                m = v.masks.get(kind)
+                if m is None or not m.any():
+                    continue
+                lab, count = ndimage.label(m)
+                for comp_id in range(1, count + 1):
+                    comp = lab == comp_id
+                    if int(comp.sum()) < OPENING_MIN_PX:
+                        continue
+                    ring = ndimage.binary_dilation(comp, iterations=6) & ~comp & wall_all
+                    if int(ring.sum()) < 20:
+                        refused.append(f"{kind}: no surrounding wall pixels to anchor it to a wall")
+                        continue
+                    ring_pts = pr[ring]
+                    dists = [float(np.median(np.abs(ring_pts @ np.array(wl.plane.normal) + wl.plane.d))) for wl in walls]
+                    wi = int(np.argmin(dists))
+                    if dists[wi] > OPENING_WALL_DIST_M:
+                        refused.append(f"{kind}: its surrounding wall pixels fit no detected wall plane (nearest {dists[wi]:.2f} m)")
+                        continue
+                    wl = walls[wi]
+                    wn = np.array(wl.plane.normal)
+                    dirs = rays_cam[comp] @ R.T  # ray directions in the reference frame, from the camera at t
+                    denom = dirs @ wn
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        sc = -(wl.plane.d + float(wn @ t)) / denom
+                    ok = (denom < -1e-6) & (sc > 0)
+                    if int(ok.sum()) < OPENING_MIN_PX // 2:
+                        continue
+                    p = t + dirs[ok] * sc[ok][:, None]
+                    sv = p @ np.array(wl.tangent)
+                    hv = height_of(p)
+                    found.append(Opening(kind, wi, float(np.percentile(sv, 3)), float(np.percentile(sv, 97)),
+                                         max(0.0, float(np.percentile(hv, 3))), float(np.percentile(hv, 97)), int(comp.sum())))
+        for op in _merge_openings(found):
+            lim = WINDOW_LIMITS if op.kind == "window" else DOOR_LIMITS
+            wd, ht = op.s_max - op.s_min, op.h_max - op.h_min
+            why = (f"width {wd:.2f} m" if not lim["width"][0] <= wd <= lim["width"][1] else
+                   f"height {ht:.2f} m" if not lim["height"][0] <= ht <= lim["height"][1] else
+                   f"sill {op.h_min:.2f} m above the floor" if op.h_min > lim["max_sill"] else None)
+            if why:
+                refused.append(f"{op.kind}: implausible {why} (a label error, not a {op.kind}); not reported")
                 continue
-            lab, count = ndimage.label(m)
-            for comp_id in range(1, count + 1):
-                comp = lab == comp_id
-                if int(comp.sum()) < OPENING_MIN_PX:
-                    continue
-                ring = ndimage.binary_dilation(comp, iterations=6) & ~comp & wall_all
-                if int(ring.sum()) < 20:
-                    refused.append(f"{kind}: no surrounding wall pixels to anchor it to a wall")
-                    continue
-                ring_pts = pts[ring]
-                dists = [float(np.median(np.abs(ring_pts @ np.array(wl.plane.normal) + wl.plane.d))) for wl in walls]
-                wi = int(np.argmin(dists))
-                if dists[wi] > OPENING_WALL_DIST_M:
-                    refused.append(f"{kind}: its surrounding wall pixels fit no detected wall plane (nearest {dists[wi]:.2f} m)")
-                    continue
-                wl = walls[wi]
-                wn = np.array(wl.plane.normal)
-                r = rays[comp]
-                denom = r @ wn
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    t = -wl.plane.d / denom
-                ok = (denom < -1e-6) & (t > 0)
-                if int(ok.sum()) < OPENING_MIN_PX // 2:
-                    continue
-                p = r[ok] * t[ok][:, None]
-                s = p @ np.array(wl.tangent)
-                hv = height_of(p)
-                op = Opening(kind, wi, float(np.percentile(s, 3)), float(np.percentile(s, 97)),
-                             max(0.0, float(np.percentile(hv, 3))), float(np.percentile(hv, 97)), int(comp.sum()))
-                lim = WINDOW_LIMITS if kind == "window" else DOOR_LIMITS
-                wd, ht = op.s_max - op.s_min, op.h_max - op.h_min
-                why = (f"width {wd:.2f} m" if not lim["width"][0] <= wd <= lim["width"][1] else
-                       f"height {ht:.2f} m" if not lim["height"][0] <= ht <= lim["height"][1] else
-                       f"sill {op.h_min:.2f} m above the floor" if op.h_min > lim["max_sill"] else None)
-                if why:
-                    refused.append(f"{kind}: implausible {why} (a label error, not a {kind}); not reported")
-                    continue
-                openings.append(op)
+            openings.append(op)
 
+    if len(kept) > 1:
+        notes.append(f"solved from {len(kept)} registered photographs")
     return SurfaceLayout(
         up=tuple(map(float, up)), camera_height_m=float(d), room_height_m=room_height, floor_rms_m=floor_rms,
         walls=tuple(walls), openings=tuple(openings), refused=tuple(refused), notes=tuple(notes),

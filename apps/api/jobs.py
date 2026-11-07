@@ -427,13 +427,14 @@ def _layout_shell(prog) -> dict | None:
     boot = (prog.stage_facts or {}).get("bootstrap") or {}
     if not (boot.get("layout") or {}).get("used"):
         return None
+    fusion = (boot.get("layout") or {}).get("fusion") or {}
     for a in prog.attempts:
         if a.get("level") == 0 and a.get("outcome") == "succeeded" and "best-supported" in str(a.get("detail")):
             import re
 
             m = re.search(r"\(([^)]+)\)", a["detail"])
-            return {"chosen": m.group(1) if m else "one photo"}
-    return {"chosen": "one photo"}
+            return {"chosen": m.group(1) if m else "one photo", "photos_used": fusion.get("photos_used", 1), "refused": fusion.get("refused") or {}}
+    return {"chosen": "one photo", "photos_used": fusion.get("photos_used", 1), "refused": fusion.get("refused") or {}}
 
 
 def _structure_points(world_ir) -> list:

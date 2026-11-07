@@ -180,3 +180,12 @@ def test_without_a_layout_shell_the_verdict_is_unchanged():
     from reconstruction.scene_identity import capture_quality
 
     assert capture_quality(10, ["ev1"], 4374)["state"] == "insufficient"
+
+
+def test_a_fused_room_says_how_many_photos_it_used_and_which_could_not_be_registered():
+    from reconstruction.scene_identity import capture_quality
+
+    q = capture_quality(10, ["ev1"], 4374, structure={"room": 1, "floor": 1, "wall": 4},
+                        layout_shell={"chosen": "a.jpg", "photos_used": 4, "refused": {"b.jpg": "no consistent feature matches"}})
+    assert q["state"] == "partial" and q["registered"] == 4
+    assert "4 of 10" in q["message"] and "b.jpg" in q["message"]

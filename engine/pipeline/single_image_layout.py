@@ -26,18 +26,59 @@ def _flip(v: Sequence[float]) -> Tuple[float, float, float]:
     return (float(v[0]), -float(v[1]), float(v[2]))
 
 
-def layout_planes(analysis, pts: Sequence[Tuple[float, float, float]], pix: Sequence[Tuple[int, int]], w: int, h: int, f: float):
-    """Solve the layout and express it as planes over the bootstrap's grid points.
+SURFACE_KEYS = ("floor", "ceiling", "wall", "window", "door")
 
-    Returns ``(layout, detection_or_None, up_vector_in_bootstrap_frame, facts)``. ``detection`` is None when the solver could
-    not establish a floor, so the caller falls back to RANSAC over the (metric) points rather than getting nothing.
+
+def view_input(ev, hfov_deg: float):
+    """A registered extra photo (ImageAnalysis-like + pose) as a solver ViewInput."""
+    from perception.layout.surface_layout import ViewInput
+
+    return ViewInput(np.asarray(ev.depth_m, dtype=np.float64), ev.masks, hfov_deg, R=np.asarray(ev.R, float), t=np.asarray(ev.t, float),
+                     name=str(getattr(ev, "name", "view")))
+
+
+def extra_view_points(ev, hfov_deg: float, target_points: int):
+    """A registered extra photo's depth as grid points in the bootstrap frame (x right, y UP, z forward, reference camera at 0).
+
+    Returns (points (N,3), labels {surface: bool (N,)}, colours [(r,g,b) | None] (N)). Points with no valid depth are dropped.
     """
+    d = np.asarray(ev.depth_m, dtype=np.float64)
+    h2, w2 = d.shape
+    f2 = (w2 / 2.0) / math.tan(math.radians(hfov_deg) / 2.0)
+    step = max(1, int(math.sqrt(w2 * h2 / float(target_points))))
+    uu, vv = np.meshgrid(np.arange(step // 2, w2, step), np.arange(step // 2, h2, step))
+    z = d[vv, uu]
+    ok = np.isfinite(z) & (z > 0.05)
+    uu, vv, z = uu[ok], vv[ok], z[ok]
+    cam = np.stack([(uu - w2 / 2.0) / f2 * z, (vv - h2 / 2.0) / f2 * z, z], axis=-1)  # solver frame: y DOWN
+    ref = cam @ np.asarray(ev.R, float).T + np.asarray(ev.t, float)
+    boot = ref * np.array([1.0, -1.0, 1.0])
+    labels = {k: np.asarray(ev.masks[k])[vv, uu] if k in ev.masks else np.zeros(len(z), bool) for k in SURFACE_KEYS}
+    rgb = getattr(ev, "rgb", None)
+    cols = [tuple(int(c) for c in rgb[v, u]) for u, v in zip(uu, vv)] if rgb is not None else [None] * len(z)
+    return boot, labels, cols
+
+
+def layout_planes(analysis, pts: Sequence[Tuple[float, float, float]], labels, w: int, h: int, f: float, extra_views=None):
+    """Solve the layout (the reference photo plus any registered extra photos) and express it as planes over the points.
+
+    ``labels``: {surface: bool array over ``pts``} (reference grid points first, then the extra photos' points). Returns
+    ``(layout, detection_or_None, up_vector_in_bootstrap_frame, facts)``. ``detection`` is None when the solver could not
+    establish a floor, so the caller falls back to RANSAC over the (metric) points rather than getting nothing.
+    """
+    from perception.layout.surface_layout import ViewInput, solve_layout_views
+
     hfov = math.degrees(2.0 * math.atan(w / (2.0 * f)))
-    layout = solve_layout(np.asarray(analysis.depth_m, dtype=np.float64), analysis.masks, hfov_deg=hfov)
+    views = [ViewInput(np.asarray(analysis.depth_m, dtype=np.float64), analysis.masks, hfov, name="reference")]
+    views += [view_input(ev, hfov) for ev in (extra_views or ())]
+    layout = solve_layout_views(views)
     facts: Dict[str, object] = {
         "attempted": True, "method": "metric depth + ADE20K surface labels -> floor/ceiling/wall planes",
         "hfov_deg": round(hfov, 1), "refused": list(layout.refused), "notes": list(layout.notes),
     }
+    if len(views) > 1:
+        left_out = [n for n in layout.notes if "left out" in n]
+        facts["fusion"] = {"photos_used": len(views) - len(left_out), "photos_offered": len(views), "refused": {}, "notes": left_out}
     if layout.camera_height_m is None:
         facts["used"] = False
         facts["reason"] = "; ".join(layout.refused) or "no floor"
@@ -45,15 +86,13 @@ def layout_planes(analysis, pts: Sequence[Tuple[float, float, float]], pix: Sequ
 
     up_b = _flip(layout.up)
     P = np.asarray(pts, dtype=np.float64)
-    ui = np.asarray([p[0] for p in pix])
-    vi = np.asarray([p[1] for p in pix])
     z = P[:, 2]
     band = 0.05 + 0.02 * np.abs(z)
     ids = np.asarray([f"bs:{i:05d}" for i in range(len(pts))], dtype=object)
 
     def plane(plane_id: str, normal_b, d: float, mask_key: str, note: str) -> Optional[DetectedPlane]:
         n = np.asarray(normal_b, dtype=np.float64)
-        on_label = analysis.masks[mask_key][vi, ui]
+        on_label = np.asarray(labels[mask_key], dtype=bool)
         dist = P @ n + d
         sel = on_label & (np.abs(dist) <= band)
         if int(sel.sum()) < MIN_PLANE_INLIERS:
@@ -68,7 +107,7 @@ def layout_planes(analysis, pts: Sequence[Tuple[float, float, float]], pix: Sequ
 
     planes: List[DetectedPlane] = []
     floor = plane("layout-floor", up_b, layout.camera_height_m, "floor",
-                  f"floor from {int(analysis.masks['floor'].sum())} labelled pixels; camera height {layout.camera_height_m:.2f} m "
+                  f"floor from {int(np.asarray(labels['floor']).sum())} labelled points; camera height {layout.camera_height_m:.2f} m "
                   f"(floor rms {layout.floor_rms_m:.3f} m)")
     if floor is not None:
         planes.append(floor)

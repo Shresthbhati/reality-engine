@@ -60,3 +60,25 @@ def test_no_detector_and_failing_detector_are_recorded_not_faked(tmp_path):
 
     f2 = bootstrap_single_image(item, facts, depth_map=dm, furniture_detector=boom).facts["furniture"]
     assert f2["attempted"] is False and "weights missing" in f2["reason"]
+
+
+def test_overlapping_detections_never_become_duplicate_entities(tmp_path):
+    """Two detectors can call one object two things; the validator rejects same-type overlap, which used to fail the job."""
+    item, facts, dm = _room(tmp_path)
+    dets = [_sofa(), FurnitureDetection(label="armchair", score=0.6, box_xyxy=(102, 131, 222, 201), view_id="ev-room")]
+    res = bootstrap_single_image(item, facts, depth_map=dm, furniture_detections=dets)
+    ff = res.facts["furniture"]
+    assert ff["placed"] == 1
+    assert any("duplicate" in r.get("reason", "") for r in ff["rejected"]), ff["rejected"]
+    from world_ir.validation import validate_world_ir
+
+    dup = [i for i in validate_world_ir(res.world).issues if i.code == "invariant_6_duplicate_entity"]
+    assert not dup, dup
+
+
+def test_placed_furniture_carries_the_label_the_room_summary_counts(tmp_path):
+    """Studio's insights bar counted 0 furniture because the entities lacked 'furniture_candidate'."""
+    item, facts, dm = _room(tmp_path)
+    res = bootstrap_single_image(item, facts, depth_map=dm, furniture_detections=[_sofa()])
+    ent = next(e for e in res.world.entities.values() if e.type.value == "furniture")
+    assert "furniture_candidate" in ent.semantic_labels

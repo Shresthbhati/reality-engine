@@ -47,5 +47,6 @@ export function getStatus(): Promise<StatusDto> {
 }
 
 export function getHealth(): Promise<{ status: string; time: string }> {
-  return apiGet<{ status: string; time: string }>("/api/health", { timeoutMs: 5000 });
+  // 15 s: the first request in `next dev` compiles the proxy route before forwarding (production answers in ms).
+  return apiGet<{ status: string; time: string }>("/api/health", { timeoutMs: 15000 });
 }

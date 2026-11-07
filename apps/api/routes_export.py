@@ -39,12 +39,34 @@ _MEDIA_TYPES = {
     "floorplan_svg": "image/svg+xml",
     "floorplan_dxf": "image/vnd.dxf",
     "room_report_pdf": "application/pdf",
+    "room_schedule_csv": "text/csv",
     "obj": "model/obj",
     "ply": "application/x-ply",
     "stl": "model/stl",
 }
 # profile bundles (multi-file, may hold binary) are stored as one JSON document; see _bundle_json
 _MEDIA_TYPES.update({name: "application/json" for name in reality.EXPORT_PROFILES})
+
+
+_STATE_OF_PROVENANCE = {"OBSERVED": "measured", "MEASURED": "measured", "INFERRED": "inferred", "ESTIMATED": "estimated"}
+
+
+def _element_report(world, ids) -> list:
+    """Per exported element: what it is, whether it was measured or inferred, and how sure the engine is (T-2.7)."""
+    rows = []
+    for eid in ids:
+        ent = world.entities.get(eid)
+        if ent is None:
+            continue
+        prov = getattr(ent.provenance, "name", str(ent.provenance)).upper()
+        unc = getattr(ent, "uncertainty", None)
+        rows.append({
+            "id": eid, "name": ent.name, "type": ent.type.value,
+            "state": _STATE_OF_PROVENANCE.get(prov, "unknown"),
+            "confidence": None if ent.confidence is None else round(float(ent.confidence), 3),
+            "note": (getattr(unc, "note", None) or None),
+        })
+    return rows
 
 
 class ExportRequest(BaseModel):
@@ -133,6 +155,10 @@ async def export_world(
         data = content
 
     digest, _ = store_bytes(data)
+    elements = _element_report(world, report.entities_exported)
+    by_state: dict = {}
+    for r in elements:
+        by_state[r["state"]] = by_state.get(r["state"], 0) + 1
     return {
         "version_id": row.id,
         "format": body.format,
@@ -144,6 +170,8 @@ async def export_world(
         "entities_exported": list(report.entities_exported),
         "entities_skipped": list(report.entities_skipped),
         "skip_reasons": list(report.skip_reasons),
+        "elements": elements,
+        "evidence_summary": {"total": len(elements), "by_state": by_state},
     }
 
 

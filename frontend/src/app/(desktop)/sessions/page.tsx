@@ -83,12 +83,12 @@ function SessionsPageInner() {
         title="Sessions"
         action={
           <Link
-            href="/sessions/new"
+            href="/reconstruct"
             className="flex items-center gap-1.5 text-sm font-medium px-3 h-8 rounded-md transition-colors"
             style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
           >
             <Plus className="w-3.5 h-3.5" />
-            Create Session
+            New session
           </Link>
         }
       />
@@ -156,8 +156,8 @@ function SessionsPageInner() {
                 ? "No Sessions yet."
                 : "No Sessions match this filter."
           }
-          actionLabel={sessions !== null && sessions.length === 0 ? "Create Session" : undefined}
-          actionHref={sessions !== null && sessions.length === 0 ? "/sessions/new" : undefined}
+          actionLabel={sessions !== null && sessions.length === 0 ? "New session" : undefined}
+          actionHref={sessions !== null && sessions.length === 0 ? "/reconstruct" : undefined}
         />
       ) : (
         <table className="w-full text-sm">

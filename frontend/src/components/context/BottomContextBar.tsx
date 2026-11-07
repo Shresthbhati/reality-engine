@@ -116,7 +116,7 @@ export default function BottomContextBar({
             className={`flex items-center gap-1.5 px-2.5 h-6 rounded transition-colors cursor-pointer ${
               activeTab === "context" && !collapsed
                 ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-medium border border-[var(--accent)]/30"
-                : "text-neutral-400 hover:text-white"
+                : "text-fg-muted hover:text-fg"
             }`}
           >
             <Sliders className="w-3 h-3" />
@@ -132,7 +132,7 @@ export default function BottomContextBar({
             className={`flex items-center gap-1.5 px-2.5 h-6 rounded transition-colors cursor-pointer ${
               activeTab === "timeline" && !collapsed
                 ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-medium border border-[var(--accent)]/30"
-                : "text-neutral-400 hover:text-white"
+                : "text-fg-muted hover:text-fg"
             }`}
           >
             <Clock className="w-3 h-3" />
@@ -148,7 +148,7 @@ export default function BottomContextBar({
             className={`flex items-center gap-1.5 px-2.5 h-6 rounded transition-colors cursor-pointer ${
               activeTab === "processing" && !collapsed
                 ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-medium border border-[var(--accent)]/30"
-                : "text-neutral-400 hover:text-white"
+                : "text-fg-muted hover:text-fg"
             }`}
           >
             <Layers className="w-3 h-3" />
@@ -164,7 +164,7 @@ export default function BottomContextBar({
             className={`flex items-center gap-1.5 px-2.5 h-6 rounded transition-colors cursor-pointer ${
               activeTab === "activity" && !collapsed
                 ? "text-[var(--accent)] bg-[var(--accent-subtle)] font-medium border border-[var(--accent)]/30"
-                : "text-neutral-400 hover:text-white"
+                : "text-fg-muted hover:text-fg"
             }`}
           >
             <Activity className="w-3 h-3" />
@@ -177,11 +177,11 @@ export default function BottomContextBar({
           <div className="flex items-center gap-2 px-2.5 py-0.5 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/40 text-[var(--accent)] font-mono text-[11px]">
             <Ruler className="w-3 h-3" />
             <span>Distance: <strong>{measurement.distance.toFixed(3)} {unitCtx.lengthUnit}</strong></span>
-            <span className="text-neutral-500">|</span>
+            <span className="text-fg-subtle">|</span>
             <span>ΔX: {measurement.delta[0].toFixed(2)}</span>
             <span>ΔY: {measurement.delta[1].toFixed(2)}</span>
             <span>ΔZ: {measurement.delta[2].toFixed(2)}</span>
-            {unitCtx.badge && <span className="text-amber-300">({unitCtx.badge})</span>}
+            {unitCtx.badge && <span className="text-warning">({unitCtx.badge})</span>}
           </div>
         )}
 
@@ -189,30 +189,30 @@ export default function BottomContextBar({
         <div className="flex items-center gap-2">
           {selectedEntity && (
             <div className="flex items-center gap-2 px-2 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--accent)]/40 text-[11px]">
-              <span className="text-neutral-400">Selected:</span>
-              <span className="font-mono text-white font-semibold">
+              <span className="text-fg-muted">Selected:</span>
+              <span className="font-mono text-fg font-semibold">
                 {selectedEntity.id}
               </span>
               <button
                 type="button"
                 onClick={onFrameSelected}
                 title="Frame in Viewport [F]"
-                className="text-[var(--accent)] hover:text-white p-0.5 cursor-pointer"
+                className="text-[var(--accent)] hover:text-fg p-0.5 cursor-pointer"
               >
                 <Maximize2 className="w-3 h-3" />
               </button>
             </div>
           )}
 
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 px-2 border-l border-neutral-800">
-            <span className="text-neutral-500">HEAD:</span>
-            <span className="text-white font-medium">{activeVersion ?? "no version"}</span>
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-fg-muted px-2 border-l border-line-subtle">
+            <span className="text-fg-subtle">HEAD:</span>
+            <span className="text-fg font-medium">{activeVersion ?? "no version"}</span>
           </div>
 
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}
-            className="p-1 rounded text-neutral-400 hover:text-white transition-colors cursor-pointer"
+            className="p-1 rounded text-fg-muted hover:text-fg transition-colors cursor-pointer"
             title={collapsed ? "Expand context bar" : "Collapse context bar"}
           >
             {collapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -227,33 +227,33 @@ export default function BottomContextBar({
             <div className="grid grid-cols-4 gap-4 h-full">
               {/* Telemetry 1: Active World & Coordinate Frame */}
               <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)] flex flex-col justify-between">
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">
                   Spatial Coordinate Frame
                 </span>
-                <div className="font-mono text-white font-medium text-xs">
+                <div className="font-mono text-fg font-medium text-xs">
                   {String(world?.coordinate_frame || world?.coordinate_system || "metric_enu")}
                 </div>
-                <div className="text-[10px] text-neutral-500 font-mono">
+                <div className="text-[10px] text-fg-subtle font-mono">
                   Scale: {meta.scale?.state || "Calibrated Metric"}
                 </div>
               </div>
 
               {/* Telemetry 2: Selection / Entity Telemetry */}
               <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)] flex flex-col justify-between">
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">
                   Selection Telemetry
                 </span>
                 {selectedEntity ? (
                   <>
-                    <div className="font-mono text-white text-xs truncate">
+                    <div className="font-mono text-fg text-xs truncate">
                       {selectedEntity.id} ({selectedEntity.type})
                     </div>
-                    <div className="text-[10px] text-neutral-400 font-mono">
+                    <div className="text-[10px] text-fg-muted font-mono">
                       {pos ? `XYZ: ${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)} m` : "Pos unavailable"}
                     </div>
                   </>
                 ) : (
-                  <div className="text-neutral-500 italic text-xs">
+                  <div className="text-fg-subtle italic text-xs">
                     No entity selected · click 3D mesh or use Nav
                   </div>
                 )}
@@ -261,23 +261,23 @@ export default function BottomContextBar({
 
               {/* Telemetry 3: Grid & Snap State */}
               <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)] flex flex-col justify-between">
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">
                   Grid & Snap Reference
                 </span>
                 <div className="font-mono text-[var(--accent)] text-xs">
                   Grid: 1.0 m ENU spacing
                 </div>
-                <div className="text-[10px] text-neutral-500 font-mono">
+                <div className="text-[10px] text-fg-subtle font-mono">
                   Snap: Planar Inliers · [G] Toggle
                 </div>
               </div>
 
               {/* Telemetry 4: WorldStore Version Head */}
               <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)] flex flex-col justify-between">
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">
                   WorldStore Version
                 </span>
-                <div className="font-mono text-white font-medium text-xs break-all">
+                <div className="font-mono text-fg font-medium text-xs break-all">
                   {activeVersion ?? "—"}
                 </div>
                 <div className="text-[10px] font-mono" style={{ color: activeVersion ? "var(--success)" : "var(--text-tertiary)" }}>
@@ -292,20 +292,20 @@ export default function BottomContextBar({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[var(--accent)]" />
                 <div className="text-xs">
-                  <div className="text-white font-medium">1. Capture Evidence Ingestion</div>
-                  <div className="text-neutral-500 text-[11px] font-mono">
+                  <div className="text-fg font-medium">1. Capture Evidence Ingestion</div>
+                  <div className="text-fg-subtle text-[11px] font-mono">
                     {sessions.length} sessions attached
                   </div>
                 </div>
               </div>
 
-              <span className="w-8 h-px bg-neutral-800" />
+              <span className="w-8 h-px bg-elevated" />
 
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[var(--success)]" />
                 <div className="text-xs">
-                  <div className="text-white font-medium">2. SfM Camera Calibration</div>
-                  <div className="text-neutral-500 text-[11px] font-mono">
+                  <div className="text-fg font-medium">2. SfM Camera Calibration</div>
+                  <div className="text-fg-subtle text-[11px] font-mono">
                     {meta.reconstruction?.cameras_registered != null
                       ? `${meta.reconstruction.cameras_registered} cameras registered`
                       : "Multi-view reconstruction"}
@@ -313,13 +313,13 @@ export default function BottomContextBar({
                 </div>
               </div>
 
-              <span className="w-8 h-px bg-neutral-800" />
+              <span className="w-8 h-px bg-elevated" />
 
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[var(--purple)]" />
                 <div className="text-xs">
-                  <div className="text-white font-medium">3. Structural Plane Promotion</div>
-                  <div className="text-neutral-500 text-[11px] font-mono">
+                  <div className="text-fg font-medium">3. Structural Plane Promotion</div>
+                  <div className="text-fg-subtle text-[11px] font-mono">
                     {Object.keys(world?.entities || {}).length} items in this world
                   </div>
                 </div>
@@ -331,13 +331,13 @@ export default function BottomContextBar({
             (worldId ? (
               <PipelineGraph worldId={worldId} compact />
             ) : (
-              <p className="text-neutral-500 text-xs font-mono">No world selected.</p>
+              <p className="text-fg-subtle text-xs font-mono">No world selected.</p>
             ))}
 
           {activeTab === "activity" && (
             <div className="space-y-1.5">
               {activityLoading ? (
-                <p className="text-neutral-500 text-xs font-mono">Loading activity log...</p>
+                <p className="text-fg-subtle text-xs font-mono">Loading activity log...</p>
               ) : activityError ? (
                 // A failed read is not an empty log: say the log is unavailable
                 // rather than claiming nothing has been recorded.
@@ -345,15 +345,15 @@ export default function BottomContextBar({
                   Activity log unavailable: {activityError}
                 </p>
               ) : activities.length === 0 ? (
-                <p className="text-neutral-500 text-xs font-mono">
+                <p className="text-fg-subtle text-xs font-mono">
                   No activity events recorded for this world yet.
                 </p>
               ) : (
                 activities.map((a) => (
                   <div key={a.id} className="flex items-center gap-2 text-[11px] font-mono">
-                    <span className="text-neutral-500">{a.timestamp ? a.timestamp.slice(11, 19) : "Recent"}</span>
+                    <span className="text-fg-subtle">{a.timestamp ? a.timestamp.slice(11, 19) : "Recent"}</span>
                     <span className="text-[var(--accent)] font-medium">{a.type}</span>
-                    <span className="text-neutral-300">{a.label}</span>
+                    <span className="text-fg-muted">{a.label}</span>
                   </div>
                 ))
               )}

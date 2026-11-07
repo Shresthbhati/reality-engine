@@ -139,6 +139,13 @@ def export_to_obj(
                         c_rgb = [c / 255.0 for c in c_rgb]
                     color = tuple(c_rgb)
 
+        if mat_name == "default_material":  # no authored material: name it by surface type (same defaults as the glTF export)
+            from exporters.gltf.exporter import _SURFACE_DEFAULTS
+
+            kind = getattr(entity.type, "value", None)
+            if kind in _SURFACE_DEFAULTS:
+                mat_name, color = f"surface_{kind}", tuple(_SURFACE_DEFAULTS[kind][0])
+
         if mat_name not in materials_defined:
             materials_defined.add(mat_name)
             mtl_lines.extend([

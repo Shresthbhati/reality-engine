@@ -102,3 +102,12 @@ test("world counts skip evidence planes already solved into shells; scale is in 
   assert.equal(fmtValue(2.61, "model_units"), "2.61 units");
   assert.equal(fmtValue(0.1, "m"), "0.10 m");
 });
+
+test("uncertaintyText shows the stated +/- inline, in the row's own unit, and says nothing when none was recorded", async () => {
+  const { uncertaintyText } = await import("../../src/lib/inspector/entity-facts.ts");
+  const row = (u: number | null, unit: string | null) => ({ key: "k", label: "L", value: 3.4, unit, state: "ESTIMATED", basis: "b", uncertaintyM: u, assumedDefault: false, correctable: true }) as never;
+  assert.equal(uncertaintyText(row(0.51, "m")), "±0.51 m");
+  assert.equal(uncertaintyText(row(0.51, "model_units")), "±0.51 units");
+  assert.equal(uncertaintyText(row(null, "m")), "");
+  assert.equal(uncertaintyText(row(0, "m")), "");
+});

@@ -71,17 +71,17 @@ export default function CaptureCoverage({ worldId, refreshKey, onUploaded }: Cap
 
   if (error) {
     return (
-      <p className="text-[11px] text-red-300" role="alert" data-testid="coverage-error">
+      <p className="text-[11px] text-error" role="alert" data-testid="coverage-error">
         {error}
       </p>
     );
   }
-  if (!data) return <p className="text-[11px] text-neutral-400">Checking wall coverage…</p>;
+  if (!data) return <p className="text-[11px] text-fg-muted">Checking wall coverage…</p>;
 
   const geo = mapGeometry(data);
   return (
     <section className="rounded border border-[var(--border)] p-2" aria-label="Wall coverage" data-testid="capture-coverage">
-      <h3 className="text-[11px] font-semibold text-neutral-200" data-testid="coverage-headline">
+      <h3 className="text-[11px] font-semibold text-fg" data-testid="coverage-headline">
         {coverageHeadline(data)}
       </h3>
       {geo && (
@@ -97,14 +97,14 @@ export default function CaptureCoverage({ worldId, refreshKey, onUploaded }: Cap
               <g key={w.index} data-testid={`coverage-wall-${w.index}`} data-status={w.status}>
                 <title>{`${w.label}: ${STATUS_LABEL[w.status]}`}</title>
                 <line x1={w.x1} y1={w.y1} x2={w.x2} y2={w.y2} stroke={st.stroke} strokeWidth={4} strokeDasharray={st.dash} strokeLinecap="round" />
-                <text x={w.mx} y={w.my} fontSize={10} fill="currentColor" textAnchor="middle" dy={-6} className="text-neutral-300">
+                <text x={w.mx} y={w.my} fontSize={10} fill="currentColor" textAnchor="middle" dy={-6} className="text-fg-muted">
                   {w.index}
                 </text>
               </g>
             );
           })}
           {geo.corners.map((c) => (
-            <text key={c.label} x={c.x} y={c.y} fontSize={9} fill="currentColor" textAnchor="middle" dy={3} className="text-neutral-500">
+            <text key={c.label} x={c.x} y={c.y} fontSize={9} fill="currentColor" textAnchor="middle" dy={3} className="text-fg-subtle">
               {c.label}
             </text>
           ))}
@@ -117,7 +117,7 @@ export default function CaptureCoverage({ worldId, refreshKey, onUploaded }: Cap
         </svg>
       )}
       {geo && (
-        <ul className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-neutral-400" aria-label="Legend">
+        <ul className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-fg-muted" aria-label="Legend">
           {(["seen", "weak", "not_seen"] as const).map((k) => (
             <li key={k} className="flex items-center gap-1">
               <svg width="18" height="6" aria-hidden>
@@ -129,14 +129,14 @@ export default function CaptureCoverage({ worldId, refreshKey, onUploaded }: Cap
         </ul>
       )}
       {data.hints.length > 0 && (
-        <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] text-neutral-200" data-testid="coverage-hints">
+        <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] text-fg" data-testid="coverage-hints">
           {data.hints.map((h) => (
             <li key={h}>{h}</li>
           ))}
         </ul>
       )}
       {data.available && (data.notes ?? []).map((n) => (
-        <p key={n} className="mt-1 text-[10px] text-neutral-500">
+        <p key={n} className="mt-1 text-[10px] text-fg-subtle">
           {n}
         </p>
       ))}
@@ -145,7 +145,7 @@ export default function CaptureCoverage({ worldId, refreshKey, onUploaded }: Cap
           <input id={inputId} ref={input} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={(e) => void upload(e.target.files)} />
           <label
             htmlFor={inputId}
-            className={`inline-flex cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-neutral-200 hover:bg-white/5 focus-within:ring-1 ${busy ? "pointer-events-none opacity-50" : ""}`}
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-fg hover:bg-hover focus-within:ring-1 ${busy ? "pointer-events-none opacity-50" : ""}`}
           >
             <Camera className="h-3.5 w-3.5" aria-hidden />
             {busy ? "Adding…" : "Add photos to refine this model"}
@@ -153,7 +153,7 @@ export default function CaptureCoverage({ worldId, refreshKey, onUploaded }: Cap
         </div>
       )}
       {message && (
-        <p className="mt-1 text-[10px] text-neutral-300" role="status">
+        <p className="mt-1 text-[10px] text-fg-muted" role="status">
           {message}
         </p>
       )}

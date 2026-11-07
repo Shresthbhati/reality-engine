@@ -119,13 +119,13 @@ export function TransformGizmoToolbar({
       style={{
         background: "rgba(23, 23, 23, 0.85)",
         border: "1px solid rgba(255, 255, 255, 0.12)",
-        color: "var(--foreground, #e5e5e5)",
+        color: "var(--text-primary)",
       }}
       role="toolbar"
       aria-label="3D Transform Gizmo Controls"
     >
       {/* Mode Selectors */}
-      <div className="flex items-center gap-0.5 border-r border-white/10 pr-1.5 mr-0.5">
+      <div className="flex items-center gap-0.5 border-r border-line pr-1.5 mr-0.5">
         <button
           type="button"
           onClick={() => onModeChange("translate")}
@@ -133,8 +133,8 @@ export function TransformGizmoToolbar({
           aria-label="Translate Mode"
           className={`flex h-7 items-center gap-1.5 px-2 rounded font-medium transition-colors cursor-pointer ${
             mode === "translate"
-              ? "bg-blue-600/80 text-white font-semibold"
-              : "text-zinc-400 hover:text-white hover:bg-white/10"
+              ? "bg-info/80 text-fg font-semibold"
+              : "text-fg-muted hover:text-fg hover:bg-hover"
           }`}
         >
           <Move className="h-3.5 w-3.5" />
@@ -148,8 +148,8 @@ export function TransformGizmoToolbar({
           aria-label="Rotate Mode"
           className={`flex h-7 items-center gap-1.5 px-2 rounded font-medium transition-colors cursor-pointer ${
             mode === "rotate"
-              ? "bg-blue-600/80 text-white font-semibold"
-              : "text-zinc-400 hover:text-white hover:bg-white/10"
+              ? "bg-info/80 text-fg font-semibold"
+              : "text-fg-muted hover:text-fg hover:bg-hover"
           }`}
         >
           <RotateCw className="h-3.5 w-3.5" />
@@ -163,8 +163,8 @@ export function TransformGizmoToolbar({
           aria-label="Scale Mode"
           className={`flex h-7 items-center gap-1.5 px-2 rounded font-medium transition-colors cursor-pointer ${
             mode === "scale"
-              ? "bg-blue-600/80 text-white font-semibold"
-              : "text-zinc-400 hover:text-white hover:bg-white/10"
+              ? "bg-info/80 text-fg font-semibold"
+              : "text-fg-muted hover:text-fg hover:bg-hover"
           }`}
         >
           <Maximize className="h-3.5 w-3.5" />
@@ -173,7 +173,7 @@ export function TransformGizmoToolbar({
       </div>
 
       {/* Boundary Snapping Toggle */}
-      <div className="flex items-center gap-0.5 border-r border-white/10 pr-1.5 mr-0.5">
+      <div className="flex items-center gap-0.5 border-r border-line pr-1.5 mr-0.5">
         <button
           type="button"
           onClick={() => onSnapConfigChange({ enabled: !snapConfig.enabled })}
@@ -182,8 +182,8 @@ export function TransformGizmoToolbar({
           aria-pressed={snapConfig.enabled}
           className={`flex h-7 items-center gap-1 px-2 rounded transition-colors cursor-pointer ${
             snapConfig.enabled
-              ? "bg-emerald-600/70 text-white font-semibold"
-              : "text-zinc-400 hover:text-white hover:bg-white/10"
+              ? "bg-success/70 text-fg font-semibold"
+              : "text-fg-muted hover:text-fg hover:bg-hover"
           }`}
         >
           <Magnet className="h-3.5 w-3.5" />
@@ -204,8 +204,8 @@ export function TransformGizmoToolbar({
           aria-pressed={snapConfig.preventWallPenetration}
           className={`flex h-7 items-center gap-1 px-2 rounded transition-colors cursor-pointer ${
             snapConfig.preventWallPenetration
-              ? "bg-indigo-600/70 text-white font-semibold"
-              : "text-zinc-400 hover:text-white hover:bg-white/10"
+              ? "bg-accent/70 text-fg font-semibold"
+              : "text-fg-muted hover:text-fg hover:bg-hover"
           }`}
         >
           <ShieldCheck className="h-3.5 w-3.5" />
@@ -221,7 +221,7 @@ export function TransformGizmoToolbar({
           disabled={!canUndo}
           title="Undo Transform (Ctrl+Z)"
           aria-label="Undo Transform"
-          className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-hover disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
         >
           <Undo2 className="h-3.5 w-3.5" />
         </button>
@@ -232,7 +232,7 @@ export function TransformGizmoToolbar({
           disabled={!canRedo}
           title="Redo Transform (Ctrl+Y)"
           aria-label="Redo Transform"
-          className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-hover disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
         >
           <Redo2 className="h-3.5 w-3.5" />
         </button>

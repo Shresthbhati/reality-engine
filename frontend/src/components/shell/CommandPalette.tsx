@@ -169,7 +169,7 @@ const COMMANDS: Command[] = [
   // Worlds & Navigation
   { label: "Open Home", href: "/", icon: Globe },
   { label: "Open Worlds", href: "/worlds", icon: Globe },
-  { label: "Create Capture Session", href: "/sessions/new", icon: Camera },
+  { label: "New session", href: "/reconstruct", icon: Camera },
   { label: "Create Spatial World", href: "/worlds/new", icon: Globe },
   { label: "Attach Evidence", href: "/evidence", icon: ShieldCheck },
 ];

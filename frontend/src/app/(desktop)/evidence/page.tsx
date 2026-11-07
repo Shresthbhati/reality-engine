@@ -288,7 +288,7 @@ export default function EvidenceQualityFirewallPage() {
                   <Link
                     href={`/evidence/${selected.id}/view`}
                     className="inline-flex items-center justify-center h-9 rounded-md text-sm font-medium"
-                    style={{ background: "var(--primary)", color: "white" }}
+                    style={{ background: "var(--primary)", color: "var(--on-primary)" }}
                   >
                     Open asset inspector
                   </Link>

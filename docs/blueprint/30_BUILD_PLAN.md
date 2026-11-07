@@ -179,9 +179,9 @@ Spec: [SCENE_COMPLETE_RECONSTRUCTION](../future/perception/SCENE_COMPLETE_RECONS
 
 | ID | Task | Depends | Done when | Status |
 |----|------|---------|-----------|--------|
-| 8.6 | Scene-complete eval set | 8.1 | `benchmarks/scene_complete/` with ≥ 20 AI + ≥ 20 real room photos labelled (class, box, support surface) + a scorer | TODO |
-| 8.7 | Single-image path: DA-V2 depth, planes on wall/floor/ceiling masks, detector → `furniture_from_detections` | 8.6 | spec M1 acceptance (COCO-class furniture recall ≥ 70 %, floor contact < 5 % room height) | TODO |
-| 8.8 | Open-vocab detector + crop pass called from the API reconstruction path (multi-view and single-image) | 8.7, O1/O2 decision | spec M2 acceptance; fixtures on wall planes | TODO |
+| 8.6 | Scene-complete eval set | 8.1 | `benchmarks/scene_complete/` with ≥ 20 AI + ≥ 20 real room photos labelled (class, box, support surface) + a scorer | PARTIAL (scorer + runner + label checker + tests done; the 40 labelled photos are missing and need a person: see [README](../../benchmarks/scene_complete/README.md)) |
+| 8.7 | Single-image path: DA-V2 depth, planes on wall/floor/ceiling masks, detector → `furniture_from_detections` | 8.6 | spec M1 acceptance (COCO-class furniture recall ≥ 70 %, floor contact < 5 % room height) | PARTIAL — layout + furniture wired, acceptance unmeasured (needs 8.6 labels) |
+| 8.8 | Open-vocab detector + crop pass called from the API reconstruction path (multi-view and single-image) | 8.7, O1/O2 decision | spec M2 acceptance; fixtures on wall planes | PARTIAL — Grounding DINO Tiny merged with Mask R-CNN in the API path (single-image furniture); crop pass and multi-view fixtures not done |
 
 ## Phase U — UI/UX redesign track (added 2026-11-06)
 
@@ -192,9 +192,9 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 |----|------|---------|-----------|--------|
 | U.1 | Frontend audit: routes → APIs, installed libs, duplicate components, existing tokens | — | audit table committed; 14 updated with keep/replace per responsibility | PARTIAL (audit committed: [32](32_FRONTEND_AUDIT.md) §2–7, 2026-11-06; 14 not yet updated — port 32 §8.1) |
 | U.2 | Library compatibility + licence matrix; one choice per responsibility | U.1 | matrix committed; nothing installed without a row | DONE (docs: [32](32_FRONTEND_AUDIT.md) §8; registry data read 2026-11-06, nothing installed) |
-| U.3 | Shared design tokens (colour, type, spacing, radius) light + dark | U.1 | every component uses tokens; contrast checks pass | TODO |
-| U.4 | Home: New Session · Open World + recent + needs-attention | U.3, 11.1 | Playwright + screenshots at 1280 / 1920 / 375 | TODO |
-| U.5 | Session: one guided flow with explicit processing states | U.3, 1.6 | states match backend `stage`; no fake % | TODO |
+| U.3 | Shared design tokens (colour, type, spacing, radius) light + dark | U.1 | every component uses tokens; contrast checks pass | DONE locally (tokens + contrast + no-raw-palette guard: tests/contract/design-tokens.test.mts; [33](33_TURNAROUND_PLAN.md)) |
+| U.4 | Home: New Session · Open World + recent + needs-attention | U.3, 11.1 | Playwright + screenshots at 1280 / 1920 / 375 | DONE locally ([33](33_TURNAROUND_PLAN.md); e2e/home.spec.ts) |
+| U.5 | Session: one guided flow with explicit processing states | U.3, 1.6 | states match backend `stage`; no fake % | DONE locally ([33](33_TURNAROUND_PLAN.md); e2e/session-flow.spec.ts, tests/contract/stage-labels.test.mts) |
 | U.6 | World workspace: viewport-first, hierarchy left, contextual inspector right | U.3 | inspector varies by selection type; screenshots | TODO |
 | U.7 | Session adoption review: new / updated / matched / uncertain / conflicting | U.6, 6.3 | adopting a second session matches rather than duplicates (e2e) | TODO |
 | U.8 | Mobile priorities + WCAG 2.2 AA pass | U.4–U.7 | keyboard + touch walkthrough recorded; axe clean | TODO |
@@ -213,7 +213,7 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 
 | ID | Task | Status |
 |----|------|--------|
-| 13.1 | Branch audit + CODEOWNERS | TODO |
+| 13.1 | Branch audit + CODEOWNERS | PARTIAL (audit + CODEOWNERS committed: [BRANCH_AUDIT](../engineering/BRANCH_AUDIT.md); owner still must delete branches and enable `main` protection) |
 | 13.2 | Give pHash dedup and time/GPS session grouping a production caller | TODO |
 | 13.3 | HEIC, 360° panoramas, point-cloud (PLY/LAS) and mesh (OBJ/glTF) ingestion | TODO |
 | 13.4 | Learned room layout (PolyLayout-class), line detection, non-Manhattan rooms | TODO |

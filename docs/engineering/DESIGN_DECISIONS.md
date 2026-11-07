@@ -204,7 +204,6 @@ Supersedes the old expectation (test_commit_failed_db_write_rolls_back) that an 
    means the `citydb` CLI runs, never that a database was reached. Contract tests against a fake CLI are not real
    3DCityDB verification; that stays external.
 
-<<<<<<< HEAD
 ## Decision — Axis convention
 
 **Status: ACCEPTED**
@@ -226,7 +225,7 @@ geo-referenced. Automatic cross-source / geo-registration remains the MISSING it
 `docs/future/registration/CROSS_SOURCE_REGISTRATION.md` (it needs a measurable residual and a valid correspondence
 set, which manual placement does not provide). Material hypotheses (plan M3) are likewise kept ESTIMATED with
 `asserted=False` and are deliberately not mapped to physics materials.
-=======
+
 
 ## Quality bands (2026-10-13)
 
@@ -240,4 +239,53 @@ A model score is not a probability (master document 14.2), so the product shows 
   otherwise `fair`. The reason is returned with the band so the UI can say why.
 - There is **no per-point band**: the stored point cloud carries no per-point confidence.
 - The thresholds (0.5, 0.75, 0.8) are tolerances, not calibrated constants.
->>>>>>> 4027b5c
+
+## Decision — One Studio UI (the workstation); no Simple/Pro switch (2026-11-07)
+
+Status: accepted by the product owner ("Aa" = option A). Plan task T-1.1 in `docs/blueprint/33_TURNAROUND_PLAN.md`.
+
+- The world page renders `SpatialWorkstation` for everyone. The Simple "place viewer" (`components/simple/*`) and the
+  per-viewer Pro-mode preference (`re-pro-mode`, `useProMode`, Settings toggle) are removed.
+- Why: the first customer (architecture and interior design firms) needs measuring, the inspector and evidence in the main
+  view; two UIs for one world was a third noun beside Session and World (audit `32_FRONTEND_AUDIT.md` D1).
+- A simpler presentation for clients comes back later as a **view mode inside the Studio** (plan M4b read-only client link),
+  not as a second app.
+- Consequence: `lib/copy.ts` and `lib/places.ts` (consumer wording and honest job progress) are no longer used by any screen; they
+  stay because contract tests cover them. Delete or reuse when the client view is built.
+
+## Decision — Proxy-only browser transport (2026-11-07, implemented)
+
+Status: accepted and implemented (plan task T-1.2).
+
+- The browser talks only to same-origin Next route handlers. Explicit handlers under `frontend/src/app/api/**` keep priority;
+  the new catch-all `frontend/src/app/api/[...path]/route.ts` forwards every other `/api/**` call (any method, streamed
+  request and response bodies) to the backend with the server-side token (`lib/api/backend.ts`).
+- `apiBaseUrl()` (`lib/api/client.ts`): browser = same origin; Electron = injected `__REALITY_API_BASE__` (direct to the local
+  API, unchanged); server-side rendering = `REALITY_BACKEND_URL`, then legacy `NEXT_PUBLIC_API_BASE_URL`, then :8100. The browser
+  bundle no longer reads `NEXT_PUBLIC_API_TOKEN`; set `REALITY_API_TOKEN` (server only).
+- The catch-all drops client `Authorization`, `Cookie`, hop-by-hop headers and rejects `.`/`..`/encoded-slash path segments.
+- Verified 2026-11-07: Playwright suite 51 passed / 1 skipped in dev and in production-build mode; with a token-protected API
+  the proxy returned 200 without a client token and with a forged one, passed 404/422 through, rejected an encoded traversal
+  with 400, and a real JPEG upload returned 201 and came back byte-identical.
+- Known limits: (1) one shared service token means **no per-user identity reaches the backend**. That is fine for the local
+  single-user product and is the first thing to change for hosted multi-tenant use (M6: forward the user's credential
+  instead of a blanket token). (2) Job-progress SSE has no frontend consumer yet, so streaming of long-lived events through the
+  proxy is untested. (3) In `next dev` the first request compiles the route, so the footer health timeout was raised to 15 s.
+- The new guard `test_every_proxy_targets_a_path_the_api_serves` skips the catch-all by design.
+
+## Decision — Light theme shares the dark theme's copper accent (2026-11-07)
+
+Status: accepted by the product owner ("copper is fine"). Plan task U.3.
+
+- Light `--accent` is `#8a4f2a` (was legacy cyan `#00708a`); light and dark now share one brand. `--primary`/`--on-primary` are identical in both themes.
+- Every colour pair is held to WCAG AA by `frontend/tests/contract/design-tokens.test.mts`; change a token value, then run `npm run test:contract`.
+- Components use the token utilities from `globals.css` (`bg-surface`, `text-fg`, `text-success`, ...). The same test fails on any raw palette class (`text-zinc-400`, ...) in `src`.
+
+## Decision — Learned single-image layout and open-vocabulary furniture (2026-11-07, implemented locally)
+
+* **Why:** a real user world (10 AI-generated photos) came out with 5 floors, 1 wall and no furniture because 206 sparse SfM points cannot carry structure. A learned depth + surface-label stage gives every photo thousands of labelled 3D points.
+* **Models (loaded from the local Hugging Face cache only, never downloaded at request time):** `depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf` (Apache-2.0 per the upstream project; its model card has no licence tag, **confirm before a paid release**), `openmmlab/upernet-convnext-tiny` (MIT per its model card), `IDEA-Research/grounding-dino-tiny` (Apache-2.0). Rejected for a paid product: MASt3R/DUSt3R and Depth Anything V2 Base and larger (non-commercial licences). VGGT and Mask2Former were not evaluated.
+* **Selection rule:** multi-view is kept when credible (>= 40 sparse points per registered camera and >= 3 cameras). Only when it is not, and only if the layout path actually succeeds, the room shell is built from the best-supported single photograph. The replacement is recorded in `attempts` and the other photos are listed as not fused.
+* **Honesty:** scale stays `relative` with an explicit "ESTIMATE" note (monocular metric depth is roughly 10-20 % off, never a measurement); entities are capped at 0.35 confidence (openings 0.3); implausible openings (floating doors, sliver windows) are refused with the reason.
+* **Opt-outs:** `REALITY_LAYOUT_MODELS=0`, `REALITY_OPEN_VOCAB=0`; both are skipped under the `REALITY_TEST_BACKEND` seam.
+* **Open:** fusing several photographs into one shell; accuracy needs the labelled set (8.6).

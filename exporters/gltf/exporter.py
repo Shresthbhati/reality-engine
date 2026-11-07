@@ -126,6 +126,17 @@ def _real_points_mesh(
     }
 
 
+#: neutral defaults by surface type: (rgb 0-1, roughness, alpha). Authored materials and measured colours always win.
+_SURFACE_DEFAULTS = {
+    "floor": ((0.62, 0.55, 0.47), 0.8, 1.0),
+    "ceiling": ((0.93, 0.93, 0.92), 0.9, 1.0),
+    "wall": ((0.88, 0.87, 0.84), 0.9, 1.0),
+    "window": ((0.62, 0.78, 0.9), 0.1, 0.35),
+    "door": ((0.55, 0.42, 0.3), 0.6, 1.0),
+    "furniture": ((0.7, 0.66, 0.6), 0.7, 1.0),
+}
+
+
 def _resolve_material(
     world: "WorldIR",
     entity,
@@ -230,6 +241,25 @@ def _resolve_material(
                 mat_idx = len(gltf["materials"]) - 1
                 material_map[key] = mat_idx
                 return mat_idx
+
+    # No authored material: a default named by surface type, shared by every element of that type, so downstream tools
+    # (SketchUp, 3ds Max, Blender) get floor / wall / window ... materials instead of one anonymous grey.
+    kind = getattr(getattr(entity, "type", None), "value", None)
+    default = _SURFACE_DEFAULTS.get(kind)
+    if default is not None:
+        key = f"surface:{kind}"
+        if key in material_map:
+            return material_map[key]
+        rgb, rough, alpha = default
+        mat_def = {
+            "name": f"surface_{kind}",
+            "pbrMetallicRoughness": {"baseColorFactor": [rgb[0], rgb[1], rgb[2], alpha], "metallicFactor": 0.0, "roughnessFactor": rough},
+        }
+        if alpha < 1.0:
+            mat_def["alphaMode"] = "BLEND"
+        gltf.setdefault("materials", []).append(mat_def)
+        material_map[key] = len(gltf["materials"]) - 1
+        return material_map[key]
 
     return None
 

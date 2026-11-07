@@ -48,7 +48,7 @@ export default async function WorldsPage({
       />
 
       {/* Status Filter Tabs */}
-      <div className="flex items-center gap-2 px-6 pt-4 border-b border-zinc-800">
+      <div className="flex items-center gap-2 px-6 pt-4 border-b border-line-subtle">
         {tabs.map((tab) => {
           const isActive = status === tab.id;
           return (
@@ -57,8 +57,8 @@ export default async function WorldsPage({
               href={tab.href}
               className={`px-3 py-1.5 text-xs font-medium rounded-t-md transition-colors border-b-2 -mb-px ${
                 isActive
-                  ? "border-indigo-500 text-zinc-100 bg-zinc-800/40"
-                  : "border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                  ? "border-accent text-fg bg-elevated/40"
+                  : "border-transparent text-fg-muted hover:text-fg hover:border-line"
               }`}
             >
               {tab.label}

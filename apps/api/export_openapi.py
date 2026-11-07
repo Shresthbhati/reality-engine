@@ -99,7 +99,7 @@ def generate_markdown_docs(dest_path: Path | str = "docs/API_DOCUMENTATION.md") 
         "- `POST /api/worlds/{id}/commit`: Commit human corrections or automated reconciliations.",
         "",
         "### 3. Multi-Format 3D & BIM Export",
-        "- `POST /api/worlds/{id}/export`: Export current world to `gltf`, `glb`, `usda`, `obj`, `ply`, `stl`, `ifc`, `blender`, `cityjson`, `floorplan_svg`, `floorplan_dxf`, or `room_report_pdf`.",
+        "- `POST /api/worlds/{id}/export`: Export current world to `gltf`, `glb`, `usda`, `obj`, `ply`, `stl`, `ifc`, `blender`, `cityjson`, `floorplan_svg`, `floorplan_dxf`, `room_report_pdf`, or `room_schedule_csv`.",
         "",
         "## Error Semantics",
         "| Status Code | Description | Meaning |",

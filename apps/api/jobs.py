@@ -36,6 +36,8 @@ from engine.pipeline import world_delta
 from engine.pipeline.dense_gate import dense_auto_enabled
 from reconstruction.colmap_session import ColmapSession
 from engine.pipeline.single_image_furniture import maskrcnn_furniture_detector, unload_furniture_model
+from engine.pipeline.open_vocab_furniture import combined_furniture_detector, unload_open_vocab_furniture
+from engine.pipeline.single_image_layout import make_layout_analyzer
 from engine.pipeline.progressive import (
     EvidenceInput,
     InsufficientEvidence,
@@ -420,6 +422,20 @@ def enqueue_job(
 from reconstruction.scene_identity import capture_quality  # noqa: E402
 
 
+def _layout_shell(prog) -> dict | None:
+    """{"chosen": photo name} when the room shell came from one photograph's learned layout (see progressive.py)."""
+    boot = (prog.stage_facts or {}).get("bootstrap") or {}
+    if not (boot.get("layout") or {}).get("used"):
+        return None
+    for a in prog.attempts:
+        if a.get("level") == 0 and a.get("outcome") == "succeeded" and "best-supported" in str(a.get("detail")):
+            import re
+
+            m = re.search(r"\(([^)]+)\)", a["detail"])
+            return {"chosen": m.group(1) if m else "one photo"}
+    return {"chosen": "one photo"}
+
+
 def _structure_points(world_ir) -> list:
     """The room-defining corners for the viewer; a failure here must never fail the job."""
     try:
@@ -765,15 +781,23 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             **_dense_cpu_options(job.payload))
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
-    prog = await asyncio.to_thread(
-        lambda: run_progressive(
-            run_inputs, vs_options=options, prior_ids=prior_ids, artifact_store=artifact_store,
-            depth_model=(getattr(options, "depth_model", None) or "DPT_Hybrid"),
-            furniture_detector=maskrcnn_furniture_detector,
+    # the deterministic test seam must not load real models; production leaves test_backend None
+    layout_analyzer, unload_layout_models = (None, lambda: None) if test_backend is not None else make_layout_analyzer()
+    try:
+        prog = await asyncio.to_thread(
+            lambda: run_progressive(
+                run_inputs, vs_options=options, prior_ids=prior_ids, artifact_store=artifact_store,
+                depth_model=(getattr(options, "depth_model", None) or "DPT_Hybrid"),
+                furniture_detector=(maskrcnn_furniture_detector if os.environ.get("REALITY_OPEN_VOCAB") == "0"
+                                    else combined_furniture_detector),
+                layout_analyzer=layout_analyzer,
+            )
         )
-    )
+    finally:
+        unload_layout_models()
     world_ir = prog.world
     unload_furniture_model()  # idle API must not keep the detector resident between jobs
+    unload_open_vocab_furniture()
 
     await _throw_if_cancelled(db, job)
 
@@ -982,7 +1006,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "capture_quality": capture_quality(
             len(items), prog.registered_ids, len(prog.points),
             n_duplicates_dropped=sum(1 for s in skipped_evidence if "duplicate" in s.get("reason", "")),
-            structure=cand_snap["entity_types"], attempts=prog.attempts),
+            structure=cand_snap["entity_types"], attempts=prog.attempts,
+            layout_shell=_layout_shell(prog)),
         "structure_points": _structure_points(world_ir),
         "level": prog.level,
         "level_name": prog.level_name,

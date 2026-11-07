@@ -144,9 +144,15 @@ class _FakeDetector:
     lift -> merge -> promote -> validate) run without torch."""
 
     calls = 0
+    unloads = 0
 
     def __init__(self, **kwargs):
         _FakeDetector.calls += 1
+
+    def unload(self):
+        # The stage wraps segmentation in engine.core.device.unloading (P0.4) so VRAM is
+        # released before the next model loads; a detector without unload() cannot run.
+        _FakeDetector.unloads += 1
 
     def segment(self, evidence):
         n = 64
@@ -236,9 +242,11 @@ def test_perception_stage_runs_fake_detector(
     # Call the stage directly (the real entry `vertical_slice` needs COLMAP;
     # the stage function is the unit under test here).
     world = _empty_world()
+    unloads_before = _FakeDetector.unloads
     facts = vs._perception_stage(result, world, evidence, maps, options)
 
-    assert facts["status"] == "ran"
+    assert facts["status"] == "ran", facts.get("note")
+    assert _FakeDetector.unloads == unloads_before + 1, "detector must be unloaded after segmentation"
     assert facts["masks_considered"] == 2
     assert facts["hypotheses_lifted"] == 2
     assert facts["candidates_merged"] == 1  # same wall position -> one object

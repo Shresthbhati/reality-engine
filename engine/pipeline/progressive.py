@@ -106,6 +106,58 @@ def _roles(world) -> List[str]:
                    if e.type.value in ("wall", "floor", "ceiling")})
 
 
+#: a sparse model with fewer points per registered camera than this is not structure: planes fitted to it are noise
+MIN_SPARSE_POINTS_PER_CAMERA = 40
+
+
+def _multiview_weakness(vs) -> Optional[str]:
+    """Why a multi-view result cannot be trusted to carry structure, or None when it can."""
+    registered = max(1, len(vs.camera_poses))
+    if len(vs.camera_poses) < 3:
+        return f"only {len(vs.camera_poses)} cameras registered"
+    kinds = [e.type.value for e in vs.world.entities.values()]
+    if "floor" not in kinds or kinds.count("wall") < 2:
+        return f"no room shell was recovered (needs a floor and at least two walls; found {kinds.count('floor')} floor, {kinds.count('wall')} wall)"
+    if len(vs.points) < MIN_SPARSE_POINTS_PER_CAMERA * registered:
+        return (f"only {len(vs.points)} sparse points for {registered} cameras "
+                f"(under {MIN_SPARSE_POINTS_PER_CAMERA} per camera): fitted planes would be noise")
+    return None
+
+
+def _layout_score(analysis) -> float:
+    """How much of the frame is room structure (floor/wall/ceiling/openings): the best view to build the shell from."""
+    m = analysis.masks
+    return sum(float(m[k].mean()) for k in ("floor", "wall", "ceiling", "window", "door")) + (0.05 if float(m["ceiling"].mean()) > 0.01 else 0.0)
+
+
+def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_model, furniture_detector, attempts):
+    """Bootstrap the room shell from the single photograph whose layout is best supported; try the next best if the solver
+    refuses. Returns ``([(candidate, BootstrapResult)], facts)`` or ``([], facts)`` when no photograph yields a layout."""
+    scored = []
+    for cand in ordered:
+        try:
+            an = layout_analyzer(cand.item)
+        except Exception as exc:  # noqa: BLE001 -- recorded; the classic path is the fallback
+            attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed",
+                             "detail": f"{cand.name}: learned layout unavailable: {type(exc).__name__}: {exc}"[:300]})
+            return [], {"reason": "layout models unavailable"}
+        if float(an.masks["floor"].mean()) >= 0.03:
+            scored.append((_layout_score(an), cand, an))
+    scored.sort(key=lambda t: -t[0])
+    for score, cand, an in scored[:3]:
+        try:
+            boot = bootstrap_single_image(cand.item, cand.facts, artifact_store=artifact_store, depth_model=depth_model,
+                                          furniture_detector=furniture_detector, layout_analysis=an)
+        except BootstrapUnavailable as exc:
+            attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed", "detail": f"{cand.name}: {exc}"})
+            continue
+        if boot.facts.get("layout", {}).get("used"):
+            return [(cand, boot)], {"chosen": cand.name, "candidates_scored": len(scored), "score": round(score, 3)}
+        attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed",
+                         "detail": f"{cand.name}: layout refused: {boot.facts.get('layout', {}).get('reason')}"[:300]})
+    return [], {"reason": "no photograph yielded a floor and walls", "candidates_scored": len(scored)}
+
+
 def run_progressive(
     inputs: Sequence[EvidenceInput],
     *,
@@ -116,6 +168,7 @@ def run_progressive(
     vertical_slice_fn: Optional[Callable] = None,
     bootstrap_depth_map=None,
     furniture_detector=None,
+    layout_analyzer: Optional[Callable] = None,
 ) -> ProgressiveResult:
     eligible = [i for i in inputs if i.facts.geometry_eligible]
     excluded = []
@@ -157,6 +210,25 @@ def run_progressive(
                              "elapsed_s": round(_time.perf_counter() - _t0, 3),
                              "detail": f"{type(exc).__name__}: {exc}"[:400]})
             vs = None
+
+    layout_reason: Optional[str] = None
+    pre_boots: list = []
+    pre_pick = None
+    if vs is not None and layout_analyzer is not None:
+        weakness = _multiview_weakness(vs)
+        if weakness:
+            # The weak multi-view model is replaced ONLY after the layout actually succeeded: if the learned models are
+            # unavailable or refuse, the multi-view result stands (a weak model is still better than none).
+            prior_set = set(prior_ids)
+            pre_boots, pre_pick = _bootstrap_best_layout(
+                sorted(eligible, key=lambda c: c.item.id not in prior_set), layout_analyzer, artifact_store=artifact_store,
+                depth_model=depth_model, furniture_detector=furniture_detector, attempts=attempts)
+            if pre_boots:
+                layout_reason = weakness
+                attempts[[i for i, a in enumerate(attempts) if a["level"] == 2][-1]]["outcome"] = "rejected"
+                attempts[[i for i, a in enumerate(attempts) if a["level"] == 2][-1]]["detail"] += (
+                    f"; not credible ({weakness}): room shell built from learned single-image layout instead")
+                vs = None
 
     degraded: List[str] = []
     if excluded:
@@ -210,9 +282,13 @@ def run_progressive(
         # hypotheses into ONE world. N images never silently become 1.
         prior = set(prior_ids)
         ordered = sorted(eligible, key=lambda c: c.item.id not in prior)  # earliest evidence first (stable)
-        boots = []
+        boots, layout_pick = pre_boots, pre_pick
         _boot_t0 = _time.perf_counter()
-        for k, cand in enumerate(ordered):
+        if layout_analyzer is not None and not boots:
+            boots, layout_pick = _bootstrap_best_layout(
+                ordered, layout_analyzer, artifact_store=artifact_store, depth_model=depth_model,
+                furniture_detector=furniture_detector, attempts=attempts)
+        for k, cand in enumerate(ordered if not boots else []):
             try:
                 boots.append((cand, bootstrap_single_image(
                     cand.item, cand.facts, artifact_store=artifact_store, depth_model=depth_model,
@@ -230,7 +306,9 @@ def run_progressive(
         used = [c for c, _ in boots]
         attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "succeeded",
                          "elapsed_s": round(_time.perf_counter() - _boot_t0, 3),
-                         "detail": (f"single-view hypothesis from {used[0].name}" if len(used) == 1 else
+                         "detail": (f"room shell from the best-supported of {len(eligible)} photographs ({used[0].name}) "
+                                    "via learned metric depth + surface labels" if layout_pick and "chosen" in layout_pick else
+                                    f"single-view hypothesis from {used[0].name}" if len(used) == 1 else
                                     f"{len(used)} independent single-view hypotheses fused (unregistered)")})
         world, level = boot.world, 0
         # only a lone image is anchored by its own assumed pose; fused views are unrelated frames
@@ -247,7 +325,12 @@ def run_progressive(
         }
         counts = {"entities": len(world.entities), "measurements": 0, "relationships": 0}
         bootstrap_facts = boot.facts
-        if len(eligible) == 1:
+        if layout_pick and "chosen" in layout_pick and len(eligible) > 1:
+            degraded.append(
+                f"room shell built from one photograph ({layout_pick['chosen']}); the other {len(eligible) - 1} are kept as "
+                "evidence but not yet fused into it"
+                + (f" (multi-view reconstruction was not credible: {layout_reason})" if layout_reason else ""))
+        elif len(eligible) == 1:
             degraded.append("single-view hypothesis: partial by construction "
                             "(relative scale, hidden surfaces unknown)")
         else:

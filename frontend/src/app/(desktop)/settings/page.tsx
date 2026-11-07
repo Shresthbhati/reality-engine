@@ -6,12 +6,10 @@ import {
   DensityPref,
   setDensity,
   setProcessingPref,
-  setProMode,
   setTheme,
   ThemePref,
   useDensity,
   useProcessingPref,
-  useProMode,
   useTheme,
 } from "@/lib/prefs";
 
@@ -36,7 +34,6 @@ export default function SettingsPage() {
   const [reduceMotion, setReduceMotion] = useState(readReduceMotion);
   const [purgedMessage, setPurgedMessage] = useState<string | null>(null);
   const theme = useTheme();
-  const pro = useProMode();
   const density = useDensity();
   const processing = useProcessingPref();
 
@@ -141,16 +138,6 @@ export default function SettingsPage() {
           />
         </Section>
 
-        {/* Mode Section */}
-        <Section title="Mode">
-          <ToggleRow
-            label="Pro mode"
-            description="Shows the engineer workstation, sessions, evidence and technical details such as version hashes and coordinate frames."
-            checked={pro}
-            onChange={() => setProMode(!pro)}
-          />
-        </Section>
-
         {/* Processing Section (Blueprint P14) */}
         <Section title="Processing">
           <div className="flex flex-col gap-4">
@@ -226,7 +213,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={handlePurgeTrash}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors hover:bg-neutral-800"
+                className="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors hover:bg-elevated"
                 style={{
                   borderColor: "var(--border)",
                   color: "var(--text-primary)",
@@ -237,7 +224,7 @@ export default function SettingsPage() {
               </button>
             </div>
             {purgedMessage && (
-              <p className="text-xs text-emerald-400 mt-1">{purgedMessage}</p>
+              <p className="text-xs text-success mt-1">{purgedMessage}</p>
             )}
           </div>
         </Section>

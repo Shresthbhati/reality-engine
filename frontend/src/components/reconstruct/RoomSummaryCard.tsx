@@ -20,15 +20,15 @@ export interface RoomSummaryCardProps extends Omit<SummaryExtras, "coverage"> {
 }
 
 const STATE_STYLE: Record<string, string> = {
-  MEASURED: "border-emerald-500/40 text-emerald-300",
-  ESTIMATED: "border-amber-400/50 text-amber-300",
-  INFERRED: "border-sky-400/40 text-sky-300",
+  MEASURED: "border-success/40 text-success",
+  ESTIMATED: "border-warning/50 text-warning",
+  INFERRED: "border-info/40 text-info",
 };
 
 const VERDICT_STYLE = {
-  sufficient: "border-emerald-500/40 text-emerald-300",
-  partial: "border-amber-400/50 text-amber-300",
-  insufficient: "border-red-400/60 text-red-300",
+  sufficient: "border-success/40 text-success",
+  partial: "border-warning/50 text-warning",
+  insufficient: "border-error/60 text-error",
 } as const;
 
 /**
@@ -72,18 +72,18 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
           <dl className="flex flex-wrap gap-x-4 gap-y-1" data-testid="summary-dimensions">
             {s.dimensions.map((d) => (
               <div key={d.key} data-testid={`summary-dim-${d.key}`} className="min-w-0">
-                <dt className="text-[10px] uppercase tracking-wider text-neutral-500">{d.label}</dt>
-                <dd className="flex items-baseline gap-1.5 text-[12px] text-neutral-100">
+                <dt className="text-[10px] uppercase tracking-wider text-fg-subtle">{d.label}</dt>
+                <dd className="flex items-baseline gap-1.5 text-[12px] text-fg">
                   {d.value === null ? (
-                    <span className="text-neutral-500">not available</span>
+                    <span className="text-fg-subtle">not available</span>
                   ) : (
                     <>
                       <span className="font-semibold tabular-nums">{d.value}</span>
-                      <span className="text-[10px] text-neutral-400">{d.unit}</span>
+                      <span className="text-[10px] text-fg-muted">{d.unit}</span>
                       {d.state && (
                         <span
                           data-testid={`summary-dim-state-${d.key}`}
-                          className={cn("rounded border px-1 text-[9px] font-semibold", STATE_STYLE[d.state] ?? "border-neutral-600 text-neutral-300")}
+                          className={cn("rounded border px-1 text-[9px] font-semibold", STATE_STYLE[d.state] ?? "border-line-strong text-fg-muted")}
                         >
                           {d.state}
                         </span>
@@ -95,7 +95,7 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
             ))}
           </dl>
         ) : (
-          <p className="text-[11px] text-neutral-400" data-testid="summary-no-room">
+          <p className="text-[11px] text-fg-muted" data-testid="summary-no-room">
             No room outline measured yet: dimensions are not available.
           </p>
         )}
@@ -112,7 +112,7 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
             <li
               key={name}
               data-testid={`summary-count-${name}`}
-              className="rounded border border-[var(--border)] px-1.5 py-0.5 text-neutral-200"
+              className="rounded border border-[var(--border)] px-1.5 py-0.5 text-fg"
               title={s.countsReliable ? tip : "Not counted: the photos could not be placed in one 3D space, so nothing here describes the room."}
             >
               {s.countsReliable ? n : "—"} {name}
@@ -125,7 +125,7 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
           data-scale-kind={s.scaleKind}
           className={cn(
             "flex items-center gap-1 text-[11px]",
-            s.scaleKind === "measured" ? "text-emerald-300" : s.scaleKind === "estimated" ? "text-amber-300" : "text-neutral-400",
+            s.scaleKind === "measured" ? "text-success" : s.scaleKind === "estimated" ? "text-warning" : "text-fg-muted",
           )}
         >
           <Ruler className="h-3.5 w-3.5" aria-hidden />
@@ -134,7 +134,7 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
       </div>
 
       {s.unitNote && (
-        <p className="mt-1 text-[11px] text-amber-300" data-testid="summary-unit-note">
+        <p className="mt-1 text-[11px] text-warning" data-testid="summary-unit-note">
           {s.unitNote}
         </p>
       )}
@@ -149,14 +149,14 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
           <span className={cn("rounded border px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide", VERDICT_STYLE[s.captureQuality.state])}>
             {captureBadge(s.captureQuality)}
           </span>
-          {s.captureQuality.message && <span className="min-w-0 flex-1 text-neutral-200">{s.captureQuality.message}</span>}
+          {s.captureQuality.message && <span className="min-w-0 flex-1 text-fg">{s.captureQuality.message}</span>}
         </div>
       )}
 
       {s.warnings.length > 0 && (
         <ul className="mt-1.5 space-y-0.5" data-testid="summary-warnings">
           {s.warnings.map((w) => (
-            <li key={w} className="flex items-start gap-1.5 text-[11px] text-amber-300">
+            <li key={w} className="flex items-start gap-1.5 text-[11px] text-warning">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
               {w}
             </li>
@@ -164,16 +164,16 @@ export default function RoomSummaryCard({ world, worldId, refreshKey, onPhotosAd
         </ul>
       )}
       {s.captureHint && (
-        <p className="mt-1 flex items-start gap-1.5 text-[11px] text-neutral-300" data-testid="summary-capture-hint">
+        <p className="mt-1 flex items-start gap-1.5 text-[11px] text-fg-muted" data-testid="summary-capture-hint">
           <Lightbulb className="mt-0.5 h-3 w-3 shrink-0 text-[var(--accent)]" aria-hidden />
           <span>
-            <strong className="text-neutral-100">Capture next:</strong> {s.captureHint}
+            <strong className="text-fg">Capture next:</strong> {s.captureHint}
           </span>
         </p>
       )}
       {worldId && dto?.available && (
         <details className="mt-1.5" onToggle={(e) => setMapOpen((e.currentTarget as HTMLDetailsElement).open)}>
-          <summary className="cursor-pointer text-[11px] text-neutral-400 hover:text-neutral-200" data-testid="coverage-toggle">
+          <summary className="cursor-pointer text-[11px] text-fg-muted hover:text-fg" data-testid="coverage-toggle">
             Wall coverage map
           </summary>
           {mapOpen && (

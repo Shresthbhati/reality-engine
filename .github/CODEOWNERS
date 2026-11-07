@@ -1,0 +1,10 @@
+# Plan task 13.1. Sole maintainer for now; add teammates per line as they join.
+# Take effect as a required review only once branch protection requires code-owner review.
+*                               @Shresthbhati
+
+# Contracts that every engine depends on: changes here need an explicit owner look.
+/world_ir/                      @Shresthbhati
+/worldstore/                    @Shresthbhati
+/docs/blueprint/                @Shresthbhati
+/docs/engineering/              @Shresthbhati
+/.github/                       @Shresthbhati

@@ -16,7 +16,6 @@ export interface ProcessingPref {
 }
 
 const THEME_KEY = "re-theme";
-const PRO_KEY = "re-pro-mode";
 const DENSITY_KEY = "re-density";
 const PROCESSING_KEY = "re-processing-pref";
 const EVENT = "re-prefs-change";
@@ -71,14 +70,6 @@ export function setTheme(theme: ThemePref) {
 
 export function useTheme(): ThemePref {
   return useSyncExternalStore(subscribe, getTheme, () => "system" as ThemePref);
-}
-
-export function setProMode(on: boolean) {
-  write(PRO_KEY, String(on));
-}
-
-export function useProMode(): boolean {
-  return useSyncExternalStore(subscribe, () => read(PRO_KEY) === "true", () => false);
 }
 
 export function getDensity(): DensityPref {

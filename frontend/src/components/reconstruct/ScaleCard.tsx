@@ -78,7 +78,7 @@ export default function ScaleCard({ worldId, scale, onChanged }: ScaleCardProps)
   if (view.kind === "estimated" || view.kind === "measured") {
     return (
       <p
-        className={view.kind === "estimated" ? "mt-1 flex items-center gap-1.5 text-[11px] text-amber-300" : "mt-1 flex items-center gap-1.5 text-[11px] text-emerald-300"}
+        className={view.kind === "estimated" ? "mt-1 flex items-center gap-1.5 text-[11px] text-warning" : "mt-1 flex items-center gap-1.5 text-[11px] text-success"}
         data-testid="scale-state-label"
         data-scale-state={view.kind}
       >
@@ -91,15 +91,15 @@ export default function ScaleCard({ worldId, scale, onChanged }: ScaleCardProps)
 
   const s = data?.suggestion && !data.rejected ? data.suggestion : null;
   return (
-    <div className="mt-2 rounded border border-amber-400/30 bg-amber-400/5 p-2" data-testid="scale-card">
-      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-200" data-testid="scale-cta">
+    <div className="mt-2 rounded border border-warning/30 bg-warning-subtle p-2" data-testid="scale-card">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-warning" data-testid="scale-cta">
         <Ruler className="h-3.5 w-3.5" aria-hidden />
         {view.cta}
       </p>
       {s ? (
         <div className="mt-1.5" data-testid="scale-suggestion">
-          <p className="text-[11px] leading-relaxed text-neutral-200">{suggestionSentence(s)}</p>
-          <p className="mt-0.5 text-[10px] text-neutral-400">
+          <p className="text-[11px] leading-relaxed text-fg">{suggestionSentence(s)}</p>
+          <p className="mt-0.5 text-[10px] text-fg-muted">
             Source: {s.source_kind} <code>{s.source_entity_id}</code> · implies {s.implied_scale.toFixed(3)} m per model unit ·
             dimensions would be labelled ESTIMATED, not measured.
           </p>
@@ -108,7 +108,7 @@ export default function ScaleCard({ worldId, scale, onChanged }: ScaleCardProps)
               type="button"
               onClick={() => void run("accept")}
               disabled={busy !== null}
-              className="rounded border border-amber-300/60 px-2 py-0.5 text-[11px] font-medium text-amber-100 hover:bg-amber-300/10 disabled:opacity-50"
+              className="rounded border border-warning/60 px-2 py-0.5 text-[11px] font-medium text-warning hover:bg-warning-subtle disabled:opacity-50"
             >
               {busy === "accept" ? "Accepting…" : "Accept"}
             </button>
@@ -116,24 +116,24 @@ export default function ScaleCard({ worldId, scale, onChanged }: ScaleCardProps)
               type="button"
               onClick={() => void run("reject")}
               disabled={busy !== null}
-              className="rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-neutral-300 hover:bg-white/5 disabled:opacity-50"
+              className="rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-fg-muted hover:bg-hover disabled:opacity-50"
             >
               {busy === "reject" ? "Dismissing…" : "Reject"}
             </button>
           </div>
         </div>
       ) : data && !data.rejected ? (
-        <p className="mt-1 text-[10px] text-neutral-400" data-testid="scale-no-suggestion">
+        <p className="mt-1 text-[10px] text-fg-muted" data-testid="scale-no-suggestion">
           No typical size to suggest: {data.reason ?? "no standard object was detected"}.
         </p>
       ) : null}
       {message && (
-        <p className="mt-1 text-[10px] text-neutral-300" role="status">
+        <p className="mt-1 text-[10px] text-fg-muted" role="status">
           {message}
         </p>
       )}
       {error && (
-        <p className="mt-1 text-[10px] text-red-300" role="alert">
+        <p className="mt-1 text-[10px] text-error" role="alert">
           {error}
         </p>
       )}

@@ -1,5 +1,6 @@
 "use client";
 
+import { evidenceHeadline, orderedElements, stateLabel, type EvidenceSummary, type ExportElement } from "@/lib/export/evidence-model";
 import { useEffect, useState, useMemo, type ComponentType } from "react";
 import {
   X,
@@ -62,6 +63,7 @@ const ALL_FORMATS: FormatDefinition[] = [
   { value: "floorplan_svg", label: "SVG Plan", ext: "svg", category: "docs", description: "Scalable vector floor plan", Icon: FileText },
   { value: "floorplan_dxf", label: "DXF CAD Plan", ext: "dxf", category: "docs", description: "AutoCAD 2D drawing exchange", Icon: FileCode },
   { value: "room_report_pdf", label: "Room Report PDF", ext: "pdf", category: "docs", description: "Room dimensions & compliance", Icon: FileText },
+  { value: "room_schedule_csv", label: "Room Schedule CSV", ext: "csv", category: "docs", description: "One row per room: area, perimeter, height, openings", Icon: FileText },
   { value: "floorplan_pdf", label: "Floor Plan PDF", ext: "pdf", category: "docs", description: "Architectural 1-sheet PDF", Icon: FileText },
   { value: "multisheet_floorplan_pdf", label: "Multi-Sheet PDF", ext: "pdf", category: "docs", description: "Full multi-page drawing set", Icon: FileText },
 ];
@@ -86,6 +88,9 @@ export default function ExportPanel({
     entitiesSkipped: number;
     reasons: string[];
     showDetails: boolean;
+    elements: ExportElement[];
+    summary: EvidenceSummary;
+    showEvidence: boolean;
   } | null>(null);
 
   const [formatsTick, setFormatsTick] = useState(0);
@@ -132,6 +137,9 @@ export default function ExportPanel({
           (id, i) => `${id}: ${result.skip_reasons[i] ?? "unknown constraint"}`
         ),
         showDetails: false,
+        elements: result.elements ?? [],
+        summary: result.evidence_summary ?? { total: 0, by_state: {} },
+        showEvidence: false,
       });
     } catch (err: unknown) {
       if (isApiError(err)) {
@@ -259,21 +267,21 @@ export default function ExportPanel({
           style={{
             background: "rgba(239, 68, 68, 0.08)",
             borderColor: "rgba(239, 68, 68, 0.3)",
-            color: "#f87171",
+            color: "var(--error)",
           }}
         >
           <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-error" />
             <div className="flex-1">
               <span className="font-semibold block">Export Failed</span>
-              <p className="text-[11px] leading-relaxed text-neutral-300 mt-0.5">{error.message}</p>
+              <p className="text-[11px] leading-relaxed text-fg-muted mt-0.5">{error.message}</p>
             </div>
             {lastAttempt && (
               <button
                 type="button"
                 onClick={() => void handleExport(lastAttempt.format, lastAttempt.ext)}
                 disabled={running !== null}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-red-200 text-[10px] font-medium border border-red-500/30 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 rounded bg-error-subtle hover:bg-error-subtle text-error text-[10px] font-medium border border-error/30 transition-colors"
               >
                 <RefreshCw className="w-3 h-3" />
                 Retry
@@ -291,17 +299,17 @@ export default function ExportPanel({
           style={{
             background: "rgba(245, 158, 11, 0.08)",
             borderColor: "rgba(245, 158, 11, 0.3)",
-            color: "#fbbf24",
+            color: "var(--warning)",
           }}
         >
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+            <AlertCircle className="w-4 h-4 shrink-0 text-warning" />
             <span className="text-[11px]">{loadError}</span>
           </div>
           <button
             type="button"
             onClick={fetchFormats}
-            className="p-1 rounded hover:bg-amber-400/20 text-amber-200 transition-colors"
+            className="p-1 rounded hover:bg-warning-subtle text-warning transition-colors"
             title="Retry format status check"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -316,31 +324,60 @@ export default function ExportPanel({
           style={{
             background: "rgba(16, 185, 129, 0.08)",
             borderColor: "rgba(16, 185, 129, 0.3)",
-            color: "#34d399",
+            color: "var(--success)",
           }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="font-semibold text-emerald-300">{done.title}</span>
+              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+              <span className="font-semibold text-success">{done.title}</span>
             </div>
           </div>
-          <div className="text-[11px] text-neutral-300">
+          <div className="text-[11px] text-fg-muted">
             Exported {done.entitiesExported} entities successfully.
             {done.entitiesSkipped > 0 && ` (${done.entitiesSkipped} skipped due to non-mesh geometry)`}
           </div>
+          <div className="text-[11px] text-fg-muted" data-testid="export-evidence-headline">{evidenceHeadline(done.summary)}</div>
+          {done.elements.length > 0 && (
+            <div className="mt-1 pt-1 border-t border-success/20">
+              <button
+                type="button"
+                onClick={() => setDone({ ...done, showEvidence: !done.showEvidence })}
+                className="flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg transition-colors"
+              >
+                <span>{done.showEvidence ? "Hide evidence per element" : "View evidence per element"}</span>
+                {done.showEvidence ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+              {done.showEvidence && (
+                <table className="mt-1 w-full text-[10px] text-fg-muted" data-testid="export-evidence-table">
+                  <thead>
+                    <tr className="text-left text-fg"><th className="pr-2">Element</th><th className="pr-2">State</th><th>Confidence</th></tr>
+                  </thead>
+                  <tbody>
+                    {orderedElements(done.elements).map((el) => (
+                      <tr key={el.id} title={el.note ?? undefined}>
+                        <td className="pr-2">{el.name}</td>
+                        <td className="pr-2">{stateLabel(el.state)}</td>
+                        <td>{el.confidence === null ? "n/a" : `${Math.round(el.confidence * 100)}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
           {done.reasons.length > 0 && (
-            <div className="mt-1 pt-1 border-t border-emerald-500/20">
+            <div className="mt-1 pt-1 border-t border-success/20">
               <button
                 type="button"
                 onClick={() => setDone({ ...done, showDetails: !done.showDetails })}
-                className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-neutral-200 transition-colors"
+                className="flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg transition-colors"
               >
                 <span>{done.showDetails ? "Hide skipped details" : "View skipped reasons"}</span>
                 {done.showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               </button>
               {done.showDetails && (
-                <div className="mt-1 p-1.5 rounded bg-black/40 font-mono text-[10px] text-neutral-400 max-h-24 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                <div className="mt-1 p-1.5 rounded bg-black/40 font-mono text-[10px] text-fg-muted max-h-24 overflow-y-auto whitespace-pre-wrap leading-relaxed">
                   {done.reasons.join("\n")}
                 </div>
               )}

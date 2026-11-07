@@ -24,30 +24,30 @@ function CreateReconstruction() {
   const { status, loading, refresh } = useWorldStatus(worldId);
   const nav = flowNav(worldId, Boolean(status?.has_model));
   return (
-    <section aria-labelledby="reconstruct-title" className="flex h-full w-full flex-col items-center justify-center overflow-y-auto p-6">
+    <section aria-labelledby="reconstruct-title" className="flex h-full w-full flex-col items-center justify-center-safe overflow-y-auto p-6">
       {nav.back && (
         <div className="mb-3 w-full max-w-4xl">
           <Link href={nav.back.href} className={LINK_CLS} style={{ color: "var(--accent)" }}>&larr; {nav.back.label}</Link>
         </div>
       )}
       <h1 id="reconstruct-title" className="mb-1 text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-        {worldId ? "Add photographs to your world" : "Create a reconstruction"}
+        {worldId ? "Add photographs to your world" : "New session"}
       </h1>
       <p className="mb-6 max-w-lg text-center text-xs" style={{ color: "var(--text-tertiary)" }}>
         Give Reality Engine photographs of a real place. It builds the best spatial model the evidence
         supports, says plainly what it is unsure about, and improves the same model as you add more views.
       </p>
       {worldId && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-xs text-sky-200 w-full max-w-xl">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-info/30 bg-info-subtle px-4 py-2.5 text-xs text-info w-full max-w-xl">
           <span>This world has intelligent capture requests to resolve occlusions and low-coverage surfaces.</span>
-          <Link href={`/capture?world=${worldId}`} className="shrink-0 font-semibold underline hover:text-white">
+          <Link href={`/capture?world=${worldId}`} className="shrink-0 font-semibold underline hover:text-fg">
             View Requests &rarr;
           </Link>
         </div>
       )}
       <div className="mb-6 w-full max-w-4xl">
         {worldId && loading ? (
-          <p className="text-center text-xs text-neutral-400" role="status">Reading this world&apos;s state…</p>
+          <p className="text-center text-xs text-fg-muted" role="status">Reading this world&apos;s state…</p>
         ) : (
         <GuidedFlow
           status={status}

@@ -1,8 +1,10 @@
-# REALITY ENGINE — CURRENT STATUS (authoritative, reconciled 2026-11-03)
+# REALITY ENGINE — STATUS SNAPSHOT 2026-11-03 (SUPERSEDED)
 
-> ONE authoritative status file. Older docs are history, not truth.
-> Reconciled across Phases 0 through 9 of the Master Development Plan.
-> Baseline GitHub `origin/main` at PR #174.
+> **SUPERSEDED 2026-11-07.** This file is a historical snapshot at PR #174 and is no longer authoritative.
+> Current sources of truth: task order in [`docs/blueprint/30_BUILD_PLAN.md`](blueprint/30_BUILD_PLAN.md),
+> capability status in [`docs/implementation/IMPLEMENTATION_STATUS.md`](implementation/IMPLEMENTATION_STATUS.md).
+>
+> Original note: reconciled across Phases 0 through 9 of the Master Development Plan; baseline GitHub `origin/main` at PR #174.
 
 ## Vertical Slice & Production Architecture
 

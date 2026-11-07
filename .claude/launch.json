@@ -4,13 +4,28 @@
     {
       "name": "reality-studio-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "-p", "3011"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "frontend",
+        "--",
+        "-p",
+        "3011"
+      ],
       "port": 3011
     },
     {
       "name": "reality-studio-webpack",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["frontend/node_modules/next/dist/bin/next", "dev", "frontend", "--webpack", "-p", "3011"],
+      "runtimeArgs": [
+        "frontend/node_modules/next/dist/bin/next",
+        "dev",
+        "frontend",
+        "--webpack",
+        "-p",
+        "3011"
+      ],
       "port": 3011
     },
     {
@@ -30,6 +45,24 @@
         "import http.server, functools\nclass H(http.server.SimpleHTTPRequestHandler):\n    def end_headers(self):\n        self.send_header('Access-Control-Allow-Origin', '*')\n        super().end_headers()\nhttp.server.ThreadingHTTPServer(('127.0.0.1', 8765), functools.partial(H, directory='datasets/south_building/images')).serve_forever()"
       ],
       "port": 8765
+    },
+    {
+      "name": "reality-api-verify",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-c",
+        "import os; os.environ['CORS_ORIGINS']='http://localhost:3011'; os.environ['DATABASE_URL']='sqlite+aiosqlite:///./data/verify2_app.db'; os.environ['STORAGE_ROOT']='./data/verify2_artifacts'; os.environ['WORLDSTORE_ROOT']='./data/verify2_worldstore'; import uvicorn; uvicorn.run('apps.api.main:app', host='127.0.0.1', port=8199)"
+      ],
+      "port": 8199
+    },
+    {
+      "name": "reality-studio-verify",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-c",
+        "import os, subprocess; os.environ['REALITY_BACKEND_URL']='http://127.0.0.1:8199'; subprocess.run('npm run dev --prefix frontend -- -p 3011', shell=True)"
+      ],
+      "port": 3011
     }
   ]
 }

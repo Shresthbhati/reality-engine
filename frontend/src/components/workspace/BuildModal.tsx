@@ -165,7 +165,7 @@ export default function BuildModal({
               onClick={() => pick(k)}
               className={`flex-1 h-8 rounded text-xs font-medium capitalize border cursor-pointer ${
                 kind === k
-                  ? "bg-[var(--primary)] text-[var(--text-primary)] border-[var(--primary)]"
+                  ? "bg-[var(--primary)] text-on-primary border-[var(--primary)]"
                   : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text-primary)]"
               }`}
             >
@@ -311,7 +311,7 @@ export default function BuildModal({
           type="button"
           onClick={submit}
           disabled={submitting || !name.trim() || openingErrors}
-          className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[var(--primary)] text-[var(--text-primary)] hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
+          className="flex items-center justify-center gap-2 h-9 rounded-md text-sm font-semibold bg-[var(--primary)] text-on-primary hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
         >
           {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {submitting ? "Building…" : `Build ${kind}`}

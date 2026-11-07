@@ -34,12 +34,12 @@ export function StoreySelector({
 
   return (
     <div
-      className={`bg-zinc-900/90 backdrop-blur-md border border-zinc-700/80 rounded-xl shadow-2xl p-2 text-zinc-200 text-xs ${className}`}
+      className={`bg-surface/90 backdrop-blur-md border border-line/80 rounded-xl shadow-2xl p-2 text-fg text-xs ${className}`}
       data-testid="storey-selector"
     >
-      <div className="flex items-center justify-between px-1.5 pb-2 mb-1.5 border-b border-zinc-800">
-        <div className="flex items-center gap-1.5 text-zinc-300 font-semibold text-[11px]">
-          <Layers className="w-3.5 h-3.5 text-indigo-400" />
+      <div className="flex items-center justify-between px-1.5 pb-2 mb-1.5 border-b border-line-subtle">
+        <div className="flex items-center gap-1.5 text-fg-muted font-semibold text-[11px]">
+          <Layers className="w-3.5 h-3.5 text-accent" />
           <span>Building Storeys</span>
         </div>
 
@@ -48,8 +48,8 @@ export function StoreySelector({
           onClick={() => onToggleIsolate(!isolateActiveStorey)}
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border ${
             isolateActiveStorey
-              ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-              : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-zinc-200"
+              ? "bg-warning-subtle text-warning border-warning/40"
+              : "bg-elevated text-fg-muted border-line hover:text-fg"
           }`}
           title="Isolate active floor cutaway"
         >
@@ -65,12 +65,12 @@ export function StoreySelector({
           onClick={() => onSelectStorey("all")}
           className={`px-2.5 py-1.5 rounded-lg text-left transition-all flex items-center justify-between border ${
             activeStoreyId === "all"
-              ? "bg-indigo-600/30 border-indigo-500/80 text-zinc-100 font-semibold shadow-sm ring-1 ring-indigo-500/30"
-              : "bg-zinc-800/40 border-zinc-700/30 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+              ? "bg-accent-subtle border-accent/80 text-fg font-semibold shadow-sm ring-1 ring-accent/30"
+              : "bg-elevated/40 border-line/30 text-fg-muted hover:bg-elevated hover:text-fg"
           }`}
         >
           <span>All Levels Combined</span>
-          <span className="text-[10px] text-zinc-500 font-normal">Full Model</span>
+          <span className="text-[10px] text-fg-subtle font-normal">Full Model</span>
         </button>
 
         {/* Individual Storey Buttons */}
@@ -83,18 +83,18 @@ export function StoreySelector({
               onClick={() => onSelectStorey(st.storey_id)}
               className={`px-2.5 py-1.5 rounded-lg text-left transition-all flex items-center justify-between border ${
                 isActive
-                  ? "bg-indigo-600/30 border-indigo-500/80 text-zinc-100 font-semibold shadow-sm ring-1 ring-indigo-500/30"
-                  : "bg-zinc-800/40 border-zinc-700/30 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                  ? "bg-accent-subtle border-accent/80 text-fg font-semibold shadow-sm ring-1 ring-accent/30"
+                  : "bg-elevated/40 border-line/30 text-fg-muted hover:bg-elevated hover:text-fg"
               }`}
               data-testid={`storey-btn-${st.storey_id}`}
             >
               <div className="flex items-center gap-2">
-                <span className="w-4 h-4 rounded bg-zinc-700/60 text-[10px] flex items-center justify-center font-bold text-zinc-300">
+                <span className="w-4 h-4 rounded bg-line/60 text-[10px] flex items-center justify-center font-bold text-fg-muted">
                   {st.level_index >= 0 ? `L${st.level_index}` : `B${Math.abs(st.level_index)}`}
                 </span>
                 <span>{st.name}</span>
               </div>
-              <span className="text-[10px] text-zinc-400 font-mono">
+              <span className="text-[10px] text-fg-muted font-mono">
                 {st.floor_elevation_m >= 0 ? `+${st.floor_elevation_m.toFixed(1)}m` : `${st.floor_elevation_m.toFixed(1)}m`}
               </span>
             </button>

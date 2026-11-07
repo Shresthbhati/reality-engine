@@ -60,6 +60,20 @@ def maskrcnn_furniture_detector(item, w: int, h: int) -> list:
     ]
 
 
+#: items overlapping this much (intersection over the SMALLER volume, so containment counts) are one object seen twice
+DUPLICATE_OVERLAP = 0.6
+
+
+def _box_overlap(a, b) -> float:
+    inter = 1.0
+    for i in range(3):
+        inter *= max(0.0, min(a[1][i], b[1][i]) - max(a[0][i], b[0][i]))
+    vol = lambda x: math.prod(max(0.0, x[1][i] - x[0][i]) for i in range(3))  # noqa: E731
+    union = vol(a) + vol(b) - inter
+    smaller = min(vol(a), vol(b))
+    return max(inter / union if union > 0 else 0.0, inter / smaller if smaller > 0 else 0.0)
+
+
 def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f: float, cx: float, cy: float,
                     w: int, h: int, pre: str, confidence_ceiling: float) -> Dict[str, object]:
     """Add furniture entities to ``world``; return a facts dict (what ran, what was rejected and why)."""
@@ -102,7 +116,9 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
         "meters_per_unit_assumed": round(s, 4),
         "note": "class-prior sizes (metres) are applied through an ASSUMED camera height; not a measurement",
     }
-    for k, e in enumerate(res.entities, start=1):
+    kept_boxes: list = []
+    k = 0
+    for e in sorted(res.entities, key=lambda ent: -float(ent["confidence"])):
         cp = e["custom_properties"]
         px, py, pz = cp["position_m"]
         pos = {"x": px / s, "y": pz / s, "z": py / s}
@@ -110,6 +126,15 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
                 for key, v in cp["dimensions"].items()}
         L, W, H = (cp["dimensions"][name]["value"] / s for name in ("length_m", "width_m", "height_m"))
         r = 0.5 * math.hypot(L, W)
+        box = ((pos["x"] - r, pos["y"], pos["z"] - r), (pos["x"] + r, pos["y"] + H, pos["z"] + r))
+        # mirror of the world validator's duplicate rule (same type, bounds IoU > 0.5), with margin: two detectors can
+        # place one object twice, and the validator would then fail the whole job
+        if any(_box_overlap(box, kb) > DUPLICATE_OVERLAP for kb in kept_boxes):
+            facts["rejected"].append({"label": cp["category"], "view_id": item.id,
+                                      "reason": "duplicate: overlaps an already placed item of higher confidence"})
+            continue
+        kept_boxes.append(box)
+        k += 1
         conf = min(confidence_ceiling, float(e["confidence"]))
         eid = f"{pre}-furniture-{k:02d}"
         geom = Geometry(
@@ -121,7 +146,7 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
         world.geometries[geom.id] = geom
         world.entities[eid] = Entity(
             id=eid, type=EntityType.FURNITURE, name=e["name"], transform={"position": pos},
-            geometry_ids=[geom.id], provenance=Provenance.INFERRED, confidence=conf,
+            geometry_ids=[geom.id], semantic_labels=["furniture_candidate"], provenance=Provenance.INFERRED, confidence=conf,
             uncertainty=Uncertainty(
                 confidence=conf,
                 note=("single-view furniture: COCO detection, floor-contact placement, class-prior size via an "
@@ -129,11 +154,11 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
             ),
             observations=[obs],
             custom_properties={
-                "category": cp["category"], "dimensions": dims, "yaw_rad": cp["yaw_rad"], "yaw_basis": cp["yaw_basis"],
+                "category": cp["category"], "entity_class": f"furniture.{cp['category']}", "dimensions": dims, "yaw_rad": cp["yaw_rad"], "yaw_basis": cp["yaw_basis"],
                 "flags": e["flags"],
                 "bootstrap": {"role": "furniture", "source": "single_image", "evidence_id": item.id,
                               "scale": "relative", "meters_per_unit_assumed": round(s, 4)},
             },
         )
-    facts["placed"] = len(res.entities)
+    facts["placed"] = k
     return facts

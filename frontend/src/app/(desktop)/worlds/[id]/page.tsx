@@ -1,8 +1,8 @@
-import WorldPageSwitch from "@/components/simple/WorldPageSwitch";
+import SpatialWorkstation from "@/components/workspace/SpatialWorkstation";
 
 /**
- * A place. Simple mode is the place viewer (the model is the whole screen); Pro mode is the engineer workstation
- * (world navigation, adaptive inspector, contextual timeline). The mode is a per-viewer preference (Settings).
+ * A world. One Studio for everyone (decision 2026-11-07): the workstation, with world navigation, adaptive
+ * inspector and contextual timeline. The former Simple "place viewer" and the Pro-mode switch were removed.
  */
 export default async function WorldWorkspacePage({
   params,
@@ -10,5 +10,5 @@ export default async function WorldWorkspacePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <WorldPageSwitch worldId={id} />;
+  return <SpatialWorkstation worldId={id} />;
 }

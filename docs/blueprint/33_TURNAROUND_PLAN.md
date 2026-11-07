@@ -157,8 +157,8 @@ schedule. Dimension checks against M3 tape measurements run in CI.
 | T-2.2 | DONE | Measure tools in Studio: wall length, room area, ceiling height, opening size, point-to-point; each shows ± uncertainty and observed/inferred | T5 | high | Playwright fixture wall test verified matches WorldIR |
 | T-2.3 | DONE | Room schedule (area, perimeter, ceiling height, openings, fixtures, finishes) as PDF + CSV | T1 | medium | numbers equal WorldIR values in test; fixtures and finishes exported in CSV & PDF |
 | T-2.4 | DONE | Plain mesh export for SketchUp/3ds Max workflows (OBJ/DAE/GLB, metric, per-object nodes, materials named by surface) | T1 | low | trimesh scale assert, DAE/OBJ/GLB per-object nodes & surface materials verified in test |
-| T-2.6 | Select furniture → "Extract as asset" → independent copy (own ID + URL), downloadable | T3 (slice: data model → API → UI) | high | extracted asset keeps geometry, materials, dimensions, provenance; original untouched (test) |
-| T-2.7 | Export report in UI: what was measured vs inferred, per element, with confidence | T1 | medium | report renders per export |
+| T-2.6 | DONE | Select furniture → "Extract as asset" → independent copy (own ID + URL), downloadable | T3 (slice: data model → API → UI) | high | extracted asset keeps geometry, materials, dimensions, provenance; original untouched (PR #255) |
+| T-2.7 | DONE | Export report in UI: what was measured vs inferred, per element, with confidence | T1 | medium | report renders per export with evidence headline and per-element table; Playwright E2E verified |
 
 Deferred for this customer: LOD chains, collision proxies, Unity preset, linked asset instances.
 

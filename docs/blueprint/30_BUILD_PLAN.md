@@ -217,7 +217,7 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 | 13.2 | Give pHash dedup and time/GPS session grouping a production caller | DONE (verified by tests/test_task_13_2_dedup_and_session_grouping.py) |
 | 13.3 | HEIC, 360° panoramas, point-cloud (PLY/LAS) and mesh (OBJ/glTF) ingestion | DONE |
 | 13.4 | Learned room layout (PolyLayout-class), line detection, non-Manhattan rooms | TODO |
-| 13.5 | Floor plan SVG/PDF export | TODO |
+| 13.5 | Floor plan SVG/PDF export | DONE |
 | 13.6 | SAM 2 behind the segmentation interface (benchmark vs SAM 1) | TODO |
 | 13.7 | Outdoor perception: vegetation, roads, terrain, facades, roofs | TODO |
 | 13.8 | Colour accuracy (ΔE under controlled capture) | TODO |

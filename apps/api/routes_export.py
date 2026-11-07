@@ -40,6 +40,8 @@ _MEDIA_TYPES = {
     "unreal": "application/x-python",
     "floorplan_svg": "image/svg+xml",
     "floorplan_dxf": "image/vnd.dxf",
+    "floorplan_pdf": "application/pdf",
+    "multisheet_floorplan_pdf": "application/pdf",
     "room_report_pdf": "application/pdf",
     "room_schedule_csv": "text/csv",
     "dae": "model/vnd.collada+xml",

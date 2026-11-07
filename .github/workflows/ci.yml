@@ -93,6 +93,7 @@ jobs:
             tests/test_world_adoption_api.py \
             tests/test_task_13_2_dedup_and_session_grouping.py \
             tests/test_task_13_3_extended_ingestion.py \
+            tests/test_multisheet_floorplan_pdf.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

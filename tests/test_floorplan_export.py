@@ -50,7 +50,7 @@ def test_dxf_plan_is_ascii_r12_and_carries_layers():
 def test_dxf_parsed_back_with_ezdxf():
     """13.5: DXF parsed back with ezdxf; layer names + wall count asserted."""
     import io
-    import ezdxf
+    ezdxf = pytest.importorskip('ezdxf')
     from world_ir import Entity, EntityType
     from exporters.floorplan import _rooms, _room_walls
 

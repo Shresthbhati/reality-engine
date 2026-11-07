@@ -481,6 +481,24 @@ def apply_scale_anchor(analysis, anchor):
     return out
 
 
+def fuse_window_detections(analysis, detector):
+    """A copy of ``analysis`` whose window/door masks also include detector boxes the segmenter missed (shut windows, glass doors).
+
+    A detector that cannot run leaves the segmenter's masks as they are and records why in ``window_fusion``.
+    """
+    import copy
+
+    from perception.layout.window_fusion import fuse_window_boxes
+
+    out = copy.copy(analysis)
+    try:
+        masks, fused = fuse_window_boxes(analysis.masks, detector(analysis.rgb))
+        out.masks, out.window_fusion = masks, {"fused": fused}
+    except Exception as exc:  # noqa: BLE001 -- the second source is an enhancement
+        out.window_fusion = {"fused": [], "reason": f"window detector unavailable: {exc}"}
+    return out
+
+
 def make_layout_analyzer(scale_anchor=None):
     """``(analyze, unload)`` for the progressive ladder, or ``(None, noop)`` when REALITY_LAYOUT_MODELS=0.
     A ``scale_anchor`` (see ``scale_anchor_from_references``) multiplies every photo's depth by the user-given factor.
@@ -503,6 +521,10 @@ def make_layout_analyzer(scale_anchor=None):
         u = urlparse(item.source_uri)
         path = url2pathname(unquote(u.path)) if u.scheme == "file" else item.source_uri
         an = analyze_path(models, Path(path))
+        if os.environ.get("REALITY_OPEN_VOCAB") != "0" and an.rgb is not None:
+            from engine.pipeline.open_vocab_furniture import grounded_window_detector
+
+            an = fuse_window_detections(an, grounded_window_detector)
         return apply_scale_anchor(an, scale_anchor) if scale_anchor else an
 
     return analyze, models.unload

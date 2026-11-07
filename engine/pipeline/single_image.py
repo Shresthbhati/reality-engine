@@ -362,6 +362,8 @@ def bootstrap_single_image(
 
         layout_facts["room"] = add_layout_room(world, layout, eid_of_plane, pre=pre, confidence_ceiling=CONFIDENCE_CEILING,
                                                  opening_ids=openings_facts.get("by_opening"))
+        if getattr(layout_analysis, "window_fusion", None) is not None:
+            layout_facts["window_fusion"] = layout_analysis.window_fusion
         if fixture_detector is not None and getattr(layout_analysis, "rgb", None) is not None:
             import math as _m
 

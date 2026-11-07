@@ -27,3 +27,12 @@ test("a world with a point cloud keeps its cloud-based framing", () => {
 test("no meshes means nothing to frame", () => {
   assert.equal(shouldAutoFrame(false, 0, null, "w1"), false);
 });
+
+import { shouldFramePoints } from "../../src/lib/viewport/autoframe.ts";
+
+test("the camera frames the point cloud once per world, then stays where the user put it", () => {
+  assert.equal(shouldFramePoints(true, null, "w1"), true);
+  assert.equal(shouldFramePoints(true, "w1", "w1"), false);
+  assert.equal(shouldFramePoints(true, "w1", "w2"), true);
+  assert.equal(shouldFramePoints(false, null, "w1"), false);
+});

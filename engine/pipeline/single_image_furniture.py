@@ -74,9 +74,27 @@ def _box_overlap(a, b) -> float:
     return max(inter / union if union > 0 else 0.0, inter / smaller if smaller > 0 else 0.0)
 
 
+def _measured_colour(rgb, box) -> Dict[str, object]:
+    """Median colour of the inner half of the detection box in the photograph: the piece's observed colour (not a texture)."""
+    if rgb is None or box is None:
+        return {}
+    import numpy as np
+
+    img = np.asarray(rgb)
+    h, w = img.shape[:2]
+    x0, y0, x1, y1 = box
+    dx, dy = (x1 - x0) / 4.0, (y1 - y0) / 4.0
+    a, b, c, d = int(max(0, x0 + dx)), int(max(0, y0 + dy)), int(min(w, x1 - dx)), int(min(h, y1 - dy))
+    if c - a < 2 or d - b < 2:
+        return {}
+    col = np.median(img[b:d, a:c].reshape(-1, img.shape[-1])[:, :3], axis=0)
+    return {"mean_color_rgb": [int(round(float(v))) for v in col],
+            "color_basis": "median colour of the inner half of the detection box in the photograph"}
+
+
 def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f: float, cx: float, cy: float,
                     w: int, h: int, pre: str, confidence_ceiling: float,
-                    metric: bool = False) -> Dict[str, object]:
+                    metric: bool = False, rgb=None) -> Dict[str, object]:
     """Add furniture entities to ``world``; return a facts dict (what ran, what was rejected and why)."""
     from perception.instances.furniture_from_detections import (
         FurnitureCamera, RoomFrame, furniture_from_detections,
@@ -157,6 +175,7 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
             custom_properties={
                 "category": cp["category"], "entity_class": f"furniture.{cp['category']}", "dimensions": dims, "yaw_rad": cp["yaw_rad"], "yaw_basis": cp["yaw_basis"],
                 "flags": e["flags"],
+                **_measured_colour(rgb, e.get("box_xyxy")),
                 "bootstrap": {"role": "furniture", "source": "single_image", "evidence_id": item.id,
                               "scale": "relative", "meters_per_unit_assumed": round(s, 4)},
             },

@@ -12,3 +12,8 @@ export function shouldAutoFrame(
 ): boolean {
   return !hasCloud && meshCount > 0 && framedWorldId !== worldId;
 }
+
+/** A world with a point cloud is framed on it once per world id; later rebuilds (refresh, edits, mode changes) keep the user's camera. */
+export function shouldFramePoints(hasPoints: boolean, framedPointsWorldId: string | null, worldId: string): boolean {
+  return hasPoints && framedPointsWorldId !== worldId;
+}

@@ -448,6 +448,7 @@ def bootstrap_single_image(
             furniture_facts = place_furniture(
                 world, obs, item, dets, floor_op=floor_op, pts=pts, f=f, cx=cx, cy=cy, w=w, h=h, pre=pre,
                 confidence_ceiling=CONFIDENCE_CEILING, metric=bool(anchor),
+                rgb=getattr(layout_analysis, "rgb", None),
             )
 
     # ---- corridor direction: only when two distinct parallel walls and a floor were all found ----

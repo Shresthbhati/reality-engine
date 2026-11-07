@@ -82,3 +82,16 @@ def test_placed_furniture_carries_the_label_the_room_summary_counts(tmp_path):
     res = bootstrap_single_image(item, facts, depth_map=dm, furniture_detections=[_sofa()])
     ent = next(e for e in res.world.entities.values() if e.type.value == "furniture")
     assert "furniture_candidate" in ent.semantic_labels
+
+
+def test_furniture_colour_is_the_median_of_the_inner_box_in_the_photo():
+    import numpy as np
+
+    from engine.pipeline.single_image_furniture import _measured_colour
+
+    img = np.zeros((100, 100, 3), np.uint8)
+    img[:, :] = (200, 0, 0)               # background red
+    img[30:70, 30:70] = (10, 120, 250)    # the piece, blue-ish; the box edge includes background
+    got = _measured_colour(img, [20, 20, 80, 80])
+    assert got["mean_color_rgb"] == [10, 120, 250] and "photograph" in got["color_basis"]
+    assert _measured_colour(None, [20, 20, 80, 80]) == {} and _measured_colour(img, None) == {}

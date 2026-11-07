@@ -13,7 +13,7 @@ import { pointsBounds, robustPointsBounds } from "./loaders";
 import { isOversizedEntity } from "./oversized";
 import { atlasUrl, buildRoomShellParts, confidenceRamp, partMaterial, DEFAULT_CONF_PALETTE, type ConfidencePalette, type ShellKind, type ShellPart, type ShellRenderMode } from "./room-shell-model";
 import { centroid, cutawayHides, dollyForFov, nearestCenter, parseHexColor, upAxisOf, ORTHO_FOV, PERSPECTIVE_FOV } from "./view-model";
-import { shouldAutoFrame } from "./autoframe";
+import { shouldAutoFrame, shouldFramePoints } from "./autoframe";
 import { buildOutdoor, derivePalette, emptyOutdoorResult, meshBounds, partMesh, type OutdoorPart, type OutdoorResult } from "./outdoor-model";
 import type { MeasureKind, Vec3 } from "./measure-model";
 import { STRUCTURE_COLORS, choosePointDisplay, decimatePoints, type PointDisplayMode, type StructurePoint } from "./structure-points-model";
@@ -228,6 +228,7 @@ export class WorldSceneController {
   // Data cache
   private world: WorldIR | null = null;
   private framedWorldId: string | null = null;
+  private framedPointsWorldId: string | null = null;
   private pointsData: Float32Array | null = null;
   private camerasData: CamerasPayload | null = null;
   private meshData: { positions: Float32Array; indices: Uint32Array } | null = null;
@@ -826,7 +827,10 @@ export class WorldSceneController {
     this.disposeDimensions();
 
     // 1. Build the point layer (structure points by default, the full cloud on request)
-    this.buildPointLayer(true);
+    const hasPts = this.pointMode === "structure" ? this.structurePoints.length > 0 : Boolean(this.pointsData && this.pointsData.length > 0);
+    const framePts = shouldFramePoints(hasPts, this.framedPointsWorldId, this.world?.id ?? "");
+    this.buildPointLayer(framePts);
+    if (framePts) this.framedPointsWorldId = this.world?.id ?? "";
 
     // 1.5 Real room shell from measured interior semantics (replaces the faint per-entity boxes where it applies).
     // Not drawn when the photos could not be placed in one space: it would present unplaced geometry as a room.

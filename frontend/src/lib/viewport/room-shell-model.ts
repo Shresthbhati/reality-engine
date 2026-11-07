@@ -586,7 +586,116 @@ function buildRawParts(world: WorldIR): RawPart[] {
       });
     }
   }
+  // furniture the room loop did not draw (no plan footprint, e.g. a one-photo layout world): a recognisable procedural model
+  const drawn = new Set(parts.filter((p) => p.kind === "furniture").map((p) => p.entityId));
+  for (const f of entities) {
+    if (!(f.semantic_labels ?? []).includes("furniture_candidate") || drawn.has(f.id)) continue;
+    parts.push(...furnitureModel(f as never, slabWalls));
+  }
   return parts;
+}
+
+// ---- procedural furniture: boxes only, sized from the entity's estimated dimensions (nothing is cropped from a photo) --------
+
+type FurnitureLike = { id: string; transform?: { position?: { x: number; y: number; z: number } }; custom_properties?: Props };
+
+const FURNITURE_TONE: Record<string, V3> = {
+  sofa: [176, 160, 138], armchair: [168, 150, 128], chair: [150, 112, 76], dining_table: [146, 104, 68], coffee_table: [140, 100, 66],
+  desk: [146, 104, 68], bed: [226, 221, 212], wardrobe: [150, 110, 72], bookshelf: [150, 110, 72], dresser: [150, 110, 72],
+  nightstand: [150, 110, 72], tv_stand: [120, 84, 56], tv: [28, 28, 32], lamp: [240, 220, 170], stool: [150, 112, 76], cabinet: [150, 110, 72],
+};
+const WIDE_PIECES = new Set(["sofa", "bed", "tv_stand", "dresser", "bookshelf", "wardrobe", "cabinet", "tv", "desk"]);
+const shade = (c: V3, k: number): V3 => c.map((v) => Math.max(0, Math.min(255, Math.round(v * k)))) as V3;
+
+function furnitureModel(f: FurnitureLike, walls: Slab[]): RawPart[] {
+  const cp = (f.custom_properties ?? {}) as Props;
+  const pos = f.transform?.position;
+  const dim = (k: string): number | null => numberOr(((cp.dimensions as Props | undefined)?.[k] as Props | undefined)?.value);
+  const L0 = dim("length_m"), W0 = dim("width_m"), H = dim("height_m");
+  const cls = typeof cp.category === "string" ? cp.category : String(cp.entity_class ?? "").replace(/^furniture\./, "");
+  if (!pos || L0 === null || W0 === null || H === null) return [];
+  const measured = rgbOrNull(cp.mean_color_rgb);
+  const tone = measured ?? FURNITURE_TONE[cls] ?? TYPE_FALLBACK.furniture;
+  const res = (c: V3): Resolved => ({ color: c, measured: measured !== null });
+  const yaw = typeof cp.yaw_rad === "number" ? cp.yaw_rad : 0;
+  const l: V3 = [Math.cos(yaw), 0, Math.sin(yaw)], w: V3 = [-Math.sin(yaw), 0, Math.cos(yaw)];
+  // the back goes against the nearest wall (a sofa stands against one)
+  let toWall: V3 | null = null, best = Infinity;
+  for (const s of walls) {
+    const a = s.start, b = add(s.start, mul(s.dir, s.length)), ab: V3 = sub(b, a), t = Math.max(0, Math.min(1, dot(sub([pos.x, a[1], pos.z], a), ab) / Math.max(1e-9, dot(ab, ab))));
+    const q = add(a, mul(ab, t)), d = Math.hypot(q[0] - pos.x, q[2] - pos.z);
+    if (d < best) { best = d; toWall = [q[0] - pos.x, 0, q[2] - pos.z]; }
+  }
+  const cand: V3[] = [l, mul(l, -1), w, mul(w, -1)];
+  const target: V3 = toWall && len(toWall) > 1e-6 ? mul(toWall, 1 / len(toWall)) : w;
+  const bAxis = cand.reduce((m, c) => (dot(c, target) > dot(m, target) ? c : m), cand[0]);
+  const alongL = Math.abs(dot(bAxis, l)) > 0.5;
+  let across = alongL ? W0 : L0, depth = alongL ? L0 : W0;
+  if (WIDE_PIECES.has(cls) && depth > across) [across, depth] = [depth, across];
+  const uAxis: V3 = [-bAxis[2], 0, bAxis[0]];
+  const origin: V3 = [pos.x, pos.y, pos.z];
+  const A = across / 2, D = depth / 2;
+  let n = 0;
+  const out: RawPart[] = [];
+  const box = (u0: number, u1: number, b0: number, b1: number, y0: number, y1: number, c: V3): void => {
+    const at = (u: number, b: number, y: number): V3 => add(add(add(origin, mul(uAxis, u)), mul(bAxis, b)), [0, y, 0]);
+    const ring = (y: number): V3[] => [at(u0, b0, y), at(u1, b0, y), at(u1, b1, y), at(u0, b1, y)];
+    out.push(boxPart(`${f.id}:m${n++}`, "furniture", f.id, [...ring(y0), ...ring(y1)], res(c), 1));
+  };
+  const frame = shade(tone, 0.82), soft = shade(tone, 1.08), dark = shade(tone, 0.6);
+  const legs = (inset: number, th: number, top: number, c: V3): void => {
+    for (const su of [-1, 1]) for (const sb of [-1, 1]) {
+      const cu = su * (A - inset), cb = sb * (D - inset);
+      box(cu - th, cu + th, cb - th, cb + th, 0, top, c);
+    }
+  };
+  switch (cls) {
+    case "sofa": case "armchair": {
+      const arm = Math.min(0.14 * across, 0.22), back = 0.2 * depth, seat = 0.42 * H;
+      box(-A, A, -D, D, 0, seat, frame);                                         // base
+      box(-A, A, D - back, D, seat, H, frame);                                    // back
+      box(-A, -A + arm, -D, D - back, seat, 0.68 * H, frame);                     // arms
+      box(A - arm, A, -D, D - back, seat, 0.68 * H, frame);
+      const n2 = cls === "sofa" && across > 1.4 ? 2 : 1, span = (across - 2 * arm) / n2;
+      for (let i = 0; i < n2; i++) {
+        const u0 = -A + arm + i * span + 0.01, u1 = u0 + span - 0.02;
+        box(u0, u1, -D, D - back, seat, seat + 0.1 * H, soft);                    // seat cushion
+        box(u0, u1, D - back - 0.11 * depth, D - back, seat + 0.1 * H, 0.92 * H, soft); // back cushion
+      }
+      break;
+    }
+    case "chair": case "stool": {
+      legs(0.03, 0.025, 0.5 * H, dark);
+      box(-A, A, -D, D, 0.5 * H, 0.56 * H, soft);
+      if (cls === "chair") box(-A, A, D - 0.08 * depth, D, 0.56 * H, H, frame);
+      break;
+    }
+    case "dining_table": case "coffee_table": case "desk": {
+      const top = Math.min(0.06, 0.12 * H);
+      box(-A, A, -D, D, H - top, H, soft);
+      legs(0.04, 0.025, H - top, dark);
+      break;
+    }
+    case "bed": {
+      box(-A, A, -D, D, 0, 0.45 * H, frame);                               // base
+      box(-A + 0.03, A - 0.03, -D + 0.03, D - 0.12 * depth, 0.45 * H, 0.9 * H, soft); // mattress
+      box(-A, A, D - 0.05 * depth, D, 0, Math.min(1.6 * H, 1.2), frame);          // headboard
+      break;
+    }
+    case "tv": box(-A, A, -D, D, 0, H, dark); break;
+    case "lamp": {
+      box(-0.02, 0.02, -0.02, 0.02, 0, 0.85 * H, dark);
+      box(-0.17, 0.17, -0.17, 0.17, 0.85 * H, H, soft);
+      break;
+    }
+    case "tv_stand": case "dresser": case "cabinet": case "nightstand": case "wardrobe": case "bookshelf": {
+      box(-A, A, -D, D, 0, H, frame);
+      box(-A + 0.02, A - 0.02, -D - 0.005, -D + 0.01, 0.12 * H, 0.9 * H, soft);   // the face: drawers / doors
+      break;
+    }
+    default: box(-A, A, -D, D, 0, H, tone);
+  }
+  return out;
 }
 
 // ---- Material per render mode (the ONLY thing the modes change) -------------------------------------------------

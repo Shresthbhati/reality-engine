@@ -176,7 +176,8 @@ def furniture_from_detections(detections: Sequence[FurnitureDetection], cameras:
         if trunc:
             scale = 1.0
         obs.append(dict(cls=cls, centre=centre, view=det.view_id, score=float(det.score), scale=scale,
-                        eye=eye, vdir=vdir, label=det.label, pre_moved=pre_moved, w=float(det.score) * (0.2 if trunc else 1.0), trunc=trunc))
+                        eye=eye, vdir=vdir, label=det.label, pre_moved=pre_moved, w=float(det.score) * (0.2 if trunc else 1.0), trunc=trunc,
+                        box=tuple(float(c) for c in det.box_xyxy)))
 
     # ---- multi-view fusion: per class greedy clustering on the floor point -------------------------------
     clusters: List[List[dict]] = []
@@ -246,6 +247,7 @@ def furniture_from_detections(detections: Sequence[FurnitureDetection], cameras:
                 "n_views": n, "position_spread_m": round(spread, 3),
             },
             "evidence_ids": sorted({o["view"] for o in cl}),
+            "box_xyxy": list(max(cl, key=lambda o: o["score"])["box"]),
             "provenance": "ESTIMATED", "confidence": conf, "flags": flags,
         })
     return res

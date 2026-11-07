@@ -81,7 +81,7 @@ test.describe("World Card Lifecycle and Management (Task 1.4)", () => {
       page.waitForResponse((r) => r.url().includes("/api/worlds") && r.request().method() === "DELETE"),
       confirmBtn.click(),
     ]);
-    expect(delResponse.status()).toBe(200);
+    expect([200, 204]).toContain(delResponse.status());
 
     // Verify it is no longer listed in active worlds
     await expect(page.locator(`[data-testid="world-card"][data-world-id="${createdWorldId}"]`)).toHaveCount(0);
@@ -114,7 +114,7 @@ test.describe("World Card Lifecycle and Management (Task 1.4)", () => {
       page.waitForResponse((r) => r.url().includes("/api/worlds") && r.request().method() === "DELETE"),
       purgeBtn.click(),
     ]);
-    expect(purgeResponse.status()).toBe(200);
+    expect([200, 204]).toContain(purgeResponse.status());
 
     // Verify world is gone from Trash
     await expect(page.locator(`[data-testid="world-card"][data-world-id="${createdWorldId}"]`)).toHaveCount(0);

@@ -20,6 +20,7 @@ from apps.api import jobs as jobrunner
 from apps.api.auth import auth_middleware
 from apps.api.db import dispose_db, init_db
 from apps.api.routes_account import account_router, auth_router
+from apps.api.routes_adoptions import adoptions_router
 from apps.api.routes_artifacts import artifacts
 from apps.api.routes_assets import assets_router
 from apps.api.routes_assistant import assistant, assistant_tools
@@ -77,7 +78,7 @@ app.add_middleware(
 )
 
 # `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
-for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, assets_router, usage_router, furniture_router):
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, adoptions_router, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, assets_router, usage_router, furniture_router):
     app.include_router(router)
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

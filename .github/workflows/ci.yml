@@ -90,6 +90,7 @@ jobs:
             tests/test_non_rectangular_rooms.py \
             tests/test_surface_finishes.py \
             tests/test_measured_room_accuracy_report.py \
+            tests/test_world_adoption_api.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

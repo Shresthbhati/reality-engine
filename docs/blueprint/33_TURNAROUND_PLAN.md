@@ -191,7 +191,7 @@ new / updated / matched / uncertain / conflicting, user accepts, world version i
 |----|------|------|--------|-----------|
 | T-4.1 | DONE | Multi-session world adoption contract ADR (Decision 027 in `docs/engineering/DESIGN_DECISIONS.md`): WorldID vs SessionID, candidate match Sim(3), alignment confidence scoring, 5-state ChangeSet schema, and atomic approval state machine | T6 | medium | ADR committed and accepted |
 | 3.6 | DONE | Identity scenarios A1–A5 all passing (single entity for same door/window across multiple views, PARTIALLY_OBSERVED coverage state, unobserved wall exclusion; `tests/scenarios/test_scenarios.py` passed) | T2 | high | adversarial identity tests pass |
-| 6.2 / 6.3 | Incremental registration + update path wired to API | T3 sliced | high | e2e from gate passes |
+| 6.2 / 6.3 | DONE | Incremental registration + update path wired to API (Decision 027 endpoints: POST /adoptions, GET /adoptions/{id}, POST /commit, POST /reject; 5-state ChangeSet; Rule 18 protection; atomic transaction in `tests/test_world_adoption_api.py`) | T3 sliced | high | e2e from gate passes |
 | U.7 | Adoption review UI | T5 | high | e2e: second session matches, not duplicates |
 | T-4.2 | DONE | Late reconstruction results never overwrite accepted manual edits (rule 18) | T3 | high | test: edit → reprocess → edit survives (`test_edit_preservation_reprocess.py` passed) |
 

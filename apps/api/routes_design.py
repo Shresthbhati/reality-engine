@@ -13,6 +13,7 @@ from apps.api.auth import AuthContext, get_auth_context
 from apps.api.db import get_db
 from apps.api.routes_worlds import CommitRequest, commit_world_correction
 from apps.api.tenancy import world_scope
+from world_ir.design_finishes import finish_options
 from world_ir.furniture_catalog import catalog_items
 
 catalog = APIRouter(prefix="/api/furniture-catalog", tags=["design"])
@@ -38,6 +39,44 @@ class ReplaceIn(BaseModel):
 
 class DeleteIn(BaseModel):
     parent_version_id: str | None = None
+
+
+class FinishIn(BaseModel):
+    """Exactly one of ``colour_rgb`` ([r,g,b]), ``paint`` (a swatch id) or ``material`` (a floor material id)."""
+    colour_rgb: list[int] | None = None
+    paint: str | None = None
+    material: str | None = None
+    also_entity_ids: list[str] = []
+    parent_version_id: str | None = None
+
+
+class ClearFinishIn(BaseModel):
+    also_entity_ids: list[str] = []
+    parent_version_id: str | None = None
+
+
+finishes = APIRouter(prefix="/api/finishes", tags=["design"])
+surfaces = APIRouter(prefix="/api/worlds/{world_id}/surfaces/{entity_id}", tags=["design"], dependencies=[Depends(world_scope)])
+
+
+@finishes.get("")
+async def get_finishes() -> dict:
+    return finish_options()
+
+
+@surfaces.post("/finish")
+async def set_surface_finish(world_id: str, entity_id: str, body: FinishIn, db: AsyncSession = Depends(get_db),
+                             auth: AuthContext = Depends(get_auth_context)) -> dict:
+    op = {"op": "finish", "colour_rgb": body.colour_rgb, "paint": body.paint, "material": body.material,
+          "also_entity_ids": body.also_entity_ids}
+    return await _commit(world_id, entity_id, op, body.parent_version_id, f"Finish {entity_id}", db, auth)
+
+
+@surfaces.post("/clear-finish")
+async def clear_surface_finish(world_id: str, entity_id: str, body: ClearFinishIn, db: AsyncSession = Depends(get_db),
+                               auth: AuthContext = Depends(get_auth_context)) -> dict:
+    op = {"op": "clear_finish", "also_entity_ids": body.also_entity_ids}
+    return await _commit(world_id, entity_id, op, body.parent_version_id, f"Clear finish {entity_id}", db, auth)
 
 
 @catalog.get("")

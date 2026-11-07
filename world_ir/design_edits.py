@@ -158,4 +158,11 @@ def apply(world, entity_id: str, op: Dict[str, Any]) -> dict:
         return delete(world, entity_id)
     if kind == "replace":
         return replace(world, entity_id, op.get("catalog_id"))
-    raise DesignEditError("op must be one of move, rotate, delete, replace")
+    if kind in ("finish", "clear_finish"):
+        from world_ir import design_finishes                  # lazy: design_finishes imports this module
+
+        if kind == "clear_finish":
+            return design_finishes.clear_finish(world, entity_id, op.get("also_entity_ids"))
+        return design_finishes.set_finish(world, entity_id, op.get("colour_rgb"), op.get("material"), op.get("paint"),
+                                          op.get("also_entity_ids"))
+    raise DesignEditError("op must be one of move, rotate, delete, replace, finish, clear_finish")

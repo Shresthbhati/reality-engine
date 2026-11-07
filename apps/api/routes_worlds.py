@@ -1212,8 +1212,8 @@ def _validate_commit_changes(changes: dict) -> dict:
                 raise HTTPException(422, "field 'accept_revisit' must be an object with 'old_room' and 'new_room'")
             validated[key] = value
         elif key == "design_edit":
-            if not isinstance(value, dict) or value.get("op") not in ("move", "rotate", "delete", "replace"):
-                raise HTTPException(422, "field 'design_edit' must be an object with op = move, rotate, delete or replace")
+            if not isinstance(value, dict) or value.get("op") not in ("move", "rotate", "delete", "replace", "finish", "clear_finish"):
+                raise HTTPException(422, "field 'design_edit' must be an object with op = move, rotate, delete, replace, finish or clear_finish")
             validated[key] = value
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):

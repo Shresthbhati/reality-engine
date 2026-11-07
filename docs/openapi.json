@@ -7341,6 +7341,155 @@
         }
       }
     },
+    "/api/finishes": {
+      "get": {
+        "tags": [
+          "design"
+        ],
+        "summary": "Get Finishes",
+        "operationId": "get_finishes_api_finishes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Finishes Api Finishes Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/surfaces/{entity_id}/finish": {
+      "post": {
+        "tags": [
+          "design"
+        ],
+        "summary": "Set Surface Finish",
+        "operationId": "set_surface_finish_api_worlds__world_id__surfaces__entity_id__finish_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinishIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Set Surface Finish Api Worlds  World Id  Surfaces  Entity Id  Finish Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/surfaces/{entity_id}/clear-finish": {
+      "post": {
+        "tags": [
+          "design"
+        ],
+        "summary": "Clear Surface Finish",
+        "operationId": "clear_surface_finish_api_worlds__world_id__surfaces__entity_id__clear_finish_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearFinishIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear Surface Finish Api Worlds  World Id  Surfaces  Entity Id  Clear Finish Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/intent": {
       "put": {
         "tags": [
@@ -9550,6 +9699,31 @@
         "type": "object",
         "title": "CityPatch"
       },
+      "ClearFinishIn": {
+        "properties": {
+          "also_entity_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Also Entity Ids",
+            "default": []
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "title": "ClearFinishIn"
+      },
       "CommitRequest": {
         "properties": {
           "entity_id": {
@@ -10444,6 +10618,68 @@
           "format"
         ],
         "title": "ExportRequest"
+      },
+      "FinishIn": {
+        "properties": {
+          "colour_rgb": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Colour Rgb"
+          },
+          "paint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paint"
+          },
+          "material": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material"
+          },
+          "also_entity_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Also Entity Ids",
+            "default": []
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "title": "FinishIn",
+        "description": "Exactly one of ``colour_rgb`` ([r,g,b]), ``paint`` (a swatch id) or ``material`` (a floor material id)."
       },
       "FloorLayoutIn": {
         "properties": {

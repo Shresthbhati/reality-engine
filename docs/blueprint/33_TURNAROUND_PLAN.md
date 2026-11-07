@@ -202,7 +202,7 @@ that opens on a phone with a simple walk-through view.
 
 | ID | Task | Tier | Effort | Done when |
 |----|------|------|--------|-----------|
-| T-6.7 | Shared edit-command API + persistent per-world undo/redo (replace the in-memory 50-entry singleton) | T3 sliced | high | reload → undo still works; undo in world A never touches B |
+| T-6.7 | DONE | Shared edit-command API + persistent per-world undo/redo (replace the in-memory 50-entry singleton) | T3 sliced | high | reload → undo still works; undo in world A never touches B (verified by tests/test_furniture_commands_and_undo.py) |
 | T-4b.1 | Move / rotate / delete furniture; replace with an item from a small built-in catalog (glTF, licensed CC0) | T2 | high | edits stored as commands with provenance `generated` |
 | T-4b.2 | DONE | Change surface finish (wall paint colour, floor material) as a derived design layer — the as-built survey is never overwritten | T2 | medium | as-built export unchanged after edits (test: 	est_as_built_export_unchanged_after_surface_finish_edits passed) |
 | T-4b.3 | DONE | Named design options = saved world versions with plain-language labels; compare as-built vs option | T2 | medium | two options exportable side by side (	est_named_design_options_lifecycle_and_side_by_side_export passed) |

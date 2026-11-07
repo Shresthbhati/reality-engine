@@ -18,28 +18,29 @@ from apps.api import jobs as jobrunner
 from apps.api.auth import auth_middleware
 from apps.api.db import dispose_db, init_db
 from apps.api.routes_artifacts import artifacts
+from apps.api.routes_assets import assets_router
 from apps.api.routes_assistant import assistant, assistant_tools
 from apps.api.routes_completion import completion
-from apps.api.routes_geo import geo
-from apps.api.routes_intent import estimate_router as intent_estimate, intent_router
-from apps.api.routes_jobs import activity, jobs, notifications
 from apps.api.routes_evidence_quality import quality
+from apps.api.routes_export import export
+from apps.api.routes_furniture import furniture_router
+from apps.api.routes_geo import geo
+from apps.api.routes_intent import estimate_router as intent_estimate
+from apps.api.routes_intent import intent_router
+from apps.api.routes_jobs import activity, jobs, notifications
 from apps.api.routes_measurements import measurements
 from apps.api.routes_misc import evidence, uploads
-from apps.api.routes_export import export
 from apps.api.routes_procedural import procedural, templates_router
+from apps.api.routes_proposals import pipeline_router, proposals
 from apps.api.routes_query import query
-from apps.api.routes_proposals import proposals, pipeline_router
 from apps.api.routes_reconstructions import reconstructions, world_status
 from apps.api.routes_registration import registration
 from apps.api.routes_sessions import health, sessions
 from apps.api.routes_sites import sites
 from apps.api.routes_system import system
-from apps.api.routes_worlds import worlds
 from apps.api.routes_technologies import technologies_router
-from apps.api.routes_assets import assets_router
 from apps.api.routes_usage import router as usage_router
-from reconstruction.proc import recover_orphaned_jobs
+from apps.api.routes_worlds import worlds
 
 app = FastAPI(title="Reality Engine API", version="0.1.0")
 
@@ -62,7 +63,7 @@ app.add_middleware(
 )
 
 # `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
-for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, assets_router, usage_router):
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, assets_router, usage_router, furniture_router):
     app.include_router(router)
 
 

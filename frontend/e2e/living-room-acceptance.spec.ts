@@ -45,9 +45,11 @@ test.describe("Living Room Demo End-to-End Acceptance (Task 12.1)", () => {
     const actionsBtn = page.getByTestId("open-actions");
     if (await actionsBtn.isVisible()) {
       await actionsBtn.click();
-      const exportBtn = page.getByRole("button", { name: /export/i }).first();
-      if (await exportBtn.isVisible()) {
-        await exportBtn.click();
+      const openExport = page.getByTestId("open-export");
+      if (await openExport.isVisible()) {
+        await openExport.click();
+        const dialog = page.getByRole("dialog", { name: "Universal Exporter" });
+        await expect(dialog).toBeVisible();
       }
     }
   });

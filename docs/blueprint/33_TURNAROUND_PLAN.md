@@ -234,7 +234,7 @@ Gate: a design partner signs up on a hosted URL, uploads, waits, exports, withou
 | T-6.3 | Storage adapter: ArtifactStore → S3-compatible behind existing interface; local stays default | T2 | medium | same tests pass against MinIO in CI |
 | T-6.4 | Account lifecycle on top of existing tenant isolation: signup, invite, delete-my-data | T2 | medium | security review pass; delete removes artifacts |
 | T-6.5 | DONE | Usage metering (GPU-minutes, storage, exports per tenant) — per-tenant usage endpoint (GET /api/tenants/{id}/usage, GET /api/usage) verified with tenant isolation tests (	ests/test_usage_metering.py) |
-| T-6.6 | Observability: structured job logs + error tracking + per-stage timing dashboard | T1 | medium | a failed job is diagnosable from logs alone |
+| T-6.6 | DONE | Observability: structured job logs + error tracking + per-stage timing dashboard (failed job diagnosable from logs alone; verified by tests/test_observability_job_logs.py) |
 | T-6.8 | Security pass (HawkScan/DAST on hosted staging) | T1 | medium | no high findings |
 
 ### M7 — Pilot and release gate (≈ 2–4 weeks, mostly human)

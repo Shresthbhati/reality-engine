@@ -78,6 +78,7 @@ jobs:
             tests/test_design_options_finish_layer.py \
             tests/test_camera_views_and_renders.py \
             tests/test_usage_metering.py \
+            tests/test_observability_job_logs.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

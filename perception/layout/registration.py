@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -76,10 +76,15 @@ def _kabsch(src: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return rot, cr - rot @ cs
 
 
-def register_pair(ref_rgb: np.ndarray, ref_depth: np.ndarray, src_rgb: np.ndarray, src_depth: np.ndarray, hfov_deg: float,
-                  *, seed: int = 0, min_inliers: int = MIN_INLIERS) -> Optional[Registration]:
-    pr, dr = _features(_gray(ref_rgb))
-    ps, ds = _features(_gray(src_rgb))
+def compute_features(rgb: np.ndarray):
+    """SIFT keypoints (pixel coordinates in the image) + descriptors; computed once per photo and reused for every pair."""
+    return _features(_gray(rgb))
+
+
+def _register_features(fr, ref_depth: np.ndarray, fs, src_depth: np.ndarray, hfov_deg: float, *, seed: int = 0,
+                       min_inliers: int = MIN_INLIERS) -> Optional[Registration]:
+    pr, dr = fr
+    ps, ds = fs
     if dr is None or ds is None or len(pr) < 8 or len(ps) < 8:
         return None
     matcher = cv2.BFMatcher(cv2.NORM_L2)
@@ -130,3 +135,68 @@ def register_pair(ref_rgb: np.ndarray, ref_depth: np.ndarray, src_rgb: np.ndarra
         return None
     resid = np.linalg.norm(p_src[mask] @ rot.T + tr - p_ref[mask], axis=1)
     return Registration(R=rot, t=tr, inliers=int(mask.sum()), n_matches=n, rms_m=float(np.sqrt(np.mean(resid ** 2))))
+
+
+def register_pair(ref_rgb: np.ndarray, ref_depth: np.ndarray, src_rgb: np.ndarray, src_depth: np.ndarray, hfov_deg: float,
+                  *, seed: int = 0, min_inliers: int = MIN_INLIERS) -> Optional[Registration]:
+    return _register_features(compute_features(ref_rgb), ref_depth, compute_features(src_rgb), src_depth, hfov_deg,
+                              seed=seed, min_inliers=min_inliers)
+
+
+@dataclass(frozen=True)
+class ViewsRegistration:
+    #: name -> pose of that photo's camera in the REFERENCE photo's frame (the reference itself is the identity)
+    poses: Dict[str, Registration]
+    #: name -> why the photo could not be placed (it is left out of the fusion, never guessed)
+    refused: Dict[str, str]
+    #: (ref_name, src_name, inliers) for every pairwise registration that succeeded
+    edges: Tuple[Tuple[str, str, int], ...]
+
+
+def register_views(items: Sequence[Tuple[str, np.ndarray, np.ndarray]], hfov_deg: float, *, ref_index: int = 0,
+                   min_inliers: int = MIN_INLIERS) -> ViewsRegistration:
+    """Place every photo in the reference photo's frame. ``items`` = [(name, rgb, depth)].
+
+    Pairwise registrations are computed between all photos, then the poses are chained outward from the reference along the
+    most strongly supported links (a photo that only overlaps a neighbour is placed through it). A photo with no consistent
+    link to any placed photo is refused with a reason.
+    """
+    n = len(items)
+    feats = [compute_features(rgb) for _, rgb, _ in items]
+    pair: Dict[Tuple[int, int], Registration] = {}
+    for i in range(n):
+        for j in range(i + 1, n):
+            reg = _register_features(feats[i], items[i][2], feats[j], items[j][2], hfov_deg, min_inliers=min_inliers)
+            if reg is not None:
+                pair[(i, j)] = reg  # pose of j in i's frame
+
+    def link(i: int, j: int) -> Optional[Registration]:
+        """Pose of j in i's frame, from whichever direction was registered."""
+        if (i, j) in pair:
+            return pair[(i, j)]
+        if (j, i) in pair:
+            r = pair[(j, i)]
+            rt = r.R.T
+            return Registration(R=rt, t=-rt @ r.t, inliers=r.inliers, n_matches=r.n_matches, rms_m=r.rms_m)
+        return None
+
+    eye = Registration(R=np.eye(3), t=np.zeros(3), inliers=0, n_matches=0, rms_m=0.0)
+    placed: Dict[int, Registration] = {ref_index: eye}
+    while True:
+        best = None
+        for i in placed:
+            for j in range(n):
+                if j in placed:
+                    continue
+                l = link(i, j)
+                if l is not None and (best is None or l.inliers > best[2].inliers):
+                    best = (i, j, l)
+        if best is None:
+            break
+        i, j, l = best
+        pi = placed[i]
+        placed[j] = Registration(R=pi.R @ l.R, t=pi.R @ l.t + pi.t, inliers=l.inliers, n_matches=l.n_matches, rms_m=l.rms_m)
+    refused = {items[j][0]: f"no consistent feature matches with any placed photo (needs >= {min_inliers} agreeing matches)"
+               for j in range(n) if j not in placed}
+    edges = tuple((items[i][0], items[j][0], r.inliers) for (i, j), r in sorted(pair.items()))
+    return ViewsRegistration(poses={items[j][0]: r for j, r in placed.items()}, refused=refused, edges=edges)

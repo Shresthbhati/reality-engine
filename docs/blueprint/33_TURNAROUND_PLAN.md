@@ -108,6 +108,7 @@ tasks marked *parallel-safe*.
 | T-2.2 (measure) | DONE | Studio point-to-point distance/height/area/angle with honest units; dimensions (value, state, basis, +/-) on walls, room and openings; Playwright measure and fixture wall dimension test verified against WorldIR |
 | T-4.2 | DONE | Late reconstruction results never overwrite accepted manual edits (rule 18); verified by exact ID & spatial anchor matching and end-to-end API reprocess job (`tests/test_edit_preservation_reprocess.py`) |
 | T-4b.4 | DONE | Read-only client share link (token-scoped, revocable, no account needed); verified by security tests against editing, cross-world leakage, and revocation (`tests/test_client_share_link.py`) |
+| T-4b.2 & T-4b.3 | DONE | Derived surface finish layers (as-built survey never overwritten) & named design options with plain-language labels and side-by-side export (	ests/test_design_options_finish_layer.py) |
 | Real-world verification (found by running the user's 10 photos) | DONE locally, 5 regressions fixed | Real API job + real Studio: (1) duplicate furniture failed validation, (2) openings without a host wall failed validation, (3) GPU OOM killed the layout (now retries on CPU), (4) key-points stage crashed on slabs, (5) a one-photo room was labelled 'not placed in 3D' and hid the model, plus a viewport TypeError and legacy-box rendering. Now: the 10 photos give a visible solid room shell, 3 furniture counted, estimated dimensions labelled, no page errors. Open: footprint is still 10.5 x 4.8 units (far walls count), 9 photos not fused, no accuracy figure |
 | H-0.1, H-3.1, H-3.2 | OPEN (you) | firm interviews, closed-window photos, tape-measured rooms |
 
@@ -203,9 +204,10 @@ that opens on a phone with a simple walk-through view.
 |----|------|------|--------|-----------|
 | T-6.7 | Shared edit-command API + persistent per-world undo/redo (replace the in-memory 50-entry singleton) | T3 sliced | high | reload → undo still works; undo in world A never touches B |
 | T-4b.1 | Move / rotate / delete furniture; replace with an item from a small built-in catalog (glTF, licensed CC0) | T2 | high | edits stored as commands with provenance `generated` |
-| T-4b.2 | Change surface finish (wall paint colour, floor material) as a derived design layer — the as-built survey is never overwritten | T2 | medium | as-built export unchanged after edits (test) |
-| T-4b.3 | Named design options = saved world versions with plain-language labels; compare as-built vs option | T2 | medium | two options exportable side by side |
+| T-4b.2 | DONE | Change surface finish (wall paint colour, floor material) as a derived design layer — the as-built survey is never overwritten | T2 | medium | as-built export unchanged after edits (test: 	est_as_built_export_unchanged_after_surface_finish_edits passed) |
+| T-4b.3 | DONE | Named design options = saved world versions with plain-language labels; compare as-built vs option | T2 | medium | two options exportable side by side (	est_named_design_options_lifecycle_and_side_by_side_export passed) |
 | T-4b.4 | DONE | Read-only client share link (token-scoped, revocable, no account needed) | T2 | medium | security test: link cannot edit or see other worlds (`tests/test_client_share_link.py` passed) |
+| T-4b.2 & T-4b.3 | DONE | Derived surface finish layers (as-built survey never overwritten) & named design options with plain-language labels and side-by-side export (	ests/test_design_options_finish_layer.py) |
 | T-4b.5 | Simple walk mode (eye-height first-person, collide with walls, touch + keyboard) | T5 | high | screenshots 375/1280; works on a phone |
 | T-4b.6 | Still renders (PNG) from saved camera views for client decks | T1 | medium | render endpoint returns image for a saved view |
 

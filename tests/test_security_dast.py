@@ -13,6 +13,7 @@ Automated offensive-style verification covering:
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import httpx
 import pytest
@@ -25,6 +26,7 @@ from apps.api.auth import (
     rate_limiter,
     revoke_share_token_in_memory,
 )
+from apps.api.db import dispose_db, init_db
 from apps.api.main import app
 
 TOKEN = "secret-production-api-token-xyz123"
@@ -45,13 +47,19 @@ class SecurityClient:
 
 
 @pytest.fixture(autouse=True)
-def _reset_auth_env(monkeypatch):
+def _reset_auth_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.delenv("REALITY_API_TOKEN", raising=False)
     monkeypatch.delenv("REALITY_SIGNING_KEY", raising=False)
     monkeypatch.setattr(auth, "_warned", False)
     rate_limiter.reset()
+
+    db_path = tmp_path / "dast.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path.as_posix()}")
+    asyncio.run(dispose_db())
+    asyncio.run(init_db())
     yield
     rate_limiter.reset()
+    asyncio.run(dispose_db())
 
 
 def test_dast_external_unauthenticated_requests_fail_closed(monkeypatch):

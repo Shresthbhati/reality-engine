@@ -484,3 +484,33 @@ class JobLog(Base):
     level: Mapped[str] = mapped_column(String(16), default="INFO")
     message: Mapped[str] = mapped_column(Text)
     context_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class WorldEditCommand(Base):
+    """Persistent per-world edit command log for undo/redo (T-6.7 & T-4b.1).
+
+    Replaces volatile client-side history with an auditable, durable command stream.
+    Supports move, rotate, delete, replace, surface finish, etc. Every command is reversible
+    via inverse_params and advances the world's version lineage with provenance GENERATED.
+    """
+
+    __tablename__ = "world_edit_commands"
+    __table_args__ = (
+        Index("ix_world_edit_commands_world_undone", "world_id", "undone"),
+        Index("ix_world_edit_commands_world_seq", "world_id", "sequence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    command_type: Mapped[str] = mapped_column(String(32))  # move, rotate, delete, replace, surface_finish, transform
+    entity_id: Mapped[str] = mapped_column(String(128), index=True)
+    description: Mapped[str] = mapped_column(String(255))
+    params: Mapped[dict] = mapped_column(JSON)
+    inverse_params: Mapped[dict] = mapped_column(JSON)
+    version_id_before: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    version_id_after: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    undone: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    sequence: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

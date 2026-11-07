@@ -29,6 +29,7 @@ api = [
     "httpx",
     "pydantic>=2.0",              # every apps/api route module
     "alembic>=1.13",              # apps/api/migrations (Task 1.1)
+    "boto3>=1.28",                # S3/R2/MinIO storage adapter (Task T-6.3)
 ]
 # IFC export (exporters/ifc_bridge.py) needs IfcOpenShell; without it the API answers 501 for format=ifc. Declared so a clean
 # `pip install -e ".[dev]"` exercises the IFC tests instead of silently skipping them.

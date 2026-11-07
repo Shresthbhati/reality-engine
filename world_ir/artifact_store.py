@@ -22,10 +22,12 @@ import re
 import uuid
 from abc import abstractmethod
 from pathlib import Path
-from typing import Dict
+from typing import Any
 
 from engine.core.artifact_store_interface import (
     ArtifactNotFoundError as CoreArtifactNotFoundError,
+)
+from engine.core.artifact_store_interface import (
     ArtifactStoreInterface,
 )
 
@@ -56,7 +58,7 @@ class ArtifactStore(ArtifactStoreInterface):
     `Geometry.data_hash` without re-parsing the uri."""
 
     @abstractmethod
-    def put(self, data: bytes) -> "tuple[str, str]":
+    def put(self, data: bytes) -> tuple[str, str]:
         """Store `data`, returning (data_uri, sha256_hex)."""
 
     @abstractmethod
@@ -91,9 +93,9 @@ class ArtifactStore(ArtifactStoreInterface):
 
 class MemoryArtifactStore(ArtifactStore):
     def __init__(self):
-        self._blobs: Dict[str, bytes] = {}
+        self._blobs: dict[str, bytes] = {}
 
-    def put(self, data: bytes) -> "tuple[str, str]":
+    def put(self, data: bytes) -> tuple[str, str]:
         digest = _digest(data)
         self._blobs[digest] = data
         return self.uri_for(digest), digest
@@ -117,14 +119,14 @@ class FileArtifactStore(ArtifactStore):
     same sharding convention as Git's object store (avoids one huge flat
     directory for large worlds)."""
 
-    def __init__(self, root: "str | Path"):
+    def __init__(self, root: str | Path):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path_for(self, digest: str) -> Path:
         return self.root / digest[:2] / f"{digest}.bin"
 
-    def put(self, data: bytes) -> "tuple[str, str]":
+    def put(self, data: bytes) -> tuple[str, str]:
         digest = _digest(data)
         path = self._path_for(digest)
         if path.is_symlink():
@@ -159,3 +161,146 @@ class FileArtifactStore(ArtifactStore):
     def has(self, digest: str) -> bool:
         path = self._path_for(digest)
         return path.is_file() and not path.is_symlink()
+
+
+class S3ArtifactStore(ArtifactStore):
+    """S3-compatible content-addressed artifact store (AWS S3, MinIO, Cloudflare R2).
+
+    T-6.3: Integrates seamlessly behind the ArtifactStore interface.
+    Local storage stays default; S3 is used when S3_BUCKET_NAME / REALITY_STORAGE_BACKEND=s3 is set.
+    """
+
+    def __init__(
+        self,
+        bucket: str,
+        *,
+        endpoint_url: str | None = None,
+        region_name: str | None = None,
+        aws_access_key_id: str | None = None,
+        aws_secret_access_key: str | None = None,
+        prefix: str = "artifacts",
+        s3_client: Any | None = None,
+    ):
+        self.bucket = bucket
+        self.prefix = prefix.strip("/")
+        if s3_client is not None:
+            self.s3_client = s3_client
+        else:
+            try:
+                import boto3
+            except ImportError as exc:
+                raise RuntimeError("boto3 is required for S3ArtifactStore; install with `pip install boto3`") from exc
+
+            session = boto3.session.Session()
+            kwargs: dict[str, Any] = {}
+            if endpoint_url:
+                kwargs["endpoint_url"] = endpoint_url
+            if region_name:
+                kwargs["region_name"] = region_name
+            if aws_access_key_id and aws_secret_access_key:
+                kwargs["aws_access_key_id"] = aws_access_key_id
+                kwargs["aws_secret_access_key"] = aws_secret_access_key
+            self.s3_client = session.client("s3", **kwargs)
+
+    def _key_for(self, digest: str) -> str:
+        if self.prefix:
+            return f"{self.prefix}/{digest[:2]}/{digest}.bin"
+        return f"{digest[:2]}/{digest}.bin"
+
+    def put(self, data: bytes) -> tuple[str, str]:
+        digest = _digest(data)
+        key = self._key_for(digest)
+        # Content-addressed: check if intact object already exists to avoid redundant upload
+        if not self.has(digest):
+            self.s3_client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=data,
+                ContentType="application/octet-stream",
+            )
+        return self.uri_for(digest), digest
+
+    def get(self, data_uri: str) -> bytes:
+        digest = self.digest_of(data_uri)
+        key = self._key_for(digest)
+        try:
+            resp = self.s3_client.get_object(Bucket=self.bucket, Key=key)
+            data = resp["Body"].read()
+        except Exception as exc:
+            code = ""
+            if hasattr(exc, "response") and isinstance(exc.response, dict):
+                code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in ("NoSuchKey", "404", "NotFound") or "not found" in str(exc).lower():
+                raise ArtifactNotFoundError(data_uri) from exc
+            raise ArtifactNotFoundError(data_uri) from exc
+
+        # Integrity check: verify content matches hash
+        if _digest(data) != digest:
+            raise ArtifactNotFoundError(f"corrupt artifact: hash mismatch for {data_uri}")
+        return data
+
+    def has(self, digest: str) -> bool:
+        if not _DIGEST_RE.match(digest):
+            return False
+        key = self._key_for(digest)
+        try:
+            self.s3_client.head_object(Bucket=self.bucket, Key=key)
+            return True
+        except Exception as exc:
+            code = ""
+            if hasattr(exc, "response") and isinstance(exc.response, dict):
+                code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in ("NoSuchKey", "404", "NotFound") or "not found" in str(exc).lower():
+                return False
+            return False
+
+    def delete(self, digest_or_uri: str) -> bool:
+        if digest_or_uri.startswith("artifact://"):
+            digest = self.digest_of(digest_or_uri)
+        else:
+            digest = digest_or_uri
+        key = self._key_for(digest)
+        try:
+            self.s3_client.delete_object(Bucket=self.bucket, Key=key)
+            return True
+        except Exception:
+            return False
+
+
+def create_artifact_store(
+    store_type: str | None = None,
+    *,
+    root: str | Path | None = None,
+    bucket: str | None = None,
+    endpoint_url: str | None = None,
+    region_name: str | None = None,
+    aws_access_key_id: str | None = None,
+    aws_secret_access_key: str | None = None,
+    prefix: str = "artifacts",
+) -> ArtifactStore:
+    """Factory creating an ArtifactStore. Local filesystem stays default."""
+    selected_type = (
+        store_type
+        or os.environ.get("REALITY_STORAGE_BACKEND")
+        or ("s3" if (bucket or os.environ.get("S3_BUCKET_NAME") or os.environ.get("REALITY_S3_BUCKET")) else "file")
+    ).lower()
+
+    if selected_type == "s3":
+        bkt = bucket or os.environ.get("S3_BUCKET_NAME") or os.environ.get("REALITY_S3_BUCKET") or "reality-artifacts"
+        endpoint = endpoint_url or os.environ.get("S3_ENDPOINT_URL") or os.environ.get("AWS_ENDPOINT_URL")
+        region = region_name or os.environ.get("AWS_REGION") or os.environ.get("S3_REGION") or "us-east-1"
+        key_id = aws_access_key_id or os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("S3_ACCESS_KEY_ID")
+        secret_key = aws_secret_access_key or os.environ.get("AWS_SECRET_ACCESS_KEY") or os.environ.get("S3_SECRET_ACCESS_KEY")
+        return S3ArtifactStore(
+            bucket=bkt,
+            endpoint_url=endpoint,
+            region_name=region,
+            aws_access_key_id=key_id,
+            aws_secret_access_key=secret_key,
+            prefix=prefix,
+        )
+    elif selected_type == "memory":
+        return MemoryArtifactStore()
+    else:
+        root_path = root or os.environ.get("STORAGE_ROOT") or os.environ.get("WORLDSTORE_ROOT") or "./data/artifacts"
+        return FileArtifactStore(root_path)

@@ -406,9 +406,11 @@ def enqueue_job(
     entity_id: str,
     payload: dict | None = None,
     priority: int = 0,
+    team_id: str | None = None,
 ) -> Job:
     job = Job(
         id=f"job_{uuid.uuid4().hex[:12]}",
+        team_id=team_id,
         type=job_type,
         entity_type=entity_type,
         entity_id=entity_id,
@@ -1433,7 +1435,9 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         log.exception("job %s failed", job.id)
         import traceback
 
-        job.error = traceback.format_exc()[-2000:]
+        # Log full traceback internally; store safe concise message on job row (T-6.8 / T-1.3)
+        job.error = f"{type(exc).__name__}: {str(exc).strip() or 'Internal processing failure'}"
+        job.payload = {**(job.payload or {}), "traceback_logged": True}
         # Failure classification for the user-facing state (NEEDS MORE
         # EVIDENCE vs FAILED): carried on the payload, never inferred from text.
         kind = getattr(exc, "failure_kind", None)

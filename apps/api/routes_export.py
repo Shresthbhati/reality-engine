@@ -19,6 +19,7 @@ from apps.api.db import get_db
 from apps.api.tenancy import world_scope
 from apps.api.auth import AuthContext, get_auth_context
 from apps.api.routes_worlds import _load_world_or_409, _version_row
+from apps.api.models import ExportRecord, World, new_id
 from apps.api.storage import resolve_artifact, store_bytes
 from sdk import reality
 from world_ir.artifact_store import FileArtifactStore
@@ -132,7 +133,10 @@ async def export_formats(
 
 @export.post("")
 async def export_world(
-    world_id: str, body: ExportRequest, db: AsyncSession = Depends(get_db),
+    world_id: str,
+    body: ExportRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
     """Export the version's WorldIR to a real format via sdk.reality.export().
     422 for an unsupported format (never a silent no-op); the exporter's
@@ -164,6 +168,20 @@ async def export_world(
         data = content
 
     digest, _ = store_bytes(data)
+    w = await db.get(World, world_id)
+    team_id = (w.team_id if w else None) or (auth.tenant_id if auth.tenant_id != "default" else None)
+    export_rec = ExportRecord(
+        id=new_id(),
+        tenant_id=team_id,
+        world_id=world_id,
+        version_id=row.id,
+        format=body.format,
+        size_bytes=len(data),
+        artifact_uri=f"sha256://{digest}",
+    )
+    db.add(export_rec)
+    await db.commit()
+
     elements = _element_report(world, report.entities_exported)
     by_state: dict = {}
     for r in elements:
@@ -204,6 +222,7 @@ async def export_package(
     world_id: str,
     version: str | None = None,
     db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
 ) -> Response:
     """Export the version's WorldIR as a versioned .zip package archive (Task 11.2)."""
     from apps.api.routes_misc import _safe_filename
@@ -214,6 +233,20 @@ async def export_package(
 
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
     zip_bytes = export_world_package_zip(world, artifact_store=artifact_store)
+    w = await db.get(World, world_id)
+    team_id = (w.team_id if w else None) or (auth.tenant_id if auth.tenant_id != "default" else None)
+    export_rec = ExportRecord(
+        id=new_id(),
+        tenant_id=team_id,
+        world_id=world_id,
+        version_id=row.id,
+        format="package_zip",
+        size_bytes=len(zip_bytes),
+        artifact_uri=None,
+    )
+    db.add(export_rec)
+    await db.commit()
+
     filename = _safe_filename(f"{world_id}_v{world.version}.zip")
 
     return Response(

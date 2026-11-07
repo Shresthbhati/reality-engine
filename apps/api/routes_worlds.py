@@ -2184,7 +2184,7 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
         ref = wss.add_scale_reference(world_id, a, b, distance_m, body.method, model_distance, unit_check)
     except ScaleAnchoringError as exc:
         raise HTTPException(422, str(exc)) from exc
-    job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", sessions[0].id)
+    job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", sessions[0].id, team_id=world.team_id)
     await db.commit()
     return {"world_id": world_id, "job_id": job.id, "reference": ref,
             "dimension_state_after": "ESTIMATED" if body.method == PRIOR_ACCEPTED else "MEASURED",

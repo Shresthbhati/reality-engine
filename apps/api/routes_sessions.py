@@ -378,7 +378,7 @@ async def reconstruct_session(session_id: str, db: AsyncSession = Depends(get_db
     if existing.scalars().first():
         raise HTTPException(409, "Reconstruction already in progress for this session")
 
-    job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", s.id)
+    job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", s.id, team_id=s.team_id)
     s.status = "processing"
     s.processing_started_at = utcnow()
     await db.commit()

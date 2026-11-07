@@ -77,6 +77,7 @@ jobs:
             tests/test_client_share_link.py \
             tests/test_design_options_finish_layer.py \
             tests/test_camera_views_and_renders.py \
+            tests/test_usage_metering.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

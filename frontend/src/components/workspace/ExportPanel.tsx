@@ -1,5 +1,6 @@
 "use client";
 
+import { evidenceHeadline, orderedElements, stateLabel, type EvidenceSummary, type ExportElement } from "@/lib/export/evidence-model";
 import { useEffect, useState, useMemo, type ComponentType } from "react";
 import {
   X,
@@ -87,6 +88,9 @@ export default function ExportPanel({
     entitiesSkipped: number;
     reasons: string[];
     showDetails: boolean;
+    elements: ExportElement[];
+    summary: EvidenceSummary;
+    showEvidence: boolean;
   } | null>(null);
 
   const [formatsTick, setFormatsTick] = useState(0);
@@ -133,6 +137,9 @@ export default function ExportPanel({
           (id, i) => `${id}: ${result.skip_reasons[i] ?? "unknown constraint"}`
         ),
         showDetails: false,
+        elements: result.elements ?? [],
+        summary: result.evidence_summary ?? { total: 0, by_state: {} },
+        showEvidence: false,
       });
     } catch (err: unknown) {
       if (isApiError(err)) {
@@ -330,6 +337,35 @@ export default function ExportPanel({
             Exported {done.entitiesExported} entities successfully.
             {done.entitiesSkipped > 0 && ` (${done.entitiesSkipped} skipped due to non-mesh geometry)`}
           </div>
+          <div className="text-[11px] text-fg-muted" data-testid="export-evidence-headline">{evidenceHeadline(done.summary)}</div>
+          {done.elements.length > 0 && (
+            <div className="mt-1 pt-1 border-t border-success/20">
+              <button
+                type="button"
+                onClick={() => setDone({ ...done, showEvidence: !done.showEvidence })}
+                className="flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg transition-colors"
+              >
+                <span>{done.showEvidence ? "Hide evidence per element" : "View evidence per element"}</span>
+                {done.showEvidence ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+              {done.showEvidence && (
+                <table className="mt-1 w-full text-[10px] text-fg-muted" data-testid="export-evidence-table">
+                  <thead>
+                    <tr className="text-left text-fg"><th className="pr-2">Element</th><th className="pr-2">State</th><th>Confidence</th></tr>
+                  </thead>
+                  <tbody>
+                    {orderedElements(done.elements).map((el) => (
+                      <tr key={el.id} title={el.note ?? undefined}>
+                        <td className="pr-2">{el.name}</td>
+                        <td className="pr-2">{stateLabel(el.state)}</td>
+                        <td>{el.confidence === null ? "n/a" : `${Math.round(el.confidence * 100)}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
           {done.reasons.length > 0 && (
             <div className="mt-1 pt-1 border-t border-success/20">
               <button

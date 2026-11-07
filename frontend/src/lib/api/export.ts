@@ -20,6 +20,8 @@ export type ExportFormat =
   | "floorplan_pdf"
   | "multisheet_floorplan_pdf";
 
+import type { EvidenceSummary, ExportElement } from "@/lib/export/evidence-model";
+
 export interface ExportResult {
   version_id: string;
   format: ExportFormat;
@@ -29,6 +31,9 @@ export interface ExportResult {
   entities_exported: string[];
   entities_skipped: string[];
   skip_reasons: string[];
+  /** per exported element: measured vs inferred and confidence (T-2.7) */
+  elements: ExportElement[];
+  evidence_summary: EvidenceSummary;
 }
 
 /** Exports the world's current (or ?version=) WorldIR to a real format

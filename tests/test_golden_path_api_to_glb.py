@@ -95,3 +95,21 @@ def test_validator_rejects_broken_glbs(client, tmp_path, monkeypatch):
     forged = struct.pack("<4sII", b"glTF", 2, total) + chunk_json + chunk_bin
     with pytest.raises(GlbError, match="runs past"):
         validate_glb(forged)
+
+
+def test_export_reports_per_element_evidence_state_and_confidence(client, tmp_path, monkeypatch):
+    """T-2.7: what was measured vs inferred, per exported element, with confidence."""
+    sid, wid = _setup(client, tmp_path, monkeypatch)
+    job = _wait(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"])
+    assert job["status"] in ("succeeded", "partial"), job
+    world = client.get(f"/api/worlds/{wid}/worldir").json()
+    body, _ = _export_glb(client, wid)
+
+    rows = body["elements"]
+    assert [r["id"] for r in rows] == body["entities_exported"]  # one row per exported element, same order
+    for r in rows:
+        ent = world["entities"][r["id"]]
+        assert r["type"] == ent["type"] and r["state"] in ("measured", "inferred", "estimated", "unknown")
+        assert r["confidence"] is None or 0.0 <= r["confidence"] <= 1.0
+    assert body["evidence_summary"]["total"] == len(rows)
+    assert sum(body["evidence_summary"]["by_state"].values()) == len(rows)

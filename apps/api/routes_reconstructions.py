@@ -291,7 +291,7 @@ async def create_reconstruction(
             job.payload = {**(job.payload or {}), "dense_cpu": dense_cfg}
     else:
         job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", session.id,
-                                    payload={"dense_cpu": dense_cfg} if dense_cpu else None)
+                                    payload={"dense_cpu": dense_cfg} if dense_cpu else None, team_id=session.team_id)
         coalesced = False
     session.status = "processing"
     session.processing_started_at = utcnow()

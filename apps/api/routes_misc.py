@@ -245,7 +245,7 @@ async def create_upload(
         )
     )
     await db.commit()
-    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id)
+    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=team_id)
     await db.commit()
     return {"upload_id": up.id, "evidence_id": ev.id, "job_id": job.id, "checksum": digest}
 
@@ -380,7 +380,7 @@ async def resumable_finalize(
         )
     )
     await db.commit()
-    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id)
+    job = jobrunner.enqueue_job(db, jobrunner.PROCESS_EVIDENCE, "evidence", ev.id, team_id=team_id)
     await db.commit()
     clear_staging(upload_id)
     return {

@@ -233,7 +233,7 @@ Gate: a design partner signs up on a hosted URL, uploads, waits, exports, withou
 | T-6.2 | Durable job queue (Redis/RQ or Postgres-backed) replacing in-process jobs; one GPU worker consumes | T3 sliced | high | worker restart loses no job (test) |
 | T-6.3 | Storage adapter: ArtifactStore → S3-compatible behind existing interface; local stays default | T2 | medium | same tests pass against MinIO in CI |
 | T-6.4 | Account lifecycle on top of existing tenant isolation: signup, invite, delete-my-data | T2 | medium | security review pass; delete removes artifacts |
-| T-6.5 | Usage metering (GPU-minutes, storage, exports per tenant) — billing later | T1 | medium | per-tenant usage endpoint |
+| T-6.5 | DONE | Usage metering (GPU-minutes, storage, exports per tenant) — per-tenant usage endpoint (GET /api/tenants/{id}/usage, GET /api/usage) verified with tenant isolation tests (	ests/test_usage_metering.py) |
 | T-6.6 | Observability: structured job logs + error tracking + per-stage timing dashboard | T1 | medium | a failed job is diagnosable from logs alone |
 | T-6.8 | Security pass (HawkScan/DAST on hosted staging) | T1 | medium | no high findings |
 

@@ -257,9 +257,13 @@ class Job(Base):
     """
 
     __tablename__ = "jobs"
-    __table_args__ = (Index("ix_jobs_entity", "entity_type", "entity_id"),)
+    __table_args__ = (
+        Index("ix_jobs_entity", "entity_type", "entity_id"),
+        Index("ix_jobs_team_id", "team_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     type: Mapped[str] = mapped_column(String(64), index=True)
     entity_type: Mapped[str] = mapped_column(String(32))
     entity_id: Mapped[str] = mapped_column(String(32))
@@ -444,3 +448,18 @@ class Asset(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class ExportRecord(Base):
+    """Record of an export artifact generated for a tenant (T-6.5 usage metering)."""
+
+    __tablename__ = "export_records"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    format: Mapped[str] = mapped_column(String(32), index=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

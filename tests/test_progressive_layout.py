@@ -12,7 +12,7 @@ from engine.pipeline.progressive import EvidenceInput, run_progressive
 from evidence.image_check import inspect_image
 from evidence.session import EvidenceItem, EvidenceKind
 from tests.test_progressive_units import _noise_photo
-from world_ir import WorldIR
+from world_ir import Entity, EntityType, WorldIR
 
 N_PHOTOS = 3
 
@@ -26,10 +26,17 @@ def _inputs(tmp_path):
     return out
 
 
-def _slice(n_points, registered=N_PHOTOS):
+def _world(structure):
+    w = WorldIR()
+    if structure:
+        w.entities["struct-plane-000"] = Entity(id="struct-plane-000", type=EntityType.FLOOR, name="floor")
+    return w
+
+
+def _slice(n_points, registered=N_PHOTOS, structure=True):
     def fn(items, options):
         return SimpleNamespace(
-            world=WorldIR(), camera_poses=[(f"ev-{k}", (float(k), 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)) for k in range(registered)],
+            world=_world(structure), camera_poses=[(f"ev-{k}", (float(k), 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)) for k in range(registered)],
             registration_status="success", cameras_registered=registered, cameras_input=N_PHOTOS, scale_state="relative",
             meters_per_unit=None, stage_facts={}, points=[(0.0, 0.0, float(i)) for i in range(n_points)],
             compile=SimpleNamespace(measurements_count=0, relationships_count=0))
@@ -90,3 +97,10 @@ def test_a_weak_multiview_model_is_kept_when_the_layout_cannot_replace_it(tmp_pa
     assert res.level == 2 and res.vs_result is not None
     assert [a["outcome"] for a in res.attempts if a["level"] == 2] == ["succeeded"]
     assert any("learned layout unavailable" in a["detail"] for a in res.attempts if a["level"] == 0)
+
+
+def test_plenty_of_points_but_no_structure_is_still_replaced(tmp_path, analyzer):
+    """Seen on the real world: 890 points, 11 cameras, and a world with zero floors/walls/ceilings."""
+    res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=900, structure=False), layout_analyzer=analyzer)
+    assert res.level == 0
+    assert "no floor, wall or ceiling" in res.attempts[0]["detail"]

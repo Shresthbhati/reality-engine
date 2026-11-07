@@ -74,7 +74,28 @@ def _box_overlap(a, b) -> float:
     return max(inter / union if union > 0 else 0.0, inter / smaller if smaller > 0 else 0.0)
 
 
-def _measured_colour(rgb, box) -> Dict[str, object]:
+MASK_BASIS = "footprint and height measured from the segmentation mask + metric depth (visible surfaces only: hidden sides are not seen)"
+
+
+def _mask_measure(analysis, box, hint, floor_op, f, cx, cy):
+    """``(class, footprint dict, mask)`` for one detection from the learned segmentation, or None (the box placement stays)."""
+    if analysis is None or box is None or getattr(analysis, "label_map", None) is None:
+        return None
+    import numpy as np
+
+    from perception.layout.furniture_masks import class_and_mask, footprint_from_mask
+
+    got = class_and_mask(analysis.label_map, analysis.id2label, box, hint)
+    if got is None:
+        return None
+    n = np.asarray(floor_op.normal, float)
+    n = n if n[1] >= 0 else -n
+    fp = footprint_from_mask(got[1], np.asarray(analysis.depth_m, float), f, cx, cy, up=(n[0], -n[1], n[2]),
+                             camera_height_m=abs(float(floor_op.d)))
+    return None if fp is None else (got[0], fp, got[1])
+
+
+def _measured_colour(rgb, box, mask=None) -> Dict[str, object]:
     """Median colour of the inner half of the detection box in the photograph: the piece's observed colour (not a texture)."""
     if rgb is None or box is None:
         return {}
@@ -82,6 +103,10 @@ def _measured_colour(rgb, box) -> Dict[str, object]:
 
     img = np.asarray(rgb)
     h, w = img.shape[:2]
+    if mask is not None and int(mask.sum()) >= 60:
+        col = np.median(img[mask][:, :3], axis=0)
+        return {"mean_color_rgb": [int(round(float(v))) for v in col],
+                "color_basis": "median colour of the piece's segmentation mask in the photograph"}
     x0, y0, x1, y1 = box
     dx, dy = (x1 - x0) / 4.0, (y1 - y0) / 4.0
     a, b, c, d = int(max(0, x0 + dx)), int(max(0, y0 + dy)), int(min(w, x1 - dx)), int(min(h, y1 - dy))
@@ -94,7 +119,7 @@ def _measured_colour(rgb, box) -> Dict[str, object]:
 
 def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f: float, cx: float, cy: float,
                     w: int, h: int, pre: str, confidence_ceiling: float,
-                    metric: bool = False, rgb=None) -> Dict[str, object]:
+                    metric: bool = False, rgb=None, analysis=None) -> Dict[str, object]:
     """Add furniture entities to ``world``; return a facts dict (what ran, what was rejected and why)."""
     from perception.instances.furniture_from_detections import (
         FurnitureCamera, RoomFrame, furniture_from_detections,
@@ -146,6 +171,21 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
         dims = {key: make_dimension(v["value"] / s, state="ESTIMATED", basis=v["basis"], scale_state="metric" if metric else "unknown")
                 for key, v in cp["dimensions"].items()}
         L, W, H = (cp["dimensions"][name]["value"] / s for name in ("length_m", "width_m", "height_m"))
+        category, yaw, yaw_basis, flags, mask = cp["category"], cp["yaw_rad"], cp["yaw_basis"], list(e["flags"]), None
+        meas = _mask_measure(analysis, e.get("box_xyxy"), category, floor_op, f, cx, cy)
+        if meas is not None:
+            category, fp, mask = meas
+            fx, fy, fz = fp["floor_point_cam"]
+            pos = {"x": fx, "y": -fy, "z": fz}   # camera frame (y down) -> world (y up); already in the depth map's units
+            L, W, H = fp["length_m"], fp["width_m"], min(2.6, max(0.2, fp["height_m"]))
+            yaw, yaw_basis = fp["yaw_rad"], "measured_from_mask"
+            flags.append("footprint_from_mask")
+            from perception.instances.furniture_from_detections import SIZE_PRIORS
+
+            if category in SIZE_PRIORS and max(L, W) > 1.8 * SIZE_PRIORS[category][0]:
+                flags.append("larger_than_class_prior: bounding rectangle of the visible mask, possibly L-shaped or merged pieces")
+            kw = dict(state="ESTIMATED", basis=MASK_BASIS, scale_state="metric" if metric else "unknown")
+            dims = {"length_m": make_dimension(L, **kw), "width_m": make_dimension(W, **kw), "height_m": make_dimension(H, **kw)}
         r = 0.5 * math.hypot(L, W)
         box = ((pos["x"] - r, pos["y"], pos["z"] - r), (pos["x"] + r, pos["y"] + H, pos["z"] + r))
         # mirror of the world validator's duplicate rule (same type, bounds IoU > 0.5), with margin: two detectors can
@@ -175,9 +215,9 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
             ),
             observations=[obs],
             custom_properties={
-                "category": cp["category"], "entity_class": f"furniture.{cp['category']}", "dimensions": dims, "yaw_rad": cp["yaw_rad"], "yaw_basis": cp["yaw_basis"],
-                "flags": e["flags"],
-                **_measured_colour(rgb, e.get("box_xyxy")),
+                "category": category, "entity_class": f"furniture.{category}", "dimensions": dims, "yaw_rad": yaw, "yaw_basis": yaw_basis,
+                "flags": flags,
+                **_measured_colour(rgb, e.get("box_xyxy"), mask),
                 "bootstrap": {"role": "furniture", "source": "single_image", "evidence_id": item.id,
                               "scale": "relative", "meters_per_unit_assumed": round(s, 4)},
             },

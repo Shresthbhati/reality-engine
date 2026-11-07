@@ -95,3 +95,9 @@ def test_furniture_colour_is_the_median_of_the_inner_box_in_the_photo():
     got = _measured_colour(img, [20, 20, 80, 80])
     assert got["mean_color_rgb"] == [10, 120, 250] and "photograph" in got["color_basis"]
     assert _measured_colour(None, [20, 20, 80, 80]) == {} and _measured_colour(img, None) == {}
+
+
+def test_mask_measure_returns_none_without_a_segmentation():
+    from engine.pipeline.single_image_furniture import _mask_measure
+
+    assert _mask_measure(None, [0, 0, 10, 10], "sofa", None, 100.0, 50.0, 50.0) is None

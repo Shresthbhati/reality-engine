@@ -65,3 +65,35 @@ def test_without_a_floor_the_layout_is_refused_and_ransac_still_runs(tmp_path, m
     item = EvidenceItem(id="ev-room", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
     res = bootstrap_single_image(item, inspect_image(p), layout_analysis=SimpleNamespace(depth_m=depth, masks=masks))
     assert res.facts["layout"]["used"] is False and "floor" in res.facts["layout"]["reason"]
+
+
+# ---------------------------------------------------------------------------- floor plan from the layout (M2 / 13.5)
+
+
+def test_the_layout_world_exports_a_floor_plan_dxf_svg_and_room_report(bootstrap):
+    from exporters.floorplan import (build_room_report, export_to_floorplan_dxf_with_report,
+                                     export_to_floorplan_svg_with_report)
+
+    rooms = _of(bootstrap, "room")
+    assert len(rooms) == 1
+    cp = rooms[0].custom_properties
+    assert "inferred" in cp["footprint_closure"] and len(cp["footprint_polygon_m"]) >= 3
+    dxf, rep = export_to_floorplan_dxf_with_report(bootstrap.world)
+    assert "ROOM" in dxf and "WALL" in dxf and "OPENING" in dxf  # layers present
+    svg, _ = export_to_floorplan_svg_with_report(bootstrap.world)
+    assert svg.lstrip().startswith("<svg") or "<svg" in svg
+    (r,) = build_room_report(bootstrap.world)["rooms"]
+    assert r["height_m"] == pytest.approx(2.6, abs=0.1)
+    assert r["openings"].get("window") == 1 and r["walls"] >= 2
+    # the visible part only: it must not claim the whole room, and the area must be plausible for this 3.4 x 3.5 m view
+    assert 3.0 < r["area_m2"] < 16.0
+
+
+def test_walls_carry_their_observed_extent_and_the_window_offset(bootstrap):
+    walls = [e for e in _of(bootstrap, "wall") if e.custom_properties.get("wall_slab")]
+    assert len(walls) >= 2
+    with_window = [w for w in walls if w.custom_properties["wall_slab"]["openings"]]
+    assert len(with_window) == 1
+    o = with_window[0].custom_properties["wall_slab"]["openings"][0]
+    assert o["kind"] == "window" and o["width_m"] == pytest.approx(1.4, abs=0.2) and o["sill_m"] == pytest.approx(0.9, abs=0.15)
+    assert 0 <= o["offset_m"] <= with_window[0].custom_properties["length_m"]

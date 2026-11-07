@@ -149,6 +149,99 @@ def add_layout_openings(world, obs, layout: SurfaceLayout, eid_of_plane: Dict[st
     return facts
 
 
+def _hull(points):
+    """Convex hull (Andrew's monotone chain), counter-clockwise, no repeated end point."""
+    pts = sorted(set((round(x, 6), round(y, 6)) for x, y in points))
+    if len(pts) <= 2:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], *, pre: str,
+                    confidence_ceiling: float) -> Dict[str, object]:
+    """A ROOM entity for the part of the room one photograph saw, so the floor plan / report exporters have something to draw.
+
+    The footprint is the convex hull of the OBSERVED wall segments and the camera position (the camera stands inside the room).
+    Everything outside that hull (the sides and rear nobody photographed) is not claimed: the closure is marked inferred and the
+    area is a lower bound of the visible part. Walls get ``wall_slab`` data (observed extent, openings with offsets and sizes).
+    """
+    from world_ir import Entity, EntityType
+
+    from provenance import Provenance as Prov
+
+    facts: Dict[str, object] = {"attempted": True, "created": False}
+    up = np.asarray(_flip(layout.up))
+    x = np.array([1.0, 0.0, 0.0])
+    e1 = x - (x @ up) * up
+    e1 = e1 / np.linalg.norm(e1)
+    e2 = np.cross(e1, up)  # forward (+z) for a level camera
+    height = layout.room_height_m or 0.0
+    cap = min(confidence_ceiling, OPENING_CONFIDENCE_CEILING)
+    cam_h = float(layout.camera_height_m)
+
+    seg_pts: List[Tuple[float, float]] = [(0.0, 0.0)]
+    walls_used = []
+    for i, wl in enumerate(layout.walls):
+        eid = eid_of_plane.get(f"layout-wall-{i}")
+        if eid is None or eid not in world.entities:
+            continue
+        n, t = np.asarray(_flip(wl.plane.normal)), np.asarray(_flip(wl.tangent))
+        p0 = -wl.plane.d * n
+        a, b = p0 + wl.s_min * t, p0 + wl.s_max * t
+        seg_pts += [(float(a @ e1), float(a @ e2)), (float(b @ e1), float(b @ e2))]
+        walls_used.append((i, eid, a, b, wl))
+    if len(walls_used) < 1:
+        facts["reason"] = "no promoted wall to bound a room"
+        return facts
+    poly = _hull(seg_pts)
+    if len(poly) < 3:
+        facts["reason"] = "walls and camera are collinear: no footprint"
+        return facts
+    area = 0.5 * abs(sum(poly[k][0] * poly[(k + 1) % len(poly)][1] - poly[(k + 1) % len(poly)][0] * poly[k][1] for k in range(len(poly))))
+    room_id = f"{pre}-room-01"
+    world.entities[room_id] = Entity(
+        id=room_id, type=EntityType.ROOM, name="Room (visible part)",
+        provenance=Prov.INFERRED, confidence=cap,
+        uncertainty=Uncertainty(confidence=cap, note="one photograph: the walls that were seen plus the camera position; sides and rear are not claimed"),
+        custom_properties={
+            "footprint_polygon_m": [[round(px, 4), round(py, 4)] for px, py in poly],
+            "footprint_basis": {"e1": [float(c) for c in e1], "e2": [float(c) for c in e2]},
+            "footprint_closure": "inferred: convex hull of the observed wall segments and the camera position",
+            "floor_area_m2": round(area, 3), "height_m": round(height, 3) if height else None, "dimensions": {},
+            "visible_part_only": True,
+        },
+    )
+    for i, eid, a, b, wl in walls_used:
+        ent = world.entities[eid]
+        openings = []
+        for o in layout.openings:
+            if o.wall_index != i:
+                continue
+            openings.append({"kind": o.kind, "offset_m": round(max(0.0, o.s_min - wl.s_min), 3),
+                             "width_m": round(o.s_max - o.s_min, 3), "height_m": round(o.h_max - o.h_min, 3),
+                             "sill_m": round(o.h_min, 3)})
+        ent.custom_properties.update({
+            "room_id": room_id, "length_m": round(wl.s_max - wl.s_min, 3), "height_m": round(height, 3),
+            "thickness_m": 0.1, "thickness_basis": "default_unmeasured", "observed_fraction": 1.0,
+            "wall_slab": {"start_xyz_m": [float(c) for c in a], "end_xyz_m": [float(c) for c in b], "openings": openings},
+        })
+    facts.update({"created": True, "room_id": room_id, "area_m2_visible_part": round(area, 2), "walls": len(walls_used)})
+    return facts
+
+
 def make_layout_analyzer():
     """``(analyze, unload)`` for the progressive ladder, or ``(None, noop)`` when REALITY_LAYOUT_MODELS=0.
 

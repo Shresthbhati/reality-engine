@@ -330,6 +330,9 @@ def bootstrap_single_image(
 
         openings_facts = add_layout_openings(world, obs, layout, eid_of_plane, pre=pre,
                                              confidence_ceiling=CONFIDENCE_CEILING)
+        from engine.pipeline.single_image_layout import add_layout_room
+
+        layout_facts["room"] = add_layout_room(world, layout, eid_of_plane, pre=pre, confidence_ceiling=CONFIDENCE_CEILING)
     elif wall_pixels and gray is None:
         openings_facts["reason"] = "photograph not readable from its source_uri"
     elif not wall_pixels:

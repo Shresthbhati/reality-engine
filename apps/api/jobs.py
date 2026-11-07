@@ -640,15 +640,19 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     )
     evidence_rows = list(result.scalars().all())
     head_report = await _head_report(db, world)
-    # F6: user-verified corrections from the current version are replayed onto the rebuilt world below. A failure to
-    # read the previous version only means no carry-over, never a lost reconstruction.
+    # F6 / T-4.2: user-verified corrections and decisions from the current version are replayed onto the rebuilt world below.
+    # A failure to read the previous version only means no carry-over, never a lost reconstruction.
     prev_corrections: list = []
+    prev_decisions: list = []
     try:
         from apps.api.worldstore_service import get_current_worldir as _get_head_world
         _prev_world = await _get_head_world(db, world.id)
-        prev_corrections = list(((_prev_world.metadata or {}).get("user_corrections") if _prev_world else []) or [])
+        if _prev_world and _prev_world.metadata:
+            prev_corrections = list((_prev_world.metadata.get("user_corrections") or []) or [])
+            prev_decisions = list((_prev_world.metadata.get("user_decisions") or []) or [])
     except Exception:  # noqa: BLE001 -- enrichment only
         prev_corrections = []
+        prev_decisions = []
     prior_ids = list((head_report.get("evidence") or {}).get("all_ids") or [])
     resolved = []
     skipped_evidence = []
@@ -824,11 +828,14 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "attempts": prog.attempts,
     }
 
-    # ---- F6: replay user-verified corrections (they outrank every automatic result and survive a rebuild) ----
-    if prev_corrections:
+    # ---- F6 / T-4.2: replay user-verified corrections & decisions (they outrank every automatic result and survive a rebuild) ----
+    if prev_corrections or prev_decisions:
         try:
-            from world_ir.corrections import carry_corrections
-            carry_corrections(world_ir, prev_corrections)
+            from world_ir.corrections import carry_corrections, carry_decisions
+            if prev_corrections:
+                carry_corrections(world_ir, prev_corrections)
+            if prev_decisions:
+                carry_decisions(world_ir, prev_decisions)
         except Exception as exc:  # noqa: BLE001 -- the rebuilt world stands; the failure is visible
             world_ir.metadata["correction_carry"] = {"error": f"{type(exc).__name__}: {exc}"}
 

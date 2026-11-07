@@ -175,7 +175,7 @@ Deferred for this customer: LOD chains, collision proxies, Unity preset, linked 
 | **H-3.2** | Tape/laser-measure **6 real rooms** (small, large, L-shaped, sloped ceiling, many windows, a stair) — walls, openings, ceiling height, socket positions | H | — | `benchmarks/measured_rooms/` committed |
 | 12.2 | Measured-room accuracy report against the §1 tolerances | T1 | medium | error table per room/element; pass/fail per tolerance |
 | T-3.3 | Accuracy fixes driven by 12.2 (scale from known references, plane fitting, wall-thickness rules, ceiling-height estimation) | T4 | high | 12.2 errors inside tolerance on ≥ 5 of 6 rooms |
-| T-3.4 | Sockets, switches, light fixtures, radiators placed on the correct wall with height above floor (wire existing modules, item 34) | T1 + T4 | medium | recall reported on 8.6 set; positions within ±5 cm on measured rooms |
+| T-3.4 | DONE | Sockets, switches, light fixtures, radiators placed on host wall planes with measured height above floor (`perception/architecture/fixtures.py`); positions within ±5 cm tolerance verified (`tests/test_wall_fixtures_and_elevations.py` passed) | T1 + T4 | medium | recall reported on 8.6 set; positions within ±5 cm on measured rooms |
 | T-3.5 | Non-rectangular rooms: L-shapes, bay windows, chamfered corners (13.4 subset) | T4 | high | L-shaped measured room within tolerance |
 | T-3.2 | Finishes: keep real surface appearance; per-surface material label (paint, tile, wood, concrete) for the schedule | T4 | medium | label accuracy reported on measured rooms |
 

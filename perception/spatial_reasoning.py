@@ -197,7 +197,7 @@ def infer_spatial_relationships(
 
         is_wall_mount = (
             "envelope.wall" in hosts
-            or any(k in name or k in labels for k in ("socket", "switch", "plate", "sconce", "mirror", "picture", "frame", "panel"))
+            or any(k in name or k in labels for k in ("socket", "switch", "plate", "sconce", "mirror", "picture", "frame", "panel", "radiator", "heater", "thermostat"))
             or "wall_fixture" in labels
         )
         is_ceiling_mount = (
@@ -231,7 +231,7 @@ def infer_spatial_relationships(
                     forward_kind=RelationshipKind.ATTACHED_TO,
                     reverse_kind=RelationshipKind.SUPPORTS,
                     confidence=round(conf, 3),
-                    metadata={"surface_role": "wall", "measured_distance_m": round(min_dist, 4)},
+                    metadata={"surface_role": "wall", "measured_distance_m": round(min_dist, 4), "height_above_floor_m": round(float(pos[2] - min((float(_entity_bottom_z(f) or 0.0) for f in floors), default=0.0)), 3)},
                 ):
                     n_attached += 1
                     total_edges += 2

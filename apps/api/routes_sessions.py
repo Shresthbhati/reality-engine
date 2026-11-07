@@ -38,6 +38,7 @@ class LocationIn(BaseModel):
     heading: float | None = None
     speed: float | None = None
     source: str = "gnss"
+    coordinate_reference_system: str = "WGS84"
     captured_at: datetime | None = None
 
 
@@ -261,13 +262,95 @@ async def session_location(session_id: str, db: AsyncSession = Depends(get_db)) 
     return _location_out(loc).model_dump(mode="json")
 
 
+class LocationBatchIn(BaseModel):
+    points: list[LocationIn]
+
+
+@sessions.post("/{session_id}/locations")
+async def add_session_locations(
+    session_id: str,
+    body: LocationBatchIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    from apps.api.validation import require_finite, require_latitude, require_longitude
+
+    s = await db.get(Session, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+    created = []
+    for pt in body.points:
+        loc = Location(
+            id=new_id("loc"),
+            entity_type="session",
+            entity_id=session_id,
+            latitude=require_latitude(pt.latitude),
+            longitude=require_longitude(pt.longitude),
+            altitude=require_finite(pt.altitude, "altitude") if pt.altitude is not None else None,
+            accuracy=require_finite(pt.accuracy, "accuracy") if pt.accuracy is not None else None,
+            heading=require_finite(pt.heading, "heading") if pt.heading is not None else None,
+            speed=require_finite(pt.speed, "speed") if pt.speed is not None else None,
+            source=pt.source,
+            coordinate_reference_system=pt.coordinate_reference_system,
+            captured_at=pt.captured_at or utcnow(),
+        )
+        db.add(loc)
+        created.append(loc.id)
+    await db.commit()
+    return {"added": len(created), "location_ids": created}
+
+
 @sessions.get("/{session_id}/trajectory")
 async def session_trajectory(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     s = await db.get(Session, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
-    # Real trajectory artifacts only — honest empty state until they exist.
-    return {"available": False, "reason": "No trajectory artifacts processed for this session", "points": []}
+
+    res = await db.execute(
+        select(Location)
+        .where(Location.entity_type == "session", Location.entity_id == session_id)
+        .order_by(Location.captured_at.asc())
+    )
+    locs = res.scalars().all()
+
+    if not locs:
+        # Check evidence attached to this session with locations
+        ev_res = await db.execute(
+            select(Location)
+            .join(Evidence, Evidence.id == Location.entity_id)
+            .where(Location.entity_type == "evidence", Evidence.session_id == session_id)
+            .order_by(Location.captured_at.asc())
+        )
+        locs = ev_res.scalars().all()
+
+    if not locs:
+        return {
+            "available": False,
+            "session_id": session_id,
+            "reason": "No trajectory points captured for this session",
+            "points": [],
+        }
+
+    points = [
+        {
+            "latitude": loc.latitude,
+            "longitude": loc.longitude,
+            "altitude": loc.altitude,
+            "accuracy": loc.accuracy,
+            "heading": loc.heading,
+            "speed": loc.speed,
+            "source": loc.source,
+            "coordinate_reference_system": loc.coordinate_reference_system,
+            "captured_at": loc.captured_at.isoformat() if loc.captured_at else None,
+        }
+        for loc in locs
+    ]
+    return {
+        "available": True,
+        "session_id": session_id,
+        "count": len(points),
+        "points": points,
+    }
 
 
 @sessions.post("/{session_id}/reconstruct")

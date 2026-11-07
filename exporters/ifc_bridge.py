@@ -61,6 +61,7 @@ _ENTITY_IFC_CLASS = {
     EntityType.STAIRS.value: "IfcStair",
     EntityType.BUILDING.value: "IfcBuilding",
     EntityType.ROOM.value: "IfcSpace",
+    EntityType.FURNITURE.value: "IfcFurnishingElement",
 }
 
 _IMPORT_ERROR_MESSAGE = (

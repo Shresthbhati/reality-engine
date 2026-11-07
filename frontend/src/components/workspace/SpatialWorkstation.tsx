@@ -19,6 +19,7 @@ import ReconstructionStatusBar from "@/components/reconstruct/ReconstructionStat
 import NoGeometryExplanation from "@/components/reconstruct/NoGeometryExplanation";
 import QueryPanel from "@/components/workspace/QueryPanel";
 import ExportPanel from "@/components/workspace/ExportPanel";
+import RoomsPanel from "@/components/workspace/RoomsPanel";
 import MapPlotView from "@/components/map/MapPlotView";
 import {
   useWorlds,
@@ -102,6 +103,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [roomsPanelOpen, setRoomsPanelOpen] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [diffVersions, setDiffVersions] = useState<{ base?: string; head?: string }>({});
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null);
@@ -442,6 +444,10 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       setExportPanelOpen(true);
     };
 
+    const handleOpenRoomsPanelEvent = () => {
+      setRoomsPanelOpen(true);
+    };
+
     const handleTriggerExportEvent = (e: Event) => {
       const customEvent = e as CustomEvent<{ format: "worldir" | "ply" | "cameras" | "report" }>;
       if (customEvent.detail?.format) {
@@ -456,6 +462,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     window.addEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
     window.addEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
     window.addEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
+    window.addEventListener("open-rooms-panel", handleOpenRoomsPanelEvent as EventListener);
     window.addEventListener("trigger-export", handleTriggerExportEvent as EventListener);
 
     return () => {
@@ -466,6 +473,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       window.removeEventListener("open-room-construction", handleOpenConstructionEvent as EventListener);
       window.removeEventListener("open-spatial-query", handleOpenQueryEvent as EventListener);
       window.removeEventListener("open-export-panel", handleOpenExportPanelEvent as EventListener);
+      window.removeEventListener("open-rooms-panel", handleOpenRoomsPanelEvent as EventListener);
       window.removeEventListener("trigger-export", handleTriggerExportEvent as EventListener);
     };
   }, [selectedEntityId, layout, insightsModel.hasInsights, handleClearSelection, handleFrameEntity, handleExport]);
@@ -739,6 +747,14 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           )}
 
           {exportPanelOpen && <ExportPanel worldId={worldId} onClose={() => setExportPanelOpen(false)} />}
+
+          {roomsPanelOpen && (
+            <RoomsPanel
+              worldId={worldId}
+              onClose={() => setRoomsPanelOpen(false)}
+              onChanged={() => { Promise.all([refetchIr(), refetchVersions()]); }}
+            />
+          )}
 
           {exportError && (
             <div

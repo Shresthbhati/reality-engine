@@ -18,6 +18,7 @@ import {
   Map as MapIcon,
   Compass,
   Download,
+  DoorOpen,
   Filter,
   GitBranch,
   Layers,
@@ -139,6 +140,11 @@ const COMMANDS: Command[] = [
     label: "Open Spatial Query",
     icon: Search,
     action: () => window.dispatchEvent(new CustomEvent("open-spatial-query")),
+  },
+  {
+    label: "Rooms: join and second visits",
+    icon: DoorOpen,
+    action: () => window.dispatchEvent(new CustomEvent("open-rooms-panel")),
   },
   {
     label: "Export World (glTF / USD / Blender / CityJSON)",

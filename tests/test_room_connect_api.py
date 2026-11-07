@@ -70,10 +70,19 @@ def test_accepting_a_revisit_through_the_api_swaps_the_room_and_a_refusal_change
     three = fuse_single_views([_room(tmp_path, monkeypatch, t) for t in "123"]).world
     connect_rooms(three, _door(three, "boot1").id, _door(three, "boot2").id)
 
+    real, commit, state = rw._load_worldir_from_store, rw.commit_world_correction, {"committed": False}
+
     async def load(w, version_id=None):
-        return copy.deepcopy(three)
+        # before the commit the two-room fixture stands in for the stored world; after it, the really stored version is read back
+        return await real(w, version_id) if state["committed"] else copy.deepcopy(three)
+
+    async def commit_then_flag(*a, **k):
+        out = await commit(*a, **k)
+        state["committed"] = True
+        return out
 
     monkeypatch.setattr(rw, "_load_worldir_from_store", load)
+    monkeypatch.setattr(rw, "commit_world_correction", commit_then_flag)
     before = _head(c, wid)
     bad = c.post(f"/api/worlds/{wid}/rooms/accept-revisit", json={"old_room": "boot9", "new_room": "boot3"})
     assert bad.status_code == 422 and _head(c, wid) == before
@@ -82,3 +91,5 @@ def test_accepting_a_revisit_through_the_api_swaps_the_room_and_a_refusal_change
     stored = c.get(f"/api/worlds/{wid}/worldir").json()
     assert not any(k.startswith("boot2-") for k in stored["entities"]) and any(k.startswith("boot3-") for k in stored["entities"])
     assert stored["metadata"]["room_revisits"][0]["state"] == "accepted"
+    body = ok.json()
+    assert body["lost_connections"] == [] and body["rejoined"][0]["state"] == "placed" and body["entities_removed"] > 0

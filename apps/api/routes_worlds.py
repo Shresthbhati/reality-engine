@@ -1695,6 +1695,13 @@ async def api_accept_revisit(
     )
     res = await commit_world_correction(world_id, commit_req, db, auth)
     res["operation"] = "accept_revisit"
+    # what the swap did (joins re-made, joins that could not be kept) comes from the record it wrote into the new version
+    wr = await db.get(World, world_id)
+    after = await _load_worldir_from_store(wr) if wr is not None else None
+    records = (after.metadata or {}).get("room_revisits", []) if after is not None else []
+    last = next((r for r in reversed(records) if r.get("old_room") == body.old_room and r.get("new_room") == body.new_room), None)
+    if last is not None:
+        res.update({k: last[k] for k in ("entities_removed", "rejoined", "lost_connections", "change_summary")})
     return res
 
 

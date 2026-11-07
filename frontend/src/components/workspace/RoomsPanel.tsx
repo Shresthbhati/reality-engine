@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, DoorOpen, GitCompare, Loader2, RefreshCw, X } from "lucide-react";
 import {
   acceptRevisit, changeHeadline, changeStateLabel, confidenceBand, connectRooms, getRoomChangeSet, getRoomProposals, groupChanges,
-  hasProposals, joinConfirmation, joinSentence, lostConnectionText, revisitConfirmation, revisitSentence, roomName,
+  hasProposals, joinConfirmation, joinSentence, lostConnectionText, revisitConfirmation, revisitSentence, roomName, visualEvidenceText,
   type DoorJoinProposal, type LostConnection, type RevisitProposal, type RoomChangeSet, type RoomProposals,
 } from "@/lib/api/rooms";
 
@@ -211,6 +211,8 @@ export default function RoomsPanel({ worldId, onClose, onChanged }: { worldId: s
                   <Bar label="Size" value={r.evidence.dimensions} />
                   <Bar label="Ceiling" value={r.evidence.ceiling_height} />
                   <Bar label="Openings" value={r.evidence.openings} />
+                  {r.evidence.visual != null && <Bar label="Photos" value={r.evidence.visual} />}
+                  {visualEvidenceText(r) && <p className="text-[10px] text-[var(--text-tertiary)]">{visualEvidenceText(r)}</p>}
                 </div>
                 {!rv && (
                   <div className="flex gap-2">

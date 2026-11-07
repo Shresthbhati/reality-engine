@@ -20,7 +20,7 @@ from engine.pipeline.rooms import DOOR_HEIGHT_TOL_M, DOOR_WIDTH_TOL_M, room_pref
 REVISIT_MIN_SCORE = 0.6
 OPENING_REL_TOL = 0.25   # widths within 25 % and sills within 0.25 m count as the same opening
 OPENING_SILL_TOL_M = 0.25
-WEIGHTS = {"dimensions": 0.4, "ceiling_height": 0.2, "openings": 0.4}
+WEIGHTS = {"dimensions": 0.4, "ceiling_height": 0.2, "openings": 0.4, "visual": 0.5}
 
 
 def _val(d, key):
@@ -49,9 +49,12 @@ def _rel(a: float, b: float) -> float:
     return abs(a - b) / max(a, b, 1e-9)
 
 
-def similarity(a: Dict[str, object], b: Dict[str, object]) -> Dict[str, object]:
-    """Agreement of two room signatures: components in 0..1 (None when not comparable) and their weighted ``score``."""
-    comp: Dict[str, Optional[float]] = {"dimensions": None, "ceiling_height": None, "openings": None}
+def similarity(a: Dict[str, object], b: Dict[str, object], visual: Optional[float] = None) -> Dict[str, object]:
+    """Agreement of two room signatures: components in 0..1 (None when not comparable) and their weighted ``score``.
+
+    ``visual`` (feature matches between the rooms' photos) joins as one more component when it is available.
+    """
+    comp: Dict[str, Optional[float]] = {"dimensions": None, "ceiling_height": None, "openings": None, "visual": visual}
     if None not in (a["long_m"], b["long_m"], a["short_m"], b["short_m"]):
         comp["dimensions"] = max(0.0, 1.0 - (_rel(a["long_m"], b["long_m"]) + _rel(a["short_m"], b["short_m"])) / 2.0)
     if a["height_m"] and b["height_m"]:
@@ -71,16 +74,21 @@ def similarity(a: Dict[str, object], b: Dict[str, object]) -> Dict[str, object]:
     return {"score": round(score, 3), **{k: (None if v is None else round(v, 3)) for k, v in comp.items()}}
 
 
-def propose_matches(world) -> Dict[str, List[dict]]:
-    """Ranked, read-only proposals: ``{"door_joins": [...], "revisits": [...]}`` (best first)."""
+def propose_matches(world, visual=None) -> Dict[str, List[dict]]:
+    """Ranked, read-only proposals: ``{"door_joins": [...], "revisits": [...]}`` (best first).
+
+    ``visual(room_a, room_b)`` may return ``{score, best_inliers, pairs_tested}`` (``room_visual.visual_agreement``) or None.
+    """
     prefixes = sorted({room_prefix(e.id) for e in world.entities.values() if e.type.value == "room"})
     sigs = {p: room_signature(world, p) for p in prefixes}
     revisits: List[dict] = []
     for pa, pb in combinations(prefixes, 2):
-        sim = similarity(sigs[pa], sigs[pb])
+        vis = visual(pa, pb) if visual is not None else None
+        sim = similarity(sigs[pa], sigs[pb], vis["score"] if vis else None)
         if sim["score"] >= REVISIT_MIN_SCORE:
             revisits.append({"room_a": pa, "room_b": pb, "confidence": sim["score"], "state": "proposed",
-                             "evidence": {k: sim[k] for k in ("dimensions", "ceiling_height", "openings")},
+                             "evidence": {k: sim[k] for k in ("dimensions", "ceiling_height", "openings", "visual")},
+                             **({"visual_detail": vis} if vis else {}),
                              "note": "measured size, ceiling height and openings agree; confirm only if this is the same room"})
     doors = [e for e in world.entities.values() if e.type.value == "door" and not (e.custom_properties or {}).get("connects_to")]
     joins: List[dict] = []

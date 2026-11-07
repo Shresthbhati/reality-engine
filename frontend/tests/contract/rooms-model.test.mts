@@ -66,3 +66,15 @@ test("a lost connection explains itself", () => {
   assert.match(lostConnectionText({ old_door: "boot2-opening-01", other_door: "boot1-opening-01", reason: "no door of the new room matches the old door's size" }),
     /Room 1/);
 });
+
+import { revisitSentence, visualEvidenceText } from "../../src/lib/rooms/rooms-model.ts";
+
+test("photo evidence is shown in words only when photos were compared", () => {
+  const base = { room_a: "boot1", room_b: "boot2", confidence: 0.9, state: "proposed" as const, note: "",
+    evidence: { dimensions: 1, ceiling_height: 1, openings: 1 } };
+  assert.equal(visualEvidenceText(base), null);
+  assert.doesNotMatch(revisitSentence(base), /photos/);
+  const withPhotos = { ...base, evidence: { ...base.evidence, visual: 1 }, visual_detail: { score: 1, best_inliers: 41, pairs_tested: 1 } };
+  assert.match(visualEvidenceText(withPhotos) as string, /41 verified feature matches in the best of 1 photo pair\./);
+  assert.match(revisitSentence(withPhotos), /photos share matching features/);
+});

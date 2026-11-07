@@ -21,7 +21,8 @@ export interface RevisitProposal {
   room_b: string;
   confidence: number;
   state: "proposed";
-  evidence: { dimensions: number | null; ceiling_height: number | null; openings: number | null };
+  evidence: { dimensions: number | null; ceiling_height: number | null; openings: number | null; visual?: number | null };
+  visual_detail?: { score: number; best_inliers: number; pairs_tested: number };
   note: string;
 }
 
@@ -81,7 +82,15 @@ export function joinSentence(j: DoorJoinProposal): string {
 }
 
 export function revisitSentence(r: RevisitProposal): string {
-  return `${roomName(r.room_b)} could be a second visit to ${roomName(r.room_a)}: its measured size, ceiling height and openings are similar.`;
+  const photos = r.visual_detail ? ", and their photos share matching features" : "";
+  return `${roomName(r.room_b)} could be a second visit to ${roomName(r.room_a)}: its measured size, ceiling height and openings are similar${photos}.`;
+}
+
+/** The photo-matching evidence in words, or null when no photos could be compared (never shown as a zero). */
+export function visualEvidenceText(r: RevisitProposal): string | null {
+  const d = r.visual_detail;
+  if (!d) return null;
+  return `${d.best_inliers} verified feature matches in the best of ${d.pairs_tested} photo pair${d.pairs_tested === 1 ? "" : "s"}.`;
 }
 
 export function joinConfirmation(roomA: string, roomB: string): string {

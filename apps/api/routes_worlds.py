@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import json
 import logging
 import math
@@ -1646,8 +1648,24 @@ async def api_room_proposals(world_id: str, db: AsyncSession = Depends(get_db), 
     if worldir is None:
         raise HTTPException(404, "WorldIR not available for this world's current version")
     from engine.pipeline.room_matching import propose_matches
+    from engine.pipeline.room_visual import visual_agreement
+    from engine.pipeline.rooms import room_prefix
 
-    return propose_matches(worldir)
+    # photos per room, from the evidence ids its entities were built from; the feature matching runs in a thread (it is CPU work)
+    ids_by_room: dict[str, set[str]] = {}
+    for e in worldir.entities.values():
+        eid = ((e.custom_properties or {}).get("bootstrap") or {}).get("evidence_id")
+        if eid:
+            ids_by_room.setdefault(room_prefix(e.id), set()).add(eid)
+    wanted = {i for ids in ids_by_room.values() for i in ids}
+    paths: dict[str, list] = {}
+    if wanted:
+        from apps.api.storage import resolve_artifact
+
+        rows = (await db.execute(select(Evidence).where(Evidence.id.in_(wanted)))).scalars().all()
+        by_id = {r.id: (resolve_artifact(r.artifact_uri) if r.artifact_uri else None) for r in rows}
+        paths = {room: [by_id[i] for i in sorted(ids) if by_id.get(i)] for room, ids in ids_by_room.items()}
+    return await asyncio.to_thread(propose_matches, worldir, lambda a, b: visual_agreement(paths.get(a, []), paths.get(b, [])))
 
 
 @worlds.get("/{world_id}/rooms/change-set")

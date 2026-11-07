@@ -93,3 +93,12 @@ def test_change_set_is_read_only_and_says_positions_are_not_compared(world):
     before = copy.deepcopy(world.to_dict())
     cs = change_set(world, "boot1", "boot2")
     assert world.to_dict() == before and "shared frame" in cs["note"]
+
+
+def test_visual_evidence_joins_the_confidence_and_is_shown_as_evidence(world):
+    high = propose_matches(world, visual=lambda a, b: {"score": 1.0, "best_inliers": 40, "pairs_tested": 2})["revisits"][0]
+    low = propose_matches(world, visual=lambda a, b: {"score": 0.0, "best_inliers": 2, "pairs_tested": 2})["revisits"][0]
+    none = propose_matches(world, visual=lambda a, b: None)["revisits"][0]
+    assert high["evidence"]["visual"] == 1.0 and low["evidence"]["visual"] == 0.0 and none["evidence"]["visual"] is None
+    assert high["confidence"] >= none["confidence"] > low["confidence"]
+    assert high["visual_detail"]["best_inliers"] == 40

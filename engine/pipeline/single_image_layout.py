@@ -207,8 +207,10 @@ def add_layout_fixtures(world, obs, layout: SurfaceLayout, detections, eid_of_pl
     cap = min(confidence_ceiling, OPENING_CONFIDENCE_CEILING)
     kept = []
     for fx in sorted(placed, key=lambda f: -f.score):
-        if any(k.kind == fx.kind and np.linalg.norm(np.subtract(k.position, fx.position)) < FIXTURE_DUPLICATE_M for k in kept):
-            continue  # the same fixture seen twice
+        # the same fixture seen twice, or one plate called both "socket" and "switch": the higher score keeps the spot
+        if any((k.kind == fx.kind or {k.kind, fx.kind} == {"socket", "switch"})
+               and np.linalg.norm(np.subtract(k.position, fx.position)) < FIXTURE_DUPLICATE_M for k in kept):
+            continue
         host = eid_of_plane.get(f"layout-wall-{fx.wall_index}") if fx.wall_index is not None else None
         if fx.wall_index is not None and host is None:
             refused.append({"kind": fx.kind, "reason": "its wall was not promoted"})

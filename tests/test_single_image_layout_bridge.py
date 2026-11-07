@@ -438,3 +438,12 @@ def test_fixtures_export_as_ifc_outlets_and_switching_devices(tmp_path, monkeypa
     export_world_to_ifc(res.world, out)
     m = ifcopenshell.open(str(out))
     assert len(m.by_type("IfcOutlet")) == 1 and len(m.by_type("IfcSwitchingDevice")) == 1
+
+
+def test_one_plate_called_both_socket_and_switch_is_one_fixture(tmp_path, monkeypatch):
+    from tests.layout_synth import render
+
+    ref = render(0.0, 0.0, 0.0, 0.0, hfov=80.0)
+    box = _px(ref, (0.5, 1.5 - 1.0, 3.0))
+    res, _ = _fixture_world(tmp_path, monkeypatch, lambda rgb: [("socket", 0.5, box), ("switch", 0.7, box)])
+    assert res.facts["layout"]["fixtures"]["placed"] == 1

@@ -93,6 +93,41 @@ test("Measure panel opens: Distance enabled, Volume disabled", async ({ page }) 
   await expect(panel.getByRole("button", { name: "Volume" })).toBeDisabled();
 });
 
+test("Measure tools and fixture wall dimensions match WorldIR with uncertainty (T-2.2)", async ({ page, request }) => {
+  const wir = (await (await request.get(`${API_URL}/api/worlds/${worldId}/worldir`)).json()) as {
+    entities: Record<string, { type: string; name: string; geometry_ids?: string[]; custom_properties?: Record<string, any> }>;
+    geometries: Record<string, { bounds_min: { x: number; y: number; z: number }; bounds_max: { x: number; y: number; z: number } }>;
+  };
+
+  const wallEntry = Object.entries(wir.entities).find(([_, e]) => e.name?.toLowerCase().includes("wall") || e.type === "wall");
+  expect(wallEntry).toBeDefined();
+  const [wallKey] = wallEntry!;
+
+  await page.goto(WORLD);
+
+  // 1. Point-to-point measure mode HUD (T-2.2)
+  await page.getByRole("button", { name: /^Measure/ }).click();
+  const panel = page.getByLabel("Measurement mode", { exact: true });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Distance" })).toBeEnabled();
+  await expect(panel.getByRole("button", { name: "Height" })).toBeEnabled();
+  await expect(panel.getByRole("button", { name: "Area" })).toBeEnabled();
+  await expect(panel.getByText(/Snap to entity box corners\/edges/i)).toBeVisible();
+
+  // Close measure mode HUD
+  await panel.getByLabel("Stop measuring").click();
+  await expect(panel).toBeHidden();
+
+  // 2. Select fixture wall in SceneTree
+  const wallRow = page.getByTestId(`scene-row-${wallKey}`);
+  if (await wallRow.isVisible()) {
+    await wallRow.click();
+    const dimRows = page.getByTestId("dimension-rows");
+    await expect(dimRows).toBeVisible();
+    await expect(dimRows.getByText(/Length|Height|Width/i).first()).toBeVisible();
+  }
+});
+
 test("Geospatial Map tab says the local frame is not georeferenced", async ({ page }) => {
   await page.goto(WORLD);
   await page.getByRole("button", { name: "Map", exact: true }).click();

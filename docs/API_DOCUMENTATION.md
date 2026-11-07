@@ -219,7 +219,9 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/report`**: World Report
 - **`POST /api/worlds/{world_id}/restore`**: Restore World
 - **`POST /api/worlds/{world_id}/rollback`**: Rollback World
+- **`GET /api/worlds/{world_id}/rooms/change-set`**: Api Room Change Set
 - **`POST /api/worlds/{world_id}/rooms/connect`**: Api Connect Rooms
+- **`GET /api/worlds/{world_id}/rooms/proposals`**: Api Room Proposals
 - **`POST /api/worlds/{world_id}/scale`**: Set World Scale
 - **`GET /api/worlds/{world_id}/scale/suggestion`**: Get Scale Suggestion
 - **`POST /api/worlds/{world_id}/scale/suggestion/reject`**: Reject Scale Suggestion

@@ -2299,6 +2299,106 @@
         }
       }
     },
+    "/api/worlds/{world_id}/rooms/proposals": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Api Room Proposals",
+        "description": "Read-only match proposals between this world's rooms (door joins, possible second visits), each with its evidence.\n\nNothing is applied: the user confirms a join through ``POST /rooms/connect``.",
+        "operationId": "api_room_proposals_api_worlds__world_id__rooms_proposals_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/rooms/change-set": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Api Room Change Set",
+        "description": "Read-only change set between room ``old`` and a possible second visit ``new`` (matched / updated / new / uncertain / conflicting).",
+        "operationId": "api_room_change_set_api_worlds__world_id__rooms_change_set_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "old",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Old"
+            }
+          },
+          {
+            "name": "new",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "New"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/rooms/connect": {
       "post": {
         "tags": [

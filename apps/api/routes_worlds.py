@@ -1612,6 +1612,43 @@ class SplitCorrectionIn(BaseModel):
     parent_version_id: str | None = None
 
 
+@worlds.get("/{world_id}/rooms/proposals")
+async def api_room_proposals(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
+    """Read-only match proposals between this world's rooms (door joins, possible second visits), each with its evidence.
+
+    Nothing is applied: the user confirms a join through ``POST /rooms/connect``.
+    """
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    worldir = await _load_worldir_from_store(w)
+    if worldir is None:
+        raise HTTPException(404, "WorldIR not available for this world's current version")
+    from engine.pipeline.room_matching import propose_matches
+
+    return propose_matches(worldir)
+
+
+@worlds.get("/{world_id}/rooms/change-set")
+async def api_room_change_set(world_id: str, old: str, new: str, db: AsyncSession = Depends(get_db),
+                              auth: AuthContext = Depends(get_auth_context)):
+    """Read-only change set between room ``old`` and a possible second visit ``new`` (matched / updated / new / uncertain / conflicting)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    worldir = await _load_worldir_from_store(w)
+    if worldir is None:
+        raise HTTPException(404, "WorldIR not available for this world's current version")
+    from engine.pipeline.room_matching import change_set, room_signature
+
+    for prefix in (old, new):
+        if room_signature(worldir, prefix) is None:
+            raise HTTPException(404, f"No room '{prefix}' in this world")
+    return change_set(worldir, old, new)
+
+
 class ConnectRoomsIn(BaseModel):
     door_id: str
     other_door_id: str

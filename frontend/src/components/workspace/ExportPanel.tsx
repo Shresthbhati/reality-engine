@@ -62,6 +62,7 @@ const ALL_FORMATS: FormatDefinition[] = [
   { value: "floorplan_svg", label: "SVG Plan", ext: "svg", category: "docs", description: "Scalable vector floor plan", Icon: FileText },
   { value: "floorplan_dxf", label: "DXF CAD Plan", ext: "dxf", category: "docs", description: "AutoCAD 2D drawing exchange", Icon: FileCode },
   { value: "room_report_pdf", label: "Room Report PDF", ext: "pdf", category: "docs", description: "Room dimensions & compliance", Icon: FileText },
+  { value: "room_schedule_csv", label: "Room Schedule CSV", ext: "csv", category: "docs", description: "One row per room: area, perimeter, height, openings", Icon: FileText },
   { value: "floorplan_pdf", label: "Floor Plan PDF", ext: "pdf", category: "docs", description: "Architectural 1-sheet PDF", Icon: FileText },
   { value: "multisheet_floorplan_pdf", label: "Multi-Sheet PDF", ext: "pdf", category: "docs", description: "Full multi-page drawing set", Icon: FileText },
 ];

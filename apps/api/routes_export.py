@@ -39,6 +39,7 @@ _MEDIA_TYPES = {
     "floorplan_svg": "image/svg+xml",
     "floorplan_dxf": "image/vnd.dxf",
     "room_report_pdf": "application/pdf",
+    "room_schedule_csv": "text/csv",
     "obj": "model/obj",
     "ply": "application/x-ply",
     "stl": "model/stl",

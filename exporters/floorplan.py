@@ -958,3 +958,36 @@ def export_to_multisheet_floorplan_pdf_with_report(world, artifact_store=None) -
         content_hash=content_hash(pdf),
     )
     return pdf, rep
+
+
+def export_to_room_schedule_csv_with_report(world, artifact_store=None) -> Tuple[str, ExportReport]:
+    """One CSV row per room, straight from ``build_room_report`` so the schedule and the report can never disagree."""
+    import csv
+    import io
+
+    rep = build_room_report(world)
+    buf = io.StringIO()
+    cols = ["room_id", "room", "area_m2", "perimeter_m", "ceiling_height_m", "walls", "windows", "doors", "other_openings",
+            "opening_area_m2", "wall_area_gross_m2", "wall_area_net_m2", "confidence_mean", "inferred_walls", "units",
+            "scale_state", "dimension_states"]
+    w = csv.DictWriter(buf, fieldnames=cols, lineterminator="\n")
+    w.writeheader()
+    for r in rep["rooms"]:
+        op = r["openings"]
+        w.writerow({
+            "room_id": r["id"], "room": r["name"], "area_m2": r["area_m2"], "perimeter_m": r["perimeter_m"],
+            "ceiling_height_m": "" if r["height_m"] is None else r["height_m"], "walls": r["walls"],
+            "windows": op.get("window", 0), "doors": op.get("door", 0),
+            "other_openings": sum(v for k, v in op.items() if k not in ("window", "door")),
+            "opening_area_m2": r["opening_area_m2"], "wall_area_gross_m2": r["wall_area_gross_m2"],
+            "wall_area_net_m2": r["wall_area_net_m2"], "confidence_mean": "" if r["confidence_mean"] is None else r["confidence_mean"],
+            "inferred_walls": r["inferred_walls"], "units": rep["units"], "scale_state": rep["scale_state"],
+            "dimension_states": "|".join(r["dimension_states"]),
+        })
+    text = buf.getvalue()
+    report = ExportReport(
+        format="room_schedule_csv", world_id=world.id, world_version=world.version,
+        entities_exported=tuple(r["id"] for r in rep["rooms"]), entities_skipped=(), skip_reasons=(),
+        content_hash=content_hash(text),
+    )
+    return text, report

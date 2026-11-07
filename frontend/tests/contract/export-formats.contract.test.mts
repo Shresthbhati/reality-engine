@@ -19,11 +19,12 @@ test("ExportFormat type supports all standard 3D, CAD, BIM, GIS, and Floor Plan 
     "floorplan_svg",
     "floorplan_dxf",
     "room_report_pdf",
+    "room_schedule_csv",
     "floorplan_pdf",
     "multisheet_floorplan_pdf",
   ];
 
-  assert.equal(formats.length, 17);
+  assert.equal(formats.length, 18);
   assert.ok(formats.includes("glb"));
   assert.ok(formats.includes("obj"));
   assert.ok(formats.includes("ply"));

@@ -16,6 +16,7 @@ export type ExportFormat =
   | "floorplan_svg"
   | "floorplan_dxf"
   | "room_report_pdf"
+  | "room_schedule_csv"
   | "floorplan_pdf"
   | "multisheet_floorplan_pdf";
 

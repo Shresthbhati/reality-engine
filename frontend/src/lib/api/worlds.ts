@@ -111,3 +111,33 @@ export function deleteWorld(worldId: string): Promise<void> {
 export function purgeWorld(worldId: string): Promise<void> {
   return apiDelete<void>(`/api/worlds/${encodeURIComponent(worldId)}?permanent=true`);
 }
+
+
+export interface ExtractedAssetDto {
+  id: string;
+  name: string;
+  category: string;
+  source_world_id: string;
+  source_entity_id: string;
+  dimensions: {
+    width_m: number;
+    depth_m: number;
+    height_m: number;
+    bounding_box?: { min: number[]; max: number[] };
+  };
+  provenance: Record<string, unknown>;
+  download_url: string;
+  created_at: string;
+}
+
+export function extractAsset(
+  worldId: string,
+  entityId: string,
+  name?: string,
+  category?: string,
+): Promise<ExtractedAssetDto> {
+  return apiPost<ExtractedAssetDto>(
+    `/api/worlds/${encodeURIComponent(worldId)}/extract-asset`,
+    { entity_id: entityId, name, category },
+  );
+}

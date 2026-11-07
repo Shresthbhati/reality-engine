@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { getStudioHistory } from "@/lib/viewport/history-stack";
 import { buildTransformPayload, positionOf } from "@/lib/inspector/pose";
 import { fetchEntityProvenance, type EntityProvenance } from "@/lib/api/provenance";
+import { extractAsset, type ExtractedAssetDto } from "@/lib/api/worlds";
 import {
   Armchair,
   BrickWall,
@@ -210,6 +211,30 @@ function EntityDetails({
     typeof entity.confidence === "number" && Number.isFinite(entity.confidence)
       ? entity.confidence
       : null;
+
+  const [lastEntityId, setLastEntityId] = useState(entity.id);
+  const [extracting, setExtracting] = useState(false);
+  const [extractedAsset, setExtractedAsset] = useState<ExtractedAssetDto | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
+
+  if (lastEntityId !== entity.id) {
+    setLastEntityId(entity.id);
+    setExtractedAsset(null);
+    setExtractError(null);
+  }
+
+  const handleExtractAsset = async () => {
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const res = await extractAsset(worldId, entity.id, entity.name || undefined);
+      setExtractedAsset(res);
+    } catch (err: unknown) {
+      setExtractError(err instanceof Error ? err.message : "Failed to extract asset");
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   const pos = positionOf(entity.transform);
   const [posX, setPosX] = useState(pos?.x !== undefined ? String(pos.x) : "");
@@ -1281,6 +1306,54 @@ function EntityDetails({
 
         {tab === "overview" && (
           <div className="space-y-5">
+            {/* Standalone Asset Extraction Card (T-2.6) */}
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3 space-y-2.5" data-testid="extract-asset-card">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 font-medium text-[12px] text-[var(--text-primary)]">
+                  <Box className="w-3.5 h-3.5 text-[var(--accent)]" />
+                  <span>Reusable Asset</span>
+                </span>
+                {extractedAsset ? (
+                  <span className="text-[11px] font-mono text-[var(--success)] flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Extracted
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleExtractAsset}
+                    disabled={extracting}
+                    className="px-2.5 py-1 rounded bg-[var(--accent)] text-on-accent hover:bg-[var(--accent-hover)] font-medium text-[11px] transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {extracting ? "Extracting..." : "Extract as asset"}
+                  </button>
+                )}
+              </div>
+              {extractedAsset && (
+                <div className="space-y-1.5 pt-1 border-t border-[var(--border)] text-[11px]">
+                  <div className="flex justify-between text-[var(--text-secondary)]">
+                    <span>Asset ID:</span>
+                    <span className="font-mono text-[var(--text-primary)]">{extractedAsset.id}</span>
+                  </div>
+                  <div className="flex justify-between text-[var(--text-secondary)]">
+                    <span>Dimensions:</span>
+                    <span className="font-mono text-[var(--text-primary)]">
+                      {extractedAsset.dimensions.width_m}m × {extractedAsset.dimensions.depth_m}m × {extractedAsset.dimensions.height_m}m
+                    </span>
+                  </div>
+                  <a
+                    href={extractedAsset.download_url}
+                    download
+                    className="mt-2 w-full py-1.5 rounded font-medium text-[11px] bg-[var(--bg-surface)] hover:bg-[var(--bg-hover)] border border-[var(--border)] text-[var(--accent)] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Download GLB (.glb)</span>
+                  </a>
+                </div>
+              )}
+              {extractError && (
+                <p className="text-[11px] text-[var(--error)] font-mono">{extractError}</p>
+              )}
+            </div>
             <div className="flex items-start gap-3">
               {photos[0] && <PhotoThumb worldId={worldId} evidenceId={photos[0].evidence_id} name={photos[0].evidence_name} className="h-24 w-24 shrink-0" />}
               <div className="min-w-0 flex-1">

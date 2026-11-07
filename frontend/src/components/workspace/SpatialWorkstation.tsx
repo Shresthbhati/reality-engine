@@ -46,6 +46,8 @@ import { buildSceneTree, toggleHidden } from "@/lib/workspace/scene-tree-model";
 import { buildInsights, withKnownPhotos } from "@/lib/workspace/insights-model";
 import { Loader2, Box, Map as MapIcon, ImagePlus, X, PanelLeft, PanelRight, Undo2, Redo2 } from "lucide-react";
 import { getStudioHistory } from "@/lib/viewport/history-stack";
+import { getWorldHistory, redoWorld, undoWorld } from "@/lib/api/history";
+import { currentVersionOf, pickRedoSource, pickUndoSource, redoTitle, undoTitle, type WorldHistory } from "@/lib/history/history-model";
 import { cn } from "@/lib/utils";
 
 /**
@@ -202,7 +204,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     [worlds, worldId]
   );
 
-  const currentVersionId = versions[0]?.id ?? null;
+  const currentVersionId = currentVersionOf(versions);
 
   const selectedEntity = useMemo(() => {
     if (!worldIR || !selectedEntityId) return null;
@@ -368,19 +370,49 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
     return history.subscribe(update);
   }, []);
 
+  // Saved-edit history lives on the server (one version per committed edit), so it survives a reload.
+  const [serverHistory, setServerHistory] = useState<WorldHistory | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyTick, setHistoryTick] = useState(0);
+  const refreshHistory = useCallback(() => setHistoryTick((t) => t + 1), []);
+
+  const runServerHistory = useCallback(async (action: "undo" | "redo") => {
+    setHistoryError(null);
+    try {
+      setServerHistory(await (action === "undo" ? undoWorld(worldId) : redoWorld(worldId)));
+      getStudioHistory().clear(); // local entries described the world before this step; they no longer apply
+      await Promise.all([refetchIr(), refetchVersions()]);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : `Could not ${action}`);
+      refreshHistory();
+    }
+  }, [worldId, refetchIr, refetchVersions, refreshHistory]);
+
+  // Re-read what can be undone whenever the world, or the version it is on, changes (a commit, an undo, a reconstruction).
+  useEffect(() => {
+    if (!worldId) return;
+    let live = true;
+    getWorldHistory(worldId).then((h) => { if (live) setServerHistory(h); }).catch(() => { if (live) setServerHistory(null); });
+    return () => { live = false; };
+  }, [worldId, currentVersionId, historyTick]);
+
   const handleUndo = useCallback(() => {
-    const item = getStudioHistory().undo();
+    const source = pickUndoSource(serverHistory, getStudioHistory().getUndoCount());
+    if (source === "server") { void runServerHistory("undo"); return; }
+    const item = source === "local" ? getStudioHistory().undo() : null;
     if (item) {
       window.dispatchEvent(new CustomEvent("history-state-changed", { detail: { action: "undo", item } }));
     }
-  }, []);
+  }, [serverHistory, runServerHistory]);
 
   const handleRedo = useCallback(() => {
-    const item = getStudioHistory().redo();
+    const source = pickRedoSource(serverHistory, getStudioHistory().getRedoCount());
+    if (source === "server") { void runServerHistory("redo"); return; }
+    const item = source === "local" ? getStudioHistory().redo() : null;
     if (item) {
       window.dispatchEvent(new CustomEvent("history-state-changed", { detail: { action: "redo", item } }));
     }
-  }, []);
+  }, [serverHistory, runServerHistory]);
 
   // Global Keyboard Shortcuts and Custom Event Listeners
   useEffect(() => {
@@ -476,7 +508,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       window.removeEventListener("open-rooms-panel", handleOpenRoomsPanelEvent as EventListener);
       window.removeEventListener("trigger-export", handleTriggerExportEvent as EventListener);
     };
-  }, [selectedEntityId, layout, insightsModel.hasInsights, handleClearSelection, handleFrameEntity, handleExport]);
+  }, [selectedEntityId, layout, insightsModel.hasInsights, handleClearSelection, handleFrameEntity, handleExport, handleUndo, handleRedo]);
 
   // First-ever world: the only thing to do is to drop photos.
   if (!propWorldId && !worldsLoading && worlds.length === 0) {
@@ -647,8 +679,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <button
               type="button"
               onClick={handleUndo}
-              disabled={!canUndo}
-              title={canUndo && undoDesc ? `Undo: ${undoDesc} (Ctrl+Z)` : "Undo (Ctrl+Z)"}
+              disabled={!canUndo && !serverHistory?.can_undo}
+              title={undoTitle(serverHistory, canUndo ? undoDesc : null)}
               aria-label="Undo"
               className="flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
             >
@@ -657,8 +689,8 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             <button
               type="button"
               onClick={handleRedo}
-              disabled={!canRedo}
-              title={canRedo && redoDesc ? `Redo: ${redoDesc} (Ctrl+Y)` : "Redo (Ctrl+Y)"}
+              disabled={!canRedo && !serverHistory?.can_redo}
+              title={redoTitle(serverHistory, canRedo ? redoDesc : null)}
               aria-label="Redo"
               className="flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
             >
@@ -754,6 +786,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
               onClose={() => setRoomsPanelOpen(false)}
               onChanged={() => { Promise.all([refetchIr(), refetchVersions()]); }}
             />
+          )}
+
+          {historyError && (
+            <div role="alert" className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-md px-3 py-2 text-xs shadow-xl bg-[var(--surface)] border border-[var(--border)] text-fg">
+              <span>{historyError}</span>
+              <button type="button" onClick={() => setHistoryError(null)} aria-label="Dismiss" className="cursor-pointer">×</button>
+            </div>
           )}
 
           {exportError && (

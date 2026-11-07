@@ -17,6 +17,17 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 
 ## Route Catalog
 
+### accounts
+
+- **`POST /api/accounts/invites`**: Create Invite
+- **`POST /api/accounts/invites/accept`**: Accept Invite
+- **`POST /api/accounts/login`**: Login
+- **`DELETE /api/accounts/me`**: Delete My Data
+- **`GET /api/accounts/me`**: Me
+- **`GET /api/accounts/members`**: Members
+- **`DELETE /api/accounts/members/{account_id}`**: Remove Member
+- **`POST /api/accounts/signup`**: Signup
+
 ### activity
 
 - **`GET /api/activity`**: List Activity
@@ -67,6 +78,12 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/status`**: Status
 - **`GET /health`**: Healthz Check
 - **`GET /healthz`**: Healthz Check
+
+### history
+
+- **`GET /api/worlds/{world_id}/history`**: Get History
+- **`POST /api/worlds/{world_id}/redo`**: Post Redo
+- **`POST /api/worlds/{world_id}/undo`**: Post Undo
 
 ### intent
 
@@ -189,6 +206,10 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/uploads/resumable/chunk`**: Resumable Chunk
 - **`POST /api/uploads/resumable/start`**: Resumable Start
 - **`POST /api/uploads/resumable/{upload_id}/finalize`**: Resumable Finalize
+
+### usage
+
+- **`GET /api/usage`**: Get Usage
 
 ### worlds
 

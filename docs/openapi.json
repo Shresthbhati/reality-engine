@@ -2399,6 +2399,57 @@
         }
       }
     },
+    "/api/worlds/{world_id}/rooms/accept-revisit": {
+      "post": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Api Accept Revisit",
+        "description": "The user confirms that room ``new_room`` is a second visit to ``old_room``: the new capture replaces it, door joins are re-made.",
+        "operationId": "api_accept_revisit_api_worlds__world_id__rooms_accept_revisit_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptRevisitIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/rooms/connect": {
       "post": {
         "tags": [
@@ -7408,6 +7459,35 @@
         },
         "type": "object",
         "title": "AcceptIn"
+      },
+      "AcceptRevisitIn": {
+        "properties": {
+          "old_room": {
+            "type": "string",
+            "title": "Old Room"
+          },
+          "new_room": {
+            "type": "string",
+            "title": "New Room"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "old_room",
+          "new_room"
+        ],
+        "title": "AcceptRevisitIn"
       },
       "AlignmentIn": {
         "properties": {

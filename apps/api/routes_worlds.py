@@ -1077,6 +1077,7 @@ _COMMIT_MUTABLE_FIELDS = (
     "split",
     "merge",
     "connect_room",
+    "accept_revisit",
     # F6: a typed real dimension. Applied to the world (entity + replayable registry + VERIFIED state), never to an
     # arbitrary entity attribute -- handled explicitly below, not by setattr.
     "user_correction",
@@ -1203,6 +1204,10 @@ def _validate_commit_changes(changes: dict) -> dict:
             if not isinstance(value, dict) or not isinstance(value.get("other_door_id"), str) or not value["other_door_id"]:
                 raise HTTPException(422, "field 'connect_room' must be an object with 'other_door_id'")
             validated[key] = value
+        elif key == "accept_revisit":
+            if not isinstance(value, dict) or not all(isinstance(value.get(k), str) and value[k] for k in ("old_room", "new_room")):
+                raise HTTPException(422, "field 'accept_revisit' must be an object with 'old_room' and 'new_room'")
+            validated[key] = value
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):
                 raise HTTPException(422, f"field '{key}' must be an object")
@@ -1311,6 +1316,13 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
                 note = value.get("note", "") if isinstance(value, dict) else ""
                 reclassify_entity(worldir, body.entity_id, new_class, note, auth.user_id)
             except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "accept_revisit":
+            from engine.pipeline.room_revisit import RoomRevisitError, accept_revisit
+            try:
+                accept_revisit(worldir, value["old_room"], value["new_room"])
+            except RoomRevisitError as exc:
                 raise HTTPException(422, str(exc)) from exc
             continue
         elif key == "connect_room":
@@ -1647,6 +1659,43 @@ async def api_room_change_set(world_id: str, old: str, new: str, db: AsyncSessio
         if room_signature(worldir, prefix) is None:
             raise HTTPException(404, f"No room '{prefix}' in this world")
     return change_set(worldir, old, new)
+
+
+class AcceptRevisitIn(BaseModel):
+    old_room: str
+    new_room: str
+    parent_version_id: str | None = None
+
+
+@worlds.post("/{world_id}/rooms/accept-revisit")
+async def api_accept_revisit(
+    world_id: str,
+    body: AcceptRevisitIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """The user confirms that room ``new_room`` is a second visit to ``old_room``: the new capture replaces it, door joins are re-made."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    worldir = await _load_worldir_from_store(w)
+    if worldir is None:
+        raise HTTPException(404, "WorldIR not available for this world's current version")
+    from engine.pipeline.rooms import room_prefix
+
+    anchor = next((e.id for e in worldir.entities.values() if e.type.value == "room" and room_prefix(e.id) == body.new_room), None)
+    if anchor is None:
+        raise HTTPException(422, f"no room {body.new_room!r} in this world")
+    commit_req = CommitRequest(
+        entity_id=anchor,
+        changes={"accept_revisit": {"old_room": body.old_room, "new_room": body.new_room}},
+        parent_version_id=body.parent_version_id,
+        commit_message=f"Accept {body.new_room} as a second visit to {body.old_room}",
+    )
+    res = await commit_world_correction(world_id, commit_req, db, auth)
+    res["operation"] = "accept_revisit"
+    return res
 
 
 class ConnectRoomsIn(BaseModel):

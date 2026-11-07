@@ -57,3 +57,28 @@ def test_proposals_and_change_set_are_read_only_routes(world, tmp_path, monkeypa
     assert cs.status_code == 200 and set(cs.json()["summary"]) == {"matched"}
     assert c.get(f"/api/worlds/{wid}/rooms/change-set", params={"old": "boot1", "new": "boot9"}).status_code == 404
     assert _head(c, wid) == before                       # reading proposals never mints a version
+
+
+def test_accepting_a_revisit_through_the_api_swaps_the_room_and_a_refusal_changes_nothing(world, tmp_path, monkeypatch):
+    import copy
+
+    from engine.pipeline.rooms import connect_rooms
+    from engine.pipeline.single_image import fuse_single_views
+    import apps.api.routes_worlds as rw
+
+    c, wid, _ = world
+    three = fuse_single_views([_room(tmp_path, monkeypatch, t) for t in "123"]).world
+    connect_rooms(three, _door(three, "boot1").id, _door(three, "boot2").id)
+
+    async def load(w, version_id=None):
+        return copy.deepcopy(three)
+
+    monkeypatch.setattr(rw, "_load_worldir_from_store", load)
+    before = _head(c, wid)
+    bad = c.post(f"/api/worlds/{wid}/rooms/accept-revisit", json={"old_room": "boot9", "new_room": "boot3"})
+    assert bad.status_code == 422 and _head(c, wid) == before
+    ok = c.post(f"/api/worlds/{wid}/rooms/accept-revisit", json={"old_room": "boot2", "new_room": "boot3"})
+    assert ok.status_code == 200, ok.text
+    stored = c.get(f"/api/worlds/{wid}/worldir").json()
+    assert not any(k.startswith("boot2-") for k in stored["entities"]) and any(k.startswith("boot3-") for k in stored["entities"])
+    assert stored["metadata"]["room_revisits"][0]["state"] == "accepted"

@@ -207,3 +207,8 @@ def test_elements_carry_dimensions_with_state_basis_and_uncertainty(bootstrap):
 
     dxf, _ = export_to_floorplan_dxf_with_report(bootstrap.world)
     assert "ESTIMATED" in dxf and "not measured" not in dxf  # the plan prints each dimension WITH its state
+
+
+def test_room_exposes_the_ceiling_height_keys_the_summary_card_reads(bootstrap):
+    cp = _of(bootstrap, "room")[0].custom_properties
+    assert cp["ceiling_height_min_m"] == pytest.approx(2.6, abs=0.1) and cp["ceiling_height_max_m"] == cp["ceiling_height_min_m"]

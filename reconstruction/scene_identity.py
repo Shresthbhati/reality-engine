@@ -398,7 +398,7 @@ def _workspace_path_failure(attempts: Optional[Sequence[dict]]) -> Optional[Tupl
 
 def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, *,
                     n_duplicates_dropped: int = 0, structure: Optional[Dict[str, int]] = None,
-                    attempts: Optional[Sequence[dict]] = None) -> dict:
+                    attempts: Optional[Sequence[dict]] = None, layout_shell: Optional[dict] = None) -> dict:
     """Plain-language verdict on whether the photos could be placed in one shared 3D space.
 
     Pairwise 2D matching cannot tell a consistent set from an inconsistent one (measured: an inconsistent set
@@ -409,6 +409,22 @@ def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, 
     state = {ReconOutcome.SUCCESS: "sufficient", ReconOutcome.PARTIAL: "partial"}.get(d.outcome, "insufficient")
     out = {"state": state, "n_input": n_input, "registered": d.registered_images, "points": n_points,
            "duplicates_dropped": n_duplicates_dropped, "reasons": list(d.reasons), "advice": []}
+    if layout_shell and state != "sufficient":
+        # multi-view could not carry the room, but one photograph's learned layout did: that is a partial model built from
+        # ONE photo (the others are not fused into it yet), not "the photos could not be placed in 3D"
+        out["state"] = "partial"
+        out["source"] = "single_photo_layout"
+        out["registered"] = 1
+        out["reasons"].append("multi-view reconstruction could not place the photos together")
+        out["message"] = (f"The room was built from the best single photo ({layout_shell.get('chosen')}) of {n_input}. "
+                          f"The other {max(0, n_input - 1)} could not be placed together in one 3D space, so they are not "
+                          "part of this model yet.")
+        out["advice"] = [
+            "For a model built from all photos, take them from different positions in the same room with roughly 60-80% "
+            "overlap between neighbouring views, without changing the scene between shots.",
+            "Real photographs of the real room usually register far better than generated images.",
+        ]
+        return out
     path_failure = _workspace_path_failure(attempts)
     if path_failure and state == "insufficient":
         chars, limit = path_failure

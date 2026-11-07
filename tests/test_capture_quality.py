@@ -163,3 +163,20 @@ def test_wall_coverage_other_walls_block_the_view():
 def test_wall_coverage_reports_unavailable_without_footprint():
     assert cq.wall_coverage([], [])["available"] is False
     assert cq.wall_coverage([[0, 0, 0], [1, 0, 0]], [])["reason"]
+
+
+def test_a_room_built_from_the_best_single_photo_is_partial_not_unplaced():
+    """Real world: 10 photos, 1 used for the learned layout. The 3D view must show that room, not a 'not placed' wall."""
+    from reconstruction.scene_identity import capture_quality
+
+    q = capture_quality(10, ["ev1"], 4374, structure={"room": 1, "floor": 1, "wall": 4},
+                        layout_shell={"chosen": "ev1.jpg"})
+    assert q["state"] == "partial" and q["source"] == "single_photo_layout"
+    assert "best single photo" in q["message"] and "ev1.jpg" in q["message"]
+    assert any("overlap" in a.lower() for a in q["advice"])
+
+
+def test_without_a_layout_shell_the_verdict_is_unchanged():
+    from reconstruction.scene_identity import capture_quality
+
+    assert capture_quality(10, ["ev1"], 4374)["state"] == "insufficient"

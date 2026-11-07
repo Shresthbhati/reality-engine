@@ -247,6 +247,8 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
             "footprint_basis": {"e1": [float(c) for c in e1], "e2": [float(c) for c in e2]},
             "footprint_closure": "inferred: convex hull of the observed wall segments and the camera position",
             "floor_area_m2": round(area, 3), "height_m": round(height, 3) if height else None,
+            # one photo sees one ceiling plane: min == max (the summary card and snapping read these keys)
+            **({"ceiling_height_min_m": round(height, 3), "ceiling_height_max_m": round(height, 3)} if height else {}),
             "dimensions": {
                 "floor_area_m2": _dim(world, area, kind="area", basis=DIM_BASIS + "; visible part only (lower bound)"),
                 **({"height_m": _dim(world, height)} if height else {}),

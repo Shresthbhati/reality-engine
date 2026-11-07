@@ -422,6 +422,20 @@ def enqueue_job(
 from reconstruction.scene_identity import capture_quality  # noqa: E402
 
 
+def _layout_shell(prog) -> dict | None:
+    """{"chosen": photo name} when the room shell came from one photograph's learned layout (see progressive.py)."""
+    boot = (prog.stage_facts or {}).get("bootstrap") or {}
+    if not (boot.get("layout") or {}).get("used"):
+        return None
+    for a in prog.attempts:
+        if a.get("level") == 0 and a.get("outcome") == "succeeded" and "best-supported" in str(a.get("detail")):
+            import re
+
+            m = re.search(r"\(([^)]+)\)", a["detail"])
+            return {"chosen": m.group(1) if m else "one photo"}
+    return {"chosen": "one photo"}
+
+
 def _structure_points(world_ir) -> list:
     """The room-defining corners for the viewer; a failure here must never fail the job."""
     try:
@@ -992,7 +1006,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         "capture_quality": capture_quality(
             len(items), prog.registered_ids, len(prog.points),
             n_duplicates_dropped=sum(1 for s in skipped_evidence if "duplicate" in s.get("reason", "")),
-            structure=cand_snap["entity_types"], attempts=prog.attempts),
+            structure=cand_snap["entity_types"], attempts=prog.attempts,
+            layout_shell=_layout_shell(prog)),
         "structure_points": _structure_points(world_ir),
         "level": prog.level,
         "level_name": prog.level_name,

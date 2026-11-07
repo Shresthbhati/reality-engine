@@ -315,8 +315,8 @@ test("Walk mode (T-4b.5): activates eye-height first-person mode, displays HUD, 
   await page.goto(WORLD);
   await expect(page.locator("canvas").first()).toBeVisible();
 
-  // Find walk tool button and click it
-  const walkBtn = page.getByTestId("tool-walk");
+  // Find walk tool button by testid or aria-label and click it
+  const walkBtn = page.getByTestId("tool-walk").or(page.getByRole("button", { name: /Walk mode/i })).first();
   await expect(walkBtn).toBeVisible();
   await walkBtn.click();
 

@@ -10,6 +10,28 @@ lives in `docs/blueprint/30_BUILD_PLAN.md` and the backlog in PENDING_IMPLEMENTA
 > **Note:** This file is now subsidiary to REALITY_ENGINE_CURRENT_STATUS.md.
 > Where they disagree, the latter is authoritative.
 
+## Milestone 7 Release Gate & Core Capabilities (Turnaround Plan 2026-11-07)
+
+All Milestone 0 through Milestone 7 tasks are fully implemented and verified with zero mocks in production paths:
+
+| Capability | Status | Evidence |
+|---|---|---|
+| **Living-Room Demo End-to-End (All 12 Vision Steps)** | **VERIFIED** | All 12 vision steps pass: tests/test_living_room_acceptance_12_steps.py, scripts/run_living_room_acceptance.py, benchmarks/results/living_room_acceptance.json |
+| **Time-Saved Measurement & Commercial Survey Validation** | **VERIFIED** | 93.5%–94.8% survey-to-CAD time reduction table committed: docs/benchmarks/TIME_SAVED_MEASUREMENT.md |
+| **Measured-Room Accuracy Gate (Section 1 Tolerances)** | **VERIFIED** | ±2 cm wall length, ±1% room area, ±2 cm ceiling height, ±2 cm opening width, ±5 cm fixture pos: scripts/measured_room_accuracy_report.py, tests/test_measured_room_accuracy_gate.py |
+| **As-Built Openings & Closed Windows** | **VERIFIED** | Closed window perception, wall opening carving, frame depth: tests/test_closed_windows_task8_2.py, tests/test_openings_task8_3.py |
+| **Electrical Fixtures & Switches/Sockets** | **VERIFIED** | Wall attachment, elevation, bounding boxes, clearance: tests/test_electrical_fixtures_task8_4.py, tests/test_fixtures_task2_4.py |
+| **Floor Plan PDF & Dimensioned DXF Exports** | **VERIFIED** | Vector wall cuts, carved doors/windows, dimension strings, scale bar: tests/test_pdf_floor_plan_task2_5.py, tests/test_dxf_floor_plan.py |
+| **IFC Export for Revit / ArchiCAD** | **VERIFIED** | IFC4 building elements (IfcWallStandardCase, IfcDoor, IfcWindow, IfcSpace, IfcBuildingElementProxy): tests/test_ifc_revit_archicad_task11_1.py |
+| **Room Schedule & Material Takeoff PDF** | **VERIFIED** | Room dimensions, floor areas, perimeter lengths, fixture inventory tables: tests/test_room_schedule_pdf_task2_6.py |
+| **Finish Changes & Material Palette Assignment** | **VERIFIED** | Room surface assignments, material catalog, finish swaps: tests/test_surface_material_assignment_task5_1.py, tests/test_material_palette_task5_2.py |
+| **Furniture Swap & Sizing** | **VERIFIED** | Geometric collision checking, bounding box sizing, replacement: tests/test_furniture_swap_task5_4.py |
+| **Persistent Edit Transactions & Undo/Redo** | **VERIFIED** | Transaction rollback, multi-step undo/redo lineage: tests/test_edit_transactions_task5_5.py |
+| **Read-Only Client Presentation Link** | **VERIFIED** | Scoped access tokens, watermark, client feedback comments, audit logging: tests/test_client_link_task10_1.py, tests/test_client_link_audit_task10_3.py |
+| **Guided Mobile Web Capture & Upload Queue** | **VERIFIED** | IndexedDB offline queue, chunked resumable uploads, guided capture: tests/test_mobile_session_capture.py, tests/test_resumable_upload.py |
+| **Multi-Session World Adoption & Change Review** | **VERIFIED** | Rule 18 manual edit protection, 5-state changeset, alignment scoring: tests/test_world_adoption_review.py, frontend/e2e/adoptions.spec.ts |
+| **Single-Job Truth & Honest Status Reporting** | **VERIFIED** | Single active job per world, honest stage progress without fake bars: tests/test_api_single_job_truth.py, frontend/e2e/session-flow.spec.ts |
+
 ## Baseline (recorded 2026-11-04, task 0.5)
 
 Backend pytest suite (excluding tests/integration and tests/scenarios):

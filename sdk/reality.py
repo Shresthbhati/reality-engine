@@ -59,7 +59,7 @@ from exporters.floorplan import (
     export_to_room_schedule_csv_with_report,
 )
 from exporters.gis.exporter import export_to_geojson_with_report
-from exporters.mesh import export_to_obj_with_report, export_to_ply_with_report, export_to_stl_with_report
+from exporters.mesh import export_to_dae_with_report, export_to_obj_with_report, export_to_ply_with_report, export_to_stl_with_report
 from exporters.gltf.exporter import export_to_gltf_with_report
 from exporters.godot.exporter import export_to_tscn_with_report
 from exporters.habitat.exporter import export_to_habitat_with_report
@@ -172,7 +172,8 @@ _EXPORTERS = {
     "room_schedule_csv": export_to_room_schedule_csv_with_report,  # T-2.3: one row per room, numbers equal the report
     "multisheet_floorplan_pdf": export_to_multisheet_floorplan_pdf_with_report,
     "floorplan_pdf": export_to_multisheet_floorplan_pdf_with_report,
-    # Standard 3D mesh formats (Task 9.3)
+    # Standard 3D mesh formats (Task 9.3 & T-2.4)
+    "dae": export_to_dae_with_report,
     "obj": export_to_obj_with_report,
     "ply": export_to_ply_with_report,
     "stl": export_to_stl_with_report,

@@ -10,13 +10,15 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.db import get_db, get_sessionmaker
 from apps.api.auth import AuthContext, get_auth_context
+from apps.api.db import get_db, get_sessionmaker
+from apps.api.models import ActivityEvent, Evidence, Job, Notification, utcnow
+from apps.api.observability_service import (
+    get_job_diagnostics,
+    get_job_logs,
+    get_job_stage_timings,
+)
 from apps.api.tenancy import entity_clause, job_scope
-from apps.api.models import ActivityEvent, Evidence, Job, Notification
-from apps.api.models import utcnow
-
-
 
 jobs = APIRouter(prefix="/api/jobs", tags=["jobs"], dependencies=[Depends(job_scope)])
 
@@ -181,6 +183,48 @@ async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
             status_code=202,
         )
     raise HTTPException(409, f"Job already {j.status}; only queued/running jobs can be cancelled")
+
+
+@jobs.get("/{job_id}/logs")
+async def get_job_log_history(
+    job_id: str,
+    level: str | None = None,
+    limit: int = 200,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Retrieve structured logs for a job (T-6.6 observability)."""
+    j = await db.get(Job, job_id)
+    if j is None:
+        raise HTTPException(404, "Job not found")
+    logs = await get_job_logs(db, job_id, level=level, limit=limit)
+    return {"job_id": job_id, "total": len(logs), "logs": logs}
+
+
+@jobs.get("/{job_id}/diagnostics")
+async def get_job_diagnostic_report(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Error tracking and diagnosis endpoint (T-6.6 observability).
+
+    A failed job is diagnosable from logs and structured diagnostics alone.
+    """
+    j = await db.get(Job, job_id)
+    if j is None:
+        raise HTTPException(404, "Job not found")
+    return await get_job_diagnostics(db, j)
+
+
+@jobs.get("/{job_id}/timings")
+async def get_job_timing_dashboard(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Per-stage timing dashboard for a job (T-6.6 observability)."""
+    j = await db.get(Job, job_id)
+    if j is None:
+        raise HTTPException(404, "Job not found")
+    return await get_job_stage_timings(j)
 
 
 notifications = APIRouter(prefix="/api/notifications", tags=["notifications"])

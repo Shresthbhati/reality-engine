@@ -463,3 +463,24 @@ class ExportRecord(Base):
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class JobLog(Base):
+    """Structured log record for a background job (T-6.6 observability).
+
+    Enables deep post-mortem analysis and operational debugging of failed
+    and running jobs without exposing host server tracebacks or SSH access.
+    """
+
+    __tablename__ = "job_logs"
+    __table_args__ = (
+        Index("ix_job_logs_job_timestamp", "job_id", "timestamp"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    level: Mapped[str] = mapped_column(String(16), default="INFO")
+    message: Mapped[str] = mapped_column(Text)
+    context_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

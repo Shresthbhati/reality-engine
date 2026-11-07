@@ -26,6 +26,7 @@ from apps.api.models import (
     Evidence,
     EvidenceDecision,
     Job,
+    JobLog,
     Session,
     World,
     WorldVersion,
@@ -418,6 +419,16 @@ def enqueue_job(
         priority=priority,
     )
     db.add(job)
+    db.add(
+        JobLog(
+            id=new_id("log"),
+            job_id=job.id,
+            stage="queued",
+            level="INFO",
+            message=f"Job {job.id} queued ({job_type} on {entity_type}:{entity_id})",
+            context_json={"priority": priority, "team_id": team_id},
+        )
+    )
     return job
 
 
@@ -1370,6 +1381,16 @@ async def process_next_job(db: AsyncSession) -> Job | None:
     job.progress = 0.0  # a retry starts over; progress is monotonic within one attempt
     job.started_at = utcnow()
     job.heartbeat_at = utcnow()
+    db.add(
+        JobLog(
+            id=new_id("log"),
+            job_id=job.id,
+            stage="started",
+            level="INFO",
+            message=f"Job started on worker {WORKER_ID}",
+            context_json={"worker_id": WORKER_ID, "attempts": job.attempts},
+        )
+    )
     await db.commit()
 
     from reconstruction.proc import (
@@ -1424,6 +1445,16 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         else:
             job.status = JOB_SUCCEEDED
         job.completed_at = utcnow()
+        db.add(
+            JobLog(
+                id=new_id("log"),
+                job_id=job.id,
+                stage=job.stage or "completed",
+                level="INFO",
+                message=f"Job finished with status {job.status}",
+                context_json={"progress": job.progress, "status": job.status},
+            )
+        )
         await _emit_completion(db, job)
     except _JobCancelled as exc:
         log.warning("job %s cancelled: %s", job.id, exc)
@@ -1431,6 +1462,16 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         job.status = JOB_CANCELLED
         job.error = f"cancelled by operator: {exc}"
         job.completed_at = utcnow()
+        db.add(
+            JobLog(
+                id=new_id("log"),
+                job_id=job.id,
+                stage="cancelled",
+                level="WARNING",
+                message=f"Job cancelled: {job.error}",
+                context_json={"cancel_requested": True},
+            )
+        )
     except Exception as exc:
         log.exception("job %s failed", job.id)
         import traceback
@@ -1462,9 +1503,34 @@ async def process_next_job(db: AsyncSession) -> Job | None:
             # cannot succeed on a retry: fail now, don't loop the queue
             job.status = JOB_FAILED
             job.completed_at = utcnow()
+            db.add(
+                JobLog(
+                    id=new_id("log"),
+                    job_id=job.id,
+                    stage=job.stage or "failed",
+                    level="ERROR",
+                    message=f"Job execution failed: {job.error}",
+                    context_json={
+                        "error_summary": job.error,
+                        "failure_kind": kind,
+                        "attempts": job.attempts,
+                        "retryable": False,
+                    },
+                )
+            )
         else:
             job.status = JOB_QUEUED
             job.stage = None
+            db.add(
+                JobLog(
+                    id=new_id("log"),
+                    job_id=job.id,
+                    stage="retry_queued",
+                    level="WARNING",
+                    message=f"Job attempt {job.attempts} failed (will retry): {job.error}",
+                    context_json={"error": job.error, "attempts": job.attempts, "retryable": True},
+                )
+            )
     if job.status in TERMINAL_STAGE:
         job.stage = TERMINAL_STAGE[job.status]
         if job.status in (JOB_SUCCEEDED, JOB_PARTIAL):

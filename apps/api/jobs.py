@@ -57,6 +57,7 @@ from reconstruction.proc import (
 )
 
 log = logging.getLogger("reality.api.jobs")
+from apps.api.obs import clean_error, enter_stage, job_log  # noqa: E402
 
 WORKER_ID = f"worker-{os.environ.get('REALITY_WORKER_NAME', uuid.uuid4().hex[:8])}"
 
@@ -478,7 +479,7 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
     evidence = await db.get(Evidence, job.entity_id)
     if evidence is None:
         raise RuntimeError(f"Evidence {job.entity_id} not found")
-    job.stage = "verifying_artifact"
+    enter_stage(job, "verifying_artifact")
     evidence.processing_state = "processing"
     await db.commit()
 
@@ -494,7 +495,7 @@ async def _run_process_evidence(db: AsyncSession, job: Job) -> str:
     if evidence.checksum and digest != evidence.checksum:
         raise RuntimeError("Checksum mismatch between evidence record and stored artifact")
 
-    job.stage = "registering"
+    enter_stage(job, "registering")
     metadata = dict(evidence.metadata_json or {})
     metadata["verified"] = True
     metadata["verified_at"] = datetime.now(timezone.utc).isoformat()
@@ -589,7 +590,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     if world is None:
         raise RuntimeError(f"World {session.world_id} not found")
 
-    job.stage = "checking_reconstruction_backend"
+    enter_stage(job, "checking_reconstruction_backend")
     job.heartbeat_at = utcnow()
     await db.commit()
     try:
@@ -624,7 +625,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 f"Reconstruction failed: test backend {backend_spec!r} unavailable: {exc}"
             ) from exc
 
-    job.stage = "resolving_evidence"
+    enter_stage(job, "resolving_evidence")
     job.heartbeat_at = utcnow()
     await db.commit()
     # Progressive refinement: the model is built from ALL photo evidence of
@@ -679,7 +680,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     # wedged the pipeline for >90 s), and non-photographic material is kept
     # out of observed geometry.
     await _throw_if_cancelled(db, job)
-    job.stage = "analyzing_evidence"
+    enter_stage(job, "analyzing_evidence")
     job.heartbeat_at = utcnow()
     await db.commit()
     if test_backend is not None:
@@ -726,8 +727,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
 
     await _throw_if_cancelled(db, job)
     # user-facing stage: what the engine is actually about to do
-    job.stage = ("building_rough_model" if len(items) <= 1
-                 else "refining" if prior_ids else "reconstructing")
+    enter_stage(job, "building_rough_model" if len(items) <= 1
+                else "refining" if prior_ids else "reconstructing")
     job.heartbeat_at = utcnow()
     await db.commit()
     artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
@@ -1012,7 +1013,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         await db.commit()
         return "partial"
 
-    job.stage = "committing_version"
+    enter_stage(job, "committing_version")
     job.heartbeat_at = utcnow()
     await db.commit()
     report = {
@@ -1344,7 +1345,7 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     reaped = 0
     for job in result.scalars().all():
         job.status = JOB_QUEUED
-        job.stage = None
+        enter_stage(job, None)
         job.worker_id = None
         reaped += 1
     if reaped:
@@ -1440,10 +1441,10 @@ async def process_next_job(db: AsyncSession) -> Job | None:
         job.error = f"cancelled by operator: {exc}"
         job.completed_at = utcnow()
     except Exception as exc:
+        # the traceback goes to the structured log under the job id; the API gets a one-line message with no server paths
         log.exception("job %s failed", job.id)
-        import traceback
-
-        job.error = traceback.format_exc()[-2000:]
+        job_log(log, "job.failed", job_id=job.id, stage=job.stage, error_class=type(exc).__name__, exc_info=True)
+        job.error = clean_error(exc)
         # Failure classification for the user-facing state (NEEDS MORE
         # EVIDENCE vs FAILED): carried on the payload, never inferred from text.
         kind = getattr(exc, "failure_kind", None)
@@ -1470,9 +1471,9 @@ async def process_next_job(db: AsyncSession) -> Job | None:
             job.completed_at = utcnow()
         else:
             job.status = JOB_QUEUED
-            job.stage = None
+            enter_stage(job, None)
     if job.status in TERMINAL_STAGE:
-        job.stage = TERMINAL_STAGE[job.status]
+        enter_stage(job, TERMINAL_STAGE[job.status])
         if job.status in (JOB_SUCCEEDED, JOB_PARTIAL):
             job.progress = 100.0
     try:

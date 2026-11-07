@@ -39,6 +39,10 @@ from apps.api.routes_worlds import worlds
 from apps.api.routes_technologies import technologies_router
 from reconstruction.proc import recover_orphaned_jobs
 
+from apps.api.obs import configure_logging  # noqa: E402
+
+configure_logging()  # JSON log lines when REALITY_LOG_JSON=1 (hosted)
+
 app = FastAPI(title="Reality Engine API", version="0.1.0")
 
 

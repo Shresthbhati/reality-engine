@@ -1076,6 +1076,7 @@ _COMMIT_MUTABLE_FIELDS = (
     "reclassify",
     "split",
     "merge",
+    "connect_room",
     # F6: a typed real dimension. Applied to the world (entity + replayable registry + VERIFIED state), never to an
     # arbitrary entity attribute -- handled explicitly below, not by setattr.
     "user_correction",
@@ -1198,6 +1199,10 @@ def _validate_commit_changes(changes: dict) -> dict:
             if not isinstance(value, (dict, list)):
                 raise HTTPException(422, "field 'merge' must be a list or object")
             validated[key] = value
+        elif key == "connect_room":
+            if not isinstance(value, dict) or not isinstance(value.get("other_door_id"), str) or not value["other_door_id"]:
+                raise HTTPException(422, "field 'connect_room' must be an object with 'other_door_id'")
+            validated[key] = value
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):
                 raise HTTPException(422, f"field '{key}' must be an object")
@@ -1306,6 +1311,13 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
                 note = value.get("note", "") if isinstance(value, dict) else ""
                 reclassify_entity(worldir, body.entity_id, new_class, note, auth.user_id)
             except CorrectionError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key == "connect_room":
+            from engine.pipeline.rooms import RoomConnectionError, connect_rooms
+            try:
+                connect_rooms(worldir, body.entity_id, value["other_door_id"])
+            except RoomConnectionError as exc:
                 raise HTTPException(422, str(exc)) from exc
             continue
         elif key == "split":
@@ -1598,6 +1610,31 @@ class SplitCorrectionIn(BaseModel):
     split_ratio: float = 0.5
     note: str | None = None
     parent_version_id: str | None = None
+
+
+class ConnectRoomsIn(BaseModel):
+    door_id: str
+    other_door_id: str
+    parent_version_id: str | None = None
+
+
+@worlds.post("/{world_id}/rooms/connect")
+async def api_connect_rooms(
+    world_id: str,
+    body: ConnectRoomsIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """Join two rooms captured in separate sessions: the second room's door is placed on the first room's door (a rigid move)."""
+    commit_req = CommitRequest(
+        entity_id=body.door_id,
+        changes={"connect_room": {"other_door_id": body.other_door_id}},
+        parent_version_id=body.parent_version_id,
+        commit_message=f"Connect door {body.door_id} to {body.other_door_id}",
+    )
+    res = await commit_world_correction(world_id, commit_req, db, auth)
+    res["operation"] = "connect_rooms"
+    return res
 
 
 class MergeCorrectionIn(BaseModel):

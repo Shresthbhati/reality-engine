@@ -227,6 +227,60 @@
         }
       }
     },
+    "/api/sessions/{session_id}/locations": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Add Session Locations",
+        "operationId": "add_session_locations_api_sessions__session_id__locations_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationBatchIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Add Session Locations Api Sessions  Session Id  Locations Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/trajectory": {
       "get": {
         "tags": [
@@ -2219,6 +2273,57 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/rooms/connect": {
+      "post": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Api Connect Rooms",
+        "description": "Join two rooms captured in separate sessions: the second room's door is placed on the first room's door (a rigid move).",
+        "operationId": "api_connect_rooms_api_worlds__world_id__rooms_connect_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectRoomsIn"
               }
             }
           }
@@ -7761,7 +7866,7 @@
           "files": {
             "items": {
               "type": "string",
-              "contentMediaType": "application/octet-stream"
+              "format": "binary"
             },
             "type": "array",
             "title": "Files"
@@ -7778,7 +7883,7 @@
           "files": {
             "items": {
               "type": "string",
-              "contentMediaType": "application/octet-stream"
+              "format": "binary"
             },
             "type": "array",
             "title": "Files"
@@ -7893,7 +7998,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -7907,7 +8012,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -7933,7 +8038,7 @@
           },
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -8600,6 +8705,35 @@
           "plan_id"
         ],
         "title": "ConfirmIn"
+      },
+      "ConnectRoomsIn": {
+        "properties": {
+          "door_id": {
+            "type": "string",
+            "title": "Door Id"
+          },
+          "other_door_id": {
+            "type": "string",
+            "title": "Other Door Id"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "door_id",
+          "other_door_id"
+        ],
+        "title": "ConnectRoomsIn"
       },
       "ConnectorIn": {
         "properties": {
@@ -9516,6 +9650,22 @@
         ],
         "title": "IntentIn"
       },
+      "LocationBatchIn": {
+        "properties": {
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/LocationIn"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "title": "LocationBatchIn"
+      },
       "LocationIn": {
         "properties": {
           "latitude": {
@@ -9574,6 +9724,11 @@
             "type": "string",
             "title": "Source",
             "default": "gnss"
+          },
+          "coordinate_reference_system": {
+            "type": "string",
+            "title": "Coordinate Reference System",
+            "default": "WGS84"
           },
           "captured_at": {
             "anyOf": [
@@ -10644,13 +10799,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

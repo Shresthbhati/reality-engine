@@ -155,6 +155,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/sessions`**: Create Session
 - **`GET /api/sessions/{session_id}`**: Get Session
 - **`GET /api/sessions/{session_id}/location`**: Session Location
+- **`POST /api/sessions/{session_id}/locations`**: Add Session Locations
 - **`POST /api/sessions/{session_id}/reconstruct`**: Reconstruct Session
 - **`GET /api/sessions/{session_id}/trajectory`**: Session Trajectory
 
@@ -218,6 +219,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/report`**: World Report
 - **`POST /api/worlds/{world_id}/restore`**: Restore World
 - **`POST /api/worlds/{world_id}/rollback`**: Rollback World
+- **`POST /api/worlds/{world_id}/rooms/connect`**: Api Connect Rooms
 - **`POST /api/worlds/{world_id}/scale`**: Set World Scale
 - **`GET /api/worlds/{world_id}/scale/suggestion`**: Get Scale Suggestion
 - **`POST /api/worlds/{world_id}/scale/suggestion/reject`**: Reject Scale Suggestion
@@ -248,7 +250,7 @@ Content-Type: image/jpeg
 - `POST /api/worlds/{id}/commit`: Commit human corrections or automated reconciliations.
 
 ### 3. Multi-Format 3D & BIM Export
-- `POST /api/worlds/{id}/export`: Export current world to `gltf`, `glb`, `usda`, `obj`, `ply`, `stl`, `ifc`, `blender`, `cityjson`, `floorplan_svg`, `floorplan_dxf`, or `room_report_pdf`.
+- `POST /api/worlds/{id}/export`: Export current world to `gltf`, `glb`, `usda`, `obj`, `ply`, `stl`, `ifc`, `blender`, `cityjson`, `floorplan_svg`, `floorplan_dxf`, `room_report_pdf`, or `room_schedule_csv`.
 
 ## Error Semantics
 | Status Code | Description | Meaning |

@@ -353,3 +353,163 @@ We adopt a decoupled cloud-native topology:
 1. **Local Developer Experience Preserved**: The default local runtime continues to use local filesystem storage (`STORAGE_ROOT`) and in-process background worker execution without requiring cloud credentials.
 2. **Adapter Contract (T-6.3)**: `ArtifactStore` interface isolates filesystem vs S3 implementations (`S3ArtifactStore`), validated against MinIO in CI.
 3. **Durable Job Queue (T-6.2)**: API box publishes job payloads to queue; GPU worker polls or receives webhook triggers and posts results back directly to object store.
+
+---
+
+## Decision 027 — Multi-Session World Adoption Contract & Progressive Project Evolution
+
+**Status: ACCEPTED (T-4.1, Constitution §3)**
+
+### 1. Context & Motivation
+Small-to-mid architectural and interior design firms capture spaces incrementally—often room by room across separate sessions—and frequently perform follow-up site visits to survey additional areas or document structural changes.
+
+In a production SaaS environment:
+- Treating every capture session as an isolated, standalone world fragments projects into disconnected files.
+- Silently clobbering an existing world model risks obliterating manual user design work, violating **Product Constitution Rule 18** (manual user edits are strictly protected against late reconstruction overwrites).
+- A second or subsequent site visit must seamlessly propose an **Adoption**: registering the new session into the existing World coordinate frame, deriving an explicit, categorized change set, and allowing the professional user to review, arbitrate, and approve the evolution of the model.
+
+This ADR establishes the formal adoption contract, data schema, confidence scoring, and state machine governing session-to-world adoption across the reality engine.
+
+---
+
+### 2. Core Entities & Identity Hierarchy
+
+```
++-------------------------------------------------------------+
+|                          Project                            |
+|  (Tenant-scoped container for an architectural site/client) |
++-------------------------------------------------------------+
+                              | 1
+                              |
+                              * n
++-------------------------------------------------------------+
+|                          WorldID                            |
+|       (Durable Digital Twin with linear version history)     |
+|       v0  -->  v1  -->  v2 (HEAD)                           |
++-------------------------------------------------------------+
+      ^                                      ^
+      | adopts                               | adopts
++---------------+                      +---------------+
+|   Session A   |                      |   Session B   |
+| (Site Visit 1)|                      | (Site Visit 2)|
++---------------+                      +---------------+
+```
+
+1. **`WorldID`**:
+   - The authoritative, long-lived identifier for the digital twin of a building or apartment.
+   - Owns a strictly linear, immutable version history (`v0, v1, v2, ...`) managed in `WorldStore`.
+   - Contains the canonical semantic `WorldIR` graph (walls, slabs, openings, fixtures, furniture, finishes).
+
+2. **`SessionID`**:
+   - An immutable evidence bundle from a single capture event (photos, camera intrinsics/extrinsics, GPS/IMU trajectories, and dense point evidence).
+   - Does not have mutable state. Once uploaded and reconstructed into candidate geometry, it can be proposed for adoption into one or more target worlds.
+
+---
+
+### 3. Candidate Matching & Relative Alignment (`CandidateMatch`)
+
+When an incoming session `S` is evaluated against an existing target world `W_HEAD`:
+
+1. **Multi-Cue Registration Ladder**:
+   - **Level 1 (Direct Visual Loop Closure)**: 2D feature matching between session photos and world keyframes with RANSAC PnP / Sim(3) Kabsch alignment.
+   - **Level 2 (Portal & Opening Matching)**: Shared architectural opening geometry (doorways, pass-throughs) matched across room boundaries within metric tolerances.
+   - **Level 3 (Planar Alignment)**: RANSAC alignment of major structural planes (gravity vector / vertical up-axis, coplanar floor slabs, bounding wall segments).
+
+2. **Transform Contract**:
+   The registration yields a 7-DOF similarity transformation `T_{S -> W} in Sim(3)`:
+   `x_W = s * R * x_S + t`
+   where `R in SO(3)`, `t in R^3`, and scale `s > 0`. If scale is already metric from calibrated sensors or known references, `s == 1.0`.
+
+---
+
+### 4. Alignment Confidence Scoring (`alignment_confidence`)
+
+Every candidate match computes a normalized scalar confidence `C_align in [0.0, 1.0]`:
+`C_align = 0.45 * w_overlap + 0.35 * w_feature + 0.20 * w_scale`
+
+Where:
+- `w_overlap`: Fractional bounding-volume and structural plane inlier overlap.
+- `w_feature`: Visual feature inlier ratio and mutual nearest-neighbor correspondence quality.
+- `w_scale`: Metric consistency ratio (`|1.0 - s| <= 0.02`).
+
+#### Operational Confidence Tiers:
+| Confidence Tier | Score Range | Engine Behavior & UX Policy |
+| :--- | :--- | :--- |
+| **`HIGH`** | `C_align >= 0.85` | Automatic alignment verified (RMSE <= 0.03 m). Proposed changes presented for one-click adoption approval. |
+| **`MODERATE`** | `0.60 <= C_align < 0.85` | Spatial overlap confirmed but partial (e.g. single connecting doorway). UI displays side-by-side 3D overlap preview with registration highlights. |
+| **`LOW`** | `C_align < 0.60` | Automatic alignment refused. System offers manual 3-point correspondence alignment or creation of a separate room cluster. |
+
+---
+
+### 5. Change Set Schema (`ChangeSet`)
+
+Comparing the aligned session candidate against `W_HEAD` generates an explicit semantic change set. Every entity in the candidate is deterministically classified into exactly one of five categories:
+
+```json
+{
+  "adoption_id": "adp_9a7bc412",
+  "world_id": "wld_841c36c1",
+  "session_id": "ses_e01f29da",
+  "alignment_confidence": 0.92,
+  "change_set": {
+    "matched": ["ent_wall_north_01", "ent_floor_01"],
+    "new": ["ent_room_kitchen", "ent_wall_k01", "ent_window_k01"],
+    "updated": ["ent_wall_east_01"],
+    "uncertain": ["ent_chair_unknown_02"],
+    "conflicting": []
+  }
+}
+```
+
+1. **`MATCHED`**:
+   - The session observation confirms an existing entity within tolerance (spatial deviation <= 2 cm, surface normal deviation <= 5 degrees).
+   - Action: Entity ID is preserved; observation count increments; evidence linkages added; geometric confidence bounds tightened.
+
+2. **`NEW`**:
+   - Geometry detected in the session that corresponds to no existing entity in `W_HEAD` (e.g., an adjacent newly surveyed room or newly placed piece of furniture).
+   - Action: Entity assigned a stable UUID with `SessionProvenance`, linked into the parent room graph, and added to the world model upon adoption.
+
+3. **`UPDATED`**:
+   - Existing unlocked entity whose geometry or boundary is refined by denser observations (e.g. higher-density wall points revealing an exact opening boundary).
+   - Action: Entity geometry and bounding metrics updated; previous geometry preserved in version history.
+
+4. **`UNCERTAIN`**:
+   - Low-observation count, occluded, or boundary-ambiguous entity (e.g. `coverage_state == "PARTIALLY_OBSERVED"`).
+   - Action: Flagged in UI for explicit user toggle (Accept / Drop) before committing.
+
+5. **`CONFLICTING`**:
+   - Geometric clash (e.g. wall shifted > 5 cm compared to prior survey).
+   - Clashes with an entity carrying `is_manual_edit=True` or `provenance="USER_EDIT"`.
+   - Action: **Rule 18 Protection**: Manual edits are never overwritten. The user edit is retained by default; the user is presented an explicit side-by-side resolution choice.
+
+---
+
+### 6. Adoption State Machine & Safety Protocol
+
+```mermaid
+stateDiagram-v2
+    [*] --> PROPOSED: Alignment & ChangeSet fit
+    PROPOSED --> REJECTED: User rejects or cancels
+    PROPOSED --> ACCEPTED: User accepts change set
+    ACCEPTED --> ADOPTING: begin_adoption() (Intent written)
+    ADOPTING --> COMMITTED: WorldStore.save_version() + verify
+    COMMITTED --> ADOPTED: DB HEAD pointer moved + intent cleared
+    ADOPTING --> QUARANTINED: In-process crash / fault (abandon_adoption)
+    QUARANTINED --> [*]
+    REJECTED --> [*]
+    ADOPTED --> [*]
+```
+
+1. **`PROPOSED`**: Candidate aligned and `ChangeSet` generated. Read-only review state in UI.
+2. **`ACCEPTED`**: User confirms adoption (all non-conflicting + resolved items).
+3. **Atomic Transaction Execution**:
+   - Calls `worldstore_service.begin_adoption(world_id, parent_version)`.
+   - Saves new version `v_{N+1}` to storage root.
+   - Reads back and verifies structural integrity of the synthesized `WorldIR`.
+   - In a single DB transaction, updates world `head_version_id` and records the mirror version row.
+   - Clears adoption intent via `worldstore_service.finish_adoption()`.
+4. **Crash Invariance**:
+   - If an unhandled failure occurs before HEAD moves, `abandon_adoption()` quarantines the staged directory (`quarantine/`).
+   - Startup reconciliation (`reconcile_adoptions`) cleans orphaned intents before workers process incoming tasks.
+   - The world model is never left in a corrupted or ambiguous state.
+

@@ -188,7 +188,7 @@ new / updated / matched / uncertain / conflicting, user accepts, world version i
 
 | ID | Task | Tier | Effort | Done when |
 |----|------|------|--------|-----------|
-| T-4.1 | Adoption contract ADR: WorldID/SessionID, candidate match, alignment confidence, change set, approval states (Constitution §3) | **T6** (Opus + user) | — | ADR in `docs/engineering/DESIGN_DECISIONS.md` |
+| T-4.1 | DONE | Multi-session world adoption contract ADR (Decision 027 in `docs/engineering/DESIGN_DECISIONS.md`): WorldID vs SessionID, candidate match Sim(3), alignment confidence scoring, 5-state ChangeSet schema, and atomic approval state machine | T6 | medium | ADR committed and accepted |
 | 3.6 | DONE | Identity scenarios A1–A5 all passing (single entity for same door/window across multiple views, PARTIALLY_OBSERVED coverage state, unobserved wall exclusion; `tests/scenarios/test_scenarios.py` passed) | T2 | high | adversarial identity tests pass |
 | 6.2 / 6.3 | Incremental registration + update path wired to API | T3 sliced | high | e2e from gate passes |
 | U.7 | Adoption review UI | T5 | high | e2e: second session matches, not duplicates |

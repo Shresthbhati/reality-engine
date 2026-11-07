@@ -85,7 +85,7 @@ export default function ActionsMenu(h: ActionsMenuHandlers) {
       title: "Explore",
       items: [
         { id: "query", label: "Spatial query", icon: Search, run: h.onQuery },
-        { id: "export", label: "Export", icon: Download, run: h.onExport },
+        { id: "export", label: "Export", icon: Download, run: h.onExport, testId: "open-export" },
         { id: "browse", label: "Worlds, sessions, evidence", icon: FolderOpen, run: h.onBrowse },
         { id: "commands", label: "Command palette", hint: "Ctrl K", icon: Command, run: h.onCommands },
       ],

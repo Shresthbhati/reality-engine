@@ -275,3 +275,38 @@ test("District tab: a server 422 is shown verbatim, never as an empty state", as
   await expect(dialog.getByRole("alert")).toContainText("footprint sides must be greater than 4 m");
   await expect(dialog).toBeVisible();
 });
+
+
+test("Export report in UI: what was measured vs inferred, per element, with confidence (T-2.7)", async ({ page }) => {
+  await page.goto(WORLD);
+  await page.getByTestId("open-actions").click();
+  await page.getByTestId("open-export").click();
+  const dialog = page.getByRole("dialog", { name: "Universal Exporter" });
+  await expect(dialog).toBeVisible();
+
+  // Export as SVG Plan or Room Schedule CSV or GLB
+  const exportBtn = dialog.getByRole("button", { name: /Export SVG Plan|Export GLB Binary|Export glTF 2.0/i }).first();
+  await expect(exportBtn).toBeEnabled({ timeout: 15000 });
+  await exportBtn.click();
+
+  // Verify export success with evidence headline
+  const headline = dialog.getByTestId("export-evidence-headline");
+  await expect(headline).toBeVisible({ timeout: 20000 });
+  await expect(headline).toContainText(/elements?:.*(measured|inferred|estimated)/i);
+
+  // Toggle per-element evidence table
+  const viewToggle = dialog.getByRole("button", { name: "View evidence per element" });
+  await expect(viewToggle).toBeVisible();
+  await viewToggle.click();
+
+  // Verify per-element table with element headers and rows
+  const table = dialog.getByTestId("export-evidence-table");
+  await expect(table).toBeVisible();
+  await expect(table.locator("th").nth(0)).toHaveText("Element");
+  await expect(table.locator("th").nth(1)).toHaveText("State");
+  await expect(table.locator("th").nth(2)).toHaveText("Confidence");
+
+  const rows = table.locator("tbody tr");
+  await expect(rows.first()).toBeVisible();
+  await expect(rows.first().locator("td").nth(1)).toHaveText(/Measured|Inferred|Estimated|Unknown/);
+});

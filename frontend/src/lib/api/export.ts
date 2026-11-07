@@ -7,6 +7,7 @@ export type ExportFormat =
   | "obj"
   | "ply"
   | "stl"
+  | "dae"
   | "ifc"
   | "blender"
   | "cityjson"

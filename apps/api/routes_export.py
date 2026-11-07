@@ -40,6 +40,7 @@ _MEDIA_TYPES = {
     "floorplan_dxf": "image/vnd.dxf",
     "room_report_pdf": "application/pdf",
     "room_schedule_csv": "text/csv",
+    "dae": "model/vnd.collada+xml",
     "obj": "model/obj",
     "ply": "application/x-ply",
     "stl": "model/stl",

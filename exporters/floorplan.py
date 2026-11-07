@@ -428,8 +428,20 @@ def export_to_floorplan_dxf_with_report(world, artifact_store=None) -> Tuple[str
 
 # --------------------------------------------------------------------------------------------------- room report
 
+def _point_in_poly(x: float, y: float, poly: Sequence[Sequence[float]]) -> bool:
+    """Ray casting point-in-polygon test."""
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        x1, y1 = float(poly[i][0]), float(poly[i][1])
+        x2, y2 = float(poly[(i + 1) % n][0]), float(poly[(i + 1) % n][1])
+        if ((y1 > y) != (y2 > y)) and (x < (x2 - x1) * (y - y1) / (y2 - y1 + 1e-12) + x1):
+            inside = not inside
+    return inside
+
+
 def build_room_report(world) -> dict:
-    """Machine-readable room report: per room area, height, gross/net wall area, openings, colours and confidence."""
+    """Machine-readable room report: per room area, height, gross/net wall area, openings, fixtures, finishes, colours and confidence."""
     unit, _ = _scale_units(world)
     rooms = _rooms(world)
     if not rooms:
@@ -451,6 +463,31 @@ def build_room_report(world) -> dict:
         dims = cp.get("dimensions") or {}
         states = sorted({d.get("state") for d in dims.values() if isinstance(d, dict) and d.get("state")})
         confs = [float(w["confidence"]) for w in walls if w.get("confidence") is not None]
+
+        # Fixtures in this room (T-2.3)
+        fixtures_in_room = []
+        for ent in world.entities.values():
+            if _classify_floorplan_element(ent) == "FIXTURES":
+                ent_cp = ent.custom_properties or {}
+                if ent_cp.get("room_id") == room.id:
+                    fixtures_in_room.append(ent)
+                elif not ent_cp.get("room_id"):
+                    pos = (ent.transform or {}).get("position") if isinstance(ent.transform, dict) else None
+                    if pos and "x" in pos and "y" in pos:
+                        poly = cp.get("footprint_polygon_m", [])
+                        if len(poly) >= 3 and _point_in_poly(float(pos["x"]), float(pos["y"]), poly):
+                            fixtures_in_room.append(ent)
+
+        fixture_counts: Dict[str, int] = {}
+        for f in fixtures_in_room:
+            f_cp = f.custom_properties or {}
+            f_kind = str(f_cp.get("entity_class") or f_cp.get("class_name") or f_cp.get("category") or (f.type.value if hasattr(f.type, "value") else str(f.type))).lower()
+            fixture_counts[f_kind] = fixture_counts.get(f_kind, 0) + 1
+
+        floor_finish = cp.get("floor_finish") or cp.get("floor_material") or cp.get("finish_floor") or "unspecified"
+        wall_finish = cp.get("wall_finish") or cp.get("wall_material") or cp.get("finish_wall") or "unspecified"
+        ceiling_finish = cp.get("ceiling_finish") or cp.get("ceiling_material") or cp.get("finish_ceiling") or "unspecified"
+
         out["rooms"].append({
             "id": room.id, "name": room.name,
             "area_m2": round(float(cp.get("floor_area_m2") or _poly_area(cp["footprint_polygon_m"])), 3),
@@ -461,6 +498,11 @@ def build_room_report(world) -> dict:
             "opening_area_m2": round(opening_area, 3),
             "wall_area_net_m2": round(max(0.0, gross - opening_area), 3),
             "walls": len(walls), "openings": counts,
+            "fixtures": len(fixtures_in_room),
+            "fixture_counts": fixture_counts,
+            "floor_finish": str(floor_finish),
+            "wall_finish": str(wall_finish),
+            "ceiling_finish": str(ceiling_finish),
             "floor_color_rgb": cp.get("floor_color_rgb"), "wall_color_rgb": cp.get("wall_color_rgb"),
             "color_basis": cp.get("color_source") or cp.get("color_state") or "measured from points" if (
                 cp.get("mean_color_rgb") or cp.get("wall_color_rgb")) else "not measured",
@@ -492,6 +534,8 @@ def report_to_pdf(report: dict) -> bytes:
                       f"{r['opening_area_m2']:.2f} {unit}²  = net {r['wall_area_net_m2']:.2f} {unit}²", 10, False))
         lines.append((f"Walls {r['walls']} ({r['inferred_walls']} inferred) · openings "
                       f"{r['openings'] or 'none'}", 10, False))
+        lines.append((f"Fixtures: {r.get('fixtures', 0)} ({', '.join(f'{k}: {v}' for k, v in (r.get('fixture_counts') or {}).items()) or 'none recorded'})", 10, False))
+        lines.append((f"Finishes — floor: {r.get('floor_finish', 'unspecified')} · wall: {r.get('wall_finish', 'unspecified')} · ceiling: {r.get('ceiling_finish', 'unspecified')}", 9, False))
         lines.append((f"Dimension states: {', '.join(r.get('dimension_states') or []) or 'none recorded'}", 10, False))
         lines.append((f"Colour: {r.get('color_basis')} · wall {r.get('wall_color_rgb')} · floor "
                       f"{r.get('floor_color_rgb')}", 9, False))
@@ -1066,6 +1110,7 @@ def export_to_room_schedule_csv_with_report(world, artifact_store=None) -> Tuple
     rep = build_room_report(world)
     buf = io.StringIO()
     cols = ["room_id", "room", "area_m2", "perimeter_m", "ceiling_height_m", "walls", "windows", "doors", "other_openings",
+            "fixtures", "floor_finish", "wall_finish", "ceiling_finish",
             "opening_area_m2", "wall_area_gross_m2", "wall_area_net_m2", "confidence_mean", "inferred_walls", "units",
             "scale_state", "dimension_states"]
     w = csv.DictWriter(buf, fieldnames=cols, lineterminator="\n")
@@ -1077,6 +1122,10 @@ def export_to_room_schedule_csv_with_report(world, artifact_store=None) -> Tuple
             "ceiling_height_m": "" if r["height_m"] is None else r["height_m"], "walls": r["walls"],
             "windows": op.get("window", 0), "doors": op.get("door", 0),
             "other_openings": sum(v for k, v in op.items() if k not in ("window", "door")),
+            "fixtures": r.get("fixtures", 0),
+            "floor_finish": r.get("floor_finish", "unspecified"),
+            "wall_finish": r.get("wall_finish", "unspecified"),
+            "ceiling_finish": r.get("ceiling_finish", "unspecified"),
             "opening_area_m2": r["opening_area_m2"], "wall_area_gross_m2": r["wall_area_gross_m2"],
             "wall_area_net_m2": r["wall_area_net_m2"], "confidence_mean": "" if r["confidence_mean"] is None else r["confidence_mean"],
             "inferred_walls": r["inferred_walls"], "units": rep["units"], "scale_state": rep["scale_state"],

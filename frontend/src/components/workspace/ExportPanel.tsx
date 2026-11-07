@@ -50,6 +50,7 @@ const ALL_FORMATS: FormatDefinition[] = [
   { value: "obj", label: "Wavefront OBJ", ext: "obj", category: "3d", description: "Polygon geometry format", Icon: FileCode },
   { value: "ply", label: "Stanford PLY", ext: "ply", category: "3d", description: "Dense point cloud / mesh", Icon: Layers },
   { value: "stl", label: "StereoLithography", ext: "stl", category: "3d", description: "3D printing mesh", Icon: Grid },
+  { value: "dae", label: "COLLADA DAE", ext: "dae", category: "3d", description: "Digital Asset Exchange (SketchUp, 3ds Max)", Icon: Package },
 
   // BIM, Engines & GIS
   { value: "ifc", label: "IFC4 BIM", ext: "ifc", category: "bim", description: "Industry Foundation Classes", Icon: Building2 },

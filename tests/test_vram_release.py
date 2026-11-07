@@ -62,6 +62,7 @@ def test_unloading_releases_on_exception(fake_cuda):
     ("perception.depth.midAS_backend", "MiDaSDepthBackend", ("_model", "_transform")),
     ("perception.depth.depth_anything_backend", "DepthAnythingV2Backend", ("_model", "_processor")),
     ("perception.segmentation.sam_backend", "SAMSegmentationBackend", ("_model", "_mask_generator")),
+    ("perception.segmentation.sam2_backend", "SAM2SegmentationBackend", ("_model", "_mask_generator")),
 ])
 def test_real_backends_unload_their_models(fake_cuda, path, cls, attrs):
     import importlib

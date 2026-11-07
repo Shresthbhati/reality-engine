@@ -269,5 +269,41 @@ models:
     checksum: unpinned
     verify: record sha256 in model registry
 
+  - model: sam2_hiera_tiny
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 450.0
+    status: candidate
+    acquisition: github facebookresearch/sam2
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: sam2_hiera_small
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 650.0
+    status: candidate
+    acquisition: github facebookresearch/sam2
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: sam2_hiera_base_plus
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 900.0
+    status: candidate
+    acquisition: github facebookresearch/sam2
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: sam2_hiera_large
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 1750.0
+    status: candidate
+    acquisition: github facebookresearch/sam2
+    checksum: unpinned
+    verify: record sha256 in model registry
+
 # Rule: before ANY new source/model is vendored or bundled, add its row
 # here with the verified license text path. An empty row is a bug.

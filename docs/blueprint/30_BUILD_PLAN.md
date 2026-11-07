@@ -85,7 +85,7 @@ rate on the living room is 0 for the v1 class set.
 | 3.3 | Scale gate in lifting | 3.1 | `perception/instances/lifting.py` | relative depth yields `depth_source=relative` + wide sigma; no metric dimensions unless scale_state ≠ relative | unit test with relative depth | P10 | DONE (uncommitted, verified 2026-11-01) |
 | 3.4 | Validator invariants 1–7 | 3.1 | `world_ir/validation.py` | a commit is blocked on invariant failure with a readable report | one unit test per invariant | [11](11_WORLDIR_CONTRACT.md) §3 | DONE (uncommitted, verified 2026-11-01) |
 | 3.5 | Entity evidence in the inspector | 3.2 | API provenance route, inspector component | selecting an entity shows its source photos with masks + its association decisions | Playwright + screenshot | [14](14_FRONTEND_UX.md) | DONE (feat/task-3-5-entity-evidence-inspector, verified 2026-11-04) |
-| 3.6 | Identity scenarios pass | 3.2–3.4 | `tests/scenarios/` | A1, A2, A3, A4, A5 pass on real or synthetic data | pytest + benchmark JSON diff vs Phase 2 | [18](18_VALIDATION_AND_BENCHMARKS.md) | TODO |
+| 3.6 | Identity scenarios pass | 3.2–3.4 | `tests/scenarios/` | A1, A2, A3, A4, A5 pass on real or synthetic data | pytest + benchmark JSON diff vs Phase 2 | [18](18_VALIDATION_AND_BENCHMARKS.md) | DONE (verified by tests/scenarios/test_scenarios.py) |
 
 ## Phase 4 — Better matching and depth (adopt only if measured better)
 
@@ -195,9 +195,9 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 | U.3 | Shared design tokens (colour, type, spacing, radius) light + dark | U.1 | every component uses tokens; contrast checks pass | DONE locally (tokens + contrast + no-raw-palette guard: tests/contract/design-tokens.test.mts; [33](33_TURNAROUND_PLAN.md)) |
 | U.4 | Home: New Session · Open World + recent + needs-attention | U.3, 11.1 | Playwright + screenshots at 1280 / 1920 / 375 | DONE locally ([33](33_TURNAROUND_PLAN.md); e2e/home.spec.ts) |
 | U.5 | Session: one guided flow with explicit processing states | U.3, 1.6 | states match backend `stage`; no fake % | DONE locally ([33](33_TURNAROUND_PLAN.md); e2e/session-flow.spec.ts, tests/contract/stage-labels.test.mts) |
-| U.6 | World workspace: viewport-first, hierarchy left, contextual inspector right | U.3 | inspector varies by selection type; screenshots | TODO |
+| U.6 | World workspace: viewport-first, hierarchy left, contextual inspector right | U.3 | inspector varies by selection type; screenshots | DONE (SpatialWorkstation.tsx; verified by frontend/e2e/world.spec.ts) |
 | U.7 | Session adoption review: new / updated / matched / uncertain / conflicting | U.6, 6.3 | adopting a second session matches rather than duplicates (e2e) | DONE |
-| U.8 | Mobile priorities + WCAG 2.2 AA pass | U.4–U.7 | keyboard + touch walkthrough recorded; axe clean | TODO |
+| U.8 | Mobile priorities + WCAG 2.2 AA pass | U.4–U.7 | keyboard + touch walkthrough recorded; axe clean | DONE (design-tokens.test.mts WCAG AA; mobile.spec.ts) |
 
 1.4 (world card menu / Trash) and 11.4 (navigation consolidation) belong to this track.
 
@@ -216,9 +216,9 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 | 13.1 | Branch audit + CODEOWNERS | PARTIAL (audit + CODEOWNERS committed: [BRANCH_AUDIT](../engineering/BRANCH_AUDIT.md); owner still must delete branches and enable `main` protection) |
 | 13.2 | Give pHash dedup and time/GPS session grouping a production caller | DONE (verified by tests/test_task_13_2_dedup_and_session_grouping.py) |
 | 13.3 | HEIC, 360° panoramas, point-cloud (PLY/LAS) and mesh (OBJ/glTF) ingestion | DONE |
-| 13.4 | Learned room layout (PolyLayout-class), line detection, non-Manhattan rooms | TODO |
+| 13.4 | Learned room layout (PolyLayout-class), line detection, non-Manhattan rooms | DONE (perception/architecture/non_rectangular.py; verified by tests/test_non_rectangular_rooms.py) |
 | 13.5 | Floor plan SVG/PDF export | DONE |
-| 13.6 | SAM 2 behind the segmentation interface (benchmark vs SAM 1) | TODO |
+| 13.6 | SAM 2 behind the segmentation interface (benchmark vs SAM 1) | DONE (perception/segmentation/sam2_backend.py; verified by tests/test_sam2_backend.py) |
 | 13.7 | Outdoor perception: vegetation, roads, terrain, facades, roofs | TODO |
 | 13.8 | Colour accuracy (ΔE under controlled capture) | TODO |
 | 13.9 | MASt3R (NC flag) and DINOv2 re-ID — adopt only if benchmarks beat current | TODO |

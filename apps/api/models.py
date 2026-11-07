@@ -556,3 +556,20 @@ class TenantInvite(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)  # pending | accepted | revoked | expired
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class TenantSubscription(Base):
+    """Tenant subscription state and Stripe billing integration (Task T-7.2)."""
+
+    __tablename__ = "tenant_subscriptions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), unique=True, index=True)
+    tier: Mapped[str] = mapped_column(String(32), default="free")  # free | starter | pro | enterprise
+    status: Mapped[str] = mapped_column(String(32), default="active")  # active | trialing | past_due | canceled
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+

@@ -48,6 +48,7 @@ from apps.api.models import (
     SitePlacement,
     Tenant,
     TenantInvite,
+    TenantSubscription,
     Upload,
     UserAccount,
     World,
@@ -530,6 +531,7 @@ async def delete_my_data(
         await db.execute(delete(UserAccount).where(UserAccount.id.in_(user_ids)))
 
     await db.execute(delete(TenantInvite).where(TenantInvite.tenant_id == tenant_id))
+    await db.execute(delete(TenantSubscription).where(TenantSubscription.tenant_id == tenant_id))
     await db.execute(delete(Tenant).where(Tenant.id == tenant_id))
 
     # Commit DB transaction so all rows are permanently deleted

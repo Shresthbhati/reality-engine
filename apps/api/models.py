@@ -388,3 +388,37 @@ class SiteAnchor(Base):
     lon: Mapped[float] = mapped_column(Float)
     rotation_deg: Mapped[float] = mapped_column(Float, default=0.0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Account(Base):
+    """A person who signs in (hosted use). Belongs to exactly one tenant; the tenant's first account is its owner.
+
+    ``role`` is never admin: ADMIN bypasses tenant isolation (it is the operator role), so signup and invites only hand out
+    editor or viewer. Ownership is a flag here, not a role.
+    """
+
+    __tablename__ = "accounts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)   # stored lower-cased
+    password_hash: Mapped[str] = mapped_column(String(300))
+    tenant_id: Mapped[str] = mapped_column(String(32), index=True)
+    role: Mapped[str] = mapped_column(String(16), default="editor")
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Invite(Base):
+    """A single-use, expiring invitation into a tenant. Only the sha256 of the token is stored."""
+
+    __tablename__ = "invites"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(32), index=True)
+    email: Mapped[str] = mapped_column(String(254))
+    role: Mapped[str] = mapped_column(String(16), default="editor")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

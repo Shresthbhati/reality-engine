@@ -26,7 +26,8 @@ from fastapi.responses import JSONResponse
 
 log = logging.getLogger("reality.api.auth")
 
-OPEN_PATHS = frozenset({"/api/health", "/healthz"})
+#: Reachable without a token. The three account paths are how a token is obtained; they rate-limit themselves (routes_accounts).
+OPEN_PATHS = frozenset({"/api/health", "/healthz", "/api/accounts/signup", "/api/accounts/login", "/api/accounts/invites/accept"})
 # "testclient" is Starlette's TestClient peer name; it is not a routable address, so real clients can't spoof it.
 _LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 _warned = False
@@ -81,6 +82,29 @@ def _get_signing_secret() -> str:
     return os.environ.get("REALITY_SIGNING_KEY") or os.environ.get("REALITY_API_TOKEN") or "reality-default-dev-secret-key"
 
 
+def _token_ttl_seconds() -> int:
+    """How long a scoped token stays valid (REALITY_TOKEN_TTL_SECONDS, default 30 days; 0 = never expires)."""
+    try:
+        return max(0, int(os.environ.get("REALITY_TOKEN_TTL_SECONDS", "2592000")))
+    except ValueError:
+        return 2592000
+
+
+async def _account_is_active(user_id: str, tenant_id: str) -> bool:
+    """Tokens of signed-up accounts (user id ``acc_*``) die with the account: removing a member or deleting an account
+    takes effect on the next request, not when the token expires."""
+    try:
+        from apps.api.db import get_sessionmaker
+        from apps.api.models import Account
+
+        async with get_sessionmaker()() as db:
+            acc = await db.get(Account, user_id)
+            return acc is not None and acc.tenant_id == tenant_id
+    except Exception:   # noqa: BLE001 -- fail closed
+        log.exception("account lookup failed")
+        return False
+
+
 def issue_scoped_token(
     tenant_id: str,
     user_id: str,
@@ -112,6 +136,14 @@ def verify_scoped_token(token: str, secret: str | None = None) -> AuthContext | 
         role = Role(role_str)
     except ValueError:
         return None
+    ttl = _token_ttl_seconds()
+    if ttl:
+        try:
+            age = time.time() - int(ts_str)
+        except ValueError:
+            return None
+        if age > ttl or age < -300:           # expired, or minted in the future (clock-skew allowance 5 min)
+            return None
     return AuthContext(
         user_id=user_id,
         tenant_id=tenant_id,
@@ -252,6 +284,8 @@ async def auth_middleware(request: Request, call_next):
             # Check cryptographic scoped token
             scoped_ctx = verify_scoped_token(supplied)
             if scoped_ctx is not None:
+                if scoped_ctx.user_id.startswith("acc_") and not await _account_is_active(scoped_ctx.user_id, scoped_ctx.tenant_id):
+                    return _unauthorized("This account no longer exists")
                 auth_ctx = scoped_ctx
             elif global_token:
                 return _unauthorized("Missing or invalid bearer token")
@@ -279,7 +313,8 @@ async def auth_middleware(request: Request, call_next):
     # 3. RBAC Check on Mutating Operations
     # Viewer role is strictly read-only: mutating methods (POST, PUT, PATCH, DELETE) are forbidden
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-        if auth_ctx.role == Role.VIEWER:
+        own_account_delete = request.method == "DELETE" and request.url.path == "/api/accounts/me"   # everyone may delete their own account
+        if auth_ctx.role == Role.VIEWER and not own_account_delete:
             return _forbidden("Forbidden: insufficient permissions for mutating operations")
 
     request.state.auth = auth_ctx

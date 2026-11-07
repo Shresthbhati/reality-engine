@@ -64,6 +64,13 @@ export function unitText(unit: string | null): string {
 export const isUncalibratedUnit = (unit: string | null): boolean => !!unit && unit.startsWith("model_units");
 
 const fmtNum = (v: number): string => (Math.abs(v) < 0.0005 ? "0" : Number.isInteger(v) ? String(v) : v.toFixed(2));
+/** the stated +/- shown inline next to a dimension (T-2.2); empty when none was recorded, never a guessed figure */
+export const uncertaintyText = (r: { uncertaintyM: number | null; unit: string | null }): string => {
+  if (r.uncertaintyM === null || !(r.uncertaintyM > 0)) return "";
+  const u = unitText(r.unit);
+  return `±${fmtNum(r.uncertaintyM)}${u ? ` ${u}` : ""}`;
+};
+
 export const fmtValue = (v: number, unit: string | null): string => {
   const u = unitText(unit);
   return u ? `${fmtNum(v)} ${u}` : fmtNum(v);

@@ -5,7 +5,7 @@ import { useId, useState, type ReactNode } from "react";
 import { ChevronDown, Info } from "lucide-react";
 import { TONE_TOKEN, type ConfidenceFacet } from "@/lib/inspector/confidence-model";
 import {
-  dimensionTooltip, fmtValue, stateWord, type DimensionRow, type Fact, type Swatch,
+  dimensionTooltip, fmtValue, stateWord, uncertaintyText, type DimensionRow, type Fact, type Swatch,
 } from "@/lib/inspector/entity-facts";
 
 export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
@@ -131,7 +131,10 @@ export function DimensionRows({
         <li key={r.key} className="flex items-center gap-3 py-2.5 text-[12px]">
           <span className="w-28 shrink-0 text-[var(--text-secondary)]">{r.label}</span>
           <span className="min-w-0 flex-1">
-            <span className="block font-mono-num text-[var(--text-primary)]">{fmtValue(r.value, r.unit)}</span>
+            <span className="block font-mono-num text-[var(--text-primary)]">
+              {fmtValue(r.value, r.unit)}
+              {uncertaintyText(r) && <span className="ml-1.5 text-[11px] text-[var(--text-tertiary)]" data-testid="dimension-uncertainty">{uncertaintyText(r)}</span>}
+            </span>
             <span className="block text-[11px] text-[var(--text-tertiary)]">
               {r.assumedDefault ? "Assumed default, not measured" : stateWord(r.state)}
             </span>

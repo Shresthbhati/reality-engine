@@ -1417,8 +1417,10 @@ export class WorldSceneController {
       const userHidden = this.hiddenEntityIds.has(part.entityId);
       const cut = this.cutaway && !forced && !!meta && cutawayHides(part.kind, meta.center, meta.roomCenter, camPos);
       const show = !userHidden && !cut;
-      this.shellSolid[i].visible = show && this.renderMode !== "wireframe";
-      this.shellWire[i].visible = show && this.renderMode !== "solid";
+      // the mesh arrays are rebuilt with the parts; a render-mode change that lands between the two has nothing to toggle yet
+      const solid = this.shellSolid[i], wire = this.shellWire[i];
+      if (solid) solid.visible = show && this.renderMode !== "wireframe";
+      if (wire) wire.visible = show && this.renderMode !== "solid";
       total.set(part.entityId, (total.get(part.entityId) ?? 0) + 1);
       if (!show) hidden.set(part.entityId, (hidden.get(part.entityId) ?? 0) + 1);
     });

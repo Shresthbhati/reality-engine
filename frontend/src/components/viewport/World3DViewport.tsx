@@ -38,6 +38,7 @@ import {
   History,
   Globe,
   Cpu,
+  Footprints,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -858,6 +859,36 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Walk Mode First-Person HUD */}
+        {tool === "walk" && (
+          <>
+            <div
+              className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2 rounded-full text-xs font-mono shadow-lg backdrop-blur-md"
+              style={{ ...PANEL, color: "var(--text-primary)" }}
+              data-testid="walk-mode-hud"
+            >
+              <Footprints className="w-4 h-4 animate-pulse shrink-0" style={{ color: "var(--accent)" }} />
+              <span>
+                <strong className="font-semibold" style={{ color: "var(--text-primary)" }}>Walk Mode:</strong> WASD / Arrows to walk · Drag / Touch to look · Eye height 1.65m · Wall collision active
+              </span>
+              <button
+                type="button"
+                onClick={() => pickTool("select")}
+                className="ml-2 px-2 py-0.5 rounded text-xs transition-colors cursor-pointer"
+                style={{ ...PANEL, color: "var(--text-secondary)" }}
+                title="Exit walk mode"
+                data-testid="exit-walk-mode"
+              >
+                Exit
+              </button>
+            </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-16 z-10 flex justify-between px-8 text-[11px] font-mono opacity-80 md:hidden">
+              <div className="rounded-md px-2.5 py-1 backdrop-blur-xs" style={{ ...PANEL, color: "var(--text-secondary)" }}>✣ Left 50%: Move</div>
+              <div className="rounded-md px-2.5 py-1 backdrop-blur-xs" style={{ ...PANEL, color: "var(--text-secondary)" }}>◎ Right 50%: Look</div>
+            </div>
+          </>
+        )}
+
         {/* Interactive Measurement HUD Card */}
         {isMeasuring && (
           <MeasurementPanel
@@ -970,6 +1001,14 @@ export default function World3DViewport({
           </IconButton>
           <IconButton label="Orbit (drag to rotate, no selection)" active={tool === "orbit"} onClick={() => pickTool("orbit")}>
             <Orbit className="w-4 h-4" />
+          </IconButton>
+          <IconButton
+            label="Walk mode (eye-height first person, collide with walls)"
+            active={tool === "walk"}
+            onClick={() => pickTool("walk")}
+            data-testid="tool-walk"
+          >
+            <Footprints className="w-4 h-4" />
           </IconButton>
           <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
           <IconButton label="Zoom in" onClick={() => controllerRef.current?.zoomBy(0.75)}>

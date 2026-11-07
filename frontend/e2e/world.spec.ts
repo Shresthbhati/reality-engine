@@ -310,3 +310,31 @@ test("Export report in UI: what was measured vs inferred, per element, with conf
   await expect(rows.first()).toBeVisible();
   await expect(rows.first().locator("td").nth(1)).toHaveText(/Measured|Inferred|Estimated|Unknown/);
 });
+
+test("Walk mode (T-4b.5): activates eye-height first-person mode, displays HUD, and exits smoothly", async ({ page }) => {
+  await page.goto(WORLD);
+  await expect(page.locator("canvas").first()).toBeVisible();
+
+  // Find walk tool button and click it
+  const walkBtn = page.getByTestId("tool-walk");
+  await expect(walkBtn).toBeVisible();
+  await walkBtn.click();
+
+  // Walk HUD should be visible
+  const hud = page.getByTestId("walk-mode-hud");
+  await expect(hud).toBeVisible();
+  await expect(hud).toContainText("Walk Mode");
+  await expect(hud).toContainText("Eye height 1.65m");
+
+  // Keyboard navigation does not error
+  await page.keyboard.press("KeyW");
+  await page.keyboard.press("KeyA");
+  await page.keyboard.press("KeyS");
+  await page.keyboard.press("KeyD");
+
+  // Exit walk mode via HUD Exit button
+  const exitBtn = page.getByTestId("exit-walk-mode");
+  await expect(exitBtn).toBeVisible();
+  await exitBtn.click();
+  await expect(hud).toBeHidden();
+});

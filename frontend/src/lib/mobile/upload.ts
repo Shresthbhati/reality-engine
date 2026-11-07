@@ -12,8 +12,13 @@ import { ApiError, apiBaseUrl, type CreateReconstructionResult } from "@/lib/api
 
 export interface UploadOptions {
   worldId: string | null;
+  sessionId?: string | null;
   latitude?: number;
   longitude?: number;
+  altitude?: number | null;
+  accuracy?: number | null;
+  heading?: number | null;
+  speed?: number | null;
   onProgress: (loaded: number, total: number) => void;
   signal?: AbortSignal;
 }
@@ -38,10 +43,15 @@ export function uploadPhoto(file: File, opts: UploadOptions): Promise<CreateReco
     const form = new FormData();
     form.append("files", file, file.name);
     if (opts.worldId) form.append("world_id", opts.worldId);
+    if (opts.sessionId) form.append("session_id", opts.sessionId);
     if (opts.latitude !== undefined && opts.longitude !== undefined) {
       form.append("latitude", String(opts.latitude));
       form.append("longitude", String(opts.longitude));
     }
+    if (opts.altitude != null) form.append("altitude", String(opts.altitude));
+    if (opts.accuracy != null) form.append("accuracy", String(opts.accuracy));
+    if (opts.heading != null) form.append("heading", String(opts.heading));
+    if (opts.speed != null) form.append("speed", String(opts.speed));
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);

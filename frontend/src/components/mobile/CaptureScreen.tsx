@@ -4,8 +4,9 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Camera, Image as ImageIcon, Loader2, MapPin, RotateCcw, Smartphone, X } from "lucide-react";
 import { isApiError, useWorldStatus } from "@/lib/api";
+import { addSessionLocations, type LocationBatchPoint } from "@/lib/api/sessions";
 import { uploadPhoto } from "@/lib/mobile/upload";
-import { EMPTY_QUEUE, nextToUpload, outcomeFromResponse, queueReducer, summarize, type QueueItem } from "@/lib/mobile/upload-queue";
+import { EMPTY_QUEUE, nextToUpload, outcomeFromResponse, queueReducer, summarize, type QueueItem, type QueueItemLocation } from "@/lib/mobile/upload-queue";
 import { photoResult, type Tone } from "@/lib/mobile/capture-result";
 import WorldStatusCard, { TONE_COLOR } from "./WorldStatusCard";
 
@@ -22,7 +23,16 @@ import WorldStatusCard, { TONE_COLOR } from "./WorldStatusCard";
 
 type GpsState =
   | { status: "loading" }
-  | { status: "ready"; lat: number; lng: number; accuracyM: number }
+  | {
+      status: "ready";
+      lat: number;
+      lng: number;
+      accuracyM: number;
+      altitude?: number | null;
+      heading?: number | null;
+      speed?: number | null;
+      timestamp?: string;
+    }
   | { status: "unavailable"; reason: string };
 
 type CameraState = { kind: "starting" } | { kind: "live" } | { kind: "unavailable"; reason: string };
@@ -78,29 +88,91 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
   const gpsRef = useRef<GpsState>(gps);
 
   const { status, error: statusError, refresh } = useWorldStatus(worldId);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const pendingFixesRef = useRef<LocationBatchPoint[]>([]);
+  const isFlushingRef = useRef(false);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  const flushFixes = useCallback(async (targetSessionId: string) => {
+    if (isFlushingRef.current || pendingFixesRef.current.length === 0) return;
+    isFlushingRef.current = true;
+    const toSend = [...pendingFixesRef.current];
+    try {
+      await addSessionLocations(targetSessionId, toSend);
+      pendingFixesRef.current = pendingFixesRef.current.slice(toSend.length);
+    } catch {
+      // Retained in buffer to retry on subsequent fix or upload completion
+    } finally {
+      isFlushingRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     gpsRef.current = gps;
   }, [gps]);
 
-  // Real geolocation only; denied/unsupported is shown, never defaulted.
+  // Real continuous geolocation tracking (watchPosition) logged to session trajectory
   useEffect(() => {
     let live = true;
     if (!("geolocation" in navigator)) {
       void Promise.resolve().then(() => live && setGps({ status: "unavailable", reason: "Not supported" }));
-    } else {
-      navigator.geolocation.getCurrentPosition(
-        (pos) =>
-          live &&
-          setGps({ status: "ready", lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: Math.round(pos.coords.accuracy) }),
-        (err) => live && setGps({ status: "unavailable", reason: err.code === err.PERMISSION_DENIED ? "Permission denied" : "Unavailable" }),
-        { enableHighAccuracy: true, timeout: 10000 },
-      );
+      return;
     }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (!live) return;
+        const fix = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracyM: Math.round(pos.coords.accuracy),
+          altitude: pos.coords.altitude,
+          heading: pos.coords.heading,
+          speed: pos.coords.speed,
+          timestamp: new Date(pos.timestamp).toISOString(),
+        };
+        setGps({
+          status: "ready",
+          ...fix,
+        });
+
+        const point: LocationBatchPoint = {
+          latitude: fix.lat,
+          longitude: fix.lng,
+          altitude: fix.altitude,
+          accuracy: fix.accuracyM,
+          heading: fix.heading,
+          speed: fix.speed,
+          captured_at: fix.timestamp,
+        };
+
+        pendingFixesRef.current.push(point);
+        const currentSid = sessionIdRef.current;
+        if (currentSid) {
+          void flushFixes(currentSid);
+        }
+      },
+      (err) => {
+        if (!live) return;
+        setGps({
+          status: "unavailable",
+          reason: err.code === err.PERMISSION_DENIED ? "Permission denied" : "Unavailable",
+        });
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+    );
+
     return () => {
       live = false;
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
     };
-  }, []);
+  }, [flushFixes]);
 
   // Real device camera. Re-runs when the user taps "Try camera again".
   useEffect(() => {
@@ -158,10 +230,24 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
     const controller = new AbortController();
     controllersRef.current.set(next.id, controller);
     const g = gpsRef.current;
+    const fileLoc = next.location ?? (g.status === "ready" ? {
+      latitude: g.lat,
+      longitude: g.lng,
+      altitude: g.altitude,
+      accuracy: g.accuracyM,
+      heading: g.heading,
+      speed: g.speed,
+    } : undefined);
+
     uploadPhoto(file, {
       worldId,
-      latitude: g.status === "ready" ? g.lat : undefined,
-      longitude: g.status === "ready" ? g.lng : undefined,
+      sessionId: sessionIdRef.current ?? undefined,
+      latitude: fileLoc?.latitude,
+      longitude: fileLoc?.longitude,
+      altitude: fileLoc?.altitude,
+      accuracy: fileLoc?.accuracy,
+      heading: fileLoc?.heading,
+      speed: fileLoc?.speed,
       signal: controller.signal,
       onProgress: (loaded, total) => dispatch({ type: "progress", id: next.id, loaded, total }),
     })
@@ -172,6 +258,11 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
         if (res.world_id !== worldId) {
           setWorldId(res.world_id);
           window.history.replaceState(null, "", `/m/camera?world=${encodeURIComponent(res.world_id)}`);
+        }
+        if (res.session_id && res.session_id !== sessionIdRef.current) {
+          setSessionId(res.session_id);
+          sessionIdRef.current = res.session_id;
+          void flushFixes(res.session_id);
         }
         refresh();
       })
@@ -185,22 +276,36 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
         });
       })
       .finally(() => controllersRef.current.delete(next.id));
-  }, [queue, worldId, refresh]);
+  }, [queue, worldId, refresh, flushFixes]);
 
   const addFiles = useCallback((files: File[]) => {
     const images = files.filter((f) => f.type.startsWith("image/") || f.type === "");
     if (images.length < files.length) setNotice("Only photos can be added here; other files were skipped.");
     else setNotice(null);
     if (images.length === 0) return;
+    const g = gpsRef.current;
+    const currentLoc: QueueItemLocation | null =
+      g.status === "ready"
+        ? {
+            latitude: g.lat,
+            longitude: g.lng,
+            altitude: g.altitude,
+            accuracy: g.accuracyM,
+            heading: g.heading,
+            speed: g.speed,
+            timestamp: g.timestamp,
+          }
+        : null;
+
     const items = images.map((f) => {
       const id = newId();
       filesRef.current.set(id, f);
       const url = URL.createObjectURL(f);
       urlsRef.current.push(url);
-      return { id, name: f.name || "photo.jpg", size: f.size, url };
+      return { id, name: f.name || "photo.jpg", size: f.size, url, location: currentLoc };
     });
     setPreviews((p) => ({ ...p, ...Object.fromEntries(items.map((i) => [i.id, i.url])) }));
-    dispatch({ type: "add", items: items.map(({ id, name, size }) => ({ id, name, size })) });
+    dispatch({ type: "add", items: items.map(({ id, name, size, location }) => ({ id, name, size, location })) });
   }, []);
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {

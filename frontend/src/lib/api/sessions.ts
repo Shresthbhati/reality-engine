@@ -55,4 +55,25 @@ export async function jobsForSession(id: string): Promise<JobDto[]> {
 
 /** Alias used by the Sessions detail page; identical to `jobsForSession`. */
 export const getSessionJobs: typeof jobsForSession = jobsForSession;
+export interface LocationBatchPoint {
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  accuracy?: number | null;
+  heading?: number | null;
+  speed?: number | null;
+  source?: string;
+  coordinate_reference_system?: string;
+  captured_at?: string | null;
+}
+
+export function addSessionLocations(
+  sessionId: string,
+  points: LocationBatchPoint[],
+): Promise<{ added: number; location_ids: string[] }> {
+  return apiPost<{ added: number; location_ids: string[] }>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/locations`,
+    { points },
+  );
+}
 

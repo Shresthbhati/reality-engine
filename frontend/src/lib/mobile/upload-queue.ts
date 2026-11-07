@@ -12,6 +12,16 @@
 
 export type UploadStatus = "queued" | "uploading" | "accepted" | "rejected" | "failed";
 
+export interface QueueItemLocation {
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  accuracy?: number | null;
+  heading?: number | null;
+  speed?: number | null;
+  timestamp?: string | null;
+}
+
 export interface QueueItem {
   id: string;
   name: string;
@@ -25,6 +35,7 @@ export interface QueueItem {
   retryable: boolean;
   evidenceId: string | null;
   rejectedReason: string | null;
+  location?: QueueItemLocation | null;
 }
 
 export interface QueueState {
@@ -32,7 +43,7 @@ export interface QueueState {
 }
 
 export type QueueAction =
-  | { type: "add"; items: { id: string; name: string; size: number }[] }
+  | { type: "add"; items: { id: string; name: string; size: number; location?: QueueItemLocation | null }[] }
   | { type: "start"; id: string }
   | { type: "progress"; id: string; loaded: number; total: number }
   | { type: "accepted"; id: string; evidenceId: string }
@@ -68,6 +79,7 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
           retryable: true,
           evidenceId: null,
           rejectedReason: null,
+          location: i.location ?? null,
         }));
       return fresh.length ? { items: [...state.items, ...fresh] } : state;
     }

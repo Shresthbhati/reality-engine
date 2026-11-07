@@ -107,10 +107,15 @@ async def _video_frames(path, fname: str, evidence_class: str | None):
 async def create_reconstruction(
     files: list[UploadFile],
     world_id: str | None = Form(default=None),
+    session_id: str | None = Form(default=None),
     name: str | None = Form(default=None),
     evidence_class: str | None = Form(default=None),
     latitude: float | None = Form(default=None),
     longitude: float | None = Form(default=None),
+    altitude: float | None = Form(default=None),
+    accuracy: float | None = Form(default=None),
+    heading: float | None = Form(default=None),
+    speed: float | None = Form(default=None),
     dense_cpu: bool = Form(default=False),
     plane_sweep_max_views: int | None = Form(default=None, ge=2, le=8),
     plane_sweep_stride: int | None = Form(default=None, ge=1, le=8),
@@ -122,7 +127,7 @@ async def create_reconstruction(
 
     No world_id -> a new World is created. With world_id -> the photos join
     that World and its model is rebuilt from ALL of its evidence."""
-    from apps.api.validation import require_latitude, require_longitude, require_name
+    from apps.api.validation import require_finite, require_latitude, require_longitude, require_name
 
     await assert_visible(db, World, world_id, auth)  # a foreign world is a 404 before any file is read
     if not files:
@@ -209,12 +214,19 @@ async def create_reconstruction(
                              entity_id=world.id, summary=f"World '{world.name}' created from photos"))
         await db.flush()
 
-    session = Session(
-        id=new_id("ses"), name=f"Capture {now:%Y-%m-%d %H:%M:%S}", status="uploaded",
-        owner_id=auth.user_id, team_id=world.team_id or team_stamp(auth), world_id=world.id, uploaded_at=utcnow(), captured_at=now,
-    )
-    db.add(session)
-    await db.flush()
+    if session_id:
+        session = await db.get(Session, session_id)
+        if session is None:
+            raise HTTPException(404, "Session not found")
+        if session.world_id != world.id:
+            raise HTTPException(400, "Session does not belong to this world")
+    else:
+        session = Session(
+            id=new_id("ses"), name=f"Capture {now:%Y-%m-%d %H:%M:%S}", status="uploaded",
+            owner_id=auth.user_id, team_id=world.team_id or team_stamp(auth), world_id=world.id, uploaded_at=utcnow(), captured_at=now,
+        )
+        db.add(session)
+        await db.flush()
 
     gps = None
     ev_out = []
@@ -236,11 +248,29 @@ async def create_reconstruction(
                       processing_state="processed", mime_type=mime, size=len(data), checksum=digest,
                       artifact_uri=up.artifact_uri, metadata_json=meta, processed_at=utcnow())
         db.add(ev)
+        if latitude is not None and longitude is not None:
+            db.add(Location(
+                id=new_id("loc"),
+                entity_type="evidence",
+                entity_id=ev.id,
+                latitude=require_latitude(latitude),
+                longitude=require_longitude(longitude),
+                altitude=require_finite(altitude, "altitude") if altitude is not None else None,
+                accuracy=require_finite(accuracy, "accuracy") if accuracy is not None else None,
+                heading=require_finite(heading, "heading") if heading is not None else None,
+                speed=require_finite(speed, "speed") if speed is not None else None,
+                source="device",
+                captured_at=utcnow(),
+            ))
         ev_out.append({"id": ev.id, "name": fname, "type": kind, "evidence_class": facts.get("evidence_class")})
     # location: only what a device / the file itself actually reported
     if latitude is not None and longitude is not None:
         db.add(Location(id=new_id("loc"), entity_type="session", entity_id=session.id,
                         latitude=require_latitude(latitude), longitude=require_longitude(longitude),
+                        altitude=require_finite(altitude, "altitude") if altitude is not None else None,
+                        accuracy=require_finite(accuracy, "accuracy") if accuracy is not None else None,
+                        heading=require_finite(heading, "heading") if heading is not None else None,
+                        speed=require_finite(speed, "speed") if speed is not None else None,
                         source="device", captured_at=utcnow()))
     elif gps is not None:
         db.add(Location(id=new_id("loc"), entity_type="session", entity_id=session.id,
@@ -253,8 +283,7 @@ async def create_reconstruction(
     # union of evidence when it runs, so it already covers this batch.
     queued = (await db.execute(
         select(Job).where(Job.type == jobrunner.RECONSTRUCT_SESSION, Job.status == "queued",
-                          Job.entity_id.in_(select(Session.id).where(Session.world_id == world.id,
-                                                                     Session.id != session.id)))
+                          Job.entity_id.in_(select(Session.id).where(Session.world_id == world.id)))
     )).scalars().first()
     if queued is not None:
         job, coalesced = queued, True

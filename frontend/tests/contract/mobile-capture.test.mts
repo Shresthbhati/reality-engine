@@ -28,6 +28,33 @@ import {
 const run = (actions: QueueAction[], from: QueueState = EMPTY_QUEUE) => actions.reduce(queueReducer, from);
 const add = (...ids: string[]): QueueAction => ({ type: "add", items: ids.map((id) => ({ id, name: `${id}.jpg`, size: 1000 })) });
 
+test("queue: preserves per-photo timestamped GPS/accuracy snapshot", () => {
+  const loc = {
+    latitude: 37.7749,
+    longitude: -122.4194,
+    altitude: 12.5,
+    accuracy: 3.8,
+    heading: 90,
+    speed: 1.4,
+    timestamp: "2026-11-07T10:00:00.000Z",
+  };
+  const withLocAction: QueueAction = {
+    type: "add",
+    items: [{ id: "photo-gps", name: "gps.jpg", size: 2048, location: loc }],
+  };
+  let s = run([withLocAction]);
+  assert.equal(s.items[0].id, "photo-gps");
+  assert.deepEqual(s.items[0].location, loc);
+
+  // Survives upload lifecycle and retry without losing location snapshot
+  s = run([{ type: "start", id: "photo-gps" }], s);
+  assert.deepEqual(s.items[0].location, loc);
+  s = run([{ type: "failed", id: "photo-gps", error: "network error", retryable: true }], s);
+  assert.deepEqual(s.items[0].location, loc);
+  s = run([{ type: "retry", id: "photo-gps" }], s);
+  assert.deepEqual(s.items[0].location, loc);
+});
+
 test("queue: happy path queued -> uploading -> accepted, progress is monotonic", () => {
   let s = run([add("a"), { type: "start", id: "a" }]);
   assert.equal(s.items[0].status, "uploading");

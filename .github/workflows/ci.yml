@@ -81,6 +81,7 @@ jobs:
             tests/test_observability_job_logs.py \
             tests/test_furniture_commands_and_undo.py \
             tests/test_security_dast.py \
+            tests/test_account_lifecycle.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

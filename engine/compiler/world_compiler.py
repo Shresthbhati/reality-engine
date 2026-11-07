@@ -850,6 +850,16 @@ def compile_reconstruction_to_world(
             measure_world_appearance(world, list(options.appearance_views), artifact_store=options.artifact_store)
         except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
             interior_warnings.append(f"surface appearance: {type(exc).__name__}: {exc}")
+    else:
+        try:
+            from perception.materials.material_hypotheses import attach_material_hypotheses
+            from perception.materials.room_surfaces import propagate_room_finishes
+            for ent in world.entities.values():
+                if ent.type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING) and ent.custom_properties.get("mean_color_rgb"):
+                    attach_material_hypotheses(ent, allow_unprojected=True)
+            propagate_room_finishes(world)
+        except Exception as exc:  # noqa: BLE001
+            interior_warnings.append(f"surface finishes: {type(exc).__name__}: {exc}")
 
     # ---- D3: reconcile area / extent / net wall area / dimension states across each room ----
     try:

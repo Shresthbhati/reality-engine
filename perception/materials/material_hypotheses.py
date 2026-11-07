@@ -53,11 +53,13 @@ def hypothesize_materials(
     return [c.to_dict() for c in classifications]
 
 
-def attach_material_hypotheses(entity) -> Optional[List[dict]]:
-    """Store ``custom_properties['material_hypotheses']`` for an entity whose appearance was measured from photos."""
+def attach_material_hypotheses(entity, allow_unprojected: bool = False) -> Optional[List[dict]]:
+    """Store ``custom_properties['material_hypotheses']`` and finish labels for an entity."""
     cp = entity.custom_properties
     app = cp.get("appearance") or {}
-    if cp.get("color_source") != "image_projected" or not cp.get("mean_color_rgb"):
+    if not cp.get("mean_color_rgb"):
+        return None
+    if cp.get("color_source") != "image_projected" and not allow_unprojected:
         return None
     kind = entity.type.value if hasattr(entity.type, "value") else str(entity.type)
     hyps = hypothesize_materials(
@@ -70,4 +72,9 @@ def attach_material_hypotheses(entity) -> Optional[List[dict]]:
     )
     if hyps:
         cp["material_hypotheses"] = hyps
+        top_cat = hyps[0]["category"]
+        finish_label = "paint" if top_cat in ("plaster", "paint") else top_cat
+        cp["material_label"] = finish_label
+        cp["material_name"] = hyps[0].get("material_name", finish_label)
+        cp["finish"] = finish_label
     return hyps

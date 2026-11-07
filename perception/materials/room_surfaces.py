@@ -212,8 +212,61 @@ def measure_world_appearance(world, views: Sequence[SurfaceView], *, artifact_st
             summary["measured"] += 1
         if appearance.atlas_uri:
             summary["textured"] += 1
+    propagate_room_finishes(world)
     summary["available"] = True
     summary["views_used"] = len(views)
     summary["notes"] = list(report.notes)
     world.metadata["surface_appearance"] = summary
     return summary
+def propagate_room_finishes(world) -> None:
+    """Propagate per-surface material finishes to room-level schedule properties."""
+    from collections import Counter
+    from perception.materials.material_hypotheses import hypothesize_materials
+
+    rooms = [e for e in world.entities.values() if e.type == EntityType.ROOM]
+    for room in rooms:
+        cp = room.custom_properties
+        walls = [e for e in world.entities.values() if e.type == EntityType.WALL
+                 and e.custom_properties.get("room_id") == room.id]
+        floors = [e for e in world.entities.values() if e.type == EntityType.FLOOR
+                  and e.custom_properties.get("room_id") == room.id]
+        ceilings = [e for e in world.entities.values() if e.type == EntityType.CEILING
+                    and e.custom_properties.get("room_id") == room.id]
+
+        # Wall finishes
+        wall_finishes = [w.custom_properties.get("finish") for w in walls if w.custom_properties.get("finish")]
+        if wall_finishes:
+            cp["wall_finish"] = Counter(wall_finishes).most_common(1)[0][0]
+        elif cp.get("wall_color_rgb"):
+            h = hypothesize_materials(cp["wall_color_rgb"], "wall")
+            if h:
+                cat = h[0]["category"]
+                cp["wall_finish"] = "paint" if cat in ("plaster", "paint") else cat
+
+        # Floor finishes
+        floor_finish = None
+        for fl in floors:
+            if fl.custom_properties.get("finish"):
+                floor_finish = fl.custom_properties["finish"]
+                break
+        if not floor_finish and cp.get("floor_color_rgb"):
+            h = hypothesize_materials(cp["floor_color_rgb"], "floor")
+            if h:
+                floor_finish = h[0]["category"]
+        if floor_finish:
+            cp["floor_finish"] = floor_finish
+
+        # Ceiling finishes
+        ceiling_finish = None
+        for cl in ceilings:
+            if cl.custom_properties.get("finish"):
+                ceiling_finish = cl.custom_properties["finish"]
+                break
+        if not ceiling_finish and cp.get("ceiling_color_rgb"):
+            h = hypothesize_materials(cp["ceiling_color_rgb"], "ceiling")
+            if h:
+                cat = h[0]["category"]
+                ceiling_finish = "paint" if cat in ("plaster", "paint") else cat
+        if ceiling_finish:
+            cp["ceiling_finish"] = ceiling_finish
+

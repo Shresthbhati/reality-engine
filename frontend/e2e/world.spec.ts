@@ -95,11 +95,11 @@ test("Measure panel opens: Distance enabled, Volume disabled", async ({ page }) 
 
 test("Measure tools and fixture wall dimensions match WorldIR with uncertainty (T-2.2)", async ({ page, request }) => {
   const wir = (await (await request.get(`${API_URL}/api/worlds/${worldId}/worldir`)).json()) as {
-    entities: Record<string, { type: string; name: string; geometry_ids?: string[]; custom_properties?: Record<string, any> }>;
+    entities: Record<string, { type: string; name: string; geometry_ids?: string[]; custom_properties?: Record<string, unknown> }>;
     geometries: Record<string, { bounds_min: { x: number; y: number; z: number }; bounds_max: { x: number; y: number; z: number } }>;
   };
 
-  const wallEntry = Object.entries(wir.entities).find(([_, e]) => e.name?.toLowerCase().includes("wall") || e.type === "wall");
+  const wallEntry = Object.entries(wir.entities).find(([, e]) => e.name?.toLowerCase().includes("wall") || e.type === "wall");
   expect(wallEntry).toBeDefined();
   const [wallKey] = wallEntry!;
 

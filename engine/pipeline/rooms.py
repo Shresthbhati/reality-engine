@@ -104,6 +104,33 @@ def _move_room(world, prefix: str, R: np.ndarray, t: np.ndarray, theta: float) -
     return moved
 
 
+def place_side_by_side(world, gap_m: float = 1.0) -> Dict[str, float]:
+    """Put rooms that are not joined apart along X so they do not sit on one another (each room is built in its own frame).
+
+    This is a DISPLAY placement, not a claim about where the rooms are: it is recorded as ``rooms_layout.mode =
+    side_by_side_unplaced`` until the user joins them through a door (``connect_rooms``). Returns the shift applied per room.
+    """
+    from world_ir import Vector3  # noqa: F401  (geometry bounds are rewritten by _move_room)
+
+    prefixes = sorted({room_prefix(e.id) for e in world.entities.values() if e.type.value == "room"})
+    offsets: Dict[str, float] = {}
+    cursor = None
+    for pre in prefixes:
+        xs = [v for e in world.entities.values() if room_prefix(e.id) == pre for gid in e.geometry_ids
+              if (g := world.geometries.get(gid)) is not None for v in (g.bounds_min.x, g.bounds_max.x)]
+        if not xs:
+            continue
+        lo, hi = min(xs), max(xs)
+        dx = 0.0 if cursor is None else cursor - lo
+        if dx:
+            _move_room(world, pre, np.eye(3), np.array([dx, 0.0, 0.0]), 0.0)
+        offsets[pre] = round(dx, 4)
+        cursor = hi + dx + gap_m
+    world.metadata["rooms_layout"] = {"mode": "side_by_side_unplaced", "offsets_m": offsets,
+                                      "note": "rooms are shown side by side only; nothing measured how they sit relative to each other"}
+    return offsets
+
+
 def connect_rooms(world, door_a_id: str, door_b_id: str, *, width_tol_m: float = DOOR_WIDTH_TOL_M,
                   height_tol_m: float = DOOR_HEIGHT_TOL_M) -> Dict[str, object]:
     """Move room B (the door_b's room) so its door coincides with door A and the rooms lie on opposite sides of it.
@@ -138,4 +165,7 @@ def connect_rooms(world, door_a_id: str, door_b_id: str, *, width_tol_m: float =
               "translation_m": [round(float(v), 4) for v in t], "state": CONNECTION_STATE, "entities_moved": moved,
               "note": "placement assumes the two doors are the same opening; nothing else measured how the rooms sit"}
     world.metadata.setdefault("room_connections", []).append(record)
+    layout = world.metadata.get("rooms_layout")
+    if isinstance(layout, dict):                      # these rooms are now placed by a door, not just shown side by side
+        layout["joined_rooms"] = sorted(set(layout.get("joined_rooms") or ()) | {pa, pb})
     return record

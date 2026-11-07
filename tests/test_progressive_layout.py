@@ -187,3 +187,66 @@ def test_a_shell_fragmented_into_many_floors_is_not_trusted():
 
     assert _multiview_weakness(vs(1)) is None
     assert "11 floor" in _multiview_weakness(vs(11))
+
+
+# ---------------------------------------------------------------------------- M4: photos of another room (another session) become their own room
+
+
+def _two_room_analyzer(monkeypatch):
+    """ev-0..2 look at room A; ev-3..5 look at a visually different room B (re-seeded textures): they cannot register with A."""
+    import engine.pipeline.single_image as si
+    import tests.layout_synth as ls
+    import tests.test_multiview_layout as mv
+
+    monkeypatch.setattr(si, "ASSUMED_HFOV_DEG", 80.0)
+    a = mv._views()[:3]
+    saved = dict(ls._TEXTURES)
+    ls._TEXTURES.update({name: ls._texture(900 + i) for i, name in enumerate(ls.PLANES)})
+    try:
+        b = mv._views()[:3]
+    finally:
+        ls._TEXTURES.clear()
+        ls._TEXTURES.update(saved)
+    by_id = {f"ev-{k}": v for k, v in enumerate(a + b)}
+
+    def analyze(item):
+        v = by_id[item.id]
+        return SimpleNamespace(depth_m=v.depth, masks=v.masks, rgb=v.rgb)
+
+    return analyze
+
+
+def _six_inputs(tmp_path):
+    out = []
+    for k in range(6):
+        p = _noise_photo(tmp_path / f"p{k}.jpg", seed=k)
+        out.append(EvidenceInput(item=EvidenceItem(id=f"ev-{k}", kind=EvidenceKind.PHOTO, source_uri=p.as_uri()),
+                                 facts=inspect_image(p), name=p.name, path=p))
+    return out
+
+
+def _room_prefixes(world):
+    return sorted({e.id.split("-", 1)[0] for e in world.entities.values() if e.type.value == "room"})
+
+
+def test_photos_of_a_different_room_from_another_session_become_their_own_room(tmp_path, monkeypatch):
+    analyzer = _two_room_analyzer(monkeypatch)
+    res = run_progressive(_six_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=60), layout_analyzer=analyzer,
+                          prior_ids=["ev-0", "ev-1", "ev-2"])
+    assert res.level == 0 and len(_room_prefixes(res.world)) == 2
+    unplaced = " ".join(res.degraded)
+    assert "p3.jpg" not in unplaced and "p4.jpg" not in unplaced                    # the photos that formed room 2 are placed
+    assert "p5.jpg" in unplaced                                                     # one that could not solve a room is still reported
+    assert any("further room" in a["detail"] for a in res.attempts if a["level"] == 0)
+    # the rooms are not placed relative to each other yet: they sit side by side (no overlap) and say so, so the world validates
+    from world_ir.validation import validate_world_ir
+
+    errors = [i for i in validate_world_ir(res.world).issues if str(i.severity.value).lower() == "error"]
+    assert errors == [], [str(i) for i in errors][:3]
+    assert res.world.metadata["rooms_layout"]["mode"] == "side_by_side_unplaced"
+
+
+def test_the_same_failure_inside_one_session_stays_a_refused_photo_not_a_new_room(tmp_path, monkeypatch):
+    analyzer = _two_room_analyzer(monkeypatch)
+    res = run_progressive(_six_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=60), layout_analyzer=analyzer)
+    assert len(_room_prefixes(res.world)) == 1                                       # no earlier session: unchanged behaviour

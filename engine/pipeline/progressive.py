@@ -169,13 +169,16 @@ def _register_extras(ref_cand, ref_an, analyzed):
     return extras, dict(reg.refused)
 
 
+MAX_EXTRA_ROOMS = 3
+
+
 def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_model, furniture_detector, attempts,
-                           fixture_detector=None):
+                           fixture_detector=None, prior_set=None, tag: str = "", pool=None):
     """Bootstrap the room shell from the single photograph whose layout is best supported; try the next best if the solver
     refuses. Returns ``([(candidate, BootstrapResult)], facts)`` or ``([], facts)`` when no photograph yields a layout."""
     scored = []
     analyzed = []
-    for cand in ordered:
+    for cand in ([] if pool is not None else ordered):
         try:
             an = layout_analyzer(cand.item)
         except Exception as exc:  # noqa: BLE001 -- recorded; the classic path is the fallback
@@ -185,13 +188,18 @@ def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_mo
         analyzed.append((cand, an))
         if float(an.masks["floor"].mean()) >= 0.03:
             scored.append((_layout_score(an), cand, an))
+    if pool is not None:                      # already analysed (the photos the first room could not use)
+        for cand, an in pool:
+            analyzed.append((cand, an))
+            if float(an.masks["floor"].mean()) >= 0.03:
+                scored.append((_layout_score(an), cand, an))
     scored.sort(key=lambda t: -t[0])
     for score, cand, an in scored[:3]:
         extras, reg_refused = _register_extras(cand, an, analyzed)
         try:
             boot = bootstrap_single_image(cand.item, cand.facts, artifact_store=artifact_store, depth_model=depth_model,
                                           furniture_detector=furniture_detector, layout_analysis=an, extra_views=extras,
-                                          fixture_detector=fixture_detector)
+                                          fixture_detector=fixture_detector, tag=tag)
         except BootstrapUnavailable as exc:
             attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed", "detail": f"{cand.name}: {exc}"})
             continue
@@ -200,7 +208,30 @@ def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_mo
             fusion = lay.setdefault("fusion", {"photos_used": 1, "photos_offered": len(analyzed), "notes": []})
             fusion["photos_offered"] = len(analyzed)
             fusion["refused"] = dict(reg_refused)
-            return [(cand, boot)], {"chosen": cand.name, "candidates_scored": len(scored), "score": round(score, 3), "fusion": fusion}
+            used_names = {cand.name} | {x.name for x in extras}
+            fusion["used_names"] = sorted(used_names)
+            boots = [(cand, boot)]
+            if prior_set and not tag:
+                # M4: photos of ANOTHER session that this room could not register are a different room, not noise: each such
+                # group becomes its own room (own frame, own id prefix). Photos of the SAME session that fail stay refused.
+                ref_side = cand.item.id in prior_set
+                left = [(c, a) for c, a in analyzed if c.name not in used_names and (c.item.id in prior_set) != ref_side
+                        and float(a.masks["floor"].mean()) >= 0.03]
+                n = 2
+                while left and len(boots) <= MAX_EXTRA_ROOMS:
+                    more, mf = _bootstrap_best_layout([c for c, _ in left], layout_analyzer, artifact_store=artifact_store,
+                                                      depth_model=depth_model, furniture_detector=furniture_detector,
+                                                      attempts=attempts, fixture_detector=fixture_detector, tag=str(n), pool=left)
+                    if not more:
+                        break
+                    got = set(mf["fusion"]["used_names"])
+                    for nm in got:
+                        fusion["refused"].pop(nm, None)               # it is placed now, in its own room
+                    boots += more
+                    left = [(c, a) for c, a in left if c.name not in got]
+                    n += 1
+            return boots, {"chosen": cand.name, "candidates_scored": len(scored), "score": round(score, 3), "fusion": fusion,
+                           "rooms": len(boots)}
         attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed",
                          "detail": f"{cand.name}: layout refused: {boot.facts.get('layout', {}).get('reason')}"[:300]})
     return [], {"reason": "no photograph yielded a floor and walls", "candidates_scored": len(scored)}
@@ -274,7 +305,7 @@ def run_progressive(
             pre_boots, pre_pick = _bootstrap_best_layout(
                 sorted(eligible, key=lambda c: c.item.id not in prior_set), layout_analyzer, artifact_store=artifact_store,
                 depth_model=depth_model, furniture_detector=furniture_detector, attempts=attempts,
-                fixture_detector=fixture_detector)
+                fixture_detector=fixture_detector, prior_set=prior_set)
             if pre_boots:
                 layout_reason = weakness
                 layout_superseded = weakness is None
@@ -341,7 +372,7 @@ def run_progressive(
         if layout_analyzer is not None and not boots:
             boots, layout_pick = _bootstrap_best_layout(
                 ordered, layout_analyzer, artifact_store=artifact_store, depth_model=depth_model,
-                furniture_detector=furniture_detector, attempts=attempts, fixture_detector=fixture_detector)
+                furniture_detector=furniture_detector, attempts=attempts, fixture_detector=fixture_detector, prior_set=prior)
         for k, cand in enumerate(ordered if not boots else []):
             try:
                 boots.append((cand, bootstrap_single_image(
@@ -357,6 +388,10 @@ def run_progressive(
                 + "; ".join(f"L{a['level']} {a['outcome']}: {a['detail']}" for a in attempts)
             )
         boot = boots[0][1] if len(boots) == 1 else fuse_single_views([(c.item, r) for c, r in boots])
+        if layout_pick and layout_pick.get("rooms", 1) > 1:
+            from engine.pipeline.rooms import place_side_by_side
+
+            place_side_by_side(boot.world)          # separate rooms must not sit on one another (they validate, and read as separate)
         used = [c for c, _ in boots]
         attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "succeeded",
                          "elapsed_s": round(_time.perf_counter() - _boot_t0, 3),
@@ -366,7 +401,9 @@ def run_progressive(
                                      f"room shell from the best-supported of {len(eligible)} photographs ({used[0].name}) "
                                      "via learned metric depth + surface labels") if layout_pick and "chosen" in layout_pick else
                                     f"single-view hypothesis from {used[0].name}" if len(used) == 1 else
-                                    f"{len(used)} independent single-view hypotheses fused (unregistered)")})
+                                    f"{len(used)} independent single-view hypotheses fused (unregistered)")
+                                   + (f"; {layout_pick['rooms'] - 1} further room(s) from other sessions, each in its own frame"
+                                      if layout_pick and layout_pick.get("rooms", 1) > 1 else "")})
         world, level = boot.world, 0
         # only a lone image is anchored by its own assumed pose; fused views are unrelated frames
         registered_ids = [used[0].item.id] if len(used) == 1 else []

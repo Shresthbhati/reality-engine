@@ -32,6 +32,36 @@ WALL_SNAP_DEG = 20.0
 CLUSTER_RADIUS_M = 0.6   # brief said 0.5; measured oblique single-view scatter on the fidelity room reaches ~0.55
 CLAMP_FLAG_M = 0.3
 SIZE_TOLERANCE = (0.75, 1.33)      # measured footprint scale vs the class prior is clamped to this band
+# tried (0.6, 2.2) for metric depth: a box width over-reads pieces that recede from the camera (a sectional), the footprints then
+# overlap their neighbours; so the band stays the same until the footprint comes from the mask, not the box
+METRIC_SIZE_TOLERANCE = SIZE_TOLERANCE
+#: classes a detector confuses with each other; in a metric world the measured height (box top over the floor contact) breaks the tie
+CONFUSABLE = (("coffee_table", "dining_table", "desk", "nightstand"), ("bookshelf", "wardrobe", "dresser", "tv_stand", "cabinet"))
+RELABEL_MIN_ERR = 0.45   # |ln(measured / prior height)| the given label must exceed before another class is considered
+RELABEL_GAIN = 0.5       # the replacement must fit the measured height this much better
+
+
+def _top_height(cam: "FurnitureCamera", det: "FurnitureDetection", depth: float, back_depth_m: float, floor_z: float) -> float:
+    """Height above the floor of the box's top edge, taken as the far-top edge of the piece (forward depth = front contact + the
+    piece's depth): the top edge of a 2D box over an object seen from above is its far edge, not its near one."""
+    R, o = np.array(cam.R, float), np.array(cam.t, float)
+    u, v = (det.box_xyxy[0] + det.box_xyxy[2]) / 2.0, det.box_xyxy[1]
+    d = R @ np.array([(u - cam.cx) / cam.fx, (v - cam.cy) / cam.fy, 1.0])
+    fwd = depth + back_depth_m
+    return float(o[2] + fwd * d[2] - floor_z)
+
+
+def _relabel_by_height(cls: str, height_m: float):
+    """``(class, original)``: the confusable class whose prior height best fits the measured one, else ``(cls, None)``."""
+    for group in CONFUSABLE:
+        if cls not in group or height_m <= 0.05:
+            continue
+        err = lambda c: abs(math.log(height_m / SIZE_PRIORS[c][2]))
+        best = min(group, key=err)
+        if (best != cls and abs(math.log(SIZE_PRIORS[best][2] / SIZE_PRIORS[cls][2])) > 0.25  # classes of one height are not told apart
+                and err(cls) > RELABEL_MIN_ERR and err(best) < RELABEL_GAIN * err(cls)):
+            return best, cls
+    return cls, None
 
 #: class -> (length, width, height) metres; length is the longer footprint side.
 SIZE_PRIORS: Dict[str, Tuple[float, float, float]] = {
@@ -136,7 +166,9 @@ def _yaw_snap(yaw: float, wall_yaw: float):
 
 
 def furniture_from_detections(detections: Sequence[FurnitureDetection], cameras: Sequence[FurnitureCamera],
-                              room: RoomFrame, *, scale_state: str = "metric") -> FurnitureResult:
+                              room: RoomFrame, *, scale_state: str = "metric", trust_heights=None) -> FurnitureResult:
+    """``trust_heights``: heights/widths come from metric-style depth (default: when ``scale_state`` is metric)."""
+    trust = scale_state == "metric" if trust_heights is None else bool(trust_heights)
     cams = {c.view_id: c for c in cameras}
     res = FurnitureResult()
     obs: List[dict] = []
@@ -154,6 +186,9 @@ def furniture_from_detections(detections: Sequence[FurnitureDetection], cameras:
             res.rejected.append({"label": det.label, "view_id": det.view_id, "reason": why})
             continue
         contact, depth, eye = hit
+        relabelled = None
+        if trust:
+            cls, relabelled = _relabel_by_height(cls, _top_height(cam, det, depth, SIZE_PRIORS[cls][1], room.floor_z))
         L, W, H = SIZE_PRIORS[cls]
         view = contact - eye
         dist = float(np.linalg.norm(view))
@@ -170,13 +205,13 @@ def furniture_from_detections(detections: Sequence[FurnitureDetection], cameras:
                                                                                np.array(room.min_xy) + m))
         pre_moved = float(np.linalg.norm(cr - rr @ centre))
         centre = _rot(room.wall_yaw) @ cr
-        scale = float(np.clip(width_m / ((L + W) / 2.0), *SIZE_TOLERANCE))
+        scale = float(np.clip(width_m / ((L + W) / 2.0), *(METRIC_SIZE_TOLERANCE if trust else SIZE_TOLERANCE)))
         # a box clipped by the image side has a wrong width and a shifted bottom-centre: trust it far less
         trunc = cam.width is not None and (det.box_xyxy[0] <= 1.0 or det.box_xyxy[2] >= cam.width - 1.0)
         if trunc:
             scale = 1.0
         obs.append(dict(cls=cls, centre=centre, view=det.view_id, score=float(det.score), scale=scale,
-                        eye=eye, vdir=vdir, label=det.label, pre_moved=pre_moved, w=float(det.score) * (0.2 if trunc else 1.0), trunc=trunc,
+                        eye=eye, vdir=vdir, label=det.label, pre_moved=pre_moved, w=float(det.score) * (0.2 if trunc else 1.0), trunc=trunc, relabelled=relabelled,
                         box=tuple(float(c) for c in det.box_xyxy)))
 
     # ---- multi-view fusion: per class greedy clustering on the floor point -------------------------------
@@ -216,7 +251,7 @@ def furniture_from_detections(detections: Sequence[FurnitureDetection], cameras:
         hi = np.array([room.max_xy[0] - hx, room.max_xy[1] - hy])
         clamped = np.minimum(np.maximum(c_room, lo), np.maximum(lo, hi))
         moved = float(np.linalg.norm(clamped - c_room))
-        flags = []
+        flags = [f"relabelled_from_{o['relabelled']}" for o in cl[:1] if o.get("relabelled")]
         if moved > 1e-6:
             centre = _rot(room.wall_yaw) @ clamped
         moved = max(moved, max(o["pre_moved"] for o in cl))

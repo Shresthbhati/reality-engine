@@ -166,3 +166,33 @@ def test_clamped_inside_room_and_flagged():
     e = furniture_from_detections([FurnitureDetection("sofa", .9, det.box_xyxy, "v")], [cam], tight).entities[0]
     cp = e["custom_properties"]
     assert cp["position_m"][1] <= 2.3 and any(fl.startswith("clamped_into_room") for fl in e["flags"])
+
+
+def _fake(label, size, at=(2.6, 1.6)):
+    spots = [at] + [(x, y) for x in (1.2, 1.8, 2.6, 3.4) for y in (0.8, 1.6, 2.4)]
+    for cx, cy in spots:
+        lo = (cx - size[0] / 2, cy - size[1] / 2, 0.0)
+        f = {"ref": "table", "min": lo, "max": (lo[0] + size[0], lo[1] + size[1], size[2])}
+        for cam in CAMS:
+            d = _detection(cam, f)
+            if d is not None and d.box_xyxy[0] > 2 and d.box_xyxy[2] < I.width - 2:
+                return cam, FurnitureDetection(label, 0.9, d.box_xyxy, cam.view_id)
+    raise AssertionError("no camera sees the fake piece")
+
+
+def test_a_low_piece_called_a_desk_is_a_coffee_table_in_a_metric_world():
+    cam, det = _fake("desk", (1.0, 0.6, 0.45))
+    out = furniture_from_detections([det], [cam], ROOM, scale_state="metric")
+    assert out.entities[0]["custom_properties"]["category"] == "coffee_table"
+    assert any(f.startswith("relabelled_from_desk") for f in out.entities[0]["flags"])
+    unscaled = furniture_from_detections([det], [cam], ROOM, scale_state="unknown")
+    assert unscaled.entities[0]["custom_properties"]["category"] == "desk"  # heights are only trusted in metres
+
+
+def test_a_tall_cabinet_called_a_bookshelf_keeps_its_class_but_a_low_one_is_not_a_bookshelf():
+    cam, det = _fake("bookshelf", (1.4, 0.4, 0.5))
+    got = furniture_from_detections([det], [cam], ROOM, scale_state="metric").entities[0]["custom_properties"]["category"]
+    assert got in ("tv_stand", "cabinet", "dresser")
+    cam, det = _fake("bookshelf", (0.9, 0.3, 1.8))
+    assert furniture_from_detections([det], [cam], ROOM, scale_state="metric").entities[0]["custom_properties"]["category"] == "bookshelf"
+

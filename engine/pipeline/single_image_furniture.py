@@ -128,7 +128,9 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
         view_id=item.id, R=((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0)), t=(0.0, 0.0, 0.0),
         fx=f, fy=f, cx=cx, cy=cy, width=w, height=h,
     )
-    res = furniture_from_detections(list(detections), [cam], room, scale_state="metric" if metric else "unknown")
+    # rgb given = the learned-layout path: its depth is metric-style, so heights and widths are trusted for class checks
+    res = furniture_from_detections(list(detections), [cam], room, scale_state="metric" if metric else "unknown",
+                                    trust_heights=metric or rgb is not None)
     facts["rejected"] = res.rejected
     facts["scale_assumption"] = {
         "assumed_camera_height_m": ASSUMED_CAMERA_HEIGHT_M, "camera_height_relative_units": round(cam_h_rel, 4),

@@ -108,6 +108,8 @@ def _roles(world) -> List[str]:
 
 #: a sparse model with fewer points per registered camera than this is not structure: planes fitted to it are noise
 MIN_SPARSE_POINTS_PER_CAMERA = 40
+MAX_PLAUSIBLE_FLOORS = 3
+MIN_CREDIBLE_WALLS = 3
 
 
 def _multiview_weakness(vs) -> Optional[str]:
@@ -118,6 +120,12 @@ def _multiview_weakness(vs) -> Optional[str]:
     kinds = [e.type.value for e in vs.world.entities.values()]
     if "floor" not in kinds or kinds.count("wall") < 2:
         return f"no room shell was recovered (needs a floor and at least two walls; found {kinds.count('floor')} floor, {kinds.count('wall')} wall)"
+    if kinds.count("wall") < MIN_CREDIBLE_WALLS:
+        return (f"thin shell: {kinds.count('wall')} walls and {kinds.count('floor')} floors (a room seen from several photos "
+                f"shows at least {MIN_CREDIBLE_WALLS} walls)")
+    if kinds.count("floor") > MAX_PLAUSIBLE_FLOORS:
+        return (f"the shell is fragmented into {kinds.count('floor')} floor planes (a room has one floor; "
+                f"more than {MAX_PLAUSIBLE_FLOORS} means the plane fit split it)")
     if len(vs.points) < MIN_SPARSE_POINTS_PER_CAMERA * registered:
         return (f"only {len(vs.points)} sparse points for {registered} cameras "
                 f"(under {MIN_SPARSE_POINTS_PER_CAMERA} per camera): fitted planes would be noise")

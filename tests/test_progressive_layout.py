@@ -30,7 +30,7 @@ def _inputs(tmp_path):
 def _world(structure):
     w = WorldIR()
     if structure:
-        for i, kind in enumerate((EntityType.FLOOR, EntityType.WALL, EntityType.WALL)):
+        for i, kind in enumerate((EntityType.FLOOR, EntityType.WALL, EntityType.WALL, EntityType.WALL)):
             w.entities[f"struct-plane-{i:03d}"] = Entity(id=f"struct-plane-{i:03d}", type=kind, name=kind.value)
     return w
 
@@ -165,3 +165,16 @@ def test_a_photo_that_cannot_be_registered_is_left_out_with_its_reason(tmp_path,
     fusion = res.stage_facts["bootstrap"]["layout"]["fusion"]
     assert fusion["photos_used"] == 2 and list(fusion["refused"]) == ["p2.jpg"]
     assert any("p2.jpg" in d and "could not be registered" in d for d in res.degraded), res.degraded
+
+
+def test_a_shell_fragmented_into_many_floors_is_not_trusted():
+    from engine.pipeline.progressive import _multiview_weakness
+
+    def vs(floors, walls=4):
+        ents = [SimpleNamespace(type=SimpleNamespace(value="floor")) for _ in range(floors)] + \
+               [SimpleNamespace(type=SimpleNamespace(value="wall")) for _ in range(walls)]
+        return SimpleNamespace(camera_poses=[0] * 10, world=SimpleNamespace(entities={i: e for i, e in enumerate(ents)}),
+                               points=[0] * 4000)
+
+    assert _multiview_weakness(vs(1)) is None
+    assert "11 floor" in _multiview_weakness(vs(11))

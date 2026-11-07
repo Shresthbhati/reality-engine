@@ -654,11 +654,12 @@ async def entity_provenance(
             relevant_obs_ids.add(obs_id)
         ev = None
         if getattr(obs, "data_hash", None):
-            res = await db.execute(select(Evidence).where(Evidence.checksum == obs.data_hash))
-            ev = res.scalar_one_or_none()
+            # the same photo uploaded in several worlds shares a checksum: any one row names the file
+            res = await db.execute(select(Evidence).where(Evidence.checksum == obs.data_hash).order_by(Evidence.id))
+            ev = res.scalars().first()
         if ev is None and getattr(obs, "data_uri", None):
-            res = await db.execute(select(Evidence).where(Evidence.artifact_uri == obs.data_uri))
-            ev = res.scalar_one_or_none()
+            res = await db.execute(select(Evidence).where(Evidence.artifact_uri == obs.data_uri).order_by(Evidence.id))
+            ev = res.scalars().first()
         if ev is not None:
             observation_matches.append({
                 "observation_id": obs_id,
@@ -677,9 +678,9 @@ async def entity_provenance(
         img_id = obs_item.get("image_id")
         if img_id:
             res = await db.execute(
-                select(Evidence).where((Evidence.id == img_id) | (Evidence.name == img_id))
+                select(Evidence).where((Evidence.id == img_id) | (Evidence.name == img_id)).order_by(Evidence.id)
             )
-            ev = res.scalar_one_or_none()
+            ev = res.scalars().first()
             if ev is not None and not any(m.get("evidence_id") == ev.id for m in observation_matches):
                 observation_matches.append({
                     "observation_id": obs_item.get("observation_id"),

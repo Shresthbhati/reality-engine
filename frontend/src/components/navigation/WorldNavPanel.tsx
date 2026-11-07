@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   MapPin,
   GitBranch,
+  GitMerge,
   Box,
   ChevronDown,
   ChevronRight,
@@ -1414,6 +1415,14 @@ interface SpatialAnchor {
             >
               <GitBranch className="w-3.5 h-3.5" />
               <span>Review change proposals</span>
+            </Link>
+
+            <Link
+              href={`/worlds/${encodeURIComponent(activeWorldId)}/adoptions`}
+              className="w-full py-1.5 rounded font-medium text-xs bg-[var(--bg-elevated)] hover:bg-[var(--border)] text-[var(--accent)] border border-[var(--accent)]/30 transition-colors flex items-center justify-center gap-1.5 font-sans"
+            >
+              <GitMerge className="w-3.5 h-3.5" />
+              <span>Adopt capture session</span>
             </Link>
 
             {onCompareVersions && versions.length > 0 && versions[0]?.parentVersionId && (

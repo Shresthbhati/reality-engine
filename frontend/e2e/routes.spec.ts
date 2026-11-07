@@ -9,6 +9,7 @@ const ROUTES = [
   "/worlds",
   "/worlds/new",
   `/worlds/${worldId}`,
+  `/worlds/${worldId}/adoptions`,
   `/worlds/${worldId}/pipeline`,
   "/sessions",
   "/sessions/new",

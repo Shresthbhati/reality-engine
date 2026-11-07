@@ -122,11 +122,11 @@ async def referenced_blob_digests(db) -> set[str]:
     A blob is garbage only if it is absent here -- add a column to this list whenever a new table stores a blob URI."""
     from sqlalchemy import select
 
-    from apps.api.models import Evidence, Upload, World, WorldVersion
+    from apps.api.models import Asset, Evidence, Upload, World, WorldVersion
 
     found: set[str] = set()
     for col in (Upload.artifact_uri, Evidence.artifact_uri, WorldVersion.points_artifact_uri,
-                WorldVersion.cameras_artifact_uri, World.thumbnail_uri):
+                WorldVersion.cameras_artifact_uri, World.thumbnail_uri, Asset.artifact_uri):
         for (uri,) in (await db.execute(select(col).where(col.like("sha256://%")).distinct())).all():
             d = blob_digest(uri)
             if d:

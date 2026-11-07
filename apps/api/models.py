@@ -388,3 +388,30 @@ class SiteAnchor(Base):
     lon: Mapped[float] = mapped_column(Float)
     rotation_deg: Mapped[float] = mapped_column(Float, default=0.0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Asset(Base):
+    """An independent, reusable 3D asset extracted from a world entity (T-2.6).
+
+    Retains the original entity's geometry, materials, canonical dimensions,
+    and provenance back to the source world and session, leaving the original
+    world untouched.
+    """
+
+    __tablename__ = "assets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(64), default="furniture")
+    source_world_id: Mapped[str] = mapped_column(String(32), index=True)
+    source_entity_id: Mapped[str] = mapped_column(String(128), index=True)
+    dimensions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    provenance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

@@ -121,6 +121,15 @@ async def export_formats(
     }
 
 
+async def record_export(db: AsyncSession, world_id: str, fmt: str, content_hash: str | None) -> None:
+    """Every successful export is one `world.exported` event: the input to per-tenant usage metering (apps/api/usage.py)."""
+    from apps.api.models import ActivityEvent, new_id
+
+    db.add(ActivityEvent(id=new_id("act"), type="world.exported", entity_type="world", entity_id=world_id,
+                         summary=f"Exported as {fmt}", metadata_json={"format": fmt, "content_hash": content_hash}))
+    await db.commit()
+
+
 @export.post("")
 async def export_world(
     world_id: str, body: ExportRequest, db: AsyncSession = Depends(get_db),
@@ -159,6 +168,7 @@ async def export_world(
     by_state: dict = {}
     for r in elements:
         by_state[r["state"]] = by_state.get(r["state"], 0) + 1
+    await record_export(db, world_id, body.format, report.content_hash)
     return {
         "version_id": row.id,
         "format": body.format,

@@ -284,3 +284,24 @@ def test_a_metric_world_never_takes_an_estimate(api):
     assert c.post(f"/api/worlds/{wid}/scale", json={"method": PRIOR_ACCEPTED,
                                                     "source_entity_id": "d1"}).status_code == 409
     assert queued == []
+
+
+def test_a_layout_world_takes_a_known_length_without_a_camera_pair(api, monkeypatch):
+    """A world built from one photo's learned layout has no camera pair, so 'Set scale' used to answer 422."""
+    import apps.api.routes_worlds as rw
+    from apps.api import worldstore_service as wss
+
+    c, wid, state, queued, _ = api
+    monkeypatch.setattr(rw, "_head_scale_context", lambda row: ({"state": "relative"}, 1.0, None, None, None))
+    body = {"method": KNOWN_LENGTH, "distance_m": 3.0, "model_length": 2.5}
+
+    state["world"].metadata = {}  # not a layout world: still refused, exactly as before
+    assert c.post(f"/api/worlds/{wid}/scale", json=body).status_code == 422
+
+    state["world"].metadata = {"bootstrap": {"layout": {"used": True}}, "scale": {"state": "relative"}}
+    r = c.post(f"/api/worlds/{wid}/scale", json=body)
+    assert r.status_code == 202, r.text
+    assert r.json()["reference"]["model_distance"] == pytest.approx(2.5) and r.json()["dimension_state_after"] == "MEASURED"
+    refs = wss.list_scale_references(wid)
+    assert [x["method"] for x in refs] == [KNOWN_LENGTH] and refs[0]["distance_m"] == 3.0
+    assert len(queued) == 1  # one re-run queued; it applies the factor to the layout's depth

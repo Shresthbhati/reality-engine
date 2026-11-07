@@ -288,3 +288,73 @@ def test_a_mis_registered_extra_photo_is_left_out_and_reported(tmp_path, monkeyp
     f = fused.facts["layout"]["fusion"]
     assert f["photos_used"] == len(extras)  # the reference + the two good extras
     assert any("v1" in n and "vertical" in n for n in f["notes"]), f["notes"]
+
+
+# ---------------------------------------------------------------------------- scale from a known length (T-3.3)
+
+
+def test_scale_anchor_from_stored_references_is_the_gated_median_factor():
+    from engine.pipeline.single_image_layout import scale_anchor_from_references
+    from reconstruction.scale import KNOWN_LENGTH, ScaleReference
+
+    refs = [ScaleReference("a", "b", 3.0, KNOWN_LENGTH, 2.5), ScaleReference("a", "b", 4.8, KNOWN_LENGTH, 4.0)]
+    anchor, notes = scale_anchor_from_references(refs)
+    assert anchor["factor"] == pytest.approx(1.2) and anchor["basis"] == KNOWN_LENGTH
+    assert scale_anchor_from_references([])[0] is None
+
+
+def test_known_lengths_that_disagree_are_not_averaged_into_a_scale():
+    from engine.pipeline.single_image_layout import scale_anchor_from_references
+    from reconstruction.scale import KNOWN_LENGTH, ScaleReference
+
+    anchor, notes = scale_anchor_from_references([ScaleReference("a", "b", 3.0, KNOWN_LENGTH, 2.5),
+                                                  ScaleReference("a", "b", 4.0, KNOWN_LENGTH, 4.0)])  # 1.2 vs 1.0
+    assert anchor is None and any("disagree" in n for n in notes)
+
+
+def test_an_absurd_factor_is_refused_not_applied():
+    from engine.pipeline.single_image_layout import scale_anchor_from_references
+    from reconstruction.scale import KNOWN_LENGTH, ScaleReference
+
+    anchor, notes = scale_anchor_from_references([ScaleReference("a", "b", 30.0, KNOWN_LENGTH, 2.0)])  # 15x: wrong points picked
+    assert anchor is None and any("implausible" in n for n in notes)
+
+
+def test_a_depth_scale_anchor_rescales_the_analysis_and_travels_with_it():
+    import numpy as np
+
+    from engine.pipeline.single_image_layout import apply_scale_anchor
+
+    an = SimpleNamespace(depth_m=np.full((4, 4), 2.0), masks={}, rgb=None)
+    out = apply_scale_anchor(an, {"factor": 1.5, "basis": "known_length", "distance_m": 3.0, "model_distance": 2.0})
+    assert float(out.depth_m[0, 0]) == pytest.approx(3.0) and out.scale_anchor["factor"] == 1.5
+    assert float(an.depth_m[0, 0]) == 2.0  # the original analysis is untouched
+
+
+def test_an_anchored_world_is_metric_measured_scale_and_its_dimensions_are_in_metres(bootstrap_factory):
+    from world_ir.validation import validate_world_ir
+
+    res = bootstrap_factory({"factor": 1.2, "basis": "known_length", "distance_m": 3.0, "model_distance": 2.5})
+    scale = res.world.metadata["scale"]
+    assert scale["state"] == "metric" and scale["meters_per_unit"] == 1.0
+    assert scale["note"].startswith("metric scale from known_length: ") and scale["dimension_state"] == "MEASURED"
+    wall = next(w for w in _of(res, "wall") if w.custom_properties.get("wall_slab"))
+    assert wall.custom_properties["dimensions"]["length_m"]["unit"] == "m"
+    assert wall.custom_properties["dimensions"]["length_m"]["state"] == "ESTIMATED"  # shape error remains: only the scale is measured
+    errors = [i for i in validate_world_ir(res.world).issues if str(i.severity.value).lower() == "error"]
+    assert not errors, [(i.code, i.message[:100]) for i in errors]
+
+
+@pytest.fixture()
+def bootstrap_factory(tmp_path, monkeypatch):
+    monkeypatch.setattr(room, "HFOV", 60.0)
+    depth, masks = room._render(pitch_deg=5.0)
+    p = tmp_path / "room.png"
+    Image.fromarray(np.random.default_rng(1).integers(90, 120, (room.H, room.W, 3), dtype=np.uint8)).save(p)
+    item = EvidenceItem(id="ev-room", kind=EvidenceKind.PHOTO, source_uri=p.as_uri())
+
+    def make(anchor):
+        an = SimpleNamespace(depth_m=depth * (anchor["factor"] if anchor else 1.0), masks=masks, scale_anchor=anchor)
+        return bootstrap_single_image(item, inspect_image(p), layout_analysis=an)
+
+    return make

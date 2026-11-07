@@ -113,3 +113,14 @@ def test_export_reports_per_element_evidence_state_and_confidence(client, tmp_pa
         assert r["confidence"] is None or 0.0 <= r["confidence"] <= 1.0
     assert body["evidence_summary"]["total"] == len(rows)
     assert sum(body["evidence_summary"]["by_state"].values()) == len(rows)
+
+
+def test_a_layout_style_scale_reference_does_not_break_the_multiview_job(client, tmp_path, monkeypatch):
+    """The layout path stores a known length against a sentinel pair (photo, photo~layout); the multi-view solver must ignore it."""
+    from apps.api import worldstore_service as wss
+    from reconstruction.scale import KNOWN_LENGTH
+
+    sid, wid = _setup(client, tmp_path, monkeypatch)
+    wss.add_scale_reference(wid, "ev_x", "ev_x~layout", 3.0, KNOWN_LENGTH, 2.5, None)
+    job = _wait(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"])
+    assert job["status"] in ("succeeded", "partial"), (job["status"], job.get("error"))

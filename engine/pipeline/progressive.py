@@ -355,7 +355,9 @@ def run_progressive(
         # only a lone image is anchored by its own assumed pose; fused views are unrelated frames
         registered_ids = [used[0].item.id] if len(used) == 1 else []
         result_points, poses = boot.points, boot.camera_poses
-        scale_state, mpu, registration = "relative", None, "partial"
+        _sc = (world.metadata or {}).get("scale") or {}
+        # a user-anchored layout world is metric (see single_image.py); anything else from one photo stays relative
+        scale_state, mpu, registration = ("metric", float(_sc.get("meters_per_unit") or 1.0), "partial") if _sc.get("state") == "metric"             else ("relative", None, "partial")
         fused = len(used) > 1
         stage_facts = {
             "backend": "single_image_bootstrap_fused" if fused else "single_image_bootstrap",

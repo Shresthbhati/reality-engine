@@ -283,6 +283,16 @@ def bootstrap_single_image(
     )
     world = WorldIR(id="bootstrap-pending", name="Single-image bootstrap",
                     main_branch_id="branch-main-bootstrap")
+    anchor = getattr(layout_analysis, "scale_anchor", None) if metric else None
+    if anchor:
+        # the user gave a real length: the (estimated-metric) depth was rescaled by its factor, so the world is in metres.
+        # Only the SCALE is measured; shape and every other dimension remain estimates from monocular depth.
+        world.metadata["scale"] = {
+            "state": "metric", "meters_per_unit": 1.0, "basis": anchor["basis"], "dimension_state": "MEASURED",
+            "note": (f"metric scale from {anchor['basis']}: a known length of {anchor['distance_m']:g} m picked in the model "
+                     f"(factor {anchor['factor']:.3f} applied to the estimated metric depth); shape and other dimensions are "
+                     "still estimated from monocular depth"),
+        }
     world.observations[obs.id] = obs
 
     plane_pos = positions_by_plane(result, oriented)
@@ -420,7 +430,7 @@ def bootstrap_single_image(
             floor_op = max(floor_ops, key=lambda o: o.plane.inlier_count) if floor_ops else None
             furniture_facts = place_furniture(
                 world, obs, item, dets, floor_op=floor_op, pts=pts, f=f, cx=cx, cy=cy, w=w, h=h, pre=pre,
-                confidence_ceiling=CONFIDENCE_CEILING,
+                confidence_ceiling=CONFIDENCE_CEILING, metric=bool(anchor),
             )
 
     # ---- corridor direction: only when two distinct parallel walls and a floor were all found ----
@@ -515,7 +525,8 @@ def bootstrap_single_image(
         custom_properties={"unobserved": list(UNOBSERVED)},
     )
 
-    world.metadata["scale"] = {
+    if not anchor:
+        world.metadata["scale"] = {
         "state": "relative", "meters_per_unit": None,
         "note": ("single-image metric-depth ESTIMATE (indoor model, typically within ~10-20%): not a measurement, "
                  "set the scale from one known distance" if metric else

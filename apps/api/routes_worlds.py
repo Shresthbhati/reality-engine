@@ -1923,6 +1923,11 @@ class ScaleIn(BaseModel):
     source_entity_id: str | None = None
 
 
+def _is_layout_world(world) -> bool:
+    """True for a world built from the learned single-image layout (see engine/pipeline/single_image_layout.py)."""
+    return bool((((world.metadata or {}).get("bootstrap") or {}).get("layout") or {}).get("used"))
+
+
 def _head_scale_context(row: WorldVersion) -> tuple[dict, float, str | None, str | None, float | None]:
     """(world metadata scale, metres-per-unit of the current version or 1.0, cam_a, cam_b, their pre-scale
     separation) -- the camera pair fingerprints the model unit for model-space references."""
@@ -2043,8 +2048,15 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
         row = await _version_row(db, world_id, None)
         scale, mpu, ca, cb, csep = _head_scale_context(row)
         if ca is None:
-            raise HTTPException(422, "this world has no registered camera pair to tie the length to")
-        a, b, unit_check = ca, cb, csep
+            if body.method == KNOWN_LENGTH and _is_layout_world(_load_world_or_409(row)):
+                # a world built from one photo's learned layout has no camera pair; its unit is the layout's own (estimated
+                # metres), so the reference needs no unit check and the re-run applies its factor to the layout's depth
+                a = sorted(known)[0] if known else "layout:photo"
+                b, unit_check = f"{a}~layout", None
+            else:
+                raise HTTPException(422, "this world has no registered camera pair to tie the length to")
+        else:
+            a, b, unit_check = ca, cb, csep
         if body.method == PRIOR_ACCEPTED:
             sug = suggest_scale_for_world(_load_world_or_409(row))
             if scale.get("state") == "metric":

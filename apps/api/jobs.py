@@ -783,7 +783,13 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
     # the deterministic test seam must not load real models; production leaves test_backend None
-    layout_analyzer, unload_layout_models = (None, lambda: None) if test_backend is not None else make_layout_analyzer()
+    from engine.pipeline.single_image_layout import scale_anchor_from_references
+
+    layout_scale_anchor, layout_anchor_notes = scale_anchor_from_references(baselines)  # a known length the user gave, if any
+    for _n in layout_anchor_notes:
+        log.warning("layout scale: %s", _n)
+    layout_analyzer, unload_layout_models = ((None, lambda: None) if test_backend is not None
+                                             else make_layout_analyzer(scale_anchor=layout_scale_anchor))
     try:
         prog = await asyncio.to_thread(
             lambda: run_progressive(

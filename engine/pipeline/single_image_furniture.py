@@ -75,7 +75,8 @@ def _box_overlap(a, b) -> float:
 
 
 def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f: float, cx: float, cy: float,
-                    w: int, h: int, pre: str, confidence_ceiling: float) -> Dict[str, object]:
+                    w: int, h: int, pre: str, confidence_ceiling: float,
+                    metric: bool = False) -> Dict[str, object]:
     """Add furniture entities to ``world``; return a facts dict (what ran, what was rejected and why)."""
     from perception.instances.furniture_from_detections import (
         FurnitureCamera, RoomFrame, furniture_from_detections,
@@ -99,17 +100,17 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
     if cam_h_rel < 1e-6:
         facts["reason"] = "camera sits on the floor plane: no height to scale from"
         return facts
-    s = ASSUMED_CAMERA_HEIGHT_M / cam_h_rel          # metres per relative unit (ASSUMED)
+    s = 1.0 if metric else ASSUMED_CAMERA_HEIGHT_M / cam_h_rel   # metres per unit: 1 in a metric world, else ASSUMED
 
     # bootstrap frame (X right, Y up, Z forward) -> placer frame (x right, y forward, z up), assumed metres
     xs = [p[0] * s for p in pts]
     ys = [p[2] * s for p in pts]
-    room = RoomFrame(floor_z=-ASSUMED_CAMERA_HEIGHT_M, min_xy=(min(xs), min(ys)), max_xy=(max(xs), max(ys)))
+    room = RoomFrame(floor_z=-cam_h_rel * s, min_xy=(min(xs), min(ys)), max_xy=(max(xs), max(ys)))
     cam = FurnitureCamera(
         view_id=item.id, R=((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0)), t=(0.0, 0.0, 0.0),
         fx=f, fy=f, cx=cx, cy=cy, width=w, height=h,
     )
-    res = furniture_from_detections(list(detections), [cam], room, scale_state="unknown")
+    res = furniture_from_detections(list(detections), [cam], room, scale_state="metric" if metric else "unknown")
     facts["rejected"] = res.rejected
     facts["scale_assumption"] = {
         "assumed_camera_height_m": ASSUMED_CAMERA_HEIGHT_M, "camera_height_relative_units": round(cam_h_rel, 4),
@@ -122,7 +123,7 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
         cp = e["custom_properties"]
         px, py, pz = cp["position_m"]
         pos = {"x": px / s, "y": pz / s, "z": py / s}
-        dims = {key: make_dimension(v["value"] / s, state="ESTIMATED", basis=v["basis"], scale_state="unknown")
+        dims = {key: make_dimension(v["value"] / s, state="ESTIMATED", basis=v["basis"], scale_state="metric" if metric else "unknown")
                 for key, v in cp["dimensions"].items()}
         L, W, H = (cp["dimensions"][name]["value"] / s for name in ("length_m", "width_m", "height_m"))
         r = 0.5 * math.hypot(L, W)

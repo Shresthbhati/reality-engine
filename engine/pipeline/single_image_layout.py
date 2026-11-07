@@ -338,8 +338,48 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
     return facts
 
 
-def make_layout_analyzer():
+#: a known-length reference implying a factor outside this range means the wrong points were picked, not a real correction
+SCALE_FACTOR_RANGE = (0.2, 5.0)
+
+
+def scale_anchor_from_references(refs):
+    """The depth scale factor a user's known length(s) imply, as ``({factor, basis, distance_m, model_distance} | None, notes)``.
+
+    The layout's depth is already metric-ish (monocular, typically 10-20 % off); a real length the user gives (distance_m, picked
+    between two points whose model length is model_distance) corrects the whole thing by ``distance_m / model_distance``. Several
+    lengths are median-gated by ``consolidate_references`` (they must agree); an absurd factor is refused with a note.
+    """
+    from reconstruction.scale import KNOWN_LENGTH, consolidate_references
+
+    known = [r for r in refs if getattr(r, "method", None) == KNOWN_LENGTH and getattr(r, "model_distance", None)]
+    if not known:
+        return None, []
+    chosen, notes = consolidate_references(known)
+    chosen = [r for r in chosen if r.method == KNOWN_LENGTH]
+    if not chosen:
+        return None, list(notes)
+    r = chosen[0]
+    factor = r.distance_m / r.model_distance
+    if not (SCALE_FACTOR_RANGE[0] <= factor <= SCALE_FACTOR_RANGE[1]):
+        return None, list(notes) + [f"a scale factor of {factor:.2f} is implausible (limit {SCALE_FACTOR_RANGE[0]}-{SCALE_FACTOR_RANGE[1]}): "
+                                    "check the two points and the length you entered; no scale was applied"]
+    return {"factor": float(factor), "basis": KNOWN_LENGTH, "distance_m": float(r.distance_m),
+            "model_distance": float(r.model_distance)}, list(notes)
+
+
+def apply_scale_anchor(analysis, anchor):
+    """A copy of ``analysis`` with its metric depth multiplied by the anchor's factor and the anchor attached."""
+    import copy
+
+    out = copy.copy(analysis)
+    out.depth_m = np.asarray(analysis.depth_m, dtype=np.float64) * float(anchor["factor"])
+    out.scale_anchor = anchor
+    return out
+
+
+def make_layout_analyzer(scale_anchor=None):
     """``(analyze, unload)`` for the progressive ladder, or ``(None, noop)`` when REALITY_LAYOUT_MODELS=0.
+    A ``scale_anchor`` (see ``scale_anchor_from_references``) multiplies every photo's depth by the user-given factor.
 
     ``analyze(item)`` runs metric depth + surface segmentation on the item's photograph; it raises
     ``LayoutModelsUnavailable`` when the weights are not cached, which the ladder records before falling back to the classic path.
@@ -358,6 +398,7 @@ def make_layout_analyzer():
     def analyze(item):
         u = urlparse(item.source_uri)
         path = url2pathname(unquote(u.path)) if u.scheme == "file" else item.source_uri
-        return analyze_path(models, Path(path))
+        an = analyze_path(models, Path(path))
+        return apply_scale_anchor(an, scale_anchor) if scale_anchor else an
 
     return analyze, models.unload

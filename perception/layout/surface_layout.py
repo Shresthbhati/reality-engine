@@ -238,6 +238,23 @@ def _own_up(depth: np.ndarray, floor_mask: np.ndarray, hfov_deg: float, seed: in
     return -n if d < 0 else n
 
 
+def _own_wall_normal(depth: np.ndarray, wall_mask: np.ndarray, hfov_deg: float, seed: int) -> Optional[np.ndarray]:
+    """The dominant wall plane's normal of ONE photo in its own camera frame, or None without enough wall."""
+    valid = np.isfinite(depth) & (depth > 0.05) & wall_mask
+    if int(valid.sum()) < MIN_WALL_SUPPORT_PX * 3:
+        return None
+    pts = backproject(depth, hfov_deg)[valid]
+    z = depth[valid]
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(pts), min(len(pts), MAX_FIT_POINTS), replace=False)
+    fit = _ransac_plane(pts[idx], rng, PLANE_TOL_M, z=z[idx])
+    return None if fit is None else fit[0]
+
+
+#: a wall seen by a photo without floor must still be vertical in the reference frame, within this many degrees
+MAX_WALL_TILT_DEG = 10.0
+
+
 def _merge_openings(ops: List[Opening]) -> List[Opening]:
     """The same window seen by several photos is ONE window.
 
@@ -290,13 +307,21 @@ def solve_layout_views(views: Sequence[ViewInput], seed: int = 0) -> SurfaceLayo
         R, t = v.pose()
         if k > 0 and ref_up is not None:
             own = _own_up(v.depth, v.masks.get("floor", np.zeros(v.depth.shape, bool)), v.hfov_deg, seed)
-            if own is None:
-                notes.append(f"{v.name}: left out, no floor visible to verify its vertical against the reference")
-                continue
-            ang = math.degrees(math.acos(float(np.clip((R @ own) @ ref_up, -1, 1))))
-            if ang > MAX_VERTICAL_DISAGREEMENT_DEG:
-                notes.append(f"{v.name}: left out, its vertical disagrees with the reference by {ang:.0f} degrees (mis-registered)")
-                continue
+            if own is not None:
+                ang = math.degrees(math.acos(float(np.clip((R @ own) @ ref_up, -1, 1))))
+                if ang > MAX_VERTICAL_DISAGREEMENT_DEG:
+                    notes.append(f"{v.name}: left out, its vertical disagrees with the reference by {ang:.0f} degrees (mis-registered)")
+                    continue
+            else:  # too little floor to verify the vertical: its dominant wall must come out vertical once placed
+                wn = _own_wall_normal(v.depth, v.masks.get("wall", np.zeros(v.depth.shape, bool)), v.hfov_deg, seed)
+                if wn is None:
+                    notes.append(f"{v.name}: left out, neither floor nor wall visible enough to verify its vertical against the reference")
+                    continue
+                tilt = math.degrees(math.asin(float(np.clip(abs((R @ wn) @ ref_up), 0, 1))))
+                if tilt > MAX_WALL_TILT_DEG:
+                    notes.append(f"{v.name}: left out, its wall is {tilt:.0f} degrees off vertical in the reference frame, so its vertical "
+                                 "disagrees with the reference (mis-registered)")
+                    continue
         cam_pts = backproject(v.depth, v.hfov_deg)
         valid = np.isfinite(v.depth) & (v.depth > 0.05)
         kept.append((v, cam_pts @ R.T + t, valid, _rays(*v.depth.shape, v.hfov_deg)))

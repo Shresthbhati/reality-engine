@@ -5,6 +5,7 @@ promoted five floors (one above the ceiling) and one wall. A credible multi-view
 """
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 import tests.test_surface_layout as room
@@ -118,3 +119,49 @@ def test_a_world_that_is_only_a_floor_is_not_a_room(tmp_path, analyzer):
 
     res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=only_floor, layout_analyzer=analyzer)
     assert res.level == 0 and "floor and at least two walls" in res.attempts[0]["detail"]
+
+
+# ---------------------------------------------------------------------------- automatic fusion of the photos
+
+
+def _textured_analyzer(monkeypatch, n=3, names=None):
+    import engine.pipeline.single_image as si
+    import tests.test_multiview_layout as mv
+
+    monkeypatch.setattr(si, "ASSUMED_HFOV_DEG", 80.0)
+    views = mv._views()[:n]
+    by_id = {f"ev-{k}": v for k, v in enumerate(views)}
+
+    def analyze(item):
+        v = by_id[item.id]
+        return SimpleNamespace(depth_m=v.depth, masks=v.masks, rgb=v.rgb)
+
+    return analyze
+
+
+def test_the_ladder_registers_and_fuses_the_photos_by_itself(tmp_path, monkeypatch):
+    analyzer = _textured_analyzer(monkeypatch)
+    res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=60), layout_analyzer=analyzer)
+    assert res.level == 0
+    fusion = res.stage_facts["bootstrap"]["layout"]["fusion"]
+    assert fusion["photos_used"] == N_PHOTOS and not fusion["refused"]
+    assert any("fused" in a["detail"] and "3 of 3" in a["detail"] for a in res.attempts if a["level"] == 0)
+    kinds = [e.type.value for e in res.world.entities.values()]
+    assert kinds.count("wall") >= 2 and kinds.count("window") == 1  # these 3 photos never look at the -x wall
+
+
+def test_a_photo_that_cannot_be_registered_is_left_out_with_its_reason(tmp_path, monkeypatch):
+    import numpy as np
+    import tests.layout_synth as ls
+
+    analyzer = _textured_analyzer(monkeypatch)
+    far = ls.render(0.0, 0.0, 180.0, 0.0, hfov=80.0)  # looks at the opposite wall: shares nothing with the others
+    far.masks["floor"] = np.zeros_like(far.masks["floor"])  # no floor: it can never be picked as the reference
+
+    def analyze(item):
+        return SimpleNamespace(depth_m=far.depth, masks=far.masks, rgb=far.rgb) if item.id == "ev-2" else analyzer(item)
+
+    res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=60), layout_analyzer=analyze)
+    fusion = res.stage_facts["bootstrap"]["layout"]["fusion"]
+    assert fusion["photos_used"] == 2 and list(fusion["refused"]) == ["p2.jpg"]
+    assert any("p2.jpg" in d and "could not be registered" in d for d in res.degraded), res.degraded

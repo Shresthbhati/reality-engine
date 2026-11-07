@@ -39,6 +39,7 @@ class ImageAnalysis:
     masks: Dict[str, np.ndarray]  # solver surface masks
     label_map: np.ndarray  # (H, W) ADE20K class ids
     id2label: Dict[int, str]
+    rgb: Optional[np.ndarray] = None  # (H, W, 3) uint8: lets the engine match features between photos
 
 
 class LayoutModels:
@@ -116,7 +117,8 @@ class LayoutModels:
         for key, names in SURFACE_CLASSES.items():
             ids = [i for i, n in id2label.items() if n in names]
             masks[key] = np.isin(label_map, ids)
-        return ImageAnalysis(depth_m=depth.cpu().numpy().astype(np.float64), masks=masks, label_map=label_map, id2label=id2label)
+        return ImageAnalysis(depth_m=depth.cpu().numpy().astype(np.float64), masks=masks, label_map=label_map, id2label=id2label,
+                             rgb=np.asarray(image))
 
 
 def analyze_path(models: LayoutModels, path: Path) -> ImageAnalysis:

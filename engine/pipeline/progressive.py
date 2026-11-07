@@ -130,10 +130,42 @@ def _layout_score(analysis) -> float:
     return sum(float(m[k].mean()) for k in ("floor", "wall", "ceiling", "window", "door")) + (0.05 if float(m["ceiling"].mean()) > 0.01 else 0.0)
 
 
+def _register_extras(ref_cand, ref_an, analyzed):
+    """Register every other analysed photo to the reference by matched features + metric depth (no SfM).
+
+    Returns ``(extra_views, refused)``: the registered photos as pose-carrying views for the fused layout, and
+    ``{photo name: reason}`` for the ones that could not be placed. Without RGB (no feature matching possible) nothing is fused.
+    """
+    import math
+    from types import SimpleNamespace
+
+    from engine.pipeline.single_image import _intrinsics
+    from perception.layout.registration import register_views
+
+    others = [(c, a) for c, a in analyzed if c is not ref_cand]
+    if not others or any(getattr(a, "rgb", None) is None for _, a in [(ref_cand, ref_an)] + others):
+        return [], {}
+    h, w = ref_an.depth_m.shape
+    f, _ = _intrinsics(w, h, ref_cand.facts)
+    hfov = math.degrees(2.0 * math.atan(w / (2.0 * f)))
+    items = [(ref_cand.name, ref_an.rgb, ref_an.depth_m)] + [(c.name, a.rgb, a.depth_m) for c, a in others]
+    try:
+        reg = register_views(items, hfov, ref_index=0)
+    except Exception as exc:  # noqa: BLE001 -- fusion is an enhancement: the single-photo shell stands
+        return [], {c.name: f"registration failed: {type(exc).__name__}: {exc}"[:200] for c, _ in others}
+    extras = []
+    for c, a in others:
+        pose = reg.poses.get(c.name)
+        if pose is not None:
+            extras.append(SimpleNamespace(depth_m=a.depth_m, masks=a.masks, rgb=a.rgb, R=pose.R, t=pose.t, name=c.name))
+    return extras, dict(reg.refused)
+
+
 def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_model, furniture_detector, attempts):
     """Bootstrap the room shell from the single photograph whose layout is best supported; try the next best if the solver
     refuses. Returns ``([(candidate, BootstrapResult)], facts)`` or ``([], facts)`` when no photograph yields a layout."""
     scored = []
+    analyzed = []
     for cand in ordered:
         try:
             an = layout_analyzer(cand.item)
@@ -141,18 +173,24 @@ def _bootstrap_best_layout(ordered, layout_analyzer, *, artifact_store, depth_mo
             attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed",
                              "detail": f"{cand.name}: learned layout unavailable: {type(exc).__name__}: {exc}"[:300]})
             return [], {"reason": "layout models unavailable"}
+        analyzed.append((cand, an))
         if float(an.masks["floor"].mean()) >= 0.03:
             scored.append((_layout_score(an), cand, an))
     scored.sort(key=lambda t: -t[0])
     for score, cand, an in scored[:3]:
+        extras, reg_refused = _register_extras(cand, an, analyzed)
         try:
             boot = bootstrap_single_image(cand.item, cand.facts, artifact_store=artifact_store, depth_model=depth_model,
-                                          furniture_detector=furniture_detector, layout_analysis=an)
+                                          furniture_detector=furniture_detector, layout_analysis=an, extra_views=extras)
         except BootstrapUnavailable as exc:
             attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed", "detail": f"{cand.name}: {exc}"})
             continue
         if boot.facts.get("layout", {}).get("used"):
-            return [(cand, boot)], {"chosen": cand.name, "candidates_scored": len(scored), "score": round(score, 3)}
+            lay = boot.facts["layout"]
+            fusion = lay.setdefault("fusion", {"photos_used": 1, "photos_offered": len(analyzed), "notes": []})
+            fusion["photos_offered"] = len(analyzed)
+            fusion["refused"] = dict(reg_refused)
+            return [(cand, boot)], {"chosen": cand.name, "candidates_scored": len(scored), "score": round(score, 3), "fusion": fusion}
         attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "failed",
                          "detail": f"{cand.name}: layout refused: {boot.facts.get('layout', {}).get('reason')}"[:300]})
     return [], {"reason": "no photograph yielded a floor and walls", "candidates_scored": len(scored)}
@@ -306,8 +344,11 @@ def run_progressive(
         used = [c for c, _ in boots]
         attempts.append({"level": 0, "name": LEVEL_NAMES[0], "outcome": "succeeded",
                          "elapsed_s": round(_time.perf_counter() - _boot_t0, 3),
-                         "detail": (f"room shell from the best-supported of {len(eligible)} photographs ({used[0].name}) "
-                                    "via learned metric depth + surface labels" if layout_pick and "chosen" in layout_pick else
+                         "detail": ((f"room fused from {layout_pick['fusion']['photos_used']} of {len(eligible)} photographs "
+                                     f"(reference {used[0].name}), registered by matched features + metric depth"
+                                     if layout_pick and layout_pick.get("fusion", {}).get("photos_used", 1) > 1 else
+                                     f"room shell from the best-supported of {len(eligible)} photographs ({used[0].name}) "
+                                     "via learned metric depth + surface labels") if layout_pick and "chosen" in layout_pick else
                                     f"single-view hypothesis from {used[0].name}" if len(used) == 1 else
                                     f"{len(used)} independent single-view hypotheses fused (unregistered)")})
         world, level = boot.world, 0
@@ -326,9 +367,14 @@ def run_progressive(
         counts = {"entities": len(world.entities), "measurements": 0, "relationships": 0}
         bootstrap_facts = boot.facts
         if layout_pick and "chosen" in layout_pick and len(eligible) > 1:
+            fus = layout_pick.get("fusion") or {}
+            n_used, refused = int(fus.get("photos_used", 1)), fus.get("refused") or {}
+            built = (f"room fused from {n_used} of {len(eligible)} photographs (reference {layout_pick['chosen']})" if n_used > 1 else
+                     f"room shell built from one photograph ({layout_pick['chosen']})")
             degraded.append(
-                f"room shell built from one photograph ({layout_pick['chosen']}); the other {len(eligible) - 1} are kept as "
-                "evidence but not yet fused into it"
+                built
+                + ("; could not be registered: " + ", ".join(f"{k} ({v.split('(')[0].strip()})" for k, v in refused.items()) if refused else "")
+                + ("" if n_used > 1 or refused else f"; the other {len(eligible) - 1} are kept as evidence but not yet fused into it")
                 + (f" (multi-view reconstruction was not credible: {layout_reason})" if layout_reason else ""))
         elif len(eligible) == 1:
             degraded.append("single-view hypothesis: partial by construction "

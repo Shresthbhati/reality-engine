@@ -310,3 +310,149 @@ class TestIfcExport:
         export_world_to_ifc(world, p2)
         assert p1.read_bytes() == p2.read_bytes()
 
+
+    def test_roundtrip_architectural_classes_and_counts(self, tmp_path):
+        """T-2.1: Verify IfcWall, IfcSlab, IfcDoor, IfcWindow, IfcSpace,
+        IfcFurnishingElement, and openings as IfcOpeningElement all round-trip
+        with exact classes and expected element counts."""
+        world = WorldIR()
+
+        # 1. Wall (host)
+        world.geometries["g-wall"] = Geometry(
+            id="g-wall", type=GeometryType.BOX,
+            bounds_min=Vector3(0.0, 0.0, 0.0),
+            bounds_max=Vector3(5.0, 0.2, 2.8),
+            provenance=Provenance.OBSERVED,
+        )
+        world.entities["wall-1"] = Entity(
+            id="wall-1", name="Living Room Wall", type=EntityType.WALL,
+            geometry_ids=["g-wall"],
+        )
+
+        # 2. Slabs: Floor & Ceiling
+        world.geometries["g-floor"] = Geometry(
+            id="g-floor", type=GeometryType.PLANE,
+            bounds_min=Vector3(0.0, 0.0, -0.1),
+            bounds_max=Vector3(5.0, 5.0, 0.0),
+        )
+        world.entities["floor-1"] = Entity(
+            id="floor-1", name="Ground Slab", type=EntityType.FLOOR,
+            geometry_ids=["g-floor"],
+        )
+        world.geometries["g-ceil"] = Geometry(
+            id="g-ceil", type=GeometryType.PLANE,
+            bounds_min=Vector3(0.0, 0.0, 2.8),
+            bounds_max=Vector3(5.0, 5.0, 2.9),
+        )
+        world.entities["ceil-1"] = Entity(
+            id="ceil-1", name="Ceiling Slab", type=EntityType.CEILING,
+            geometry_ids=["g-ceil"],
+        )
+
+        # 3. Door (hosted on wall-1)
+        world.geometries["g-door"] = Geometry(
+            id="g-door", type=GeometryType.BOX,
+            bounds_min=Vector3(0.8, 0.0, 0.0),
+            bounds_max=Vector3(1.7, 0.2, 2.1),
+        )
+        world.entities["door-1"] = Entity(
+            id="door-1", name="Entry Door", type=EntityType.DOOR,
+            geometry_ids=["g-door"],
+            custom_properties={"in_wall": {"wall_id": "wall-1"}},
+        )
+
+        # 4. Window (hosted on wall-1)
+        world.geometries["g-win"] = Geometry(
+            id="g-win", type=GeometryType.BOX,
+            bounds_min=Vector3(2.5, 0.0, 0.9),
+            bounds_max=Vector3(3.8, 0.2, 2.1),
+        )
+        world.entities["win-1"] = Entity(
+            id="win-1", name="Main Window", type=EntityType.WINDOW,
+            geometry_ids=["g-win"],
+            custom_properties={"in_wall": {"wall_id": "wall-1"}},
+        )
+
+        # 5. Room (IfcSpace)
+        world.geometries["g-room"] = Geometry(
+            id="g-room", type=GeometryType.BOX,
+            bounds_min=Vector3(0.0, 0.0, 0.0),
+            bounds_max=Vector3(5.0, 5.0, 2.8),
+        )
+        world.entities["room-1"] = Entity(
+            id="room-1", name="Main Lounge", type=EntityType.ROOM,
+            geometry_ids=["g-room"],
+        )
+
+        # 6. Furniture (IfcFurnishingElement)
+        world.geometries["g-sofa"] = Geometry(
+            id="g-sofa", type=GeometryType.BOX,
+            bounds_min=Vector3(1.0, 2.0, 0.0),
+            bounds_max=Vector3(3.2, 3.0, 0.85),
+        )
+        world.entities["sofa-1"] = Entity(
+            id="sofa-1", name="Three-Seater Sofa", type=EntityType.FURNITURE,
+            geometry_ids=["g-sofa"],
+        )
+
+        # 7. Opening (standalone passage opening hosted on wall)
+        world.geometries["g-op"] = Geometry(
+            id="g-op", type=GeometryType.BOX,
+            bounds_min=Vector3(4.0, 0.0, 0.0),
+            bounds_max=Vector3(4.9, 0.2, 2.2),
+        )
+        world.entities["op-1"] = Entity(
+            id="op-1", name="Passage Arch", type=EntityType.OPENING,
+            geometry_ids=["g-op"],
+            custom_properties={"in_wall": {"wall_id": "wall-1"}},
+        )
+
+        out = tmp_path / "t2_1_architectural.ifc"
+        report = export_world_to_ifc(world, out)
+        assert out.exists()
+        assert not report["skipped"]
+
+        # Roundtrip inspection via ifcopenshell
+        f = ifcopenshell.open(str(out))
+        assert f.schema == "IFC4"
+
+        walls = f.by_type("IfcWall")
+        assert len(walls) == 1
+        assert "wall-1" in walls[0].Name
+
+        slabs = f.by_type("IfcSlab")
+        assert len(slabs) == 2  # floor + ceiling
+
+        doors = f.by_type("IfcDoor")
+        assert len(doors) == 1
+        assert "door-1" in doors[0].Name
+
+        windows = f.by_type("IfcWindow")
+        assert len(windows) == 1
+        assert "win-1" in windows[0].Name
+
+        spaces = f.by_type("IfcSpace")
+        assert len(spaces) == 1
+        assert "room-1" in spaces[0].Name
+
+        furnishings = f.by_type("IfcFurnishingElement")
+        assert len(furnishings) == 1
+        assert "sofa-1" in furnishings[0].Name
+
+        # Openings: opening-door-1, opening-win-1, and standalone op-1
+        openings = f.by_type("IfcOpeningElement")
+        assert len(openings) >= 3
+
+        # RelVoidsElement connects wall to openings
+        void_rels = f.by_type("IfcRelVoidsElement")
+        assert len(void_rels) >= 3
+        relating_walls = {rel.RelatingBuildingElement.GlobalId for rel in void_rels}
+        assert walls[0].GlobalId in relating_walls
+
+        # RelFillsElement connects opening to door and window
+        fill_rels = f.by_type("IfcRelFillsElement")
+        assert len(fill_rels) >= 2
+        filled_openings = {rel.RelatingOpeningElement.GlobalId for rel in fill_rels}
+        filled_elements = {rel.RelatedBuildingElement.GlobalId for rel in fill_rels}
+        assert doors[0].GlobalId in filled_elements
+        assert windows[0].GlobalId in filled_elements

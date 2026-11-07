@@ -169,6 +169,7 @@ def bootstrap_single_image(
     furniture_detector=None,
     furniture_detections=None,
     layout_analysis=None,
+    extra_views=None,
 ) -> BootstrapResult:
     """Build the LEVEL 0 hypothesis for one photograph.
 
@@ -219,12 +220,28 @@ def bootstrap_single_image(
             pts.append(((u - cx) / f * z, -(v - cy) / f * z, z))
             pix.append((u, v))
 
+    # ---- registered extra photos (fusion): their depth becomes points in this photo's frame, with their own surface labels ----
+    point_labels = None
+    extra_cols: List[object] = []
+    if metric:
+        from engine.pipeline.single_image_layout import SURFACE_KEYS, extra_view_points
+
+        point_labels = {k: [bool(layout_analysis.masks[k][v, u]) if k in layout_analysis.masks else False for (u, v) in pix]
+                        for k in SURFACE_KEYS}
+        hfov_ref = math.degrees(2.0 * math.atan(w / (2.0 * f)))
+        for ev in (extra_views or ()):
+            ep, el, ec = extra_view_points(ev, hfov_ref, target_points)
+            pts.extend(tuple(float(c) for c in row) for row in ep)
+            for k in SURFACE_KEYS:
+                point_labels[k].extend(bool(b) for b in el[k])
+            extra_cols.extend(ec)
+
     point_unc = Uncertainty(
         confidence=CONFIDENCE_CEILING,
         note="monocular relative depth (learned prior), assumed camera; not a measurement",
     )
     rgb = _load_rgb(item, w, h)
-    colors = [tuple(int(c) for c in rgb[v, u]) for u, v in pix] if rgb is not None else [None] * len(pts)
+    colors = ([tuple(int(c) for c in rgb[v, u]) for u, v in pix] if rgb is not None else [None] * len(pix)) + extra_cols
     rec_points = [
         ReconstructedPoint(position=p, track_id=f"bs:{i:05d}", source_evidence_ids=[item.id],
                            uncertainty=point_unc, color=c)
@@ -246,7 +263,7 @@ def bootstrap_single_image(
     if metric:
         from engine.pipeline.single_image_layout import layout_planes
 
-        layout, detection, up_vec, layout_facts = layout_planes(layout_analysis, pts, pix, w, h, f)
+        layout, detection, up_vec, layout_facts = layout_planes(layout_analysis, pts, point_labels, w, h, f, extra_views)
     if detection is None:
         tol = 0.02 * float(np.median([p[2] for p in pts])) + 0.02
         min_inl = max(40, int(0.02 * len(pts)))
@@ -309,12 +326,12 @@ def bootstrap_single_image(
         # frame-edge truncation, measured from the plane's own supporting pixels
         idxs = [index_of[t] for t in op.plane.inlier_ids]
         if op.role == "wall":
-            wall_pixels[eid] = [pix[i] for i in idxs]
+            wall_pixels[eid] = [pix[i] for i in idxs if i < len(pix)]
         for side, test in (
             ("left", lambda u, v: u < EDGE_BAND * w), ("right", lambda u, v: u > (1 - EDGE_BAND) * w),
             ("top", lambda u, v: v < EDGE_BAND * h), ("bottom", lambda u, v: v > (1 - EDGE_BAND) * h),
         ):
-            share = sum(1 for i in idxs if test(*pix[i])) / max(1, len(idxs))
+            share = sum(1 for i in idxs if i < len(pix) and test(*pix[i])) / max(1, len(idxs))
             truncated[side] = max(truncated[side], share)
         promoted.append(eid)
         eid_of_plane[op.plane.plane_id] = eid

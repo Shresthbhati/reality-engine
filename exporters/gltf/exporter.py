@@ -330,6 +330,7 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
     tail_buffer = bytearray()  # additional real-mesh bytes, appended after the cube buffer
     material_map: dict[str, int] = {}
     entity_id_to_node_idx: dict[str, int] = {}
+    cube_mesh_by_mat: dict[Optional[int], int] = {}
 
     for entity in world.entities.values():
         if not entity.transform or "position" not in entity.transform:
@@ -409,17 +410,27 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
 
         # Material binding (Task 9.1)
         mat_idx = _resolve_material(world, entity, gltf, material_map, artifact_store=artifact_store, tail_buffer=tail_buffer, base_buffer_len=len(buffer_bytes))
-        if mat_idx is not None:
-            if mesh_index == 0:
-                mesh_index = len(gltf["meshes"])
-                gltf["meshes"].append({
-                    "primitives": [
-                        {"attributes": {"POSITION": 0}, "indices": 1, "mode": 4, "material": mat_idx}
-                    ]
-                })
+        if mesh_index == 0:
+            if mat_idx in cube_mesh_by_mat:
+                mesh_index = cube_mesh_by_mat[mat_idx]
             else:
-                for prim in gltf["meshes"][mesh_index]["primitives"]:
-                    prim["material"] = mat_idx
+                if not cube_mesh_by_mat:
+                    # Claim the initial placeholder cube mesh 0 so it is not an orphan
+                    if mat_idx is not None:
+                        gltf["meshes"][0]["primitives"][0]["material"] = mat_idx
+                    cube_mesh_by_mat[mat_idx] = 0
+                    mesh_index = 0
+                else:
+                    new_idx = len(gltf["meshes"])
+                    cube_prim = {"attributes": {"POSITION": 0}, "indices": 1, "mode": 4}
+                    if mat_idx is not None:
+                        cube_prim["material"] = mat_idx
+                    gltf["meshes"].append({"primitives": [cube_prim]})
+                    cube_mesh_by_mat[mat_idx] = new_idx
+                    mesh_index = new_idx
+        elif mat_idx is not None:
+            for prim in gltf["meshes"][mesh_index]["primitives"]:
+                prim["material"] = mat_idx
 
         node_entry = {
             "name": entity.name or entity.id,

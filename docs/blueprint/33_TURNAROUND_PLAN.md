@@ -209,7 +209,7 @@ that opens on a phone with a simple walk-through view.
 | T-4b.4 | DONE | Read-only client share link (token-scoped, revocable, no account needed) | T2 | medium | security test: link cannot edit or see other worlds (`tests/test_client_share_link.py` passed) |
 | T-4b.2 & T-4b.3 | DONE | Derived surface finish layers (as-built survey never overwritten) & named design options with plain-language labels and side-by-side export (	ests/test_design_options_finish_layer.py) |
 | T-4b.5 | Simple walk mode (eye-height first-person, collide with walls, touch + keyboard) | T5 | high | screenshots 375/1280; works on a phone |
-| T-4b.6 | Still renders (PNG) from saved camera views for client decks | T1 | medium | render endpoint returns image for a saved view |
+| T-4b.6 | DONE | Still renders (PNG) from saved camera views for client decks | T1 | medium | render endpoint returns image for a saved view (`tests/test_camera_views_and_renders.py` passed) |
 
 ### M5 — Capture that a normal person can do (≈ 2–3 weeks, parallel-safe with M4)
 

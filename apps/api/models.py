@@ -131,6 +131,20 @@ class WorldShareLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class WorldCameraView(Base):
+    """Saved camera view for client decks and walk presets (T-4b.6)."""
+
+    __tablename__ = "world_camera_views"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    position: Mapped[dict] = mapped_column(JSON)
+    target: Mapped[dict] = mapped_column(JSON)
+    fov_deg: Mapped[float] = mapped_column(Float, default=60.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Session(Base):
     """A capture Session. First-class: may exist without a World."""
 

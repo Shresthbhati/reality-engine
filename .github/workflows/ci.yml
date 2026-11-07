@@ -76,7 +76,7 @@ jobs:
             tests/test_edit_preservation_reprocess.py \
             tests/test_client_share_link.py \
             tests/test_design_options_finish_layer.py \
-            tests/test_design_options_finish_layer.py \
+            tests/test_camera_views_and_renders.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

@@ -154,3 +154,32 @@ def test_key_points_are_derived_with_corners_at_the_right_heights(bootstrap):
     assert span == pytest.approx(1.1, abs=0.15)  # the window: sill 0.9 -> head 2.0
     for p in win:
         assert all(e in bootstrap.world.entities for e in p["entity_ids"])
+
+
+def test_glb_materials_are_named_by_surface_and_shared(bootstrap):
+    """T-2.4: SketchUp/3ds Max users get floor/wall/window/furniture materials, not one anonymous grey."""
+    from exporters.gltf.exporter import export_to_glb
+    from tests.gltf_validation import parse_glb, validate_glb
+
+    glb = export_to_glb(bootstrap.world)
+    validate_glb(glb)  # structurally valid
+    j = parse_glb(glb)
+    j = j[0] if isinstance(j, tuple) else j
+    names = [m["name"] for m in j["materials"]]
+    assert {"surface_floor", "surface_wall", "surface_ceiling", "surface_window"} <= set(names)
+    assert len(names) == len(set(names))  # one material per surface type, shared by every node of that type
+    by_name = {n["name"]: n for n in j["nodes"]}
+    wall_nodes = [n for n in j["nodes"] if n["name"].startswith("Inferred wall")]
+    wall_mats = {j["meshes"][n["mesh"]]["primitives"][0].get("material") for n in wall_nodes}
+    assert len(wall_mats) == 1 and None not in wall_mats
+    glass = next(m for m in j["materials"] if m["name"] == "surface_window")
+    assert glass.get("alphaMode") == "BLEND"
+
+
+def test_obj_materials_are_named_by_surface_too(bootstrap):
+    from exporters.mesh.obj import export_to_obj
+
+    obj, mtl = export_to_obj(bootstrap.world)
+    used = {line.split()[1] for line in obj.splitlines() if line.startswith("usemtl")}
+    assert {"surface_floor", "surface_wall", "surface_ceiling", "surface_window"} <= used
+    assert all(f"newmtl {m}" in mtl for m in used)

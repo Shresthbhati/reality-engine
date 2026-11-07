@@ -49,7 +49,14 @@ _MEDIA_TYPES = {
 _MEDIA_TYPES.update({name: "application/json" for name in reality.EXPORT_PROFILES})
 
 
-_STATE_OF_PROVENANCE = {"OBSERVED": "measured", "MEASURED": "measured", "INFERRED": "inferred", "ESTIMATED": "estimated"}
+_STATE_OF_PROVENANCE = {
+    "OBSERVED": "measured",
+    "MEASURED": "measured",
+    "RECONSTRUCTED": "measured",
+    "INFERRED": "inferred",
+    "ESTIMATED": "estimated",
+    "GENERATED": "estimated",
+}
 
 
 def _element_report(world, ids) -> list:

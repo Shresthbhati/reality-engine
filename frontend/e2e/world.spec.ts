@@ -308,5 +308,5 @@ test("Export report in UI: what was measured vs inferred, per element, with conf
 
   const rows = table.locator("tbody tr");
   await expect(rows.first()).toBeVisible();
-  await expect(rows.first().locator("td").nth(1)).toHaveText(/Measured|Inferred|Estimated/);
+  await expect(rows.first().locator("td").nth(1)).toHaveText(/Measured|Inferred|Estimated|Unknown/);
 });

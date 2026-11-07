@@ -242,7 +242,10 @@ async def commit_version(
         if parent_world is not None and _canonical_bytes(parent_world) == new_bytes:
             row = await db.get(WorldVersion, parent)
             if row is not None and row.world_id == world_id:
-                return row
+                if label is not None and row.label != label:
+                    pass
+                else:
+                    return row
             # Mirror missing or diverged: fall through and save (safe).
 
     vid = begin_adoption(world_id, parent)

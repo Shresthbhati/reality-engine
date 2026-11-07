@@ -34,6 +34,7 @@ from apps.api.models import (
     Location,
     Session,
     World,
+    WorldCameraView,
     WorldShareLink,
     WorldVersion,
     new_id,
@@ -2558,6 +2559,14 @@ async def create_design_option(
             ent.custom_properties["material_label"] = mat_name
             ent.custom_properties["design_layer"] = "finish"
 
+    from world_ir.world_v1 import Scenario
+    scn_id = f"scn-{uuid4().hex[:8]}"
+    worldir.scenarios[scn_id] = Scenario(
+        id=scn_id,
+        name=body.label.strip(),
+        description=body.description or "",
+    )
+
     from apps.api import worldstore_service
     version_row = await worldstore_service.commit_version(
         db,
@@ -2667,3 +2676,187 @@ async def compare_design_options(
         "added_entity_ids": added_ids,
         "removed_entity_ids": removed_ids,
     }
+
+
+
+# -------------------------------------------------------------------------------------------------
+# Saved Camera Views & Still Renders (T-4b.6)
+# -------------------------------------------------------------------------------------------------
+
+class CameraViewIn(BaseModel):
+    name: str
+    position: dict
+    target: dict
+    fov_deg: float = 60.0
+
+
+@worlds.post("/{world_id}/views")
+async def create_camera_view(
+    world_id: str,
+    body: CameraViewIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Save a camera view pose for client deck still renders and presentations (T-4b.6)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    if auth.role == Role.VIEWER:
+        raise HTTPException(403, "Read-only access cannot save camera views")
+
+    if not body.name or len(body.name) > 120:
+        raise HTTPException(422, "name must be a non-empty string <= 120 chars")
+
+    for k, val in (("position", body.position), ("target", body.target)):
+        if not isinstance(val, dict) or not all(axis in val for axis in ("x", "y", "z")):
+            raise HTTPException(422, f"{k} must be an object with numeric x, y, z")
+        for axis in ("x", "y", "z"):
+            v = val[axis]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise HTTPException(422, f"{k}.{axis} must be a finite number")
+
+    if not (10.0 <= body.fov_deg <= 150.0):
+        raise HTTPException(422, "fov_deg must be within [10, 150]")
+
+    view = WorldCameraView(
+        id=new_id("view"),
+        world_id=w.id,
+        name=body.name.strip(),
+        position={axis: float(body.position[axis]) for axis in ("x", "y", "z")},
+        target={axis: float(body.target[axis]) for axis in ("x", "y", "z")},
+        fov_deg=float(body.fov_deg),
+    )
+    db.add(view)
+    await db.commit()
+    await db.refresh(view)
+    return {
+        "id": view.id,
+        "world_id": view.world_id,
+        "name": view.name,
+        "position": view.position,
+        "target": view.target,
+        "fov_deg": view.fov_deg,
+        "created_at": view.created_at.isoformat() if view.created_at else None,
+    }
+
+
+@worlds.get("/{world_id}/views")
+async def list_camera_views(
+    world_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """List all saved camera views for a world (T-4b.6)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+
+    res = await db.execute(
+        select(WorldCameraView).where(WorldCameraView.world_id == world_id).order_by(WorldCameraView.created_at.asc())
+    )
+    views = res.scalars().all()
+    return {
+        "world_id": world_id,
+        "items": [
+            {
+                "id": v.id,
+                "name": v.name,
+                "position": v.position,
+                "target": v.target,
+                "fov_deg": v.fov_deg,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+            }
+            for v in views
+        ],
+    }
+
+
+@worlds.delete("/{world_id}/views/{view_id}")
+async def delete_camera_view(
+    world_id: str,
+    view_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Delete a saved camera view (T-4b.6)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    if auth.role == Role.VIEWER:
+        raise HTTPException(403, "Read-only access cannot delete camera views")
+
+    view = await db.get(WorldCameraView, view_id)
+    if view is None or view.world_id != world_id:
+        raise HTTPException(404, "Camera view not found")
+
+    await db.delete(view)
+    await db.commit()
+    return {"status": "deleted", "id": view_id}
+
+
+@worlds.get("/{world_id}/render")
+async def render_world_view(
+    world_id: str,
+    view_id: str | None = None,
+    version: str | None = None,
+    width: int = 1280,
+    height: int = 720,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> Response:
+    """Render still PNG from saved camera view for client decks (T-4b.6)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+
+    row = await _version_row(db, world_id, version, auth=auth)
+    worldir = _load_world_or_409(row)
+
+    view_name = "Default Perspective"
+    pos = {"x": 0.0, "y": 1.6, "z": -4.0}
+    tgt = {"x": 0.0, "y": 1.2, "z": 0.0}
+    fov = 60.0
+
+    if view_id is not None:
+        res = await db.execute(
+            select(WorldCameraView).where(WorldCameraView.world_id == world_id, WorldCameraView.id == view_id)
+        )
+        view = res.scalars().first()
+        if view is None:
+            res = await db.execute(
+                select(WorldCameraView).where(WorldCameraView.world_id == world_id, WorldCameraView.name == view_id)
+            )
+            view = res.scalars().first()
+        if view is None:
+            raise HTTPException(404, f"Saved camera view '{view_id}' not found")
+        view_name = view.name
+        pos = view.position
+        tgt = view.target
+        fov = view.fov_deg
+
+    from apps.api.render_service import render_still_png
+    png_bytes = render_still_png(
+        world=worldir,
+        view_name=view_name,
+        position=pos,
+        target=tgt,
+        fov_deg=fov,
+        width=max(320, min(3840, width)),
+        height=max(240, min(2160, height)),
+        world_name=w.name,
+        version_label=row.label or "as-built",
+    )
+
+    safe_view = "".join(c for c in view_name if c.isalnum() or c in ("-", "_")).strip() or "view"
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f'inline; filename="{w.id}_{safe_view}.png"',
+            "Cache-Control": "private, max-age=3600",
+        },
+    )

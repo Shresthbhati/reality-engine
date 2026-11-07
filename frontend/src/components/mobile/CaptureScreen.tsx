@@ -5,6 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Camera, Image as ImageIcon, Loader2, MapPin, RotateCcw, Smartphone, X } from "lucide-react";
 import { isApiError, useWorldStatus } from "@/lib/api";
 import { uploadPhoto } from "@/lib/mobile/upload";
+import { addFix, emptyTrack, fixNear, markSent, toLocationPoints, unsent, type GpsTrack } from "@/lib/mobile/gps-track";
+import { postSessionLocations } from "@/lib/api/locations";
+import { getCaptureCoverage } from "@/lib/api/capture-coverage";
+import { pickHint, type CaptureHint, type HintState } from "@/lib/mobile/coverage-hint";
+import { autoRetryDelayMs, idsToRetry, keepInStore, restoredMessage, restorePlan } from "@/lib/mobile/offline-model";
+import { loadPhotos, removePhoto, savePhoto } from "@/lib/mobile/offline-store";
 import { EMPTY_QUEUE, nextToUpload, outcomeFromResponse, queueReducer, summarize, type QueueItem } from "@/lib/mobile/upload-queue";
 import { photoResult, type Tone } from "@/lib/mobile/capture-result";
 import WorldStatusCard, { TONE_COLOR } from "./WorldStatusCard";
@@ -68,6 +74,7 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
   const [camera, setCamera] = useState<CameraState>({ kind: "starting" });
   const [cameraKey, setCameraKey] = useState(0);
   const [gps, setGps] = useState<GpsState>({ status: "loading" });
+  const [fixCount, setFixCount] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const nativeInputRef = useRef<HTMLInputElement | null>(null);
@@ -76,31 +83,86 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
   const urlsRef = useRef<string[]>([]);
   const controllersRef = useRef(new Map<string, AbortController>());
   const gpsRef = useRef<GpsState>(gps);
+  const trackRef = useRef<GpsTrack>(emptyTrack());
+  const sessionIdRef = useRef<string | null>(null);
+  const flushingRef = useRef(false);
 
   const { status, error: statusError, refresh } = useWorldStatus(worldId);
+
+  // T-5.4: after a batch settles and a (new) model exists, ask the real coverage API for ONE hint. Shown once, dismissible, silent
+  // when nothing is known: the pure rules live in lib/mobile/coverage-hint.ts.
+  const [hint, setHint] = useState<CaptureHint | null>(null);
+  const hintStateRef = useRef<HintState>({ shown: [], dismissedKey: null });
+  const modelVersion = status?.model?.version_id ?? null;
+  const pendingUploads = summarize(queue).pending;
+  useEffect(() => {
+    if (!worldId || !modelVersion || pendingUploads > 0) return;
+    let live = true;
+    getCaptureCoverage(worldId)
+      .then((dto) => {
+        if (!live) return;
+        const h = pickHint(dto, hintStateRef.current);
+        if (!h) return;
+        hintStateRef.current = { ...hintStateRef.current, shown: [...hintStateRef.current.shown, h.key] };
+        setHint(h);
+      })
+      .catch(() => undefined); // no coverage is no hint, never an error banner
+    return () => {
+      live = false;
+    };
+  }, [worldId, modelVersion, pendingUploads]);
 
   useEffect(() => {
     gpsRef.current = gps;
   }, [gps]);
 
-  // Real geolocation only; denied/unsupported is shown, never defaulted.
+  // Real geolocation only; denied/unsupported is shown, never defaulted. A WATCH (T-5.1): the session holds a track of
+  // timestamped fixes, not one reading, so a walk through a building or along a street leaves a trajectory.
   useEffect(() => {
     let live = true;
     if (!("geolocation" in navigator)) {
       void Promise.resolve().then(() => live && setGps({ status: "unavailable", reason: "Not supported" }));
-    } else {
-      navigator.geolocation.getCurrentPosition(
-        (pos) =>
-          live &&
-          setGps({ status: "ready", lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: Math.round(pos.coords.accuracy) }),
-        (err) => live && setGps({ status: "unavailable", reason: err.code === err.PERMISSION_DENIED ? "Permission denied" : "Unavailable" }),
-        { enableHighAccuracy: true, timeout: 10000 },
-      );
+      return () => { live = false; };
     }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (!live) return;
+        setGps({ status: "ready", lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: Math.round(pos.coords.accuracy) });
+        trackRef.current = addFix(trackRef.current, {
+          lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null,
+          altitudeM: pos.coords.altitude, heading: pos.coords.heading, speedMps: pos.coords.speed, at: pos.timestamp,
+        });
+        setFixCount(trackRef.current.fixes.length);
+      },
+      (err) => live && setGps({ status: "unavailable", reason: err.code === err.PERMISSION_DENIED ? "Permission denied" : "Unavailable" }),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
+    );
     return () => {
       live = false;
+      navigator.geolocation.clearWatch(id);
     };
   }, []);
+
+  // Post the fixes the session has not seen yet (needs the session id the first upload returns). Failures keep them for the next try.
+  const flushTrack = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    const pending = unsent(trackRef.current);
+    if (!sid || pending.length === 0 || flushingRef.current) return;
+    flushingRef.current = true;
+    try {
+      await postSessionLocations(sid, toLocationPoints(pending));
+      trackRef.current = markSent(trackRef.current, pending.length);
+    } catch {
+      /* kept: sent only moves on success, the next flush retries */
+    } finally {
+      flushingRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = window.setInterval(() => void flushTrack(), 20_000);
+    return () => window.clearInterval(t);
+  }, [flushTrack]);
 
   // Real device camera. Re-runs when the user taps "Try camera again".
   useEffect(() => {
@@ -145,6 +207,63 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
     };
   }, []);
 
+  // T-5.3: photos that had not finished uploading when the page closed come back from the device's IndexedDB and upload again.
+  useEffect(() => {
+    let live = true;
+    void loadPhotos().then((stored) => {
+      if (!live || stored.length === 0) return;
+      const plan = restorePlan(stored.map(({ id, file }) => ({ id, name: file.name, size: file.size })), EMPTY_QUEUE);
+      const byId = new Map(stored.map((s) => [s.id, s.file]));
+      const urls: Record<string, string> = {};
+      for (const p of plan.add) {
+        const f = byId.get(p.id)!;
+        filesRef.current.set(p.id, f);
+        const u = URL.createObjectURL(f);
+        urlsRef.current.push(u);
+        urls[p.id] = u;
+      }
+      setPreviews((prev) => ({ ...prev, ...urls }));
+      dispatch({ type: "add", items: plan.add });
+      setNotice(restoredMessage(plan.add.length));
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Keep the device store equal to "photos that still need the network": finished or unretryable ones are removed.
+  useEffect(() => {
+    for (const i of queue.items) if (!keepInStore(i)) void removePhoto(i.id);
+  }, [queue]);
+
+  // A retryable failure (offline, a dropped connection) retries itself with backoff, and at once when the connection returns.
+  const retryTimersRef = useRef(new Map<string, number>());
+  const queueRef = useRef(queue);
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
+  useEffect(() => {
+    const timers = retryTimersRef.current;
+    for (const i of queue.items) {
+      const key = `${i.id}:${i.attempts}`;
+      const delay = autoRetryDelayMs(i);
+      if (delay === null || timers.has(key)) continue;
+      timers.set(key, window.setTimeout(() => { timers.delete(key); dispatch({ type: "retry", id: i.id }); }, delay));
+    }
+  }, [queue]);
+  useEffect(() => {
+    const timers = retryTimersRef.current;
+    const onOnline = () => {
+      for (const id of idsToRetry(queueRef.current)) dispatch({ type: "retry", id });
+    };
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      timers.forEach((t) => window.clearTimeout(t));
+      timers.clear();
+    };
+  }, []);
+
   // The pump: one photo at a time, strictly in order (see nextToUpload).
   useEffect(() => {
     const next = nextToUpload(queue, worldId);
@@ -157,15 +276,18 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
     }
     const controller = new AbortController();
     controllersRef.current.set(next.id, controller);
-    const g = gpsRef.current;
+    // this photo's own position: the fix nearest in time to when it was taken (none when no fix is close enough)
+    const here = fixNear(trackRef.current, file.lastModified || Date.now());
     uploadPhoto(file, {
       worldId,
-      latitude: g.status === "ready" ? g.lat : undefined,
-      longitude: g.status === "ready" ? g.lng : undefined,
+      latitude: here?.lat,
+      longitude: here?.lng,
       signal: controller.signal,
       onProgress: (loaded, total) => dispatch({ type: "progress", id: next.id, loaded, total }),
     })
       .then((res) => {
+        sessionIdRef.current = res.session_id;
+        void flushTrack();
         const outcome = outcomeFromResponse(res);
         if (outcome.kind === "accepted") dispatch({ type: "accepted", id: next.id, evidenceId: outcome.evidenceId });
         else dispatch({ type: "rejected", id: next.id, reason: outcome.reason });
@@ -185,7 +307,7 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
         });
       })
       .finally(() => controllersRef.current.delete(next.id));
-  }, [queue, worldId, refresh]);
+  }, [queue, worldId, refresh, flushTrack]);
 
   const addFiles = useCallback((files: File[]) => {
     const images = files.filter((f) => f.type.startsWith("image/") || f.type === "");
@@ -195,6 +317,7 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
     const items = images.map((f) => {
       const id = newId();
       filesRef.current.set(id, f);
+      void savePhoto(id, f); // kept on the device until it has uploaded (T-5.3)
       const url = URL.createObjectURL(f);
       urlsRef.current.push(url);
       return { id, name: f.name || "photo.jpg", size: f.size, url };
@@ -303,7 +426,7 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
             style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
           >
             <MapPin className="h-3.5 w-3.5" aria-hidden style={{ color: gps.status === "ready" ? "var(--accent)" : "var(--text-tertiary)" }} />
-            {gps.status === "ready" ? `GPS ±${gps.accuracyM} m` : gps.status === "loading" ? "GPS searching…" : `No GPS: ${gps.reason}`}
+            {gps.status === "ready" ? `GPS ±${gps.accuracyM} m · ${fixCount} fix${fixCount === 1 ? "" : "es"}` : gps.status === "loading" ? "GPS searching…" : `No GPS: ${gps.reason}`}
           </span>
           <span
             className="font-mono-num flex min-h-[28px] items-center rounded-full px-2.5"
@@ -361,6 +484,20 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
       )}
 
       <div className="flex flex-col gap-4 px-4">
+        {hint && (
+          <section role="status" aria-label="Capture hint" className="flex items-start justify-between gap-3 rounded-xl p-3 text-sm" style={{ ...cardStyle, borderColor: hint.tone === "good" ? "var(--success)" : "var(--accent-border)" }}>
+            <p style={{ color: "var(--text-primary)" }}>{hint.text}</p>
+            <button
+              type="button"
+              onClick={() => { hintStateRef.current = { ...hintStateRef.current, dismissedKey: hint.key }; setHint(null); }}
+              className="min-h-[44px] shrink-0 rounded-lg px-3 text-xs font-semibold"
+              style={{ color: "var(--accent)" }}
+            >
+              Got it
+            </button>
+          </section>
+        )}
+
         {/* World / session state */}
         {worldId ? (
           <WorldStatusCard worldId={worldId} status={status} error={statusError} refresh={refresh} />

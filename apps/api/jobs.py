@@ -1380,7 +1380,7 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
     for job in result.scalars().all():
         if job.attempts >= job.max_attempts:
             job.status = JOB_FAILED
-            job.stage = "failed"
+            job.stage = TERMINAL_STAGE[JOB_FAILED]
             job.completed_at = utcnow()
             job.error = f"Worker died or job timed out after {job.attempts} attempt(s)"
             db.add(
@@ -1424,7 +1424,7 @@ async def reap_stale_jobs(db: AsyncSession) -> int:
             if dead_job:
                 if dead_job.attempts >= dead_job.max_attempts:
                     dead_job.status = JOB_FAILED
-                    dead_job.stage = "failed"
+                    dead_job.stage = TERMINAL_STAGE[JOB_FAILED]
                     dead_job.completed_at = utcnow()
                     dead_job.error = f"Worker process died after {dead_job.attempts} attempt(s)"
                 else:

@@ -32,7 +32,7 @@ api = [
 ]
 # IFC export (exporters/ifc_bridge.py) needs IfcOpenShell; without it the API answers 501 for format=ifc. Declared so a clean
 # `pip install -e ".[dev]"` exercises the IFC tests instead of silently skipping them.
-export = ["ifcopenshell>=0.8"]
+export = ["ifcopenshell>=0.8", "ezdxf>=1.4"]
 # EXR depth-map import (evidence/depth_exr.py, RGB-D captures). Without it EXR depth is refused explicitly, never guessed.
 rgbd = ["OpenEXR>=3.2"]
 # Video-frame tracking backend (perception/instances/track_backend.py); OPTIONAL: its tests skip visibly without it.

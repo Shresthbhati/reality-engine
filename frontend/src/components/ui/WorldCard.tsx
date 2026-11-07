@@ -13,6 +13,7 @@ import {
   Trash2,
   ExternalLink,
   AlertTriangle,
+  Download,
 } from "lucide-react";
 import type { WorldRow } from "@/lib/types";
 import {
@@ -129,6 +130,8 @@ export default function WorldCard({
   return (
     <>
       <div
+        data-testid="world-card"
+        data-world-id={world.id}
         className="relative flex flex-col rounded-lg overflow-hidden transition-colors group"
         style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
       >
@@ -149,6 +152,7 @@ export default function WorldCard({
               e.stopPropagation();
               setMenuOpen(!menuOpen);
             }}
+            data-testid="world-menu-btn"
             className="p-1 rounded-md bg-surface/70 hover:bg-elevated text-fg-muted transition"
             title="World options"
           >
@@ -162,6 +166,7 @@ export default function WorldCard({
             >
               <Link
                 href={`/worlds/${world.id}`}
+                data-testid="world-open-btn"
                 className="flex items-center gap-2 px-3 py-1.5 hover:bg-elevated transition"
                 onClick={() => setMenuOpen(false)}
               >
@@ -171,8 +176,19 @@ export default function WorldCard({
 
               {statusView === "active" && (
                 <>
+                  <Link
+                    href={`/worlds/${world.id}?tab=export`}
+                    data-testid="world-export-btn"
+                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-elevated transition"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export</span>
+                  </Link>
+
                   <button
                     type="button"
+                    data-testid="world-rename-btn"
                     onClick={() => {
                       setMenuOpen(false);
                       setRenaming(true);
@@ -185,6 +201,7 @@ export default function WorldCard({
 
                   <button
                     type="button"
+                    data-testid="world-duplicate-btn"
                     onClick={handleDuplicate}
                     disabled={isSubmitting}
                     className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-elevated text-left transition"
@@ -195,6 +212,7 @@ export default function WorldCard({
 
                   <button
                     type="button"
+                    data-testid="world-archive-btn"
                     onClick={handleArchive}
                     disabled={isSubmitting}
                     className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-elevated text-left transition"
@@ -210,6 +228,7 @@ export default function WorldCard({
                   type="button"
                   onClick={handleRestore}
                   disabled={isSubmitting}
+                  data-testid="world-restore-btn"
                   className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-elevated text-left text-success transition"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -225,6 +244,7 @@ export default function WorldCard({
                   setMenuOpen(false);
                   setConfirmDelete(true);
                 }}
+                data-testid="world-delete-btn"
                 className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-error/40 text-left text-error transition"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -323,10 +343,21 @@ export default function WorldCard({
               )}
             </p>
 
+            <div data-testid="delete-affected-items" className="rounded-md bg-elevated/60 border border-line p-3 text-xs space-y-1.5">
+              <div className="font-medium text-fg">What will be {statusView === "trash" ? "permanently purged" : "moved to Trash"}:</div>
+              <ul className="list-disc list-inside text-fg-muted space-y-0.5">
+                <li>World: <span className="text-fg font-medium">{world.name}</span></li>
+                <li>Sessions: <span className="text-fg font-medium">{world.sessionCount} session{world.sessionCount !== 1 ? "s" : ""}</span></li>
+                <li>Evidence: <span className="text-fg font-medium">{world.evidenceCount} item{world.evidenceCount !== 1 ? "s" : ""}</span></li>
+                {world.coverageKm2 != null && <li>Coverage: <span className="text-fg font-medium">{world.coverageKm2} km²</span></li>}
+              </ul>
+            </div>
+
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-line-subtle">
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
+                data-testid="cancel-delete-btn"
                 className="px-3 py-1.5 rounded-lg hover:bg-elevated text-xs text-fg-muted transition"
               >
                 Cancel
@@ -335,6 +366,7 @@ export default function WorldCard({
                 type="button"
                 onClick={handleDelete}
                 disabled={isSubmitting}
+                data-testid="confirm-delete-btn"
                 className="px-3 py-1.5 rounded-lg bg-error hover:bg-error text-on-error font-medium text-xs transition disabled:opacity-50"
               >
                 {statusView === "trash" ? "Purge Permanently" : "Move to Trash"}

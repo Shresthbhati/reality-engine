@@ -188,6 +188,8 @@ def _world_out(w: World, session_count: int | None = None) -> dict:
 @worlds.get("")
 async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """``?status=active|archived|trashed`` (default active): archived and trashed worlds are hidden from the default list."""
+    if status == "trash":
+        status = "trashed"
     if status not in WORLD_STATUSES:
         raise HTTPException(422, f"status must be one of {', '.join(WORLD_STATUSES)}")
     stmt = select(World).where(World.status == status)

@@ -22,7 +22,8 @@ import type { WorldRow } from "@/lib/types";
 import type { CamerasPayload } from "@/types/worldir";
 
 export async function listWorlds(status: "active" | "archived" | "trash" = "active"): Promise<{ rows: WorldRow[]; dtos: WorldDto[] }> {
-  const url = status === "active" ? "/api/worlds" : `/api/worlds?status=${encodeURIComponent(status)}`;
+  const backendStatus = status === "trash" ? "trashed" : status;
+  const url = backendStatus === "active" ? "/api/worlds" : `/api/worlds?status=${encodeURIComponent(backendStatus)}`;
   const data = await apiGet<ApiList<WorldDto>>(url);
   return { rows: data.items.map((d) => toWorldRow(d)), dtos: data.items };
 }

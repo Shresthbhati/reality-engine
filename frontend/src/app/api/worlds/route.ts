@@ -27,6 +27,9 @@ function parseJson(text: string): unknown {
 export async function GET(request?: NextRequest) {
   try {
     const searchParams = request?.url ? new URL(request.url).searchParams : null;
+    if (searchParams?.get("status") === "trash") {
+      searchParams.set("status", "trashed");
+    }
     const qs = searchParams?.toString();
     const url = qs ? `${BACKEND_URL}/api/worlds?${qs}` : `${BACKEND_URL}/api/worlds`;
     const backendRes = await backendFetch(url, {

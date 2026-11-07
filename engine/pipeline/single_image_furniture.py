@@ -146,7 +146,7 @@ def place_furniture(world, obs, item, detections: Sequence, *, floor_op, pts, f:
         world.geometries[geom.id] = geom
         world.entities[eid] = Entity(
             id=eid, type=EntityType.FURNITURE, name=e["name"], transform={"position": pos},
-            geometry_ids=[geom.id], provenance=Provenance.INFERRED, confidence=conf,
+            geometry_ids=[geom.id], semantic_labels=["furniture_candidate"], provenance=Provenance.INFERRED, confidence=conf,
             uncertainty=Uncertainty(
                 confidence=conf,
                 note=("single-view furniture: COCO detection, floor-contact placement, class-prior size via an "

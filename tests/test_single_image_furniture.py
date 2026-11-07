@@ -74,3 +74,11 @@ def test_overlapping_detections_never_become_duplicate_entities(tmp_path):
 
     dup = [i for i in validate_world_ir(res.world).issues if i.code == "invariant_6_duplicate_entity"]
     assert not dup, dup
+
+
+def test_placed_furniture_carries_the_label_the_room_summary_counts(tmp_path):
+    """Studio's insights bar counted 0 furniture because the entities lacked 'furniture_candidate'."""
+    item, facts, dm = _room(tmp_path)
+    res = bootstrap_single_image(item, facts, depth_map=dm, furniture_detections=[_sofa()])
+    ent = next(e for e in res.world.entities.values() if e.type.value == "furniture")
+    assert "furniture_candidate" in ent.semantic_labels

@@ -42,7 +42,7 @@ MIN_FLOOR_SPAN_M = 1.0
 MAX_WALLS = 6
 #: a wall must carry at least this share of all wall evidence, lie within a plausible distance and be flat enough
 WALL_MIN_SHARE = 0.05
-WALL_DIST_RANGE_M = (0.4, 12.0)
+WALL_DIST_RANGE_M = (0.4, 8.0)  # indoor metric depth is unreliable beyond ~8 m
 #: candidates are merged only when the union is still this flat; a wall is rejected outright above WALL_REJECT_RMS_M
 WALL_MAX_RMS_M = 0.09
 WALL_REJECT_RMS_M = 0.25

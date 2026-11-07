@@ -225,3 +225,10 @@ def test_a_sliver_window_is_refused():
     lay = _with_opening("window", -0.5, 0.5, 1.0, 1.15)  # 15 cm tall: segmentation noise, not a window
     assert not [o for o in lay.openings if o.kind == "window"]
     assert any("window" in r for r in lay.refused)
+
+
+def test_walls_beyond_the_depth_models_reliable_range_are_not_reported():
+    depth, masks = _render()
+    lay = solve_layout(depth * 3.0, masks, hfov_deg=HFOV)  # the same room seen from 3x farther: front wall at 10.5 m
+    assert all(w.plane.d <= 8.0 for w in lay.walls), [round(w.plane.d, 1) for w in lay.walls]
+    assert any("implausible wall plane" in n for n in lay.notes)

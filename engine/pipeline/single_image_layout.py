@@ -274,7 +274,10 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
             # start/end ON THE FLOOR (the solver's wall line is at camera height), with the wall's direction and up
             "wall_slab": {"start_xyz_m": [float(c) for c in (a - cam_h * up_h)], "end_xyz_m": [float(c) for c in (b - cam_h * up_h)],
                           "direction": [float(c) for c in (b - a) / max(1e-9, float(np.linalg.norm(b - a)))],
-                          "up": [float(c) for c in up_h], "height_m": round(height, 3), "openings": openings},
+                          # the wall normal faces the camera (the room's inside); outward is the other way
+                          "outward": [float(c) for c in -np.asarray(_flip(wl.plane.normal))],
+                          "up": [float(c) for c in up_h], "height_m": round(height, 3),
+                          "length_m": round(float(np.linalg.norm(b - a)), 3), "thickness_m": 0.1, "openings": openings},
         })
     # floor and ceiling belong to the room too (the validator requires every surface to name its space)
     boundary = [eid for _, eid, _, _, _ in walls_used]
@@ -284,6 +287,14 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
             world.entities[eid].custom_properties["room_id"] = room_id
             boundary.append(eid)
     world.entities[room_id].custom_properties["boundary_element_ids"] = boundary
+    # floor / ceiling polygons for Studio's solid shell (same hull as the footprint, at floor level and at ceiling height)
+    for key, lift in (("layout-floor", 0.0), ("layout-ceiling", height or 2.4)):
+        eid = eid_of_plane.get(key)
+        if eid in world.entities:
+            world.entities[eid].custom_properties["slab"] = {
+                "up": [float(c) for c in up_h],
+                "polygon_xyz_m": [[float(c) for c in (q + lift * up_h)] for q in floor_pts],
+            }
     facts.update({"created": True, "room_id": room_id, "area_m2_visible_part": round(area, 2), "walls": len(walls_used)})
     return facts
 

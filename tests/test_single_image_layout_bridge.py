@@ -212,3 +212,27 @@ def test_elements_carry_dimensions_with_state_basis_and_uncertainty(bootstrap):
 def test_room_exposes_the_ceiling_height_keys_the_summary_card_reads(bootstrap):
     cp = _of(bootstrap, "room")[0].custom_properties
     assert cp["ceiling_height_min_m"] == pytest.approx(2.6, abs=0.1) and cp["ceiling_height_max_m"] == cp["ceiling_height_min_m"]
+
+
+def test_slabs_have_everything_studios_solid_shell_builder_reads(bootstrap):
+    """Without these Studio fell back to translucent legacy boxes and said 'no reconstructed room shell'."""
+    import numpy as np
+
+    walls = [w for w in _of(bootstrap, "wall") if w.custom_properties.get("wall_slab")]
+    assert walls
+    for w in walls:
+        s = w.custom_properties["wall_slab"]
+        d, up, out = (np.asarray(s[k]) for k in ("direction", "up", "outward"))
+        assert abs(np.linalg.norm(out) - 1) < 1e-6 and abs(out @ up) < 1e-6 and abs(out @ d) < 1e-6
+        a, b = np.asarray(s["start_xyz_m"]), np.asarray(s["end_xyz_m"])
+        assert s["length_m"] == pytest.approx(float(np.linalg.norm(b - a)), abs=1e-3) and s["thickness_m"] > 0
+        # outward points AWAY from the room: the camera (origin) is on the inner side of the wall
+        assert float(np.dot(-(a + b) / 2, out)) < 0
+    for kind in ("floor", "ceiling"):
+        (e,) = _of(bootstrap, kind)
+        slab = e.custom_properties["slab"]
+        assert len(slab["polygon_xyz_m"]) >= 3 and abs(np.linalg.norm(slab["up"]) - 1) < 1e-6
+        assert e.custom_properties["room_id"]
+    fl, ce = (_of(bootstrap, k)[0].custom_properties["slab"] for k in ("floor", "ceiling"))
+    rise = np.dot(np.asarray(ce["polygon_xyz_m"][0]) - np.asarray(fl["polygon_xyz_m"][0]), np.asarray(fl["up"]))
+    assert rise == pytest.approx(2.6, abs=0.15)

@@ -119,7 +119,14 @@ async def _startup() -> None:
     except Exception:
         import logging
         logging.getLogger("reality.api.startup").exception("startup adoption recovery failed")
-    app.state.worker = asyncio.create_task(jobrunner.worker_loop())
+    enable_worker = (
+        not os.environ.get("REALITY_DISABLE_IN_PROCESS_WORKER")
+        and os.environ.get("ENABLE_WORKER", "true").lower() in ("true", "1", "yes")
+    )
+    if enable_worker:
+        app.state.worker = asyncio.create_task(jobrunner.worker_loop())
+    else:
+        app.state.worker = None
 
 
 @app.on_event("shutdown")

@@ -230,7 +230,7 @@ Gate: a design partner signs up on a hosted URL, uploads, waits, exports, withou
 | ID | Task | Tier | Effort | Done when |
 |----|------|------|--------|-----------|
 | T-6.1 | DONE | Hosting decision: 1 API box + 1 GPU worker (e.g. RunPod/Lambda/Modal) + S3-compatible storage | **T6** | — | ADR with monthly cost estimate (ADR 026 in docs/engineering/DESIGN_DECISIONS.md) |
-| T-6.2 | Durable job queue (Redis/RQ or Postgres-backed) replacing in-process jobs; one GPU worker consumes | T3 sliced | high | worker restart loses no job (test) |
+| T-6.2 | DONE | Durable job queue: atomic leases, heartbeats, dead worker crash recovery, standalone worker daemon | T3 sliced | high | worker restart loses no job (verified by tests/test_durable_job_queue.py) |
 | T-6.3 | DONE | Storage adapter: ArtifactStore → S3-compatible behind existing interface; local stays default | T2 | medium | S3ArtifactStore & factory verified with MinIO/S3 protocol tests (tests/test_s3_artifact_store.py) |
 | T-6.4 | DONE | Account lifecycle on top of existing tenant isolation: signup, invite, delete-my-data | T2 | medium | security review pass; delete removes artifacts (verified by tests/test_account_lifecycle.py) |
 | T-6.5 | DONE | Usage metering (GPU-minutes, storage, exports per tenant) — per-tenant usage endpoint (GET /api/tenants/{id}/usage, GET /api/usage) verified with tenant isolation tests (	ests/test_usage_metering.py) |

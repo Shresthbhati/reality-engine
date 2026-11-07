@@ -168,6 +168,7 @@ def bootstrap_single_image(
     tag: str = "",
     furniture_detector=None,
     furniture_detections=None,
+    layout_analysis=None,
 ) -> BootstrapResult:
     """Build the LEVEL 0 hypothesis for one photograph.
 
@@ -195,8 +196,12 @@ def bootstrap_single_image(
         ReconstructionResult,
     )
 
-    dm = depth_map or _estimate_depth(item, depth_model)
-    depth = np.asarray(dm.values, dtype=np.float64)
+    metric = layout_analysis is not None  # perception.layout.learned_models.ImageAnalysis: metric depth + surface labels
+    if metric:
+        depth = np.asarray(layout_analysis.depth_m, dtype=np.float64)
+    else:
+        dm = depth_map or _estimate_depth(item, depth_model)
+        depth = np.asarray(dm.values, dtype=np.float64)
     if depth.ndim != 2 or depth.size == 0 or not np.isfinite(depth).all():
         raise BootstrapUnavailable("depth map is empty or non-finite")
     if float(depth.max() - depth.min()) < 1e-6:
@@ -210,7 +215,7 @@ def bootstrap_single_image(
     pix: List[Tuple[int, int]] = []
     for v in range(step // 2, h, step):
         for u in range(step // 2, w, step):
-            z = 1.0 / (INVERSE_DEPTH_OFFSET + float(depth[v, u]))
+            z = float(depth[v, u]) if metric else 1.0 / (INVERSE_DEPTH_OFFSET + float(depth[v, u]))
             pts.append(((u - cx) / f * z, -(v - cy) / f * z, z))
             pix.append((u, v))
 
@@ -234,10 +239,19 @@ def bootstrap_single_image(
                                   registration_status="partial")
 
     # ---- planes in relative units (tolerance scaled to the depth range) ----
-    tol = 0.02 * float(np.median([p[2] for p in pts])) + 0.02
-    min_inl = max(40, int(0.02 * len(pts)))
-    detection = detect_planes(result, seed=seed, distance_tolerance_m=tol, min_inliers=min_inl)
-    oriented = classify_planes(detection.planes, [pose.position], (0.0, 1.0, 0.0))
+    layout = None
+    layout_facts: Dict[str, object] = {"attempted": False}
+    up_vec = (0.0, 1.0, 0.0)
+    detection = None
+    if metric:
+        from engine.pipeline.single_image_layout import layout_planes
+
+        layout, detection, up_vec, layout_facts = layout_planes(layout_analysis, pts, pix, w, h, f)
+    if detection is None:
+        tol = 0.02 * float(np.median([p[2] for p in pts])) + 0.02
+        min_inl = max(40, int(0.02 * len(pts)))
+        detection = detect_planes(result, seed=seed, distance_tolerance_m=tol, min_inliers=min_inl)
+    oriented = classify_planes(detection.planes, [pose.position], up_vec)
 
     obs = Observation(
         id=f"obs-image-{item.id}", sensor_type="camera", data_uri=item.source_uri,
@@ -257,6 +271,7 @@ def bootstrap_single_image(
     plane_pos = positions_by_plane(result, oriented)
     index_of = {f"bs:{i:05d}": i for i in range(len(pts))}
     promoted: List[str] = []
+    eid_of_plane: Dict[str, str] = {}
     unpromoted: List[dict] = []
     truncated = {"left": 0.0, "right": 0.0, "top": 0.0, "bottom": 0.0}
     wall_pixels: Dict[str, List[Tuple[int, int]]] = {}
@@ -302,6 +317,7 @@ def bootstrap_single_image(
             share = sum(1 for i in idxs if test(*pix[i])) / max(1, len(idxs))
             truncated[side] = max(truncated[side], share)
         promoted.append(eid)
+        eid_of_plane[op.plane.plane_id] = eid
 
     # ---- opening CANDIDATES on wall planes: image-space rectangles, never recognised objects ----
     openings_facts: Dict[str, object] = {
@@ -309,7 +325,12 @@ def bootstrap_single_image(
         "method": "engine.pipeline.openings: contrast rectangles inside wall-plane pixels",
     }
     gray = _load_gray(item, w, h) if wall_pixels else None
-    if wall_pixels and gray is None:
+    if layout is not None and layout.camera_height_m is not None:
+        from engine.pipeline.single_image_layout import add_layout_openings
+
+        openings_facts = add_layout_openings(world, obs, layout, eid_of_plane, pre=pre,
+                                             confidence_ceiling=CONFIDENCE_CEILING)
+    elif wall_pixels and gray is None:
         openings_facts["reason"] = "photograph not readable from its source_uri"
     elif not wall_pixels:
         openings_facts["reason"] = "no wall plane was found to search for openings on"
@@ -322,7 +343,7 @@ def bootstrap_single_image(
                 corners = []
                 for cu, cv_ in cand.quad_px:
                     iu, iv = min(w - 1, max(0, int(round(cu)))), min(h - 1, max(0, int(round(cv_))))
-                    z = 1.0 / (INVERSE_DEPTH_OFFSET + float(depth[iv, iu]))
+                    z = float(depth[iv, iu]) if metric else 1.0 / (INVERSE_DEPTH_OFFSET + float(depth[iv, iu]))
                     corners.append(((iu - cx) / f * z, -(iv - cy) / f * z, z))
                 cxs, cys, czs = zip(*corners)
                 oid = f"{pre}-opening-{k:02d}"
@@ -475,7 +496,9 @@ def bootstrap_single_image(
 
     world.metadata["scale"] = {
         "state": "relative", "meters_per_unit": None,
-        "note": "single-image monocular depth: relative units only; no metric scale",
+        "note": ("single-image metric-depth ESTIMATE (indoor model, typically within ~10-20%): not a measurement, "
+                 "set the scale from one known distance" if metric else
+                 "single-image monocular depth: relative units only; no metric scale"),
     }
     world.metadata["bootstrap"] = {
         "level": 0, "source_evidence_id": item.id, "depth_model": depth_model,
@@ -483,6 +506,7 @@ def bootstrap_single_image(
         "confidence_ceiling": CONFIDENCE_CEILING, "gravity_assumption": "camera roughly level (+Y up)",
         "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
         "openings": openings_facts, "corridor": corridor, "furniture": furniture_facts,
+        "layout": layout_facts,
     }
     world.metadata["reconstruction"] = {
         "backend": "single_image_bootstrap", "registration_status": "partial",
@@ -497,6 +521,7 @@ def bootstrap_single_image(
         "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
         "depth_model": depth_model, "grid_step": step,
         "openings": openings_facts, "corridor": corridor, "furniture": furniture_facts,
+        "layout": layout_facts,
     }
     return BootstrapResult(
         world=world, points=tuple(pts),

@@ -280,3 +280,12 @@ Status: accepted by the product owner ("copper is fine"). Plan task U.3.
 - Light `--accent` is `#8a4f2a` (was legacy cyan `#00708a`); light and dark now share one brand. `--primary`/`--on-primary` are identical in both themes.
 - Every colour pair is held to WCAG AA by `frontend/tests/contract/design-tokens.test.mts`; change a token value, then run `npm run test:contract`.
 - Components use the token utilities from `globals.css` (`bg-surface`, `text-fg`, `text-success`, ...). The same test fails on any raw palette class (`text-zinc-400`, ...) in `src`.
+
+## Decision — Learned single-image layout and open-vocabulary furniture (2026-11-07, implemented locally)
+
+* **Why:** a real user world (10 AI-generated photos) came out with 5 floors, 1 wall and no furniture because 206 sparse SfM points cannot carry structure. A learned depth + surface-label stage gives every photo thousands of labelled 3D points.
+* **Models (loaded from the local Hugging Face cache only, never downloaded at request time):** `depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf` (Apache-2.0 per the upstream project; its model card has no licence tag, **confirm before a paid release**), `openmmlab/upernet-convnext-tiny` (MIT per its model card), `IDEA-Research/grounding-dino-tiny` (Apache-2.0). Rejected for a paid product: MASt3R/DUSt3R and Depth Anything V2 Base and larger (non-commercial licences). VGGT and Mask2Former were not evaluated.
+* **Selection rule:** multi-view is kept when credible (>= 40 sparse points per registered camera and >= 3 cameras). Only when it is not, and only if the layout path actually succeeds, the room shell is built from the best-supported single photograph. The replacement is recorded in `attempts` and the other photos are listed as not fused.
+* **Honesty:** scale stays `relative` with an explicit "ESTIMATE" note (monocular metric depth is roughly 10-20 % off, never a measurement); entities are capped at 0.35 confidence (openings 0.3); implausible openings (floating doors, sliver windows) are refused with the reason.
+* **Opt-outs:** `REALITY_LAYOUT_MODELS=0`, `REALITY_OPEN_VOCAB=0`; both are skipped under the `REALITY_TEST_BACKEND` seam.
+* **Open:** fusing several photographs into one shell; accuracy needs the labelled set (8.6).

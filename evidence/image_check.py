@@ -92,6 +92,9 @@ class ImageFacts:
     exif: dict = field(default_factory=dict)
     #: (lat, lon) only when the file itself carries GPS EXIF -- never inferred.
     gps: Optional[tuple] = None
+    #: 360-degree panorama detection and projection metadata (Task 13.3)
+    is_360: bool = False
+    projection: Optional[str] = None
 
     @property
     def geometry_eligible(self) -> bool:
@@ -112,6 +115,8 @@ class ImageFacts:
             "sharpness": self.sharpness,
             "exif": self.exif,
             "gps": list(self.gps) if self.gps else None,
+            "is_360": self.is_360,
+            "projection": self.projection,
             "geometry_eligible": self.geometry_eligible,
         }
 
@@ -147,6 +152,29 @@ def _gps_from_exif(exif) -> Optional[tuple]:
     return (lat, lon)
 
 
+def _parse_heic_container(data: bytes) -> tuple[int | None, int | None, dict]:
+    """Parse ISOBMFF HEIC/HEIF container for image spatial extents (ispe) and EXIF."""
+    import struct
+    width = None
+    height = None
+    exif: dict = {}
+
+    idx = data.find(b"ispe")
+    if idx >= 4 and idx + 16 <= len(data):
+        try:
+            w, h = struct.unpack_from(">II", data, idx + 8)
+            if 0 < w < 100_000 and 0 < h < 100_000:
+                width, height = w, h
+        except Exception:
+            pass
+
+    exif_idx = data.find(b"Exif\x00\x00")
+    if exif_idx != -1 and exif_idx + 14 <= len(data):
+        exif["has_exif"] = True
+
+    return width, height, exif
+
+
 def inspect_image(path: Path | str, declared_class: Optional[str] = None) -> ImageFacts:
     """Decode + classify one image file. Never raises: a bad file is a
     result (``ok=False`` with the measured reason)."""
@@ -172,6 +200,31 @@ def inspect_image(path: Path | str, declared_class: Optional[str] = None) -> Ima
     except Image.DecompressionBombError as exc:
         return ImageFacts(ok=False, reason=f"decompression bomb refused ({exc})", max_pixels=cap)
     except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as exc:
+        # Fallback: check if file is an ISOBMFF HEIC/HEIF container (e.g. from iPhone)
+        try:
+            with open(path, "rb") as f:
+                header = f.read(65536)
+            if len(header) >= 12 and header[4:8] == b"ftyp":
+                w, h, heic_exif = _parse_heic_container(header)
+                if w and h:
+                    if w * h > cap:
+                        return ImageFacts(ok=False, reason=f"image is {w}x{h} ({w * h:,} px); decoded-pixel cap is {cap:,}", max_pixels=cap)
+                    if min(w, h) < MIN_SIDE_PX:
+                        return ImageFacts(ok=False, width=w, height=h, stored_width=w, stored_height=h,
+                                          reason=f"image too small ({w}x{h}); need at least {MIN_SIDE_PX}px per side", max_pixels=cap)
+                    return ImageFacts(
+                        ok=True,
+                        width=w,
+                        height=h,
+                        stored_width=w,
+                        stored_height=h,
+                        max_pixels=cap,
+                        evidence_class="photograph",
+                        class_basis="HEIC container parsed (ISOBMFF ispe)",
+                        exif=heic_exif,
+                    )
+        except Exception:
+            pass
         return ImageFacts(ok=False, reason=f"not a decodable image ({type(exc).__name__})")
     except Exception as exc:  # decompression bombs, truncated files
         return ImageFacts(ok=False, reason=f"image decode failed ({type(exc).__name__}: {exc})")
@@ -231,10 +284,26 @@ def inspect_image(path: Path | str, declared_class: Optional[str] = None) -> Ima
         evidence_class = "photograph_unverified"
         basis = "decodes with natural colour statistics; no camera EXIF (not verified)"
 
+    # 360° / Equirectangular panorama check (2:1 aspect ratio or GPano XMP)
+    is_360 = False
+    projection = None
+    if width > 0 and height > 0 and abs((width / height) - 2.0) < 0.05:
+        is_360 = True
+        projection = "equirectangular"
+    else:
+        raw_info = getattr(img, "info", {}) or {}
+        xmp = raw_info.get("xmp") or raw_info.get("XML:com.adobe.xmp") or ""
+        if isinstance(xmp, bytes):
+            xmp = xmp.decode("utf-8", errors="ignore")
+        if "equirectangular" in str(xmp).lower() or "usepanoramaviewer" in str(xmp).lower():
+            is_360 = True
+            projection = "equirectangular"
+
     return ImageFacts(
         ok=True, width=width, height=height, stored_width=stored_w, stored_height=stored_h,
         exif_orientation=orientation, max_pixels=cap, evidence_class=evidence_class,
         class_basis=basis, sharpness=sharpness, exif=exif, gps=gps,
+        is_360=is_360, projection=projection,
     )
 
 

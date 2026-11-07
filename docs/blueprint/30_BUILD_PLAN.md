@@ -215,7 +215,7 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 |----|------|--------|
 | 13.1 | Branch audit + CODEOWNERS | PARTIAL (audit + CODEOWNERS committed: [BRANCH_AUDIT](../engineering/BRANCH_AUDIT.md); owner still must delete branches and enable `main` protection) |
 | 13.2 | Give pHash dedup and time/GPS session grouping a production caller | DONE (verified by tests/test_task_13_2_dedup_and_session_grouping.py) |
-| 13.3 | HEIC, 360° panoramas, point-cloud (PLY/LAS) and mesh (OBJ/glTF) ingestion | TODO |
+| 13.3 | HEIC, 360° panoramas, point-cloud (PLY/LAS) and mesh (OBJ/glTF) ingestion | DONE |
 | 13.4 | Learned room layout (PolyLayout-class), line detection, non-Manhattan rooms | TODO |
 | 13.5 | Floor plan SVG/PDF export | TODO |
 | 13.6 | SAM 2 behind the segmentation interface (benchmark vs SAM 1) | TODO |

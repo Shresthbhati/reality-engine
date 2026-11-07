@@ -186,6 +186,32 @@ async def create_reconstruction(
             accepted.append((fname, f.content_type, data, kind, digest, {}, {"frames_extracted": len(frames)}))
             for fr_name, jpeg, fr_digest, fr_facts, fr_meta in frames:
                 accepted.append((fr_name, "image/jpeg", jpeg, "photo", fr_digest, fr_facts, fr_meta))
+        elif kind == "point_cloud":
+            meta = {}
+            if fname.lower().endswith(".ply"):
+                from evidence.importers import _parse_ply_header
+                p_meta = _parse_ply_header(data)
+                meta["point_cloud_format"] = "ply"
+                if p_meta.get("vertex_count") is not None:
+                    meta["vertex_count"] = p_meta.get("vertex_count")
+            elif fname.lower().endswith(".pcd"):
+                from evidence.importers import _parse_pcd_header
+                p_meta = _parse_pcd_header(data)
+                meta["point_cloud_format"] = "pcd"
+                if p_meta.get("point_count") is not None:
+                    meta["vertex_count"] = p_meta.get("point_count")
+            elif fname.lower().endswith((".las", ".laz")):
+                meta["point_cloud_format"] = "las"
+            accepted.append((fname, f.content_type, data, kind, digest, meta, {}))
+        elif kind == "mesh":
+            meta = {}
+            if fname.lower().endswith(".obj"):
+                v_count = data.count(b"\nv ") + (1 if data.startswith(b"v ") else 0)
+                meta["mesh_format"] = "obj"
+                meta["vertex_count"] = v_count
+            elif fname.lower().endswith((".gltf", ".glb")):
+                meta["mesh_format"] = "glb" if data.startswith(b"glTF") else "gltf"
+            accepted.append((fname, f.content_type, data, kind, digest, meta, {}))
         else:
             accepted.append((fname, f.content_type, data, kind, digest, {}, {}))
 
@@ -225,9 +251,10 @@ async def create_reconstruction(
             a[6].pop("_phash", None)
             a[6].pop("_sharpness", None)
 
-    if not photos:
+    point_clouds_or_meshes = [a for a in accepted if a[3] in ("point_cloud", "mesh")]
+    if not photos and not point_clouds_or_meshes:
         raise HTTPException(422, {
-            "message": "none of the files is a usable photograph",
+            "message": "none of the files is a usable photograph, point cloud, or mesh",
             "rejected": rejected,
         })
 
@@ -330,25 +357,32 @@ async def create_reconstruction(
                          entity_id=session.id, summary=f"{len(accepted)} file(s) added to '{world.name}'"))
     await db.flush()
 
-    # A reconstruction still waiting in the queue for this world will read the
-    # union of evidence when it runs, so it already covers this batch.
-    queued = (await db.execute(
-        select(Job).where(Job.type == jobrunner.RECONSTRUCT_SESSION, Job.status == "queued",
-                          Job.entity_id.in_(select(Session.id).where(Session.world_id == world.id)))
-    )).scalars().first()
-    if queued is not None:
-        job, coalesced = queued, True
-        if dense_cpu:       # the queued run reads the union of evidence, so it must also honour this opt-in
-            job.payload = {**(job.payload or {}), "dense_cpu": dense_cfg}
+    job_id = None
+    coalesced = False
+    if photos:
+        # A reconstruction still waiting in the queue for this world will read the
+        # union of evidence when it runs, so it already covers this batch.
+        queued = (await db.execute(
+            select(Job).where(Job.type == jobrunner.RECONSTRUCT_SESSION, Job.status == "queued",
+                              Job.entity_id.in_(select(Session.id).where(Session.world_id == world.id)))
+        )).scalars().first()
+        if queued is not None:
+            job, coalesced = queued, True
+            if dense_cpu:       # the queued run reads the union of evidence, so it must also honour this opt-in
+                job.payload = {**(job.payload or {}), "dense_cpu": dense_cfg}
+        else:
+            job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", session.id,
+                                        payload={"dense_cpu": dense_cfg} if dense_cpu else None, team_id=session.team_id)
+            coalesced = False
+        job_id = job.id
+        session.status = "processing"
+        session.processing_started_at = utcnow()
     else:
-        job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", session.id,
-                                    payload={"dense_cpu": dense_cfg} if dense_cpu else None, team_id=session.team_id)
-        coalesced = False
-    session.status = "processing"
-    session.processing_started_at = utcnow()
+        session.status = "completed"
+        session.processing_finished_at = utcnow()
     await db.commit()
     return {
-        "world_id": world.id, "session_id": session.id, "job_id": job.id,
+        "world_id": world.id, "session_id": session.id, "job_id": job_id,
         "evidence": ev_out, "rejected": rejected, "coalesced": coalesced,
         "created_world": world_id is None,
         "capture_quality": capture_quality,

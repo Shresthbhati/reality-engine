@@ -119,8 +119,7 @@ _MARKUP_PREFIXES = (b"<!doctype", b"<html", b"<svg", b"<script", b"<?php")
 
 
 def _sniff_media(data: bytes) -> str | None:
-    """'photo' / 'video' from the file's own magic bytes, or None. Declared MIME and extension are never trusted for
-    these two kinds: they are what the reconstruction engine decodes."""
+    """'photo' / 'video' / 'point_cloud' / 'mesh' from the file's own magic bytes, or None."""
     head = data[:16]
     if head[:3] == b"\xff\xd8\xff" or head[:8] == b"\x89PNG\r\n\x1a\n" or head[:4] in (b"II*\x00", b"MM\x00*"):
         return "photo"
@@ -130,6 +129,10 @@ def _sniff_media(data: bytes) -> str | None:
         return "photo" if data[8:12] in _HEIC_BRANDS else "video"
     if head[:4] == b"\x1aE\xdf\xa3" or (head[:4] == b"RIFF" and data[8:12] == b"AVI "):
         return "video"
+    if head[:4] == b"glTF":
+        return "mesh"
+    if head[:3] == b"ply":
+        return "point_cloud"
     return None
 
 
@@ -146,7 +149,7 @@ def vet_upload(filename: str, mime: str | None, data: bytes) -> str:
     declared = _classify(filename, mime)
     sniffed = _sniff_media(data)
     if sniffed:
-        if declared in ("photo", "video") and declared != sniffed:
+        if declared in ("photo", "video", "point_cloud", "mesh") and declared != sniffed:
             raise ValueError(f"content is a {sniffed} but the file is declared as a {declared}")
         return sniffed
     if declared in ("photo", "video"):
@@ -154,7 +157,7 @@ def vet_upload(filename: str, mime: str | None, data: bytes) -> str:
             return declared
         raise ValueError(f"not a valid {declared}: the bytes are not a supported {declared} format")
     if declared == "dataset" and not _upload_allow_any_type():
-        raise ValueError("unsupported file type (accepted: photos, videos, point clouds, GNSS tracks, sensor logs)")
+        raise ValueError("unsupported file type (accepted: photos, videos, point clouds, meshes, GNSS tracks, sensor logs)")
     if data[:8].startswith(_ACTIVE_CONTENT_PREFIXES) or data[:64].lstrip().lower().startswith(_MARKUP_PREFIXES):
         raise ValueError("file content is not evidence data (executable, script or markup)")
     return declared
@@ -166,8 +169,12 @@ def _classify(filename: str, mime: str | None) -> str:
         return _TYPE_BY_MIME[mime]
     if name.endswith(_VIDEO_EXT):
         return "video"
+    if name.endswith((".heic", ".heif")):
+        return "photo"
     if name.endswith((".las", ".laz", ".ply", ".pcd", ".e57")):
         return "point_cloud"
+    if name.endswith((".obj", ".gltf", ".glb", ".fbx", ".dae")):
+        return "mesh"
     if name.endswith((".gpx", ".nmea")):
         return "gnss"
     if name.endswith((".csv", ".json")):
@@ -513,7 +520,8 @@ async def check_uploads(files: list[UploadFile]) -> dict:
                 path.write_bytes(data)
                 facts = await asyncio.to_thread(inspect_image, path, None)
                 row.update(decodable=facts.ok or facts.width > 0, width=facts.width or None,
-                           height=facts.height or None, sharpness=facts.sharpness, has_gps=facts.gps is not None)
+                           height=facts.height or None, sharpness=facts.sharpness, has_gps=facts.gps is not None,
+                           is_360=facts.is_360, projection=facts.projection)
                 if facts.ok:
                     row["looks_like_photo"] = facts.evidence_class in GEOMETRY_CLASSES
                     try:
@@ -527,6 +535,25 @@ async def check_uploads(files: list[UploadFile]) -> dict:
                     row["too_small"] = facts.width > 0 and "too small" in (facts.reason or "")
                     row["decodable"] = facts.width > 0
                     row["problem"] = facts.reason
+            elif kind == "point_cloud":
+                row.update(decodable=True, looks_like_photo=None)
+                if name.endswith(".ply"):
+                    from evidence.importers import _parse_ply_header
+                    p_meta = _parse_ply_header(data)
+                    row.update(point_cloud_format="ply", vertex_count=p_meta.get("vertex_count"))
+                elif name.endswith(".pcd"):
+                    from evidence.importers import _parse_pcd_header
+                    p_meta = _parse_pcd_header(data)
+                    row.update(point_cloud_format="pcd", vertex_count=p_meta.get("point_count"))
+                elif name.endswith((".las", ".laz")):
+                    row.update(point_cloud_format="las")
+            elif kind == "mesh":
+                row.update(decodable=True, looks_like_photo=None)
+                if name.endswith(".obj"):
+                    v_count = data.count(b"\nv ") + (1 if data.startswith(b"v ") else 0)
+                    row.update(mesh_format="obj", vertex_count=v_count)
+                elif name.endswith((".gltf", ".glb")):
+                    row.update(mesh_format="glb" if data.startswith(b"glTF") else "gltf")
             rows.append(row)
 
     # Near-duplicate detection via perceptual hash (pHash)
@@ -563,12 +590,16 @@ async def check_uploads(files: list[UploadFile]) -> dict:
         r["relatively_soft"] = bool(median and r["sharpness"] is not None and r["sharpness"] < _SOFT_RATIO * median)
 
     def usable(r: dict) -> bool:
-        return r["kind"] == "photo" and r["decodable"] and not r["too_small"] and r["looks_like_photo"] is not False \
-            and r["duplicate_of"] is None
+        if r["kind"] == "photo":
+            return bool(r["decodable"]) and not r["too_small"] and r["looks_like_photo"] is not False \
+                and r["duplicate_of"] is None
+        if r["kind"] in ("point_cloud", "mesh"):
+            return bool(r.get("decodable")) and r["duplicate_of"] is None
+        return False
 
     n_usable = sum(1 for r in rows if usable(r))
     n_flagged = sum(1 for r in rows if r["relatively_soft"] or r["duplicate_of"] or r.get("near_duplicate_of") or r["too_small"]
-                    or r["decodable"] is False or r["looks_like_photo"] is False)
+                    or r["decodable"] is False or (r["kind"] == "photo" and r["looks_like_photo"] is False))
     near_dups_count = sum(1 for r in rows if r.get("near_duplicate_of") is not None)
     verdict = "no_usable_photos" if n_usable == 0 else "add_angles" if n_usable < _MIN_GOOD_SET else \
         "has_problems" if n_flagged else "good"

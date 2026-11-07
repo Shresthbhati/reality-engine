@@ -69,6 +69,8 @@ class LayoutModels:
             self._seg = UperNetForSemanticSegmentation.from_pretrained(SEG_MODEL, local_files_only=True).to(dev).eval()
         except Exception as exc:  # noqa: BLE001
             self._depth = self._seg = None
+            if "out of memory" in str(exc).lower() and self._device != "cpu":
+                raise  # analyze() retries the whole thing on CPU
             raise LayoutModelsUnavailable(
                 f"layout models are not available locally ({exc}). Fetch once with: "
                 f"python -c \"from huggingface_hub import snapshot_download as d; d('{DEPTH_MODEL}'); d('{SEG_MODEL}')\""
@@ -85,7 +87,17 @@ class LayoutModels:
             pass
 
     def analyze(self, image) -> ImageAnalysis:
-        """``image``: a PIL RGB image (already EXIF-oriented)."""
+        """``image``: a PIL RGB image (already EXIF-oriented). A full GPU (shared with COLMAP / other apps) retries on CPU."""
+        try:
+            return self._analyze_once(image)
+        except Exception as exc:  # noqa: BLE001
+            if "out of memory" not in str(exc).lower() or self._device == "cpu":
+                raise
+            self.unload()
+            self._device = "cpu"
+            return self._analyze_once(image)
+
+    def _analyze_once(self, image) -> ImageAnalysis:
         import torch
 
         self._load()

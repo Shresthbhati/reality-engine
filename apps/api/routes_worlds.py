@@ -8,6 +8,7 @@ import math
 import os
 import struct
 from pathlib import Path
+from uuid import uuid4
 
 log = logging.getLogger("reality.api.worlds")
 
@@ -382,6 +383,7 @@ async def list_world_versions(
                 "id": v.id,
                 "world_id": v.world_id,
                 "parent_version_id": v.parent_version_id,
+                "label": v.label,
                 "artifact_uri": v.artifact_uri,
                 "artifact_hash": v.artifact_hash,
                 "source_session_ids": v.source_session_ids or [],
@@ -573,7 +575,34 @@ async def _version_row(
     if auth is not None:
         enforce_project_isolation(w, auth)
     if version_id is not None:
+        if version_id.lower() == "as-built":
+            res = await db.execute(
+                select(WorldVersion).where(
+                    WorldVersion.world_id == world_id,
+                    WorldVersion.label == "as-built",
+                )
+            )
+            row = res.scalars().first()
+            if row is None:
+                res = await db.execute(
+                    select(WorldVersion).where(
+                        WorldVersion.world_id == world_id,
+                    ).order_by(WorldVersion.created_at.asc())
+                )
+                row = res.scalars().first()
+            if row is None:
+                raise HTTPException(404, f"As-built version not found for world {world_id}")
+            return row
+
         row = await db.get(WorldVersion, version_id)
+        if row is None or row.world_id != world_id:
+            res = await db.execute(
+                select(WorldVersion).where(
+                    WorldVersion.world_id == world_id,
+                    WorldVersion.label == version_id,
+                ).order_by(WorldVersion.created_at.desc())
+            )
+            row = res.scalars().first()
         if row is None or row.world_id != world_id:
             raise HTTPException(
                 404, f"Version '{version_id}' not found for world {world_id}"
@@ -1090,6 +1119,9 @@ _COMMIT_MUTABLE_FIELDS = (
     # F6: a typed real dimension. Applied to the world (entity + replayable registry + VERIFIED state), never to an
     # arbitrary entity attribute -- handled explicitly below, not by setattr.
     "user_correction",
+    "surface_finish",
+    "material",
+    "design_layer",
 )
 _MAX_COMMIT_CHANGES = 32
 _MAX_COMMIT_VALUE_BYTES = 16 * 1024
@@ -1100,6 +1132,7 @@ class CommitRequest(BaseModel):
     changes: dict
     parent_version_id: str | None = None
     commit_message: str | None = None
+    label: str | None = None
 
 
 def _assert_all_finite(value, field: str) -> None:
@@ -1208,6 +1241,14 @@ def _validate_commit_changes(changes: dict) -> dict:
         elif key == "merge":
             if not isinstance(value, (dict, list)):
                 raise HTTPException(422, "field 'merge' must be a list or object")
+            validated[key] = value
+        elif key in ("surface_finish", "material"):
+            if not isinstance(value, (str, dict)):
+                raise HTTPException(422, f"field '{key}' must be a string or object")
+            validated[key] = value
+        elif key == "design_layer":
+            if not isinstance(value, str) or not value or len(value) > 100:
+                raise HTTPException(422, "field 'design_layer' must be a non-empty string <= 100 chars")
             validated[key] = value
         elif key in ("custom_properties", "transform"):
             if not isinstance(value, dict):
@@ -1338,6 +1379,54 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
                 merge_entities(worldir, body.entity_id, sec_ids, new_name=name, note=note, user_id=auth.user_id)
             except CorrectionError as exc:
                 raise HTTPException(422, str(exc)) from exc
+            continue
+        elif key in ("surface_finish", "material"):
+            from world_ir.schema_v1 import Material, SurfaceFinish
+            finish_val = SurfaceFinish.SMOOTH
+            color_rgb = (0.8, 0.8, 0.8)
+            mat_name = "Custom Finish"
+            mat_class = "finish"
+
+            if isinstance(value, str):
+                try:
+                    finish_val = SurfaceFinish(value)
+                except ValueError:
+                    mat_class = value
+            elif isinstance(value, dict):
+                if "surface_finish" in value:
+                    try:
+                        finish_val = SurfaceFinish(value["surface_finish"])
+                    except ValueError:
+                        finish_val = SurfaceFinish.SMOOTH
+                if "color_rgb" in value and isinstance(value["color_rgb"], (list, tuple)) and len(value["color_rgb"]) == 3:
+                    color_rgb = tuple(float(c) for c in value["color_rgb"])
+                if "name" in value:
+                    mat_name = str(value["name"])
+                elif "material_name" in value:
+                    mat_name = str(value["material_name"])
+                if "class_name" in value:
+                    mat_class = str(value["class_name"])
+                elif "material" in value:
+                    mat_class = str(value["material"])
+
+            mat_id = f"mat-{entity.id}-{uuid4().hex[:6]}"
+            new_mat = Material(
+                id=mat_id,
+                name=mat_name,
+                class_name=mat_class,
+                surface_finish=finish_val,
+                color_rgb=color_rgb,
+                provenance=Provenance.GENERATED,
+                confidence=1.0,
+            )
+            worldir.materials[mat_id] = new_mat
+            entity.material_ids = [mat_id]
+            entity.custom_properties = dict(entity.custom_properties or {})
+            entity.custom_properties["surface_finish"] = finish_val.value
+            entity.custom_properties["material"] = mat_class
+            entity.custom_properties["material_label"] = mat_name
+            layer_name = validated.get("design_layer", "finish")
+            entity.custom_properties["design_layer"] = layer_name
             continue
         if key == "name":
             entity.name = value
@@ -1554,6 +1643,7 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
             id=stored.version_id,
             world_id=w.id,
             parent_version_id=stored.parent,
+            label=body.label,
             artifact_uri=stored.artifact_uri,
             artifact_hash=stored.artifact_hash,
             source_session_ids=list(stored.source_session_ids),
@@ -2361,4 +2451,219 @@ async def access_shared_world(
         "label": link.label,
         "current_version_id": w.current_version_id,
         "worldir": worldir.to_dict() if worldir else None,
+    }
+
+
+
+# -------------------------------------------------------------------------------------------------
+# Named Design Options & Surface Finish Layers (T-4b.2 & T-4b.3)
+# -------------------------------------------------------------------------------------------------
+
+class DesignOptionIn(BaseModel):
+    label: str
+    base_version: str | None = None
+    description: str | None = None
+    surface_finishes: list[dict] | None = None
+
+
+class VersionLabelIn(BaseModel):
+    label: str
+
+
+@worlds.get("/{world_id}/options")
+async def list_design_options(
+    world_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """List all saved design options and as-built survey versions for a world (T-4b.3)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+
+    res = await db.execute(
+        select(WorldVersion).where(WorldVersion.world_id == world_id).order_by(WorldVersion.created_at.asc())
+    )
+    versions = res.scalars().all()
+    options = []
+    for i, v in enumerate(versions):
+        is_as_built = (v.label == "as-built") or (v.parent_version_id is None and (v.label is None or v.label == "as-built"))
+        lbl = v.label or ("as-built" if is_as_built else f"Option {chr(65 + max(0, i - 1))}")
+        options.append({
+            "version_id": v.id,
+            "label": lbl,
+            "parent_version_id": v.parent_version_id,
+            "is_as_built": is_as_built,
+            "is_current": v.id == w.current_version_id,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+            "changed_entities_count": len(v.changed_entity_ids or []),
+        })
+    return {"world_id": world_id, "options": options}
+
+
+@worlds.post("/{world_id}/options")
+async def create_design_option(
+    world_id: str,
+    body: DesignOptionIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Create a new named design option with a plain-language label derived from a base version (T-4b.3)."""
+    if auth.role == Role.VIEWER:
+        raise HTTPException(403, "Read-only access cannot create design options")
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+
+    base_row = await _version_row(db, world_id, body.base_version, auth=auth)
+    worldir = _load_world_or_409(base_row)
+
+    from world_ir.schema_v1 import Material, SurfaceFinish
+    changed_entity_ids = []
+    if body.surface_finishes:
+        for sf in body.surface_finishes:
+            ent_id = sf.get("entity_id")
+            if not ent_id or ent_id not in worldir.entities:
+                raise HTTPException(422, f"entity '{ent_id}' not found in world")
+            ent = worldir.entities[ent_id]
+            changed_entity_ids.append(ent_id)
+
+            finish_str = sf.get("surface_finish", "smooth")
+            try:
+                finish_val = SurfaceFinish(finish_str)
+            except ValueError:
+                finish_val = SurfaceFinish.SMOOTH
+
+            color_rgb = tuple(float(c) for c in sf.get("color_rgb", [0.8, 0.8, 0.8]))
+            mat_name = str(sf.get("name") or sf.get("material_name") or "Option Finish")
+            mat_class = str(sf.get("class_name") or sf.get("material") or "finish")
+
+            mat_id = f"mat-{ent.id}-{uuid4().hex[:6]}"
+            new_mat = Material(
+                id=mat_id,
+                name=mat_name,
+                class_name=mat_class,
+                surface_finish=finish_val,
+                color_rgb=color_rgb,
+                provenance=Provenance.GENERATED,
+                confidence=1.0,
+            )
+            worldir.materials[mat_id] = new_mat
+            ent.material_ids = [mat_id]
+            ent.custom_properties = dict(ent.custom_properties or {})
+            ent.custom_properties["surface_finish"] = finish_val.value
+            ent.custom_properties["material"] = mat_class
+            ent.custom_properties["material_label"] = mat_name
+            ent.custom_properties["design_layer"] = "finish"
+
+    from apps.api import worldstore_service
+    version_row = await worldstore_service.commit_version(
+        db,
+        world_id=w.id,
+        world=worldir,
+        parent=base_row.id,
+        label=body.label.strip(),
+        allow_branch=True,
+    )
+
+    return {
+        "world_id": w.id,
+        "version_id": version_row.id,
+        "label": version_row.label,
+        "parent_version_id": version_row.parent_version_id,
+        "created_at": version_row.created_at.isoformat() if version_row.created_at else None,
+        "changed_entity_ids": changed_entity_ids,
+    }
+
+
+@worlds.patch("/{world_id}/versions/{version_id}/label")
+async def set_version_label(
+    world_id: str,
+    version_id: str,
+    body: VersionLabelIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Assign or rename a plain-language label on a world version (T-4b.3)."""
+    if auth.role == Role.VIEWER:
+        raise HTTPException(403, "Read-only access cannot rename versions")
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+
+    row = await _version_row(db, world_id, version_id, auth=auth)
+    row.label = body.label.strip()
+    await db.commit()
+    await db.refresh(row)
+    return {"version_id": row.id, "label": row.label}
+
+
+@worlds.get("/{world_id}/options/compare")
+async def compare_design_options(
+    world_id: str,
+    base: str = "as-built",
+    target: str = "as-built",
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Compare as-built survey vs named design option, or two options (T-4b.3)."""
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+
+    row_base = await _version_row(db, world_id, base, auth=auth)
+    row_target = await _version_row(db, world_id, target, auth=auth)
+
+    world_base = _load_world_or_409(row_base)
+    world_target = _load_world_or_409(row_target)
+
+    finish_diffs = []
+    for eid, ent_target in world_target.entities.items():
+        ent_base = world_base.entities.get(eid)
+        base_props = ent_base.custom_properties if ent_base else {}
+        target_props = ent_target.custom_properties or {}
+
+        base_finish = base_props.get("surface_finish")
+        target_finish = target_props.get("surface_finish")
+        base_mat = base_props.get("material") or base_props.get("material_label")
+        target_mat = target_props.get("material") or target_props.get("material_label")
+
+        if base_finish != target_finish or base_mat != target_mat:
+            finish_diffs.append({
+                "entity_id": eid,
+                "name": ent_target.name,
+                "type": ent_target.type.value,
+                "base": {"surface_finish": base_finish, "material": base_mat},
+                "target": {"surface_finish": target_finish, "material": target_mat},
+            })
+
+    added_ids = [eid for eid in world_target.entities if eid not in world_base.entities]
+    removed_ids = [eid for eid in world_base.entities if eid not in world_target.entities]
+
+    return {
+        "world_id": world_id,
+        "base": {
+            "version_id": row_base.id,
+            "label": row_base.label or "as-built",
+            "created_at": row_base.created_at.isoformat() if row_base.created_at else None,
+            "entity_count": len(world_base.entities),
+        },
+        "target": {
+            "version_id": row_target.id,
+            "label": row_target.label or target,
+            "created_at": row_target.created_at.isoformat() if row_target.created_at else None,
+            "entity_count": len(world_target.entities),
+        },
+        "summary": {
+            "finishes_changed_count": len(finish_diffs),
+            "added_entities_count": len(added_ids),
+            "removed_entities_count": len(removed_ids),
+        },
+        "finish_differences": finish_diffs,
+        "added_entity_ids": added_ids,
+        "removed_entity_ids": removed_ids,
     }

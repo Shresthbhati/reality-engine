@@ -94,11 +94,13 @@ def get_store() -> WorldStore:
 
 def _mirror_row(stored, *, report: dict | None = None,
                  points_artifact_uri: str | None = None,
-                 cameras_artifact_uri: str | None = None) -> WorldVersion:
+                 cameras_artifact_uri: str | None = None,
+                 label: str | None = None) -> WorldVersion:
     return WorldVersion(
         id=stored.version_id,
         world_id=stored.world_id,
         parent_version_id=stored.parent,
+        label=label or ("as-built" if stored.parent is None else None),
         artifact_uri=stored.artifact_uri,
         artifact_hash=stored.artifact_hash,
         source_session_ids=list(stored.source_session_ids),
@@ -194,6 +196,8 @@ async def commit_version(
     cameras: bytes | None = None,
     report: dict | None = None,
     expect_parent: str | None = None,
+    label: str | None = None,
+    allow_branch: bool = False,
 ) -> WorldVersion:
     """Save a new WorldStore version and advance this World's HEAD.
 
@@ -265,7 +269,9 @@ async def commit_version(
             digest, _ = store_bytes(cameras)
             cameras_uri = f"sha256://{digest}"
 
-        if expect_parent is not None:
+        if allow_branch:
+            head_predicate = True
+        elif expect_parent is not None:
             head_predicate = World.current_version_id == expect_parent
         else:
             # No base claimed (first version racing another first version):
@@ -288,6 +294,7 @@ async def commit_version(
         row = _mirror_row(
             stored, report=report,
             points_artifact_uri=points_uri, cameras_artifact_uri=cameras_uri,
+            label=label,
         )
         db.add(row)
         await db.commit()

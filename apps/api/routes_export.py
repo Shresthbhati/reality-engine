@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api import worldstore_service
 from apps.api.db import get_db
 from apps.api.tenancy import world_scope
+from apps.api.auth import AuthContext, get_auth_context
 from apps.api.routes_worlds import _load_world_or_409, _version_row
 from apps.api.storage import resolve_artifact, store_bytes
 from sdk import reality
@@ -220,3 +221,71 @@ async def export_package(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+
+class CompareExportRequest(BaseModel):
+    format: str
+    version_a: str = "as-built"
+    version_b: str
+
+
+@export.post("/compare")
+async def export_options_compare(
+    world_id: str,
+    body: CompareExportRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Export two design options (e.g. as-built survey vs option) side by side (T-4b.3)."""
+    import json
+    row_a = await _version_row(db, world_id, body.version_a, auth=auth)
+    row_b = await _version_row(db, world_id, body.version_b, auth=auth)
+
+    world_a = _load_world_or_409(row_a)
+    world_b = _load_world_or_409(row_b)
+
+    artifact_store = FileArtifactStore(worldstore_service.worldstore_root() / "pipeline-artifacts")
+
+    def _do_export(world):
+        if body.format in reality.EXPORT_PROFILES:
+            files, rep = reality.export_profile(world, body.format, artifact_store=artifact_store)
+            content = _bundle_json(files)
+        else:
+            content, rep = reality.export(world, body.format, artifact_store=artifact_store)
+        if isinstance(content, dict):
+            data = json.dumps(content, indent=2, sort_keys=True).encode("utf-8")
+        elif isinstance(content, str):
+            data = content.encode("utf-8")
+        else:
+            data = content
+        digest, _ = store_bytes(data)
+        elements = _element_report(world, rep.entities_exported)
+        return digest, rep, elements
+
+    digest_a, rep_a, elem_a = _do_export(world_a)
+    digest_b, rep_b, elem_b = _do_export(world_b)
+
+    return {
+        "world_id": world_id,
+        "format": body.format,
+        "option_a": {
+            "version_id": row_a.id,
+            "label": row_a.label or body.version_a,
+            "artifact_uri": f"sha256://{digest_a}",
+            "download_url": f"/api/worlds/{world_id}/export/{digest_a}/download?format={body.format}",
+            "content_hash": rep_a.content_hash,
+            "entities_exported": list(rep_a.entities_exported),
+            "evidence_summary": {"total": len(elem_a)},
+        },
+        "option_b": {
+            "version_id": row_b.id,
+            "label": row_b.label or body.version_b,
+            "artifact_uri": f"sha256://{digest_b}",
+            "download_url": f"/api/worlds/{world_id}/export/{digest_b}/download?format={body.format}",
+            "content_hash": rep_b.content_hash,
+            "entities_exported": list(rep_b.entities_exported),
+            "evidence_summary": {"total": len(elem_b)},
+        },
+        "side_by_side": True,
+    }

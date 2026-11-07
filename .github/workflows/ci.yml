@@ -75,6 +75,8 @@ jobs:
             tests/test_golden_path_api_to_glb.py \
             tests/test_edit_preservation_reprocess.py \
             tests/test_client_share_link.py \
+            tests/test_design_options_finish_layer.py \
+            tests/test_design_options_finish_layer.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

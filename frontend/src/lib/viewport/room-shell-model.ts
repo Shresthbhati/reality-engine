@@ -49,6 +49,9 @@ export interface ShellPart {
   evidenceState?: EvidenceState;
   /** M2: image-projected atlas for this part's entity (perception/materials/surface_appearance.py). Absent = flat/striped fallback. */
   texture?: ShellTexture;
+  /** T-4b.2: `color` is a designer's finish (paint / floor material), not a measurement. Drawn flat in the normal view only; the
+   *  evidence view ignores it. The survey colour stays on the entity (`mean_color_rgb`) untouched. */
+  designed?: boolean;
 }
 
 /** Reference to a stored atlas PNG; alpha=0 texels are unobserved (never inpainted) and must stay transparent. */
@@ -407,6 +410,7 @@ function annotate(world: WorldIR, raw: RawPart[]): ShellPart[] {
     const evState = resolveEvidenceState(rawEvState, provenance, c);
     const unobserved = provenance !== null && UNOBSERVED.has(provenance.toUpperCase());
     const texture = textureFor(world, p);
+    const finish = rgbOrNull((cpr.design_finish as Props | null | undefined)?.colour_rgb);
     // Not-captured entities read as such: generated = translucent, map-imported = slightly muted.
     const origin = cpr.generated_by ? 0.45 : cpr.imported === true || cpr.source === "OpenStreetMap" ? 0.7 : 1;
     return {
@@ -416,7 +420,7 @@ function annotate(world: WorldIR, raw: RawPart[]): ShellPart[] {
       provenance,
       evidenceState: evState,
       confidenceState: unobserved ? "unobserved" : c === null ? "unknown" : "scored",
-      ...(texture ? { texture } : {}),
+      ...(finish ? { color: finish, designed: true } : texture ? { texture } : {}),   // a finish replaces the photo texture in the normal view
     };
   });
 }
@@ -739,6 +743,7 @@ export function isEstimated(part: ShellPart): boolean {
 
 export function partMaterial(part: ShellPart, mode: ShellRenderMode, pal: ConfidencePalette = DEFAULT_CONF_PALETTE): PartMaterial {
   if (mode !== "confidence") {
+    if (part.designed) return { color: part.color, hatch: false, opacity: part.opacity, textured: false };   // chosen, not measured: solid, never striped
     const textured = !!part.texture;
     // a textured part is not "colour not measured": the flat colour only shows through where the atlas has no texel
     return { color: part.color, hatch: !part.colorMeasured && !textured, opacity: part.opacity, textured };

@@ -47,21 +47,22 @@ export default function RoomsPanel({ worldId, onClose, onChanged }: { worldId: s
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ text: string; lost: LostConnection[] } | null>(null);
 
-  const load = useCallback(async () => {
+  // The proposals are fetched in the effect (state is set only when the answer arrives); `load` asks for a fresh fetch from a handler.
+  const [reloadTick, setReloadTick] = useState(0);
+  const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    try {
-      setProposals(await getRoomProposals(worldId));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load room proposals.");
-    } finally {
-      setLoading(false);
-    }
-  }, [worldId]);
+    setReloadTick((t) => t + 1);
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let live = true;
+    getRoomProposals(worldId)
+      .then((p) => { if (live) setProposals(p); })
+      .catch((e) => { if (live) setError(e instanceof Error ? e.message : "Could not load room proposals."); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [worldId, reloadTick]);
 
   async function openReview(r: RevisitProposal, oldRoom: string, newRoom: string) {
     const key = `${r.room_a}|${r.room_b}`;
@@ -89,7 +90,7 @@ export default function RoomsPanel({ worldId, onClose, onChanged }: { worldId: s
       setConfirm(null);
       setReview(null);
       onChanged?.();
-      await load();
+      load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "The change was not applied.");
     } finally {
@@ -114,7 +115,7 @@ export default function RoomsPanel({ worldId, onClose, onChanged }: { worldId: s
           <h3 id="rooms-panel-title" className="text-sm font-semibold">Rooms: joins and second visits</h3>
         </div>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => void load()} aria-label="Refresh proposals" className="p-1 rounded hover:bg-[var(--surface-hover)]">
+          <button type="button" onClick={() => load()} aria-label="Refresh proposals" className="p-1 rounded hover:bg-[var(--surface-hover)]">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} style={{ color: "var(--text-tertiary)" }} />
           </button>
           <button type="button" onClick={onClose} aria-label="Close rooms panel" className="p-1 rounded hover:bg-[var(--surface-hover)]">

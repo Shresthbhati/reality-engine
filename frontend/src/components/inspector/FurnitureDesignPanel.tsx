@@ -31,8 +31,10 @@ export default function FurnitureDesignPanel({ worldId, entity, parentVersion, m
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // Each save returns the new version; the next action builds on it right away instead of waiting for the model to reload.
-  const [parent, setParent] = useState(parentVersion);
+  // Each save returns the new version; the next action builds on it right away instead of waiting for the model to reload. Once the
+  // model has reloaded (or changed some other way, e.g. Undo) the version the screen shows wins again.
+  const [saved, setSaved] = useState<{ version: string; basedOn: string | undefined } | null>(null);
+  const parent = saved && saved.basedOn === parentVersion ? saved.version : parentVersion;
   const blocked = replaceBlockedReason(metricScale);
 
   // The caller keys this panel by piece + version, so a new selection or a saved edit remounts it with fresh numbers.
@@ -47,7 +49,7 @@ export default function FurnitureDesignPanel({ worldId, entity, parentVersion, m
     setError(null);
     try {
       const res = await action();
-      if (res?.version_id) setParent(res.version_id);
+      if (res?.version_id) setSaved({ version: res.version_id, basedOn: parentVersion });
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save that change");

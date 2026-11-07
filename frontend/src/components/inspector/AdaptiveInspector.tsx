@@ -46,6 +46,8 @@ import {
 import { describeScale } from "@/lib/api/scale-model";
 import { isFurniture, isMetricScale } from "@/lib/design/design-model";
 import FurnitureDesignPanel from "@/components/inspector/FurnitureDesignPanel";
+import SurfaceFinishPanel from "@/components/inspector/SurfaceFinishPanel";
+import { surfaceType } from "@/lib/design/finish-model";
 import {
   ChipGroup, ConfidenceBars, DimensionRows, Disclosure, EntityChip, FactList, KV, MaterialCards, Muted, SectionTitle,
 } from "./InspectorParts";
@@ -1298,11 +1300,22 @@ function EntityDetails({
 
             {isFurniture(entity) && entity && onDesignChanged && (
               <FurnitureDesignPanel
-                key={`${entity.id}:${activeVersion ?? ""}`}
+                key={`${entity.id}:${entity.name}:${JSON.stringify(entity.transform ?? null)}:${String((entity.custom_properties as Record<string, unknown> | undefined)?.yaw_rad ?? "")}`}
                 worldId={worldId}
                 entity={entity as never}
                 parentVersion={activeVersion}
                 metricScale={isMetricScale((world as { metadata?: unknown } | null)?.metadata)}
+                onChanged={onDesignChanged}
+              />
+            )}
+
+            {surfaceType(entity) !== null && entity && onDesignChanged && (
+              <SurfaceFinishPanel
+                key={`${entity.id}:${JSON.stringify((entity.custom_properties as Record<string, unknown> | undefined)?.design_finish ?? null)}`}
+                worldId={worldId}
+                entity={entity as never}
+                sameTypeIds={Object.values(world?.entities ?? {}).filter((e) => e.type === entity.type).map((e) => e.id)}
+                parentVersion={activeVersion}
                 onChanged={onDesignChanged}
               />
             )}

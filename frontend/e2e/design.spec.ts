@@ -48,6 +48,7 @@ test("Turn, swap and delete a sofa; Undo brings it back", async ({ page, request
   await panel.getByRole("button", { name: "Swap" }).click();
   await expect.poll(async () => (await wir()).entities.sofa.name).toBe("Armchair");
 
+  await expect(page.getByRole("tree", { name: "Scene" }).getByRole("button", { name: /^Armchair/ })).toBeVisible();   // the screen shows the swap
   await panel.getByRole("button", { name: "Delete piece" }).click();
   await panel.getByRole("button", { name: "Delete", exact: true }).click();
   await expect.poll(async () => Object.keys((await wir()).entities)).not.toContain("sofa");

@@ -27,13 +27,25 @@ def _dim(v: float) -> dict:
 def room() -> WorldIR:
     wir = WorldIR(id="x")
     wir.metadata["scale"] = {"state": "metric"}
+    wir.metadata["compiled_from"] = {"up": [0, 0, 1]}       # the slabs below are z-up, as a compiled room is; the viewer reads this
     boxes = {"floor": ((0, 0, 0), (6, 0.1, 5)), "wall-n": ((0, 0, 0), (6, 2.6, 0.2))}
+    # The room is a solid shell as a reconstructed room is: a room, a wall slab and a floor slab (z is up), each with a MEASURED colour.
+    shell = {
+        "wall-n": {"room_id": "room-1", "mean_color_rgb": [200, 190, 180],
+                   "wall_slab": {"start_xyz_m": [0, 0, 0], "direction": [1, 0, 0], "outward": [0, -1, 0], "up": [0, 0, 1],
+                                 "length_m": 6.0, "height_m": 2.6, "thickness_m": 0.2, "openings": []}},
+        "floor": {"room_id": "room-1", "mean_color_rgb": [150, 110, 70],
+                  "slab": {"polygon_xyz_m": [[0, 0, 0], [6, 0, 0], [6, 5, 0], [0, 5, 0]], "up": [0, 0, 1], "thickness_m": 0.15, "direction": -1}},
+    }
+    wir.entities["room-1"] = Entity(id="room-1", type=EntityType.ROOM, name="Room", provenance=Provenance.RECONSTRUCTED, confidence=0.8,
+                                    custom_properties={"wall_color_rgb": [190, 180, 170]})
     for name, (lo, hi) in boxes.items():
         gid = f"g-{name}"
         wir.geometries[gid] = Geometry(id=gid, type=GeometryType.BOX, bounds_min=Vector3(*lo), bounds_max=Vector3(*hi),
                                        provenance=Provenance.RECONSTRUCTED)
         wir.entities[name] = Entity(id=name, type=EntityType.FLOOR if name == "floor" else EntityType.WALL, name=name,
-                                    geometry_ids=[gid], provenance=Provenance.RECONSTRUCTED, confidence=0.8)
+                                    geometry_ids=[gid], provenance=Provenance.RECONSTRUCTED, confidence=0.8,
+                                    semantic_labels=["wall_slab"] if name == "wall-n" else [], custom_properties=shell[name])
     wir.geometries["g-sofa"] = Geometry(id="g-sofa", type=GeometryType.BOX, bounds_min=Vector3(2, 0, 1.5), bounds_max=Vector3(4, 0.85, 2.5),
                                         provenance=Provenance.ESTIMATED)
     wir.entities["sofa"] = Entity(

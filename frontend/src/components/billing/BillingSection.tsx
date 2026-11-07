@@ -86,7 +86,7 @@ export default function BillingSection() {
 
       const data = await res.json();
       if (data.checkout_url) {
-        window.location.href = data.checkout_url;
+        window.location.assign(data.checkout_url);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Checkout failed");
@@ -113,7 +113,7 @@ export default function BillingSection() {
 
       const data = await res.json();
       if (data.portal_url) {
-        window.location.href = data.portal_url;
+        window.location.assign(data.portal_url);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Portal redirect failed");

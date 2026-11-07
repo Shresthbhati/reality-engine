@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import BillingSection from "@/components/billing/BillingSection";
 import {

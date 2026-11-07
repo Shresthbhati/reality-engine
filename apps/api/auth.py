@@ -32,6 +32,42 @@ _LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 _warned = False
 
 
+def is_open_path(path: str) -> bool:
+    """Paths accessible without bearer authentication (health probes, public signup/login, invite acceptance)."""
+    if path in OPEN_PATHS:
+        return True
+    if path in ("/api/auth/signup", "/api/auth/login"):
+        return True
+    if path.startswith("/api/auth/invites/"):
+        return True
+    return False
+
+
+def hash_password(password: str, salt: bytes | None = None) -> str:
+    """Hash password using PBKDF2-HMAC-SHA256 with 100,000 iterations (OWASP recommendation)."""
+    if salt is None:
+        salt = os.urandom(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    return f"pbkdf2:sha256:100000${salt.hex()}${key.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verify password against stored PBKDF2 hash using constant-time comparison."""
+    try:
+        parts = stored_hash.split("$")
+        if len(parts) != 3:
+            return False
+        algo_iter, salt_hex, key_hex = parts
+        _, _, iters_str = algo_iter.split(":")
+        iters = int(iters_str)
+        salt = bytes.fromhex(salt_hex)
+        expected_key = bytes.fromhex(key_hex)
+        computed_key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
+        return hmac.compare_digest(computed_key, expected_key)
+    except Exception:
+        return False
+
+
 class Role(str, Enum):
     ADMIN = "admin"
     EDITOR = "editor"
@@ -265,7 +301,7 @@ def _rate_limited(retry_after: float) -> JSONResponse:
 
 async def auth_middleware(request: Request, call_next):
     global _warned
-    if request.method == "OPTIONS" or request.url.path in OPEN_PATHS:
+    if request.method == "OPTIONS":
         return await call_next(request)
 
     # 1. Rate Limiting Check
@@ -275,6 +311,10 @@ async def auth_middleware(request: Request, call_next):
     allowed, retry_after = rate_limiter.check(client_host)
     if not allowed:
         return _rate_limited(retry_after)
+
+    # Open paths (health probes, public signup/login, invite acceptance) proceed without bearer token
+    if is_open_path(request.url.path):
+        return await call_next(request)
 
     role_header = request.headers.get("x-role", "admin").lower()
     try:

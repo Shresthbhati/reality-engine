@@ -203,6 +203,8 @@ def reclassify_entity(
         "kind": "reclassify",
         "basis": "user",
         "entity_id": entity_id,
+        "entity_type": getattr(ent.type, "value", str(ent.type)),
+        "anchor": _anchor_of(ent),
         "old_class": old_class,
         "new_class": clean_class,
         "note": note.strip() or None,
@@ -337,6 +339,8 @@ def split_entity(
         "kind": "split",
         "basis": "user",
         "source_entity_id": entity_id,
+        "entity_type": getattr(ent.type, "value", str(ent.type)),
+        "anchor": _anchor_of(ent),
         "created_entity_ids": [id1, id2],
         "split_axis": axis,
         "split_ratio": float(split_ratio),
@@ -430,6 +434,8 @@ def merge_entities(
         "kind": "merge",
         "basis": "user",
         "primary_entity_id": primary_entity_id,
+        "entity_type": getattr(primary.type, "value", str(primary.type)),
+        "anchor": _anchor_of(primary),
         "merged_entity_ids": list(sec_ids),
         "note": note.strip() or None,
         "user_id": user_id or "user",
@@ -440,3 +446,109 @@ def merge_entities(
     world.metadata["user_decisions"] = decisions
 
     return primary, decision
+
+
+def carry_decisions(world, decisions: Iterable[dict]) -> dict:
+    """Replay saved user decisions (reclassify, split, merge) onto a freshly compiled world (T-4.2).
+
+    Exact entity id first; if not found, falls back to the nearest entity of the same type within
+    CARRY_MATCH_TOL_M. Re-applies the decision and preserves the decision registry in world.metadata["user_decisions"].
+    """
+    report: Dict[str, list] = {"applied": [], "skipped": []}
+    by_type: Dict[str, List[Any]] = {}
+    for ent in (getattr(world, "entities", None) or {}).values():
+        by_type.setdefault(getattr(ent.type, "value", str(ent.type)), []).append(ent)
+
+    saved: List[dict] = []
+    for dec in decisions or []:
+        if not isinstance(dec, dict) or dec.get("basis") != "user":
+            continue
+        kind = dec.get("kind")
+        if kind == "reclassify":
+            target_id = dec.get("entity_id")
+            ent = (getattr(world, "entities", None) or {}).get(target_id)
+            matched = "id"
+            if ent is None:
+                anchor = dec.get("anchor")
+                if not anchor:
+                    report["skipped"].append({"decision": dec, "reason": "entity not found and no anchor"})
+                    saved.append(dec)
+                    continue
+                candidates = by_type.get(str(dec.get("entity_type")), [])
+                scored = sorted(
+                    ((_distance(anchor, a), e) for e in candidates if (a := _anchor_of(e)) is not None),
+                    key=lambda p: p[0],
+                )
+                if not scored or scored[0][0] > CARRY_MATCH_TOL_M:
+                    report["skipped"].append({
+                        "decision": dec,
+                        "reason": f"no entity of type {dec.get('entity_type')} within {CARRY_MATCH_TOL_M} m",
+                    })
+                    saved.append(dec)
+                    continue
+                ent, matched = scored[0][1], f"nearest ({scored[0][0]:.2f} m)"
+
+            clean_class = str(dec.get("new_class") or "").strip()
+            if clean_class:
+                cp = getattr(ent, "custom_properties", None) or {}
+                cp = dict(cp)
+                cp["entity_class"] = clean_class
+                cp["classification_basis"] = "user"
+                cp["user_decision"] = dec
+                ent.custom_properties = cp
+
+                labels = [clean_class]
+                for part in clean_class.split("/"):
+                    if part and part not in labels:
+                        labels.append(part)
+                ent.semantic_labels = labels
+                leaf_name = clean_class.split("/")[-1].replace("_", " ").title()
+                ent.name = leaf_name
+
+                report["applied"].append({
+                    "entity_id": ent.id,
+                    "kind": "reclassify",
+                    "new_class": clean_class,
+                    "matched_by": matched,
+                })
+            saved.append(dec)
+        elif kind == "split":
+            source_id = dec.get("source_entity_id")
+            ent = (getattr(world, "entities", None) or {}).get(source_id)
+            if ent is not None:
+                try:
+                    split_entity(
+                        world,
+                        ent.id,
+                        dec.get("split_axis", "x"),
+                        dec.get("split_ratio", 0.5),
+                        note=dec.get("note") or "",
+                        user_id=dec.get("user_id") or "user",
+                    )
+                    report["applied"].append({"entity_id": ent.id, "kind": "split"})
+                except Exception as exc:
+                    report["skipped"].append({"decision": dec, "reason": str(exc)})
+            saved.append(dec)
+        elif kind == "merge":
+            p_id = dec.get("primary_entity_id")
+            m_ids = dec.get("merged_entity_ids") or []
+            if p_id in (world.entities or {}) and any(sid in (world.entities or {}) for sid in m_ids):
+                try:
+                    available_secondaries = [sid for sid in m_ids if sid in world.entities]
+                    merge_entities(
+                        world,
+                        p_id,
+                        available_secondaries,
+                        note=dec.get("note") or "",
+                        user_id=dec.get("user_id") or "user",
+                    )
+                    report["applied"].append({"entity_id": p_id, "kind": "merge"})
+                except Exception as exc:
+                    report["skipped"].append({"decision": dec, "reason": str(exc)})
+            saved.append(dec)
+        else:
+            saved.append(dec)
+
+    if saved:
+        world.metadata["user_decisions"] = saved
+    return report

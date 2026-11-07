@@ -106,6 +106,7 @@ tasks marked *parallel-safe*.
 | T-5.4 | DONE | Live coverage hint after each batch (subtle, non-nagging guidance directly from `GET /api/worlds/{id}/capture-coverage`; `mobile.spec.ts` passed) |
 | Pairwise Registration | DONE | `perception/layout/registration.py` robust Kabsch + RANSAC rigid alignment from metric depth + 2D feature correspondences for low-overlap/AI photos (7 synth tests passed in 1.47s) |
 | T-2.2 (measure) | DONE | Studio point-to-point distance/height/area/angle with honest units; dimensions (value, state, basis, +/-) on walls, room and openings; Playwright measure and fixture wall dimension test verified against WorldIR |
+| T-4.2 | DONE | Late reconstruction results never overwrite accepted manual edits (rule 18); verified by exact ID & spatial anchor matching and end-to-end API reprocess job (`tests/test_edit_preservation_reprocess.py`) |
 | Real-world verification (found by running the user's 10 photos) | DONE locally, 5 regressions fixed | Real API job + real Studio: (1) duplicate furniture failed validation, (2) openings without a host wall failed validation, (3) GPU OOM killed the layout (now retries on CPU), (4) key-points stage crashed on slabs, (5) a one-photo room was labelled 'not placed in 3D' and hid the model, plus a viewport TypeError and legacy-box rendering. Now: the 10 photos give a visible solid room shell, 3 furniture counted, estimated dimensions labelled, no page errors. Open: footprint is still 10.5 x 4.8 units (far walls count), 9 photos not fused, no accuracy figure |
 | H-0.1, H-3.1, H-3.2 | OPEN (you) | firm interviews, closed-window photos, tape-measured rooms |
 
@@ -189,7 +190,7 @@ new / updated / matched / uncertain / conflicting, user accepts, world version i
 | 3.6 | Identity scenario acceptance | T2 | high | adversarial identity tests pass |
 | 6.2 / 6.3 | Incremental registration + update path wired to API | T3 sliced | high | e2e from gate passes |
 | U.7 | Adoption review UI | T5 | high | e2e: second session matches, not duplicates |
-| T-4.2 | Late reconstruction results never overwrite accepted manual edits (rule 18) | T3 | high | test: edit → reprocess → edit survives |
+| T-4.2 | DONE | Late reconstruction results never overwrite accepted manual edits (rule 18) | T3 | high | test: edit → reprocess → edit survives (`test_edit_preservation_reprocess.py` passed) |
 
 ### M4b — Design iteration and client presentation (≈ 3 weeks)
 

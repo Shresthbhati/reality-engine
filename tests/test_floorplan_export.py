@@ -47,6 +47,51 @@ def test_dxf_plan_is_ascii_r12_and_carries_layers():
     assert report.format == "floorplan_dxf"
 
 
+def test_dxf_parsed_back_with_ezdxf():
+    """13.5: DXF parsed back with ezdxf; layer names + wall count asserted."""
+    import io
+    import ezdxf
+    from world_ir import Entity, EntityType
+    from exporters.floorplan import _rooms, _room_walls
+
+    world = _world(metric=True)
+    world.entities["fixture-sink-01"] = Entity(
+        id="fixture-sink-01",
+        type=EntityType.UNKNOWN,
+        name="Kitchen Sink",
+        custom_properties={
+            "entity_class": "plumbing.sink",
+            "bounds_min": [1.0, 1.0, 0.0],
+            "bounds_max": [1.6, 1.5, 0.85],
+        },
+    )
+
+    dxf, report = export_to_floorplan_dxf_with_report(world)
+    doc = ezdxf.read(io.StringIO(dxf))
+    assert doc.dxfversion == "AC1009"
+
+    layer_names = {layer.dxf.name for layer in doc.layers}
+    for required in ("WALL", "OPENING", "FIXTURES", "FURNITURE", "DIMENSION", "DOOR_SWING"):
+        assert required in layer_names, f"Missing required layer: {required}"
+
+    msp = doc.modelspace()
+    room_walls = [w for r in _rooms(world) for w in _room_walls(world, r)]
+    wall_lines = list(msp.query('LINE[layer=="WALL"]'))
+    assert len(wall_lines) == len(room_walls) * 4
+
+    door_swings = list(msp.query('*[layer=="DOOR_SWING"]'))
+    assert len(door_swings) >= 1
+
+    furniture = list(msp.query('*[layer=="FURNITURE"]'))
+    assert len(furniture) >= 1
+
+    fixtures = list(msp.query('*[layer=="FIXTURES"]'))
+    assert len(fixtures) >= 1
+
+    assert report.format == "floorplan_dxf"
+    assert "fixture-sink-01" in report.entities_exported
+
+
 def test_room_report_net_wall_area_subtracts_openings():
     rep = build_room_report(_world())
     r = rep["rooms"][0]

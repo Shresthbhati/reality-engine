@@ -249,14 +249,84 @@ def export_to_floorplan_svg_with_report(world, artifact_store=None) -> Tuple[str
 
 
 def _dxf_header() -> List[str]:
+    layers = (
+        ("ROOM", 7), ("WALL", 7), ("WALLS", 7), ("OPENING", 5), ("OPENINGS", 5),
+        ("DOOR_SWING", 4), ("DOOR_SWINGS", 4), ("FURNITURE", 2),
+        ("FIXTURE", 6), ("FIXTURES", 6), ("DIMENSION", 1), ("DIMENSIONS", 1),
+        ("TEXT", 7), ("UNOBSERVED", 30),
+    )
     return [
         "0", "SECTION", "2", "HEADER", "0", "ENDSEC",
-        "0", "SECTION", "2", "TABLES", "0", "TABLE", "2", "LAYER", "70", "7",
+        "0", "SECTION", "2", "TABLES", "0", "TABLE", "2", "LAYER", "70", str(len(layers)),
         *sum((["0", "LAYER", "2", name, "70", "0", "62", str(colour), "6", "CONTINUOUS"]
-              for name, colour in (("ROOM", 7), ("WALL", 7), ("OPENING", 5), ("DIMENSION", 5),
-                                   ("TEXT", 7), ("UNOBSERVED", 30))), []),
+              for name, colour in layers), []),
         "0", "ENDTAB", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES",
     ]
+
+
+def _dxf_arc(layer: str, center: Sequence[float], radius: float, start_deg: float, end_deg: float) -> List[str]:
+    return [
+        "0", "ARC", "8", layer,
+        "10", f"{center[0]:.4f}", "20", f"{center[1]:.4f}", "30", "0",
+        "40", f"{radius:.4f}",
+        "50", f"{start_deg:.2f}",
+        "60", f"{end_deg:.2f}",
+    ]
+
+
+def _classify_floorplan_element(entity) -> Optional[str]:
+    t_val = (entity.type.value if hasattr(entity.type, "value") else str(entity.type)).lower()
+    if t_val == "furniture":
+        return "FURNITURE"
+    if t_val in ("fixture", "appliance"):
+        return "FIXTURES"
+    cp = entity.custom_properties or {}
+    ec = str(cp.get("entity_class") or cp.get("class_name") or cp.get("category") or "").lower()
+    name = (entity.name or "").lower()
+    if any(ec.startswith(p) for p in ("electrical", "plumbing", "fixture", "sanitary", "hvac")) or any(
+        kw in name for kw in ("sink", "toilet", "bath", "shower", "socket", "switch", "light", "radiator")
+    ):
+        return "FIXTURES"
+    if ec.startswith("furniture") or any(
+        kw in name for kw in ("sofa", "couch", "chair", "table", "desk", "bed", "cabinet", "shelf", "wardrobe", "furniture")
+    ):
+        return "FURNITURE"
+    return None
+
+
+def _entity_footprint_polygon(world, entity) -> Optional[List[Tuple[float, float]]]:
+    cp = entity.custom_properties or {}
+    if "footprint_polygon_m" in cp and isinstance(cp["footprint_polygon_m"], list) and len(cp["footprint_polygon_m"]) >= 3:
+        return [(float(p[0]), float(p[1])) for p in cp["footprint_polygon_m"]]
+    if "plan_obb_centre_m" in cp and "plan_obb_size_m" in cp:
+        cx, cy = float(cp["plan_obb_centre_m"][0]), float(cp["plan_obb_centre_m"][1])
+        sx, sy = float(cp["plan_obb_size_m"][0]) / 2.0, float(cp["plan_obb_size_m"][1]) / 2.0
+        return [(cx - sx, cy - sy), (cx + sx, cy - sy), (cx + sx, cy + sy), (cx - sx, cy + sy)]
+    bmin = cp.get("bounds_min")
+    bmax = cp.get("bounds_max")
+    if bmin and bmax and len(bmin) >= 2 and len(bmax) >= 2:
+        min_x, min_y = float(bmin[0]), float(bmin[1])
+        max_x, max_y = float(bmax[0]), float(bmax[1])
+        return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
+    for gid in (entity.geometry_ids or []):
+        geom = (world.geometries or {}).get(gid)
+        if geom and geom.bounds_min and geom.bounds_max:
+            min_x, min_y = float(geom.bounds_min.x), float(geom.bounds_min.y)
+            max_x, max_y = float(geom.bounds_max.x), float(geom.bounds_max.y)
+            return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
+    if entity.transform and "position" in entity.transform:
+        pos = entity.transform["position"]
+        if isinstance(pos, dict):
+            cx, cy = float(pos.get("x", 0.0)), float(pos.get("y", 0.0))
+        elif isinstance(pos, (list, tuple)) and len(pos) >= 2:
+            cx, cy = float(pos[0]), float(pos[1])
+        else:
+            return None
+        dims = cp.get("dimensions") or {}
+        w = float(dims.get("width_m", {}).get("value", 0.6) if isinstance(dims.get("width_m"), dict) else 0.6) / 2.0
+        d = float(dims.get("depth_m", {}).get("value", 0.6) if isinstance(dims.get("depth_m"), dict) else 0.6) / 2.0
+        return [(cx - w, cy - d), (cx + w, cy - d), (cx + w, cy + d), (cx - w, cy + d)]
+    return None
 
 
 def _dxf_line(layer: str, a: Sequence[float], b: Sequence[float]) -> List[str]:
@@ -299,9 +369,20 @@ def export_to_floorplan_dxf_with_report(world, artifact_store=None) -> Tuple[str
             lines += _dxf_line(layer, p, corners[(i + 1) % len(corners)])
         for o in wall["openings"]:
             off, width = float(o.get("offset_m", 0.0)), float(o.get("width_m", 0.0))
+            kind = str(o.get("kind", "opening")).lower()
             p0 = (a[0] + d[0] * off, a[1] + d[1] * off)
             p1 = (a[0] + d[0] * (off + width), a[1] + d[1] * (off + width))
             lines += _dxf_line("OPENING", p0, p1)
+            if "door" in kind or kind == "opening":
+                r = width
+                n_dir = (-d[1], d[0])
+                door_end = (p0[0] + n_dir[0] * r, p0[1] + n_dir[1] * r)
+                lines += _dxf_line("DOOR_SWING", p0, door_end)
+                ang_start = math.degrees(math.atan2(p1[1] - p0[1], p1[0] - p0[0])) % 360
+                ang_end = math.degrees(math.atan2(door_end[1] - p0[1], door_end[0] - p0[0])) % 360
+                if (ang_end - ang_start) % 360 > 180:
+                    ang_start, ang_end = ang_end, ang_start
+                lines += _dxf_arc("DOOR_SWING", p0, r, ang_start, ang_end)
         if wall["dimension"]:
             mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
             lines += _dxf_text(mid[0], mid[1], _dim_label(wall["dimension"], unit), 0.10)
@@ -318,11 +399,28 @@ def export_to_floorplan_dxf_with_report(world, artifact_store=None) -> Tuple[str
             dim = dims.get(key) or dims.get(key.replace("layout_", "floor_"))
             if dim:
                 lines += _dxf_text(position[0], position[1], f"{label} {_dim_label(dim, unit)}", 0.11)
+    exported_ids = [r.id for r in rooms] + [w["id"] for w in walls]
+    # Export furniture and fixtures
+    for eid, entity in (world.entities or {}).items():
+        layer = _classify_floorplan_element(entity)
+        if layer is None:
+            continue
+        poly = _entity_footprint_polygon(world, entity)
+        if not poly:
+            continue
+        for i, p in enumerate(poly):
+            q = poly[(i + 1) % len(poly)]
+            lines += _dxf_line(layer, p, q)
+        cx = sum(p[0] for p in poly) / len(poly)
+        cy = sum(p[1] for p in poly) / len(poly)
+        if entity.name:
+            lines += _dxf_text(cx, cy, entity.name, 0.08)
+        exported_ids.append(eid)
     lines += ["0", "ENDSEC", "0", "EOF"]
     dxf = "\n".join(lines) + "\n"
     report = ExportReport(
         format="floorplan_dxf", world_id=world.id, world_version=world.version,
-        entities_exported=tuple([r.id for r in rooms] + [w["id"] for w in walls]),
+        entities_exported=tuple(exported_ids),
         entities_skipped=(), skip_reasons=(), content_hash=content_hash(dxf),
     )
     return dxf, report

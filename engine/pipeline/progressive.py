@@ -209,12 +209,23 @@ def run_progressive(
             vs = None
 
     layout_reason: Optional[str] = None
+    pre_boots: list = []
+    pre_pick = None
     if vs is not None and layout_analyzer is not None:
-        layout_reason = _multiview_weakness(vs)
-        if layout_reason:
-            attempts[-1]["outcome"] = "rejected"
-            attempts[-1]["detail"] += f"; not credible ({layout_reason}): room shell built from learned single-image layout instead"
-            vs = None
+        weakness = _multiview_weakness(vs)
+        if weakness:
+            # The weak multi-view model is replaced ONLY after the layout actually succeeded: if the learned models are
+            # unavailable or refuse, the multi-view result stands (a weak model is still better than none).
+            prior_set = set(prior_ids)
+            pre_boots, pre_pick = _bootstrap_best_layout(
+                sorted(eligible, key=lambda c: c.item.id not in prior_set), layout_analyzer, artifact_store=artifact_store,
+                depth_model=depth_model, furniture_detector=furniture_detector, attempts=attempts)
+            if pre_boots:
+                layout_reason = weakness
+                attempts[[i for i, a in enumerate(attempts) if a["level"] == 2][-1]]["outcome"] = "rejected"
+                attempts[[i for i, a in enumerate(attempts) if a["level"] == 2][-1]]["detail"] += (
+                    f"; not credible ({weakness}): room shell built from learned single-image layout instead")
+                vs = None
 
     degraded: List[str] = []
     if excluded:
@@ -268,10 +279,9 @@ def run_progressive(
         # hypotheses into ONE world. N images never silently become 1.
         prior = set(prior_ids)
         ordered = sorted(eligible, key=lambda c: c.item.id not in prior)  # earliest evidence first (stable)
-        boots = []
-        layout_pick = None
+        boots, layout_pick = pre_boots, pre_pick
         _boot_t0 = _time.perf_counter()
-        if layout_analyzer is not None:
+        if layout_analyzer is not None and not boots:
             boots, layout_pick = _bootstrap_best_layout(
                 ordered, layout_analyzer, artifact_store=artifact_store, depth_model=depth_model,
                 furniture_detector=furniture_detector, attempts=attempts)

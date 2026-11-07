@@ -79,3 +79,14 @@ def test_layout_models_unavailable_falls_back_to_the_classic_path_and_says_so(tm
     res = run_progressive(_inputs(tmp_path)[:1], vs_options=None, bootstrap_depth_map=dm, layout_analyzer=unavailable)
     assert res.level == 0  # the classic single-view path still produced a world
     assert any("learned layout unavailable" in a["detail"] for a in res.attempts if a["outcome"] == "failed")
+
+
+def test_a_weak_multiview_model_is_kept_when_the_layout_cannot_replace_it(tmp_path):
+    """Never trade a weak model for nothing: unavailable models leave the multi-view result in place."""
+    def unavailable(item):
+        raise RuntimeError("weights not cached")
+
+    res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=60), layout_analyzer=unavailable)
+    assert res.level == 2 and res.vs_result is not None
+    assert [a["outcome"] for a in res.attempts if a["level"] == 2] == ["succeeded"]
+    assert any("learned layout unavailable" in a["detail"] for a in res.attempts if a["level"] == 0)

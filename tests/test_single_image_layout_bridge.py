@@ -135,3 +135,22 @@ def test_ifc_export_has_a_space_for_the_room_and_furnishing_elements_for_furnitu
     assert len(m.by_type("IfcSpace")) == 1
     assert len(m.by_type("IfcFurnishingElement")) == n_furniture
     assert len(m.by_type("IfcWindow")) == 1 and len(m.by_type("IfcSlab")) == 2
+
+
+def test_key_points_are_derived_with_corners_at_the_right_heights(bootstrap):
+    """The job's structure_points stage failed with KeyError 'direction' on this world (found by the real full run)."""
+    import numpy as np
+
+    from reconstruction.structure_points import structure_points
+
+    pts = structure_points(bootstrap.world)
+    kinds = {p["kind"] for p in pts}
+    assert "corner" in kinds and "opening_corner" in kinds
+    up = np.asarray(_of(bootstrap, "wall")[0].custom_properties["wall_slab"]["up"])
+    heights = sorted({round(float(np.dot(p["position"], up)), 1) for p in pts if p["kind"] == "corner"})
+    assert max(heights) - min(heights) == pytest.approx(2.6, abs=0.15)  # floor corners to ceiling corners
+    win = [p for p in pts if p["kind"] == "opening_corner"]
+    span = max(float(np.dot(p["position"], up)) for p in win) - min(float(np.dot(p["position"], up)) for p in win)
+    assert span == pytest.approx(1.1, abs=0.15)  # the window: sill 0.9 -> head 2.0
+    for p in win:
+        assert all(e in bootstrap.world.entities for e in p["entity_ids"])

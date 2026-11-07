@@ -107,7 +107,8 @@ def add_layout_openings(world, obs, layout: SurfaceLayout, eid_of_plane: Dict[st
     cam_h = float(layout.camera_height_m)
     cap = min(confidence_ceiling, OPENING_CONFIDENCE_CEILING)
     k = 0
-    for o in layout.openings:
+    facts["by_opening"] = {}
+    for oi, o in enumerate(layout.openings):
         host = eid_of_plane.get(f"layout-wall-{o.wall_index}")
         if host is None:
             facts["skipped"].append(f"{o.kind} on wall {o.wall_index}: that wall was not promoted")
@@ -121,6 +122,7 @@ def add_layout_openings(world, obs, layout: SurfaceLayout, eid_of_plane: Dict[st
         xs, ys, zs = zip(*corners)
         k += 1
         oid = f"{pre}-opening-{k:02d}"
+        facts["by_opening"][oi] = oid
         geom = Geometry(
             id=f"geom-{oid}", type=GeometryType.BOX, vertex_count=4,
             bounds_min=Vector3(min(xs), min(ys), min(zs)), bounds_max=Vector3(max(xs), max(ys), max(zs)),
@@ -171,7 +173,7 @@ def _hull(points):
 
 
 def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], *, pre: str,
-                    confidence_ceiling: float) -> Dict[str, object]:
+                    confidence_ceiling: float, opening_ids: Optional[Dict[int, str]] = None) -> Dict[str, object]:
     """A ROOM entity for the part of the room one photograph saw, so the floor plan / report exporters have something to draw.
 
     The footprint is the convex hull of the OBSERVED wall segments and the camera position (the camera stands inside the room).
@@ -238,16 +240,19 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
     for i, eid, a, b, wl in walls_used:
         ent = world.entities[eid]
         openings = []
-        for o in layout.openings:
-            if o.wall_index != i:
+        for oi, o in enumerate(layout.openings):
+            if o.wall_index != i or oi not in (opening_ids or {}):
                 continue
-            openings.append({"kind": o.kind, "offset_m": round(max(0.0, o.s_min - wl.s_min), 3),
+            openings.append({"entity_id": (opening_ids or {})[oi], "kind": o.kind, "offset_m": round(max(0.0, o.s_min - wl.s_min), 3),
                              "width_m": round(o.s_max - o.s_min, 3), "height_m": round(o.h_max - o.h_min, 3),
                              "sill_m": round(o.h_min, 3)})
         ent.custom_properties.update({
             "room_id": room_id, "length_m": round(wl.s_max - wl.s_min, 3), "height_m": round(height, 3),
             "thickness_m": 0.1, "thickness_basis": "default_unmeasured", "observed_fraction": 1.0,
-            "wall_slab": {"start_xyz_m": [float(c) for c in a], "end_xyz_m": [float(c) for c in b], "openings": openings},
+            # start/end ON THE FLOOR (the solver's wall line is at camera height), with the wall's direction and up
+            "wall_slab": {"start_xyz_m": [float(c) for c in (a - cam_h * up_h)], "end_xyz_m": [float(c) for c in (b - cam_h * up_h)],
+                          "direction": [float(c) for c in (b - a) / max(1e-9, float(np.linalg.norm(b - a)))],
+                          "up": [float(c) for c in up_h], "height_m": round(height, 3), "openings": openings},
         })
     # floor and ceiling belong to the room too (the validator requires every surface to name its space)
     boundary = [eid for _, eid, _, _, _ in walls_used]

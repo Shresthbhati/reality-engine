@@ -195,3 +195,33 @@ def test_weak_and_implausible_walls_are_dropped_with_a_reason():
     assert all(w.plane.d >= 0.4 for w in lay.walls)  # the 0.3 m block is not a wall
     assert any(abs(w.plane.d - 3.5) < 0.06 for w in lay.walls)
     assert any('implausible' in n for n in lay.notes)
+
+
+def _with_opening(kind, x_lo, x_hi, h_lo, h_hi):
+    """A labelled opening on the front wall at the given x range and height-above-floor range (metres)."""
+    depth, masks = _render(window=False)
+    pts = backproject(depth, HFOV)
+    y_hi, y_lo = CAM_H - h_lo, CAM_H - h_hi
+    box = (np.abs(depth - 3.5) < 0.02) & (pts[..., 0] > x_lo) & (pts[..., 0] < x_hi) & (pts[..., 1] < y_hi) & (pts[..., 1] > y_lo)
+    masks = dict(masks)
+    masks[kind] = box
+    masks["wall"] = masks["wall"] & ~box
+    return solve_layout(depth, masks, hfov_deg=HFOV)
+
+
+def test_a_door_that_floats_above_the_floor_is_refused_not_reported():
+    lay = _with_opening("door", -0.4, 0.4, 1.2, 2.0)  # a "door" whose sill is 1.2 m off the floor is a label error
+    assert not [o for o in lay.openings if o.kind == "door"]
+    assert any("door" in r and "implausible" in r for r in lay.refused), lay.refused
+
+
+def test_a_real_door_is_kept():
+    lay = _with_opening("door", -0.4, 0.4, 0.0, 2.05)
+    (door,) = [o for o in lay.openings if o.kind == "door"]
+    assert door.h_min < 0.15 and door.h_max == pytest.approx(2.05, abs=0.12)
+
+
+def test_a_sliver_window_is_refused():
+    lay = _with_opening("window", -0.5, 0.5, 1.0, 1.15)  # 15 cm tall: segmentation noise, not a window
+    assert not [o for o in lay.openings if o.kind == "window"]
+    assert any("window" in r for r in lay.refused)

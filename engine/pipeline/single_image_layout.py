@@ -147,3 +147,28 @@ def add_layout_openings(world, obs, layout: SurfaceLayout, eid_of_plane: Dict[st
         )
     facts["candidates"] = k
     return facts
+
+
+def make_layout_analyzer():
+    """``(analyze, unload)`` for the progressive ladder, or ``(None, noop)`` when REALITY_LAYOUT_MODELS=0.
+
+    ``analyze(item)`` runs metric depth + surface segmentation on the item's photograph; it raises
+    ``LayoutModelsUnavailable`` when the weights are not cached, which the ladder records before falling back to the classic path.
+    """
+    import os
+    from pathlib import Path
+    from urllib.parse import unquote, urlparse
+    from urllib.request import url2pathname
+
+    if os.environ.get("REALITY_LAYOUT_MODELS", "1") == "0":
+        return None, (lambda: None)
+    from perception.layout.learned_models import LayoutModels, analyze_path
+
+    models = LayoutModels()
+
+    def analyze(item):
+        u = urlparse(item.source_uri)
+        path = url2pathname(unquote(u.path)) if u.scheme == "file" else item.source_uri
+        return analyze_path(models, Path(path))
+
+    return analyze, models.unload

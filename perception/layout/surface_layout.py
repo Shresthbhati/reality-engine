@@ -51,6 +51,9 @@ WALL_DUP_ANGLE_DEG = 10.0
 WALL_DUP_OFFSET_M = 0.30
 OPENING_MIN_PX = 60
 OPENING_WALL_DIST_M = 0.25
+#: plausible metric extents; an opening outside them is a segmentation error and is refused with the reason
+WINDOW_LIMITS = {"width": (0.3, 4.5), "height": (0.3, 2.7), "max_sill": 1.6}
+DOOR_LIMITS = {"width": (0.5, 3.5), "height": (1.6, 3.0), "max_sill": 0.3}
 MAX_FIT_POINTS = 4000
 
 
@@ -353,9 +356,17 @@ def solve_layout(
                 p = r[ok] * t[ok][:, None]
                 s = p @ np.array(wl.tangent)
                 hv = height_of(p)
-                openings.append(Opening(kind, wi, float(np.percentile(s, 3)), float(np.percentile(s, 97)),
-                                        max(0.0, float(np.percentile(hv, 3))), float(np.percentile(hv, 97)),
-                                        int(comp.sum())))
+                op = Opening(kind, wi, float(np.percentile(s, 3)), float(np.percentile(s, 97)),
+                             max(0.0, float(np.percentile(hv, 3))), float(np.percentile(hv, 97)), int(comp.sum()))
+                lim = WINDOW_LIMITS if kind == "window" else DOOR_LIMITS
+                wd, ht = op.s_max - op.s_min, op.h_max - op.h_min
+                why = (f"width {wd:.2f} m" if not lim["width"][0] <= wd <= lim["width"][1] else
+                       f"height {ht:.2f} m" if not lim["height"][0] <= ht <= lim["height"][1] else
+                       f"sill {op.h_min:.2f} m above the floor" if op.h_min > lim["max_sill"] else None)
+                if why:
+                    refused.append(f"{kind}: implausible {why} (a label error, not a {kind}); not reported")
+                    continue
+                openings.append(op)
 
     return SurfaceLayout(
         up=tuple(map(float, up)), camera_height_m=float(d), room_height_m=room_height, floor_rms_m=floor_rms,

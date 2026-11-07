@@ -36,6 +36,7 @@ from engine.pipeline import world_delta
 from engine.pipeline.dense_gate import dense_auto_enabled
 from reconstruction.colmap_session import ColmapSession
 from engine.pipeline.single_image_furniture import maskrcnn_furniture_detector, unload_furniture_model
+from engine.pipeline.single_image_layout import make_layout_analyzer
 from engine.pipeline.progressive import (
     EvidenceInput,
     InsufficientEvidence,
@@ -765,13 +766,18 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             **_dense_cpu_options(job.payload))
     # The ladder: multi-view reconstruction when the evidence supports it,
     # the strongest lower level otherwise (never an empty world).
-    prog = await asyncio.to_thread(
-        lambda: run_progressive(
-            run_inputs, vs_options=options, prior_ids=prior_ids, artifact_store=artifact_store,
-            depth_model=(getattr(options, "depth_model", None) or "DPT_Hybrid"),
-            furniture_detector=maskrcnn_furniture_detector,
+    layout_analyzer, unload_layout_models = make_layout_analyzer()
+    try:
+        prog = await asyncio.to_thread(
+            lambda: run_progressive(
+                run_inputs, vs_options=options, prior_ids=prior_ids, artifact_store=artifact_store,
+                depth_model=(getattr(options, "depth_model", None) or "DPT_Hybrid"),
+                furniture_detector=maskrcnn_furniture_detector,
+                layout_analyzer=layout_analyzer,
+            )
         )
-    )
+    finally:
+        unload_layout_models()
     world_ir = prog.world
     unload_furniture_model()  # idle API must not keep the detector resident between jobs
 

@@ -289,3 +289,67 @@ Status: accepted by the product owner ("copper is fine"). Plan task U.3.
 * **Honesty:** scale stays `relative` with an explicit "ESTIMATE" note (monocular metric depth is roughly 10-20 % off, never a measurement); entities are capped at 0.35 confidence (openings 0.3); implausible openings (floating doors, sliver windows) are refused with the reason.
 * **Opt-outs:** `REALITY_LAYOUT_MODELS=0`, `REALITY_OPEN_VOCAB=0`; both are skipped under the `REALITY_TEST_BACKEND` seam.
 * **Open:** fusing several photographs into one shell; accuracy needs the labelled set (8.6).
+
+## Decision 026 — Production Hosting Architecture & Monthly Cost Model (1 API Box + 1 GPU Worker + S3 Storage) (T-6.1)
+
+**Status: ACCEPTED (ADR 2026-11-07)**
+
+### 1. Context & Objectives
+Reality Engine consists of two fundamentally distinct workloads:
+1. **Interactive API & Client Viewport**: Lightweight, latency-critical REST endpoints, WebSockets/SSE, Next.js frontend SSR, spatial queries, and persistent per-world undo/redo command logs.
+2. **Batch Spatial & ML Perception**: Heavy GPU compute executing COLMAP sparse SfM, OpenMVS/Poisson surface reconstruction, and monocular depth/segmentation models (Depth Anything V2, UPerNet, Grounding DINO).
+
+Running GPU instances 24/7 wastes 85–95% of server expenditure during idle hours. Conversely, routing multi-gigabyte raw photo uploads and GLB assets through a single compute instance saturates network bandwidth and exhausts memory.
+
+### 2. Architecture Decision: 3-Tier Split
+We adopt a decoupled cloud-native topology:
+
+```
+[ Client Browser / Mobile Capture ]
+      |                      \ (Presigned S3 Upload / Download)
+      v                       v
+[ Tier 1: API / Web Box ]   [ Tier 3: S3 Object Store (Cloudflare R2) ]
+      |                       ^
+      | (Durable Job Dispatch) | (Fetch Evidence / Write WorldIR & GLB)
+      v                       |
+[ Tier 2: On-Demand GPU Worker (RunPod Serverless / Modal) ]
+```
+
+#### Tier 1 — API & Web Server (1 Box)
+- **Role**: Serves Next.js frontend, FastAPI REST endpoints, SQLite / PostgreSQL metadata, and enqueues reconstruction jobs.
+- **Specification**: 4 vCPU, 8 GB RAM (e.g. Hetzner Cloud CPX31 or AWS EC2 t4g.xlarge).
+- **Network**: Public HTTPS with Let's Encrypt SSL, rate limiting, and CORS restrictions.
+- **Storage**: 80 GB NVMe for OS, local DB, and temporary caches.
+
+#### Tier 2 — On-Demand GPU Worker (RunPod Serverless / Modal Labs)
+- **Role**: Executes heavyweight perception and 3D reconstruction pipelines on a worker container.
+- **Specification**: NVIDIA RTX 4090 (24 GB VRAM) or NVIDIA L4 / A10G (24 GB VRAM) container with CUDA 12.x, PyTorch, COLMAP, and pre-baked model weights.
+- **Lifecycle**: Scales to 0 when idle. Cold start < 15 seconds using warm container layers; job execution time typically 2.5 to 5.0 minutes per room reconstruction.
+- **Billing**: Per-second execution billing (~$0.44/hour on RunPod Serverless or $0.00022/second).
+
+#### Tier 3 — S3-Compatible Object Store (Cloudflare R2 / AWS S3)
+- **Role**: Primary durable repository for session evidence photos, depth sidecars, point clouds, WorldIR JSON snapshots, and GLB / IFC export binaries.
+- **Provider**: **Cloudflare R2** chosen for its **$0.00 egress bandwidth fee** guarantee, avoiding surprise egress bills from architectural model downloads and video sweeps.
+- **Security**: Tenant-isolated bucket prefixes (`/{tenant_id}/{world_id}/artifacts/{sha256}.bin`). Raw uploads generated via short-lived presigned URLs.
+
+---
+
+### 3. Monthly Cost Estimates & Tier Projections
+
+| Resource | Low / Staging (50 jobs/mo) | Mid / Commercial (500 jobs/mo) | High / Scale (2,500 jobs/mo) |
+| :--- | :--- | :--- | :--- |
+| **API Box (Hetzner CPX31/CPX41)** | $16.50 / mo | $31.00 / mo | $65.00 / mo |
+| **GPU Compute (RTX 4090 @ $0.44/hr)** | $1.47 / mo *(3.3 hrs)* | $14.67 / mo *(33.3 hrs)* | $73.33 / mo *(166.7 hrs)* |
+| **Object Storage (Cloudflare R2)** | $0.38 / mo *(25 GB)* | $3.75 / mo *(250 GB)* | $22.50 / mo *(1.5 TB)* |
+| **Data Egress Bandwidth** | $0.00 *(R2 Free Egress)* | $0.00 *(R2 Free Egress)* | $0.00 *(R2 Free Egress)* |
+| **DNS / SSL / Observability** | $1.50 / mo | $3.00 / mo | $10.00 / mo |
+| **Total Monthly Spend** | **$19.85 / mo** | **$52.42 / mo** | **$170.83 / mo** |
+
+*Estimated cost per completed room reconstruction at commercial volume:* **~$0.10 per room**, providing a 98% gross margin on standard architectural subscription tiers ($49–$199/month).
+
+---
+
+### 4. Consequences & Implementation Seams
+1. **Local Developer Experience Preserved**: The default local runtime continues to use local filesystem storage (`STORAGE_ROOT`) and in-process background worker execution without requiring cloud credentials.
+2. **Adapter Contract (T-6.3)**: `ArtifactStore` interface isolates filesystem vs S3 implementations (`S3ArtifactStore`), validated against MinIO in CI.
+3. **Durable Job Queue (T-6.2)**: API box publishes job payloads to queue; GPU worker polls or receives webhook triggers and posts results back directly to object store.

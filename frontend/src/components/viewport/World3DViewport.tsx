@@ -134,8 +134,8 @@ interface World3DViewportProps {
 }
 
 function IconButton({
-  label, active = false, disabled = false, onClick, children,
-}: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  label, active = false, disabled = false, onClick, children, "data-testid": testId,
+}: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode; "data-testid"?: string }) {
   return (
     <button
       type="button"
@@ -144,6 +144,7 @@ function IconButton({
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
+      data-testid={testId}
       className="flex h-8 w-8 items-center justify-center rounded transition-colors disabled:cursor-not-allowed disabled:opacity-35 cursor-pointer"
       style={{
         color: active ? "var(--accent)" : "var(--text-secondary)",

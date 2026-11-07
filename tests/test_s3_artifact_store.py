@@ -16,6 +16,8 @@ import threading
 
 import pytest
 
+pytest.importorskip("boto3")
+
 from world_ir.artifact_store import (
     ArtifactNotFoundError,
     FileArtifactStore,

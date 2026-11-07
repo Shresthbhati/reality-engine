@@ -186,7 +186,10 @@ class S3ArtifactStore(ArtifactStore):
         if s3_client is not None:
             self.s3_client = s3_client
         else:
-            import boto3
+            try:
+                import boto3
+            except ImportError as exc:
+                raise RuntimeError("boto3 is required for S3ArtifactStore; install with `pip install boto3`") from exc
 
             session = boto3.session.Session()
             kwargs: dict[str, Any] = {}

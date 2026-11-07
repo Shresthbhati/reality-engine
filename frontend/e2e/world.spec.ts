@@ -115,7 +115,7 @@ test("Measure tools and fixture wall dimensions match WorldIR with uncertainty (
   await expect(panel.getByText(/Snap to entity box corners\/edges/i)).toBeVisible();
 
   // Close measure mode HUD
-  await panel.getByLabel("Stop measuring").click();
+  await panel.getByLabel("Close measurement mode").click();
   await expect(panel).toBeHidden();
 
   // 2. Select fixture wall in SceneTree

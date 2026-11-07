@@ -25,19 +25,18 @@ pure float math, no clocks, no RNG.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import List, Sequence, Tuple
 
 from perception.architecture.classify import (
-    DOOR_MAX_WIDTH_M,
-    PlaneInput,
     SCAN_BUCKET_M,
+    PlaneInput,
     _dot,
     _normalize,
 )
 from perception.architecture.parametric import FitRefused
 
-Vec3 = Tuple[float, float, float]
+Vec3 = tuple[float, float, float]
 
 #: Window size gates (interior windows). Wide on purpose.
 WIN_MIN_WIDTH_M = 0.4
@@ -61,7 +60,7 @@ class WindowRefused(FitRefused):
 @dataclass(frozen=True)
 class WindowFit:
     """A measured window: the opening's real geometry measured from the
-    wall plane's own inlier coverage."""
+    wall plane's own inlier coverage and/or visual detection cues."""
 
     wall_plane_id: str
     #: Center of the measured opening (world frame).
@@ -75,8 +74,14 @@ class WindowFit:
     #: Wall inlier points bordering the measured opening (support).
     n_points: int
     confidence: float
-    evidence_ids: Tuple[str, ...]
+    evidence_ids: tuple[str, ...]
     kind: str = "window"
+    is_closed: bool = False
+    has_frame: bool = True
+    has_mullions: bool = False
+    coverage_state: str = "OBSERVED"
+    observed_fraction: float = 1.0
+    source: str = "gap"
 
     def to_dict(self) -> dict:
         return {
@@ -91,7 +96,34 @@ class WindowFit:
             "n_points": self.n_points,
             "confidence": self.confidence,
             "evidence_ids": list(self.evidence_ids),
+            "is_closed": self.is_closed,
+            "has_frame": self.has_frame,
+            "has_mullions": self.has_mullions,
+            "coverage_state": self.coverage_state,
+            "observed_fraction": self.observed_fraction,
+            "source": self.source,
         }
+
+
+@dataclass(frozen=True)
+class VisualWindowEvidence:
+    """Visual detection evidence for a window (glass reflection, frame, mullions) (T-3.1)."""
+
+    evidence_id: str
+    wall_plane_id: str
+    position: Vec3
+    width_m: float
+    height_m: float
+    sill_height_m: float
+    confidence: float
+    has_frame: bool = True
+    has_mullions: bool = False
+    is_closed: bool = True
+    glass_sheen: float = 0.8
+    observed_fraction: float = 1.0
+    bounds_min: Vec3 | None = None
+    bounds_max: Vec3 | None = None
+    image_ids: tuple[str, ...] = ()
 
 
 def _coverage_grid(
@@ -293,4 +325,269 @@ def detect_window(
         n_points=ring_have,
         confidence=confidence,
         evidence_ids=evidence_ids,
+        source="gap",
     )
+
+
+def detect_visual_windows(
+    wall: PlaneInput,
+    visual_cues: Sequence[dict] | None = None,
+    up: Vec3 = (0.0, 0.0, 1.0),
+    floor_height: float = 0.0,
+) -> list[VisualWindowEvidence]:
+    """Detect visual windows on a wall plane from visual cues or semantic detections (T-3.1).
+
+    Enables detection of closed windows where glass inlier points exist and no
+    geometric empty gap is formed in the wall point cloud.
+    """
+    if not visual_cues:
+        return []
+
+    results: list[VisualWindowEvidence] = []
+    for i, cue in enumerate(visual_cues):
+        target_plane = cue.get("wall_plane_id")
+        if target_plane and target_plane != wall.plane_id:
+            continue
+
+        width = float(cue.get("width_m", 1.2))
+        height = float(cue.get("height_m", 1.4))
+        sill = float(cue.get("sill_height_m", 0.9))
+        confidence = float(cue.get("confidence", 0.85))
+
+        if width < WIN_MIN_WIDTH_M or width > WIN_MAX_WIDTH_M:
+            continue
+        if height < WIN_MIN_HEIGHT_M or height > WIN_MAX_HEIGHT_M:
+            continue
+        if sill < MIN_SILL_M or sill > MAX_SILL_M:
+            continue
+
+        pos = cue.get("position")
+        if pos:
+            position: Vec3 = (float(pos[0]), float(pos[1]), float(pos[2]))
+        else:
+            position = (wall.centroid[0], wall.centroid[1], floor_height + sill + height / 2.0)
+
+        b_min = cue.get("bounds_min")
+        b_max = cue.get("bounds_max")
+        bounds_min = (
+            (float(b_min[0]), float(b_min[1]), float(b_min[2]))
+            if b_min
+            else (position[0] - width / 2, position[1] - 0.1, position[2] - height / 2)
+        )
+        bounds_max = (
+            (float(b_max[0]), float(b_max[1]), float(b_max[2]))
+            if b_max
+            else (position[0] + width / 2, position[1] + 0.1, position[2] + height / 2)
+        )
+
+        results.append(
+            VisualWindowEvidence(
+                evidence_id=cue.get("evidence_id", f"viswin-{wall.plane_id}-{i}"),
+                wall_plane_id=wall.plane_id,
+                position=position,
+                width_m=width,
+                height_m=height,
+                sill_height_m=sill,
+                confidence=confidence,
+                has_frame=bool(cue.get("has_frame", True)),
+                has_mullions=bool(cue.get("has_mullions", False)),
+                is_closed=bool(cue.get("is_closed", True)),
+                glass_sheen=float(cue.get("glass_sheen", 0.8)),
+                observed_fraction=float(cue.get("observed_fraction", 1.0)),
+                bounds_min=bounds_min,
+                bounds_max=bounds_max,
+                image_ids=tuple(cue.get("image_ids", ())),
+            )
+        )
+    return results
+
+
+def fuse_window_evidence(
+    gap_fit: WindowFit | None,
+    visual_fits: Sequence[VisualWindowEvidence],
+    wall: PlaneInput,
+) -> list[WindowFit]:
+    """Fuse geometric gap detector fit with visual detector window observations (T-3.1).
+
+    Fuse, don't replace:
+    - If both gap fit and visual fit overlap spatially on the wall plane:
+      They reinforce each other into a fused WindowFit with boosted confidence.
+    - If only visual fit is present (e.g. shut/closed window with glass):
+      Produces a WindowFit representing the closed window (shut window != wall).
+    - If only gap fit is present (e.g. open window or rough opening):
+      Keeps the measured WindowFit from gap detector.
+    """
+    fused: list[WindowFit] = []
+    unmatched_visual = list(visual_fits)
+
+    if gap_fit is not None:
+        matched_visual = None
+        for vf in visual_fits:
+            dist = math.sqrt(sum((gap_fit.position[k] - vf.position[k]) ** 2 for k in range(3)))
+            if dist < max(gap_fit.width_m, vf.width_m):
+                matched_visual = vf
+                break
+
+        if matched_visual is not None:
+            unmatched_visual.remove(matched_visual)
+            fused_conf = min(
+                1.0, 1.0 - (1.0 - gap_fit.confidence) * (1.0 - matched_visual.confidence)
+            )
+            fused.append(
+                WindowFit(
+                    wall_plane_id=wall.plane_id,
+                    position=gap_fit.position,
+                    width_m=(gap_fit.width_m + matched_visual.width_m) / 2.0,
+                    height_m=(gap_fit.height_m + matched_visual.height_m) / 2.0,
+                    sill_height_m=(gap_fit.sill_height_m + matched_visual.sill_height_m) / 2.0,
+                    bounds_min=gap_fit.bounds_min,
+                    bounds_max=gap_fit.bounds_max,
+                    n_points=gap_fit.n_points,
+                    confidence=fused_conf,
+                    evidence_ids=gap_fit.evidence_ids + (matched_visual.evidence_id,),
+                    kind="window",
+                    is_closed=matched_visual.is_closed,
+                    has_frame=matched_visual.has_frame,
+                    has_mullions=matched_visual.has_mullions,
+                    coverage_state="OBSERVED",
+                    observed_fraction=matched_visual.observed_fraction,
+                    source="fused",
+                )
+            )
+        else:
+            fused.append(gap_fit)
+
+    # Visual-only windows (shut/closed windows on wall plane)
+    for vf in unmatched_visual:
+        b_min = vf.bounds_min or (
+            vf.position[0] - vf.width_m / 2,
+            vf.position[1] - 0.1,
+            vf.position[2] - vf.height_m / 2,
+        )
+        b_max = vf.bounds_max or (
+            vf.position[0] + vf.width_m / 2,
+            vf.position[1] + 0.1,
+            vf.position[2] + vf.height_m / 2,
+        )
+        fused.append(
+            WindowFit(
+                wall_plane_id=wall.plane_id,
+                position=vf.position,
+                width_m=vf.width_m,
+                height_m=vf.height_m,
+                sill_height_m=vf.sill_height_m,
+                bounds_min=b_min,
+                bounds_max=b_max,
+                n_points=12,
+                confidence=vf.confidence,
+                evidence_ids=(vf.evidence_id,),
+                kind="window",
+                is_closed=vf.is_closed,
+                has_frame=vf.has_frame,
+                has_mullions=vf.has_mullions,
+                coverage_state="OBSERVED" if vf.observed_fraction >= 0.95 else "PARTIALLY_OBSERVED",
+                observed_fraction=vf.observed_fraction,
+                source="visual",
+            )
+        )
+    return fused
+
+
+def aggregate_multiview_window_observations(
+    observations: Sequence[dict | WindowFit | VisualWindowEvidence],
+    window_id: str = "win-0",
+) -> tuple[WindowFit, str]:
+    """Aggregate multiple partial observations of a window across multiple views (Scenario A3).
+
+    A window partly visible across multiple images:
+    - Resolves into ONE continuous window entity (does not duplicate or fragment).
+    - Determines aggregated coverage fraction across views.
+    - If any views have partial coverage, computes overall coverage state
+      ('PARTIALLY_OBSERVED' or 'OBSERVED').
+
+    Returns:
+        (WindowFit, coverage_state_string)
+    """
+    if not observations:
+        raise ValueError("observations must not be empty")
+
+    obs_list: list[dict] = []
+    for obs in observations:
+        if isinstance(obs, WindowFit):
+            obs_list.append(obs.to_dict())
+        elif isinstance(obs, VisualWindowEvidence):
+            obs_list.append(
+                {
+                    "position": list(obs.position),
+                    "width_m": obs.width_m,
+                    "height_m": obs.height_m,
+                    "sill_height_m": obs.sill_height_m,
+                    "confidence": obs.confidence,
+                    "evidence_ids": [obs.evidence_id],
+                    "image_ids": list(obs.image_ids),
+                    "observed_fraction": obs.observed_fraction,
+                    "is_closed": obs.is_closed,
+                    "has_frame": obs.has_frame,
+                    "has_mullions": obs.has_mullions,
+                    "bounds_min": list(obs.bounds_min) if obs.bounds_min else None,
+                    "bounds_max": list(obs.bounds_max) if obs.bounds_max else None,
+                    "wall_plane_id": obs.wall_plane_id,
+                }
+            )
+        elif isinstance(obs, dict):
+            obs_list.append(obs)
+
+    all_ev_ids = []
+    fractions = []
+    widths = []
+    heights = []
+    sills = []
+    confs = []
+    positions = []
+
+    wall_id = obs_list[0].get("wall_plane_id", "wall-0")
+    for o in obs_list:
+        evs = o.get("evidence_ids")
+        if evs:
+            all_ev_ids.extend(evs)
+        elif o.get("evidence_id"):
+            all_ev_ids.append(o["evidence_id"])
+        fractions.append(float(o.get("observed_fraction", 0.5)))
+        widths.append(float(o.get("width_m", 1.2)))
+        heights.append(float(o.get("height_m", 1.4)))
+        sills.append(float(o.get("sill_height_m", 0.9)))
+        confs.append(float(o.get("confidence", 0.8)))
+        positions.append(o.get("position", [0.0, 0.0, 1.5]))
+
+    avg_pos: Vec3 = tuple(sum(p[k] for p in positions) / len(positions) for k in range(3))
+    avg_width = sum(widths) / len(widths)
+    avg_height = sum(heights) / len(heights)
+    avg_sill = sum(sills) / len(sills)
+
+    combined_coverage = min(1.0, sum(fractions) * 0.75)
+    is_partial = any(f < 0.90 for f in fractions) or combined_coverage < 0.95
+    coverage_state = "PARTIALLY_OBSERVED" if is_partial else "OBSERVED"
+
+    b_min: Vec3 = (avg_pos[0] - avg_width / 2.0, avg_pos[1] - 0.1, avg_pos[2] - avg_height / 2.0)
+    b_max: Vec3 = (avg_pos[0] + avg_width / 2.0, avg_pos[1] + 0.1, avg_pos[2] + avg_height / 2.0)
+
+    fit = WindowFit(
+        wall_plane_id=wall_id,
+        position=avg_pos,
+        width_m=avg_width,
+        height_m=avg_height,
+        sill_height_m=avg_sill,
+        bounds_min=b_min,
+        bounds_max=b_max,
+        n_points=len(obs_list) * 15,
+        confidence=min(1.0, max(confs) * 1.1),
+        evidence_ids=tuple(sorted(set(all_ev_ids))),
+        kind="window",
+        is_closed=any(o.get("is_closed", True) for o in obs_list),
+        has_frame=any(o.get("has_frame", True) for o in obs_list),
+        has_mullions=any(o.get("has_mullions", False) for o in obs_list),
+        coverage_state=coverage_state,
+        observed_fraction=combined_coverage,
+        source="multiview",
+    )
+    return fit, coverage_state

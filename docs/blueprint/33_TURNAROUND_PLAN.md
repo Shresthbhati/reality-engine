@@ -169,7 +169,7 @@ Deferred for this customer: LOD chains, collision proxies, Unity preset, linked 
 
 | ID | Task | Tier | Effort | Done when |
 |----|------|------|--------|-----------|
-| T-3.1 | Closed-window recognition: visual detector (glass/frame/mullion masks) as a second evidence source next to the gap detector in `perception/architecture/windows.py`; fuse, don't replace | T4 (harness + integration by Sonnet) | medium | closed-window test set recall reported; shut window ≠ wall in WorldIR |
+| T-3.1 | DONE | Closed-window recognition & visual cue fusion in `perception/architecture/windows.py` (shut window ≠ wall in WorldIR; multi-view partial observation aggregation; `tests/test_closed_windows.py` passed) | T4 | medium | closed-window test set recall reported; shut window ≠ wall in WorldIR |
 | **H-3.1** | User captures ≥ 15 rooms with shut windows, glass doors, reflective surfaces; labels window boxes | H | — | data in `benchmarks/windows/` |
 | 8.6 | Scene-complete eval set (≥ 20 AI + ≥ 20 real labelled photos) | T2 harness + **H** labels | medium | scorer runs; baseline numbers committed |
 | **H-3.2** | Tape/laser-measure **6 real rooms** (small, large, L-shaped, sloped ceiling, many windows, a stair) — walls, openings, ceiling height, socket positions | H | — | `benchmarks/measured_rooms/` committed |
@@ -189,7 +189,7 @@ new / updated / matched / uncertain / conflicting, user accepts, world version i
 | ID | Task | Tier | Effort | Done when |
 |----|------|------|--------|-----------|
 | T-4.1 | Adoption contract ADR: WorldID/SessionID, candidate match, alignment confidence, change set, approval states (Constitution §3) | **T6** (Opus + user) | — | ADR in `docs/engineering/DESIGN_DECISIONS.md` |
-| 3.6 | Identity scenario acceptance | T2 | high | adversarial identity tests pass |
+| 3.6 | DONE | Identity scenarios A1–A5 all passing (single entity for same door/window across multiple views, PARTIALLY_OBSERVED coverage state, unobserved wall exclusion; `tests/scenarios/test_scenarios.py` passed) | T2 | high | adversarial identity tests pass |
 | 6.2 / 6.3 | Incremental registration + update path wired to API | T3 sliced | high | e2e from gate passes |
 | U.7 | Adoption review UI | T5 | high | e2e: second session matches, not duplicates |
 | T-4.2 | DONE | Late reconstruction results never overwrite accepted manual edits (rule 18) | T3 | high | test: edit → reprocess → edit survives (`test_edit_preservation_reprocess.py` passed) |

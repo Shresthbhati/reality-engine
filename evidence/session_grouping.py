@@ -50,12 +50,37 @@ class SessionGroup:
             "start_time": self.start_time,
             "end_time": self.end_time,
             "center_gps": list(self.center_gps) if self.center_gps else None,
-            "item_ids": [getattr(item, "id", str(item)) for item in self.items],
+            "item_ids": [
+                item.get("id") if isinstance(item, dict) else getattr(item, "id", str(item))
+                for item in self.items
+            ],
         }
 
 
 def _extract_time_and_gps(item: Any) -> Tuple[Optional[float], Optional[Tuple[float, float]]]:
     """Helper to extract timestamp (epoch seconds) and GPS (lat, lon) from various evidence types."""
+    if isinstance(item, dict):
+        t = item.get("captured_at") or item.get("acquired_at")
+        meta = item.get("metadata", {}) or {}
+        sensor = item.get("sensor_metadata", {}) or {}
+        gps = None
+        if "latitude" in item and "longitude" in item and item["latitude"] is not None and item["longitude"] is not None:
+            try:
+                gps = (float(item["latitude"]), float(item["longitude"]))
+            except (ValueError, TypeError):
+                pass
+        if gps is None and "latitude_deg" in sensor and "longitude_deg" in sensor:
+            try:
+                gps = (float(sensor["latitude_deg"]), float(sensor["longitude_deg"]))
+            except (ValueError, TypeError):
+                pass
+        if gps is None and "gps" in meta and isinstance(meta["gps"], (tuple, list)) and len(meta["gps"]) >= 2:
+            try:
+                gps = (float(meta["gps"][0]), float(meta["gps"][1]))
+            except (ValueError, TypeError):
+                pass
+        return t, gps
+
     # 1. Direct attributes (e.g. EvidenceItem, ImportedAsset)
     t = getattr(item, "captured_at", None)
     if t is None:

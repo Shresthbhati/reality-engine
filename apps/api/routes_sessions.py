@@ -50,6 +50,28 @@ class SessionIn(BaseModel):
     location: LocationIn | None = None
 
 
+class EvidenceItemIn(BaseModel):
+    id: str
+    captured_at: datetime | float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    metadata: dict | None = None
+
+
+class GroupSessionsIn(BaseModel):
+    items: list[EvidenceItemIn] | None = None
+    evidence_ids: list[str] | None = None
+    max_time_gap_s: float = 1800.0
+    max_distance_m: float = 500.0
+    group_prefix: str = "session"
+
+
+class DeduplicateSessionIn(BaseModel):
+    hash_type: str = "phash"
+    threshold: int | None = None
+    dry_run: bool = True
+
+
 class SessionOut(BaseModel):
     id: str
     name: str
@@ -383,3 +405,144 @@ async def reconstruct_session(session_id: str, db: AsyncSession = Depends(get_db
     s.processing_started_at = utcnow()
     await db.commit()
     return {"job_id": job.id, "type": job.type, "status": job.status}
+
+
+@sessions.post("/group")
+async def group_sessions_endpoint(
+    body: GroupSessionsIn,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Group evidence items into capture sessions based on temporal and GPS spatial continuity.
+
+    Splits capture batches when the time gap exceeds max_time_gap_s (default 30 min)
+    or GPS distance exceeds max_distance_m (default 500m)."""
+    from evidence.session_grouping import group_evidence_by_session
+
+    items_to_group = []
+
+    if body.evidence_ids:
+        res = await db.execute(
+            select(Evidence).where(Evidence.id.in_(body.evidence_ids))
+        )
+        db_evs = res.scalars().all()
+        loc_res = await db.execute(
+            select(Location).where(
+                Location.entity_type == "evidence",
+                Location.entity_id.in_(body.evidence_ids),
+            )
+        )
+        locs = {loc.entity_id: loc for loc in loc_res.scalars().all()}
+        for ev in db_evs:
+            loc = locs.get(ev.id)
+            gps_tuple = (loc.latitude, loc.longitude) if loc else None
+            meta = dict(ev.metadata_json or {})
+            if gps_tuple and "gps" not in meta:
+                meta["gps"] = gps_tuple
+            items_to_group.append({
+                "id": ev.id,
+                "captured_at": ev.processed_at.timestamp() if ev.processed_at else None,
+                "metadata": meta,
+            })
+
+    if body.items:
+        for it in body.items:
+            t = it.captured_at.timestamp() if isinstance(it.captured_at, datetime) else it.captured_at
+            gps = (it.latitude, it.longitude) if it.latitude is not None and it.longitude is not None else None
+            meta = dict(it.metadata or {})
+            if gps and "gps" not in meta:
+                meta["gps"] = gps
+            items_to_group.append({
+                "id": it.id,
+                "captured_at": t,
+                "metadata": meta,
+            })
+
+    groups = group_evidence_by_session(
+        items_to_group,
+        max_time_gap_s=body.max_time_gap_s,
+        max_distance_m=body.max_distance_m,
+        group_prefix=body.group_prefix,
+    )
+
+    return {
+        "total_items": len(items_to_group),
+        "group_count": len(groups),
+        "groups": [g.to_dict() for g in groups],
+    }
+
+
+@sessions.post("/{session_id}/deduplicate")
+async def deduplicate_session(
+    session_id: str,
+    body: DeduplicateSessionIn | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Analyze and deduplicate photos in a session using perceptual hashing (pHash/dHash).
+
+    Returns retained photos, duplicate pairs with distance and reason, and quality scores.
+    If dry_run is False, marks near_duplicate metadata on duplicate Evidence records."""
+    from apps.api.models import Evidence
+    from apps.api.storage import resolve_artifact
+    from evidence.dedup import deduplicate_images, DEFAULT_PHASH_THRESHOLD, DEFAULT_DHASH_THRESHOLD
+
+    cfg = body or DeduplicateSessionIn()
+    s = await db.get(Session, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    res = await db.execute(
+        select(Evidence).where(Evidence.session_id == session_id, Evidence.type == "photo")
+    )
+    ev_list = res.scalars().all()
+    threshold = cfg.threshold or (DEFAULT_PHASH_THRESHOLD if cfg.hash_type == "phash" else DEFAULT_DHASH_THRESHOLD)
+    if not ev_list:
+        return {
+            "session_id": session_id,
+            "total_input": 0,
+            "retained_count": 0,
+            "duplicate_count": 0,
+            "retained_ids": [],
+            "duplicate_ids": [],
+            "duplicates": [],
+            "hash_type": cfg.hash_type,
+            "threshold": threshold,
+        }
+
+    items = []
+    qualities = {}
+    ev_by_id = {}
+    for ev in ev_list:
+        ev_by_id[ev.id] = ev
+        p = resolve_artifact(ev.artifact_uri)
+        if p and p.exists():
+            items.append((ev.id, p))
+            sharpness = (ev.metadata_json or {}).get("image_facts", {}).get("sharpness", 0.0)
+            qualities[ev.id] = float(sharpness or 0.0)
+
+    dedup = deduplicate_images(items, max_distance=cfg.threshold, hash_type=cfg.hash_type, quality_scores=qualities)
+
+    if not cfg.dry_run and dedup.duplicates:
+        dup_map = {d.duplicate_id: d for d in dedup.duplicates}
+        for ev_id, d in dup_map.items():
+            ev = ev_by_id.get(ev_id)
+            if ev:
+                meta = dict(ev.metadata_json or {})
+                meta["near_duplicate_of"] = d.canonical_id
+                meta["phash_distance"] = d.distance
+                meta["dedup_reason"] = d.reason
+                ev.metadata_json = meta
+        await db.commit()
+
+    return {
+        "session_id": session_id,
+        "total_input": dedup.total_input,
+        "retained_count": len(dedup.retained_ids),
+        "duplicate_count": dedup.duplicate_count,
+        "retained_ids": dedup.retained_ids,
+        "duplicate_ids": dedup.duplicate_ids,
+        "duplicates": [d.to_dict() for d in dedup.duplicates],
+        "hash_type": dedup.hash_type,
+        "threshold": dedup.threshold,
+    }

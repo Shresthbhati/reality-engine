@@ -599,6 +599,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
       onExport={handleExport}
       loadError={!worldIR && irError ? irError.message : null}
       onRetryLoad={refetchIr}
+      onDesignChanged={() => { void Promise.all([refetchIr(), refetchVersions()]); }}
     />
   );
 

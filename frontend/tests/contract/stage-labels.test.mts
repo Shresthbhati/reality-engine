@@ -12,7 +12,12 @@ import { readFileSync } from "node:fs";
 import { STAGE_LABEL, buildFlowSteps, stageLabel, type FlowStatusInput } from "../../src/lib/reconstruct/flow-model.ts";
 
 const jobsPy = readFileSync(new URL("../../../apps/api/jobs.py", import.meta.url), "utf8");
-const backendStages = [...new Set([...jobsPy.matchAll(/job\.stage\s*=\s*"([a-z_]+)"/g)].map((m) => m[1]))];
+// A stage is set either as `job.stage = "x"` or through `enter_stage(job, "x")` (which also times the stage it leaves); the
+// second form may hold a conditional with several literals, so take every quoted name inside the call.
+const backendStages = [...new Set([
+  ...[...jobsPy.matchAll(/job\.stage\s*=\s*"([a-z_]+)"/g)].map((m) => m[1]),
+  ...[...jobsPy.matchAll(/enter_stage\(\s*job\s*,([\s\S]*?)\)\s*\n/g)].flatMap((m) => [...m[1].matchAll(/"([a-z_]+)"/g)].map((s) => s[1])),
+])];
 
 test("the backend's stage names were found (guards the regex against a refactor)", () => {
   assert.ok(backendStages.length >= 5, `only found: ${backendStages.join(", ")}`);

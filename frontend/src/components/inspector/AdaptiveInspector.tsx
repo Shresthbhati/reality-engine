@@ -44,6 +44,8 @@ import {
   roomFacts, scaleSentence, stateWord, type EntityKind, type Fact,
 } from "@/lib/inspector/entity-facts";
 import { describeScale } from "@/lib/api/scale-model";
+import { isFurniture, isMetricScale } from "@/lib/design/design-model";
+import FurnitureDesignPanel from "@/components/inspector/FurnitureDesignPanel";
 import {
   ChipGroup, ConfidenceBars, DimensionRows, Disclosure, EntityChip, FactList, KV, MaterialCards, Muted, SectionTitle,
 } from "./InspectorParts";
@@ -64,6 +66,8 @@ interface AdaptiveInspectorProps {
   onOpenDiff?: (base?: string, head?: string) => void;
   onOpenRoomConstruction?: () => void;
   onExport?: (format: "worldir" | "ply" | "cameras" | "report") => void;
+  /** Called after a furniture design edit (move / turn / swap / delete) was saved, so the caller reloads the model. */
+  onDesignChanged?: () => void;
   /** Set when `world` is null because the WorldIR fetch failed (e.g. a 404
    * racing a just-succeeded reconstruction), not because none was ever
    * compiled -- these must not render the same "not compiled yet" message,
@@ -105,6 +109,7 @@ export default function AdaptiveInspector({
   onExport,
   loadError,
   onRetryLoad,
+  onDesignChanged,
 }: AdaptiveInspectorProps) {
   const [tab, setTab] = useState<InspectorTab>("overview");
   const [isEditing, setIsEditing] = useState(false);
@@ -141,6 +146,7 @@ export default function AdaptiveInspector({
           onTraceEvidence={onTraceEvidence}
           onCommitCorrection={onCommitCorrection}
           onOpenDiff={onOpenDiff}
+          onDesignChanged={onDesignChanged}
           isEditing={isEditing}
           setIsEditing={setIsEditing}
           previewImageId={previewImageId}
@@ -175,11 +181,13 @@ function EntityDetails({
   onTraceEvidence,
   onCommitCorrection,
   onOpenDiff,
+  onDesignChanged,
   isEditing,
   setIsEditing,
   previewImageId,
   setPreviewImageId,
 }: {
+  onDesignChanged?: () => void;
   world: WorldIR | null;
   worldId: string;
   activeVersion?: string;
@@ -1287,6 +1295,17 @@ function EntityDetails({
                 {overviewFacts.length > 0 ? <FactList facts={overviewFacts} /> : <Muted>No measurements are recorded for this item.</Muted>}
               </div>
             </div>
+
+            {isFurniture(entity) && entity && onDesignChanged && (
+              <FurnitureDesignPanel
+                key={`${entity.id}:${activeVersion ?? ""}`}
+                worldId={worldId}
+                entity={entity as never}
+                parentVersion={activeVersion}
+                metricScale={isMetricScale((world as { metadata?: unknown } | null)?.metadata)}
+                onChanged={onDesignChanged}
+              />
+            )}
 
             {(kind === "window" || kind === "door") && conf !== null && conf < 0.5 && (
               <p className="flex items-start gap-1.5 text-[12px] text-[var(--warning)]">

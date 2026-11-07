@@ -647,7 +647,10 @@ export class WorldSceneController {
     this.structurePoints = opts.structurePoints ?? [];
     this.suppressLegacy = Boolean(opts.suppressLegacy);
     this.cameraAnimation = null;
-    if (this.selectedEntityId !== null) {
+    // A reload of the SAME world (after a saved edit) keeps the selected piece if it still exists; anything else clears it.
+    const keptSelection =
+      this.selectedEntityId !== null && this.world?.id === world.id && world.entities?.[this.selectedEntityId] ? this.selectedEntityId : null;
+    if (this.selectedEntityId !== null && keptSelection === null) {
       this.selectedEntityId = null;
       this.onSelectCallback?.(null);
     }
@@ -663,6 +666,7 @@ export class WorldSceneController {
     this.root.updateMatrixWorld(true);
 
     this.rebuildScene();
+    if (keptSelection) this.selectEntity(keptSelection, false);
   }
 
   private disposePointLayer() {

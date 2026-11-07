@@ -108,7 +108,6 @@ def _roles(world) -> List[str]:
 
 #: a sparse model with fewer points per registered camera than this is not structure: planes fitted to it are noise
 MIN_SPARSE_POINTS_PER_CAMERA = 40
-_STRUCTURE_TYPES = {"floor", "wall", "ceiling"}
 
 
 def _multiview_weakness(vs) -> Optional[str]:
@@ -116,8 +115,9 @@ def _multiview_weakness(vs) -> Optional[str]:
     registered = max(1, len(vs.camera_poses))
     if len(vs.camera_poses) < 3:
         return f"only {len(vs.camera_poses)} cameras registered"
-    if not any(e.type.value in _STRUCTURE_TYPES for e in vs.world.entities.values()):
-        return "no floor, wall or ceiling was recovered from it"
+    kinds = [e.type.value for e in vs.world.entities.values()]
+    if "floor" not in kinds or kinds.count("wall") < 2:
+        return f"no room shell was recovered (needs a floor and at least two walls; found {kinds.count('floor')} floor, {kinds.count('wall')} wall)"
     if len(vs.points) < MIN_SPARSE_POINTS_PER_CAMERA * registered:
         return (f"only {len(vs.points)} sparse points for {registered} cameras "
                 f"(under {MIN_SPARSE_POINTS_PER_CAMERA} per camera): fitted planes would be noise")

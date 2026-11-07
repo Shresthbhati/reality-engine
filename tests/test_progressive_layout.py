@@ -29,7 +29,8 @@ def _inputs(tmp_path):
 def _world(structure):
     w = WorldIR()
     if structure:
-        w.entities["struct-plane-000"] = Entity(id="struct-plane-000", type=EntityType.FLOOR, name="floor")
+        for i, kind in enumerate((EntityType.FLOOR, EntityType.WALL, EntityType.WALL)):
+            w.entities[f"struct-plane-{i:03d}"] = Entity(id=f"struct-plane-{i:03d}", type=kind, name=kind.value)
     return w
 
 
@@ -103,4 +104,17 @@ def test_plenty_of_points_but_no_structure_is_still_replaced(tmp_path, analyzer)
     """Seen on the real world: 890 points, 11 cameras, and a world with zero floors/walls/ceilings."""
     res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=_slice(n_points=900, structure=False), layout_analyzer=analyzer)
     assert res.level == 0
-    assert "no floor, wall or ceiling" in res.attempts[0]["detail"]
+    assert "no room shell was recovered" in res.attempts[0]["detail"]
+
+
+def test_a_world_that_is_only_a_floor_is_not_a_room(tmp_path, analyzer):
+    """Seen on the real world: multi-view 'succeeded' with exactly one floor entity and nothing else."""
+    def only_floor(items, options):
+        r = _slice(n_points=900)(items, options)
+        w = WorldIR()
+        w.entities["struct-plane-000"] = Entity(id="struct-plane-000", type=EntityType.FLOOR, name="floor")
+        r.world = w
+        return r
+
+    res = run_progressive(_inputs(tmp_path), vs_options=None, vertical_slice_fn=only_floor, layout_analyzer=analyzer)
+    assert res.level == 0 and "floor and at least two walls" in res.attempts[0]["detail"]

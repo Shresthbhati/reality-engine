@@ -2,10 +2,18 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Camera, Image as ImageIcon, Loader2, MapPin, RotateCcw, Smartphone, X } from "lucide-react";
+import { AlertTriangle, Camera, Compass, Image as ImageIcon, Loader2, MapPin, RotateCcw, Smartphone, X } from "lucide-react";
 import { isApiError, useWorldStatus } from "@/lib/api";
 import { addSessionLocations, type LocationBatchPoint } from "@/lib/api/sessions";
+import { getCaptureCoverage, coverageHeadline, type CaptureCoverageDto } from "@/lib/api/capture-coverage";
 import { uploadPhoto } from "@/lib/mobile/upload";
+import {
+  clearCapturePhotos,
+  loadPendingCapturePhotos,
+  persistCapturePhoto,
+  removeCapturePhoto,
+  updateCapturePhotoStatus,
+} from "@/lib/mobile/offline-queue";
 import { EMPTY_QUEUE, nextToUpload, outcomeFromResponse, queueReducer, summarize, type QueueItem, type QueueItemLocation } from "@/lib/mobile/upload-queue";
 import { photoResult, type Tone } from "@/lib/mobile/capture-result";
 import WorldStatusCard, { TONE_COLOR } from "./WorldStatusCard";
@@ -63,6 +71,7 @@ export default function CaptureScreen() {
       key={start.epoch}
       initialWorldId={start.worldId}
       onReset={() => {
+        void clearCapturePhotos();
         window.history.replaceState(null, "", "/m/camera");
         setStart((s) => ({ epoch: s.epoch + 1, worldId: null }));
       }}
@@ -72,6 +81,11 @@ export default function CaptureScreen() {
 
 function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: string | null; onReset: () => void }) {
   const [worldId, setWorldId] = useState<string | null>(initialWorldId);
+  const [, setSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const pendingFixesRef = useRef<LocationBatchPoint[]>([]);
+  const isFlushingRef = useRef(false);
+
   const [queue, dispatch] = useReducer(queueReducer, EMPTY_QUEUE);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
@@ -88,14 +102,68 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
   const gpsRef = useRef<GpsState>(gps);
 
   const { status, error: statusError, refresh } = useWorldStatus(worldId);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
-  const pendingFixesRef = useRef<LocationBatchPoint[]>([]);
-  const isFlushingRef = useRef(false);
+  const [coverage, setCoverage] = useState<CaptureCoverageDto | null>(null);
+
+  const updateCoverage = useCallback((wid: string) => {
+    void getCaptureCoverage(wid)
+      .then((res) => setCoverage(res))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
+    if (worldId) {
+      updateCoverage(worldId);
+    }
+  }, [worldId, updateCoverage]);
+
+  // Hydrate offline persistent queue from IndexedDB on mount
+  useEffect(() => {
+    let active = true;
+    void loadPendingCapturePhotos().then((stored) => {
+      if (!active || stored.length === 0) return;
+      const recoveredItems: { id: string; name: string; size: number; location?: QueueItemLocation | null }[] = [];
+      const previewEntries: [string, string][] = [];
+      for (const item of stored) {
+        const file = new File([item.blob], item.name, { type: item.type || "image/jpeg" });
+        filesRef.current.set(item.id, file);
+        const url = URL.createObjectURL(item.blob);
+        urlsRef.current.push(url);
+        previewEntries.push([item.id, url]);
+        recoveredItems.push({
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          location: item.location,
+        });
+        if (item.worldId && !worldId) {
+          setWorldId(item.worldId);
+        }
+        if (item.sessionId && !sessionIdRef.current) {
+          sessionIdRef.current = item.sessionId;
+          setSessionId(item.sessionId);
+        }
+      }
+      setPreviews((p) => ({ ...p, ...Object.fromEntries(previewEntries) }));
+      dispatch({ type: "add", items: recoveredItems });
+    });
+    return () => {
+      active = false;
+    };
+  }, [worldId]);
+
+  // Automatically retry queued/retryable failed items when connection is restored
+  useEffect(() => {
+    const handleOnline = () => {
+      queue.items
+        .filter((i) => i.status === "failed" && i.retryable)
+        .forEach((i) => {
+          void updateCapturePhotoStatus(i.id, { status: "queued", error: null });
+          dispatch({ type: "retry", id: i.id });
+        });
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [queue.items]);
 
   const flushFixes = useCallback(async (targetSessionId: string) => {
     if (isFlushingRef.current || pendingFixesRef.current.length === 0) return;
@@ -223,6 +291,7 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
     if (!next) return;
     const file = filesRef.current.get(next.id);
     dispatch({ type: "start", id: next.id });
+    void updateCapturePhotoStatus(next.id, { status: "uploading", attempts: next.attempts + 1 });
     if (!file) {
       dispatch({ type: "failed", id: next.id, error: "This photo is no longer held in memory. Take it again.", retryable: false });
       return;
@@ -253,8 +322,13 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
     })
       .then((res) => {
         const outcome = outcomeFromResponse(res);
-        if (outcome.kind === "accepted") dispatch({ type: "accepted", id: next.id, evidenceId: outcome.evidenceId });
-        else dispatch({ type: "rejected", id: next.id, reason: outcome.reason });
+        if (outcome.kind === "accepted") {
+          dispatch({ type: "accepted", id: next.id, evidenceId: outcome.evidenceId });
+          void removeCapturePhoto(next.id);
+        } else {
+          dispatch({ type: "rejected", id: next.id, reason: outcome.reason });
+          void removeCapturePhoto(next.id);
+        }
         if (res.world_id !== worldId) {
           setWorldId(res.world_id);
           window.history.replaceState(null, "", `/m/camera?world=${encodeURIComponent(res.world_id)}`);
@@ -265,18 +339,21 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
           void flushFixes(res.session_id);
         }
         refresh();
+        void updateCoverage(res.world_id);
       })
       .catch((err: unknown) => {
         const retryable = isApiError(err) ? err.retryable : true;
+        const msg = isApiError(err) ? err.message : "The upload failed.";
+        void updateCapturePhotoStatus(next.id, { status: "failed", error: msg });
         dispatch({
           type: "failed",
           id: next.id,
-          error: isApiError(err) ? err.message : "The upload failed.",
+          error: msg,
           retryable,
         });
       })
       .finally(() => controllersRef.current.delete(next.id));
-  }, [queue, worldId, refresh, flushFixes]);
+  }, [queue, worldId, refresh, flushFixes, updateCoverage]);
 
   const addFiles = useCallback((files: File[]) => {
     const images = files.filter((f) => f.type.startsWith("image/") || f.type === "");
@@ -302,11 +379,24 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
       filesRef.current.set(id, f);
       const url = URL.createObjectURL(f);
       urlsRef.current.push(url);
+      void persistCapturePhoto({
+        id,
+        name: f.name || "photo.jpg",
+        size: f.size,
+        type: f.type || "image/jpeg",
+        blob: f,
+        status: "queued",
+        worldId,
+        sessionId: sessionIdRef.current,
+        location: currentLoc,
+        attempts: 0,
+        createdAt: Date.now(),
+      });
       return { id, name: f.name || "photo.jpg", size: f.size, url, location: currentLoc };
     });
     setPreviews((p) => ({ ...p, ...Object.fromEntries(items.map((i) => [i.id, i.url])) }));
     dispatch({ type: "add", items: items.map(({ id, name, size, location }) => ({ id, name, size, location })) });
-  }, []);
+  }, [worldId]);
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -466,6 +556,22 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
       )}
 
       <div className="flex flex-col gap-4 px-4">
+        {/* Live coverage hint (subtle, non-nagging guidance directly from the coverage engine) */}
+        {coverage && coverage.available && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-xs leading-snug"
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+            data-testid="live-coverage-hint"
+          >
+            <Compass className="h-4 w-4 shrink-0" style={{ color: "var(--accent)" }} aria-hidden />
+            <span className="font-medium text-[var(--text-primary)]">
+              {coverage.hints[0] ?? coverageHeadline(coverage)}
+            </span>
+          </div>
+        )}
+
         {/* World / session state */}
         {worldId ? (
           <WorldStatusCard worldId={worldId} status={status} error={statusError} refresh={refresh} />
@@ -507,8 +613,14 @@ function CaptureScreenInner({ initialWorldId, onReset }: { initialWorldId: strin
                   item={item}
                   preview={previews[item.id]}
                   result={photoResult(item, item.evidenceId ? evidenceById.get(item.evidenceId) : undefined)}
-                  onRetry={() => dispatch({ type: "retry", id: item.id })}
-                  onRemove={() => dispatch({ type: "remove", id: item.id })}
+                  onRetry={() => {
+                    void updateCapturePhotoStatus(item.id, { status: "queued", error: null });
+                    dispatch({ type: "retry", id: item.id });
+                  }}
+                  onRemove={() => {
+                    void removeCapturePhoto(item.id);
+                    dispatch({ type: "remove", id: item.id });
+                  }}
                 />
               ))}
             </ul>

@@ -42,3 +42,12 @@ def test_labels_outside_the_placer_vocabulary_are_dropped_with_no_guessing():
 def test_aliases_resolve_but_the_prompt_label_is_preserved():
     (d,) = _clean([("television", 0.7, (100, 100, 300, 250))])
     assert d.label == "television"  # the placer canonicalises it (-> tv); we never rewrite what the model said
+
+
+def test_merge_keeps_one_label_per_object_across_classes():
+    from engine.pipeline.open_vocab_furniture import merge_detections
+
+    gd = [FurnitureDetection("coffee table", 0.55, (100, 100, 300, 200), "v")]
+    rcnn = [FurnitureDetection("dining table", 0.80, (105, 102, 305, 202), "v"), FurnitureDetection("couch", 0.9, (400, 100, 700, 300), "v")]
+    out = merge_detections(gd, rcnn)
+    assert sorted(d.label for d in out) == ["couch", "dining table"]  # same object, higher score wins, whatever the class

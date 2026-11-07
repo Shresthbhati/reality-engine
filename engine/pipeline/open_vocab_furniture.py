@@ -122,6 +122,20 @@ def grounded_furniture_detector(item, w: int, h: int) -> list:
     return clean_detections(raw, view_id=item.id, src_size=size, grid_size=(w, h))
 
 
+def merge_detections(gd: Sequence[FurnitureDetection], rcnn: Sequence[FurnitureDetection]) -> List[FurnitureDetection]:
+    """Union of two detectors' boxes: one label per physical object. Boxes that overlap are one object whatever each detector
+    called it (a coffee table and a dining table cannot be the same spot), so the higher score wins across classes too."""
+    merged: List[FurnitureDetection] = []
+    for d in sorted(list(gd) + list(rcnn), key=lambda d: -d.score):
+        if _canon(d.label) is None:
+            merged.append(d)  # unknown labels stay so the placer records them as rejected, never silently dropped
+            continue
+        if any(_canon(m.label) is not None and _iou(m.box_xyxy, d.box_xyxy) > NMS_IOU for m in merged):
+            continue
+        merged.append(d)
+    return merged
+
+
 def combined_furniture_detector(item, w: int, h: int) -> list:
     """Grounding DINO + Mask R-CNN, merged class-aware. Grounding DINO unavailable -> Mask R-CNN alone; both unavailable -> raises."""
     from engine.pipeline.single_image_furniture import maskrcnn_furniture_detector
@@ -131,12 +145,4 @@ def combined_furniture_detector(item, w: int, h: int) -> list:
         gd = grounded_furniture_detector(item, w, h)
     except Exception:  # noqa: BLE001 -- the open-vocabulary model is an enhancement; COCO detections still stand
         return rcnn
-    merged: List[FurnitureDetection] = []
-    for d in sorted(list(gd) + list(rcnn), key=lambda d: -d.score):
-        if _canon(d.label) is None:
-            merged.append(d)  # unknown labels stay so the placer records them as rejected, never silently dropped
-            continue
-        if any(_canon(m.label) == _canon(d.label) and _iou(m.box_xyxy, d.box_xyxy) > NMS_IOU for m in merged):
-            continue
-        merged.append(d)
-    return merged
+    return merge_detections(gd, rcnn)

@@ -138,7 +138,7 @@ def add_layout_openings(world, obs, layout: SurfaceLayout, eid_of_plane: Dict[st
                 note=(f"{o.kind} segmented in the photograph and projected onto its wall plane: "
                       f"{width:.2f} m wide, sill {o.h_min:.2f} m, head {o.h_max:.2f} m (monocular-depth estimate)")),
             observations=[obs],
-            custom_properties={"bootstrap": {
+            custom_properties={"host_wall_id": host, "bootstrap": {
                 "role": "opening_from_labels", "source": "single_image_layout", "host_entity_id": host,
                 "resolved_kind": True, "kind_basis": "ADE20K semantic label",
                 "dimensions": {"width_m": round(width, 3), "height_m": round(height, 3), "sill_m": round(o.h_min, 3),
@@ -238,6 +238,14 @@ def add_layout_room(world, layout: SurfaceLayout, eid_of_plane: Dict[str, str], 
             "thickness_m": 0.1, "thickness_basis": "default_unmeasured", "observed_fraction": 1.0,
             "wall_slab": {"start_xyz_m": [float(c) for c in a], "end_xyz_m": [float(c) for c in b], "openings": openings},
         })
+    # floor and ceiling belong to the room too (the validator requires every surface to name its space)
+    boundary = [eid for _, eid, _, _, _ in walls_used]
+    for key in ("layout-floor", "layout-ceiling"):
+        eid = eid_of_plane.get(key)
+        if eid in world.entities:
+            world.entities[eid].custom_properties["room_id"] = room_id
+            boundary.append(eid)
+    world.entities[room_id].custom_properties["boundary_element_ids"] = boundary
     facts.update({"created": True, "room_id": room_id, "area_m2_visible_part": round(area, 2), "walls": len(walls_used)})
     return facts
 

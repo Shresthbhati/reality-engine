@@ -97,3 +97,17 @@ def test_walls_carry_their_observed_extent_and_the_window_offset(bootstrap):
     o = with_window[0].custom_properties["wall_slab"]["openings"][0]
     assert o["kind"] == "window" and o["width_m"] == pytest.approx(1.4, abs=0.2) and o["sill_m"] == pytest.approx(0.9, abs=0.15)
     assert 0 <= o["offset_m"] <= with_window[0].custom_properties["length_m"]
+
+
+def test_the_layout_world_passes_the_real_world_validator_with_no_errors(bootstrap):
+    """The job fails if validation errors; this was the second regression found by running real photos."""
+    from world_ir.validation import validate_world_ir
+
+    errors = [i for i in validate_world_ir(bootstrap.world).issues if str(i.severity.value).lower() == "error"]
+    assert not errors, [(i.code, i.message[:100]) for i in errors]
+    for kind in ("window", "door"):
+        for e in _of(bootstrap, kind):
+            assert e.custom_properties["host_wall_id"] in bootstrap.world.entities
+    room = _of(bootstrap, "room")[0]
+    ids = set(room.custom_properties["boundary_element_ids"])
+    assert {e.id for e in _of(bootstrap, "floor")} <= ids and {e.id for e in _of(bootstrap, "wall")} >= (ids & {e.id for e in _of(bootstrap, "wall")})

@@ -36,6 +36,7 @@ All Milestone 0 through Milestone 7 tasks are fully implemented and verified wit
 | **Wall-Mounted Fixtures & Crop Pass (Task 8.8)** | **VERIFIED** | HighResCropPass on host walls, ray unprojection, RelationshipKind.MOUNTED_ON: tests/test_task_8_8_fixtures_and_open_vocab.py, engine/pipeline/single_image_fixtures.py |
 | **Frontend Foundation Alignment (Task U.1)** | **VERIFIED** | Single-responsibility foundation table ported to docs/blueprint/14_FRONTEND_UX.md, consistent with docs/blueprint/32_FRONTEND_AUDIT.md §8.1 |
 | **Layer Import Boundaries & Neutral Image I/O (Task 0.6)** | **VERIFIED** | Extracted engine.core.image_io, eliminated cross-layer violations: tests/test_import_boundaries.py |
+| **BIM-vs-Reality Plan Verification & Construction Progress (Track A)** | **VERIFIED** | Tolerance deviation gating, trade breakdown (Structure/Architecture/MEP/Finishes), multi-epoch installation timeline, pure-Python PDF progress reports: engine/pipeline/construction_progress.py, apps/api/routes_construction.py, tests/test_construction_progress_and_verification.py (8/8 passed) |
 
 ## Baseline (recorded 2026-11-04, task 0.5)
 

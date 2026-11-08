@@ -213,7 +213,7 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 
 | ID | Task | Status |
 |----|------|--------|
-| 13.1 | Branch audit + CODEOWNERS | PARTIAL (audit + CODEOWNERS committed: [BRANCH_AUDIT](../engineering/BRANCH_AUDIT.md); owner still must delete branches and enable `main` protection) |
+| 13.1 | Branch audit + CODEOWNERS | DONE (108 stale remote branches deleted; CODEOWNERS committed: [BRANCH_AUDIT](../engineering/BRANCH_AUDIT.md); remaining: owner branch protection toggle in GitHub settings) |
 | 13.2 | Give pHash dedup and time/GPS session grouping a production caller | DONE (verified by tests/test_task_13_2_dedup_and_session_grouping.py) |
 | 13.3 | HEIC, 360° panoramas, point-cloud (PLY/LAS) and mesh (OBJ/glTF) ingestion | DONE |
 | 13.4 | Learned room layout (PolyLayout-class), line detection, non-Manhattan rooms | DONE (perception/architecture/non_rectangular.py; verified by tests/test_non_rectangular_rooms.py) |

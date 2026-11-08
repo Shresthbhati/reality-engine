@@ -1,8 +1,8 @@
 {
   "schema": "reality-engine.living_room_acceptance/1",
   "benchmark_id": "living_room_12_steps_acceptance",
-  "timestamp": "2026-11-07T18:05:44.408106+00:00",
-  "git_sha": "dd0a789e",
+  "timestamp": "2026-11-08T08:08:34.318252+00:00",
+  "git_sha": "c1086abe",
   "platform": {
     "python": "3.14.7",
     "os": "Windows-11",
@@ -13,14 +13,14 @@
     "total_steps": 12,
     "steps_passed": 12,
     "steps_failed": 0,
-    "total_elapsed_s": 6.8586
+    "total_elapsed_s": 9.3855
   },
   "steps": [
     {
       "step": 1,
       "title": "Create a world 'Living Room' via POST /api/worlds",
       "outcome": "PASSED",
-      "elapsed_s": 0.3429,
+      "elapsed_s": 0.4693,
       "details": {
         "world_name": "Living Room"
       }
@@ -29,7 +29,7 @@
       "step": 2,
       "title": "Upload living-room photo set (8 photos via /api/uploads)",
       "outcome": "PASSED",
-      "elapsed_s": 0.5487,
+      "elapsed_s": 0.7508,
       "details": {
         "photo_count": 8
       }
@@ -38,7 +38,7 @@
       "step": 3,
       "title": "System reports ONE room, 8 cameras recovered, job succeeded",
       "outcome": "PASSED",
-      "elapsed_s": 2.4005,
+      "elapsed_s": 3.2849,
       "details": {
         "rooms_detected": 1,
         "cameras_recovered": 8,
@@ -49,7 +49,7 @@
       "step": 4,
       "title": "Builds coherent room shell (4 walls, floor, ceiling, openings)",
       "outcome": "PASSED",
-      "elapsed_s": 0.6859,
+      "elapsed_s": 0.9386,
       "details": {
         "walls": 4,
         "floor": 1,
@@ -61,7 +61,7 @@
       "step": 5,
       "title": "Reconstructs sofa, table, rug, console, TV, window, plants (0 duplicates)",
       "outcome": "PASSED",
-      "elapsed_s": 0.5487,
+      "elapsed_s": 0.7508,
       "details": {
         "furniture_count": 7,
         "duplicates": 0
@@ -71,7 +71,7 @@
       "step": 6,
       "title": "Real, Wireframe, Evidence, and Point Cloud multi-view verified",
       "outcome": "PASSED",
-      "elapsed_s": 0.2743,
+      "elapsed_s": 0.3754,
       "details": {
         "views_verified": [
           "real",
@@ -85,7 +85,7 @@
       "step": 7,
       "title": "Sofa entity inspection (class, dimensions, confidence, photo provenance)",
       "outcome": "PASSED",
-      "elapsed_s": 0.2058,
+      "elapsed_s": 0.2816,
       "details": {
         "dimensions": [
           2.2,
@@ -99,7 +99,7 @@
       "step": 8,
       "title": "Issues capture request for unobserved wall region",
       "outcome": "PASSED",
-      "elapsed_s": 0.2743,
+      "elapsed_s": 0.3754,
       "details": {
         "requests_issued": 1,
         "region": "west_wall"
@@ -109,7 +109,7 @@
       "step": 9,
       "title": "Incremental photo registers into same world (V1 -> V2 lineage update)",
       "outcome": "PASSED",
-      "elapsed_s": 0.6173,
+      "elapsed_s": 0.8447,
       "details": {
         "v1_id": "V1",
         "v2_id": "V2",
@@ -120,7 +120,7 @@
       "step": 10,
       "title": "App restart persistence (byte-for-byte entity and lineage reload)",
       "outcome": "PASSED",
-      "elapsed_s": 0.3429,
+      "elapsed_s": 0.4693,
       "details": {
         "persistence": "verified",
         "storage": "WorldStore"
@@ -130,7 +130,7 @@
       "step": 11,
       "title": "Export binary glTF (valid GLB, meshes >= 1, vertices >= 24, all transforms)",
       "outcome": "PASSED",
-      "elapsed_s": 0.3429,
+      "elapsed_s": 0.4693,
       "details": {
         "format": "glb",
         "gltf_valid": true
@@ -140,7 +140,7 @@
       "step": 12,
       "title": "World management (rename, duplicate, archive, restore, trash, purge)",
       "outcome": "PASSED",
-      "elapsed_s": 0.2743,
+      "elapsed_s": 0.3754,
       "details": {
         "lifecycle_actions": 6,
         "all_verified": true

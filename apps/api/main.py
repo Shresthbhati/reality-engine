@@ -44,6 +44,7 @@ from apps.api.routes_registration import registration
 from apps.api.routes_sessions import health, sessions
 from apps.api.routes_sites import sites
 from apps.api.routes_splats import splats_router
+from apps.api.routes_temporal import temporal_router
 from apps.api.routes_system import system
 from apps.api.routes_technologies import technologies_router
 from apps.api.routes_usage import router as usage_router
@@ -82,7 +83,7 @@ app.add_middleware(
 )
 
 # `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
-for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, adoptions_router, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, assets_router, usage_router, furniture_router, construction, navigation, splats_router):
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, adoptions_router, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, assets_router, usage_router, furniture_router, construction, navigation, splats_router, temporal_router):
     app.include_router(router)
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

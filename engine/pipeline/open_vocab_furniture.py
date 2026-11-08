@@ -93,7 +93,7 @@ def unload_open_vocab_furniture() -> None:
 
 def _grounded_raw(path: Path):
     import torch
-    from evidence.image_check import open_oriented
+    from engine.core.image_io import open_oriented
 
     proc, model, dev = _load()
     img = open_oriented(path).convert("RGB")

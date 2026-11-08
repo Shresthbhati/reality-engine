@@ -52,7 +52,7 @@ class OneFormerSegmentationBackend(ISegmentationBackend):
         Raises SegmentationBackendUnavailableError when the model cannot load; never returns fabricated masks."""
         self._ensure_model()
         import torch
-        from evidence.image_check import open_oriented
+        from engine.core.image_io import open_oriented
 
         img = open_oriented(evidence.path).convert("RGB")
         inputs = self._processor(images=img, task_inputs=[self.task], return_tensors="pt")

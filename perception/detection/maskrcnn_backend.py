@@ -146,7 +146,7 @@ class MaskRCNNDetector(IDetectorBackend, ISegmentationBackend):
         """Run the model on each decodable image. Returns a list of
         (item, result_dict) for items actually processed -- items that
         fail to decode are skipped, never fabricated."""
-        from evidence.image_check import open_oriented
+        from engine.core.image_io import open_oriented
         import numpy as np
 
         self._torch.set_grad_enabled(False)

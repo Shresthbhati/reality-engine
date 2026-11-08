@@ -185,7 +185,7 @@ class MiDaSDepthBackend(IDepthBackend):
         _ensure_perception_deps()
         import torch
         import numpy as np
-        from evidence.image_check import open_oriented
+        from engine.core.image_io import open_oriented
 
         self._load_model()
 

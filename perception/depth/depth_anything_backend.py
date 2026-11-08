@@ -105,7 +105,7 @@ class DepthAnythingV2Backend(IDepthBackend):
         _ensure_dependencies()
         import numpy as np
         import torch
-        from evidence.image_check import open_oriented
+        from engine.core.image_io import open_oriented
 
         image_evidence = [
             e for e in evidence

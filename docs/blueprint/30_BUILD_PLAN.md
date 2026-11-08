@@ -221,7 +221,7 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 | 13.6 | SAM 2 behind the segmentation interface (benchmark vs SAM 1) | DONE (perception/segmentation/sam2_backend.py; verified by tests/test_sam2_backend.py) |
 | 13.7 | Outdoor perception: vegetation, roads, terrain, facades, roofs | DONE (perception/environment/outdoor.py; verified by tests/test_outdoor_perception_task13_7.py) |
 | 13.8 | Colour accuracy (ΔE under controlled capture) | DONE (perception/materials/color_accuracy.py; verified by tests/test_colour_accuracy_task13_8.py) |
-| 13.9 | MASt3R (NC flag) and DINOv2 re-ID — adopt only if benchmarks beat current | TODO |
+| 13.9 | MASt3R (NC flag) and DINOv2 re-ID — adopt only if benchmarks beat current | DONE (reconstruction/matching/mast3r.py, perception/instances/dinov2_reid.py, perception/instances/dinov2_embeddings.py; verified by tests/test_task_13_9_mast3r_dinov2.py, tests/test_mast3r_dinov2_task13_9.py) |
 
 ---
 

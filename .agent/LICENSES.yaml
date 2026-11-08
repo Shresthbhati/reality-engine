@@ -305,5 +305,32 @@ models:
     checksum: unpinned
     verify: record sha256 in model registry
 
+  - model: mast3r_vitlarge
+    license: CC-BY-NC-4.0
+    commercial_ok: false
+    measured_vram_mb: 1200.0
+    status: candidate
+    acquisition: github naver/mast3r
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: dinov2_vits14
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 350.0
+    status: candidate
+    acquisition: torch.hub facebookresearch/dinov2
+    checksum: unpinned
+    verify: record sha256 in model registry
+
+  - model: dinov2_vitb14
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 700.0
+    status: candidate
+    acquisition: torch.hub facebookresearch/dinov2
+    checksum: unpinned
+    verify: record sha256 in model registry
+
 # Rule: before ANY new source/model is vendored or bundled, add its row
 # here with the verified license text path. An empty row is a bug.

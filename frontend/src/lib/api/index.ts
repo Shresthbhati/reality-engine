@@ -36,6 +36,7 @@ export * from "./temporal";
 export * from "./bcf";
 export * from "./surface-quality";
 export * from "./drawings";
+export * from "./mep";
 
 /**
  * The row shapes the API layer emits are the UI's view model; re-exported here

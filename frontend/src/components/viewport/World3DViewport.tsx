@@ -41,6 +41,7 @@ import {
   Cpu,
   Footprints,
   ShieldAlert,
+  Network,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -114,6 +115,12 @@ import type { ClashItem, ClashReportSummary } from "@/lib/studio/clash-bcf-model
 import { fetchWorldClashes, downloadBcfZip } from "@/lib/api/bcf";
 import { SurfaceQualityPanel } from "@/components/studio/SurfaceQualityPanel";
 import { SectionDrawingModal } from "@/components/studio/SectionDrawingModal";
+import { MepTopologyPanel } from "@/components/studio/MepTopologyPanel";
+import type { MepFacilityTopology, MepSegment } from "@/lib/studio/mep-topology-model";
+import {
+  fetchMepTopology,
+  detectMepTopology,
+} from "@/lib/api/mep";
 import type {
   HeatmapData,
   SurfaceQualityReport,
@@ -346,6 +353,41 @@ export default function World3DViewport({
       console.warn("Failed to compare epochs:", err);
     } finally {
       setIsTemporalLoading(false);
+    }
+  }, [world]);
+
+  // MEP Facility Topology state and handlers
+  const [showMepTopology, setShowMepTopology] = useState(false);
+  const [mepTopology, setMepTopology] = useState<MepFacilityTopology | null>(null);
+  const [selectedMepSegment, setSelectedMepSegment] = useState<MepSegment | null>(null);
+  const [isMepLoading, setIsMepLoading] = useState(false);
+
+  const handleToggleMepTopology = useCallback(async () => {
+    const next = !showMepTopology;
+    setShowMepTopology(next);
+    if (next && !mepTopology && world?.id) {
+      setIsMepLoading(true);
+      try {
+        const data = await fetchMepTopology(world.id);
+        setMepTopology(data);
+      } catch (err) {
+        console.warn("Failed to load MEP topology:", err);
+      } finally {
+        setIsMepLoading(false);
+      }
+    }
+  }, [showMepTopology, mepTopology, world]);
+
+  const handleRefreshMepTopology = useCallback(async () => {
+    if (!world?.id) return;
+    setIsMepLoading(true);
+    try {
+      const data = await detectMepTopology(world.id);
+      setMepTopology(data);
+    } catch (err) {
+      console.warn("Failed to detect MEP topology:", err);
+    } finally {
+      setIsMepLoading(false);
     }
   }, [world]);
 
@@ -1524,6 +1566,22 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* MEP Facility Topology Panel Overlay */}
+        {showMepTopology && (
+          <div className="absolute top-14 right-3 z-30 pointer-events-auto">
+            <MepTopologyPanel
+              worldId={world?.id ?? ""}
+              topology={mepTopology}
+              selectedSegmentId={selectedMepSegment?.segment_id ?? null}
+              onSelectSegment={setSelectedMepSegment}
+              onRefresh={handleRefreshMepTopology}
+              onClose={() => setShowMepTopology(false)}
+              isOpen={showMepTopology}
+              isLoading={isMepLoading}
+            />
+          </div>
+        )}
+
         {/* Architectural Section & Elevation Drawings Modal */}
         {showSectionDrawings && (
           <SectionDrawingModal
@@ -1692,6 +1750,14 @@ export default function World3DViewport({
                 onClick={() => setShowSectionDrawings(true)}
               >
                 <FileText className="w-4 h-4 text-accent" />
+              </IconButton>
+
+              <IconButton
+                label="MEP & Conduit Routing Topology (IFC4x3)"
+                active={showMepTopology}
+                onClick={handleToggleMepTopology}
+              >
+                <Network className="w-4 h-4 text-accent" />
               </IconButton>
             </>
           )}

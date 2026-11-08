@@ -70,6 +70,15 @@ import { captureTitle, isUnplaced, type CaptureQuality, type StructurePoint } fr
 import MeasurementPanel from "./MeasurementPanel";
 import WalkthroughHUD from "./WalkthroughHUD";
 import MiniMapOverlay from "./MiniMapOverlay";
+import SplatControlsOverlay from "@/components/studio/SplatControlsOverlay";
+import {
+  fetchSplatMetadata,
+  fetchSplatBuffer,
+  generateWorldSplats,
+  uploadWorldSplats,
+  type SplatMetadata,
+} from "@/lib/api/splats";
+import { formatSplatCount, type HybridRenderMode } from "@/lib/viewport/splat-model";
 import {
   fetchWorldNavigation,
   createWorldBookmark,
@@ -324,6 +333,15 @@ export default function World3DViewport({
   const [ortho, setOrtho] = useState(false);
   const [showDims, setShowDims] = useState(true);
   const [layersOpen, setLayersOpen] = useState(false);
+  // Gaussian Splatting & Hybrid Viewport (Track C)
+  const [showSplatOverlay, setShowSplatOverlay] = useState(false);
+  const [splatMetadata, setSplatMetadata] = useState<SplatMetadata | null>(null);
+  const [splatLoadedCount, setSplatLoadedCount] = useState(0);
+  const [isSplatLoading, setIsSplatLoading] = useState(false);
+  const [splatVisibility, setSplatVisibility] = useState(true);
+  const [splatOpacity, setSplatOpacity] = useState(1.0);
+  const [splatScaleMultiplier, setSplatScaleMultiplier] = useState(1.0);
+  const [hybridRenderMode, setHybridRenderMode] = useState<HybridRenderMode>("hybrid");
 
   const [gridVisible, setGridVisible] = useState(true);
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -621,6 +639,94 @@ export default function World3DViewport({
     a.download = `${worldId ?? "reality-viewport"}.png`;
     a.click();
   }, [worldId]);
+
+  // Fetch Gaussian Splatting metadata and stream buffer if available
+  useEffect(() => {
+    if (!worldId) return;
+    let cancelled = false;
+    fetchSplatMetadata(worldId)
+      .then(async (meta) => {
+        if (cancelled) return;
+        setSplatMetadata(meta);
+        if (meta.available && meta.splat_count > 0) {
+          setIsSplatLoading(true);
+          try {
+            const buffer = await fetchSplatBuffer(worldId);
+            if (!cancelled && controllerRef.current) {
+              const cloud = controllerRef.current.loadSplatsFromBuffer(buffer, "splat");
+              setSplatLoadedCount(cloud.count);
+            }
+          } catch (err) {
+            console.warn("[Splats] Failed to stream splats:", err);
+          } finally {
+            if (!cancelled) setIsSplatLoading(false);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("[Splats] Failed to load splat metadata:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId]);
+
+  const handleGenerateSplats = useCallback(async () => {
+    if (!worldId) return;
+    setIsSplatLoading(true);
+    try {
+      await generateWorldSplats(worldId);
+      const meta = await fetchSplatMetadata(worldId);
+      setSplatMetadata(meta);
+      const buffer = await fetchSplatBuffer(worldId);
+      if (controllerRef.current) {
+        const cloud = controllerRef.current.loadSplatsFromBuffer(buffer, "splat");
+        setSplatLoadedCount(cloud.count);
+        setShowSplatOverlay(true);
+      }
+    } finally {
+      setIsSplatLoading(false);
+    }
+  }, [worldId]);
+
+  const handleUploadSplats = useCallback(async (file: File) => {
+    if (!worldId) return;
+    setIsSplatLoading(true);
+    try {
+      await uploadWorldSplats(worldId, file);
+      const meta = await fetchSplatMetadata(worldId);
+      setSplatMetadata(meta);
+      const buffer = await fetchSplatBuffer(worldId);
+      if (controllerRef.current) {
+        const cloud = controllerRef.current.loadSplatsFromBuffer(buffer, "splat");
+        setSplatLoadedCount(cloud.count);
+        setShowSplatOverlay(true);
+      }
+    } finally {
+      setIsSplatLoading(false);
+    }
+  }, [worldId]);
+
+  const handleToggleSplatVisibility = useCallback((vis: boolean) => {
+    setSplatVisibility(vis);
+    controllerRef.current?.setSplatVisibility(vis);
+  }, []);
+
+  const handleSetSplatOpacity = useCallback((op: number) => {
+    setSplatOpacity(op);
+    controllerRef.current?.setSplatOpacity(op);
+  }, []);
+
+  const handleSetSplatScaleMultiplier = useCallback((scale: number) => {
+    setSplatScaleMultiplier(scale);
+    controllerRef.current?.setSplatScale(scale);
+  }, []);
+
+  const handleSetHybridMode = useCallback((m: HybridRenderMode) => {
+    setHybridRenderMode(m);
+    controllerRef.current?.setHybridRenderMode(m);
+  }, []);
 
   // Fetch navigation data when entering walk mode
   useEffect(() => {
@@ -1054,6 +1160,27 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Gaussian Splats & Hybrid Viewport Overlay (Track C) */}
+        {showSplatOverlay && (
+          <SplatControlsOverlay
+            metadata={splatMetadata}
+            loadedCount={splatLoadedCount}
+            isLoaded={splatLoadedCount > 0}
+            isLoading={isSplatLoading}
+            visibility={splatVisibility}
+            opacity={splatOpacity}
+            scaleMultiplier={splatScaleMultiplier}
+            hybridMode={hybridRenderMode}
+            onToggleVisibility={handleToggleSplatVisibility}
+            onSetOpacity={handleSetSplatOpacity}
+            onSetScaleMultiplier={handleSetSplatScaleMultiplier}
+            onSetHybridMode={handleSetHybridMode}
+            onGenerateSplats={handleGenerateSplats}
+            onUploadSplats={handleUploadSplats}
+            onClose={() => setShowSplatOverlay(false)}
+          />
+        )}
+
         {/* Walk Mode First-Person HUD & MiniMap (Track B) */}
         {tool === "walk" && (
           <>
@@ -1346,6 +1473,13 @@ export default function World3DViewport({
             </IconButton>
             <IconButton label="Save screenshot (PNG)" onClick={handleScreenshot}>
               <Download className="w-4 h-4" />
+            </IconButton>
+            <IconButton
+              label={splatLoadedCount > 0 ? `Gaussian Splats (${formatSplatCount(splatLoadedCount)})` : "Gaussian Splats (3DGS)"}
+              active={showSplatOverlay}
+              onClick={() => setShowSplatOverlay((v) => !v)}
+            >
+              <Sparkles className="w-4 h-4" />
             </IconButton>
             <div className="mx-0.5 h-5 w-px" style={{ background: "var(--border)" }} />
             <IconButton

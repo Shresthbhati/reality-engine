@@ -1,7 +1,29 @@
 # 14 — Frontend and user experience
 
-**Stack (keep):** Next.js 16 app router, React 19, three.js, zustand, Tailwind 4,
-maplibre (for geo later), Playwright e2e. Lives in `frontend/`.
+## Technology stack & foundation (one per responsibility)
+
+Audited and aligned with [32_FRONTEND_AUDIT.md](32_FRONTEND_AUDIT.md) §8.1. Everything lives in `frontend/`.
+
+| Responsibility | Foundation | Decision / Status |
+|---|---|---|
+| Framework, routing, styling | Next 16 App Router, React 19, Tailwind 4, CSS-variable tokens | Installed, Keep |
+| Primitives, recipes, toast | shadcn/ui on Base UI (`@base-ui/react`) | Adopt (U.3 / U.4) |
+| Icons | Lucide (`lucide-react`) | Installed, Keep |
+| 3D Viewport | Three.js (imperative) | Installed, Keep |
+| Panel layout | Allotment | Adopt (U.6) |
+| Client UI state | Zustand | Installed, prune/replace for server state |
+| Server state | TanStack Query (`@tanstack/react-query`) | Adopt (U.4 / U.5) |
+| Tables / virtual lists | TanStack Table / Virtual | Approved, deferred |
+| Drag and drop | dnd-kit | Deferred |
+| Upload | In-house resumable chunked upload (`POST /api/uploads/resumable/*`) | Keep |
+| Charts | ECharts | Approved, deferred (Apache-2.0 notice required) |
+| Motion | CSS transitions / keyframes | Keep; Motion deferred |
+| Forms | React Hook Form + Zod | Approved, deferred |
+| Command palette | In-house `CommandPalette.tsx` against real `lib/search.ts` | Keep |
+| Maps | maplibre-gl | Installed, Keep |
+| End-to-end / a11y testing | Playwright + `@axe-core/playwright` | Installed / dev dependency |
+
+Rejected: Drei (unnecessary abstraction/version lock), Dockview (over-complex for paneling), Uppy (in-house handles sha256 chunks), Sonner, React Aria (Apache-2.0), Radix flavour (deprecated in favor of Base UI).
 
 ## Navigation (desktop)
 

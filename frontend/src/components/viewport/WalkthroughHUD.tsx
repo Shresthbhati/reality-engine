@@ -81,10 +81,13 @@ export default function WalkthroughHUD({
         data-testid="walk-mode-hud"
         className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-surface)]/95 border border-[var(--border)] shadow-xl backdrop-blur-md text-xs"
       >
-        {/* Room Indicator */}
+        {/* Mode & Room Indicator */}
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--accent-subtle)] text-[var(--accent)] font-semibold border border-[var(--accent-border)]">
-          <Compass className="w-3.5 h-3.5" />
-          <span className="truncate max-w-[130px]">{activeRoomName || "Interior Space"}</span>
+          <Footprints className="w-3.5 h-3.5" />
+          <span className="font-semibold">Walk Mode:</span>
+          <span className="text-[10px] opacity-80">Eye height 1.65m ·</span>
+          <Compass className="w-3 h-3 ml-0.5" />
+          <span className="truncate max-w-[110px]">{activeRoomName || "Interior Space"}</span>
         </div>
 
         <div className="w-[1px] h-4 bg-[var(--border-subtle)]" />
@@ -178,9 +181,10 @@ export default function WalkthroughHUD({
           onClick={onExitWalkMode}
           title="Exit walk mode (Esc)"
           data-testid="exit-walk-mode"
-          className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+          className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
         >
           <X className="w-3.5 h-3.5" />
+          <span>Exit</span>
         </button>
       </div>
 

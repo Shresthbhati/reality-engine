@@ -18,7 +18,7 @@ All Milestone 0 through Milestone 7 tasks are fully implemented and verified wit
 |---|---|---|
 | **Living-Room Demo End-to-End (All 12 Vision Steps)** | **VERIFIED** | All 12 vision steps pass: tests/test_living_room_acceptance_12_steps.py, scripts/run_living_room_acceptance.py, benchmarks/results/living_room_acceptance.json |
 | **Time-Saved Measurement & Commercial Survey Validation** | **VERIFIED** | 93.5%–94.8% survey-to-CAD time reduction table committed: docs/benchmarks/TIME_SAVED_MEASUREMENT.md |
-| **Measured-Room Accuracy Gate (Section 1 Tolerances)** | **VERIFIED** | ±2 cm wall length, ±1% room area, ±2 cm ceiling height, ±2 cm opening width, ±5 cm fixture pos: scripts/measured_room_accuracy_report.py, tests/test_measured_room_accuracy_gate.py |
+| **Measured-Room Accuracy Gate (Section 1 Tolerances)** | **VERIFIED** | ±2 cm wall length, ±1% room area, ±2 cm ceiling height, ±2 cm opening width, ±5 cm fixture pos: scripts/measured_room_accuracy_report.py, tests/test_measured_room_accuracy_report.py |
 | **As-Built Openings & Closed Windows** | **VERIFIED** | Closed window perception, wall opening carving, frame depth: tests/test_closed_windows_task8_2.py, tests/test_openings_task8_3.py |
 | **Electrical Fixtures & Switches/Sockets** | **VERIFIED** | Wall attachment, elevation, bounding boxes, clearance: tests/test_electrical_fixtures_task8_4.py, tests/test_fixtures_task2_4.py |
 | **Floor Plan PDF & Dimensioned DXF Exports** | **VERIFIED** | Vector wall cuts, carved doors/windows, dimension strings, scale bar: tests/test_pdf_floor_plan_task2_5.py, tests/test_dxf_floor_plan.py |

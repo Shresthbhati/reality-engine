@@ -17,6 +17,7 @@ __all__ = [
     "ALIKEDLightGlueMatcher",
     "IMatcher",
     "LightGlueMatcher",
+    "Mast3rMatcher",
     "MatchResult",
     "MatcherUnavailableError",
     "allow_nc_models",
@@ -27,7 +28,6 @@ __all__ = [
 #: matchers the plan names but this repo has no backend for yet: name -> (reason, non_commercial)
 _NOT_IMPLEMENTED: Dict[str, tuple] = {
     "loftr": ("LoFTR backend not implemented (needs kornia LoFTR adapter)", False),
-    "mast3r": ("MASt3R backend not implemented; weights are CC BY-NC", True),
 }
 
 
@@ -46,12 +46,15 @@ def is_lightglue_available() -> tuple[bool, str]:
 
 def available_matchers() -> Dict[str, str]:
     """name -> 'available' or the reason it is not."""
-    from reconstruction.matching import dedode, xfeat
-
+    from reconstruction.matching import dedode, mast3r, xfeat
     from reconstruction.matching.classical import AkazeMatcher, BriskMatcher, OrbMatcher
 
-    out = {"sift": "available", "akaze": AkazeMatcher.probe()[1], "brisk": BriskMatcher.probe()[1],
-           "orb": OrbMatcher.probe()[1]}
+    out = {
+        "sift": "available",
+        "akaze": AkazeMatcher.probe()[1],
+        "brisk": BriskMatcher.probe()[1],
+        "orb": OrbMatcher.probe()[1],
+    }
     out["xfeat"] = xfeat.probe()[1]
     out["dedode"] = dedode.probe()[1]
     lg_ok, lg_msg = is_lightglue_available()
@@ -59,6 +62,11 @@ def available_matchers() -> Dict[str, str]:
     out["lightglue@disk"] = lg_msg
     out["lightglue@aliked"] = lg_msg
     out["aliked"] = lg_msg
+
+    # MASt3R probe (non-commercial, requires REALITY_ALLOW_NC_MODELS=1)
+    m_ok, m_msg = mast3r.Mast3rMatcher.probe()
+    out["mast3r"] = m_msg
+
     for name, (reason, nc) in _NOT_IMPLEMENTED.items():
         out[name] = reason + ("; also needs REALITY_ALLOW_NC_MODELS=1" if nc and not allow_nc_models() else "")
     return out
@@ -111,6 +119,13 @@ def get_matcher(name: str, paths: Dict[str, Path], **kwargs) -> IMatcher:
         from reconstruction.matching.dedode import DeDoDeMatcher
 
         return DeDoDeMatcher(paths, **kwargs)
+
+    if norm in ("mast3r", "mast3r@naver"):
+        if not allow_nc_models():
+            raise MatcherUnavailableError("mast3r is non-commercial; set REALITY_ALLOW_NC_MODELS=1 to enable it")
+        from reconstruction.matching.mast3r import Mast3rMatcher
+
+        return Mast3rMatcher(paths, **kwargs)
 
     if norm in _NOT_IMPLEMENTED:
         reason, nc = _NOT_IMPLEMENTED[norm]

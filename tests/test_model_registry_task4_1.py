@@ -22,7 +22,10 @@ def test_model_registry_spec_fields():
         assert spec.task, f"Model {name} missing task"
         assert spec.license, f"Model {name} missing license"
         assert isinstance(spec.commercial_ok, bool), f"Model {name} invalid commercial_ok"
-        assert spec.commercial_ok is True, f"Model {name} not marked commercial_ok"
+        if "NC" in spec.license or "Non-Commercial" in spec.license:
+            assert spec.commercial_ok is False, f"Non-commercial model {name} must have commercial_ok=False"
+        else:
+            assert spec.commercial_ok is True, f"Model {name} not marked commercial_ok"
         assert 0.0 <= spec.measured_vram_mb <= 5200.0, (
             f"Model {name} VRAM {spec.measured_vram_mb} MB exceeds RTX 4050 5,200 MB ceiling"
         )

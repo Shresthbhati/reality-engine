@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reality Engine — Data Flow & Behind-the-Scenes Workflow</title>
+<style>
+  :root{
+    --ink:#0f172a; --surface:#ffffff; --panel:#f8fafc; --border:#cbd5e1;
+    --ink-dim:#475569; --accent:#2563eb; --accent-dark:#1d4ed8;
+    --ok:#059669; --warn:#b45309; --skip:#64748b; --fail:#dc2626;
+    --stage:#eff6ff; --stage-border:#bfdbfe;
+    --mono:#1e293b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",sans-serif;color:var(--ink);background:#f1f5f9;line-height:1.5}
+  .wrap{max-width:1200px;margin:0 auto;padding:32px 24px}
+  header{margin-bottom:28px}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:-0.02em}
+  .sub{color:var(--ink-dim);font-size:15px}
+  .chip{display:inline-block;padding:2px 10px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:12px;font-weight:600;margin-right:8px;margin-bottom:8px}
+  .grid{display:grid;grid-template-columns:1fr;gap:24px}
+  @media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 2px rgb(0 0 0 / 0.04)}
+  .card h2{font-size:16px;margin:0 0 14px;display:flex;align-items:center;gap:8px;letter-spacing:-0.01em}
+  .card h2 .num{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:700;flex-shrink:0}
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .step{display:flex;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;align-items:center}
+  .step .ord{width:26px;height:26px;border-radius:8px;background:var(--stage);color:var(--accent-dark);display:grid;place-items:center;font-weight:700;font-size:13px;flex-shrink:0;border:1px solid var(--stage-border)}
+  .step .body{flex:1;min-width:0}
+  .step .name{font-weight:600;font-size:13.5px;color:var(--ink)}
+  .step .mod{font-size:12px;color:var(--ink-dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+  .step .arrow{margin-left:8px;color:#94a3b8;font-weight:600;font-size:12px;white-space:nowrap}
+  .gate{font-size:12px;color:var(--ok);margin-top:4px;display:flex;align-items:center;gap:6px}
+  .gate.warn{color:var(--warn)} .gate.skip{color:var(--skip)} .gate.fail{color:var(--fail)}
+  .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+  .tag{font-size:11px;padding:1px 7px;border-radius:6px;background:#eef2ff;color:#1d4ed8;border:1px solid #bfdbfe;margin-left:6px}
+  .tag.ok{background:#ecfdf5;color:var(--ok);border-color:#a7f3d0}
+  .tag.skip{background:#f1f5f9;color:var(--skip);border-color:#cbd5e1}
+  .tag.fail{background:#fef2f2;color:var(--fail);border-color:#fecaca}
+  .note{font-size:13px;color:var(--ink-dim);margin-top:8px;border-left:3px solid var(--border);padding-left:10px;background:#f8fafc;border-radius:0 6px 6px 0;padding:8px 12px}
+  .honest{font-size:12px;color:#059669;font-weight:600}
+  .fullwidth{grid-column:1/-1}
+  .mermaid{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:16px}
+  .kbd{font-family:ui-monospace,monospace;font-size:12px;background:#e2e8f0;padding:1px 6px;border-radius:4px;color:#334155}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Reality Engine — Data Flow &amp; Behind-the-Scenes Workflow</h1>
+  <div class="sub">End-to-end trace of how captured photos become a versioned 3D world, across the CLI, the FastAPI/Studio API, and the core pipeline.</div>
+  <div style="margin-top:8px">
+    <span class="chip">CLI: <kbd>reality run</kbd></span>
+    <span class="chip">CLI: <kbd>reality compile</kbd></span>
+    <span class="chip">API: FastAPI + Studio</span>
+    <span class="chip">Core: vertical_slice</span>
+  </div>
+</header>
+
+<div class="grid">
+
+<!-- ============================ HIGH-LEVEL ============================ -->
+<div class="card fullwidth">
+  <h2><span class="num">0</span>Big picture — two entry doors, one core pipeline</h2>
+  <div class="flow">
+    <div class="step">
+      <div class="ord">A</div>
+      <div class="body">
+        <div class="name">CLI entry — <code>reality run</code> / <code>reality compile</code></div>
+        <div class="mod">apps/cli/main.py · cmd_run · cmd_compile</div>
+        <div class="arrow">→</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="ord">B</div>
+      <div class="body">
+        <div class="name">API entry — FastAPI job worker</div>
+        <div class="mod">apps/api/main.py · apps/api/jobs · vertical_slice</div>
+        <div class="arrow">→</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="ord">C</div>
+      <div class="body">
+        <div class="name">Core pipeline — <code>vertical_slice()</code></div>
+        <div class="mod">engine/pipeline/vertical_slice.py</div>
+        <div class="arrow">→</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="ord">D</div>
+      <div class="body">
+        <div class="name">WorldIR + artifacts → exports → WorldStore → Studio UI</div>
+        <div class="mod">world_ir · worldstore · exporters · frontend/</div>
+      </div>
+    </div>
+  </div>
+  <div class="note"><span class="dot"></span> <b>Honesty rule:</b> every stage can honestly <span class="tag skip">skip</span> (recorded reason) or <span class="tag fail">fail</span> (verbatim error). Nothing fabricates geometry.</div>
+</div>
+
+<!-- ============================ CLI PATH ============================ -->
+<div class="card">
+  <h2><span class="num">1</span>CLI path — <code>reality run</code> / <code>reality compile</code></h2>
+  <div class="flow">
+    <div class="step">
+      <div class="ord">1</div><div class="body"><div class="name">Photos on disk / manifest.json</div><div class="mod">folder of images + manifest.json</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">2</div><div class="body"><div class="name">Evidence items (ids = filenames)</div><div class="mod">EvidenceItem · EvidenceKind.PHOTO</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">3</div><div class="body"><div class="name">ReconstructionOrchestrator.run()</div><div class="mod">reconstruction/orchestrator.py — probe → accept → execute → fallback → stamp provenance</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">4</div><div class="body"><div class="name">COLMAP SfM → sparse camera poses + points</div><div class="mod">reconstruction/backend/colmap_backend.py</div><span class="tag skip">skip if no COLMAP</span></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">5</div><div class="body"><div class="name">Metric scale anchoring (measured baseline)</div><div class="mod">reconstruction/scale.py · anchor_metric_scale</div><span class="tag skip">RELATIVE if no baseline</span></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">6</div><div class="body"><div class="name">Frame canonicalization (dominant plane → +Y)</div><div class="mod">reconstruction/frame.py · canonicalize_like_head</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">7</div><div class="body"><div class="name">[opt.] Depth (MiDaS) → dense metric points</div><div class="mod">perception/depth/midAS_backend.py · reconstruction/depth_to_points.py</div><span class="tag skip">skipped honestly</span></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">8</div><div class="body"><div class="name">Compile → validated WorldIR</div><div class="mod">engine/compiler/world_compiler.py · compile_reconstruction_to_world</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">9</div><div class="body"><div class="name">[opt.] Perception (Mask R-CNN) → object entities</div><div class="mod">perception/detection/maskrcnn_backend.py · perception/instances/</div><span class="tag skip">skipped honestly</span></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">10</div><div class="body"><div class="name">[opt.] Mesh + exports (glTF / USD / Blender / CityJSON / IFC)</div><div class="mod">exporters/ · reality.export</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">11</div><div class="body"><div class="name">worldir.json / report.json / points.ply / mesh.ply / cameras.json</div><div class="mod">&lt;dataset&gt;/pipeline_out</div></div>
+    </div>
+  </div>
+  <div class="note"><span class="dot"></span> CLI <code>cmd_compile</code> runs the <b>full vertical slice</b> in one call and writes every artifact to disk. <code>cmd_run</code> is the autonomous variant (adds terrain fusion + multi-format export).</div>
+</div>
+
+<!-- ============================ API PATH ============================ -->
+<div class="card">
+  <h2><span class="num">2</span>API path — FastAPI → Studio frontend</h2>
+  <div class="flow">
+    <div class="step">
+      <div class="ord">1</div><div class="body"><div class="name">HTTP request (REST)</div><div class="mod">frontend/src/app/api/* → /api/*</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">2</div><div class="body"><div class="name">Auth middleware + CORS</div><div class="mod">apps/api/main.py · auth_middleware · REALITY_API_TOKEN</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">3</div><div class="body"><div class="name">Router → service (jobs / sessions / reconstructions / worlds / …)</div><div class="mod">apps/api/routes_*.py · apps/api/jobs.py · jobrunner.worker_loop</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">4</div><div class="body"><div class="name">Background job runs <code>vertical_slice()</code></div><div class="mod">engine/pipeline/vertical_slice.py</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">5</div><div class="body"><div class="name">WorldIR → WorldStore (versioned persistence)</div><div class="mod">worldstore/store.py · WorldStore.save_version</div></div><div class="arrow">→</div>
+    </div>
+    <div class="step">
+      <div class="ord">6</div><div class="body"><div class="name">JSON response → Next.js Studio UI</div><div class="mod">frontend/src/app/worlds/* · Next.js App Router</div></div>
+    </div>
+  </div>
+  <div class="note"><span class="dot"></span> API and CLI <b>share the same domain services</b> — no duplicated computation. Orphaned jobs are recovered on startup (reconstruction/proc.py · recover_orphaned_jobs).</div>
+</div>
+
+<!-- ============================ CORE PIPELINE ============================ -->
+<div class="card fullwidth">
+  <h2><span class="num">3</span>Core pipeline — stage-by-stage inside <code>vertical_slice()</code></h2>
+  <div class="flow">
+    <div class="step">
+      <div class="ord">S1</div><div class="body"><div class="name">Reconstruction (COLMAP SfM)</div><div class="mod">reconstruction/orchestrator.py → colmap_backend.py → sparse poses + points</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S2</div><div class="body"><div class="name">Metric scale anchoring</div><div class="mod">reconstruction/scale.py → METRIC (baseline) / RELATIVE (working unit)</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S2.5</div><div class="body"><div class="name">Frame canonicalization</div><div class="mod">reconstruction/frame.py → dominant plane → +Y</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S2.8</div><div class="body"><div class="name">[opt.] Depth → dense points</div><div class="mod">perception/depth/midAS_backend.py → metricize_all → depth_map_to_points</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S2.9</div><div class="body"><div class="name">Layout evidence (single-image walls)</div><div class="mod">engine/pipeline/vertical_slice.py → projected wall support</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S3</div><div class="body"><div class="name">Compile → validated WorldIR</div><div class="mod">engine/compiler/world_compiler.py → entities / geometries / measurements / relationships</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S3.5</div><div class="body"><div class="name">[opt.] Perception → object entities</div><div class="mod">perception/detection/maskrcnn_backend.py → lift_region_to_3d → merge_hypotheses → promote_object_to_entity</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S3.6</div><div class="body"><div class="name">[opt.] Mesh → surface artifact</div><div class="mod">reconstruction/meshing/mesh.py → Poisson reconstruction → PLY</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S3.65</div><div class="body"><div class="name">[opt.] Dense MVS → fused pointcloud</div><div class="mod">reconstruction/dense_pipeline.py → dense_judge → adopt-if-better</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S3.7</div><div class="body"><div class="name">Plural-source fusion → pointcloud</div><div class="mod">world_ir/ · fusion of sparse + dense geometry</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S3.8</div><div class="body"><div class="name">[opt.] Detail discovery + ROI refinement</div><div class="mod">perception/detail/pipeline.py → measured GSD → ROI work orders</div></div>
+    </div>
+    <div class="step">
+      <div class="ord">S4</div><div class="body"><div class="name">Record scale + spatial reasoning</div><div class="mod">world.metadata["scale"] · perception/spatial_reasoning.py (ATTACHED_TO / RESTS_ON / CONTAINS)</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ API ENDPOINTS ============================ -->
+<div class="card">
+  <h2><span class="num">4</span>Studio API surface (data touchpoints)</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div style="font-size:12.5px;color:var(--ink-dim)">Ingest &amp; sessions</div>
+    <div style="font-family:ui-monospace,monospace;font-size:11.5px;color:#334155;line-height:1.6">
+      POST /api/sessions<br>POST /api/sessions/{id}/add-source<br>GET /api/sessions/{id}/inspect<br>POST /api/sessions/{id}/ingest-mobile<br>POST /api/sessions/{id}/mobile-tasks<br>POST /api/sessions/{id}/reconstruct<br>GET /api/sessions/{id}/export-package
+    </div>
+    <div style="font-size:12.5px;color:var(--ink-dim);margin-top:10px">Worlds &amp; reconstructions</div>
+    <div style="font-family:ui-monospace,monospace;font-size:11.5px;color:#334155;line-height:1.6">
+      GET /api/worlds<br>GET /api/worlds/{id}<br>GET /api/worlds/{id}/worldir<br>GET /api/worlds/{id}/report<br>GET /api/worlds/{id}/cameras<br>GET /api/worlds/{id}/points<br>GET /api/worlds/{id}/space-graph<br>POST /api/worlds/{id}/export<br>POST /api/worlds/{id}/diff<br>POST /api/worlds/{id}/commit<br>POST /api/worlds/{id}/restore<br>POST /api/worlds/{id}/archive<br>POST /api/worlds/{id}/duplicate<br>POST /api/worlds/{id}/versions<br>GET /api/worlds/{id}/entities/{eid}/provenance<br>GET /api/worlds/{id}/evidence/{eid}/image<br>GET /api/worlds/{id}/export/formats<br>GET /api/worlds/{id}/export/{hash}/download<br>POST /api/worlds/{id}/technologies/benchmark
+    </div>
+    <div style="font-size:12.5px;color:var(--ink-dim);margin-top:10px">Jobs &amp; artifacts</div>
+    <div style="font-family:ui-monospace,monospace;font-size:11.5px;color:#334155;line-height:1.6">
+      POST /api/jobs/compile<br>POST /api/jobs/ingest<br>GET /api/jobs/{id}<br>POST /api/jobs/{id}/cancel<br>GET /api/artifacts/{id}<br>GET /api/artifacts/{id}/download
+    </div>
+    <div style="font-size:12.5px;color:var(--ink-dim);margin-top:10px">Query, geo, sites, procedural, measurements, intent</div>
+    <div style="font-family:ui-monospace,monospace;font-size:11.5px;color:#334155;line-height:1.6">
+      GET /api/query<br>GET /api/geo<br>GET /api/sites<br>GET /api/procedural<br>GET /api/measurements<br>GET /api/intent<br>GET /api/evidence/quality<br>GET /api/technologies
+    </div>
+  </div>
+  <div class="note"><span class="dot"></span> Frontend = Next.js Studio at <kbd>frontend/</kbd> (port 3000); API = FastAPI uvicorn at <kbd>apps/api/main:app</kbd> (port 8100). Next.js API routes proxy server-side and never ship <code>REALITY_API_TOKEN</code> to the browser.</div>
+</div>
+
+<!-- ============================ HONESTY ============================ -->
+<div class="card fullwidth">
+  <h2><span class="num">5</span>Behind the scenes — honesty gates &amp; what can skip</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:#fff">
+      <div style="font-weight:600;color:var(--ink)">SfM fails / declines</div>
+      <div style="font-size:12px;color:var(--ink-dim)">Orchestrator tries COLMAP then Fake backend; if all fail → <span class="tag fail">ReconstructionOrchestrationError</span> with full attempt log. No invented geometry.</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:#fff">
+      <div style="font-weight:600;color:var(--ink)">No measured baseline</div>
+      <div style="font-size:12px;color:var(--ink-dim)">World stays <span class="tag skip">RELATIVE</span> — unit-less model distances, honestly noted in world.metadata["scale"].</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:#fff">
+      <div style="font-weight:600;color:var(--ink)">Depth / perception unavailable</div>
+      <div style="font-size:12px;color:var(--ink-dim)">Stage <span class="tag skip">skipped with a recorded reason</span>; structural world is preserved. Never silently degraded.</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:#fff">
+      <div style="font-weight:600;color:var(--ink)">Export format missing</div>
+      <div style="font-size:12px;color:var(--ink-dim)"><span class="tag fail">UnsupportedExportFormatError</span> — IFC needs IfcOpenShell; never writes an empty file.</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:#fff">
+      <div style="font-weight:600;color:var(--ink)">Dense MVS escalation</div>
+      <div style="font-size:12px;color:var(--ink-dim)">Only when <span class="tag ok">measured</span> sparse-model properties justify it; the dense cloud is judged against the sparse world and kept only if better.</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:#fff">
+      <div style="font-weight:600;color:var(--ink)">Orphaned jobs</div>
+      <div style="font-size:12px;color:var(--ink-dim)">Recovered on API startup (reconstruction/proc.py); adoption conflicts quarantined before the worker starts.</div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -68,6 +68,18 @@ import {
 import { resolveUnitContext } from "@/lib/viewport/measure-model";
 import { captureTitle, isUnplaced, type CaptureQuality, type StructurePoint } from "@/lib/viewport/structure-points-model";
 import MeasurementPanel from "./MeasurementPanel";
+import WalkthroughHUD from "./WalkthroughHUD";
+import MiniMapOverlay from "./MiniMapOverlay";
+import {
+  fetchWorldNavigation,
+  createWorldBookmark,
+  type NavigationData,
+  type SpatialBookmark,
+} from "@/lib/api/navigation";
+import {
+  interpolateTourPose,
+  detectActiveRoom,
+} from "@/lib/viewport/tour-model";
 import TransformGizmoToolbar from "@/components/studio/TransformGizmoToolbar";
 import { CapturePlanPanel } from "@/components/studio/CapturePlanPanel";
 import type { CapturePlanSummary } from "@/lib/studio/capture-plan-model";
@@ -227,6 +239,16 @@ export default function World3DViewport({
   const [tool, setTool] = useState<PointerTool>("select");
   const [gizmoMode, setGizmoMode] = useState<TransformGizmoMode>("translate");
   const [snapConfig, setSnapConfig] = useState<SnapConfig>(DEFAULT_SNAP_CONFIG);
+
+  // Multi-Room Semantic Navigation & Walkthrough Tour State (Track B)
+  const [navData, setNavData] = useState<NavigationData | null>(null);
+  const [isTourPlaying, setIsTourPlaying] = useState(false);
+  const [tourElapsedSeconds, setTourElapsedSeconds] = useState(0);
+  const [tourSpeed, setTourSpeed] = useState(1);
+  const [activeRoomName, setActiveRoomName] = useState("");
+  const [tourNarration, setTourNarration] = useState("");
+  const [walkPlayerPos, setWalkPlayerPos] = useState<[number, number, number]>([0, 1.65, 0]);
+  const [walkPlayerYaw, setWalkPlayerYaw] = useState(0);
 
   // Studio Intelligence state fallbacks (from props or world.metadata)
   const resolvedCapturePlan = capturePlanProp ?? ((world?.metadata as Record<string, unknown> | undefined)?.capture_plan as CapturePlanSummary | null) ?? null;
@@ -580,6 +602,9 @@ export default function World3DViewport({
 
   const pickTool = useCallback((next: PointerTool) => {
     setTool(next);
+    if (next !== "walk") {
+      setIsTourPlaying(false);
+    }
     controllerRef.current?.setPointerTool(next);
   }, []);
 
@@ -596,6 +621,175 @@ export default function World3DViewport({
     a.download = `${worldId ?? "reality-viewport"}.png`;
     a.click();
   }, [worldId]);
+
+  // Fetch navigation data when entering walk mode
+  useEffect(() => {
+    if (tool !== "walk" || !worldId) return;
+    let cancelled = false;
+    fetchWorldNavigation(worldId)
+      .then((data) => {
+        if (!cancelled && data) {
+          setNavData(data);
+        }
+      })
+      .catch((err) => {
+        console.warn("[Walkthrough] Failed to load navigation data:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tool, worldId]);
+
+  // Walkthrough animation and player position loop
+  useEffect(() => {
+    if (tool !== "walk") return;
+
+    let animationFrameId: number;
+    let lastTime = performance.now();
+    let lastStateUpdateTime = 0;
+    let elapsedTour = tourElapsedSeconds;
+
+    const loop = (currentTime: number) => {
+      const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
+      lastTime = currentTime;
+
+      const controller = controllerRef.current;
+      if (controller) {
+        if (isTourPlaying && navData?.recommended_tour && navData.recommended_tour.keyframes.length > 0) {
+          elapsedTour += dt * tourSpeed;
+          const total = navData.recommended_tour.total_duration_seconds;
+          if (elapsedTour >= total) {
+            elapsedTour = total;
+            setIsTourPlaying(false);
+          }
+          const interpolated = interpolateTourPose(navData.recommended_tour, elapsedTour);
+          controller.setWalkPose(
+            interpolated.position[0],
+            interpolated.position[1],
+            interpolated.position[2],
+            interpolated.yawRad,
+            interpolated.pitchRad
+          );
+
+          if (currentTime - lastStateUpdateTime > 33) {
+            lastStateUpdateTime = currentTime;
+            setTourElapsedSeconds(elapsedTour);
+            setTourNarration(interpolated.narration);
+            setActiveRoomName(interpolated.currentRoom);
+            setWalkPlayerPos(interpolated.position);
+            setWalkPlayerYaw(interpolated.yawRad);
+          }
+        } else {
+          if (currentTime - lastStateUpdateTime > 50) {
+            lastStateUpdateTime = currentTime;
+            const pose = controller.getWalkPose();
+            setWalkPlayerPos(pose.position);
+            setWalkPlayerYaw(pose.yawRad);
+            if (navData?.rooms && navData.rooms.length > 0) {
+              const detected = detectActiveRoom(pose.position, navData.rooms);
+              setActiveRoomName(detected ? detected.name : "");
+            }
+          }
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(loop);
+    };
+
+    animationFrameId = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [tool, isTourPlaying, navData, tourSpeed]);
+
+  const handleToggleTourPlay = useCallback(() => {
+    setIsTourPlaying((prev) => {
+      if (!prev) {
+        const total = navData?.recommended_tour?.total_duration_seconds ?? 0;
+        if (tourElapsedSeconds >= total - 0.1) {
+          setTourElapsedSeconds(0);
+        }
+      }
+      return !prev;
+    });
+  }, [navData, tourElapsedSeconds]);
+
+  const handleNextStop = useCallback(() => {
+    if (!navData?.recommended_tour?.keyframes || navData.recommended_tour.keyframes.length === 0) return;
+    const kfs = navData.recommended_tour.keyframes;
+    const nextKf = kfs.find((kf) => (kf.transition_seconds + kf.dwell_seconds) > tourElapsedSeconds + 0.5);
+    const targetKf = nextKf || kfs[kfs.length - 1];
+    controllerRef.current?.setWalkPose(
+      targetKf.position[0],
+      targetKf.position[1],
+      targetKf.position[2],
+      targetKf.yaw_rad,
+      targetKf.pitch_rad
+    );
+    setWalkPlayerPos(targetKf.position);
+    setWalkPlayerYaw(targetKf.yaw_rad);
+    setActiveRoomName(targetKf.room_name);
+    setTourNarration(targetKf.narration || "");
+  }, [navData, tourElapsedSeconds]);
+
+  const handlePrevStop = useCallback(() => {
+    if (!navData?.recommended_tour?.keyframes || navData.recommended_tour.keyframes.length === 0) return;
+    const kfs = navData.recommended_tour.keyframes;
+    const targetKf = kfs[0];
+    setTourElapsedSeconds(0);
+    controllerRef.current?.setWalkPose(
+      targetKf.position[0],
+      targetKf.position[1],
+      targetKf.position[2],
+      targetKf.yaw_rad,
+      targetKf.pitch_rad
+    );
+    setWalkPlayerPos(targetKf.position);
+    setWalkPlayerYaw(targetKf.yaw_rad);
+    setActiveRoomName(targetKf.room_name);
+    setTourNarration(targetKf.narration || "");
+  }, [navData]);
+
+  const handleSelectBookmark = useCallback((bmk: SpatialBookmark) => {
+    setIsTourPlaying(false);
+    controllerRef.current?.setWalkPose(
+      bmk.position[0],
+      bmk.position[1],
+      bmk.position[2],
+      bmk.yaw_rad,
+      bmk.pitch_rad
+    );
+    setWalkPlayerPos(bmk.position);
+    setWalkPlayerYaw(bmk.yaw_rad);
+    if (bmk.room_name) setActiveRoomName(bmk.room_name);
+  }, []);
+
+  const handleAddBookmark = useCallback(
+    async (name: string) => {
+      if (!worldId) return;
+      const controller = controllerRef.current;
+      const pose = controller ? controller.getWalkPose() : { position: walkPlayerPos, yawRad: walkPlayerYaw, pitchRad: 0 };
+      const room = navData?.rooms ? detectActiveRoom(pose.position, navData.rooms) : null;
+      try {
+        const saved = await createWorldBookmark(worldId, {
+          name,
+          position: pose.position,
+          yaw_rad: pose.yawRad,
+          pitch_rad: pose.pitchRad,
+          room_name: room?.name,
+          room_id: room?.room_id,
+        });
+        setNavData((prev) => {
+          if (!prev) return prev;
+          const updatedBookmarks = [...(prev.suggested_bookmarks || []), saved];
+          return { ...prev, suggested_bookmarks: updatedBookmarks };
+        });
+      } catch (err) {
+        console.error("[Walkthrough] Failed to save bookmark:", err);
+      }
+    },
+    [worldId, walkPlayerPos, walkPlayerYaw, navData]
+  );
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -860,29 +1054,40 @@ export default function World3DViewport({
           </div>
         )}
 
-        {/* Walk Mode First-Person HUD */}
+        {/* Walk Mode First-Person HUD & MiniMap (Track B) */}
         {tool === "walk" && (
           <>
-            <div
-              className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2 rounded-full text-xs font-mono shadow-lg backdrop-blur-md"
-              style={{ ...PANEL, color: "var(--text-primary)" }}
-              data-testid="walk-mode-hud"
-            >
-              <Footprints className="w-4 h-4 animate-pulse shrink-0" style={{ color: "var(--accent)" }} />
-              <span>
-                <strong className="font-semibold" style={{ color: "var(--text-primary)" }}>Walk Mode:</strong> WASD / Arrows to walk · Drag / Touch to look · Eye height 1.65m · Wall collision active
-              </span>
-              <button
-                type="button"
-                onClick={() => pickTool("select")}
-                className="ml-2 px-2 py-0.5 rounded text-xs transition-colors cursor-pointer"
-                style={{ ...PANEL, color: "var(--text-secondary)" }}
-                title="Exit walk mode"
-                data-testid="exit-walk-mode"
-              >
-                Exit
-              </button>
-            </div>
+            <WalkthroughHUD
+              navData={navData}
+              activeRoomName={activeRoomName}
+              isTourPlaying={isTourPlaying}
+              tourElapsedSeconds={tourElapsedSeconds}
+              tourTotalSeconds={navData?.recommended_tour?.total_duration_seconds || 0}
+              tourNarration={tourNarration}
+              tourSpeed={tourSpeed}
+              onToggleTourPlay={handleToggleTourPlay}
+              onNextStop={handleNextStop}
+              onPrevStop={handlePrevStop}
+              onSetTourSpeed={setTourSpeed}
+              onSelectBookmark={handleSelectBookmark}
+              onAddBookmark={handleAddBookmark}
+              onExitWalkMode={() => pickTool("select")}
+            />
+
+            <MiniMapOverlay
+              navData={navData}
+              cameraPos={walkPlayerPos}
+              cameraYaw={walkPlayerYaw}
+              activeRoomName={activeRoomName}
+              onNavigateToPoint={(x, z) => {
+                setIsTourPlaying(false);
+                controllerRef.current?.setWalkPose(x, 1.65, z);
+                setWalkPlayerPos([x, 1.65, z]);
+              }}
+              onSelectBookmark={handleSelectBookmark}
+            />
+
+            {/* Mobile Touch Navigation Guide */}
             <div className="pointer-events-none absolute inset-x-0 bottom-16 z-10 flex justify-between px-8 text-[11px] font-mono opacity-80 md:hidden">
               <div className="rounded-md px-2.5 py-1 backdrop-blur-xs" style={{ ...PANEL, color: "var(--text-secondary)" }}>✣ Left 50%: Move</div>
               <div className="rounded-md px-2.5 py-1 backdrop-blur-xs" style={{ ...PANEL, color: "var(--text-secondary)" }}>◎ Right 50%: Look</div>

@@ -34,6 +34,7 @@ from apps.api.routes_intent import estimate_router as intent_estimate
 from apps.api.routes_intent import intent_router
 from apps.api.routes_jobs import activity, jobs, notifications
 from apps.api.routes_measurements import measurements
+from apps.api.routes_navigation import navigation
 from apps.api.routes_misc import evidence, uploads
 from apps.api.routes_procedural import procedural, templates_router
 from apps.api.routes_proposals import pipeline_router, proposals
@@ -80,7 +81,7 @@ app.add_middleware(
 )
 
 # `quality` before `evidence`: /api/evidence/quality must not be captured by /api/evidence/{evidence_id}
-for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, adoptions_router, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, assets_router, usage_router, furniture_router, construction):
+for router in (health, sessions, uploads, quality, evidence, reconstructions, world_status, registration, worlds, adoptions_router, proposals, pipeline_router, artifacts, geo, sites, procedural, templates_router, measurements, query, export, jobs, notifications, activity, system, intent_router, intent_estimate, completion, assistant_tools, assistant, technologies_router, assets_router, usage_router, furniture_router, construction, navigation):
     app.include_router(router)
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

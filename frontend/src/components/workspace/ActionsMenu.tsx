@@ -8,6 +8,7 @@ import {
   Download,
   FolderOpen,
   Hammer,
+  HardHat,
   ImagePlus,
   Layers,
   PanelBottom,
@@ -25,6 +26,7 @@ export interface ActionsMenuHandlers {
   onGenerated: () => void;
   onCompleteInterior: () => void;
   onConstruction: () => void;
+  onConstructionProgress?: () => void;
   onQuery: () => void;
   onExport: () => void;
   onBrowse: () => void;
@@ -85,6 +87,7 @@ export default function ActionsMenu(h: ActionsMenuHandlers) {
       title: "Explore",
       items: [
         { id: "query", label: "Spatial query", icon: Search, run: h.onQuery },
+        { id: "construction-progress", label: "BIM compliance & progress", hint: "Track A", icon: HardHat, run: () => h.onConstructionProgress?.(), testId: "open-construction-progress" },
         { id: "export", label: "Export", icon: Download, run: h.onExport, testId: "open-export" },
         { id: "browse", label: "Worlds, sessions, evidence", icon: FolderOpen, run: h.onBrowse },
         { id: "commands", label: "Command palette", hint: "Ctrl K", icon: Command, run: h.onCommands },

@@ -8,6 +8,7 @@ import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
+import ConstructionProgressModal from "@/components/workspace/ConstructionProgressModal";
 import BuildModal from "@/components/workspace/BuildModal";
 import GeneratedPanel from "@/components/workspace/GeneratedPanel";
 import CompleteInteriorPanel from "@/components/workspace/CompleteInteriorPanel";
@@ -99,6 +100,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
   const [viewMode, setViewMode] = useState<"3d" | "map">("3d");
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [constructionModalOpen, setConstructionModalOpen] = useState(false);
+  const [constructionProgressModalOpen, setConstructionProgressModalOpen] = useState(false);
   const [buildModalOpen, setBuildModalOpen] = useState(false);
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
@@ -663,6 +665,7 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
             onGenerated={() => window.dispatchEvent(new Event("open-generated-panel"))}
             onCompleteInterior={() => window.dispatchEvent(new Event("open-complete-interior"))}
             onConstruction={() => setConstructionModalOpen(true)}
+            onConstructionProgress={() => setConstructionProgressModalOpen(true)}
             onQuery={() => setQueryPanelOpen(true)}
             onExport={() => setExportPanelOpen(true)}
             onBrowse={() => setBrowseOpen(true)}
@@ -960,6 +963,13 @@ export default function SpatialWorkstation({ worldId: propWorldId }: SpatialWork
           refetchVersions();
           window.dispatchEvent(new CustomEvent("frame-all"));
         }}
+      />
+
+      {/* Construction Site Progress & As-Built vs. Plan Verification Modal (Track A) */}
+      <ConstructionProgressModal
+        currentWorldId={worldId}
+        isOpen={constructionProgressModalOpen}
+        onClose={() => setConstructionProgressModalOpen(false)}
       />
     </div>
   );

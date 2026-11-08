@@ -277,7 +277,10 @@ async def test_construction_api_endpoints():
     store = get_store()
     design_wir = _make_sample_design_world()
     site_wir = _make_sample_design_world()
-    site_wir.id = "wld_site_epoch_1" 
+    import uuid
+    suffix = uuid.uuid4().hex[:8]
+    design_wir.id = f"wld_design_{suffix}"
+    site_wir.id = f"wld_site_{suffix}"
 
     # Save to WorldStore
     sv_design = store.save_version(design_wir, parent=None)

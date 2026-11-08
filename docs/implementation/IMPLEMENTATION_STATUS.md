@@ -32,6 +32,10 @@ All Milestone 0 through Milestone 7 tasks are fully implemented and verified wit
 | **Multi-Session World Adoption & Change Review** | **VERIFIED** | Rule 18 manual edit protection, 5-state changeset, alignment scoring: tests/test_world_adoption_review.py, frontend/e2e/adoptions.spec.ts |
 | **Pricing & Stripe Checkout Integration (Task T-7.2)** | **VERIFIED** | Solo Architect ($79/mo) and Studio Pro ($249/mo); Stripe Checkout sessions, portal, HMAC-SHA256 webhooks, scan quota: `tests/test_billing_stripe_task7_2.py`, `frontend/src/components/billing/BillingSection.tsx` |
 | **Single-Job Truth & Honest Status Reporting** | **VERIFIED** | Single active job per world, honest stage progress without fake bars: tests/test_api_single_job_truth.py, frontend/e2e/session-flow.spec.ts |
+| **MASt3R Dense Matcher & DINOv2 Visual Re-ID (Task 13.9)** | **VERIFIED** | Non-commercial gate via REALITY_ALLOW_NC_MODELS, DINOv2 visual re-ID embeddings: tests/test_task_13_9_mast3r_dinov2.py, tests/test_mast3r_dinov2_task13_9.py, reconstruction/matching/mast3r.py, perception/instances/dinov2_reid.py |
+| **Wall-Mounted Fixtures & Crop Pass (Task 8.8)** | **VERIFIED** | HighResCropPass on host walls, ray unprojection, RelationshipKind.MOUNTED_ON: tests/test_task_8_8_fixtures_and_open_vocab.py, engine/pipeline/single_image_fixtures.py |
+| **Frontend Foundation Alignment (Task U.1)** | **VERIFIED** | Single-responsibility foundation table ported to docs/blueprint/14_FRONTEND_UX.md, consistent with docs/blueprint/32_FRONTEND_AUDIT.md §8.1 |
+| **Layer Import Boundaries & Neutral Image I/O (Task 0.6)** | **VERIFIED** | Extracted engine.core.image_io, eliminated cross-layer violations: tests/test_import_boundaries.py |
 
 ## Baseline (recorded 2026-11-04, task 0.5)
 

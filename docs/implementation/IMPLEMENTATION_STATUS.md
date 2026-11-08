@@ -122,7 +122,8 @@ browser-verified. Backlog rows with remaining work: `PENDING_IMPLEMENTATION.md` 
 | Extended capture ingestion: HEIC/HEIF, 360° panoramas, point clouds (PLY/PCD/LAS), meshes (OBJ/glTF/GLB) (Task 13.3) | VERIFIED | 	ests/test_task_13_3_extended_ingestion.py, evidence/image_check.py, POST /api/uploads/check, POST /api/reconstructions |
 | Floor plan export: SVG, DXF, PDF, multi-sheet PDF, room schedule (Task 13.5) | VERIFIED | 	ests/test_floorplan_export.py, 	ests/test_multisheet_floorplan_pdf.py, exporters/floorplan.py, POST /api/worlds/{id}/export |
 | World card menu, Trash/Archived views, delete confirmation (Task 1.4) | VERIFIED | frontend/src/components/ui/WorldCard.tsx, frontend/e2e/worlds-lifecycle.spec.ts, /worlds?status=trash |
-| SAM 2 segmentation backend & comparison benchmarks vs SAM 1 (Task 13.6) | VERIFIED | `perception/segmentation/sam2_backend.py`, `tests/test_sam2_backend.py`, `tests/test_vram_release.py`, `perception/model_registry.py` | 
+| SAM 2 segmentation backend & comparison benchmarks vs SAM 1 (Task 13.6) | VERIFIED | `perception/segmentation/sam2_backend.py`, `tests/test_sam2_backend.py`, `tests/test_vram_release.py`, `perception/model_registry.py` |
+| Import boundary enforcement & image_io neutral extraction (Task 0.6) | VERIFIED | `engine/core/image_io.py`, `tests/test_import_boundaries.py` | 
 | Learned door/window/furniture detection (O1/O2) | BLOCKED | detector choice needs the user; geometry-only opening host stays |
 | Surface colour + texture atlas (M1/M2), material hypotheses (M3) | PARTIAL / EXPERIMENTAL | `tests/test_room_surfaces.py`, `tests/test_material_hypotheses.py`; hypotheses ESTIMATED, `asserted=False`, confidence <= 0.4, not wired to physics |
 | Viewer room shell + atlas texture + evidence summary (V1/V2) | EXPERIMENTAL | frontend 171/171 contract tests, `tsc --noEmit` exit 0, `tests/test_api_world_artifacts.py`; no browser run |

@@ -43,13 +43,11 @@ export function SectionDrawingModal({
   const [scale, setScale] = useState<string>("1:100");
   const [sheetSize, setSheetSize] = useState<SheetSize>("A2");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !worldId) return;
     let active = true;
-    setIsLoading(true);
 
     fetchDrawingPresets(worldId)
       .then((res) => {
@@ -62,9 +60,6 @@ export function SectionDrawingModal({
       })
       .catch((err) => {
         console.warn("Failed to load drawing presets:", err);
-      })
-      .finally(() => {
-        if (active) setIsLoading(false);
       });
 
     return () => {
@@ -74,7 +69,6 @@ export function SectionDrawingModal({
 
   if (!isOpen) return null;
 
-  const currentMeta = getDrawingTypeMeta(selectedType);
   const svgUrl = getDrawingSvgUrl(worldId, {
     drawingType: selectedType,
     scaleLabel: scale,

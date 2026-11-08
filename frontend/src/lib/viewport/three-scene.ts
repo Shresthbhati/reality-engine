@@ -23,6 +23,11 @@ import { shouldAutoFrame } from "./autoframe";
 import { buildOutdoor, derivePalette, emptyOutdoorResult, meshBounds, partMesh, type OutdoorPart, type OutdoorResult } from "./outdoor-model";
 import type { MeasureKind, Vec3 } from "./measure-model";
 import { STRUCTURE_COLORS, choosePointDisplay, decimatePoints, type PointDisplayMode, type StructurePoint } from "./structure-points-model";
+import {
+  getTemporalChangeColor,
+  type TemporalEntityChangeItem,
+  type SpatialChangeClusterItem,
+} from "../studio/temporal-model";
 import { TransformGizmoController } from "../studio/transform-gizmo.ts";
 import { extractRoomBoundariesFromWorld } from "../studio/room-boundary-snap.ts";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "../studio/transform-types.ts";
@@ -198,6 +203,7 @@ export class WorldSceneController {
     topology: null as THREE.Group | null,
     shell: null as THREE.Group | null,
     splats: null as THREE.InstancedMesh | null,
+    temporalClusters: null as THREE.Group | null,
   };
 
   private outdoor: OutdoorResult = emptyOutdoorResult();
@@ -249,6 +255,8 @@ export class WorldSceneController {
   private lastWalkFrameTime = 0;
   private dimGroup: THREE.Group | null = null;
   private showDimensions = false;
+  private temporalChanges: Map<string, TemporalEntityChangeItem> | null = null;
+  private temporalSplitRatio = 0.5;
 
   private entityMeshes = new Map<string, THREE.Mesh>();
   private selectedEntityId: string | null = null;
@@ -862,6 +870,20 @@ export class WorldSceneController {
         }
       });
       this.layers.topology = null;
+    }
+    if (this.layers.temporalClusters) {
+      this.root.remove(this.layers.temporalClusters);
+      this.layers.temporalClusters.traverse((child) => {
+        if (child instanceof THREE.LineSegments || child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      this.layers.temporalClusters = null;
     }
   }
 
@@ -2470,6 +2492,125 @@ export class WorldSceneController {
         }
       }
     }
+  }
+
+  public setTemporalOverlay(
+    changes: TemporalEntityChangeItem[] | null,
+    splitRatio = 0.5
+  ) {
+    this.temporalSplitRatio = splitRatio;
+    if (!changes || changes.length === 0) {
+      this.temporalChanges = null;
+      for (const mesh of this.entityMeshes.values()) {
+        const mat = mesh.material as THREE.MeshLambertMaterial;
+        if (mesh.userData.baseColor) {
+          mat.color.set(mesh.userData.baseColor);
+        }
+        mat.emissive.setHex(0x000000);
+        mat.emissiveIntensity = 0;
+      }
+      this.applyEntityFilter(null);
+      return;
+    }
+
+    this.temporalChanges = new Map();
+    for (const c of changes) {
+      this.temporalChanges.set(c.entity_id, c);
+    }
+    this.applyTemporalState();
+  }
+
+  public setTemporalSplitRatio(ratio: number) {
+    this.temporalSplitRatio = Math.max(0, Math.min(1, ratio));
+    if (this.temporalChanges) {
+      this.applyTemporalState();
+    }
+  }
+
+  private applyTemporalState() {
+    if (!this.temporalChanges) return;
+
+    for (const [eid, mesh] of this.entityMeshes.entries()) {
+      const mat = mesh.material as THREE.MeshLambertMaterial;
+      const change = this.temporalChanges.get(eid);
+
+      if (!change) {
+        mat.color.setHex(0x71717a);
+        mat.emissive.setHex(0x000000);
+        mat.emissiveIntensity = 0;
+        mat.opacity = 0.12;
+        mesh.visible = this.layerVisibility.entities;
+        continue;
+      }
+
+      const colorToken = getTemporalChangeColor(change.change_kind);
+      mat.color.setHex(colorToken.hex);
+      mat.emissive.setHex(colorToken.hex);
+      mat.emissiveIntensity = 0.25;
+
+      if (this.temporalSplitRatio <= 0.05) {
+        mat.opacity = change.change_kind === "added" ? 0.05 : 0.85;
+      } else if (this.temporalSplitRatio >= 0.95) {
+        mat.opacity = change.change_kind === "removed" ? 0.05 : 0.85;
+      } else {
+        mat.opacity = 0.85;
+      }
+      mesh.visible = true;
+    }
+  }
+
+  public setTemporalClusters(clusters: SpatialChangeClusterItem[] | null) {
+    if (this.layers.temporalClusters) {
+      this.root.remove(this.layers.temporalClusters);
+      this.layers.temporalClusters.traverse((child) => {
+        if (child instanceof THREE.LineSegments || child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      this.layers.temporalClusters = null;
+    }
+
+    if (!clusters || clusters.length === 0) return;
+
+    const group = new THREE.Group();
+    for (const cl of clusters) {
+      const dx = Math.max(0.1, cl.bounds_max[0] - cl.bounds_min[0]);
+      const dy = Math.max(0.1, cl.bounds_max[1] - cl.bounds_min[1]);
+      const dz = Math.max(0.1, cl.bounds_max[2] - cl.bounds_min[2]);
+
+      const geo = new THREE.BoxGeometry(dx, dy, dz);
+      const isAdded = cl.change_kind === "added";
+      const hexCol = isAdded ? 0x10b981 : 0xf43f5e;
+
+      const mat = new THREE.MeshLambertMaterial({
+        color: hexCol,
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false,
+      });
+
+      const boxMesh = new THREE.Mesh(geo, mat);
+      boxMesh.position.set(cl.centroid[0], cl.centroid[1], cl.centroid[2]);
+
+      const wireGeo = new THREE.EdgesGeometry(geo);
+      const wireMat = new THREE.LineBasicMaterial({
+        color: hexCol,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const wire = new THREE.LineSegments(wireGeo, wireMat);
+      boxMesh.add(wire);
+
+      group.add(boxMesh);
+    }
+
+    this.layers.temporalClusters = group;
+    this.root.add(group);
   }
 
   public selectEntity(id: string | null, updateCamera = false) {

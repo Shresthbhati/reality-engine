@@ -98,7 +98,14 @@ import { TemporalDiffSlider } from "@/components/studio/TemporalDiffSlider";
 import { SpatialIntelligencePanel } from "@/components/studio/SpatialIntelligencePanel";
 import { TechnologiesPanel } from "@/components/studio/TechnologiesPanel";
 import type { SpatialIntelligenceSummary } from "@/lib/studio/spatial-intelligence-model";
-import type { TemporalDiffSummary } from "@/lib/studio/temporal-model";
+import type {
+  TemporalDiffSummary,
+  TemporalEpochSummary,
+} from "@/lib/studio/temporal-model";
+import {
+  fetchWorldEpochs,
+  fetchTemporalCompare,
+} from "@/lib/api/temporal";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "@/lib/studio/transform-types";
 
 const NO_SHELL_REASON =
@@ -275,6 +282,53 @@ export default function World3DViewport({
 
   const [showTemporalDiff, setShowTemporalDiff] = useState(false);
   const [temporalSplitRatio, setTemporalSplitRatio] = useState(0.5);
+  const [activeTemporalDiff, setActiveTemporalDiff] = useState<TemporalDiffSummary | null>(null);
+  const [availableEpochs, setAvailableEpochs] = useState<TemporalEpochSummary[]>([]);
+  const [isTemporalLoading, setIsTemporalLoading] = useState(false);
+  const effectiveTemporalDiff = resolvedTemporalDiff ?? activeTemporalDiff;
+
+  const handleToggleTemporal = useCallback(async () => {
+    const next = !showTemporalDiff;
+    setShowTemporalDiff(next);
+    if (next && !resolvedTemporalDiff && world?.id && availableEpochs.length === 0) {
+      setIsTemporalLoading(true);
+      try {
+        const epData = await fetchWorldEpochs(world.id);
+        if (epData.epochs) {
+          setAvailableEpochs(epData.epochs);
+          if (epData.epochs.length >= 2) {
+            const cmp = await fetchTemporalCompare(world.id, {
+              fromEpoch: epData.epochs[0].epoch_id,
+              toEpoch: epData.epochs[epData.epochs.length - 1].epoch_id,
+              includeSpatialClusters: true,
+            });
+            setActiveTemporalDiff(cmp);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load epochs or temporal comparison:", err);
+      } finally {
+        setIsTemporalLoading(false);
+      }
+    }
+  }, [showTemporalDiff, resolvedTemporalDiff, world, availableEpochs.length]);
+
+  const handleSelectEpochs = useCallback(async (fromEpochId: string, toEpochId: string) => {
+    if (!world?.id) return;
+    setIsTemporalLoading(true);
+    try {
+      const cmp = await fetchTemporalCompare(world.id, {
+        fromEpoch: fromEpochId,
+        toEpoch: toEpochId,
+        includeSpatialClusters: true,
+      });
+      setActiveTemporalDiff(cmp);
+    } catch (err) {
+      console.warn("Failed to compare epochs:", err);
+    } finally {
+      setIsTemporalLoading(false);
+    }
+  }, [world]);
 
   const resolvedSpatialIntelligence = useMemo<SpatialIntelligenceSummary | null>(() => {
     if (spatialIntelligenceProp) return spatialIntelligenceProp;
@@ -472,6 +526,19 @@ export default function World3DViewport({
     if (!controller || !highlightedEvidenceId) return;
     controller.flyToCamera(highlightedEvidenceId);
   }, [highlightedEvidenceId]);
+
+  // Multi-Epoch 4D Temporal overlay: colour entities and display volumetric change clusters
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    if (showTemporalDiff && effectiveTemporalDiff) {
+      controller.setTemporalOverlay(effectiveTemporalDiff.changes, temporalSplitRatio);
+      controller.setTemporalClusters(effectiveTemporalDiff.spatial_clusters ?? null);
+    } else {
+      controller.setTemporalOverlay(null);
+      controller.setTemporalClusters(null);
+    }
+  }, [showTemporalDiff, effectiveTemporalDiff, temporalSplitRatio, world, points, cameras, mesh]);
 
   // Quality overlay: colour entities by band. Re-applied after every scene rebuild, cleared when off.
   useEffect(() => {
@@ -1265,12 +1332,18 @@ export default function World3DViewport({
         )}
 
         {/* Multi-Epoch Temporal Diff Comparison Slider Overlay */}
-        {showTemporalDiff && resolvedTemporalDiff && (
+        {showTemporalDiff && (effectiveTemporalDiff || isTemporalLoading) && (
           <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-20 w-[480px] max-w-[calc(100%-2rem)] pointer-events-auto">
             <TemporalDiffSlider
-              diff={resolvedTemporalDiff}
+              diff={effectiveTemporalDiff}
               splitRatio={temporalSplitRatio}
-              onSplitRatioChange={setTemporalSplitRatio}
+              onSplitRatioChange={(r) => {
+                setTemporalSplitRatio(r);
+                controllerRef.current?.setTemporalSplitRatio(r);
+              }}
+              availableEpochs={availableEpochs}
+              onSelectEpochs={handleSelectEpochs}
+              isLoading={isTemporalLoading}
               selectedEntityId={selectedEntityId}
               onSelectEntity={(id) => {
                 onSelectEntity(id);
@@ -1381,15 +1454,15 @@ export default function World3DViewport({
               </IconButton>
             </>
           )}
-          {resolvedTemporalDiff && resolvedTemporalDiff.changes.length > 0 && (
+          {(effectiveTemporalDiff || world?.id) && (
             <>
               <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
               <IconButton
-                label="Temporal epoch diffing"
+                label="4D As-Built Temporal Delta & Epoch Comparison"
                 active={showTemporalDiff}
-                onClick={() => setShowTemporalDiff((v) => !v)}
+                onClick={handleToggleTemporal}
               >
-                <History className="w-4 h-4 text-success" />
+                <History className="w-4 h-4 text-warning" />
               </IconButton>
             </>
           )}

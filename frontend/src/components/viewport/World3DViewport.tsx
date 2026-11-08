@@ -32,6 +32,7 @@ import {
   ZoomOut,
   Crosshair,
   Scissors,
+  FileText,
   Download,
   MoveHorizontal,
   Compass,
@@ -112,6 +113,7 @@ import { ClashDetectionPanel } from "@/components/studio/ClashDetectionPanel";
 import type { ClashItem, ClashReportSummary } from "@/lib/studio/clash-bcf-model";
 import { fetchWorldClashes, downloadBcfZip } from "@/lib/api/bcf";
 import { SurfaceQualityPanel } from "@/components/studio/SurfaceQualityPanel";
+import { SectionDrawingModal } from "@/components/studio/SectionDrawingModal";
 import type {
   HeatmapData,
   SurfaceQualityReport,
@@ -346,6 +348,9 @@ export default function World3DViewport({
       setIsTemporalLoading(false);
     }
   }, [world]);
+
+  // Architectural Section & Elevation Drawings state
+  const [showSectionDrawings, setShowSectionDrawings] = useState(false);
 
   // Surface Quality & ASTM E1155 state and handlers
   const [showSurfaceQuality, setShowSurfaceQuality] = useState(false);
@@ -1519,6 +1524,16 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Architectural Section & Elevation Drawings Modal */}
+        {showSectionDrawings && (
+          <SectionDrawingModal
+            worldId={world?.id ?? ""}
+            projectName={world?.name || "Architectural Reality Model"}
+            isOpen={showSectionDrawings}
+            onClose={() => setShowSectionDrawings(false)}
+          />
+        )}
+
         {/* Surface Quality & ASTM E1155 Panel Overlay */}
         {showSurfaceQuality && (
           <div className="absolute top-14 right-3 z-30 pointer-events-auto">
@@ -1669,6 +1684,14 @@ export default function World3DViewport({
                 onClick={handleToggleSurfaceQuality}
               >
                 <Ruler className="w-4 h-4 text-accent" />
+              </IconButton>
+
+              <IconButton
+                label="Architectural Sections & Elevations (DXF/SVG)"
+                active={showSectionDrawings}
+                onClick={() => setShowSectionDrawings(true)}
+              >
+                <FileText className="w-4 h-4 text-accent" />
               </IconButton>
             </>
           )}

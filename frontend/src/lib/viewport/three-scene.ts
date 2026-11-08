@@ -10,6 +10,12 @@ import type {
   WorldIR,
 } from "@/types/worldir";
 import { pointsBounds, robustPointsBounds } from "./loaders";
+import {
+  parseSplatBuffer,
+  parsePlySplatBuffer,
+  type ParsedSplatCloud,
+  type HybridRenderMode,
+} from "./splat-model";
 import { isOversizedEntity } from "./oversized";
 import { atlasUrl, buildRoomShellParts, confidenceRamp, partMaterial, DEFAULT_CONF_PALETTE, type ConfidencePalette, type ShellKind, type ShellPart, type ShellRenderMode } from "./room-shell-model";
 import { centroid, cutawayHides, dollyForFov, nearestCenter, parseHexColor, upAxisOf, ORTHO_FOV, PERSPECTIVE_FOV } from "./view-model";
@@ -45,7 +51,11 @@ export interface ViewportLayers {
   topology: boolean;
   /** the real room shell (floor, walls with window openings, ceiling layers, furniture) built from measured WorldIR */
   shell: boolean;
+  /** 3D Gaussian Splats photorealistic capture layer */
+  splats?: boolean;
 }
+
+export type { HybridRenderMode };
 
 export type RenderMode = ShellRenderMode;
 
@@ -187,6 +197,7 @@ export class WorldSceneController {
     selectionOutline: null as THREE.LineSegments | null,
     topology: null as THREE.Group | null,
     shell: null as THREE.Group | null,
+    splats: null as THREE.InstancedMesh | null,
   };
 
   private outdoor: OutdoorResult = emptyOutdoorResult();
@@ -203,6 +214,11 @@ export class WorldSceneController {
   private shellSolid: THREE.Object3D[] = [];
   private shellWire: THREE.Object3D[] = [];
   private renderMode: RenderMode = "solid";
+  // Gaussian Splats & Hybrid Viewport
+  private splatCloud: ParsedSplatCloud | null = null;
+  private splatOpacity = 1.0;
+  private splatScaleMultiplier = 1.0;
+  private hybridMode: HybridRenderMode = "hybrid";
   /**
    * All world content lives under `root`. Scene space is Y-up; a world compiled Z-up (metadata.compiled_from.up) is
    * stood upright by rotating this group, so data coordinates (measurements, saved points) stay in the data frame.
@@ -776,6 +792,7 @@ export class WorldSceneController {
 
   private clearSceneLayers() {
     this.disposePointLayer();
+    this.disposeSplats();
     if (this.layers.entities) {
       this.root.remove(this.layers.entities);
       for (const mesh of this.entityMeshes.values()) {
@@ -1786,6 +1803,9 @@ export class WorldSceneController {
     }
     if (this.layers.mesh) {
       this.layers.mesh.visible = this.layerVisibility.mesh;
+    }
+    if (layers.splats !== undefined) {
+      this.setSplatVisibility(layers.splats);
     }
 
     if (layers.topology !== undefined) {
@@ -3113,10 +3133,190 @@ export class WorldSceneController {
       this.transformGizmo.dispose();
       this.transformGizmo = null;
     }
+    this.disposeSplats();
     this.controls.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement) {
       this.renderer.domElement.parentElement.removeChild(this.renderer.domElement);
+    }
+  }
+
+  // ── Gaussian Splatting & Hybrid Viewport (Track C) ──────────────────────
+
+  /**
+   * Load and render Gaussian Splat primitives from binary buffer (.splat or .ply).
+   */
+  public loadSplatsFromBuffer(buffer: ArrayBuffer, format: "splat" | "ply" = "splat"): ParsedSplatCloud {
+    this.disposeSplats();
+    const cloud = format === "ply" ? parsePlySplatBuffer(buffer) : parseSplatBuffer(buffer);
+    this.splatCloud = cloud;
+
+    if (cloud.count === 0) return cloud;
+
+    // Unit plane billboard geometry
+    const geometry = new THREE.PlaneGeometry(1, 1);
+
+    // Custom Gaussian radial falloff shader material
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uOpacity: { value: this.splatOpacity },
+        uScaleMultiplier: { value: this.splatScaleMultiplier },
+      },
+      vertexShader: `
+        attribute vec4 aRotation;
+        attribute vec3 aScale;
+        attribute float aOpacity;
+
+        varying vec2 vUv;
+        varying vec3 vColor;
+        varying float vOpacity;
+
+        uniform float uOpacity;
+        uniform float uScaleMultiplier;
+
+        vec3 rotateVector(vec4 q, vec3 v) {
+          return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+        }
+
+        void main() {
+          vUv = uv;
+          vColor = instanceColor;
+          vOpacity = aOpacity * uOpacity;
+
+          vec3 localPos = position * aScale * uScaleMultiplier;
+          vec3 rotatedLocal = rotateVector(aRotation, localPos);
+
+          #ifdef USE_INSTANCING
+            vec4 worldPos = instanceMatrix * vec4(rotatedLocal, 1.0);
+          #else
+            vec4 worldPos = modelMatrix * vec4(rotatedLocal, 1.0);
+          #endif
+
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        varying vec3 vColor;
+        varying float vOpacity;
+
+        void main() {
+          vec2 coord = (vUv - vec2(0.5)) * 2.0;
+          float r2 = dot(coord, coord);
+          if (r2 > 1.0) discard;
+
+          float alpha = vOpacity * exp(-2.5 * r2);
+          if (alpha < 0.02) discard;
+
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      side: THREE.DoubleSide,
+    });
+
+    const instMesh = new THREE.InstancedMesh(geometry, material, cloud.count);
+
+    instMesh.geometry.setAttribute("aRotation", new THREE.InstancedBufferAttribute(cloud.rotations, 4));
+    instMesh.geometry.setAttribute("aScale", new THREE.InstancedBufferAttribute(cloud.scales, 3));
+    instMesh.geometry.setAttribute("aOpacity", new THREE.InstancedBufferAttribute(cloud.opacities, 1));
+
+    const dummyMatrix = new THREE.Matrix4();
+    const dummyColor = new THREE.Color();
+
+    for (let i = 0; i < cloud.count; i++) {
+      dummyMatrix.setPosition(cloud.positions[i * 3], cloud.positions[i * 3 + 1], cloud.positions[i * 3 + 2]);
+      instMesh.setMatrixAt(i, dummyMatrix);
+
+      dummyColor.setRGB(cloud.colors[i * 3] / 255.0, cloud.colors[i * 3 + 1] / 255.0, cloud.colors[i * 3 + 2] / 255.0);
+      instMesh.setColorAt(i, dummyColor);
+    }
+
+    instMesh.instanceMatrix.needsUpdate = true;
+    if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
+
+    instMesh.frustumCulled = false;
+    instMesh.visible = (this.layerVisibility.splats ?? true) && this.hybridMode !== "cad_only";
+
+    this.layers.splats = instMesh;
+    this.root.add(instMesh);
+    this.applyHybridRenderMode();
+
+    return cloud;
+  }
+
+  public setSplatVisibility(visible: boolean) {
+    this.layerVisibility.splats = visible;
+    if (this.layers.splats) {
+      this.layers.splats.visible = visible && this.hybridMode !== "cad_only";
+    }
+  }
+
+  public setSplatOpacity(opacity: number) {
+    this.splatOpacity = Math.max(0.0, Math.min(1.0, opacity));
+    if (this.layers.splats) {
+      const mat = this.layers.splats.material as THREE.ShaderMaterial;
+      if (mat.uniforms && mat.uniforms.uOpacity) {
+        mat.uniforms.uOpacity.value = this.splatOpacity;
+      }
+    }
+  }
+
+  public setSplatScale(multiplier: number) {
+    this.splatScaleMultiplier = Math.max(0.1, Math.min(10.0, multiplier));
+    if (this.layers.splats) {
+      const mat = this.layers.splats.material as THREE.ShaderMaterial;
+      if (mat.uniforms && mat.uniforms.uScaleMultiplier) {
+        mat.uniforms.uScaleMultiplier.value = this.splatScaleMultiplier;
+      }
+    }
+  }
+
+  public setHybridRenderMode(mode: HybridRenderMode) {
+    this.hybridMode = mode;
+    this.applyHybridRenderMode();
+  }
+
+  private applyHybridRenderMode() {
+    const isCadOnly = this.hybridMode === "cad_only";
+    const isSplatsOnly = this.hybridMode === "splats_only";
+
+    if (this.layers.splats) {
+      this.layers.splats.visible = !isCadOnly && (this.layerVisibility.splats ?? true);
+    }
+    if (this.layers.shell) {
+      this.layers.shell.visible = !isSplatsOnly && this.layerVisibility.shell;
+    }
+    if (this.layers.points) {
+      this.layers.points.visible = isCadOnly ? this.layerVisibility.points : false;
+    }
+    if (this.layers.mesh) {
+      this.layers.mesh.visible = !isSplatsOnly && this.layerVisibility.mesh;
+    }
+  }
+
+  public getSplatState() {
+    return {
+      loaded: this.layers.splats !== null,
+      count: this.splatCloud?.count ?? 0,
+      bounds: this.splatCloud?.bounds ?? null,
+      visible: (this.layerVisibility.splats ?? true) && this.hybridMode !== "cad_only",
+      opacity: this.splatOpacity,
+      scaleMultiplier: this.splatScaleMultiplier,
+      hybridMode: this.hybridMode,
+    };
+  }
+
+  public disposeSplats() {
+    if (this.layers.splats) {
+      this.root.remove(this.layers.splats);
+      this.layers.splats.geometry.dispose();
+      (this.layers.splats.material as THREE.Material).dispose();
+      this.layers.splats = null;
+      this.splatCloud = null;
     }
   }
 }

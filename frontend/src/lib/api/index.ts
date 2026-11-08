@@ -31,6 +31,7 @@ export * from "./corrections";
 export * from "./geo-anchor-model";
 export * from "./construction";
 export * from "./navigation";
+export * from "./splats";
 
 /**
  * The row shapes the API layer emits are the UI's view model; re-exported here

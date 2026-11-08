@@ -98,8 +98,8 @@ def test_terrain_from_point_cloud():
     assert len(mesh.faces) > 0
 
     mesh_data = mesh.to_mesh_data()
-    assert mesh_data.vertices.shape[0] == len(mesh.vertices)
-    assert mesh_data.faces.shape[0] == len(mesh.faces)
+    assert len(mesh_data.vertices) == len(mesh.vertices)
+    assert len(mesh_data.faces) == len(mesh.faces)
     assert mesh_data.units == "meter"
 
 

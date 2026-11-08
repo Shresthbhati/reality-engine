@@ -219,7 +219,7 @@ Session and World stay the only primary concepts; the UI shows backend state onl
 | 13.4 | Learned room layout (PolyLayout-class), line detection, non-Manhattan rooms | DONE (perception/architecture/non_rectangular.py; verified by tests/test_non_rectangular_rooms.py) |
 | 13.5 | Floor plan SVG/PDF export | DONE |
 | 13.6 | SAM 2 behind the segmentation interface (benchmark vs SAM 1) | DONE (perception/segmentation/sam2_backend.py; verified by tests/test_sam2_backend.py) |
-| 13.7 | Outdoor perception: vegetation, roads, terrain, facades, roofs | TODO |
+| 13.7 | Outdoor perception: vegetation, roads, terrain, facades, roofs | DONE (perception/environment/outdoor.py; verified by tests/test_outdoor_perception_task13_7.py) |
 | 13.8 | Colour accuracy (ΔE under controlled capture) | TODO |
 | 13.9 | MASt3R (NC flag) and DINOv2 re-ID — adopt only if benchmarks beat current | TODO |
 

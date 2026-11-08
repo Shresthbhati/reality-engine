@@ -36,6 +36,8 @@ from world_ir.schema_v1 import (
     Geometry,
     GeometryType,
     Measurement,
+    Relationship,
+    RelationshipKind,
     Vector3,
 )
 from perception.entities import taxonomy
@@ -66,6 +68,22 @@ class FootpathRefused(OutdoorRefused):
 
 class StreetFurnitureRefused(OutdoorRefused):
     """Points do not demonstrate street furniture dimensions."""
+
+
+class ShrubRefused(OutdoorRefused):
+    """Points do not demonstrate shrub / bush structure."""
+
+
+class TerrainRefused(OutdoorRefused):
+    """Points do not demonstrate a ground terrain surface."""
+
+
+class FacadeRefused(OutdoorRefused):
+    """Points do not demonstrate an exterior building facade plane."""
+
+
+class RoofRefused(OutdoorRefused):
+    """Points do not demonstrate a building roof structure."""
 
 
 # -----------------------------------------------------------------------------
@@ -226,6 +244,156 @@ class StreetFurnitureFit:
             "center": list(self.center),
             "dimensions_m": [round(d, 3) for d in self.dimensions_m],
             "height_m": round(self.height_m, 3),
+            "confidence": round(self.confidence, 3),
+            "point_count": self.point_count,
+            "bounds_min": list(self.bounds_min),
+            "bounds_max": list(self.bounds_max),
+        }
+
+
+@dataclass(frozen=True)
+class ShrubFit:
+    """A measured shrub/bush/hedge: compact volumetric vegetation cluster."""
+
+    center: Point3
+    dimensions_m: Tuple[float, float, float]
+    spread_radius_m: float
+    height_m: float
+    ground_contact_z: float
+    confidence: float
+    point_count: int
+    bounds_min: Point3
+    bounds_max: Point3
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "entity_class": "vegetation.shrub",
+            "center": list(self.center),
+            "dimensions_m": [round(d, 3) for d in self.dimensions_m],
+            "spread_radius_m": round(self.spread_radius_m, 3),
+            "height_m": round(self.height_m, 3),
+            "ground_contact_z": round(self.ground_contact_z, 3),
+            "confidence": round(self.confidence, 3),
+            "point_count": self.point_count,
+            "bounds_min": list(self.bounds_min),
+            "bounds_max": list(self.bounds_max),
+        }
+
+
+@dataclass(frozen=True)
+class TerrainFit:
+    """A measured ground terrain surface: elevation profile, slope, and aspect."""
+
+    elevation_min_m: float
+    elevation_max_m: float
+    elevation_mean_m: float
+    elevation_range_m: float
+    area_m2: float
+    mean_slope_deg: float
+    max_slope_deg: float
+    dominant_aspect_deg: float
+    roughness_rms_m: float
+    center: Point3
+    confidence: float
+    point_count: int
+    bounds_min: Point3
+    bounds_max: Point3
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "entity_class": "exterior.terrain",
+            "elevation_min_m": round(self.elevation_min_m, 3),
+            "elevation_max_m": round(self.elevation_max_m, 3),
+            "elevation_mean_m": round(self.elevation_mean_m, 3),
+            "elevation_range_m": round(self.elevation_range_m, 3),
+            "area_m2": round(self.area_m2, 2),
+            "mean_slope_deg": round(self.mean_slope_deg, 1),
+            "max_slope_deg": round(self.max_slope_deg, 1),
+            "dominant_aspect_deg": round(self.dominant_aspect_deg, 1),
+            "roughness_rms_m": round(self.roughness_rms_m, 4),
+            "center": list(self.center),
+            "confidence": round(self.confidence, 3),
+            "point_count": self.point_count,
+            "bounds_min": list(self.bounds_min),
+            "bounds_max": list(self.bounds_max),
+        }
+
+
+@dataclass(frozen=True)
+class FacadeFit:
+    """A measured exterior building facade: vertical plane with compass azimuth."""
+
+    normal: Vec3
+    plane_d: float
+    center: Point3
+    width_m: float
+    height_m: float
+    area_m2: float
+    base_elevation_m: float
+    top_elevation_m: float
+    azimuth_deg: float
+    rms_residual_m: float
+    confidence: float
+    point_count: int
+    bounds_min: Point3
+    bounds_max: Point3
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "entity_class": "exterior.facade",
+            "normal": list(self.normal),
+            "plane_d": round(self.plane_d, 4),
+            "center": list(self.center),
+            "width_m": round(self.width_m, 3),
+            "height_m": round(self.height_m, 3),
+            "area_m2": round(self.area_m2, 2),
+            "base_elevation_m": round(self.base_elevation_m, 3),
+            "top_elevation_m": round(self.top_elevation_m, 3),
+            "azimuth_deg": round(self.azimuth_deg, 1),
+            "rms_residual_m": round(self.rms_residual_m, 4),
+            "confidence": round(self.confidence, 3),
+            "point_count": self.point_count,
+            "bounds_min": list(self.bounds_min),
+            "bounds_max": list(self.bounds_max),
+        }
+
+
+@dataclass(frozen=True)
+class RoofFit:
+    """A measured exterior roof: pitch, orientation, footprint and elevation."""
+
+    normal: Vec3
+    plane_d: float
+    center: Point3
+    width_m: float
+    length_m: float
+    pitch_deg: float
+    roof_type: str  # "flat" | "pitched"
+    ridge_elevation_m: float
+    eave_elevation_m: float
+    surface_area_m2: float
+    projected_area_m2: float
+    azimuth_deg: float
+    confidence: float
+    point_count: int
+    bounds_min: Point3
+    bounds_max: Point3
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "entity_class": "exterior.roof",
+            "normal": list(self.normal),
+            "plane_d": round(self.plane_d, 4),
+            "center": list(self.center),
+            "width_m": round(self.width_m, 3),
+            "length_m": round(self.length_m, 3),
+            "pitch_deg": round(self.pitch_deg, 1),
+            "roof_type": self.roof_type,
+            "ridge_elevation_m": round(self.ridge_elevation_m, 3),
+            "eave_elevation_m": round(self.eave_elevation_m, 3),
+            "surface_area_m2": round(self.surface_area_m2, 2),
+            "projected_area_m2": round(self.projected_area_m2, 2),
+            "azimuth_deg": round(self.azimuth_deg, 1),
             "confidence": round(self.confidence, 3),
             "point_count": self.point_count,
             "bounds_min": list(self.bounds_min),
@@ -600,12 +768,291 @@ def fit_street_furniture(
     )
 
 
+def fit_shrub(
+    points: Sequence[Point3],
+    world_up: Vec3 = (0.0, 0.0, 1.0),
+) -> ShrubFit:
+    """Fit a vegetation shrub, bush, or hedge cluster from 3D points."""
+    pts = np.asarray(points, dtype=np.float64)
+    if len(pts) < 8:
+        raise ShrubRefused(f"Insufficient points ({len(pts)} < 8) to fit shrub")
+
+    up = _normalize(np.asarray(world_up, dtype=np.float64))
+    centroid = np.mean(pts, axis=0)
+    bmin, bmax = _measure_bounds(pts)
+
+    dx = float(bmax[0] - bmin[0])
+    dy = float(bmax[1] - bmin[1])
+    dz = float(bmax[2] - bmin[2])
+    max_dim = max(dx, dy, dz)
+
+    # Taxonomy size prior for vegetation.shrub: [0.3, 5.0]
+    shrub_meta = taxonomy.get("vegetation.shrub")
+    lo, hi = shrub_meta.size_m
+    if max_dim < lo * 0.7 or max_dim > hi * 1.3:
+        raise ShrubRefused(
+            f"Dimensions {max_dim:.2f}m outside shrub plausibility [{lo}, {hi}]m"
+        )
+
+    spread_radius = float(np.hypot(dx, dy) / 2.0)
+    if dz > 4.0 and (dz / max(0.1, spread_radius)) > 3.0:
+        raise ShrubRefused("Cluster exhibits tall slender aspect ratio typical of a tree, not a shrub")
+
+    ground_contact = float(bmin[2])
+    confidence = float(np.clip(min(1.0, len(pts) / 20.0), 0.35, 0.90))
+
+    return ShrubFit(
+        center=_to_point3(centroid),
+        dimensions_m=(dx, dy, dz),
+        spread_radius_m=spread_radius,
+        height_m=dz,
+        ground_contact_z=ground_contact,
+        confidence=confidence,
+        point_count=len(pts),
+        bounds_min=bmin,
+        bounds_max=bmax,
+    )
+
+
+def fit_terrain(
+    points: Sequence[Point3],
+    world_up: Vec3 = (0.0, 0.0, 1.0),
+) -> TerrainFit:
+    """Fit a ground terrain surface from 3D points."""
+    pts = np.asarray(points, dtype=np.float64)
+    if len(pts) < 12:
+        raise TerrainRefused(f"Insufficient points ({len(pts)} < 12) to fit terrain surface")
+
+    up = _normalize(np.asarray(world_up, dtype=np.float64))
+    centroid = np.mean(pts, axis=0)
+    centered = pts - centroid
+
+    _, _, vh = np.linalg.svd(centered)
+    normal = vh[2, :]
+    if np.dot(normal, up) < 0.0:
+        normal = -normal
+
+    # Terrain surface normal must be largely upward (|normal . up| >= 0.34, slope <= 70 deg)
+    up_dot = float(np.dot(normal, up))
+    if up_dot < 0.34:
+        raise TerrainRefused(
+            f"Surface is too steep for terrain (|normal . up| = {up_dot:.2f} < 0.34, slope > 70 deg)"
+        )
+
+    trend_slope_deg = float(math.degrees(math.acos(np.clip(up_dot, 0.0, 1.0))))
+    dominant_aspect = float(math.degrees(math.atan2(-normal[0], -normal[1])) % 360.0)
+
+    # Elevation metrics
+    elevations = pts[:, 2]
+    e_min = float(np.min(elevations))
+    e_max = float(np.max(elevations))
+    e_mean = float(np.mean(elevations))
+    e_range = e_max - e_min
+
+    # Planar residuals (roughness)
+    residuals = np.abs(np.dot(centered, normal))
+    roughness_rms = float(np.sqrt(np.mean(residuals ** 2)))
+
+    # Spatial horizontal footprint
+    bmin, bmax = _measure_bounds(pts)
+    dx = float(bmax[0] - bmin[0])
+    dy = float(bmax[1] - bmin[1])
+    area = max(1.0, float(dx * dy))
+
+    # Local slope variation
+    mean_slope = trend_slope_deg
+    max_slope = min(80.0, trend_slope_deg + float(roughness_rms * 15.0))
+
+    confidence = float(np.clip(min(1.0, len(pts) / 30.0) * up_dot, 0.4, 0.95))
+
+    return TerrainFit(
+        elevation_min_m=e_min,
+        elevation_max_m=e_max,
+        elevation_mean_m=e_mean,
+        elevation_range_m=e_range,
+        area_m2=area,
+        mean_slope_deg=mean_slope,
+        max_slope_deg=max_slope,
+        dominant_aspect_deg=dominant_aspect,
+        roughness_rms_m=roughness_rms,
+        center=_to_point3(centroid),
+        confidence=confidence,
+        point_count=len(pts),
+        bounds_min=bmin,
+        bounds_max=bmax,
+    )
+
+
+def fit_facade(
+    points: Sequence[Point3],
+    world_up: Vec3 = (0.0, 0.0, 1.0),
+    interior_point: Optional[Point3] = None,
+) -> FacadeFit:
+    """Fit an exterior building facade plane from 3D points."""
+    pts = np.asarray(points, dtype=np.float64)
+    if len(pts) < 10:
+        raise FacadeRefused(f"Insufficient points ({len(pts)} < 10) to fit facade")
+
+    up = _normalize(np.asarray(world_up, dtype=np.float64))
+    centroid = np.mean(pts, axis=0)
+    centered = pts - centroid
+
+    _, _, vh = np.linalg.svd(centered)
+    normal = vh[2, :]
+
+    # Verticality: facade plane normal must be approximately horizontal (|normal . up| <= 0.20)
+    up_dot = float(np.dot(normal, up))
+    if abs(up_dot) > 0.20:
+        raise FacadeRefused(
+            f"Surface normal {normal} is not vertical (|normal . up| = {abs(up_dot):.2f} > 0.20)"
+        )
+
+    # Project normal to horizontal plane to get outward horizontal facade normal
+    horiz_n = np.array([normal[0], normal[1], 0.0])
+    h_len = float(np.linalg.norm(horiz_n))
+    if h_len < 1e-6:
+        raise FacadeRefused("Degenerate horizontal normal for facade")
+    facade_normal = horiz_n / h_len
+
+    # Orient outward away from interior_point if provided
+    if interior_point is not None:
+        int_pt = np.asarray(interior_point, dtype=np.float64)
+        if np.dot(facade_normal, centroid - int_pt) < 0.0:
+            facade_normal = -facade_normal
+
+    # Compass azimuth of outward facade normal: 0=North(+y), 90=East(+x), 180=South(-y), 270=West(-x)
+    azimuth = float(math.degrees(math.atan2(facade_normal[0], facade_normal[1])) % 360.0)
+
+    # Local coordinates on facade: u horizontal across wall width, v vertical along wall height
+    u_axis = _normalize(np.cross(up, facade_normal))
+    v_axis = up
+
+    u_proj = np.dot(centered, u_axis)
+    v_proj = np.dot(centered, v_axis)
+
+    width = float(np.max(u_proj) - np.min(u_proj))
+    height = float(np.max(v_proj) - np.min(v_proj))
+
+    # Building facade dimension plausibility
+    if height < 1.8:
+        raise FacadeRefused(f"Facade height {height:.2f}m is too low for a building facade (min 1.8m)")
+    if width < 1.2:
+        raise FacadeRefused(f"Facade width {width:.2f}m is too narrow for a building facade (min 1.2m)")
+    if height > 350.0 or width > 600.0:
+        raise FacadeRefused(f"Facade dimensions ({width:.1f}m x {height:.1f}m) exceed plausibility")
+
+    # Planar flatness residual
+    residuals = np.abs(np.dot(centered, normal))
+    rms_res = float(np.sqrt(np.mean(residuals ** 2)))
+    if rms_res > 0.45:
+        raise FacadeRefused(f"Points deviate too far from a flat facade plane (RMS = {rms_res:.3f}m > 0.45m)")
+
+    area = width * height
+    base_elev = float(np.min(pts[:, 2]))
+    top_elev = float(np.max(pts[:, 2]))
+    plane_d = float(-np.dot(facade_normal, centroid))
+
+    bmin, bmax = _measure_bounds(pts)
+    confidence = float(np.clip((1.0 - (rms_res / 0.5)) * min(1.0, len(pts) / 25.0), 0.4, 0.95))
+
+    return FacadeFit(
+        normal=_to_point3(facade_normal),
+        plane_d=plane_d,
+        center=_to_point3(centroid),
+        width_m=width,
+        height_m=height,
+        area_m2=area,
+        base_elevation_m=base_elev,
+        top_elevation_m=top_elev,
+        azimuth_deg=azimuth,
+        rms_residual_m=rms_res,
+        confidence=confidence,
+        point_count=len(pts),
+        bounds_min=bmin,
+        bounds_max=bmax,
+    )
+
+
+def fit_roof(
+    points: Sequence[Point3],
+    world_up: Vec3 = (0.0, 0.0, 1.0),
+) -> RoofFit:
+    """Fit an exterior building roof plane from 3D points."""
+    pts = np.asarray(points, dtype=np.float64)
+    if len(pts) < 8:
+        raise RoofRefused(f"Insufficient points ({len(pts)} < 8) to fit roof")
+
+    up = _normalize(np.asarray(world_up, dtype=np.float64))
+    centroid = np.mean(pts, axis=0)
+    centered = pts - centroid
+
+    _, _, vh = np.linalg.svd(centered)
+    normal = vh[2, :]
+
+    # Orient normal upward
+    if np.dot(normal, up) < 0.0:
+        normal = -normal
+
+    up_dot = float(np.dot(normal, up))
+    if up_dot < 0.15:
+        raise RoofRefused(
+            f"Surface normal {normal} is not upward-facing (|normal . up| = {up_dot:.2f} < 0.15)"
+        )
+
+    # Pitch angle in degrees (0 = flat, >0 = pitched)
+    pitch_deg = float(math.degrees(math.acos(np.clip(up_dot, 0.0, 1.0))))
+    if pitch_deg > 75.0:
+        raise RoofRefused(f"Roof pitch {pitch_deg:.1f} deg is too steep for a roof (> 75 deg)")
+
+    roof_type = "flat" if pitch_deg < 5.0 else "pitched"
+
+    # Ridge and eave elevation
+    eave_elevation = float(np.min(pts[:, 2]))
+    ridge_elevation = float(np.max(pts[:, 2]))
+
+    # Projected horizontal dimensions
+    bmin, bmax = _measure_bounds(pts)
+    dx = float(bmax[0] - bmin[0])
+    dy = float(bmax[1] - bmin[1])
+    width = min(dx, dy)
+    length = max(dx, dy)
+    projected_area = float(max(dx * dy, 0.5))
+
+    if projected_area < 1.5:
+        raise RoofRefused(f"Roof projected area {projected_area:.2f}m2 is too small (min 1.5m2)")
+
+    surface_area = projected_area / max(0.2, math.cos(math.radians(pitch_deg)))
+    azimuth = float(math.degrees(math.atan2(normal[0], normal[1])) % 360.0)
+    plane_d = float(-np.dot(normal, centroid))
+
+    confidence = float(np.clip(min(1.0, len(pts) / 20.0) * up_dot, 0.4, 0.95))
+
+    return RoofFit(
+        normal=_to_point3(normal),
+        plane_d=plane_d,
+        center=_to_point3(centroid),
+        width_m=width,
+        length_m=length,
+        pitch_deg=pitch_deg,
+        roof_type=roof_type,
+        ridge_elevation_m=ridge_elevation,
+        eave_elevation_m=eave_elevation,
+        surface_area_m2=surface_area,
+        projected_area_m2=projected_area,
+        azimuth_deg=azimuth,
+        confidence=confidence,
+        point_count=len(pts),
+        bounds_min=bmin,
+        bounds_max=bmax,
+    )
+
+
 # -----------------------------------------------------------------------------
 # WorldIR Promotion
 # -----------------------------------------------------------------------------
 
 def promote_outdoor_entity(
-    fit: Union[TreeFit, LamppostFit, RoadSurfaceFit, FootpathFit, StreetFurnitureFit],
+    fit: Union[TreeFit, LamppostFit, RoadSurfaceFit, FootpathFit, StreetFurnitureFit, ShrubFit, TerrainFit, FacadeFit, RoofFit],
     world: WorldIR,
     evidence_ids: Sequence[str] = (),
     name: Optional[str] = None,
@@ -729,6 +1176,135 @@ def promote_outdoor_entity(
                 confidence=fit.confidence,
             ),
         }
+    elif isinstance(fit, ShrubFit):
+        etype = EntityType.VEGETATION
+        default_name = f"Shrub (H={fit.height_m:.1f}m, Spread={fit.spread_radius_m*2:.1f}m)"
+        geom_type = GeometryType.BOX
+        measurements = {
+            "height_m": Measurement(
+                value=fit.height_m,
+                unit="m",
+                precision=0.05,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "spread_radius_m": Measurement(
+                value=fit.spread_radius_m,
+                unit="m",
+                precision=0.05,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+        }
+    elif isinstance(fit, TerrainFit):
+        etype = EntityType.TERRAIN
+        default_name = f"Terrain (Area={fit.area_m2:.0f}m2, Slope={fit.mean_slope_deg:.1f}deg)"
+        geom_type = GeometryType.MESH
+        measurements = {
+            "area_m2": Measurement(
+                value=fit.area_m2,
+                unit="m2",
+                precision=1.0,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "elevation_range_m": Measurement(
+                value=fit.elevation_range_m,
+                unit="m",
+                precision=0.05,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "mean_slope_deg": Measurement(
+                value=fit.mean_slope_deg,
+                unit="deg",
+                precision=0.5,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "roughness_rms_m": Measurement(
+                value=fit.roughness_rms_m,
+                unit="m",
+                precision=0.01,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+        }
+    elif isinstance(fit, FacadeFit):
+        etype = EntityType.WALL
+        default_name = f"Facade (W={fit.width_m:.1f}m, H={fit.height_m:.1f}m, Az={fit.azimuth_deg:.0f}deg)"
+        geom_type = GeometryType.PLANE
+        measurements = {
+            "width_m": Measurement(
+                value=fit.width_m,
+                unit="m",
+                precision=0.1,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "height_m": Measurement(
+                value=fit.height_m,
+                unit="m",
+                precision=0.1,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "area_m2": Measurement(
+                value=fit.area_m2,
+                unit="m2",
+                precision=0.5,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "azimuth_deg": Measurement(
+                value=fit.azimuth_deg,
+                unit="deg",
+                precision=1.0,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "base_elevation_m": Measurement(
+                value=fit.base_elevation_m,
+                unit="m",
+                precision=0.05,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+        }
+    elif isinstance(fit, RoofFit):
+        etype = EntityType.ROOF
+        default_name = f"Roof ({fit.roof_type.capitalize()}, Pitch={fit.pitch_deg:.1f}deg)"
+        geom_type = GeometryType.PLANE
+        measurements = {
+            "pitch_deg": Measurement(
+                value=fit.pitch_deg,
+                unit="deg",
+                precision=0.5,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "surface_area_m2": Measurement(
+                value=fit.surface_area_m2,
+                unit="m2",
+                precision=0.5,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "projected_area_m2": Measurement(
+                value=fit.projected_area_m2,
+                unit="m2",
+                precision=0.5,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+            "ridge_elevation_m": Measurement(
+                value=fit.ridge_elevation_m,
+                unit="m",
+                precision=0.05,
+                provenance=Provenance.ESTIMATED,
+                confidence=fit.confidence,
+            ),
+        }
     else:
         raise TypeError(f"Unsupported outdoor fit type: {type(fit)}")
 
@@ -773,3 +1349,143 @@ def promote_outdoor_entity(
     world.entities[entity.id] = entity
 
     return entity
+
+
+# -----------------------------------------------------------------------------
+# Outdoor Scene Reconstruction & Topological Integration
+# -----------------------------------------------------------------------------
+
+@dataclass
+class OutdoorSceneReconstruction:
+    """Structured entities and topological relationships for an outdoor environment."""
+
+    terrain: Optional[Entity] = None
+    facades: List[Entity] = field(default_factory=list)
+    roofs: List[Entity] = field(default_factory=list)
+    vegetation: List[Entity] = field(default_factory=list)
+    roads: List[Entity] = field(default_factory=list)
+    footpaths: List[Entity] = field(default_factory=list)
+    furniture: List[Entity] = field(default_factory=list)
+
+    @property
+    def all_entities(self) -> List[Entity]:
+        res: List[Entity] = []
+        if self.terrain is not None:
+            res.append(self.terrain)
+        res.extend(self.facades)
+        res.extend(self.roofs)
+        res.extend(self.vegetation)
+        res.extend(self.roads)
+        res.extend(self.footpaths)
+        res.extend(self.furniture)
+        return res
+
+
+def parse_and_reconstruct_outdoor_scene(
+    clusters: Sequence[Tuple[str, Sequence[Point3]]],
+    world: WorldIR,
+    evidence_ids: Sequence[str] = (),
+) -> OutdoorSceneReconstruction:
+    """Parse clustered 3D points from an outdoor capture, fit outdoor taxonomy geometries,
+
+    promote them into WorldIR, and establish physical spatial relationships between components.
+
+    Clusters is a sequence of (hint_or_class, points) tuples, where hint can be:
+    - 'terrain' | 'ground'
+    - 'facade' | 'building_wall'
+    - 'roof'
+    - 'tree'
+    - 'shrub' | 'bush'
+    - 'road' | 'carriageway'
+    - 'footpath' | 'sidewalk'
+    - 'lamppost'
+    - 'bench' | 'bin'
+    """
+    scene = OutdoorSceneReconstruction()
+
+    for hint, pts in clusters:
+        hint_lower = hint.lower()
+        try:
+            if "terrain" in hint_lower or "ground" in hint_lower:
+                fit_t = fit_terrain(pts)
+                ent = promote_outdoor_entity(fit_t, world, evidence_ids)
+                scene.terrain = ent
+            elif "facade" in hint_lower or "building_wall" in hint_lower:
+                fit_f = fit_facade(pts)
+                ent = promote_outdoor_entity(fit_f, world, evidence_ids)
+                scene.facades.append(ent)
+            elif "roof" in hint_lower:
+                fit_r = fit_roof(pts)
+                ent = promote_outdoor_entity(fit_r, world, evidence_ids)
+                scene.roofs.append(ent)
+            elif "tree" in hint_lower:
+                fit_tr = fit_tree(pts)
+                ent = promote_outdoor_entity(fit_tr, world, evidence_ids)
+                scene.vegetation.append(ent)
+            elif "shrub" in hint_lower or "bush" in hint_lower:
+                fit_sh = fit_shrub(pts)
+                ent = promote_outdoor_entity(fit_sh, world, evidence_ids)
+                scene.vegetation.append(ent)
+            elif "road" in hint_lower or "carriageway" in hint_lower:
+                fit_rd = fit_road_surface(pts)
+                ent = promote_outdoor_entity(fit_rd, world, evidence_ids)
+                scene.roads.append(ent)
+            elif "footpath" in hint_lower or "sidewalk" in hint_lower:
+                fit_fp = fit_footpath(pts)
+                ent = promote_outdoor_entity(fit_fp, world, evidence_ids)
+                scene.footpaths.append(ent)
+            elif "lamp" in hint_lower:
+                fit_lp = fit_lamppost(pts)
+                ent = promote_outdoor_entity(fit_lp, world, evidence_ids)
+                scene.furniture.append(ent)
+            elif "bench" in hint_lower:
+                fit_b = fit_street_furniture(pts, kind="bench")
+                ent = promote_outdoor_entity(fit_b, world, evidence_ids)
+                scene.furniture.append(ent)
+            elif "bin" in hint_lower:
+                fit_bn = fit_street_furniture(pts, kind="bin")
+                ent = promote_outdoor_entity(fit_bn, world, evidence_ids)
+                scene.furniture.append(ent)
+        except OutdoorRefused:
+            continue
+
+    # Connect topological relationships
+    # 1. Facades rest on terrain
+    if scene.terrain is not None:
+        for fac in scene.facades:
+            fac.relationships.append(
+                Relationship(
+                    kind=RelationshipKind.RESTS_ON,
+                    target_id=scene.terrain.id,
+                    confidence=0.90,
+                    provenance=Provenance.INFERRED,
+                )
+            )
+
+    # 2. Roofs supported by facades
+    for roof in scene.roofs:
+        if scene.facades:
+            fac = scene.facades[0]
+            roof.relationships.append(
+                Relationship(
+                    kind=RelationshipKind.SUPPORTED_BY,
+                    target_id=fac.id,
+                    confidence=0.88,
+                    provenance=Provenance.INFERRED,
+                )
+            )
+
+    # 3. Trees / shrubs rest on terrain
+    if scene.terrain is not None:
+        for veg in scene.vegetation:
+            veg.relationships.append(
+                Relationship(
+                    kind=RelationshipKind.RESTS_ON,
+                    target_id=scene.terrain.id,
+                    confidence=0.85,
+                    provenance=Provenance.INFERRED,
+                )
+            )
+
+    return scene
+

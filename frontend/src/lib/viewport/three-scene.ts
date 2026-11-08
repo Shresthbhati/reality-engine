@@ -1531,6 +1531,21 @@ export class WorldSceneController {
     this.updateWalkCameraLook();
   }
 
+  public setWalkPose(x: number, y: number, z: number, yawRad?: number, pitchRad?: number) {
+    this.camera.position.set(x, y, z);
+    if (yawRad !== undefined) this.walkYaw = yawRad;
+    if (pitchRad !== undefined) this.walkPitch = clampPitch(pitchRad);
+    this.updateWalkCameraLook();
+  }
+
+  public getWalkPose(): { position: [number, number, number]; yawRad: number; pitchRad: number } {
+    return {
+      position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
+      yawRad: this.walkYaw,
+      pitchRad: this.walkPitch,
+    };
+  }
+
   private updateWalkCameraLook() {
     const dirX = -Math.sin(this.walkYaw) * Math.cos(this.walkPitch);
     const dirY = Math.sin(this.walkPitch);

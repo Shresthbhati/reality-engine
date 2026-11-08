@@ -111,6 +111,16 @@ import {
 import { ClashDetectionPanel } from "@/components/studio/ClashDetectionPanel";
 import type { ClashItem, ClashReportSummary } from "@/lib/studio/clash-bcf-model";
 import { fetchWorldClashes, downloadBcfZip } from "@/lib/api/bcf";
+import { SurfaceQualityPanel } from "@/components/studio/SurfaceQualityPanel";
+import type {
+  HeatmapData,
+  SurfaceQualityReport,
+} from "@/lib/studio/surface-quality-model";
+import {
+  fetchSurfaceQuality,
+  fetchSurfaceHeatmap,
+  downloadSurfaceCertificatePdf,
+} from "@/lib/api/surface-quality";
 
 
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "@/lib/studio/transform-types";
@@ -334,6 +344,59 @@ export default function World3DViewport({
       console.warn("Failed to compare epochs:", err);
     } finally {
       setIsTemporalLoading(false);
+    }
+  }, [world]);
+
+  // Surface Quality & ASTM E1155 state and handlers
+  const [showSurfaceQuality, setShowSurfaceQuality] = useState(false);
+  const [surfaceReport, setSurfaceReport] = useState<SurfaceQualityReport | null>(null);
+  const [surfaceHeatmap, setSurfaceHeatmap] = useState<HeatmapData | null>(null);
+  const [isHeatmapVisible, setIsHeatmapVisible] = useState(true);
+  const [isSurfaceLoading, setIsSurfaceLoading] = useState(false);
+
+  const handleToggleSurfaceQuality = useCallback(async () => {
+    const next = !showSurfaceQuality;
+    setShowSurfaceQuality(next);
+    if (next && !surfaceReport && world?.id) {
+      setIsSurfaceLoading(true);
+      try {
+        const [rep, hm] = await Promise.all([
+          fetchSurfaceQuality(world.id),
+          fetchSurfaceHeatmap(world.id),
+        ]);
+        setSurfaceReport(rep);
+        setSurfaceHeatmap(hm);
+      } catch (err) {
+        console.warn("Failed to fetch surface quality:", err);
+      } finally {
+        setIsSurfaceLoading(false);
+      }
+    }
+  }, [showSurfaceQuality, surfaceReport, world]);
+
+  const handleRefreshSurfaceQuality = useCallback(async () => {
+    if (!world?.id) return;
+    setIsSurfaceLoading(true);
+    try {
+      const [rep, hm] = await Promise.all([
+        fetchSurfaceQuality(world.id),
+        fetchSurfaceHeatmap(world.id),
+      ]);
+      setSurfaceReport(rep);
+      setSurfaceHeatmap(hm);
+    } catch (err) {
+      console.warn("Failed to refresh surface quality:", err);
+    } finally {
+      setIsSurfaceLoading(false);
+    }
+  }, [world]);
+
+  const handleDownloadCertificate = useCallback(async () => {
+    if (!world?.id) return;
+    try {
+      await downloadSurfaceCertificatePdf(world.id, world.name || "Surface Quality Audit");
+    } catch (err) {
+      console.warn("Failed to download certificate:", err);
     }
   }, [world]);
 
@@ -627,6 +690,16 @@ export default function World3DViewport({
       controller.setClashMarkers(null, null);
     }
   }, [showClashes, clashReport, selectedClash, world, points, cameras, mesh]);
+
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    if (showSurfaceQuality && surfaceHeatmap && isHeatmapVisible) {
+      controller.setSurfaceQualityHeatmap(surfaceHeatmap.points, true);
+    } else {
+      controller.setSurfaceQualityHeatmap(null, false);
+    }
+  }, [showSurfaceQuality, surfaceHeatmap, isHeatmapVisible]);
 
   useEffect(() => {
     if (frameSignal > 0) controllerRef.current?.frameAll();
@@ -1446,6 +1519,22 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Surface Quality & ASTM E1155 Panel Overlay */}
+        {showSurfaceQuality && (
+          <div className="absolute top-14 right-3 z-30 pointer-events-auto">
+            <SurfaceQualityPanel
+              report={surfaceReport}
+              heatmap={surfaceHeatmap}
+              isHeatmapVisible={isHeatmapVisible}
+              onToggleHeatmap={setIsHeatmapVisible}
+              onRefreshQuality={handleRefreshSurfaceQuality}
+              onDownloadCertificate={handleDownloadCertificate}
+              onClose={() => setShowSurfaceQuality(false)}
+              isLoading={isSurfaceLoading}
+            />
+          </div>
+        )}
+
         {/* Multi-Trade Clash Perception & BCF Export Overlay */}
         {showClashes && (
           <div className="absolute top-14 right-3 z-30 pointer-events-auto">
@@ -1572,6 +1661,14 @@ export default function World3DViewport({
                     <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-error ring-1 ring-base" />
                   )}
                 </div>
+              </IconButton>
+
+              <IconButton
+                label="Surface Quality & ASTM E1155"
+                active={showSurfaceQuality}
+                onClick={handleToggleSurfaceQuality}
+              >
+                <Ruler className="w-4 h-4 text-accent" />
               </IconButton>
             </>
           )}

@@ -32,6 +32,7 @@ import {
   type ClashItem,
   getClashSeverityColor,
 } from "../studio/clash-bcf-model";
+import { type HeatmapPoint } from "../studio/surface-quality-model";
 import { TransformGizmoController } from "../studio/transform-gizmo.ts";
 import { extractRoomBoundariesFromWorld } from "../studio/room-boundary-snap.ts";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "../studio/transform-types.ts";
@@ -209,6 +210,7 @@ export class WorldSceneController {
     splats: null as THREE.InstancedMesh | null,
     temporalClusters: null as THREE.Group | null,
     clashMarkers: null as THREE.Group | null,
+    surfaceHeatmap: null as THREE.Points | null,
   };
 
   private outdoor: OutdoorResult = emptyOutdoorResult();
@@ -2711,6 +2713,52 @@ export class WorldSceneController {
         );
       }
     }
+  }
+
+
+  public setSurfaceQualityHeatmap(points: HeatmapPoint[] | null, visible = true) {
+    if (this.layers.surfaceHeatmap) {
+      this.root.remove(this.layers.surfaceHeatmap);
+      this.layers.surfaceHeatmap.geometry.dispose();
+      (this.layers.surfaceHeatmap.material as THREE.Material).dispose();
+      this.layers.surfaceHeatmap = null;
+    }
+
+    if (!visible || !points || points.length === 0) {
+      return;
+    }
+
+    const count = points.length;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      const p = points[i];
+      positions[i * 3] = p.x;
+      positions[i * 3 + 1] = p.y + 0.02;
+      positions[i * 3 + 2] = p.z;
+
+      colors[i * 3] = p.color_rgb[0];
+      colors[i * 3 + 1] = p.color_rgb[1];
+      colors[i * 3 + 2] = p.color_rgb[2];
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.14,
+      vertexColors: true,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.88,
+    });
+
+    const pointCloud = new THREE.Points(geometry, material);
+    pointCloud.name = "SurfaceQualityHeatmap";
+    this.layers.surfaceHeatmap = pointCloud;
+    this.root.add(pointCloud);
   }
 
   public selectEntity(id: string | null, updateCamera = false) {

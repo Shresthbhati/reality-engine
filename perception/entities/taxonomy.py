@@ -160,7 +160,10 @@ _c("finish.mirror", "Mirror", None, "structure", "parametric", (0.1, 2.5), promp
 _c("finish.tiling", "Tiled area", None, "structure", "procedural", (0.3, 30), prompts=("wall tiles",))
 _c("finish.moulding", "Decorative moulding / ornament", None, "structure", "mesh", (0.05, 30))
 # ---- 12 exterior ---------------------------------------------------------------------------------------------------------
+_c("exterior.facade", "Building facade", None, "wall", "parametric", (2, 200), prompts=("building facade", "exterior wall", "facade"))
+_c("exterior.terrain", "Terrain / ground surface", None, "terrain", "mesh", (1, 10000), prompts=("terrain", "ground surface", "earth", "topography"))
 _c("exterior.roof", "Roof", None, "roof", "procedural", (2, 60), prompts=("roof",))
+_c("exterior.roof.plane", "Roof plane / pitch", "exterior.roof", "roof", "parametric", (1, 50), prompts=("roof pitch", "roof plane"))
 _c("exterior.balcony", "Balcony / terrace", None, "structure", "procedural", (0.8, 12), prompts=("balcony",))
 _c("exterior.gate", "Gate", None, "structure", "parametric", (0.6, 8), prompts=("gate",))
 _c("exterior.fence", "Fence / boundary wall", None, "structure", "procedural", (1, 200), prompts=("fence", "boundary wall"))

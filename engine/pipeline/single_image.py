@@ -30,6 +30,7 @@ Assumptions (all recorded on the world under metadata["bootstrap"]):
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -166,6 +167,8 @@ def bootstrap_single_image(
     target_points: int = 4000,
     depth_map=None,
     tag: str = "",
+    fixture_crop_pass=None,
+    fixture_detections=None,
     furniture_detector=None,
     furniture_detections=None,
     layout_analysis=None,
@@ -423,6 +426,26 @@ def bootstrap_single_image(
                 confidence_ceiling=CONFIDENCE_CEILING,
             )
 
+    # ---- wall fixtures: fine-detail sockets and switches placed on host walls (Task 8.8) ----
+    fixtures_facts: Dict[str, object] = {"attempted": False, "reason": "no fixture crop pass was supplied"}
+    if fixture_crop_pass is not None or os.environ.get("REALITY_CROP_PASS", "").strip() == "1":
+        from engine.pipeline.single_image_fixtures import place_wall_fixtures
+
+        oriented_walls = [o for o in oriented if o.role == "wall"]
+        fixtures_facts = place_wall_fixtures(
+            world,
+            item,
+            wall_pixels,
+            oriented_walls,
+            f=f,
+            cx=cx,
+            cy=cy,
+            w=w,
+            h=h,
+            pre=pre,
+            crop_pass=fixture_crop_pass,
+        )
+
     # ---- corridor direction: only when two distinct parallel walls and a floor were all found ----
     corridor = None
     walls_o = [o for o in oriented if o.role == "wall"]
@@ -527,6 +550,7 @@ def bootstrap_single_image(
         "confidence_ceiling": CONFIDENCE_CEILING, "gravity_assumption": "camera roughly level (+Y up)",
         "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
         "openings": openings_facts, "corridor": corridor, "furniture": furniture_facts,
+        "fixtures": fixtures_facts,
         "layout": layout_facts,
     }
     world.metadata["reconstruction"] = {
@@ -542,6 +566,7 @@ def bootstrap_single_image(
         "not_attempted": list(NOT_ATTEMPTED), "unobserved": list(UNOBSERVED),
         "depth_model": depth_model, "grid_step": step,
         "openings": openings_facts, "corridor": corridor, "furniture": furniture_facts,
+        "fixtures": fixtures_facts,
         "layout": layout_facts,
     }
     return BootstrapResult(

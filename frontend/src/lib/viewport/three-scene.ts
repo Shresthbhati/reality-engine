@@ -28,6 +28,10 @@ import {
   type TemporalEntityChangeItem,
   type SpatialChangeClusterItem,
 } from "../studio/temporal-model";
+import {
+  type ClashItem,
+  getClashSeverityColor,
+} from "../studio/clash-bcf-model";
 import { TransformGizmoController } from "../studio/transform-gizmo.ts";
 import { extractRoomBoundariesFromWorld } from "../studio/room-boundary-snap.ts";
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "../studio/transform-types.ts";
@@ -204,6 +208,7 @@ export class WorldSceneController {
     shell: null as THREE.Group | null,
     splats: null as THREE.InstancedMesh | null,
     temporalClusters: null as THREE.Group | null,
+    clashMarkers: null as THREE.Group | null,
   };
 
   private outdoor: OutdoorResult = emptyOutdoorResult();
@@ -884,6 +889,20 @@ export class WorldSceneController {
         }
       });
       this.layers.temporalClusters = null;
+    }
+    if (this.layers.clashMarkers) {
+      this.root.remove(this.layers.clashMarkers);
+      this.layers.clashMarkers.traverse((child) => {
+        if (child instanceof THREE.LineSegments || child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      this.layers.clashMarkers = null;
     }
   }
 
@@ -2611,6 +2630,87 @@ export class WorldSceneController {
 
     this.layers.temporalClusters = group;
     this.root.add(group);
+  }
+
+  public setClashMarkers(
+    clashes: ClashItem[] | null,
+    selectedClashId: string | null = null,
+    updateCamera = false
+  ) {
+    if (this.layers.clashMarkers) {
+      this.root.remove(this.layers.clashMarkers);
+      this.layers.clashMarkers.traverse((child) => {
+        if (child instanceof THREE.LineSegments || child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      this.layers.clashMarkers = null;
+    }
+
+    if (!clashes || clashes.length === 0) {
+      if (selectedClashId === null) {
+        this.applyEntityFilter(null);
+      }
+      return;
+    }
+
+    const group = new THREE.Group();
+    let selectedClash: ClashItem | null = null;
+
+    for (const clash of clashes) {
+      const isSel = clash.id === selectedClashId;
+      if (isSel) selectedClash = clash;
+
+      const colorToken = getClashSeverityColor(clash.severity);
+      const hexCol = colorToken.hex;
+
+      const sphereGeo = new THREE.SphereGeometry(isSel ? 0.22 : 0.15, 16, 16);
+      const sphereMat = new THREE.MeshLambertMaterial({
+        color: hexCol,
+        emissive: new THREE.Color(hexCol),
+        emissiveIntensity: isSel ? 0.8 : 0.4,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const markerMesh = new THREE.Mesh(sphereGeo, sphereMat);
+      markerMesh.position.set(clash.clash_point[0], clash.clash_point[1], clash.clash_point[2]);
+      group.add(markerMesh);
+
+      const dx = Math.max(0.15, clash.bounds_max[0] - clash.bounds_min[0]);
+      const dy = Math.max(0.15, clash.bounds_max[1] - clash.bounds_min[1]);
+      const dz = Math.max(0.15, clash.bounds_max[2] - clash.bounds_min[2]);
+      const boxGeo = new THREE.BoxGeometry(dx, dy, dz);
+      const wireGeo = new THREE.EdgesGeometry(boxGeo);
+      const wireMat = new THREE.LineBasicMaterial({
+        color: hexCol,
+        transparent: true,
+        opacity: isSel ? 0.95 : 0.6,
+      });
+      const wire = new THREE.LineSegments(wireGeo, wireMat);
+      wire.position.set(clash.clash_point[0], clash.clash_point[1], clash.clash_point[2]);
+      group.add(wire);
+    }
+
+    this.layers.clashMarkers = group;
+    this.root.add(group);
+
+    if (selectedClash) {
+      const clashingPair = new Set([selectedClash.entity_a_id, selectedClash.entity_b_id]);
+      this.applyEntityFilter(clashingPair);
+
+      if (updateCamera && selectedClash.viewpoint) {
+        this.flyToBookmark(
+          selectedClash.viewpoint.camera_position,
+          selectedClash.clash_point,
+          true
+        );
+      }
+    }
   }
 
   public selectEntity(id: string | null, updateCamera = false) {

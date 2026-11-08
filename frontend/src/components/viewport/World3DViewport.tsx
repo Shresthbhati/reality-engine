@@ -39,6 +39,7 @@ import {
   Globe,
   Cpu,
   Footprints,
+  ShieldAlert,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -106,6 +107,12 @@ import {
   fetchWorldEpochs,
   fetchTemporalCompare,
 } from "@/lib/api/temporal";
+
+import { ClashDetectionPanel } from "@/components/studio/ClashDetectionPanel";
+import type { ClashItem, ClashReportSummary } from "@/lib/studio/clash-bcf-model";
+import { fetchWorldClashes, downloadBcfZip } from "@/lib/api/bcf";
+
+
 import { DEFAULT_SNAP_CONFIG, type TransformGizmoMode, type SnapConfig } from "@/lib/studio/transform-types";
 
 const NO_SHELL_REASON =
@@ -330,6 +337,64 @@ export default function World3DViewport({
     }
   }, [world]);
 
+  // Automated Issue & Clash Detection state and handlers
+  const [showClashes, setShowClashes] = useState(false);
+  const [clashReport, setClashReport] = useState<ClashReportSummary | null>(null);
+  const [selectedClash, setSelectedClash] = useState<ClashItem | null>(null);
+  const [isClashLoading, setIsClashLoading] = useState(false);
+
+  const handleToggleClashes = useCallback(async () => {
+    const next = !showClashes;
+    setShowClashes(next);
+    if (next && !clashReport && world?.id) {
+      setIsClashLoading(true);
+      try {
+        const report = await fetchWorldClashes(world.id);
+        setClashReport(report);
+      } catch (err) {
+        console.warn("Failed to fetch clashes:", err);
+      } finally {
+        setIsClashLoading(false);
+      }
+    }
+  }, [showClashes, clashReport, world]);
+
+  const handleRefreshClashes = useCallback(async () => {
+    if (!world?.id) return;
+    setIsClashLoading(true);
+    try {
+      const report = await fetchWorldClashes(world.id);
+      setClashReport(report);
+      setSelectedClash(null);
+    } catch (err) {
+      console.warn("Failed to refresh clashes:", err);
+    } finally {
+      setIsClashLoading(false);
+    }
+  }, [world]);
+
+  const handleSelectClash = useCallback((clash: ClashItem | null) => {
+    setSelectedClash(clash);
+    controllerRef.current?.setClashMarkers(clashReport?.items ?? null, clash?.id ?? null, true);
+  }, [clashReport]);
+
+  const handleExportBcf = useCallback(async () => {
+    if (!world?.id) return;
+    try {
+      const blob = await downloadBcfZip(world.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `world_${world.id.slice(0, 8)}_clashes.bcfzip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn("Failed to export BCF:", err);
+    }
+  }, [world]);
+
   const resolvedSpatialIntelligence = useMemo<SpatialIntelligenceSummary | null>(() => {
     if (spatialIntelligenceProp) return spatialIntelligenceProp;
     if (!world) return null;
@@ -550,6 +615,18 @@ export default function World3DViewport({
     if (initialLayers) controllerRef.current?.setLayerVisibility({ ...layers });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [world]);
+
+
+  // Clash perception: sync 3D markers with ThreeScene
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    if (showClashes && clashReport) {
+      controller.setClashMarkers(clashReport.items, selectedClash?.id ?? null, false);
+    } else {
+      controller.setClashMarkers(null, null);
+    }
+  }, [showClashes, clashReport, selectedClash, world, points, cameras, mesh]);
 
   useEffect(() => {
     if (frameSignal > 0) controllerRef.current?.frameAll();
@@ -1369,6 +1446,21 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Multi-Trade Clash Perception & BCF Export Overlay */}
+        {showClashes && (
+          <div className="absolute top-14 right-3 z-30 pointer-events-auto">
+            <ClashDetectionPanel
+              report={clashReport}
+              selectedClashId={selectedClash?.id ?? null}
+              onSelectClash={handleSelectClash}
+              onExportBcf={handleExportBcf}
+              onRefreshClashes={handleRefreshClashes}
+              onClose={() => setShowClashes(false)}
+              isLoading={isClashLoading}
+            />
+          </div>
+        )}
+
         {/* Top right: XYZ axis gizmo */}
         {axes && (
           <svg
@@ -1463,6 +1555,23 @@ export default function World3DViewport({
                 onClick={handleToggleTemporal}
               >
                 <History className="w-4 h-4 text-warning" />
+              </IconButton>
+            </>
+          )}
+          {world?.id && (
+            <>
+              <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
+              <IconButton
+                label="Automated Issue & Clash Detection (BCF 2.1)"
+                active={showClashes}
+                onClick={handleToggleClashes}
+              >
+                <div className="relative">
+                  <ShieldAlert className="w-4 h-4 text-error" />
+                  {clashReport && clashReport.total_clashes > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-error ring-1 ring-base" />
+                  )}
+                </div>
               </IconButton>
             </>
           )}

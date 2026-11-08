@@ -42,6 +42,7 @@ import {
   Footprints,
   ShieldAlert,
   Network,
+  Users,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -115,6 +116,15 @@ import type { ClashItem, ClashReportSummary } from "@/lib/studio/clash-bcf-model
 import { fetchWorldClashes, downloadBcfZip } from "@/lib/api/bcf";
 import { SurfaceQualityPanel } from "@/components/studio/SurfaceQualityPanel";
 import { SectionDrawingModal } from "@/components/studio/SectionDrawingModal";
+import { CollabPresenceBar } from "@/components/studio/CollabPresenceBar";
+import { SpatialMarkupModal } from "@/components/studio/SpatialMarkupModal";
+import type { PeerPresence, SpatialMarkup, MarkupTrade, MarkupStatus } from "@/lib/studio/collab-presence-model";
+import {
+  sendCollabHeartbeat,
+  fetchCollabMarkups,
+  createSpatialMarkup,
+  deleteSpatialMarkup,
+} from "@/lib/api/collab";
 import { MepTopologyPanel } from "@/components/studio/MepTopologyPanel";
 import type { MepFacilityTopology, MepSegment } from "@/lib/studio/mep-topology-model";
 import {
@@ -390,6 +400,101 @@ export default function World3DViewport({
       setIsMepLoading(false);
     }
   }, [world]);
+
+  // Collaborative Telepresence & Live Spatial Markups state
+  const [showCollabPresence, setShowCollabPresence] = useState(true);
+  const [showMarkupModal, setShowMarkupModal] = useState(false);
+  const [isPinModeActive, setIsPinModeActive] = useState(false);
+  const [collabPeers, setCollabPeers] = useState<PeerPresence[]>([]);
+  const [collabMarkups, setCollabMarkups] = useState<SpatialMarkup[]>([]);
+  const [followedPeerId, setFollowedPeerId] = useState<string | null>(null);
+  const clientIdRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!clientIdRef.current) {
+      clientIdRef.current = `client-${Math.random().toString(36).slice(2, 9)}`;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!world?.id || !showCollabPresence) return;
+    let isCancelled = false;
+    const syncPresence = async () => {
+      try {
+        const res = await sendCollabHeartbeat(world.id, {
+          client_id: clientIdRef.current,
+          user_name: "Collaborator",
+          role: "architect",
+          color: "#38bdf8",
+          camera_position: [0.0, 0.0, 1.8],
+          look_at: [0.0, 2.0, 1.8],
+          field_of_view: 60.0,
+        });
+        if (!isCancelled && res?.active_peers) {
+          setCollabPeers(res.active_peers);
+        }
+      } catch (err) {
+        console.warn("Collab heartbeat sync error:", err);
+      }
+    };
+    const loadMarkups = async () => {
+      try {
+        const data = await fetchCollabMarkups(world.id);
+        if (!isCancelled && data?.markups) {
+          setCollabMarkups(data.markups);
+        }
+      } catch (err) {
+        console.warn("Failed to load markups:", err);
+      }
+    };
+    void syncPresence();
+    void loadMarkups();
+    const interval = setInterval(() => {
+      void syncPresence();
+    }, 8000);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [world, showCollabPresence]);
+
+  const handleCreateMarkup = useCallback(
+    async (payload: {
+      title: string;
+      description: string;
+      trade: MarkupTrade;
+      status: MarkupStatus;
+      position: [number, number, number];
+    }) => {
+      if (!world?.id) return;
+      const res = await createSpatialMarkup(world.id, {
+        markup_type: "pin",
+        trade: payload.trade,
+        title: payload.title,
+        description: payload.description,
+        author_name: "Collaborator",
+        position: payload.position,
+        status: payload.status,
+      });
+      if (res?.markup) {
+        setCollabMarkups((prev) => [...prev, res.markup]);
+      }
+    },
+    [world],
+  );
+
+  const handleDeleteMarkup = useCallback(
+    async (markupId: string) => {
+      if (!world?.id) return;
+      await deleteSpatialMarkup(world.id, markupId);
+      setCollabMarkups((prev) => prev.filter((m) => m.markup_id !== markupId));
+    },
+    [world],
+  );
+
+  const handleFollowPeer = useCallback((peer: PeerPresence | null) => {
+    setFollowedPeerId(peer ? peer.client_id : null);
+  }, []);
 
   // Architectural Section & Elevation Drawings state
   const [showSectionDrawings, setShowSectionDrawings] = useState(false);
@@ -1566,6 +1671,33 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Real-Time Collaborative Telepresence Bar */}
+        {showCollabPresence && world && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+            <CollabPresenceBar
+              peers={collabPeers}
+              activeMarkupCount={collabMarkups.length}
+              followedClientId={followedPeerId}
+              onFollowPeer={handleFollowPeer}
+              onOpenMarkups={() => setShowMarkupModal(true)}
+              onAddPin={() => setIsPinModeActive((prev) => !prev)}
+              isPinModeActive={isPinModeActive}
+            />
+          </div>
+        )}
+
+        {/* Collaborative Spatial Markups & BCF Modal */}
+        {showMarkupModal && (
+          <SpatialMarkupModal
+            worldId={world?.id ?? ""}
+            markups={collabMarkups}
+            isOpen={showMarkupModal}
+            onClose={() => setShowMarkupModal(false)}
+            onCreateMarkup={handleCreateMarkup}
+            onDeleteMarkup={handleDeleteMarkup}
+          />
+        )}
+
         {/* MEP Facility Topology Panel Overlay */}
         {showMepTopology && (
           <div className="absolute top-14 right-3 z-30 pointer-events-auto">
@@ -1750,6 +1882,14 @@ export default function World3DViewport({
                 onClick={() => setShowSectionDrawings(true)}
               >
                 <FileText className="w-4 h-4 text-accent" />
+              </IconButton>
+
+              <IconButton
+                label="Real-Time Collaborative Telepresence & Markups"
+                active={showCollabPresence}
+                onClick={() => setShowCollabPresence((v) => !v)}
+              >
+                <Users className="w-4 h-4 text-accent" />
               </IconButton>
 
               <IconButton

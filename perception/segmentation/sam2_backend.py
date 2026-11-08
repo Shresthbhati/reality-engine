@@ -234,7 +234,7 @@ class SAM2SegmentationBackend(ISegmentationBackend):
 
         _ensure_sam2_deps()
         import numpy as np
-        from evidence.image_check import open_oriented
+        from engine.core.image_io import open_oriented
 
         self._load_model()
 

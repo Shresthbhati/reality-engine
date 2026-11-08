@@ -82,6 +82,7 @@ KNOWN_VIOLATIONS: dict[tuple[str, str], str] = {
     ("reconstruction.robustness", "evidence.session"): "reconstruction consumes evidence.session items (sibling coupling)",
     ("registration.cross_session", "reconstruction.backend.interface"): "registration uses reconstruction camera/transform/result types (sibling coupling)",
     ("perception.segmentation.oneformer_backend", "evidence.session"): "perception consumes evidence.session items (sibling coupling)",
+    ("perception.segmentation.sam2_backend", "evidence.session"): "perception consumes evidence.session items (sibling coupling)",
     ("reconstruction.mvs.dense_cloud", "perception.depth.interface"): "reconstruction consumes perception depth/plane types (sibling coupling)",
     ("reconstruction.scale.metric_anchor", "evidence.session"): "reconstruction consumes evidence.session items (sibling coupling)",
     ("reconstruction.scale.metric_anchor", "evidence.session_grouping"): "reconstruction consumes evidence.session items (sibling coupling)",

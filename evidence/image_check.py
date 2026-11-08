@@ -31,45 +31,14 @@ DECLARABLE_CLASSES = frozenset(
 
 MIN_SIDE_PX = 64
 
-#: Decoded-pixel cap (width*height). Phone cameras reach ~50-200 MP; an
-#: unbounded image otherwise exhausts memory (RGB decode = 3 bytes/px).
-#: Override with REALITY_ENGINE_MAX_IMAGE_PIXELS.
-DEFAULT_MAX_IMAGE_PIXELS = 200_000_000
+from engine.core.image_io import (
+    DEFAULT_MAX_IMAGE_PIXELS,
+    ImageTooLarge,
+    max_image_pixels,
+    open_oriented,
+)
+
 _ORIENTATION_TAG = 0x0112
-
-
-class ImageTooLarge(ValueError):
-    """Header-declared pixel count exceeds the cap; raised before decoding."""
-
-
-def max_image_pixels() -> int:
-    try:
-        v = int(os.environ.get("REALITY_ENGINE_MAX_IMAGE_PIXELS", ""))
-        return v if v > 0 else DEFAULT_MAX_IMAGE_PIXELS
-    except ValueError:
-        return DEFAULT_MAX_IMAGE_PIXELS
-
-
-def open_oriented(path, max_pixels: Optional[int] = None):
-    """Open an image for geometry/depth/detection: EXIF orientation applied
-    (so pixels match the upright scene the intrinsics describe) and the
-    pixel cap enforced from the header, before any decode.
-
-    Returns a fully loaded PIL image. Raises ``ImageTooLarge`` over the cap
-    and the usual PIL errors for undecodable files.
-    """
-    from PIL import Image, ImageOps
-
-    cap = max_pixels or max_image_pixels()
-    try:
-        with Image.open(path) as img:
-            w, h = img.size
-            if w * h > cap:
-                raise ImageTooLarge(f"image is {w}x{h} ({w * h:,} px); decoded-pixel cap is {cap:,}")
-            img.load()
-            return ImageOps.exif_transpose(img)
-    except Image.DecompressionBombError as exc:  # Pillow's own 2x-limit backstop (~179 MP)
-        raise ImageTooLarge(f"decompression bomb refused ({exc})") from exc
 
 
 @dataclass(frozen=True)

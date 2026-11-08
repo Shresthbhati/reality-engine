@@ -122,6 +122,6 @@ class LayoutModels:
 
 
 def analyze_path(models: LayoutModels, path: Path) -> ImageAnalysis:
-    from evidence.image_check import open_oriented
+    from engine.core.image_io import open_oriented
 
     return models.analyze(open_oriented(Path(path)).convert("RGB"))

@@ -21,8 +21,33 @@ export interface FlowStep {
   current: boolean;
 }
 
+/** localStorage keys for per-world flow step completion (steps 4 and 5 are UI actions
+ * with no backend signal, so we persist completion locally). Prefix avoids collisions. */
+const FLOW_PREFIX = "reality.flow:";
+
+function flowKey(worldId: string, step: StepId): string {
+  return `${FLOW_PREFIX}${worldId}:${step}`;
+}
+
+/** Mark a step as done for a world (called from the UI when the user performs the action). */
+export function markFlowStepDone(worldId: string, step: StepId): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(flowKey(worldId, step), "1");
+  } catch { /* localStorage unavailable in some environments */ }
+}
+
+/** Check whether a step was previously marked done for a world. */
+export function isFlowStepDone(worldId: string | null | undefined, step: StepId): boolean {
+  if (!worldId || typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(flowKey(worldId, step)) === "1";
+  } catch { return false; }
+}
+
 /** The subset of `WorldStatus` the flow reads (structural, so this file has no React/API imports). */
 export interface FlowStatusInput {
+  world_id?: string;
   state: string;
   state_label?: string;
   in_progress: boolean;
@@ -131,17 +156,22 @@ export function buildFlowSteps(status: FlowStatusInput | null | undefined): Flow
 
   const review: FlowStep = hasModel
     ? {
-        id: "review", n: 4, title: "Review the room", state: "action", current: false,
-        reason: "Open the 3D view and switch between Coloured, Wireframe and Confidence.",
+        id: "review", n: 4, title: "Review the room",
+        state: isFlowStepDone(status?.world_id ?? null, "review") ? "done" : "action", current: false,
+        reason: isFlowStepDone(status?.world_id ?? null, "review")
+          ? "Room reviewed in the 3D viewer."
+          : "Open the 3D view and switch between Coloured, Wireframe and Confidence.",
         cta: { kind: "open_world", label: "Open viewer" },
       }
     : { id: "review", n: 4, title: "Review the room", state: "unavailable", current: false, reason: "Needs a reconstructed model first." };
 
   const measure: FlowStep = !hasModel
     ? { id: "measure", n: 5, title: "Measure / export", state: "unavailable", current: false, reason: "Needs a reconstructed model first." }
-    : scaleView.kind === "relative"
-      ? { id: "measure", n: 5, title: "Measure / export", state: "action", current: false, reason: "You can measure now, but distances are in model units until the scale is set." }
-      : { id: "measure", n: 5, title: "Measure / export", state: "action", current: false, reason: "Pick two points to measure a distance, or export the model." };
+    : isFlowStepDone(status?.world_id ?? null, "measure")
+      ? { id: "measure", n: 5, title: "Measure / export", state: "done", current: false, reason: "Distance measured or model exported." }
+      : scaleView.kind === "relative"
+        ? { id: "measure", n: 5, title: "Measure / export", state: "action", current: false, reason: "You can measure now, but distances are in model units until the scale is set." }
+        : { id: "measure", n: 5, title: "Measure / export", state: "action", current: false, reason: "Pick two points to measure a distance, or export the model." };
 
   const steps = [photos, reconstruct, scale, review, measure];
   const cur = steps.find((s) => s.state === "active" || s.state === "action");

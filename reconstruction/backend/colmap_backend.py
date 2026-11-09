@@ -26,6 +26,7 @@ import numpy as np
 from provenance import Uncertainty
 
 from evidence.session import EvidenceItem, EvidenceKind
+from .colmap_config import ColmapConfig
 from .interface import (
     IReconstructionBackend,
     ReconstructedCameraPose,
@@ -285,7 +286,6 @@ def _subprocess_env(colmap_path: str) -> Dict[str, str]:
 
 #: Native COLMAP on Windows crashes (exit 0xC0000409, no message) once a file it opens exceeds MAX_PATH (260).
 #: The deepest paths under a workspace add ~90 characters (dense/<n>/stereo/depth_maps/<image>.geometric.bin).
-MAX_WORKSPACE_PATH_CHARS = 170
 
 
 class WorkspacePathTooLong(RuntimeError):
@@ -294,9 +294,10 @@ class WorkspacePathTooLong(RuntimeError):
 
 def _check_workspace_path(ws: Path) -> None:
     """Fail EARLY with the real cause instead of a native crash whose only symptom is an exit code."""
-    if os.name == "nt" and len(str(Path(ws).resolve())) > MAX_WORKSPACE_PATH_CHARS:
+    config = ColmapConfig.from_file()
+    if os.name == "nt" and len(str(Path(ws).resolve())) > config.max_workspace_path_chars:
         raise WorkspacePathTooLong(
-            f"COLMAP workspace path is {len(str(Path(ws).resolve()))} characters (limit {MAX_WORKSPACE_PATH_CHARS}); "
+            f"COLMAP workspace path is {len(str(Path(ws).resolve()))} characters (limit {config.max_workspace_path_chars}); "
             "native COLMAP on Windows crashes silently beyond ~260 characters including file names. "
             "Point WORLDSTORE_ROOT at a shorter directory.")
 
@@ -304,7 +305,9 @@ def _check_workspace_path(ws: Path) -> None:
 class ColmapReconstructionBackend(IReconstructionBackend):
     def __init__(self, colmap_binary: str = "colmap", use_gpu: bool = False,
                  robust_sift: bool = True, guided_matching: bool = False,
-                 dense_mvs: bool = False, artifact_store=None, session=None):
+                 dense_mvs: bool = False, artifact_store=None, session=None,
+                 config: Optional[ColmapConfig] = None):
+        self._config = config if config is not None else ColmapConfig.from_file()
         self._colmap_binary = colmap_binary
         #: Optional reconstruction.colmap_session.ColmapSession. When set, the workspace
         #: PERSISTS between runs and new photographs are registered into the previous sparse
@@ -322,17 +325,17 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         # no-GPU build ("without GPU support" per its own version banner);
         # passing use_gpu=1 against it fails every step. A CUDA build
         # should pass use_gpu=True explicitly.
-        self._use_gpu = use_gpu
+        self._use_gpu = self._config.use_gpu
         #: Affine-shape + domain-size-pooling SIFT. Measured default ON:
         #: +22% verified points at unchanged fidelity on the committed
         #: real 32-photo subset. Costs ~3x extraction time (CPU-only in
         #: COLMAP); opt out explicitly.
-        self.robust_sift = robust_sift
+        self.robust_sift = self._config.robust_sift
         #: Guided matching. Default OFF -- measured FALSE COVERAGE on
         #: repetitive architecture (31/32 cameras but 24.6 deg median
         #: rotation error vs 0.164 deg without). Opt in only when the
         #: capture lacks repetitive structures.
-        self.guided_matching = guided_matching
+        self.guided_matching = self._config.guided_matching
         #: Dense-MVS continuation. Default OFF (heavyweight, GPU-bound):
         #: when True, reconstruct() continues the mapper's sparse model
         #: through image_undistorter -> patch_match_stereo ->
@@ -341,7 +344,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         #: binary must PROBE as dense-capable before any compute is
         #: spent; a dense failure raises rather than degrading into a
         #: sparse-only success.
-        self.dense_mvs = dense_mvs
+        self.dense_mvs = self._config.dense_mvs
         #: Optional ArtifactStore. When set AND dense_mvs=True, the
         #: fused cloud is ingested through the canonical chain
         #: (parse -> PointCloudData -> content-addressed artifact)
@@ -400,7 +403,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 "to run real reconstruction (see docs/RECONSTRUCTION_BACKEND_DECISION.md)"
             )
         env = _subprocess_env(colmap_path)
-        gpu_flag = "1" if self._use_gpu else "0"
+        gpu_flag = "1" if self._config.use_gpu else "0"
 
         # Dense continuation is an explicit opt-in, and its capability
         # precondition is checked BEFORE any compute is spent: a binary
@@ -897,7 +900,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             binary=self._colmap_binary,
             # Dense stereo honors the same GPU decision as sparse; the
             # CPU Windows build must not be handed use_gpu=1.
-            use_gpu=True if self._use_gpu else False,
+            use_gpu=True if self._config.use_gpu else False,
         )
 
         fused_bytes = Path(run.fused_ply_path).read_bytes()

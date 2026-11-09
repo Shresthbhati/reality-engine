@@ -29,35 +29,71 @@ _MESH_MAGIC = b"RESMSH01"  # Reality Engine Surface Mesh, format v1
 class PointCloudData:
     """An ordered, real set of 3D points. Order is preserved (not
     resorted) so `len(points) == vertex_count` stays meaningful and a
-    caller's own point identity/order survives a round trip."""
+    caller's own point identity/order survives a round trip.
+
+    Colours are optional per-point RGB (0-255). When present they are
+    stored alongside positions and round-tripped through to_bytes /
+    from_bytes.
+    """
 
     points: Tuple[Point, ...]
+    colors: Optional[Tuple[Tuple[int, int, int], ...]] = None
 
     def __post_init__(self):
         if not isinstance(self.points, tuple):
             object.__setattr__(self, "points", tuple(self.points))
+        if self.colors is not None and not isinstance(self.colors, tuple):
+            object.__setattr__(self, "colors", tuple(self.colors))
+        if self.colors is not None and len(self.colors) != len(self.points):
+            raise ValueError(
+                f"colors length {len(self.colors)} != points length {len(self.points)}"
+            )
 
     def to_bytes(self) -> bytes:
         """Deterministic binary encoding: magic, point count (uint32 LE),
-        then count * 3 float64 LE. float64 (not float32) because these
-        are real reconstructed coordinates, not a rendering approximation
-        -- precision loss here would silently corrupt downstream
+        then per-point: x,y,z (float64 LE) followed by r,g,b (uchar) when
+        colours are present. float64 (not float32) because these are real
+        reconstructed coordinates, not a rendering approximation --
+        precision loss here would silently corrupt downstream
         measurements."""
-        body = struct.pack(f"<{len(self.points) * 3}d", *(c for p in self.points for c in p))
-        return _MAGIC + struct.pack("<I", len(self.points)) + body
+        has_colours = self.colors is not None
+        body = struct.pack(
+            f"<{len(self.points) * 3}d",
+            *(c for p in self.points for c in p),
+        )
+        if has_colours:
+            body += struct.pack(
+                f"<{len(self.colors) * 3}B",
+                *(c for rgb in self.colors for c in rgb),
+            )
+        return _MAGIC + struct.pack("<II", len(self.points), int(has_colours)) + body
 
     @staticmethod
     def from_bytes(data: bytes) -> "PointCloudData":
         if data[:8] != _MAGIC:
             raise ValueError(f"not a PointCloudData payload (bad magic {data[:8]!r})")
-        (count,) = struct.unpack_from("<I", data, 8)
-        flat = struct.unpack_from(f"<{count * 3}d", data, 12)
+        (count, has_colours) = struct.unpack_from("<II", data, 8)
+        flat = struct.unpack_from(f"<{count * 3}d", data, 16)
         points = tuple((flat[i], flat[i + 1], flat[i + 2]) for i in range(0, len(flat), 3))
-        return PointCloudData(points=points)
+        colours = None
+        if has_colours:
+            offset = 16 + count * 3 * 8
+            colour_flat = struct.unpack_from(f"<{count * 3}B", data, offset)
+            colours = tuple(
+                (colour_flat[i], colour_flat[i + 1], colour_flat[i + 2])
+                for i in range(0, len(colour_flat), 3)
+            )
+        return PointCloudData(points=points, colors=colours)
 
     @staticmethod
-    def from_positions(positions: Sequence[Point]) -> "PointCloudData":
-        return PointCloudData(points=tuple(positions))
+    def from_positions(
+        positions: Sequence[Point],
+        colors: Optional[Sequence[Tuple[int, int, int]]] = None,
+    ) -> "PointCloudData":
+        return PointCloudData(
+            points=tuple(positions),
+            colors=None if colors is None else tuple(colors),
+        )
 
 
 @dataclass(frozen=True, init=False)

@@ -85,7 +85,17 @@ def ingest_fused_ply(
         return tuple(R[i][0] * x + R[i][1] * y + R[i][2] * z for i in range(3))
 
     placed = [_place(p.position) for p in points]
-    cloud = PointCloudData.from_positions(placed)
+
+    # Per-point colours from the fused.ply (COLMAP measures RGB per point);
+    # pass them through so the persisted cloud carries colour evidence.
+    colours = None
+    if any(p.color is not None for p in points):
+        colours = tuple(
+            (p.color[0], p.color[1], p.color[2]) if p.color is not None else (0, 0, 0)
+            for p in points
+        )
+
+    cloud = PointCloudData.from_positions(placed, colors=colours)
     data_uri, data_hash = artifact_store.put(cloud.to_bytes())
 
     xs = [q[0] for q in placed]
@@ -129,6 +139,7 @@ def ingest_fused_ply(
                 "note": "true multi-view stereo fusion output; monocular "
                 "depth priors are a separate, weaker evidence class and "
                 "are never recorded under this source",
+                "colours_persisted": facts["had_colors"],
             },
         )],
     )

@@ -44,6 +44,7 @@ import {
   Network,
   Users,
   Calculator,
+  ShieldCheck,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -118,6 +119,7 @@ import { fetchWorldClashes, downloadBcfZip } from "@/lib/api/bcf";
 import { SurfaceQualityPanel } from "@/components/studio/SurfaceQualityPanel";
 import { SectionDrawingModal } from "@/components/studio/SectionDrawingModal";
 import { TakeoffScheduleModal } from "@/components/studio/TakeoffScheduleModal";
+import { LifeSafetyAccessibilityModal } from "@/components/studio/LifeSafetyAccessibilityModal";
 import { CollabPresenceBar } from "@/components/studio/CollabPresenceBar";
 import { SpatialMarkupModal } from "@/components/studio/SpatialMarkupModal";
 import type { PeerPresence, SpatialMarkup, MarkupTrade, MarkupStatus } from "@/lib/studio/collab-presence-model";
@@ -501,6 +503,7 @@ export default function World3DViewport({
   // Architectural Section & Elevation Drawings state
   const [showSectionDrawings, setShowSectionDrawings] = useState(false);
   const [showTakeoffModal, setShowTakeoffModal] = useState(false);
+  const [showLifeSafetyModal, setShowLifeSafetyModal] = useState(false);
 
   // Surface Quality & ASTM E1155 state and handlers
   const [showSurfaceQuality, setShowSurfaceQuality] = useState(false);
@@ -1715,6 +1718,16 @@ export default function World3DViewport({
               isLoading={isMepLoading}
             />
           </div>
+        )}
+
+        {/* Life Safety & ADA Accessibility Compliance Modal */}
+        {showLifeSafetyModal && (
+          <LifeSafetyAccessibilityModal
+            worldId={world?.id ?? ""}
+            projectName={world?.name || "Architectural Reality Model"}
+            isOpen={showLifeSafetyModal}
+            onClose={() => setShowLifeSafetyModal(false)}
+          />
         )}
 
         {/* Bill of Quantities (BoQ) & Material Takeoff Modal */}

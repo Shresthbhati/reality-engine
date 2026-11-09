@@ -38,6 +38,7 @@ export const RAIL_ITEMS: NavEntry[] = [
   { id: "evidence", label: "Evidence", href: "/evidence", matches: ["/evidence"] },
   { id: "sessions", label: "Sessions", href: "/sessions", matches: ["/sessions"] },
   { id: "reports", label: "Reports", href: "/reports", matches: ["/reports"] },
+  { id: "assistant", label: "Assistant", href: null }, // AI assistant panel (backend wired, UI stub)
   { id: "settings", label: "Settings", href: "/settings" },
 ];
 

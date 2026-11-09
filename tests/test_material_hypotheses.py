@@ -16,7 +16,7 @@ def test_warm_brown_floor_ranks_wood_first_but_only_as_a_hypothesis():
 
 
 def test_grey_floor_prefers_hard_floor_over_wood():
-    assert hypothesize_materials((128, 128, 128), "floor", spread_delta_e=2.0)[0]["material"] == "concrete_or_tile_floor"
+    assert hypothesize_materials((128, 128, 128), "floor", spread_delta_e=2.0)[0]["material"] == "concrete"
 
 
 def test_flat_light_wall_is_painted_and_uniformity_raises_the_score():

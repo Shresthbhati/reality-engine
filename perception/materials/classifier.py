@@ -341,7 +341,7 @@ def classify_material(evidence: MaterialEvidence) -> List[MaterialClassification
             min(1.0, concrete_score),
             "structural architectural concrete element",
         ))
-    elif is_neutral_grey and sheen <= 0.20 and 0.25 <= roughness <= 0.55 and kind not in ("road", "street", "curb", "sidewalk", "pavement"):
+    elif is_neutral_grey and sheen <= 0.20 and 0.10 <= roughness <= 0.60 and kind not in ("road", "street", "curb", "sidewalk", "pavement"):
         concrete_score = 0.45 + 0.20
         candidates.append((
             "concrete",

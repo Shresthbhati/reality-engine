@@ -15,6 +15,7 @@ geometry is worse than an honest absence.
 
 from __future__ import annotations
 
+import os
 import shutil
 import struct
 import subprocess
@@ -76,7 +77,7 @@ def reconstruct_surface(
     colmap_binary: str = "colmap",
     depth: int = 10,
     trim: float = 0.0,
-    num_threads: int = -1,
+    num_threads: Optional[int] = None,
     work_dir: Optional[Path] = None,
 ) -> MeshData:
     """Oriented point cloud -> COLMAP screened-Poisson triangle mesh.
@@ -101,7 +102,15 @@ def reconstruct_surface(
     Raises MeshingUnavailableError (probe failed), PreprocessError-shape
     ValueErrors from MeshData validation on degenerate output, and
     MeshingError when the backend fails on valid input.
+
+    Threading: num_threads defaults to min(4, cpu_count). COLMAP's -1
+    (all cores) starves the rest of the pipeline on building-scale inputs
+    and is the main cause of 40+ min hangs -- never the default here.
     """
+    if num_threads is None:
+        import os as _os
+
+        num_threads = min(4, _os.cpu_count() or 1)
     if not points:
         raise MeshingError("no points -- nothing to mesh")
     if len(points) != len(normals):

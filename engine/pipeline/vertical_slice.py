@@ -116,7 +116,11 @@ class VerticalSliceOptions:
     #: False; skipped honestly when its dependencies are unavailable.
     mesh_enabled: bool = True
     mesh_voxel_size_m: float = 0.02
-    mesh_poisson_depth: int = 10
+    #: Poisson octree depth for surface reconstruction. Depth 10 (1024^3)
+    #: is far too fine for large clouds and is the main cause of 40+ min
+    #: hangs on building-scale inputs; depth 8 (256^3) is the default and
+    #: is bumped only when a caller explicitly requests finer output.
+    mesh_poisson_depth: int = 8
 
     #: Dense-MVS stage (P6-01): run COLMAP patch_match_stereo +
     #: stereo_fusion over the sparse model and ingest fused.ply as a

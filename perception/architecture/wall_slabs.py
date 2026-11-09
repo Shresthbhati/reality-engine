@@ -179,7 +179,8 @@ def layout_consistency(layout, ceiling_layers: Sequence[dict] = ()) -> dict:
 
 def promote_room_layout(world, result, up, *, wall_planes: Sequence[Tuple[str, np.ndarray]] = (),
                         artifact_store=None, structure_prefix: str = "struct",
-                        layout_edges_ab: Optional[Sequence[Sequence[Sequence[float]]]] = None) -> dict:
+                        layout_edges_ab: Optional[Sequence[Sequence[Sequence[float]]]] = None,
+                        wall_thickness_m: float = 0.10) -> dict:
     """Mutates ``world``; returns an accounting dict (also stored at ``world.metadata["room_layout"]``)."""
     report: dict = {"rooms": [], "warnings": [], "view_model": dict(VIEW_MODEL)}
     world.metadata["room_layout"] = report
@@ -192,14 +193,14 @@ def promote_room_layout(world, result, up, *, wall_planes: Sequence[Tuple[str, n
     for room in rooms:
         try:
             _promote_room(world, room, result, P, up, wall_planes, artifact_store, report,
-                          layout_edges_ab=layout_edges_ab)
+                          layout_edges_ab=layout_edges_ab, wall_thickness_m=wall_thickness_m)
         except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
             report["warnings"].append(f"{room.id}: {type(exc).__name__}: {exc}")
     return report
 
 
 def _promote_room(world, room: Entity, result, P: np.ndarray, up, wall_planes, artifact_store, report: dict,
-                  layout_edges_ab=None) -> None:
+                  layout_edges_ab=None, wall_thickness_m: float = 0.10) -> None:
     cp = room.custom_properties
     e1, e2, u = _basis(cp["footprint_basis"].get("up", up))
     floor_h = float(cp["floor_height_m"])
@@ -210,7 +211,8 @@ def _promote_room(world, room: Entity, result, P: np.ndarray, up, wall_planes, a
     AB, HH = pl[:, :2], pl[:, 2] - floor_h
     top = max([h for h in (heights or []) if h] + [cp.get("ceiling_height_max_m") or 0.0, 2.0])
     near = (HH > 0.05) & (HH < top + 0.3)
-    layout = solve_room_layout(poly.tolist(), heights, AB[near], layout_edges_ab=layout_edges_ab)
+    layout = solve_room_layout(poly.tolist(), heights, AB[near], thickness_m=wall_thickness_m,
+                               layout_edges_ab=layout_edges_ab)
     consistency = layout_consistency(layout, cp.get("ceiling_layers") or [])
     cp["layout_dimension_u_m"] = consistency["extent_u_m"]
     cp["layout_dimension_v_m"] = consistency["extent_v_m"]

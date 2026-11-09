@@ -164,6 +164,11 @@ class CompileOptions:
     #: lower-confidence ADDITIONAL observation for the S2 solver: they can only raise a wall no point supports to
     #: OBSERVED with a layout basis, never move or outrank a measured wall. None = no layout evidence supplied.
     layout_edges_ab: Optional[Sequence] = None
+    #: Wall thickness in metres, applied to all promoted wall slabs. No pipeline
+    #: stage observes both faces of a wall, so this is a labelled default, not a
+    #: measurement (``thickness_basis="default_unmeasured"``). Pass a measured
+    #: value when tape measurements exist.
+    wall_thickness_m: float = 0.10
 
 
 @dataclass(frozen=True)
@@ -829,7 +834,7 @@ def compile_reconstruction_to_world(
                          for o in oriented if o.role == "wall"
                          and f"{options.structure_prefix}-{o.plane.plane_id}" in world.entities],
             artifact_store=options.artifact_store, structure_prefix=options.structure_prefix,
-            layout_edges_ab=options.layout_edges_ab)
+            layout_edges_ab=options.layout_edges_ab, wall_thickness_m=options.wall_thickness_m)
         entities_created.extend(sorted(set(world.entities) - before))
         interior_warnings.extend(f"room layout: {w}" for w in layout_report.get("warnings", []))
     except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible

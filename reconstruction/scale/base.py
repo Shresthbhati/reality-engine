@@ -305,10 +305,27 @@ def anchor_metric_scale(
         for p in sorted(result.points, key=lambda p: p.track_id)
     ]
 
+    # Preserve dense MVS points through the rebuild -- they are real measured
+    # geometry and must not be dropped just because scale changed.
+    scaled_dense = None
+    if result.dense_points is not None:
+        scaled_dense = [
+            ReconstructedPoint(
+                position=tuple(c * meters_per_unit for c in p.position),
+                track_id=p.track_id,
+                source_evidence_ids=p.source_evidence_ids,
+                uncertainty=p.uncertainty,
+                color=p.color,
+            )
+            for p in sorted(result.dense_points, key=lambda p: p.track_id)
+        ]
+
     scaled = ReconstructionResult(
         points=scaled_points,
         camera_poses=scaled_poses,
         registration_status=result.registration_status,
+        dense_points=scaled_dense,
+        dense_report=result.dense_report,
     )
     diagnostics = ScaleDiagnostics(
         state=ScaleState.METRIC,

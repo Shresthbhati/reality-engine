@@ -1,8 +1,13 @@
-"""Pipeline orchestration and incremental execution components."""
+"""Universal Spatial Pipeline (Directive Rules 11 & 12)."""
 
-from .incremental_ingest import IncrementalIngestResult, run_incremental_ingest
+from engine.pipeline.universal_spatial_pipeline import (
+    UniversalPipelineOptions,
+    UniversalPipelineResult,
+    UniversalSpatialPipeline,
+)
 
 __all__ = [
-    "IncrementalIngestResult",
-    "run_incremental_ingest",
+    "UniversalPipelineOptions",
+    "UniversalPipelineResult",
+    "UniversalSpatialPipeline",
 ]

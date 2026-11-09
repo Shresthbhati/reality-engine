@@ -40,6 +40,8 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
+import numpy as np
+
 from provenance import Provenance, Uncertainty
 from engine.math.math3 import Vec3
 from world_ir.observations import DepthSource, sigma_for
@@ -93,6 +95,10 @@ class ObjectHypothesis3D:
     sigma_m: Optional[float] = None
     #: (dx, dy, dz) of the bounds in metres. None = no metric dimensions (relative depth, scale_state still "relative").
     metric_extents_m: Optional[Tuple[float, float, float]] = None
+    #: Oriented bounding box: (center, half_extents, rotation_quat_wxyz) in metres.
+    #: PCA-aligned to the unprojected mask points -- tighter than AABB for rotated objects.
+    #: None = not computed (no metric scale or too few points).
+    oriented_bounds: Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float, float]]] = None
 
     def to_dict(self) -> dict:
         return {
@@ -111,6 +117,11 @@ class ObjectHypothesis3D:
             "depth_source": self.depth_source.value,
             "sigma_m": self.sigma_m,
             "metric_extents_m": None if self.metric_extents_m is None else list(self.metric_extents_m),
+            "oriented_bounds": None if self.oriented_bounds is None else {
+                "center": list(self.oriented_bounds[0]),
+                "half_extents": list(self.oriented_bounds[1]),
+                "rotation_wxyz": list(self.oriented_bounds[2]),
+            },
         }
 
 
@@ -182,6 +193,65 @@ def lift_region_to_3d(
         (bounds_max.x - bounds_min.x, bounds_max.y - bounds_min.y, bounds_max.z - bounds_min.z) if has_scale else None
     )
 
+    # Oriented bounds: PCA on the unprojected points gives a tighter, rotated
+    # box than AABB for objects at an angle to the camera plane. Only when we
+    # have metric scale (oriented bounds in metres need real depth).
+    obb: Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float, float]]] = None
+    if has_scale and len(points) >= 3:
+        pts = np.array([[p.x, p.y, p.z] for p in points], dtype=float)
+        centroid_np = pts.mean(axis=0)
+        # Covariance + eigendecomposition for principal axes
+        cov = np.cov(pts, rowvar=False)
+        evals, evecs = np.linalg.eigh(cov)
+        # Sort eigenvalues descending so evecs columns are principal axes
+        order = np.argsort(evals)[::-1]
+        evecs = evecs[:, order]
+        # Half-extents = 2*stddev along each principal axis (covers ~95% of points)
+        stds = np.sqrt(np.maximum(evals[order], 0.0))
+        half_extents = tuple(2.0 * float(s) for s in stds)
+        # Rotation: columns of evecs are the local axes in world coords. Convert
+        # the rotation matrix to a quaternion (w, x, y, z).
+        R = evecs  # columns are principal axes
+        # Ensure right-handed: det(R) should be +1
+        if np.linalg.det(R) < 0:
+            R[:, 2] *= -1.0
+        # Rotation matrix -> quaternion (w, x, y, z)
+        m00, m01, m02 = R[0, 0], R[0, 1], R[0, 2]
+        m10, m11, m12 = R[1, 0], R[1, 1], R[1, 2]
+        m20, m21, m22 = R[2, 0], R[2, 1], R[2, 2]
+        trace = m00 + m11 + m22
+        if trace > 0:
+            s = math.sqrt(trace + 1.0) * 2.0
+            qw = 0.25 * s
+            qx = (m21 - m12) / s
+            qy = (m02 - m20) / s
+            qz = (m10 - m01) / s
+        elif m00 > m11 and m00 > m22:
+            s = math.sqrt(max(1e-12, 1.0 + m00 - m11 - m22)) * 2.0
+            qw = (m21 - m12) / s
+            qx = 0.25 * s
+            qy = (m01 + m10) / s
+            qz = (m02 + m20) / s
+        elif m11 > m22:
+            s = math.sqrt(max(1e-12, 1.0 + m11 - m00 - m22)) * 2.0
+            qw = (m02 - m20) / s
+            qx = (m01 + m10) / s
+            qy = 0.25 * s
+            qz = (m12 + m21) / s
+        else:
+            s = math.sqrt(max(1e-12, 1.0 + m22 - m00 - m11)) * 2.0
+            qw = (m10 - m01) / s
+            qx = (m02 + m20) / s
+            qy = (m12 + m21) / s
+            qz = 0.25 * s
+        qn = math.sqrt(qw * qw + qx * qx + qy * qy + qz * qz)
+        qw, qx, qy, qz = qw / qn, qx / qn, qy / qn, qz / qn
+        obb = (
+            (float(centroid_np[0]), float(centroid_np[1]), float(centroid_np[2])),
+            half_extents,
+            (float(qw), float(qx), float(qy), float(qz)),
+        )
+
     return ObjectHypothesis3D(
         region_id=region.region_id,
         evidence_id=region.evidence_id,
@@ -201,4 +271,5 @@ def lift_region_to_3d(
         depth_source=depth_source,
         sigma_m=sigma_m,
         metric_extents_m=extents,
+        oriented_bounds=obb,
     )

@@ -40,6 +40,7 @@ export * from "./mep";
 export * from "./collab";
 export * from "./takeoff";
 export * from "./life-safety";
+export * from "./thermal-envelope";
 
 /**
  * The row shapes the API layer emits are the UI's view model; re-exported here

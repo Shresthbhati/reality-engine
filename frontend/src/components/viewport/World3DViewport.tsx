@@ -45,6 +45,7 @@ import {
   Users,
   Calculator,
   ShieldCheck,
+  Flame,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -120,6 +121,7 @@ import { SurfaceQualityPanel } from "@/components/studio/SurfaceQualityPanel";
 import { SectionDrawingModal } from "@/components/studio/SectionDrawingModal";
 import { TakeoffScheduleModal } from "@/components/studio/TakeoffScheduleModal";
 import { LifeSafetyAccessibilityModal } from "@/components/studio/LifeSafetyAccessibilityModal";
+import { ThermalEnvelopeModal } from "@/components/studio/ThermalEnvelopeModal";
 import { CollabPresenceBar } from "@/components/studio/CollabPresenceBar";
 import { SpatialMarkupModal } from "@/components/studio/SpatialMarkupModal";
 import type { PeerPresence, SpatialMarkup, MarkupTrade, MarkupStatus } from "@/lib/studio/collab-presence-model";
@@ -504,6 +506,7 @@ export default function World3DViewport({
   const [showSectionDrawings, setShowSectionDrawings] = useState(false);
   const [showTakeoffModal, setShowTakeoffModal] = useState(false);
   const [showLifeSafetyModal, setShowLifeSafetyModal] = useState(false);
+  const [showThermalModal, setShowThermalModal] = useState(false);
 
   // Surface Quality & ASTM E1155 state and handlers
   const [showSurfaceQuality, setShowSurfaceQuality] = useState(false);
@@ -1718,6 +1721,16 @@ export default function World3DViewport({
               isLoading={isMepLoading}
             />
           </div>
+        )}
+
+        {/* Building Envelope Thermal Performance Modal */}
+        {showThermalModal && (
+          <ThermalEnvelopeModal
+            worldId={world?.id ?? ""}
+            projectName={world?.name || "Architectural Reality Model"}
+            isOpen={showThermalModal}
+            onClose={() => setShowThermalModal(false)}
+          />
         )}
 
         {/* Life Safety & ADA Accessibility Compliance Modal */}

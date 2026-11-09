@@ -43,6 +43,7 @@ import {
   ShieldAlert,
   Network,
   Users,
+  Calculator,
 } from "lucide-react";
 import {
   WorldSceneController,
@@ -116,6 +117,7 @@ import type { ClashItem, ClashReportSummary } from "@/lib/studio/clash-bcf-model
 import { fetchWorldClashes, downloadBcfZip } from "@/lib/api/bcf";
 import { SurfaceQualityPanel } from "@/components/studio/SurfaceQualityPanel";
 import { SectionDrawingModal } from "@/components/studio/SectionDrawingModal";
+import { TakeoffScheduleModal } from "@/components/studio/TakeoffScheduleModal";
 import { CollabPresenceBar } from "@/components/studio/CollabPresenceBar";
 import { SpatialMarkupModal } from "@/components/studio/SpatialMarkupModal";
 import type { PeerPresence, SpatialMarkup, MarkupTrade, MarkupStatus } from "@/lib/studio/collab-presence-model";
@@ -498,6 +500,7 @@ export default function World3DViewport({
 
   // Architectural Section & Elevation Drawings state
   const [showSectionDrawings, setShowSectionDrawings] = useState(false);
+  const [showTakeoffModal, setShowTakeoffModal] = useState(false);
 
   // Surface Quality & ASTM E1155 state and handlers
   const [showSurfaceQuality, setShowSurfaceQuality] = useState(false);
@@ -1714,6 +1717,16 @@ export default function World3DViewport({
           </div>
         )}
 
+        {/* Bill of Quantities (BoQ) & Material Takeoff Modal */}
+        {showTakeoffModal && (
+          <TakeoffScheduleModal
+            worldId={world?.id ?? ""}
+            projectName={world?.name || "Architectural Reality Model"}
+            isOpen={showTakeoffModal}
+            onClose={() => setShowTakeoffModal(false)}
+          />
+        )}
+
         {/* Architectural Section & Elevation Drawings Modal */}
         {showSectionDrawings && (
           <SectionDrawingModal
@@ -1874,6 +1887,14 @@ export default function World3DViewport({
                 onClick={handleToggleSurfaceQuality}
               >
                 <Ruler className="w-4 h-4 text-accent" />
+              </IconButton>
+
+              <IconButton
+                label="Bill of Quantities & Material Takeoff (CSI MasterFormat)"
+                active={showTakeoffModal}
+                onClick={() => setShowTakeoffModal(true)}
+              >
+                <Calculator className="w-4 h-4 text-accent" />
               </IconButton>
 
               <IconButton

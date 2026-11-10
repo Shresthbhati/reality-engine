@@ -67,8 +67,8 @@ def test_progress_is_monotonic_and_settles_truthfully(client, tmp_path, monkeypa
     assert seen == sorted(seen), f"progress went backwards: {seen}"
     assert job["status"] in ("succeeded", "partial")
     assert job["progress"] == 100.0
-    assert job["stage"] in ("done", "done_with_warnings")
-    assert job["stage"] == ("done" if job["status"] == "succeeded" else "done_with_warnings")
+    assert job["stage"] in ("complete", "partial")
+    assert job["stage"] == ("complete" if job["status"] == "succeeded" else "partial")
     assert job["photos_total"] == 3
 
 

@@ -623,6 +623,11 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     test_backend = None
     backend_spec = os.environ.get("REALITY_TEST_BACKEND", "").strip()
     if backend_spec:
+        if os.environ.get("REALITY_ENV") != "test":
+            raise RuntimeError(
+                "REALITY_TEST_BACKEND is set outside REALITY_ENV=test; "
+                "refusing to run a test backend"
+            )
         import importlib
 
         module_name, _, class_name = backend_spec.partition(":")

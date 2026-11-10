@@ -74,7 +74,7 @@ Total: 1
 
 ## unlisted
 
-Total: 468
+Total: 470
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -324,6 +324,7 @@ Total: 468
 - `tests/test_metric_scale_fusion.py`
 - `tests/test_midas_backend.py`
 - `tests/test_mobile_bridge.py`
+- `tests/test_model_licence_gate.py`
 - `tests/test_model_registry_task4_1.py`
 - `tests/test_model_scheduler_task4_2.py`
 - `tests/test_multi_session_alignment.py`
@@ -462,6 +463,7 @@ Total: 468
 - `tests/test_spatial_tiling.py`
 - `tests/test_stacked_storey_reconstruction.py`
 - `tests/test_stair_detector.py`
+- `tests/test_status_ledger.py`
 - `tests/test_structural_network.py`
 - `tests/test_structure_points.py`
 - `tests/test_studio.py`

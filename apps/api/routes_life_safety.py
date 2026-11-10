@@ -115,7 +115,7 @@ async def download_life_safety_certificate(
     version_id: Optional[str] = Query(None, description="World version ID"),
     occupancy_group: str = Query(default="Business (Group B)"),
     is_sprinklered: bool = Query(default=True),
-    architect_name: str = Query(default="Reality Engine Certified Auditor"),
+    architect_name: str = Query(default="Automated preliminary screening (not professionally reviewed)"),
     db: AsyncSession = Depends(get_db),
     auth: AuthContext = Depends(get_auth_context),
 ) -> Response:

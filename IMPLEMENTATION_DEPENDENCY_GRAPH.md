@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-11-10).** Current status lives in [docs/STATUS.md](docs/STATUS.md); current plan in docs/blueprint/34_MASTER_PLAN.md. Kept for history.
+
 # Reality Engine — Implementation Dependency Graph
 ## Execution Sequencing, Critical Path Analysis, and Parallelization Lanes
 

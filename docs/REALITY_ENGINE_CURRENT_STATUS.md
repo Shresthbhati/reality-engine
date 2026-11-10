@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-11-10).** Current status lives in [docs/STATUS.md](../docs/STATUS.md); current plan in docs/blueprint/34_MASTER_PLAN.md. Kept for history.
+
 # REALITY ENGINE — STATUS SNAPSHOT 2026-11-03 (SUPERSEDED)
 
 > **SUPERSEDED 2026-11-07.** This file is a historical snapshot at PR #174 and is no longer authoritative.

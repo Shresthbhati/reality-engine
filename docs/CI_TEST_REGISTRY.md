@@ -84,7 +84,7 @@ Total: 1
 
 ## unlisted
 
-Total: 462
+Total: 463
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -291,6 +291,7 @@ Total: 462
 - `tests/test_interior_scene_e2e.py`
 - `tests/test_job_dedupe.py`
 - `tests/test_job_progress.py`
+- `tests/test_job_stage_runs_model.py`
 - `tests/test_job_timestamps.py`
 - `tests/test_jobs.py`
 - `tests/test_kiss_icp.py`

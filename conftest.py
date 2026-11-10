@@ -19,6 +19,11 @@ Strategy
 
 from __future__ import annotations
 
+import os
+
+# Test-only seams (e.g. REALITY_TEST_BACKEND) are honoured only under this env.
+os.environ.setdefault("REALITY_ENV", "test")
+
 # ---------------------------------------------------------------------------
 # Physics / simulation test modules (downstream — not part of core CI)
 # ---------------------------------------------------------------------------

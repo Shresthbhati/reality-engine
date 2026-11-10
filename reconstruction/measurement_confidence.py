@@ -1,4 +1,4 @@
-"""Measurement confidence and tolerances (plan item D.19).
+"""Measurement confidence and tolerances (D-19).
 
 Attaches confidence intervals and provenance to every dimension in a world,
 distinguishing directly measured distances from image-derived estimates.
@@ -61,19 +61,15 @@ class DimensionReport:
 class MeasurementConfidence:
     """Computes confidence-weighted dimensions for WorldIR entities."""
 
-    #: Confidence for a dimension directly tape-measured.
     CONF_TAPE = 0.95
-    #: Confidence for a dimension derived from calibrated imagery.
     CONF_IMAGE = 0.60
-    #: Confidence for a labelled heuristic default (e.g. wall thickness).
     CONF_HEURISTIC = 0.30
-    #: Confidence for an unprovenanced value.
     CONF_UNKNOWN = 0.0
 
     def dimension_for_entity(
         self,
         entity: Entity,
-        kind: str,                     # "length" | "height" | "thickness" | "width"
+        kind: str,
         tape_value: Optional[float] = None,
         tape_error_m: Optional[float] = None,
         image_value: Optional[float] = None,
@@ -85,7 +81,6 @@ class MeasurementConfidence:
 
         Priority: tape_measured > image_derived > heuristic > unknown.
         """
-        # ---- tape measurement wins outright --------------------------------
         if tape_value is not None:
             conf = self.CONF_TAPE
             tol = tape_error_m
@@ -95,9 +90,7 @@ class MeasurementConfidence:
                 provenance="tape_measured", evidence_ids=[],
                 method="tape_measurement", tolerance_m=tol, note=note)
 
-        # ---- image-derived --------------------------------------------------
         if image_value is not None:
-            # confidence falls with distance from camera and baseline quality
             conf = self.CONF_IMAGE
             note = "Derived from captured imagery; uncalibrated without a scale reference."
             if image_baseline_m is not None and image_baseline_m < 0.5:
@@ -108,7 +101,6 @@ class MeasurementConfidence:
                 provenance="image_derived", evidence_ids=[],
                 method="photogrammetry", tolerance_m=None, note=note)
 
-        # ---- heuristic default ----------------------------------------------
         if heuristic_value is not None:
             base = ("Labelled default, not a measurement. No pipeline stage "
                     "observes both faces of this element.")
@@ -118,7 +110,6 @@ class MeasurementConfidence:
                 provenance="heuristic", evidence_ids=[],
                 method="labelled_default", note=note)
 
-        # ---- nothing known --------------------------------------------------
         return MeasuredDimension(
             value_m=0.0, confidence=self.CONF_UNKNOWN,
             provenance="unknown", evidence_ids=[], method="none",

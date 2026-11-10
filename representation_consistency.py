@@ -1,4 +1,4 @@
-"""Multi-representation consistency checking (plan item D.20).
+"""Multi-representation consistency checking (D-20).
 
 Compares point clouds, meshes, Gaussian splats, semantic entities and
 architectural geometry. Flags areas where one representation disagrees with
@@ -7,7 +7,7 @@ another instead of silently choosing whichever result looks best.
 Honesty rules:
 * A disagreement is reported with both measurements and the distance between
   them -- never silently resolved.
-* "No data in one representation" is recorded as missing, not as agreement.
+ * "No data in one representation" is recorded as missing, not as agreement.
 * All distances are in metres and labelled with the representations compared.
 """
 
@@ -46,11 +46,7 @@ class ConsistencyReport:
 
 
 class RepresentationConsistencyChecker:
-    """Compares multiple geometric representations of the same world."""
-
-    #: Two surfaces farther than this are a conflict (metres).
     SURFACE_DISAGREEMENT_TOL_M = 0.10
-    #: An entity whose bounds fall outside a mesh by more than this is a conflict.
     ENTITY_MESH_TOL_M = 0.15
 
     def check(
@@ -60,11 +56,6 @@ class RepresentationConsistencyChecker:
         entities: Optional[Sequence[Entity]] = None,
         slabs: Optional[Sequence[Entity]] = None,
     ) -> ConsistencyReport:
-        """Run all consistency checks between provided representations.
-
-        Any representation may be None (not available); missing representations
-        are reported as gaps, not conflicts.
-        """
         conflicts: List[RepresentationConflict] = []
         compared: List[str] = []
 
@@ -77,19 +68,15 @@ class RepresentationConsistencyChecker:
         if slabs is not None:
             compared.append("slab")
 
-        # ---- point cloud vs mesh: do they occupy the same volume? ----------
         if point_cloud is not None and mesh_vertices is not None:
             conflicts.extend(self._cloud_vs_mesh(point_cloud, mesh_vertices))
 
-        # ---- entities vs mesh: does each entity sit on/inside the mesh? -----
         if entities is not None and mesh_vertices is not None:
             conflicts.extend(self._entities_vs_mesh(entities, mesh_vertices))
 
-        # ---- slabs vs mesh: do wall/floor slabs match the mesh surfaces? ---
         if slabs is not None and mesh_vertices is not None:
             conflicts.extend(self._slabs_vs_mesh(slabs, mesh_vertices))
 
-        # ---- point cloud vs entities: are entity bounds supported by points? -
         if point_cloud is not None and entities is not None:
             conflicts.extend(self._entities_vs_pointcloud(entities, point_cloud))
 
@@ -124,7 +111,6 @@ class RepresentationConsistencyChecker:
         if len(pc) == 0 or len(mv) == 0:
             return conflicts
 
-        # sample the cloud for speed
         sample = pc[::max(1, len(pc) // 2000)]
         for pt in sample:
             d, _ = self._nearest_distance(pt, mv)
@@ -190,7 +176,6 @@ class RepresentationConsistencyChecker:
             thick = slab.get("thickness_m")
             if not poly or thick is None:
                 continue
-            # check each polygon corner against the mesh
             for corner in poly:
                 pt = np.asarray(corner, float)
                 d, _ = self._nearest_distance(pt, mv)
@@ -226,8 +211,6 @@ class RepresentationConsistencyChecker:
                 continue
             centre = (np.asarray(bmin, float) + np.asarray(bmax, float)) / 2
             d, _ = self._nearest_distance(centre, pc)
-            # entities can legitimately be in empty space (floating shelves etc.),
-            # so use a looser tolerance and lower severity
             if d > 0.5:
                 conflicts.append(RepresentationConflict(
                     rule="entity_vs_pointcloud_support",

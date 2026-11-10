@@ -1,16 +1,14 @@
-"""Reconstruction uncertainty map (plan item B.10).
+"""Reconstruction uncertainty map (N-7).
 
 Maintains spatial confidence across a reconstruction: which areas have strong
 visual evidence, weak evidence, conflicting observations, or no evidence at all.
-Pure analysis of a ReconstructionResult; produces a voxelised confidence field
-plus per-region reports.
+Produces a voxelised confidence field plus per-region reports.
 
 Honesty rules:
 * Confidence is derived from triangulation support (track length, reprojection
   error) and camera baseline -- never invented.
 * Voxels with no points are "unobserved", not "empty".
-* Conflicting observations (depth contradictions from consistency.py) are
-  recorded as "conflicting" regions, never averaged away.
+* Conflicting observations are recorded as "conflicting", never averaged away.
 """
 
 from __future__ import annotations
@@ -57,7 +55,7 @@ class UncertaintyMap:
     voxel_size_m: float
     scene_bounds_min_m: Tuple[float, float, float]
     scene_bounds_max_m: Tuple[float, float, float]
-    overall_confidence: float  # 0..1, mean across observed voxels
+    overall_confidence: float
     unobserved_volume_m3: float
     provisional: bool = True
 
@@ -65,13 +63,9 @@ class UncertaintyMap:
 class UncertaintyMapper:
     """Builds a voxelised uncertainty map from a ReconstructionResult."""
 
-    #: Voxel side length in metres (default 25 cm).
     DEFAULT_VOXEL_SIZE_M = 0.25
-    #: Track length giving full confidence (3+ cameras observing a point).
     FULL_TRACK_LENGTH = 3
-    #: Reprojection error below which a point is "well constrained".
     GOOD_REPROJECTION_PX = 0.5
-    #: Reprojection error above which confidence drops sharply.
     POOR_REPROJECTION_PX = 2.0
 
     def __init__(self, voxel_size_m: float = DEFAULT_VOXEL_SIZE_M):
@@ -82,12 +76,6 @@ class UncertaintyMapper:
         result: ReconstructionResult,
         contradictions: Optional[List[dict]] = None,
     ) -> UncertaintyMap:
-        """Build the uncertainty map from points + optional depth contradictions.
-
-        contradictions: output of reconstruction/consistency.py (list of
-            DepthContradiction dicts with "point" keys). Points near a
-            contradiction are downgraded to "conflicting".
-        """
         points = result.points
         if not points:
             return UncertaintyMap(
@@ -103,12 +91,10 @@ class UncertaintyMapper:
         b_min = tuple(float(x) for x in coords.min(axis=0))
         b_max = tuple(float(x) for x in coords.max(axis=0))
 
-        # ---- index points into voxels --------------------------------------
         voxel_idx = np.floor(coords / self.voxel_size_m).astype(np.int64)
         unique, inverse, counts = np.unique(
             voxel_idx, axis=0, return_inverse=True, return_counts=True)
 
-        # ---- build contradiction lookup ------------------------------------
         contradiction_centres: List[np.ndarray] = []
         if contradictions:
             for c in contradictions:
@@ -116,7 +102,6 @@ class UncertaintyMapper:
                 if pt is not None and len(pt) == 3:
                     contradiction_centres.append(np.asarray(pt, float))
 
-        # ---- per-voxel metrics ---------------------------------------------
         voxels: List[UncertaintyVoxel] = []
         for k in range(len(unique)):
             centre = unique[k] * self.voxel_size_m + self.voxel_size_m / 2
@@ -128,7 +113,6 @@ class UncertaintyMapper:
             ]
             mean_track = float(np.mean(track_lengths)) if track_lengths else 0.0
 
-            # reprojection: use uncertainty.confidence as an error proxy
             confs = []
             for p in pts:
                 u = getattr(p, "uncertainty", None)
@@ -137,21 +121,18 @@ class UncertaintyMapper:
                     if c is not None:
                         confs.append(float(c))
             mean_conf = float(np.mean(confs)) if confs else 0.0
-            mean_reproj = max(0.0, 1.0 - mean_conf) * 3.0  # proxy px
+            mean_reproj = max(0.0, 1.0 - mean_conf) * 3.0
 
-            # ---- confidence score ------------------------------------------
-            track_score = min(1.0, mean_track / self.FULL_TRACK_LENGTH)
-            reproj_score = 1.0 - min(1.0, mean_reproj / self.POOR_REPROJECTION_PX)
-            conf = round(0.6 * track_score + 0.4 * reproj_score, 3)
+            conf = round(0.6 * min(1.0, mean_track / self.FULL_TRACK_LENGTH) +
+                         0.4 * (1.0 - min(1.0, mean_reproj / self.POOR_REPROJECTION_PX)), 3)
 
-            # ---- state -----------------------------------------------------
             is_conflicting = any(
                 float(np.linalg.norm(centre - cc)) < self.voxel_size_m
                 for cc in contradiction_centres
             )
             if is_conflicting:
                 state = "conflicting"
-                conf = round(conf * 0.5, 3)  # halve confidence for conflicts
+                conf = round(conf * 0.5, 3)
             elif len(pts) == 0:
                 state = "unobserved"
                 conf = 0.0
@@ -174,7 +155,6 @@ class UncertaintyMapper:
                 note="Conflicting depth observations nearby" if is_conflicting else None,
             ))
 
-        # ---- region aggregation --------------------------------------------
         regions = self._aggregate_regions(voxels)
 
         observed = [v for v in voxels if v.state != "unobserved"]
@@ -198,7 +178,6 @@ class UncertaintyMapper:
 
     @staticmethod
     def _aggregate_regions(voxels: List[UncertaintyVoxel]) -> List[UncertaintyRegion]:
-        """Group adjacent voxels of the same state into regions (simple BFS)."""
         by_state: Dict[str, List[UncertaintyVoxel]] = {}
         for v in voxels:
             by_state.setdefault(v.state, []).append(v)
@@ -206,16 +185,14 @@ class UncertaintyMapper:
         regions: List[UncertaintyRegion] = []
         for state, vs in by_state.items():
             if state == "unobserved":
-                continue  # report unobserved as a volume, not a region
+                continue
             vs_sorted = sorted(vs, key=lambda v: -v.confidence)
-            # Simple region: all voxels of this state (could be split into
-            # connected components; kept as one region per state for clarity)
             centres = np.array([v.centre_m for v in vs_sorted])
             vol = len(vs_sorted)
             bounds_min = tuple(float(centres[:, i].min()) for i in range(3))
             bounds_max = tuple(float(centres[:, i].max()) for i in range(3))
             centre = tuple(float(centres[:, i].mean()) for i in range(3))
-            volume_m3 = round(vol * (0.25 ** 3), 4)  # assumes default voxel size
+            volume_m3 = round(vol * (0.25 ** 3), 4)
             regions.append(UncertaintyRegion(
                 state=state, voxel_count=vol, volume_m3=volume_m3,
                 centre_m=tuple(round(c, 4) for c in centre),

@@ -1,17 +1,14 @@
-"""Intelligent capture director (plan items A.1, A.4, A.5).
+"""Intelligent capture director (N-1).
 
-Combines capture_quality.py (image-quality verdicts + per-wall coverage) with
-route planning and object-specific prompts to guide a user through an incomplete
-room capture. Pure, testable, no hardware dependency.
+Combines capture quality assessment with per-surface coverage analysis to
+guide users through incomplete room captures. Identifies missing views
+(corners, ceilings, floors, windows, doors, obstructed areas) and explains
+what to photograph next.
 
-Honesty rules:
-* Coverage estimates are plan-view approximations (camera centre + viewing
-  direction). Furniture occlusion, lens FOV and true intrinsics are not known
-  here, so every result is labelled ``provisional`` and explained.
-* Missing views are *inferred* from coverage gaps, never measured directly.
-* Object-specific prompts come from WorldIR entities whose bounds intersect a
-  wall that is not yet "seen" -- an object is only prompted when the evidence
-  actually supports that it exists and is poorly covered.
+Pure, testable, no hardware dependency. Honesty rules:
+* Coverage estimates are plan-view approximations; furniture occlusion and
+  lens FOV are not modelled. Every result is labelled provisional.
+* Missing views are inferred from coverage gaps, never measured directly.
 """
 
 from __future__ import annotations
@@ -22,30 +19,28 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from reconstruction.capture_quality import (
-    OK, WARN, DROP, _headline, assess_capture, wall_coverage,
-)
+from reconstruction.capture_quality import OK, WARN, DROP, assess_capture, wall_coverage
 from world_ir import Entity, EntityType
 
 
 @dataclass(frozen=True)
 class MissingView:
     """One view the director recommends the user take next."""
-    target: str                    # "wall_3" | "object:door_001" | "ceiling" | "floor" | "corner_A"
+    target: str                    # "wall_3" | "object:door_001" | "ceiling" | "floor" | "corner_A" | "general"
     kind: str                      # "wall" | "object" | "ceiling" | "floor" | "corner" | "general"
     reason: str                    # human-readable, specific reason
     suggested_position: str        # e.g. "stand in the middle of the room facing wall 3"
-    overlap_with: Optional[str]    # evidence id of a neighbouring photo to overlap with, or None
+    overlap_with: Optional[str]    # evidence id of a neighbouring photo to overlap with
     priority: int                  # 1 = do this first, higher numbers later
 
 
 @dataclass(frozen=True)
 class CapturePlan:
-    """The complete recommended capture state for one room/world."""
+    """Complete capture state for one room/world."""
     room_id: str
     status: str                    # "incomplete" | "complete" | "no_evidence"
     missing_views: List[MissingView]
-    next_best: Optional[MissingView]  # the single most important view to take next
+    next_best: Optional[MissingView]     # the single most important view to take next
     wall_coverage: dict            # output of wall_coverage()
     image_quality: dict            # output of assess_capture() summary
     provisional: bool              # always True until validated on real data
@@ -56,14 +51,14 @@ class CapturePlan:
 class RouteStep:
     """One step in a recommended capture route."""
     step: int
-    target: str                    # same namespace as MissingView.target
-    instruction: str               # what to do at this step
-    expected_coverage_gain: str    # which walls/objects this step addresses
+    target: str
+    instruction: str
+    expected_coverage_gain: str
 
 
 @dataclass(frozen=True)
 class CaptureRoute:
-    """An ordered capture route through a room or property."""
+    """Ordered capture route through one room or property."""
     room_id: str
     steps: List[RouteStep]
     estimated_photos: int
@@ -73,9 +68,7 @@ class CaptureRoute:
 class CaptureDirector:
     """Decides what photos are still needed and in what order to take them."""
 
-    #: Wall coverage fractions below which a wall is considered missing entirely.
     NOT_SEEN = 0.20
-    #: Wall coverage fractions below which a wall is weak (needs reinforcement).
     WEAK = 0.80
 
     def missing_views(
@@ -87,19 +80,7 @@ class CaptureDirector:
         world_entities: Optional[Sequence[Entity]] = None,
         photo_assessments: Optional[dict] = None,
     ) -> CapturePlan:
-        """Return every missing view for a room plus the single next-best view.
-
-        Parameters
-        ----------
-        footprint_xyz: room footprint polygon corners in world frame.
-        cameras: registered camera poses [{evidence_id, position_m, rotation_wxyz}].
-        basis: plan basis {e1, e2, up}; defaults to (x, z) with +Y up.
-        world_entities: WorldIR entities (doors, windows, fixtures, etc.) whose
-            placement on poorly-covered walls triggers object-specific prompts.
-        photo_assessments: optional output of assess_capture() to fold image
-            quality into the plan (blurry/overexposed photos are treated as
-            missing coverage for the walls they were meant to capture).
-        """
+        """Return every missing view for a room plus the single next-best view."""
         coverage = wall_coverage(footprint_xyz, cameras, basis)
         missing: List[MissingView] = []
 
@@ -112,7 +93,7 @@ class CaptureDirector:
                 notes=["No room footprint available: cannot plan capture views."],
             )
 
-        # ---- wall-level missing views -------------------------------------
+        # Wall-level missing views
         for w in coverage.get("walls", []):
             if w["status"] == "not_seen":
                 missing.append(MissingView(
@@ -130,7 +111,7 @@ class CaptureDirector:
                     overlap_with=None, priority=2,
                 ))
 
-        # ---- object-specific missing views ---------------------------------
+        # Object-specific missing views
         if world_entities:
             seen_wall_ids = {w["index"] for w in coverage.get("walls", [])
                              if w["status"] == "seen"}
@@ -138,7 +119,6 @@ class CaptureDirector:
                 wall_ref = ent.custom_properties.get("in_wall", {}).get("wall_id")
                 if not wall_ref:
                     continue
-                # extract wall index from id like "wall-room-001-03"
                 try:
                     wall_index = int(wall_ref.rsplit("-", 1)[-1])
                 except (ValueError, IndexError):
@@ -159,24 +139,21 @@ class CaptureDirector:
                     overlap_with=None, priority=1,
                 ))
 
-        # ---- ceiling / floor prompts --------------------------------------
+        # Ceiling / floor prompts
         missing.append(MissingView(
             target="ceiling", kind="ceiling",
-            reason="Ceiling plane not yet observed. Photograph the ceiling edges "
-                   "from the middle of the room.",
+            reason="Ceiling plane not yet observed. Photograph ceiling edges from the middle of the room.",
             suggested_position="Stand in the middle of the room, tilt the camera up.",
             overlap_with=None, priority=3,
         ))
         missing.append(MissingView(
             target="floor", kind="floor",
-            reason="Floor plane not yet observed. Photograph the floor edges "
-                   "from standing height.",
+            reason="Floor plane not yet observed. Photograph floor edges from standing height.",
             suggested_position="Stand in the middle of the room, point the camera down.",
             overlap_with=None, priority=3,
         ))
 
-        # ---- corner prompts (corners are where two walls meet; if both are
-        # ---- unseen, a corner view resolves both at once) ------------------
+        # Corner prompts (one corner view covers two unseen walls)
         corners = coverage.get("corners", [])
         unseen_walls = {w["index"] for w in coverage.get("walls", [])
                         if w["status"] == "not_seen"}
@@ -185,19 +162,18 @@ class CaptureDirector:
             if w1 in unseen_walls and w2 in unseen_walls:
                 missing.append(MissingView(
                     target=f"corner_{c['label']}", kind="corner",
-                    reason=f"Corner {c['label']} joins two unseen walls "
-                           f"(wall {w1} and wall {w2}). One corner photograph covers both.",
+                    reason=f"Corner {c['label']} joins two unseen walls (wall {w1} and wall {w2}). "
+                           f"One corner photograph covers both.",
                     suggested_position=f"Stand so corner {c['label']} fills the frame.",
                     overlap_with=None, priority=1,
                 ))
-                break  # one corner prompt is enough; the wall prompts cover the rest
+                break
 
-        # ---- next best view -----------------------------------------------
+        # Next best view
         missing.sort(key=lambda m: (m.priority, m.target))
         next_best = missing[0] if missing else None
 
-        # fold image quality: if a photo was dropped, note that its walls may
-        # need re-capture
+        # Fold image quality into notes
         quality_notes: List[str] = []
         if photo_assessments and photo_assessments.get("available"):
             s = photo_assessments.get("summary", {})
@@ -233,12 +209,7 @@ class CaptureDirector:
         basis: Optional[dict] = None,
         world_entities: Optional[Sequence[Entity]] = None,
     ) -> CaptureRoute:
-        """An ordered capture route through one room.
-
-        Orders missing views so that general room coverage (walls, corners)
-        comes before object-specific detail, and corner views (which cover two
-        walls at once) come before single-wall views.
-        """
+        """An ordered capture route through one room."""
         plan = self.missing_views(
             room_id, footprint_xyz, cameras, basis, world_entities)
         steps: List[RouteStep] = []

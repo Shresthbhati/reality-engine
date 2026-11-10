@@ -1,4 +1,4 @@
-"""Architectural constraint solver (plan item D.16).
+"""Architectural constraint solver (N-13).
 
 Checks WorldIR geometry for physically implausible relationships:
 * walls that do not meet floors/ceilings
@@ -6,8 +6,7 @@ Checks WorldIR geometry for physically implausible relationships:
 * windows floating outside walls
 * stairs that do not connect floors
 
-Reports violations with measured evidence; never auto-corrects (geometry
-changes require user confirmation or new capture evidence).
+Reports violations with measured evidence; never auto-corrects.
 
 Honesty rules:
 * Every violation carries the measurements that triggered it and a severity.
@@ -29,39 +28,30 @@ from world_ir import Entity, EntityType, Geometry, Relationship, RelationshipKin
 @dataclass(frozen=True)
 class ConstraintViolation:
     """One implausible architectural relationship."""
-    rule: str                      # e.g. "wall_meets_floor"
-    subject_id: str                # entity id
-    subject_type: str              # "wall" | "door" | "window" | "stair"
+    rule: str
+    subject_id: str
+    subject_type: str
     target_id: Optional[str]
     target_type: Optional[str]
-    severity: str                  # "info" | "warning" | "error"
+    severity: str
     message: str
-    measured: dict                 # measurements that triggered this
+    measured: dict
     suggestion: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class ConstraintReport:
-    """All constraint violations found in one world."""
     violations: List[ConstraintViolation]
     entities_checked: int
     provisional: bool = True
 
 
 class ArchitecturalConstraintSolver:
-    """Validates WorldIR entities against architectural plausibility rules."""
-
-    #: A wall whose vertical extent does not reach within this of a floor is
-    #: flagged (metres).
     WALL_FLOOR_GAP_TOL_M = 0.15
-    #: An opening whose host wall is more than this from its position is
-    #    detached (metres).
     OPENING_HOST_TOL_M = 0.10
-    #: Stair vertical rise that does not connect two floor levels (metres).
     STAIR_FLOOR_GAP_TOL_M = 0.30
 
     def check_world(self, entities: Dict[str, Entity]) -> ConstraintReport:
-        """Run every architectural constraint check over the world's entities."""
         violations: List[ConstraintViolation] = []
 
         walls = [e for e in entities.values() if e.type == EntityType.WALL]
@@ -70,7 +60,7 @@ class ArchitecturalConstraintSolver:
         doors = [e for e in entities.values() if e.type == EntityType.DOOR]
         windows = [e for e in entities.values() if e.type == EntityType.WINDOW]
         openings = [e for e in entities.values() if e.type == EntityType.OPENING]
-        stairs = [e for e in entities.values() if e.type == EntityType.STAIRS]
+        stairs = [e for e in entities.values() if e.type == EntityType.STAIR]
 
         violations.extend(self._check_walls_meet_floors(walls, floors, entities))
         violations.extend(self._check_walls_meet_ceilings(walls, ceilings, entities))
@@ -79,20 +69,12 @@ class ArchitecturalConstraintSolver:
         violations.extend(self._check_stairs_connect_floors(stairs, floors, entities))
 
         violations.sort(key=lambda v: ({"error": 0, "warning": 1, "info": 2}[v.severity], v.subject_id))
-        return ConstraintReport(
-            violations=violations,
-            entities_checked=len(entities),
-            provisional=True,
-        )
-
-    # ------------------------------------------------------------------ checks
+        return ConstraintReport(violations=violations, entities_checked=len(entities), provisional=True)
 
     def _bounds(self, ent: Entity) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-        """Return (min, max) world bounds for an entity, or None."""
         gids = ent.geometry_ids
         if not gids:
             return None
-        # We don't have direct geometry access here; use custom_properties bounds
         cp = ent.custom_properties
         bmin = cp.get("bounds_min") or cp.get("bounds", {}).get("min")
         bmax = cp.get("bounds_max") or cp.get("bounds", {}).get("max")
@@ -114,19 +96,18 @@ class ArchitecturalConstraintSolver:
             cb = self._centre(w)
             if cb is None:
                 continue
-            # find nearest floor below the wall
             best_floor: Optional[Entity] = None
             best_gap = float("inf")
             for f in floors:
                 fb = self._bounds(f)
                 if fb is None:
                     continue
-                # floor top vs wall bottom
                 floor_top = fb[1][1]
-                wall_bottom = cb[1]  # approximate; use bounds if available
                 wb = self._bounds(w)
                 if wb is not None:
                     wall_bottom = wb[0][1]
+                else:
+                    wall_bottom = cb[1]
                 gap = wall_bottom - floor_top
                 if 0 <= gap < best_gap:
                     best_gap = gap
@@ -143,8 +124,8 @@ class ArchitecturalConstraintSolver:
                 out.append(ConstraintViolation(
                     rule="wall_meets_floor", subject_id=w.id, subject_type="wall",
                     target_id=best_floor.id, target_type="floor", severity="warning",
-                    message=(f"Wall '{w.name or w.id}' ends {best_gap:.2f} m above "
-                             f"the nearest floor '{best_floor.name or best_floor.id}'."),
+                    message=f"Wall '{w.name or w.id}' ends {best_gap:.2f} m above "
+                            f"the nearest floor '{best_floor.name or best_floor.id}'.",
                     measured={"gap_m": round(best_gap, 3)},
                     suggestion="Check for a missing floor section or a raised wall.",
                 ))
@@ -182,8 +163,8 @@ class ArchitecturalConstraintSolver:
                 out.append(ConstraintViolation(
                     rule="wall_meets_ceiling", subject_id=w.id, subject_type="wall",
                     target_id=best_ceiling.id, target_type="ceiling", severity="info",
-                    message=(f"Wall '{w.name or w.id}' ends {best_gap:.2f} m below "
-                             f"the nearest ceiling '{best_ceiling.name or best_ceiling.id}'."),
+                    message=f"Wall '{w.name or w.id}' ends {best_gap:.2f} m below "
+                            f"the nearest ceiling '{best_ceiling.name or best_ceiling.id}'.",
                     measured={"gap_m": round(best_gap, 3)},
                     suggestion="Check for a soffit, beam, or missing ceiling section.",
                 ))
@@ -197,10 +178,8 @@ class ArchitecturalConstraintSolver:
         all_openings = doors + windows + openings
         for o in all_openings:
             cp = o.custom_properties
-            in_wall = cp.get("in_wall", {})
-            wall_id = in_wall.get("wall_id")
+            wall_id = cp.get("in_wall", {}).get("wall_id")
             if not wall_id:
-                # opening has no recorded host wall: unknown, not invalid
                 continue
             wall = entities.get(wall_id)
             if wall is None:
@@ -213,23 +192,18 @@ class ArchitecturalConstraintSolver:
                     suggestion="Remove the dangling reference or re-capture the host wall.",
                 ))
                 continue
-            # check the opening is within the wall's bounds
-            ob = self._bounds(o)
             wb = self._bounds(wall)
-            if ob is None or wb is None:
+            ob = self._bounds(o)
+            if wb is None or ob is None:
                 continue
-            # opening centre should lie on the wall's face plane
             o_center = (ob[0] + ob[1]) / 2
-            # wall extent along its length axis
-            wall_len = float(np.linalg.norm(wb[1] - wb[0]))
-            # rough check: opening within wall's AABB
             within = bool(np.all(o_center >= wb[0] - 0.05) and np.all(o_center <= wb[1] + 0.05))
             if not within:
                 out.append(ConstraintViolation(
                     rule="opening_within_host_wall", subject_id=o.id, subject_type="opening",
                     target_id=wall_id, target_type="wall", severity="warning",
-                    message=(f"Opening '{o.name or o.id}' is outside its host wall "
-                             f"'{wall.name or wall.id}' bounds."),
+                    message=f"Opening '{o.name or o.id}' is outside its host wall "
+                            f"'{wall.name or wall.id}' bounds.",
                     measured={"opening_center_m": [round(float(c), 3) for c in o_center],
                               "wall_bounds_m": [[round(float(c), 3) for c in wb[0]],
                                                 [round(float(c), 3) for c in wb[1]]]},
@@ -253,15 +227,14 @@ class ArchitecturalConstraintSolver:
             ob = self._bounds(wnd)
             if wb is None or ob is None:
                 continue
-            # window should not extend above the wall top
             wall_top = wb[1][1]
             win_top = ob[1][1]
             if win_top > wall_top + 0.05:
                 out.append(ConstraintViolation(
                     rule="window_below_wall_top", subject_id=wnd.id, subject_type="window",
                     target_id=wall_id, target_type="wall", severity="warning",
-                    message=(f"Window '{wnd.name or wnd.id}' extends above its host wall "
-                             f"'{wall.name or wall.id}' top by {win_top - wall_top:.2f} m."),
+                    message=f"Window '{wnd.name or wnd.id}' extends above its host wall "
+                            f"'{wall.name or wall.id}' top by {win_top - wall_top:.2f} m.",
                     measured={"window_top_m": round(float(win_top), 3),
                               "wall_top_m": round(float(wall_top), 3)},
                     suggestion="Lower the window or extend the host wall.",
@@ -278,7 +251,6 @@ class ArchitecturalConstraintSolver:
                 continue
             stair_bottom = sb[0][1]
             stair_top = sb[1][1]
-            # find floors near the stair bottom and top
             bottom_floor: Optional[Entity] = None
             top_floor: Optional[Entity] = None
             best_bottom_gap = float("inf")
@@ -311,8 +283,8 @@ class ArchitecturalConstraintSolver:
                 out.append(ConstraintViolation(
                     rule="stairs_connect_floors", subject_id=s.id, subject_type="stair",
                     target_id=bottom_floor.id, target_type="floor", severity="error",
-                    message=(f"Stair '{s.name or s.id}' starts and ends on the same "
-                             f"floor '{bottom_floor.name or bottom_floor.id}'."),
+                    message=f"Stair '{s.name or s.id}' starts and ends on the same "
+                            f"floor '{bottom_floor.name or bottom_floor.id}'.",
                     measured={"floor_id": bottom_floor.id},
                     suggestion="The stair may not actually change elevation; re-capture.",
                 ))

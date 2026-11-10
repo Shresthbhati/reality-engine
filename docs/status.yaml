@@ -1,0 +1,172 @@
+# Source of truth for docs/STATUS.md (python scripts/render_status.py).
+# Seeded from section 5 of docs/blueprint/34_MASTER_PLAN.md (all 21 rows).
+# gate = the phase exit gate that closes the item: G0=P0 Truth, G1=P1 One pipeline,
+# G2=P2 Real data + P3 Geometry, G3=P4 Persistent World + PU UI + P5 Capture, G4=P6 SaaS ops + P7 Expansion.
+- id: S5-01
+  capability: "Photo → World through the API"
+  status: PARTIAL
+  gate: G1
+  evidence: "call graph 1.1; tests/test_golden_path_api_to_glb.py in CI"
+  tests: ["tests/test_golden_path_api_to_glb.py"]
+  updated: "2026-11-10"
+  next: "P101–P108"
+- id: S5-02
+  capability: "Stage contract / observability"
+  status: MISSING
+  gate: G1
+  evidence: ""
+  tests: []
+  updated: "2026-11-10"
+  next: "P101–P105 (finding F2)"
+- id: S5-03
+  capability: "Resumable jobs"
+  status: FOUNDATION
+  gate: G1
+  evidence: "leases + heartbeat, no checkpoints (F3)"
+  tests: []
+  updated: "2026-11-10"
+  next: "P104, P109"
+- id: S5-04
+  capability: "Honest job states"
+  status: CONTRACT-VERIFIED
+  gate: G0
+  evidence: "jobs.py:79–91; reconstruction_state.py"
+  tests: []
+  updated: "2026-11-10"
+  next: "T007 (unknown state in UI)"
+- id: S5-05
+  capability: "Universal pipeline"
+  status: UNWIRED
+  gate: G1
+  evidence: "F1"
+  tests: []
+  updated: "2026-11-10"
+  next: "P112–P113"
+- id: S5-06
+  capability: "Accuracy gate"
+  status: IMPL-UNVERIFIED
+  gate: G2
+  evidence: "F5; master plan marks it defective"
+  tests: []
+  updated: "2026-11-10"
+  next: "E201–E205. Defective per master plan: fix before trusting."
+- id: S5-07
+  capability: "Measured-room dataset"
+  status: MISSING
+  gate: G2
+  evidence: ""
+  tests: []
+  updated: "2026-11-10"
+  next: "E207–E210 [H]. No benchmarks/measured_rooms/ (audit claim [A], not re-checked by T010)."
+- id: S5-08
+  capability: "Closed windows / glass"
+  status: IMPL-UNVERIFIED
+  gate: G2
+  evidence: "tests/test_closed_windows.py (synthetic)"
+  tests: ["tests/test_closed_windows.py"]
+  updated: "2026-11-10"
+  next: "G306–G307"
+- id: S5-09
+  capability: "Feed-forward geometry"
+  status: MISSING
+  gate: G2
+  evidence: ""
+  tests: []
+  updated: "2026-11-10"
+  next: "G301–G305. Registry has MASt3R only, non-commercial licence."
+- id: S5-10
+  capability: "VIO / IMU"
+  status: FOUNDATION
+  gate: G3
+  evidence: "evidence/sensors.py parsers, no consumer"
+  tests: []
+  updated: "2026-11-10"
+  next: "C601–C606"
+- id: S5-11
+  capability: "Provenance classes"
+  status: CONTRACT-VERIFIED
+  gate: G3
+  evidence: "F10"
+  tests: []
+  updated: "2026-11-10"
+  next: "W401"
+- id: S5-12
+  capability: "Not-observed vs removed"
+  status: MISSING
+  gate: G3
+  evidence: ""
+  tests: []
+  updated: "2026-11-10"
+  next: "W402–W405 (F10, F11)"
+- id: S5-13
+  capability: "Session → World adoption"
+  status: IMPL-UNVERIFIED
+  gate: G3
+  evidence: "routes_adoptions.py; tests/test_world_adoption_api.py in CI"
+  tests: ["tests/test_world_adoption_api.py"]
+  updated: "2026-11-10"
+  next: "W406–W410"
+- id: S5-14
+  capability: "Typed edit commands + undo"
+  status: IMPL-UNVERIFIED
+  gate: G3
+  evidence: "engine/commands/; WorldEditCommand model"
+  tests: []
+  updated: "2026-11-10"
+  next: "U509"
+- id: S5-15
+  capability: "CAD/BIM export"
+  status: IMPL-UNVERIFIED
+  gate: G2
+  evidence: "exporters/; IfcOpenShell + ezdxf extras"
+  tests: []
+  updated: "2026-11-10"
+  next: "E211–E212 [H]"
+- id: S5-16
+  capability: "Specialist tools (MEP, clash, takeoff, life-safety, thermal)"
+  status: IMPL-UNVERIFIED
+  gate: G0
+  evidence: "F8, F9; not in CI"
+  tests: []
+  updated: "2026-11-10"
+  next: "T003–T006, U512"
+- id: S5-17
+  capability: "Gaussian splats"
+  status: PARTIAL
+  gate: G4
+  evidence: "engine/pipeline/gaussian_splats.py (I/O only)"
+  tests: []
+  updated: "2026-11-10"
+  next: "DEFERRED to P7"
+- id: S5-18
+  capability: "Tenant isolation"
+  status: IMPL-UNVERIFIED
+  gate: G4
+  evidence: "apps/api/tenancy.py; tests/test_security_dast.py in-process"
+  tests: ["tests/test_security_dast.py"]
+  updated: "2026-11-10"
+  next: "S701–S704"
+- id: S5-19
+  capability: "Billing"
+  status: IMPL-UNVERIFIED
+  gate: G4
+  evidence: "billing_service.py simulated without keys"
+  tests: []
+  updated: "2026-11-10"
+  next: "S710 [H]"
+- id: S5-20
+  capability: "Distributed presence"
+  status: FOUNDATION
+  gate: G4
+  evidence: "F14"
+  tests: []
+  updated: "2026-11-10"
+  next: "S711 (document limit; build when multi-worker)"
+- id: S5-21
+  capability: "One status source"
+  status: PARTIAL
+  gate: G0
+  evidence: "F15; docs/status.yaml and docs/STATUS.md added by T010"
+  tests: ["tests/test_status_ledger.py"]
+  updated: "2026-11-10"
+  next: "T011 (banner superseded docs). Master plan status word was DOCUMENTATION-DEBT."

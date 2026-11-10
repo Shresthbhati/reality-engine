@@ -149,3 +149,27 @@ def test_non_succeeded_checkpoint_is_not_reused():
     ctx = StageContext(job_id="j", workdir=Path("."), artifacts={}, params={})
     m = run_stages([_S()], ctx, checkpoints=_Store())
     assert ran == [1] and m.stages[0].status == "succeeded"
+
+
+def test_inputs_hash_param_order_independent():
+    assert compute_inputs_hash("1", {"a": "x"}, {"p": 1, "q": 2}) == compute_inputs_hash(
+        "1", {"a": "x"}, {"q": 2, "p": 1}
+    )
+
+
+def test_inputs_hash_version_change_differs():
+    assert compute_inputs_hash("1", {"a": "x"}, {"p": 1}) != compute_inputs_hash("2", {"a": "x"}, {"p": 1})
+
+
+def test_inputs_hash_artifact_change_differs():
+    assert compute_inputs_hash("1", {"a": "x", "b": "y"}, {}) != compute_inputs_hash("1", {"a": "x", "b": "z"}, {})
+
+
+def test_inputs_hash_param_change_differs():
+    assert compute_inputs_hash("1", {"a": "x"}, {"p": 1}) != compute_inputs_hash("1", {"a": "x"}, {"p": 2})
+
+
+def test_inputs_hash_is_64_lowercase_hex():
+    import re
+
+    assert re.fullmatch(r"[0-9a-f]{64}", compute_inputs_hash("1", {}, {}))

@@ -626,7 +626,7 @@ def audit_life_safety_compliance(
 
 def export_life_safety_certificate_pdf(
     report: LifeSafetyReport,
-    architect_name: str = "Reality Engine Certified Auditor",
+    architect_name: str = "Automated preliminary screening (not professionally reviewed)",
 ) -> bytes:
     """Generate a formal architectural Life Safety & Accessibility Certificate in pure PDF 1.4."""
     # Page setup: Standard Letter portrait 612 x 792 pt
@@ -746,6 +746,9 @@ def export_life_safety_certificate_pdf(
         ops.append(text_op(410.0, r_row_y + 3.0, f"{r.max_permitted_distance_m:.1f} m ({r.max_permitted_distance_m*3.281:.0f} ft)", 7.0, bold=False))
         ops.append(text_op(500.0, r_row_y + 3.0, r.status.value.upper(), 7.0, bold=True, color=r_col))
         r_row_y -= 13.0
+
+    # Page-1 disclaimer: this output is an automated screening, never a compliance certificate.
+    ops.append(text_op(50.0, 50.0, "Preliminary automated screening. Not a code-compliance certificate. Requires review by a qualified professional.", 7.0, bold=True, color=(0.6, 0.1, 0.1)))
 
     # Architect Certification & Signature Seal Block
     seal_y = 65.0

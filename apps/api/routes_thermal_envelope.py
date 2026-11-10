@@ -33,6 +33,20 @@ class ThermalEvaluationRequest(BaseModel):
     project_name: Optional[str] = Field(default=None, description="Optional project title")
 
 
+def _label_thermal(report: ThermalEnvelopeReport, cz: ClimateZone, delta_t_k: float, u_overridden: bool) -> dict:
+    return {
+        **report.to_dict(),
+        "validation_status": "preliminary",
+        "assumptions": [
+            f"Climate zone {cz.value} prescriptive ASHRAE 90.1 targets are applied.",
+            f"Design heating temperature difference is {delta_t_k} K.",
+            "U-factors are user-supplied overrides where given, otherwise assumed from material defaults, not measured."
+            if u_overridden
+            else "U-factors are assumed from material defaults, not measured.",
+        ],
+    }
+
+
 def _parse_climate_zone(zone_str: str) -> ClimateZone:
     for cz in ClimateZone:
         if cz.value == zone_str or cz.name.lower() == zone_str.lower():
@@ -65,7 +79,7 @@ async def get_thermal_envelope_report(
         design_delta_t_k=design_delta_t_k,
         project_name=w.name or "Architectural Reality Model",
     )
-    return report.to_dict()
+    return _label_thermal(report, cz, design_delta_t_k, False)
 
 
 @thermal_envelope_router.post("/{world_id}/thermal-envelope/evaluate")
@@ -93,7 +107,7 @@ async def evaluate_custom_thermal_scenario(
         custom_u_overrides=payload.custom_u_overrides,
         project_name=project_title,
     )
-    return report.to_dict()
+    return _label_thermal(report, cz, payload.design_delta_t_k, bool(payload.custom_u_overrides))
 
 
 @thermal_envelope_router.get("/{world_id}/thermal-envelope/certificate")

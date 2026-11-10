@@ -35,6 +35,18 @@ log = logging.getLogger("reality.api.mep")
 mep_router = APIRouter(prefix="/api/worlds", tags=["mep"])
 
 
+def _label_topology(topology: MepFacilityTopology) -> dict:
+    return {
+        **topology.to_dict(),
+        "validation_status": "preliminary",
+        "basis": "inferred_from_world_entities",
+        "assumptions": [
+            "MEP systems are inferred from detected world entities and fixtures, not from design drawings or site survey.",
+            "Distribution routes are synthesized with orthogonal routing and a default ceiling plenum height.",
+        ],
+    }
+
+
 class MepDetectRequest(BaseModel):
     version_id: Optional[str] = Field(None, description="World version ID (default: current head)")
     system_filter: Optional[str] = Field(None, description="Optional system filter: electrical, hvac, plumbing")
@@ -67,7 +79,7 @@ async def get_mep_topology(
     world_ir = _load_world_or_409(v_row)
 
     topology = detect_mep_elements_from_world(world_ir)
-    return topology.to_dict()
+    return _label_topology(topology)
 
 
 @mep_router.post("/{world_id}/mep/detect")
@@ -92,7 +104,7 @@ async def detect_mep_topology_endpoint(
         filt = req.system_filter.lower()
         topology.systems = [s for s in topology.systems if s.system_type.value == filt]
 
-    return topology.to_dict()
+    return _label_topology(topology)
 
 
 @mep_router.post("/{world_id}/mep/route")
@@ -128,6 +140,11 @@ async def compute_mep_custom_route(
         "total_length_m": round(total_len, 3),
         "bend_count": max(0, len(waypoints) - 2),
         "waypoints": [[round(c, 4) for c in wp] for wp in waypoints],
+        "validation_status": "preliminary",
+        "assumptions": [
+            "Route is a geometric orthogonal path between the supplied coordinates; it does not check the world model for obstructions or code clearances.",
+            f"Ceiling routing height is {req.ceiling_z} m as supplied or defaulted.",
+        ],
     }
 
 

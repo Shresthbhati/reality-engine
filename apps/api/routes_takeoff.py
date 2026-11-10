@@ -30,6 +30,26 @@ from engine.pipeline.material_takeoff import (
 
 log = logging.getLogger("reality.api.takeoff")
 
+
+def _takeoff_assumptions(rates_overridden: bool, waste_overridden: bool) -> list[str]:
+    return [
+        "Quantities are derived from the reconstructed world model, not from surveyed measurements.",
+        "Unit rates are user-supplied overrides where given, otherwise generic DEFAULT_UNIT_RATES (not a regional price quote)."
+        if rates_overridden
+        else "Unit rates are the generic DEFAULT_UNIT_RATES (not a regional price quote).",
+        "Waste allowances are user-supplied overrides where given, otherwise the per-item defaults."
+        if waste_overridden
+        else "Waste allowances are the per-item defaults.",
+    ]
+
+
+def _label_takeoff(report: TakeoffReport, rates_overridden: bool = False, waste_overridden: bool = False) -> dict:
+    return {
+        **report.to_dict(),
+        "validation_status": "preliminary",
+        "assumptions": _takeoff_assumptions(rates_overridden, waste_overridden),
+    }
+
 takeoff_router = APIRouter(prefix="/api/worlds", tags=["takeoff"])
 
 
@@ -67,7 +87,7 @@ async def get_material_takeoff(
         project_name=w.name or "Architectural Reality Model",
     )
 
-    return report.to_dict()
+    return _label_takeoff(report)
 
 
 @takeoff_router.post("/{world_id}/takeoff/estimate")
@@ -93,7 +113,7 @@ async def calculate_custom_estimate(
         project_name=req.project_name or w.name or "Architectural Reality Model",
     )
 
-    return report.to_dict()
+    return _label_takeoff(report, bool(req.rate_overrides), bool(req.waste_overrides))
 
 
 @takeoff_router.get("/{world_id}/takeoff/export/csv")

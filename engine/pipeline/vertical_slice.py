@@ -286,28 +286,21 @@ class VerticalSliceResult:
         return "\n".join(lines)
 
 
-def vertical_slice(
-    evidence_items: Sequence[EvidenceItem],
-    options: Optional[VerticalSliceOptions] = None,
-) -> VerticalSliceResult:
-    """Run photos -> SfM -> scale -> WorldIR. Raises VerticalSliceError
-    (wrapping the underlying stage error) when a stage refuses honestly;
-    never returns a fabricated world."""
-    options = options or VerticalSliceOptions()
+@dataclass(frozen=True)
+class PoseOutcome:
+    """Result of the pose stage: the validated sparse reconstruction plus the backend/run that produced it."""
 
-    import time as _time
+    evidence_items: Sequence[EvidenceItem]   # after trusted-intrinsics injection; downstream stages must use these
+    backend: object
+    run: object                              # ReconstructionRun (diagnostics.backend_name / duration_s)
+    result: object                           # ReconstructionResult
 
-    clock: Dict[str, float] = {}      # seconds per stage, written to the report so slowness is never invisible
-    stage_timings = clock
-    _mark = [_time.perf_counter()]
 
-    def lap(name: str) -> None:
-        now = _time.perf_counter()
-        clock[name] = round(now - _mark[0], 2)
-        _mark[0] = now
+def run_pose(evidence_items, options, lap=lambda name: None, lap_validation=lambda name: None) -> PoseOutcome:
+    """Backend run + WorldArbiter wiring + output validation, extracted verbatim from ``vertical_slice``.
 
-    _lap = lap
-
+    ``lap`` / ``lap_validation`` are the caller's timing hooks (the CLI path keeps its per-stage timings).
+    Raises VerticalSliceError exactly as the inline code did."""
     if len(evidence_items) < 2:
         raise VerticalSliceError(
             f"vertical slice needs >= 2 image evidence items, got {len(evidence_items)}"
@@ -365,8 +358,27 @@ def vertical_slice(
         validate_reconstruction_output(result)
     except UnvalidatableReconstructionError as exc:
         raise VerticalSliceError(f"reconstruction output is invalid ({exc}) -- not compiling") from exc
+    lap_validation("reconstruction")
+    return PoseOutcome(evidence_items=evidence_items, backend=backend, run=run, result=result)
 
-    _lap("reconstruction")
+
+@dataclass(frozen=True)
+class ScaleOutcome:
+    """Result of the scale stage: the (possibly metric) reconstruction and how its scale was established."""
+
+    result: object
+    meters_per_unit: Optional[float]
+    scale_state: str
+    scale_note: str
+    unit_k: float
+    unit_facts: Optional[dict]
+    scale_error: Optional[str]
+    device_depth_facts: Optional[dict]
+
+
+def run_scale(result, evidence_items, options) -> ScaleOutcome:
+    """Metric scale anchoring (measured baselines, then device depth, else the honest RELATIVE working unit),
+    extracted verbatim from ``vertical_slice``."""
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None
     unit_k, unit_facts = 1.0, None     # the RELATIVE working unit (reconstruction.scene_scale); 1.0 = solver units
@@ -417,6 +429,41 @@ def vertical_slice(
                 "stays RELATIVE (unit-less model distances, not meters)"
             )
             scale_note = scale_note + " | " + scale_error
+    return ScaleOutcome(result=result, meters_per_unit=meters_per_unit, scale_state=scale_state,
+                        scale_note=scale_note, unit_k=unit_k, unit_facts=unit_facts, scale_error=scale_error,
+                        device_depth_facts=device_depth_facts)
+
+
+def vertical_slice(
+    evidence_items: Sequence[EvidenceItem],
+    options: Optional[VerticalSliceOptions] = None,
+) -> VerticalSliceResult:
+    """Run photos -> SfM -> scale -> WorldIR. Raises VerticalSliceError
+    (wrapping the underlying stage error) when a stage refuses honestly;
+    never returns a fabricated world."""
+    options = options or VerticalSliceOptions()
+
+    import time as _time
+
+    clock: Dict[str, float] = {}      # seconds per stage, written to the report so slowness is never invisible
+    stage_timings = clock
+    _mark = [_time.perf_counter()]
+
+    def lap(name: str) -> None:
+        now = _time.perf_counter()
+        clock[name] = round(now - _mark[0], 2)
+        _mark[0] = now
+
+    _lap = lap
+
+    # ---- stages 0-1: evidence prep + reconstruction (run_pose, extracted in P107) ----
+    pose = run_pose(evidence_items, options, lap=lap, lap_validation=_lap)
+    evidence_items, backend, run, result = pose.evidence_items, pose.backend, pose.run, pose.result
+
+    # ---- stage 2: metric scale anchoring (run_scale, extracted in P107) ----
+    sc = run_scale(result, evidence_items, options)
+    result, meters_per_unit, scale_state, scale_note = sc.result, sc.meters_per_unit, sc.scale_state, sc.scale_note
+    unit_k, unit_facts, scale_error, device_depth_facts = sc.unit_k, sc.unit_facts, sc.scale_error, sc.device_depth_facts
 
     _lap("scale")
     # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) ----

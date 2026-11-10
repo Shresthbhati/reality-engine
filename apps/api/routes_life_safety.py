@@ -24,6 +24,18 @@ log = logging.getLogger("reality.api.life_safety")
 life_safety_router = APIRouter(prefix="/api/worlds", tags=["life-safety"])
 
 
+def _label_life_safety(report: LifeSafetyReport, occupancy_group: str, is_sprinklered: bool) -> dict:
+    return {
+        **report.to_dict(),
+        "validation_status": "preliminary",
+        "assumptions": [
+            f"Occupancy group is {occupancy_group}.",
+            "Building is sprinklered." if is_sprinklered else "Building is not sprinklered.",
+            "Egress travel distances are computed from the reconstructed world model, not a surveyed floor plan.",
+        ],
+    }
+
+
 class LifeSafetyAuditRequest(BaseModel):
     version_id: Optional[str] = Field(None, description="World version ID")
     occupancy_group: str = Field(default="Business (Group B)", description="IBC Occupancy classification group")
@@ -55,7 +67,7 @@ async def get_life_safety_report(
         is_sprinklered=is_sprinklered,
         project_name=w.name or "Architectural Reality Model",
     )
-    return report.to_dict()
+    return _label_life_safety(report, occupancy_group, is_sprinklered)
 
 
 @life_safety_router.post("/{world_id}/life-safety/audit")
@@ -81,7 +93,7 @@ async def run_custom_life_safety_audit(
         is_sprinklered=payload.is_sprinklered,
         project_name=project_title,
     )
-    return report.to_dict()
+    return _label_life_safety(report, payload.occupancy_group, payload.is_sprinklered)
 
 
 @life_safety_router.get("/{world_id}/life-safety/egress-path")

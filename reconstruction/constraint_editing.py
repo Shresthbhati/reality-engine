@@ -1,7 +1,7 @@
-"""Constraint-aware editing (plan item F.27).
+"""Constraint-aware editing (N-27).
 
-Builds on reconstruction/architectural_constraints.py: before an edit is
-applied, runs the constraint solver and reports whether the edit would create
+Builds on perception/architectural_constraints.py: before an edit is applied,
+runs the constraint solver and reports whether the edit would create
 disconnected or implausible geometry. Edits that would violate constraints are
 rejected with a specific reason; the user must confirm or provide new evidence.
 
@@ -62,10 +62,8 @@ class ConstraintAwareEditor:
         world_entities: current (pre-edit) world.
         proposed_entities: world with the edit applied.
         """
-        # Run the solver on the proposed state
         report = self.solver.check_world(proposed_entities)
 
-        # Separate blocking errors from warnings
         errors = [v for v in report.violations if v.severity == "error"]
         warnings = [v for v in report.violations if v.severity in ("warning", "info")]
 
@@ -99,11 +97,7 @@ class ConstraintAwareEditor:
         reason: str = "",
         actor: str = "user",
     ) -> EditCheckResult:
-        """Convenience: check a single-field edit on one entity.
-
-        Applies the change to a copy of the entity, then runs the constraint
-        solver on the modified world.
-        """
+        """Convenience: check a single-field edit on one entity."""
         import copy
         entity = world_entities.get(entity_id)
         if entity is None:
@@ -115,9 +109,8 @@ class ConstraintAwareEditor:
             )
 
         proposed = copy.deepcopy(world_entities)
-        cp = dict(proposed[entity_id].custom_properties)
+        cp = dict(entity.custom_properties)
         cp[field] = new_value
-        # Recreate entity with updated custom_properties
         new_entity = Entity(
             id=entity.id, type=entity.type, name=entity.name,
             custom_properties=cp, confidence=entity.confidence,

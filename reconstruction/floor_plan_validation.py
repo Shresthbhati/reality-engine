@@ -1,4 +1,4 @@
-"""Automatic floor-plan and room-layout validation (plan item F.30).
+"""Automatic floor-plan and room-layout validation (F-30).
 
 Checks whether room boundaries, doors, circulation areas and floor-plan
 geometry agree with the reconstructed 3D environment. Compares the generated
@@ -50,12 +50,8 @@ class FloorPlanValidationReport:
 class FloorPlanValidator:
     """Compares floor-plan geometry against the reconstructed 3D world."""
 
-    #: A door whose plan width differs from measured width by more than this
-    #: is a discrepancy (metres).
     DOOR_WIDTH_TOL_M = 0.05
-    #: A room wall length that differs by more than this is a discrepancy.
     WALL_LENGTH_TOL_M = 0.05
-    #: A gap in the room loop larger than this means the plan is not closed.
     LOOP_GAP_TOL_M = 0.02
 
     def validate_room(
@@ -65,11 +61,10 @@ class FloorPlanValidator:
         doors: Sequence[Entity],
         world_entities: Dict[str, Entity],
     ) -> FloorPlanValidationReport:
-        """Validate one room's plan against its 3D walls and doors."""
         discrepancies: List[PlanDiscrepancy] = []
         cp = room.custom_properties or {}
 
-        # ---- room closure: check the wall loop closes -----------------------
+        # Room closure: check the wall loop closes
         wall_loops = self._check_loop_closure(walls)
         for gap in wall_loops:
             discrepancies.append(PlanDiscrepancy(
@@ -77,12 +72,12 @@ class FloorPlanValidator:
                 element_id=room.id, plan_value=None,
                 measured_value=gap, difference_m=None,
                 severity="error" if gap > self.LOOP_GAP_TOL_M else "warning",
-                message=f"Room '{room.name or room.id}' wall loop has a {gap:.3f} m gap "
-                        f"between walls {gap['wall_a']} and {gap['wall_b']}." if isinstance(gap, dict) else f"Room loop gap: {gap}",
+                message=f"Room '{room.name or room.id}' wall loop has a "
+                        f"{gap:.3f} m gap.",
                 note="The footprint polygon may not match the reconstructed walls.",
             ))
 
-        # ---- wall lengths: plan vs measured --------------------------------
+        # Wall lengths: plan vs measured
         plan_wall_lengths = cp.get("wall_lengths_m", {})
         for w in walls:
             wcp = w.custom_properties or {}
@@ -105,12 +100,12 @@ class FloorPlanValidator:
                         note="Re-measure or update the plan.",
                     ))
 
-        # ---- doors in walls ------------------------------------------------
+        # Doors in walls
         for d in doors:
             dcp = d.custom_properties or {}
             host_wall_id = dcp.get("in_wall", {}).get("wall_id")
             plan_width = dcp.get("width_m")
-            measured_width = dcp.get("width_m")  # same source for now
+            measured_width = dcp.get("width_m")
             if host_wall_id:
                 host = world_entities.get(host_wall_id)
                 if host is None:
@@ -122,6 +117,7 @@ class FloorPlanValidator:
                                 f"which does not exist.",
                         note="Reassign the door's host wall or re-capture.",
                     ))
+                    continue
             if plan_width is not None and measured_width is not None:
                 diff = abs(float(plan_width) - float(measured_width))
                 if diff > self.DOOR_WIDTH_TOL_M:
@@ -154,7 +150,6 @@ class FloorPlanValidator:
         all_doors: Dict[str, Sequence[Entity]],
         world_entities: Dict[str, Entity],
     ) -> List[FloorPlanValidationReport]:
-        """Validate multiple rooms; returns one report per room."""
         reports: List[FloorPlanValidationReport] = []
         for room in rooms:
             room_id = room.id
@@ -166,17 +161,14 @@ class FloorPlanValidator:
     # ------------------------------------------------------------------ helpers
 
     @staticmethod
-    def _check_loop_closure(
-        walls: Sequence[Entity],
-    ) -> List[object]:
-        """Return gaps in the wall loop (dicts or distances)."""
-        gaps: List[object] = []
+    def _check_loop_closure(walls: Sequence[Entity]) -> List[float]:
+        """Return gaps in the wall loop."""
+        gaps: List[float] = []
         walls_list = list(walls)
         if len(walls_list) < 2:
             return gaps
 
-        # Build wall segments from bounds
-        segments: List[Tuple[np.ndarray, np.ndarray, str]] = []
+        segments = []
         for w in walls_list:
             cp = w.custom_properties or {}
             bmin = cp.get("bounds_min")
@@ -187,10 +179,8 @@ class FloorPlanValidator:
             p1 = np.asarray(bmax, float)
             segments.append((p0, p1, w.id))
 
-        # Check end-to-start connections
         for i in range(len(segments)):
             p0_i, p1_i, id_i = segments[i]
-            # wall end point
             end_i = p1_i
             for j in range(len(segments)):
                 if i == j:
@@ -198,9 +188,12 @@ class FloorPlanValidator:
                 p0_j, p1_j, id_j = segments[j]
                 start_j = p0_j
                 gap = float(np.linalg.norm(end_i - start_j))
-                if gap > 0.01:  # some gap
-                    gaps.append({"wall_a": id_i, "wall_b": id_j, "gap_m": round(gap, 4)})
+                if gap > 0.01:
+                    gaps.append(gap)
         return gaps
+
+
+import numpy as np  # noqa: E402
 
 
 __all__ = ["FloorPlanValidator", "PlanDiscrepancy", "FloorPlanValidationReport"]

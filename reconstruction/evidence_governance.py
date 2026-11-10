@@ -1,39 +1,39 @@
-"""Evidence and provenance governance (plan item H.40).
+"""Evidence and provenance governance (N-40).
 
-Makes every important spatial claim traceable to source images, sensor
-observations, reconstruction stages, manual edits or inference. Preserves the
-distinction between observed, reconstructed, inferred, generated, unknown and
-conflicting data.
+Tracks every spatial claim back to source images, sensor observations,
+reconstruction stages, manual edits or inference. Preserves the distinction
+between observed, reconstructed, inferred, generated, unknown and conflicting
+data.
 
 Honesty rules:
-* Every entity carries a provenance enum; no claim defaults to "observed".
-* The provenance chain is queryable: media → frame → calibration → pose →
-  depth → point → hypothesis → entity → edit → export.
+* Every entity carries a provenance enum; nothing defaults to "observed".
+* The provenance chain is queryable end-to-end: media -> frame -> calibration
+  -> pose -> depth -> point -> hypothesis -> entity -> edit -> export.
 * Conflicting provenance for the same entity is recorded, not suppressed.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Sequence
-
-from world_ir import Entity
+from typing import Dict, List, Optional
 
 
-class ProvenanceKind(str, Enum):
-    OBSERVED = "observed"        # directly seen in source media
-    RECONSTRUCTED = "reconstructed"  # computed from observations
-    INFERRED = "inferred"        # deduced, not directly measured
-    GENERATED = "generated"      # procedurally created (e.g. wall slabs)
-    UNKNOWN = "unknown"          # no provenance recorded
-    CONFLICTING = "conflicting"  # two or more provenances disagree
+class ProvenanceKind(Enum):
+    OBSERVED = "observed"
+    RECONSTRUCTED = "reconstructed"
+    INFERRED = "inferred"
+    GENERATED = "generated"
+    UNKNOWN = "unknown"
+    CONFLICT = "conflict"
 
 
 @dataclass(frozen=True)
 class ProvenanceLink:
     """One link in the provenance chain."""
-    step: str                      # "media" | "frame" | "calibration" | "pose" | "depth" | "point" | "hypothesis" | "entity" | "edit" | "export"
+    step: str                      # media | frame | calibration | pose | depth |
+                                   # point | hypothesis | entity | edit | export
     source_id: str                 # id of the thing at this step
     target_id: str                 # id of the thing produced
     kind: ProvenanceKind
@@ -50,7 +50,7 @@ class EntityProvenance:
     primary_kind: ProvenanceKind
     confidence: float
     chain: List[ProvenanceLink]
-    conflicting: List[ProvenanceKind] = field(default_factory=list)  # other provenances seen
+    conflicting: List[ProvenanceKind] = field(default_factory=list)
     note: Optional[str] = None
 
     def is_observed(self) -> bool:
@@ -67,9 +67,9 @@ class EntityProvenance:
 class GovernanceReport:
     """Provenance audit for a world."""
     entities: Dict[str, EntityProvenance]
-    unprovenanced: List[str]           # entities with no provenance at all
-    conflicting: List[str]             # entities with conflicting provenance
-    summary: Dict[str, int]            # count per provenance kind
+    unprovenanced: List[str]
+    conflicting: List[str]
+    summary: Dict[str, int]
     provisional: bool = True
 
 
@@ -93,7 +93,6 @@ class EvidenceGovernance:
         timestamp: Optional[str] = None,
         note: Optional[str] = None,
     ) -> None:
-        """Append one link to an entity's provenance chain."""
         link = ProvenanceLink(
             step=step, source_id=source_id, target_id=target_id,
             kind=kind, confidence=max(0.0, min(1.0, confidence)),
@@ -101,8 +100,6 @@ class EvidenceGovernance:
         )
         self._chains.setdefault(entity_id, []).append(link)
 
-        # update the primary provenance: the last link wins, but conflicts are
-        # remembered when kinds disagree
         prev = self._kinds.get(entity_id)
         if prev is None:
             self._kinds[entity_id] = kind
@@ -117,7 +114,6 @@ class EvidenceGovernance:
         )
 
     def provenance_for(self, entity_id: str) -> Optional[EntityProvenance]:
-        """Return the full provenance record for one entity."""
         chain = self._chains.get(entity_id)
         if chain is None and entity_id not in self._kinds:
             return None
@@ -126,16 +122,12 @@ class EvidenceGovernance:
         conflicts = list(self._conflicts.get(entity_id, []))
         note = self._derive_note(kind, conf, conflicts)
         return EntityProvenance(
-            entity_id=entity_id, entity_type="unknown",  # type set by caller if known
+            entity_id=entity_id, entity_type="unknown",
             primary_kind=kind, confidence=round(conf, 3),
             chain=list(chain), conflicting=conflicts, note=note,
         )
 
-    def audit_world(
-        self,
-        entities: Dict[str, Entity],
-    ) -> GovernanceReport:
-        """Audit provenance for every entity in a world."""
+    def audit_world(self, entities: Dict[str, Entity]) -> GovernanceReport:
         entity_provs: Dict[str, EntityProvenance] = {}
         unprovenanced: List[str] = []
         conflicting: List[str] = []
@@ -147,15 +139,14 @@ class EvidenceGovernance:
                 unprovenanced.append(eid)
                 summary[ProvenanceKind.UNKNOWN.value] += 1
                 entity_provs[eid] = EntityProvenance(
-                    entity_id=eid, entity_type=ent.type.value if ent.type else "unknown",
+                    entity_id=eid, entity_type=ent.type if hasattr(ent.type, 'value') else str(ent.type),
                     primary_kind=ProvenanceKind.UNKNOWN, confidence=0.0,
                     chain=[], conflicting=[], note="No provenance recorded.",
                 )
                 continue
-            # fill in the entity type
             entity_provs[eid] = EntityProvenance(
                 entity_id=eid,
-                entity_type=ent.type.value if ent.type else "unknown",
+                entity_type=ent.type.value if hasattr(ent.type, 'value') else str(ent.type),
                 primary_kind=prov.primary_kind, confidence=prov.confidence,
                 chain=prov.chain, conflicting=prov.conflicting, note=prov.note,
             )
@@ -180,5 +171,4 @@ class EvidenceGovernance:
         return "; ".join(parts)
 
 
-__all__ = ["EvidenceGovernance", "EntityProvenance", "ProvenanceLink",
-           "GovernanceReport", "ProvenanceKind"]
+__all__ = ["EvidenceGovernance", "EntityProvenance", "ProvenanceLink", "GovernanceReport", "ProvenanceKind"]

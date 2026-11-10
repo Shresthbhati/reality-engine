@@ -1,14 +1,14 @@
-"""Global undo/redo (plan item F.28).
+"""Global undo/redo (N-28).
 
 Transactional undo/redo across manual edits and confirmed AI operations,
-including version-aware recovery. Every operation is recorded as a
-reverseible transaction with before/after snapshots.
+including version-aware recovery. Every operation is recorded as a reversible
+transaction with before/after snapshots.
 
 Honesty rules:
 * A transaction can only be undone if its before-snapshot still exists.
 * Undo/redo history is append-only; transactions are never rewritten.
-* A transaction that would conflict with later changes is flagged, not
-  silently reversed.
+* A transaction that would conflict with later changes is flagged, not silently
+  reversed.
 """
 
 from __future__ import annotations
@@ -67,8 +67,7 @@ class UndoRedoManager:
         reversible: bool = True,
     ) -> Transaction:
         """Record a new transaction. Any transactions after the current index
-        are discarded (standard undo/redo semantics: new work forks the
-        history)."""
+        are discarded (standard undo/redo semantics: new work forks the history)."""
         self._tx_counter += 1
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -84,7 +83,6 @@ class UndoRedoManager:
             reversible=reversible,
         )
 
-        # Discard any transactions after the current index (forked history)
         self._transactions = self._transactions[: self._index + 1]
         self._transactions.append(tx)
         self._index += 1
@@ -97,16 +95,11 @@ class UndoRedoManager:
         return self._index + 1 < len(self._transactions)
 
     def undo(self, world_entities: Dict[str, Entity]) -> UndoRedoResult:
-        """Undo the most recent applied transaction.
-
-        Restores the before-snapshot of the transaction at _index, then moves
-        the index back. Returns the restored entities and a new world.
-        """
+        """Undo the most recent applied transaction."""
         if not self.can_undo():
             return UndoRedoResult(
                 ok=False, tx_id=None,
-                message="Nothing to undo.",
-                entities_restored=[], world=None,
+                message="Nothing to undo.", entities_restored=[], world=None,
             )
 
         tx = self._transactions[self._index]
@@ -117,13 +110,11 @@ class UndoRedoManager:
                 entities_restored=[], world=None,
             )
 
-        # Restore before-snapshot entities into the provided world dict
         restored: List[str] = []
         for eid, snap in tx.before_snapshot.items():
             world_entities[eid] = self._deserialize(snap)
             restored.append(eid)
 
-        # Remove entities that existed only in the after-snapshot (added entities)
         for eid in tx.after_snapshot:
             if eid not in tx.before_snapshot:
                 world_entities.pop(eid, None)
@@ -136,16 +127,11 @@ class UndoRedoManager:
         )
 
     def redo(self, world_entities: Dict[str, Entity]) -> UndoRedoResult:
-        """Redo the most recent undone transaction.
-
-        Restores the after-snapshot of the transaction at _index + 1, then
-        moves the index forward.
-        """
+        """Redo the most recent undone transaction."""
         if not self.can_redo():
             return UndoRedoResult(
                 ok=False, tx_id=None,
-                message="Nothing to redo.",
-                entities_restored=[], world=None,
+                message="Nothing to redo.", entities_restored=[], world=None,
             )
 
         self._index += 1
@@ -164,7 +150,6 @@ class UndoRedoManager:
             world_entities[eid] = self._deserialize(snap)
             restored.append(eid)
 
-        # Remove entities that existed only in the before-snapshot (deleted entities)
         for eid in tx.before_snapshot:
             if eid not in tx.after_snapshot:
                 world_entities.pop(eid, None)
@@ -176,19 +161,16 @@ class UndoRedoManager:
         )
 
     def history(self) -> List[dict]:
-        """Return all transactions with their applied/undone state."""
         return [
             {**t.to_dict(), "applied": i <= self._index}
             for i, t in enumerate(self._transactions)
         ]
 
-    # ------------------------------------------------------------------ helpers
-
     @staticmethod
     def _serialize(e: Entity) -> dict:
         return {
             "id": e.id,
-            "type": e.type.value if e.type else None,
+            "type": e.type.value if hasattr(e.type, "value") else str(e.type),
             "name": e.name,
             "custom_properties": dict(e.custom_properties),
             "confidence": e.confidence,

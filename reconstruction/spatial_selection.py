@@ -1,4 +1,4 @@
-"""Unified spatial selection (plan item F.26).
+"""Unified spatial selection (N-26).
 
 Allows users to select an object from the viewport, object tree, search results
 or natural-language query and keeps the selection synchronized everywhere.
@@ -16,10 +16,10 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set
 
-from world_ir import Entity, EntityType
+from world_ir import Entity
 
 
-class SelectionMode(str, Enum):
+class SelectionMode(Enum):
     SINGLE = "single"
     MULTI = "multi"
 
@@ -70,12 +70,7 @@ class SpatialSelectionManager:
         multi: Optional[bool] = None,
         timestamp: Optional[str] = None,
     ) -> SelectionChange:
-        """Select one entity.
-
-        In SINGLE mode, replaces the current selection.
-        In MULTI mode, toggles the entity (adds if absent, removes if present)
-        unless multi=False, in which case it replaces.
-        """
+        """Select one entity."""
         import time
         now = timestamp or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         added: List[str] = []
@@ -140,7 +135,6 @@ class SpatialSelectionManager:
         previous = self._hovered
         self._hovered = entity_id
         self._source = source
-        import time
         self._timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         return previous
 
@@ -163,7 +157,4 @@ class SpatialSelectionManager:
         return [entities[eid] for eid in self._selected if eid in entities]
 
 
-__all__ = [
-    "SpatialSelectionManager", "Selection", "SelectionChange",
-    "SelectionMode",
-]
+__all__ = ["SpatialSelectionManager", "Selection", "SelectionChange", "SelectionMode"]

@@ -1,4 +1,4 @@
-"""Stage-by-stage reconstruction observability (plan item H.38).
+"""Stage-by-stage reconstruction observability (N-38).
 
 Records the input, output, runtime, memory consumption, warnings and failure
 reason for each pipeline stage. An engineer can trace why a particular wall,
@@ -60,62 +60,6 @@ class PipelineObservability:
         }
 
 
-@dataclass
-class _StageBuilder:
-    """Mutable builder for a StageRecord during time_stage()."""
-    stage: str
-    started_at: str
-    input_hash: Optional[str] = None
-    output_hash: Optional[str] = None
-    memory_mb: Optional[float] = None
-    warnings: List[str] = field(default_factory=list)
-    failure_reason: Optional[str] = None
-    artifact_uri: Optional[str] = None
-
-
-class _TimedStage:
-    """Context manager returned by PipelineObserver.time_stage()."""
-
-    def __init__(self, observer: "PipelineObserver", stage: str):
-        self._observer = observer
-        self._stage = stage
-        self._start: Optional[float] = None
-
-    def __enter__(self) -> _StageBuilder:
-        self._start = time.perf_counter()
-        builder = _StageBuilder(
-            stage=self._stage,
-            started_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        )
-        self._observer._current_builder = builder
-        return builder
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        elapsed = time.perf_counter() - (self._start or 0.0)
-        if exc_type is not None:
-            status = "failed"
-            failure_reason = f"{exc_type.__name__}: {exc_val}"
-        else:
-            status = "success"
-            failure_reason = None
-
-        builder = self._observer._current_builder
-        finished = StageRecord(
-            stage=self._stage, status=status,
-            started_at=builder.started_at if builder else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            finished_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            runtime_s=round(elapsed, 3),
-            input_hash=builder.input_hash if builder else None,
-            output_hash=builder.output_hash if builder else None,
-            memory_mb=builder.memory_mb if builder else None,
-            warnings=list(builder.warnings) if builder else [],
-            failure_reason=failure_reason,
-            artifact_uri=builder.artifact_uri if builder else None,
-        )
-        self._observer._records.append(finished)
-        self._observer._current_builder = None
-
-
 class PipelineObserver:
     """Records and queries stage-by-stage pipeline observability."""
 
@@ -123,7 +67,6 @@ class PipelineObserver:
         self._records: List[StageRecord] = []
         self._run_id: Optional[str] = None
         self._world_id: Optional[str] = None
-        self._current_builder: Optional[_StageBuilder] = None
 
     def begin_run(self, run_id: str, world_id: str) -> None:
         self._run_id = run_id
@@ -142,10 +85,7 @@ class PipelineObserver:
         failure_reason: Optional[str] = None,
         artifact_uri: Optional[str] = None,
     ) -> StageRecord:
-        """Record one stage's execution.
-
-        status: "success" | "skipped" | "failed"
-        """
+        """Record one stage's execution."""
         started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         runtime_s = 0.0
 
@@ -163,18 +103,10 @@ class PipelineObserver:
         return record
 
     def time_stage(self, stage: str):
-        """Context manager that measures a stage's runtime and records it.
-
-        Usage:
-            with observer.time_stage("meshing") as rec:
-                ... do meshing work ...
-                rec.output_hash = "..."
-                rec.warnings.append("...")
-        """
+        """Context manager that measures a stage's runtime and records it."""
         return _TimedStage(self, stage)
 
     def finalize(self) -> PipelineObservability:
-        """Build the final observability report."""
         total_runtime = sum(r.runtime_s for r in self._records)
         failed = [r.stage for r in self._records if r.status == "failed"]
         skipped = [r.stage for r in self._records if r.status == "skipped"]
@@ -203,6 +135,61 @@ class PipelineObserver:
             if r.stage == stage:
                 return r
         return None
+
+
+class _TimedStage:
+    """Context manager returned by PipelineObserver.time_stage()."""
+
+    def __init__(self, observer: PipelineObserver, stage: str):
+        self._observer = observer
+        self._stage = stage
+        self._start: Optional[float] = None
+
+    def __enter__(self) -> "_StageBuilder":
+        self._start = time.perf_counter()
+        return _StageBuilder(
+            stage=self._stage,
+            started_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        )
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        elapsed = time.perf_counter() - (self._start or 0.0)
+        if exc_type is not None:
+            status = "failed"
+            failure_reason = f"{exc_type.__name__}: {exc_val}"
+        else:
+            status = "success"
+            failure_reason = None
+
+        # Find the builder returned to the caller
+        builder = getattr(self._observer, "_current_builder", None)
+        finished = StageRecord(
+            stage=self._stage, status=status,
+            started_at=builder.started_at if builder else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            finished_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            runtime_s=round(elapsed, 3),
+            input_hash=builder.input_hash if builder else None,
+            output_hash=builder.output_hash if builder else None,
+            memory_mb=builder.memory_mb if builder else None,
+            warnings=list(builder.warnings) if builder else [],
+            failure_reason=failure_reason,
+            artifact_uri=builder.artifact_uri if builder else None,
+        )
+        self._observer._records.append(finished)
+        self._observer._current_builder = None
+
+
+@dataclass
+class _StageBuilder:
+    """Mutable builder for a StageRecord during time_stage()."""
+    stage: str
+    started_at: str
+    input_hash: Optional[str] = None
+    output_hash: Optional[str] = None
+    memory_mb: Optional[float] = None
+    warnings: List[str] = field(default_factory=list)
+    failure_reason: Optional[str] = None
+    artifact_uri: Optional[str] = None
 
 
 __all__ = ["PipelineObserver", "StageRecord", "PipelineObservability"]

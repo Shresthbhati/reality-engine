@@ -1,8 +1,8 @@
-"""Physical-damage and deterioration tracking (plan item E.24).
+"""Physical damage and deterioration tracking (N-24).
 
-Tracks supported changes such as cracks, surface damage, staining, deformation
-and deterioration over repeated captures. Distinguishes newly observed defects
-from existing conditions, while accounting for lighting/viewpoint differences.
+Tracks supported cracks, stains, staining, deformation and deterioration
+over repeated captures. Distinguishes newly observed defects from existing
+conditions while accounting for lighting/viewpoint differences.
 
 Honesty rules:
 * A defect is only recorded when visual evidence supports it; absence of
@@ -29,7 +29,7 @@ class DamageRecord:
     object_type: str
     object_name: Optional[str]
     damage_type: str                 # "crack" | "stain" | "deformation" | "surface_damage" | "other"
-    location_m: Optional[tuple[float, float, float]]  # where on the object
+    location_m: Optional[Tuple[float, float, float]]  # where on the object
     severity: str                    # "minor" | "moderate" | "major" | "unknown"
     confidence: float                # 0..1
     first_observed: str              # ISO-8601 UTC capture id / timestamp
@@ -57,13 +57,10 @@ class DamageReport:
 class DamageTracker:
     """Tracks physical damage across world versions."""
 
-    #: Confidence below which a damage observation is not recorded.
     MIN_CONFIDENCE = 0.40
 
     def __init__(self):
-        # object_id -> list of DamageRecord (all versions)
         self._history: Dict[str, List[DamageRecord]] = {}
-        # object_id -> latest DamageRecord (current version)
         self._current: Dict[str, DamageRecord] = {}
 
     def record_damage(
@@ -81,10 +78,7 @@ class DamageTracker:
         viewpoint_note: Optional[str] = None,
         timestamp: Optional[str] = None,
     ) -> Optional[DamageRecord]:
-        """Record a damage observation for one object in one capture.
-
-        Returns the DamageRecord if confidence is above threshold, else None.
-        """
+        """Record a damage observation for one object in one capture."""
         now = timestamp or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         conf = max(0.0, min(1.0, confidence))
         if conf < self.MIN_CONFIDENCE:
@@ -116,11 +110,6 @@ class DamageTracker:
         self,
         previous_current: Optional[Dict[str, DamageRecord]] = None,
     ) -> DamageReport:
-        """Build a damage report for the current version.
-
-        previous_current: the _current dict from the previous version, used to
-        detect new vs. resolved damage.
-        """
         objects: Dict[str, List[DamageRecord]] = {}
         new_ids: List[str] = []
         resolved_ids: List[str] = []

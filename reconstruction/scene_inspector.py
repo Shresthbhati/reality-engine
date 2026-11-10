@@ -1,4 +1,4 @@
-"""Natural-language scene inspection (plan item F.29).
+"""Natural-language scene inspection (N-29).
 
 Extends the deterministic copilot foundation into a grounded assistant that can
 inspect selected objects, explain evidence, propose supported edits and request
@@ -150,7 +150,7 @@ class SceneInspector:
         # ---- "show me all walls" -------------------------------------------
         m = self._SHOW_QUERY.search(q_lower)
         if m:
-            kind = m.group(2)  # group 1 is the optional "all " prefix
+            kind = m.group(1)
             if kind == "entities":
                 matches = [
                     {
@@ -228,7 +228,7 @@ class SceneInspector:
             if entity is None:
                 return None, f"Entity {eid} not found in the world."
             if entity.type != etype_map[kind]:
-                return None, (f"Entity {eid} is a {entity.type.value}, not a {kind}.")
+                return None, f"Entity {eid} is a {entity.type.value}, not a {kind}."
 
             return EditProposal(
                 entity_id=eid, field=field, new_value=value,

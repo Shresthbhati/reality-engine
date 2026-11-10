@@ -1,4 +1,4 @@
-"""Object-level change history (plan item E.23).
+"""Object-level change history (N-23).
 
 Tracks changes to individual walls, doors, windows, fixtures, furniture and
 site objects across world versions. Records what changed, when, and what
@@ -31,13 +31,12 @@ class ChangeRecord:
     before: Optional[object]
     after: Optional[object]
     change_kind: str               # "updated" | "added" | "removed" | "provenance_changed"
-    evidence_ids: List[str]        # source photos/sensor observations, if any
+    evidence_ids: List[str]        # source photos/sensor observations
     evidence_note: Optional[str]   # why this change is believed correct
     actor: Optional[str]           # "user" | "reconstruction" | "assistant" | "import"
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        return d
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -84,12 +83,7 @@ class ChangeHistoryTracker:
         actor: Optional[str] = None,
         timestamp: Optional[str] = None,
     ) -> List[ChangeRecord]:
-        """Record field-level changes between before/after snapshots.
-
-        If before is None, the object was added; if after is None, removed.
-        Otherwise every differing custom_property and geometry field is
-        recorded as a separate ChangeRecord.
-        """
+        """Record field-level changes between before/after snapshots."""
         now = timestamp or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         records: List[ChangeRecord] = []
 
@@ -112,7 +106,6 @@ class ChangeHistoryTracker:
                 actor=actor,
             ))
         elif before is not None and after is not None:
-            # Compare geometry-related custom_properties
             before_cp = before.custom_properties or {}
             after_cp = after.custom_properties or {}
             keys = set(before_cp) | set(after_cp)
@@ -128,7 +121,6 @@ class ChangeHistoryTracker:
                         evidence_note=evidence_note,
                         actor=actor,
                     ))
-            # Compare provenance / confidence
             if before.provenance != after.provenance:
                 records.append(ChangeRecord(
                     object_id=object_id, object_type=object_type,
@@ -150,7 +142,6 @@ class ChangeHistoryTracker:
                     actor=actor,
                 ))
 
-        # Persist
         if records:
             self._records.setdefault(object_id, []).extend(records)
             if object_id not in self._first_seen:
@@ -159,7 +150,6 @@ class ChangeHistoryTracker:
         return records
 
     def history_for(self, object_id: str) -> Optional[ObjectChangeHistory]:
-        """Return the full change history for one object."""
         records = self._records.get(object_id)
         if records is None and object_id not in self._first_seen:
             return None
@@ -175,7 +165,6 @@ class ChangeHistoryTracker:
         )
 
     def all_histories(self) -> List[ObjectChangeHistory]:
-        """Return change history for every tracked object."""
         ids = set(self._records) | set(self._first_seen)
         out: List[ObjectChangeHistory] = []
         for oid in sorted(ids):

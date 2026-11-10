@@ -94,6 +94,16 @@ jobs:
             tests/test_task_13_2_dedup_and_session_grouping.py \
             tests/test_task_13_3_extended_ingestion.py \
             tests/test_multisheet_floorplan_pdf.py \
+            tests/test_temporal_delta.py \
+            tests/test_mep_topology.py \
+            tests/test_material_takeoff_boq.py \
+            tests/test_life_safety_compliance.py \
+            tests/test_thermal_envelope_ashrae.py \
+            tests/test_universal_spatial_pipeline_rules11_12.py \
+            tests/test_no_fake_backend_in_production.py \
+            tests/test_clash_detection_bcf.py \
+            tests/test_collab_telepresence.py \
+            tests/test_section_elevation_drawings.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

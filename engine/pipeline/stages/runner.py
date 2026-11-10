@@ -50,7 +50,7 @@ def run_stages(
             raise StageCancelled(f"cancelled before stage {spec.name!r}")
         inputs_hash = compute_inputs_hash(spec.version, ctx.artifacts, ctx.params)
         hit = checkpoints.lookup(ctx.job_id, spec.name, inputs_hash)
-        if hit is not None:
+        if hit is not None and hit.status == "succeeded":  # only a succeeded stage is reusable
             result = hit
         else:
             if on_start:

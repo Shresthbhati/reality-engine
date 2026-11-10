@@ -121,3 +121,31 @@ def test_inputs_hash_is_order_independent_sha256():
     h = compute_inputs_hash("1", {"a": "x", "b": "y"}, {"p": 1})
     assert h == compute_inputs_hash("1", {"b": "y", "a": "x"}, {"p": 1})
     assert len(h) == 64 and h == h.lower()
+
+
+def test_non_succeeded_checkpoint_is_not_reused():
+    from datetime import datetime, timezone
+
+    class _Store:
+        def lookup(self, job_id, name, inputs_hash):
+            now = datetime.now(timezone.utc)
+            return StageResult(name=name, status="failed", inputs_hash=inputs_hash, outputs={}, metrics={},
+                               warnings=[], error="old", started_at=now, ended_at=now, peak_rss_mb=None)
+
+        def record(self, job_id, result):
+            pass
+
+    ran = []
+
+    class _S:
+        spec = StageSpec(name="a", version="1", resource_class="cpu", required=True)
+
+        def run(self, ctx):
+            ran.append(1)
+            now = datetime.now(timezone.utc)
+            return StageResult(name="a", status="succeeded", inputs_hash="", outputs={}, metrics={},
+                               warnings=[], error=None, started_at=now, ended_at=now, peak_rss_mb=None)
+
+    ctx = StageContext(job_id="j", workdir=Path("."), artifacts={}, params={})
+    m = run_stages([_S()], ctx, checkpoints=_Store())
+    assert ran == [1] and m.stages[0].status == "succeeded"

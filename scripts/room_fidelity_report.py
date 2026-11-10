@@ -135,6 +135,18 @@ def wall_metrics(world, truth) -> Dict[str, dict]:
     walls = primary_walls(world)
     out = {"wall_count": _m(len(walls), HIGHER, "walls", ground_truth=len(gt_walls)),
            "wall_count_error": _m(abs(len(walls) - len(gt_walls)), LOWER, "walls")}
+    # Wall precision: fraction of detected walls that match a ground truth wall.
+    if walls and gt_walls:
+        det_centres = []
+        for w in walls:
+            b = _bounds(world, w)
+            if b is not None:
+                det_centres.append((b[0][:2] + b[1][:2]) / 2)
+        gt_centres = [(np.array(gw["start"], float)[:2] + np.array(gw["end"], float)[:2]) / 2 for gw in gt_walls]
+        if det_centres and gt_centres:
+            matches = _match_by_distance(det_centres, gt_centres, 1.0)
+            out["wall_precision"] = _m(len(matches) / len(det_centres), HIGHER, "fraction",
+                                       detected=len(det_centres), ground_truth=len(gt_walls))
     boxes = [b for b in (_bounds(world, w) for w in walls) if b is not None]
     if not boxes:
         out["wall_perimeter_coverage"] = _na("no wall entity carries geometry bounds")

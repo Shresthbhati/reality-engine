@@ -23,6 +23,7 @@ import type {
 import { changeCategoryCounts, describeBuild, evidenceInVersion, modelStateCopy, versionEvidenceSummary } from "@/lib/api";
 import type { WorldIR } from "@/types/worldir";
 import ScaleCard from "@/components/reconstruct/ScaleCard";
+import CameraCard from "@/components/reconstruct/CameraCard";
 import RoomSummaryCard from "@/components/reconstruct/RoomSummaryCard";
 import { parseCaptureQuality } from "@/lib/viewport/structure-points-model";
 import { cn } from "@/lib/utils";
@@ -433,6 +434,7 @@ export default function ReconstructionStatusBar({
                 {model.scale?.state?.toLowerCase() === "relative" ? " · relative scale (no real-world units)" : ""}
               </p>
               {!viewingOld && <ScaleCard worldId={status.world_id} scale={model.scale} onChanged={onScaleChanged} />}
+              {!viewingOld && <CameraCard worldId={status.world_id} onChanged={onScaleChanged} />}
               <p
                 className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]"
                 title="Observed = seen directly. Inferred = deduced by the engine. Unknown = not seen, so not guessed."

@@ -434,6 +434,49 @@ def run_scale(result, evidence_items, options) -> ScaleOutcome:
                         device_depth_facts=device_depth_facts)
 
 
+@dataclass(frozen=True)
+class FrameOutcome:
+    """Result of frame canonicalization (stage 2.5) plus the eye-height refinement of a RELATIVE working unit."""
+
+    result: object
+    frame_record: object
+    unit_k: float
+    unit_facts: Optional[dict]
+    scale_note: str
+
+
+def run_frame(result, options, unit_k, unit_facts, scale_note) -> FrameOutcome:
+    """Dominant plane -> +Y, then refine the relative working unit; extracted verbatim from ``vertical_slice``. Plan 3.4 has
+    no stage of its own for this, so the Scale stage carries it (a required stage: a failure aborts the run)."""
+    from reconstruction.frame import FrameCanonicalizationError
+
+    try:
+        result, frame_record = _canonicalize(result, options)
+    except FrameCanonicalizationError as exc:
+        raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
+    result, unit_k, unit_facts = _refine_unit(result, unit_k, unit_facts)
+    if unit_facts:
+        scale_note = scale_note + f" | {unit_facts['basis']}"
+    return FrameOutcome(result=result, frame_record=frame_record, unit_k=unit_k, unit_facts=unit_facts,
+                        scale_note=scale_note)
+
+
+@dataclass(frozen=True)
+class DepthOutcome:
+    """Result of the depth stage: its facts (None = nothing to report) and the metricized depth maps that the
+    perception stage lifts object masks against (empty when the stage skipped)."""
+
+    facts: Optional[dict]
+    metric_maps: list
+
+
+def run_depth(result, evidence_items, options, scale_state: str) -> DepthOutcome:
+    """Optional sidecar / monocular depth -> dense metric points appended to ``result.points`` IN PLACE (see
+    ``_depth_stage``). Never raises: a skip is visible in ``facts``."""
+    facts, metric_maps = _depth_stage(result, evidence_items, options, scale_state)
+    return DepthOutcome(facts=facts, metric_maps=metric_maps)
+
+
 def vertical_slice(
     evidence_items: Sequence[EvidenceItem],
     options: Optional[VerticalSliceOptions] = None,
@@ -466,21 +509,15 @@ def vertical_slice(
     unit_k, unit_facts, scale_error, device_depth_facts = sc.unit_k, sc.unit_facts, sc.scale_error, sc.device_depth_facts
 
     _lap("scale")
-    # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) ----
-    from reconstruction.frame import FrameCanonicalizationError
-
-    try:
-        result, frame_record = _canonicalize(result, options)
-    except FrameCanonicalizationError as exc:
-        raise VerticalSliceError(f"frame canonicalization stage failed: {exc}") from exc
-    result, unit_k, unit_facts = _refine_unit(result, unit_k, unit_facts)
-    if unit_facts:
-        scale_note = scale_note + f" | {unit_facts['basis']}"
+    # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) (run_frame, extracted in P108) ----
+    fr = run_frame(result, options, unit_k, unit_facts, scale_note)
+    result, frame_record, unit_k, unit_facts, scale_note = fr.result, fr.frame_record, fr.unit_k, fr.unit_facts, fr.scale_note
 
     lap("scale_and_frame")
     _lap("frame")
-    # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
-    depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options, scale_state)
+    # ---- stage 2.8: depth -> dense metric points (optional, honest skip) (run_depth, extracted in P108) ----
+    dp = run_depth(result, evidence_items, options, scale_state)
+    depth_facts, metric_depth_maps = dp.facts, dp.metric_maps
 
     # ---- stage 2.9: single-image layout evidence (plan F4; projected, lower-confidence wall support) ----
     layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)

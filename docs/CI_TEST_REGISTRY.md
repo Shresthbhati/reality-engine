@@ -84,7 +84,7 @@ Total: 1
 
 ## unlisted
 
-Total: 467
+Total: 468
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -470,6 +470,7 @@ Total: 467
 - `tests/test_specialist_truth_labels.py`
 - `tests/test_stacked_storey_reconstruction.py`
 - `tests/test_stage_checkpoints.py`
+- `tests/test_stage_pose_scale.py`
 - `tests/test_stage_resume.py`
 - `tests/test_stage_runner.py`
 - `tests/test_stair_detector.py`

@@ -141,8 +141,8 @@ def test_evaluate_measured_room_accuracy_on_synthetic_fixture():
     assert len_check.error_abs <= 0.02
 
 
-def test_evaluate_measured_room_accuracy_custom_perfect_world():
-    """Verify evaluation on a clean reconstructed world within all Section 1 tolerances."""
+def _perfect_world_and_gt() -> tuple[WorldIR, dict]:
+    """Clean 5x4 m room: 4 walls, door, window, socket, all within Section 1 tolerances."""
     world = WorldIR(id="w-perfect", name="Perfect Survey")
 
     room = Entity(id="room-1", type=EntityType.ROOM, name="Studio")
@@ -221,7 +221,12 @@ def test_evaluate_measured_room_accuracy_custom_perfect_world():
             {"fixture_type": "socket", "position_m": [1.0, 0.0, 0.30]},
         ],
     }
+    return world, gt
 
+
+def test_evaluate_measured_room_accuracy_custom_perfect_world():
+    """Verify evaluation on a clean reconstructed world within all Section 1 tolerances."""
+    world, gt = _perfect_world_and_gt()
     rep = evaluate_measured_room_accuracy(world, gt)
     assert rep.meets_tolerances is True
     assert rep.failed_checks == 0
@@ -243,3 +248,126 @@ def test_cli_execution_synthetic_fixture(tmp_path: Path):
     assert "checks" in data
     assert "tolerances" in data
     assert len(data["checks"]) >= 8
+    assert {"class_scores", "missing", "extra"} <= set(data)
+
+
+# --- E201: optimal matching, missing / extra counted, per-class scores ---------------------
+
+
+def _cs(rep, etype):
+    return next(c for c in rep.class_scores if c.element_type == etype)
+
+
+def test_perfect_prediction_full_recall_and_gate_passes():
+    world, gt = _perfect_world_and_gt()
+    rep = evaluate_measured_room_accuracy(world, gt)
+    for etype in ("wall", "door", "window", "fixture"):
+        cs = _cs(rep, etype)
+        assert cs.recall == 1.0 and cs.precision == 1.0 and cs.f1 == 1.0
+    assert rep.missing == [] and rep.extra == []
+    assert rep.meets_tolerances is True
+
+
+def test_missing_wall_lowers_recall_and_fails_gate():
+    world, gt = _perfect_world_and_gt()
+    del world.entities["w-4"]
+    rep = evaluate_measured_room_accuracy(world, gt)
+    cs = _cs(rep, "wall")
+    assert cs.n_ground_truth == 4 and cs.n_detected == 3 and cs.n_matched == 3
+    assert cs.recall == 0.75 and cs.precision == 1.0
+    assert rep.missing == [{"element_type": "wall", "gt_id": "w-w"}]
+    assert rep.failed_checks == 0  # every matched dimension is fine; only the gap fails the gate
+    assert rep.meets_tolerances is False
+
+
+def test_extra_wall_lowers_precision_and_is_listed():
+    world, gt = _perfect_world_and_gt()
+    w = Entity(id="w-extra", type=EntityType.WALL, name="Ghost")
+    w.semantic_labels = ["wall_slab"]
+    w.custom_properties = {
+        "length_m": 2.0,
+        "wall_slab": {"start_xyz_m": [10.0, 10.0, 0.0], "end_xyz_m": [12.0, 10.0, 0.0], "length_m": 2.0},
+    }
+    world.entities[w.id] = w
+    rep = evaluate_measured_room_accuracy(world, gt)
+    cs = _cs(rep, "wall")
+    assert cs.n_detected == 5 and cs.n_matched == 4
+    assert cs.precision == 0.8 and cs.recall == 1.0
+    assert rep.extra == [{"element_type": "wall", "element_id": "w-extra"}]
+    assert rep.missing == []
+
+
+def test_no_room_entity_fails_gate():
+    world, gt = _perfect_world_and_gt()
+    del world.entities["room-1"]
+    rep = evaluate_measured_room_accuracy(world, gt)
+    assert rep.meets_tolerances is False
+    assert rep.to_dict()["meets_tolerances"] is False
+
+
+def test_missing_door_fails_gate_despite_good_dimensions():
+    world, gt = _perfect_world_and_gt()
+    del world.entities["d-1"]
+    rep = evaluate_measured_room_accuracy(world, gt)
+    assert {"element_type": "door", "gt_id": "door-0"} in rep.missing
+    assert _cs(rep, "door").recall == 0.0
+    assert rep.meets_tolerances is False
+
+
+def test_missing_fixture_is_reported_but_does_not_fail_gate():
+    world, gt = _perfect_world_and_gt()
+    del world.entities["sock-1"]
+    rep = evaluate_measured_room_accuracy(world, gt)
+    assert [m["element_type"] for m in rep.missing] == ["fixture"]
+    assert rep.meets_tolerances is True
+
+
+def test_zero_over_zero_scores_are_zero():
+    from perception.architecture.accuracy_report import ClassScore, _class_score
+
+    assert _class_score("door", 0, 0, 0) == ClassScore("door", 0, 0, 0, 0.0, 0.0, 0.0)
+
+
+def test_optimal_assignment_beats_greedy_nearest_first():
+    from perception.architecture.accuracy_report import _match_points_by_distance
+
+    det = [(0.6, 0.0, 0.0), (1.9, 0.0, 0.0)]
+    gt = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+    # Greedy nearest-first takes det0<->gt1 (0.4) and strands det1 (1.9 m from gt0): 1 match.
+    # Optimal pairs det0<->gt0 and det1<->gt1: 2 matches.
+    pairs = _match_points_by_distance(det, gt, max_dist=1.5)
+    assert sorted((i, j) for i, j, _ in pairs) == [(0, 0), (1, 1)]
+
+
+def test_assignment_rejects_pairs_beyond_max_dist_after_assignment():
+    from perception.architecture.accuracy_report import _match_points_by_distance
+
+    assert _match_points_by_distance([(5.0, 0.0, 0.0)], [(0.0, 0.0, 0.0)], max_dist=1.5) == []
+    assert _match_points_by_distance([], [(0.0, 0.0, 0.0)], max_dist=1.5) == []
+
+
+def test_zero_measured_value_is_a_failed_check_not_skipped():
+    world, gt = _perfect_world_and_gt()
+    world.entities["d-1"].custom_properties["width_m"] = 0.0
+    del world.entities["w-1"].custom_properties["length_m"]
+    del world.entities["w-1"].custom_properties["wall_slab"]["length_m"]
+    rep = evaluate_measured_room_accuracy(world, gt)
+    door_w = next(c for c in rep.checks if c.element_id == "d-1" and c.dimension_name == "width")
+    wall_l = next(c for c in rep.checks if c.element_id == "w-1" and c.dimension_name == "length")
+    assert door_w.passed is False and wall_l.passed is False
+    assert rep.total_checks == 13 and rep.failed_checks == 2
+    assert rep.meets_tolerances is False
+
+
+def test_to_dict_and_table_include_new_fields():
+    world, gt = _perfect_world_and_gt()
+    del world.entities["w-4"]
+    rep = evaluate_measured_room_accuracy(world, gt)
+    d = rep.to_dict()
+    assert d["missing"] == [{"element_type": "wall", "gt_id": "w-w"}]
+    assert d["extra"] == []
+    wall = next(c for c in d["class_scores"] if c["element_type"] == "wall")
+    assert wall["recall"] == 0.75 and wall["n_ground_truth"] == 4
+    table = rep.format_table()
+    assert "Class scores" in table and "MISSING" in table and "w-w" in table
+    json.dumps(d)

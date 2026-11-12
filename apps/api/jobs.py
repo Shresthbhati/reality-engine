@@ -348,11 +348,27 @@ def _colmap_estimated_intrinsics(session: ColmapSession | None, size: tuple[int,
     return vals[0]
 
 
-def _intrinsics_options(facts_list, colmap_session: ColmapSession | None = None) -> tuple[dict, dict]:
+def _declared_focal_px(declared: dict, size: tuple[int, int]) -> float | None:
+    """Focal length in pixels from an operator declaration ({focal_length_35mm} | {hfov_deg} | {focal_px}), else None."""
+    import math
+
+    if declared.get("focal_length_35mm"):
+        return float(declared["focal_length_35mm"]) * math.hypot(*size) / 43.267
+    if declared.get("hfov_deg"):
+        return (size[0] / 2.0) / math.tan(math.radians(float(declared["hfov_deg"])) / 2.0)
+    if declared.get("focal_px"):
+        return float(declared["focal_px"])
+    return None
+
+
+def _intrinsics_options(facts_list, colmap_session: ColmapSession | None = None,
+                        declared: dict | None = None) -> tuple[dict, dict]:
     """Pipeline-option kwargs (image_size, intrinsics) built ONLY from real sources, plus an honest record.
 
     image_size: the decoded size of the geometry-eligible photographs (the most common size).
     intrinsics, in priority order, never invented:
+      0. the camera the OPERATOR declared for this world (POST /api/worlds/{id}/camera) -- for photographs whose
+         EXIF was stripped (messaging apps, exports). Needs every photograph to share one size;
       1. EXIF 35mm-equivalent focal length -> fx=fy=f35*diag_px/43.267, principal point assumed at the centre
          (needs every photograph to agree on size and focal);
       2. the intrinsics COLMAP estimated for this world's previous sparse model;
@@ -374,7 +390,11 @@ def _intrinsics_options(facts_list, colmap_session: ColmapSession | None = None)
         focals = {f.exif.get("focal_length_35mm") for f in eligible}
         f35 = next(iter(focals)) if len(focals) == 1 else None
         found = None
-        if f35 and f35 > 0:
+        dfpx = _declared_focal_px(declared, size) if declared else None
+        if dfpx:
+            found = ((dfpx, dfpx, size[0] / 2.0, size[1] / 2.0), "operator_declared_camera",
+                     "declared by the operator (EXIF absent or overridden); principal point assumed at image centre")
+        elif f35 and f35 > 0:
             fpx = f35 * (size[0] ** 2 + size[1] ** 2) ** 0.5 / 43.267
             found = ((fpx, fpx, size[0] / 2.0, size[1] / 2.0), "exif_focal_length_35mm",
                      "principal point assumed at image centre")
@@ -869,7 +889,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             # Its state advances only when this run's version is adopted (commit below).
             colmap_session = ColmapSession(worldstore_service.worldstore_root() / "colmap-sessions" / world.id)
             holder["session"] = colmap_session
-            intr_kwargs, intrinsics_record = _intrinsics_options([ei.facts for ei in run_inputs], colmap_session)
+            intr_kwargs, intrinsics_record = _intrinsics_options(
+                [ei.facts for ei in run_inputs], colmap_session, worldstore_service.get_camera_declaration(world.id))
             options = VerticalSliceOptions(
                 artifact_store=artifact_store, colmap_session=colmap_session,
                 **intr_kwargs,

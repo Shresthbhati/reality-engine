@@ -84,7 +84,7 @@ Total: 1
 
 ## unlisted
 
-Total: 473
+Total: 474
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -196,6 +196,7 @@ Total: 473
 - `tests/test_cross_session_pose_graph.py`
 - `tests/test_cross_session_registration.py`
 - `tests/test_debris_system.py`
+- `tests/test_declared_camera.py`
 - `tests/test_delta_manifest.py`
 - `tests/test_dense_arbitration.py`
 - `tests/test_dense_cloud_fusion.py`

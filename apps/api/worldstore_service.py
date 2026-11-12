@@ -504,6 +504,41 @@ def add_scale_reference(world_id: str, evidence_id_a: str, evidence_id_b: str, d
     return ref
 
 
+# ------------------------------------------------------------------------- user-declared camera
+
+
+def _camera_path(world_id: str) -> Path:
+    return worldstore_root() / "camera-declarations" / f"{world_id}.json"
+
+
+def get_camera_declaration(world_id: str) -> dict | None:
+    """The camera the operator declared for this world ({focal_length_35mm}|{hfov_deg}|{focal_px}), or None."""
+    try:
+        data = json.loads(_camera_path(world_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def set_camera_declaration(world_id: str, focal_length_35mm: float | None = None, hfov_deg: float | None = None,
+                           focal_px: float | None = None) -> dict:
+    """Record exactly one camera fact (replaces any earlier one). ValueError when none/several or out of range."""
+    given = {k: float(v) for k, v in (("focal_length_35mm", focal_length_35mm), ("hfov_deg", hfov_deg),
+                                      ("focal_px", focal_px)) if v is not None}
+    if len(given) != 1:
+        raise ValueError("give exactly one of focal_length_35mm, hfov_deg, focal_px")
+    (key, val), = given.items()
+    lo, hi = {"focal_length_35mm": (8.0, 600.0), "hfov_deg": (10.0, 150.0), "focal_px": (50.0, 100000.0)}[key]
+    if not lo <= val <= hi:
+        raise ValueError(f"{key} must lie in {lo}-{hi}")
+    path = _camera_path(world_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(given), encoding="utf-8")
+    os.replace(tmp, path)
+    return given
+
+
 def _scale_rejected_path(world_id: str) -> Path:
     return worldstore_root() / "scale-references" / f"{world_id}.rejected.json"
 

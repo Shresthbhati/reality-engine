@@ -33,7 +33,8 @@ def _setup(tmp_path: Path, backend=None):
 
 def test_profile_lists_ladder_then_the_fine_stages_then_the_tail() -> None:
     names = PIPELINE_PROFILES[PROFILE_NAME]
-    assert names == ["evidence_resolve", "evidence_quality", "reconstruct", *FINE, "compile_validate", "changeset_commit"]
+    assert names == ["evidence_resolve", "evidence_quality", "reconstruct", *FINE, "quality_report", "compile_validate",
+                     "changeset_commit"]
     assert [s.spec.name for s in build_stages(PROFILE_NAME)] == names
     assert "reconstruct_legacy" not in names
 

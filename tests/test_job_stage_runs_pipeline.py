@@ -11,7 +11,8 @@ pytest.importorskip("aiosqlite")
 from tests.test_application_api import _attach, _upload_photo, _wait_job, client  # noqa: F401  (fixture)
 
 FINE = ["pose", "scale", "depth", "layout", "perception", "mesh", "dense", "detail", "finalize"]
-STAGES = ["evidence_resolve", "evidence_quality", "reconstruct", *FINE, "compile_validate", "changeset_commit"]
+STAGES = ["evidence_resolve", "evidence_quality", "reconstruct", *FINE, "quality_report", "compile_validate",
+          "changeset_commit"]
 
 
 def _first_run(client, tmp_path, monkeypatch, expect="succeeded"):
@@ -41,8 +42,9 @@ def test_successful_reconstruct_records_the_fine_stages_in_order(client, tmp_pat
     assert [i["name"] for i in items] == STAGES
     status = {i["name"]: i["status"] for i in items}
     # backend-dependent optional stages are skipped (never "succeeded") on the deterministic test backend
-    assert {n for n, st in status.items() if st == "skipped"} == {"depth", "perception", "mesh", "dense", "detail"}
-    assert {st for n, st in status.items() if n not in ("depth", "perception", "mesh", "dense", "detail")} == {"succeeded"}
+    skipped = {"depth", "perception", "mesh", "dense", "detail", "quality_report"}  # no mesh -> NOT_EVALUABLE, skipped
+    assert {n for n, st in status.items() if st == "skipped"} == skipped
+    assert {st for n, st in status.items() if n not in skipped} == {"succeeded"}
     assert all(i["version"] == "1" for i in items)
     assert all(i["error"] is None for i in items)
 

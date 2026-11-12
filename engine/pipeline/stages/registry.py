@@ -18,12 +18,13 @@ PROFILE_NAME = "interior_survey_standard"
 #: inside its multi-view rung and are reported right after it (``ladder.LadderReport``), ``skipped`` with a reason when
 #: the rung was not used. Order is DATA-FLOW order, which differs from plan section 3.4's listing: layout (the compile)
 #: precedes perception, mesh and dense because they read the compiled world; ``detail`` (plan: part of perception)
-#: follows dense because it reads the fused points; ``finalize`` assembles the result. ``frame`` runs inside ``scale``.
+#: follows dense because it reads the fused points; ``finalize`` assembles the result. ``frame`` runs inside ``scale``. P110 ``quality_report`` follows ``finalize``: it reads the
+#: mesh the ladder produced (``ctx.state["ladder"]``), which exists once ``reconstruct`` has run, and precedes the tail.
 PIPELINE_PROFILES: dict[str, list[str]] = {
     PROFILE_NAME: [
         "evidence_resolve", "evidence_quality", "reconstruct",
         "pose", "scale", "depth", "layout", "perception", "mesh", "dense", "detail", "finalize",
-        "compile_validate", "changeset_commit",
+        "quality_report", "compile_validate", "changeset_commit",
     ],
 }
 
@@ -60,9 +61,10 @@ def build_stages(profile: str = PROFILE_NAME) -> list[Stage]:
     from engine.pipeline.stages.s02_quality import EvidenceQuality
     from engine.pipeline.stages.s03_reconstruct import Reconstruct
     from engine.pipeline.stages.s11_compile_validate import CompileValidate
+    from engine.pipeline.stages.s12_quality_report import QualityReport
     from engine.pipeline.stages.s13_changeset import ChangesetCommit
 
     by_name: dict[str, Stage] = {c.spec.name: c() for c in (
-        EvidenceResolve, EvidenceQuality, Reconstruct, CompileValidate, ChangesetCommit)}
+        EvidenceResolve, EvidenceQuality, Reconstruct, QualityReport, CompileValidate, ChangesetCommit)}
     by_name.update({c.spec.name: LadderReport(c.spec) for c in fine_chain()})
     return [by_name[n] for n in PIPELINE_PROFILES[profile]]

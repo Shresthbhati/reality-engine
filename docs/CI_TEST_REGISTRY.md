@@ -84,7 +84,7 @@ Total: 1
 
 ## unlisted
 
-Total: 475
+Total: 476
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -406,6 +406,7 @@ Total: 475
 - `tests/test_provenance.py`
 - `tests/test_provenance_graph.py`
 - `tests/test_quality_report.py`
+- `tests/test_quality_report_stage.py`
 - `tests/test_query_after_incremental_update.py`
 - `tests/test_raycast_coverage_task5_3.py`
 - `tests/test_real_model_availability.py`

@@ -30,7 +30,7 @@ class Dense:
             ctx.state["vertical_slice_options"], scale_state=ctx.state["scale"].scale_state,
             meters_per_unit=ctx.state["scale"].meters_per_unit, frame_rotation=ctx.state["frame"].frame_record.rotation,
             unit_k=ctx.state["frame"].unit_k, perception_facts=ctx.state["perception"].facts,
-            mesh_facts=ctx.state["mesh"].facts,
+            mesh_facts=ctx.state["mesh"].facts, lap=ctx.state.get("lap", lambda name: None),
         )
         ctx.state["dense"] = outcome
         ctx.state["layout"] = dataclasses.replace(layout, world=outcome.world, diagnostics=outcome.diagnostics)

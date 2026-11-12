@@ -11,13 +11,19 @@ from datetime import datetime, timezone
 
 from engine.pipeline.stages.base import Stage, StageContext, StageResult, StageSpec
 
-PIPELINE_VERSION = "p106-coarse"
+PIPELINE_VERSION = "p108-ladder"
 PROFILE_NAME = "interior_survey_standard"
 
-#: P108 replaces ``reconstruct_legacy`` with the finer stages of plan section 3.4.
+#: P108: the progressive ladder (``reconstruct``: multi-view, falling back to single-image) is kept; the fine stages run
+#: inside its multi-view rung and are reported right after it (``ladder.LadderReport``), ``skipped`` with a reason when
+#: the rung was not used. Order is DATA-FLOW order, which differs from plan section 3.4's listing: layout (the compile)
+#: precedes perception, mesh and dense because they read the compiled world; ``detail`` (plan: part of perception)
+#: follows dense because it reads the fused points; ``finalize`` assembles the result. ``frame`` runs inside ``scale``.
 PIPELINE_PROFILES: dict[str, list[str]] = {
     PROFILE_NAME: [
-        "evidence_resolve", "evidence_quality", "reconstruct_legacy", "compile_validate", "changeset_commit",
+        "evidence_resolve", "evidence_quality", "reconstruct",
+        "pose", "scale", "depth", "layout", "perception", "mesh", "dense", "detail", "finalize",
+        "compile_validate", "changeset_commit",
     ],
 }
 
@@ -49,11 +55,14 @@ class SegmentStage:
 
 
 def build_stages(profile: str = PROFILE_NAME) -> list[Stage]:
+    from engine.pipeline.stages.ladder import LadderReport, fine_chain
     from engine.pipeline.stages.s01_evidence import EvidenceResolve
     from engine.pipeline.stages.s02_quality import EvidenceQuality
-    from engine.pipeline.stages.s04_reconstruct_legacy import ReconstructLegacy
+    from engine.pipeline.stages.s03_reconstruct import Reconstruct
     from engine.pipeline.stages.s11_compile_validate import CompileValidate
     from engine.pipeline.stages.s13_changeset import ChangesetCommit
 
-    by_name = {c.spec.name: c for c in (EvidenceResolve, EvidenceQuality, ReconstructLegacy, CompileValidate, ChangesetCommit)}
-    return [by_name[n]() for n in PIPELINE_PROFILES[profile]]
+    by_name: dict[str, Stage] = {c.spec.name: c() for c in (
+        EvidenceResolve, EvidenceQuality, Reconstruct, CompileValidate, ChangesetCommit)}
+    by_name.update({c.spec.name: LadderReport(c.spec) for c in fine_chain()})
+    return [by_name[n] for n in PIPELINE_PROFILES[profile]]

@@ -848,7 +848,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             [f"{len(skipped_evidence) - n_skipped_resolve} evidence item(s) excluded by scene identity"]
             if len(skipped_evidence) > n_skipped_resolve else []))
 
-    def seg_reconstruct_legacy(ctx) -> SegmentReport:
+    def seg_reconstruct(ctx) -> SegmentReport:
         nonlocal artifact_store, baselines, basis_from_note, dimension_state_for_basis, intrinsics_record, options, prog, scale_ref_notes, world_ir
         # user-facing stage: what the engine is actually about to do
         job.stage = ("building_rough_model" if len(items) <= 1
@@ -912,6 +912,11 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # the strongest lower level otherwise (never an empty world).
         # the deterministic test seam must not load real models; production leaves test_backend None
         layout_analyzer, unload_layout_models = (None, lambda: None) if test_backend is not None else make_layout_analyzer()
+        # P108: the multi-view rung runs the fine stages (pose ... finalize) in-process; their results are reported to the
+        # manifest after this stage. A failure inside any of them raises out of the rung, so the ladder still falls back.
+        from engine.pipeline import vertical_slice as _vs   # resolved at call time: the module attribute is the test seam
+        from engine.pipeline.stages.ladder import Ladder
+        fine: dict = {}
         try:
             prog = _inline(
                 lambda: run_progressive(
@@ -920,10 +925,12 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                     furniture_detector=(maskrcnn_furniture_detector if os.environ.get("REALITY_OPEN_VOCAB") == "0"
                                         else combined_furniture_detector),
                     layout_analyzer=layout_analyzer,
+                    vertical_slice_fn=lambda evidence, vs_opts: _vs.vertical_slice(evidence, vs_opts, stage_sink=fine),
                 )
             )
         finally:
             unload_layout_models()
+        ctx.state["ladder"] = Ladder(prog=prog, fine=fine)
         world_ir = prog.world
         unload_furniture_model()  # idle API must not keep the detector resident between jobs
         unload_open_vocab_furniture()
@@ -1279,7 +1286,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             warnings=([f"COLMAP state not persisted ({colmap_commit_fault})"] if colmap_commit_fault else [])
             + [f"changed with uncertainty: {u}" for u in decision["uncertainties"]])
 
-    # ---- P106: the five stages run through the stage runner ----
+    # ---- P106/P108: the stages run through the stage runner (ladder + fine stages: engine.pipeline.stages.ladder) ----
     # run_stages is synchronous, so it runs in ONE worker thread; the segments reach the async session via aw()
     # (a coroutine scheduled back on this loop) and DbCheckpointStore is only ever called from that thread.
     from apps.api.db import get_sessionmaker
@@ -1294,17 +1301,20 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         job_id=job.id, workdir=Path(tempfile.gettempdir()), artifacts={}, params={"session_id": job.entity_id},
         state={"segments": {
             "evidence_resolve": seg_evidence_resolve, "evidence_quality": seg_evidence_quality,
-            "reconstruct_legacy": seg_reconstruct_legacy, "compile_validate": seg_compile_validate,
+            "reconstruct": seg_reconstruct, "compile_validate": seg_compile_validate,
             "changeset_commit": seg_changeset_commit,
         }},
     )
     ended = [0]
 
+    cancel_before = {"evidence_resolve", "evidence_quality", "reconstruct", "compile_validate"}
+
     def should_cancel() -> bool:
         # The same boundaries as the former inline _throw_if_cancelled calls: before resolve, before quality,
         # before reconstruction and before compile. There was never a check between validation and the commit (a
-        # cancel landing there is graded by the post-commit check in the tail), so none is made before the last stage.
-        if ended[0] == len(stages) - 1:
+        # cancel landing there is graded by the post-commit check in the tail), and none between reconstruction and
+        # compile: the fine stages after `reconstruct` only report what the ladder already did.
+        if specs[ended[0]].name not in cancel_before:
             return False
         aw(db.refresh(job, attribute_names=["cancel_requested"]))
         return bool(job.cancel_requested)

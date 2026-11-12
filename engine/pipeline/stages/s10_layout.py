@@ -23,7 +23,8 @@ class Layout:
 
         started = datetime.now(timezone.utc)
         pose = ctx.state["pose"]
-        outcome = run_layout(pose.result, pose.evidence_items, ctx.state["vertical_slice_options"], pose.backend)
+        outcome = run_layout(pose.result, pose.evidence_items, ctx.state["vertical_slice_options"], pose.backend,
+                             lap=ctx.state.get("lap", lambda name: None))
         ctx.state["layout"] = outcome
         evidence_status, evidence_warnings = facts_status(outcome.layout_facts, "layout_evidence")
         warnings = evidence_warnings if evidence_status != "succeeded" else []

@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from engine.pipeline.stages.base import StageContext, StageResult, StageSpec
 
 
+def _no_lap(name: str) -> None:
+    return None
+
+
 class Pose:
     spec = StageSpec(name="pose", version="1", resource_class="gpu", required=True)
 
@@ -18,7 +22,8 @@ class Pose:
         from engine.pipeline.vertical_slice import run_pose
 
         started = datetime.now(timezone.utc)
-        pose = run_pose(ctx.state["evidence_items"], ctx.state["vertical_slice_options"])
+        lap = ctx.state.get("lap", _no_lap)   # the ladder driver supplies the per-stage timing hook (stage_timings_s)
+        pose = run_pose(ctx.state["evidence_items"], ctx.state["vertical_slice_options"], lap=lap, lap_validation=lap)
         ctx.state["pose"] = pose
         result = pose.result
         warnings = []

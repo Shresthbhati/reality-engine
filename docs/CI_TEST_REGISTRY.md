@@ -84,7 +84,7 @@ Total: 1
 
 ## unlisted
 
-Total: 474
+Total: 475
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -473,6 +473,7 @@ Total: 474
 - `tests/test_stage_checkpoints.py`
 - `tests/test_stage_dense.py`
 - `tests/test_stage_depth.py`
+- `tests/test_stage_ladder.py`
 - `tests/test_stage_layout.py`
 - `tests/test_stage_mesh.py`
 - `tests/test_stage_perception.py`

@@ -171,6 +171,8 @@ Resume rule: before running a stage the runner looks up `(job_id, name, inputs_h
 | 12 | `quality_report` | cpu | yes | **new**: geometry, coverage and uncertainty summary; `NOT_EVALUABLE` is never `PASS` |
 | 13 | `changeset_commit` | cpu | yes | "committing_version" block |
 
+**As built by P108 (decision: keep the fallback ladder).** `jobs.py` still calls `progressive.run_progressive` (multi-view, falling back to single-image), so a multi-view failure falls back and never hard-fails the job. The ladder is the stage `reconstruct`; the fine stages run inside its multi-view rung (`engine/pipeline/stages/ladder.py`) and are reported right after it, `skipped` with the ladder's reason when the rung was not used (the run then grades `partial`). Actual order, which is data-flow order and differs from the table: `evidence_resolve, evidence_quality, reconstruct, pose, scale, depth, layout, perception, mesh, dense, detail, finalize, compile_validate, changeset_commit`. Differences: layout (the compile) precedes perception/mesh/dense because they read the compiled world; `detail` is its own stage after dense (it reads the fused points); `finalize` assembles the result; `frame` runs inside `scale`; `capture_priors` and `quality_report` are not built yet (P110).
+
 ---
 
 ## 4. Phases, gates and order

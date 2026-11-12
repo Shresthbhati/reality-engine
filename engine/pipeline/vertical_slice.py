@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,6 +63,8 @@ from reconstruction.scale import (
     anchor_metric_scale,
     unscaled,
 )
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "VerticalSliceError",
@@ -609,69 +612,49 @@ def run_layout(result, evidence_items, options, backend, lap=lambda name: None) 
 def vertical_slice(
     evidence_items: Sequence[EvidenceItem],
     options: Optional[VerticalSliceOptions] = None,
+    *,
+    stage_sink: Optional[dict] = None,
 ) -> VerticalSliceResult:
     """Run photos -> SfM -> scale -> WorldIR. Raises VerticalSliceError
     (wrapping the underlying stage error) when a stage refuses honestly;
-    never returns a fabricated world."""
-    options = options or VerticalSliceOptions()
+    never returns a fabricated world.
 
-    import time as _time
+    P108: this is the stage chain pose -> scale -> depth -> layout -> perception -> mesh -> dense -> detail -> finalize
+    (``engine.pipeline.stages.ladder.run_fine_stages``, the one orchestration of the ``run_*`` functions below).
+    ``stage_sink``, when given, receives each stage's ``StageResult`` keyed by stage name as it finishes."""
+    from engine.pipeline.stages.ladder import run_fine_stages
 
-    clock: Dict[str, float] = {}      # seconds per stage, written to the report so slowness is never invisible
-    stage_timings = clock
-    _mark = [_time.perf_counter()]
+    return run_fine_stages(evidence_items, options or VerticalSliceOptions(), stage_sink)
 
-    def lap(name: str) -> None:
-        now = _time.perf_counter()
-        clock[name] = round(now - _mark[0], 2)
-        _mark[0] = now
 
+@dataclass(frozen=True)
+class DetailOutcome:
+    """Result of the detail stage: its facts (``status`` ran / skipped, with the reason)."""
+
+    facts: Optional[dict]
+
+
+def run_detail(result, world, options, scale_state: str) -> DetailOutcome:
+    """Optional detail discovery + ROI refinement on the fused world (see ``_detail_stage``); records its facts in
+    ``world.metadata["detail"]`` and never raises: a skip is visible in ``facts``."""
+    return DetailOutcome(facts=_detail_stage(result, world, options, scale_state))
+
+
+def run_finalize(evidence_items, backend, run, result, sc: "ScaleOutcome", fr: "FrameOutcome", layout_facts, dp: "DepthOutcome",
+                 perception_facts, mesh_facts, dn: "DenseOutcome", detail_facts, *, clock, lap) -> VerticalSliceResult:
+    """Record the scale state and the stage facts in the world's canonical metadata, run the (never-failing) reconstruction
+    diagnostics and correction plan, and assemble the ``VerticalSliceResult``; extracted verbatim from ``vertical_slice``.
+    ``result`` is the scaled, frame-canonical reconstruction; ``dn.world`` is the fused world. ``clock`` is the per-stage
+    seconds dict written to the report; ``lap`` the caller's timing hook."""
     _lap = lap
-
-    # ---- stages 0-1: evidence prep + reconstruction (run_pose, extracted in P107) ----
-    pose = run_pose(evidence_items, options, lap=lap, lap_validation=_lap)
-    evidence_items, backend, run, result = pose.evidence_items, pose.backend, pose.run, pose.result
-
-    # ---- stage 2: metric scale anchoring (run_scale, extracted in P107) ----
-    sc = run_scale(result, evidence_items, options)
-    result, meters_per_unit, scale_state, scale_note = sc.result, sc.meters_per_unit, sc.scale_state, sc.scale_note
-    unit_k, unit_facts, scale_error, device_depth_facts = sc.unit_k, sc.unit_facts, sc.scale_error, sc.device_depth_facts
-
-    _lap("scale")
-    # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) (run_frame, extracted in P108) ----
-    fr = run_frame(result, options, unit_k, unit_facts, scale_note)
-    result, frame_record, unit_k, unit_facts, scale_note = fr.result, fr.frame_record, fr.unit_k, fr.unit_facts, fr.scale_note
-
-    lap("scale_and_frame")
-    _lap("frame")
-    # ---- stage 2.8: depth -> dense metric points (optional, honest skip) (run_depth, extracted in P108) ----
-    dp = run_depth(result, evidence_items, options, scale_state)
-    depth_facts, metric_depth_maps = dp.facts, dp.metric_maps
-
-    # ---- stages 2.9-3: layout evidence + compile to validated WorldIR (run_layout, extracted in P108) ----
-    ly = run_layout(result, evidence_items, options, backend, lap=lap)
-    layout_facts, world, diagnostics, compile_options = ly.layout_facts, ly.world, ly.diagnostics, ly.compile_options
-    # ---- stage 3.5: semantic perception -> object entities (optional) ----
-    perception_facts = run_perception(result, world, evidence_items, metric_depth_maps, options).facts
-
-    _lap("perception")
-    # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
-    mesh_facts = run_mesh(result, world, options, scale_state).facts
-    _lap("mesh")
-
-    lap("perception_and_mesh")
-    # ---- stages 3.65-3.7: dense MVS, dense-structure pass, plane sweep, fusion (run_dense, extracted in P108) ----
-    dn = run_dense(result, world, diagnostics, compile_options, evidence_items, options, scale_state=scale_state,
-                   meters_per_unit=meters_per_unit, frame_rotation=frame_record.rotation, unit_k=unit_k,
-                   perception_facts=perception_facts, mesh_facts=mesh_facts, lap=lap)
+    stage_timings = clock
     world, diagnostics = dn.world, dn.diagnostics
+    meters_per_unit, scale_state, scale_error, device_depth_facts = sc.meters_per_unit, sc.scale_state, sc.scale_error, sc.device_depth_facts
+    frame_record, unit_k, unit_facts, scale_note = fr.frame_record, fr.unit_k, fr.unit_facts, fr.scale_note
+    depth_facts = dp.facts
     dense_mvs_facts, dense_gate_facts, structure_facts = dn.dense_mvs_facts, dn.dense_gate_facts, dn.structure_facts
     plane_sweep_facts, fusion_facts = dn.plane_sweep_facts, dn.fusion_facts
-    # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
-    detail_facts = _detail_stage(result, world, options, scale_state)
-    lap("detail")
 
-    _lap("fusion_and_detail")
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,

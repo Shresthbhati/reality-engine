@@ -10,10 +10,11 @@ pytest.importorskip("aiosqlite")
 
 from tests.test_application_api import _attach, _upload_photo, _wait_job, client  # noqa: F401  (fixture)
 
-STAGES = ["evidence_resolve", "evidence_quality", "reconstruct_legacy", "compile_validate", "changeset_commit"]
+FINE = ["pose", "scale", "depth", "layout", "perception", "mesh", "dense", "detail", "finalize"]
+STAGES = ["evidence_resolve", "evidence_quality", "reconstruct", *FINE, "compile_validate", "changeset_commit"]
 
 
-def _first_run(client, tmp_path, monkeypatch):
+def _first_run(client, tmp_path, monkeypatch, expect="succeeded"):
     monkeypatch.setenv("REALITY_TEST_BACKEND", "tests.test_cli_compile:_TwoViewBackend")
     monkeypatch.setenv("WORLDSTORE_ROOT", str(tmp_path / "ws"))
     import apps.api.worldstore_service as ws_svc
@@ -26,7 +27,7 @@ def _first_run(client, tmp_path, monkeypatch):
         _upload_photo(client, sid, f"frame_{i:02d}.jpg", b"jpeg-" + f"{i}".encode() * 8)
 
     job = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
-    assert job["status"] == "succeeded", job.get("error")
+    assert job["status"] == expect, job.get("error")
     return sid, job
 
 
@@ -34,12 +35,16 @@ def _stages(client, job):
     return client.get(f"/api/jobs/{job['id']}/stages").json()["items"]
 
 
-def test_successful_reconstruct_records_five_stages_in_order(client, tmp_path, monkeypatch):
+def test_successful_reconstruct_records_the_fine_stages_in_order(client, tmp_path, monkeypatch):
     _, job = _first_run(client, tmp_path, monkeypatch)
     items = _stages(client, job)
     assert [i["name"] for i in items] == STAGES
-    assert [i["status"] for i in items] == ["succeeded"] * 5
-    assert all(i["error"] is None and i["version"] == "1" for i in items)
+    status = {i["name"]: i["status"] for i in items}
+    # backend-dependent optional stages are skipped (never "succeeded") on the deterministic test backend
+    assert {n for n, st in status.items() if st == "skipped"} == {"depth", "perception", "mesh", "dense", "detail"}
+    assert {st for n, st in status.items() if n not in ("depth", "perception", "mesh", "dense", "detail")} == {"succeeded"}
+    assert all(i["version"] == "1" for i in items)
+    assert all(i["error"] is None for i in items)
 
 
 def test_unchanged_run_keeps_its_payload_and_grades_succeeded(client, tmp_path, monkeypatch):
@@ -51,7 +56,7 @@ def test_unchanged_run_keeps_its_payload_and_grades_succeeded(client, tmp_path, 
     again = _wait_job(client, client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"], timeout=90.0)
     assert again["status"] == "succeeded", again.get("error")
     assert again["payload"]["unchanged"] is True and again["payload"]["adopted"] is False
-    assert {i["status"] for i in _stages(client, again)} == {"succeeded"}
+    assert {i["status"] for i in _stages(client, again)} == {"succeeded", "skipped"}  # skipped: optional backends off
 
 
 def test_rejected_candidate_grades_partial_through_the_manifest(client, tmp_path, monkeypatch):
@@ -81,3 +86,26 @@ def test_failing_required_stage_fails_the_job_with_the_stage_error(client):
     items = _stages(client, job)
     assert [(i["name"], i["status"]) for i in items] == [("evidence_resolve", "failed")]
     assert "0 usable photo evidence" in items[0]["error"]
+
+
+def test_single_image_fallback_skips_the_fine_stages_and_grades_partial_not_failed(client, tmp_path, monkeypatch):
+    """The ladder is kept: when the multi-view rung is not the one used, the job still completes (partial) and the
+    fine stages say why they did not contribute."""
+    import dataclasses
+
+    import apps.api.jobs as jobs_mod
+
+    real = jobs_mod.run_progressive
+
+    def fell_back(*args, **kwargs):
+        prog = real(*args, **kwargs)
+        attempts = [*prog.attempts, {"level": 2, "name": "x", "outcome": "failed", "detail": "VerticalSliceError: simulated"}]
+        return dataclasses.replace(prog, vs_result=None, attempts=attempts, degraded=[*prog.degraded, "single-view fallback"])
+
+    monkeypatch.setattr(jobs_mod, "run_progressive", fell_back)
+    _, job = _first_run(client, tmp_path, monkeypatch, expect="partial")
+    by = {i["name"]: i for i in _stages(client, job)}
+    assert by["reconstruct"]["status"] == "degraded"
+    for name in FINE:
+        assert by[name]["status"] == "skipped" and "simulated" in by[name]["warnings"][0], name
+    assert by["compile_validate"]["status"] == "succeeded"

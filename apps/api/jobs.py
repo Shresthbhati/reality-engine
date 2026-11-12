@@ -931,6 +931,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         finally:
             unload_layout_models()
         ctx.state["ladder"] = Ladder(prog=prog, fine=fine)
+        ctx.state["artifact_store"] = artifact_store        # quality_report resolves the mesh bytes through it
         world_ir = prog.world
         unload_furniture_model()  # idle API must not keep the detector resident between jobs
         unload_open_vocab_furniture()

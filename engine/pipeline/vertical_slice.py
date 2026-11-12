@@ -536,6 +536,19 @@ def run_dense(result, world, diagnostics, compile_options, evidence_items, optio
                         plane_sweep_facts=plane_sweep_facts, fusion_facts=fusion_facts)
 
 
+@dataclass(frozen=True)
+class MeshOutcome:
+    """Result of the mesh stage: its facts (``status`` ran / skipped / failed, with the reason)."""
+
+    facts: dict
+
+
+def run_mesh(result, world, options, scale_state: str) -> MeshOutcome:
+    """Fused metric points -> Poisson surface mesh artifact -> WorldIR geometry + entity on ``world`` (in place);
+    see ``_mesh_stage`` for the honest-skip gates. Never fabricates a fallback mesh."""
+    return MeshOutcome(facts=_mesh_stage(result, world, options, scale_state))
+
+
 def vertical_slice(
     evidence_items: Sequence[EvidenceItem],
     options: Optional[VerticalSliceOptions] = None,
@@ -608,7 +621,7 @@ def vertical_slice(
 
     _lap("perception")
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
-    mesh_facts = _mesh_stage(result, world, options, scale_state)
+    mesh_facts = run_mesh(result, world, options, scale_state).facts
     _lap("mesh")
 
     lap("perception_and_mesh")

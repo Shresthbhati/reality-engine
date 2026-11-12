@@ -563,6 +563,49 @@ def run_perception(result, world, evidence_items, metric_depth_maps, options) ->
     return PerceptionOutcome(facts=_perception_stage(result, world, evidence_items, metric_depth_maps, options))
 
 
+@dataclass(frozen=True)
+class LayoutOutcome:
+    """Result of the layout stage: the compiled world, how it compiled, and the layout-evidence facts."""
+
+    layout_edges_ab: object
+    layout_facts: dict
+    world: object
+    diagnostics: object
+    compile_options: object
+
+
+def run_layout(result, evidence_items, options, backend, lap=lambda name: None) -> LayoutOutcome:
+    """Single-image layout evidence, then the structure compile (planes -> classification -> promotion -> rooms ->
+    validation gate) and the backend's post-compile hook, extracted verbatim from ``vertical_slice``. Raises
+    VerticalSliceError when the world cannot be compiled. ``lap`` is the caller's timing hook."""
+    _lap = lap
+    # ---- stage 2.9: single-image layout evidence (plan F4; projected, lower-confidence wall support) ----
+    layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
+
+    lap("depth_and_layout")
+    _lap("depth")
+    # ---- stage 3: compile to validated WorldIR ----
+    compile_options = CompileOptions(
+        seed=options.seed, up=options.up, artifact_store=options.artifact_store,
+        layout_edges_ab=layout_edges_ab,
+    )
+    try:
+        world, diagnostics = compile_reconstruction_to_world(result, compile_options)
+    except Exception as exc:  # noqa: BLE001
+        raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
+
+    if hasattr(backend, "post_compile_hook"):
+        try:
+            backend.post_compile_hook(world, result, evidence_items)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("backend.post_compile_hook failed: %s", exc)
+
+    lap("compile")
+    _lap("compile")
+    return LayoutOutcome(layout_edges_ab=layout_edges_ab, layout_facts=layout_facts, world=world,
+                         diagnostics=diagnostics, compile_options=compile_options)
+
+
 def vertical_slice(
     evidence_items: Sequence[EvidenceItem],
     options: Optional[VerticalSliceOptions] = None,
@@ -605,29 +648,9 @@ def vertical_slice(
     dp = run_depth(result, evidence_items, options, scale_state)
     depth_facts, metric_depth_maps = dp.facts, dp.metric_maps
 
-    # ---- stage 2.9: single-image layout evidence (plan F4; projected, lower-confidence wall support) ----
-    layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
-
-    lap("depth_and_layout")
-    _lap("depth")
-    # ---- stage 3: compile to validated WorldIR ----
-    compile_options = CompileOptions(
-        seed=options.seed, up=options.up, artifact_store=options.artifact_store,
-        layout_edges_ab=layout_edges_ab,
-    )
-    try:
-        world, diagnostics = compile_reconstruction_to_world(result, compile_options)
-    except Exception as exc:  # noqa: BLE001
-        raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
-
-    if hasattr(backend, "post_compile_hook"):
-        try:
-            backend.post_compile_hook(world, result, evidence_items)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("backend.post_compile_hook failed: %s", exc)
-
-    lap("compile")
-    _lap("compile")
+    # ---- stages 2.9-3: layout evidence + compile to validated WorldIR (run_layout, extracted in P108) ----
+    ly = run_layout(result, evidence_items, options, backend, lap=lap)
+    layout_facts, world, diagnostics, compile_options = ly.layout_facts, ly.world, ly.diagnostics, ly.compile_options
     # ---- stage 3.5: semantic perception -> object entities (optional) ----
     perception_facts = run_perception(result, world, evidence_items, metric_depth_maps, options).facts
 

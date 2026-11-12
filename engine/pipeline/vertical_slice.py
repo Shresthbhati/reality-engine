@@ -549,6 +549,20 @@ def run_mesh(result, world, options, scale_state: str) -> MeshOutcome:
     return MeshOutcome(facts=_mesh_stage(result, world, options, scale_state))
 
 
+@dataclass(frozen=True)
+class PerceptionOutcome:
+    """Result of the perception stage: its facts (``status`` ran / skipped, with the reason)."""
+
+    facts: dict
+
+
+def run_perception(result, world, evidence_items, metric_depth_maps, options) -> PerceptionOutcome:
+    """Detector masks lifted through the metricized depth maps into object entities promoted into ``world`` (in
+    place); see ``_perception_stage``. Skips honestly (never fabricates objects); raises VerticalSliceError only when
+    the promoted world no longer validates."""
+    return PerceptionOutcome(facts=_perception_stage(result, world, evidence_items, metric_depth_maps, options))
+
+
 def vertical_slice(
     evidence_items: Sequence[EvidenceItem],
     options: Optional[VerticalSliceOptions] = None,
@@ -615,9 +629,7 @@ def vertical_slice(
     lap("compile")
     _lap("compile")
     # ---- stage 3.5: semantic perception -> object entities (optional) ----
-    perception_facts = _perception_stage(
-        result, world, evidence_items, metric_depth_maps, options
-    )
+    perception_facts = run_perception(result, world, evidence_items, metric_depth_maps, options).facts
 
     _lap("perception")
     # ---- stage 3.6: dense geometry -> surface mesh (optional) ----

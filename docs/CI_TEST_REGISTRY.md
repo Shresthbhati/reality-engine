@@ -84,7 +84,7 @@ Total: 1
 
 ## unlisted
 
-Total: 476
+Total: 477
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -129,6 +129,7 @@ Total: 476
 - `tests/test_arch_components.py`
 - `tests/test_arch_registry.py`
 - `tests/test_arch_worldir.py`
+- `tests/test_architectural_constraints.py`
 - `tests/test_architectural_perception.py`
 - `tests/test_architecture_contract_adapter_task5_2.py`
 - `tests/test_artifact_integrity.py`

@@ -1016,7 +1016,11 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         # would create permanently untraceable state. Fail instead; HEAD
         # stays intact.
         _assert_reconstruction_traced(world_ir)
-        return SegmentReport(warnings=[f"validation warning: {w}" for w in validation.warnings])
+        # P111: architectural constraints are data, not exceptions -- an error degrades the stage, never fails it.
+        from world_ir.constraints import check_architectural_constraints, violations_to_segment_fields
+        c_warnings, c_metrics = violations_to_segment_fields(check_architectural_constraints(world_ir))
+        return SegmentReport(warnings=[*[f"validation warning: {w}" for w in validation.warnings], *c_warnings],
+                             metrics=c_metrics)
 
     def seg_changeset_commit(ctx) -> SegmentReport:
         nonlocal cameras_bytes, changes, colmap_commit_fault, decision, finished_early, included, others, points_bytes, version_row, world_ir

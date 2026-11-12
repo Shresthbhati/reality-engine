@@ -477,6 +477,65 @@ def run_depth(result, evidence_items, options, scale_state: str) -> DepthOutcome
     return DepthOutcome(facts=facts, metric_maps=metric_maps)
 
 
+@dataclass(frozen=True)
+class DenseOutcome:
+    """Result of the dense stage: the (possibly recompiled) world and the facts of each sub-step."""
+
+    world: object
+    diagnostics: object
+    dense_mvs_facts: Optional[dict]
+    dense_gate_facts: Optional[dict]
+    structure_facts: Optional[dict]
+    plane_sweep_facts: dict
+    fusion_facts: dict
+
+
+def run_dense(result, world, diagnostics, compile_options, evidence_items, options, *, scale_state, meters_per_unit,
+              frame_rotation, unit_k, perception_facts, mesh_facts, lap=lambda name: None) -> DenseOutcome:
+    """Dense MVS (explicit or evidence-gated) -> dense-structure pass -> CPU plane sweep -> plural-source fusion,
+    extracted verbatim from ``vertical_slice``. ``perception_facts`` / ``mesh_facts`` gate the structure pass (it only
+    runs when neither of them contributed). Appends dense points to ``result.points`` and geometry to ``world`` in
+    place; the structure pass may return a recompiled world. ``lap`` is the caller's timing hook."""
+    _lap = lap
+    # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
+    # Runs BEFORE fusion so dense points can participate in cross-source fusion
+    dense_options, dense_gate_facts, dense_tmp = options, None, None
+    if options.dense_auto and not options.dense_mvs_enabled:
+        dense_options, dense_gate_facts, dense_tmp = _auto_dense_options(result, len(evidence_items), options)
+    try:
+        dense_mvs_facts = _dense_mvs_stage(
+            result, world, dense_options, scale_state, meters_per_unit,
+            frame_rotation=frame_rotation,
+            judge=dense_gate_facts is not None,          # an AUTOMATIC dense candidate must earn its place
+            unit_k=unit_k,
+        )
+    finally:
+        if dense_tmp is not None:
+            import shutil
+
+            shutil.rmtree(dense_tmp, ignore_errors=True)       # the fused cloud was ingested into the artifact store
+
+    lap("dense_mvs")
+    _lap("dense")
+    # ---- stage 3.655: structure from the DENSE cloud (adopted only when it finds strictly more) ----
+    structure_facts = None
+    if (dense_mvs_facts or {}).get("status") == "ran" and (perception_facts or {}).get("status") in (None, "skipped", "disabled") \
+            and (mesh_facts or {}).get("status") in (None, "skipped", "disabled"):
+        world, diagnostics, structure_facts = _dense_structure_pass(
+            result, world, diagnostics, compile_options, dense_mvs_facts)
+    lap("dense_structure")
+    # ---- stage 3.66: CPU plane-sweep dense geometry (plan F3) ----
+    plane_sweep_facts = _plane_sweep_stage(result, evidence_items, options, scale_state)
+
+    # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
+    fusion_facts = _fusion_stage(result, world, options, scale_state)
+
+    lap("plane_sweep_and_fusion")
+    return DenseOutcome(world=world, diagnostics=diagnostics, dense_mvs_facts=dense_mvs_facts,
+                        dense_gate_facts=dense_gate_facts, structure_facts=structure_facts,
+                        plane_sweep_facts=plane_sweep_facts, fusion_facts=fusion_facts)
+
+
 def vertical_slice(
     evidence_items: Sequence[EvidenceItem],
     options: Optional[VerticalSliceOptions] = None,
@@ -553,40 +612,13 @@ def vertical_slice(
     _lap("mesh")
 
     lap("perception_and_mesh")
-    # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
-    # Runs BEFORE fusion so dense points can participate in cross-source fusion
-    dense_options, dense_gate_facts, dense_tmp = options, None, None
-    if options.dense_auto and not options.dense_mvs_enabled:
-        dense_options, dense_gate_facts, dense_tmp = _auto_dense_options(result, len(evidence_items), options)
-    try:
-        dense_mvs_facts = _dense_mvs_stage(
-            result, world, dense_options, scale_state, meters_per_unit,
-            frame_rotation=frame_record.rotation,
-            judge=dense_gate_facts is not None,          # an AUTOMATIC dense candidate must earn its place
-            unit_k=unit_k,
-        )
-    finally:
-        if dense_tmp is not None:
-            import shutil
-
-            shutil.rmtree(dense_tmp, ignore_errors=True)       # the fused cloud was ingested into the artifact store
-
-    lap("dense_mvs")
-    _lap("dense")
-    # ---- stage 3.655: structure from the DENSE cloud (adopted only when it finds strictly more) ----
-    structure_facts = None
-    if (dense_mvs_facts or {}).get("status") == "ran" and (perception_facts or {}).get("status") in (None, "skipped", "disabled") \
-            and (mesh_facts or {}).get("status") in (None, "skipped", "disabled"):
-        world, diagnostics, structure_facts = _dense_structure_pass(
-            result, world, diagnostics, compile_options, dense_mvs_facts)
-    lap("dense_structure")
-    # ---- stage 3.66: CPU plane-sweep dense geometry (plan F3) ----
-    plane_sweep_facts = _plane_sweep_stage(result, evidence_items, options, scale_state)
-
-    # ---- stage 3.7: plural-source fusion -> WorldIR pointcloud (P6-02) ----
-    fusion_facts = _fusion_stage(result, world, options, scale_state)
-
-    lap("plane_sweep_and_fusion")
+    # ---- stages 3.65-3.7: dense MVS, dense-structure pass, plane sweep, fusion (run_dense, extracted in P108) ----
+    dn = run_dense(result, world, diagnostics, compile_options, evidence_items, options, scale_state=scale_state,
+                   meters_per_unit=meters_per_unit, frame_rotation=frame_record.rotation, unit_k=unit_k,
+                   perception_facts=perception_facts, mesh_facts=mesh_facts, lap=lap)
+    world, diagnostics = dn.world, dn.diagnostics
+    dense_mvs_facts, dense_gate_facts, structure_facts = dn.dense_mvs_facts, dn.dense_gate_facts, dn.structure_facts
+    plane_sweep_facts, fusion_facts = dn.plane_sweep_facts, dn.fusion_facts
     # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
     detail_facts = _detail_stage(result, world, options, scale_state)
     lap("detail")

@@ -211,6 +211,54 @@ def _rotate_result(result: ReconstructionResult, R: np.ndarray) -> Reconstructio
     )
 
 
+#: Re-fit "up" to floor/ceiling-like planes within this angle of the current up
+UP_REFINE_PLANE_TOL_DEG = 35.0
+#: a correction smaller than this is noise; one larger than UP_REFINE_MAX_CORRECTION_DEG means the planes are not
+#: floor/ceiling at all (a tilted wall) and is refused rather than laying the model on its side
+UP_REFINE_MIN_CORRECTION_DEG = 1.5
+UP_REFINE_MAX_CORRECTION_DEG = 35.0
+
+
+def refine_up_from_planes(planes, up=(0.0, 1.0, 0.0)):
+    """Re-estimate "up" from the planes' own normals: the support-weighted mean of the floor/ceiling-like normals.
+
+    The frame is fixed from the sparse cloud, before dense monocular depth exists; that depth is systematically tilted,
+    so the dense cloud's real floors and ceilings sit off +Y and fail the classifier's 15 degree tolerance (observed: 0
+    floors, 43 'unknown' planes on a ten-photo room). Returns ``(R, angle_deg)`` with ``R`` rotating the refined up onto
+    ``up``, or None when no plane carries evidence or the correction is below UP_REFINE_MIN_CORRECTION_DEG (noise) or
+    above UP_REFINE_MAX_CORRECTION_DEG (not a floor/ceiling: refused, never guessed)."""
+    up0 = np.asarray(up, dtype=float)
+    up0 /= np.linalg.norm(up0)
+    u = up0.copy()
+    cos_tol = np.cos(np.radians(UP_REFINE_PLANE_TOL_DEG))
+    for _ in range(10):
+        acc = np.zeros(3)
+        for p in planes:
+            n = np.asarray(p.normal, dtype=float)
+            n /= np.linalg.norm(n)
+            dot = float(n @ u)
+            if abs(dot) >= cos_tol:
+                acc += float(p.inlier_count) * np.sign(dot) * n
+        if np.linalg.norm(acc) < 1e-12:
+            return None
+        u_new = acc / np.linalg.norm(acc)
+        moved = float(np.degrees(np.arccos(np.clip(float(u @ u_new), -1.0, 1.0))))
+        u = u_new
+        if moved < 0.05:
+            break
+    angle = float(np.degrees(np.arccos(np.clip(float(u @ up0), -1.0, 1.0))))
+    if angle < UP_REFINE_MIN_CORRECTION_DEG or angle > UP_REFINE_MAX_CORRECTION_DEG:
+        return None
+    return _rotation_from_to(u, up0), angle
+
+
+def rotate_in_place(result: ReconstructionResult, R: np.ndarray) -> None:
+    """Rotate every point and camera pose of ``result`` by ``R`` in place (callers hold references to the result)."""
+    rotated = _rotate_result(result, R)
+    result.points[:] = rotated.points
+    result.camera_poses[:] = rotated.camera_poses
+
+
 #: A candidate shares HEAD's raw (pre-canonical) frame when, after HEAD's canonical rotation is applied, its cameras
 #: sit where HEAD's cameras sit: mean displacement of the shared cameras below this fraction of their extent.
 #: (Measured on real incremental registration: bundle adjustment moves established cameras by ~0.1-0.6 % of the

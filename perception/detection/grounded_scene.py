@@ -29,6 +29,19 @@ SCENE_PROMPTS: Tuple[str, ...] = (
 MAX_BOX_SHARE = 0.80
 MIN_BOX_SHARE = 0.004
 NMS_IOU = 0.5
+#: every class is queried on its own, so each prompt returns *something* (a "bed" in a living room at ~0.4): demand more
+MIN_SCORE = 0.45
+#: boxes of DIFFERENT classes on the same pixels are one object seen with two names: the higher score keeps it
+CROSS_CLASS_IOU = 0.6
+#: an object seen in a single photograph needs at least this confidence (score x share of valid depth) to enter the world
+MIN_SINGLE_VIEW_CONFIDENCE = 0.6
+#: WorldIR type per label; anything not listed stays UNKNOWN rather than being guessed
+ENTITY_TYPE_BY_LABEL: Dict[str, str] = {
+    **{k: "furniture" for k in ("sofa", "armchair", "chair", "dining table", "coffee table", "side table", "desk", "bed",
+                                "wardrobe", "bookshelf", "dresser", "nightstand", "tv stand", "television", "floor lamp",
+                                "rug")},
+    "potted plant": "vegetation",
+}
 #: keep pixels whose depth is within this fraction of the box's foreground depth
 DEPTH_BAND = 0.35
 MIN_MASK_PIXELS = 20
@@ -45,14 +58,17 @@ def _iou(a: Sequence[float], b: Sequence[float]) -> float:
 def clean_boxes(
     raw: Sequence[Tuple[str, float, Tuple[float, float, float, float]]], src_size: Tuple[int, int]
 ) -> List[Tuple[str, float, Tuple[float, float, float, float]]]:
-    """Drop scene-sized and speck-sized boxes, then class-aware NMS (highest score wins)."""
+    """Drop weak, scene-sized and speck-sized boxes; then NMS, highest score first: a box is dropped when it overlaps a
+    kept box of the same class (IoU > NMS_IOU) or of any other class (IoU > CROSS_CLASS_IOU)."""
     sw, sh = src_size
     kept: List[Tuple[str, float, Tuple[float, float, float, float]]] = []
     for label, score, box in sorted(raw, key=lambda r: -r[1]):
+        if score < MIN_SCORE:
+            continue
         share = max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1]) / float(sw * sh)
         if not (MIN_BOX_SHARE <= share <= MAX_BOX_SHARE):
             continue
-        if any(k[0] == label and _iou(k[2], box) > NMS_IOU for k in kept):
+        if any(_iou(k[2], box) > (NMS_IOU if k[0] == label else CROSS_CLASS_IOU) for k in kept):
             continue
         kept.append((label, score, box))
     return kept

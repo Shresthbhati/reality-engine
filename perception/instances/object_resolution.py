@@ -135,23 +135,38 @@ def _box_iou(a: "MergedObjectCandidate", b: "MergedObjectCandidate") -> float:
     return inter / union if union > 0 else 0.0
 
 
+#: same-class candidates whose centres are closer than this share of the larger one's longest side are one object
+#: (observed on a ten-photo room: per-view depth misalignment moved one sofa's box by about half its length)
+FUSE_CENTRE_SHARE = 0.5
+
+
+def _longest_side(c: "MergedObjectCandidate") -> float:
+    return max(c.bounds_max.x - c.bounds_min.x, c.bounds_max.y - c.bounds_min.y, c.bounds_max.z - c.bounds_min.z)
+
+
 def fuse_overlapping_candidates(
-    candidates: List["MergedObjectCandidate"], iou_min: Optional[float] = None
+    candidates: List["MergedObjectCandidate"], iou_min: Optional[float] = None,
+    centre_share: float = FUSE_CENTRE_SHARE,
 ) -> List["MergedObjectCandidate"]:
     """Fuse same-label candidates whose bounds overlap by more than ``iou_min`` (default: the world validator's own
     duplicate rule, ``world_ir.validation._DUPLICATE_IOU``).
 
     Per-view depth is only approximately aligned, so one sofa seen from several photographs can come out of the
-    association resolver as several candidates that overlap heavily. The validator calls those duplicates
-    (``invariant_6_duplicate_entity``); by its definition they ARE one object, so they are fused here: every contributing
-    hypothesis is kept, the extent is the union, the position the confidence-weighted centroid. Order is stable."""
+    association resolver as several candidates that overlap heavily, or sit closer than ``centre_share`` of the larger
+    one's longest side. The validator calls the overlapping ones duplicates (``invariant_6_duplicate_entity``); they are
+    one object, so they are fused here: every contributing hypothesis is kept, the extent is the union, the position the
+    confidence-weighted centroid. Order is stable."""
     if iou_min is None:
         from world_ir.validation import _DUPLICATE_IOU as iou_min
     n = len(candidates)
     uf = _UnionFind(n)
     for i in range(n):
         for j in range(i + 1, n):
-            if candidates[i].label == candidates[j].label and _box_iou(candidates[i], candidates[j]) > iou_min:
+            a, b = candidates[i], candidates[j]
+            if a.label != b.label:
+                continue
+            near = _distance(a.position, b.position) < centre_share * max(_longest_side(a), _longest_side(b))
+            if near or _box_iou(a, b) > iou_min:
                 uf.union(i, j)
     groups: Dict[int, List[int]] = {}
     for i in range(n):

@@ -14,17 +14,25 @@ from perception.segmentation.interface import SegmentationResult, SegmentedRegio
 from tests.test_mapping_spine_perception import _empty_world, synthetic_registered_result  # noqa: F401 (fixture)
 
 
-def test_clean_boxes_drops_scene_sized_and_speck_boxes_and_dedups_per_class():
+def test_clean_boxes_drops_weak_scene_sized_speck_and_duplicate_boxes():
     src = (1000, 1000)
     raw = [
         ("sofa", 0.9, (100, 500, 600, 800)),
         ("sofa", 0.6, (110, 510, 590, 790)),         # same class, IoU > 0.5 -> dropped
-        ("rug", 0.8, (110, 510, 590, 790)),           # different class, same place -> kept
+        ("bed", 0.8, (110, 510, 590, 790)),           # DIFFERENT class on the same pixels: one object, the sofa wins
+        ("rug", 0.7, (700, 500, 950, 800)),           # elsewhere: kept
+        ("wardrobe", 0.40, (50, 50, 300, 400)),       # below MIN_SCORE: the 'a wardrobe in a living room' kind of hit
         ("curtain", 0.7, (0, 0, 1000, 1000)),         # the whole frame: scene-level false positive
         ("potted plant", 0.7, (10, 10, 14, 14)),      # a speck
     ]
     kept = gs.clean_boxes(raw, src)
-    assert [(k[0], k[1]) for k in kept] == [("sofa", 0.9), ("rug", 0.8)]
+    assert [(k[0], k[1]) for k in kept] == [("sofa", 0.9), ("rug", 0.7)]
+
+
+def test_labels_map_to_world_types_and_unlisted_ones_are_not_guessed():
+    t = gs.ENTITY_TYPE_BY_LABEL
+    assert t["sofa"] == t["tv stand"] == t["rug"] == "furniture" and t["potted plant"] == "vegetation"
+    assert "picture frame" not in t and "curtain" not in t
 
 
 def test_depth_cut_keeps_the_foreground_object_and_drops_the_wall_behind_it():
@@ -87,6 +95,11 @@ def test_overlapping_same_label_candidates_fuse_by_the_validators_own_rule():
     fused = out[0]
     assert (fused.bounds_min.x, fused.bounds_max.x) == (0, 2.2)      # union extent
     assert fuse_overlapping_candidates([a, c]) == [a, c]             # nothing overlaps: unchanged
+    # same class, IoU only 0.38 but the centres are 0.9 apart on a 2 m object (< half its length): still one sofa
+    e = _cand("e", "sofa", (0.9, 0, 0), (2.9, 1, 1))
+    assert [x.candidate_id for x in fuse_overlapping_candidates([a, e])] == ["a"]
+    f = _cand("f", "sofa", (1.3, 0, 0), (3.3, 1, 1))                 # centres 1.3 apart: two sofas side by side
+    assert [x.candidate_id for x in fuse_overlapping_candidates([a, f])] == ["a", "f"]
 
 
 def test_perception_stage_rolls_back_objects_that_invalidate_the_world(synthetic_registered_result, monkeypatch):
@@ -170,3 +183,43 @@ def test_perception_stage_uses_the_grounded_segmenter_and_labels_the_model(synth
     assert facts["entities_promoted"] == 1 and "Grounding DINO" in facts["note"]
     (ent,) = [e for e in world.entities.values() if e.id.startswith("entity-object")]
     assert ent.semantic_labels == ["coffee table"]
+    from world_ir import EntityType
+    assert ent.type == EntityType.FURNITURE
+
+
+def test_perception_stage_drops_weak_single_view_objects_but_keeps_confirmed_ones(synthetic_registered_result, monkeypatch):
+    from engine.pipeline import vertical_slice as vs
+
+    result, _intr, maps = synthetic_registered_result
+    options = VerticalSliceOptions(
+        intrinsics=(64.0, 64.0, 32.0, 32.0), image_size=(64, 64), perception_model="grounded", object_resolver="union_find")
+    mask = [[20 <= r < 44 and 20 <= c < 44 for c in range(64)] for r in range(64)]
+    mask2 = [[4 <= r < 12 and 4 <= c < 12 for c in range(64)] for r in range(64)]   # a different spot: seen by IMG_A only
+
+    class _Fake:
+        def __init__(self, depth_by_id):
+            pass
+
+        def segment(self, evidence):
+            out = []
+            for i in evidence:
+                regs = [SegmentedRegion(f"s-{i.evidence_id}-0", i.evidence_id, "sofa", mask, 0.8)]   # both views: confirmed
+                if i.evidence_id == "IMG_A":
+                    regs.append(SegmentedRegion("s-A-1", "IMG_A", "bed", mask2, 0.4))              # one view, weak: a hallucination
+                out.append(SegmentationResult(i.evidence_id, regs, "grounding-dino-tiny"))
+            return out
+
+        def unload(self):
+            pass
+
+    monkeypatch.setattr(gs, "GroundedSceneSegmenter", _Fake)
+
+    class _Ev:
+        def __init__(self, eid):
+            self.evidence_id = eid
+            self.source_uri = f"file://{eid}.jpg"
+
+    world = _empty_world()
+    facts = vs._perception_stage(result, world, [_Ev("IMG_A"), _Ev("IMG_B")], maps, options)
+    labels = sorted(e.semantic_labels[0] for e in world.entities.values() if e.id.startswith("entity-object"))
+    assert labels == ["sofa"] and facts["resolution"]["dropped_weak_single_view"] == 1

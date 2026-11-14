@@ -1198,6 +1198,12 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     n_resolved = len(candidates)
     candidates = fuse_overlapping_candidates(candidates)
     resolution["fused_overlapping"] = n_resolved - len(candidates)
+    if grounded:
+        # open-vocabulary detectors name things that are not there; an object backed by ONE photograph must be confident
+        from perception.detection.grounded_scene import MIN_SINGLE_VIEW_CONFIDENCE
+        strong = [c for c in candidates if c.observation_count > 1 or c.confidence >= MIN_SINGLE_VIEW_CONFIDENCE]
+        resolution["dropped_weak_single_view"] = len(candidates) - len(strong)
+        candidates = strong
 
     entity_ids = {c.candidate_id: f"entity-object-{i:03d}" for i, c in enumerate(candidates)}
     tracks, track_to_entity = {}, {}
@@ -1214,6 +1220,12 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     promoted = 0
     for cand in candidates:
         promoted_obj = promote_object_to_entity(cand, world, entity_id=entity_ids[cand.candidate_id])
+        if grounded:
+            from perception.detection.grounded_scene import ENTITY_TYPE_BY_LABEL
+            from world_ir import EntityType
+
+            if cand.label in ENTITY_TYPE_BY_LABEL:   # unlisted labels (picture frame, curtain) stay UNKNOWN, honestly
+                promoted_obj.entity.type = EntityType(ENTITY_TYPE_BY_LABEL[cand.label])
         if assoc is not None:
             # why this is one entity (viewer: identity line). `ambiguous_with` is mapped from the engine's track ids to the
             # ids these entities actually carry in the world.

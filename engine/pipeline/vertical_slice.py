@@ -1115,8 +1115,15 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     except ImportError as exc:
         return {**skip, "note": f"optional perception dependencies unavailable: {exc}"}
 
+    depth_by_id = {dm.evidence_id: dm for dm in metric_depth_maps}
+    grounded = options.perception_model == "grounded"
     try:
-        detector = MaskRCNNDetector(score_threshold=options.detection_score_threshold)
+        if grounded:
+            # open-vocabulary scene objects (sofa, coffee table, TV stand, rug, plant ...): COCO has no such classes
+            from perception.detection.grounded_scene import GroundedSceneSegmenter
+            detector = GroundedSceneSegmenter(depth_by_id)
+        else:
+            detector = MaskRCNNDetector(score_threshold=options.detection_score_threshold)
     except Exception as exc:  # noqa: BLE001 -- model unavailability is a skip
         return {**skip, "note": f"detector unavailable: {exc}", "model": options.perception_model}
 
@@ -1126,7 +1133,6 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     fx, fy, cx, cy = options.intrinsics
     width, height = options.image_size
     intrinsics = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height)
-    depth_by_id = {dm.evidence_id: dm for dm in metric_depth_maps}
 
     try:
         from engine.core.device import unloading
@@ -1177,12 +1183,21 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
         candidates, assoc = resolve_hypotheses(
             hypotheses, DepthSource.MVS, cam_pos, cameras=cameras,
-            model="mask_rcnn@coco", license="BSD-3-Clause", world=world,
+            model="grounding-dino-tiny" if grounded else "mask_rcnn@coco",
+            license="Apache-2.0" if grounded else "BSD-3-Clause", world=world,
         )
         resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
         resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
     else:
         raise VerticalSliceError(f"unknown object_resolver {options.object_resolver!r}: expected 'association' or 'union_find'")
+
+    # one object seen from several photographs can leave the resolver as several heavily overlapping candidates (per-view depth
+    # is only approximately aligned); the world validator calls those duplicates, so fuse them by its own rule first
+    from perception.instances.object_resolution import fuse_overlapping_candidates
+
+    n_resolved = len(candidates)
+    candidates = fuse_overlapping_candidates(candidates)
+    resolution["fused_overlapping"] = n_resolved - len(candidates)
 
     entity_ids = {c.candidate_id: f"entity-object-{i:03d}" for i, c in enumerate(candidates)}
     tracks, track_to_entity = {}, {}
@@ -1192,6 +1207,10 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             first = c.source_hypotheses[0]
             track_to_entity[assoc.assignment[f"{first.evidence_id}|{first.region_id}"]] = entity_ids[c.candidate_id]
 
+    from world_ir.observations import LEDGER_KEY
+
+    entities_before, geometries_before = set(world.entities), set(world.geometries)
+    ledger_before = world.metadata.get(LEDGER_KEY)
     promoted = 0
     for cand in candidates:
         promoted_obj = promote_object_to_entity(cand, world, entity_id=entity_ids[cand.candidate_id])
@@ -1215,9 +1234,21 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     from world_ir.validation import validate_world_ir
     report = validate_world_ir(world)
     if report.errors:
-        raise VerticalSliceError(
-            f"perception stage produced an invalid world: {report.errors[:3]}"
-        )
+        # Perception is an enhancement: objects that make the world invalid cost the OBJECTS, never the structural world
+        # (same rule as the mesh stage). Everything this stage added is removed and the reason is recorded.
+        for eid in set(world.entities) - entities_before:
+            del world.entities[eid]
+        for gid in set(world.geometries) - geometries_before:
+            del world.geometries[gid]
+        if ledger_before is None:
+            world.metadata.pop(LEDGER_KEY, None)
+        else:
+            world.metadata[LEDGER_KEY] = ledger_before
+        return {
+            **skip, "status": "rejected", "model": options.perception_model, "entities_rejected": promoted,
+            "hypotheses_lifted": len(hypotheses), "candidates_merged": len(candidates), "resolution": resolution,
+            "note": f"object entities rejected by world validation; world left as it was: {[str(i) for i in report.errors[:3]]}",
+        }
 
     return {
         "status": "ran",
@@ -1229,7 +1260,8 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         "entities_promoted": promoted,
         "resolution": resolution,
         "note": (
-            "COCO Mask R-CNN masks lifted via SfM-aligned depth (metric-by-"
+            ("Grounding DINO boxes cut to the foreground depth band" if grounded else "COCO Mask R-CNN masks")
+            + " lifted via SfM-aligned depth (metric-by-"
             "alignment, approximate); merged by the gated association resolver (or label+proximity if "
             "object_resolver='union_find'); provenance "
             "INFERRED with per-entity evidence ids"

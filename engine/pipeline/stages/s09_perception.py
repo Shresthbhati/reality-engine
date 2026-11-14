@@ -4,8 +4,10 @@
 Reads ``ctx.state`` ``pose`` / ``depth`` (the metricized depth maps) / ``layout`` / ``vertical_slice_options``;
 promotes objects into the layout world in place and sets ``ctx.state["perception"]`` (PerceptionOutcome). ``skipped``
 with the reason when perception is disabled (``perception_model=None``), there are no trusted intrinsics, no metric
-depth survived, or the detector / its weights are unavailable. An invalid world after promotion raises
-VerticalSliceError (the runner records ``failed``; the stage is optional, so the job grades PARTIAL).
+depth survived, or the detector / its weights are unavailable. An invalid world after promotion is ``rejected``: the
+objects this stage added are removed and the world is left as it was (an optional enhancement must never sink the
+multi-view world -- on a real ten-photo room a single duplicate object made the ladder fall back to a single-image
+model). ``perception_model="grounded"`` uses Grounding DINO (open vocabulary) instead of COCO Mask R-CNN.
 
 Plan 3.4 also names the detail pass under perception. That pass runs AFTER dense fusion in ``vertical_slice()`` (it
 reads the dense points and the fused world), so it cannot share a stage with perception without changing behaviour;

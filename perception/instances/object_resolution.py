@@ -123,6 +123,60 @@ def _distance(a: Vec3, b: Vec3) -> float:
     return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2) ** 0.5
 
 
+def _box_iou(a: "MergedObjectCandidate", b: "MergedObjectCandidate") -> float:
+    inter = 1.0
+    for lo_a, hi_a, lo_b, hi_b in ((a.bounds_min.x, a.bounds_max.x, b.bounds_min.x, b.bounds_max.x),
+                                   (a.bounds_min.y, a.bounds_max.y, b.bounds_min.y, b.bounds_max.y),
+                                   (a.bounds_min.z, a.bounds_max.z, b.bounds_min.z, b.bounds_max.z)):
+        inter *= max(0.0, min(hi_a, hi_b) - max(lo_a, lo_b))
+    vol = lambda c: ((c.bounds_max.x - c.bounds_min.x) * (c.bounds_max.y - c.bounds_min.y)  # noqa: E731
+                     * (c.bounds_max.z - c.bounds_min.z))
+    union = vol(a) + vol(b) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def fuse_overlapping_candidates(
+    candidates: List["MergedObjectCandidate"], iou_min: Optional[float] = None
+) -> List["MergedObjectCandidate"]:
+    """Fuse same-label candidates whose bounds overlap by more than ``iou_min`` (default: the world validator's own
+    duplicate rule, ``world_ir.validation._DUPLICATE_IOU``).
+
+    Per-view depth is only approximately aligned, so one sofa seen from several photographs can come out of the
+    association resolver as several candidates that overlap heavily. The validator calls those duplicates
+    (``invariant_6_duplicate_entity``); by its definition they ARE one object, so they are fused here: every contributing
+    hypothesis is kept, the extent is the union, the position the confidence-weighted centroid. Order is stable."""
+    if iou_min is None:
+        from world_ir.validation import _DUPLICATE_IOU as iou_min
+    n = len(candidates)
+    uf = _UnionFind(n)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if candidates[i].label == candidates[j].label and _box_iou(candidates[i], candidates[j]) > iou_min:
+                uf.union(i, j)
+    groups: Dict[int, List[int]] = {}
+    for i in range(n):
+        groups.setdefault(uf.find(i), []).append(i)
+    fused: List[MergedObjectCandidate] = []
+    for root in sorted(groups):
+        members = [candidates[i] for i in groups[root]]
+        if len(members) == 1:
+            fused.append(members[0])
+            continue
+        total = sum(max(m.confidence, 1e-9) for m in members)
+        centroid = Vec3(*(sum(max(m.confidence, 1e-9) * getattr(m.position, ax) for m in members) / total
+                          for ax in ("x", "y", "z")))
+        fused.append(MergedObjectCandidate(
+            candidate_id=members[0].candidate_id,
+            label=members[0].label,
+            position=centroid,
+            bounds_min=Vec3(*(min(getattr(m.bounds_min, ax) for m in members) for ax in ("x", "y", "z"))),
+            bounds_max=Vec3(*(max(getattr(m.bounds_max, ax) for m in members) for ax in ("x", "y", "z"))),
+            source_hypotheses=tuple(h for m in members for h in m.source_hypotheses),
+            confidence=max(m.confidence for m in members),
+        ))
+    return fused
+
+
 def resolve_objects(hypotheses: List[ObjectHypothesis3D], **kwargs):
     """The default object-resolution entry point: gated Hungarian association (see `association.resolve_hypotheses`,
     same keyword arguments). Returns (candidates, AssociationResult)."""

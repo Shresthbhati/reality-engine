@@ -848,6 +848,9 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 [ei.facts for ei in run_inputs], colmap_session, worldstore_service.get_camera_declaration(world.id))
             options = VerticalSliceOptions(
                 artifact_store=artifact_store, colmap_session=colmap_session,
+                # scene objects from open-vocabulary detection (sofa, TV stand, rug, plants ...); REALITY_OPEN_VOCAB=0
+                # keeps the COCO Mask R-CNN stage (the same opt-out as the single-image furniture detector below)
+                perception_model="maskrcnn" if os.environ.get("REALITY_OPEN_VOCAB") == "0" else "grounded",
                 **intr_kwargs,
                 measured_baselines=tuple(baselines),
                 # Level 3 is part of the normal path: dense MVS is attempted only when the measured sparse model justifies

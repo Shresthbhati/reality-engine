@@ -91,15 +91,15 @@ def unload_open_vocab_furniture() -> None:
         pass
 
 
-def _grounded_raw(path: Path):
+def _grounded_raw(path: Path, prompts: Sequence[str] = PROMPTS):
     import torch
     from engine.core.image_io import open_oriented
 
     proc, model, dev = _load()
     img = open_oriented(path).convert("RGB")
     raw: List[Tuple[str, float, Tuple[float, float, float, float]]] = []
-    for i in range(0, len(PROMPTS), BATCH):
-        chunk = PROMPTS[i:i + BATCH]
+    for i in range(0, len(prompts), BATCH):
+        chunk = prompts[i:i + BATCH]
         inp = proc(images=[img] * len(chunk), text=[f"{p}." for p in chunk], return_tensors="pt", padding=True).to(dev)
         with torch.no_grad():
             out = model(**inp)
@@ -111,14 +111,18 @@ def _grounded_raw(path: Path):
     return raw, img.size
 
 
-def grounded_furniture_detector(item, w: int, h: int) -> list:
-    """Grounding DINO detections for ``item`` in the ``w`` x ``h`` grid. Raises when the model cannot run."""
+def item_path(item) -> Path:
+    """The image file behind an evidence item (``file://`` URI or plain path)."""
     from urllib.parse import unquote, urlparse
     from urllib.request import url2pathname
 
     u = urlparse(item.source_uri)
-    path = Path(url2pathname(unquote(u.path)) if u.scheme == "file" else item.source_uri)
-    raw, size = _grounded_raw(path)
+    return Path(url2pathname(unquote(u.path)) if u.scheme == "file" else item.source_uri)
+
+
+def grounded_furniture_detector(item, w: int, h: int) -> list:
+    """Grounding DINO detections for ``item`` in the ``w`` x ``h`` grid. Raises when the model cannot run."""
+    raw, size = _grounded_raw(item_path(item))
     return clean_detections(raw, view_id=item.id, src_size=size, grid_size=(w, h))
 
 

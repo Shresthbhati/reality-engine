@@ -200,10 +200,11 @@ def consolidate_horizontal_roles(
     """Per-plane sanity for floor/ceiling roles; ``classify_plane`` only checks which side of a plane the cameras are on.
 
     That is enough to call every downward-facing slab that dense monocular depth smears across a room a "ceiling"
-    (12 of them in a room with one). Two checks, then one clean-up; distinct levels (storeys, mezzanines) are never
-    removed, because each check is a property of ONE plane, not a vote between levels:
-      1. flatness: a real floor/ceiling is flat. Inlier heights spread (5th..95th percentile) over more than
-         FLATNESS_MAX of the plane's lateral extent -> tilted or smeared -> ``unknown``;
+    (12 of them in a room with one). Two checks, then one clean-up; distinct flat levels (storeys, mezzanines) are never
+    removed:
+      1. flatness: inlier heights spread (5th..95th percentile) over more than FLATNESS_MAX of the plane's lateral
+         extent marks a plane tilted/smeared. Tilt only RANKS: when a flat candidate exists for the role, the tilted
+         ones become ``unknown``; when none does, the best-supported tilted one stays (depth tilts real floors too);
       2. physical: a ceiling lies above every camera that OBSERVED it and a floor below them (the cameras are inside the
          room; per plane, so a multi-storey capture stays valid) -> else ``unknown``. Without observer data, all cameras;
       3. fragments of ONE level (same role, heights within LEVEL_HEIGHT_TOL_SHARE of the vertical extent) merge into the
@@ -225,6 +226,8 @@ def consolidate_horizontal_roles(
 
     height: Dict[int, float] = {}
     support: Dict[int, int] = {}
+    tilted: Dict[int, bool] = {}
+    tilt_note: Dict[int, str] = {}
     for i, op in enumerate(oriented):
         if op.role not in ("floor", "ceiling"):
             continue
@@ -235,10 +238,8 @@ def consolidate_horizontal_roles(
         lateral = pts - np.outer(hs, u)
         extent = float(max(np.ptp(lateral @ axis) for axis in _orthonormal_pair(u))) or 1e-9
         spread = float(np.percentile(hs, 95) - np.percentile(hs, 5))
-        if spread / extent > FLATNESS_MAX:
-            demote(i, f"horizontal-facing but not flat (height spread {spread:.2f} over {extent:.2f}): "
-                      "tilted or depth-smeared surface, not a floor or ceiling")
-            continue
+        tilted[i] = spread / extent > FLATNESS_MAX
+        tilt_note[i] = f"height spread {spread:.2f} over {extent:.2f}"
         seen = [float(np.dot(c, u)) for c in (observers or {}).get(op.plane.plane_id, ())] or cam_h
         h = float(np.mean(hs))
         if seen and ((op.role == "ceiling" and h <= max(seen)) or (op.role == "floor" and h >= min(seen))):
@@ -249,7 +250,17 @@ def consolidate_horizontal_roles(
 
     if not height:
         return out, stats
-    tol = max(LEVEL_HEIGHT_TOL_SHARE * (max(list(height.values()) + cam_h) - min(list(height.values()) + cam_h)), 1e-9)
+    # Tilt is a ranking signal, not a veto: monocular depth tilts real floors too (a real floor measured 0.88 high over
+    # 4.5 across). With any flat candidate, tilted ones are clutter; with none, the best-supported tilted one IS the surface.
+    for role in ("ceiling", "floor"):
+        cand = [i for i in height if out[i].role == role]
+        flat = [i for i in cand if not tilted[i]]
+        best_tilted = [] if flat or not cand else [max(cand, key=lambda i: support[i])]
+        for i in cand:
+            if tilted[i] and i not in best_tilted:
+                demote(i, f"{role} candidate is tilted or depth-smeared ({tilt_note[i]}) and "
+                          + ("a flat one exists" if flat else "a better-supported one exists"))
+    tol =max(LEVEL_HEIGHT_TOL_SHARE * (max(list(height.values()) + cam_h) - min(list(height.values()) + cam_h)), 1e-9)
     for role in ("ceiling", "floor"):
         idx = sorted((i for i in height if out[i].role == role), key=lambda i: height[i])
         levels: List[List[int]] = []

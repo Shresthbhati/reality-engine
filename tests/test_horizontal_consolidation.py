@@ -41,7 +41,17 @@ def test_tilted_depth_smear_is_not_a_ceiling_but_the_flat_ceiling_stays():
     ]
     out, stats = consolidate_horizontal_roles(planes, UP, CAMS, pos)
     assert _roles(out) == {"ceil": "ceiling", "smear-a": "unknown", "smear-b": "unknown", "floor": "floor"}
-    assert stats == {"demoted": 2, "merged": 0} and "not flat" in out[1].uncertainty.note
+    assert stats == {"demoted": 2, "merged": 0} and "tilted or depth-smeared" in out[1].uncertainty.note
+
+
+def test_when_every_candidate_is_tilted_the_best_supported_one_is_the_surface():
+    """Monocular depth tilts real floors too: a hard flatness veto deleted the floor and the multi-view room was rejected."""
+    pos = {}
+    planes = [_plane("floor-main", "floor", 0.0, 150, pos, tilt=-0.6), _plane("floor-bit", "floor", 0.1, 40, pos, tilt=-0.6),
+              _plane("ceil-main", "ceiling", 2.5, 120, pos, tilt=0.6), _plane("ceil-bit", "ceiling", 2.2, 50, pos, tilt=0.6)]
+    out, stats = consolidate_horizontal_roles(planes, UP, CAMS, pos)
+    assert _roles(out) == {"floor-main": "floor", "floor-bit": "unknown", "ceil-main": "ceiling", "ceil-bit": "unknown"}
+    assert stats == {"demoted": 2, "merged": 0} and "better-supported" in out[1].uncertainty.note
 
 
 def test_a_ceiling_below_the_cameras_that_saw_it_is_not_a_ceiling():

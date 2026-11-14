@@ -311,3 +311,27 @@ def metricize_all(
         metric_maps.append(metric)
         alignments.append(alignment)
     return metric_maps, alignments, failed
+
+
+#: the dense box may extend past the sparse cloud's robust box by this share of each axis extent
+TRIM_MARGIN = 0.25
+#: below this many reference points there is no scene to measure and nothing is trimmed
+TRIM_MIN_REFERENCE = 50
+
+
+def trim_to_scene(points, reference, margin: float = TRIM_MARGIN, min_reference: int = TRIM_MIN_REFERENCE):
+    """Drop dense monocular-depth points far outside the scene the SfM sparse cloud defines.
+
+    Monocular depth hallucinates range for sky, windows and anything beyond the room; those points then become giant
+    'walls' in plane detection (observed: wall planes hundreds of units wide in a room a few units across). The sparse
+    COLMAP points are reliable, so the scene box is their 2nd..98th percentile per axis, grown by ``margin`` of each
+    axis extent. Returns ``(kept, n_dropped)``; with fewer than ``min_reference`` reference points nothing is dropped."""
+    ref = np.array([p.position for p in reference], dtype=float)
+    if len(ref) < min_reference or not points:
+        return list(points), 0
+    lo, hi = np.percentile(ref, 2, axis=0), np.percentile(ref, 98, axis=0)
+    pad = margin * (hi - lo)
+    lo, hi = lo - pad, hi + pad
+    pts = np.array([p.position for p in points], dtype=float)
+    inside = np.all((pts >= lo) & (pts <= hi), axis=1)
+    return [p for p, keep in zip(points, inside) if keep], int((~inside).sum())

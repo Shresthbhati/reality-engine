@@ -1059,6 +1059,9 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
         dense.extend(depth_map_to_points(dm, camera, stride=options.depth_stride,
                                          image_rgb=_photo_rgb_or_none(evidence_items, dm.evidence_id)))
 
+    from reconstruction.depth_to_points import trim_to_scene
+
+    dense, trimmed = trim_to_scene(dense, result.points)   # result.points is still the sparse cloud here
     result.points.extend(dense)
     residuals = sorted(a.residual_median_m for a in alignments)
     median_residual = residuals[len(residuals) // 2] if residuals else None
@@ -1069,6 +1072,7 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
         "metricized": len(metric_maps),
         "metricize_failed": failed,
         "dense_points": len(dense),
+        "dense_points_trimmed_outside_scene": trimmed,
         "dense_points_with_colour": sum(1 for p in dense if p.color is not None),
         "stride": options.depth_stride,
         "residual_median_m": median_residual,
@@ -1200,10 +1204,10 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     resolution["fused_overlapping"] = n_resolved - len(candidates)
     if grounded:
         # open-vocabulary detectors name things that are not there; an object backed by ONE photograph must be confident
-        from perception.detection.grounded_scene import MIN_SINGLE_VIEW_CONFIDENCE
-        strong = [c for c in candidates if c.observation_count > 1 or c.confidence >= MIN_SINGLE_VIEW_CONFIDENCE]
-        resolution["dropped_weak_single_view"] = len(candidates) - len(strong)
-        candidates = strong
+        from perception.detection.grounded_scene import filter_implausible, scene_box
+        candidates, dropped = filter_implausible(candidates, scene_box(result.points), n_views=len(depth_by_id))
+        resolution["dropped"] = dropped
+        resolution["dropped_weak_single_view"] = dropped.get("weak_single_view", 0) + dropped.get("single_view", 0)
 
     entity_ids = {c.candidate_id: f"entity-object-{i:03d}" for i, c in enumerate(candidates)}
     tracks, track_to_entity = {}, {}

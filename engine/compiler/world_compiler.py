@@ -68,6 +68,7 @@ from perception.geometry.orientation import (
     OrientationError,
     classify_planes,
     consolidate_horizontal_roles,
+    consolidate_vertical_roles,
     observer_positions_by_plane,
 )
 from perception.geometry.planes import (
@@ -360,6 +361,8 @@ def compile_reconstruction_to_world(
         # one floor level and one ceiling level per storey: classify_planes judges each plane alone
         oriented, _horizontal_stats = consolidate_horizontal_roles(
             oriented, options.up, camera_positions, positions_by_id, observers=observers)
+        # one wall per wall: dense depth cuts a wall into per-view patches
+        oriented, _vertical_stats = consolidate_vertical_roles(oriented, options.up, positions_by_id)
     except OrientationError as exc:
         raise CompileInputError(f"plane classification failed: {exc}") from exc
 

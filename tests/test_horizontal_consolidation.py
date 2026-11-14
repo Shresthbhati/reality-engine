@@ -72,6 +72,18 @@ def test_fragments_of_one_level_merge_into_the_strongest_plane():
     assert "merged into a" in out[1].uncertainty.note
 
 
+def test_floor_copies_within_the_surfaces_own_roughness_are_one_floor_but_a_clear_gap_is_a_level():
+    """Per-view monocular depth gives each photo its own copy of one floor: copies closer than the floor's own vertical
+    spread merge; a copy beyond it stays a separate level."""
+    pos = {}
+    planes = [_plane("main", "floor", 0.0, 150, pos, tilt=0.04),        # spread ~0.22 over a 6-wide extent: still flat
+              _plane("copy", "floor", 0.3, 60, pos), _plane("far", "floor", 0.8, 50, pos),
+              _plane("ceil", "ceiling", 2.5, 100, pos)]
+    out, stats = consolidate_horizontal_roles(planes, UP, CAMS, pos)
+    assert _roles(out) == {"main": "floor", "copy": "unknown", "far": "floor", "ceil": "ceiling"}
+    assert stats["merged"] == 1 and len(out[0].plane.inlier_ids) == 210
+
+
 def test_distinct_flat_levels_all_survive_storeys_and_mezzanines():
     pos = {}
     cams = CAMS + [(0.0, 3.6, 0.0), (1.0, 3.9, 0.0)]                # cameras on both levels

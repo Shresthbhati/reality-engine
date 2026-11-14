@@ -228,6 +228,7 @@ def consolidate_horizontal_roles(
     support: Dict[int, int] = {}
     tilted: Dict[int, bool] = {}
     tilt_note: Dict[int, str] = {}
+    spread_of: Dict[int, float] = {}
     for i, op in enumerate(oriented):
         if op.role not in ("floor", "ceiling"):
             continue
@@ -239,6 +240,7 @@ def consolidate_horizontal_roles(
         extent = float(max(np.ptp(lateral @ axis) for axis in _orthonormal_pair(u))) or 1e-9
         spread = float(np.percentile(hs, 95) - np.percentile(hs, 5))
         tilted[i] = spread / extent > FLATNESS_MAX
+        spread_of[i] = spread
         tilt_note[i] = f"height spread {spread:.2f} over {extent:.2f}"
         seen = [float(np.dot(c, u)) for c in (observers or {}).get(op.plane.plane_id, ())] or cam_h
         h = float(np.mean(hs))
@@ -262,17 +264,30 @@ def consolidate_horizontal_roles(
                           + ("a flat one exists" if flat else "a better-supported one exists"))
     tol =max(LEVEL_HEIGHT_TOL_SHARE * (max(list(height.values()) + cam_h) - min(list(height.values()) + cam_h)), 1e-9)
     for role in ("ceiling", "floor"):
+        # Greedy from the best-supported plane: everything within its noise band is the same surface. The band is the
+        # larger of the fixed level tolerance and the plane's own vertical spread -- per-view monocular depth gives each
+        # photo a slightly different copy of one floor, so copies closer than the surface's own roughness are not levels.
         idx = sorted((i for i in height if out[i].role == role), key=lambda i: height[i])
-        levels: List[List[int]] = []
+        chains: List[List[int]] = []                    # heights that follow each other within the fixed tolerance
         for i in idx:
-            if levels and height[i] - height[levels[-1][-1]] <= tol:
-                levels[-1].append(i)
+            if chains and height[i] - height[chains[-1][-1]] <= tol:
+                chains[-1].append(i)
             else:
-                levels.append([i])
+                chains.append([i])
+        for c in chains:
+            c.sort(key=lambda i: -support[i])           # lead = best-supported member
+        pending = sorted(chains, key=lambda c: -support[c[0]])
+        levels: List[List[int]] = []
+        while pending:
+            first = pending.pop(0)
+            band = max(tol, spread_of.get(first[0], 0.0))
+            near = [c for c in pending if abs(height[c[0]] - height[first[0]]) <= band]
+            pending = [c for c in pending if c not in near]
+            levels.append(first + [i for c in near for i in c])
         for lv in levels:
             if len(lv) < 2:
                 continue
-            lead = max(lv, key=lambda i: support[i])
+            lead = lv[0]
             union = sorted({t for i in lv for t in out[i].plane.inlier_ids})
             out[lead] = dataclasses.replace(out[lead], plane=dataclasses.replace(out[lead].plane, inlier_ids=union))
             for i in lv:
@@ -281,6 +296,83 @@ def consolidate_horizontal_roles(
                         confidence=0.0, note=f"fragment of the {role} at height {height[lead]:.2f}; merged into "
                                              f"{out[lead].plane.plane_id}"))
                     stats["merged"] += 1
+    return out, stats
+
+
+#: Wall fragments of one wall: horizontal normals within this angle ...
+WALL_AZIMUTH_TOL_RAD = math.radians(12.0)
+#: ... standing within the larger of this share of the scene's lateral extent and the lead fragment's own thickness ...
+WALL_OFFSET_TOL_SHARE = 0.03
+#: ... and touching along the wall: the gap between their runs is at most this share of the scene's lateral extent.
+WALL_GAP_SHARE = 0.10
+
+
+def consolidate_vertical_roles(
+    oriented: Sequence[OrientedPlane],
+    up: Tuple[float, float, float],
+    positions_by_id: Dict[str, Tuple[float, float, float]],
+) -> Tuple[List[OrientedPlane], Dict[str, int]]:
+    """Fragments of ONE wall become one wall. Dense depth cuts a single wall into several patches (one per view); the
+    wall-role planes that share a direction, stand on the same line (within the better-supported patch's own thickness)
+    and touch along it are merged into the best-supported one, which takes their inliers. Opposite walls, perpendicular
+    walls and walls that merely are parallel but apart are never merged. Merged-away planes become ``unknown`` with the
+    reason recorded. Returns ``(planes, {"merged": n})``."""
+    import dataclasses
+
+    import numpy as np
+
+    u = np.asarray(_as_unit(up), dtype=float)
+    out = list(oriented)
+    stats = {"merged": 0}
+    info: Dict[int, dict] = {}
+    for i, op in enumerate(oriented):
+        if op.role != "wall":
+            continue
+        pts = np.array([positions_by_id[t] for t in op.plane.inlier_ids if t in positions_by_id], dtype=float)
+        n = np.asarray(op.normal, dtype=float)
+        n_h = n - (n @ u) * u
+        norm = float(np.linalg.norm(n_h))
+        if len(pts) < 3 or norm < 1e-6:
+            continue
+        info[i] = {"pts": pts, "n": n_h / norm, "support": len(op.plane.inlier_ids)}
+    if len(info) < 2:
+        return out, stats
+    allp = np.vstack([v["pts"] for v in info.values()])
+    lateral = allp - np.outer(allp @ u, u)
+    scene = float(max(np.ptp(lateral @ axis) for axis in _orthonormal_pair(u))) or 1e-9
+
+    pending = sorted(info, key=lambda i: -info[i]["support"])
+    while pending:
+        lead = pending.pop(0)
+        L = info[lead]
+        t = np.cross(u, L["n"])
+        lead_off = L["pts"] @ L["n"]
+        band = max(WALL_OFFSET_TOL_SHARE * scene, float(np.percentile(lead_off, 95) - np.percentile(lead_off, 5)))
+        s_lead = L["pts"] @ t
+        lo, hi = float(np.percentile(s_lead, 2)), float(np.percentile(s_lead, 98))
+        members = []
+        for j in pending:
+            J = info[j]
+            if math.acos(max(-1.0, min(1.0, float(J["n"] @ L["n"])))) > WALL_AZIMUTH_TOL_RAD:
+                continue
+            if abs(float(np.median(J["pts"] @ L["n"])) - float(np.median(lead_off))) > band:
+                continue
+            s_j = J["pts"] @ t
+            j0, j1 = float(np.percentile(s_j, 2)), float(np.percentile(s_j, 98))
+            if max(j0, lo) - min(j1, hi) > WALL_GAP_SHARE * scene:
+                continue
+            members.append(j)
+            lo, hi = min(lo, j0), max(hi, j1)         # the merged wall grows: later fragments may touch the new run
+        if not members:
+            continue
+        pending = [j for j in pending if j not in members]
+        union = sorted({t_ for i in [lead] + members for t_ in out[i].plane.inlier_ids})
+        out[lead] = dataclasses.replace(out[lead], plane=dataclasses.replace(out[lead].plane, inlier_ids=union))
+        for j in members:
+            out[j] = dataclasses.replace(out[j], role="unknown", uncertainty=Uncertainty(
+                confidence=0.0, note=f"fragment of the wall {out[lead].plane.plane_id} (same direction, same line, "
+                                     f"touching); merged into it"))
+            stats["merged"] += 1
     return out, stats
 
 

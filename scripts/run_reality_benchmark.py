@@ -35,6 +35,33 @@ def _scorecards(results_dir):
     return cards
 
 
+def _git(*args) -> str:
+    import subprocess
+
+    try:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=20).stdout.strip()
+    except Exception:  # noqa: BLE001 -- provenance is best-effort, never a reason to lose the report
+        return ""
+
+
+def build_report(agg: dict, cards: list) -> dict:
+    """The machine-readable release report: what was measured, on which commit, when. Nothing is added that was not scored."""
+    import time
+
+    return {"report_version": 1, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "engine_commit": _git("rev-parse", "HEAD") or None, "working_tree_dirty": bool(_git("status", "--porcelain")),
+            "any_metric_measured": any(c["measured"] for c in agg["categories"].values()),
+            "aggregate": agg, "scorecards": cards}
+
+
+def history_line(report: dict) -> dict:
+    """One compact, append-only line per release: enough to see accuracy move between commits."""
+    agg = report["aggregate"]
+    return {"generated_at": report["generated_at"], "engine_commit": report["engine_commit"], "dirty": report["working_tree_dirty"],
+            "verdict": agg["verdict"], "scenarios": agg["scenarios"], "gates": agg["gates"],
+            "category_scores": {cid: {"score": c["score"], "coverage": c["coverage"]} for cid, c in agg["categories"].items()}}
+
+
 def _fmt(v):
     return "not measured" if v is None else f"{v:.0%}"
 
@@ -57,6 +84,8 @@ def main(argv=None) -> int:
     ap.add_argument("--results", help="directory of scenario result files")
     ap.add_argument("--emit-manifests", metavar="DIR", help="write empty manifests for all scenarios to DIR")
     ap.add_argument("--json", action="store_true", help="print JSON")
+    ap.add_argument("--report", metavar="FILE", help="write the machine-readable release report (JSON) to FILE")
+    ap.add_argument("--history", metavar="FILE", help="append one compact line for this run to FILE (JSONL accuracy history)")
     args = ap.parse_args(argv)
     if args.emit_manifests:
         out = pathlib.Path(args.emit_manifests)
@@ -67,6 +96,17 @@ def main(argv=None) -> int:
         return 0
     cards = _scorecards(args.results)
     agg = aggregate(cards)
+    if args.report or args.history:
+        report = build_report(agg, cards)
+        if args.report:
+            p = pathlib.Path(args.report)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(report, indent=1), encoding="utf-8")
+        if args.history:
+            h = pathlib.Path(args.history)
+            h.parent.mkdir(parents=True, exist_ok=True)
+            with h.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(history_line(report)) + "\n")
     if args.json:
         print(json.dumps({"aggregate": agg, "scorecards": cards}, indent=2))
     else:

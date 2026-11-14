@@ -151,6 +151,19 @@ def test_cli_emits_one_manifest_per_scenario(tmp_path, capsys):
     assert len(files) == 24 and json.loads(files[0].read_text())["scenario_id"] == "001"
 
 
+def test_release_report_and_history_record_what_was_measured_and_where(tmp_path):
+    from scripts.run_reality_benchmark import main
+
+    report, history = tmp_path / "r" / "report.json", tmp_path / "h" / "history.jsonl"
+    assert main(["--report", str(report), "--history", str(history)]) == 0
+    assert main(["--history", str(history)]) == 0                                        # history is append-only
+    data = json.loads(report.read_text())
+    assert data["report_version"] == 1 and data["any_metric_measured"] is False          # nothing measured yet: said plainly
+    assert "engine_commit" in data and "working_tree_dirty" in data and len(data["scorecards"]) == 24
+    lines = [json.loads(x) for x in history.read_text().splitlines()]
+    assert len(lines) == 2 and lines[0]["verdict"] == "INCOMPLETE" and "category_scores" in lines[0]
+
+
 def test_scorecard_matches_the_published_schema():
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(SCHEMA.read_text())

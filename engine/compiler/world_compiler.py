@@ -587,6 +587,12 @@ def compile_reconstruction_to_world(
     if options.promote_windows and detected_windows:
         for widx, win in enumerate(detected_windows, start=1):
             win_id = f"window-{widx:03d}"
+            if f"{options.structure_prefix}-{win.wall_plane_id}" not in world.entities:
+                # A window with no host wall is not a valid statement about the room (the world validator rejects it,
+                # and one orphan then sinks the whole multi-view world): record it, never invent a host.
+                interior_warnings.append(
+                    f"{win_id} not promoted: its host plane {win.wall_plane_id} is not a wall entity in this world")
+                continue
             if win_id not in world.entities:
                 win_geom_id = f"geom-{win_id}"
                 wbmin, wbmax = win.bounds_min, win.bounds_max

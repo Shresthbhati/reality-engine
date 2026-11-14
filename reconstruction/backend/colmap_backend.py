@@ -90,6 +90,21 @@ def _uri_to_path(uri: str) -> Path:
     return Path(uri)
 
 
+def _uniform_image_size(paths: List[Path]) -> bool:
+    """True when there are >= 2 readable images and all share one pixel size (a header read; nothing is decoded).
+    Unreadable images make this False, so the default per-image behaviour is kept rather than guessed."""
+    from PIL import Image
+
+    sizes = set()
+    try:
+        for p in paths:
+            with Image.open(p) as im:
+                sizes.add(im.size)
+    except Exception:  # noqa: BLE001 -- unreadable image: keep the default
+        return False
+    return len(paths) >= 2 and len(sizes) == 1
+
+
 def _trusted_intrinsics(evidence: List[EvidenceItem]):
     """Per-image trusted intrinsics from evidence metadata, or None.
 
@@ -656,12 +671,18 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 timings[label] = round(time.time() - t0, 2)
 
         trusted = _trusted_intrinsics(image_evidence)
-        signature = {"robust_sift": bool(self.robust_sift), "guided_matching": bool(self.guided_matching),
-                     "trusted_intrinsics": list(trusted) if trusted is not None else None}
         by_name: Dict[str, Tuple[EvidenceItem, Path]] = {}
         for item in image_evidence:
             src = _uri_to_path(item.source_uri)
             by_name[f"{item.id}{src.suffix or '.jpg'}"] = (item, src)
+        # Unknown intrinsics and one pixel size across the set: one device took these, so solve ONE shared camera.
+        # Per-image cameras let COLMAP fit a different focal to every photo (observed spread 694-1109 px plus a
+        # diverged 150,712 px camera on a ten-photo room), which no downstream stage can use.
+        single_camera = trusted is None and _uniform_image_size([p for _, p in by_name.values()])
+        signature = {"robust_sift": bool(self.robust_sift), "guided_matching": bool(self.guided_matching),
+                     "trusted_intrinsics": list(trusted) if trusted is not None else None}
+        if single_camera:
+            signature["single_camera"] = True   # only when on: states committed before this keep their signature
         evidence_id_by_name = {n: it.id for n, (it, _) in by_name.items()}
         n_input = len(image_evidence)
 
@@ -681,6 +702,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             fx, fy, cx, cy = trusted
             extractor_args = ["--ImageReader.camera_model", "PINHOLE",
                               "--ImageReader.camera_params", f"{fx},{fy},{cx},{cy}"]
+        if single_camera:
+            extractor_args += ["--ImageReader.single_camera", "1"]
         extractor_args += _sift_extraction_args(robust=self.robust_sift)
         # Affine-shape SIFT is CPU-only in COLMAP (see reconstruct()).
         cpu_or_gpu = "0" if self.robust_sift else gpu_flag

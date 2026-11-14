@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reality-engine.local/schemas/measured_rooms/ground_truth.schema.json",
+  "title": "Measured-room ground truth",
+  "description": "One room's surveyed truth, as consumed by perception.architecture.accuracy_report. Key names follow synthetic/fidelity_room/ground_truth.json, which validates unchanged. A real (non-synthetic) file must also carry a `capture` block recording who measured it, how, and under what consent.",
+  "type": "object",
+  "required": ["room", "walls", "openings"],
+  "properties": {
+    "room": {
+      "type": "object",
+      "required": ["id", "area_m2", "height_m"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string"},
+        "area_m2": {"type": "number", "exclusiveMinimum": 0},
+        "height_m": {"type": "number", "exclusiveMinimum": 0, "description": "Ceiling height."},
+        "length_m": {"type": "number", "exclusiveMinimum": 0},
+        "width_m": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "walls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "start", "end", "length_m"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "start": {"$ref": "#/$defs/point2"},
+          "end": {"$ref": "#/$defs/point2"},
+          "length_m": {"type": "number", "exclusiveMinimum": 0}
+        }
+      }
+    },
+    "openings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "center", "width_m", "height_m", "wall"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["door", "window", "opening"]},
+          "center": {"$ref": "#/$defs/point3"},
+          "width_m": {"type": "number", "exclusiveMinimum": 0},
+          "height_m": {"type": "number", "exclusiveMinimum": 0},
+          "sill_m": {"type": "number", "minimum": 0},
+          "wall": {"type": "string", "minLength": 1, "description": "Id of the host wall."}
+        }
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fixture_type", "position_m"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "fixture_type": {"type": "string", "minLength": 1},
+          "position_m": {"$ref": "#/$defs/point3"}
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "required": [
+        "room_id", "date", "device_model", "measured_by", "method",
+        "tolerance_m", "consent_reference", "lighting", "notes"
+      ],
+      "properties": {
+        "room_id": {"type": "string", "minLength": 1},
+        "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+        "device_model": {"type": "string", "minLength": 1},
+        "measured_by": {"type": "string", "minLength": 1},
+        "method": {"enum": ["laser", "tape", "both"]},
+        "tolerance_m": {"type": "number", "exclusiveMinimum": 0},
+        "consent_reference": {"type": "string", "minLength": 1},
+        "lighting": {"type": "string", "minLength": 1},
+        "notes": {"type": "string"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "Only synthetic files may omit `capture` (`source: synthetic` as in the fidelity fixture, or `synthetic: true`).",
+      "if": {
+        "not": {
+          "anyOf": [
+            {"required": ["synthetic"], "properties": {"synthetic": {"const": true}}},
+            {"required": ["source"], "properties": {"source": {"const": "synthetic"}}}
+          ]
+        }
+      },
+      "then": {"required": ["capture"]}
+    }
+  ],
+  "$defs": {
+    "point2": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "minItems": 2, "maxItems": 2},
+    "point3": {
+      "type": "array",
+      "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}],
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
+}

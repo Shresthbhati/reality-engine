@@ -35,6 +35,14 @@ MIN_SCORE = 0.45
 CROSS_CLASS_IOU = 0.6
 #: an object seen in a single photograph needs at least this confidence (score x share of valid depth) to enter the world
 MIN_SINGLE_VIEW_CONFIDENCE = 0.6
+#: with this many photographs or more, an object must be confirmed by >= 2 of them (one view cannot localise anything in 3D)
+MANY_VIEWS = 4
+#: scene box = 2nd..98th percentile of the sparse points, grown by this share of its diagonal
+SCENE_MARGIN = 0.25
+#: nothing in a room is longer than this share of the room's own extent (depth blow-ups are)
+MAX_SIDE_SHARE = 0.7
+#: below this many sparse points there is no scene to measure; the scene filters then do nothing
+MIN_SCENE_POINTS = 50
 #: WorldIR type per label; anything not listed stays UNKNOWN rather than being guessed
 ENTITY_TYPE_BY_LABEL: Dict[str, str] = {
     **{k: "furniture" for k in ("sofa", "armchair", "chair", "dining table", "coffee table", "side table", "desk", "bed",
@@ -100,6 +108,50 @@ def depth_refined_mask(
     mask = np.zeros((dh, dw), dtype=bool)
     mask[y0:y1, x0:x1] = keep
     return mask
+
+
+def scene_box(points) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Robust (lo, hi) of the sparse points (2nd..98th percentile per axis); None when there are too few to define one."""
+    pts = np.array([tuple(getattr(p, "position", p)) for p in points], dtype=float)
+    if len(pts) < MIN_SCENE_POINTS:
+        return None
+    return np.percentile(pts, 2, axis=0), np.percentile(pts, 98, axis=0)
+
+
+def filter_implausible(candidates, box, n_views: int, min_confidence: float = MIN_SINGLE_VIEW_CONFIDENCE):
+    """Drop candidates that cannot be real objects of this scene; returns (kept, {reason: count}).
+
+    Reasons, in order: ``outside_scene`` (centre beyond the sparse points' box grown by SCENE_MARGIN), ``scene_sized``
+    (longest side > MAX_SIDE_SHARE of the scene's longest axis extent), ``single_view`` (one photograph, though the capture has
+    >= MANY_VIEWS), ``weak_single_view`` (one photograph in a small capture and confidence < ``min_confidence``)."""
+    from collections import Counter
+
+    dropped: Counter = Counter()
+    kept = []
+    if box is not None:
+        lo, hi = box
+        diag = float(np.linalg.norm(hi - lo))
+        longest = float(np.max(hi - lo))
+        lo_m, hi_m = lo - SCENE_MARGIN * diag, hi + SCENE_MARGIN * diag
+    for c in candidates:
+        if box is not None:
+            centre = np.array([c.position.x, c.position.y, c.position.z])
+            side = max(c.bounds_max.x - c.bounds_min.x, c.bounds_max.y - c.bounds_min.y, c.bounds_max.z - c.bounds_min.z)
+            if bool(np.any(centre < lo_m) or np.any(centre > hi_m)):
+                dropped["outside_scene"] += 1
+                continue
+            if side > MAX_SIDE_SHARE * longest:
+                dropped["scene_sized"] += 1
+                continue
+        if len(c.evidence_ids) < 2:
+            if n_views >= MANY_VIEWS:
+                dropped["single_view"] += 1
+                continue
+            if c.confidence < min_confidence:
+                dropped["weak_single_view"] += 1
+                continue
+        kept.append(c)
+    return kept, dict(dropped)
 
 
 class GroundedSceneSegmenter:

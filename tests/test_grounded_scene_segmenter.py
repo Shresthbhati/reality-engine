@@ -83,6 +83,32 @@ def _cand(cid, label, lo, hi, conf=0.8):
                                  bounds_max=Vec3(*hi), source_hypotheses=(), confidence=conf)
 
 
+def _seen(cand, *views):
+    import dataclasses
+    return dataclasses.replace(cand, source_hypotheses=tuple(SimpleNamespace(evidence_id=v, region_id=f"r-{v}") for v in views))
+
+
+def test_scene_filters_drop_outliers_slivers_and_single_view_objects():
+    rng = np.random.default_rng(0)
+    box = gs.scene_box(rng.uniform(-1.5, 1.5, size=(200, 3)))            # a ~3 unit room
+    assert box is not None and gs.scene_box(rng.uniform(size=(10, 3))) is None   # too few points: no scene, no filter
+
+    good = _seen(_cand("good", "sofa", (-0.5, -0.5, 0), (0.5, 0.5, 0.5)), "a", "b", "c")
+    far = _seen(_cand("far", "bookshelf", (-11, 1, -2), (-4, 3, 1)), "a", "b")       # a depth blow-up outside the room
+    huge = _seen(_cand("huge", "potted plant", (-1.4, -1.4, -1.4), (1.4, 1.4, 1.4)), "a", "b")   # as big as the room
+    sliver = _seen(_cand("sliver", "potted plant", (0, 0, 0), (0.06, 0.08, 0.08)), "a")  # one photo of a 10-photo capture
+    kept, dropped = gs.filter_implausible([good, far, huge, sliver], box, n_views=10)
+    assert [c.candidate_id for c in kept] == ["good"]
+    assert dropped == {"outside_scene": 1, "scene_sized": 1, "single_view": 1}
+
+
+def test_single_view_rule_is_a_confidence_gate_in_small_captures():
+    weak = _seen(_cand("weak", "sofa", (0, 0, 0), (1, 1, 1), conf=0.4), "a")
+    firm = _seen(_cand("firm", "sofa", (3, 0, 0), (4, 1, 1), conf=0.8), "a")
+    kept, dropped = gs.filter_implausible([weak, firm], None, n_views=3)            # 3 photos: one view may be all there is
+    assert [c.candidate_id for c in kept] == ["firm"] and dropped == {"weak_single_view": 1}
+
+
 def test_overlapping_same_label_candidates_fuse_by_the_validators_own_rule():
     from perception.instances.object_resolution import fuse_overlapping_candidates
 

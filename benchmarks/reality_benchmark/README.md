@@ -10,6 +10,7 @@ dashboard says so (`python scripts/run_reality_benchmark.py`).
 |---|---|
 | `registry.py` | 12 metric categories (weights sum to 100), 118 metrics with targets, 6 critical gates, 24 scenarios |
 | `scorer.py` | turns measurements into metric results, gates, a weighted scorecard and a verdict |
+| `inventory.py` | the per-image entity inventory contract and the evaluator that scores it against annotations (P/R/F1, mAP, small-object groups, duplicates, cross-view identity) |
 | `manifests.py` | empty per-scenario manifests (datasets, camera poses, ground truth, tolerances, pass/fail) |
 | `result.schema.json` | the scorecard / `metric_results` schema |
 | `scripts/run_reality_benchmark.py` | dashboard, scoring from result files, manifest emitter |

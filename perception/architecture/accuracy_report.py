@@ -498,3 +498,161 @@ def evaluate_measured_room_accuracy(
 
     report.compute_summary()
     return report
+
+
+# --- E203: every room, not the first -------------------------------------------------------
+
+ROOM_MATCH_MAX_DIST_M = 1.5  # centroid gate for rooms without a shared id (same as the wall gate)
+ROOM_SCOPE_MARGIN_M = 0.3  # walls and openings sit on the footprint edge, not strictly inside it
+
+
+@dataclass
+class WorldAccuracyReport:
+    """Per-room reports plus ground-truth rooms nobody reconstructed (and rooms nobody surveyed)."""
+
+    rooms: list[RoomAccuracyReport] = field(default_factory=list)
+    missing_rooms: list[dict[str, Any]] = field(default_factory=list)  # {"gt_id"}
+    extra_rooms: list[dict[str, Any]] = field(default_factory=list)  # {"element_id"}; reported, not gated
+    meets_tolerances: bool = False
+
+    def compute_summary(self) -> None:
+        for r in self.rooms:
+            r.compute_summary()
+        self.meets_tolerances = (
+            bool(self.rooms) and not self.missing_rooms and all(r.meets_tolerances for r in self.rooms)
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        self.compute_summary()
+        return {
+            "meets_tolerances": self.meets_tolerances,
+            "rooms": [r.to_dict() for r in self.rooms],
+            "missing_rooms": [dict(m) for m in self.missing_rooms],
+            "extra_rooms": [dict(e) for e in self.extra_rooms],
+        }
+
+    def format_table(self) -> str:
+        self.compute_summary()
+        parts = [r.format_table() for r in self.rooms]
+        parts += [f"MISSING room: ground truth {m['gt_id']} has no reconstructed room" for m in self.missing_rooms]
+        parts += [f"EXTRA   room: reconstructed {e['element_id']} has no ground truth" for e in self.extra_rooms]
+        parts.append(f"World Gate: {'PASS' if self.meets_tolerances else 'FAIL'} ({len(self.rooms)} room(s) evaluated)")
+        return "\n".join(parts)
+
+
+def _polygon(ent: Any) -> list[tuple[float, float]]:
+    poly = (ent.custom_properties or {}).get("footprint_polygon_m") or []
+    return [(float(p[0]), float(p[1])) for p in poly]
+
+
+def _centroid_2d(points: list[tuple[float, float]]) -> tuple[float, float, float] | None:
+    if not points:
+        return None
+    return (sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points), 0.0)
+
+
+def _near_footprint(pt: tuple[float, float], poly: list[tuple[float, float]], margin: float) -> bool:
+    """Inside the polygon (ray casting) or within ``margin`` of one of its edges."""
+    x, y = pt
+    inside = False
+    for k, (x1, y1) in enumerate(poly):
+        x2, y2 = poly[(k + 1) % len(poly)]
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            inside = not inside
+        dx, dy = x2 - x1, y2 - y1
+        t = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)))
+        if math.hypot(x - (x1 + t * dx), y - (y1 + t * dy)) <= margin:
+            return True
+    return inside
+
+
+def _entity_xy(ent: Any) -> tuple[float, float] | None:
+    cp = ent.custom_properties or {}
+    slab = cp.get("wall_slab") or {}
+    s, e = slab.get("start_xyz_m"), slab.get("end_xyz_m")
+    if s and e:
+        return ((s[0] + e[0]) / 2.0, (s[1] + e[1]) / 2.0)
+    pos = cp.get("position_m") or cp.get("position")
+    return (float(pos[0]), float(pos[1])) if pos else None
+
+
+def _scope_world_to_room(world: WorldIR, room_ent: Any, n_rooms: int) -> WorldIR:
+    """A view of ``world`` holding the room and the elements that belong to it.
+
+    A wall belongs to the room named by its ``room_id``; anything else (unlabelled walls, doors,
+    windows, fixtures) belongs to the room whose footprint contains it. With no footprint to test
+    against, elements are only attributable when the world has a single room.
+    """
+    poly = _polygon(room_ent)
+    scoped = WorldIR(id=world.id, name=world.name)
+    scoped.entities[room_ent.id] = room_ent
+    for ent in world.entities.values():
+        if ent.type == EntityType.ROOM:
+            continue
+        owner = (ent.custom_properties or {}).get("room_id") if ent.type == EntityType.WALL else None
+        if owner is not None:
+            keep = owner == room_ent.id
+        else:
+            xy = _entity_xy(ent)
+            keep = (
+                _near_footprint(xy, poly, ROOM_SCOPE_MARGIN_M) if (poly and xy is not None) else n_rooms == 1
+            )
+        if keep:
+            scoped.entities[ent.id] = ent
+    return scoped
+
+
+def evaluate_world_accuracy(
+    world: WorldIR,
+    ground_truth: dict[str, Any],
+    tolerances: Section1Tolerances | None = None,
+) -> WorldAccuracyReport:
+    """Evaluate every ground-truth room, not just the first.
+
+    ``ground_truth["rooms"]`` is a list of single-room ground-truth dicts (each shaped like the
+    input of :func:`evaluate_measured_room_accuracy`); a dict with a top-level ``room`` is treated
+    as one room. Rooms are matched by id (``Entity.id == ground_truth room id``) when present, and
+    the rest by one-to-one centroid assignment (``ROOM_MATCH_MAX_DIST_M``). A ground-truth room
+    with no match is a missing room and fails the gate; an unmatched reconstructed room is listed
+    in ``extra_rooms`` but does not fail it. ``evaluate_measured_room_accuracy`` remains the
+    single-room entry point.
+    """
+    gt_rooms = ground_truth.get("rooms") or ([ground_truth] if ground_truth.get("room") else [])
+    room_ents = [e for e in world.entities.values() if e.type == EntityType.ROOM]
+    gt_ids = [str((g.get("room") or {}).get("id", f"room-{k}")) for k, g in enumerate(gt_rooms)]
+
+    pairs: dict[int, int] = {}  # gt index -> room entity index
+    by_id = {e.id: k for k, e in enumerate(room_ents)}
+    for gi, gid in enumerate(gt_ids):
+        if gid in by_id:
+            pairs[gi] = by_id[gid]
+    free_gt = [gi for gi in range(len(gt_rooms)) if gi not in pairs]
+    free_ent = [ei for ei in range(len(room_ents)) if ei not in pairs.values()]
+
+    def _gt_centroid(g: dict[str, Any]) -> tuple[float, float, float] | None:
+        c = (g.get("room") or {}).get("centroid")
+        if c:
+            return (float(c[0]), float(c[1]), 0.0)
+        return _centroid_2d([(float(w["start"][0]), float(w["start"][1])) for w in g.get("walls", [])])
+
+    gt_c = [(gi, _gt_centroid(gt_rooms[gi])) for gi in free_gt]
+    ent_c = [(ei, _centroid_2d(_polygon(room_ents[ei]))) for ei in free_ent]
+    gt_c, ent_c = [t for t in gt_c if t[1]], [t for t in ent_c if t[1]]
+    for i, j, _ in _match_points_by_distance(
+        [c for _, c in ent_c], [c for _, c in gt_c], max_dist=ROOM_MATCH_MAX_DIST_M  # type: ignore[misc]
+    ):
+        pairs[gt_c[j][0]] = ent_c[i][0]
+
+    report = WorldAccuracyReport()
+    for gi, g in enumerate(gt_rooms):
+        if gi in pairs:
+            scoped = _scope_world_to_room(world, room_ents[pairs[gi]], len(room_ents))
+            sub = evaluate_measured_room_accuracy(scoped, g, tolerances)
+            sub.room_id = gt_ids[gi]  # the report speaks in ground-truth ids
+            report.rooms.append(sub)
+        else:
+            report.missing_rooms.append({"gt_id": gt_ids[gi]})
+    matched_ents = set(pairs.values())
+    report.extra_rooms = [{"element_id": e.id} for k, e in enumerate(room_ents) if k not in matched_ents]
+    report.compute_summary()
+    return report

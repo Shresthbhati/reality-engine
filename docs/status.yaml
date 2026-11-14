@@ -46,18 +46,18 @@
   capability: "Accuracy gate"
   status: IMPL-UNVERIFIED
   gate: G2
-  evidence: "F5; master plan marks it defective"
-  tests: []
-  updated: "2026-11-10"
-  next: "E201–E205. Defective per master plan: fix before trusting."
+  evidence: "E201–E206 done against SYNTHETIC worlds only: optimal matching, missing/extra, per-class P/R/F1, every-room evaluation, explicit CLI source, uncalibrated uncertainty. No real-room evidence."
+  tests: ["tests/test_measured_room_accuracy_report.py", "tests/test_accuracy_report_adversarial.py", "tests/test_world_accuracy_report.py"]
+  updated: "2026-11-14"
+  next: "E208/E210 [H] real rooms; then E206 numeric uncertainty. Not trustworthy until a real room has been scored."
 - id: S5-07
   capability: "Measured-room dataset"
   status: MISSING
   gate: G2
-  evidence: ""
-  tests: []
-  updated: "2026-11-10"
-  next: "E207–E210 [H]. No benchmarks/measured_rooms/ (audit claim [A], not re-checked by T010)."
+  evidence: "benchmarks/measured_rooms/ has the ground-truth schema (E205), PROTOCOL.md (E207) and scripts/run_measured_room.py (E209, API mocked in tests). No photos, ground truth or consent records exist."
+  tests: ["tests/test_ground_truth_schema.py", "tests/test_run_measured_room_cli.py"]
+  updated: "2026-11-14"
+  next: "E208 [H] capture and measure six rooms per PROTOCOL.md; E210 [H] run the runner on all six and publish the baseline."
 - id: S5-08
   capability: "Closed windows / glass"
   status: IMPL-UNVERIFIED

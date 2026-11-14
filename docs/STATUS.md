@@ -2,7 +2,7 @@
 
 Generated from `docs/status.yaml` by `scripts/render_status.py`. Do not edit by hand.
 
-Baseline: 595d3226
+Baseline: 4d2ee016
 
 | ID | Capability | Status | Gate | Evidence | Tests | Updated | Next |
 |---|---|---|---|---|---|---|---|
@@ -11,8 +11,8 @@ Baseline: 595d3226
 | S5-03 | Resumable jobs | FOUNDATION | G1 | leases + heartbeat, no checkpoints (F3) |  | 2026-11-10 | P104, P109 |
 | S5-04 | Honest job states | CONTRACT-VERIFIED | G0 | jobs.py:79–91; reconstruction_state.py |  | 2026-11-10 | T007 (unknown state in UI) |
 | S5-05 | Universal pipeline | UNWIRED | G1 | F1 |  | 2026-11-10 | P112–P113 |
-| S5-06 | Accuracy gate | IMPL-UNVERIFIED | G2 | F5; master plan marks it defective |  | 2026-11-10 | E201–E205. Defective per master plan: fix before trusting. |
-| S5-07 | Measured-room dataset | MISSING | G2 |  |  | 2026-11-10 | E207–E210 [H]. No benchmarks/measured_rooms/ (audit claim [A], not re-checked by T010). |
+| S5-06 | Accuracy gate | IMPL-UNVERIFIED | G2 | E201–E206 done against SYNTHETIC worlds only: optimal matching, missing/extra, per-class P/R/F1, every-room evaluation, explicit CLI source, uncalibrated uncertainty. No real-room evidence. | tests/test_measured_room_accuracy_report.py, tests/test_accuracy_report_adversarial.py, tests/test_world_accuracy_report.py | 2026-11-14 | E208/E210 [H] real rooms; then E206 numeric uncertainty. Not trustworthy until a real room has been scored. |
+| S5-07 | Measured-room dataset | MISSING | G2 | benchmarks/measured_rooms/ has the ground-truth schema (E205), PROTOCOL.md (E207) and scripts/run_measured_room.py (E209, API mocked in tests). No photos, ground truth or consent records exist. | tests/test_ground_truth_schema.py, tests/test_run_measured_room_cli.py | 2026-11-14 | E208 [H] capture and measure six rooms per PROTOCOL.md; E210 [H] run the runner on all six and publish the baseline. |
 | S5-08 | Closed windows / glass | IMPL-UNVERIFIED | G2 | tests/test_closed_windows.py (synthetic) | tests/test_closed_windows.py | 2026-11-10 | G306–G307 |
 | S5-09 | Feed-forward geometry | MISSING | G2 |  |  | 2026-11-10 | G301–G305. Registry has MASt3R only, non-commercial licence. |
 | S5-10 | VIO / IMU | FOUNDATION | G3 | evidence/sensors.py parsers, no consumer |  | 2026-11-10 | C601–C606 |

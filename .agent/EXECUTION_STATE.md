@@ -3,6 +3,27 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-14 -- P2 evaluator cards E202-E209 (branch claude/e202-and-further-374554; local commits, NOT pushed)
+
+Branch was fast-forwarded onto `claude/project-docs-setup-73af3d` @ 36990330 (carries E201 and `docs/blueprint/35_TASK_CARDS.md`).
+Done, each with its own commit: E202 adversarial evaluator tests (8), E203 `evaluate_world_accuracy` (every room; missing room
+fails the gate; unmatched reconstructed rooms listed, not gated), E204 CLI needs an explicit source (exit 2) + synthetic banner +
+`evidence_class`, E205 `benchmarks/measured_rooms/ground_truth.schema.json` (the synthetic fixture validates unchanged), E206
+interim (constant uncertainty strings -> `uncalibrated`), E207 `PROTOCOL.md`, E209 `scripts/run_measured_room.py`.
+Also: the new tests are registered in `ci.yml`, `docs/CI_TEST_REGISTRY.md` regenerated, `docs/status.yaml` rows S5-06 / S5-07
+updated (status words unchanged: IMPL-UNVERIFIED / MISSING).
+
+Verified (observed): 64 passed over the 5 accuracy/schema/runner test files + test_status_ledger + test_ci_test_registry. The
+`jsonschema` tests ran with copies of `jsonschema` and its deps on PYTHONPATH because `.venv` lacks it (declared dev dep; CI installs it).
+Defect caught by the mock test: the runner first loaded `/worldir` with `load_world` (expects a manifest+ir package directory);
+the API serves `WorldIR.to_dict()`, so it now uses `WorldIR.from_dict`.
+
+NOT verified: the runner against a real API (mocked `httpx` only; P105 `/stages` is not on this branch, so `stages` is null);
+anything on real rooms. All accuracy numbers remain synthetic; the accuracy gate is still not trustworthy evidence.
+Blocked on a human: E208 (capture six rooms), E210 (run and publish baseline), E211/E212 (open exports in external tools),
+E206 numeric uncertainty (needs E210). Phase P3 (G301+) needs the E210 baseline and owner approval of D6 (G301).
+Next: once rooms exist, `python scripts/run_measured_room.py --room-dir benchmarks/measured_rooms/<room> --api ... --token ... --out ...`.
+
 ## 2026-11-06 -- Integration + audit sprint (CONTINUATION; read this first)
 
 **Branch:** `claude/integration-2026-11-05` (worktree `.claude/worktrees/bold-feynman-0ba202`). Checkpoint commits

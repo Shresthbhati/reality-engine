@@ -359,6 +359,25 @@ def test_zero_measured_value_is_a_failed_check_not_skipped():
     assert rep.meets_tolerances is False
 
 
+# --- E206 (pre-E210): no invented uncertainty numbers -----------------------------------------
+
+
+def test_evaluator_labels_constant_uncertainties_uncalibrated():
+    world, gt = _perfect_world_and_gt()
+    rep = evaluate_measured_room_accuracy(world, gt)
+    assert rep.checks
+    assert {c.uncertainty for c in rep.checks} == {"uncalibrated"}
+    assert "uncalibrated" in rep.format_table()
+
+
+def test_reconstruction_supplied_area_uncertainty_is_still_reported():
+    world, gt = _perfect_world_and_gt()
+    world.entities["room-1"].custom_properties["dimensions"] = {"floor_area_m2": {"uncertainty_pct": 0.8}}
+    rep = evaluate_measured_room_accuracy(world, gt)
+    area = next(c for c in rep.checks if c.dimension_name == "floor_area")
+    assert area.uncertainty == "+-0.8%"
+
+
 # --- E204: the CLI never defaults to the synthetic fixture silently -------------------------
 
 

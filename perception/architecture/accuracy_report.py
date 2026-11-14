@@ -22,6 +22,10 @@ from scipy.optimize import linear_sum_assignment
 
 from world_ir import EntityType, WorldIR
 
+# E206: no residual distribution from measured rooms exists yet (needs E210), so a numeric bound
+# would be invented. Replace this label with per-dimension values derived from those residuals.
+UNCALIBRATED = "uncalibrated"
+
 
 @dataclass(frozen=True)
 class Section1Tolerances:
@@ -303,8 +307,8 @@ def evaluate_measured_room_accuracy(
         # 1. Floor area
         gt_area = float(gt_room.get("area_m2", 0.0))
         if gt_area > 0:
-            unc_val = rcp.get("dimensions", {}).get("floor_area_m2", {}).get("uncertainty_pct", 0.5)
-            unc_str = f"+-{unc_val:.1f}%" if isinstance(unc_val, (int, float)) else "+-0.5%"
+            unc_val = rcp.get("dimensions", {}).get("floor_area_m2", {}).get("uncertainty_pct")
+            unc_str = f"+-{unc_val:.1f}%" if isinstance(unc_val, (int, float)) else UNCALIBRATED
             _add_dim_check(
                 report, **room_kw, dimension_name="floor_area",
                 measured=float(rcp.get("floor_area_m2") or 0.0), ground_truth=gt_area, unit="m2",
@@ -317,7 +321,7 @@ def evaluate_measured_room_accuracy(
             _add_dim_check(
                 report, **room_kw, dimension_name="ceiling_height",
                 measured=float(rcp.get("height_m") or 0.0), ground_truth=gt_height, unit="m",
-                tolerance=tolerances.ceiling_height_m, uncertainty="+-0.015 m",
+                tolerance=tolerances.ceiling_height_m, uncertainty=UNCALIBRATED,
             )
 
         # 3. Overall room plan dimensions (length and width)
@@ -332,7 +336,7 @@ def evaluate_measured_room_accuracy(
             ):
                 _add_dim_check(
                     report, **room_kw, dimension_name=name, measured=meas, ground_truth=gt_v,
-                    unit="m", tolerance=tolerances.wall_length_m, uncertainty="+-0.010 m",
+                    unit="m", tolerance=tolerances.wall_length_m, uncertainty=UNCALIBRATED,
                 )
 
     # 4. Individual wall lengths
@@ -384,7 +388,7 @@ def evaluate_measured_room_accuracy(
                 report, element_id=w_ent.id, element_type="wall", dimension_name="length",
                 measured=float(cp.get("length_m") or slab.get("length_m") or 0.0),
                 ground_truth=gt_wall_len, unit="m", tolerance=tolerances.wall_length_m,
-                uncertainty="+-0.012 m", notes=f"matched GT {gw.get('id', gw.get('side', j))}",
+                uncertainty=UNCALIBRATED, notes=f"matched GT {gw.get('id', gw.get('side', j))}",
             )
 
     # 5. Openings (doors and windows)
@@ -428,7 +432,7 @@ def evaluate_measured_room_accuracy(
                     _add_dim_check(
                         report, element_id=o_ent.id, element_type=kind, dimension_name=dim,
                         measured=float(cp.get(key) or 0.0), ground_truth=gt_v, unit="m",
-                        tolerance=tol, uncertainty="+-0.015 m",
+                        tolerance=tol, uncertainty=UNCALIBRATED,
                     )
 
     # 6. Fixtures (if present in ground truth)
@@ -489,7 +493,7 @@ def evaluate_measured_room_accuracy(
                     unit="m",
                     error_abs=round(dist, 4),
                     error_pct=0.0,
-                    uncertainty="+-0.020 m",
+                    uncertainty=UNCALIBRATED,
                     tolerance_threshold=tolerances.fixture_pos_m,
                     passed=dist <= tolerances.fixture_pos_m,
                     notes=f"type={gf.get('fixture_type', f_ent.type.value)}",

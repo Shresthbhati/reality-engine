@@ -359,6 +359,42 @@ def test_zero_measured_value_is_a_failed_check_not_skipped():
     assert rep.meets_tolerances is False
 
 
+# --- E204: the CLI never defaults to the synthetic fixture silently -------------------------
+
+
+def test_cli_without_arguments_exits_2(capsys):
+    assert cli_main([]) == 2
+    assert "choose --fixture synthetic or provide --world and --ground-truth" in capsys.readouterr().err
+
+
+def test_cli_rejects_half_a_real_input_and_mixed_sources(capsys, tmp_path: Path):
+    p = tmp_path / "x.json"
+    assert cli_main(["--world", str(p)]) == 2
+    assert cli_main(["--ground-truth", str(p)]) == 2
+    assert cli_main(["--fixture", "synthetic", "--world", str(p), "--ground-truth", str(p)]) == 2
+    assert capsys.readouterr().err.count("choose --fixture synthetic or provide") == 3
+
+
+def test_cli_synthetic_prints_banner_first_and_labels_json(capsys, tmp_path: Path):
+    json_out = tmp_path / "r.json"
+    assert cli_main(["--fixture", "synthetic", "--json", str(json_out)]) == 0
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first == "SYNTHETIC FIXTURE — regression check only, not real-world accuracy evidence"
+    assert json.loads(json_out.read_text(encoding="utf-8"))["evidence_class"] == "synthetic"
+
+
+def test_cli_real_inputs_are_labelled_measured(capsys, tmp_path: Path):
+    from world_ir.serialization import save_world
+
+    world, gt = _perfect_world_and_gt()
+    wp, gp, jp = tmp_path / "world.json", tmp_path / "gt.json", tmp_path / "r.json"
+    save_world(world, wp)
+    gp.write_text(json.dumps(gt), encoding="utf-8")
+    assert cli_main(["--world", str(wp), "--ground-truth", str(gp), "--json", str(jp)]) == 0
+    assert "SYNTHETIC FIXTURE" not in capsys.readouterr().out
+    assert json.loads(jp.read_text(encoding="utf-8"))["evidence_class"] == "measured"
+
+
 def test_to_dict_and_table_include_new_fields():
     world, gt = _perfect_world_and_gt()
     del world.entities["w-4"]

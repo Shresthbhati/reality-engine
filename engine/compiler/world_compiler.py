@@ -67,6 +67,7 @@ from evidence.promote_rooms import (
 from perception.geometry.orientation import (
     OrientationError,
     classify_planes,
+    consolidate_horizontal_roles,
     observer_positions_by_plane,
 )
 from perception.geometry.planes import (
@@ -354,8 +355,11 @@ def compile_reconstruction_to_world(
         min_inliers=options.min_inliers,
     )
     try:
-        oriented = classify_planes(refined_planes, camera_positions, options.up,
-                                   observers=observer_positions_by_plane(refined_planes, result))
+        observers = observer_positions_by_plane(refined_planes, result)
+        oriented = classify_planes(refined_planes, camera_positions, options.up, observers=observers)
+        # one floor level and one ceiling level per storey: classify_planes judges each plane alone
+        oriented, _horizontal_stats = consolidate_horizontal_roles(
+            oriented, options.up, camera_positions, positions_by_id, observers=observers)
     except OrientationError as exc:
         raise CompileInputError(f"plane classification failed: {exc}") from exc
 

@@ -1,6 +1,6 @@
 # Reality Engine — December 2026 release
 
-This is the only release document. It says what ships on 31 December 2026, what does not, and what is still open. There is no other plan, roadmap or backlog; evidence lives in the files linked under "Where the facts are".
+This is the only release document. It says what ships on 31 December 2026, what does not, and what is still open. The implementation spec is `docs/BUILD_SPEC.md`; there is no other plan, roadmap or backlog; evidence lives in the files linked under "Where the facts are".
 
 Baseline: `main` @ `3ceb60b5` (PR #309), checked 2026-11-15.
 
@@ -62,6 +62,7 @@ A box is ticked only with evidence: a passing test named here, or a recorded run
 
 | What | File |
 |---|---|
+| How to build it: data structures, algorithms, work packages B01–B20 | `docs/BUILD_SPEC.md` |
 | Capability by capability, with test counts | `docs/engineering/capability_matrix.md` |
 | Status ledger | `docs/STATUS.md` (generated from `docs/status.yaml`) |
 | What CI actually runs | `docs/CI_TEST_REGISTRY.md` |
@@ -73,4 +74,4 @@ A box is ticked only with evidence: a passing test named here, or a recorded run
 
 ## Rule for changing this file
 
-Tick a box in the same commit as its evidence. Add a line only for a release blocker. Do not add plans.
+Tick a box in the same commit as its evidence. Add a line only for a release blocker. Implementation detail goes in `docs/BUILD_SPEC.md` and nowhere else; do not add other plans.

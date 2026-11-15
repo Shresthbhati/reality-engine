@@ -1380,12 +1380,13 @@ The repository contains:
 
 - `docs/STATUS.md` (current status ledger, generated from `docs/status.yaml`)
 - `RELEASE.md` (the only release document: scope, checklist, open facts)
+- `docs/BUILD_SPEC.md` (the only implementation spec: data structures, algorithms, work packages)
 - `docs/engineering/capability_matrix.md` (capability by capability, with test counts)
 - `docs/future/` (per-subsystem engineering specifications)
 - `docs/engineering/DESIGN_DECISIONS.md` (accepted architecture decisions)
 
 Older plans, roadmaps and backlogs were deleted on 2026-11-15. Do not
-recreate them; do not add new plan documents.
+recreate them; do not add other plan documents.
 
 These files are the canonical registry of intentionally unfinished
 engineering work. They are not TODO notes; they carry model, failure

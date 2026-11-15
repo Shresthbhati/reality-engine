@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.auth import AuthContext, get_auth_context
 from apps.api.db import get_db, get_sessionmaker
-from apps.api.models import ActivityEvent, Evidence, Job, Notification, utcnow
+from apps.api.models import ActivityEvent, Evidence, Job, JobStageRun, Notification, utcnow
 from apps.api.observability_service import (
     get_job_diagnostics,
     get_job_logs,
@@ -198,6 +198,36 @@ async def get_job_log_history(
         raise HTTPException(404, "Job not found")
     logs = await get_job_logs(db, job_id, level=level, limit=limit)
     return {"job_id": job_id, "total": len(logs), "logs": logs}
+
+
+@jobs.get("/{job_id}/stages")
+async def get_job_stages(job_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Pipeline stage attempts for a job, oldest first (P105)."""
+    j = await db.get(Job, job_id)
+    if j is None:
+        raise HTTPException(404, "Job not found")
+    rows = (
+        (await db.execute(select(JobStageRun).where(JobStageRun.job_id == job_id).order_by(JobStageRun.started_at, JobStageRun.id)))
+        .scalars()
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "name": r.name,
+                "version": r.version,
+                "status": r.status,
+                "attempt": r.attempt,
+                "metrics": r.metrics,
+                "warnings": r.warnings,
+                "error": r.error,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+                "duration_s": (r.ended_at - r.started_at).total_seconds() if r.started_at and r.ended_at else None,
+            }
+            for r in rows
+        ]
+    }
 
 
 @jobs.get("/{job_id}/diagnostics")

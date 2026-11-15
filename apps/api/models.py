@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -573,3 +574,27 @@ class TenantSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class JobStageRun(Base):
+    """One attempt of one pipeline stage for a job (P103); backs checkpoint reuse and stage diagnostics."""
+
+    __tablename__ = "job_stage_runs"
+    __table_args__ = (
+        UniqueConstraint("job_id", "name", "inputs_hash", "attempt", name="uq_job_stage_runs_job_name_hash_attempt"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    version: Mapped[str] = mapped_column(String(32))
+    inputs_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    outputs: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    peak_rss_mb: Mapped[float | None] = mapped_column(Float, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { reconstructSession, getJob, isApiError } from "@/lib/api";
 import type { JobDto } from "@/lib/api/types";
+import { toJobStatus, isTerminal, isUsableResult, type JobStatus } from "@/lib/api/job-status";
 
 /**
  * Starts a real reconstruction job for this Session (POST
@@ -40,14 +41,10 @@ export default function ReconstructPanel({
         failures = 0;
         setError(null);
         setJob(latest);
-        if (
-          latest.status === "succeeded" ||
-          latest.status === "partial" ||
-          latest.status === "failed" ||
-          latest.status === "cancelled"
-        ) {
+        const st = toJobStatus(latest.status);
+        if (isTerminal(st)) {
           if (pollRef.current) clearInterval(pollRef.current);
-          if ((latest.status === "succeeded" || latest.status === "partial") && worldId) {
+          if (isUsableResult(st) && worldId) {
             router.push(`/worlds/${worldId}`);
           }
         }
@@ -81,12 +78,56 @@ export default function ReconstructPanel({
     }
   }
 
-  const isRunning =
-    job != null &&
-    job.status !== "succeeded" &&
-    job.status !== "partial" &&
-    job.status !== "failed" &&
-    job.status !== "cancelled";
+  const status = job ? toJobStatus(job.status) : null;
+  const isRunning = status === "queued" || status === "running";
+
+  function renderOutcome(j: NonNullable<typeof job>, st: JobStatus) {
+    switch (st) {
+      case "queued":
+      case "running":
+        return null;
+      case "succeeded":
+        return (
+          <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--success)" }}>
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Reconstruction complete — opening World…
+          </p>
+        );
+      case "partial":
+        return j.payload?.adopted === false ? (
+          <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning)" }}>
+            <XCircle className="w-3.5 h-3.5" />
+            This rebuild was not adopted — the World keeps its current version. Opening World…
+          </p>
+        ) : (
+          <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning)" }}>
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Reconstruction partially complete — opening World…
+          </p>
+        );
+      case "cancelled":
+        return (
+          <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-tertiary)" }}>
+            <XCircle className="w-3.5 h-3.5" />
+            Reconstruction cancelled.
+          </p>
+        );
+      case "failed":
+        return (
+          <p className="flex items-start gap-1.5 text-xs" style={{ color: "var(--error)" }}>
+            <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>{j.error ?? "Reconstruction failed."}</span>
+          </p>
+        );
+      case "unknown":
+        return (
+          <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-tertiary)" }}>
+            <XCircle className="w-3.5 h-3.5" />
+            Status unknown — refresh or check the job log
+          </p>
+        );
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -105,43 +146,10 @@ export default function ReconstructPanel({
         style={{ background: "var(--accent-subtle)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}
       >
         <RefreshCw className={`w-3.5 h-3.5 ${starting || isRunning ? "animate-spin" : ""}`} />
-        {isRunning ? `Reconstructing (${job?.stage ?? job?.status})…` : "Start Reconstruction"}
+        {isRunning ? `Reconstructing (${job?.stage ?? status})…` : "Start Reconstruction"}
       </button>
 
-      {job?.status === "succeeded" && (
-        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--success)" }}>
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          Reconstruction complete — opening World…
-        </p>
-      )}
-
-      {job?.status === "partial" && job.payload?.adopted === false && (
-        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning)" }}>
-          <XCircle className="w-3.5 h-3.5" />
-          This rebuild was not adopted — the World keeps its current version. Opening World…
-        </p>
-      )}
-
-      {job?.status === "partial" && job.payload?.adopted !== false && (
-        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--warning)" }}>
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          Reconstruction partially complete — opening World…
-        </p>
-      )}
-
-      {job?.status === "cancelled" && (
-        <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-tertiary)" }}>
-          <XCircle className="w-3.5 h-3.5" />
-          Reconstruction cancelled.
-        </p>
-      )}
-
-      {job?.status === "failed" && (
-        <p className="flex items-start gap-1.5 text-xs" style={{ color: "var(--error)" }}>
-          <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>{job.error ?? "Reconstruction failed."}</span>
-        </p>
-      )}
+      {job && status !== null && renderOutcome(job, status)}
 
       {error && (
         <p className="text-xs" style={{ color: "var(--error)" }}>

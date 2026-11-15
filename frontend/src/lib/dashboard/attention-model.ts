@@ -8,6 +8,7 @@
  * - failed/partial items older than STALE_AFTER_DAYS drop off (an old failure is history, not a to-do).
  */
 import type { JobDto } from "../api/types";
+import { toJobStatus } from "../api/job-status.ts";
 
 export type AttentionKind = "failed" | "partial" | "running";
 
@@ -37,11 +38,21 @@ const TITLE: Record<AttentionKind, (label: string) => string> = {
 
 const ORDER: Record<AttentionKind, number> = { failed: 0, partial: 1, running: 2 };
 
-function kindOf(status: string): AttentionKind | null {
-  if (status === "failed") return "failed";
-  if (status === "partial") return "partial";
-  if (status === "running" || status === "queued") return "running";
-  return null; // succeeded, cancelled, anything else
+function kindOf(raw: string): AttentionKind | null {
+  switch (toJobStatus(raw)) {
+    case "failed":
+      return "failed";
+    case "partial":
+      return "partial";
+    case "running":
+    case "queued":
+      return "running";
+    case "succeeded":
+    case "cancelled":
+      return null;
+    case "unknown":
+      return null; // not shown as attention: an unreadable status is neither a success nor a known problem
+  }
 }
 
 function when(j: JobDto): string | null {

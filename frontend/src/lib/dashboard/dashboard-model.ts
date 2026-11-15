@@ -3,6 +3,7 @@
  * Handles real storage byte formatting and durable jobs categorization.
  */
 import type { JobDto, StorageStatusDto } from "../api/types";
+import { toJobStatus } from "../api/job-status.ts";
 
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) {
@@ -51,16 +52,26 @@ export function summarizeJobs(jobs: JobDto[] | null | undefined): JobsSummary {
   let queued = 0;
 
   for (const j of jobs) {
-    if (j.status === "running") {
-      running++;
-      active.push(j);
-    } else if (j.status === "failed") {
-      failed.push(j);
-    } else if (j.status === "succeeded") {
-      succeeded++;
-    } else if (j.status === "queued") {
-      queued++;
-      active.push(j);
+    switch (toJobStatus(j.status)) {
+      case "running":
+        running++;
+        active.push(j);
+        break;
+      case "failed":
+        failed.push(j);
+        break;
+      case "succeeded":
+        succeeded++;
+        break;
+      case "queued":
+        queued++;
+        active.push(j);
+        break;
+      case "partial":
+      case "cancelled":
+        break;
+      case "unknown":
+        break; // counted only in total; never as succeeded
     }
   }
 

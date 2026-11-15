@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-11-10).** Current status lives in [docs/STATUS.md](../STATUS.md); current plan in docs/blueprint/34_MASTER_PLAN.md. Kept for history.
+
 # Capabilities Manifest
 
 What the Reality Engine can do **today**, verified 2026-09-23.

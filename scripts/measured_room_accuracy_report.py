@@ -10,6 +10,10 @@ Master Turnaround Plan Section 1 tolerances:
 - Opening height: +-2 cm (0.02 m)
 - Fixture position: +-5 cm (0.05 m)
 
+Exactly one source is required (there is no default): ``--fixture synthetic`` or both
+``--world`` and ``--ground-truth``. The JSON report carries ``evidence_class`` ("synthetic" or
+"measured"); synthetic runs print a banner first, because they prove regressions, not accuracy.
+
 Usage:
     python scripts/measured_room_accuracy_report.py --fixture synthetic
     python scripts/measured_room_accuracy_report.py --fixture synthetic --json out.json
@@ -33,6 +37,10 @@ from perception.architecture.accuracy_report import (  # noqa: E402
     evaluate_measured_room_accuracy,
 )
 from world_ir.serialization import load_world  # noqa: E402
+
+
+SYNTHETIC_BANNER = "SYNTHETIC FIXTURE — regression check only, not real-world accuracy evidence"
+USAGE_ERROR = "choose --fixture synthetic or provide --world and --ground-truth"
 
 
 def evaluate_synthetic_fixture(tolerances: Section1Tolerances) -> tuple[dict[str, Any], str]:
@@ -65,9 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--fixture",
-        choices=("synthetic", "real"),
-        default="synthetic",
-        help="Target fixture to evaluate (default: synthetic)",
+        choices=("synthetic",),
+        help="Evaluate the built-in synthetic fixture (regression check only; no default)",
     )
     parser.add_argument(
         "--world",
@@ -124,13 +131,20 @@ def main(argv: list[str] | None = None) -> int:
         opening_height_m=args.opening_tol_m,
     )
 
-    if args.world and args.ground_truth:
-        report_dict, formatted_table = evaluate_custom_world(args.world, args.ground_truth, tolerances)
-    elif args.fixture == "synthetic":
-        report_dict, formatted_table = evaluate_synthetic_fixture(tolerances)
-    else:
-        print("Real room fixture requires --world and --ground-truth paths.", file=sys.stderr)
+    has_real = bool(args.world and args.ground_truth)
+    if bool(args.world) != bool(args.ground_truth) or has_real == bool(args.fixture):
+        # Exactly one source: never fall back to the synthetic fixture silently, and never let
+        # synthetic and measured inputs be mixed under one evidence label.
+        print(USAGE_ERROR, file=sys.stderr)
         return 2
+
+    if has_real:
+        report_dict, formatted_table = evaluate_custom_world(args.world, args.ground_truth, tolerances)
+        report_dict["evidence_class"] = "measured"
+    else:
+        report_dict, formatted_table = evaluate_synthetic_fixture(tolerances)
+        report_dict["evidence_class"] = "synthetic"
+        print(SYNTHETIC_BANNER)
 
     print(formatted_table)
 

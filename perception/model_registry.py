@@ -30,7 +30,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 #: torch/torchvision's default checkpoint cache -- where a plain
 #: weights-API load lands (torch.hub.set_dir's default layout).
@@ -385,3 +385,28 @@ _DEFAULT_MODELS = [
 for m in _DEFAULT_MODELS:
     if m.name not in _REGISTRY:
         _REGISTRY[m.name] = m
+
+
+ALLOWED_PRODUCTION_LICENCES: frozenset[str] = frozenset(
+    {"Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause"}
+)
+
+
+class LicenceNotAllowedError(RuntimeError):
+    """A model's licence is empty or not cleared for production use."""
+
+
+def assert_production_licences(model_names: Iterable[str]) -> None:
+    """Raise unless every named model has an allowed production licence.
+
+    Unknown names raise KeyError; disallowed or empty licences raise
+    LicenceNotAllowedError naming the model and its licence."""
+    for name in model_names:
+        spec = get(name)
+        if spec is None:
+            raise KeyError(name)
+        if spec.license not in ALLOWED_PRODUCTION_LICENCES:
+            raise LicenceNotAllowedError(
+                f"model {name!r} has licence {spec.license!r}, "
+                "not allowed for production"
+            )

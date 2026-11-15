@@ -172,8 +172,11 @@ def merge_submodel_results(
 
     merged_points: List[ReconstructedPoint] = []
     merged_poses: List[ReconstructedCameraPose] = []
+    placed: set = set()   # evidence ids that already have a pose in the merged model
     statuses = []
-    for name in sorted(results):
+    # COLMAP's mapper can register the SAME image in several sub-models (observed: 13 poses for 10 photos). One photo has
+    # one pose: the reference frame's wins, and a later sub-model contributes poses only for photos not yet placed.
+    for name in [reference] + [n for n in sorted(results) if n != reference]:
         result = results[name]
         if name != reference and name not in admitted:
             statuses.append("partial")
@@ -184,12 +187,14 @@ def merge_submodel_results(
         if name == reference:
             merged_points.extend(result.points)
             merged_poses.extend(result.camera_poses)
+            placed.update(p.evidence_id for p in result.camera_poses)
             statuses.append(result.registration_status)
             continue
         if report.status_by_session.get(name) == "aligned" and report.transforms.get(name) is not None:
             moved = _apply_transform_to_result(result, report.transforms[name])
             merged_points.extend(moved.points)
-            merged_poses.extend(moved.camera_poses)
+            merged_poses.extend(p for p in moved.camera_poses if p.evidence_id not in placed)
+            placed.update(p.evidence_id for p in moved.camera_poses)
             statuses.append(result.registration_status)
         else:
             # Refused/unresolved: excluded from geometry; the report

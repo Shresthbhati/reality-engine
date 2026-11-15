@@ -2195,6 +2195,60 @@ async def set_world_scale(world_id: str, body: ScaleIn, db: AsyncSession = Depen
                     "only if the authoritative geometry changes"}
 
 
+class CameraIn(BaseModel):
+    """Exactly one of the three. Use when the photographs carry no EXIF focal length (stripped by a messenger/export)."""
+    focal_length_35mm: float | None = None
+    hfov_deg: float | None = None
+    focal_px: float | None = None
+
+
+@worlds.get("/{world_id}/camera")
+async def get_world_camera(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
+    """The camera the operator declared for this world, or null (the pipeline then uses EXIF / COLMAP's own solve)."""
+    from apps.api import worldstore_service as wss
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    return {"world_id": world_id, "camera": wss.get_camera_declaration(world_id)}
+
+
+@worlds.post("/{world_id}/camera", status_code=202)
+async def set_world_camera(world_id: str, body: CameraIn, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
+    """Declare the camera that took this world's photographs and re-evaluate the world with it.
+
+    Without trusted intrinsics depth, perception and meshing skip. This supplies them when EXIF is missing;
+    the principal point is assumed at the image centre, so the result is labelled ``estimated``. Never guessed:
+    nothing is recorded unless the operator gives a value."""
+    from apps.api import jobs as jobrunner
+    from apps.api import worldstore_service as wss
+    from apps.api.models import Job, Session as _Session
+
+    w = await db.get(World, world_id)
+    if w is None:
+        raise HTTPException(404, "World not found")
+    enforce_project_isolation(w, auth)
+    sessions = (await db.execute(
+        select(_Session).where(_Session.world_id == world_id).order_by(_Session.created_at.desc()))).scalars().all()
+    if not sessions:
+        raise HTTPException(409, "this world has no capture session to re-evaluate")
+    busy = (await db.execute(
+        select(Job.id).where(Job.entity_type == "session", Job.entity_id.in_([s.id for s in sessions]),
+                             Job.status.in_(("queued", "running"))).limit(1)
+    )).scalars().first()
+    if busy:
+        raise HTTPException(409, f"a reconstruction is in progress (job {busy}); declare the camera when it finishes")
+    try:
+        camera = wss.set_camera_declaration(world_id, body.focal_length_35mm, body.hfov_deg, body.focal_px)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    job = jobrunner.enqueue_job(db, jobrunner.RECONSTRUCT_SESSION, "session", sessions[0].id, team_id=w.team_id)
+    await db.commit()
+    return {"world_id": world_id, "job_id": job.id, "camera": camera, "trust": "estimated",
+            "note": "the world will be re-evaluated with this camera; depth, perception and meshing run if the rest of their gates pass"}
+
+
 @worlds.get("/{world_id}/thumbnail")
 async def world_thumbnail(world_id: str, v: str | None = None, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """A 480 px JPEG of one of the place's own photographs (a placed one when the model has them). `v` is only a

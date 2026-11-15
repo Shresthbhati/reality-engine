@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-11-10).** Current status lives in [docs/STATUS.md](../../docs/STATUS.md); current plan in docs/blueprint/34_MASTER_PLAN.md. Kept for history.
+
 # 20 — Reuse map: what exists, what to do with it
 
 Read this **before writing code**. Most capabilities already have a starting point.

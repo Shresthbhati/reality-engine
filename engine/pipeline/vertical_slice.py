@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,6 +63,8 @@ from reconstruction.scale import (
     anchor_metric_scale,
     unscaled,
 )
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "VerticalSliceError",
@@ -286,28 +289,21 @@ class VerticalSliceResult:
         return "\n".join(lines)
 
 
-def vertical_slice(
-    evidence_items: Sequence[EvidenceItem],
-    options: Optional[VerticalSliceOptions] = None,
-) -> VerticalSliceResult:
-    """Run photos -> SfM -> scale -> WorldIR. Raises VerticalSliceError
-    (wrapping the underlying stage error) when a stage refuses honestly;
-    never returns a fabricated world."""
-    options = options or VerticalSliceOptions()
+@dataclass(frozen=True)
+class PoseOutcome:
+    """Result of the pose stage: the validated sparse reconstruction plus the backend/run that produced it."""
 
-    import time as _time
+    evidence_items: Sequence[EvidenceItem]   # after trusted-intrinsics injection; downstream stages must use these
+    backend: object
+    run: object                              # ReconstructionRun (diagnostics.backend_name / duration_s)
+    result: object                           # ReconstructionResult
 
-    clock: Dict[str, float] = {}      # seconds per stage, written to the report so slowness is never invisible
-    stage_timings = clock
-    _mark = [_time.perf_counter()]
 
-    def lap(name: str) -> None:
-        now = _time.perf_counter()
-        clock[name] = round(now - _mark[0], 2)
-        _mark[0] = now
+def run_pose(evidence_items, options, lap=lambda name: None, lap_validation=lambda name: None) -> PoseOutcome:
+    """Backend run + WorldArbiter wiring + output validation, extracted verbatim from ``vertical_slice``.
 
-    _lap = lap
-
+    ``lap`` / ``lap_validation`` are the caller's timing hooks (the CLI path keeps its per-stage timings).
+    Raises VerticalSliceError exactly as the inline code did."""
     if len(evidence_items) < 2:
         raise VerticalSliceError(
             f"vertical slice needs >= 2 image evidence items, got {len(evidence_items)}"
@@ -365,8 +361,27 @@ def vertical_slice(
         validate_reconstruction_output(result)
     except UnvalidatableReconstructionError as exc:
         raise VerticalSliceError(f"reconstruction output is invalid ({exc}) -- not compiling") from exc
+    lap_validation("reconstruction")
+    return PoseOutcome(evidence_items=evidence_items, backend=backend, run=run, result=result)
 
-    _lap("reconstruction")
+
+@dataclass(frozen=True)
+class ScaleOutcome:
+    """Result of the scale stage: the (possibly metric) reconstruction and how its scale was established."""
+
+    result: object
+    meters_per_unit: Optional[float]
+    scale_state: str
+    scale_note: str
+    unit_k: float
+    unit_facts: Optional[dict]
+    scale_error: Optional[str]
+    device_depth_facts: Optional[dict]
+
+
+def run_scale(result, evidence_items, options) -> ScaleOutcome:
+    """Metric scale anchoring (measured baselines, then device depth, else the honest RELATIVE working unit),
+    extracted verbatim from ``vertical_slice``."""
     # ---- stage 2: metric scale anchoring (honest RELATIVE fallback) ----
     scaled = None
     unit_k, unit_facts = 1.0, None     # the RELATIVE working unit (reconstruction.scene_scale); 1.0 = solver units
@@ -417,9 +432,25 @@ def vertical_slice(
                 "stays RELATIVE (unit-less model distances, not meters)"
             )
             scale_note = scale_note + " | " + scale_error
+    return ScaleOutcome(result=result, meters_per_unit=meters_per_unit, scale_state=scale_state,
+                        scale_note=scale_note, unit_k=unit_k, unit_facts=unit_facts, scale_error=scale_error,
+                        device_depth_facts=device_depth_facts)
 
-    _lap("scale")
-    # ---- stage 2.5: frame canonicalization (dominant plane -> +Y) ----
+
+@dataclass(frozen=True)
+class FrameOutcome:
+    """Result of frame canonicalization (stage 2.5) plus the eye-height refinement of a RELATIVE working unit."""
+
+    result: object
+    frame_record: object
+    unit_k: float
+    unit_facts: Optional[dict]
+    scale_note: str
+
+
+def run_frame(result, options, unit_k, unit_facts, scale_note) -> FrameOutcome:
+    """Dominant plane -> +Y, then refine the relative working unit; extracted verbatim from ``vertical_slice``. Plan 3.4 has
+    no stage of its own for this, so the Scale stage carries it (a required stage: a failure aborts the run)."""
     from reconstruction.frame import FrameCanonicalizationError
 
     try:
@@ -429,46 +460,46 @@ def vertical_slice(
     result, unit_k, unit_facts = _refine_unit(result, unit_k, unit_facts)
     if unit_facts:
         scale_note = scale_note + f" | {unit_facts['basis']}"
+    return FrameOutcome(result=result, frame_record=frame_record, unit_k=unit_k, unit_facts=unit_facts,
+                        scale_note=scale_note)
 
-    lap("scale_and_frame")
-    _lap("frame")
-    # ---- stage 2.8: depth -> dense metric points (optional, honest skip) ----
-    depth_facts, metric_depth_maps = _depth_stage(result, evidence_items, options, scale_state)
 
-    # ---- stage 2.9: single-image layout evidence (plan F4; projected, lower-confidence wall support) ----
-    layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
+@dataclass(frozen=True)
+class DepthOutcome:
+    """Result of the depth stage: its facts (None = nothing to report) and the metricized depth maps that the
+    perception stage lifts object masks against (empty when the stage skipped)."""
 
-    lap("depth_and_layout")
-    _lap("depth")
-    # ---- stage 3: compile to validated WorldIR ----
-    compile_options = CompileOptions(
-        seed=options.seed, up=options.up, artifact_store=options.artifact_store,
-        layout_edges_ab=layout_edges_ab,
-    )
-    try:
-        world, diagnostics = compile_reconstruction_to_world(result, compile_options)
-    except Exception as exc:  # noqa: BLE001
-        raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
+    facts: Optional[dict]
+    metric_maps: list
 
-    if hasattr(backend, "post_compile_hook"):
-        try:
-            backend.post_compile_hook(world, result, evidence_items)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("backend.post_compile_hook failed: %s", exc)
 
-    lap("compile")
-    _lap("compile")
-    # ---- stage 3.5: semantic perception -> object entities (optional) ----
-    perception_facts = _perception_stage(
-        result, world, evidence_items, metric_depth_maps, options
-    )
+def run_depth(result, evidence_items, options, scale_state: str) -> DepthOutcome:
+    """Optional sidecar / monocular depth -> dense metric points appended to ``result.points`` IN PLACE (see
+    ``_depth_stage``). Never raises: a skip is visible in ``facts``."""
+    facts, metric_maps = _depth_stage(result, evidence_items, options, scale_state)
+    return DepthOutcome(facts=facts, metric_maps=metric_maps)
 
-    _lap("perception")
-    # ---- stage 3.6: dense geometry -> surface mesh (optional) ----
-    mesh_facts = _mesh_stage(result, world, options, scale_state)
-    _lap("mesh")
 
-    lap("perception_and_mesh")
+@dataclass(frozen=True)
+class DenseOutcome:
+    """Result of the dense stage: the (possibly recompiled) world and the facts of each sub-step."""
+
+    world: object
+    diagnostics: object
+    dense_mvs_facts: Optional[dict]
+    dense_gate_facts: Optional[dict]
+    structure_facts: Optional[dict]
+    plane_sweep_facts: dict
+    fusion_facts: dict
+
+
+def run_dense(result, world, diagnostics, compile_options, evidence_items, options, *, scale_state, meters_per_unit,
+              frame_rotation, unit_k, perception_facts, mesh_facts, lap=lambda name: None) -> DenseOutcome:
+    """Dense MVS (explicit or evidence-gated) -> dense-structure pass -> CPU plane sweep -> plural-source fusion,
+    extracted verbatim from ``vertical_slice``. ``perception_facts`` / ``mesh_facts`` gate the structure pass (it only
+    runs when neither of them contributed). Appends dense points to ``result.points`` and geometry to ``world`` in
+    place; the structure pass may return a recompiled world. ``lap`` is the caller's timing hook."""
+    _lap = lap
     # ---- stage 3.65: dense MVS -> fused.ply -> WorldIR pointcloud (P6-01) ----
     # Runs BEFORE fusion so dense points can participate in cross-source fusion
     dense_options, dense_gate_facts, dense_tmp = options, None, None
@@ -477,7 +508,7 @@ def vertical_slice(
     try:
         dense_mvs_facts = _dense_mvs_stage(
             result, world, dense_options, scale_state, meters_per_unit,
-            frame_rotation=frame_record.rotation,
+            frame_rotation=frame_rotation,
             judge=dense_gate_facts is not None,          # an AUTOMATIC dense candidate must earn its place
             unit_k=unit_k,
         )
@@ -503,11 +534,127 @@ def vertical_slice(
     fusion_facts = _fusion_stage(result, world, options, scale_state)
 
     lap("plane_sweep_and_fusion")
-    # ---- stage 3.8: detail discovery + ROI refinement (P7-06, optional) ----
-    detail_facts = _detail_stage(result, world, options, scale_state)
-    lap("detail")
+    return DenseOutcome(world=world, diagnostics=diagnostics, dense_mvs_facts=dense_mvs_facts,
+                        dense_gate_facts=dense_gate_facts, structure_facts=structure_facts,
+                        plane_sweep_facts=plane_sweep_facts, fusion_facts=fusion_facts)
 
-    _lap("fusion_and_detail")
+
+@dataclass(frozen=True)
+class MeshOutcome:
+    """Result of the mesh stage: its facts (``status`` ran / skipped / failed, with the reason)."""
+
+    facts: dict
+
+
+def run_mesh(result, world, options, scale_state: str) -> MeshOutcome:
+    """Fused metric points -> Poisson surface mesh artifact -> WorldIR geometry + entity on ``world`` (in place);
+    see ``_mesh_stage`` for the honest-skip gates. Never fabricates a fallback mesh."""
+    return MeshOutcome(facts=_mesh_stage(result, world, options, scale_state))
+
+
+@dataclass(frozen=True)
+class PerceptionOutcome:
+    """Result of the perception stage: its facts (``status`` ran / skipped, with the reason)."""
+
+    facts: dict
+
+
+def run_perception(result, world, evidence_items, metric_depth_maps, options) -> PerceptionOutcome:
+    """Detector masks lifted through the metricized depth maps into object entities promoted into ``world`` (in
+    place); see ``_perception_stage``. Skips honestly (never fabricates objects); raises VerticalSliceError only when
+    the promoted world no longer validates."""
+    return PerceptionOutcome(facts=_perception_stage(result, world, evidence_items, metric_depth_maps, options))
+
+
+@dataclass(frozen=True)
+class LayoutOutcome:
+    """Result of the layout stage: the compiled world, how it compiled, and the layout-evidence facts."""
+
+    layout_edges_ab: object
+    layout_facts: dict
+    world: object
+    diagnostics: object
+    compile_options: object
+
+
+def run_layout(result, evidence_items, options, backend, lap=lambda name: None) -> LayoutOutcome:
+    """Single-image layout evidence, then the structure compile (planes -> classification -> promotion -> rooms ->
+    validation gate) and the backend's post-compile hook, extracted verbatim from ``vertical_slice``. Raises
+    VerticalSliceError when the world cannot be compiled. ``lap`` is the caller's timing hook."""
+    _lap = lap
+    # ---- stage 2.9: single-image layout evidence (plan F4; projected, lower-confidence wall support) ----
+    layout_edges_ab, layout_facts = _layout_evidence_stage(result, evidence_items, options)
+
+    lap("depth_and_layout")
+    _lap("depth")
+    # ---- stage 3: compile to validated WorldIR ----
+    compile_options = CompileOptions(
+        seed=options.seed, up=options.up, artifact_store=options.artifact_store,
+        layout_edges_ab=layout_edges_ab,
+    )
+    try:
+        world, diagnostics = compile_reconstruction_to_world(result, compile_options)
+    except Exception as exc:  # noqa: BLE001
+        raise VerticalSliceError(f"world compile stage failed: {exc}") from exc
+
+    if hasattr(backend, "post_compile_hook"):
+        try:
+            backend.post_compile_hook(world, result, evidence_items)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("backend.post_compile_hook failed: %s", exc)
+
+    lap("compile")
+    _lap("compile")
+    return LayoutOutcome(layout_edges_ab=layout_edges_ab, layout_facts=layout_facts, world=world,
+                         diagnostics=diagnostics, compile_options=compile_options)
+
+
+def vertical_slice(
+    evidence_items: Sequence[EvidenceItem],
+    options: Optional[VerticalSliceOptions] = None,
+    *,
+    stage_sink: Optional[dict] = None,
+) -> VerticalSliceResult:
+    """Run photos -> SfM -> scale -> WorldIR. Raises VerticalSliceError
+    (wrapping the underlying stage error) when a stage refuses honestly;
+    never returns a fabricated world.
+
+    P108: this is the stage chain pose -> scale -> depth -> layout -> perception -> mesh -> dense -> detail -> finalize
+    (``engine.pipeline.stages.ladder.run_fine_stages``, the one orchestration of the ``run_*`` functions below).
+    ``stage_sink``, when given, receives each stage's ``StageResult`` keyed by stage name as it finishes."""
+    from engine.pipeline.stages.ladder import run_fine_stages
+
+    return run_fine_stages(evidence_items, options or VerticalSliceOptions(), stage_sink)
+
+
+@dataclass(frozen=True)
+class DetailOutcome:
+    """Result of the detail stage: its facts (``status`` ran / skipped, with the reason)."""
+
+    facts: Optional[dict]
+
+
+def run_detail(result, world, options, scale_state: str) -> DetailOutcome:
+    """Optional detail discovery + ROI refinement on the fused world (see ``_detail_stage``); records its facts in
+    ``world.metadata["detail"]`` and never raises: a skip is visible in ``facts``."""
+    return DetailOutcome(facts=_detail_stage(result, world, options, scale_state))
+
+
+def run_finalize(evidence_items, backend, run, result, sc: "ScaleOutcome", fr: "FrameOutcome", layout_facts, dp: "DepthOutcome",
+                 perception_facts, mesh_facts, dn: "DenseOutcome", detail_facts, *, clock, lap) -> VerticalSliceResult:
+    """Record the scale state and the stage facts in the world's canonical metadata, run the (never-failing) reconstruction
+    diagnostics and correction plan, and assemble the ``VerticalSliceResult``; extracted verbatim from ``vertical_slice``.
+    ``result`` is the scaled, frame-canonical reconstruction; ``dn.world`` is the fused world. ``clock`` is the per-stage
+    seconds dict written to the report; ``lap`` the caller's timing hook."""
+    _lap = lap
+    stage_timings = clock
+    world, diagnostics = dn.world, dn.diagnostics
+    meters_per_unit, scale_state, scale_error, device_depth_facts = sc.meters_per_unit, sc.scale_state, sc.scale_error, sc.device_depth_facts
+    frame_record, unit_k, unit_facts, scale_note = fr.frame_record, fr.unit_k, fr.unit_facts, fr.scale_note
+    depth_facts = dp.facts
+    dense_mvs_facts, dense_gate_facts, structure_facts = dn.dense_mvs_facts, dn.dense_gate_facts, dn.structure_facts
+    plane_sweep_facts, fusion_facts = dn.plane_sweep_facts, dn.fusion_facts
+
     # ---- stage 4: record the scale state in canonical metadata ----
     world.metadata["scale"] = {
         "state": scale_state,
@@ -912,6 +1059,9 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
         dense.extend(depth_map_to_points(dm, camera, stride=options.depth_stride,
                                          image_rgb=_photo_rgb_or_none(evidence_items, dm.evidence_id)))
 
+    from reconstruction.depth_to_points import trim_to_scene
+
+    dense, trimmed = trim_to_scene(dense, result.points)   # result.points is still the sparse cloud here
     result.points.extend(dense)
     residuals = sorted(a.residual_median_m for a in alignments)
     median_residual = residuals[len(residuals) // 2] if residuals else None
@@ -922,6 +1072,7 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
         "metricized": len(metric_maps),
         "metricize_failed": failed,
         "dense_points": len(dense),
+        "dense_points_trimmed_outside_scene": trimmed,
         "dense_points_with_colour": sum(1 for p in dense if p.color is not None),
         "stride": options.depth_stride,
         "residual_median_m": median_residual,
@@ -968,8 +1119,15 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     except ImportError as exc:
         return {**skip, "note": f"optional perception dependencies unavailable: {exc}"}
 
+    depth_by_id = {dm.evidence_id: dm for dm in metric_depth_maps}
+    grounded = options.perception_model == "grounded"
     try:
-        detector = MaskRCNNDetector(score_threshold=options.detection_score_threshold)
+        if grounded:
+            # open-vocabulary scene objects (sofa, coffee table, TV stand, rug, plant ...): COCO has no such classes
+            from perception.detection.grounded_scene import GroundedSceneSegmenter
+            detector = GroundedSceneSegmenter(depth_by_id)
+        else:
+            detector = MaskRCNNDetector(score_threshold=options.detection_score_threshold)
     except Exception as exc:  # noqa: BLE001 -- model unavailability is a skip
         return {**skip, "note": f"detector unavailable: {exc}", "model": options.perception_model}
 
@@ -979,7 +1137,6 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     fx, fy, cx, cy = options.intrinsics
     width, height = options.image_size
     intrinsics = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width=width, height=height)
-    depth_by_id = {dm.evidence_id: dm for dm in metric_depth_maps}
 
     try:
         from engine.core.device import unloading
@@ -1030,12 +1187,27 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
         candidates, assoc = resolve_hypotheses(
             hypotheses, DepthSource.MVS, cam_pos, cameras=cameras,
-            model="mask_rcnn@coco", license="BSD-3-Clause", world=world,
+            model="grounding-dino-tiny" if grounded else "mask_rcnn@coco",
+            license="Apache-2.0" if grounded else "BSD-3-Clause", world=world,
         )
         resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
         resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
     else:
         raise VerticalSliceError(f"unknown object_resolver {options.object_resolver!r}: expected 'association' or 'union_find'")
+
+    # one object seen from several photographs can leave the resolver as several heavily overlapping candidates (per-view depth
+    # is only approximately aligned); the world validator calls those duplicates, so fuse them by its own rule first
+    from perception.instances.object_resolution import fuse_overlapping_candidates
+
+    n_resolved = len(candidates)
+    candidates = fuse_overlapping_candidates(candidates)
+    resolution["fused_overlapping"] = n_resolved - len(candidates)
+    if grounded:
+        # open-vocabulary detectors name things that are not there; an object backed by ONE photograph must be confident
+        from perception.detection.grounded_scene import filter_implausible, scene_box
+        candidates, dropped = filter_implausible(candidates, scene_box(result.points), n_views=len(depth_by_id))
+        resolution["dropped"] = dropped
+        resolution["dropped_weak_single_view"] = dropped.get("weak_single_view", 0) + dropped.get("single_view", 0)
 
     entity_ids = {c.candidate_id: f"entity-object-{i:03d}" for i, c in enumerate(candidates)}
     tracks, track_to_entity = {}, {}
@@ -1045,9 +1217,19 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             first = c.source_hypotheses[0]
             track_to_entity[assoc.assignment[f"{first.evidence_id}|{first.region_id}"]] = entity_ids[c.candidate_id]
 
+    from world_ir.observations import LEDGER_KEY
+
+    entities_before, geometries_before = set(world.entities), set(world.geometries)
+    ledger_before = world.metadata.get(LEDGER_KEY)
     promoted = 0
     for cand in candidates:
         promoted_obj = promote_object_to_entity(cand, world, entity_id=entity_ids[cand.candidate_id])
+        if grounded:
+            from perception.detection.grounded_scene import ENTITY_TYPE_BY_LABEL
+            from world_ir import EntityType
+
+            if cand.label in ENTITY_TYPE_BY_LABEL:   # unlisted labels (picture frame, curtain) stay UNKNOWN, honestly
+                promoted_obj.entity.type = EntityType(ENTITY_TYPE_BY_LABEL[cand.label])
         if assoc is not None:
             # why this is one entity (viewer: identity line). `ambiguous_with` is mapped from the engine's track ids to the
             # ids these entities actually carry in the world.
@@ -1068,9 +1250,21 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     from world_ir.validation import validate_world_ir
     report = validate_world_ir(world)
     if report.errors:
-        raise VerticalSliceError(
-            f"perception stage produced an invalid world: {report.errors[:3]}"
-        )
+        # Perception is an enhancement: objects that make the world invalid cost the OBJECTS, never the structural world
+        # (same rule as the mesh stage). Everything this stage added is removed and the reason is recorded.
+        for eid in set(world.entities) - entities_before:
+            del world.entities[eid]
+        for gid in set(world.geometries) - geometries_before:
+            del world.geometries[gid]
+        if ledger_before is None:
+            world.metadata.pop(LEDGER_KEY, None)
+        else:
+            world.metadata[LEDGER_KEY] = ledger_before
+        return {
+            **skip, "status": "rejected", "model": options.perception_model, "entities_rejected": promoted,
+            "hypotheses_lifted": len(hypotheses), "candidates_merged": len(candidates), "resolution": resolution,
+            "note": f"object entities rejected by world validation; world left as it was: {[str(i) for i in report.errors[:3]]}",
+        }
 
     return {
         "status": "ran",
@@ -1082,7 +1276,8 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         "entities_promoted": promoted,
         "resolution": resolution,
         "note": (
-            "COCO Mask R-CNN masks lifted via SfM-aligned depth (metric-by-"
+            ("Grounding DINO boxes cut to the foreground depth band" if grounded else "COCO Mask R-CNN masks")
+            + " lifted via SfM-aligned depth (metric-by-"
             "alignment, approximate); merged by the gated association resolver (or label+proximity if "
             "object_resolver='union_find'); provenance "
             "INFERRED with per-entity evidence ids"

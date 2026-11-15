@@ -188,6 +188,31 @@ def test_pdf_certificate_export():
     assert b"Downtown Innovation Hub" in pdf_bytes
 
 
+def test_default_author_is_not_certified():
+    """Default auditor name must not claim certification (engine function and API route)."""
+    import inspect
+
+    from apps.api.routes_life_safety import download_life_safety_certificate
+
+    engine_default = inspect.signature(export_life_safety_certificate_pdf).parameters["architect_name"].default
+    route_default = inspect.signature(download_life_safety_certificate).parameters["architect_name"].default.default
+    for default in (engine_default, route_default):
+        assert "Certified" not in default
+        assert default == "Automated preliminary screening (not professionally reviewed)"
+
+
+def test_pdf_carries_disclaimer():
+    """Default-generated PDF must carry the preliminary-screening disclaimer on page 1."""
+    w = _build_life_safety_test_world()
+    report = audit_life_safety_compliance(w, project_name="Downtown Innovation Hub")
+    pdf_bytes = export_life_safety_certificate_pdf(report)
+    assert (
+        b"Preliminary automated screening. Not a code-compliance certificate. "
+        b"Requires review by a qualified professional."
+    ) in pdf_bytes
+    assert b"Certified" not in pdf_bytes
+
+
 @pytest.mark.asyncio
 async def test_life_safety_api_endpoints():
     """Verify HTTP REST API endpoints for life safety retrieval, audit, and exports."""

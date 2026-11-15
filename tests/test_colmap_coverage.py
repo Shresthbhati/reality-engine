@@ -397,6 +397,21 @@ class TestMergeDiagnostics:
         assert report.status_by_session.get("1") == "aligned"
         assert len(merged.camera_poses) == 12
 
+    def test_a_photo_registered_in_two_submodels_has_one_pose_the_references(self):
+        """COLMAP's mapper can register the same image in several sub-models: a ten-photo capture reported 13 cameras.
+        One photo, one pose; the reference sub-model's pose wins."""
+        from reconstruction.merge import merge_submodel_results
+
+        r0, _ = _submodel([f"a{i}" for i in range(6)])
+        r1, _ = _submodel(["a3", "a4", "a5", "b0", "b1", "b2"],           # a3..a5 are ALSO in the reference model
+                          gauge_R=_axis_rotation_matrix(math.pi), gauge_t=np.array([40.0, -12.0, 5.0]))
+        merged, report = merge_submodel_results({"0": r0, "1": r1}, reference="0")
+        assert report.status_by_session.get("1") == "aligned"
+        ids = [p.evidence_id for p in merged.camera_poses]
+        assert len(ids) == 9 and len(set(ids)) == 9                           # 6 + 3 new, not 12
+        ref_pos = {p.evidence_id: p.position for p in r0.camera_poses}
+        assert all(p.position == ref_pos[p.evidence_id] for p in merged.camera_poses if p.evidence_id in ref_pos)
+
     def test_merge_report_travels_on_result(self):
         """The merge diagnostics must SURVIVE into the returned result:
         the backend discarded `_merge_report`, so a false merge left no

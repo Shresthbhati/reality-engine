@@ -1378,11 +1378,13 @@ THEN SAY IT IS DONE.
 
 The repository contains:
 
-- `docs/implementation/PENDING_IMPLEMENTATION.md` (master backlog)
+- `docs/STATUS.md` (current status ledger, generated from `docs/status.yaml`)
+- `docs/blueprint/35_TASK_CARDS.md` (work queue; plan in `34_MASTER_PLAN.md`)
 - `docs/future/` (per-subsystem engineering specifications)
 - `docs/engineering/DESIGN_DECISIONS.md` (accepted architecture decisions)
-- `docs/implementation/IMPLEMENTATION_STATUS.md` and `CAPABILITIES.md`
-  (what exists and was verified)
+- `docs/implementation/PENDING_IMPLEMENTATION.md`, `IMPLEMENTATION_STATUS.md`
+  and `CAPABILITIES.md` are SUPERSEDED history (2026-11-10); do not treat
+  them as current status.
 
 These files are the canonical registry of intentionally unfinished
 engineering work. They are not TODO notes; they carry model, failure
@@ -1390,7 +1392,7 @@ modes, and acceptance criteria per item.
 
 Before implementing a new subsystem:
 
-1. Check `PENDING_IMPLEMENTATION.md` for the item and its priority.
+1. Check `docs/STATUS.md` and `35_TASK_CARDS.md` for the item and its priority.
 2. Check its detailed specification under `docs/future/`.
 3. Check `DESIGN_DECISIONS.md` so a settled architecture is not relitigated.
 4. Inspect actual code.

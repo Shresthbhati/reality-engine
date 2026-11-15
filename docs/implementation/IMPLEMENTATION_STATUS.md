@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-11-10).** Current status lives in [docs/STATUS.md](../STATUS.md); current plan in docs/blueprint/34_MASTER_PLAN.md. Kept for history.
+
 # Implementation Status
 
 Last reconciled: 2026-10-17 (Provenance and Uncertainty rows re-checked against .agent/TASKS.yaml P10-01/P10-02; other rows last reconciled 2026-09-23).

@@ -14,6 +14,7 @@ not hypothetical, and must fail loudly, not fake a result.
 
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import subprocess
@@ -88,6 +89,21 @@ def _uri_to_path(uri: str) -> Path:
             path = path[1:]
         return Path(path)
     return Path(uri)
+
+
+def _uniform_image_size(paths: List[Path]) -> bool:
+    """True when there are >= 2 readable images and all share one pixel size (a header read; nothing is decoded).
+    Unreadable images make this False, so the default per-image behaviour is kept rather than guessed."""
+    from PIL import Image
+
+    sizes = set()
+    try:
+        for p in paths:
+            with Image.open(p) as im:
+                sizes.add(im.size)
+    except Exception:  # noqa: BLE001 -- unreadable image: keep the default
+        return False
+    return len(paths) >= 2 and len(sizes) == 1
 
 
 def _trusted_intrinsics(evidence: List[EvidenceItem]):
@@ -217,6 +233,18 @@ def _parse_points3d_txt(text: str, image_id_to_evidence_id: Dict[str, str]) -> L
 #: verify them honestly stay missing (recorded, not forced).
 DEFAULT_ROBUST_SIFT = True
 DEFAULT_GUIDED_MATCHING = False
+
+#: Mapper attempts, in order. COLMAP's own default seed is -1 (random every run); a fixed first seed makes a run
+#: reproducible, and the later attempts only run when registration is weak: another seed, then relaxed initialisation
+#: and absolute-pose thresholds (weak-texture or low-parallax captures).
+MAPPER_ATTEMPTS: Tuple[Tuple[str, ...], ...] = (
+    ("--Mapper.random_seed", "0"),
+    ("--Mapper.random_seed", "1"),
+    ("--Mapper.random_seed", "2", "--Mapper.init_min_tri_angle", "8", "--Mapper.abs_pose_min_num_inliers", "20",
+     "--Mapper.abs_pose_min_inlier_ratio", "0.15"),
+)
+#: registering at least this share of the photographs ends the retries
+WEAK_REGISTRATION_SHARE = 0.8
 
 
 def _sift_extraction_args(robust: bool = DEFAULT_ROBUST_SIFT) -> List[str]:
@@ -477,7 +505,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 # never revealed. Pinning keeps poses truthful.
                 mapper_args += ["--Mapper.ba_refine_focal_length", "0",
                                 "--Mapper.ba_refine_extra_params", "0"]
-            _run("mapper", mapper_args)
+            _run("mapper", mapper_args + list(MAPPER_ATTEMPTS[0]))   # reproducible: COLMAP's default seed is random
 
             # The mapper may split the capture into MULTIPLE sub-models
             # (sparse/0, sparse/1, ...). Reading only `0` silently
@@ -656,12 +684,18 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 timings[label] = round(time.time() - t0, 2)
 
         trusted = _trusted_intrinsics(image_evidence)
-        signature = {"robust_sift": bool(self.robust_sift), "guided_matching": bool(self.guided_matching),
-                     "trusted_intrinsics": list(trusted) if trusted is not None else None}
         by_name: Dict[str, Tuple[EvidenceItem, Path]] = {}
         for item in image_evidence:
             src = _uri_to_path(item.source_uri)
             by_name[f"{item.id}{src.suffix or '.jpg'}"] = (item, src)
+        # Unknown intrinsics and one pixel size across the set: one device took these, so solve ONE shared camera.
+        # Per-image cameras let COLMAP fit a different focal to every photo (observed spread 694-1109 px plus a
+        # diverged 150,712 px camera on a ten-photo room), which no downstream stage can use.
+        single_camera = trusted is None and _uniform_image_size([p for _, p in by_name.values()])
+        signature = {"robust_sift": bool(self.robust_sift), "guided_matching": bool(self.guided_matching),
+                     "trusted_intrinsics": list(trusted) if trusted is not None else None}
+        if single_camera:
+            signature["single_camera"] = True   # only when on: states committed before this keep their signature
         evidence_id_by_name = {n: it.id for n, (it, _) in by_name.items()}
         n_input = len(image_evidence)
 
@@ -681,6 +715,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             fx, fy, cx, cy = trusted
             extractor_args = ["--ImageReader.camera_model", "PINHOLE",
                               "--ImageReader.camera_params", f"{fx},{fy},{cx},{cy}"]
+        if single_camera:
+            extractor_args += ["--ImageReader.single_camera", "1"]
         extractor_args += _sift_extraction_args(robust=self.robust_sift)
         # Affine-shape SIFT is CPU-only in COLMAP (see reconstruct()).
         cpu_or_gpu = "0" if self.robust_sift else gpu_flag
@@ -701,13 +737,34 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             run("exhaustive_matcher", ["--database_path", str(db_path), "--FeatureMatching.use_gpu", cpu_or_gpu,
                                        *_sift_matching_args(guided=self.guided_matching)])
 
+        mapper_attempts_log: List[Dict[str, object]] = []
+
         def full_mapper():
-            out = ws / "sparse_full"
-            shutil.rmtree(out, ignore_errors=True)
-            out.mkdir()
-            run("mapper", ["--database_path", str(db_path), "--image_path", str(image_dir),
-                           "--output_path", str(out), *pinned])
-            return self._parse_sparse_dir(out, evidence_id_by_name, n_input, env)
+            """Mapper with a PINNED seed (COLMAP's default seed is -1 = random every run, so identical photos registered
+            3 to 13 of 10 cameras), retried on weak registration with the next seed and then relaxed thresholds: features
+            and matches are already in the database, so a retry is cheap. The best attempt (most cameras, then points)
+            becomes ``sparse_full``; every attempt is recorded in ``info['mapper_attempts']``."""
+            mapper_attempts_log.clear()
+            best = None   # (score, parsed result tuple, attempt dir)
+            for k, extra in enumerate(MAPPER_ATTEMPTS):
+                out = ws / f"sparse_full_try{k}"
+                shutil.rmtree(out, ignore_errors=True)
+                out.mkdir()
+                run("mapper", ["--database_path", str(db_path), "--image_path", str(image_dir),
+                               "--output_path", str(out), *pinned, *extra])
+                parsed = self._parse_sparse_dir(out, evidence_id_by_name, n_input, env)
+                n_reg, n_pts = len(parsed[0].camera_poses), len(parsed[0].points)
+                mapper_attempts_log.append({"attempt": k, "args": list(extra), "registered": n_reg, "points": n_pts})
+                if best is None or (n_reg, n_pts) > best[0]:
+                    best = ((n_reg, n_pts), parsed, out)
+                if n_reg >= max(3, math.ceil(WEAK_REGISTRATION_SHARE * n_input)):
+                    break      # registered enough of the capture: no retry
+            final = ws / "sparse_full"
+            shutil.rmtree(final, ignore_errors=True)
+            os.replace(best[2], final)
+            for k in range(len(MAPPER_ATTEMPTS)):
+                shutil.rmtree(ws / f"sparse_full_try{k}", ignore_errors=True)
+            return best[1]
 
         info: Dict[str, object] = {
             "prior_images": len(prior["images"]) if prior else 0,
@@ -830,6 +887,8 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         # Incremental / reused runs keep COLMAP's coordinate frame; a full re-solve starts a new one
         # (the geometry can still agree -- world_delta.camera_consistency measures that frame-independently).
         info["frame"] = "preserved" if info.get("mode") in ("incremental", "reused") else "re-solved"
+        if mapper_attempts_log:
+            info["mapper_attempts"] = [dict(a) for a in mapper_attempts_log]
         info["registered_total"] = len(registered_names)
         info["unregistered"] = sorted(evidence_id_by_name[n] for n in by_name if n not in set(registered_names))
         info["seconds"] = dict(timings, total=round(time.time() - t_start, 2))

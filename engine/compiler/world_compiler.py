@@ -67,6 +67,8 @@ from evidence.promote_rooms import (
 from perception.geometry.orientation import (
     OrientationError,
     classify_planes,
+    consolidate_horizontal_roles,
+    consolidate_vertical_roles,
     observer_positions_by_plane,
 )
 from perception.geometry.planes import (
@@ -354,8 +356,13 @@ def compile_reconstruction_to_world(
         min_inliers=options.min_inliers,
     )
     try:
-        oriented = classify_planes(refined_planes, camera_positions, options.up,
-                                   observers=observer_positions_by_plane(refined_planes, result))
+        observers = observer_positions_by_plane(refined_planes, result)
+        oriented = classify_planes(refined_planes, camera_positions, options.up, observers=observers)
+        # one floor level and one ceiling level per storey: classify_planes judges each plane alone
+        oriented, _horizontal_stats = consolidate_horizontal_roles(
+            oriented, options.up, camera_positions, positions_by_id, observers=observers)
+        # one wall per wall: dense depth cuts a wall into per-view patches
+        oriented, _vertical_stats = consolidate_vertical_roles(oriented, options.up, positions_by_id)
     except OrientationError as exc:
         raise CompileInputError(f"plane classification failed: {exc}") from exc
 
@@ -587,6 +594,12 @@ def compile_reconstruction_to_world(
     if options.promote_windows and detected_windows:
         for widx, win in enumerate(detected_windows, start=1):
             win_id = f"window-{widx:03d}"
+            if f"{options.structure_prefix}-{win.wall_plane_id}" not in world.entities:
+                # A window with no host wall is not a valid statement about the room (the world validator rejects it,
+                # and one orphan then sinks the whole multi-view world): record it, never invent a host.
+                interior_warnings.append(
+                    f"{win_id} not promoted: its host plane {win.wall_plane_id} is not a wall entity in this world")
+                continue
             if win_id not in world.entities:
                 win_geom_id = f"geom-{win_id}"
                 wbmin, wbmax = win.bounds_min, win.bounds_max

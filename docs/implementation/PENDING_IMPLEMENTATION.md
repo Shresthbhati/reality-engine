@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-11-10).** Current status lives in [docs/STATUS.md](../STATUS.md); current plan in docs/blueprint/34_MASTER_PLAN.md. Kept for history.
+
 # Reality Engine — Pending Implementation (Master Backlog)
 
 > Capabilities that are architecturally intended but not yet fully

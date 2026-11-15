@@ -324,3 +324,68 @@ The data structures above do not change for any of these; they add backends, ont
 | Global optimisation of everything at once | A factor-graph solver (GTSAM or Ceres) over cameras, planes and object positions | `measurements.fuse` (B14) is the scalar special case; residuals are already recorded |
 | Dimensional accuracy claims | Six measured rooms with a laser measure, two held out | evaluator and protocol exist under `benchmarks/` |
 | Learning from corrections | A reviewed-label store and a held-out test set; never train on unreviewed output | corrections are already versioned world edits |
+
+## 7. Exact targets for the packages that were loose
+
+- **B09** edits `perception/geometry/orientation.py::consolidate_horizontal_roles` (line ~193). That function decides floor vs other horizontal roles; the support-plane rule goes there. `classify_plane` / `classify_planes` in the same file stay as they are. `perception/architecture/room_graph.py::floor_undersized_vs_floors` already flags small "floors" — reuse its area test, do not write a second one. `perception/architecture/fixtures.py::find_floor_elevation` must return the storey floor chosen here.
+- **B15** extends `apps/api/routes_query.py`, which already serves `/nearest`, `/within_radius`, `/contents/{entity_id}`, `/container/{entity_id}`. Add only `/find`. `contents` and `container` must read the relations from `world_ir/relations.py` once it exists — one source of containment, not two. The frontend client `frontend/src/lib/api/query.ts` already has `queryContents` and `queryContainer`; add `queryFind`.
+- **B18** edits `frontend/src/components/inspector/InspectorParts.tsx` (parts tree — exists, extend) and `frontend/src/lib/inspector/entity-facts.ts` (attribute rows with basis). `AdaptiveInspector.tsx` is 102 KB: add nothing to it except mounting the two pieces; new UI goes in new files under `frontend/src/components/inspector/`.
+- **B19** edits `exporters/ifc_bridge.py`: `_enrich_element_property_sets` (line ~357) gains `Pset_RealityEngine`; `export_world_to_ifc` (line ~479) emits `IfcRelAggregates` for `part_of`; `_resolve_ifc_class` maps new ontology families (unknown family → `IfcBuildingElementProxy`, never a wrong class). glTF side lives under `exporters/gltf/`.
+
+## 8. Briefs — how to hand a package to Sonnet
+
+One brief per package. Paste the template with the row's values. The implementer reads this file; the brief only scopes it.
+
+**Template**
+
+```
+Repo: reality-engine, branch chore/december-release. Create branch build/<ID> from it.
+Read docs/BUILD_SPEC.md sections 0, 2, 5 and package <ID> (plus section 7 if it names <ID>).
+Build package <ID> exactly as specified: the data structures in section 2 are fixed.
+You may edit only: <FILES>. Stop and report if another file must change.
+Write the tests named in the package first and see them fail. Then implement.
+Run: <TEST CMD>, then the regression line at the top of section 3.
+One commit "<ID>: <title>". Do not push, stash, or switch other branches.
+Report: files changed; each command with its last output line verbatim; what you did not verify.
+Never: new dependency not named in the package; default value where data is unknown;
+editing a test to make it pass unless the package names it; a second copy of something that exists.
+```
+
+| ID | Needs | Files | Test command |
+|---|---|---|---|
+| D01 | — | `tests/integration/test_reliability_journey.py`, `reconstruction/backend/colmap_backend.py` | see D01 below |
+| B01 | D01 | `engine/pipeline/stages/*`, `apps/api/jobs.py` | `pytest tests/test_stage_resume.py tests/test_stage_runner.py -q` |
+| B02 | B01 | `world_ir/observation_table.py`, `engine/pipeline/stages/s09_perception.py`, `apps/api/routes_worlds.py` | `pytest tests/test_observation_table.py -q` |
+| B03 | — | `config/ontology.yaml`, `perception/ontology.py`, `perception/entities/taxonomy.py` | `pytest tests -q -k "ontology or taxonomy"` |
+| B04 | B02, B03 | `perception/detection/hierarchical.py`, `s09_perception.py` | `pytest tests/test_hierarchical_detection.py -q` |
+| B05 | B04 | `perception/detection/attributes.py` | `pytest tests/test_attribute_classification.py -q` |
+| B06 | B02 | `perception/segmentation/sam2_backend.py`, `world_ir/mask_store.py`, `s09_perception.py`, `pyproject.toml` | `pytest tests/test_mask_store.py -q` |
+| B07 | B06 | `perception/instances/dinov2_embeddings.py`, `s09_perception.py` | `pytest tests/test_appearance_embeddings.py -q` |
+| B08 | B07 | `perception/instances/global_association.py`, `perception/instances/association.py` | `pytest tests/test_global_association.py -q` |
+| B09 | — | `perception/geometry/orientation.py`, `perception/architecture/fixtures.py` | `pytest tests -q -k "orientation or floor"` |
+| B10 | — | `perception/architecture/room_layout.py`, `non_rectangular.py` | `pytest tests/test_room_layout.py tests/test_non_rectangular_rooms.py -q` |
+| B11 | B01 | `reconstruction/fusion/voxel_cloud.py`, `reconstruction/fusion/consumer.py` | `pytest tests/test_voxel_cloud.py tests/test_dense_fusion_multisource.py -q` |
+| B12 | — | `reconstruction/backend/colmap_backend.py`, `reconstruction/colmap_session.py` | `pytest tests -q -k colmap` |
+| B13 | — | `engine/hardware/model_pool.py`, `engine/hardware/device_manager.py`, model load sites | `pytest tests/test_model_pool.py -q` |
+| B14 | — | `reconstruction/fusion/measurements.py` | `pytest tests/test_measurement_fusion.py -q` |
+| B15 | B08 | `world_ir/relations.py`, `apps/api/routes_query.py`, `frontend/src/lib/api/query.ts` | `pytest tests/test_relations.py tests -q -k query` |
+| B16 | B05, B08, B13 | `engine/quality/autonomous_correction_loop.py` | `pytest tests -q -k correction_loop` |
+| B17 | — | `apps/api/routes_reconstructions.py`, `engine/pipeline/facade.py`, `tests/integration/test_progressive_product_journey.py` | that test file, `-k test_H` |
+| B18 | B15 | `frontend/src/components/inspector/*`, `frontend/src/lib/inspector/*`, `frontend/src/lib/api/query.ts` | `cd frontend && npx tsc --noEmit && npm run lint && npm run test:contract` |
+| B19 | B08 | `exporters/ifc_bridge.py`, `exporters/gltf/*` | `pytest tests -q -k "ifc or gltf"` |
+| B20 | all | `RELEASE.md` only | the checklist in `RELEASE.md` |
+
+B12 and D01 both touch `colmap_backend.py` — never run them at the same time. B02, B04, B06, B07 all touch `s09_perception.py` — run in the listed order, one at a time.
+
+### D01 — Diagnose two failing crash-recovery tests (do first)
+
+Observed 2026-11-15 on `04362f72`, in a 57-minute run of `pytest tests -k "colmap or dense"`: 204 passed, 2 failed —
+`tests/integration/test_reliability_journey.py::test_a_process_killed_at_each_pipeline_boundary_recovers_consistently_and_the_retry_is_safe[colmap_current_updated]` and
+`…::test_a_crash_before_the_worldstore_commit_never_advances_head_or_colmap_state[conflict reconciliation-engine.pipeline.world_delta.reconcile_conflicts]`.
+Not known: whether they fail on `main` @ `3ceb60b5` too.
+
+1. Run only those two tests on `chore/december-release`. Record pass/fail and the assertion text.
+2. `git worktree add ../d01-main 3ceb60b5` and run the same two there. Do not stash or switch this checkout.
+3. Same result on both → pre-existing; report the root cause, fix only if the fix is inside the two files listed, otherwise report and stop.
+4. Fails only on the branch → the cause is the constructor change in `colmap_backend.py` (explicit arguments now override the config file). Find the caller that relied on the old behaviour; fix the caller's arguments, keep "explicit arguments win".
+5. Remove the worktree. Report both runs' last output lines verbatim.

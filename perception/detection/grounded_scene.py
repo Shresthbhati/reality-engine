@@ -50,8 +50,9 @@ ENTITY_TYPE_BY_LABEL: Dict[str, str] = {
                                 "rug")},
     "potted plant": "vegetation",
 }
-#: keep pixels whose depth is within this fraction of the box's foreground depth
-DEPTH_BAND = 0.35
+#: keep pixels whose depth is within this fraction of the box's foreground depth. At 0.35 a sofa 4 m away kept a 2.8 m deep
+#: slab: floor in front and wall behind were lifted with it and a 6-view sofa came out 7 m long (measured on a ten-photo room).
+DEPTH_BAND = 0.15
 MIN_MASK_PIXELS = 20
 
 

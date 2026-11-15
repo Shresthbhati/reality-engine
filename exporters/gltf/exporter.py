@@ -104,6 +104,21 @@ def _entity_exportable_geometry(world: "WorldIR", entity):
     return None
 
 
+#: smallest side a bounds-sized cube may have, so a flat plane (zero thickness) still renders as a thin slab
+_MIN_CUBE_SIDE_M = 0.02
+
+
+def _cube_from_bounds(geometry):
+    """(translation, scale) that turn the shared unit cube into the geometry's real axis-aligned box, or None when the
+    geometry records no bounds (then the cube stays a 1 m placeholder, never an invented size)."""
+    lo, hi = getattr(geometry, "bounds_min", None), getattr(geometry, "bounds_max", None)
+    if lo is None or hi is None:
+        return None
+    centre = [(lo.x + hi.x) / 2.0, (lo.y + hi.y) / 2.0, (lo.z + hi.z) / 2.0]
+    size = [max(_MIN_CUBE_SIDE_M, hi.x - lo.x), max(_MIN_CUBE_SIDE_M, hi.y - lo.y), max(_MIN_CUBE_SIDE_M, hi.z - lo.z)]
+    return [float(v) for v in centre], [float(v) for v in size]
+
+
 def _real_points_mesh(
     points: "list[tuple[float, float, float]]", origin: "tuple[float, float, float]",
 ) -> dict:
@@ -341,6 +356,7 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
 
         pos = entity.transform["position"]
         mesh_index = 0  # default: shared placeholder cube
+        points_mesh_index = None
 
         real_mesh = _resolve_real_mesh(artifact_store, geometry)
         if real_mesh is not None and real_mesh[0] and real_mesh[1]:
@@ -407,7 +423,12 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
                 })
                 # keep the next accessor 4-byte aligned
                 tail_buffer.extend(b"\x00" * ((-len(tail_buffer)) % 4))
+                if _cube_from_bounds(geometry) is not None:
+                    # POINTS primitives are drawn as nothing by most viewers: the entity itself becomes its real AABB
+                    # box, and the real points ride along as a sibling node (added below)
+                    points_mesh_index, mesh_index = mesh_index, 0
 
+        has_real_mesh = mesh_index != 0  # False -> this node will be the shared unit cube
         # Material binding (Task 9.1)
         mat_idx = _resolve_material(world, entity, gltf, material_map, artifact_store=artifact_store, tail_buffer=tail_buffer, base_buffer_len=len(buffer_bytes))
         if mesh_index == 0:
@@ -437,7 +458,14 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
             "mesh": mesh_index,
             "translation": [float(pos["x"]), float(pos["y"]), float(pos["z"])],
         }
-        if isinstance(entity.transform, dict):
+        authored_scale = isinstance(entity.transform, dict) and isinstance(entity.transform.get("scale"), dict) \
+            and all(k in entity.transform["scale"] for k in ("x", "y", "z"))
+        sized = None if (has_real_mesh or authored_scale) else _cube_from_bounds(geometry)
+        if sized is not None:
+            # a unit cube is 1 m on every side whatever the entity is: size and place it by the real AABB instead, so a
+            # wall is a wall-sized slab and a sofa a sofa-sized block (the AABB is world-axis-aligned: no rotation)
+            node_entry["translation"], node_entry["scale"] = sized
+        elif isinstance(entity.transform, dict):
             rot = entity.transform.get("rotation")
             if isinstance(rot, dict) and all(k in rot for k in ("x", "y", "z", "w")):
                 node_entry["rotation"] = [float(rot["x"]), float(rot["y"]), float(rot["z"]), float(rot["w"])]
@@ -448,6 +476,14 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
         node_index = len(gltf["nodes"])
         gltf["nodes"].append(node_entry)
         entity_id_to_node_idx[entity.id] = node_index
+        if points_mesh_index is not None:
+            if mat_idx is not None:
+                for prim in gltf["meshes"][points_mesh_index]["primitives"]:
+                    prim["material"] = mat_idx
+            gltf["nodes"].append({
+                "name": f"{entity.name or entity.id} (points)", "mesh": points_mesh_index,
+                "translation": [float(pos["x"]), float(pos["y"]), float(pos["z"])],
+            })
 
     # Build hierarchy: parent-child links (Task 9.1)
     child_node_indices: set[int] = set()

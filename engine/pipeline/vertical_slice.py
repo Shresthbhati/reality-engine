@@ -1143,6 +1143,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         with unloading(detector):
             seg_results = detector.segment(list(evidence_items))
     except Exception as exc:  # noqa: BLE001
+        log.warning("perception segmentation failed (objects skipped)", exc_info=True)   # the note alone hid the cause
         return {**skip, "note": f"segmentation failed: {exc}"}
 
     hypotheses = []

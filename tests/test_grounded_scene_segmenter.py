@@ -119,7 +119,7 @@ def test_overlapping_same_label_candidates_fuse_by_the_validators_own_rule():
     out = fuse_overlapping_candidates([a, b, c, d])
     assert [x.candidate_id for x in out] == ["a", "c", "d"]
     fused = out[0]
-    assert (fused.bounds_min.x, fused.bounds_max.x) == (0, 2.2)      # union extent
+    assert abs((fused.bounds_max.x - fused.bounds_min.x) - 2.0) < 1e-9   # consensus extent (both are 2 m), not the 2.2 m union
     assert fuse_overlapping_candidates([a, c]) == [a, c]             # nothing overlaps: unchanged
     # same class, IoU only 0.38 but the centres are 0.9 apart on a 2 m object (< half its length): still one sofa
     e = _cand("e", "sofa", (0.9, 0, 0), (2.9, 1, 1))

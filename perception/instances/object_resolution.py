@@ -144,6 +144,20 @@ def _longest_side(c: "MergedObjectCandidate") -> float:
     return max(c.bounds_max.x - c.bounds_min.x, c.bounds_max.y - c.bounds_min.y, c.bounds_max.z - c.bounds_min.z)
 
 
+def consensus_bounds(centre: Vec3, boxes: List[Tuple[Vec3, Vec3]]) -> Tuple[Vec3, Vec3]:
+    """One box for several views of one object: ``centre`` +- the per-axis MEDIAN half-extent of the views' boxes.
+
+    The union of per-view boxes grows with every view whose depth scale is a little off (each view's box sits somewhere
+    else along its own rays), so a sofa seen in six photographs came out 7 m long. The median is what most views agree on
+    and cannot be inflated by one misaligned view. One box is returned unchanged."""
+    if len(boxes) == 1:
+        return boxes[0]
+    half = [sorted((hi.x - lo.x, hi.y - lo.y, hi.z - lo.z)[ax] for lo, hi in boxes) for ax in range(3)]
+    mid = len(boxes) // 2
+    h = [(s[mid] if len(s) % 2 else 0.5 * (s[mid - 1] + s[mid])) / 2.0 for s in half]
+    return Vec3(centre.x - h[0], centre.y - h[1], centre.z - h[2]), Vec3(centre.x + h[0], centre.y + h[1], centre.z + h[2])
+
+
 def fuse_overlapping_candidates(
     candidates: List["MergedObjectCandidate"], iou_min: Optional[float] = None,
     centre_share: float = FUSE_CENTRE_SHARE,
@@ -154,7 +168,7 @@ def fuse_overlapping_candidates(
     Per-view depth is only approximately aligned, so one sofa seen from several photographs can come out of the
     association resolver as several candidates that overlap heavily, or sit closer than ``centre_share`` of the larger
     one's longest side. The validator calls the overlapping ones duplicates (``invariant_6_duplicate_entity``); they are
-    one object, so they are fused here: every contributing hypothesis is kept, the extent is the union, the position the
+    one object, so they are fused here: every contributing hypothesis is kept, the extent is the consensus box (``consensus_bounds``), the position the
     confidence-weighted centroid. Order is stable."""
     if iou_min is None:
         from world_ir.validation import _DUPLICATE_IOU as iou_min
@@ -180,12 +194,13 @@ def fuse_overlapping_candidates(
         total = sum(max(m.confidence, 1e-9) for m in members)
         centroid = Vec3(*(sum(max(m.confidence, 1e-9) * getattr(m.position, ax) for m in members) / total
                           for ax in ("x", "y", "z")))
+        lo, hi = consensus_bounds(centroid, [(m.bounds_min, m.bounds_max) for m in members])
         fused.append(MergedObjectCandidate(
             candidate_id=members[0].candidate_id,
             label=members[0].label,
             position=centroid,
-            bounds_min=Vec3(*(min(getattr(m.bounds_min, ax) for m in members) for ax in ("x", "y", "z"))),
-            bounds_max=Vec3(*(max(getattr(m.bounds_max, ax) for m in members) for ax in ("x", "y", "z"))),
+            bounds_min=lo,
+            bounds_max=hi,
             source_hypotheses=tuple(h for m in members for h in m.source_hypotheses),
             confidence=max(m.confidence for m in members),
         ))

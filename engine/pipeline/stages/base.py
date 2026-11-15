@@ -1,4 +1,4 @@
-"""Stage contract (docs/blueprint/34_MASTER_PLAN.md section 3.3). Pure; no database."""
+"""Stage contract (see ARCHITECTURE.md). Pure; no database."""
 from __future__ import annotations
 
 import hashlib

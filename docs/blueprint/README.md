@@ -25,20 +25,19 @@ and check the result against these documents without asking anyone.
 | 10 | [16_MEDIA_GEO_VIDEO.md](16_MEDIA_GEO_VIDEO.md) | Before touching ingestion, video, GPS or coordinate frames. |
 | 11 | [17_ONTOLOGY.md](17_ONTOLOGY.md) | Before adding a new object/surface class. |
 | 12 | [18_VALIDATION_AND_BENCHMARKS.md](18_VALIDATION_AND_BENCHMARKS.md) | Before claiming anything works. |
-| 13 | [20_REUSE_MAP.md](20_REUSE_MAP.md) | Before writing new code — the thing may already exist. |
-| 14 | [30_BUILD_PLAN.md](30_BUILD_PLAN.md) | To pick your next task. |
+| 13 | [36_UI_SPEC.md](36_UI_SPEC.md) | Before changing the interface. |
+| 14 | [37_REUSE_MAP.md](37_REUSE_MAP.md) | Before adding an external model or library. |
+| 15 | [../../RELEASE.md](../../RELEASE.md) | To pick your next task. |
 
 ## How an agent uses this folder (the loop)
 
-1. Open [30_BUILD_PLAN.md](30_BUILD_PLAN.md). Take the **first task whose
-   status is not DONE and whose dependencies are DONE**.
+1. Open [RELEASE.md](../../RELEASE.md). Take the **first unticked box under "Must pass"**.
 2. Read the docs that task links to. Read the code the task names.
-3. Check [20_REUSE_MAP.md](20_REUSE_MAP.md): extend what exists, do not rebuild it.
+3. Search the code first: extend what exists, do not rebuild it.
 4. Build the smallest complete change that meets the task's **Done when**.
 5. Run the task's **Verify** steps. Paste the real output into the PR / handoff.
 6. Run the **Vision check** at the bottom of this file.
-7. Mark the task DONE in [30_BUILD_PLAN.md](30_BUILD_PLAN.md) with the commit
-   hash and the evidence, and update `docs/implementation/IMPLEMENTATION_STATUS.md`.
+7. Tick the box in [RELEASE.md](../../RELEASE.md) in the same commit as its evidence.
 
 ## Vision check (run before every merge)
 

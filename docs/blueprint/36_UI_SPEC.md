@@ -1,6 +1,6 @@
 # 36 — Clean UI Spec
 
-Companion to `34_MASTER_PLAN.md` (decision D10). Implemented by cards U501–U520 in `35_TASK_CARDS.md`.
+The target interface for Reality Studio. Release scope is in `RELEASE.md`.
 Scope: the existing Next.js app in `frontend/`. No second app, no renderer change, no new state library (Zustand is already installed).
 
 **Today [V]:** 40 routes, 26 API proxies, 32 Studio/workspace panel components, a 976-line `SpatialWorkstation.tsx`, nine specialist tools each with its own full-screen modal, 25+ command-palette entries.

@@ -80,4 +80,4 @@ Markers are defined in `pyproject.toml` (`slow`, `physics`, ...).
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) -- how the system is built
 - [`QUICKSTART.md`](QUICKSTART.md) -- install, start, add photos, refine, export
 - [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) -- what is and is not verified
-- [`docs/implementation/ROADMAP.md`](docs/implementation/ROADMAP.md) -- prioritised pending work
+- [`RELEASE.md`](RELEASE.md) -- what ships in December 2026 and what is still open

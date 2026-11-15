@@ -1,6 +1,6 @@
 # 37 — Open-Source Reuse Map
 
-Companion to `34_MASTER_PLAN.md`. Replaces `20_REUSE_MAP.md` (stale).
+Open-source candidates and their licences. Release scope is in `RELEASE.md`.
 Rule: nothing below enters a production run until its licence is recorded in `perception/model_registry.py` and passes the gate from card T009.
 
 **Licence column:** ✓ = confirmed from the project's own page on 2026-11-10 · ◇ = recalled from memory, **confirm before adopting** · weights and code are often licensed separately — check both.

@@ -1379,12 +1379,13 @@ THEN SAY IT IS DONE.
 The repository contains:
 
 - `docs/STATUS.md` (current status ledger, generated from `docs/status.yaml`)
-- `docs/blueprint/35_TASK_CARDS.md` (work queue; plan in `34_MASTER_PLAN.md`)
+- `RELEASE.md` (the only release document: scope, checklist, open facts)
+- `docs/engineering/capability_matrix.md` (capability by capability, with test counts)
 - `docs/future/` (per-subsystem engineering specifications)
 - `docs/engineering/DESIGN_DECISIONS.md` (accepted architecture decisions)
-- `docs/implementation/PENDING_IMPLEMENTATION.md`, `IMPLEMENTATION_STATUS.md`
-  and `CAPABILITIES.md` are SUPERSEDED history (2026-11-10); do not treat
-  them as current status.
+
+Older plans, roadmaps and backlogs were deleted on 2026-11-15. Do not
+recreate them; do not add new plan documents.
 
 These files are the canonical registry of intentionally unfinished
 engineering work. They are not TODO notes; they carry model, failure
@@ -1392,7 +1393,7 @@ modes, and acceptance criteria per item.
 
 Before implementing a new subsystem:
 
-1. Check `docs/STATUS.md` and `35_TASK_CARDS.md` for the item and its priority.
+1. Check `RELEASE.md` and `docs/STATUS.md` for the item and its priority.
 2. Check its detailed specification under `docs/future/`.
 3. Check `DESIGN_DECISIONS.md` so a settled architecture is not relitigated.
 4. Inspect actual code.
@@ -1419,10 +1420,9 @@ engineering decisions are made autonomously.
 # 52. PRIORITY AUTHORITY
 ============================================================
 
-The project's priority roadmap (`docs/blueprint/30_BUILD_PLAN.md`,
-with product intent in `docs/blueprint/` — start at its README) is
-authoritative. `docs/implementation/ROADMAP.md` is kept as history;
-`.agent/TASKS.yaml` records execution progress against the build plan.
+The release checklist in `RELEASE.md` is authoritative (product intent
+is in `docs/blueprint/` — start at its README). `.agent/TASKS.yaml`
+records execution progress.
 The user/project has already established an ordered sequence of
 implementation priorities.
 

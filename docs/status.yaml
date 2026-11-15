@@ -1,5 +1,5 @@
 # Source of truth for docs/STATUS.md (python scripts/render_status.py).
-# Seeded from section 5 of docs/blueprint/34_MASTER_PLAN.md (all 21 rows).
+# Release scope and checklist: RELEASE.md.
 # gate = the phase exit gate that closes the item: G0=P0 Truth, G1=P1 One pipeline,
 # G2=P2 Real data + P3 Geometry, G3=P4 Persistent World + PU UI + P5 Capture, G4=P6 SaaS ops + P7 Expansion.
 - id: S5-01

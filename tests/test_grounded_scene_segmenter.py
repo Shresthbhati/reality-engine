@@ -29,6 +29,32 @@ def test_clean_boxes_drops_weak_scene_sized_speck_and_duplicate_boxes():
     assert [(k[0], k[1]) for k in kept] == [("sofa", 0.9), ("rug", 0.7)]
 
 
+def test_prompt_variants_are_queried_and_reported_under_the_canonical_class(monkeypatch):
+    """'coffee table' alone found the table in 0/6 views of a real room; 'wooden coffee table' found it in 6/6."""
+    q = gs.query_prompts(("sofa", "coffee table", "rug"))
+    assert q[:3] == ("sofa", "coffee table", "rug") and "wooden coffee table" in q and "area rug" in q
+    assert "standing lamp" not in q                       # only variants of the requested classes are sent
+
+    depth = np.full((40, 40), 5.0)
+    depth[10:30, 10:30] = 2.0
+    dm = DepthMap(evidence_id="ev-a", width=40, height=40, values=depth.tolist(), unit="meters")
+    sent = []
+
+    def fake_raw(path, prompts):
+        sent.append(tuple(prompts))
+        # the plain prompt finds nothing; the variant finds the table, and the rug is found by both phrasings
+        return [("wooden coffee table", 0.8, (8, 8, 32, 32)), ("rug", 0.7, (0, 33, 8, 39)),
+                ("area rug", 0.75, (0, 33, 8, 39))], (40, 40)
+
+    monkeypatch.setattr(ovf, "_grounded_raw", fake_raw)
+    monkeypatch.setattr(ovf, "item_path", lambda item: "ignored")
+    seg = gs.GroundedSceneSegmenter({"ev-a": dm}, prompts=("coffee table", "rug"))
+    out = seg.segment([SimpleNamespace(id="ev-a")])
+    labels = [r.label for r in out[0].regions]
+    assert "wooden coffee table" in sent[0] and labels.count("coffee table") == 1
+    assert labels.count("rug") <= 1 and "wooden coffee table" not in labels and "area rug" not in labels
+
+
 def test_labels_map_to_world_types_and_unlisted_ones_are_not_guessed():
     t = gs.ENTITY_TYPE_BY_LABEL
     assert t["sofa"] == t["tv stand"] == t["rug"] == "furniture" and t["potted plant"] == "vegetation"
@@ -71,7 +97,7 @@ def test_segmenter_returns_labelled_masks_per_view_and_skips_views_without_depth
     (region,) = results[0].regions
     assert region.label == "coffee table" and region.confidence == 0.8 and region.evidence_id == "ev-a"
     assert np.asarray(region.mask).sum() == 400                           # the 20x20 foreground
-    assert seen == [gs.SCENE_PROMPTS] and "rug" in gs.SCENE_PROMPTS and "potted plant" in gs.SCENE_PROMPTS
+    assert seen == [gs.query_prompts(gs.SCENE_PROMPTS)] and "rug" in gs.SCENE_PROMPTS and "potted plant" in gs.SCENE_PROMPTS
 
 
 def _cand(cid, label, lo, hi, conf=0.8):

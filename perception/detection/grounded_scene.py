@@ -25,6 +25,24 @@ SCENE_PROMPTS: Tuple[str, ...] = (
     "sofa", "armchair", "chair", "dining table", "coffee table", "side table", "desk", "bed", "wardrobe", "bookshelf",
     "dresser", "nightstand", "tv stand", "television", "floor lamp", "rug", "potted plant", "picture frame", "curtain",
 )
+#: Extra phrasings queried for a class; every hit is reported under the CANONICAL label. Grounding DINO is sensitive to the
+#: exact words: on a ten-photo living room the plain prompt "coffee table" found nothing above threshold in 0/6 views, while
+#: "wooden coffee table" found it in 6/6 at 0.81. Only variants that measured better than the plain prompt are listed.
+PROMPT_VARIANTS: Dict[str, Tuple[str, ...]] = {
+    "coffee table": ("wooden coffee table",),
+    "floor lamp": ("standing lamp",),     # 6/6 views at 0.73 vs 0.60
+    "rug": ("area rug",),                 # 6/6 at 0.75 vs 5/6 at 0.65
+    "bookshelf": ("shelving unit",),      # 6/6 vs 5/6
+    "side table": ("end table",),         # 6/6 at 0.63 vs 3/6 at 0.44
+}
+_CANONICAL_OF_VARIANT = {v: k for k, vs in PROMPT_VARIANTS.items() for v in vs}
+
+
+def query_prompts(prompts: Sequence[str]) -> Tuple[str, ...]:
+    """``prompts`` plus the variants of every class in it (what is actually sent to the detector)."""
+    return tuple(prompts) + tuple(v for p in prompts for v in PROMPT_VARIANTS.get(p, ()))
+
+
 #: boxes covering more than this share of the frame are scene-level false positives; tiny ones are noise
 MAX_BOX_SHARE = 0.80
 MIN_BOX_SHARE = 0.004
@@ -175,7 +193,8 @@ class GroundedSceneSegmenter:
             depth = self._depth.get(eid)
             if depth is None:
                 continue
-            raw, src_size = _grounded_raw(item_path(item), self._prompts)
+            raw, src_size = _grounded_raw(item_path(item), query_prompts(self._prompts))
+            raw = [(_CANONICAL_OF_VARIANT.get(label, label), score, box) for label, score, box in raw]
             values = np.asarray(depth.values, dtype=float)
             regions: List[SegmentedRegion] = []
             for j, (label, score, box) in enumerate(clean_boxes(raw, src_size)):

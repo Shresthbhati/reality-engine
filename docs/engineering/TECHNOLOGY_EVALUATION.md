@@ -44,8 +44,33 @@ the script are checked in as a fixture (next step).
 The metric model's per-view scale to SfM units is nearly constant (1.51-1.58, coefficient of variation 1.6%), while the
 current pipeline's per-view scales (from the earlier run's logged alignments) spanned 0.30-0.60 for views aligned on ~1,000
 points (about 2x; one view aligned on only 115 points gave 0.16). DPT's units are arbitrary per image, so each view needs its
-own scale, and per-view freedom is the likely mechanism behind the layered floors seen earlier (not proven by a controlled test). This is the strongest evidence-backed candidate improvement so far, but it rests on one scene and on
-agreement with SfM; it must be confirmed against surveyed geometry before it is adopted.
+own scale.
+
+### 3a. Follow-up controlled A/B: does a metric model with one global scale fix the layered floors? **No (not supported).**
+
+Same saved sparse model, same compile; only the depth source differs (A = DPT_Hybrid per-view scale, B = metric depth with one
+global scale, C = metric depth with a scale per view):
+
+| | A | B | C |
+|---|---|---|---|
+| Dense points | 120,399 | 147,973 | 147,640 |
+| Horizontal-plane share of plane inliers | 0.66 | 0.64 | 0.68 |
+| Share of below-camera horizontal points within +-0.15 of the dominant level | 0.19 | 0.22 | 0.22 |
+| p10-p90 height spread of those points (working units) | 1.95 | 1.88 | 1.88 |
+| Height peaks | 12 | 10 | 13 |
+| Floor-role plane candidates before consolidation | 972 | 946 | 890 |
+| Entities after compile (wall/floor/ceiling) | 6/3/2 | 7/3/3 (+corridor) | 11/2/3 |
+
+The height distribution of horizontal surfaces is essentially the same whatever the depth source, so per-view scale freedom
+is **not** what produced the many "floor" levels. My earlier suggestion that it was is retracted. The levels are
+geometry-intrinsic: a furnished living room with a sofa seat, coffee table, shelves and stairs really has many upward-facing
+surfaces, and the classifier labels every upward-facing plane a floor candidate. The pipeline's own floor estimator (needs a
+2 cm-tight mode) also found no sharp floor peak in any variant.
+
+What the experiment does show: metric depth fits the SfM geometry better (0.117 vs 0.199) and needs one scale, not one per
+view. With that global scale (1.552 SfM units per metre) the cameras sit 1.86-2.06 m above the lowest horizontal surfaces, versus
+a typical 1.5-1.7 m: plausible but ~20-30% high, so the scale carries an unknown bias and is not metric without a reference.
+One scene, one sparse model, consistency with SfM, no ground truth. **Decision: no change to the default depth path.**
 
 ## 4. Candidate table (directive list)
 

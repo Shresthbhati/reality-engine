@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-15T00:56:03+0530",
+ "generated_at": "2026-11-15T11:25:49+0530",
  "live_roots": [
   "apps.api.main",
   "apps.api.jobs"
@@ -330,7 +330,7 @@
     "skipped": 0,
     "errors": 0
    },
-   "real_data_notes": "DPT_Hybrid per-view residual 1.0-3.0 working units vs ~3-unit viewing distance; floors layered."
+   "real_data_notes": "DPT_Hybrid needs a scale per view; a metric model (Depth Anything V2 Metric-Indoor Small) fits SfM better (0.117 vs 0.199 relative residual) with ONE scale, but did not change floor/ceiling structure in a controlled A/B (docs/engineering/TECHNOLOGY_EVALUATION.md 3a)."
   },
   {
    "capability": "SfM",
@@ -757,7 +757,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 61,
+    "passed": 62,
     "failed": 0,
     "skipped": 0,
     "errors": 0

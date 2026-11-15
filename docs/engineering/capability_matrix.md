@@ -2,7 +2,7 @@
 
 Verified = the row's unit tests passed in this run; it is not accuracy on real photographs.
 
-Live roots: apps.api.main, apps.api.jobs. Generated 2026-11-15T00:56:03+0530.
+Live roots: apps.api.main, apps.api.jobs. Generated 2026-11-15T11:25:49+0530.
 
 | Capability | Status | Verified | Modules (reachable from API / total) | Tests passed/failed | Real-data evidence |
 |---|---|---|---|---|---|
@@ -14,7 +14,7 @@ Live roots: apps.api.main, apps.api.jobs. Generated 2026-11-15T00:56:03+0530.
 | Instance segmentation | Partial | yes (unit tests) | 0 / 3 | 7/0 | - |
 | Small-object detection | Partial | yes (unit tests) | 2 / 3 | 12/0 | Tiled pass on 10 images: low precision (railings as 'visible wiring', texture as 'drain'); 678 unreviewed drafts, no ground truth. |
 | Object tracking | Partial | yes (unit tests) | 0 / 3 | 29/0 | - |
-| Depth estimation | Existing | yes (unit tests) | 3 / 3 | 25/0 | DPT_Hybrid per-view residual 1.0-3.0 working units vs ~3-unit viewing distance; floors layered. |
+| Depth estimation | Existing | yes (unit tests) | 3 / 3 | 25/0 | DPT_Hybrid needs a scale per view; a metric model (Depth Anything V2 Metric-Indoor Small) fits SfM better (0.117 vs 0.199 relative residual) with ONE scale, but did not change floor/ceiling structure in a controlled A/B (docs/engineering/TECHNOLOGY_EVALUATION.md 3a). |
 | SfM | Partial | FAILING | 2 / 3 | 21/1 | 10 photos: 9/10 registered after seed pinning; sparse geometry differed between runs (995 vs 1,423 points). |
 | MVS | Partial | FAILING | 2 / 3 | 27/4 | - |
 | Point-cloud fusion | Existing | yes (unit tests) | 2 / 2 | 16/0 | - |
@@ -25,7 +25,7 @@ Live roots: apps.api.main, apps.api.jobs. Generated 2026-11-15T00:56:03+0530.
 | Material recognition | Existing | yes (unit tests) | 3 / 3 | 17/0 | - |
 | Uncertainty estimation | Partial | yes (unit tests) | 3 / 5 | 58/0 | - |
 | WorldIR | Existing | yes (unit tests) | 24 / 27 | 27/0 | - |
-| Accuracy validation | Existing | yes (unit tests) | 2 / 5 | 61/0 | - |
+| Accuracy validation | Existing | yes (unit tests) | 2 / 5 | 62/0 | - |
 | Active capture guidance | Partial | yes (unit tests) | 1 / 2 | 7/0 | - |
 | Export and persistence | Existing | yes (unit tests) | 4 / 4 | 40/0 | - |
 

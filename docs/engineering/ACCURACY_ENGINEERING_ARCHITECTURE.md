@@ -44,8 +44,9 @@ Not a new framework. Three additions to the existing ladder:
 
 1. **Engine contracts**: each stage declares inputs, outputs, VRAM budget and a measurable post-condition (extends `StageSpec`).
 2. **Diagnosis table** mapping measured findings to an existing, bounded correction:
-   duplicate entity -> re-run association; missing small fixture -> targeted tile pass on the wall region; floor layers
-   (depth residual high) -> metric-depth alignment; weak registration -> next mapper seed (exists); uncertain region -> capture request.
+   duplicate entity -> re-run association; missing small fixture -> targeted tile pass on the wall region; several "floor"
+   levels -> separate the floor (lowest large level) from support surfaces (seat/table tops, steps); the depth source was tested and is
+   not the cause (TECHNOLOGY_EVALUATION 3a); weak registration -> next mapper seed (exists); uncertain region -> capture request.
 3. **Gates fed by the benchmark**: a candidate result is committed only when the relevant benchmark metrics do not regress
    (the existing `judge()` acceptance pattern, generalised) and the critical gates pass.
 
@@ -63,7 +64,7 @@ P0 (in order; each has a pass criterion that is measured, not asserted)
 
 1. **Ground truth first.** Annotate the available images (boxes + cross-view instance ids); survey or otherwise obtain dimensions for at least one real room. Blocks every accuracy claim.
 2. **Persist per-view observations** (box, mask, score, label, view) through promotion; `inventory_from_world`. Pass: inventory validates and round-trips a stored world.
-3. **Depth: confirm metric depth with one global scale** against surveyed geometry; if confirmed, replace per-view alignment. Pass: floor-level count falls and dimension error improves on the surveyed room; no regression elsewhere.
+3. **Floor vs support surfaces.** The metric-depth experiment (TECHNOLOGY_EVALUATION 3a) showed the many "floor" levels are not a depth artifact. Pass: on annotated images the floor entity is the lowest large level and furniture tops/steps are not floors. Metric depth stays an option for scale only, pending a reference measurement (its implied camera height is ~20-30% high).
 4. **Small-object pass on the live path with a precision gate.** Pass: small-object precision and recall measured on annotated images, reported per entity group.
 5. **Masks** (SAM 2, after install approval) from boxes. Pass: instance mIoU measured.
 6. **Wire the unreachable pieces that earn it**: quality report, completeness, correction loop. Pass: the matrix row becomes reachable and a test exercises the live call.

@@ -49,9 +49,10 @@ precision, recall, F1 or mAP has been measured.
 * One full run of 10 photos takes ~13 minutes (Grounding DINO on 19 prompts per photo dominates).
 * COLMAP geometry differs between runs on the same photos (995 vs 1,423 sparse points; scene sometimes entirely above the
   cameras), so multi-view results are not reproducible even though registration (9/10) is.
-* Per-view depth is poorly consistent with the sparse cloud: median residual 1.0-3.0 working units on a scene whose
-  typical viewing distance is 3. It layers one floor into several. A robust affine (scale+shift) fit lowered residuals
-  2-4x but did not improve the structure; it was reverted (diff kept outside the repo).
+* Per-view depth (DPT_Hybrid, a scale per view) fits the sparse cloud to a relative residual of 0.199; a metric model fits it
+  better (0.117) with one scale. Neither changed how many "floor" levels the compile finds (about 950 floor-role plane
+  candidates before consolidation in every variant): those are mostly furniture tops and steps labelled floor because their
+  normals point up, not a depth artifact (TECHNOLOGY_EVALUATION 3a). An earlier affine-fit experiment was reverted.
 * GPU is an RTX 4050 with 6 GB.
 * Missing libraries: `segment_anything`, `sam2`, `open3d`, `pycolmap`, `ultralytics`.
 

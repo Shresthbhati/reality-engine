@@ -110,7 +110,7 @@ REAL_DATA_NOTES: Dict[str, str] = {
     "Object detection": "Grounding DINO coarse pass inspected on one 1672x941 interior: vents, AC, doors, windows, shelves, plants, picture frame boxed sensibly.",
     "Small-object detection": "Tiled pass on 10 images: low precision (railings as 'visible wiring', texture as 'drain'); 678 unreviewed drafts, no ground truth.",
     "SfM": "10 photos: 9/10 registered after seed pinning; sparse geometry differed between runs (995 vs 1,423 points).",
-    "Depth estimation": "DPT_Hybrid per-view residual 1.0-3.0 working units vs ~3-unit viewing distance; floors layered.",
+    "Depth estimation": "DPT_Hybrid needs a scale per view; a metric model (Depth Anything V2 Metric-Indoor Small) fits SfM better (0.117 vs 0.199 relative residual) with ONE scale, but did not change floor/ceiling structure in a controlled A/B (docs/engineering/TECHNOLOGY_EVALUATION.md 3a).",
     "Room segmentation": "Floor/wall consolidation cut replayed wall counts 25->8 and 21->6; footprint remains a ragged polygon.",
 }
 

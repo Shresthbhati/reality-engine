@@ -77,7 +77,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 | open3d | APPROVED | MIT (LICENSE read) | n/a | 2026-11-14 | API reachable | reconstruction/pointcloud_clean.py -> vertical_slice scene box (default path; SciPy fallback, backend on the record) |
 | pcl | APPROVED | BSD (LICENSE.txt read) | n/a | 2026-11-14 | Implemented | an internal module named pcl_core exists; the C++ library is not used |
 | manifold | APPROVED | Apache-2.0 | n/a | 2026-11-15 | Functionally tested | geometry/mesh_boolean.py; the mesh stage records a manifold verdict on the reconstructed surface |
-| bytetrack | APPROVED | MIT | n/a | 2024-06-19 | Implemented | perception/tracking exists but is not reachable from the API |
+| bytetrack | APPROVED | MIT | n/a | 2024-06-19 | Functionally tested | reimplemented in perception/tracking/temporal.py (ByteTrack-style IoU association with ambiguity reporting); tests/test_tracking_2d.py, tests/test_temporal_tracking.py |
 | gsplat | APPROVED | Apache-2.0 | n/a | 2026-09-19 | Implemented | splat ingest/render exists separately (PR #299) |
 | nerfstudio | APPROVED | Apache-2.0 | n/a | 2025-07-29 | Implemented | not integrated |
 | compas | APPROVED | MIT | n/a | 2026-11-11 | Implemented | not integrated |
@@ -91,11 +91,11 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 | grounded_sam | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | SAM 1 weights not verified | 2024-09-05 | Implemented | superseded by Grounded-SAM-2 |
 | detectron2 | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | model-zoo weights vary; not audited | 2026-10-27 | Implemented | not integrated |
 | sam_hq | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | syscv-community/sam-hq-vit-base: apache-2.0 (model card read 2026-11-16; cached, 362 MB) | 2025-09-12 | Implemented | NOT integrated: an adapter was built and removed |
-| marigold | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | marigold-depth-v1-1: openrail++ (use restrictions) | 2026-09-06 | Implemented | not integrated |
+| marigold | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | marigold-depth-lcm-v1-0: apache-2.0 (model card read 2026-11-16, fp16 files cached); marigold-depth-v1-1 is openrail++ (use restrictions) | 2026-09-06 | Implemented | NOT integrated: measured, not better |
 | mmtracking | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | varies | 2023-09-19 | Implemented | not integrated |
 | openusd | APPROVED_WITH_RESTRICTIONS | Tomorrow Open Source Technology License 1.0 (modified Apache 2.0; LICENSE.txt read) | n/a | 2026-11-14 | Functionally tested | sdk.reality 'usdc' export through pxr; validate_usda uses pxr as the authority |
 | web_ifc | APPROVED_WITH_RESTRICTIONS | MPL-2.0 | n/a | 2026-11-13 | Implemented | not integrated |
-| lightglue | LICENCE_REVIEW_REQUIRED | Apache-2.0 | HF lightglue_superpoint: 'other' (SuperPoint terms, unresolved) | 2026-10-25 | Implemented | adapter exists in repo, not reachable from the API |
+| lightglue | LICENCE_REVIEW_REQUIRED | Apache-2.0 | HF lightglue_superpoint: 'other' (SuperPoint terms, unresolved) | 2026-10-25 | Implemented | reconstruction/matching/lightglue.py (kornia) behind the matcher registry get_matcher('lightglue' / 'lightglue@aliked'); not wired into SfM or the API |
 | openmvg | LICENCE_REVIEW_REQUIRED | MPL-2.0 (API); sub-components not audited | n/a | 2026-11-07 | Implemented | not integrated |
 | mask2former | LICENCE_REVIEW_REQUIRED | MIT (repo archived) | HF COCO weights: 'other' (unresolved) | 2024-07-29 (archived) | Implemented | not integrated |
 | depth_anything_v2_metric_indoor | LICENCE_REVIEW_REQUIRED | Apache-2.0 (code) | model card declares NO licence (verified: null) | 2026-03-24 | Functionally tested | not integrated |
@@ -128,7 +128,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 * **colmap** (COLMAP): Geometry differs run to run on the same photos (995 vs 1,423 points observed).
 * **pycolmap** (pycolmap): SfM stays on the COLMAP binary; running it in-process would remove the long-workspace-path failure class, no measured need yet.
 * **hloc** (hloc): Candidate for SfM reproducibility; extractor weights licence must be checked before use.
-* **lightglue** (LightGlue): Code is Apache-2.0; the pretrained weights' licence is what blocks.
+* **lightglue** (LightGlue): Code and LightGlue weights are Apache-2.0 and DISK follows the same licence (README read); SuperPoint weights are non-commercial and must stay behind REALITY_ALLOW_NC_MODELS.
 * **openmvg** (openMVG): Duplicates COLMAP; no measured gap it would close.
 * **alicevision** (AliceVision): Full alternative pipeline: would be a second orchestrator, so not adopted.
 * **meshroom** (Meshroom): GUI over AliceVision; no role in a headless pipeline.
@@ -148,7 +148,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 * **depth_anything_v2_metric_indoor** (Depth Anything V2 Metric-Indoor Small): Best measured fit to SfM, but undeclared licence and no effect on floor layering in an A/B; no default change.
 * **dpt_hybrid** (DPT_Hybrid / MiDaS): Per-view scale drifts about 2x between views; objects land up to ~2.5 m apart across views.
 * **metric3d** (Metric3D): Needs the weights licence read before any test.
-* **marigold** (Marigold): Slow diffusion model; no evidence it would beat the current depth on our metric.
+* **marigold** (Marigold): Marigold does not beat MiDaS once both get the same fit. The finding that mattered: the pipeline's scale-only alignment leaves a lot on the table per view (held-out 0.208 -> 0.036 with a shift), but applying the shift made OBJECTS worse (cross-view scatter up, 20 vs 16 objects with duplicates; it was chosen for only 3 of 9 views). metricize_relative_depth(use_shift=True) is kept, off by default. Fixing cross-view depth consistency is the open problem.
 * **depth_pro** (Apple Depth Pro): Research-only weights.
 * **open3d** (Open3D): Outlier removal is integrated; ICP, TSDF and Poisson from Open3D are not used. Installing Open3D pulls in dash, whose stray top-level benchmarks package is why benchmarks/ is now a regular package.
 * **pcl** (PCL): C++ build burden for no gain over Open3D.
@@ -158,7 +158,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 * **libigl** (libigl): GPL-3.0.
 * **manifold** (Manifold (manifold3d)): Booleans are available but no pipeline stage cuts openings with them yet.
 * **cotracker** (CoTracker3): Non-commercial.
-* **bytetrack** (ByteTrack): Repo moved to FoundationVision/ByteTrack; last push 2024-06; the algorithm is small enough to reimplement.
+* **bytetrack** (ByteTrack): Not wired into the API on purpose: video ingest samples SPARSE sharpness-ranked keyframes, not consecutive frames, so frame-to-frame tracking has nothing to associate. Wire it if a consecutive-frame video mode is added. The upstream package is not needed.
 * **mmtracking** (MMTracking): Unmaintained since 2023-09; heavy mm* dependency stack.
 * **opencv** (OpenCV): In use.
 * **gsplat** (gsplat): Appearance only: not geometric accuracy.

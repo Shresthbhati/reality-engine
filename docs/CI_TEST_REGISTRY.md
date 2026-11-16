@@ -87,7 +87,7 @@ Total: 1
 
 ## unlisted
 
-Total: 497
+Total: 498
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -217,6 +217,7 @@ Total: 497
 - `tests/test_depth_exr.py`
 - `tests/test_depth_frames.py`
 - `tests/test_depth_scale.py`
+- `tests/test_depth_shift_alignment.py`
 - `tests/test_depth_to_points.py`
 - `tests/test_design_style_intelligence.py`
 - `tests/test_detail_budget.py`

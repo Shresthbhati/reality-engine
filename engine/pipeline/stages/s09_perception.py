@@ -36,7 +36,28 @@ class Perception:
         metrics = {k: float(v) for k, v in outcome.facts.items()
                    if k in ("views_segmented", "masks_considered", "hypotheses_lifted", "candidates_merged",
                             "entities_promoted") and isinstance(v, (int, float))}
+        outputs = {}
+        # B02: Persist ObservationTable artifact
+        from world_ir.observation_table import ObservationTable
+        table = getattr(outcome, "table", None)
+        if table is None and hasattr(outcome, "observations") and outcome.observations:
+            table = ObservationTable.from_observations(outcome.observations)
+        if table is not None:
+            import tempfile
+            from pathlib import Path
+            from apps.api.storage import store_bytes
+            with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as tmp:
+                tmp_p = Path(tmp.name)
+            try:
+                table.save(tmp_p)
+                sha, uri = store_bytes(tmp_p.read_bytes(), content_type="application/octet-stream")
+                outputs["observations"] = sha
+                outcome.facts["observations_artifact_uri"] = uri
+            finally:
+                if tmp_p.exists():
+                    tmp_p.unlink()
+
         return StageResult(
-            name=self.spec.name, status=status, inputs_hash="", outputs={}, metrics=metrics, warnings=warnings,
+            name=self.spec.name, status=status, inputs_hash="", outputs=outputs, metrics=metrics, warnings=warnings,
             error=None, started_at=started, ended_at=datetime.now(timezone.utc), peak_rss_mb=None,
         )

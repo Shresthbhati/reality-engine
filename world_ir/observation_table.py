@@ -135,3 +135,25 @@ class ObservationTable:
             r["unavailable"] = why
             recs.append(r)
         return recs
+
+    def to_rows(self) -> list[dict]:
+        rows = []
+        for i in range(len(self)):
+            pos = [float(x) for x in self.world_pos[i]] if np.all(np.isfinite(self.world_pos[i])) else None
+            rows.append({
+                "obs_id": str(self.obs_id[i]),
+                "image_id": str(self.image_id[i]),
+                "class_path": str(self.class_path[i]),
+                "parent_obs": int(self.parent_obs[i]),
+                "bbox_px": [float(x) for x in self.bbox_px[i]],
+                "score": float(self.score[i]),
+                "mask_ref": int(self.mask_ref[i]),
+                "emb_row": int(self.emb_row[i]),
+                "world_pos": pos,
+                "sigma_m": float(self.sigma_m[i]) if np.isfinite(self.sigma_m[i]) else None,
+                "visibility": _VIS_NAME.get(int(self.visibility[i])),
+                "entity_row": int(self.entity_row[i]),
+                "model": str(self.model[i]),
+                "attrs_json": str(self.attrs_json[i]),
+            })
+        return rows

@@ -3591,3 +3591,46 @@ async def get_world_commands(
             for c in cmds
         ],
     }
+
+@worlds.get("/{world_id}/versions/{version_id}/observations")
+async def get_version_observations(
+    world_id: str,
+    version_id: str,
+    image_id: str | None = None,
+    entity_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """Retrieve observations recorded for a world version (BUILD_SPEC B02)."""
+    w = await _world_or_404(db, world_id, auth)
+    enforce_project_isolation(w, auth)
+
+    from apps.api.models import WorldVersion
+    res = await db.execute(select(WorldVersion).where(WorldVersion.id == version_id, WorldVersion.world_id == world_id))
+    v = res.scalars().first()
+    if v is None:
+        raise HTTPException(404, "Version not found")
+
+    from world_ir.observation_table import ObservationTable
+    from apps.api.storage import resolve_artifact
+    table = None
+    obs_uri = (v.report or {}).get("observations_artifact_uri")
+    if obs_uri:
+        p = resolve_artifact(obs_uri) if str(obs_uri).startswith("sha256://") else Path(str(obs_uri))
+        if p and p.is_file():
+            table = ObservationTable.load(p)
+
+    if table is None:
+        return {"items": [], "count": 0, "world_id": world_id, "version_id": version_id}
+
+    rows = table.to_rows()
+    if image_id is not None:
+        rows = [r for r in rows if r.get("image_id") == image_id]
+    if entity_id is not None:
+        try:
+            erow = int(entity_id)
+            rows = [r for r in rows if r.get("entity_row") == erow]
+        except ValueError:
+            pass
+
+    return {"items": rows, "count": len(rows), "world_id": world_id, "version_id": version_id}

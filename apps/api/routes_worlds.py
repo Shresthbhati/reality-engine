@@ -201,7 +201,16 @@ async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)
             select(Session.world_id, func.count()).group_by(Session.world_id)
         )).all()
     )
-    return {"items": [_world_out(w, ses_counts.get(w.id, 0)) for w in res.scalars().all()]}
+    rows = res.scalars().all()
+    from apps.api import place_summary
+
+    cards = await place_summary.summaries(db, rows)      # photo_count, placed_count, quality_band, active_job, thumbnail_url ...
+    items = []
+    for w in rows:
+        out = _world_out(w, ses_counts.get(w.id, 0))
+        out.update({k: v for k, v in cards.get(w.id, {}).items() if k != "scale_state"})   # the world's own column wins
+        items.append(out)
+    return {"items": items}
 
 
 @worlds.get("/{world_id}")
@@ -1550,7 +1559,7 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         raise HTTPException(
             422,
             "corrected world failed validation: "
-            + "; ".join(_validation.messages()[:5]),
+            + "; ".join(str(i) for i in (*_validation.errors, *_validation.warnings))[:1200],   # the blocking errors first
         )
 
     # Stale-client guard: an explicit parent that is no longer HEAD is a

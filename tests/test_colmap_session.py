@@ -103,9 +103,10 @@ def test_a_workspace_path_too_long_for_native_colmap_fails_early_with_the_real_c
     import pytest
 
     from evidence.session import EvidenceItem, EvidenceKind
-    from reconstruction.backend.colmap_backend import (MAX_WORKSPACE_PATH_CHARS, ColmapReconstructionBackend,
+    from reconstruction.backend.colmap_backend import (ColmapConfig, ColmapReconstructionBackend,
                                                        WorkspacePathTooLong, _check_workspace_path)
 
+    MAX_WORKSPACE_PATH_CHARS = ColmapConfig.from_file().max_workspace_path_chars   # the limit lives in the config now
     _check_workspace_path(tmp_path)                                    # a short path is fine on every platform
     if os.name != "nt":
         pytest.skip("the MAX_PATH crash is Windows-specific")

@@ -331,9 +331,9 @@ def _check_workspace_path(ws: Path) -> None:
 
 
 class ColmapReconstructionBackend(IReconstructionBackend):
-    def __init__(self, colmap_binary: str = "colmap", use_gpu: bool = False,
-                 robust_sift: bool = True, guided_matching: bool = False,
-                 dense_mvs: bool = False, artifact_store=None, session=None,
+    def __init__(self, colmap_binary: str = "colmap", use_gpu: Optional[bool] = None,
+                 robust_sift: Optional[bool] = None, guided_matching: Optional[bool] = None,
+                 dense_mvs: Optional[bool] = None, artifact_store=None, session=None,
                  config: Optional[ColmapConfig] = None):
         self._config = config if config is not None else ColmapConfig.from_file()
         self._colmap_binary = colmap_binary
@@ -353,17 +353,18 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         # no-GPU build ("without GPU support" per its own version banner);
         # passing use_gpu=1 against it fails every step. A CUDA build
         # should pass use_gpu=True explicitly.
-        self._use_gpu = self._config.use_gpu
+        self._use_gpu = self._config.use_gpu if use_gpu is None else bool(use_gpu)
         #: Affine-shape + domain-size-pooling SIFT. Measured default ON:
         #: +22% verified points at unchanged fidelity on the committed
         #: real 32-photo subset. Costs ~3x extraction time (CPU-only in
         #: COLMAP); opt out explicitly.
-        self.robust_sift = self._config.robust_sift
+        #: None defers to the config; an explicit True/False is honoured (it used to be silently ignored).
+        self.robust_sift = self._config.robust_sift if robust_sift is None else bool(robust_sift)
         #: Guided matching. Default OFF -- measured FALSE COVERAGE on
         #: repetitive architecture (31/32 cameras but 24.6 deg median
         #: rotation error vs 0.164 deg without). Opt in only when the
         #: capture lacks repetitive structures.
-        self.guided_matching = self._config.guided_matching
+        self.guided_matching = self._config.guided_matching if guided_matching is None else bool(guided_matching)
         #: Dense-MVS continuation. Default OFF (heavyweight, GPU-bound):
         #: when True, reconstruct() continues the mapper's sparse model
         #: through image_undistorter -> patch_match_stereo ->
@@ -372,7 +373,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         #: binary must PROBE as dense-capable before any compute is
         #: spent; a dense failure raises rather than degrading into a
         #: sparse-only success.
-        self.dense_mvs = self._config.dense_mvs
+        self.dense_mvs = self._config.dense_mvs if dense_mvs is None else bool(dense_mvs)
         #: Optional ArtifactStore. When set AND dense_mvs=True, the
         #: fused cloud is ingested through the canonical chain
         #: (parse -> PointCloudData -> content-addressed artifact)

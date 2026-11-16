@@ -125,7 +125,9 @@ def test_api_frame_picker_keeps_contract_and_falls_back(tmp_path, monkeypatch):
     assert label.startswith("sharpness_ranked_windows") and 2 <= len(sel) <= rr.VIDEO_FRAME_BUDGET
     assert all(hasattr(c, "frame_index") and hasattr(c, "timestamp_s") for c in sel)
 
-    monkeypatch.setattr(cq, "score_video_frames", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    from engine.pipeline import facade     # the picker goes through the facade, which holds its own reference to the scorer
+
+    monkeypatch.setattr(facade, "score_video_frames", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     sel2, label2 = rr._pick_video_frames(path, cands)
     assert label2.startswith("uniform_time_sampling") and len(sel2) >= 2
 

@@ -26,9 +26,12 @@ def client(monkeypatch):
 
 
 def _exhaust(host: str) -> None:
-    bucket = rate_limiter.get_bucket(host, rps=0.01, burst=1.0)
-    bucket.tokens = 0.0
-    bucket.last_refill = time.monotonic()
+    # TestClient's peer is "testclient" in some Starlette versions and absent in others (the middleware then keys on its
+    # 127.0.0.1 fallback), so drain both: what matters is that the header cannot mint a different bucket
+    for key in (host, "127.0.0.1"):
+        bucket = rate_limiter.get_bucket(key, rps=0.01, burst=1.0)
+        bucket.tokens = 0.0
+        bucket.last_refill = time.monotonic()
 
 
 def test_rotating_tenant_header_does_not_evade_rate_limit(client):

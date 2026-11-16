@@ -62,7 +62,8 @@ def test_run_benchmark_single_technology():
     assert data["name"] == "TEASER++"
     assert "registration_rmse_m" in data["metrics"]
     assert data["summary_verdict"] == "RECOMMENDED"
-    assert data["vram_peak_mb"] <= 6144.0  # RTX 4050 6GB guarantee
+    # VRAM is reported only when measured (null otherwise, never a made-up number); when present it must fit the 6 GB card
+    assert data["vram_peak_mb"] is None or data["vram_peak_mb"] <= 6144.0
 
 
 def test_run_benchmark_all_technologies():
@@ -72,5 +73,8 @@ def test_run_benchmark_all_technologies():
     data = res.json()
 
     assert data["total_evaluated"] == 50
-    assert data["recommended_count"] >= 10
     assert len(data["results"]) == 50
+    # the harness never recommends what it did not really run: only measured technologies can be RECOMMENDED
+    verdicts = [r["summary_verdict"] for r in data["results"]]
+    assert data["recommended_count"] == verdicts.count("RECOMMENDED") >= 1
+    assert verdicts.count("RECOMMENDED") < len(verdicts)         # simulated/unavailable ones are not in it

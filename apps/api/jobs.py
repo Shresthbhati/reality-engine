@@ -36,7 +36,6 @@ from apps.api.models import (
 )
 from engine.pipeline import world_delta
 from engine.pipeline.dense_gate import dense_auto_enabled
-from reconstruction.colmap_intrinsics import agreed_intrinsics, read_colmap_cameras
 from reconstruction.colmap_session import ColmapSession
 from engine.pipeline.single_image_furniture import maskrcnn_furniture_detector, unload_furniture_model
 from engine.pipeline.open_vocab_furniture import combined_furniture_detector, unload_open_vocab_furniture
@@ -87,8 +86,8 @@ JOB_CANCELLED = "cancelled"
 
 TERMINAL_STATES = frozenset({JOB_PARTIAL, JOB_SUCCEEDED, JOB_FAILED, JOB_CANCELLED})
 TERMINAL_STAGE: dict[str, str] = {
-    JOB_SUCCEEDED: "complete",
-    JOB_PARTIAL: "partial",
+    JOB_SUCCEEDED: "done",                 # the documented vocabulary (STUDIO_CONSUMER_UX_PLAN B-01): done | done_with_warnings
+    JOB_PARTIAL: "done_with_warnings",     # | failed | cancelled; a settled job never reports a non-terminal stage
     JOB_FAILED: "failed",
     JOB_CANCELLED: "cancelled",
 }
@@ -295,12 +294,9 @@ def _colmap_estimated_intrinsics(session: ColmapSession | None, size: tuple[int,
     """(fx, fy, cx, cy) from the world's committed sparse model, only when every camera in it agrees (1%), is a
     pinhole-like (non-fisheye) model and has the images' real size. Else None. (The first job of a world has no
     committed model; the pose stage then adopts the model it just solved: engine/pipeline/stages/s04_pose.py.)"""
-    if session is None:
-        return None
-    manifest = session.committed_manifest()
-    if not manifest or not manifest.get("model_dir"):
-        return None
-    return agreed_intrinsics(read_colmap_cameras(session.current / str(manifest["model_dir"])), size)
+    from engine.pipeline.stages.s04_pose import committed_intrinsics
+
+    return committed_intrinsics(session, size)
 
 
 def _declared_focal_px(declared: dict, size: tuple[int, int]) -> float | None:
@@ -1170,6 +1166,10 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 "mesh": prog.stage_facts.get("mesh"),
                 # Plan F3 / F2 facts: surfaced so the status endpoint can say whether they ran or why not
                 "plane_sweep": prog.stage_facts.get("plane_sweep"),
+                # the dense decision, on the record whether or not dense ran: what was measured (gate), what happened (mvs)
+                "dense_gate": prog.stage_facts.get("dense_gate"),
+                "dense_mvs": prog.stage_facts.get("dense_mvs"),
+                "dense_structure": prog.stage_facts.get("dense_structure"),
                 "timings_s": prog.stage_facts.get("timings_s"),
                 "device_depth_scale": prog.stage_facts.get("device_depth_scale"),
                 "compile": {

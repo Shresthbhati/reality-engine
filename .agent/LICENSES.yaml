@@ -54,6 +54,35 @@ declared_runtime:
     verify: pillow LICENSE file at release time
     redistribution_obligations: notice retention
 
+  - package: open3d (optional extra "geometry")
+    declared_license: MIT
+    version_observed: "0.20.0"
+    usage: statistical outlier removal on sparse points (reconstruction/pointcloud_clean.py); SciPy fallback when absent
+    verify: LICENSE read at the isl-org/Open3D repository 2026-11-16; pip show open3d at release time
+    redistribution_obligations: keep the MIT notice; it depends on dash (MIT), whose stray top-level "benchmarks" package is why
+      the repo's benchmarks/ is a regular package
+
+  - package: usd-core (optional extra "geometry")
+    declared_license: Tomorrow Open Source Technology License 1.0 (modified Apache-2.0; read in the OpenUSD LICENSE.txt)
+    version_observed: "0.26.11"
+    usage: real binary USD export (sdk.reality "usdc") and pxr validation of the usda export
+    verify: LICENSE.txt of PixarAnimationStudios/OpenUSD; read it before redistributing the library itself
+    redistribution_obligations: keep the licence notice; the licence is not plain Apache-2.0
+
+  - package: pycolmap (optional extra "geometry")
+    declared_license: BSD-3-Clause
+    version_observed: "4.2.1"
+    usage: independent cross-check and fallback reader for COLMAP camera models (reconstruction/colmap_intrinsics.py)
+    verify: pip show pycolmap / upstream colmap LICENSE at release time
+    redistribution_obligations: keep the BSD-3-Clause notice
+
+  - package: manifold3d (optional extra "geometry")
+    declared_license: Apache-2.0
+    version_observed: "3.5.5"
+    usage: watertightness verdict on the reconstructed surface and mesh booleans (geometry/mesh_boolean.py)
+    verify: pip show manifold3d / elalish/manifold LICENSE at release time
+    redistribution_obligations: notice retention
+
   - package: pytest (dev only)
     declared_license: MIT
     version_observed: "9.1.1"

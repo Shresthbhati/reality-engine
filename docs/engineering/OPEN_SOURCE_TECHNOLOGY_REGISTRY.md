@@ -68,22 +68,22 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 | opencv | ALREADY_INTEGRATED | Apache-2.0 | n/a | 2026-11-15 | Functionally tested | core dependency |
 | ifcopenshell | ALREADY_INTEGRATED | LGPL-3.0 | n/a | 2026-11-15 | Functionally tested | exporters/ifc_bridge.py via the SDK/API (export extra) |
 | blender | ALREADY_INTEGRATED | GPL-3.0 (COPYING read) | n/a | 2026-11-15 | Functionally tested | exporters/blender generates a Python script; Blender is never linked |
-| pycolmap | APPROVED | BSD-3-Clause | n/a | 2024-07-09 (archived) | Implemented | not integrated; the standalone repo is archived, development moved into colmap/colmap |
+| pycolmap | APPROVED | BSD-3-Clause | n/a | 2024-07-09 (archived) | Functionally tested | reconstruction/colmap_intrinsics.py: independent cross-check and fallback reader for COLMAP models (SfM itself still runs the COLMAP binary) |
 | sam2 | APPROVED | Apache-2.0 | facebook/sam2.1-hiera-small, -large: apache-2.0 | 2026-05-30 | API reachable | perception/segmentation/sam2_box_prompter.py -> grounded_scene -> vertical_slice perception stage (default mask source) |
 | grounded_sam2 | APPROVED | Apache-2.0 | inherits Grounding DINO + SAM 2 | 2025-11-11 | Implemented | pattern only: reproduce with our own adapters, not by vendoring |
 | dinov2 | APPROVED | Apache-2.0 | facebook/dinov2-small, -base: apache-2.0 | 2026-11-05 | API reachable | perception/instances/dinov2_hf.py -> vertical_slice perception_appearance (ON by default; falls back to geometry only, on the record) |
 | florence2 | APPROVED | no GitHub repo (microsoft/Florence-2 returns 404); code ships inside transformers | microsoft/Florence-2-base: mit | - | Implemented | not integrated |
 | depth_anything_v2_small | APPROVED | Apache-2.0 | depth-anything/Depth-Anything-V2-Small-hf: apache-2.0 | 2026-03-24 | Functionally tested | not the live depth model |
-| open3d | APPROVED | MIT (LICENSE read) | n/a | 2026-11-14 | Implemented | not integrated; one reference in code |
+| open3d | APPROVED | MIT (LICENSE read) | n/a | 2026-11-14 | API reachable | reconstruction/pointcloud_clean.py -> vertical_slice scene box (default path; SciPy fallback, backend on the record) |
 | pcl | APPROVED | BSD (LICENSE.txt read) | n/a | 2026-11-14 | Implemented | an internal module named pcl_core exists; the C++ library is not used |
-| manifold | APPROVED | Apache-2.0 | n/a | 2026-11-15 | Implemented | not integrated; an internal 'manifold_kernel' name exists in the catalog map, unverified |
+| manifold | APPROVED | Apache-2.0 | n/a | 2026-11-15 | Functionally tested | geometry/mesh_boolean.py; the mesh stage records a manifold verdict on the reconstructed surface |
 | bytetrack | APPROVED | MIT | n/a | 2024-06-19 | Implemented | perception/tracking exists but is not reachable from the API |
 | gsplat | APPROVED | Apache-2.0 | n/a | 2026-09-19 | Implemented | splat ingest/render exists separately (PR #299) |
 | nerfstudio | APPROVED | Apache-2.0 | n/a | 2025-07-29 | Implemented | not integrated |
 | compas | APPROVED | MIT | n/a | 2026-11-11 | Implemented | not integrated |
-| cvat | APPROVED | MIT | n/a | 2026-11-14 | Implemented | not integrated |
-| label_studio | APPROVED | Apache-2.0 | n/a | 2026-11-14 | Implemented | not integrated |
-| fiftyone | APPROVED | Apache-2.0 | n/a | 2026-11-14 | Implemented | not integrated |
+| cvat | APPROVED | MIT | n/a | 2026-11-14 | Functionally tested | benchmarks/annotation_review.py + scripts/export_annotation_review.py (COCO file exchange; no CVAT server was run here) |
+| label_studio | APPROVED | Apache-2.0 | n/a | 2026-11-14 | Functionally tested | benchmarks/annotation_review.py (Label Studio tasks + labeling config; no server was run here) |
+| fiftyone | APPROVED | Apache-2.0 | n/a | 2026-11-14 | Functionally tested | benchmarks/annotation_review.py to_fiftyone (builds a dataset when installed; clear install hint when not) |
 | limap | APPROVED | BSD-3-Clause | n/a | 2026-09-30 | Implemented | not integrated |
 | hloc | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | depends on the chosen extractor: SuperPoint non-commercial; ALIKED/DISK weights not verified | 2025-12-10 | Implemented | not integrated |
 | alicevision | APPROVED_WITH_RESTRICTIONS | MPL-2.0 (COPYING.md read; includes third-party components) | n/a | 2026-11-13 | Implemented | not integrated |
@@ -93,7 +93,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 | sam_hq | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | not verified | 2025-09-12 | Implemented | not integrated |
 | marigold | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | marigold-depth-v1-1: openrail++ (use restrictions) | 2026-09-06 | Implemented | not integrated |
 | mmtracking | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | varies | 2023-09-19 | Implemented | not integrated |
-| openusd | APPROVED_WITH_RESTRICTIONS | Tomorrow Open Source Technology License 1.0 (modified Apache 2.0; LICENSE.txt read) | n/a | 2026-11-14 | Functionally tested | usda text export exists without the library |
+| openusd | APPROVED_WITH_RESTRICTIONS | Tomorrow Open Source Technology License 1.0 (modified Apache 2.0; LICENSE.txt read) | n/a | 2026-11-14 | Functionally tested | sdk.reality 'usdc' export through pxr; validate_usda uses pxr as the authority |
 | web_ifc | APPROVED_WITH_RESTRICTIONS | MPL-2.0 | n/a | 2026-11-13 | Implemented | not integrated |
 | lightglue | LICENCE_REVIEW_REQUIRED | Apache-2.0 | HF lightglue_superpoint: 'other' (SuperPoint terms, unresolved) | 2026-10-25 | Implemented | adapter exists in repo, not reachable from the API |
 | openmvg | LICENCE_REVIEW_REQUIRED | MPL-2.0 (API); sub-components not audited | n/a | 2026-11-07 | Implemented | not integrated |
@@ -126,7 +126,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 ## Notes per record
 
 * **colmap** (COLMAP): Geometry differs run to run on the same photos (995 vs 1,423 points observed).
-* **pycolmap** (pycolmap): Would remove the long-workspace-path failure class only if SfM moved in-process; no measured need yet.
+* **pycolmap** (pycolmap): SfM stays on the COLMAP binary; running it in-process would remove the long-workspace-path failure class, no measured need yet.
 * **hloc** (hloc): Candidate for SfM reproducibility; extractor weights licence must be checked before use.
 * **lightglue** (LightGlue): Code is Apache-2.0; the pretrained weights' licence is what blocks.
 * **openmvg** (openMVG): Duplicates COLMAP; no measured gap it would close.
@@ -150,13 +150,13 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 * **metric3d** (Metric3D): Needs the weights licence read before any test.
 * **marigold** (Marigold): Slow diffusion model; no evidence it would beat the current depth on our metric.
 * **depth_pro** (Apple Depth Pro): Research-only weights.
-* **open3d** (Open3D): Fifth opportunity: outlier removal and robust registration before plane fitting.
+* **open3d** (Open3D): Outlier removal is integrated; ICP, TSDF and Poisson from Open3D are not used. Installing Open3D pulls in dash, whose stray top-level benchmarks package is why benchmarks/ is now a regular package.
 * **pcl** (PCL): C++ build burden for no gain over Open3D.
 * **pointcept** (Pointcept): Code is MIT, but the dataset terms behind the weights are the blocker.
 * **trimesh** (trimesh): Present in the environment.
 * **cgal** (CGAL): Per-package licensing; core packages are not permissive.
 * **libigl** (libigl): GPL-3.0.
-* **manifold** (Manifold (manifold3d)): Candidate for guaranteed-valid mesh booleans.
+* **manifold** (Manifold (manifold3d)): Booleans are available but no pipeline stage cuts openings with them yet.
 * **cotracker** (CoTracker3): Non-commercial.
 * **bytetrack** (ByteTrack): Repo moved to FoundationVision/ByteTrack; last push 2024-06; the algorithm is small enough to reimplement.
 * **mmtracking** (MMTracking): Unmaintained since 2023-09; heavy mm* dependency stack.
@@ -165,15 +165,15 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 * **nerfstudio** (nerfstudio): No evidence it is needed.
 * **opensplat** (OpenSplat): AGPL-3.0.
 * **graphdeco_3dgs** (Original 3D Gaussian Splatting): Non-commercial terms.
-* **openusd** (OpenUSD): The licence differs from Apache-2.0; read it before linking the library.
+* **openusd** (OpenUSD): The licence differs from Apache-2.0 (Tomorrow Open Source Technology License 1.0); read it before redistributing the library.
 * **ifcopenshell** (IfcOpenShell): LGPL-3.0: dynamic use is fine, modifying/bundling carries obligations.
 * **web_ifc** (web-ifc): File-level copyleft; frontend only.
 * **xeokit** (xeokit): AGPL-3.0.
 * **qgis** (QGIS): GPL: use as an external tool only, never as a linked dependency.
 * **compas** (COMPAS): No identified gap.
 * **blender** (Blender): Safe only as a separate process / generated script.
-* **cvat** (CVAT): Second opportunity: blocks every accuracy metric.
-* **label_studio** (Label Studio): Alternative to CVAT; pick one.
+* **cvat** (CVAT): Integrated as a file exchange: export predictions, review in CVAT, import the corrected COCO, score. Still needs a human to review.
+* **label_studio** (Label Studio): Same review loop as CVAT; either works.
 * **fiftyone** (FiftyOne): Complements the existing benchmark; does not replace it.
 * **scannet** (ScanNet): Datasets need a separate licence read.
 * **arkitscenes** (ARKitScenes): Repo moved to apple-aiml-research.

@@ -1099,6 +1099,16 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
     return facts, metric_maps
 
 
+def _mesh_manifold_status(mesh) -> dict:
+    """manifold3d's verdict on a reconstructed surface mesh; a failure to even run the check is recorded, never raised."""
+    try:
+        from geometry.mesh_boolean import manifold_status
+
+        return manifold_status(mesh.vertices, mesh.faces)
+    except Exception as exc:  # noqa: BLE001 -- a diagnostic must not lose the mesh
+        return {"backend": "manifold3d", "manifold": None, "status": "error", "note": f"{type(exc).__name__}: {exc}"}
+
+
 def _detections_2d(seg_results, image_size):
     """Per-photograph 2D detections for human review: ``{evidence_id: [{region_id, label, confidence, bbox_px}]}``. The box is the
     mask's bounding box scaled from the mask grid (the depth map's) to the photograph's pixel size; empty masks are skipped."""
@@ -2056,6 +2066,8 @@ def _mesh_stage(result, world, options, scale_state: str):
             metadata={
                 **mesh_summary(mesh),
                 "outlier_filter": outlier_facts,
+                # a measured verdict on watertightness (manifold3d), not the "typically not watertight" assumption below
+                "manifold": _mesh_manifold_status(mesh),
                 "input_points_fused": len(points),
                 "input_points_meshed": len(kept),
                 "voxel_size_m": options.mesh_voxel_size_m,

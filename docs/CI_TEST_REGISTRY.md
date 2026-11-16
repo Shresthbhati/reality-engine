@@ -87,7 +87,7 @@ Total: 1
 
 ## unlisted
 
-Total: 495
+Total: 496
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -333,6 +333,7 @@ Total: 495
 - `tests/test_material_hypotheses.py`
 - `tests/test_measurements.py`
 - `tests/test_media_preprocessing.py`
+- `tests/test_mesh_boolean.py`
 - `tests/test_mesh_exporters.py`
 - `tests/test_mesh_lod_generation.py`
 - `tests/test_mesh_repair_and_completeness.py`

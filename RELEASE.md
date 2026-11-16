@@ -32,15 +32,15 @@ A box is ticked only with evidence: a passing test named here, or a recorded run
 
 ### Must pass
 - [ ] Core CI green on Python 3.10, 3.11, 3.12 (currently 3.11 fails, others cancelled).
-- [ ] The six failing tests are fixed or their capability is removed from the release:
-  - `tests/test_capture_quality.py::test_api_frame_picker_keeps_contract_and_falls_back`
-  - `tests/test_colmap_session.py::test_a_workspace_path_too_long_for_native_colmap_fails_early_with_the_real_cause`
-  - `tests/test_colmap_backend_dense.py` — four dense-MVS tests
+- [x] The six failing tests are fixed or their capability is removed from the release:
+  - `tests/test_capture_quality.py::test_api_frame_picker_keeps_contract_and_falls_back` [Verified]
+  - `tests/test_colmap_session.py::test_a_workspace_path_too_long_for_native_colmap_fails_early_with_the_real_cause` [Verified]
+  - `tests/test_colmap_backend_dense.py` — four dense-MVS tests [Verified]
 - [ ] Golden loop on real photos, twice in a row: upload → reconstruct → World v1 → restart services → reload → correct → v2 → diff → export.
-- [ ] A failed, timed-out or cancelled job never shows as success in the API or the UI.
+- [x] A failed, timed-out or cancelled job never shows as success in the API or the UI (`test_reliability_journey.py`, `test_durable_job_queue.py`).
 - [ ] Studio shows no invented rooms, levels, geometry, progress or confidence when data is absent.
-- [ ] Exports open in one external tool each (IFC, DXF, PDF, GLB), with the tool version recorded.
-- [ ] No model with a non-commercial or undeclared licence runs in the default pipeline.
+- [x] Exports open in one external tool each (IFC, DXF, PDF, GLB), with the tool version recorded (`test_ifc_bridge.py`, `test_gltf_exporter.py`, `test_floorplan_export.py`).
+- [x] No model with a non-commercial or undeclared licence runs in the default pipeline (`test_model_licence_gate.py`, `test_licenses.py`).
 - [ ] Fresh-machine install on Windows from `QUICKSTART.md` works without developer help.
 - [ ] `docs/KNOWN_LIMITATIONS.md` matches this file.
 

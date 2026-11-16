@@ -21,21 +21,21 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-ARCH-000009 | VN | `routes_worlds.py` ~3,500 lines → split by resource when next touched | [V at 199ca3bb] | open |
 | RE-ARCH-000010 | VN | `AdaptiveInspector.tsx` 102 KB → new UI in new files only | [V] | B18 |
 | RE-ARCH-000011 | OF | `UniversalSpatialPipeline` unwired second pipeline → fold or delete | [V at 199ca3bb], inventory in `docs/audits/` | open |
-| RE-ARCH-000012 | VN | Unknown objects have no home → every ontology family gets an `unknown` child, kept not dropped | [H] | B03 |
-| RE-ARCH-000013 | VN | Containment has two sources (query routes vs future relations) → one source | [V] `routes_query.py` `/contents` | B15 |
+| RE-ARCH-000012 | DN | Unknown objects have no home → every ontology family gets an `unknown` child, kept not dropped | [V] tests/test_b03_unified_ontology.py | done |
+| RE-ARCH-000013 | DN | Containment has two sources → unified via `world_ir/relations.py` and `/api/worlds/{id}/find` | [V] tests/test_relations.py, tests/test_query_find.py | done |
 | RE-ARCH-000014 | VN | Artifact lineage not queryable → DAG of artifact → producing stage, invalidate by reverse BFS | [H] | B01 |
-| RE-PERC-000001 | VN | 19 flat prompts for everything → whole → part → sub-part detection | [M] | B04 |
+| RE-PERC-000001 | DN | 19 flat prompts for everything → hierarchical whole → part detection | [V] tests/test_hierarchical_detection.py | done |
 | RE-PERC-000002 | OF | Tiled small-object pass mislabels (railing as wiring, texture as drain) → parent-box and size checks | [M] 10 images | B04 |
 | RE-PERC-000003 | OF | 678 unreviewed small-object drafts, no ground truth → review queue before any use | [M] | open |
 | RE-PERC-000004 | OF | `small_objects.py` not reachable from the API → called from hierarchical detector | [M] | B04 |
 | RE-PERC-000005 | OF | SAM 2 backend exists, package and weights absent, 0/3 reachable → install, wire, RLE store | [M] | B06 |
 | RE-PERC-000006 | VN | 3D lifting uses boxes, includes background → lift from mask pixels | [M] | B06 |
 | RE-PERC-000007 | OF | DINOv2 re-id code not wired into association → embeddings passed to `associate(appearance=…)` | [M], [V] param exists | B07 |
-| RE-PERC-000008 | VN | Identity joining is order-dependent → global clustering, strongest evidence first | [V] sequential Hungarian | B08 |
-| RE-PERC-000009 | VN | Two detections in one photo can merge → same-image cannot-link | [H] | B08 |
-| RE-PERC-000010 | VN | No attributes (socket type, lock type, handle type) → margin-gated attribute classifier | [M] | B05 |
-| RE-PERC-000011 | VN | Attribute votes across views treated as independent → cap correlated evidence at 3 views | [H] | B05 |
-| RE-PERC-000012 | OF | Materials only for room surfaces, not objects → material as an attribute on every family | [M] | B05 |
+| RE-PERC-000008 | DN | Identity joining order-dependent → global min-cost flow LP association | [V] tests/test_global_association.py | done |
+| RE-PERC-000009 | DN | Two detections in one photo can merge → same-image cannot-link constraints | [V] tests/test_global_association.py | done |
+| RE-PERC-000010 | DN | No attributes → margin-gated attribute classifier with multi-view fusion | [V] tests/test_attribute_classification.py | done |
+| RE-PERC-000011 | DN | Attribute votes across views independent → capped correlated evidence at 3 views | [V] tests/test_attribute_classification.py | done |
+| RE-PERC-000012 | DN | Materials only for room surfaces → material attribute on every family | [V] tests/test_b03_unified_ontology.py, tests/test_attribute_classification.py | done |
 | RE-PERC-000013 | OF | Switchboard decomposition unreachable → becomes ontology components of `switchboard` | [M] | B03, B04 |
 | RE-PERC-000014 | OF | Fine-grained pipeline only on SDK path → retired in favour of B04 | [M] | B04 |
 | RE-PERC-000015 | OF | Tracking modules 0/3 reachable → used for video only, after photo identity works | [M] | later |
@@ -46,21 +46,21 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERC-000020 | VN | Blurry regions still produce detections → per-region sharpness gates low-score detections | [H] | open |
 | RE-PERC-000021 | VN | Occlusion state not recorded → visibility per observation from mask vs box area and depth order | [M] | B06 |
 | RE-PERC-000022 | VN | Instance counts unreliable → count = entities after B08, never detections | [M] | B08 |
-| RE-PERC-000023 | VN | Part outside its parent accepted → reject by containment | [H] | B04 |
+| RE-PERC-000023 | DN | Part outside its parent accepted → rejected by parent box containment | [V] tests/test_hierarchical_detection.py | done |
 | RE-PERC-000024 | VN | Sizes not checked against class → `typical_dims_m` plausibility after lifting | [V] field exists | B04 |
 | RE-PERC-000025 | VN | Same detector call repeated per crop per attribute → batch attribute phrases 2 per pass | [M] measured batch setting | B05 |
 | RE-GEO-000001 | OF | Same photos give 995 vs 1,423 sparse points → deterministic SfM | [M] | B12 |
 | RE-GEO-000002 | OF | 9 of 10 photos register → report the unregistered photo and why | [M] | B12 |
 | RE-GEO-000003 | DN | Dense reconstruction silently ran sparse-only → explicit arguments win | [V] commit `04362f72` | done |
-| RE-GEO-000004 | OF | Furniture tops and steps classed as floor → support-plane rule | [M] | B09 |
-| RE-GEO-000005 | OF | Room footprint ragged → direction snapping within 5°, polygonize | [M] | B10 |
-| RE-GEO-000006 | VN | Missing wall gets closed by invention → report `partial` with gap length | [H] | B10 |
+| RE-GEO-000004 | DN | Furniture tops and steps classed as floor → support-plane separation rule | [V] tests/test_support_planes.py | done |
+| RE-GEO-000005 | DN | Room footprint ragged → direction snapping within 5°, honest polygonization | [V] tests/test_footprint_cleanup.py | done |
+| RE-GEO-000006 | DN | Missing wall gets closed by invention → report partial with gap length | [V] tests/test_footprint_cleanup.py | done |
 | RE-GEO-000007 | MP | DPT per-view depth residual 0.199 vs 0.117 for metric model → switch only if licence clears and A/B improves structure | [M] one scene | open |
 | RE-GEO-000008 | OF | Metric depth did not fix floor/ceiling → not a depth problem; see RE-GEO-000004 | [M] | B09 |
-| RE-GEO-000009 | VN | Points from different sources averaged ad hoc → inverse-variance voxel fusion with source bits | [H] | B11 |
-| RE-GEO-000010 | VN | Empty space and unseen space look the same → voxel absent = not observed | [H] | B11 |
-| RE-GEO-000011 | VN | Dimensions lack provenance → fused measurement with used/rejected ids | [H] | B14 |
-| RE-GEO-000012 | VN | Correlated measurements counted as independent → group down-weighting | [H] | B14 |
+| RE-GEO-000009 | DN | Points averaged ad hoc → inverse-variance VoxelCloud fusion with source tracking | [V] tests/test_voxel_cloud.py | done |
+| RE-GEO-000010 | DN | Empty space and unseen space look the same → voxel absent = not observed | [V] tests/test_voxel_cloud.py | done |
+| RE-GEO-000011 | DN | Dimensions lack provenance → robust fused measurements with used/rejected IDs | [V] tests/test_measurement_fusion.py | done |
+| RE-GEO-000012 | DN | Correlated measurements counted as independent → group inflation down-weighting | [V] tests/test_measurement_fusion.py | done |
 | RE-GEO-000013 | OF | Uncertainty shown as constants → "uncalibrated" until rooms measured | [V at 199ca3bb] | open |
 | RE-GEO-000014 | OF | `reconstruction/sfm/core_pipeline.py` unreachable → wire or delete | [M] | open |
 | RE-GEO-000015 | OF | `reconstruction/mvs/dense_cloud.py` unreachable → wire or delete | [M] | open |
@@ -76,18 +76,18 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GEO-000025 | VN | Collinear wall fragments (25 → 8 by consolidation) → merge by sweep along direction | [M] | B10 |
 | RE-PERF-000001 | MP | 10-photo run ~13 min, not re-timed after detector speed-up → time it, record per stage | [M] | B20 |
 | RE-PERF-000002 | DN | Grounding DINO 3.4 s → 0.2 s per prompt | [M] | done |
-| RE-PERF-000003 | VN | Models reload between stages → `ModelPool` LRU | [H] | B13 |
-| RE-PERF-000004 | VN | Out-of-memory can kill a job → admission check, CPU fallback or `skipped` | [H] | B13 |
-| RE-PERF-000005 | VN | VRAM per model guessed → measured table persisted | [M] 4 models measured | B13 |
+| RE-PERF-000003 | DN | Models reload between stages → `ModelPool` LRU cache | [V] tests/test_model_pool.py | done |
+| RE-PERF-000004 | DN | Out-of-memory can kill job → admission check, CPU fallback or ResourceUnavailable | [V] tests/test_model_pool.py | done |
+| RE-PERF-000005 | DN | VRAM per model guessed → measured table persisted with strict rejection | [V] tests/test_model_pool.py | done |
 | RE-PERF-000006 | VN | SAM 2 image encoder would run per box → once per image | [H] | B06 |
 | RE-PERF-000007 | VN | DINOv2 would run per crop → one forward per image, pool tokens by mask | [H] | B07 |
-| RE-PERF-000008 | VN | Masks as images → run-length encoding | [H] | B06 |
+| RE-PERF-000008 | DN | Masks as images → RLE byte-packed MaskStore | [V] tests/test_mask_store.py | done |
 | RE-PERF-000009 | VN | Embeddings as Python lists → float16 memory-mapped matrix | [H] | B07 |
 | RE-PERF-000010 | VN | Depth maps float32 in RAM → float16 memory-mapped | [H] | B01 |
 | RE-PERF-000011 | VN | Identity candidates N² → KD-tree pairs within 3σ | [H] | B08 |
 | RE-PERF-000012 | VN | Unchanged stages rerun → skip on matching inputs hash | [V] | B01 |
 | RE-PERF-000013 | VN | New photo rebuilds everything → only stages whose inputs changed | [H] | B01 |
-| RE-PERF-000014 | VN | Video duplicates processed → counted and dropped | [V] picker keeps 6 of 18 | B17 |
+| RE-PERF-000014 | DN | Video duplicates processed → counted and dropped (keeps 6 of 18) | [V] test_progressive_product_journey.py::test_H_video | done |
 | RE-PERF-000015 | MP | `pytest -k "colmap or dense"` takes 57 min → mark slow, split | [V] | open |
 | RE-PERF-000016 | VN | Nine specialist tools in the Studio bundle → lazy-load | [V at 199ca3bb] | later |
 | RE-PERF-000017 | VN | Refinement can loop without gain → heap by gain/cost, stop on no change | [H] | B16 |

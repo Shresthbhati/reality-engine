@@ -61,7 +61,7 @@ def to_coco(detections: Mapping[str, Sequence[dict]], images: Mapping[str, str |
             x0, y0, x1, y1 = b["bbox_px"]
             anns.append({"id": len(anns) + 1, "image_id": img_id, "category_id": cats[b["label"]],
                          "bbox": [x0, y0, x1 - x0, y1 - y0], "area": (x1 - x0) * (y1 - y0), "iscrowd": 0,
-                         "score": None, "attributes": {"region_id": None, "source": "second_opinion"}})
+                         "score": b.get("score"), "attributes": {"region_id": None, "source": b.get("source", "second_opinion")}})
     return {"info": {"description": "Reality Engine detection predictions for human review", **(extra_info or {})},
             "categories": [{"id": i, "name": n} for n, i in cats.items()], "images": out_images, "annotations": anns}
 
@@ -75,9 +75,14 @@ def coco_from_perception(perception: Mapping, images: Mapping[str, str | Path], 
     if not detections:
         raise ValueError("no 2D detections were recorded (the perception stage did not run, or found nothing)")
     second = perception.get("second_opinion") or {}
-    extra = {eid: [{"label": b["label"], "bbox_px": b["bbox_px"]} for b in (v.get("second_only") or [])]
+    extra = {eid: [{"label": b["label"], "bbox_px": b["bbox_px"], "source": "second_opinion"} for b in (v.get("second_only") or [])]
              for eid, v in (second.get("per_view") or {}).items() if eid in images}
+    small = perception.get("small_fittings") or {}
+    for d in small.get("detections") or []:                      # unverified tiled detections: a reviewer keeps the real ones
+        if d.get("view") in images:
+            extra.setdefault(d["view"], []).append({"label": d["class"], "bbox_px": d["box_px"], "score": d.get("score"), "source": "small_fitting"})
     info = {"reality_engine": {
+        "small_fittings": ({"status": small.get("status"), "detections_by_class": small.get("detections_by_class")} if small else None),
         "version_id": version_id,
         "dropped_by_plausibility_filter": (perception.get("resolution") or {}).get("dropped_detail", []),
         "second_opinion": ({"status": second.get("status"), "detector": second.get("detector"), "totals": second.get("totals")} if second else None),
@@ -140,6 +145,37 @@ def read_coco(path_or_dict) -> Dict[str, List[dict]]:
         x, y, w, h = a["bbox"]
         out[key[a["image_id"]]].append({"label": cats[a["category_id"]], "bbox_px": [x, y, x + w, y + h]})
     return out
+
+
+def score_sources(exported_coco: dict, reviewed_coco: dict, iou_min: float = 0.5) -> dict:
+    """How much of what each EXTRA source proposed did a human keep? For every box the export marked ``second_opinion`` or
+    ``small_fitting``, it counts as kept when the reviewed file has a box with the same label at IoU >= ``iou_min`` on that image.
+    Precision per source and per label, over REVIEWED images only; ``unreviewed`` when the review covers none of them. This measures
+    how useful a source's proposals are to a reviewer, not detector accuracy in general."""
+    reviewed = read_coco(reviewed_coco)
+    cats = {c["id"]: c["name"] for c in exported_coco["categories"]}
+    key = {im["id"]: (im.get("evidence_id") or im["file_name"]) for im in exported_coco["images"]}
+    tally: Dict[str, Dict[str, Dict[str, int]]] = {}
+    for a in exported_coco["annotations"]:
+        src = (a.get("attributes") or {}).get("source")
+        eid = key[a["image_id"]]
+        if src in (None, "prediction") or eid not in reviewed:
+            continue
+        x, y, w, h = a["bbox"]
+        label = cats[a["category_id"]]
+        hit = any(g["label"] == label and _iou([x, y, x + w, y + h], g["bbox_px"]) >= iou_min for g in reviewed[eid])
+        t = tally.setdefault(src, {}).setdefault(label, {"proposed": 0, "kept": 0})
+        t["proposed"] += 1
+        t["kept"] += int(hit)
+    if not tally:
+        return {"status": "unreviewed", "note": "no extra-source boxes on reviewed images", "sources": {}}
+    out = {}
+    for src, labels in tally.items():
+        proposed, kept = sum(v["proposed"] for v in labels.values()), sum(v["kept"] for v in labels.values())
+        out[src] = {"proposed": proposed, "kept": kept, "precision": kept / proposed if proposed else None,
+                    "per_label": {k: {**v, "precision": v["kept"] / v["proposed"]} for k, v in sorted(labels.items())}}
+    return {"status": "scored", "iou_min": iou_min, "sources": out,
+            "note": "share of each source's proposals that a human kept; not detector accuracy in general"}
 
 
 def _iou(a: Sequence[float], b: Sequence[float]) -> float:

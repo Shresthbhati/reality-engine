@@ -39,6 +39,7 @@ def main(argv=None) -> int:
     s.add_argument("--reviewed", required=True)
     s.add_argument("--out", required=True)
     s.add_argument("--iou", type=float, default=0.5)
+    s.add_argument("--exported", help="the coco.json this review started from; adds precision of the second-opinion / small-fitting proposals")
     a = p.parse_args(argv)
 
     perception = _perception(json.loads(Path(a.report).read_text(encoding="utf-8")))
@@ -58,6 +59,9 @@ def main(argv=None) -> int:
         print(f"wrote {len(coco['images'])} images, {len(coco['annotations'])} predicted boxes to {out}")
         return 0
     report = ar.score(det, ar.read_coco(a.reviewed), iou_min=a.iou)
+    if getattr(a, "exported", None):                      # the file the review started from: also score the extra sources
+        reviewed_coco = json.loads(Path(a.reviewed).read_text(encoding="utf-8"))
+        report["extra_sources"] = ar.score_sources(json.loads(Path(a.exported).read_text(encoding="utf-8")), reviewed_coco, iou_min=a.iou)
     Path(a.out).write_text(json.dumps(report, indent=1), encoding="utf-8")
     print(json.dumps({k: v for k, v in report.items() if k != "per_label"}), "\n", json.dumps(report["per_label"], indent=1))
     return 0

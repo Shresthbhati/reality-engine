@@ -97,3 +97,45 @@ def test_extra_boxes_from_a_second_detector_are_marked_and_unscored():
     kept = ar.read_coco(coco)
     r = ar.score(PRED, kept)
     assert r["per_label"]["lamp"]["fn"] == 1 and r["per_label"]["lamp"]["recall"] == 0.0
+
+
+def test_small_fitting_detections_join_the_review_package_marked_as_such():
+    perception = {
+        "detections_2d": PRED,
+        "small_fittings": {"status": "ran", "detections_by_class": {"electrical.switchboard.module.socket": 1},
+                           "detections": [{"view": "e1", "class": "electrical.switchboard.module.socket", "box_px": [300.0, 400.0, 330.0, 430.0],
+                                           "score": 0.61, "stage": "fine"},
+                                          {"view": "not-an-image-we-have", "class": "x", "box_px": [0, 0, 1, 1], "score": 0.9, "stage": "fine"}]},
+    }
+    coco = ar.coco_from_perception(perception, IMAGES, SIZES, version_id="v1")
+    marked = [a for a in coco["annotations"] if a["attributes"]["source"] == "small_fitting"]
+    assert len(marked) == 1 and marked[0]["score"] == 0.61 and marked[0]["bbox"] == [300.0, 400.0, 30.0, 30.0]
+    assert coco["info"]["reality_engine"]["small_fittings"]["status"] == "ran"
+    assert "electrical.switchboard.module.socket" in {c["name"] for c in coco["categories"]}
+    # nothing recorded -> no section, no extra boxes
+    plain = ar.coco_from_perception({"detections_2d": PRED}, IMAGES, SIZES)
+    assert plain["info"]["reality_engine"]["small_fittings"] is None
+    assert not [a for a in plain["annotations"] if a["attributes"]["source"] != "prediction"]
+
+
+def test_score_sources_measures_how_much_of_each_extra_source_a_human_kept():
+    extra = {"e1": [{"label": "lamp", "bbox_px": [500.0, 10.0, 540.0, 90.0], "source": "second_opinion"},
+                    {"label": "rug", "bbox_px": [0.0, 300.0, 100.0, 400.0], "source": "second_opinion"}],
+             "e2": [{"label": "lamp", "bbox_px": [20.0, 20.0, 60.0, 100.0], "source": "second_opinion"}]}
+    exported = ar.to_coco(PRED, IMAGES, SIZES, extra_boxes=extra)
+    reviewed = json.loads(json.dumps(exported))
+    # the reviewer keeps e1's lamp, deletes e1's rug, and never opens e2 (drops that image from the review)
+    reviewed["annotations"] = [a for a in reviewed["annotations"]
+                               if not (a["attributes"]["source"] == "second_opinion" and a["category_id"] == next(
+                                   c["id"] for c in reviewed["categories"] if c["name"] == "rug"))]
+    reviewed["images"] = [im for im in reviewed["images"] if im["evidence_id"] == "e1"]
+    reviewed["annotations"] = [a for a in reviewed["annotations"] if a["image_id"] == reviewed["images"][0]["id"]]
+    r = ar.score_sources(exported, reviewed)
+    s = r["sources"]["second_opinion"]
+    assert r["status"] == "scored" and (s["proposed"], s["kept"], s["precision"]) == (2, 1, 0.5)      # e2 was not reviewed: not counted
+    assert s["per_label"]["lamp"]["precision"] == 1.0 and s["per_label"]["rug"]["precision"] == 0.0
+
+
+def test_score_sources_with_no_extra_boxes_or_no_review_produces_no_number():
+    exported = ar.to_coco(PRED, IMAGES, SIZES)
+    assert ar.score_sources(exported, exported)["status"] == "unreviewed"

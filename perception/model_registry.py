@@ -321,6 +321,18 @@ _DEFAULT_MODELS = [
         output_contract="One binary instance mask per box (H, W)",
     ),
     ModelSpec(
+        name="dinov2_small_hf",
+        task="appearance_embedding",
+        source="huggingface:facebook/dinov2-small@ed25f3a31f01632728cabb09d1542f84ab7b0056",
+        checkpoint=_HF_HOME / "models--facebook--dinov2-small",
+        license="Apache-2.0",
+        commercial_ok=True,
+        measured_vram_mb=0.0,  # not yet measured (22M parameters, one 224x224 batch per photograph)
+        status="active",  # integrated: perception/instances/dinov2_hf.py -> vertical_slice perception_appearance -> association gate
+        input_contract="RGB crop of an instance mask, 224x224",
+        output_contract="Unit-norm 384-d CLS embedding per instance",
+    ),
+    ModelSpec(
         name="sam2_hiera_small",
         task="promptable_segmentation",
         source="github:facebookresearch/sam2",

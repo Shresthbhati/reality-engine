@@ -287,6 +287,15 @@ models:
     checksum: git revision ee5bba1d82bb8749febdf90f45e84b687142ba03
     verify: model card license apache-2.0 read 2026-11-15
 
+  - model: dinov2_small_hf
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 0.0   # not yet measured
+    status: active
+    acquisition: huggingface facebook/dinov2-small (snapshot_download; local cache only)
+    checksum: git revision ed25f3a31f01632728cabb09d1542f84ab7b0056
+    verify: model card license apache-2.0 read 2026-11-16
+
   - model: sam2_hiera_small
     license: Apache-2.0
     commercial_ok: true

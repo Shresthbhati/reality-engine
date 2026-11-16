@@ -115,9 +115,10 @@ class VerticalSliceOptions:
     perception_mask_source: str = "sam2"
     #: learned appearance for cross-view object identity: "dinov2" (DINOv2-small embedding of each masked crop, fed to the
     #: association resolver's appearance gate; skipped on the record when the checkpoint is missing) or None (geometry only).
-    #: Off by default: on the 10-photo room it separated same- from different-label crops cleanly (cosine 0.63 vs 0.16) but
-    #: changed no association decision (16 objects, identical, either way), so it costs a model load for no measured gain yet.
-    perception_appearance: Optional[str] = None
+    #: On by default: it separates same- from different-label crops cleanly (cosine 0.63 vs 0.16 on the 10-photo room) and fails
+    #: safe (geometry only, reason recorded) when the checkpoint is missing. It changed no association decision on that room, so
+    #: no accuracy gain is claimed; it is the gate that keeps two same-label objects apart when geometry alone is ambiguous.
+    perception_appearance: Optional[str] = "dinov2"
     #: Content-addressed store for real geometry artifacts: the surface
     #: mesh (stage 3.6) and, when given, the promoted planes' inlier
     #: point payloads. None keeps legacy behavior (no real payloads).
@@ -1219,6 +1220,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
 
     resolution = {"resolver": options.object_resolver}
     assoc = None
+    cameras: dict[str, PinholeCamera] = {}      # filled by the association branch; the scale-drift absorb below needs them
     if options.object_resolver == "union_find":
         candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
     elif options.object_resolver == "association":
@@ -1231,7 +1233,6 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         # Build PinholeCamera objects from the registered poses so the
         # association resolver can run two-view epipolar geometric
         # verification (instead of depth-only distance gating).
-        cameras: dict[str, PinholeCamera] = {}
         for pose in result.camera_poses:
             try:
                 cameras[pose.evidence_id] = camera_from_pose(intrinsics, pose)
@@ -1256,6 +1257,9 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     n_resolved = len(candidates)
     candidates = fuse_overlapping_candidates(candidates)
     resolution["fused_overlapping"] = n_resolved - len(candidates)
+    # object_resolution.absorb_scale_drift_duplicates exists but is deliberately NOT applied here: on the 10-photo room it
+    # absorbed 0 (confirmed positions project from near to 10,000 px away in the orphans' photographs, so the reprojection test
+    # cannot separate "same object, wrong depth" from "another object"); revisit when depth scale is consistent across views
     if grounded:
         # open-vocabulary detectors name things that are not there; an object backed by ONE photograph must be confident
         from perception.detection.grounded_scene import filter_implausible, scene_box

@@ -119,6 +119,10 @@ class VerticalSliceOptions:
     #: safe (geometry only, reason recorded) when the checkpoint is missing. It changed no association decision on that room, so
     #: no accuracy gain is claimed; it is the gate that keeps two same-label objects apart when geometry alone is ambiguous.
     perception_appearance: Optional[str] = "dinov2"
+    #: tiled Grounding DINO pass for small fittings (sockets, switches, handles, vents). Off by default: it costs minutes of GPU
+    #: per job and its detections are UNVERIFIED (~55 boxes per photograph on the 10-photo room, implausibly many), so when on
+    #: they are recorded as 2D facts under perception.small_fittings and never promoted to entities.
+    perception_small_fittings: bool = False
     #: Content-addressed store for real geometry artifacts: the surface
     #: mesh (stage 3.6) and, when given, the promoted planes' inlier
     #: point payloads. None keeps legacy behavior (no real payloads).
@@ -1095,6 +1099,43 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
     return facts, metric_maps
 
 
+def _small_fittings_facts(enabled, evidence_items, depth_by_id):
+    """Tiled small-fittings detections per registered photograph as RECORDED 2D FACTS (``promoted_to_entities`` is always False).
+    None when not requested. Never raises: unavailable or failing is a recorded status."""
+    if not enabled:
+        return None
+    try:
+        from collections import Counter
+
+        import numpy as np
+
+        from engine.core.image_io import open_oriented
+        from engine.pipeline.open_vocab_furniture import item_path
+        from perception.detection.grounded_small import GroundedSmallDetector
+        from perception.entities.small_objects import inspect_small_objects
+
+        detector, totals, per_view, kept, tiles = GroundedSmallDetector(), Counter(), {}, [], 0
+        for item in evidence_items:
+            eid = getattr(item, "id", None) or item.evidence_id
+            if eid not in depth_by_id:
+                continue
+            res = inspect_small_objects(np.asarray(open_oriented(item_path(item)).convert("RGB")), detector,
+                                        min_score=detector.threshold)
+            if res.status != "ok":
+                return {"status": res.status, "note": res.note, "promoted_to_entities": False}
+            counts = Counter(d.class_id for d in res.detections)
+            per_view[eid], tiles = dict(counts), tiles + res.tiles_run
+            totals.update(counts)
+            kept += [{"view": eid, "class": d.class_id, "box_px": [round(v, 1) for v in d.box], "score": round(d.score, 3),
+                      "stage": d.stage} for d in res.detections]
+        return {"status": "ran", "promoted_to_entities": False, "tiles_run": tiles, "detections_by_class": dict(totals),
+                "per_view": per_view, "detections": kept[:300],
+                "note": "unverified 2D detections (Grounding DINO tiles); not entities, no accuracy claim"}
+    except Exception as exc:  # noqa: BLE001 -- an enhancement; its failure must not lose the objects
+        log.warning("small-fittings pass failed", exc_info=True)
+        return {"status": "failed", "note": str(exc), "promoted_to_entities": False}
+
+
 def _region_appearance(kind, evidence_items, seg_results, hypotheses):
     """DINOv2 embedding of each lifted region's masked crop, keyed like the association observations (``<evidence>|<region>``).
 
@@ -1324,9 +1365,11 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             "note": f"object entities rejected by world validation; world left as it was: {[str(i) for i in report.errors[:3]]}",
         }
 
+    small_fittings = _small_fittings_facts(options.perception_small_fittings, evidence_items, depth_by_id)
     return {
         "status": "ran",
         "model": options.perception_model,
+        **({"small_fittings": small_fittings} if small_fittings is not None else {}),
         "views_segmented": len(seg_results),
         "masks_considered": masks_total,
         "hypotheses_lifted": len(hypotheses),

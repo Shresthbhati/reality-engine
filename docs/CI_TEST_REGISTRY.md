@@ -87,7 +87,7 @@ Total: 1
 
 ## unlisted
 
-Total: 492
+Total: 493
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -473,6 +473,7 @@ Total: 492
 - `tests/test_simulation_loop.py`
 - `tests/test_single_image_furniture.py`
 - `tests/test_single_image_layout_bridge.py`
+- `tests/test_small_fittings_stage.py`
 - `tests/test_space_graph.py`
 - `tests/test_space_graph_api.py`
 - `tests/test_spatial_continuity.py`

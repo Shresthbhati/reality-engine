@@ -335,3 +335,25 @@ def test_perception_stage_drops_weak_single_view_objects_but_keeps_confirmed_one
     facts = vs._perception_stage(result, world, [_Ev("IMG_A"), _Ev("IMG_B")], maps, options)
     labels = sorted(e.semantic_labels[0] for e in world.entities.values() if e.id.startswith("entity-object"))
     assert labels == ["sofa"] and facts["resolution"]["dropped_weak_single_view"] == 1
+
+
+def test_filter_implausible_can_say_what_it_dropped_and_why():
+    from types import SimpleNamespace as NS
+
+    import numpy as np
+
+    from engine.math import Vec3
+    from perception.detection.grounded_scene import filter_implausible
+
+    box = (np.array([0.0, 0.0, 0.0]), np.array([10.0, 3.0, 10.0]))
+
+    def cand(label, pos, views, conf=0.8):
+        return NS(label=label, position=Vec3(*pos), bounds_min=Vec3(*(p - 0.5 for p in pos)), bounds_max=Vec3(*(p + 0.5 for p in pos)),
+                  evidence_ids=tuple(f"v{i}" for i in range(views)), confidence=conf)
+
+    detail: list = []
+    kept, dropped = filter_implausible([cand("sofa", (5, 1, 5), 3), cand("tv", (80, 1, 5), 3)], box, n_views=3, detail=detail)
+    assert [c.label for c in kept] == ["sofa"] and dropped == {"outside_scene": 1}
+    assert detail == [{"label": "tv", "reason": "outside_scene", "views": 3, "confidence": 0.8, "position_m": [80.0, 1.0, 5.0]}]
+    # without the argument nothing changes for existing callers
+    assert filter_implausible([cand("tv", (80, 1, 5), 3)], box, n_views=3) == ([], {"outside_scene": 1})

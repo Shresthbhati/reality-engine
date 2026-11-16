@@ -1378,8 +1378,10 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         from reconstruction.pointcloud_clean import remove_statistical_outliers
 
         keep_mask, resolution["scene_box_cleaning"] = remove_statistical_outliers([tuple(getattr(p, "position", p)) for p in result.points])
+        dropped_detail: list = []
         candidates, dropped = filter_implausible(
-            candidates, scene_box([p for p, k in zip(result.points, keep_mask) if k]), n_views=len(depth_by_id))
+            candidates, scene_box([p for p, k in zip(result.points, keep_mask) if k]), n_views=len(depth_by_id), detail=dropped_detail)
+        resolution["dropped_detail"] = dropped_detail           # what was dropped, so a human can check the filter's calls
         resolution["dropped"] = dropped
         resolution["dropped_weak_single_view"] = dropped.get("weak_single_view", 0) + dropped.get("single_view", 0)
 

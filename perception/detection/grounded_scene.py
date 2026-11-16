@@ -159,8 +159,9 @@ def scene_box(points) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     return np.percentile(pts, 2, axis=0), np.percentile(pts, 98, axis=0)
 
 
-def filter_implausible(candidates, box, n_views: int, min_confidence: float = MIN_SINGLE_VIEW_CONFIDENCE):
-    """Drop candidates that cannot be real objects of this scene; returns (kept, {reason: count}).
+def filter_implausible(candidates, box, n_views: int, min_confidence: float = MIN_SINGLE_VIEW_CONFIDENCE, detail=None):
+    """Drop candidates that cannot be real objects of this scene; returns (kept, {reason: count}). When ``detail`` is a list, each
+    dropped candidate is appended to it as ``{label, reason, views, confidence, position_m}`` so a human can see WHAT was dropped.
 
     Reasons, in order: ``outside_scene`` (centre beyond the sparse points' box grown by SCENE_MARGIN), ``scene_sized``
     (longest side > MAX_SIDE_SHARE of the scene's longest axis extent), ``single_view`` (one photograph, though the capture has
@@ -169,6 +170,13 @@ def filter_implausible(candidates, box, n_views: int, min_confidence: float = MI
 
     dropped: Counter = Counter()
     kept = []
+
+    def drop(c, reason: str) -> None:
+        dropped[reason] += 1
+        if detail is not None:
+            detail.append({"label": c.label, "reason": reason, "views": len(c.evidence_ids), "confidence": round(float(c.confidence), 3),
+                           "position_m": [round(float(c.position.x), 2), round(float(c.position.y), 2), round(float(c.position.z), 2)]})
+
     if box is not None:
         lo, hi = box
         diag = float(np.linalg.norm(hi - lo))
@@ -179,17 +187,17 @@ def filter_implausible(candidates, box, n_views: int, min_confidence: float = MI
             centre = np.array([c.position.x, c.position.y, c.position.z])
             side = max(c.bounds_max.x - c.bounds_min.x, c.bounds_max.y - c.bounds_min.y, c.bounds_max.z - c.bounds_min.z)
             if bool(np.any(centre < lo_m) or np.any(centre > hi_m)):
-                dropped["outside_scene"] += 1
+                drop(c, "outside_scene")
                 continue
             if side > MAX_SIDE_SHARE * longest:
-                dropped["scene_sized"] += 1
+                drop(c, "scene_sized")
                 continue
         if len(c.evidence_ids) < 2:
             if n_views >= MANY_VIEWS:
-                dropped["single_view"] += 1
+                drop(c, "single_view")
                 continue
             if c.confidence < min_confidence:
-                dropped["weak_single_view"] += 1
+                drop(c, "weak_single_view")
                 continue
         kept.append(c)
     return kept, dict(dropped)

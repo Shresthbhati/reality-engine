@@ -679,6 +679,14 @@ def _check_invariants(world: WorldIR, issues: List[ValidationIssue]) -> None:
             distinct.update(frozenset((d.entity_id, other)) for other, _ in d.candidates)
     for eid in ids:
         distinct.update(frozenset((eid, other)) for other in _props(world.entities[eid]).get("distinct_from") or ())
+    for i in range(len(ids)):
+        f1 = _props(world.entities[ids[i]]).get("fusion", {}).get("frame_of")
+        if not f1:
+            continue
+        for j in range(i + 1, len(ids)):
+            f2 = _props(world.entities[ids[j]]).get("fusion", {}).get("frame_of")
+            if f2 and f1 != f2:
+                distinct.add(frozenset((ids[i], ids[j])))
     groups: Dict[tuple, list] = {}
     for eid in ids:
         e = world.entities[eid]
@@ -709,7 +717,7 @@ def _check_invariants(world: WorldIR, issues: List[ValidationIssue]) -> None:
         e = world.entities[eid]
         cp = _props(e)
         if e.type in _OPENING_TYPES and has_surfaces:
-            host = cp.get("host_wall_id") or cp.get("surface_id")
+            host = cp.get("host_wall_id") or cp.get("surface_id") or (cp.get("bootstrap") or {}).get("host_entity_id")
             if not ((host in world.entities and is_surface(world.entities[host])) or _linked(world, eid, e, is_surface)):
                 _err(issues, "invariant_7_opening_without_surface", f"opening {eid} ({e.type.value}) references no surface (wall/floor/ceiling)")
         elif e.type in _SURFACE_TYPES and has_spaces:

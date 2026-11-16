@@ -262,7 +262,8 @@ def _carry_entity_identity(world_ir, prog, cand_snap, delta, conflicts, head_rep
         return world_ir, cand_snap, None
     try:
         trial = copy.deepcopy(world_ir)
-        out = carry_identity({e["id"] for e in prev_entities}, rels, trial)
+        prev_map = {e["id"]: e.get("name") for e in prev_entities if isinstance(e, dict) and "id" in e}
+        out = carry_identity(prev_map or {e["id"] for e in prev_entities}, rels, trial)
         if not (out["carried"] or out["lineage"]) or not validate_world_ir(trial).is_valid():
             return world_ir, cand_snap, {"carried": 0, "lineage": [], "note": "no identity carried"}
     except Exception as exc:  # noqa: BLE001 -- identity is an enhancement; the candidate stands as it is
@@ -541,6 +542,11 @@ class _RecordOnlyStore:
         self._store, self._abandoned = store, abandoned
 
     def lookup(self, job_id, name, inputs_hash):
+        # The 5 coarse host segments in reconstruct_session communicate through
+        # in-memory Python closure state (resolved, eval_inputs, items, world_ir),
+        # not serialized artifacts. Skipping them would starve downstream segments.
+        if name in {"evidence_resolve", "evidence_quality", "reconstruct", "compile_validate", "changeset_commit"}:
+            return None
         if self._abandoned.is_set():
             return None
         try:

@@ -36,6 +36,7 @@ There is deliberately no scalar "quality score": every reason cites a measured f
 from __future__ import annotations
 
 from collections import Counter
+import re
 from typing import Dict, List, Optional, Sequence
 
 ACCEPT = "ACCEPT"
@@ -111,6 +112,8 @@ def entity_records(world, artifact_store=None) -> List[dict]:
         rec = {"id": e.id, "type": e.type.value, "center": [round(float(v), 5) for v in c],
                "provenance": getattr(e.provenance, "value", str(e.provenance)),
                "confidence": round(float(e.confidence), 4)}
+        if getattr(e, "name", None):
+            rec["name"] = e.name
         if bounds is not None:
             rec["bounds"] = [[round(float(v), 4) for v in row] for row in bounds]
         if pts:
@@ -127,7 +130,8 @@ entity_centres = entity_records   # earlier name, same function (records are a s
 
 
 def snapshot(*, registered_ids: Sequence[str], input_ids: Sequence[str], level: int, model_state: str,
-             points: int, camera_poses: Sequence[tuple], world, artifact_store=None) -> dict:
+             points: int, camera_poses: Sequence[tuple], world, artifact_store=None,
+             coverage_degrees: Optional[float] = None) -> dict:
     """What is stored on the version report and later compared against."""
     cams = {}
     if level >= 1:  # level 0 poses are assumed / display layout, not registration
@@ -137,6 +141,7 @@ def snapshot(*, registered_ids: Sequence[str], input_ids: Sequence[str], level: 
         "registered_ids": list(registered_ids), "input_ids": list(input_ids), "level": level,
         "model_state": model_state, "points": points, "cameras": cams,
         "entities": entity_records(world, artifact_store) if level >= 1 else [], **structure_of(world),
+        "coverage_degrees": coverage_degrees,
     }
 
 
@@ -148,12 +153,25 @@ def snapshot_from_report(report: Optional[dict]) -> Optional[dict]:
     if not ev.get("registered_ids") and not ev.get("input_ids") and not report.get("structure"):
         return None
     st = report.get("structure") or {}
+    cov_deg = None
+    ev_summary = report.get("evidence_summary") or {}
+    quality_list = ev_summary.get("quality") or (report.get("evidence") or {}).get("quality") or []
+    for q in quality_list:
+        if q.get("name") == "Coverage" and q.get("basis"):
+            m = re.search(r"span (\d+(?:\.\d+)?) of 360", q["basis"])
+            if m:
+                try:
+                    cov_deg = float(m.group(1))
+                except ValueError:
+                    pass
+                break
     return {
         "registered_ids": list(ev.get("registered_ids") or []), "input_ids": list(ev.get("input_ids") or []),
         "level": report.get("level"), "model_state": report.get("model_state"),
         "points": ((report.get("stages") or {}).get("reconstruction") or {}).get("points"),
         "cameras": dict(report.get("cameras") or {}), "entities": list(report.get("entities") or []),
         "entity_types": st.get("entity_types"), "provenance": st.get("provenance"),
+        "coverage_degrees": cov_deg,
     }
 
 

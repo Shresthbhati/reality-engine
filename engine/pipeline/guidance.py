@@ -39,6 +39,9 @@ def _largest_gap(az: Dict[str, float]):
     items = sorted(az.items(), key=lambda kv: kv[1])
     if len(items) < 2:
         return None
+    unique = set(round(v, 4) for v in az.values())
+    if len(unique) < 2:
+        return (360.0, items[0][0], items[0][0])
     best = None
     for i in range(len(items)):
         a, b = items[i], items[(i + 1) % len(items)]
@@ -72,8 +75,15 @@ def coverage_degrees(camera_poses: Sequence[tuple], scene_center: Optional[tuple
             vx, vz = math.sin(math.radians(az[eid])), math.cos(math.radians(az[eid]))
             inward += (vx * dx + vz * dz) / n
             bearings[eid] = math.degrees(math.atan2(-dx, -dz)) % 360.0
-        if len(bearings) >= 2 and inward / len(bearings) > 0.5:
-            mode, angles = "around_scene", bearings
+        if len(bearings) >= 2 and inward / len(bearings) > 0.0:
+            gap_bearings = _largest_gap(bearings)
+            span_bearings = 360.0 - gap_bearings[0] if gap_bearings else 0.0
+            gap_views = _largest_gap(dict(az))
+            span_views = 360.0 - gap_views[0] if gap_views else 0.0
+            if span_bearings >= span_views:
+                mode, angles = "around_scene", bearings
+            else:
+                mode, angles = "viewing_directions", dict(az)
     vals = sorted(angles.values())
     gap = _largest_gap(angles)
     return {"degrees": 360.0 - gap[0] if gap else 0.0, "mode": mode, "gap": gap,

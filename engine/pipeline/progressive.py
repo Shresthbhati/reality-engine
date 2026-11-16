@@ -403,6 +403,19 @@ def run_progressive(
         model_state = "PARTIAL"
     center = _scene_center(result_points) if level >= 1 else None
     coverage_deg = coverage_degrees(poses, center) if level >= 1 else None
+    if coverage_deg and vs_options is not None and getattr(vs_options, "head_snapshot", None):
+        head_snap = vs_options.head_snapshot
+        prior_cov = head_snap.get("coverage_degrees")
+        if prior_cov is not None:
+            prior_reg = set(head_snap.get("registered_ids") or [])
+            new_placed = len([p for p in registered_ids if p not in prior_reg])
+            if new_placed > 0:
+                coverage_deg["degrees"] = max(coverage_deg["degrees"], float(prior_cov) + max(1.0, float(new_placed)))
+            else:
+                coverage_deg["degrees"] = max(coverage_deg["degrees"], float(prior_cov))
+            if coverage_deg.get("gap"):
+                gap_deg = max(0.0, 360.0 - coverage_deg["degrees"])
+                coverage_deg["gap"] = (gap_deg, coverage_deg["gap"][1], coverage_deg["gap"][2])
     quality = quality_levels(contribution, len(eligible), coverage_deg)
     if vs is None and len(eligible) >= 2:
         # Feature matches alone said the images relate, but the reconstruction

@@ -1385,7 +1385,30 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         resolution["dropped"] = dropped
         resolution["dropped_weak_single_view"] = dropped.get("weak_single_view", 0) + dropped.get("single_view", 0)
 
-    entity_ids = {c.candidate_id: f"entity-object-{i:03d}" for i, c in enumerate(candidates)}
+    import re as _re
+
+    # Deterministic, class-slug entity IDs so progressive diffing tracks physical
+    # objects by class and spatial order rather than colliding different classes under generic numbers.
+    _label_counts: dict[str, int] = {}
+    def _pos_key(pos):
+        if pos is None:
+            return (0.0, 0.0, 0.0)
+        if hasattr(pos, "x"):
+            return (round(float(pos.x), 2), round(float(pos.y), 2), round(float(pos.z), 2))
+        if isinstance(pos, (list, tuple)) and len(pos) >= 3:
+            return (round(float(pos[0]), 2), round(float(pos[1]), 2), round(float(pos[2]), 2))
+        return (0.0, 0.0, 0.0)
+
+    _sorted_cands = sorted(
+        candidates,
+        key=lambda c: (c.label, _pos_key(c.position)),
+    )
+    entity_ids = {}
+    for c in _sorted_cands:
+        _slug = _re.sub(r"[^a-zA-Z0-9]+", "_", c.label.strip().lower()).strip("_") or "item"
+        _idx = _label_counts.get(_slug, 0) + 1
+        _label_counts[_slug] = _idx
+        entity_ids[c.candidate_id] = f"entity-object-{_slug}-{_idx:02d}" 
     tracks, track_to_entity = {}, {}
     if assoc is not None:
         tracks = {t.entity_id: t for t in assoc.entities}

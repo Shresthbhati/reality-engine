@@ -25,11 +25,19 @@ def boxed_ids(world):
             if any(world.geometries[g].type in (GeometryType.BOX, GeometryType.PLANE) for g in e.geometry_ids)}
 
 
+# plan / schedule / report formats describe ROOMS (footprint, area, finishes): they draw or list rooms, not every wall and window
+ROOM_BASED = {"floorplan_dxf", "floorplan_pdf", "floorplan_svg", "multisheet_floorplan_pdf", "room_report_pdf", "room_schedule_csv"}
+
+
 @pytest.mark.parametrize("fmt", FORMATS)
 def test_every_boxed_entity_of_a_procedural_building_is_exported(fmt):
     world = building()
     _, report = reality.export(world, fmt)
-    assert set(report.entities_exported) == boxed_ids(world) and len(report.entities_exported) > 0
+    if fmt in ROOM_BASED:
+        rooms = {e.id for e in world.entities.values() if e.type == EntityType.ROOM}
+        assert set(report.entities_exported) == rooms and rooms      # exactly the rooms, and the generator gave them a footprint
+    else:
+        assert set(report.entities_exported) == boxed_ids(world) and len(report.entities_exported) > 0
 
 
 @pytest.mark.parametrize("profile", sorted(reality.EXPORT_PROFILES))

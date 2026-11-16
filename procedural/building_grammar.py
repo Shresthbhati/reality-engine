@@ -365,8 +365,12 @@ def generate_building(spec: BuildingSpec, world: Optional[WorldIR] = None,
                 drop(f"{pfx}-{r.id}-ceiling")
             storey.relationships = world.entities.pop(f"{pfx}-apartment").relationships
         else:
-            world.entities[f"{sid}-room"] = _semantic(f"{sid}-room", EntityType.ROOM,
-                                                      f"{name} storey {k} open plan")
+            room = _semantic(f"{sid}-room", EntityType.ROOM, f"{name} storey {k} open plan")
+            # the plate's footprint, so plan/DXF/room-report exporters can draw it (generated from the spec: GENERATED, not measured)
+            x0, y0, x1, y1 = (round(v, 6) for v in (ox, oy, ox + w, oy + d))
+            room.custom_properties.update(
+                footprint_polygon_m=[[x0, y0], [x1, y0], [x1, y1], [x0, y1]], floor_area_m2=round(w * d, 6))
+            world.entities[f"{sid}-room"] = room
             storey.relationships = [_link(RelationshipKind.CONTAINS, f"{sid}-room")]
         world.entities[sid] = storey
         storey_ids.append(sid)

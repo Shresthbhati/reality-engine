@@ -87,7 +87,7 @@ Total: 1
 
 ## unlisted
 
-Total: 496
+Total: 497
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -252,6 +252,7 @@ Total: 496
 - `tests/test_fine_grained_entity_attributes.py`
 - `tests/test_fine_grained_perception_rule5.py`
 - `tests/test_fire_system.py`
+- `tests/test_florence2_second_opinion.py`
 - `tests/test_fracture_system.py`
 - `tests/test_frame_graph.py`
 - `tests/test_frame_inheritance.py`

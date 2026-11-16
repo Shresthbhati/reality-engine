@@ -321,6 +321,18 @@ _DEFAULT_MODELS = [
         output_contract="One binary instance mask per box (H, W)",
     ),
     ModelSpec(
+        name="florence2_base_hf",
+        task="object_detection",
+        source="huggingface:florence-community/Florence-2-base@00921df66db728a9ceb750f5eca43e5c203a2051",
+        checkpoint=_HF_HOME / "models--florence-community--Florence-2-base",
+        license="MIT",
+        commercial_ok=True,
+        measured_vram_mb=631.0,  # measured: RTX 4050, fp32, <OD> on one 1536x1024 room photograph (peak allocated)
+        status="active",  # opt-in second-opinion detector: perception/detection/florence2_detector.py -> vertical_slice perception_second_opinion
+        input_contract="RGB image",
+        output_contract="Labelled boxes without scores (the <OD> task has none)",
+    ),
+    ModelSpec(
         name="dinov2_small_hf",
         task="appearance_embedding",
         source="huggingface:facebook/dinov2-small@ed25f3a31f01632728cabb09d1542f84ab7b0056",

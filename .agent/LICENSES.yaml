@@ -316,6 +316,15 @@ models:
     checksum: git revision ee5bba1d82bb8749febdf90f45e84b687142ba03
     verify: model card license apache-2.0 read 2026-11-15
 
+  - model: florence2_base_hf
+    license: MIT
+    commercial_ok: true
+    measured_vram_mb: 631.0
+    status: active
+    acquisition: huggingface florence-community/Florence-2-base (snapshot_download; local cache only)
+    checksum: git revision 00921df66db728a9ceb750f5eca43e5c203a2051
+    verify: model card license mit read 2026-11-16
+
   - model: dinov2_small_hf
     license: Apache-2.0
     commercial_ok: true

@@ -123,6 +123,9 @@ class VerticalSliceOptions:
     #: per job and its detections are UNVERIFIED (~55 boxes per photograph on the 10-photo room, implausibly many), so when on
     #: they are recorded as 2D facts under perception.small_fittings and never promoted to entities.
     perception_small_fittings: bool = False
+    #: a second detector family (Florence-2) run on every photograph; where it and the pipeline's detector disagree is recorded under
+    #: perception.second_opinion for a human. Off by default (another model load); agreement between two detectors is not accuracy.
+    perception_second_opinion: bool = False
     #: Content-addressed store for real geometry artifacts: the surface
     #: mesh (stage 3.6) and, when given, the promoted planes' inlier
     #: point payloads. None keeps legacy behavior (no real payloads).
@@ -1132,6 +1135,39 @@ def _detections_2d(seg_results, image_size):
     return out
 
 
+def _second_opinion_facts(enabled, evidence_items, detections_2d):
+    """Florence-2 against the pipeline's own 2D detections, per photograph: ``matched`` / ``primary_only`` / ``second_only`` for a
+    human to look at. None when not requested. Never raises: a missing checkpoint or a failure is a recorded status."""
+    if not enabled:
+        return None
+    try:
+        from engine.core.image_io import open_oriented
+        from engine.pipeline.open_vocab_furniture import item_path
+        from perception.detection import florence2_detector as f2
+
+        detector, per_view, totals = f2.Florence2Detector(), {}, {"matched": 0, "primary_only": 0, "second_only": 0}
+        try:
+            for item in evidence_items:
+                eid = getattr(item, "id", None) or item.evidence_id
+                if eid not in detections_2d:
+                    continue
+                agreement = f2.box_agreement(detections_2d[eid], detector.detect(open_oriented(item_path(item)).convert("RGB")))
+                per_view[eid] = agreement
+                for k in totals:
+                    totals[k] += len(agreement[k])
+        finally:
+            detector.unload()
+        return {"status": "ran", "detector": f2.MODEL_ID, "totals": totals, "per_view": per_view,
+                "note": "agreement between two detectors for human review; not accuracy, both can be wrong the same way"}
+    except Exception as exc:  # noqa: BLE001 -- an enhancement; its failure must not lose the objects
+        from perception.detection.florence2_detector import Florence2Unavailable
+
+        if isinstance(exc, Florence2Unavailable):
+            return {"status": "unavailable", "note": str(exc)}
+        log.warning("second-opinion detector failed", exc_info=True)
+        return {"status": "failed", "note": f"{type(exc).__name__}: {exc}"}
+
+
 def _small_fittings_facts(enabled, evidence_items, depth_by_id):
     """Tiled small-fittings detections per registered photograph as RECORDED 2D FACTS (``promoted_to_entities`` is always False).
     None when not requested. Never raises: unavailable or failing is a recorded status."""
@@ -1405,12 +1441,15 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         }
 
     small_fittings = _small_fittings_facts(options.perception_small_fittings, evidence_items, depth_by_id)
+    detections_2d = _detections_2d(seg_results, options.image_size)
+    second_opinion = _second_opinion_facts(options.perception_second_opinion, evidence_items, detections_2d)
     return {
         "status": "ran",
         "model": options.perception_model,
         **({"small_fittings": small_fittings} if small_fittings is not None else {}),
         # what the detector+SAM 2 found in each photograph, as boxes a reviewer can correct (benchmarks/annotation_review.py)
-        "detections_2d": _detections_2d(seg_results, options.image_size),
+        "detections_2d": detections_2d,
+        **({"second_opinion": second_opinion} if second_opinion is not None else {}),
         "views_segmented": len(seg_results),
         "masks_considered": masks_total,
         "hypotheses_lifted": len(hypotheses),

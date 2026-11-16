@@ -42,6 +42,8 @@ def is_open_path(path: str) -> bool:
         return True
     if path in ("/api/billing/tiers", "/api/billing/webhook"):
         return True
+    if path.startswith("/api/worlds/shared/access/"):
+        return True
     return False
 
 
@@ -71,13 +73,14 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 
 class Role(str, Enum):
+    SYSTEM_ADMIN = "system_admin"
     ADMIN = "admin"
     EDITOR = "editor"
     VIEWER = "viewer"
 
     @property
     def rank(self) -> int:
-        ranks = {Role.VIEWER: 1, Role.EDITOR: 2, Role.ADMIN: 3}
+        ranks = {Role.VIEWER: 1, Role.EDITOR: 2, Role.ADMIN: 3, Role.SYSTEM_ADMIN: 4}
         return ranks.get(self, 0)
 
     def __ge__(self, other: Any) -> bool:
@@ -116,7 +119,13 @@ class AuthContext:
 # -------------------------------------------------------------------------------------------------
 
 def _get_signing_secret() -> str:
-    return os.environ.get("REALITY_SIGNING_KEY") or os.environ.get("REALITY_API_TOKEN") or "reality-default-dev-secret-key"
+    key = os.environ.get("REALITY_SIGNING_KEY") or os.environ.get("REALITY_API_TOKEN")
+    if key:
+        return key
+    env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or "").lower()
+    if env in ("production", "prod", "staging"):
+        raise RuntimeError("FATAL SEC-002: REALITY_SIGNING_KEY or REALITY_API_TOKEN must be configured in production mode")
+    return "reality-default-dev-secret-key"
 
 
 def issue_scoped_token(
@@ -147,6 +156,14 @@ def verify_scoped_token(token: str, secret: str | None = None) -> AuthContext | 
     if not hmac.compare_digest(sig.encode("utf-8"), expected_sig.encode("utf-8")):
         return None
     try:
+        ts = int(ts_str)
+    except ValueError:
+        return None
+    now = int(time.time())
+    max_age_s = int(os.environ.get("REALITY_TOKEN_MAX_AGE_S", 86400))
+    if max_age_s > 0 and (ts < (now - max_age_s) or ts > (now + 300)):
+        return None
+    try:
         role = Role(role_str)
     except ValueError:
         return None
@@ -164,6 +181,26 @@ def verify_scoped_token(token: str, secret: str | None = None) -> AuthContext | 
 
 _REVOKED_SHARE_TOKENS: set[str] = set()
 
+
+
+async def check_share_token_not_revoked(token: str) -> bool:
+    token = token.strip()
+    if token in _REVOKED_SHARE_TOKENS:
+        return False
+    try:
+        from apps.api.db import get_sessionmaker
+        from apps.api.models import WorldShareLink
+        from sqlalchemy import select
+        maker = get_sessionmaker()
+        async with maker() as db:
+            res = await db.execute(select(WorldShareLink).where(WorldShareLink.token == token))
+            link = res.scalars().first()
+            if link is None or link.revoked_at is not None:
+                _REVOKED_SHARE_TOKENS.add(token)
+                return False
+            return True
+    except Exception:
+        return token not in _REVOKED_SHARE_TOKENS
 
 def revoke_share_token_in_memory(token: str) -> None:
     """Mark a share token revoked in memory."""
@@ -340,7 +377,7 @@ async def auth_middleware(request: Request, call_next):
         # First check client share token (T-4b.4)
         if supplied.startswith("sh1:"):
             share_ctx = verify_share_token(supplied)
-            if share_ctx is not None:
+            if share_ctx is not None and await check_share_token_not_revoked(supplied):
                 auth_ctx = share_ctx
             else:
                 return _unauthorized("Missing, expired, or invalid share token")
@@ -349,7 +386,7 @@ async def auth_middleware(request: Request, call_next):
             auth_ctx = AuthContext(
                 user_id=request.headers.get("x-user-id", "root"),
                 tenant_id=request.headers.get("x-tenant-id", "default"),
-                role=requested_role,
+                role=Role.SYSTEM_ADMIN if requested_role in (Role.ADMIN, Role.SYSTEM_ADMIN) else requested_role,
                 is_authenticated=True,
             )
         else:
@@ -381,7 +418,7 @@ async def auth_middleware(request: Request, call_next):
             auth_ctx = AuthContext(
                 user_id=request.headers.get("x-user-id", "local"),
                 tenant_id=request.headers.get("x-tenant-id", "default"),
-                role=requested_role,
+                role=Role.SYSTEM_ADMIN if requested_role in (Role.ADMIN, Role.SYSTEM_ADMIN) else requested_role,
                 is_authenticated=True,
                 is_loopback=True,
             )
@@ -418,11 +455,14 @@ def enforce_project_isolation(resource: Any, auth: AuthContext) -> None:
         resource_id = getattr(resource, "id", None) or getattr(resource, "world_id", None)
         if resource_id and resource_id != auth.project_id:
             raise HTTPException(status_code=403, detail="Access forbidden: token is scoped to a different world")
-    if auth.role == Role.ADMIN:
+    if auth.role == Role.SYSTEM_ADMIN:
         return
     if auth.tenant_id == "shared" and auth.project_id:
         return
     team_id = getattr(resource, "team_id", None) or getattr(resource, "tenant_id", None)
     if team_id and team_id != auth.tenant_id:
         # Fail closed with 404 to prevent resource existence enumeration across tenants
+        raise HTTPException(status_code=404, detail="Resource not found")
+    if team_id is None and auth.tenant_id != "default":
+        # SEC-003: Unowned legacy records (team_id is None) are only visible to the default tenant or SYSTEM_ADMIN
         raise HTTPException(status_code=404, detail="Resource not found")

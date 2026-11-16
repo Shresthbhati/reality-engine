@@ -29,7 +29,7 @@ async def get_current_tenant_usage(
 ) -> dict:
     """Retrieve usage metrics for the caller's tenant, or for a specified tenant if caller is ADMIN."""
     target_tenant = tenant_id or auth.tenant_id
-    if target_tenant != auth.tenant_id and auth.role != Role.ADMIN:
+    if target_tenant != auth.tenant_id and auth.role != Role.SYSTEM_ADMIN:
         # Prevent tenant enumeration across tenants
         raise HTTPException(status_code=404, detail="Tenant not found")
 
@@ -49,7 +49,7 @@ async def get_specific_tenant_usage(
     Returns GPU-minutes, compute time, storage bytes, and export counts.
     Strict tenant boundary enforced: requests for other tenants fail with 404.
     """
-    if tenant_id != auth.tenant_id and auth.role != Role.ADMIN:
+    if tenant_id != auth.tenant_id and auth.role != Role.SYSTEM_ADMIN:
         # Prevent tenant enumeration across tenants
         raise HTTPException(status_code=404, detail="Tenant not found")
 

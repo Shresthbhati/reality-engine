@@ -52,10 +52,12 @@ async def assert_visible(db: AsyncSession, model, row_id: str | None, auth: Auth
 
 
 def visible(model, auth: AuthContext):
-    """SQL predicate for 'this caller may see the row'; None = no restriction (ADMIN)."""
-    if auth.role == Role.ADMIN:
+    """SQL predicate for 'this caller may see the row'; None = no restriction (SYSTEM_ADMIN)."""
+    if auth.role == Role.SYSTEM_ADMIN:
         return None
-    return or_(model.team_id.is_(None), model.team_id == auth.tenant_id)
+    if auth.tenant_id == "default":
+        return or_(model.team_id.is_(None), model.team_id == "default")
+    return model.team_id == auth.tenant_id
 
 
 def visible_ids(model, auth: AuthContext):
@@ -65,8 +67,8 @@ def visible_ids(model, auth: AuthContext):
 
 def entity_clause(type_col, id_col, auth: AuthContext):
     """SQL predicate over an (entity_type, entity_id) pair. Rows with no entity are global; a pair this module cannot
-    resolve to an owner is hidden from non-admins (fail closed). None = no restriction (ADMIN)."""
-    if auth.role == Role.ADMIN:
+    resolve to an owner is hidden from non-admins (fail closed). None = no restriction (SYSTEM_ADMIN)."""
+    if auth.role == Role.SYSTEM_ADMIN:
         return None
     return or_(
         type_col.is_(None),
@@ -75,8 +77,8 @@ def entity_clause(type_col, id_col, auth: AuthContext):
 
 
 async def assert_entity_visible(db: AsyncSession, entity_type: str | None, entity_id: str | None, auth: AuthContext) -> None:
-    """Strict form of the above for one job's subject: an unresolvable or vanished entity is a 404 for non-admins."""
-    if auth.role == Role.ADMIN:
+    """Strict form of the above for one job's subject: an unresolvable or vanished entity is a 404 for non-system-admins."""
+    if auth.role == Role.SYSTEM_ADMIN:
         return
     model = ENTITY_MODELS.get(entity_type or "")
     row = await db.get(model, entity_id) if model is not None and entity_id else None
@@ -102,7 +104,7 @@ site_scope = _path_scope(Site, "site_id")
 
 async def job_scope(request: Request, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> None:
     job_id = request.path_params.get("job_id")
-    if job_id is None or auth.role == Role.ADMIN:
+    if job_id is None or auth.role == Role.SYSTEM_ADMIN:
         return
     job = await db.get(Job, job_id)
     if job is not None:

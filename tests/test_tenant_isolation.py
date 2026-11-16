@@ -29,7 +29,7 @@ class Api:
     def __init__(self, client: TestClient):
         self.c = client
         self.h = {t: {"Authorization": "Bearer " + issue_scoped_token(t, f"user-{t}", role, secret=SECRET)}
-                  for t, role in (("tenant-a", Role.EDITOR), ("tenant-b", Role.EDITOR), ("root", Role.ADMIN))}
+                  for t, role in (("tenant-a", Role.EDITOR), ("tenant-b", Role.EDITOR), ("root", Role.SYSTEM_ADMIN), ("admin-b", Role.ADMIN))}
 
     def call(self, who: str, method: str, path: str, **kw):
         return self.c.request(method, path, headers=self.h[who], **kw)

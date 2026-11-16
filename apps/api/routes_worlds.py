@@ -193,8 +193,11 @@ async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)
     if status not in WORLD_STATUSES:
         raise HTTPException(422, f"status must be one of {', '.join(WORLD_STATUSES)}")
     stmt = select(World).where(World.status == status)
-    if auth.role != Role.ADMIN and auth.tenant_id != "default":
-        stmt = stmt.where(World.team_id == auth.tenant_id)
+    if auth.role != Role.SYSTEM_ADMIN:
+        if auth.tenant_id == "default":
+            stmt = stmt.where(or_(World.team_id.is_(None), World.team_id == "default"))
+        else:
+            stmt = stmt.where(World.team_id == auth.tenant_id)
     res = await db.execute(stmt.order_by(World.updated_at.desc()).limit(200))
     ses_counts = dict(
         (await db.execute(
@@ -240,12 +243,12 @@ async def _world_or_404(db: AsyncSession, world_id: str, auth: AuthContext | Non
 
 
 @worlds.patch("/{world_id}")
-async def patch_world(world_id: str, body: WorldPatch, db: AsyncSession = Depends(get_db)) -> dict:
+async def patch_world(world_id: str, body: WorldPatch, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """Rename / edit the description. Identity (id, versions, sessions) is untouched. A trashed world must be restored first."""
     from apps.api.validation import require_json_size, require_name
     from apps.api.world_lifecycle import record_event
 
-    w = await _world_or_404(db, world_id)
+    w = await _world_or_404(db, world_id, auth)
     if w.status == "trashed":
         raise HTTPException(409, "World is in the trash; restore it before editing")
     changed = {}
@@ -267,7 +270,7 @@ async def patch_world(world_id: str, body: WorldPatch, db: AsyncSession = Depend
 
 
 @worlds.post("/{world_id}/duplicate", status_code=201)
-async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """Copy-on-write duplicate: a new world carrying the source's metadata and its CURRENT version's content. The
     WorldIR JSON is re-saved under the new world id (version rows are keyed by world), but geometry, points and
     cameras are content-addressed blobs that both worlds reference -- no file copies. Sessions/evidence are not
@@ -277,7 +280,7 @@ async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db)) -> 
     from apps.api import worldstore_service
     from apps.api.world_lifecycle import record_event
 
-    src = await _world_or_404(db, world_id)
+    src = await _world_or_404(db, world_id, auth)
     if src.status == "trashed":
         raise HTTPException(409, "World is in the trash; restore it before duplicating")
     src_row = None
@@ -311,10 +314,10 @@ async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db)) -> 
 
 
 @worlds.post("/{world_id}/archive")
-async def archive_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def archive_world(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     from apps.api.world_lifecycle import record_event
 
-    w = await _world_or_404(db, world_id)
+    w = await _world_or_404(db, world_id, auth)
     if w.status == "trashed":
         raise HTTPException(409, "World is in the trash; restore it first")
     if w.status == "archived":
@@ -326,10 +329,10 @@ async def archive_world(world_id: str, db: AsyncSession = Depends(get_db)) -> di
 
 
 @worlds.post("/{world_id}/restore")
-async def restore_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def restore_world(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     from apps.api.world_lifecycle import record_event
 
-    w = await _world_or_404(db, world_id)
+    w = await _world_or_404(db, world_id, auth)
     if w.status == "active":
         raise HTTPException(409, "World is already active")
     was = w.status
@@ -340,13 +343,13 @@ async def restore_world(world_id: str, db: AsyncSession = Depends(get_db)) -> di
 
 
 @worlds.delete("/{world_id}")
-async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession = Depends(get_db)):
+async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """Soft delete (default): cancel the world's queued/running jobs FIRST, then status=trashed, deleted_at=now; the
     trash sweep purges it after 30 days. ``?permanent=true`` purges now: rows, WorldStore versions and only the blobs
     nothing else references (409 while a job is still stopping)."""
     from apps.api.world_lifecycle import JobsStillRunning, cancel_world_jobs, purge_world, record_event
 
-    w = await _world_or_404(db, world_id)
+    w = await _world_or_404(db, world_id, auth)
     if permanent:
         try:
             return {"permanently_deleted": True, **await purge_world(db, w)}

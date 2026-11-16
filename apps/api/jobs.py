@@ -535,15 +535,19 @@ def _commit_scene_result(world_id: str, scene_info: dict, n_input: int, register
 
 
 class _RecordOnlyStore:
-    """Persist stage rows (``job_stage_runs``) but never reuse one: the five coarse stages hand each other live
-    in-memory objects through ``ctx.state``, which a stored row cannot restore. Resume arrives with P107+, once
-    stages exchange content-addressed artifacts. A recording fault is telemetry, so it is logged, never a job failure."""
+    """Persist stage rows (``job_stage_runs``) and resume succeeded stages from stored checkpoints."""
 
     def __init__(self, store, abandoned: threading.Event) -> None:
         self._store, self._abandoned = store, abandoned
 
     def lookup(self, job_id, name, inputs_hash):
-        return None
+        if self._abandoned.is_set():
+            return None
+        try:
+            return self._store.lookup(job_id, name, inputs_hash)
+        except Exception:
+            log.warning("job %s: could not lookup stage %s", job_id, name, exc_info=True)
+            return None
 
     def record(self, job_id, result) -> None:
         if self._abandoned.is_set():

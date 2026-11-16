@@ -278,6 +278,15 @@ models:
     checksum: unpinned
     verify: record sha256 in model registry
 
+  - model: sam2_1_hiera_small_hf
+    license: Apache-2.0
+    commercial_ok: true
+    measured_vram_mb: 1670.0
+    status: active
+    acquisition: huggingface facebook/sam2.1-hiera-small (snapshot_download; local cache only)
+    checksum: git revision ee5bba1d82bb8749febdf90f45e84b687142ba03
+    verify: model card license apache-2.0 read 2026-11-15
+
   - model: sam2_hiera_small
     license: Apache-2.0
     commercial_ok: true

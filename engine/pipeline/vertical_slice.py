@@ -110,6 +110,14 @@ class VerticalSliceOptions:
     #: how per-view object hypotheses become entities: "association" (gated Hungarian, no transitive merges, AMBIGUOUS
     #: kept apart; perception/instances/association.py) or "union_find" (the older label+distance resolver)
     object_resolver: str = "association"
+    #: where each detected object's mask comes from: "sam2" (SAM 2 box-prompted instance masks; falls back to the depth band,
+    #: on the record, when the checkpoint is missing) or "depth_band" (a depth cut of the box; leaks floor/wall into objects)
+    perception_mask_source: str = "sam2"
+    #: learned appearance for cross-view object identity: "dinov2" (DINOv2-small embedding of each masked crop, fed to the
+    #: association resolver's appearance gate; skipped on the record when the checkpoint is missing) or None (geometry only).
+    #: Off by default: on the 10-photo room it separated same- from different-label crops cleanly (cosine 0.63 vs 0.16) but
+    #: changed no association decision (16 objects, identical, either way), so it costs a model load for no measured gain yet.
+    perception_appearance: Optional[str] = None
     #: Content-addressed store for real geometry artifacts: the surface
     #: mesh (stage 3.6) and, when given, the promoted planes' inlier
     #: point payloads. None keeps legacy behavior (no real payloads).
@@ -1086,6 +1094,50 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
     return facts, metric_maps
 
 
+def _region_appearance(kind, evidence_items, seg_results, hypotheses):
+    """DINOv2 embedding of each lifted region's masked crop, keyed like the association observations (``<evidence>|<region>``).
+
+    Returns ``(vectors, facts)``. Never raises: a missing checkpoint or an unreadable image is a recorded skip and association
+    stays geometry-only for the whole run (no half-embedded, half-not mixture)."""
+    facts = {"requested": kind, "embedded": 0, "skipped": 0, "fallback_reason": None}
+    if kind is None:
+        return {}, facts
+    if kind != "dinov2":
+        raise VerticalSliceError(f"unknown perception_appearance {kind!r}: expected 'dinov2' or None")
+    try:
+        import cv2
+        import numpy as np
+
+        from engine.core.image_io import open_oriented
+        from engine.pipeline.open_vocab_furniture import item_path
+        from perception.instances.dinov2_hf import Dinov2Embedder
+
+        wanted = {(h.evidence_id, h.region_id) for h in hypotheses}
+        items = {(getattr(i, "id", None) or i.evidence_id): i for i in evidence_items}
+        embedder, vectors, embedded, skipped = Dinov2Embedder(), {}, 0, 0
+        for seg in seg_results:
+            regions = [r for r in seg.regions if (seg.evidence_id, r.region_id) in wanted]
+            if not regions or seg.evidence_id not in items:
+                continue
+            image = np.asarray(open_oriented(item_path(items[seg.evidence_id])).convert("RGB"))
+            h, w = image.shape[:2]
+            # region masks are at the depth grid's resolution; the crop needs them at the photo's
+            masks = [cv2.resize(np.asarray(r.mask, dtype=np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool) for r in regions]
+            for region, vec in zip(regions, embedder.embed_masked_crops(image, masks)):
+                if vec is None:
+                    skipped += 1
+                else:
+                    vectors[f"{seg.evidence_id}|{region.region_id}"] = vec.tolist()
+                    embedded += 1
+        embedder.unload()
+        facts.update(embedded=embedded, skipped=skipped)
+        return vectors, facts
+    except Exception as exc:  # noqa: BLE001 -- appearance is an enhancement; its failure must not lose the objects
+        log.warning("appearance embedding failed (association stays geometry-only)", exc_info=True)
+        facts["fallback_reason"] = str(exc)
+        return {}, facts
+
+
 def _perception_stage(result, world, evidence_items, metric_depth_maps, options):
     """Optional semantic perception -> object entities in the world.
 
@@ -1125,7 +1177,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         if grounded:
             # open-vocabulary scene objects (sofa, coffee table, TV stand, rug, plant ...): COCO has no such classes
             from perception.detection.grounded_scene import GroundedSceneSegmenter
-            detector = GroundedSceneSegmenter(depth_by_id)
+            detector = GroundedSceneSegmenter(depth_by_id, mask_source=options.perception_mask_source)
         else:
             detector = MaskRCNNDetector(score_threshold=options.detection_score_threshold)
     except Exception as exc:  # noqa: BLE001 -- model unavailability is a skip
@@ -1185,11 +1237,12 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
                 cameras[pose.evidence_id] = camera_from_pose(intrinsics, pose)
             except Exception:  # noqa: BLE001 -- one bad camera must not kill the whole association stage
                 pass
+        appearance, resolution["appearance"] = _region_appearance(options.perception_appearance, evidence_items, seg_results, hypotheses)
         # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
         candidates, assoc = resolve_hypotheses(
             hypotheses, DepthSource.MVS, cam_pos, cameras=cameras,
             model="grounding-dino-tiny" if grounded else "mask_rcnn@coco",
-            license="Apache-2.0" if grounded else "BSD-3-Clause", world=world,
+            license="Apache-2.0" if grounded else "BSD-3-Clause", world=world, appearance=appearance or None,
         )
         resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
         resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
@@ -1276,8 +1329,12 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         "candidates_merged": len(candidates),
         "entities_promoted": promoted,
         "resolution": resolution,
+        **({"masks": {"requested": options.perception_mask_source, **detector.mask_counts, "fallback_reason": detector.mask_fallback}}
+           if grounded and hasattr(detector, "mask_counts") else {}),
         "note": (
-            ("Grounding DINO boxes cut to the foreground depth band" if grounded else "COCO Mask R-CNN masks")
+            ("Grounding DINO boxes with SAM 2 instance masks (depth-band cut where SAM 2 gave none)"
+             if grounded and getattr(detector, "mask_counts", {}).get("sam2")
+             else "Grounding DINO boxes cut to the foreground depth band" if grounded else "COCO Mask R-CNN masks")
             + " lifted via SfM-aligned depth (metric-by-"
             "alignment, approximate); merged by the gated association resolver (or label+proximity if "
             "object_resolver='union_find'); provenance "

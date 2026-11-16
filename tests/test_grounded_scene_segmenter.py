@@ -55,6 +55,66 @@ def test_prompt_variants_are_queried_and_reported_under_the_canonical_class(monk
     assert labels.count("rug") <= 1 and "wooden coffee table" not in labels and "area rug" not in labels
 
 
+def _sam_scene(monkeypatch):
+    depth = np.full((40, 40), 5.0)
+    depth[10:30, 10:30] = 2.0                 # the object, 2 m away
+    depth[0:10, 0:10] = 9.0                   # a far outlier patch inside the SAM mask: must be stripped
+    dm = DepthMap(evidence_id="ev-a", width=40, height=40, values=depth.tolist(), unit="meters")
+    monkeypatch.setattr(ovf, "_grounded_raw", lambda path, prompts: ([("sofa", 0.9, (4.0, 4.0, 34.0, 34.0))], (40, 40)))
+    monkeypatch.setattr(ovf, "item_path", lambda item: "unused")
+    import engine.core.image_io as iio
+    from PIL import Image
+    monkeypatch.setattr(iio, "open_oriented", lambda p: Image.new("RGB", (40, 40)))
+    return dm
+
+
+def test_sam_refined_mask_keeps_the_instance_outline_and_strips_depth_outliers():
+    depth = np.full((40, 40), 2.0)
+    depth[0:10, 0:10] = 9.0
+    sam = np.zeros((80, 80), dtype=bool)      # full-resolution mask, twice the depth grid
+    sam[0:60, 0:60] = True
+    mask = gs.sam_refined_mask(depth, sam)
+    assert mask.shape == (40, 40) and mask[10:30, 10:30].all() and not mask[0:10, 0:10].any() and not mask[35:, 35:].any()
+    assert gs.sam_refined_mask(depth, np.zeros((80, 80), dtype=bool)) is None     # an empty SAM mask is no mask
+
+
+def test_segmenter_uses_sam2_masks_and_counts_them(monkeypatch):
+    dm = _sam_scene(monkeypatch)
+    sam_mask = np.zeros((40, 40), dtype=bool)
+    sam_mask[10:30, 10:30] = True
+
+    class _Sam:
+        def masks_for_boxes(self, image, boxes):
+            return [sam_mask for _ in boxes]
+
+    seg = gs.GroundedSceneSegmenter({"ev-a": dm}, mask_source="sam2", sam=_Sam())
+    out = seg.segment([SimpleNamespace(id="ev-a")])
+    (region,) = out[0].regions
+    assert np.asarray(region.mask).sum() == 400 and seg.mask_counts == {"sam2": 1, "depth_band": 0} and seg.mask_fallback is None
+
+
+def test_segmenter_falls_back_to_the_depth_band_when_sam2_is_missing_and_says_so(monkeypatch):
+    from perception.segmentation.sam2_box_prompter import Sam2Unavailable
+
+    dm = _sam_scene(monkeypatch)
+
+    class _Missing:
+        def masks_for_boxes(self, image, boxes):
+            raise Sam2Unavailable("checkpoint not in the local cache")
+
+    seg = gs.GroundedSceneSegmenter({"ev-a": dm}, mask_source="sam2", sam=_Missing())
+    out = seg.segment([SimpleNamespace(id="ev-a")])
+    assert len(out[0].regions) == 1 and seg.mask_counts == {"sam2": 0, "depth_band": 1}
+    assert "checkpoint not in the local cache" in seg.mask_fallback
+
+
+def test_unknown_mask_source_is_refused():
+    import pytest
+
+    with pytest.raises(ValueError):
+        gs.GroundedSceneSegmenter({}, mask_source="magic")
+
+
 def test_labels_map_to_world_types_and_unlisted_ones_are_not_guessed():
     t = gs.ENTITY_TYPE_BY_LABEL
     assert t["sofa"] == t["tv stand"] == t["rug"] == "furniture" and t["potted plant"] == "vegetation"
@@ -165,7 +225,7 @@ def test_perception_stage_rolls_back_objects_that_invalidate_the_world(synthetic
         intrinsics=(64.0, 64.0, 32.0, 32.0), image_size=(64, 64), perception_model="grounded", object_resolver="union_find")
 
     class _Fake:
-        def __init__(self, depth_by_id):
+        def __init__(self, depth_by_id, **_options):
             pass
 
         def segment(self, evidence):
@@ -207,7 +267,7 @@ def test_perception_stage_uses_the_grounded_segmenter_and_labels_the_model(synth
     built = {}
 
     class _Fake:
-        def __init__(self, depth_by_id):
+        def __init__(self, depth_by_id, **_options):
             built["depth_ids"] = sorted(depth_by_id)
             self.unloaded = False
 
@@ -249,7 +309,7 @@ def test_perception_stage_drops_weak_single_view_objects_but_keeps_confirmed_one
     mask2 = [[4 <= r < 12 and 4 <= c < 12 for c in range(64)] for r in range(64)]   # a different spot: seen by IMG_A only
 
     class _Fake:
-        def __init__(self, depth_by_id):
+        def __init__(self, depth_by_id, **_options):
             pass
 
         def segment(self, evidence):

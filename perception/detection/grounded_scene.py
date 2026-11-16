@@ -12,11 +12,14 @@ like "nothing detected". The model is loaded from the local Hugging Face cache o
 
 from __future__ import annotations
 
+import logging
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
 from perception.segmentation.interface import SegmentationResult, SegmentedRegion
+
+log = logging.getLogger(__name__)
 
 MODEL_NAME = "grounding-dino-tiny"
 LICENSE = "Apache-2.0"
@@ -129,6 +132,25 @@ def depth_refined_mask(
     return mask
 
 
+#: depth band applied INSIDE a SAM 2 mask: only strips depth outliers, since the mask already follows the object's outline
+SAM_DEPTH_BAND = 0.35
+
+
+def sam_refined_mask(depth_values: np.ndarray, sam_mask: np.ndarray, band: float = SAM_DEPTH_BAND) -> Optional[np.ndarray]:
+    """Boolean mask at the depth map's resolution from a full-resolution SAM 2 instance mask: the mask's valid-depth pixels
+    within ``band`` of their median depth. None when the mask holds too little valid depth."""
+    import cv2
+
+    dh, dw = depth_values.shape
+    small = cv2.resize(sam_mask.astype(np.uint8), (dw, dh), interpolation=cv2.INTER_NEAREST).astype(bool)
+    valid = small & np.isfinite(depth_values) & (depth_values > 0)
+    if int(valid.sum()) < MIN_MASK_PIXELS:
+        return None
+    ref = float(np.median(depth_values[valid]))
+    keep = valid & (np.abs(depth_values - ref) <= band * ref)
+    return keep if int(keep.sum()) >= MIN_MASK_PIXELS else None
+
+
 def scene_box(points) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     """Robust (lo, hi) of the sparse points (2nd..98th percentile per axis); None when there are too few to define one."""
     pts = np.array([tuple(getattr(p, "position", p)) for p in points], dtype=float)
@@ -180,9 +202,17 @@ class GroundedSceneSegmenter:
 
     name = MODEL_NAME
 
-    def __init__(self, depth_by_id: Dict[str, object], prompts: Sequence[str] = SCENE_PROMPTS) -> None:
+    def __init__(self, depth_by_id: Dict[str, object], prompts: Sequence[str] = SCENE_PROMPTS,
+                 mask_source: str = "depth_band", sam: object = None) -> None:
+        if mask_source not in ("depth_band", "sam2"):
+            raise ValueError(f"mask_source must be 'depth_band' or 'sam2', got {mask_source!r}")
         self._depth = depth_by_id
         self._prompts = tuple(prompts)
+        self._mask_source = mask_source
+        self._sam = sam  # a Sam2BoxPrompter (or any object with masks_for_boxes); created on first use for 'sam2'
+        #: per run: how many masks came from SAM 2 vs fell back to the depth band (recorded, never hidden)
+        self.mask_counts = {"sam2": 0, "depth_band": 0}
+        self.mask_fallback: Optional[str] = None  # why SAM 2 was not used, when it was requested and unavailable
 
     def segment(self, evidence) -> List[SegmentationResult]:
         from engine.pipeline.open_vocab_furniture import _grounded_raw, item_path
@@ -197,8 +227,28 @@ class GroundedSceneSegmenter:
             raw = [(_CANONICAL_OF_VARIANT.get(label, label), score, box) for label, score, box in raw]
             values = np.asarray(depth.values, dtype=float)
             regions: List[SegmentedRegion] = []
-            for j, (label, score, box) in enumerate(clean_boxes(raw, src_size)):
-                mask = depth_refined_mask(values, box, src_size)
+            boxes = clean_boxes(raw, src_size)
+            sam_masks = None
+            if self._mask_source == "sam2" and boxes:
+                from engine.core.image_io import open_oriented
+                from perception.segmentation.sam2_box_prompter import Sam2BoxPrompter, Sam2Unavailable
+
+                try:
+                    if self._sam is None:
+                        self._sam = Sam2BoxPrompter()
+                    sam_masks = self._sam.masks_for_boxes(open_oriented(item_path(item)).convert("RGB"), [b[2] for b in boxes])
+                except Sam2Unavailable as exc:
+                    # the checkpoint is missing: use the depth band for the rest of the run, loudly and on the record
+                    log.warning("SAM 2 unavailable, falling back to depth-band masks: %s", exc)
+                    self._mask_source, self.mask_fallback = "depth_band", str(exc)
+            for j, (label, score, box) in enumerate(boxes):
+                mask = sam_refined_mask(values, sam_masks[j]) if sam_masks is not None else None
+                if mask is not None:
+                    self.mask_counts["sam2"] += 1
+                else:
+                    mask = depth_refined_mask(values, box, src_size)
+                    if mask is not None:
+                        self.mask_counts["depth_band"] += 1
                 if mask is None:
                     continue
                 regions.append(SegmentedRegion(
@@ -211,3 +261,5 @@ class GroundedSceneSegmenter:
         from engine.pipeline.open_vocab_furniture import unload_open_vocab_furniture
 
         unload_open_vocab_furniture()
+        if self._sam is not None and hasattr(self._sam, "unload"):
+            self._sam.unload()

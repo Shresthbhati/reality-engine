@@ -69,9 +69,9 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 | ifcopenshell | ALREADY_INTEGRATED | LGPL-3.0 | n/a | 2026-11-15 | Functionally tested | exporters/ifc_bridge.py via the SDK/API (export extra) |
 | blender | ALREADY_INTEGRATED | GPL-3.0 (COPYING read) | n/a | 2026-11-15 | Functionally tested | exporters/blender generates a Python script; Blender is never linked |
 | pycolmap | APPROVED | BSD-3-Clause | n/a | 2024-07-09 (archived) | Implemented | not integrated; the standalone repo is archived, development moved into colmap/colmap |
-| sam2 | APPROVED | Apache-2.0 | facebook/sam2.1-hiera-small, -large: apache-2.0 | 2026-05-30 | Implemented | sam2_backend.py exists in the repo but is not reachable from the API |
+| sam2 | APPROVED | Apache-2.0 | facebook/sam2.1-hiera-small, -large: apache-2.0 | 2026-05-30 | API reachable | perception/segmentation/sam2_box_prompter.py -> grounded_scene -> vertical_slice perception stage (default mask source) |
 | grounded_sam2 | APPROVED | Apache-2.0 | inherits Grounding DINO + SAM 2 | 2025-11-11 | Implemented | pattern only: reproduce with our own adapters, not by vendoring |
-| dinov2 | APPROVED | Apache-2.0 | facebook/dinov2-small, -base: apache-2.0 | 2026-11-05 | Implemented | perception/instances/dinov2_reid.py exists; not reachable from the API |
+| dinov2 | APPROVED | Apache-2.0 | facebook/dinov2-small, -base: apache-2.0 | 2026-11-05 | Integrated | perception/instances/dinov2_hf.py -> vertical_slice perception_appearance option (off by default) |
 | florence2 | APPROVED | no GitHub repo (microsoft/Florence-2 returns 404); code ships inside transformers | microsoft/Florence-2-base: mit | - | Implemented | not integrated |
 | depth_anything_v2_small | APPROVED | Apache-2.0 | depth-anything/Depth-Anything-V2-Small-hf: apache-2.0 | 2026-03-24 | Functionally tested | not the live depth model |
 | open3d | APPROVED | MIT (LICENSE read) | n/a | 2026-11-14 | Implemented | not integrated; one reference in code |
@@ -137,7 +137,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 * **sam2** (SAM 2 (via transformers Sam2Model)): Top opportunity: today's masks are a depth-band cut of a box and leak floor/wall (measured cause of a 7 m 'sofa').
 * **grounded_sam2** (Grounded-SAM-2): A glue repo; our adapters should follow its box-prompt pattern.
 * **grounded_sam** (Grounded-Segment-Anything): Last push 2024-09; use the SAM 2 route instead.
-* **dinov2** (DINOv2 (via transformers Dinov2Model)): Third opportunity: association is geometry-only today and merges/splits views of the same object wrongly.
+* **dinov2** (DINOv2 (via transformers Dinov2Model)): Wired but unproven: no measured gain, so it stays opt-in. dinov2_reid.py silently substitutes a colour-statistic vector when torch.hub fails; do not use it for association.
 * **florence2** (Florence-2 (via transformers Florence2ForConditionalGeneration)): Possible second-opinion detector; must beat Grounding DINO on annotated data before replacing anything.
 * **detectron2** (Detectron2): Overlaps torchvision Mask R-CNN already integrated; Windows build is painful.
 * **mask2former** (Mask2Former): Archived upstream; weights licence unresolved.

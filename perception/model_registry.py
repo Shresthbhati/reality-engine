@@ -309,6 +309,18 @@ _DEFAULT_MODELS = [
         output_contract="Binary masks (N, H, W)",
     ),
     ModelSpec(
+        name="sam2_1_hiera_small_hf",
+        task="promptable_segmentation",
+        source="huggingface:facebook/sam2.1-hiera-small@ee5bba1d82bb8749febdf90f45e84b687142ba03",
+        checkpoint=_HF_HOME / "models--facebook--sam2.1-hiera-small",
+        license="Apache-2.0",
+        commercial_ok=True,
+        measured_vram_mb=1670.0,  # measured: RTX 4050, fp32, 14-15 box prompts on a 1536x1024 photo (peak allocated)
+        status="active",  # integrated: perception/segmentation/sam2_box_prompter.py -> grounded_scene.py -> vertical_slice perception stage
+        input_contract="RGB image + detector boxes",
+        output_contract="One binary instance mask per box (H, W)",
+    ),
+    ModelSpec(
         name="sam2_hiera_small",
         task="promptable_segmentation",
         source="github:facebookresearch/sam2",

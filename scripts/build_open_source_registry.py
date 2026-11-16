@@ -76,8 +76,9 @@ E = [
      "Implemented", "not benchmarked", "n/a", "Archived upstream; weights licence unresolved."),
     ("ultralytics", "ultralytics/ultralytics", "Ultralytics YOLO", "AGPL-3.0", "AGPL-3.0", "REJECTED", "not installed", "GPU", ["closed_set_detection"], "not integrated", "Implemented", "n/a", "n/a",
      "AGPL blocks a closed commercial product unless a commercial licence is bought."),
-    ("sam_hq", "SysCV/sam-hq", "SAM-HQ", "Apache-2.0", "not verified", "APPROVED_WITH_RESTRICTIONS", "not installed", "n/a", ["high_quality_masks"], "not integrated", "Implemented", "not benchmarked", "SAM 2",
-     "Only worth testing if SAM 2 boundaries fail on thin structures."),
+    ("sam_hq", "SysCV/sam-hq", "SAM-HQ", "Apache-2.0", "syscv-community/sam-hq-vit-base: apache-2.0 (model card read 2026-11-16; cached, 362 MB)", "APPROVED_WITH_RESTRICTIONS", "cached; native SamHQModel in transformers 5.16.1", "3.2 GB peak VRAM measured", ["high_quality_masks"],
+     "NOT integrated: an adapter was built and removed", "Implemented", "same boxes as SAM 2 on one room photo: masks 5-10x larger than the prompt box, mean IoU vs SAM 2 0.05; weights load with no missing keys, so the cause is unresolved (processor boxes verified correct)", "SAM 2",
+     "Do not use transformers' SamHQModel box prompting as is: its masks were not consistent with the prompts. Retry with the upstream SysCV code or a newer transformers, and check mask-vs-box consistency first."),
     # ---- C. depth
     ("depth_anything_v2_small", "DepthAnything/Depth-Anything-V2", "Depth Anything V2 Small", "Apache-2.0", "depth-anything/Depth-Anything-V2-Small-hf: apache-2.0", "APPROVED", "weights cached", "0.044 s, 0.42 GB (measured)",
      ["relative_depth"], "not the live depth model", "Functionally tested", "residual vs SfM 0.291 (consistency, not accuracy)", "DPT_Hybrid", "Worse fit to SfM than DPT_Hybrid in the one scene tested."),

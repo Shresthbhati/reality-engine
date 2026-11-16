@@ -90,7 +90,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 | meshroom | APPROVED_WITH_RESTRICTIONS | MPL-2.0 (COPYING.md read) | n/a | 2026-11-13 | Implemented | not integrated |
 | grounded_sam | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | SAM 1 weights not verified | 2024-09-05 | Implemented | superseded by Grounded-SAM-2 |
 | detectron2 | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | model-zoo weights vary; not audited | 2026-10-27 | Implemented | not integrated |
-| sam_hq | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | not verified | 2025-09-12 | Implemented | not integrated |
+| sam_hq | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | syscv-community/sam-hq-vit-base: apache-2.0 (model card read 2026-11-16; cached, 362 MB) | 2025-09-12 | Implemented | NOT integrated: an adapter was built and removed |
 | marigold | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | marigold-depth-v1-1: openrail++ (use restrictions) | 2026-09-06 | Implemented | not integrated |
 | mmtracking | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | varies | 2023-09-19 | Implemented | not integrated |
 | openusd | APPROVED_WITH_RESTRICTIONS | Tomorrow Open Source Technology License 1.0 (modified Apache 2.0; LICENSE.txt read) | n/a | 2026-11-14 | Functionally tested | sdk.reality 'usdc' export through pxr; validate_usda uses pxr as the authority |
@@ -142,7 +142,7 @@ Maturity ladder: Implemented < Installed < Integrated < API reachable < Function
 * **detectron2** (Detectron2): Overlaps torchvision Mask R-CNN already integrated; Windows build is painful.
 * **mask2former** (Mask2Former): Archived upstream; weights licence unresolved.
 * **ultralytics** (Ultralytics YOLO): AGPL blocks a closed commercial product unless a commercial licence is bought.
-* **sam_hq** (SAM-HQ): Only worth testing if SAM 2 boundaries fail on thin structures.
+* **sam_hq** (SAM-HQ): Do not use transformers' SamHQModel box prompting as is: its masks were not consistent with the prompts. Retry with the upstream SysCV code or a newer transformers, and check mask-vs-box consistency first.
 * **depth_anything_v2_small** (Depth Anything V2 Small): Worse fit to SfM than DPT_Hybrid in the one scene tested.
 * **depth_anything_v2_base_large** (Depth Anything V2 Base / Large): Non-commercial weights.
 * **depth_anything_v2_metric_indoor** (Depth Anything V2 Metric-Indoor Small): Best measured fit to SfM, but undeclared licence and no effect on floor layering in an A/B; no default change.

@@ -2163,6 +2163,67 @@
         }
       }
     },
+    "/api/worlds/{world_id}/review/coco": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "World Review Coco",
+        "description": "The pipeline's own 2D detections for this version as COCO 1.0, ready to upload to CVAT (or convert for Label Studio / FiftyOne\nwith scripts/export_annotation_review.py). A human corrects the boxes, and `benchmarks.annotation_review.score` turns the corrected\nfile into per-label precision/recall. Image sizes are the EXIF-oriented ones the detections were computed on.",
+        "operationId": "world_review_coco_api_worlds__world_id__review_coco_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response World Review Coco Api Worlds  World Id  Review Coco Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/points": {
       "get": {
         "tags": [

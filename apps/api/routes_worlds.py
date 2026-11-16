@@ -865,6 +865,35 @@ async def world_report(
     return row.report
 
 
+@worlds.get("/{world_id}/review/coco")
+async def world_review_coco(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """The pipeline's own 2D detections for this version as COCO 1.0, ready to upload to CVAT (or convert for Label Studio / FiftyOne
+    with scripts/export_annotation_review.py). A human corrects the boxes, and `benchmarks.annotation_review.score` turns the corrected
+    file into per-label precision/recall. Image sizes are the EXIF-oriented ones the detections were computed on."""
+    from apps.api.models import Evidence
+    from apps.api.storage import resolve_artifact
+    from benchmarks import annotation_review
+    from engine.core.image_io import open_oriented
+
+    row = await _version_row(db, world_id, version)
+    detections = (((row.report or {}).get("stages") or {}).get("perception") or {}).get("detections_2d")
+    if not detections:
+        raise HTTPException(404, f"Version '{row.id}' recorded no 2D detections (the perception stage did not run, or found nothing)")
+    evidence = (await db.execute(select(Evidence).where(Evidence.id.in_(list(detections))))).scalars().all()
+    images, sizes = {}, {}
+    for ev in evidence:
+        path = resolve_artifact(ev.artifact_uri) if ev.artifact_uri else None
+        if path is None or not path.exists():
+            continue                                # a photo that is no longer on disk cannot be reviewed; it is simply absent
+        images[ev.id] = ev.name
+        sizes[ev.id] = open_oriented(path).size
+    if not images:
+        raise HTTPException(404, "None of the photographs behind these detections are available to review")
+    return annotation_review.to_coco({k: v for k, v in detections.items() if k in images}, images, sizes)
+
+
 @worlds.get("/{world_id}/points")
 async def world_points(
     world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)

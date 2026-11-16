@@ -195,6 +195,7 @@ def metricize_relative_depth(
     sparse_points_world: Sequence[Sequence[float]],
     max_sparse_points: int = 2000,
     use_shift: bool = False,
+    consistent_shift: bool = False,
 ) -> Tuple[DepthMap, DepthAlignment]:
     """Convert a RELATIVE depth map to metric 'meters' by fitting a scale against the SfM sparse points visible in this view;
     with ``use_shift=True`` also an additive depth shift (z = s / rel + t) when it measurably helps and stays positive.
@@ -288,8 +289,14 @@ def metricize_relative_depth(
         if fit is not None:
             s2, t2, res2 = fit
             candidate = s2 / np.maximum(rel, 1e-9) + t2
-            # take it only when it clearly beats the scale-only fit AND is physical over the WHOLE map (no depth <= 0)
-            if s2 > 0 and res2 <= 0.8 * residual_median and float(np.nanmin(candidate)) > 0.0:
+            if consistent_shift and s2 > 0:
+                # every view on the SAME model (the guarded mix measurably split views apart): clamp instead of refusing
+                candidate = np.maximum(candidate, 0.05)
+                take = True
+            else:
+                # take it only when it clearly beats the scale-only fit AND is physical over the WHOLE map (no depth <= 0)
+                take = s2 > 0 and res2 <= 0.8 * residual_median and float(np.nanmin(candidate)) > 0.0
+            if take:
                 scale, shift, model, metric_values = s2, t2, "scale+shift", candidate
                 residual_median = res2
                 inlier_fraction = float(np.mean(np.abs(s2 / np.maximum(rel_at[valid], 1e-9) + t2 - z_sfm[valid])

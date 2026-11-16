@@ -10,7 +10,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 
 | ID | Class | Problem → change | Evidence | Lands in |
 |---|---|---|---|---|
-| RE-ARCH-000001 | OF | Stages pass live objects, so a crashed job cannot resume → stages exchange content-addressed artifacts | [V] `apps/api/jobs.py::_RecordOnlyStore.lookup` returns None | B01 |
+| RE-ARCH-000001 | DN | Stages pass live objects, so a crashed job cannot resume → enabled checkpoint lookup in jobs.py and stage runner | [V] commit 9fd49d86 | done |
 | RE-ARCH-000002 | OF | Two taxonomies (`perception/ontology.py`, `perception/entities/taxonomy.py`) → one ontology | [V] | B03 |
 | RE-ARCH-000003 | VN | Detections are not persisted per photo → `ObservationTable` artifact | [M] | B02 |
 | RE-ARCH-000004 | VN | Parts are not entities → parts as entities with `part_of` | [M] | B04, B08 |

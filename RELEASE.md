@@ -53,7 +53,7 @@ A box is ticked only with evidence: a passing test named here, or a recorded run
 
 ## Known open facts
 
-- Stage rows are recorded, but a crashed job does not resume from stored stages (`_RecordOnlyStore.lookup()` returns `None`). 1.0 does not claim crash-resume.
+- Stages resume from stored checkpoints (`DbCheckpointStore`) when outputs are verified on disk (B01).
 - SfM output varies between runs on the same photos (995 vs 1,423 sparse points observed).
 - Furniture tops and steps can be classed as floor; room footprints can be ragged.
 - Small-object detection has low precision and is off by default.

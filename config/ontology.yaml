@@ -1,495 +1,3248 @@
-# REALITY ENGINE — ENTITY ONTOLOGY (v1)
-# Specification: docs/blueprint/17_ONTOLOGY.md
-version: "1.0.0"
-
+version: 1.0.0
 classes:
-  # ---- Architecture --------------------------------------------------------
-  - path: architecture/wall
-    label: Wall
-    parent: null
-    prompts: ["wall", "interior wall"]
-    geometry: plane
-    mobility: fixed
-    min_pixels: 2000
-    attach: []
-
-  - path: architecture/floor
-    label: Floor
-    parent: null
-    prompts: ["floor", "flooring", "hardwood floor", "tiled floor"]
-    geometry: plane
-    mobility: fixed
-    min_pixels: 2000
-    attach: []
-
-  - path: architecture/ceiling
-    label: Ceiling
-    parent: null
-    prompts: ["ceiling", "plaster ceiling"]
-    geometry: plane
-    mobility: fixed
-    min_pixels: 2000
-    attach: []
-
-  - path: architecture/door
-    label: Door
-    parent: null
-    prompts: ["door", "doorway", "interior door"]
-    geometry: "parametric:door"
-    components: [opening, leaf, frame]
-    mobility: fixed
-    min_pixels: 1200
-    typical_dims_m: {w: [0.7, 1.2], d: [0.04, 0.15], h: [1.9, 2.4]}
-    attach:
-      - rests_on: architecture/floor
-      - hosted_by: architecture/wall
-
-  - path: architecture/window
-    label: Window
-    parent: null
-    prompts: ["window", "glass window"]
-    geometry: "parametric:window"
-    components: [opening, frame, glazing]
-    mobility: fixed
-    min_pixels: 1000
-    typical_dims_m: {w: [0.5, 3.0], d: [0.05, 0.25], h: [0.8, 2.2]}
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: architecture/passage
-    label: Passage
-    parent: null
-    prompts: ["passage", "open doorway", "archway"]
-    geometry: "parametric:opening"
-    components: [opening]
-    mobility: fixed
-    min_pixels: 1200
-    typical_dims_m: {w: [0.8, 2.5], d: [0.1, 0.4], h: [2.0, 2.6]}
-    attach:
-      - hosted_by: architecture/wall
-      - rests_on: architecture/floor
-
-  - path: architecture/column
-    label: Column
-    parent: null
-    prompts: ["column", "pillar", "structural pillar"]
-    geometry: proxy_box
-    mobility: fixed
-    min_pixels: 1000
-    typical_dims_m: {w: [0.2, 0.8], d: [0.2, 0.8], h: [2.2, 4.0]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: architecture/skirting
-    label: Skirting
-    parent: null
-    prompts: ["skirting board", "baseboard"]
-    geometry: "parametric:profile"
-    mobility: fixed
-    min_pixels: 400
-    typical_dims_m: {w: [0.5, 6.0], d: [0.01, 0.03], h: [0.06, 0.18]}
-    attach:
-      - hosted_by: architecture/wall
-      - rests_on: architecture/floor
-
-  # ---- Furniture -----------------------------------------------------------
-  - path: furniture/seating/sofa
-    label: Sofa
-    parent: null
-    prompts: ["sofa", "couch", "living room sofa"]
-    geometry: "parametric:sofa"
-    components: [frame, seat_cushion, back_cushion, armrest, leg]
-    mobility: movable
-    min_pixels: 1500
-    typical_dims_m: {w: [1.4, 2.8], d: [0.7, 1.2], h: [0.7, 1.0]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/seating/sofa/sectional
-    label: Sectional sofa
-    parent: furniture/seating/sofa
-    prompts: ["sectional sofa", "L-shaped sofa", "corner couch"]
-    geometry: "parametric:sofa"
-    components: [frame, seat_cushion, back_cushion, armrest, leg, chaise]
-    mobility: movable
-    min_pixels: 2000
-    typical_dims_m: {w: [1.6, 3.5], d: [0.8, 2.0], h: [0.7, 1.0]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/seating/armchair
-    label: Armchair
-    parent: null
-    prompts: ["armchair", "accent chair", "lounge chair"]
-    geometry: "parametric:chair"
-    components: [seat, backrest, armrest, leg]
-    mobility: movable
-    min_pixels: 1000
-    typical_dims_m: {w: [0.7, 1.1], d: [0.7, 1.1], h: [0.7, 1.0]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/seating/chair
-    label: Chair
-    parent: null
-    prompts: ["chair", "dining chair", "side chair"]
-    geometry: "parametric:chair"
-    components: [seat, backrest, leg]
-    mobility: movable
-    min_pixels: 800
-    typical_dims_m: {w: [0.4, 0.6], d: [0.4, 0.6], h: [0.7, 1.0]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/tables/coffee_table
-    label: Coffee table
-    parent: null
-    prompts: ["coffee table", "low table"]
-    geometry: "parametric:table"
-    components: [top, leg]
-    mobility: movable
-    min_pixels: 1000
-    typical_dims_m: {w: [0.6, 1.5], d: [0.4, 0.9], h: [0.35, 0.55]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/tables/side_table
-    label: Side table
-    parent: null
-    prompts: ["side table", "end table", "nightstand"]
-    geometry: "parametric:table"
-    components: [top, leg]
-    mobility: movable
-    min_pixels: 600
-    typical_dims_m: {w: [0.35, 0.65], d: [0.35, 0.65], h: [0.45, 0.7]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/tables/dining_table
-    label: Dining table
-    parent: null
-    prompts: ["dining table", "kitchen table"]
-    geometry: "parametric:table"
-    components: [top, leg]
-    mobility: movable
-    min_pixels: 1500
-    typical_dims_m: {w: [1.2, 2.6], d: [0.7, 1.2], h: [0.72, 0.78]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/tables/desk
-    label: Desk
-    parent: null
-    prompts: ["desk", "work desk", "office desk"]
-    geometry: "parametric:table"
-    components: [top, leg, drawer]
-    mobility: movable
-    min_pixels: 1200
-    typical_dims_m: {w: [1.0, 2.0], d: [0.5, 0.9], h: [0.72, 0.78]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/sleeping/bed
-    label: Bed
-    parent: null
-    prompts: ["bed", "double bed", "single bed"]
-    geometry: "parametric:bed"
-    components: [frame, mattress, headboard, leg]
-    mobility: movable
-    min_pixels: 2000
-    typical_dims_m: {w: [0.9, 2.2], d: [1.8, 2.2], h: [0.4, 1.2]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/storage/cabinet
-    label: Cabinet
-    parent: null
-    prompts: ["cabinet", "storage cabinet", "credenza", "sideboard"]
-    geometry: "parametric:cabinet"
-    components: [body, door, drawer, shelf, leg]
-    mobility: movable
-    min_pixels: 1200
-    typical_dims_m: {w: [0.6, 2.0], d: [0.35, 0.6], h: [0.6, 1.8]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/storage/shelf
-    label: Shelf
-    parent: null
-    prompts: ["bookshelf", "wall shelf", "shelving unit"]
-    geometry: "parametric:cabinet"
-    components: [frame, shelf]
-    mobility: movable
-    min_pixels: 1000
-    typical_dims_m: {w: [0.5, 1.8], d: [0.25, 0.45], h: [0.8, 2.2]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/storage/media_console
-    label: Media console
-    parent: null
-    prompts: ["media console", "tv unit", "tv stand"]
-    geometry: "parametric:cabinet"
-    components: [body, door, shelf, leg]
-    mobility: movable
-    min_pixels: 1200
-    typical_dims_m: {w: [1.0, 2.4], d: [0.35, 0.55], h: [0.35, 0.65]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: furniture/storage/wardrobe
-    label: Wardrobe
-    parent: null
-    prompts: ["wardrobe", "closet", "armoire"]
-    geometry: "parametric:cabinet"
-    components: [body, door, shelf]
-    mobility: movable
-    min_pixels: 2000
-    typical_dims_m: {w: [0.8, 2.4], d: [0.5, 0.7], h: [1.8, 2.4]}
-    attach:
-      - rests_on: architecture/floor
-
-  # ---- Soft / Decor --------------------------------------------------------
-  - path: decor/floor/rug
-    label: Rug
-    parent: null
-    prompts: ["rug", "carpet", "area rug"]
-    geometry: plane
-    mobility: movable
-    min_pixels: 1500
-    typical_dims_m: {w: [1.0, 3.5], d: [1.0, 4.0], h: [0.005, 0.03]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: decor/window/curtain
-    label: Curtain
-    parent: null
-    prompts: ["curtain", "drapes", "window curtain"]
-    geometry: mesh
-    mobility: movable
-    min_pixels: 1000
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: decor/window/blind
-    label: Blind
-    parent: null
-    prompts: ["window blind", "roller blind", "venetian blind"]
-    geometry: "parametric:blind"
-    mobility: movable
-    min_pixels: 800
-    attach:
-      - hosted_by: architecture/window
-
-  - path: decor/soft/cushion
-    label: Cushion
-    parent: null
-    prompts: ["cushion", "throw pillow", "pillow"]
-    geometry: proxy_box
-    mobility: movable
-    min_pixels: 300
-    typical_dims_m: {w: [0.3, 0.6], d: [0.3, 0.6], h: [0.1, 0.25]}
-    attach:
-      - rests_on: furniture/seating/sofa
-
-  - path: decor/soft/throw
-    label: Throw
-    parent: null
-    prompts: ["throw blanket", "blanket"]
-    geometry: mesh
-    mobility: movable
-    min_pixels: 400
-    attach:
-      - rests_on: furniture/seating/sofa
-
-  - path: decor/wall/wall_art
-    label: Wall art
-    parent: null
-    prompts: ["wall art", "painting", "picture frame", "poster"]
-    geometry: plane
-    mobility: movable
-    min_pixels: 500
-    typical_dims_m: {w: [0.3, 2.0], d: [0.02, 0.08], h: [0.3, 1.5]}
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: decor/wall/mirror
-    label: Mirror
-    parent: null
-    prompts: ["mirror", "wall mirror"]
-    geometry: plane
-    mobility: movable
-    min_pixels: 500
-    typical_dims_m: {w: [0.4, 1.5], d: [0.02, 0.08], h: [0.4, 2.0]}
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: decor/object/vase
-    label: Vase
-    parent: null
-    prompts: ["vase", "flower vase"]
-    geometry: proxy_box
-    mobility: movable
-    min_pixels: 200
-    typical_dims_m: {w: [0.1, 0.35], d: [0.1, 0.35], h: [0.15, 0.6]}
-    attach:
-      - rests_on: furniture/tables/coffee_table
-
-  - path: decor/lighting/lamp
-    label: Lamp
-    parent: null
-    prompts: ["lamp", "floor lamp", "table lamp", "desk lamp"]
-    geometry: mesh
-    mobility: movable
-    min_pixels: 400
-    typical_dims_m: {w: [0.2, 0.6], d: [0.2, 0.6], h: [0.3, 1.8]}
-    attach:
-      - rests_on: architecture/floor
-
-  # ---- Electronics ---------------------------------------------------------
-  - path: electronics/display/tv
-    label: TV
-    parent: null
-    prompts: ["television", "tv", "flat screen tv"]
-    geometry: proxy_box
-    mobility: movable
-    min_pixels: 1000
-    typical_dims_m: {w: [0.8, 1.8], d: [0.05, 0.15], h: [0.5, 1.1]}
-    attach:
-      - mounted_on: architecture/wall
-      - rests_on: furniture/storage/media_console
-
-  - path: electronics/display/monitor
-    label: Monitor
-    parent: null
-    prompts: ["computer monitor", "monitor"]
-    geometry: proxy_box
-    mobility: movable
-    min_pixels: 600
-    typical_dims_m: {w: [0.5, 0.9], d: [0.05, 0.15], h: [0.35, 0.6]}
-    attach:
-      - rests_on: furniture/tables/desk
-
-  - path: electronics/audio/speaker
-    label: Speaker
-    parent: null
-    prompts: ["speaker", "audio speaker", "smart speaker"]
-    geometry: proxy_box
-    mobility: movable
-    min_pixels: 250
-    typical_dims_m: {w: [0.1, 0.35], d: [0.1, 0.35], h: [0.15, 0.5]}
-    attach:
-      - rests_on: furniture/storage/shelf
-
-  # ---- Fixtures ------------------------------------------------------------
-  - path: fixtures/lighting/ceiling_light
-    label: Ceiling light
-    parent: null
-    prompts: ["ceiling light", "pendant light", "chandelier"]
-    geometry: mesh
-    mobility: fixed
-    min_pixels: 400
-    typical_dims_m: {w: [0.2, 1.0], d: [0.2, 1.0], h: [0.1, 0.8]}
-    attach:
-      - hosted_by: architecture/ceiling
-
-  - path: fixtures/lighting/wall_light
-    label: Wall light
-    parent: null
-    prompts: ["wall light", "sconce"]
-    geometry: mesh
-    mobility: fixed
-    min_pixels: 300
-    typical_dims_m: {w: [0.1, 0.4], d: [0.1, 0.3], h: [0.15, 0.5]}
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: fixtures/electrical/switch
-    label: Switch
-    parent: null
-    prompts: ["light switch", "wall switch"]
-    geometry: proxy_box
-    mobility: fixed
-    min_pixels: 100
-    typical_dims_m: {w: [0.07, 0.12], d: [0.01, 0.04], h: [0.07, 0.12]}
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: fixtures/electrical/socket
-    label: Socket
-    parent: null
-    prompts: ["electrical socket", "power outlet", "wall socket"]
-    geometry: proxy_box
-    mobility: fixed
-    min_pixels: 100
-    typical_dims_m: {w: [0.07, 0.15], d: [0.01, 0.04], h: [0.07, 0.12]}
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: fixtures/hvac/vent
-    label: Vent
-    parent: null
-    prompts: ["air vent", "hvac vent", "exhaust vent"]
-    geometry: plane
-    mobility: fixed
-    min_pixels: 150
-    typical_dims_m: {w: [0.15, 0.6], d: [0.02, 0.08], h: [0.15, 0.4]}
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: fixtures/hvac/radiator
-    label: Radiator
-    parent: null
-    prompts: ["radiator", "heating radiator"]
-    geometry: proxy_box
-    mobility: fixed
-    min_pixels: 800
-    typical_dims_m: {w: [0.5, 1.8], d: [0.08, 0.2], h: [0.4, 0.9]}
-    attach:
-      - hosted_by: architecture/wall
-
-  - path: fixtures/hvac/ac_unit
-    label: AC unit
-    parent: null
-    prompts: ["ac unit", "air conditioner", "split ac"]
-    geometry: proxy_box
-    mobility: fixed
-    min_pixels: 800
-    typical_dims_m: {w: [0.7, 1.2], d: [0.2, 0.35], h: [0.25, 0.4]}
-    attach:
-      - hosted_by: architecture/wall
-
-  # ---- Plants --------------------------------------------------------------
-  - path: plants/indoor/potted_plant
-    label: Potted plant
-    parent: null
-    prompts: ["potted plant", "houseplant"]
-    geometry: mesh
-    components: [plant, pot]
-    mobility: movable
-    min_pixels: 400
-    typical_dims_m: {w: [0.2, 1.2], d: [0.2, 1.2], h: [0.3, 1.8]}
-    attach:
-      - rests_on: architecture/floor
-
-  - path: plants/indoor/plant
-    label: Plant
-    parent: null
-    prompts: ["plant", "indoor greenery"]
-    geometry: mesh
-    mobility: movable
-    min_pixels: 300
-    typical_dims_m: {w: [0.2, 1.0], d: [0.2, 1.0], h: [0.2, 1.5]}
-    attach:
-      - rests_on: architecture/floor
-
-  # ---- Fallback ------------------------------------------------------------
-  - path: fallback/unknown_object
-    label: Unknown object
-    parent: null
-    prompts: ["object", "item", "furniture"]
-    geometry: proxy_box
-    mobility: movable
-    min_pixels: 0
-    typical_dims_m: null
-    attach: []
+- path: furniture
+  label: Furniture
+  parent: null
+  prompts:
+  - furniture
+  - furnishings
+  geometry: proxy_box
+  mobility: movable
+  min_pixels: 500
+  attach: []
+  aliases:
+  - furniture
+- path: architecture/wall
+  label: Wall
+  parent: null
+  prompts:
+  - wall
+  - interior wall
+  geometry: plane
+  mobility: fixed
+  min_pixels: 2000
+  attach: []
+  attributes: &id001
+    finish:
+    - paint
+    - tile
+    - stone
+    - wood
+    - plaster
+    - exposed
+    - unknown
+- path: architecture/floor
+  label: Floor
+  parent: null
+  prompts:
+  - floor
+  - flooring
+  - hardwood floor
+  - tiled floor
+  geometry: plane
+  mobility: fixed
+  min_pixels: 2000
+  attach: []
+  attributes: *id001
+- path: architecture/ceiling
+  label: Ceiling
+  parent: null
+  prompts:
+  - ceiling
+  - plaster ceiling
+  geometry: plane
+  mobility: fixed
+  min_pixels: 2000
+  attach: []
+  attributes: *id001
+- path: architecture/door
+  label: Door
+  parent: null
+  prompts:
+  - door
+  - doorway
+  - interior door
+  geometry: parametric:door
+  components:
+  - opening
+  - leaf
+  - frame
+  mobility: fixed
+  min_pixels: 1200
+  typical_dims_m:
+    w:
+    - 0.7
+    - 1.2
+    d:
+    - 0.04
+    - 0.15
+    h:
+    - 1.9
+    - 2.4
+  attach:
+  - rests_on: architecture/floor
+  - hosted_by: architecture/wall
+  aliases:
+  - opening
+  - leaf
+  - door
+  attributes: &id004
+    handle_type:
+    - lever
+    - knob
+    - pull
+    - unknown
+    lock_type:
+    - key
+    - numpad
+    - card
+    - bolt
+    - none
+    - unknown
+    swing:
+    - left
+    - right
+    - unknown
+- path: architecture/window
+  label: Window
+  parent: null
+  prompts:
+  - window
+  - glass window
+  geometry: parametric:window
+  components:
+  - opening
+  - frame
+  - glazing
+  mobility: fixed
+  min_pixels: 1000
+  typical_dims_m:
+    w:
+    - 0.5
+    - 3.0
+    d:
+    - 0.05
+    - 0.25
+    h:
+    - 0.8
+    - 2.2
+  attach:
+  - hosted_by: architecture/wall
+  aliases:
+  - frame
+  - glazing
+  attributes: &id005
+    pane_count:
+    - '1'
+    - '2'
+    - '3'
+    - 4+
+    - unknown
+    openable:
+    - 'yes'
+    - 'no'
+    - unknown
+    grill:
+    - 'yes'
+    - 'no'
+    - unknown
+- path: architecture/passage
+  label: Passage
+  parent: null
+  prompts:
+  - passage
+  - open doorway
+  - archway
+  geometry: parametric:opening
+  components:
+  - opening
+  mobility: fixed
+  min_pixels: 1200
+  typical_dims_m:
+    w:
+    - 0.8
+    - 2.5
+    d:
+    - 0.1
+    - 0.4
+    h:
+    - 2.0
+    - 2.6
+  attach:
+  - hosted_by: architecture/wall
+  - rests_on: architecture/floor
+- path: architecture/column
+  label: Column
+  parent: null
+  prompts:
+  - column
+  - pillar
+  - structural pillar
+  geometry: proxy_box
+  mobility: fixed
+  min_pixels: 1000
+  typical_dims_m:
+    w:
+    - 0.2
+    - 0.8
+    d:
+    - 0.2
+    - 0.8
+    h:
+    - 2.2
+    - 4.0
+  attach:
+  - rests_on: architecture/floor
+  attributes: *id001
+- path: architecture/skirting
+  label: Skirting
+  parent: null
+  prompts:
+  - skirting board
+  - baseboard
+  geometry: parametric:profile
+  mobility: fixed
+  min_pixels: 400
+  typical_dims_m:
+    w:
+    - 0.5
+    - 6.0
+    d:
+    - 0.01
+    - 0.03
+    h:
+    - 0.06
+    - 0.18
+  attach:
+  - hosted_by: architecture/wall
+  - rests_on: architecture/floor
+- path: furniture/seating/sofa
+  label: Sofa
+  parent: null
+  prompts:
+  - sofa
+  - couch
+  - living room sofa
+  geometry: parametric:sofa
+  components:
+  - frame
+  - seat_cushion
+  - back_cushion
+  - armrest
+  - leg
+  mobility: movable
+  min_pixels: 1500
+  typical_dims_m:
+    w:
+    - 1.4
+    - 2.8
+    d:
+    - 0.7
+    - 1.2
+    h:
+    - 0.7
+    - 1.0
+  attach:
+  - rests_on: architecture/floor
+  attributes: &id002
+    leg_count:
+    - '1'
+    - '3'
+    - '4'
+    - pedestal
+    - unknown
+    material:
+    - fabric
+    - leather
+    - wood
+    - metal
+    - plastic
+    - unknown
+- path: furniture/seating/sofa/sectional
+  label: Sectional sofa
+  parent: furniture/seating/sofa
+  prompts:
+  - sectional sofa
+  - L-shaped sofa
+  - corner couch
+  geometry: parametric:sofa
+  components:
+  - frame
+  - seat_cushion
+  - back_cushion
+  - armrest
+  - leg
+  - chaise
+  mobility: movable
+  min_pixels: 2000
+  typical_dims_m:
+    w:
+    - 1.6
+    - 3.5
+    d:
+    - 0.8
+    - 2.0
+    h:
+    - 0.7
+    - 1.0
+  attach:
+  - rests_on: architecture/floor
+  aliases:
+  - chaise
+  attributes: *id002
+- path: furniture/seating/armchair
+  label: Armchair
+  parent: null
+  prompts:
+  - armchair
+  - accent chair
+  - lounge chair
+  geometry: parametric:chair
+  components:
+  - seat
+  - backrest
+  - armrest
+  - leg
+  mobility: movable
+  min_pixels: 1000
+  typical_dims_m:
+    w:
+    - 0.7
+    - 1.1
+    d:
+    - 0.7
+    - 1.1
+    h:
+    - 0.7
+    - 1.0
+  attach:
+  - rests_on: architecture/floor
+- path: furniture/seating/chair
+  label: Chair
+  parent: null
+  prompts:
+  - chair
+  - dining chair
+  - side chair
+  geometry: parametric:chair
+  components:
+  - seat
+  - backrest
+  - leg
+  mobility: movable
+  min_pixels: 800
+  typical_dims_m:
+    w:
+    - 0.4
+    - 0.6
+    d:
+    - 0.4
+    - 0.6
+    h:
+    - 0.7
+    - 1.0
+  attach:
+  - rests_on: architecture/floor
+  attributes: *id002
+- path: furniture/tables/coffee_table
+  label: Coffee table
+  parent: null
+  prompts:
+  - coffee table
+  - low table
+  geometry: parametric:table
+  components:
+  - top
+  - leg
+  mobility: movable
+  min_pixels: 1000
+  typical_dims_m:
+    w:
+    - 0.6
+    - 1.5
+    d:
+    - 0.4
+    - 0.9
+    h:
+    - 0.35
+    - 0.55
+  attach:
+  - rests_on: architecture/floor
+  attributes: *id002
+- path: furniture/tables/side_table
+  label: Side table
+  parent: null
+  prompts:
+  - side table
+  - end table
+  - nightstand
+  geometry: parametric:table
+  components:
+  - top
+  - leg
+  mobility: movable
+  min_pixels: 600
+  typical_dims_m:
+    w:
+    - 0.35
+    - 0.65
+    d:
+    - 0.35
+    - 0.65
+    h:
+    - 0.45
+    - 0.7
+  attach:
+  - rests_on: architecture/floor
+- path: furniture/tables/dining_table
+  label: Dining table
+  parent: null
+  prompts:
+  - dining table
+  - kitchen table
+  geometry: parametric:table
+  components:
+  - top
+  - leg
+  mobility: movable
+  min_pixels: 1500
+  typical_dims_m:
+    w:
+    - 1.2
+    - 2.6
+    d:
+    - 0.7
+    - 1.2
+    h:
+    - 0.72
+    - 0.78
+  attach:
+  - rests_on: architecture/floor
+  attributes: *id002
+- path: furniture/tables/desk
+  label: Desk
+  parent: null
+  prompts:
+  - desk
+  - work desk
+  - office desk
+  geometry: parametric:table
+  components:
+  - top
+  - leg
+  - drawer
+  mobility: movable
+  min_pixels: 1200
+  typical_dims_m:
+    w:
+    - 1.0
+    - 2.0
+    d:
+    - 0.5
+    - 0.9
+    h:
+    - 0.72
+    - 0.78
+  attach:
+  - rests_on: architecture/floor
+- path: furniture/sleeping/bed
+  label: Bed
+  parent: null
+  prompts:
+  - bed
+  - double bed
+  - single bed
+  geometry: parametric:bed
+  components:
+  - frame
+  - mattress
+  - headboard
+  - leg
+  mobility: movable
+  min_pixels: 2000
+  typical_dims_m:
+    w:
+    - 0.9
+    - 2.2
+    d:
+    - 1.8
+    - 2.2
+    h:
+    - 0.4
+    - 1.2
+  attach:
+  - rests_on: architecture/floor
+- path: furniture/storage/cabinet
+  label: Cabinet
+  parent: null
+  prompts:
+  - cabinet
+  - storage cabinet
+  - credenza
+  - sideboard
+  geometry: parametric:cabinet
+  components:
+  - body
+  - door
+  - drawer
+  - shelf
+  - leg
+  mobility: movable
+  min_pixels: 1200
+  typical_dims_m:
+    w:
+    - 0.6
+    - 2.0
+    d:
+    - 0.35
+    - 0.6
+    h:
+    - 0.6
+    - 1.8
+  attach:
+  - rests_on: architecture/floor
+  aliases:
+  - body
+- path: furniture/storage/shelf
+  label: Shelf
+  parent: null
+  prompts:
+  - bookshelf
+  - wall shelf
+  - shelving unit
+  geometry: parametric:cabinet
+  components:
+  - frame
+  - shelf
+  mobility: movable
+  min_pixels: 1000
+  typical_dims_m:
+    w:
+    - 0.5
+    - 1.8
+    d:
+    - 0.25
+    - 0.45
+    h:
+    - 0.8
+    - 2.2
+  attach:
+  - rests_on: architecture/floor
+  aliases:
+  - shelf
+- path: furniture/storage/media_console
+  label: Media console
+  parent: null
+  prompts:
+  - media console
+  - tv unit
+  - tv stand
+  geometry: parametric:cabinet
+  components:
+  - body
+  - door
+  - shelf
+  - leg
+  mobility: movable
+  min_pixels: 1200
+  typical_dims_m:
+    w:
+    - 1.0
+    - 2.4
+    d:
+    - 0.35
+    - 0.55
+    h:
+    - 0.35
+    - 0.65
+  attach:
+  - rests_on: architecture/floor
+- path: furniture/storage/wardrobe
+  label: Wardrobe
+  parent: null
+  prompts:
+  - wardrobe
+  - closet
+  - armoire
+  geometry: parametric:cabinet
+  components:
+  - body
+  - door
+  - shelf
+  mobility: movable
+  min_pixels: 2000
+  typical_dims_m:
+    w:
+    - 0.8
+    - 2.4
+    d:
+    - 0.5
+    - 0.7
+    h:
+    - 1.8
+    - 2.4
+  attach:
+  - rests_on: architecture/floor
+- path: decor/floor/rug
+  label: Rug
+  parent: null
+  prompts:
+  - rug
+  - carpet
+  - area rug
+  geometry: plane
+  mobility: movable
+  min_pixels: 1500
+  typical_dims_m:
+    w:
+    - 1.0
+    - 3.5
+    d:
+    - 1.0
+    - 4.0
+    h:
+    - 0.005
+    - 0.03
+  attach:
+  - rests_on: architecture/floor
+- path: decor/window/curtain
+  label: Curtain
+  parent: null
+  prompts:
+  - curtain
+  - drapes
+  - window curtain
+  geometry: mesh
+  mobility: movable
+  min_pixels: 1000
+  attach:
+  - hosted_by: architecture/wall
+- path: decor/window/blind
+  label: Blind
+  parent: null
+  prompts:
+  - window blind
+  - roller blind
+  - venetian blind
+  geometry: parametric:blind
+  mobility: movable
+  min_pixels: 800
+  attach:
+  - hosted_by: architecture/window
+- path: decor/soft/cushion
+  label: Cushion
+  parent: null
+  prompts:
+  - cushion
+  - throw pillow
+  - pillow
+  geometry: proxy_box
+  mobility: movable
+  min_pixels: 300
+  typical_dims_m:
+    w:
+    - 0.3
+    - 0.6
+    d:
+    - 0.3
+    - 0.6
+    h:
+    - 0.1
+    - 0.25
+  attach:
+  - rests_on: furniture/seating/sofa
+- path: decor/soft/throw
+  label: Throw
+  parent: null
+  prompts:
+  - throw blanket
+  - blanket
+  geometry: mesh
+  mobility: movable
+  min_pixels: 400
+  attach:
+  - rests_on: furniture/seating/sofa
+- path: decor/wall/wall_art
+  label: Wall art
+  parent: null
+  prompts:
+  - wall art
+  - painting
+  - picture frame
+  - poster
+  geometry: plane
+  mobility: movable
+  min_pixels: 500
+  typical_dims_m:
+    w:
+    - 0.3
+    - 2.0
+    d:
+    - 0.02
+    - 0.08
+    h:
+    - 0.3
+    - 1.5
+  attach:
+  - hosted_by: architecture/wall
+- path: decor/wall/mirror
+  label: Mirror
+  parent: null
+  prompts:
+  - mirror
+  - wall mirror
+  geometry: plane
+  mobility: movable
+  min_pixels: 500
+  typical_dims_m:
+    w:
+    - 0.4
+    - 1.5
+    d:
+    - 0.02
+    - 0.08
+    h:
+    - 0.4
+    - 2.0
+  attach:
+  - hosted_by: architecture/wall
+- path: decor/object/vase
+  label: Vase
+  parent: null
+  prompts:
+  - vase
+  - flower vase
+  geometry: proxy_box
+  mobility: movable
+  min_pixels: 200
+  typical_dims_m:
+    w:
+    - 0.1
+    - 0.35
+    d:
+    - 0.1
+    - 0.35
+    h:
+    - 0.15
+    - 0.6
+  attach:
+  - rests_on: furniture/tables/coffee_table
+- path: decor/lighting/lamp
+  label: Lamp
+  parent: null
+  prompts:
+  - lamp
+  - floor lamp
+  - table lamp
+  - desk lamp
+  geometry: mesh
+  mobility: movable
+  min_pixels: 400
+  typical_dims_m:
+    w:
+    - 0.2
+    - 0.6
+    d:
+    - 0.2
+    - 0.6
+    h:
+    - 0.3
+    - 1.8
+  attach:
+  - rests_on: architecture/floor
+- path: electronics/display/tv
+  label: TV
+  parent: null
+  prompts:
+  - television
+  - tv
+  - flat screen tv
+  geometry: proxy_box
+  mobility: movable
+  min_pixels: 1000
+  typical_dims_m:
+    w:
+    - 0.8
+    - 1.8
+    d:
+    - 0.05
+    - 0.15
+    h:
+    - 0.5
+    - 1.1
+  attach:
+  - mounted_on: architecture/wall
+  - rests_on: furniture/storage/media_console
+  aliases:
+  - furniture.tv
+- path: electronics/display/monitor
+  label: Monitor
+  parent: null
+  prompts:
+  - computer monitor
+  - monitor
+  geometry: proxy_box
+  mobility: movable
+  min_pixels: 600
+  typical_dims_m:
+    w:
+    - 0.5
+    - 0.9
+    d:
+    - 0.05
+    - 0.15
+    h:
+    - 0.35
+    - 0.6
+  attach:
+  - rests_on: furniture/tables/desk
+- path: electronics/audio/speaker
+  label: Speaker
+  parent: null
+  prompts:
+  - speaker
+  - audio speaker
+  - smart speaker
+  geometry: proxy_box
+  mobility: movable
+  min_pixels: 250
+  typical_dims_m:
+    w:
+    - 0.1
+    - 0.35
+    d:
+    - 0.1
+    - 0.35
+    h:
+    - 0.15
+    - 0.5
+  attach:
+  - rests_on: furniture/storage/shelf
+- path: fixtures/lighting/ceiling_light
+  label: Ceiling light
+  parent: null
+  prompts:
+  - ceiling light
+  - pendant light
+  - chandelier
+  geometry: mesh
+  mobility: fixed
+  min_pixels: 400
+  typical_dims_m:
+    w:
+    - 0.2
+    - 1.0
+    d:
+    - 0.2
+    - 1.0
+    h:
+    - 0.1
+    - 0.8
+  attach:
+  - hosted_by: architecture/ceiling
+- path: fixtures/lighting/wall_light
+  label: Wall light
+  parent: null
+  prompts:
+  - wall light
+  - sconce
+  geometry: mesh
+  mobility: fixed
+  min_pixels: 300
+  typical_dims_m:
+    w:
+    - 0.1
+    - 0.4
+    d:
+    - 0.1
+    - 0.3
+    h:
+    - 0.15
+    - 0.5
+  attach:
+  - hosted_by: architecture/wall
+- path: fixtures/electrical/switch
+  label: Switch
+  parent: null
+  prompts:
+  - light switch
+  - wall switch
+  geometry: proxy_box
+  mobility: fixed
+  min_pixels: 100
+  typical_dims_m:
+    w:
+    - 0.07
+    - 0.12
+    d:
+    - 0.01
+    - 0.04
+    h:
+    - 0.07
+    - 0.12
+  attach:
+  - hosted_by: architecture/wall
+  attributes: &id003
+    socket_standard:
+    - type_a_b
+    - type_c
+    - type_d
+    - type_g
+    - type_m
+    - usb
+    - tv_coax
+    - rj45
+    - telephone
+    - unknown
+    gang_count:
+    - '1'
+    - '2'
+    - '3'
+    - '4'
+    - '6'
+    - '8'
+    - unknown
+    switch_kind:
+    - rocker
+    - dimmer
+    - regulator
+    - bell
+    - unknown
+- path: fixtures/electrical/socket
+  label: Socket
+  parent: null
+  prompts:
+  - electrical socket
+  - power outlet
+  - wall socket
+  geometry: proxy_box
+  mobility: fixed
+  min_pixels: 100
+  typical_dims_m:
+    w:
+    - 0.07
+    - 0.15
+    d:
+    - 0.01
+    - 0.04
+    h:
+    - 0.07
+    - 0.12
+  attach:
+  - hosted_by: architecture/wall
+  attributes: *id003
+- path: fixtures/hvac/vent
+  label: Vent
+  parent: null
+  prompts:
+  - air vent
+  - hvac vent
+  - exhaust vent
+  geometry: plane
+  mobility: fixed
+  min_pixels: 150
+  typical_dims_m:
+    w:
+    - 0.15
+    - 0.6
+    d:
+    - 0.02
+    - 0.08
+    h:
+    - 0.15
+    - 0.4
+  attach:
+  - hosted_by: architecture/wall
+- path: fixtures/hvac/radiator
+  label: Radiator
+  parent: null
+  prompts:
+  - radiator
+  - heating radiator
+  geometry: proxy_box
+  mobility: fixed
+  min_pixels: 800
+  typical_dims_m:
+    w:
+    - 0.5
+    - 1.8
+    d:
+    - 0.08
+    - 0.2
+    h:
+    - 0.4
+    - 0.9
+  attach:
+  - hosted_by: architecture/wall
+- path: fixtures/hvac/ac_unit
+  label: AC unit
+  parent: null
+  prompts:
+  - ac unit
+  - air conditioner
+  - split ac
+  geometry: proxy_box
+  mobility: fixed
+  min_pixels: 800
+  typical_dims_m:
+    w:
+    - 0.7
+    - 1.2
+    d:
+    - 0.2
+    - 0.35
+    h:
+    - 0.25
+    - 0.4
+  attach:
+  - hosted_by: architecture/wall
+- path: plants/indoor/potted_plant
+  label: Potted plant
+  parent: null
+  prompts:
+  - potted plant
+  - houseplant
+  geometry: mesh
+  components:
+  - plant
+  - pot
+  mobility: movable
+  min_pixels: 400
+  typical_dims_m:
+    w:
+    - 0.2
+    - 1.2
+    d:
+    - 0.2
+    - 1.2
+    h:
+    - 0.3
+    - 1.8
+  attach:
+  - rests_on: architecture/floor
+  aliases:
+  - pot
+- path: plants/indoor/plant
+  label: Plant
+  parent: null
+  prompts:
+  - plant
+  - indoor greenery
+  geometry: mesh
+  mobility: movable
+  min_pixels: 300
+  typical_dims_m:
+    w:
+    - 0.2
+    - 1.0
+    d:
+    - 0.2
+    - 1.0
+    h:
+    - 0.2
+    - 1.5
+  attach:
+  - rests_on: architecture/floor
+  aliases:
+  - plant
+- path: fallback/unknown_object
+  label: Unknown object
+  parent: null
+  prompts:
+  - object
+  - item
+  - furniture
+  geometry: proxy_box
+  mobility: movable
+  min_pixels: 0
+  typical_dims_m: null
+  attach: []
+- path: furniture/components/leg
+  label: Furniture leg
+  parent: furniture
+  prompts:
+  - furniture leg
+  - chair leg
+  - table leg
+  geometry: mesh
+  mobility: movable
+  min_pixels: 50
+  aliases:
+  - leg
+  - furniture.components.leg
+- path: furniture/components/cushion
+  label: Cushion
+  parent: furniture
+  prompts:
+  - cushion
+  - seat cushion
+  - couch cushion
+  geometry: mesh
+  mobility: movable
+  min_pixels: 50
+  aliases:
+  - seat_cushion
+  - cushion
+  - mattress
+- path: furniture/components/back
+  label: Backrest
+  parent: furniture
+  prompts:
+  - backrest
+  - chair back
+  geometry: mesh
+  mobility: movable
+  min_pixels: 50
+  aliases:
+  - back_cushion
+  - backrest
+  - headboard
+- path: furniture/components/arm
+  label: Armrest
+  parent: furniture
+  prompts:
+  - armrest
+  geometry: mesh
+  mobility: movable
+  min_pixels: 50
+  aliases:
+  - armrest
+- path: furniture/components/seat
+  label: Seat
+  parent: furniture
+  prompts:
+  - chair seat
+  - sofa seat
+  geometry: mesh
+  mobility: movable
+  min_pixels: 50
+  aliases:
+  - seat
+- path: furniture/components/top
+  label: Table top
+  parent: furniture
+  prompts:
+  - table top
+  - desk top
+  geometry: mesh
+  mobility: movable
+  min_pixels: 50
+  aliases:
+  - top
+- path: furniture/components/drawer
+  label: Drawer
+  parent: furniture
+  prompts:
+  - drawer
+  - desk drawer
+  geometry: mesh
+  mobility: movable
+  min_pixels: 50
+  aliases:
+  - drawer
+- path: furniture/storage/almirah
+  label: Almirah
+  parent: furniture
+  prompts:
+  - almirah
+  - wardrobe
+  - closet
+  - armoire
+  geometry: proxy_box
+  mobility: movable
+  min_pixels: 1000
+  typical_dims_m:
+    w:
+    - 0.8
+    - 2.5
+    d:
+    - 0.4
+    - 0.8
+    h:
+    - 1.6
+    - 2.4
+  attributes:
+    handle_type:
+    - bar
+    - knob
+    - recessed
+    - ring
+    - unknown
+    lock_type:
+    - key
+    - numpad
+    - padlock
+    - none
+    - unknown
+    door_count:
+    - '1'
+    - '2'
+    - '3'
+    - 4+
+    - unknown
+    material:
+    - wood
+    - metal
+    - plastic
+    - glass
+    - composite
+    - unknown
+  aliases:
+  - almirah
+  - cupboard
+  - furniture.storage.wardrobe
+  - wardrobe
+- path: building
+  label: Building
+  category: building
+  parent: null
+  world_type: building
+  geometry: hybrid
+  size_m:
+  - 3.0
+  - 500.0
+  small: false
+  prompts:
+  - building
+  hosts: []
+  components: []
+  attributes: {}
+  aliases: []
+- path: building.storey
+  label: Storey
+  category: building
+  parent: building
+  world_type: storey
+  geometry: parametric
+  size_m:
+  - 2.0
+  - 100.0
+  small: false
+  prompts:
+  - storey
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - building/storey
+- path: room
+  label: Room
+  category: room
+  parent: null
+  world_type: room
+  geometry: parametric
+  size_m:
+  - 1.2
+  - 15.0
+  small: false
+  prompts:
+  - room
+  hosts: []
+  components: []
+  attributes: {}
+  aliases: []
+- path: room.corridor
+  label: Corridor
+  category: room
+  parent: room
+  world_type: corridor
+  geometry: parametric
+  size_m:
+  - 1.0
+  - 60.0
+  small: false
+  prompts:
+  - corridor
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - room/corridor
+- path: room.kitchen
+  label: Kitchen
+  category: room
+  parent: room
+  world_type: room
+  geometry: parametric
+  size_m:
+  - 1.5
+  - 12.0
+  small: false
+  prompts:
+  - kitchen
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - room/kitchen
+- path: room.bathroom
+  label: Bathroom
+  category: room
+  parent: room
+  world_type: room
+  geometry: parametric
+  size_m:
+  - 1.2
+  - 8.0
+  small: false
+  prompts:
+  - bathroom
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - room/bathroom
+- path: room.bedroom
+  label: Bedroom
+  category: room
+  parent: room
+  world_type: room
+  geometry: parametric
+  size_m:
+  - 2.0
+  - 10.0
+  small: false
+  prompts:
+  - bedroom
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - room/bedroom
+- path: room.living
+  label: Living room
+  category: room
+  parent: room
+  world_type: room
+  geometry: parametric
+  size_m:
+  - 2.5
+  - 15.0
+  small: false
+  prompts:
+  - living room
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - room/living
+- path: envelope.wall
+  label: Wall
+  category: envelope
+  parent: null
+  world_type: wall
+  geometry: parametric
+  size_m:
+  - 0.3
+  - 30.0
+  small: false
+  prompts:
+  - wall
+  hosts: []
+  components: []
+  attributes: *id001
+  aliases:
+  - envelope/wall
+- path: envelope.floor
+  label: Floor
+  category: envelope
+  parent: null
+  world_type: floor
+  geometry: parametric
+  size_m:
+  - 1.0
+  - 30.0
+  small: false
+  prompts:
+  - floor
+  hosts: []
+  components: []
+  attributes: *id001
+  aliases:
+  - envelope/floor
+- path: envelope.ceiling
+  label: Ceiling
+  category: envelope
+  parent: null
+  world_type: ceiling
+  geometry: parametric
+  size_m:
+  - 1.0
+  - 30.0
+  small: false
+  prompts:
+  - ceiling
+  hosts: []
+  components: []
+  attributes: *id001
+  aliases:
+  - envelope/ceiling
+- path: envelope.skirting
+  label: Skirting board
+  category: envelope
+  parent: envelope.wall
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.5
+  - 20.0
+  small: false
+  prompts:
+  - skirting board
+  hosts: []
+  components: []
+  attributes: *id001
+  aliases:
+  - envelope/skirting
+- path: envelope.cornice
+  label: Cornice / coving
+  category: envelope
+  parent: envelope.ceiling
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.5
+  - 20.0
+  small: false
+  prompts:
+  - cornice / coving
+  hosts: []
+  components: []
+  attributes: *id001
+  aliases:
+  - envelope/cornice
+- path: opening.door
+  label: Door
+  category: opening
+  parent: null
+  world_type: door
+  geometry: parametric
+  size_m:
+  - 0.5
+  - 3.2
+  small: false
+  prompts:
+  - door
+  hosts:
+  - envelope.wall
+  components: []
+  attributes: *id004
+  aliases:
+  - opening/door
+- path: opening.door.leaf
+  label: Door leaf
+  category: opening
+  parent: opening.door
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.5
+  - 3.0
+  small: false
+  prompts:
+  - door leaf
+  hosts: []
+  components: []
+  attributes: *id004
+  aliases:
+  - opening/door/leaf
+- path: opening.door.frame
+  label: Door frame
+  category: opening
+  parent: opening.door
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.5
+  - 3.2
+  small: false
+  prompts:
+  - door frame
+  hosts: []
+  components: []
+  attributes: *id004
+  aliases:
+  - opening/door/frame
+- path: opening.door.handle
+  label: Door handle
+  category: opening
+  parent: opening.door
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.05
+  - 0.35
+  small: true
+  prompts:
+  - door handle
+  - door knob
+  - lever handle
+  hosts:
+  - opening.door.leaf
+  components: []
+  attributes: *id004
+  aliases:
+  - opening/door/handle
+- path: opening.door.hinge
+  label: Door hinge
+  category: opening
+  parent: opening.door
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.03
+  - 0.2
+  small: true
+  prompts:
+  - door hinge
+  hosts:
+  - opening.door.frame
+  components: []
+  attributes: *id004
+  aliases:
+  - opening/door/hinge
+- path: opening.door.lock
+  label: Door lock / latch
+  category: opening
+  parent: opening.door
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.02
+  - 0.3
+  small: true
+  prompts:
+  - door lock
+  - keyhole
+  - latch
+  hosts:
+  - opening.door.leaf
+  components: []
+  attributes: *id004
+  aliases:
+  - opening/door/lock
+- path: opening.window
+  label: Window
+  category: opening
+  parent: null
+  world_type: window
+  geometry: parametric
+  size_m:
+  - 0.2
+  - 4.0
+  small: false
+  prompts:
+  - window
+  hosts:
+  - envelope.wall
+  components: []
+  attributes: *id005
+  aliases:
+  - opening/window
+- path: opening.window.frame
+  label: Window frame
+  category: opening
+  parent: opening.window
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.2
+  - 4.0
+  small: false
+  prompts:
+  - window frame
+  hosts: []
+  components: []
+  attributes: *id005
+  aliases:
+  - opening/window/frame
+- path: opening.window.glazing
+  label: Glazing
+  category: opening
+  parent: opening.window
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.1
+  - 4.0
+  small: false
+  prompts:
+  - glazing
+  hosts: []
+  components: []
+  attributes: *id005
+  aliases:
+  - opening/window/glazing
+- path: opening.window.mullion
+  label: Window subdivision (mullion/transom)
+  category: opening
+  parent: opening.window
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.1
+  - 3.0
+  small: false
+  prompts:
+  - window subdivision (mullion/transom)
+  hosts: []
+  components: []
+  attributes: *id005
+  aliases:
+  - opening/window/mullion
+- path: opening.window.handle
+  label: Window handle
+  category: opening
+  parent: opening.window
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.04
+  - 0.25
+  small: true
+  prompts:
+  - window handle
+  - window latch
+  hosts:
+  - opening.window.frame
+  components: []
+  attributes: *id005
+  aliases:
+  - opening/window/handle
+- path: opening.opening
+  label: Generic opening
+  category: opening
+  parent: null
+  world_type: opening
+  geometry: parametric
+  size_m:
+  - 0.2
+  - 6.0
+  small: false
+  prompts:
+  - generic opening
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - opening/opening
+- path: structural.column
+  label: Column
+  category: structural
+  parent: null
+  world_type: column
+  geometry: parametric
+  size_m:
+  - 0.1
+  - 12.0
+  small: false
+  prompts:
+  - column
+  - pillar
+  hosts: []
+  components: []
+  attributes: *id001
+  aliases:
+  - structural/column
+- path: structural.beam
+  label: Beam
+  category: structural
+  parent: null
+  world_type: beam
+  geometry: parametric
+  size_m:
+  - 0.2
+  - 15.0
+  small: false
+  prompts:
+  - exposed beam
+  hosts: []
+  components: []
+  attributes: *id001
+  aliases:
+  - structural/beam
+- path: structural.arch
+  label: Arch
+  category: structural
+  parent: null
+  world_type: arch
+  geometry: procedural
+  size_m:
+  - 0.5
+  - 12.0
+  small: false
+  prompts:
+  - arch
+  - archway
+  hosts: []
+  components: []
+  attributes: *id001
+  aliases:
+  - structural/arch
+- path: circulation.stairs
+  label: Staircase
+  category: circulation
+  parent: null
+  world_type: stairs
+  geometry: procedural
+  size_m:
+  - 1.0
+  - 12.0
+  small: false
+  prompts:
+  - staircase
+  - stairs
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - circulation/stairs
+- path: circulation.stairs.tread
+  label: Stair tread
+  category: circulation
+  parent: circulation.stairs
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.15
+  - 2.0
+  small: true
+  prompts:
+  - stair tread
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - circulation/stairs/tread
+- path: circulation.stairs.riser
+  label: Stair riser
+  category: circulation
+  parent: circulation.stairs
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.05
+  - 2.0
+  small: true
+  prompts:
+  - stair riser
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - circulation/stairs/riser
+- path: circulation.stairs.stringer
+  label: Stair stringer / support
+  category: circulation
+  parent: circulation.stairs
+  world_type: structure
+  geometry: mesh
+  size_m:
+  - 0.5
+  - 8.0
+  small: false
+  prompts:
+  - stair stringer / support
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - circulation/stairs/stringer
+- path: circulation.stairs.landing
+  label: Landing
+  category: circulation
+  parent: circulation.stairs
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.6
+  - 5.0
+  small: false
+  prompts:
+  - landing
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - circulation/stairs/landing
+- path: circulation.railing
+  label: Railing / balustrade
+  category: circulation
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.3
+  - 30.0
+  small: false
+  prompts:
+  - railing
+  - balustrade
+  - glass railing
+  - handrail
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - circulation/railing
+- path: circulation.railing.post
+  label: Baluster / post
+  category: circulation
+  parent: circulation.railing
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.4
+  - 1.4
+  small: true
+  prompts:
+  - baluster / post
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - circulation/railing/post
+- path: circulation.railing.glass
+  label: Glass panel
+  category: circulation
+  parent: circulation.railing
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.3
+  - 3.0
+  small: false
+  prompts:
+  - glass panel
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - circulation/railing/glass
+- path: electrical.switchboard
+  label: Switchboard / faceplate
+  category: electrical
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.05
+  - 1.2
+  small: true
+  prompts:
+  - switchboard
+  - switch plate
+  - wall socket plate
+  - electrical faceplate
+  hosts:
+  - envelope.wall
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/switchboard
+- path: electrical.switchboard.module
+  label: Switchboard module
+  category: electrical
+  parent: electrical.switchboard
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.02
+  - 0.15
+  small: true
+  prompts:
+  - switchboard module
+  hosts:
+  - electrical.switchboard
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/switchboard/module
+- path: electrical.switchboard.module.socket
+  label: Power socket (plug point)
+  category: electrical
+  parent: electrical.switchboard.module
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.03
+  - 0.12
+  small: true
+  prompts:
+  - wall socket
+  - power outlet
+  - plug point
+  - electrical socket
+  hosts:
+  - electrical.switchboard
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/switchboard/module/socket
+- path: electrical.switchboard.module.switch
+  label: Switch
+  category: electrical
+  parent: electrical.switchboard.module
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.02
+  - 0.1
+  small: true
+  prompts:
+  - light switch
+  - wall switch
+  - rocker switch
+  - push button
+  hosts:
+  - electrical.switchboard
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/switchboard/module/switch
+- path: electrical.switchboard.module.dimmer
+  label: Dimmer / rotary control
+  category: electrical
+  parent: electrical.switchboard.module
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.02
+  - 0.1
+  small: true
+  prompts:
+  - dimmer switch
+  - rotary knob
+  hosts:
+  - electrical.switchboard
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/switchboard/module/dimmer
+- path: electrical.switchboard.module.usb
+  label: USB port
+  category: electrical
+  parent: electrical.switchboard.module
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.01
+  - 0.05
+  small: true
+  prompts:
+  - usb port
+  - usb charging socket
+  hosts:
+  - electrical.switchboard
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/switchboard/module/usb
+- path: electrical.switchboard.module.data
+  label: Data / TV / phone port
+  category: electrical
+  parent: electrical.switchboard.module
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.015
+  - 0.06
+  small: true
+  prompts:
+  - ethernet port
+  - tv socket
+  - telephone socket
+  hosts:
+  - electrical.switchboard
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/switchboard/module/data
+- path: electrical.switchboard.module.blank
+  label: Blank plate
+  category: electrical
+  parent: electrical.switchboard.module
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.02
+  - 0.1
+  small: true
+  prompts:
+  - blank plate
+  hosts:
+  - electrical.switchboard
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/switchboard/module/blank
+- path: electrical.junction_box
+  label: Junction box
+  category: electrical
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.04
+  - 0.3
+  small: true
+  prompts:
+  - junction box
+  hosts:
+  - envelope.wall
+  - envelope.ceiling
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/junction_box
+- path: electrical.distribution_board
+  label: Distribution board / fuse box
+  category: electrical
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.2
+  - 1.2
+  small: false
+  prompts:
+  - distribution board
+  - fuse box
+  - circuit breaker panel
+  hosts:
+  - envelope.wall
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/distribution_board
+- path: electrical.conduit
+  label: Conduit / trunking
+  category: electrical
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.1
+  - 30.0
+  small: true
+  prompts:
+  - conduit
+  - cable trunking
+  hosts: []
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/conduit
+- path: electrical.wiring
+  label: Visible wiring
+  category: electrical
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.1
+  - 30.0
+  small: true
+  prompts:
+  - exposed wire
+  - cable
+  hosts: []
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/wiring
+- path: electrical.light_fitting
+  label: Light fitting
+  category: electrical
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.05
+  - 1.5
+  small: false
+  prompts:
+  - ceiling light
+  - pendant light
+  - downlight
+  - wall lamp
+  hosts:
+  - envelope.ceiling
+  - envelope.wall
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/light_fitting
+- path: electrical.fan
+  label: Ceiling fan
+  category: electrical
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 1.6
+  small: false
+  prompts:
+  - ceiling fan
+  hosts:
+  - envelope.ceiling
+  components: []
+  attributes: *id003
+  aliases:
+  - electrical/fan
+- path: plumbing.pipe
+  label: Pipe
+  category: plumbing
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.1
+  - 30.0
+  small: true
+  prompts:
+  - pipe
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - plumbing/pipe
+- path: plumbing.tap
+  label: Tap / faucet
+  category: plumbing
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.05
+  - 0.4
+  small: true
+  prompts:
+  - tap
+  - faucet
+  - shower head
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - plumbing/tap
+- path: plumbing.sink
+  label: Sink / basin
+  category: plumbing
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 1.5
+  small: false
+  prompts:
+  - sink
+  - wash basin
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - plumbing/sink
+- path: plumbing.toilet
+  label: Toilet
+  category: plumbing
+  parent: null
+  world_type: structure
+  geometry: mesh
+  size_m:
+  - 0.4
+  - 0.9
+  small: false
+  prompts:
+  - toilet
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - plumbing/toilet
+- path: plumbing.bath
+  label: Bathtub / shower
+  category: plumbing
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.7
+  - 2.2
+  small: false
+  prompts:
+  - bathtub
+  - shower enclosure
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - plumbing/bath
+- path: plumbing.drain
+  label: Drain
+  category: plumbing
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.05
+  - 0.5
+  small: true
+  prompts:
+  - floor drain
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - plumbing/drain
+- path: hvac.vent
+  label: Vent / grille
+  category: hvac
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.1
+  - 1.0
+  small: true
+  prompts:
+  - air vent
+  - ventilation grille
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - hvac/vent
+- path: hvac.ac_unit
+  label: Air-conditioning unit
+  category: hvac
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 2.0
+  small: false
+  prompts:
+  - air conditioner
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - hvac/ac_unit
+- path: hvac.radiator
+  label: Radiator
+  category: hvac
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 2.5
+  small: false
+  prompts:
+  - radiator
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - hvac/radiator
+- path: hvac.duct
+  label: Duct
+  category: hvac
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.2
+  - 30.0
+  small: false
+  prompts:
+  - duct
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - hvac/duct
+- path: hvac.thermostat
+  label: Thermostat
+  category: hvac
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.05
+  - 0.2
+  small: true
+  prompts:
+  - thermostat
+  hosts:
+  - envelope.wall
+  components: []
+  attributes: {}
+  aliases:
+  - hvac/thermostat
+- path: furniture.sofa
+  label: Sofa
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 1.2
+  - 4.0
+  small: false
+  prompts:
+  - sofa
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/sofa
+- path: furniture.chair
+  label: Chair
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 1.2
+  small: false
+  prompts:
+  - chair
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/chair
+- path: furniture.table
+  label: Table
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.4
+  - 4.0
+  small: false
+  prompts:
+  - table
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/table
+- path: furniture.bed
+  label: Bed
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 1.2
+  - 2.4
+  small: false
+  prompts:
+  - bed
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/bed
+- path: furniture.wardrobe
+  label: Wardrobe / cabinet
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.4
+  - 3.0
+  small: false
+  prompts:
+  - wardrobe
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/wardrobe
+- path: furniture.shelf
+  label: Shelf / bookcase
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 3.0
+  small: false
+  prompts:
+  - shelf
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/shelf
+- path: furniture.tv_unit
+  label: TV unit
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.5
+  - 3.0
+  small: false
+  prompts:
+  - tv unit
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/tv_unit
+- path: furniture.desk
+  label: Desk
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.6
+  - 2.5
+  small: false
+  prompts:
+  - desk
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/desk
+- path: furniture.rug
+  label: Rug / carpet
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.5
+  - 5.0
+  small: false
+  prompts:
+  - rug
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/rug
+- path: furniture.refrigerator
+  label: Refrigerator
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.5
+  - 2.2
+  small: false
+  prompts:
+  - refrigerator
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/refrigerator
+- path: furniture.oven
+  label: Oven / hob
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.4
+  - 1.2
+  small: false
+  prompts:
+  - oven
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/oven
+- path: furniture.washing_machine
+  label: Washing machine
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.5
+  - 1.0
+  small: false
+  prompts:
+  - washing machine
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/washing_machine
+- path: furniture.microwave
+  label: Microwave
+  category: furniture
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 0.7
+  small: false
+  prompts:
+  - microwave
+  hosts: []
+  components: []
+  attributes: *id002
+  aliases:
+  - furniture/microwave
+- path: finish.curtain
+  label: Curtain / blind
+  category: finish
+  parent: null
+  world_type: structure
+  geometry: mesh
+  size_m:
+  - 0.3
+  - 4.0
+  small: false
+  prompts:
+  - curtain
+  - window blind
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - finish/curtain
+- path: finish.picture
+  label: Picture / framed art
+  category: finish
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.1
+  - 3.0
+  small: false
+  prompts:
+  - picture frame
+  - wall art
+  hosts:
+  - envelope.wall
+  components: []
+  attributes: {}
+  aliases:
+  - finish/picture
+- path: finish.mirror
+  label: Mirror
+  category: finish
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.1
+  - 2.5
+  small: false
+  prompts:
+  - mirror
+  hosts:
+  - envelope.wall
+  components: []
+  attributes: {}
+  aliases:
+  - finish/mirror
+- path: finish.tiling
+  label: Tiled area
+  category: finish
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.3
+  - 30.0
+  small: false
+  prompts:
+  - wall tiles
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - finish/tiling
+- path: finish.moulding
+  label: Decorative moulding / ornament
+  category: finish
+  parent: null
+  world_type: structure
+  geometry: mesh
+  size_m:
+  - 0.05
+  - 30.0
+  small: false
+  prompts:
+  - decorative moulding / ornament
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - finish/moulding
+- path: exterior.facade
+  label: Building facade
+  category: exterior
+  parent: null
+  world_type: wall
+  geometry: parametric
+  size_m:
+  - 2.0
+  - 200.0
+  small: false
+  prompts:
+  - building facade
+  - exterior wall
+  - facade
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/facade
+- path: exterior.terrain
+  label: Terrain / ground surface
+  category: exterior
+  parent: null
+  world_type: terrain
+  geometry: mesh
+  size_m:
+  - 1.0
+  - 10000.0
+  small: false
+  prompts:
+  - terrain
+  - ground surface
+  - earth
+  - topography
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/terrain
+- path: exterior.roof
+  label: Roof
+  category: exterior
+  parent: null
+  world_type: roof
+  geometry: procedural
+  size_m:
+  - 2.0
+  - 60.0
+  small: false
+  prompts:
+  - roof
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/roof
+- path: exterior.roof.plane
+  label: Roof plane / pitch
+  category: exterior
+  parent: exterior.roof
+  world_type: roof
+  geometry: parametric
+  size_m:
+  - 1.0
+  - 50.0
+  small: false
+  prompts:
+  - roof pitch
+  - roof plane
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/roof/plane
+- path: exterior.balcony
+  label: Balcony / terrace
+  category: exterior
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.8
+  - 12.0
+  small: false
+  prompts:
+  - balcony
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/balcony
+- path: exterior.gate
+  label: Gate
+  category: exterior
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.6
+  - 8.0
+  small: false
+  prompts:
+  - gate
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/gate
+- path: exterior.fence
+  label: Fence / boundary wall
+  category: exterior
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 1.0
+  - 200.0
+  small: false
+  prompts:
+  - fence
+  - boundary wall
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/fence
+- path: exterior.chimney
+  label: Chimney
+  category: exterior
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.3
+  - 4.0
+  small: false
+  prompts:
+  - chimney
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/chimney
+- path: exterior.gutter
+  label: Gutter / downpipe
+  category: exterior
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.5
+  - 30.0
+  small: true
+  prompts:
+  - downpipe
+  - gutter
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - exterior/gutter
+- path: road.carriageway
+  label: Carriageway
+  category: road
+  parent: null
+  world_type: road
+  geometry: parametric
+  size_m:
+  - 3.0
+  - 5000.0
+  small: false
+  prompts:
+  - road
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - road/carriageway
+- path: road.footpath
+  label: Footpath / sidewalk
+  category: road
+  parent: null
+  world_type: sidewalk
+  geometry: parametric
+  size_m:
+  - 1.0
+  - 5000.0
+  small: false
+  prompts:
+  - footpath
+  - sidewalk
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - road/footpath
+- path: road.kerb
+  label: Kerb
+  category: road
+  parent: null
+  world_type: curb
+  geometry: parametric
+  size_m:
+  - 1.0
+  - 5000.0
+  small: false
+  prompts:
+  - kerb
+  - curb
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - road/kerb
+- path: road.marking
+  label: Road marking
+  category: road
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 0.1
+  - 100.0
+  small: false
+  prompts:
+  - zebra crossing
+  - road marking
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - road/marking
+- path: road.drain
+  label: Road drain / manhole
+  category: road
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.3
+  - 1.2
+  small: true
+  prompts:
+  - manhole cover
+  - storm drain
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - road/drain
+- path: vegetation.tree
+  label: Tree
+  category: vegetation
+  parent: null
+  world_type: vegetation
+  geometry: procedural
+  size_m:
+  - 1.5
+  - 45.0
+  small: false
+  prompts:
+  - tree
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - vegetation/tree
+- path: vegetation.tree.trunk
+  label: Trunk
+  category: vegetation
+  parent: vegetation.tree
+  world_type: vegetation
+  geometry: parametric
+  size_m:
+  - 0.5
+  - 20.0
+  small: false
+  prompts:
+  - trunk
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - vegetation/tree/trunk
+- path: vegetation.tree.canopy
+  label: Canopy
+  category: vegetation
+  parent: vegetation.tree
+  world_type: vegetation
+  geometry: volumetric
+  size_m:
+  - 1.0
+  - 30.0
+  small: false
+  prompts:
+  - canopy
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - vegetation/tree/canopy
+- path: vegetation.shrub
+  label: Shrub / bush
+  category: vegetation
+  parent: null
+  world_type: vegetation
+  geometry: volumetric
+  size_m:
+  - 0.3
+  - 5.0
+  small: false
+  prompts:
+  - shrub
+  - bush
+  - hedge
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - vegetation/shrub
+- path: vegetation.plant
+  label: Potted / indoor plant
+  category: vegetation
+  parent: null
+  world_type: vegetation
+  geometry: volumetric
+  size_m:
+  - 0.1
+  - 3.0
+  small: false
+  prompts:
+  - potted plant
+  - houseplant
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - vegetation/plant
+- path: vegetation.flowerbed
+  label: Flowerbed
+  category: vegetation
+  parent: null
+  world_type: vegetation
+  geometry: procedural
+  size_m:
+  - 0.5
+  - 100.0
+  small: false
+  prompts:
+  - flower bed
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - vegetation/flowerbed
+- path: vegetation.lawn
+  label: Lawn / garden
+  category: vegetation
+  parent: null
+  world_type: vegetation
+  geometry: procedural
+  size_m:
+  - 1.0
+  - 2000.0
+  small: false
+  prompts:
+  - lawn
+  - garden
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - vegetation/lawn
+- path: street.lamppost
+  label: Lamppost
+  category: street
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 2.0
+  - 15.0
+  small: false
+  prompts:
+  - street lamp
+  - lamp post
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - street/lamppost
+- path: street.lamppost.shaft
+  label: Lamppost shaft
+  category: street
+  parent: street.lamppost
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 2.0
+  - 14.0
+  small: false
+  prompts:
+  - lamppost shaft
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - street/lamppost/shaft
+- path: street.lamppost.fixture
+  label: Lamp head / fixture
+  category: street
+  parent: street.lamppost
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.2
+  - 2.0
+  small: true
+  prompts:
+  - lamp head / fixture
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - street/lamppost/fixture
+- path: street.bench
+  label: Bench
+  category: street
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.8
+  - 3.0
+  small: false
+  prompts:
+  - park bench
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - street/bench
+- path: street.bin
+  label: Dustbin
+  category: street
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 1.5
+  small: false
+  prompts:
+  - dustbin
+  - trash can
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - street/bin
+- path: street.postbox
+  label: Post box
+  category: street
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 1.8
+  small: false
+  prompts:
+  - post box
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - street/postbox
+- path: street.barricade
+  label: Barricade / bollard
+  category: street
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 3.0
+  small: false
+  prompts:
+  - barricade
+  - bollard
+  - traffic barrier
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - street/barricade
+- path: utility.meter
+  label: Meter
+  category: utility
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.1
+  - 0.6
+  small: true
+  prompts:
+  - electricity meter
+  - gas meter
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - utility/meter
+- path: utility.transformer
+  label: Transformer / cabinet
+  category: utility
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.5
+  - 4.0
+  small: false
+  prompts:
+  - transformer
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - utility/transformer
+- path: utility.hydrant
+  label: Fire hydrant
+  category: utility
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.3
+  - 1.2
+  small: false
+  prompts:
+  - fire hydrant
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - utility/hydrant
+- path: utility.cable_run
+  label: Overhead cable
+  category: utility
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 2.0
+  - 500.0
+  small: false
+  prompts:
+  - overhead cable
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - utility/cable_run
+- path: signage.sign
+  label: Sign
+  category: signage
+  parent: null
+  world_type: structure
+  geometry: parametric
+  size_m:
+  - 0.1
+  - 6.0
+  small: false
+  prompts:
+  - sign
+  - signboard
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - signage/sign
+- path: signage.pole
+  label: Pole
+  category: signage
+  parent: null
+  world_type: structure
+  geometry: procedural
+  size_m:
+  - 1.5
+  - 20.0
+  small: false
+  prompts:
+  - utility pole
+  - signal pole
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - signage/pole
+- path: signage.traffic_light
+  label: Traffic signal
+  category: signage
+  parent: null
+  world_type: structure
+  geometry: hybrid
+  size_m:
+  - 0.5
+  - 8.0
+  small: false
+  prompts:
+  - traffic light
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - signage/traffic_light
+- path: misc.object
+  label: Unclassified object
+  category: misc
+  parent: null
+  world_type: unknown
+  geometry: hybrid
+  size_m:
+  - 0.01
+  - 50.0
+  small: false
+  prompts:
+  - unclassified object
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - misc/object
+- path: misc.unknown
+  label: Unknown entity
+  category: misc
+  parent: null
+  world_type: unknown
+  geometry: pointcloud
+  size_m:
+  - 0.01
+  - 500.0
+  small: false
+  prompts:
+  - unknown entity
+  hosts: []
+  components: []
+  attributes: {}
+  aliases:
+  - misc/unknown

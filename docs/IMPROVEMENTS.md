@@ -11,7 +11,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | ID | Class | Problem → change | Evidence | Lands in |
 |---|---|---|---|---|
 | RE-ARCH-000001 | DN | Stages pass live objects, so a crashed job cannot resume → enabled checkpoint lookup in jobs.py and stage runner | [V] commit 9fd49d86 | done |
-| RE-ARCH-000002 | OF | Two taxonomies (`perception/ontology.py`, `perception/entities/taxonomy.py`) → one ontology | [V] | B03 |
+| RE-ARCH-000002 | DN | Two taxonomies (`perception/ontology.py`, `perception/entities/taxonomy.py`) → one unified ontology with parts and attributes | [V] tests/test_b03_unified_ontology.py | done |
 | RE-ARCH-000003 | DN | Detections are not persisted per photo → `ObservationTable` artifact and /observations API | [V] tests/test_observation_table.py | done |
 | RE-ARCH-000004 | VN | Parts are not entities → parts as entities with `part_of` | [M] | B04, B08 |
 | RE-ARCH-000005 | VN | Relationship kinds are free strings → closed validated set | [V] `Relationship.kind: str` | B15 |

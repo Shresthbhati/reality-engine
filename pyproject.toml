@@ -17,6 +17,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Geometry libraries the pipeline uses when present and replaces with a recorded fallback when absent (point-cloud cleaning,
+# real USD export, COLMAP model reading, mesh booleans). Every one of them is optional at runtime.
+geometry = [
+    "open3d",       # MIT: statistical outlier removal (reconstruction/pointcloud_clean.py)
+    "usd-core",     # Apache-2.0/Pixar: real OpenUSD stage export (exporters/usd_stage.py)
+    "pycolmap",     # BSD-3: read COLMAP models without the CLI (reconstruction/colmap_model.py)
+    "manifold3d",   # Apache-2.0: watertight mesh booleans (geometry/mesh_boolean.py)
+]
 # The application API service (apps/api) and every test that drives it. Mirrors apps/api/requirements.txt; kept
 # here so `pip install -e ".[dev]"` (what CI runs) installs it -- without aiosqlite the API / reliability suites
 # are skipped wholesale by pytest.importorskip("aiosqlite"), which is a silent loss of coverage, not a pass.
@@ -41,7 +49,7 @@ tracking = ["imageio>=2.30"]
 # Guarded optional imports (each degrades explicitly when absent): mesh repair/topology, resource-governor memory probes.
 meshing = ["trimesh>=4.0", "networkx>=3.0"]
 resources = ["psutil>=5.9"]
-dev = ["pytest>=7.0", "pyyaml>=6.0", "jsonschema>=4.18", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]", "reality-engine[export]", "reality-engine[rgbd]"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.23", "pyyaml>=6.0", "jsonschema>=4.18", "ruff>=0.4", "mypy>=1.0", "pre-commit>=3.0", "reality-engine[api]", "reality-engine[export]", "reality-engine[rgbd]"]
 perception = ["torch>=2.0", "torchvision>=0.15", "numpy>=1.24", "segment-anything>=1.0", "timm>=0.9", "transformers>=4.40", "kornia>=0.7"]
 # colmap is a C++ binary (colmap/colmap), not a Python package.
 # The CLI expects `colmap` on PATH. No PyPI package exists.

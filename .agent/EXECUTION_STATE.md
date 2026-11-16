@@ -3,6 +3,35 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-16 -- SAM 2 masks, open-source registry, DINOv2 (opt-in), clean-baseline fixes (branch claude/e202-and-further-374554; local commits, NOT pushed)
+
+Commits: `a7b3da90` sofas kept + visible GLB; `4c53f485` prompt variants + licence-verified open-source registry; `2978bd27` SAM 2 instance
+masks (default), opt-in DINOv2 appearance, faster `lift_region_to_3d`; `bd0a080f` regenerated API docs; `4fa1e075` stale tests and real defects
+from a clean full-suite run (27 pre-existing failures -> each fixed and verified per file); `0c8e3ae9` procedural footprint + room-based export test.
+
+Measured (10-photo room, consistency checks only -- there are NO annotations, so none of this is accuracy): SAM 2 gave 126/126 masks with no
+fallback and the 7 m "sofa" is gone; DINOv2 separates same- from different-label crops (cosine 0.63 vs 0.16) but changed NO association decision
+(16 objects either way), so `perception_appearance` defaults to None. Tiled Grounding DINO for small fittings returns ~55 boxes per photo (61
+"thermostats" over 10 photos): implausible volume, deliberately NOT wired in. The `outside_scene` filter drops mostly single-view scale-drift
+duplicates (and a few depth blow-ups); the TV stand is a probable true loss, left alone.
+
+Procedural export: plan / schedule / report formats are ROOM-based; the building generator now writes `footprint_polygon_m` on its open-plan rooms
+and the test states that those six formats export exactly the rooms (3D formats keep the every-boxed-entity rule).
+
+Later the same day (commits `0e2f9bcc`, `99af3487`, `fd9175c6`, `e4d9243a`, `c96882a6`): DINOv2 appearance ON by default (registered, no measured
+gain); tiled small-fittings pass as opt-in RECORDED 2D facts, never entities; human-review loop (`perception.detections_2d` ->
+`benchmarks/annotation_review.py` -> COCO/Label Studio/FiftyOne -> `score`), CLI `scripts/export_annotation_review.py`; Open3D outlier removal
+in the scene-box step; real binary USD (`usdc`) via pxr; pycolmap cross-check/fallback reader; manifold3d verdict + booleans. Installing
+Open3D pulled `dash`, whose stray top-level `benchmarks` package shadowed the repo's, so `benchmarks/` is now a regular package.
+`absorb_scale_drift_duplicates` exists, tested, NOT wired (absorbed 0 on the 10-photo room). Approved items still NOT integrated (heavy GPU or
+vendor stacks, no measured gap): hloc/LightGlue (git-only install, SuperPoint weights non-commercial), AliceVision/Meshroom, nerfstudio, gsplat,
+Marigold, detectron2, SAM-HQ, Florence-2, ByteTrack/MMTracking, LIMAP, web-ifc, COMPAS, PCL.
+
+NOT verified: a single full-suite run after the last fixes (each fix was verified on its own test files; the layout-solver timing test is
+load-sensitive and passes on an idle machine). Still blocked on a human: one measured room (40-80 photos + wall lengths, ceiling height, openings)
+and human-reviewed annotations -- every accuracy claim waits on them. Next: DINOv2 only if a labelled set shows a gain; per-view depth-scale
+consistency (cross-view object scatter up to ~2.5 m) is the open accuracy problem.
+
 ## 2026-11-14 -- P2 evaluator cards E202-E209 (branch claude/e202-and-further-374554; local commits, NOT pushed)
 
 Branch was fast-forwarded onto `claude/project-docs-setup-73af3d` @ 36990330 (carries E201 and `docs/blueprint/35_TASK_CARDS.md`).
@@ -2172,3 +2201,16 @@ Exact next priorities (build plan order):
 
 Rules: never mark work complete without execution evidence; update this file and `.agent/TASKS.yaml` at the end of
 every session; put sprint detail in a new file under `docs/archive/execution-history/`, not here.
+
+## 2026-11-17 -- BUILD_SPEC packages (from release-planning-docs worktree, docs/BUILD_SPEC.md)
+Built as tested, self-contained modules (NOT yet wired into the live pipeline stages): B02 `world_ir/observation_table.py`,
+B04 `perception/detection/hierarchical.py`, B05 `perception/detection/attributes.py`, B06 (RLE half only) `world_ir/mask_store.py`,
+B08 `perception/instances/global_association.py`, B09 `perception/geometry/support_planes.py` (decision rule; not yet called from
+`consolidate_horizontal_roles`), B10 `perception/architecture/footprint_cleanup.py` (not yet called from `solve_room_layout`),
+B11 `reconstruction/fusion/voxel_cloud.py` (not yet called from `consumer.py`), B13 `engine/hardware/model_pool.py` (no load site uses it yet),
+B14 `reconstruction/fusion/measurements.py`, B15 `world_ir/relations.py` (no `/find` route yet), B17 video counters
+(`frames_seen/frames_kept/duplicates_dropped` on the video evidence metadata).
+Already true on this branch before this work: B01 stage resume (`DbCheckpointStore`, tests/test_stage_resume.py).
+Not started: B03 (one ontology + attributes in YAML), B06 SAM2-on-live-path wiring (SAM 2 already default perception masks here),
+B07 wiring, B12 deterministic COLMAP, B16 refinement loop, B18 Studio UI, B19 exporter parts/attributes, B20 release run (needs real photos twice,
+external tools, a person with a laser measure).

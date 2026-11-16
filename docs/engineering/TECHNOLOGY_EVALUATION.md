@@ -20,8 +20,8 @@ detectors/segmenters/SLAM libraries that were not chosen. This table is therefor
 
 | Model | Latency | Peak VRAM | Notes |
 |---|---|---|---|
-| Grounding DINO tiny, fp32, 2 prompts | 0.82 s | 3.4 GB | previous default batch of 7 spilled the 6 GB card (3.4 s/prompt) |
-| Grounding DINO tiny, fp16, 2 prompts | 0.46 s | 1.7 GB | 23/23 strong fp32 detections reproduced (max score diff 0.012); now the default |
+| Grounding DINO tiny, fp32, 2 prompts | 0.82 s | 3.4 GB | **current default** (batch 2). The previous batch of 7 spilled the 6 GB card (3.4 s/prompt) |
+| Grounding DINO tiny, fp16 (`.half()`), 2 prompts | 0.46 s | 1.7 GB | **not used**: it passed in an isolated script but crashed inside the API job (`grid_sample`: half values vs a float32 grid) and silently produced 0 objects. Autocast was correct but slower than fp32 |
 | DPT_Hybrid (current depth) | 0.16 s | 0.68 GB | |
 | Depth Anything V2 Small, fp16 | 0.044 s | 0.42 GB | relative (inverse) depth |
 | Depth Anything V2 Metric-Indoor Small, fp16 | 0.040 s | 0.24 GB | metric depth, trained on Hypersim (synthetic indoor) |

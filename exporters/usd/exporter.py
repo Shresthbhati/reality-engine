@@ -638,6 +638,7 @@ def validate_usda(usda_text: str) -> tuple[bool, list[str]]:
                 pass
 
     # 2. Check pxr
+    pxr_error = None
     try:
         from pxr import Usd  # type: ignore
         stage = Usd.Stage.CreateInMemory()
@@ -651,7 +652,9 @@ def validate_usda(usda_text: str) -> tuple[bool, list[str]]:
             if st is not None:
                 return True, []
         except Exception as e:
-            return False, [str(e)]
+            # OpenUSD is the authority and rejected the stage; fall through so the readable structural diagnosis below is
+            # reported first, with OpenUSD's own message last
+            pxr_error = " ".join(str(e).split())[:400]
         finally:
             try:
                 os.remove(tmp_name)
@@ -711,4 +714,6 @@ def validate_usda(usda_text: str) -> tuple[bool, list[str]]:
     if bracket_depth != 0:
         errors.append(f"Unbalanced square brackets in stage: depth {bracket_depth}")
 
+    if pxr_error is not None:
+        errors.append(f"OpenUSD (pxr) rejected the stage: {pxr_error}")
     return len(errors) == 0, errors

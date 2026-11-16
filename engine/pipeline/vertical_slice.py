@@ -110,6 +110,22 @@ class VerticalSliceOptions:
     #: how per-view object hypotheses become entities: "association" (gated Hungarian, no transitive merges, AMBIGUOUS
     #: kept apart; perception/instances/association.py) or "union_find" (the older label+distance resolver)
     object_resolver: str = "association"
+    #: where each detected object's mask comes from: "sam2" (SAM 2 box-prompted instance masks; falls back to the depth band,
+    #: on the record, when the checkpoint is missing) or "depth_band" (a depth cut of the box; leaks floor/wall into objects)
+    perception_mask_source: str = "sam2"
+    #: learned appearance for cross-view object identity: "dinov2" (DINOv2-small embedding of each masked crop, fed to the
+    #: association resolver's appearance gate; skipped on the record when the checkpoint is missing) or None (geometry only).
+    #: On by default: it separates same- from different-label crops cleanly (cosine 0.63 vs 0.16 on the 10-photo room) and fails
+    #: safe (geometry only, reason recorded) when the checkpoint is missing. It changed no association decision on that room, so
+    #: no accuracy gain is claimed; it is the gate that keeps two same-label objects apart when geometry alone is ambiguous.
+    perception_appearance: Optional[str] = "dinov2"
+    #: tiled Grounding DINO pass for small fittings (sockets, switches, handles, vents). Off by default: it costs minutes of GPU
+    #: per job and its detections are UNVERIFIED (~55 boxes per photograph on the 10-photo room, implausibly many), so when on
+    #: they are recorded as 2D facts under perception.small_fittings and never promoted to entities.
+    perception_small_fittings: bool = False
+    #: a second detector family (Florence-2) run on every photograph; where it and the pipeline's detector disagree is recorded under
+    #: perception.second_opinion for a human. Off by default (another model load); agreement between two detectors is not accuracy.
+    perception_second_opinion: bool = False
     #: Content-addressed store for real geometry artifacts: the surface
     #: mesh (stage 3.6) and, when given, the promoted planes' inlier
     #: point payloads. None keeps legacy behavior (no real payloads).
@@ -1086,6 +1102,153 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
     return facts, metric_maps
 
 
+def _mesh_manifold_status(mesh) -> dict:
+    """manifold3d's verdict on a reconstructed surface mesh; a failure to even run the check is recorded, never raised."""
+    try:
+        from geometry.mesh_boolean import manifold_status
+
+        return manifold_status(mesh.vertices, mesh.faces)
+    except Exception as exc:  # noqa: BLE001 -- a diagnostic must not lose the mesh
+        return {"backend": "manifold3d", "manifold": None, "status": "error", "note": f"{type(exc).__name__}: {exc}"}
+
+
+def _detections_2d(seg_results, image_size):
+    """Per-photograph 2D detections for human review: ``{evidence_id: [{region_id, label, confidence, bbox_px}]}``. The box is the
+    mask's bounding box scaled from the mask grid (the depth map's) to the photograph's pixel size; empty masks are skipped."""
+    import numpy as np
+
+    width, height = image_size
+    out: dict = {}
+    for seg in seg_results:
+        rows = []
+        for region in seg.regions:
+            m = np.asarray(region.mask, dtype=bool)
+            if m.ndim != 2 or not m.any():
+                continue
+            ys, xs = np.nonzero(m)
+            sx, sy = width / m.shape[1], height / m.shape[0]
+            rows.append({"region_id": region.region_id, "label": region.label, "confidence": round(float(region.confidence), 4),
+                         "bbox_px": [round(float(xs.min() * sx), 1), round(float(ys.min() * sy), 1),
+                                     round(float((xs.max() + 1) * sx), 1), round(float((ys.max() + 1) * sy), 1)]})
+        if rows:
+            out[seg.evidence_id] = rows
+    return out
+
+
+def _second_opinion_facts(enabled, evidence_items, detections_2d):
+    """Florence-2 against the pipeline's own 2D detections, per photograph: ``matched`` / ``primary_only`` / ``second_only`` for a
+    human to look at. None when not requested. Never raises: a missing checkpoint or a failure is a recorded status."""
+    if not enabled:
+        return None
+    try:
+        from engine.core.image_io import open_oriented
+        from engine.pipeline.open_vocab_furniture import item_path
+        from perception.detection import florence2_detector as f2
+
+        detector, per_view, totals = f2.Florence2Detector(), {}, {"matched": 0, "primary_only": 0, "second_only": 0}
+        try:
+            for item in evidence_items:
+                eid = getattr(item, "id", None) or item.evidence_id
+                if eid not in detections_2d:
+                    continue
+                agreement = f2.box_agreement(detections_2d[eid], detector.detect(open_oriented(item_path(item)).convert("RGB")))
+                per_view[eid] = agreement
+                for k in totals:
+                    totals[k] += len(agreement[k])
+        finally:
+            detector.unload()
+        return {"status": "ran", "detector": f2.MODEL_ID, "totals": totals, "per_view": per_view,
+                "note": "agreement between two detectors for human review; not accuracy, both can be wrong the same way"}
+    except Exception as exc:  # noqa: BLE001 -- an enhancement; its failure must not lose the objects
+        from perception.detection.florence2_detector import Florence2Unavailable
+
+        if isinstance(exc, Florence2Unavailable):
+            return {"status": "unavailable", "note": str(exc)}
+        log.warning("second-opinion detector failed", exc_info=True)
+        return {"status": "failed", "note": f"{type(exc).__name__}: {exc}"}
+
+
+def _small_fittings_facts(enabled, evidence_items, depth_by_id):
+    """Tiled small-fittings detections per registered photograph as RECORDED 2D FACTS (``promoted_to_entities`` is always False).
+    None when not requested. Never raises: unavailable or failing is a recorded status."""
+    if not enabled:
+        return None
+    try:
+        from collections import Counter
+
+        import numpy as np
+
+        from engine.core.image_io import open_oriented
+        from engine.pipeline.open_vocab_furniture import item_path
+        from perception.detection.grounded_small import GroundedSmallDetector
+        from perception.entities.small_objects import inspect_small_objects
+
+        detector, totals, per_view, kept, tiles = GroundedSmallDetector(), Counter(), {}, [], 0
+        for item in evidence_items:
+            eid = getattr(item, "id", None) or item.evidence_id
+            if eid not in depth_by_id:
+                continue
+            res = inspect_small_objects(np.asarray(open_oriented(item_path(item)).convert("RGB")), detector,
+                                        min_score=detector.threshold)
+            if res.status != "ok":
+                return {"status": res.status, "note": res.note, "promoted_to_entities": False}
+            counts = Counter(d.class_id for d in res.detections)
+            per_view[eid], tiles = dict(counts), tiles + res.tiles_run
+            totals.update(counts)
+            kept += [{"view": eid, "class": d.class_id, "box_px": [round(v, 1) for v in d.box], "score": round(d.score, 3),
+                      "stage": d.stage} for d in res.detections]
+        return {"status": "ran", "promoted_to_entities": False, "tiles_run": tiles, "detections_by_class": dict(totals),
+                "per_view": per_view, "detections": kept[:300],
+                "note": "unverified 2D detections (Grounding DINO tiles); not entities, no accuracy claim"}
+    except Exception as exc:  # noqa: BLE001 -- an enhancement; its failure must not lose the objects
+        log.warning("small-fittings pass failed", exc_info=True)
+        return {"status": "failed", "note": str(exc), "promoted_to_entities": False}
+
+
+def _region_appearance(kind, evidence_items, seg_results, hypotheses):
+    """DINOv2 embedding of each lifted region's masked crop, keyed like the association observations (``<evidence>|<region>``).
+
+    Returns ``(vectors, facts)``. Never raises: a missing checkpoint or an unreadable image is a recorded skip and association
+    stays geometry-only for the whole run (no half-embedded, half-not mixture)."""
+    facts = {"requested": kind, "embedded": 0, "skipped": 0, "fallback_reason": None}
+    if kind is None:
+        return {}, facts
+    if kind != "dinov2":
+        raise VerticalSliceError(f"unknown perception_appearance {kind!r}: expected 'dinov2' or None")
+    try:
+        import cv2
+        import numpy as np
+
+        from engine.core.image_io import open_oriented
+        from engine.pipeline.open_vocab_furniture import item_path
+        from perception.instances.dinov2_hf import Dinov2Embedder
+
+        wanted = {(h.evidence_id, h.region_id) for h in hypotheses}
+        items = {(getattr(i, "id", None) or i.evidence_id): i for i in evidence_items}
+        embedder, vectors, embedded, skipped = Dinov2Embedder(), {}, 0, 0
+        for seg in seg_results:
+            regions = [r for r in seg.regions if (seg.evidence_id, r.region_id) in wanted]
+            if not regions or seg.evidence_id not in items:
+                continue
+            image = np.asarray(open_oriented(item_path(items[seg.evidence_id])).convert("RGB"))
+            h, w = image.shape[:2]
+            # region masks are at the depth grid's resolution; the crop needs them at the photo's
+            masks = [cv2.resize(np.asarray(r.mask, dtype=np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool) for r in regions]
+            for region, vec in zip(regions, embedder.embed_masked_crops(image, masks)):
+                if vec is None:
+                    skipped += 1
+                else:
+                    vectors[f"{seg.evidence_id}|{region.region_id}"] = vec.tolist()
+                    embedded += 1
+        embedder.unload()
+        facts.update(embedded=embedded, skipped=skipped)
+        return vectors, facts
+    except Exception as exc:  # noqa: BLE001 -- appearance is an enhancement; its failure must not lose the objects
+        log.warning("appearance embedding failed (association stays geometry-only)", exc_info=True)
+        facts["fallback_reason"] = str(exc)
+        return {}, facts
+
+
 def _perception_stage(result, world, evidence_items, metric_depth_maps, options):
     """Optional semantic perception -> object entities in the world.
 
@@ -1125,7 +1288,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         if grounded:
             # open-vocabulary scene objects (sofa, coffee table, TV stand, rug, plant ...): COCO has no such classes
             from perception.detection.grounded_scene import GroundedSceneSegmenter
-            detector = GroundedSceneSegmenter(depth_by_id)
+            detector = GroundedSceneSegmenter(depth_by_id, mask_source=options.perception_mask_source)
         else:
             detector = MaskRCNNDetector(score_threshold=options.detection_score_threshold)
     except Exception as exc:  # noqa: BLE001 -- model unavailability is a skip
@@ -1143,6 +1306,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         with unloading(detector):
             seg_results = detector.segment(list(evidence_items))
     except Exception as exc:  # noqa: BLE001
+        log.warning("perception segmentation failed (objects skipped)", exc_info=True)   # the note alone hid the cause
         return {**skip, "note": f"segmentation failed: {exc}"}
 
     hypotheses = []
@@ -1166,6 +1330,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
 
     resolution = {"resolver": options.object_resolver}
     assoc = None
+    cameras: dict[str, PinholeCamera] = {}      # filled by the association branch; the scale-drift absorb below needs them
     if options.object_resolver == "union_find":
         candidates = merge_hypotheses(hypotheses, options.object_merge_distance_m)
     elif options.object_resolver == "association":
@@ -1178,17 +1343,17 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         # Build PinholeCamera objects from the registered poses so the
         # association resolver can run two-view epipolar geometric
         # verification (instead of depth-only distance gating).
-        cameras: dict[str, PinholeCamera] = {}
         for pose in result.camera_poses:
             try:
                 cameras[pose.evidence_id] = camera_from_pose(intrinsics, pose)
             except Exception:  # noqa: BLE001 -- one bad camera must not kill the whole association stage
                 pass
+        appearance, resolution["appearance"] = _region_appearance(options.perception_appearance, evidence_items, seg_results, hypotheses)
         # depth is SfM-aligned (metric-by-alignment, approximate), so MVS-grade uncertainty, not metric-sensor grade
         candidates, assoc = resolve_hypotheses(
             hypotheses, DepthSource.MVS, cam_pos, cameras=cameras,
             model="grounding-dino-tiny" if grounded else "mask_rcnn@coco",
-            license="Apache-2.0" if grounded else "BSD-3-Clause", world=world,
+            license="Apache-2.0" if grounded else "BSD-3-Clause", world=world, appearance=appearance or None,
         )
         resolution["decisions"] = dict(Counter(d.state.value for d in assoc.decisions))
         resolution["ambiguous_entities"] = sum(1 for e in assoc.entities if e.ambiguous_with)
@@ -1202,10 +1367,21 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     n_resolved = len(candidates)
     candidates = fuse_overlapping_candidates(candidates)
     resolution["fused_overlapping"] = n_resolved - len(candidates)
+    # object_resolution.absorb_scale_drift_duplicates exists but is deliberately NOT applied here: on the 10-photo room it
+    # absorbed 0 (confirmed positions project from near to 10,000 px away in the orphans' photographs, so the reprojection test
+    # cannot separate "same object, wrong depth" from "another object"); revisit when depth scale is consistent across views
     if grounded:
         # open-vocabulary detectors name things that are not there; an object backed by ONE photograph must be confident
         from perception.detection.grounded_scene import filter_implausible, scene_box
-        candidates, dropped = filter_implausible(candidates, scene_box(result.points), n_views=len(depth_by_id))
+        # the scene box comes from the sparse points; drop statistical outliers first so a few wild points cannot stretch it
+        # (Open3D when installed, an equivalent SciPy implementation otherwise; the backend is on the record)
+        from reconstruction.pointcloud_clean import remove_statistical_outliers
+
+        keep_mask, resolution["scene_box_cleaning"] = remove_statistical_outliers([tuple(getattr(p, "position", p)) for p in result.points])
+        dropped_detail: list = []
+        candidates, dropped = filter_implausible(
+            candidates, scene_box([p for p, k in zip(result.points, keep_mask) if k]), n_views=len(depth_by_id), detail=dropped_detail)
+        resolution["dropped_detail"] = dropped_detail           # what was dropped, so a human can check the filter's calls
         resolution["dropped"] = dropped
         resolution["dropped_weak_single_view"] = dropped.get("weak_single_view", 0) + dropped.get("single_view", 0)
 
@@ -1266,17 +1442,28 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             "note": f"object entities rejected by world validation; world left as it was: {[str(i) for i in report.errors[:3]]}",
         }
 
+    small_fittings = _small_fittings_facts(options.perception_small_fittings, evidence_items, depth_by_id)
+    detections_2d = _detections_2d(seg_results, options.image_size)
+    second_opinion = _second_opinion_facts(options.perception_second_opinion, evidence_items, detections_2d)
     return {
         "status": "ran",
         "model": options.perception_model,
+        **({"small_fittings": small_fittings} if small_fittings is not None else {}),
+        # what the detector+SAM 2 found in each photograph, as boxes a reviewer can correct (benchmarks/annotation_review.py)
+        "detections_2d": detections_2d,
+        **({"second_opinion": second_opinion} if second_opinion is not None else {}),
         "views_segmented": len(seg_results),
         "masks_considered": masks_total,
         "hypotheses_lifted": len(hypotheses),
         "candidates_merged": len(candidates),
         "entities_promoted": promoted,
         "resolution": resolution,
+        **({"masks": {"requested": options.perception_mask_source, **detector.mask_counts, "fallback_reason": detector.mask_fallback}}
+           if grounded and hasattr(detector, "mask_counts") else {}),
         "note": (
-            ("Grounding DINO boxes cut to the foreground depth band" if grounded else "COCO Mask R-CNN masks")
+            ("Grounding DINO boxes with SAM 2 instance masks (depth-band cut where SAM 2 gave none)"
+             if grounded and getattr(detector, "mask_counts", {}).get("sam2")
+             else "Grounding DINO boxes cut to the foreground depth band" if grounded else "COCO Mask R-CNN masks")
             + " lifted via SfM-aligned depth (metric-by-"
             "alignment, approximate); merged by the gated association resolver (or label+proximity if "
             "object_resolver='union_find'); provenance "
@@ -1920,6 +2107,8 @@ def _mesh_stage(result, world, options, scale_state: str):
             metadata={
                 **mesh_summary(mesh),
                 "outlier_filter": outlier_facts,
+                # a measured verdict on watertightness (manifold3d), not the "typically not watertight" assumption below
+                "manifold": _mesh_manifold_status(mesh),
                 "input_points_fused": len(points),
                 "input_points_meshed": len(kept),
                 "voxel_size_m": options.mesh_voxel_size_m,

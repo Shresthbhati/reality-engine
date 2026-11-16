@@ -539,8 +539,9 @@ def resolve_hypotheses(
         members.sort(key=lambda h: (h.evidence_id, h.region_id))
         w = sum(h.confidence for h in members) or 1.0
         pos = Vec3(*(sum(getattr(h.position, a) * h.confidence for h in members) / w for a in "xyz"))
-        lo = Vec3(*(min(getattr(h.bounds_min, a) for h in members) for a in "xyz"))
-        hi = Vec3(*(max(getattr(h.bounds_max, a) for h in members) for a in "xyz"))
+        from perception.instances.object_resolution import consensus_bounds
+
+        lo, hi = consensus_bounds(pos, [(h.bounds_min, h.bounds_max) for h in members])
         best = max(h.confidence for h in members)
         candidates.append(
             MergedObjectCandidate(

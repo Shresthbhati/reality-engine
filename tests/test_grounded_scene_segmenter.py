@@ -29,6 +29,92 @@ def test_clean_boxes_drops_weak_scene_sized_speck_and_duplicate_boxes():
     assert [(k[0], k[1]) for k in kept] == [("sofa", 0.9), ("rug", 0.7)]
 
 
+def test_prompt_variants_are_queried_and_reported_under_the_canonical_class(monkeypatch):
+    """'coffee table' alone found the table in 0/6 views of a real room; 'wooden coffee table' found it in 6/6."""
+    q = gs.query_prompts(("sofa", "coffee table", "rug"))
+    assert q[:3] == ("sofa", "coffee table", "rug") and "wooden coffee table" in q and "area rug" in q
+    assert "standing lamp" not in q                       # only variants of the requested classes are sent
+
+    depth = np.full((40, 40), 5.0)
+    depth[10:30, 10:30] = 2.0
+    dm = DepthMap(evidence_id="ev-a", width=40, height=40, values=depth.tolist(), unit="meters")
+    sent = []
+
+    def fake_raw(path, prompts):
+        sent.append(tuple(prompts))
+        # the plain prompt finds nothing; the variant finds the table, and the rug is found by both phrasings
+        return [("wooden coffee table", 0.8, (8, 8, 32, 32)), ("rug", 0.7, (0, 33, 8, 39)),
+                ("area rug", 0.75, (0, 33, 8, 39))], (40, 40)
+
+    monkeypatch.setattr(ovf, "_grounded_raw", fake_raw)
+    monkeypatch.setattr(ovf, "item_path", lambda item: "ignored")
+    seg = gs.GroundedSceneSegmenter({"ev-a": dm}, prompts=("coffee table", "rug"))
+    out = seg.segment([SimpleNamespace(id="ev-a")])
+    labels = [r.label for r in out[0].regions]
+    assert "wooden coffee table" in sent[0] and labels.count("coffee table") == 1
+    assert labels.count("rug") <= 1 and "wooden coffee table" not in labels and "area rug" not in labels
+
+
+def _sam_scene(monkeypatch):
+    depth = np.full((40, 40), 5.0)
+    depth[10:30, 10:30] = 2.0                 # the object, 2 m away
+    depth[0:10, 0:10] = 9.0                   # a far outlier patch inside the SAM mask: must be stripped
+    dm = DepthMap(evidence_id="ev-a", width=40, height=40, values=depth.tolist(), unit="meters")
+    monkeypatch.setattr(ovf, "_grounded_raw", lambda path, prompts: ([("sofa", 0.9, (4.0, 4.0, 34.0, 34.0))], (40, 40)))
+    monkeypatch.setattr(ovf, "item_path", lambda item: "unused")
+    import engine.core.image_io as iio
+    from PIL import Image
+    monkeypatch.setattr(iio, "open_oriented", lambda p: Image.new("RGB", (40, 40)))
+    return dm
+
+
+def test_sam_refined_mask_keeps_the_instance_outline_and_strips_depth_outliers():
+    depth = np.full((40, 40), 2.0)
+    depth[0:10, 0:10] = 9.0
+    sam = np.zeros((80, 80), dtype=bool)      # full-resolution mask, twice the depth grid
+    sam[0:60, 0:60] = True
+    mask = gs.sam_refined_mask(depth, sam)
+    assert mask.shape == (40, 40) and mask[10:30, 10:30].all() and not mask[0:10, 0:10].any() and not mask[35:, 35:].any()
+    assert gs.sam_refined_mask(depth, np.zeros((80, 80), dtype=bool)) is None     # an empty SAM mask is no mask
+
+
+def test_segmenter_uses_sam2_masks_and_counts_them(monkeypatch):
+    dm = _sam_scene(monkeypatch)
+    sam_mask = np.zeros((40, 40), dtype=bool)
+    sam_mask[10:30, 10:30] = True
+
+    class _Sam:
+        def masks_for_boxes(self, image, boxes):
+            return [sam_mask for _ in boxes]
+
+    seg = gs.GroundedSceneSegmenter({"ev-a": dm}, mask_source="sam2", sam=_Sam())
+    out = seg.segment([SimpleNamespace(id="ev-a")])
+    (region,) = out[0].regions
+    assert np.asarray(region.mask).sum() == 400 and seg.mask_counts == {"sam2": 1, "depth_band": 0} and seg.mask_fallback is None
+
+
+def test_segmenter_falls_back_to_the_depth_band_when_sam2_is_missing_and_says_so(monkeypatch):
+    from perception.segmentation.sam2_box_prompter import Sam2Unavailable
+
+    dm = _sam_scene(monkeypatch)
+
+    class _Missing:
+        def masks_for_boxes(self, image, boxes):
+            raise Sam2Unavailable("checkpoint not in the local cache")
+
+    seg = gs.GroundedSceneSegmenter({"ev-a": dm}, mask_source="sam2", sam=_Missing())
+    out = seg.segment([SimpleNamespace(id="ev-a")])
+    assert len(out[0].regions) == 1 and seg.mask_counts == {"sam2": 0, "depth_band": 1}
+    assert "checkpoint not in the local cache" in seg.mask_fallback
+
+
+def test_unknown_mask_source_is_refused():
+    import pytest
+
+    with pytest.raises(ValueError):
+        gs.GroundedSceneSegmenter({}, mask_source="magic")
+
+
 def test_labels_map_to_world_types_and_unlisted_ones_are_not_guessed():
     t = gs.ENTITY_TYPE_BY_LABEL
     assert t["sofa"] == t["tv stand"] == t["rug"] == "furniture" and t["potted plant"] == "vegetation"
@@ -71,7 +157,7 @@ def test_segmenter_returns_labelled_masks_per_view_and_skips_views_without_depth
     (region,) = results[0].regions
     assert region.label == "coffee table" and region.confidence == 0.8 and region.evidence_id == "ev-a"
     assert np.asarray(region.mask).sum() == 400                           # the 20x20 foreground
-    assert seen == [gs.SCENE_PROMPTS] and "rug" in gs.SCENE_PROMPTS and "potted plant" in gs.SCENE_PROMPTS
+    assert seen == [gs.query_prompts(gs.SCENE_PROMPTS)] and "rug" in gs.SCENE_PROMPTS and "potted plant" in gs.SCENE_PROMPTS
 
 
 def _cand(cid, label, lo, hi, conf=0.8):
@@ -119,7 +205,7 @@ def test_overlapping_same_label_candidates_fuse_by_the_validators_own_rule():
     out = fuse_overlapping_candidates([a, b, c, d])
     assert [x.candidate_id for x in out] == ["a", "c", "d"]
     fused = out[0]
-    assert (fused.bounds_min.x, fused.bounds_max.x) == (0, 2.2)      # union extent
+    assert abs((fused.bounds_max.x - fused.bounds_min.x) - 2.0) < 1e-9   # consensus extent (both are 2 m), not the 2.2 m union
     assert fuse_overlapping_candidates([a, c]) == [a, c]             # nothing overlaps: unchanged
     # same class, IoU only 0.38 but the centres are 0.9 apart on a 2 m object (< half its length): still one sofa
     e = _cand("e", "sofa", (0.9, 0, 0), (2.9, 1, 1))
@@ -139,7 +225,7 @@ def test_perception_stage_rolls_back_objects_that_invalidate_the_world(synthetic
         intrinsics=(64.0, 64.0, 32.0, 32.0), image_size=(64, 64), perception_model="grounded", object_resolver="union_find")
 
     class _Fake:
-        def __init__(self, depth_by_id):
+        def __init__(self, depth_by_id, **_options):
             pass
 
         def segment(self, evidence):
@@ -181,7 +267,7 @@ def test_perception_stage_uses_the_grounded_segmenter_and_labels_the_model(synth
     built = {}
 
     class _Fake:
-        def __init__(self, depth_by_id):
+        def __init__(self, depth_by_id, **_options):
             built["depth_ids"] = sorted(depth_by_id)
             self.unloaded = False
 
@@ -223,7 +309,7 @@ def test_perception_stage_drops_weak_single_view_objects_but_keeps_confirmed_one
     mask2 = [[4 <= r < 12 and 4 <= c < 12 for c in range(64)] for r in range(64)]   # a different spot: seen by IMG_A only
 
     class _Fake:
-        def __init__(self, depth_by_id):
+        def __init__(self, depth_by_id, **_options):
             pass
 
         def segment(self, evidence):
@@ -249,3 +335,25 @@ def test_perception_stage_drops_weak_single_view_objects_but_keeps_confirmed_one
     facts = vs._perception_stage(result, world, [_Ev("IMG_A"), _Ev("IMG_B")], maps, options)
     labels = sorted(e.semantic_labels[0] for e in world.entities.values() if e.id.startswith("entity-object"))
     assert labels == ["sofa"] and facts["resolution"]["dropped_weak_single_view"] == 1
+
+
+def test_filter_implausible_can_say_what_it_dropped_and_why():
+    from types import SimpleNamespace as NS
+
+    import numpy as np
+
+    from engine.math import Vec3
+    from perception.detection.grounded_scene import filter_implausible
+
+    box = (np.array([0.0, 0.0, 0.0]), np.array([10.0, 3.0, 10.0]))
+
+    def cand(label, pos, views, conf=0.8):
+        return NS(label=label, position=Vec3(*pos), bounds_min=Vec3(*(p - 0.5 for p in pos)), bounds_max=Vec3(*(p + 0.5 for p in pos)),
+                  evidence_ids=tuple(f"v{i}" for i in range(views)), confidence=conf)
+
+    detail: list = []
+    kept, dropped = filter_implausible([cand("sofa", (5, 1, 5), 3), cand("tv", (80, 1, 5), 3)], box, n_views=3, detail=detail)
+    assert [c.label for c in kept] == ["sofa"] and dropped == {"outside_scene": 1}
+    assert detail == [{"label": "tv", "reason": "outside_scene", "views": 3, "confidence": 0.8, "position_m": [80.0, 1.0, 5.0]}]
+    # without the argument nothing changes for existing callers
+    assert filter_implausible([cand("tv", (80, 1, 5), 3)], box, n_views=3) == ([], {"outside_scene": 1})

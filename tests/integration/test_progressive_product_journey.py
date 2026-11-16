@@ -415,17 +415,21 @@ def test_H_video_is_sampled_into_frame_evidence_and_duplicates_are_measured(tmp_
         assert r.status_code == 202, r.text
         body = r.json()
         kinds = [e["type"] for e in body["evidence"]]
-        assert kinds.count("video") == 1 and kinds.count("photo") == 18  # video kept + sampled frames
+        # the picker keeps the 6 distinct views and drops the 12 repeats; the counters say so
+        assert kinds.count("video") == 1 and kinds.count("photo") == 6
+        listed = c.get("/api/evidence", params={"session_id": body["session_id"]}).json()["items"]
+        vm = next(e for e in listed if e["type"] == "video")["metadata"]
+        assert (vm.get("frames_seen"), vm.get("frames_kept"), vm.get("duplicates_dropped")) == (18, 6, 12), vm
         wid = body["world_id"]
         st = _settle(c, wid)
 
         # only the frames are geometry evidence; the video file itself is not
-        assert st["model"]["images_used"] == 18
+        assert st["model"]["images_used"] == 6
         assert st["has_model"] and st["model"]["level"] >= 2
-        # 6 distinct views repeated 3x: the two repeats of each are near-duplicates
+        # 6 distinct views repeated 3x: the picker already dropped the 12 repeats, so none reach the model as redundant
         summary = next(g for g in [st["evidence_summary"]] if g)
-        assert "mostly repeat" in (summary["headline"] or "")
-        assert any(e["contribution"] == "redundant" for e in st["evidence"])
+        assert "6 new images added" in (summary["headline"] or "")
+        assert not any(e["contribution"] == "redundant" for e in st["evidence"])
         # frame identity survives: each frame names its source video and position
         ev = c.get("/api/evidence", params={"session_id": body["session_id"]}).json()["items"]
         frame_meta = [e["metadata"] for e in ev if e["type"] == "photo"]

@@ -201,7 +201,16 @@ async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)
             select(Session.world_id, func.count()).group_by(Session.world_id)
         )).all()
     )
-    return {"items": [_world_out(w, ses_counts.get(w.id, 0)) for w in res.scalars().all()]}
+    rows = res.scalars().all()
+    from apps.api import place_summary
+
+    cards = await place_summary.summaries(db, rows)      # photo_count, placed_count, quality_band, active_job, thumbnail_url ...
+    items = []
+    for w in rows:
+        out = _world_out(w, ses_counts.get(w.id, 0))
+        out.update({k: v for k, v in cards.get(w.id, {}).items() if k != "scale_state"})   # the world's own column wins
+        items.append(out)
+    return {"items": items}
 
 
 @worlds.get("/{world_id}")
@@ -854,6 +863,36 @@ async def world_report(
     if row.report is None:
         raise HTTPException(404, f"No pipeline report recorded for version '{row.id}'")
     return row.report
+
+
+@worlds.get("/{world_id}/review/coco")
+async def world_review_coco(
+    world_id: str, version: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """The pipeline's own 2D detections for this version as COCO 1.0, ready to upload to CVAT (or convert for Label Studio / FiftyOne
+    with scripts/export_annotation_review.py). A human corrects the boxes, and `benchmarks.annotation_review.score` turns the corrected
+    file into per-label precision/recall. Image sizes are the EXIF-oriented ones the detections were computed on."""
+    from apps.api.models import Evidence
+    from apps.api.storage import resolve_artifact
+    from benchmarks import annotation_review
+    from engine.core.image_io import open_oriented
+
+    row = await _version_row(db, world_id, version)
+    detections = (((row.report or {}).get("stages") or {}).get("perception") or {}).get("detections_2d")
+    if not detections:
+        raise HTTPException(404, f"Version '{row.id}' recorded no 2D detections (the perception stage did not run, or found nothing)")
+    evidence = (await db.execute(select(Evidence).where(Evidence.id.in_(list(detections))))).scalars().all()
+    images, sizes = {}, {}
+    for ev in evidence:
+        path = resolve_artifact(ev.artifact_uri) if ev.artifact_uri else None
+        if path is None or not path.exists():
+            continue                                # a photo that is no longer on disk cannot be reviewed; it is simply absent
+        images[ev.id] = ev.name
+        sizes[ev.id] = open_oriented(path).size
+    if not images:
+        raise HTTPException(404, "None of the photographs behind these detections are available to review")
+    perception_facts = ((row.report or {}).get("stages") or {}).get("perception") or {}
+    return annotation_review.coco_from_perception(perception_facts, images, sizes, version_id=row.id)
 
 
 @worlds.get("/{world_id}/points")
@@ -1550,7 +1589,7 @@ async def commit_world_correction(world_id: str, body: CommitRequest, db: AsyncS
         raise HTTPException(
             422,
             "corrected world failed validation: "
-            + "; ".join(_validation.messages()[:5]),
+            + "; ".join(str(i) for i in (*_validation.errors, *_validation.warnings))[:1200],   # the blocking errors first
         )
 
     # Stale-client guard: an explicit parent that is no longer HEAD is a

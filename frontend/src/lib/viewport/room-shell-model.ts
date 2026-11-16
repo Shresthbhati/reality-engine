@@ -373,6 +373,10 @@ export const EVIDENCE_PALETTE: Record<EvidenceState, V3> = {
   UNKNOWN: [107, 114, 128],
 };
 
+// a MEASURED confidence below this cut-off downgrades an observed element to PARTIAL; it is a display threshold, never a
+// stand-in for a missing confidence
+const PARTIAL_BELOW_CONFIDENCE = 0.5;
+
 export function resolveEvidenceState(
   evidenceState?: string | null,
   provenance?: string | null,
@@ -380,7 +384,7 @@ export function resolveEvidenceState(
 ): EvidenceState {
   const raw = (evidenceState || provenance || '').toUpperCase().trim();
   if (raw === 'OBSERVED' || raw === 'RECONSTRUCTED' || raw === 'MEASURED') {
-    if (typeof confidence === 'number' && confidence < 0.5) return 'PARTIAL';
+    if (typeof confidence === 'number' && confidence < PARTIAL_BELOW_CONFIDENCE) return 'PARTIAL';
     return 'OBSERVED';
   }
   if (raw === 'PARTIAL' || raw === 'PARTIALLY_OBSERVED') return 'PARTIAL';

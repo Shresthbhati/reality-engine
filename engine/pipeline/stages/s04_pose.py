@@ -16,6 +16,19 @@ def _no_lap(name: str) -> None:
     return None
 
 
+def committed_intrinsics(session, size: tuple[int, int]):
+    """(fx, fy, cx, cy) from a world's committed sparse model, only when every camera in it agrees (1%), is a pinhole-like
+    (non-fisheye) model and has the images' real size. Else None. Lives here so apps.api need not import reconstruction."""
+    if session is None:
+        return None
+    manifest = session.committed_manifest()
+    if not manifest or not manifest.get("model_dir"):
+        return None
+    from reconstruction.colmap_intrinsics import agreed_intrinsics, read_colmap_cameras
+
+    return agreed_intrinsics(read_colmap_cameras(session.current / str(manifest["model_dir"])), size)
+
+
 def adopt_solved_intrinsics(ctx: StageContext, pose) -> dict | None:
     """No trusted or earlier intrinsics (EXIF stripped, first job of a world): use the focal length COLMAP just
     estimated for THIS run, so depth and perception stop skipping for want of a camera model.

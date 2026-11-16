@@ -390,7 +390,31 @@ class TestGltfExportsRealGeometry:
         world, _diag, _store = _compiled_world_with_store()
         gltf_no_store = export_to_gltf(world)  # artifact_store omitted
 
-        assert all(node["mesh"] == 0 for node in gltf_no_store["nodes"])
+        # every node uses the shared cube geometry (POSITION accessor 0); materials may give it one mesh each
+        assert all(
+            prim["attributes"]["POSITION"] == 0
+            for node in gltf_no_store["nodes"] for prim in gltf_no_store["meshes"][node["mesh"]]["primitives"]
+        )
+
+    def test_cube_fallback_is_sized_and_placed_by_the_real_bounds(self):
+        """A unit cube is 1 m whatever the entity is. Nodes whose geometry records bounds must be that box."""
+        from exporters.gltf.exporter import export_to_gltf
+
+        world, _diag, _store = _compiled_world_with_store()
+        gltf = export_to_gltf(world)
+        by_name = {n["name"]: n for n in gltf["nodes"]}
+        sized = 0
+        for entity in world.entities.values():
+            geom = next((world.geometries[g] for g in entity.geometry_ids if g in world.geometries
+                         and world.geometries[g].bounds_min is not None and world.geometries[g].bounds_max is not None), None)
+            node = by_name.get(entity.name or entity.id)
+            if geom is None or node is None or "scale" not in node:
+                continue
+            sized += 1
+            lo, hi = geom.bounds_min, geom.bounds_max
+            assert node["scale"][0] >= max(0.02, hi.x - lo.x) - 1e-6
+            assert abs(node["translation"][1] - (lo.y + hi.y) / 2.0) < 1e-6
+        assert sized, "no node was sized from its bounds"
 
     def test_sdk_export_threads_artifact_store_through_for_gltf(self):
         from sdk import reality

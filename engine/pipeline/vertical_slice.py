@@ -1099,6 +1099,29 @@ def _depth_stage(result, evidence_items, options, scale_state: str):
     return facts, metric_maps
 
 
+def _detections_2d(seg_results, image_size):
+    """Per-photograph 2D detections for human review: ``{evidence_id: [{region_id, label, confidence, bbox_px}]}``. The box is the
+    mask's bounding box scaled from the mask grid (the depth map's) to the photograph's pixel size; empty masks are skipped."""
+    import numpy as np
+
+    width, height = image_size
+    out: dict = {}
+    for seg in seg_results:
+        rows = []
+        for region in seg.regions:
+            m = np.asarray(region.mask, dtype=bool)
+            if m.ndim != 2 or not m.any():
+                continue
+            ys, xs = np.nonzero(m)
+            sx, sy = width / m.shape[1], height / m.shape[0]
+            rows.append({"region_id": region.region_id, "label": region.label, "confidence": round(float(region.confidence), 4),
+                         "bbox_px": [round(float(xs.min() * sx), 1), round(float(ys.min() * sy), 1),
+                                     round(float((xs.max() + 1) * sx), 1), round(float((ys.max() + 1) * sy), 1)]})
+        if rows:
+            out[seg.evidence_id] = rows
+    return out
+
+
 def _small_fittings_facts(enabled, evidence_items, depth_by_id):
     """Tiled small-fittings detections per registered photograph as RECORDED 2D FACTS (``promoted_to_entities`` is always False).
     None when not requested. Never raises: unavailable or failing is a recorded status."""
@@ -1370,6 +1393,8 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
         "status": "ran",
         "model": options.perception_model,
         **({"small_fittings": small_fittings} if small_fittings is not None else {}),
+        # what the detector+SAM 2 found in each photograph, as boxes a reviewer can correct (benchmarks/annotation_review.py)
+        "detections_2d": _detections_2d(seg_results, options.image_size),
         "views_segmented": len(seg_results),
         "masks_considered": masks_total,
         "hypotheses_lifted": len(hypotheses),

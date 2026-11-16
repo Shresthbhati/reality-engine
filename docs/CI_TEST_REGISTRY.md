@@ -87,7 +87,7 @@ Total: 1
 
 ## unlisted
 
-Total: 493
+Total: 494
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -114,6 +114,7 @@ Total: 493
 - `tests/test_adoption_transaction.py`
 - `tests/test_alembic_migrations.py`
 - `tests/test_aliked_lightglue_task4_3.py`
+- `tests/test_annotation_review.py`
 - `tests/test_apartment_grammar.py`
 - `tests/test_apartment_ui_templates.py`
 - `tests/test_api_auth.py`

@@ -87,7 +87,7 @@ Total: 1
 
 ## unlisted
 
-Total: 498
+Total: 499
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -448,6 +448,7 @@ Total: 498
 - `tests/test_registration_api.py`
 - `tests/test_resource_governor.py`
 - `tests/test_resumable_upload.py`
+- `tests/test_review_coco_api.py`
 - `tests/test_rng.py`
 - `tests/test_robustness_admission.py`
 - `tests/test_room_building_graph.py`

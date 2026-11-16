@@ -110,5 +110,8 @@ def test_upgrade_is_idempotent_and_init_db_path_still_works(tmp_path, monkeypatc
     command.upgrade(_cfg(db), "head")
     con = sqlite3.connect(db)
     assert con.execute("SELECT name FROM worlds").fetchall() == [("Old house",)]
-    assert con.execute("SELECT version_num FROM alembic_version").fetchall() == [("0004",)]
+    from alembic.script import ScriptDirectory
+
+    head = ScriptDirectory.from_config(_cfg(db)).get_current_head()     # not a hardcoded number: it went stale at 0005
+    assert con.execute("SELECT version_num FROM alembic_version").fetchall() == [(head,)]
     con.close()

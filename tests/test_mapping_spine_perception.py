@@ -66,7 +66,11 @@ class TestDetectionContract:
 
 
 class TestModelRegistry:
-    def test_record_and_get(self, tmp_path):
+    def test_record_and_get(self, tmp_path, monkeypatch):
+        # record_pretrained writes the process-wide registry; work on a copy so "test-model" (no licence) cannot leak into
+        # the licence-gate tests that run later in the same session
+        import perception.model_registry as mr
+        monkeypatch.setattr(mr, "_REGISTRY", dict(mr._REGISTRY))
         ck = tmp_path / "fake_weights.pt"
         ck.write_bytes(b"weights-bytes")
         spec = record_pretrained(

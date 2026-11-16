@@ -28,7 +28,7 @@
    "status": "measured"
   },
   {
-   "name": "Grounding DINO tiny, fp16, 2 prompts/pass",
+   "name": "Grounding DINO tiny, fp16 (.half()), 2 prompts/pass -- NOT USED: crashes in the API job (grid_sample dtype); default is fp32 batch 2",
    "accuracy": null,
    "accuracy_note": "no ground truth: not measured",
    "load_and_first_run_s": 1.81,

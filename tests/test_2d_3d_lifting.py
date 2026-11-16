@@ -111,6 +111,31 @@ def test_mismatched_evidence_id_raises():
         lift_region_to_3d(region, depth, camera)
 
 
+def test_numpy_pixel_selection_matches_the_original_cell_by_cell_loop():
+    """The lift finds set pixels with numpy; its points, order and counts must equal a plain nested loop's."""
+    import random
+
+    rng = random.Random(7)
+    camera = _camera()
+    values = [[rng.choice([float("nan"), 0.0, -1.0, 2.0 + rng.random() * 3]) for _ in range(_WIDTH)] for _ in range(_HEIGHT)]
+    depth = DepthMap(evidence_id="ev-1", width=_WIDTH, height=_HEIGHT, values=values, unit="meters")
+    mask = [[rng.random() < 0.7 for _ in range(_WIDTH)] for _ in range(_HEIGHT)]
+
+    expected, set_pixels = [], 0
+    for r in range(_HEIGHT):
+        for c in range(_WIDTH):
+            if not mask[r][c]:
+                continue
+            set_pixels += 1
+            d = values[r][c]
+            if math.isfinite(d) and d > 0.0:
+                expected.append(camera.unproject(c + 0.5, r + 0.5, d))
+
+    hyp = lift_region_to_3d(_region(mask), depth, camera, min_valid_fraction=0.0)
+    assert hyp is not None and hyp.mask_pixel_count == set_pixels and hyp.point_count == len(expected)
+    assert [(p.x, p.y, p.z) for p in hyp.points] == [(p.x, p.y, p.z) for p in expected]
+
+
 def test_relative_depth_map_is_not_silently_treated_as_metric():
     # blueprint 3.3 changed this from "raise LiftingError": relative depth now lifts, but is flagged relative with
     # no metric dimensions (see tests/test_scale_gate.py for the full scale-gate contract).

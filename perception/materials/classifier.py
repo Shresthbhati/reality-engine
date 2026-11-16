@@ -318,6 +318,15 @@ def classify_material(evidence: MaterialEvidence) -> List[MaterialClassification
             min(1.0, plaster_score),
             "diffuse uniform matte finish",
         ))
+    elif kind in ("wall", "ceiling") and uniform and roughness <= 0.25 and sheen <= 0.25:
+        # a bold or dark accent wall is still paint: flat, uniform and matte. Lower confidence than a light neutral wall,
+        # because saturated or dark colour alone does not say whether it is paint, wallpaper or a coloured plaster.
+        candidates.append((
+            "painted_wall" if kind == "wall" else "painted_ceiling",
+            MaterialCategory.PLASTER,
+            0.50,
+            "flat uniform matte finish in a saturated or dark colour",
+        ))
 
     # 4. Brick
     is_brick_hue = (10.0 <= h <= 45.0 or 340.0 <= h <= 360.0) and 15.0 <= C <= 60.0 and 25.0 <= L <= 65.0

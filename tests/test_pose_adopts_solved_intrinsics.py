@@ -98,3 +98,34 @@ def test_shared_reader_and_agreement_rule():
     cams = [{"model": "PINHOLE", "width": 1536, "height": 1024, "params": [1200.0, 1210.0, 768.0, 512.0]}]
     assert agreed_intrinsics(cams, SIZE) == (1200.0, 1210.0, 768.0, 512.0)
     assert read_colmap_cameras(Path("does-not-exist")) == []
+
+
+def _write_two_camera_model(tmp_path):
+    import pytest
+
+    pycolmap = pytest.importorskip("pycolmap")
+    rec = pycolmap.Reconstruction()
+    rec.add_camera(pycolmap.Camera(model="PINHOLE", width=1536, height=1024, params=[1070.1, 1070.2, 768.0, 512.0], camera_id=1))
+    rec.add_camera(pycolmap.Camera(model="SIMPLE_RADIAL", width=1536, height=1024, params=[1000.0, 768.0, 512.0, 0.01], camera_id=2))
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "txt").mkdir()
+    rec.write(str(tmp_path / "bin"))
+    rec.write_text(str(tmp_path / "txt"))
+    return tmp_path
+
+
+def test_the_builtin_camera_reader_agrees_with_pycolmap_on_a_real_binary_and_text_model(tmp_path):
+    from reconstruction.colmap_intrinsics import read_cameras_pycolmap
+
+    d = _write_two_camera_model(tmp_path)
+    reference = read_cameras_pycolmap(d / "bin")
+    assert [c["model"] for c in reference] == ["PINHOLE", "SIMPLE_RADIAL"]
+    assert read_colmap_cameras(d / "bin") == reference == read_colmap_cameras(d / "txt")
+
+
+def test_a_model_the_builtin_reader_cannot_parse_falls_back_to_pycolmap(tmp_path, monkeypatch):
+    import reconstruction.colmap_intrinsics as ci
+
+    d = _write_two_camera_model(tmp_path)
+    monkeypatch.setattr(ci, "_read_colmap_cameras_builtin", lambda _d: [])      # as for a camera model newer than its table
+    assert [c["model"] for c in ci.read_colmap_cameras(d / "bin")] == ["PINHOLE", "SIMPLE_RADIAL"]

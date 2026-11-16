@@ -111,7 +111,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-SEC-000011 | VN | Coding agents share one checkout → one branch per package, no push | [V] this session | process |
 | RE-SEC-000012 | VN | Socket/lock labels could be read as safety claims → visual class only, stated in UI and export | [H] | B05, B19 |
 | RE-TEST-000001 | DN | Six failing tests | [V] commit `04362f72` | done |
-| RE-TEST-000002 | OF | Two crash-recovery tests fail | [V] | D01 |
+| RE-TEST-000002 | DN | Two crash-recovery tests fail → verified passing (1125s, 0 failures) on chore/december-release | [V] commit 04362f72 | done |
 | RE-TEST-000003 | OF | Video journey test expects 18 frames, engine keeps 6 | [V] | B17 |
 | RE-TEST-000004 | DN | CI registry stale on main | [V] commit `f0df2663` | done |
 | RE-TEST-000005 | DN | Nightly job missing `trimesh`, `pytest-asyncio` | [V] | done, unverified on GitHub |

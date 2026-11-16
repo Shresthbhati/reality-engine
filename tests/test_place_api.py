@@ -142,11 +142,17 @@ def test_rename_and_validation(client):
 def test_delete_refused_while_building_then_removes_everything(client, tmp_path, monkeypatch):
     sid, wid = _make_place(client, tmp_path, monkeypatch, backend="tests.test_job_progress:_SlowBackend")
     job_id = client.post(f"/api/sessions/{sid}/reconstruct").json()["job_id"]
-    assert client.delete(f"/api/worlds/{wid}").status_code == 409
+    # lifecycle: a plain DELETE soft-trashes (cancelling jobs); only ?permanent=true purges. A QUEUED job is cancelled on the
+    # spot, so the refusal (409: still stopping) only applies once the job is actually running -- wait for that first
+    deadline = time.time() + 30
+    while time.time() < deadline and client.get(f"/api/jobs/{job_id}").json()["status"] != "running":
+        time.sleep(0.05)
+    assert client.delete(f"/api/worlds/{wid}?permanent=true").status_code == 409
     assert client.get(f"/api/worlds/{wid}").status_code == 200, "a refused delete must change nothing"
     _wait(client, job_id)
 
-    assert client.delete(f"/api/worlds/{wid}").status_code == 204
+    gone = client.delete(f"/api/worlds/{wid}?permanent=true")
+    assert gone.status_code == 200 and gone.json()["permanently_deleted"] is True
     assert client.get(f"/api/worlds/{wid}").status_code == 404
     assert client.get(f"/api/sessions/{sid}").status_code == 404
     assert client.get(f"/api/jobs/{job_id}").status_code == 404

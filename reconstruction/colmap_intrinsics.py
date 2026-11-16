@@ -12,9 +12,27 @@ from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
 
+def read_cameras_pycolmap(model_dir: Path) -> list[dict]:
+    """The same ``[{model, width, height, params}]`` through the real pycolmap library (any COLMAP camera model, text or binary).
+    [] when pycolmap is not installed or the model cannot be read."""
+    try:
+        import pycolmap
+
+        rec = pycolmap.Reconstruction(str(model_dir))
+        return [{"model": str(c.model.name), "width": int(c.width), "height": int(c.height),
+                 "params": [float(v) for v in c.params]} for _, c in sorted(rec.cameras.items())]
+    except Exception:  # noqa: BLE001 -- missing library, missing or corrupt model: unreadable, never guessed
+        return []
+
+
 def read_colmap_cameras(model_dir: Path) -> list[dict]:
     """Camera intrinsics from a sparse model's cameras.txt (or cameras.bin).
-    Returns [{model, width, height, params}]; [] when unreadable."""
+    Returns [{model, width, height, params}]; [] when unreadable. A model the built-in reader cannot parse (a camera model newer
+    than its table) is retried through pycolmap when that is installed."""
+    return _read_colmap_cameras_builtin(model_dir) or read_cameras_pycolmap(model_dir)
+
+
+def _read_colmap_cameras_builtin(model_dir: Path) -> list[dict]:
     out: list[dict] = []
     txt = model_dir / "cameras.txt"
     try:

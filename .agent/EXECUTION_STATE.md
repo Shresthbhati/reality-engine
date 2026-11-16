@@ -18,6 +18,15 @@ duplicates (and a few depth blow-ups); the TV stand is a probable true loss, lef
 Procedural export: plan / schedule / report formats are ROOM-based; the building generator now writes `footprint_polygon_m` on its open-plan rooms
 and the test states that those six formats export exactly the rooms (3D formats keep the every-boxed-entity rule).
 
+Later the same day (commits `0e2f9bcc`, `99af3487`, `fd9175c6`, `e4d9243a`, `c96882a6`): DINOv2 appearance ON by default (registered, no measured
+gain); tiled small-fittings pass as opt-in RECORDED 2D facts, never entities; human-review loop (`perception.detections_2d` ->
+`benchmarks/annotation_review.py` -> COCO/Label Studio/FiftyOne -> `score`), CLI `scripts/export_annotation_review.py`; Open3D outlier removal
+in the scene-box step; real binary USD (`usdc`) via pxr; pycolmap cross-check/fallback reader; manifold3d verdict + booleans. Installing
+Open3D pulled `dash`, whose stray top-level `benchmarks` package shadowed the repo's, so `benchmarks/` is now a regular package.
+`absorb_scale_drift_duplicates` exists, tested, NOT wired (absorbed 0 on the 10-photo room). Approved items still NOT integrated (heavy GPU or
+vendor stacks, no measured gap): hloc/LightGlue (git-only install, SuperPoint weights non-commercial), AliceVision/Meshroom, nerfstudio, gsplat,
+Marigold, detectron2, SAM-HQ, Florence-2, ByteTrack/MMTracking, LIMAP, web-ifc, COMPAS, PCL.
+
 NOT verified: a single full-suite run after the last fixes (each fix was verified on its own test files; the layout-solver timing test is
 load-sensitive and passes on an idle machine). Still blocked on a human: one measured room (40-80 photos + wall lengths, ceiling height, openings)
 and human-reviewed annotations -- every accuracy claim waits on them. Next: DINOv2 only if a labelled set shows a gain; per-view depth-scale

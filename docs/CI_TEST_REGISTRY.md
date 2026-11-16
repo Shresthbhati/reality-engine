@@ -87,7 +87,7 @@ Total: 1
 
 ## unlisted
 
-Total: 494
+Total: 495
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -401,6 +401,7 @@ Total: 494
 - `tests/test_plane_detection_scale.py`
 - `tests/test_plane_sweep.py`
 - `tests/test_platform_boundary.py`
+- `tests/test_pointcloud_clean.py`
 - `tests/test_pose_adopts_solved_intrinsics.py`
 - `tests/test_pose_evaluation.py`
 - `tests/test_pose_graph.py`

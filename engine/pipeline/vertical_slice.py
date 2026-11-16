@@ -1327,7 +1327,13 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
     if grounded:
         # open-vocabulary detectors name things that are not there; an object backed by ONE photograph must be confident
         from perception.detection.grounded_scene import filter_implausible, scene_box
-        candidates, dropped = filter_implausible(candidates, scene_box(result.points), n_views=len(depth_by_id))
+        # the scene box comes from the sparse points; drop statistical outliers first so a few wild points cannot stretch it
+        # (Open3D when installed, an equivalent SciPy implementation otherwise; the backend is on the record)
+        from reconstruction.pointcloud_clean import remove_statistical_outliers
+
+        keep_mask, resolution["scene_box_cleaning"] = remove_statistical_outliers([tuple(getattr(p, "position", p)) for p in result.points])
+        candidates, dropped = filter_implausible(
+            candidates, scene_box([p for p, k in zip(result.points, keep_mask) if k]), n_views=len(depth_by_id))
         resolution["dropped"] = dropped
         resolution["dropped_weak_single_view"] = dropped.get("weak_single_view", 0) + dropped.get("single_view", 0)
 

@@ -125,6 +125,30 @@ def _export_glb(world, artifact_store=None):
     )
 
 
+def _export_usdc(world, artifact_store=None):
+    """Binary OpenUSD (.usdc crate) through the real ``pxr`` library: the USDA text is opened as a stage (so it must be valid
+    USD, not just plausible text) and exported. ``ImportError`` (usd-core missing) propagates with the install hint; entities
+    exported/skipped are exactly the USDA exporter's."""
+    import tempfile
+    from pathlib import Path
+
+    try:
+        from pxr import Usd
+    except ImportError as exc:
+        raise ImportError("usdc export needs OpenUSD (pip install usd-core); the usda export works without it") from exc
+    text, usda_report = export_to_usda_with_report(world, artifact_store)
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = Path(tmp) / "world.usda", Path(tmp) / "world.usdc"
+        src.write_text(text, encoding="utf-8")
+        stage = Usd.Stage.Open(str(src))
+        if stage is None or not stage.Export(str(dst)):
+            raise ValueError("OpenUSD could not open or export the generated stage")
+        data = dst.read_bytes()
+    return data, ExportReport(
+        format="usdc", world_id=world.id, world_version=world.version, entities_exported=usda_report.entities_exported,
+        entities_skipped=usda_report.entities_skipped, skip_reasons=usda_report.skip_reasons, content_hash=content_hash(data))
+
+
 def _export_ifc(world, artifact_store=None):
     """IFC4 through the IfcOpenShell bridge. The bridge writes a FILE, so this adapter writes to a temporary one and
     returns its bytes. ``ImportError`` (IfcOpenShell missing) and ``IFCBridgeError`` (nothing exportable) propagate:
@@ -153,6 +177,7 @@ _EXPORTERS = {
     "gltf": export_to_gltf_with_report,
     "glb": _export_glb,
     "usda": export_to_usda_with_report,
+    "usdc": _export_usdc,   # binary OpenUSD via pxr; needs usd-core (ImportError with the install hint if absent)
     "blender": export_to_blender_script_with_report,
     "cityjson": _export_cityjson,
     "citygml": _export_citygml,

@@ -86,3 +86,15 @@ def test_world_that_needs_no_change_is_returned_as_is():
     world = building()
     placed = with_explicit_placement(world)
     assert with_explicit_placement(placed) is placed
+
+
+def test_usdc_is_a_real_openusd_crate_that_pxr_reopens(tmp_path):
+    Usd = pytest.importorskip("pxr.Usd")
+    world = building()
+    data, report = reality.export(world, "usdc")
+    assert data[:8] == b"PXR-USDC"
+    p = tmp_path / "w.usdc"
+    p.write_bytes(data)
+    stage = Usd.Stage.Open(str(p))
+    assert stage is not None
+    assert len(list(stage.Traverse())) == len(report.entities_exported) + 1      # one prim per exported entity + /World

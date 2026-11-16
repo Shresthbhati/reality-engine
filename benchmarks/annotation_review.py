@@ -39,10 +39,15 @@ def _labels(detections: Mapping[str, Sequence[dict]]) -> List[str]:
     return sorted({d["label"] for rows in detections.values() for d in rows})
 
 
-def to_coco(detections: Mapping[str, Sequence[dict]], images: Mapping[str, str | Path], sizes: Optional[Mapping[str, Tuple[int, int]]] = None) -> dict:
+def to_coco(detections: Mapping[str, Sequence[dict]], images: Mapping[str, str | Path], sizes: Optional[Mapping[str, Tuple[int, int]]] = None,
+            extra_boxes: Optional[Mapping[str, Sequence[dict]]] = None, extra_info: Optional[dict] = None) -> dict:
     """COCO 1.0 detection JSON. ``images`` maps evidence id -> file; ``sizes`` (evidence id -> (w, h)) avoids opening files.
-    Predictions carry ``score`` and the pipeline's ``region_id`` as attributes so a reviewer's edits can be matched back."""
-    cats = {name: i + 1 for i, name in enumerate(_labels(detections))}
+    Predictions carry ``score`` and the pipeline's ``region_id`` as attributes so a reviewer's edits can be matched back.
+    ``extra_boxes`` ({evidence id: [{label, bbox_px}]}) are boxes the pipeline did NOT produce (a second detector's disagreements): they
+    are exported with ``attributes.source == "second_opinion"`` and no score, for the reviewer to keep or delete. ``extra_info`` is merged
+    into the file's ``info`` block (COCO readers ignore unknown keys)."""
+    extra_boxes = extra_boxes or {}
+    cats = {name: i + 1 for i, name in enumerate(sorted(set(_labels(detections)) | {b["label"] for rows in extra_boxes.values() for b in rows}))}
     out_images, anns = [], []
     for img_id, (eid, path) in enumerate(sorted(images.items()), start=1):
         w, h = (sizes or {}).get(eid) or _size(Path(path))
@@ -52,8 +57,32 @@ def to_coco(detections: Mapping[str, Sequence[dict]], images: Mapping[str, str |
             anns.append({"id": len(anns) + 1, "image_id": img_id, "category_id": cats[d["label"]],
                          "bbox": [x0, y0, x1 - x0, y1 - y0], "area": (x1 - x0) * (y1 - y0), "iscrowd": 0,
                          "score": d.get("confidence"), "attributes": {"region_id": d.get("region_id"), "source": "prediction"}})
-    return {"info": {"description": "Reality Engine detection predictions for human review"},
+        for b in extra_boxes.get(eid, ()):
+            x0, y0, x1, y1 = b["bbox_px"]
+            anns.append({"id": len(anns) + 1, "image_id": img_id, "category_id": cats[b["label"]],
+                         "bbox": [x0, y0, x1 - x0, y1 - y0], "area": (x1 - x0) * (y1 - y0), "iscrowd": 0,
+                         "score": None, "attributes": {"region_id": None, "source": "second_opinion"}})
+    return {"info": {"description": "Reality Engine detection predictions for human review", **(extra_info or {})},
             "categories": [{"id": i, "name": n} for n, i in cats.items()], "images": out_images, "annotations": anns}
+
+
+def coco_from_perception(perception: Mapping, images: Mapping[str, str | Path], sizes: Optional[Mapping[str, Tuple[int, int]]] = None,
+                         version_id: Optional[str] = None) -> dict:
+    """The one review package a reviewer needs, built from a version's recorded perception facts: the pipeline's detections, the
+    second detector's disagreements as extra (marked) boxes, and in ``info.reality_engine`` what the plausibility filter dropped. Only
+    photographs present in ``images`` are included. Raises ValueError when no detections were recorded."""
+    detections = perception.get("detections_2d")
+    if not detections:
+        raise ValueError("no 2D detections were recorded (the perception stage did not run, or found nothing)")
+    second = perception.get("second_opinion") or {}
+    extra = {eid: [{"label": b["label"], "bbox_px": b["bbox_px"]} for b in (v.get("second_only") or [])]
+             for eid, v in (second.get("per_view") or {}).items() if eid in images}
+    info = {"reality_engine": {
+        "version_id": version_id,
+        "dropped_by_plausibility_filter": (perception.get("resolution") or {}).get("dropped_detail", []),
+        "second_opinion": ({"status": second.get("status"), "detector": second.get("detector"), "totals": second.get("totals")} if second else None),
+        "note": "attributes.source == 'second_opinion' boxes were NOT produced by the pipeline: keep the real ones, delete the rest"}}
+    return to_coco({k: v for k, v in detections.items() if k in images}, images, sizes, extra_boxes=extra, extra_info=info)
 
 
 def to_label_studio(detections: Mapping[str, Sequence[dict]], image_urls: Mapping[str, str],

@@ -891,7 +891,8 @@ async def world_review_coco(
         sizes[ev.id] = open_oriented(path).size
     if not images:
         raise HTTPException(404, "None of the photographs behind these detections are available to review")
-    return annotation_review.to_coco({k: v for k, v in detections.items() if k in images}, images, sizes)
+    perception_facts = ((row.report or {}).get("stages") or {}).get("perception") or {}
+    return annotation_review.coco_from_perception(perception_facts, images, sizes, version_id=row.id)
 
 
 @worlds.get("/{world_id}/points")

@@ -84,3 +84,16 @@ def test_cli_export_then_score_round_trip(tmp_path):
                  "--out", str(tmp_path / "score.json")]) == 0
     per = json.loads((tmp_path / "score.json").read_text(encoding="utf-8"))["per_label"]
     assert all(v["precision"] == 1.0 and v["recall"] == 1.0 for v in per.values())
+
+
+def test_extra_boxes_from_a_second_detector_are_marked_and_unscored():
+    extra = {"e1": [{"label": "lamp", "bbox_px": [500.0, 10.0, 540.0, 90.0]}]}
+    coco = ar.to_coco(PRED, IMAGES, SIZES, extra_boxes=extra, extra_info={"reality_engine": {"version_id": "v9"}})
+    assert coco["info"]["reality_engine"] == {"version_id": "v9"} and "description" in coco["info"]
+    assert {c["name"] for c in coco["categories"]} == {"sofa", "plant", "lamp"}
+    second = [a for a in coco["annotations"] if a["attributes"]["source"] == "second_opinion"]
+    assert len(second) == 1 and second[0]["score"] is None and second[0]["bbox"] == [500.0, 10.0, 40.0, 80.0]
+    # a reviewer who keeps the lamp makes it a miss for the pipeline; one who deletes it changes nothing
+    kept = ar.read_coco(coco)
+    r = ar.score(PRED, kept)
+    assert r["per_label"]["lamp"]["fn"] == 1 and r["per_label"]["lamp"]["recall"] == 0.0

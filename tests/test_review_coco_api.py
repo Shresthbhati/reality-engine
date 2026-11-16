@@ -84,3 +84,18 @@ def test_photos_that_are_gone_from_disk_are_not_invented(env):
     wid = _seed(env, {"stages": {"perception": {"detections_2d": DETECTIONS}}}, with_photo=False)
     r = env.client.get(f"/api/worlds/{wid}/review/coco")
     assert r.status_code == 404 and "available to review" in r.json()["detail"]
+
+
+def test_the_export_carries_the_filters_drops_and_the_second_detectors_disagreements(env):
+    perception = {
+        "detections_2d": DETECTIONS,
+        "resolution": {"dropped_detail": [{"label": "tv", "reason": "outside_scene", "views": 1, "confidence": 0.7, "position_m": [9.0, 1.0, 3.0]}]},
+        "second_opinion": {"status": "ran", "detector": "florence-community/Florence-2-base", "totals": {"matched": 0, "primary_only": 1, "second_only": 1},
+                           "per_view": {"ev1": {"second_only": [{"label": "lamp", "bbox_px": [100.0, 200.0, 140.0, 280.0]}]}}},
+    }
+    wid = _seed(env, {"stages": {"perception": perception}})
+    coco = env.client.get(f"/api/worlds/{wid}/review/coco").json()
+    info = coco["info"]["reality_engine"]
+    assert info["dropped_by_plausibility_filter"][0]["label"] == "tv" and info["second_opinion"]["totals"]["second_only"] == 1
+    sources = sorted(a["attributes"]["source"] for a in coco["annotations"])
+    assert sources == ["prediction", "second_opinion"]

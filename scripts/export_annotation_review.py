@@ -19,12 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from benchmarks import annotation_review as ar  # noqa: E402
 
 
-def _detections(report: dict) -> dict:
-    node = report.get("stages", {}).get("perception") if "stages" in report else report
-    det = (node or {}).get("detections_2d")
-    if not det:
+def _perception(report: dict) -> dict:
+    node = (report.get("stages", {}).get("perception") if "stages" in report else report) or {}
+    if not node.get("detections_2d"):
         raise SystemExit("report has no perception.detections_2d (run a job with the grounded perception stage first)")
-    return det
+    return node
 
 
 def main(argv=None) -> int:
@@ -42,12 +41,13 @@ def main(argv=None) -> int:
     s.add_argument("--iou", type=float, default=0.5)
     a = p.parse_args(argv)
 
-    det = _detections(json.loads(Path(a.report).read_text(encoding="utf-8")))
+    perception = _perception(json.loads(Path(a.report).read_text(encoding="utf-8")))
+    det = perception["detections_2d"]
     if a.cmd == "export":
         images = {k: Path(v) for k, v in json.loads(Path(a.images).read_text(encoding="utf-8")).items()}
         out = Path(a.out)
         out.mkdir(parents=True, exist_ok=True)
-        coco = ar.to_coco(det, images)
+        coco = ar.coco_from_perception(perception, images)      # detections + second-opinion boxes + what the filter dropped
         (out / "coco.json").write_text(json.dumps(coco, indent=1), encoding="utf-8")
         sizes = {im["evidence_id"]: (im["width"], im["height"]) for im in coco["images"]}
         tasks, config = ar.to_label_studio(det, {k: v.as_uri() for k, v in images.items()}, sizes)

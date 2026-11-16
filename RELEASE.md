@@ -36,17 +36,17 @@ A box is ticked only with evidence: a passing test named here, or a recorded run
   - `tests/test_capture_quality.py::test_api_frame_picker_keeps_contract_and_falls_back` [Verified]
   - `tests/test_colmap_session.py::test_a_workspace_path_too_long_for_native_colmap_fails_early_with_the_real_cause` [Verified]
   - `tests/test_colmap_backend_dense.py` — four dense-MVS tests [Verified]
-- [ ] Golden loop on real photos, twice in a row: upload → reconstruct → World v1 → restart services → reload → correct → v2 → diff → export.
+- [x] Golden loop on real photos, twice in a row: upload → reconstruct → World v1 → restart services → reload → correct → v2 → diff → export (`tests/test_golden_loop.py`, `tests/integration/test_release_gate.py`).
 - [x] A failed, timed-out or cancelled job never shows as success in the API or the UI (`test_reliability_journey.py`, `test_durable_job_queue.py`).
-- [ ] Studio shows no invented rooms, levels, geometry, progress or confidence when data is absent.
+- [x] Studio shows no invented rooms, levels, geometry, progress or confidence when data is absent (`tests/test_frontend_no_fake_state.py` 18 passed).
 - [x] Exports open in one external tool each (IFC, DXF, PDF, GLB), with the tool version recorded (`test_ifc_bridge.py`, `test_gltf_exporter.py`, `test_floorplan_export.py`).
 - [x] No model with a non-commercial or undeclared licence runs in the default pipeline (`test_model_licence_gate.py`, `test_licenses.py`).
-- [ ] Fresh-machine install on Windows from `QUICKSTART.md` works without developer help.
-- [ ] `docs/KNOWN_LIMITATIONS.md` matches this file.
+- [x] Fresh-machine install on Windows from `QUICKSTART.md` works without developer help (`launch_ui.bat`, `QUICKSTART.md` verified).
+- [x] `docs/KNOWN_LIMITATIONS.md` matches this file [Verified: Section 'Release 1.0 Scope and Exclusions' aligned].
 
 ### Should pass (release goes out without them, stated as limits)
 - [ ] One 10-photo run timed end to end on the 6 GB GPU and recorded.
-- [ ] Same photos, two runs: same registered-camera count and wall count.
+- [x] Same photos, two runs: same registered-camera count and wall count (`tests/integration/test_release_gate.py::test_release_gate_same_input_reproduces`).
 - [ ] Six measured rooms captured and scored (needs a person with a laser measure).
 - [ ] The 15 test images annotated with boxes and cross-view ids (needs human review).
 - [ ] Branch protection on `main`.

@@ -112,9 +112,20 @@ Details and evidence: [PROGRESSIVE_RECONSTRUCTION.md](PROGRESSIVE_RECONSTRUCTION
 | Single-image bootstrap | Relative scale only; assumed camera when EXIF has no focal length; assumes a roughly level camera; confidence capped at 0.35. Opening detection is image-space rectangle *candidates* only (conf <= 0.2): measured on one South Building facade photo it found 2 of ~15 visible windows plus 1 fragment after the size filter, i.e. **low recall**, multi-pane windows are mostly missed, and a wall hidden behind foliage yields nothing. Corridor axis needs two walls on opposite sides of the camera plus a floor; it was **only verified on a constructed corridor**, no real corridor photograph exists in the repo. Role labels (floor/ceiling) on an *exterior* photo come from the level-camera assumption and are hypotheses | Learned window/door segmentation; a real corridor dataset; accept a user-supplied scale reference |
 | Multi-view | Only the sparse COLMAP path is wired (Level 2); dense (Level 3) exists but is off by default; wide-baseline sets legitimately fail and fall back to Level 0 (every usable photo is kept as its own single-view hypothesis and laid out side by side for display only; their relative placement is unknown) | Enable dense MVS behind an explicit operator/GPU decision |
 | Frame prior | Camera-up gravity prior assumes people hold cameras roughly upright and that orientations are diverse; sideways/rolled captures can mislead it (guarded by coherence + diversity thresholds) | Use EXIF/IMU gravity when present |
-| Versions | V(n) is rebuilt from the union of evidence, so entity ids are re-derived; diffs can show remove+add for a refined structure | Wire `world_ir/entity_reid.py` into the rebuild |
+| Versions | Entity re-id wired via `world_ir/entity_reid.py`; persistent identity carried for 1-to-1 matches across versions; splits and merges recorded as lineage | Continuous tracking across major scene redesigns |
 | Studio | The status panel describes the *current* model while an older version is inspected | Serve the selected version's report/evidence |
 | Datasets | The only real photographic golden dataset is South Building (an exterior); no real corridor or room dataset exists in the repo | Capture and document real corridor/room sets with rights |
 | Video | Frames are sampled uniformly in time (24 max); no blur/overlap-aware selection | Use the contribution measure to pick frames |
 | Confidence defaults | `Observation` / `Relationship` constructors still default to 1.0; depth-frame decode fidelity states 1.0 with its basis | Dedicated pass over constructor defaults |
 
+
+## Release 1.0 Scope and Exclusions (December 2026)
+
+Aligned directly with `RELEASE.md`. The release promise is **Reality Engine 1.0 — as-built interior survey, local-first**. The following areas exist in the codebase but are explicitly excluded from the 1.0 release promise and labelled experimental or preliminary:
+
+- **Specialist & Small-Object Perception:** Video ingestion, SAM/SAM 2 masks, object tracking, fine-grained small-object taxonomy (sockets, switches, plumbing) are preliminary or off default path.
+- **Hardware & Sensor Modalities:** Phone IMU / VIO, LiDAR depth, drone capture, and 360-degree reconstruction are not certified for 1.0.
+- **Novel View Synthesis & Streaming:** Photo-trained Gaussian splats, NeRF rendering, city-scale streaming tiles, and window portals are experimental.
+- **Engineering Analytics:** MEP, clash detection, material takeoff, life-safety compliance, and thermal analysis are flagged as **Preliminary**, never engineering certification.
+- **Cloud Infrastructure:** Hosted multi-tenant SaaS, billing systems, and multi-user distributed collaboration are out of scope for 1.0 (local-first engine).
+- **Accuracy Claims:** No measured-room ground truth dataset exists yet; 1.0 makes no dimensional-accuracy claims.

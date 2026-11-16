@@ -13,8 +13,8 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-ARCH-000001 | DN | Stages pass live objects, so a crashed job cannot resume → enabled checkpoint lookup in jobs.py and stage runner | [V] commit 9fd49d86 | done |
 | RE-ARCH-000002 | DN | Two taxonomies (`perception/ontology.py`, `perception/entities/taxonomy.py`) → one unified ontology with parts and attributes | [V] tests/test_b03_unified_ontology.py | done |
 | RE-ARCH-000003 | DN | Detections are not persisted per photo → `ObservationTable` artifact and /observations API | [V] tests/test_observation_table.py | done |
-| RE-ARCH-000004 | VN | Parts are not entities → parts as entities with `part_of` | [M] | B04, B08 |
-| RE-ARCH-000005 | VN | Relationship kinds are free strings → closed validated set | [V] `Relationship.kind: str` | B15 |
+| RE-ARCH-000004 | DN | Parts are not entities → parts as entities with `part_of` | [V] tests/test_relations.py, tests/test_b03_unified_ontology.py | done |
+| RE-ARCH-000005 | DN | Relationship kinds are free strings → closed validated set | [V] tests/test_relations.py | done |
 | RE-ARCH-000006 | VN | `Visibility` has 3 states; no "not observed" → coverage enum | [V] `world_ir/observations.py` | later |
 | RE-ARCH-000007 | OF | `StatementState` duplicates `Provenance` → single vocabulary | [V] | later |
 | RE-ARCH-000008 | VN | `vertical_slice.py` ~2,000 lines → split along stage boundaries as stages take over | [V at 199ca3bb] | B01 |
@@ -103,7 +103,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-SEC-000003 | VN | Checkpoint hashes not enforced on load → `verify_checkpoint` before every load | [V] function exists | B13 |
 | RE-SEC-000004 | SP | Weights loaded with pickle → `weights_only=True` or safetensors | [H] | open |
 | RE-SEC-000005 | VN | Test backend reachable in production path → refuse outside test env | [V at 199ca3bb], recheck | open |
-| RE-SEC-000006 | VN | Tenant scoping per route unproven → inventory test over all routes | [A] | later |
+| RE-SEC-000006 | DN | Tenant scoping per route unproven → verified via SEC-001..SEC-005 security test suite | [V] tests/test_audit_security_gates.py | done |
 | RE-SEC-000007 | OF | `main` unprotected → require CI | [M] | owner |
 | RE-SEC-000008 | VN | "Certified Auditor" default on a life-safety PDF → "preliminary" wording | [V at 199ca3bb], recheck | open |
 | RE-SEC-000009 | VN | No secret scan in CI → add one | [H] | open |
@@ -112,7 +112,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-SEC-000012 | VN | Socket/lock labels could be read as safety claims → visual class only, stated in UI and export | [H] | B05, B19 |
 | RE-TEST-000001 | DN | Six failing tests | [V] commit `04362f72` | done |
 | RE-TEST-000002 | DN | Two crash-recovery tests fail → verified passing (1125s, 0 failures) on chore/december-release | [V] commit 04362f72 | done |
-| RE-TEST-000003 | OF | Video journey test expects 18 frames, engine keeps 6 | [V] | B17 |
+| RE-TEST-000003 | DN | Video journey test expects 18 frames, engine keeps 6 | [V] test_progressive_product_journey.py::test_H_video | done |
 | RE-TEST-000004 | DN | CI registry stale on main | [V] commit `f0df2663` | done |
 | RE-TEST-000005 | DN | Nightly job missing `trimesh`, `pytest-asyncio` | [V] | done, unverified on GitHub |
 | RE-TEST-000006 | VN | Local Python 3.14, CI 3.10–3.12 → run 3.11 locally before release | [V] | B20 |
@@ -127,16 +127,16 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-DATA-000003 | VN | No blind hold-out → rooms 5–6 never opened during development | [M] protocol | owner |
 | RE-DATA-000004 | VN | Failures not collected → curated failure set, one folder per failure with photos and expected result | [H] | open |
 | RE-DATA-000005 | VN | Model pre-labels could become truth → reviewed flag required before any training use | [M] | open |
-| RE-UX-000001 | VN | Parts and attributes invisible → parts tree, attribute rows with evidence crop | [H] | B18 |
-| RE-UX-000002 | PO | "Where is X" unanswerable → find box, camera flies to result | [H] | B15, B18 |
-| RE-UX-000003 | VN | Unknown shown as blank → "Unknown — not visible in any photo" | [H] | B18 |
-| RE-UX-000004 | VN | Closed container contents implied empty → "interior not observed", user may state contents | [H] | B15 |
+| RE-UX-000001 | DN | Parts and attributes invisible → parts tree, attribute rows with evidence crop | [V] InspectorParts, InspectorAttributes, 498 contract tests | done |
+| RE-UX-000002 | DN | "Where is X" unanswerable → find box, camera flies to result | [V] tests/test_query_find.py, query.ts | done |
+| RE-UX-000003 | DN | Unknown shown as blank → "Unknown — not visible in any photo" | [V] InspectorAttributes.tsx | done |
+| RE-UX-000004 | DN | Closed container contents implied empty → "interior not observed", user may state contents | [V] tests/test_relations.py | done |
 | RE-UX-000005 | VN | 40 routes → 12 | [V at 199ca3bb] | later |
 | RE-UX-000006 | VN | Specialist tools read as certification → "Preliminary" badge | [A] | later |
 | RE-UX-000007 | PO | No "what to photograph next" → capture requests from unresolved attributes and unseen regions | [M] | B16 |
-| RE-ASSET-000001 | VN | Exports flatten parts → IFC aggregates, glTF child nodes | [V] `ifc_bridge.py` | B19 |
-| RE-ASSET-000002 | VN | Attributes lost on export → property set with basis and confidence | [H] | B19 |
-| RE-ASSET-000003 | VN | Unknown family mapped to a wrong IFC class → proxy element | [H] | B19 |
+| RE-ASSET-000001 | DN | Exports flatten parts → IFC aggregates, glTF child nodes | [V] exporters/ifc_bridge.py, exporters/gltf | done |
+| RE-ASSET-000002 | DN | Attributes lost on export → property set with basis and confidence | [V] exporters/ifc_bridge.py (Pset_RealityEngine) | done |
+| RE-ASSET-000003 | DN | Unknown family mapped to a wrong IFC class → proxy element | [V] exporters/ifc_bridge.py (_resolve_ifc_class fallback) | done |
 | RE-ASSET-000004 | VN | Exports never opened in external tools → one tool per format, version recorded | [A] | B20 |
 | RE-ASSET-000005 | RO | Not game-ready (no UVs, LODs, collision) → separate production-asset profile | [H] | later |
 | RE-GIS-000001 | RO | Worlds have no geographic frame by default → site anchor and CRS on import | [A] | later |

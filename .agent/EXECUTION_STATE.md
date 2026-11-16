@@ -3,6 +3,26 @@
 **Session end:** 2026-09-26 (auto-recon sprint: interior scene assembly,
 worktree `.claude/worktrees/auto-recon-sprint`)
 
+## 2026-11-16 -- SAM 2 masks, open-source registry, DINOv2 (opt-in), clean-baseline fixes (branch claude/e202-and-further-374554; local commits, NOT pushed)
+
+Commits: `a7b3da90` sofas kept + visible GLB; `4c53f485` prompt variants + licence-verified open-source registry; `2978bd27` SAM 2 instance
+masks (default), opt-in DINOv2 appearance, faster `lift_region_to_3d`; `bd0a080f` regenerated API docs; `4fa1e075` stale tests and real defects
+from a clean full-suite run (27 pre-existing failures -> each fixed and verified per file); `0c8e3ae9` procedural footprint + room-based export test.
+
+Measured (10-photo room, consistency checks only -- there are NO annotations, so none of this is accuracy): SAM 2 gave 126/126 masks with no
+fallback and the 7 m "sofa" is gone; DINOv2 separates same- from different-label crops (cosine 0.63 vs 0.16) but changed NO association decision
+(16 objects either way), so `perception_appearance` defaults to None. Tiled Grounding DINO for small fittings returns ~55 boxes per photo (61
+"thermostats" over 10 photos): implausible volume, deliberately NOT wired in. The `outside_scene` filter drops mostly single-view scale-drift
+duplicates (and a few depth blow-ups); the TV stand is a probable true loss, left alone.
+
+Procedural export: plan / schedule / report formats are ROOM-based; the building generator now writes `footprint_polygon_m` on its open-plan rooms
+and the test states that those six formats export exactly the rooms (3D formats keep the every-boxed-entity rule).
+
+NOT verified: a single full-suite run after the last fixes (each fix was verified on its own test files; the layout-solver timing test is
+load-sensitive and passes on an idle machine). Still blocked on a human: one measured room (40-80 photos + wall lengths, ceiling height, openings)
+and human-reviewed annotations -- every accuracy claim waits on them. Next: DINOv2 only if a labelled set shows a gain; per-view depth-scale
+consistency (cross-view object scatter up to ~2.5 m) is the open accuracy problem.
+
 ## 2026-11-14 -- P2 evaluator cards E202-E209 (branch claude/e202-and-further-374554; local commits, NOT pushed)
 
 Branch was fast-forwarded onto `claude/project-docs-setup-73af3d` @ 36990330 (carries E201 and `docs/blueprint/35_TASK_CARDS.md`).

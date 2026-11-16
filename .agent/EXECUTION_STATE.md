@@ -2201,3 +2201,16 @@ Exact next priorities (build plan order):
 
 Rules: never mark work complete without execution evidence; update this file and `.agent/TASKS.yaml` at the end of
 every session; put sprint detail in a new file under `docs/archive/execution-history/`, not here.
+
+## 2026-11-17 -- BUILD_SPEC packages (from release-planning-docs worktree, docs/BUILD_SPEC.md)
+Built as tested, self-contained modules (NOT yet wired into the live pipeline stages): B02 `world_ir/observation_table.py`,
+B04 `perception/detection/hierarchical.py`, B05 `perception/detection/attributes.py`, B06 (RLE half only) `world_ir/mask_store.py`,
+B08 `perception/instances/global_association.py`, B09 `perception/geometry/support_planes.py` (decision rule; not yet called from
+`consolidate_horizontal_roles`), B10 `perception/architecture/footprint_cleanup.py` (not yet called from `solve_room_layout`),
+B11 `reconstruction/fusion/voxel_cloud.py` (not yet called from `consumer.py`), B13 `engine/hardware/model_pool.py` (no load site uses it yet),
+B14 `reconstruction/fusion/measurements.py`, B15 `world_ir/relations.py` (no `/find` route yet), B17 video counters
+(`frames_seen/frames_kept/duplicates_dropped` on the video evidence metadata).
+Already true on this branch before this work: B01 stage resume (`DbCheckpointStore`, tests/test_stage_resume.py).
+Not started: B03 (one ontology + attributes in YAML), B06 SAM2-on-live-path wiring (SAM 2 already default perception masks here),
+B07 wiring, B12 deterministic COLMAP, B16 refinement loop, B18 Studio UI, B19 exporter parts/attributes, B20 release run (needs real photos twice,
+external tools, a person with a laser measure).

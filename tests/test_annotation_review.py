@@ -139,3 +139,27 @@ def test_score_sources_measures_how_much_of_each_extra_source_a_human_kept():
 def test_score_sources_with_no_extra_boxes_or_no_review_produces_no_number():
     exported = ar.to_coco(PRED, IMAGES, SIZES)
     assert ar.score_sources(exported, exported)["status"] == "unreviewed"
+
+
+def test_validate_training_dataset_rejects_unreviewed_prelabels():
+    """RE-DATA-000005: Model pre-labels must not become truth; reviewed flag required."""
+    draft_pkg = {
+        "status": "DRAFT - not ground truth; every record is unreviewed",
+        "records": [
+            {"entity_id": "draft-001", "review_status": "unreviewed", "category": "furniture"},
+        ],
+    }
+    with pytest.raises(ar.UnreviewedTrainingDataError) as exc:
+        ar.validate_training_dataset(draft_pkg)
+    assert "unreviewed" in str(exc.value)
+
+    # Missing reviewed flag rejected
+    unflagged = [{"id": "rec-1", "label": "chair"}]
+    with pytest.raises(ar.UnreviewedTrainingDataError) as exc:
+        ar.validate_training_dataset(unflagged)
+    assert "review_status='reviewed'" in str(exc.value)
+
+    # Reviewed records accepted
+    reviewed = [{"entity_id": "gt-001", "review_status": "reviewed", "category": "furniture"}]
+    assert ar.validate_training_dataset(reviewed) == reviewed
+

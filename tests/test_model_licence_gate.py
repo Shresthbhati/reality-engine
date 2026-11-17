@@ -50,3 +50,21 @@ async def test_job_start_licence_gate_rejects_non_commercial_model(tmp_path):
     assert "mast3r_vitlarge" in str(exc.value)
     assert "CC-BY-NC" in str(exc.value)
 
+
+def test_metric_indoor_depth_checkpoint_licence_rejection():
+    """RE-SEC-000002: Metric-Indoor depth checkpoint has undeclared licence and is rejected in production."""
+    with pytest.raises(mr.LicenceNotAllowedError) as exc:
+        mr.assert_production_licences(["depth_anything_v2_metric_indoor"])
+    assert "depth_anything_v2_metric_indoor" in str(exc.value)
+    assert "undeclared" in str(exc.value)
+
+
+def test_metric_indoor_depth_kept_out_of_default_path(monkeypatch):
+    """RE-SEC-000002: make_layout_analyzer defaults to disabled."""
+    from engine.pipeline.single_image_layout import make_layout_analyzer
+
+    monkeypatch.delenv("REALITY_LAYOUT_MODELS", raising=False)
+    analyzer, unload = make_layout_analyzer()
+    assert analyzer is None
+
+

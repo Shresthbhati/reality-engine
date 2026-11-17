@@ -264,6 +264,18 @@ _DEFAULT_MODELS = [
         output_contract="Affinity-aligned relative depth map",
     ),
     ModelSpec(
+        name="depth_anything_v2_metric_indoor",
+        task="metric_depth",
+        source="huggingface:depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf",
+        checkpoint=_HF_HOME / "models--depth-anything--Depth-Anything-V2-Metric-Indoor-Small-hf",
+        license="undeclared",
+        commercial_ok=False,
+        measured_vram_mb=240.0,
+        status="candidate",
+        input_contract="RGB image (H, W, 3)",
+        output_contract="Metric depth map in meters (H, W)",
+    ),
+    ModelSpec(
         name="owlvit_base_patch32",
         task="open_vocabulary_detection",
         source="huggingface:google/owlvit-base-patch32",

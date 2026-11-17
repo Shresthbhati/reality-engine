@@ -28,6 +28,45 @@ LABEL_STUDIO_CONFIG = """<View>
 </View>"""
 
 
+class UnreviewedTrainingDataError(ValueError):
+    """Raised when unreviewed model predictions/pre-labels are supplied for training (RE-DATA-000005)."""
+
+
+def validate_training_dataset(data: Sequence[dict] | Mapping) -> list[dict]:
+    """Ensure every annotation record has review_status == 'reviewed' before any training use.
+
+    (RE-DATA-000005: Model pre-labels could become truth -> reviewed flag required before any training use).
+    Raises UnreviewedTrainingDataError if any unreviewed record or pre-label draft is found.
+    """
+    records: Sequence[dict]
+    if isinstance(data, Mapping) and "records" in data:
+        if str(data.get("status", "")).startswith("DRAFT"):
+            raise UnreviewedTrainingDataError(f"Cannot use unreviewed draft data for training: {data.get('status')}")
+        records = data["records"]
+    elif isinstance(data, Mapping) and "annotations" in data:
+        records = data["annotations"]
+    elif isinstance(data, Sequence):
+        records = data
+    else:
+        raise TypeError(f"Unsupported dataset format: {type(data)}")
+
+    validated = []
+    for r in records:
+        status = r.get("review_status")
+        source = (r.get("attributes") or {}).get("source") if isinstance(r.get("attributes"), dict) else r.get("source")
+        if status == "unreviewed" or source in ("prediction", "second_opinion", "prelabel", "draft"):
+            raise UnreviewedTrainingDataError(
+                f"Record {r.get('entity_id') or r.get('id')} has unreviewed status {status!r} / source {source!r}; "
+                "training requires human-reviewed truth."
+            )
+        if status != "reviewed" and not r.get("is_ground_truth") and source != "ground_truth":
+            raise UnreviewedTrainingDataError(
+                f"Record {r.get('entity_id') or r.get('id')} missing explicit review_status='reviewed'."
+            )
+        validated.append(r)
+    return validated
+
+
 def _size(path: Path) -> Tuple[int, int]:
     from PIL import Image
 

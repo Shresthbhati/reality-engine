@@ -99,7 +99,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-DB-000005 | VN | Backups never restored → one restore drill | [A] | open |
 | RE-DB-000006 | VN | WorldStore and DB can disagree after a crash → test crash between the two writes | [V] D01 tests cover this area | D01 |
 | RE-SEC-000001 | DN | Non-commercial model can run → licence gate called at job start | [V] apps/api/jobs.py, tests/test_model_licence_gate.py | done |
-| RE-SEC-000002 | VN | Metric-Indoor depth checkpoint has no declared licence → keep out of default path | [M] | open |
+| RE-SEC-000002 | VN | Metric-Indoor depth checkpoint has no declared licence → keep out of default path | [V] default REALITY_LAYOUT_MODELS=0; model_registry gated | done |
 | RE-SEC-000003 | VN | Checkpoint hashes not enforced on load → `verify_checkpoint` before every load | [V] function exists | B13 |
 | RE-SEC-000004 | DN | Weights loaded with pickle → `weights_only=True` or safetensors | [V] midAS_backend.py, dinov2_embeddings.py | done |
 | RE-SEC-000005 | DN | Test backend reachable in production path → refuse outside test env | [V] apps/api/jobs.py | done |
@@ -126,7 +126,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-DATA-000002 | OF | No measured rooms | [M] | owner |
 | RE-DATA-000003 | VN | No blind hold-out → rooms 5–6 never opened during development | [M] protocol | owner |
 | RE-DATA-000004 | VN | Failures not collected → curated failure set, one folder per failure with photos and expected result | [H] | open |
-| RE-DATA-000005 | VN | Model pre-labels could become truth → reviewed flag required before any training use | [M] | open |
+| RE-DATA-000005 | VN | Model pre-labels could become truth → reviewed flag required before any training use | [V] validate_training_dataset in benchmarks/annotation_review.py | done |
 | RE-UX-000001 | DN | Parts and attributes invisible → parts tree, attribute rows with evidence crop | [V] InspectorParts, InspectorAttributes, 498 contract tests | done |
 | RE-UX-000002 | DN | "Where is X" unanswerable → find box, camera flies to result | [V] tests/test_query_find.py, query.ts | done |
 | RE-UX-000003 | DN | Unknown shown as blank → "Unknown — not visible in any photo" | [V] InspectorAttributes.tsx | done |

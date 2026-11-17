@@ -34,8 +34,10 @@ def test_indices():
 
 def test_observation_roundtrip_and_inventory_is_valid():
     t = _table()
+    t.visibility[1] = 3  # Visibility.NOT_OBSERVED
     back = t.to_observations()
     assert back[2].image_id == "b" and back[0].visibility is Visibility.PARTIAL
+    assert back[1].visibility is Visibility.NOT_OBSERVED
     assert validate_inventory(t.to_inventory()) == []
 
 

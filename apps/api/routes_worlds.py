@@ -12,7 +12,7 @@ from uuid import uuid4
 
 log = logging.getLogger("reality.api.worlds")
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -410,6 +410,21 @@ async def list_world_versions(
             for v in res.scalars().all()
         ]
     }
+
+
+@worlds.get("/{world_id}/find")
+async def find_in_world(
+    world_id: str,
+    q: str = Query(..., min_length=1),
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """\"Where is X\": entities matching query q with containment chain and position (BUILD_SPEC B15)."""
+    from apps.api.routes_query import find_entities
+    row = await _version_row(db, world_id, version, auth)
+    world = _load_world_or_409(row)
+    return {"version_id": row.id, "q": q, "results": find_entities(world, q)}
 
 
 @worlds.post("/{world_id}/attach/{session_id}")

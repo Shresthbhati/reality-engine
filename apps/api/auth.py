@@ -449,13 +449,18 @@ def get_auth_context(request: Request) -> AuthContext:
     )
 
 
+def is_global_admin(auth: AuthContext) -> bool:
+    """Check if the context has cross-tenant / global administrator authority."""
+    return auth.role == Role.SYSTEM_ADMIN or (auth.role >= Role.ADMIN and auth.tenant_id in ("root", "system", "admin"))
+
+
 def enforce_project_isolation(resource: Any, auth: AuthContext) -> None:
     """Strict project isolation: non-admin users can only access resources belonging to their tenant."""
     if auth.project_id is not None:
         resource_id = getattr(resource, "id", None) or getattr(resource, "world_id", None)
         if resource_id and resource_id != auth.project_id:
             raise HTTPException(status_code=403, detail="Access forbidden: token is scoped to a different world")
-    if auth.role == Role.SYSTEM_ADMIN:
+    if is_global_admin(auth):
         return
     if auth.tenant_id == "shared" and auth.project_id:
         return

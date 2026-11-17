@@ -54,7 +54,7 @@ A box is ticked only with evidence: a passing test named here, or a recorded run
 ## Known open facts
 
 - Stages resume from stored checkpoints (`DbCheckpointStore`) when outputs are verified on disk (B01).
-- SfM output varies between runs on the same photos (995 vs 1,423 sparse points observed).
+- SfM output is deterministic for captures ≤ 60 photos (seed 0, sorted filename order, single-threaded matching; B12).
 - Furniture tops and steps can be classed as floor; room footprints can be ragged.
 - Small-object detection has low precision and is off by default.
 

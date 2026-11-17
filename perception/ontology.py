@@ -29,6 +29,14 @@ class OntologyNode:
     min_pixels: int = 0
     typical_dims_m: Optional[Dict[str, Tuple[float, float]]] = None
     attach: Tuple[Dict[str, str], ...] = ()
+    #: attribute name -> allowed values; every list ends with "unknown" (an unseen attribute is never guessed).
+    attributes: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+    aliases: Tuple[str, ...] = ()
+    #: Registered entity-class data (formerly perception.entities.taxonomy). None on nodes that are not registered
+    #: classes: the source never stated it, so there is no default.
+    world_type: Optional[str] = None            # an existing world_ir EntityType value
+    size_m: Optional[Tuple[float, float]] = None  # plausible largest dimension (min, max), metres
+    small: bool = False                          # needs the high-detail inspection pass
 
     @property
     def group(self) -> str:
@@ -53,20 +61,40 @@ class OntologyNode:
 class Ontology:
     version: str
     nodes: Dict[str, OntologyNode] = field(default_factory=dict)
+    children: Dict[str, List[str]] = field(default_factory=dict, init=False, repr=False)
+    alias_to_path: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _prompt_lookup: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
-    _name_lookup: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        self.children = {}
+        self.alias_to_path = {}
         self._prompt_lookup = {}
-        self._name_lookup = {}
         for path, node in self.nodes.items():
-            self._name_lookup[node.name.lower()] = path
-            self._name_lookup[node.label.lower()] = path
-            self._name_lookup[path.lower()] = path
+            if node.parent:
+                self.children.setdefault(node.parent, []).append(path)
+            # First node wins a name, so adding classes never re-points an existing lookup: an implicit name
+            # (label/leaf/path) does not take a string an earlier node already uses as a detector prompt.
+            for name in node.aliases:
+                self.alias_to_path.setdefault(_norm(name), path)
+            for name in (node.label, node.name, path, path.replace("/", ".")):
+                if _norm(name) not in self._prompt_lookup:
+                    self.alias_to_path.setdefault(_norm(name), path)
             for prompt in node.prompts:
                 p_clean = prompt.lower().strip()
                 if p_clean not in self._prompt_lookup:
                     self._prompt_lookup[p_clean] = path
+
+    def ancestors(self, path: str) -> List[str]:
+        """Parent chain, nearest first (cycle-safe: validate() reports cycles)."""
+        out: List[str] = []
+        seen = {path}
+        cur = self.nodes[path].parent if path in self.nodes else None
+        while cur and cur not in seen:
+            out.append(cur)
+            seen.add(cur)
+            node = self.nodes.get(cur)
+            cur = node.parent if node else None
+        return out
 
     def get(self, path: str) -> Optional[OntologyNode]:
         """Lookup node by exact slash-separated path."""
@@ -86,9 +114,10 @@ class Ontology:
         if query in self.nodes:
             return self.nodes[query]
 
-        # 2. Case-insensitive name, label or path match
-        if q_clean in self._name_lookup:
-            return self.nodes[self._name_lookup[q_clean]]
+        # 2. Alias, label, name, path or dotted-path match (case-insensitive, spaces collapsed)
+        hit = self.alias_to_path.get(_norm(query))
+        if hit is not None:
+            return self.nodes[hit]
 
         # 3. Prompt lookup match
         if q_clean in self._prompt_lookup:
@@ -146,7 +175,39 @@ class Ontology:
                 issues.append(f"Node {path} has no detector prompts defined")
             if node.min_pixels < 0:
                 issues.append(f"Node {path} has negative min_pixels: {node.min_pixels}")
+            for comp in node.components:
+                # a short part name is a child node; a full path may point at any node
+                if comp not in self.nodes and f"{path}/{comp}" not in self.nodes:
+                    issues.append(f"Node {path} lists component that does not exist: {comp}")
+            for rel in node.attach:
+                for kind, target in rel.items():
+                    if target not in self.nodes:
+                        issues.append(f"Node {path} attach {kind} targets non-existent node: {target}")
+            for attr, values in node.attributes.items():
+                if "unknown" not in values:
+                    issues.append(f"Node {path} attribute {attr} has no 'unknown' value")
+        owner: Dict[str, str] = {}
+        for path, node in self.nodes.items():
+            for alias in node.aliases:
+                key = _norm(alias)
+                if owner.setdefault(key, path) != path:
+                    issues.append(f"Alias '{alias}' claimed by both {owner[key]} and {path}")
+        done: set = set()
+        for start in self.nodes:
+            visiting: set = set()
+            cur: Optional[str] = start
+            while cur and cur in self.nodes and cur not in done:
+                if cur in visiting:
+                    issues.append(f"Parent cycle through {cur}")
+                    break
+                visiting.add(cur)
+                cur = self.nodes[cur].parent
+            done |= visiting
         return issues
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.lower().split())
 
 
 _GLOBAL_ONTOLOGY: Optional[Ontology] = None
@@ -196,6 +257,8 @@ def load_ontology(
                 if isinstance(a, dict):
                     attach_list.append({str(k): str(v) for k, v in a.items()})
 
+        raw_attrs = item.get("attributes") or {}
+        raw_size = item.get("size_m")
         node = OntologyNode(
             path=p,
             label=str(item.get("label", p)),
@@ -207,6 +270,11 @@ def load_ontology(
             min_pixels=int(item.get("min_pixels", 0)),
             typical_dims_m=dims,
             attach=tuple(attach_list),
+            attributes={str(k): tuple(str(x) for x in v) for k, v in raw_attrs.items()},
+            aliases=tuple(str(a) for a in item.get("aliases") or ()),
+            world_type=item.get("world_type"),
+            size_m=(float(raw_size[0]), float(raw_size[1])) if raw_size else None,
+            small=bool(item.get("small", False)),
         )
         nodes[p] = node
 

@@ -289,6 +289,8 @@ def find_floor_elevation(
 
     for floor in floors:
         f_cp = floor.custom_properties or {}
+        if f_cp.get("role") == "support_surface":
+            continue  # a table top or step (orientation.consolidate_horizontal_roles) is not the storey floor
         f_pos = _get_entity_position(floor)
         floor_z = f_pos[2] if f_pos is not None else float(f_cp.get("elevation_m", default_z))
 

@@ -14,6 +14,7 @@ not hypothetical, and must fail loudly, not fake a result.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import os
 import shutil
@@ -314,6 +315,7 @@ def _subprocess_env(colmap_path: str) -> Dict[str, str]:
 
 #: Native COLMAP on Windows crashes (exit 0xC0000409, no message) once a file it opens exceeds MAX_PATH (260).
 #: The deepest paths under a workspace add ~90 characters (dense/<n>/stereo/depth_maps/<image>.geometric.bin).
+MAX_WORKSPACE_PATH_CHARS = ColmapConfig.max_workspace_path_chars   # default ceiling; ColmapConfig can override per run
 
 
 class WorkspacePathTooLong(RuntimeError):
@@ -335,7 +337,13 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                  robust_sift: Optional[bool] = None, guided_matching: Optional[bool] = None,
                  dense_mvs: Optional[bool] = None, artifact_store=None, session=None,
                  config: Optional[ColmapConfig] = None):
-        self._config = config if config is not None else ColmapConfig.from_file()
+        # Explicit kwargs win over the config file/defaults (None = "not given"); ignoring them
+        # silently turned dense_mvs=True into a sparse-only run.
+        base = config if config is not None else ColmapConfig.from_file()
+        overrides = {k: v for k, v in (("use_gpu", use_gpu), ("robust_sift", robust_sift),
+                                       ("guided_matching", guided_matching), ("dense_mvs", dense_mvs))
+                     if v is not None}
+        self._config = dataclasses.replace(base, **overrides)
         self._colmap_binary = colmap_binary
         #: Optional reconstruction.colmap_session.ColmapSession. When set, the workspace
         #: PERSISTS between runs and new photographs are registered into the previous sparse

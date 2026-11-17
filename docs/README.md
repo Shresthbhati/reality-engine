@@ -4,8 +4,8 @@ Start here. Three sources of truth, by question:
 
 | Question | Where |
 |---|---|
-| What exists now (verified)? | [`implementation/IMPLEMENTATION_STATUS.md`](implementation/IMPLEMENTATION_STATUS.md), [`implementation/CAPABILITIES.md`](implementation/CAPABILITIES.md) |
-| What comes next, in what order? | [`.agent/TASKS.yaml`](../.agent/TASKS.yaml) (canonical queue), [`implementation/ROADMAP.md`](implementation/ROADMAP.md), [`implementation/PENDING_IMPLEMENTATION.md`](implementation/PENDING_IMPLEMENTATION.md) |
+| What exists now (verified)? | [`engineering/capability_matrix.md`](engineering/capability_matrix.md), [`STATUS.md`](STATUS.md) |
+| What comes next, in what order? | [`RELEASE.md`](../RELEASE.md) (the only release document) |
 | How are unfinished systems supposed to be built? | [`future/`](future/) — per-subsystem engineering specs |
 | Why is the architecture the way it is? | [`engineering/DESIGN_DECISIONS.md`](engineering/DESIGN_DECISIONS.md) (decisions 17+), [`DECISIONS.md`](DECISIONS.md) (V11 decisions 1–16) |
 | How do the pieces fit? | [`architecture/`](architecture/) — system, data model, pipeline, coordinate frames |

@@ -49,6 +49,7 @@ import {
   ChipGroup, ConfidenceBars, DimensionRows, Disclosure, EntityChip, FactList, KV, MaterialCards, Muted, SectionTitle,
 } from "./InspectorParts";
 import { InspectorAttributes } from "./InspectorAttributes";
+import { InspectorContainerInterior, isContainerEntity } from "./InspectorContainerInterior";
 import { WorldFindSearchBar } from "./WorldFindSearchBar";
 
 interface AdaptiveInspectorProps {
@@ -1385,6 +1386,15 @@ function EntityDetails({
                 null
               }
             />
+
+            {isContainerEntity(entity) && (
+              <InspectorContainerInterior
+                entity={entity}
+                entities={entities}
+                onCommitCorrection={onCommitCorrection}
+                onSelectEntity={(id) => focusEntity(id)}
+              />
+            )}
 
             {shownLinked.map((l) => (
               <ChipGroup key={l.title} title={l.title}>

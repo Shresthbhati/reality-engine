@@ -62,8 +62,8 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GEO-000011 | DN | Dimensions lack provenance → robust fused measurements with used/rejected IDs | [V] tests/test_measurement_fusion.py | done |
 | RE-GEO-000012 | DN | Correlated measurements counted as independent → group inflation down-weighting | [V] tests/test_measurement_fusion.py | done |
 | RE-GEO-000013 | DN | Uncertainty shown as constants → "uncalibrated" until rooms measured | [V] provenance/provenance.py, tests/test_provenance.py | done |
-| RE-GEO-000014 | OF | `reconstruction/sfm/core_pipeline.py` unreachable → wire or delete | [M] | open |
-| RE-GEO-000015 | OF | `reconstruction/mvs/dense_cloud.py` unreachable → wire or delete | [M] | open |
+| RE-GEO-000014 | OF | `reconstruction/sfm/core_pipeline.py` unreachable → wire or delete | [V] reconstruction/backend/python_backend.py, tests/test_unreachable_sfm_mvs_wiring.py | done |
+| RE-GEO-000015 | OF | `reconstruction/mvs/dense_cloud.py` unreachable → wire or delete | [V] reconstruction/dense_pipeline.py, tests/test_unreachable_sfm_mvs_wiring.py | done |
 | RE-GEO-000016 | VN | SfM fails on blank walls → feed-forward backend as second candidate | [M] | later |
 | RE-GEO-000017 | VN | No device poses → ARKit/ARCore priors | [A] | later |
 | RE-GEO-000018 | VN | Wall thickness is a default → measured from both faces when both seen, else `INFERRED` | [A] | later |

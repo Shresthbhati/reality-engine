@@ -143,7 +143,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GIS-000002 | RO | Whole world loads into the viewer → tile streaming | [A] | later |
 | RE-GIS-000003 | RO | No aerial capture path → drone ingestion with GNSS | [A] | later |
 | RE-MLOPS-000001 | VN | Runs not reproducible from records → store seed, commit, model hashes, artifact hashes per job | [H] | B01 |
-| RE-MLOPS-000002 | VN | Technology catalogue (50 entries) omits models in use → reconcile with `model_registry.py` | [M] | open |
+| RE-MLOPS-000002 | VN | Technology catalogue (50 entries) omits models in use → reconcile with `model_registry.py` | [V] reconciled 61 entries in open_source_registry.json & model_registry.py | done |
 | RE-MLOPS-000003 | RO | No trained specialists → blocked on reviewed labels | [M] | later |
 | RE-AGENT-000001 | OF | A subagent stalled for 600 s without reporting → main session checks the diff itself, never assumes | [V] this session | process |
 | RE-AGENT-000002 | VN | Agents choose data structures ad hoc → fixed table in BUILD_SPEC section 2 | [V] | done |

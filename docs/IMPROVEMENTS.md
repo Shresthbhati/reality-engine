@@ -94,7 +94,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERF-000018 | VN | Detector calls unbounded per image → `budget_calls` | [H] | B04 |
 | RE-DB-000001 | VN | Stage lookup by (job, name, inputs hash) needs an index → confirm unique index exists | [M] | B01 |
 | RE-DB-000002 | VN | Dev on SQLite, production on Postgres → run core tests on both | [V] `apps/api/db.py` | open |
-| RE-DB-000003 | VN | Job claim locking on Postgres unverified → two-claimer test | [A] | open |
+| RE-DB-000003 | VN | Job claim locking on Postgres unverified → two-claimer test | [V] apps/api/jobs.py, tests/test_durable_job_queue.py | done |
 | RE-DB-000004 | VN | Observations as DB rows would be millions → artifact files, DB holds the hash | [H] | B02 |
 | RE-DB-000005 | VN | Backups never restored → one restore drill | [A] | open |
 | RE-DB-000006 | VN | WorldStore and DB can disagree after a crash → test crash between the two writes | [V] D01 tests cover this area | D01 |

@@ -1618,12 +1618,15 @@ async def claim_next_job(db: AsyncSession, worker_id: str | None = None) -> Job 
     a race was lost to another worker.
     """
     effective_worker_id = worker_id or WORKER_ID
-    result = await db.execute(
+    stmt = (
         select(Job.id)
         .where(Job.status == JOB_QUEUED)
         .order_by(Job.priority.desc(), Job.created_at.asc())
         .limit(1)
     )
+    if db.bind and getattr(db.bind.dialect, "name", "") == "postgresql":
+        stmt = stmt.with_for_update(skip_locked=True)
+    result = await db.execute(stmt)
     cand_id = result.scalar_one_or_none()
     if cand_id is None:
         return None

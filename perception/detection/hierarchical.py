@@ -50,9 +50,33 @@ def _child_queries(ontology: Ontology, path: str) -> dict[str, tuple[str, str]]:
     return out
 
 
+def crop_sharpness(crop_rgb: np.ndarray) -> float:
+    """Laplacian variance of grayscale crop as a sharpness metric (RE-PERC-000020).
+
+    Higher = sharper. Flat or heavily blurred patches evaluate to near 0.0.
+    """
+    if crop_rgb.size < 16 or min(crop_rgb.shape[:2]) < 4:
+        return 0.0
+    gray = (
+        crop_rgb[..., 0] * 0.299 +
+        crop_rgb[..., 1] * 0.587 +
+        crop_rgb[..., 2] * 0.114
+    ).astype(np.float32)
+    lap = (
+        -4.0 * gray[1:-1, 1:-1]
+        + gray[:-2, 1:-1]
+        + gray[2:, 1:-1]
+        + gray[1:-1, :-2]
+        + gray[1:-1, 2:]
+    )
+    return float(np.var(lap)) if lap.size > 0 else 0.0
+
+
 def detect_hierarchy(image_rgb: np.ndarray, image_id: str, detector, ontology: Ontology, roots: Sequence[str],
                      max_depth: int = 3, min_crop_px: int = 96, budget_calls: int = 40,
-                     model: str = "detector@unknown") -> ObservationTable:
+                     model: str = "detector@unknown",
+                     min_crop_sharpness: float = 0.0,
+                     low_score_threshold: float = 0.45) -> ObservationTable:
     h, w = image_rgb.shape[:2]
     rows: list[dict] = []
     calls = 0
@@ -88,6 +112,13 @@ def detect_hierarchy(image_rgb: np.ndarray, image_id: str, detector, ontology: O
             b = np.array([d.box for d in dets], dtype=float) + np.array([x0, y0, x0, y0])   # crop -> full image
             s = np.array([d.score for d in dets], dtype=float)
             for i in _nms(b, s):
+                score_val = float(s[i])
+                # Blurry region gating for low-score detections (RE-PERC-000020)
+                if min_crop_sharpness > 0.0 and score_val < low_score_threshold:
+                    bx_crop = (int(max(b[i, 0], 0)), int(max(b[i, 1], 0)), int(min(b[i, 2], w)), int(min(b[i, 3], h)))
+                    patch = image_rgb[bx_crop[1]:bx_crop[3], bx_crop[0]:bx_crop[2]]
+                    if crop_sharpness(patch) < min_crop_sharpness:
+                        continue
                 if parent_row >= 0:                                     # a part must sit inside its parent
                     pb = rows[parent_row]["box"]
                     cx, cy = (b[i, 0] + b[i, 2]) / 2, (b[i, 1] + b[i, 3]) / 2

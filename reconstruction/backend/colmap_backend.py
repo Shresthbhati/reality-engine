@@ -336,15 +336,17 @@ class ColmapReconstructionBackend(IReconstructionBackend):
     def __init__(self, colmap_binary: str = "colmap", use_gpu: Optional[bool] = None,
                  robust_sift: Optional[bool] = None, guided_matching: Optional[bool] = None,
                  dense_mvs: Optional[bool] = None, artifact_store=None, session=None,
-                 config: Optional[ColmapConfig] = None):
+                 config: Optional[ColmapConfig] = None, deterministic: Optional[bool] = None):
         # Explicit kwargs win over the config file/defaults (None = "not given"); ignoring them
         # silently turned dense_mvs=True into a sparse-only run.
         base = config if config is not None else ColmapConfig.from_file()
         overrides = {k: v for k, v in (("use_gpu", use_gpu), ("robust_sift", robust_sift),
-                                       ("guided_matching", guided_matching), ("dense_mvs", dense_mvs))
+                                       ("guided_matching", guided_matching), ("dense_mvs", dense_mvs),
+                                       ("deterministic", deterministic))
                      if v is not None}
         self._config = dataclasses.replace(base, **overrides)
         self._colmap_binary = colmap_binary
+        self.deterministic = self._config.deterministic
         #: Optional reconstruction.colmap_session.ColmapSession. When set, the workspace
         #: PERSISTS between runs and new photographs are registered into the previous sparse
         #: model with `image_registrator` (see _reconstruct_in_session); when None the backend
@@ -393,6 +395,23 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         #: still travels on dense_points, and the report says no
         #: artifact was persisted.
         self.artifact_store = artifact_store
+
+    def _get_colmap_version(self) -> str:
+        """Query COLMAP binary version string (BUILD_SPEC B12)."""
+        import subprocess
+        try:
+            res = subprocess.run([self._colmap_binary, "version"], capture_output=True, text=True, timeout=5)
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip().splitlines()[0]
+        except Exception:
+            pass
+        return "COLMAP (unknown version)"
+
+    def is_deterministic(self, n_images: int) -> bool:
+        """Deterministic policy: True for <= 60 images by default or when configured."""
+        if self.deterministic is not None:
+            return bool(self.deterministic)
+        return n_images <= 60
 
     # ---- orchestrator integration (reconstruction/orchestrator.py) ----
     # availability_probe: can COLMAP run in this environment at all?
@@ -477,7 +496,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                     "--ImageReader.camera_params", f"{fx},{fy},{cx},{cy}",
                 ]
             extractor_args += _sift_extraction_args(robust=self.robust_sift)
-            for item in image_evidence:
+            is_det = self.is_deterministic(len(image_evidence))
+            items = sorted(image_evidence, key=lambda it: (str(_uri_to_path(it.source_uri).name), it.id)) if is_det else list(image_evidence)
+            for item in items:
                 src = _uri_to_path(item.source_uri)
                 dest_name = f"{item.id}{src.suffix or '.jpg'}"
                 shutil.copy(src, image_dir / dest_name)
@@ -495,10 +516,11 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             _run("feature_extractor",
                  ["--database_path", str(db_path), "--image_path", str(image_dir),
                   *extractor_args, "--FeatureExtraction.use_gpu", extraction_gpu])
+            matcher_extra = ["--SiftMatching.num_threads", "1"] if is_det else []
             _run("exhaustive_matcher",
                  ["--database_path", str(db_path),
                   "--FeatureMatching.use_gpu", matching_gpu,
-                  *_sift_matching_args(guided=self.guided_matching)])
+                  *_sift_matching_args(guided=self.guided_matching), *matcher_extra])
             sparse_dir = workspace / "sparse"
             sparse_dir.mkdir()
             mapper_args = ["--database_path", str(db_path),
@@ -526,6 +548,12 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             # identity-placed).
             sparse_result, _model_dirs, _reference = self._parse_sparse_dir(
                 sparse_dir, evidence_id_by_name, len(image_evidence), env)
+
+            self.last_run_info = {
+                "colmap_version": self._get_colmap_version(),
+                "seed": 0,
+                "deterministic": is_det,
+            }
 
             if not self.dense_mvs:
                 return sparse_result
@@ -692,9 +720,12 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             finally:
                 timings[label] = round(time.time() - t0, 2)
 
+        n_input = len(image_evidence)
+        is_det = self.is_deterministic(n_input)
         trusted = _trusted_intrinsics(image_evidence)
         by_name: Dict[str, Tuple[EvidenceItem, Path]] = {}
-        for item in image_evidence:
+        items = sorted(image_evidence, key=lambda it: (str(_uri_to_path(it.source_uri).name), it.id)) if is_det else list(image_evidence)
+        for item in items:
             src = _uri_to_path(item.source_uri)
             by_name[f"{item.id}{src.suffix or '.jpg'}"] = (item, src)
         # Unknown intrinsics and one pixel size across the set: one device took these, so solve ONE shared camera.
@@ -706,7 +737,6 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         if single_camera:
             signature["single_camera"] = True   # only when on: states committed before this keep their signature
         evidence_id_by_name = {n: it.id for n, (it, _) in by_name.items()}
-        n_input = len(image_evidence)
 
         ws, prior = self.session.begin(signature, by_name)
         _check_workspace_path(ws)
@@ -743,8 +773,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 lst.write_text("\n".join(new_names) + "\n")
                 args += ["--image_list_path", str(lst)]
             run("feature_extractor", args)
+            matcher_extra = ["--SiftMatching.num_threads", "1"] if is_det else []
             run("exhaustive_matcher", ["--database_path", str(db_path), "--FeatureMatching.use_gpu", cpu_or_gpu,
-                                       *_sift_matching_args(guided=self.guided_matching)])
+                                       *_sift_matching_args(guided=self.guided_matching), *matcher_extra])
 
         mapper_attempts_log: List[Dict[str, object]] = []
 
@@ -779,6 +810,9 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             "prior_images": len(prior["images"]) if prior else 0,
             "new_images": [evidence_id_by_name[n] for n in new_names],
             "prior_registered": len(prior["registered"]) if prior else 0,
+            "colmap_version": self._get_colmap_version(),
+            "seed": 0,
+            "deterministic": is_det,
         }
         chosen_dir: Path
         incremental_ok = True
@@ -904,6 +938,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         self.session.write_manifest({
             "signature": signature, "images": evidence_id_by_name, "registered": registered_names,
             "model_dir": "sparse/0", "incremental_ok": incremental_ok, "info": info,
+            "deterministic": is_det, "seed": 0, "colmap_version": info["colmap_version"],
         })
         self.last_run_info = info
         self.session.last_run_info = info

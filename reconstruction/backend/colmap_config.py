@@ -61,6 +61,10 @@ class ColmapConfig:
     """Native COLMAP on Windows crashes silently past ~260 chars including
     file names; this is the safe working-directory ceiling."""
 
+    deterministic: Optional[bool] = None
+    """Fixed seed, sorted filename order, single-threaded matching for identical runs.
+    Default None auto-enables deterministic mode for <= 60 images (BUILD_SPEC B12)."""
+
     @classmethod
     def from_file(cls, path: Optional[str] = None) -> "ColmapConfig":
         """Load from `reconstruction.toml` (cwd) or the given path, then

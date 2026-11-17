@@ -29,7 +29,7 @@ MAX_BOX_FRAME_SHARE = 0.80
 MIN_BOX_FRAME_SHARE = 0.004
 NMS_IOU = 0.5
 #: prompts per forward pass. 7 prompts x a 750x1333 image in fp32 peak at ~10 GB, which spills a 6 GB card to system memory
-#: (measured on an RTX 4050: 3.4 s per prompt); 2 in fp16 peaks at ~1.7 GB (0.2 s per prompt, same detections).
+#: (measured on an RTX 4050: 3.4 s per prompt); 2 peaks at ~3.4 GB (~0.4 s per prompt) and cannot spill.
 BATCH = 2
 
 _MODEL = None
@@ -73,8 +73,9 @@ def _load():
         try:
             proc = AutoProcessor.from_pretrained(MODEL_ID, local_files_only=True)
             model = AutoModelForZeroShotObjectDetection.from_pretrained(MODEL_ID, local_files_only=True).to(dev).eval()
-            if dev == "cuda":
-                model = model.half()      # fp16 reproduced every strong fp32 detection (score diff <= 0.012) at ~half the memory
+            # Plain fp32 on purpose. An fp16 variant (.half() weights) crashed grid_sample inside the API job (half values vs a
+            # float32 sampling grid) and silently produced 0 objects; autocast was correct but slower than fp32. The speed
+            # win is the batch size (see BATCH), not the precision.
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(
                 f"Grounding DINO is not available locally ({exc}); fetch once with "
@@ -105,11 +106,8 @@ def _grounded_raw(path: Path, prompts: Sequence[str] = PROMPTS):
     for i in range(0, len(prompts), BATCH):
         chunk = prompts[i:i + BATCH]
         inp = proc(images=[img] * len(chunk), text=[f"{p}." for p in chunk], return_tensors="pt", padding=True).to(dev)
-        if dev == "cuda":
-            inp["pixel_values"] = inp["pixel_values"].to(next(model.parameters()).dtype)
         with torch.no_grad():
             out = model(**inp)
-        out.logits, out.pred_boxes = out.logits.float(), out.pred_boxes.float()       # post-processing in fp32
         res = proc.post_process_grounded_object_detection(
             out, inp.input_ids, threshold=BOX_THRESHOLD, text_threshold=TEXT_THRESHOLD, target_sizes=[img.size[::-1]] * len(chunk))
         for prompt, r in zip(chunk, res):

@@ -1,0 +1,188 @@
+# Open-source technology registry
+
+Facts (licence, last push, release, HEAD commit) were read on **2026-11-15** from the GitHub and Hugging Face APIs and from the LICENSE files of repositories whose API licence was `NOASSERTION`. **Classification and maturity are my assessments.** No accuracy has been measured for any candidate (no annotated data exists). Source of truth: `engine/technologies/open_source_registry.json`; regenerate this file with `python scripts/build_open_source_registry.py`.
+
+Maturity ladder: Implemented < Installed < Integrated < API reachable < Functionally tested < Real-data validated < Production ready.
+
+## Counts
+
+| Classification | Count |
+|---|---|
+| ALREADY_INTEGRATED | 7 |
+| APPROVED | 17 |
+| APPROVED_WITH_RESTRICTIONS | 10 |
+| LICENCE_REVIEW_REQUIRED | 12 |
+| RESEARCH_ONLY | 8 |
+| REJECTED | 7 |
+
+## Ten highest-value opportunities, in integration order
+
+1. **SAM 2 instance masks (Grounding DINO boxes as prompts)** (`sam2`)  
+   Replaces the depth-band mask that leaked floor/wall into objects (the measured cause of a 7 m sofa). transformers already ships Sam2Model; Apache-2.0 code and weights; no new dependency.  
+   Measured by: instance mIoU and boundary F1 once annotated; until then cross-view extent plausibility on the 10-photo room.
+
+2. **Human-verified ground truth: CVAT or Label Studio + FiftyOne feeding the Reality Benchmark** (`cvat`)  
+   Every accuracy metric is blocked by the absence of annotations. Review tooling, not a new benchmark.  
+   Measured by: enables precision/recall/mAP; no number exists before it.
+
+3. **DINOv2 appearance embeddings in the association resolver** (`dinov2`)  
+   Association is geometry-only, so views of one object split (two rugs) or merge. Code exists and is unreachable; weights are cached.  
+   Measured by: duplicate-entity rate, identity precision/recall.
+
+4. **Small-object tiled pass wired into perception** (`grounding_dino`)  
+   perception/entities/small_objects.py is unreachable from the API; sockets, switches and handles are not found at full-frame scale.  
+   Measured by: small-object recall by group.
+
+5. **Open3D outlier removal, robust registration and TSDF/Poisson** (`open3d`)  
+   MIT, wheel available. Cleans the sparse and dense clouds before plane fitting; TSDF/Poisson are candidates for the mesh stage.  
+   Measured by: Chamfer / surface distance vs surveyed room; plane-fit residual.
+
+6. **hloc + LightGlue matching for SfM reproducibility** (`hloc`)  
+   Run-to-run geometry varies (995 vs 1,423 points). Extractor weights licence (SuperPoint) must be resolved first.  
+   Measured by: registration rate, reprojection error, run-to-run spread.
+
+7. **Cross-view depth consistency (metric depth, one global scale)** (`depth_anything_v2_metric_indoor`)  
+   Best measured fit to SfM (0.117 vs 0.199) but the model card declares no licence; blocked on a licence read.  
+   Measured by: scale consistency, dimensional error.
+
+8. **Florence-2 as a second-opinion detector (native in transformers)** (`florence2`)  
+   MIT weights; no remote code now. Only replaces Grounding DINO if it wins on annotated data.  
+   Measured by: detection precision/recall vs Grounding DINO.
+
+9. **manifold3d for guaranteed-valid mesh booleans / watertight checks** (`manifold`)  
+   Apache-2.0, wheel available. Protects export validity.  
+   Measured by: watertightness, topological validity of exported meshes.
+
+10. **IfcOpenShell: validate IFC against real captures** (`ifcopenshell`)  
+   Already integrated (LGPL-3.0); the gap is real-data validation of the semantics, not a new library.  
+   Measured by: IFC element completeness vs measured room.
+
+## Records
+
+| id | classification | repo licence | weights licence | last push | maturity | integration |
+|---|---|---|---|---|---|---|
+| colmap | ALREADY_INTEGRATED | BSD-3-Clause (LICENSE read; its dependencies are licensed separately) | n/a | 2026-11-12 | Functionally tested | stage: reconstruction (apps/api/jobs.py) |
+| grounding_dino | ALREADY_INTEGRATED | Apache-2.0 | IDEA-Research/grounding-dino-tiny: apache-2.0 | 2024-08-12 | Functionally tested | stage: perception (perception/detection/grounded_scene.py) |
+| dpt_hybrid | ALREADY_INTEGRATED | MIT (repo archived) | Intel/dpt-hybrid-midas: apache-2.0 | 2024-08-23 (archived) | Functionally tested | stage: depth (vertical_slice) |
+| trimesh | ALREADY_INTEGRATED | MIT | n/a | 2026-11-13 | Functionally tested | optional, guarded import (meshing extra) |
+| opencv | ALREADY_INTEGRATED | Apache-2.0 | n/a | 2026-11-15 | Functionally tested | core dependency |
+| ifcopenshell | ALREADY_INTEGRATED | LGPL-3.0 | n/a | 2026-11-15 | Functionally tested | exporters/ifc_bridge.py via the SDK/API (export extra) |
+| blender | ALREADY_INTEGRATED | GPL-3.0 (COPYING read) | n/a | 2026-11-15 | Functionally tested | exporters/blender generates a Python script; Blender is never linked |
+| pycolmap | APPROVED | BSD-3-Clause | n/a | 2024-07-09 (archived) | Functionally tested | reconstruction/colmap_intrinsics.py: independent cross-check and fallback reader for COLMAP models (SfM itself still runs the COLMAP binary) |
+| sam2 | APPROVED | Apache-2.0 | facebook/sam2.1-hiera-small, -large: apache-2.0 | 2026-05-30 | API reachable | perception/segmentation/sam2_box_prompter.py -> grounded_scene -> vertical_slice perception stage (default mask source) |
+| grounded_sam2 | APPROVED | Apache-2.0 | inherits Grounding DINO + SAM 2 | 2025-11-11 | Implemented | pattern only: reproduce with our own adapters, not by vendoring |
+| dinov2 | APPROVED | Apache-2.0 | facebook/dinov2-small, -base: apache-2.0 | 2026-11-05 | API reachable | perception/instances/dinov2_hf.py -> vertical_slice perception_appearance (ON by default; falls back to geometry only, on the record) |
+| florence2 | APPROVED | no GitHub repo (microsoft/Florence-2 returns 404); code ships inside transformers | microsoft/Florence-2-base: mit | - | Functionally tested | perception/detection/florence2_detector.py -> vertical_slice perception_second_opinion (opt-in; per-photo agreement with the pipeline's detector recorded for human review) |
+| depth_anything_v2_small | APPROVED | Apache-2.0 | depth-anything/Depth-Anything-V2-Small-hf: apache-2.0 | 2026-03-24 | Functionally tested | not the live depth model |
+| open3d | APPROVED | MIT (LICENSE read) | n/a | 2026-11-14 | API reachable | reconstruction/pointcloud_clean.py -> vertical_slice scene box (default path; SciPy fallback, backend on the record) |
+| pcl | APPROVED | BSD (LICENSE.txt read) | n/a | 2026-11-14 | Implemented | an internal module named pcl_core exists; the C++ library is not used |
+| manifold | APPROVED | Apache-2.0 | n/a | 2026-11-15 | Functionally tested | geometry/mesh_boolean.py; the mesh stage records a manifold verdict on the reconstructed surface |
+| bytetrack | APPROVED | MIT | n/a | 2024-06-19 | Functionally tested | reimplemented in perception/tracking/temporal.py (ByteTrack-style IoU association with ambiguity reporting); tests/test_tracking_2d.py, tests/test_temporal_tracking.py |
+| gsplat | APPROVED | Apache-2.0 | n/a | 2026-09-19 | Implemented | splat ingest/render exists separately (PR #299) |
+| nerfstudio | APPROVED | Apache-2.0 | n/a | 2025-07-29 | Implemented | not integrated |
+| compas | APPROVED | MIT | n/a | 2026-11-11 | Implemented | not integrated |
+| cvat | APPROVED | MIT | n/a | 2026-11-14 | Functionally tested | benchmarks/annotation_review.py + scripts/export_annotation_review.py (COCO file exchange; no CVAT server was run here) |
+| label_studio | APPROVED | Apache-2.0 | n/a | 2026-11-14 | Functionally tested | benchmarks/annotation_review.py (Label Studio tasks + labeling config; no server was run here) |
+| fiftyone | APPROVED | Apache-2.0 | n/a | 2026-11-14 | Functionally tested | benchmarks/annotation_review.py to_fiftyone (builds a dataset when installed; clear install hint when not) |
+| limap | APPROVED | BSD-3-Clause | n/a | 2026-09-30 | Implemented | not integrated |
+| hloc | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | depends on the chosen extractor: SuperPoint non-commercial; ALIKED/DISK weights not verified | 2025-12-10 | Implemented | not integrated |
+| alicevision | APPROVED_WITH_RESTRICTIONS | MPL-2.0 (COPYING.md read; includes third-party components) | n/a | 2026-11-13 | Implemented | not integrated |
+| meshroom | APPROVED_WITH_RESTRICTIONS | MPL-2.0 (COPYING.md read) | n/a | 2026-11-13 | Implemented | not integrated |
+| grounded_sam | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | SAM 1 weights not verified | 2024-09-05 | Implemented | superseded by Grounded-SAM-2 |
+| detectron2 | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | model-zoo weights vary; not audited | 2026-10-27 | Implemented | not integrated |
+| sam_hq | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | syscv-community/sam-hq-vit-base: apache-2.0 (model card read 2026-11-16; cached, 362 MB) | 2025-09-12 | Implemented | NOT integrated: an adapter was built and removed |
+| marigold | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | marigold-depth-lcm-v1-0: apache-2.0 (model card read 2026-11-16, fp16 files cached); marigold-depth-v1-1 is openrail++ (use restrictions) | 2026-09-06 | Implemented | NOT integrated: measured, not better |
+| mmtracking | APPROVED_WITH_RESTRICTIONS | Apache-2.0 | varies | 2023-09-19 | Implemented | not integrated |
+| openusd | APPROVED_WITH_RESTRICTIONS | Tomorrow Open Source Technology License 1.0 (modified Apache 2.0; LICENSE.txt read) | n/a | 2026-11-14 | Functionally tested | sdk.reality 'usdc' export through pxr; validate_usda uses pxr as the authority |
+| web_ifc | APPROVED_WITH_RESTRICTIONS | MPL-2.0 | n/a | 2026-11-13 | Implemented | not integrated |
+| lightglue | LICENCE_REVIEW_REQUIRED | Apache-2.0 | HF lightglue_superpoint: 'other' (SuperPoint terms, unresolved) | 2026-10-25 | Implemented | reconstruction/matching/lightglue.py (kornia) behind the matcher registry get_matcher('lightglue' / 'lightglue@aliked'); not wired into SfM or the API |
+| openmvg | LICENCE_REVIEW_REQUIRED | MPL-2.0 (API); sub-components not audited | n/a | 2026-11-07 | Implemented | not integrated |
+| mask2former | LICENCE_REVIEW_REQUIRED | MIT (repo archived) | HF COCO weights: 'other' (unresolved) | 2024-07-29 (archived) | Implemented | not integrated |
+| depth_anything_v2_metric_indoor | LICENCE_REVIEW_REQUIRED | Apache-2.0 (code) | model card declares NO licence (verified: null) | 2026-03-24 | Functionally tested | not integrated |
+| metric3d | LICENCE_REVIEW_REQUIRED | BSD-2-Clause | weights host returned HTTP 401 (not verified) | 2025-03-13 | Implemented | not integrated |
+| pointcept | LICENCE_REVIEW_REQUIRED | MIT (code) | pretrained weights are trained on ScanNet etc. whose terms are non-commercial | 2026-11-03 | Implemented | not integrated |
+| cgal | LICENCE_REVIEW_REQUIRED | dual: GPL-3.0/LGPL-3.0 by package, or a commercial licence (LICENSE.md read) | n/a | 2026-11-14 | Implemented | not integrated |
+| scannet | LICENCE_REVIEW_REQUIRED | code MIT-style; DATA terms are non-commercial (not verified here) | n/a | 2025-11-03 | Implemented | not integrated |
+| arkitscenes | LICENCE_REVIEW_REQUIRED | Apple sample-code licence (LICENSE read); data terms not verified | n/a | 2026-09-11 | Implemented | not integrated |
+| scannetpp | LICENCE_REVIEW_REQUIRED | no licence declared in the repo | n/a | 2026-07-10 | Implemented | not integrated |
+| hypersim | LICENCE_REVIEW_REQUIRED | Apple sample-code licence (LICENSE read); data terms not verified | n/a | 2026-09-11 | Implemented | not integrated |
+| structured3d | LICENCE_REVIEW_REQUIRED | MIT (code); data terms not verified | n/a | 2025-02-24 | Implemented | not integrated |
+| depth_anything_v2_base_large | RESEARCH_ONLY | Apache-2.0 (code) | Base: cc-by-nc-4.0 (verified on the model card) | 2026-03-24 | Implemented | not integrated |
+| depth_pro | RESEARCH_ONLY | Apple sample-code licence (LICENSE read) | apple/DepthPro: apple-amlr (research) | 2026-09-11 | Implemented | not integrated |
+| cotracker | RESEARCH_ONLY | CC BY-NC 4.0 (LICENSE.md read) | facebook/cotracker3: cc-by-nc-4.0 | 2026-03-03 | Implemented | not integrated |
+| graphdeco_3dgs | RESEARCH_ONLY | Inria/MPII custom, research use (LICENSE.md read) | n/a | 2025-10-17 | Implemented | not integrated |
+| qgis | RESEARCH_ONLY | GPL-2.0 | n/a | 2026-11-15 | Implemented | not integrated |
+| vggt | RESEARCH_ONLY | VGGT License v1 (custom; LICENSE.txt read: research materials with an acceptable-use policy) | facebook/VGGT-1B: cc-by-nc-4.0 | 2026-05-19 | Implemented | not integrated |
+| dust3r | RESEARCH_ONLY | CC BY-NC-SA 4.0 (LICENSE read) | same | 2025-09-24 | Implemented | not integrated |
+| mast3r | RESEARCH_ONLY | CC BY-NC-SA 4.0 (LICENSE read) | same | 2025-06-30 | Implemented | not integrated |
+| openmvs | REJECTED | AGPL-3.0 | n/a | 2026-11-14 | Implemented | listed as a backend descriptor only (reconstruction/backend/registry.py); never executed |
+| ultralytics | REJECTED | AGPL-3.0 | AGPL-3.0 | 2026-11-15 | Implemented | not integrated |
+| libigl | REJECTED | GPL-3.0 | n/a | 2026-10-29 | Implemented | catalog mention only |
+| opensplat | REJECTED | AGPL-3.0 | n/a | 2026-10-29 | Implemented | not integrated |
+| xeokit | REJECTED | AGPL-3.0 | n/a | 2026-11-02 | Implemented | not integrated |
+| odm | REJECTED | AGPL-3.0 | n/a | 2026-11-13 | Implemented | not integrated |
+| pyslam | REJECTED | GPL-3.0 | n/a | 2026-10-25 | Implemented | not integrated |
+
+## Notes per record
+
+* **colmap** (COLMAP): Geometry differs run to run on the same photos (995 vs 1,423 points observed).
+* **pycolmap** (pycolmap): SfM stays on the COLMAP binary; running it in-process would remove the long-workspace-path failure class, no measured need yet.
+* **hloc** (hloc): Candidate for SfM reproducibility; extractor weights licence must be checked before use.
+* **lightglue** (LightGlue): Code and LightGlue weights are Apache-2.0 and DISK follows the same licence (README read); SuperPoint weights are non-commercial and must stay behind REALITY_ALLOW_NC_MODELS.
+* **openmvg** (openMVG): Duplicates COLMAP; no measured gap it would close.
+* **alicevision** (AliceVision): Full alternative pipeline: would be a second orchestrator, so not adopted.
+* **meshroom** (Meshroom): GUI over AliceVision; no role in a headless pipeline.
+* **openmvs** (OpenMVS): AGPL-3.0 is incompatible with a closed commercial product; usable only as a separate research tool.
+* **grounding_dino** (Grounding DINO (tiny, via transformers)): Prompt wording changes recall sharply ('coffee table' 0/6 views vs 'wooden coffee table' 6/6); fp16 .half() crashed inside the API.
+* **sam2** (SAM 2 (via transformers Sam2Model)): Top opportunity: today's masks are a depth-band cut of a box and leak floor/wall (measured cause of a 7 m 'sofa').
+* **grounded_sam2** (Grounded-SAM-2): A glue repo; our adapters should follow its box-prompt pattern.
+* **grounded_sam** (Grounded-Segment-Anything): Last push 2024-09; use the SAM 2 route instead.
+* **dinov2** (DINOv2 (via transformers Dinov2Model)): On by default but unproven: no measured gain on the 10-photo room (16 objects either way). dinov2_reid.py silently substitutes a colour-statistic vector when torch.hub fails; do not use it for association.
+* **florence2** (Florence-2 (via transformers Florence2ForConditionalGeneration)): Must beat Grounding DINO on annotated data before replacing anything.
+* **detectron2** (Detectron2): Overlaps torchvision Mask R-CNN already integrated; Windows build is painful.
+* **mask2former** (Mask2Former): Archived upstream; weights licence unresolved.
+* **ultralytics** (Ultralytics YOLO): AGPL blocks a closed commercial product unless a commercial licence is bought.
+* **sam_hq** (SAM-HQ): Do not use transformers' SamHQModel box prompting as is: its masks were not consistent with the prompts. Retry with the upstream SysCV code or a newer transformers, and check mask-vs-box consistency first.
+* **depth_anything_v2_small** (Depth Anything V2 Small): Worse fit to SfM than DPT_Hybrid in the one scene tested.
+* **depth_anything_v2_base_large** (Depth Anything V2 Base / Large): Non-commercial weights.
+* **depth_anything_v2_metric_indoor** (Depth Anything V2 Metric-Indoor Small): Best measured fit to SfM, but undeclared licence and no effect on floor layering in an A/B; no default change.
+* **dpt_hybrid** (DPT_Hybrid / MiDaS): Per-view scale drifts about 2x between views; objects land up to ~2.5 m apart across views.
+* **metric3d** (Metric3D): Needs the weights licence read before any test.
+* **marigold** (Marigold): Marigold does not beat MiDaS once both get the same fit. The finding that mattered: the pipeline's scale-only alignment leaves a lot on the table per view (held-out 0.208 -> 0.036 with a shift), but applying the shift made OBJECTS worse (cross-view scatter up, 20 vs 16 objects with duplicates; it was chosen for only 3 of 9 views). metricize_relative_depth(use_shift=True) is kept, off by default. Fixing cross-view depth consistency is the open problem.
+* **depth_pro** (Apple Depth Pro): Research-only weights.
+* **open3d** (Open3D): Outlier removal is integrated; ICP, TSDF and Poisson from Open3D are not used. Installing Open3D pulls in dash, whose stray top-level benchmarks package is why benchmarks/ is now a regular package.
+* **pcl** (PCL): C++ build burden for no gain over Open3D.
+* **pointcept** (Pointcept): Code is MIT, but the dataset terms behind the weights are the blocker.
+* **trimesh** (trimesh): Present in the environment.
+* **cgal** (CGAL): Per-package licensing; core packages are not permissive.
+* **libigl** (libigl): GPL-3.0.
+* **manifold** (Manifold (manifold3d)): Booleans are available but no pipeline stage cuts openings with them yet.
+* **cotracker** (CoTracker3): Non-commercial.
+* **bytetrack** (ByteTrack): Not wired into the API on purpose: video ingest samples SPARSE sharpness-ranked keyframes, not consecutive frames, so frame-to-frame tracking has nothing to associate. Wire it if a consecutive-frame video mode is added. The upstream package is not needed.
+* **mmtracking** (MMTracking): Unmaintained since 2023-09; heavy mm* dependency stack.
+* **opencv** (OpenCV): In use.
+* **gsplat** (gsplat): Appearance only: not geometric accuracy.
+* **nerfstudio** (nerfstudio): No evidence it is needed.
+* **opensplat** (OpenSplat): AGPL-3.0.
+* **graphdeco_3dgs** (Original 3D Gaussian Splatting): Non-commercial terms.
+* **openusd** (OpenUSD): The licence differs from Apache-2.0 (Tomorrow Open Source Technology License 1.0); read it before redistributing the library.
+* **ifcopenshell** (IfcOpenShell): LGPL-3.0: dynamic use is fine, modifying/bundling carries obligations.
+* **web_ifc** (web-ifc): File-level copyleft; frontend only.
+* **xeokit** (xeokit): AGPL-3.0.
+* **qgis** (QGIS): GPL: use as an external tool only, never as a linked dependency.
+* **compas** (COMPAS): No identified gap.
+* **blender** (Blender): Safe only as a separate process / generated script.
+* **cvat** (CVAT): Integrated as a file exchange: export predictions, review in CVAT, import the corrected COCO, score. Still needs a human to review.
+* **label_studio** (Label Studio): Same review loop as CVAT; either works.
+* **fiftyone** (FiftyOne): Complements the existing benchmark; does not replace it.
+* **scannet** (ScanNet): Datasets need a separate licence read.
+* **arkitscenes** (ARKitScenes): Repo moved to apple-aiml-research.
+* **scannetpp** (ScanNet++): No declared licence.
+* **hypersim** (Hypersim): Synthetic; cannot validate real-world accuracy.
+* **structured3d** (Structured3D): Synthetic.
+* **vggt** (VGGT): Non-commercial weights.
+* **dust3r** (DUSt3R): Non-commercial.
+* **mast3r** (MASt3R): Non-commercial.
+* **odm** (OpenDroneMap / WebODM): AGPL-3.0.
+* **pyslam** (pySLAM): GPL-3.0.
+* **limap** (LIMAP): Line features could help wall edges; no measured need yet.

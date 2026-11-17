@@ -153,9 +153,13 @@ class DepthAlignment:
     #: fraction of aligned pixels within 2x the median residual
     inlier_fraction: float
     aligned_pixels: int
-    #: fitted scale s where metric_depth = s / relative_value
+    #: fitted scale s where metric_depth = s / relative_value (+ shift when model == "scale+shift")
     scale: float
     note: str
+    #: additive depth offset t of the fit metric_depth = s / relative_value + t; 0.0 for the scale-only model
+    shift: float = 0.0
+    #: "scale" (one parameter) or "scale+shift" (two); the shift is used only when it measurably helps and stays physical
+    model: str = "scale"
 
     def to_dict(self) -> dict:
         return {
@@ -164,8 +168,25 @@ class DepthAlignment:
             "inlier_fraction": self.inlier_fraction,
             "aligned_pixels": self.aligned_pixels,
             "scale": self.scale,
+            "shift": self.shift,
+            "model": self.model,
             "note": self.note,
         }
+
+
+def _robust_scale_shift(x: np.ndarray, z: np.ndarray, iters: int = 4):
+    """Trimmed least squares z ~ s * x + t (x = 1/relative depth). Returns (s, t, median |residual|) or None when degenerate."""
+    keep = np.ones(len(x), dtype=bool)
+    s = t = 0.0
+    for _ in range(iters):
+        if int(keep.sum()) < 10 or np.ptp(x[keep]) < 1e-9:
+            return None
+        s, t = np.linalg.lstsq(np.stack([x[keep], np.ones(int(keep.sum()))], axis=1), z[keep], rcond=None)[0]
+        res = np.abs(s * x + t - z)
+        keep = res < 3.0 * (float(np.median(res[keep])) + 1e-9)
+    if int(keep.sum()) < 10:
+        return None
+    return float(s), float(t), float(np.median(np.abs(s * x[keep] + t - z[keep])))
 
 
 def metricize_relative_depth(
@@ -173,9 +194,17 @@ def metricize_relative_depth(
     camera: PinholeCamera,
     sparse_points_world: Sequence[Sequence[float]],
     max_sparse_points: int = 2000,
+    use_shift: bool = False,
+    consistent_shift: bool = False,
 ) -> Tuple[DepthMap, DepthAlignment]:
-    """Convert a RELATIVE depth map to metric 'meters' by fitting ONE
-    scale against the SfM sparse points visible in this view.
+    """Convert a RELATIVE depth map to metric 'meters' by fitting a scale against the SfM sparse points visible in this view;
+    with ``use_shift=True`` also an additive depth shift (z = s / rel + t) when it measurably helps and stays positive.
+
+    OFF by default, measured on the 10-photo room: the shift cut the median relative residual on HELD-OUT SfM points from 0.208 to
+    0.036, but it made the OBJECTS worse (cross-view position scatter up: sofa 1.37 -> 1.64, plants 2.99 -> 3.97; 20 kept objects
+    with duplicate sofas and coffee tables, against 16). It was chosen for only 3 of 9 views, so views ended up on different depth
+    models and disagreed with each other. A better per-view fit is not a better multi-view world; a shift would need to be applied
+    consistently (or jointly estimated across views) before it can help.
 
     Method (documented approximation): project each sparse point into
     this view; where it lands, compare its true camera-frame depth with
@@ -253,7 +282,25 @@ def metricize_relative_depth(
     residual_median = float(np.median(residuals))
     inlier_fraction = float(np.mean(residuals <= max(2.0 * residual_median, 1e-9)))
 
+    shift, model = 0.0, "scale"
     metric_values = scale / np.maximum(rel, 1e-9)
+    if use_shift and int(valid.sum()) >= 2 * min_points:
+        fit = _robust_scale_shift(1.0 / rel_at[valid], z_sfm[valid])
+        if fit is not None:
+            s2, t2, res2 = fit
+            candidate = s2 / np.maximum(rel, 1e-9) + t2
+            if consistent_shift and s2 > 0:
+                # every view on the SAME model (the guarded mix measurably split views apart): clamp instead of refusing
+                candidate = np.maximum(candidate, 0.05)
+                take = True
+            else:
+                # take it only when it clearly beats the scale-only fit AND is physical over the WHOLE map (no depth <= 0)
+                take = s2 > 0 and res2 <= 0.8 * residual_median and float(np.nanmin(candidate)) > 0.0
+            if take:
+                scale, shift, model, metric_values = s2, t2, "scale+shift", candidate
+                residual_median = res2
+                inlier_fraction = float(np.mean(np.abs(s2 / np.maximum(rel_at[valid], 1e-9) + t2 - z_sfm[valid])
+                                                <= max(2.0 * res2, 1e-9)))
     metric = DepthMap(
         evidence_id=depth.evidence_id,
         width=depth.width,
@@ -268,8 +315,10 @@ def metricize_relative_depth(
         inlier_fraction=inlier_fraction,
         aligned_pixels=int(valid.sum()),
         scale=scale,
+        shift=shift,
+        model=model,
         note=(
-            f"relative depth metricized by median inverse-depth alignment against "
+            f"relative depth metricized by {model} inverse-depth alignment against "
             f"{int(valid.sum())} SfM sparse points (residual median "
             f"{residual_median * 1000:.1f} mm, inlier fraction {inlier_fraction:.2f}); "
             "correct where the sparse cloud is dense, approximate elsewhere"

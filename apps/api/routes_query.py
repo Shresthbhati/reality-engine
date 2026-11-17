@@ -99,6 +99,61 @@ async def query_contents(
     }
 
 
+_CHAIN_KINDS = ("part_of", "inside", "on", "attached_to")
+
+
+def _norm(s: str) -> str:
+    return " ".join(str(s).lower().replace("_", " ").replace("/", " ").split())
+
+
+def find_entities(world, q: str) -> list[dict]:
+    """Entities whose type, label, ontology alias or attribute value matches ``q``, each with its containment chain
+    (via part_of / inside / on / attached_to), 3D position and basis. Unknown attributes (value None) never match."""
+    from perception.ontology import get_default_ontology
+
+    needle = _norm(q)
+    if not needle:
+        return []
+    path = get_default_ontology().resolve_or_unknown(q).path
+    wanted_path = None if path.startswith("fallback/") else path
+    out = []
+    for e in world.entities.values():
+        attrs = (e.extra_fields or {}).get("attributes") or {}
+        hit_attr = next((n for n, a in attrs.items() if a.get("value") and needle in _norm(a["value"])), None)
+        user = next((a for a in attrs.values() if a.get("basis") == "user_stated" and a.get("value") and needle in _norm(a["value"])), None)
+        hit = (wanted_path is not None and e.type == wanted_path) or needle in _norm(e.type) \
+            or any(needle in _norm(lbl) for lbl in e.semantic_labels) or hit_attr is not None
+        if not hit:
+            continue
+        chain, cur, seen = [], e, {e.id}
+        while True:
+            nxt = next((r for r in cur.relationships if r.kind in _CHAIN_KINDS and r.target_id in world.entities
+                        and r.target_id not in seen), None)
+            if nxt is None:
+                break
+            cur = world.entities[nxt.target_id]; seen.add(cur.id)
+            chain.append({"id": cur.id, "type": cur.type, "via": nxt.kind})
+        pos = None
+        if e.transform is not None:
+            m = e.transform.matrix
+            pos = [m[0][3], m[1][3], m[2][3]]
+        out.append({"id": e.id, "type": e.type, "chain": chain, "position": pos,
+                    "basis": "user_stated" if user else "visual",
+                    "interior": (e.extra_fields or {}).get("interior")})
+    return out
+
+
+@query.get("/find")
+async def query_find(
+    world_id: str, q: str = Query(..., min_length=1), version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """\"Where is X\": entities matching ``q`` with their room -> furniture -> part chain and position."""
+    row = await _version_row(db, world_id, version)
+    world = _load_world_or_409(row)
+    return {"version_id": row.id, "q": q, "results": find_entities(world, q)}
+
+
 @query.get("/container/{entity_id}")
 async def query_container(
     world_id: str, entity_id: str, version: str | None = None,

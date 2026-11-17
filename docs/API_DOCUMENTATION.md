@@ -17,9 +17,32 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 
 ## Route Catalog
 
+### account
+
+- **`DELETE /api/account/data`**: Delete My Data
+- **`POST /api/account/delete-my-data`**: Delete My Data
+- **`GET /api/account/invites`**: List Invites
+- **`POST /api/account/invites`**: Create Invite
+- **`DELETE /api/account/invites/{invite_id}`**: Revoke Invite
+- **`GET /api/account/me`**: Get Current Account
+
 ### activity
 
 - **`GET /api/activity`**: List Activity
+
+### adoptions
+
+- **`POST /api/worlds/{world_id}/adoptions`**: Propose Adoption
+- **`GET /api/worlds/{world_id}/adoptions/{adoption_id}`**: Get Adoption Proposal
+- **`POST /api/worlds/{world_id}/adoptions/{adoption_id}/commit`**: Commit Adoption
+- **`POST /api/worlds/{world_id}/adoptions/{adoption_id}/reject`**: Reject Adoption
+
+### assets
+
+- **`GET /api/assets`**: List Assets
+- **`GET /api/assets/{asset_id}`**: Get Asset
+- **`GET /api/assets/{asset_id}/download`**: Download Asset
+- **`POST /api/worlds/{world_id}/extract-asset`**: Extract World Asset
 
 ### assistant
 
@@ -29,6 +52,38 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/worlds/{world_id}/assistant/capture-plan`**: Plan Capture
 - **`POST /api/worlds/{world_id}/assistant/confirm`**: Confirm
 
+### auth
+
+- **`GET /api/auth/invites/{token}`**: Inspect Invite
+- **`POST /api/auth/invites/{token}/accept`**: Accept Invite
+- **`POST /api/auth/login`**: Login
+- **`POST /api/auth/signup`**: Signup
+
+### billing
+
+- **`POST /api/billing/checkout`**: Create Subscription Checkout
+- **`POST /api/billing/portal`**: Create Billing Portal Session
+- **`GET /api/billing/status`**: Get Current Tenant Billing Status
+- **`GET /api/billing/tiers`**: List Pricing Tiers
+- **`POST /api/billing/webhook`**: Handle Stripe Webhook
+
+### clash_bcf
+
+- **`GET /api/worlds/{world_id}/bcf/export`**: Export Bcf Package
+- **`POST /api/worlds/{world_id}/bcf/import`**: Import Bcf Package
+- **`GET /api/worlds/{world_id}/clashes`**: Get World Clashes
+- **`POST /api/worlds/{world_id}/clashes/detect`**: Run Clash Detection
+
+### collab
+
+- **`GET /api/worlds/{world_id}/collab/events`**: Collab Events Stream
+- **`GET /api/worlds/{world_id}/collab/export/bcf`**: Export Collab Bcf
+- **`POST /api/worlds/{world_id}/collab/heartbeat`**: Post Heartbeat
+- **`GET /api/worlds/{world_id}/collab/markups`**: List Markups
+- **`POST /api/worlds/{world_id}/collab/markups`**: Create Markup
+- **`DELETE /api/worlds/{world_id}/collab/markups/{markup_id}`**: Delete Markup
+- **`GET /api/worlds/{world_id}/collab/presence`**: Get Presence
+
 ### completion
 
 - **`GET /api/worlds/{world_id}/completion/proposals`**: List Proposals
@@ -36,6 +91,19 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/worlds/{world_id}/completion/proposals/{pid}/accept`**: Accept Proposal
 - **`GET /api/worlds/{world_id}/completion/proposals/{pid}/diff`**: Proposal Diff
 - **`POST /api/worlds/{world_id}/completion/proposals/{pid}/reject`**: Reject Proposal
+
+### construction
+
+- **`POST /api/construction/report/pdf`**: Generate Pdf Report
+- **`POST /api/construction/timeline`**: Timeline Progression
+- **`POST /api/construction/verify`**: Verify Plan
+
+### drawings
+
+- **`GET /api/worlds/{world_id}/drawings/export/dxf`**: Export Drawing Dxf
+- **`POST /api/worlds/{world_id}/drawings/generate`**: Generate Drawing Endpoint
+- **`GET /api/worlds/{world_id}/drawings/presets`**: List Drawing Presets
+- **`GET /api/worlds/{world_id}/drawings/render/svg`**: Render Drawing Svg
 
 ### evidence
 
@@ -53,9 +121,16 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 ### export
 
 - **`POST /api/worlds/{world_id}/export`**: Export World
+- **`POST /api/worlds/{world_id}/export/compare`**: Export Options Compare
 - **`GET /api/worlds/{world_id}/export/formats`**: Export Formats
 - **`GET /api/worlds/{world_id}/export/package`**: Export Package
 - **`GET /api/worlds/{world_id}/export/{content_hash}/download`**: Download Export
+
+### furniture
+
+- **`GET /api/furniture/catalog`**: Get Furniture Catalog
+- **`GET /api/furniture/catalog/{catalog_id}`**: Get Furniture Catalog Item
+- **`GET /api/furniture/catalog/{catalog_id}/glb`**: Download Furniture Catalog Glb
 
 ### geo
 
@@ -79,13 +154,39 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/jobs`**: List Jobs
 - **`GET /api/jobs/{job_id}`**: Get Job
 - **`POST /api/jobs/{job_id}/cancel`**: Cancel Job
+- **`GET /api/jobs/{job_id}/diagnostics`**: Get Job Diagnostic Report
 - **`GET /api/jobs/{job_id}/events`**: Job Events
+- **`GET /api/jobs/{job_id}/logs`**: Get Job Log History
+- **`GET /api/jobs/{job_id}/stages`**: Get Job Stages
+- **`GET /api/jobs/{job_id}/timings`**: Get Job Timing Dashboard
+
+### life-safety
+
+- **`GET /api/worlds/{world_id}/life-safety`**: Get Life Safety Report
+- **`POST /api/worlds/{world_id}/life-safety/audit`**: Run Custom Life Safety Audit
+- **`GET /api/worlds/{world_id}/life-safety/certificate`**: Download Life Safety Certificate
+- **`GET /api/worlds/{world_id}/life-safety/egress-path`**: Get Egress Routes
 
 ### measurements
 
 - **`GET /api/worlds/{world_id}/measurements`**: List Measurements
 - **`POST /api/worlds/{world_id}/measurements`**: Create Measurement
 - **`DELETE /api/worlds/{world_id}/measurements/{measurement_id}`**: Delete Measurement
+
+### mep
+
+- **`POST /api/worlds/{world_id}/mep/detect`**: Detect Mep Topology Endpoint
+- **`GET /api/worlds/{world_id}/mep/export/geojson`**: Export Mep Geojson Endpoint
+- **`GET /api/worlds/{world_id}/mep/export/ifc`**: Export Mep Ifc Endpoint
+- **`POST /api/worlds/{world_id}/mep/route`**: Compute Mep Custom Route
+- **`GET /api/worlds/{world_id}/mep/topology`**: Get Mep Topology
+
+### navigation
+
+- **`GET /api/worlds/{world_id}/bookmarks`**: List World Bookmarks
+- **`POST /api/worlds/{world_id}/bookmarks`**: Create World Bookmark
+- **`GET /api/worlds/{world_id}/navigation`**: Get World Navigation
+- **`POST /api/worlds/{world_id}/navigation/path`**: Calculate Navigation Path
 
 ### notifications
 
@@ -153,8 +254,11 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 
 - **`GET /api/sessions`**: List Sessions
 - **`POST /api/sessions`**: Create Session
+- **`POST /api/sessions/group`**: Group Sessions Endpoint
 - **`GET /api/sessions/{session_id}`**: Get Session
+- **`POST /api/sessions/{session_id}/deduplicate`**: Deduplicate Session
 - **`GET /api/sessions/{session_id}/location`**: Session Location
+- **`POST /api/sessions/{session_id}/locations`**: Add Session Locations
 - **`POST /api/sessions/{session_id}/reconstruct`**: Reconstruct Session
 - **`GET /api/sessions/{session_id}/trajectory`**: Session Trajectory
 
@@ -171,15 +275,47 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`DELETE /api/sites/{site_id}/placements/{placement_id}`**: Delete Placement
 - **`PATCH /api/sites/{site_id}/placements/{placement_id}`**: Patch Placement
 
+### splats
+
+- **`GET /api/worlds/{world_id}/splats`**: Get Splat Metadata
+- **`POST /api/worlds/{world_id}/splats/generate`**: Generate Splats
+- **`GET /api/worlds/{world_id}/splats/stream`**: Stream Splats
+- **`POST /api/worlds/{world_id}/splats/upload`**: Upload Splats
+
+### surface_quality
+
+- **`GET /api/worlds/{world_id}/surface-quality`**: Get World Surface Quality
+- **`POST /api/worlds/{world_id}/surface-quality/analyze`**: Analyze Surface Quality Endpoint
+- **`GET /api/worlds/{world_id}/surface-quality/certificate`**: Export Surface Quality Certificate
+- **`GET /api/worlds/{world_id}/surface-quality/heatmap`**: Get Surface Heatmap
+
 ### system
 
 - **`GET /api/system/verification`**: Get Verification
+
+### takeoff
+
+- **`GET /api/worlds/{world_id}/takeoff`**: Get Material Takeoff
+- **`POST /api/worlds/{world_id}/takeoff/estimate`**: Calculate Custom Estimate
+- **`GET /api/worlds/{world_id}/takeoff/export/csv`**: Export Takeoff Csv
+- **`GET /api/worlds/{world_id}/takeoff/export/pdf`**: Export Takeoff Pdf
 
 ### technologies
 
 - **`GET /api/technologies`**: List Technologies
 - **`POST /api/technologies/benchmark`**: Run Benchmark
 - **`GET /api/technologies/{tech_id}`**: Get Technology
+
+### temporal
+
+- **`GET /api/worlds/{world_id}/epochs`**: List World Epochs
+- **`GET /api/worlds/{world_id}/temporal/compare`**: Compare World Epochs
+
+### thermal-envelope
+
+- **`GET /api/worlds/{world_id}/thermal-envelope`**: Get Thermal Envelope Report
+- **`GET /api/worlds/{world_id}/thermal-envelope/certificate`**: Download Thermal Certificate
+- **`POST /api/worlds/{world_id}/thermal-envelope/evaluate`**: Evaluate Custom Thermal Scenario
 
 ### uploads
 
@@ -189,20 +325,30 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/uploads/resumable/start`**: Resumable Start
 - **`POST /api/uploads/resumable/{upload_id}/finalize`**: Resumable Finalize
 
+### usage
+
+- **`GET /api/tenants/{tenant_id}/usage`**: Get Specific Tenant Usage
+- **`GET /api/usage`**: Get Current Tenant Usage
+
 ### worlds
 
 - **`GET /api/worlds`**: List Worlds
 - **`POST /api/worlds`**: Create World
 - **`POST /api/worlds/import/package`**: Import World Package
+- **`GET /api/worlds/shared/access/{token}`**: Access Shared World
 - **`DELETE /api/worlds/{world_id}`**: Delete World
 - **`GET /api/worlds/{world_id}`**: Get World
 - **`PATCH /api/worlds/{world_id}`**: Patch World
 - **`POST /api/worlds/{world_id}/archive`**: Archive World
 - **`GET /api/worlds/{world_id}/artifacts/{sha256}`**: World Artifact
 - **`POST /api/worlds/{world_id}/attach/{session_id}`**: Attach Session
+- **`GET /api/worlds/{world_id}/camera`**: Get World Camera
+- **`POST /api/worlds/{world_id}/camera`**: Set World Camera
 - **`GET /api/worlds/{world_id}/cameras`**: World Cameras
 - **`GET /api/worlds/{world_id}/capture-requests`**: List Capture Requests
 - **`PATCH /api/worlds/{world_id}/capture-requests/{request_id}`**: Update Capture Request Status
+- **`GET /api/worlds/{world_id}/commands`**: Get World Commands
+- **`POST /api/worlds/{world_id}/commands`**: Execute World Command
 - **`POST /api/worlds/{world_id}/commit`**: Commit World Correction
 - **`POST /api/worlds/{world_id}/corrections/merge`**: Api Merge Entities
 - **`POST /api/worlds/{world_id}/corrections/reclassify`**: Api Reclassify Entity
@@ -212,19 +358,33 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/worlds/{world_id}/duplicate`**: Duplicate World
 - **`GET /api/worlds/{world_id}/entities/{entity_id}/confidence`**: Entity Confidence
 - **`GET /api/worlds/{world_id}/entities/{entity_id}/provenance`**: Entity Provenance
+- **`GET /api/worlds/{world_id}/options`**: List Design Options
+- **`POST /api/worlds/{world_id}/options`**: Create Design Option
+- **`GET /api/worlds/{world_id}/options/compare`**: Compare Design Options
 - **`GET /api/worlds/{world_id}/points`**: World Points
 - **`GET /api/worlds/{world_id}/quality`**: World Quality
 - **`GET /api/worlds/{world_id}/query/spaces`**: Query World Spaces
+- **`POST /api/worlds/{world_id}/redo`**: Redo World Command
+- **`GET /api/worlds/{world_id}/render`**: Render World View
 - **`GET /api/worlds/{world_id}/report`**: World Report
 - **`POST /api/worlds/{world_id}/restore`**: Restore World
+- **`GET /api/worlds/{world_id}/review/coco`**: World Review Coco
 - **`POST /api/worlds/{world_id}/rollback`**: Rollback World
 - **`POST /api/worlds/{world_id}/scale`**: Set World Scale
 - **`GET /api/worlds/{world_id}/scale/suggestion`**: Get Scale Suggestion
 - **`POST /api/worlds/{world_id}/scale/suggestion/reject`**: Reject Scale Suggestion
+- **`GET /api/worlds/{world_id}/shares`**: List World Share Links
+- **`POST /api/worlds/{world_id}/shares`**: Create World Share Link
+- **`POST /api/worlds/{world_id}/shares/{share_id}/revoke`**: Revoke World Share Link
 - **`GET /api/worlds/{world_id}/space-graph`**: Get World Space Graph
 - **`GET /api/worlds/{world_id}/spatial-intelligence`**: Get World Spatial Intelligence
 - **`GET /api/worlds/{world_id}/thumbnail`**: World Thumbnail
+- **`POST /api/worlds/{world_id}/undo`**: Undo World Command
 - **`GET /api/worlds/{world_id}/versions`**: List World Versions
+- **`PATCH /api/worlds/{world_id}/versions/{version_id}/label`**: Set Version Label
+- **`GET /api/worlds/{world_id}/views`**: List Camera Views
+- **`POST /api/worlds/{world_id}/views`**: Create Camera View
+- **`DELETE /api/worlds/{world_id}/views/{view_id}`**: Delete Camera View
 - **`GET /api/worlds/{world_id}/worldir`**: World Worldir
 
 ## Key Workflows
@@ -248,7 +408,7 @@ Content-Type: image/jpeg
 - `POST /api/worlds/{id}/commit`: Commit human corrections or automated reconciliations.
 
 ### 3. Multi-Format 3D & BIM Export
-- `POST /api/worlds/{id}/export`: Export current world to `gltf`, `glb`, `usda`, `obj`, `ply`, `stl`, `ifc`, `blender`, `cityjson`, `floorplan_svg`, `floorplan_dxf`, or `room_report_pdf`.
+- `POST /api/worlds/{id}/export`: Export current world to `gltf`, `glb`, `usda`, `obj`, `ply`, `stl`, `dae`, `ifc`, `blender`, `cityjson`, `floorplan_svg`, `floorplan_dxf`, `room_report_pdf`, or `room_schedule_csv`.
 
 ## Error Semantics
 | Status Code | Description | Meaning |

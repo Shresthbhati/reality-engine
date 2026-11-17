@@ -17,6 +17,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Geometry libraries the pipeline uses when present and replaces with a recorded fallback when absent (point-cloud cleaning,
+# real USD export, COLMAP model reading, mesh booleans). Every one of them is optional at runtime.
+geometry = [
+    "open3d",       # MIT: statistical outlier removal (reconstruction/pointcloud_clean.py)
+    "usd-core",     # Apache-2.0/Pixar: real OpenUSD stage export (exporters/usd_stage.py)
+    "pycolmap",     # BSD-3: read COLMAP models without the CLI (reconstruction/colmap_model.py)
+    "manifold3d",   # Apache-2.0: watertight mesh booleans (geometry/mesh_boolean.py)
+]
 # The application API service (apps/api) and every test that drives it. Mirrors apps/api/requirements.txt; kept
 # here so `pip install -e ".[dev]"` (what CI runs) installs it -- without aiosqlite the API / reliability suites
 # are skipped wholesale by pytest.importorskip("aiosqlite"), which is a silent loss of coverage, not a pass.

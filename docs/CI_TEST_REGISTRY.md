@@ -87,7 +87,7 @@ Total: 1
 
 ## unlisted
 
-Total: 489
+Total: 499
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -114,6 +114,7 @@ Total: 489
 - `tests/test_adoption_transaction.py`
 - `tests/test_alembic_migrations.py`
 - `tests/test_aliked_lightglue_task4_3.py`
+- `tests/test_annotation_review.py`
 - `tests/test_apartment_grammar.py`
 - `tests/test_apartment_ui_templates.py`
 - `tests/test_api_auth.py`
@@ -216,6 +217,7 @@ Total: 489
 - `tests/test_depth_exr.py`
 - `tests/test_depth_frames.py`
 - `tests/test_depth_scale.py`
+- `tests/test_depth_shift_alignment.py`
 - `tests/test_depth_to_points.py`
 - `tests/test_design_style_intelligence.py`
 - `tests/test_detail_budget.py`
@@ -232,6 +234,7 @@ Total: 489
 - `tests/test_detection_policy.py`
 - `tests/test_device.py`
 - `tests/test_dimension_gates.py`
+- `tests/test_dinov2_hf.py`
 - `tests/test_district_grammar.py`
 - `tests/test_doctor.py`
 - `tests/test_entity_evidence_provenance_task3_5.py`
@@ -250,6 +253,7 @@ Total: 489
 - `tests/test_fine_grained_entity_attributes.py`
 - `tests/test_fine_grained_perception_rule5.py`
 - `tests/test_fire_system.py`
+- `tests/test_florence2_second_opinion.py`
 - `tests/test_fracture_system.py`
 - `tests/test_frame_graph.py`
 - `tests/test_frame_inheritance.py`
@@ -331,6 +335,7 @@ Total: 489
 - `tests/test_material_hypotheses.py`
 - `tests/test_measurements.py`
 - `tests/test_media_preprocessing.py`
+- `tests/test_mesh_boolean.py`
 - `tests/test_mesh_exporters.py`
 - `tests/test_mesh_lod_generation.py`
 - `tests/test_mesh_repair_and_completeness.py`
@@ -362,6 +367,7 @@ Total: 489
 - `tests/test_onnx_quantizer.py`
 - `tests/test_ontology_extension.py`
 - `tests/test_ontology_loader_task8_1.py`
+- `tests/test_open_source_registry.py`
 - `tests/test_open_vocab_detector_task8_2.py`
 - `tests/test_open_vocab_furniture.py`
 - `tests/test_openings_host.py`
@@ -398,6 +404,7 @@ Total: 489
 - `tests/test_plane_detection_scale.py`
 - `tests/test_plane_sweep.py`
 - `tests/test_platform_boundary.py`
+- `tests/test_pointcloud_clean.py`
 - `tests/test_pose_adopts_solved_intrinsics.py`
 - `tests/test_pose_evaluation.py`
 - `tests/test_pose_graph.py`
@@ -441,6 +448,7 @@ Total: 489
 - `tests/test_registration_api.py`
 - `tests/test_resource_governor.py`
 - `tests/test_resumable_upload.py`
+- `tests/test_review_coco_api.py`
 - `tests/test_rng.py`
 - `tests/test_robustness_admission.py`
 - `tests/test_room_building_graph.py`
@@ -453,6 +461,7 @@ Total: 489
 - `tests/test_runtime_foundation.py`
 - `tests/test_sam2_backend.py`
 - `tests/test_sam_backend.py`
+- `tests/test_scale_drift_absorb.py`
 - `tests/test_scale_gate.py`
 - `tests/test_scene_complete_bench.py`
 - `tests/test_scene_complete_scorer.py`
@@ -470,6 +479,7 @@ Total: 489
 - `tests/test_simulation_loop.py`
 - `tests/test_single_image_furniture.py`
 - `tests/test_single_image_layout_bridge.py`
+- `tests/test_small_fittings_stage.py`
 - `tests/test_space_graph.py`
 - `tests/test_space_graph_api.py`
 - `tests/test_spatial_continuity.py`

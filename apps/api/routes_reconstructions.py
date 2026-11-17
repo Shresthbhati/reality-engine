@@ -96,7 +96,7 @@ async def _video_frames(path, fname: str, evidence_class: str | None):
         cand = by_index[idx]
         frames.append((f"{stem}#frame-{idx:06d}.jpg", jpeg, digest, facts.to_dict(), {
             "source_video": fname, "frame_index": idx, "video_timestamp_s": cand.timestamp_s,
-            "fps": container.get("fps"), "selection": selection,
+            "fps": container.get("fps"), "selection": selection, "frames_seen": len(candidates),
         }))
     if not frames:
         return [], "no decodable frames could be extracted from the video"
@@ -183,7 +183,10 @@ async def create_reconstruction(
                 continue
             # the original video is kept as evidence (never re-encoded); its
             # sampled frames are DERIVED photo evidence that carry its identity
-            accepted.append((fname, f.content_type, data, kind, digest, {}, {"frames_extracted": len(frames)}))
+            seen = int(frames[0][4].get("frames_seen", len(frames)))
+            accepted.append((fname, f.content_type, data, kind, digest, {},
+                             {"frames_extracted": len(frames), "frames_seen": seen, "frames_kept": len(frames),
+                              "duplicates_dropped": max(seen - len(frames), 0)}))
             for fr_name, jpeg, fr_digest, fr_facts, fr_meta in frames:
                 accepted.append((fr_name, "image/jpeg", jpeg, "photo", fr_digest, fr_facts, fr_meta))
         elif kind == "point_cloud":

@@ -144,6 +144,20 @@ def _longest_side(c: "MergedObjectCandidate") -> float:
     return max(c.bounds_max.x - c.bounds_min.x, c.bounds_max.y - c.bounds_min.y, c.bounds_max.z - c.bounds_min.z)
 
 
+def consensus_bounds(centre: Vec3, boxes: List[Tuple[Vec3, Vec3]]) -> Tuple[Vec3, Vec3]:
+    """One box for several views of one object: ``centre`` +- the per-axis MEDIAN half-extent of the views' boxes.
+
+    The union of per-view boxes grows with every view whose depth scale is a little off (each view's box sits somewhere
+    else along its own rays), so a sofa seen in six photographs came out 7 m long. The median is what most views agree on
+    and cannot be inflated by one misaligned view. One box is returned unchanged."""
+    if len(boxes) == 1:
+        return boxes[0]
+    half = [sorted((hi.x - lo.x, hi.y - lo.y, hi.z - lo.z)[ax] for lo, hi in boxes) for ax in range(3)]
+    mid = len(boxes) // 2
+    h = [(s[mid] if len(s) % 2 else 0.5 * (s[mid - 1] + s[mid])) / 2.0 for s in half]
+    return Vec3(centre.x - h[0], centre.y - h[1], centre.z - h[2]), Vec3(centre.x + h[0], centre.y + h[1], centre.z + h[2])
+
+
 def fuse_overlapping_candidates(
     candidates: List["MergedObjectCandidate"], iou_min: Optional[float] = None,
     centre_share: float = FUSE_CENTRE_SHARE,
@@ -154,7 +168,7 @@ def fuse_overlapping_candidates(
     Per-view depth is only approximately aligned, so one sofa seen from several photographs can come out of the
     association resolver as several candidates that overlap heavily, or sit closer than ``centre_share`` of the larger
     one's longest side. The validator calls the overlapping ones duplicates (``invariant_6_duplicate_entity``); they are
-    one object, so they are fused here: every contributing hypothesis is kept, the extent is the union, the position the
+    one object, so they are fused here: every contributing hypothesis is kept, the extent is the consensus box (``consensus_bounds``), the position the
     confidence-weighted centroid. Order is stable."""
     if iou_min is None:
         from world_ir.validation import _DUPLICATE_IOU as iou_min
@@ -180,16 +194,81 @@ def fuse_overlapping_candidates(
         total = sum(max(m.confidence, 1e-9) for m in members)
         centroid = Vec3(*(sum(max(m.confidence, 1e-9) * getattr(m.position, ax) for m in members) / total
                           for ax in ("x", "y", "z")))
+        lo, hi = consensus_bounds(centroid, [(m.bounds_min, m.bounds_max) for m in members])
         fused.append(MergedObjectCandidate(
             candidate_id=members[0].candidate_id,
             label=members[0].label,
             position=centroid,
-            bounds_min=Vec3(*(min(getattr(m.bounds_min, ax) for m in members) for ax in ("x", "y", "z"))),
-            bounds_max=Vec3(*(max(getattr(m.bounds_max, ax) for m in members) for ax in ("x", "y", "z"))),
+            bounds_min=lo,
+            bounds_max=hi,
             source_hypotheses=tuple(h for m in members for h in m.source_hypotheses),
             confidence=max(m.confidence for m in members),
         ))
     return fused
+
+
+def absorb_scale_drift_duplicates(
+    candidates: List["MergedObjectCandidate"], cameras: Dict[str, object], box_margin: float = 0.15,
+) -> Tuple[List["MergedObjectCandidate"], int]:
+    """Fold a single-photograph candidate into a multi-photograph one of the same label when geometry says they are one object.
+
+    A per-photograph depth-scale error moves a detection along THAT camera's viewing ray, so the same sofa can come out of one
+    photograph metres from where the others put it, and 3D distance cannot link them. A viewing ray can: if the confirmed
+    object's position, projected into the orphan's photograph, falls inside the orphan's own 2D footprint (grown by
+    ``box_margin``), and the confirmed object has NO detection of its own in that photograph, the orphan is that object seen
+    with a wrong depth. It is absorbed as evidence (its hypotheses join ``source_hypotheses``); the confirmed object's position
+    and extent are NOT moved by the drifted points. An orphan whose footprint contains no such object stays as it was.
+    Returns ``(candidates, n_absorbed)``; order of the survivors is stable.
+
+    UNPROVEN, NOT USED BY THE PIPELINE: measured on the 10-photo room it absorbed 0 orphans, because the confirmed objects'
+    positions project between near-correct and thousands of pixels away in the orphans' photographs (the same depth-scale drift
+    this is meant to repair), so the test only works once per-view scale is consistent."""
+    confirmed = [i for i, c in enumerate(candidates) if len(c.evidence_ids) >= 2]
+    orphans = [i for i, c in enumerate(candidates) if len(c.evidence_ids) == 1]
+    if not confirmed or not orphans:
+        return list(candidates), 0
+
+    extra: Dict[int, List["MergedObjectCandidate"]] = {}
+    absorbed = set()
+    for oi in orphans:
+        o = candidates[oi]
+        view = o.evidence_ids[0]
+        cam = cameras.get(view)
+        if cam is None:
+            continue
+        pix = [q for q in (cam.project(p) for h in o.source_hypotheses for p in h.points) if q is not None]
+        if len(pix) < 3:
+            continue
+        us, vs = [q[0] for q in pix], [q[1] for q in pix]
+        du, dv = (max(us) - min(us)) * box_margin, (max(vs) - min(vs)) * box_margin
+        u0, u1, v0, v1 = min(us) - du, max(us) + du, min(vs) - dv, max(vs) + dv
+        cu, cv = (u0 + u1) / 2, (v0 + v1) / 2
+        best, best_d = None, None
+        for ei in confirmed:
+            e = candidates[ei]
+            if e.label != o.label or view in e.evidence_ids:
+                continue        # another label, or e already has its own detection in this photograph: o is a second instance
+            q = cam.project(e.position)
+            if q is None or not (u0 <= q[0] <= u1 and v0 <= q[1] <= v1):
+                continue
+            d = (q[0] - cu) ** 2 + (q[1] - cv) ** 2
+            if best_d is None or d < best_d:
+                best, best_d = ei, d
+        if best is not None:
+            extra.setdefault(best, []).append(o)
+            absorbed.add(oi)
+
+    out: List["MergedObjectCandidate"] = []
+    for i, c in enumerate(candidates):
+        if i in absorbed:
+            continue
+        if i in extra:
+            hyps = tuple(c.source_hypotheses) + tuple(h for o in extra[i] for h in o.source_hypotheses)
+            c = MergedObjectCandidate(
+                candidate_id=c.candidate_id, label=c.label, position=c.position, bounds_min=c.bounds_min,
+                bounds_max=c.bounds_max, source_hypotheses=hyps, confidence=c.confidence)
+        out.append(c)
+    return out, len(absorbed)
 
 
 def resolve_objects(hypotheses: List[ObjectHypothesis3D], **kwargs):

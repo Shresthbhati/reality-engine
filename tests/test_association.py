@@ -177,8 +177,21 @@ def test_resolve_hypotheses_returns_the_same_candidate_type_with_every_source_ke
     cands, result = resolve_hypotheses(hyps, DepthSource.METRIC)
     assert len(cands) == 1
     assert cands[0].observation_count == 5 and cands[0].evidence_ids == tuple(f"ev{i}" for i in range(5))
-    assert cands[0].bounds_min.x <= 1.8 and cands[0].confidence >= 0.8
+    c = cands[0]
+    assert abs((c.bounds_max.x - c.bounds_min.x) - 0.4) < 1e-9 and c.confidence >= 0.8  # consensus box, not the union
     assert len(result.decisions) == 5
+
+
+def test_one_misaligned_view_does_not_inflate_the_fused_box():
+    """Six views of one sofa; one view's depth is off so its box sits 3 m away and is huge. The union would be ~6 m; the
+    consensus box keeps the size most views agree on."""
+    from perception.instances.object_resolution import consensus_bounds
+
+    good = [(Vec3(-1.0, 0.0, -0.45), Vec3(1.0, 0.85, 0.45)) for _ in range(5)]
+    bad = (Vec3(2.0, 0.0, -2.0), Vec3(5.0, 1.0, 2.0))
+    lo, hi = consensus_bounds(Vec3(0.0, 0.4, 0.0), good + [bad])
+    assert abs((hi.x - lo.x) - 2.0) < 1e-9 and abs((hi.z - lo.z) - 0.9) < 1e-9
+    assert consensus_bounds(Vec3(9, 9, 9), good[:1]) == good[0]  # a single box is returned unchanged
 
 
 def test_resolve_hypotheses_survives_region_ids_repeated_across_images():

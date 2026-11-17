@@ -309,6 +309,42 @@ _DEFAULT_MODELS = [
         output_contract="Binary masks (N, H, W)",
     ),
     ModelSpec(
+        name="sam2_1_hiera_small_hf",
+        task="promptable_segmentation",
+        source="huggingface:facebook/sam2.1-hiera-small@ee5bba1d82bb8749febdf90f45e84b687142ba03",
+        checkpoint=_HF_HOME / "models--facebook--sam2.1-hiera-small",
+        license="Apache-2.0",
+        commercial_ok=True,
+        measured_vram_mb=1670.0,  # measured: RTX 4050, fp32, 14-15 box prompts on a 1536x1024 photo (peak allocated)
+        status="active",  # integrated: perception/segmentation/sam2_box_prompter.py -> grounded_scene.py -> vertical_slice perception stage
+        input_contract="RGB image + detector boxes",
+        output_contract="One binary instance mask per box (H, W)",
+    ),
+    ModelSpec(
+        name="florence2_base_hf",
+        task="object_detection",
+        source="huggingface:florence-community/Florence-2-base@00921df66db728a9ceb750f5eca43e5c203a2051",
+        checkpoint=_HF_HOME / "models--florence-community--Florence-2-base",
+        license="MIT",
+        commercial_ok=True,
+        measured_vram_mb=631.0,  # measured: RTX 4050, fp32, <OD> on one 1536x1024 room photograph (peak allocated)
+        status="active",  # opt-in second-opinion detector: perception/detection/florence2_detector.py -> vertical_slice perception_second_opinion
+        input_contract="RGB image",
+        output_contract="Labelled boxes without scores (the <OD> task has none)",
+    ),
+    ModelSpec(
+        name="dinov2_small_hf",
+        task="appearance_embedding",
+        source="huggingface:facebook/dinov2-small@ed25f3a31f01632728cabb09d1542f84ab7b0056",
+        checkpoint=_HF_HOME / "models--facebook--dinov2-small",
+        license="Apache-2.0",
+        commercial_ok=True,
+        measured_vram_mb=0.0,  # not yet measured (22M parameters, one 224x224 batch per photograph)
+        status="active",  # integrated: perception/instances/dinov2_hf.py -> vertical_slice perception_appearance -> association gate
+        input_contract="RGB crop of an instance mask, 224x224",
+        output_contract="Unit-norm 384-d CLS embedding per instance",
+    ),
+    ModelSpec(
         name="sam2_hiera_small",
         task="promptable_segmentation",
         source="github:facebookresearch/sam2",

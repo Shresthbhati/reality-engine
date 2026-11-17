@@ -152,18 +152,16 @@ def lift_region_to_3d(
             f"do not match depth map dimensions {depth.height}x{depth.width}"
         )
 
-    mask_pixel_count = 0
+    # masks are mostly empty: find the set pixels with numpy (row-major, same order as the old nested loop) and only
+    # unproject those with valid depth instead of visiting every cell in Python
+    mask_np = np.asarray(region.mask, dtype=bool)
+    mask_pixel_count = int(mask_np.sum())
     points: List[Vec3] = []
-    for row in range(depth.height):
-        mask_row = region.mask[row]
-        depth_row = depth.values[row]
-        for col in range(depth.width):
-            if not mask_row[col]:
-                continue
-            mask_pixel_count += 1
-            d = depth_row[col]
-            if not math.isfinite(d) or d <= 0.0:
-                continue
+    if mask_pixel_count:
+        rows, cols = np.nonzero(mask_np)
+        d_all = np.asarray(depth.values, dtype=float)[rows, cols]
+        valid = np.isfinite(d_all) & (d_all > 0.0)
+        for col, row, d in zip(cols[valid].tolist(), rows[valid].tolist(), d_all[valid].tolist()):
             # Pixel-center convention: pixel (col, row) covers the
             # continuous image-plane square [col, col+1) x [row, row+1).
             points.append(camera.unproject(col + 0.5, row + 0.5, d))

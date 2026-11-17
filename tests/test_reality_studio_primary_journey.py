@@ -94,12 +94,16 @@ def test_reality_studio_primary_user_journey_e2e(client, tmp_path: Path, monkeyp
             ],
         )
 
+    # hand-placed stand-in openings must satisfy the world invariants: an opening cites the wall that hosts it, and
+    # an entity nobody observed is INFERRED, not OBSERVED
+    host_wall_id = next(e.id for e in compiled_world.entities.values() if e.type == EntityType.WALL)
+
     if not any(e.type == EntityType.DOOR for e in compiled_world.entities.values()):
         compiled_world.entities["door-001"] = Entity(
             id="door-001",
             type=EntityType.DOOR,
             name="Pocket Doorway",
-            custom_properties={"width_m": 0.9, "height_m": 2.1},
+            custom_properties={"width_m": 0.9, "height_m": 2.1, "host_wall_id": host_wall_id},
             provenance=Provenance.INFERRED,
             confidence=0.85,
         )
@@ -109,8 +113,8 @@ def test_reality_studio_primary_user_journey_e2e(client, tmp_path: Path, monkeyp
             id="window-001",
             type=EntityType.WINDOW,
             name="Exterior Glazing Window",
-            custom_properties={"sill_height_m": 0.9, "width_m": 1.2, "height_m": 1.5},
-            provenance=Provenance.OBSERVED,
+            custom_properties={"sill_height_m": 0.9, "width_m": 1.2, "height_m": 1.5, "host_wall_id": host_wall_id},
+            provenance=Provenance.INFERRED,
             confidence=0.92,
         )
 

@@ -462,6 +462,7 @@ def _poisson_available() -> bool:
         return False
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(
     not _poisson_available(),
     reason="COLMAP binary with poisson_mesher not available "

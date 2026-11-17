@@ -61,7 +61,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GEO-000010 | DN | Empty space and unseen space look the same → voxel absent = not observed | [V] tests/test_voxel_cloud.py | done |
 | RE-GEO-000011 | DN | Dimensions lack provenance → robust fused measurements with used/rejected IDs | [V] tests/test_measurement_fusion.py | done |
 | RE-GEO-000012 | DN | Correlated measurements counted as independent → group inflation down-weighting | [V] tests/test_measurement_fusion.py | done |
-| RE-GEO-000013 | OF | Uncertainty shown as constants → "uncalibrated" until rooms measured | [V at 199ca3bb] | open |
+| RE-GEO-000013 | DN | Uncertainty shown as constants → "uncalibrated" until rooms measured | [V] provenance/provenance.py, tests/test_provenance.py | done |
 | RE-GEO-000014 | OF | `reconstruction/sfm/core_pipeline.py` unreachable → wire or delete | [M] | open |
 | RE-GEO-000015 | OF | `reconstruction/mvs/dense_cloud.py` unreachable → wire or delete | [M] | open |
 | RE-GEO-000016 | VN | SfM fails on blank walls → feed-forward backend as second candidate | [M] | later |
@@ -88,7 +88,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERF-000012 | VN | Unchanged stages rerun → skip on matching inputs hash | [V] | B01 |
 | RE-PERF-000013 | VN | New photo rebuilds everything → only stages whose inputs changed | [H] | B01 |
 | RE-PERF-000014 | DN | Video duplicates processed → counted and dropped (keeps 6 of 18) | [V] test_progressive_product_journey.py::test_H_video | done |
-| RE-PERF-000015 | MP | `pytest -k "colmap or dense"` takes 57 min → mark slow, split | [V] | open |
+| RE-PERF-000015 | DN | `pytest -k "colmap or dense"` takes 57 min → marked slow across integration and backend suites; deselected with `-m 'not slow'` | [V] pyproject.toml, tests/ | done |
 | RE-PERF-000016 | VN | Nine specialist tools in the Studio bundle → lazy-load | [V at 199ca3bb] | later |
 | RE-PERF-000017 | VN | Refinement can loop without gain → heap by gain/cost, stop on no change | [H] | B16 |
 | RE-PERF-000018 | VN | Detector calls unbounded per image → `budget_calls` | [H] | B04 |
@@ -98,16 +98,16 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-DB-000004 | VN | Observations as DB rows would be millions → artifact files, DB holds the hash | [H] | B02 |
 | RE-DB-000005 | VN | Backups never restored → one restore drill | [A] | open |
 | RE-DB-000006 | VN | WorldStore and DB can disagree after a crash → test crash between the two writes | [V] D01 tests cover this area | D01 |
-| RE-SEC-000001 | VN | Non-commercial model can run → licence gate called at job start | [V] gate exists, `mast3r` is CC-BY-NC | open |
+| RE-SEC-000001 | DN | Non-commercial model can run → licence gate called at job start | [V] apps/api/jobs.py, tests/test_model_licence_gate.py | done |
 | RE-SEC-000002 | VN | Metric-Indoor depth checkpoint has no declared licence → keep out of default path | [M] | open |
 | RE-SEC-000003 | VN | Checkpoint hashes not enforced on load → `verify_checkpoint` before every load | [V] function exists | B13 |
 | RE-SEC-000004 | DN | Weights loaded with pickle → `weights_only=True` or safetensors | [V] midAS_backend.py, dinov2_embeddings.py | done |
-| RE-SEC-000005 | VN | Test backend reachable in production path → refuse outside test env | [V at 199ca3bb], recheck | open |
+| RE-SEC-000005 | DN | Test backend reachable in production path → refuse outside test env | [V] apps/api/jobs.py | done |
 | RE-SEC-000006 | DN | Tenant scoping per route unproven → verified via SEC-001..SEC-005 security test suite | [V] tests/test_audit_security_gates.py | done |
 | RE-SEC-000007 | OF | `main` unprotected → require CI | [M] | owner |
 | RE-SEC-000008 | DN | "Certified Auditor" default on a life-safety PDF → "preliminary" wording | [V] tests/test_life_safety_compliance.py, tests/test_thermal_envelope_ashrae.py | done |
 | RE-SEC-000009 | VN | No secret scan in CI → add one | [H] | open |
-| RE-SEC-000010 | VN | Upload limits untested → under/over tests per limit | [A] | open |
+| RE-SEC-000010 | DN | Upload limits untested → under/over tests per limit | [V] tests/test_upload_integrity_contract.py | done |
 | RE-SEC-000011 | VN | Coding agents share one checkout → one branch per package, no push | [V] this session | process |
 | RE-SEC-000012 | VN | Socket/lock labels could be read as safety claims → visual class only, stated in UI and export | [H] | B05, B19 |
 | RE-TEST-000001 | DN | Six failing tests | [V] commit `04362f72` | done |

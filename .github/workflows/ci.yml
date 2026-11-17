@@ -188,6 +188,19 @@ jobs:
       - name: mypy (core packages, best-effort)
         run: mypy apps/cli/main.py --ignore-missing-imports --no-error-summary || true
 
+  security:
+    name: Security & Secret Scan (RE-SEC-000009)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   frontend:
     name: Frontend (lint, typecheck, build)
     if: github.event_name != 'schedule'

@@ -106,7 +106,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-SEC-000006 | DN | Tenant scoping per route unproven → verified via SEC-001..SEC-005 security test suite | [V] tests/test_audit_security_gates.py | done |
 | RE-SEC-000007 | OF | `main` unprotected → require CI | [M] | owner |
 | RE-SEC-000008 | DN | "Certified Auditor" default on a life-safety PDF → "preliminary" wording | [V] tests/test_life_safety_compliance.py, tests/test_thermal_envelope_ashrae.py | done |
-| RE-SEC-000009 | VN | No secret scan in CI → add one | [H] | open |
+| RE-SEC-000009 | VN | No secret scan in CI → add one | [V] .github/workflows/ci.yml (gitleaks) | done |
 | RE-SEC-000010 | DN | Upload limits untested → under/over tests per limit | [V] tests/test_upload_integrity_contract.py | done |
 | RE-SEC-000011 | VN | Coding agents share one checkout → one branch per package, no push | [V] this session | process |
 | RE-SEC-000012 | VN | Socket/lock labels could be read as safety claims → visual class only, stated in UI and export | [H] | B05, B19 |

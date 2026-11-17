@@ -417,6 +417,7 @@ def test_H_video_is_sampled_into_frame_evidence_and_duplicates_are_measured(tmp_
         kinds = [e["type"] for e in body["evidence"]]
         # the picker keeps the 6 distinct views and drops the 12 repeats; the counters say so
         assert kinds.count("video") == 1 and kinds.count("photo") == 6
+        assert (body.get("frames_seen"), body.get("frames_kept"), body.get("duplicates_dropped")) == (18, 6, 12)
         listed = c.get("/api/evidence", params={"session_id": body["session_id"]}).json()["items"]
         vm = next(e for e in listed if e["type"] == "video")["metadata"]
         assert (vm.get("frames_seen"), vm.get("frames_kept"), vm.get("duplicates_dropped")) == (18, 6, 12), vm

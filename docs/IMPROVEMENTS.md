@@ -20,7 +20,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-ARCH-000008 | VN | `vertical_slice.py` ~2,000 lines → split along stage boundaries as stages take over | [V at 199ca3bb] | B01 |
 | RE-ARCH-000009 | DN | `routes_worlds.py` ~3,500 lines → split into modular routers (commands, shares, options) | [V] routes_worlds_commands.py, routes_worlds_shares.py, routes_worlds_options.py | done |
 | RE-ARCH-000010 | VN | `AdaptiveInspector.tsx` 102 KB → new UI in new files only | [V] | B18 |
-| RE-ARCH-000011 | OF | `UniversalSpatialPipeline` unwired second pipeline → fold or delete | [V at 199ca3bb], inventory in `docs/audits/` | open |
+| RE-ARCH-000011 | OF | `UniversalSpatialPipeline` unwired second pipeline → fold or delete | [V] deleted in P113 (3ceb60b5dd) | done |
 | RE-ARCH-000012 | DN | Unknown objects have no home → every ontology family gets an `unknown` child, kept not dropped | [V] tests/test_b03_unified_ontology.py | done |
 | RE-ARCH-000013 | DN | Containment has two sources → unified via `world_ir/relations.py` and `/api/worlds/{id}/find` | [V] tests/test_relations.py, tests/test_query_find.py | done |
 | RE-ARCH-000014 | VN | Artifact lineage not queryable → DAG of artifact → producing stage, invalidate by reverse BFS | [H] | B01 |

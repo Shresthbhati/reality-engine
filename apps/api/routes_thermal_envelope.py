@@ -115,7 +115,7 @@ async def download_thermal_certificate(
     world_id: str,
     version_id: Optional[str] = Query(None, description="World version ID"),
     climate_zone: str = Query(default="5A_cold"),
-    auditor_name: str = Query(default="Reality Engine Certified Energy Auditor"),
+    auditor_name: str = Query(default="Automated preliminary screening (not professionally reviewed)"),
     db: AsyncSession = Depends(get_db),
     auth: AuthContext = Depends(get_auth_context),
 ) -> Response:

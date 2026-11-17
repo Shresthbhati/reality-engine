@@ -393,7 +393,7 @@ def evaluate_thermal_envelope(
 
 def export_thermal_envelope_certificate_pdf(
     report: ThermalEnvelopeReport,
-    auditor_name: str = "Reality Engine Certified Energy Auditor",
+    auditor_name: str = "Automated preliminary screening (not professionally reviewed)",
 ) -> bytes:
     """Generate professional ASHRAE 90.1 Building Envelope Energy Certificate in pure PDF 1.4."""
     PAGE_W = 612.0
@@ -495,11 +495,11 @@ def export_thermal_envelope_certificate_pdf(
     # Auditor Certification & Signature Block
     seal_y = 65.0
     ops.append(rect_op(45.0, seal_y, 524.0, 52.0, (0.97, 0.97, 0.98), (0.75, 0.80, 0.85)))
-    ops.append(text_op(55.0, seal_y + 36.0, "ENERGY AUDITOR COMPLIANCE STATEMENT:", 7.5, bold=True, color=(0.15, 0.22, 0.3)))
-    ops.append(text_op(55.0, seal_y + 24.0, "This energy compliance certificate was computed from measured spatial BIM envelope boundaries.", 7.0, bold=False))
-    ops.append(text_op(55.0, seal_y + 12.0, "Conforms with ASHRAE 90.1 Section 5 and IECC Section C402 for architectural permit submission.", 7.0, bold=False))
-    ops.append(text_op(380.0, seal_y + 36.0, f"Auditor: {auditor_name}", 7.5, bold=True))
-    ops.append(text_op(380.0, seal_y + 24.0, "Seal: ASHRAE-90.1-PERMIT-VALIDATED", 7.0, bold=False))
+    ops.append(text_op(55.0, seal_y + 36.0, "PRELIMINARY ENERGY SCREENING STATEMENT:", 7.5, bold=True, color=(0.15, 0.22, 0.3)))
+    ops.append(text_op(55.0, seal_y + 24.0, "Preliminary automated screening computed from spatial BIM envelope boundaries.", 7.0, bold=False))
+    ops.append(text_op(55.0, seal_y + 12.0, "Not a professional code-compliance certificate. Requires review by a qualified professional.", 7.0, bold=False))
+    ops.append(text_op(380.0, seal_y + 36.0, f"Reviewer: {auditor_name}", 7.5, bold=True))
+    ops.append(text_op(380.0, seal_y + 24.0, "Status: PRELIMINARY-SCREENING-ONLY", 7.0, bold=False))
     ops.append(text_op(380.0, seal_y + 12.0, f"Date: {report.timestamp[:10]}", 7.0, bold=False))
 
     # Assemble PDF-1.4 stream

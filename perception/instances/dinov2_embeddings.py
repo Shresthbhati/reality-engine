@@ -226,8 +226,8 @@ def extract_dinov2_embedding(
         if model is None:
             weights = get_dinov2_weights_path(model_name)
             if weights is not None:
-                # Load from checkpoint
-                state_dict = torch.load(weights, map_location=device)
+                # Load from checkpoint with weights_only=True to prevent unsafe pickle execution (RE-SEC-000004)
+                state_dict = torch.load(weights, map_location=device, weights_only=True)
                 model = torch.hub.load("facebookresearch/dinov2", model_name, pretrained=False)
                 model.load_state_dict(state_dict)
             else:

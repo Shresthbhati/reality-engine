@@ -149,7 +149,7 @@ class MiDaSDepthBackend(IDepthBackend):
                 source="local" if Path(self._checkpoint_path).parent.name == "MiDaS" else "github",
                 pretrained=False,
             )
-            state_dict = torch.load(self._checkpoint_path, map_location=self._device)
+            state_dict = torch.load(self._checkpoint_path, map_location=self._device, weights_only=True)
             self._model.load_state_dict(state_dict)
         else:
             # Download via torch.hub (requires internet on first run).

@@ -348,13 +348,21 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
     cube_mesh_by_mat: dict[Optional[int], int] = {}
 
     for entity in world.entities.values():
-        if not entity.transform or "position" not in entity.transform:
-            continue  # no placement to export the node with
         geometry = _entity_exportable_geometry(world, entity)
         if geometry is None:
             continue  # nothing real to export (see module docstring)
 
-        pos = entity.transform["position"]
+        pos = None
+        if entity.transform and isinstance(entity.transform, dict) and "position" in entity.transform:
+            pos = entity.transform["position"]
+        elif geometry and getattr(geometry, "bounds_min", None) is not None and getattr(geometry, "bounds_max", None) is not None:
+            pos = {
+                "x": float((geometry.bounds_min.x + geometry.bounds_max.x) / 2.0),
+                "y": float((geometry.bounds_min.y + geometry.bounds_max.y) / 2.0),
+                "z": float((geometry.bounds_min.z + geometry.bounds_max.z) / 2.0),
+            }
+        if pos is None:
+            continue  # no placement to export the node with
         mesh_index = 0  # default: shared placeholder cube
         points_mesh_index = None
 
@@ -458,6 +466,44 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
             "mesh": mesh_index,
             "translation": [float(pos["x"]), float(pos["y"]), float(pos["z"])],
         }
+
+        # Export attributes to glTF extras (BUILD_SPEC B19)
+        attrs = (getattr(entity, "extra_fields", None) or {}).get("attributes")
+        if not attrs and isinstance(getattr(entity, "custom_properties", None), dict):
+            attrs = entity.custom_properties.get("attributes")
+
+        if isinstance(attrs, dict) and attrs:
+            extras_attrs = {}
+            for attr_name, attr_data in attrs.items():
+                if isinstance(attr_data, dict):
+                    val = attr_data.get("value")
+                    basis = str(attr_data.get("basis") or ("visual" if val is not None else "unknown"))
+                    conf = float(attr_data.get("p") if attr_data.get("p") is not None else attr_data.get("confidence", 1.0 if val is not None else 0.0))
+                    # Unknown attributes export as absent with Basis = "unknown", never a default
+                    if val is None or basis == "unknown":
+                        extras_attrs[attr_name] = {
+                            "basis": "unknown",
+                            "confidence": float(round(conf, 3)),
+                        }
+                    else:
+                        extras_attrs[attr_name] = {
+                            "value": val,
+                            "basis": basis,
+                            "confidence": float(round(conf, 3)),
+                        }
+                elif attr_data is not None:
+                    extras_attrs[attr_name] = {
+                        "value": attr_data,
+                        "basis": "user_stated",
+                        "confidence": 1.0,
+                    }
+                else:
+                    extras_attrs[attr_name] = {
+                        "basis": "unknown",
+                        "confidence": 0.0,
+                    }
+            if extras_attrs:
+                node_entry.setdefault("extras", {})["attributes"] = extras_attrs
         authored_scale = isinstance(entity.transform, dict) and isinstance(entity.transform.get("scale"), dict) \
             and all(k in entity.transform["scale"] for k in ("x", "y", "z"))
         sized = None if (has_real_mesh or authored_scale) else _cube_from_bounds(geometry)
@@ -492,7 +538,8 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
         pid = getattr(e, "parent_id", None)
         if not pid:
             for rel in getattr(e, "relationships", ()):
-                if getattr(rel, "kind", None) is RelationshipKind.PART_OF and rel.target_id in entity_id_to_node_idx:
+                kind = getattr(rel, "kind", None)
+                if (kind in (RelationshipKind.PART_OF, "part_of") or str(kind).endswith("PART_OF")) and rel.target_id in entity_id_to_node_idx:
                     pid = rel.target_id
                     break
         if pid and pid in entity_id_to_node_idx:

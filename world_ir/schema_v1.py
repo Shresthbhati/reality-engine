@@ -670,6 +670,14 @@ class Entity:
     external_references: tuple = ()
 
     @property
+    def extra_fields(self) -> dict:
+        return self.custom_properties
+
+    @extra_fields.setter
+    def extra_fields(self, val: dict) -> None:
+        self.custom_properties = val or {}
+
+    @property
     def material(self) -> Optional[str]:
         """Material classification attribute (Blueprint 11 & Task 10.2)."""
         attrs = self.custom_properties.get("attributes")

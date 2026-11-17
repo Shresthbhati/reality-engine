@@ -87,7 +87,7 @@ export function parseAttributes(entity: Entity | null | undefined): AttributeRow
   if (!entity) return [];
 
   const rawAttrs =
-    (entity.extra_fields?.attributes as Record<string, any>) ||
+    ((entity as any).extra_fields?.attributes as Record<string, any>) ||
     (entity.custom_properties?.attributes as Record<string, any>) ||
     {};
 

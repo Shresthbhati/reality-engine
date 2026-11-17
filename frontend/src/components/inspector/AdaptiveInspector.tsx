@@ -48,6 +48,8 @@ import { describeScale } from "@/lib/api/scale-model";
 import {
   ChipGroup, ConfidenceBars, DimensionRows, Disclosure, EntityChip, FactList, KV, MaterialCards, Muted, SectionTitle,
 } from "./InspectorParts";
+import { InspectorAttributes } from "./InspectorAttributes";
+import { WorldFindSearchBar } from "./WorldFindSearchBar";
 
 interface AdaptiveInspectorProps {
   world: WorldIR | null;
@@ -126,6 +128,14 @@ export default function AdaptiveInspector({
       aria-label="Properties"
       className="w-full h-full flex flex-col overflow-hidden bg-[var(--bg-surface)] text-[var(--text-primary)]"
     >
+      <div className="p-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+        <WorldFindSearchBar
+          worldId={worldId}
+          version={activeVersion}
+          onSelectEntity={(id) => onSelectEntity(id)}
+          onFrameEntity={onFrameEntity}
+        />
+      </div>
       {entity ? (
         <EntityDetails
           key={entity.id}
@@ -1367,6 +1377,14 @@ function EntityDetails({
                 <span>Not enough evidence to be sure this is a {kind} (the depth fit was weak or the frame was hidden).</span>
               </p>
             )}
+
+            <InspectorAttributes
+              attributes={
+                ((entity.custom_properties?.attributes as Record<string, unknown>) ||
+                  (entity.custom_properties?.attribute_hypotheses as Record<string, unknown>)) ??
+                null
+              }
+            />
 
             {shownLinked.map((l) => (
               <ChipGroup key={l.title} title={l.title}>

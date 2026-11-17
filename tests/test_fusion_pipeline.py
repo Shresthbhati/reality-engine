@@ -59,6 +59,20 @@ class TestFusePipelinePoints:
         assert r_true_lo <= fused.value <= r_true_hi
         assert fused.agreement_rms is not None and fused.agreement_rms < 0.01
 
+    def test_voxel_cloud_fused_in_consumer(self):
+        from reconstruction.fusion.voxel_cloud import SFM, MONO_DEPTH
+        sparse = [_sparse_point(1.0, 0.0, 2.0)]
+        depth = [_depth_point(1.005, 0.0, 2.0)]
+        result = fuse_pipeline_points(
+            sparse_points=sparse, depth_points=depth,
+            association_tolerance_m=0.05,
+        )
+        assert "voxel_cloud" in result
+        vc = result["voxel_cloud"]
+        assert len(vc.key) > 0
+        assert (vc.sources & SFM).any()
+        assert (vc.sources & MONO_DEPTH).any()
+
     def test_unassociated_points_pass_through(self):
         # A depth point with no sparse neighbor within tolerance is a
         # single-source observation: passthrough, never dropped, never

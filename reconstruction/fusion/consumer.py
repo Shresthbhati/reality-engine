@@ -183,4 +183,48 @@ def fuse_pipeline_points(
         "n_passthrough_dense_mvs": n_passthrough_dense_mvs,
         "fused": fused,
     })
+
+    # B11 VoxelCloud integration: integrate points in order sfm -> mvs -> device-depth -> mono-depth
+    from reconstruction.fusion.voxel_cloud import VoxelCloud, SFM, MVS, DEVICE_DEPTH, MONO_DEPTH
+
+    vc = VoxelCloud(voxel_m=0.02)
+    def _extract_arrays(points: Sequence[ReconstructedPoint]):
+        if not points:
+            return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.float64), 0.05
+        pos = np.array([p.position for p in points], dtype=np.float64)
+        colors = []
+        sigmas = []
+        for p in points:
+            c = getattr(p, "color", None) or getattr(p, "rgb", None) or (128, 128, 128)
+            colors.append(c[:3] if len(c) >= 3 else (128, 128, 128))
+            sig = getattr(p.uncertainty, "sigma", None) or getattr(p.uncertainty, "std_dev", None)
+            sigmas.append(float(sig) if sig and float(sig) > 0 else 0.05)
+        mean_sigma = float(np.median(sigmas)) if sigmas else 0.05
+        return pos, np.array(colors, dtype=np.float64), mean_sigma
+
+    sfm_pos, sfm_rgb, sfm_sig = _extract_arrays(sparse_points)
+    if len(sfm_pos) > 0:
+        vc.integrate(sfm_pos, sfm_rgb, sfm_sig, SFM)
+
+    mvs_pos, mvs_rgb, mvs_sig = _extract_arrays(dense_mvs_points)
+    if len(mvs_pos) > 0:
+        vc.integrate(mvs_pos, mvs_rgb, mvs_sig, MVS)
+
+    dev_pts, mono_pts = [], []
+    for p in depth_points:
+        track = getattr(p, "track_id", "")
+        if "device" in track or "arkit" in track or "lidar" in track:
+            dev_pts.append(p)
+        else:
+            mono_pts.append(p)
+
+    dev_pos, dev_rgb, dev_sig = _extract_arrays(dev_pts)
+    if len(dev_pos) > 0:
+        vc.integrate(dev_pos, dev_rgb, dev_sig, DEVICE_DEPTH)
+
+    mono_pos, mono_rgb, mono_sig = _extract_arrays(mono_pts)
+    if len(mono_pos) > 0:
+        vc.integrate(mono_pos, mono_rgb, max(mono_sig, 0.10), MONO_DEPTH)
+
+    facts["voxel_cloud"] = vc
     return facts

@@ -18,7 +18,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-ARCH-000006 | VN | `Visibility` has 3 states; no "not observed" → coverage enum | [V] `world_ir/observations.py` | later |
 | RE-ARCH-000007 | OF | `StatementState` duplicates `Provenance` → single vocabulary | [V] | later |
 | RE-ARCH-000008 | VN | `vertical_slice.py` ~2,000 lines → split along stage boundaries as stages take over | [V at 199ca3bb] | B01 |
-| RE-ARCH-000009 | VN | `routes_worlds.py` ~3,500 lines → split by resource when next touched | [V at 199ca3bb] | open |
+| RE-ARCH-000009 | DN | `routes_worlds.py` ~3,500 lines → split into modular routers (commands, shares, options) | [V] routes_worlds_commands.py, routes_worlds_shares.py, routes_worlds_options.py | done |
 | RE-ARCH-000010 | VN | `AdaptiveInspector.tsx` 102 KB → new UI in new files only | [V] | B18 |
 | RE-ARCH-000011 | OF | `UniversalSpatialPipeline` unwired second pipeline → fold or delete | [V at 199ca3bb], inventory in `docs/audits/` | open |
 | RE-ARCH-000012 | DN | Unknown objects have no home → every ontology family gets an `unknown` child, kept not dropped | [V] tests/test_b03_unified_ontology.py | done |
@@ -43,7 +43,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERC-000017 | OF | Closed windows found by gaps only → visual evidence path | [A] | later |
 | RE-PERC-000018 | VN | Mirrors and glass create phantom objects → reflective-surface flag suppresses lifting behind planes | [H] | later |
 | RE-PERC-000019 | VN | Detector scores used as confidence → calibrate once annotations exist | [M] no annotations | open |
-| RE-PERC-000020 | VN | Blurry regions still produce detections → per-region sharpness gates low-score detections | [H] | open |
+| RE-PERC-000020 | DN | Blurry regions still produce detections → per-region sharpness gates low-score detections | [V] tests/test_hierarchical_detection.py | done |
 | RE-PERC-000021 | VN | Occlusion state not recorded → visibility per observation from mask vs box area and depth order | [M] | B06 |
 | RE-PERC-000022 | VN | Instance counts unreliable → count = entities after B08, never detections | [M] | B08 |
 | RE-PERC-000023 | DN | Part outside its parent accepted → rejected by parent box containment | [V] tests/test_hierarchical_detection.py | done |
@@ -67,7 +67,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GEO-000016 | VN | SfM fails on blank walls → feed-forward backend as second candidate | [M] | later |
 | RE-GEO-000017 | VN | No device poses → ARKit/ARCore priors | [A] | later |
 | RE-GEO-000018 | VN | Wall thickness is a default → measured from both faces when both seen, else `INFERRED` | [A] | later |
-| RE-GEO-000019 | VN | Mesh quality unknown → watertight / manifold / components verdict | [H] | open |
+| RE-GEO-000019 | DN | Mesh quality unknown → watertight / manifold / components verdict | [V] tests/test_quality_report_stage.py | done |
 | RE-GEO-000020 | VN | Openings cut by ad hoc geometry → robust booleans | [H] | later |
 | RE-GEO-000021 | RO | Domes, arches, vaults unrepresentable → surface-of-revolution and arch primitives | [H] | later |
 | RE-GEO-000022 | VN | Steps are not parts of stairs → stair ontology with step/riser components | [M] | B03, B09 |
@@ -101,11 +101,11 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-SEC-000001 | VN | Non-commercial model can run → licence gate called at job start | [V] gate exists, `mast3r` is CC-BY-NC | open |
 | RE-SEC-000002 | VN | Metric-Indoor depth checkpoint has no declared licence → keep out of default path | [M] | open |
 | RE-SEC-000003 | VN | Checkpoint hashes not enforced on load → `verify_checkpoint` before every load | [V] function exists | B13 |
-| RE-SEC-000004 | SP | Weights loaded with pickle → `weights_only=True` or safetensors | [H] | open |
+| RE-SEC-000004 | DN | Weights loaded with pickle → `weights_only=True` or safetensors | [V] midAS_backend.py, dinov2_embeddings.py | done |
 | RE-SEC-000005 | VN | Test backend reachable in production path → refuse outside test env | [V at 199ca3bb], recheck | open |
 | RE-SEC-000006 | DN | Tenant scoping per route unproven → verified via SEC-001..SEC-005 security test suite | [V] tests/test_audit_security_gates.py | done |
 | RE-SEC-000007 | OF | `main` unprotected → require CI | [M] | owner |
-| RE-SEC-000008 | VN | "Certified Auditor" default on a life-safety PDF → "preliminary" wording | [V at 199ca3bb], recheck | open |
+| RE-SEC-000008 | DN | "Certified Auditor" default on a life-safety PDF → "preliminary" wording | [V] tests/test_life_safety_compliance.py, tests/test_thermal_envelope_ashrae.py | done |
 | RE-SEC-000009 | VN | No secret scan in CI → add one | [H] | open |
 | RE-SEC-000010 | VN | Upload limits untested → under/over tests per limit | [A] | open |
 | RE-SEC-000011 | VN | Coding agents share one checkout → one branch per package, no push | [V] this session | process |

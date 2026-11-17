@@ -196,6 +196,7 @@ def consolidate_horizontal_roles(
     camera_positions: Sequence[Tuple[float, float, float]],
     positions_by_id: Dict[str, Tuple[float, float, float]],
     observers: Optional[Dict[str, Sequence[Tuple[float, float, float]]]] = None,
+    classify_support_surfaces: bool = False,
 ) -> Tuple[List[OrientedPlane], Dict[str, int]]:
     """Per-plane sanity for floor/ceiling roles; ``classify_plane`` only checks which side of a plane the cameras are on.
 
@@ -296,7 +297,85 @@ def consolidate_horizontal_roles(
                         confidence=0.0, note=f"fragment of the {role} at height {height[lead]:.2f}; merged into "
                                              f"{out[lead].plane.plane_id}"))
                     stats["merged"] += 1
+    if classify_support_surfaces:
+        stats["support_surfaces"] = _assign_support_surfaces(out, u, up, positions_by_id)
     return out, stats
+
+
+#: Heights of horizontal planes that differ by no more than this are one cluster (one surface).
+SUPPORT_CLUSTER_GAP_M = 0.08
+#: A storey floor spans at least this share of the footprint its walls enclose.
+STOREY_FLOOR_MIN_AREA_SHARE = 0.40
+
+
+def _assign_support_surfaces(out: List[OrientedPlane], u, up, positions_by_id) -> int:
+    """B09. Floor of a storey = the lowest height cluster of floor-role planes that reaches >= 2 wall bases and spans
+    >= STOREY_FLOOR_MIN_AREA_SHARE of the footprint those walls enclose; every other floor-role cluster is
+    ``support_surface`` (table top, step, shelf), never ``floor``. Wall bases = the lowest 0.1 m of each wall-role plane.
+    Fewer than two walls in the scene means the rule cannot be assessed: every role is left as it was. The area test is room_graph.floor_undersized_vs_floors (not a second copy). Mutates ``out``;
+    returns the number of planes turned into support surfaces."""
+    import dataclasses
+
+    import numpy as np
+    from scipy.spatial import cKDTree
+
+    from perception.architecture.classify import ArchitecturalElement
+    from perception.architecture.room_graph import (
+        FLOOR_HEIGHT_TOLERANCE_M, FLOOR_WALL_GAP_TOLERANCE_M, floor_undersized_vs_floors)
+
+    def pts_of(op):
+        return np.array([positions_by_id[t] for t in op.plane.inlier_ids if t in positions_by_id], dtype=float)
+
+    axes = _orthonormal_pair(u)
+    bases = []                                      # per wall: (base height, lateral (n,2) base points, 3-D base points)
+    for op in out:
+        if op.role == "wall":
+            p = pts_of(op)
+            if len(p) >= 3:
+                h = p @ u
+                low = p[h <= h.min() + 0.1]
+                bases.append((float(h.min()), np.stack([low @ a for a in axes], axis=1), low))
+    if len(bases) < 2:
+        return 0
+
+    floors = [(i, pts_of(op)) for i, op in enumerate(out) if op.role == "floor"]
+    floors = sorted(((float(np.mean(p @ u)), i, p) for i, p in floors if len(p) >= 3), key=lambda f: f[0])
+    clusters: List[list] = []
+    for f in floors:
+        if clusters and f[0] - clusters[-1][-1][0] <= SUPPORT_CLUSTER_GAP_M:
+            clusters[-1].append(f)
+        else:
+            clusters.append([f])
+
+    def element(eid, p3):
+        return ArchitecturalElement(element_id=eid, element_type="floor", source_plane_id=eid, reason="B09",
+                                    bounds_min=tuple(p3.min(axis=0)), bounds_max=tuple(p3.max(axis=0)))
+
+    count, storey_floor_h = 0, None
+    for cl in clusters:
+        h = float(np.mean([f[0] for f in cl]))
+        pts = np.vstack([f[2] for f in cl])
+        lat = np.stack([pts @ a for a in axes], axis=1)
+        near = [b for b in bases if abs(b[0] - h) <= FLOOR_HEIGHT_TOLERANCE_M]
+        reached = [b for b in near if cKDTree(lat).query(b[1])[0].min() <= FLOOR_WALL_GAP_TOLERANCE_M]
+        if len(reached) < 2:
+            why = f"reaches {len(reached)} wall base(s), a storey floor reaches at least 2"
+        else:
+            ref = element("storey", np.vstack([b[2] for b in reached]))
+            if floor_undersized_vs_floors(element("cluster", pts), [ref], up, fraction=STOREY_FLOOR_MIN_AREA_SHARE,
+                                          coverage_positions=pts.tolist()):
+                why = f"spans under {STOREY_FLOOR_MIN_AREA_SHARE:.0%} of the footprint its walls enclose"
+            elif storey_floor_h is not None and h - storey_floor_h <= FLOOR_HEIGHT_TOLERANCE_M:
+                why = f"is {h - storey_floor_h:.2f} above the storey floor already chosen"
+            else:
+                storey_floor_h, why = h, None
+        if why:
+            for _, i, _ in cl:
+                out[i] = dataclasses.replace(out[i], role="support_surface", uncertainty=Uncertainty(
+                    confidence=out[i].uncertainty.confidence,
+                    note=f"support surface at height {h:.2f}, not a floor: {why}"))
+                count += 1
+    return count
 
 
 #: Wall fragments of one wall: horizontal normals within this angle ...

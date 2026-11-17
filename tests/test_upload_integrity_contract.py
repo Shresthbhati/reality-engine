@@ -208,3 +208,30 @@ def test_artifacts_are_served_as_attachments_without_sniffing(client):
     art = client.get(f"/api/evidence/{r.json()['evidence_id']}/artifact")
     assert art.headers["x-content-type-options"] == "nosniff"
     assert art.headers["content-disposition"].startswith("attachment")
+
+
+def test_upload_check_file_count_limits_under_and_over(client):
+    """RE-SEC-000010: /api/uploads/check limits: 0 files -> 422, <= 300 -> 200, > 300 -> 413."""
+    # 1. 0 files
+    r_empty = client.post("/api/uploads/check", files=[])
+    assert r_empty.status_code == 422
+
+    # 2. Under limit (2 files)
+    img_data = _jpeg_with_exif(40)
+    files_ok = [
+        ("files", ("f1.jpg", img_data, "image/jpeg")),
+        ("files", ("f2.jpg", img_data, "image/jpeg")),
+    ]
+    r_ok = client.post("/api/uploads/check", files=files_ok)
+    assert r_ok.status_code == 200
+    assert len(r_ok.json()["files"]) == 2
+
+    # 3. Over limit (> 300 files)
+    files_over = [
+        ("files", (f"f_{i}.jpg", b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xdb\x00C", "image/jpeg"))
+        for i in range(301)
+    ]
+    r_over = client.post("/api/uploads/check", files=files_over)
+    assert r_over.status_code == 413
+    assert "at most 300 files" in r_over.text
+

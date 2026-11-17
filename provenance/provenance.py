@@ -29,10 +29,14 @@ class Uncertainty:
     The DEFAULT is 0.0 (unknown), never 1.0: a value whose producer did
     not state how sure it is must not read as certain. Callers that have
     actually measured or fixed a confidence pass it explicitly.
+
+    `calibrated` is False unless explicit measured physical ground truth was
+    used to calibrate the uncertainty (RE-GEO-000013).
     """
 
     confidence: float = 0.0
     note: Optional[str] = None
+    calibrated: bool = False
 
     def __post_init__(self):
         if not (0.0 <= self.confidence <= 1.0):
@@ -42,11 +46,17 @@ class Uncertainty:
         d = {"confidence": self.confidence}
         if self.note is not None:
             d["note"] = self.note
+        if self.calibrated:
+            d["calibrated"] = True
         return d
 
     @staticmethod
     def from_dict(data: dict) -> "Uncertainty":
-        return Uncertainty(confidence=data.get("confidence", 0.0), note=data.get("note"))
+        return Uncertainty(
+            confidence=data.get("confidence", 0.0),
+            note=data.get("note"),
+            calibrated=bool(data.get("calibrated", False)),
+        )
 
 
 @dataclass(frozen=True)

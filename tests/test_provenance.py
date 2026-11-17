@@ -33,3 +33,18 @@ def test_roundtrip_dict():
     p = Provenanced(value=42, provenance=Provenance.OBSERVED, uncertainty=Uncertainty(0.9, "lidar"))
     restored = Provenanced.from_dict(p.to_dict())
     assert restored == p
+
+
+def test_uncertainty_calibrated_default_and_roundtrip():
+    """RE-GEO-000013: Default uncertainty is uncalibrated unless explicitly calibrated."""
+    u_default = Uncertainty(0.7)
+    assert not u_default.calibrated
+    assert "calibrated" not in u_default.to_dict()
+
+    u_cal = Uncertainty(0.95, "laser_measured", calibrated=True)
+    assert u_cal.calibrated
+    d = u_cal.to_dict()
+    assert d.get("calibrated") is True
+    restored = Uncertainty.from_dict(d)
+    assert restored == u_cal
+

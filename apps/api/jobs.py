@@ -664,6 +664,23 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         job.stage = "checking_reconstruction_backend"
         job.heartbeat_at = utcnow()
         aw(db.commit())
+
+        # Licence Gate (BUILD_SPEC rule 3 & RE-SEC-000001):
+        # Refuse to run any model with a non-commercial or undeclared licence in the pipeline path.
+        models_to_check = []
+        params = getattr(job, "payload", None) or getattr(job, "parameters", None)
+        if isinstance(params, dict):
+            raw_models = params.get("models")
+            if isinstance(raw_models, (list, tuple)):
+                models_to_check.extend(raw_models)
+            elif isinstance(raw_models, str):
+                models_to_check.append(raw_models)
+            model_override = params.get("model") or params.get("depth_model") or params.get("detector_model")
+            if model_override and isinstance(model_override, str):
+                models_to_check.append(model_override)
+        if models_to_check:
+            from perception.model_registry import assert_production_licences
+            assert_production_licences(models_to_check)
         try:
             from engine.pipeline.vertical_slice import (
                 VerticalSliceError,

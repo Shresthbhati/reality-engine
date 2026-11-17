@@ -119,12 +119,15 @@ def classify_fixture(entity: Entity) -> str | None:
 
 def _get_entity_position(entity: Entity) -> Point3 | None:
     """Extract (x, y, z) position from entity transform or custom properties."""
-    tr = entity.transform or {}
-    pos = tr.get("position")
-    if isinstance(pos, dict) and "x" in pos and "y" in pos and "z" in pos:
-        return (float(pos["x"]), float(pos["y"]), float(pos["z"]))
-    if isinstance(pos, (list, tuple)) and len(pos) >= 3:
-        return (float(pos[0]), float(pos[1]), float(pos[2]))
+    tr = getattr(entity, "transform", None)
+    if isinstance(tr, (list, tuple)) and len(tr) == 4 and all(isinstance(row, (list, tuple)) and len(row) == 4 for row in tr):
+        return (float(tr[0][3]), float(tr[1][3]), float(tr[2][3]))
+    if isinstance(tr, dict):
+        pos = tr.get("position")
+        if isinstance(pos, dict) and "x" in pos and "y" in pos and "z" in pos:
+            return (float(pos["x"]), float(pos["y"]), float(pos["z"]))
+        if isinstance(pos, (list, tuple)) and len(pos) >= 3:
+            return (float(pos[0]), float(pos[1]), float(pos[2]))
 
     cp = entity.custom_properties or {}
     for key in ("position", "plan_obb_centre_m"):
@@ -288,7 +291,10 @@ def find_floor_elevation(
     pt_z = fixture_pos[2]
 
     for floor in floors:
-        f_cp = floor.custom_properties or {}
+        f_cp = getattr(floor, "custom_properties", None) or getattr(floor, "extra_fields", None) or {}
+        # Ignore support surfaces (table tops, shelves, steps) - only true storey floors define elevation (BUILD_SPEC B09)
+        if f_cp.get("role") == "support_surface" or getattr(floor, "type", "") == "support_surface":
+            continue
         f_pos = _get_entity_position(floor)
         floor_z = f_pos[2] if f_pos is not None else float(f_cp.get("elevation_m", default_z))
 

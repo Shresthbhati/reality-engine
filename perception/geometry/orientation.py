@@ -296,6 +296,73 @@ def consolidate_horizontal_roles(
                         confidence=0.0, note=f"fragment of the {role} at height {height[lead]:.2f}; merged into "
                                              f"{out[lead].plane.plane_id}"))
                     stats["merged"] += 1
+
+    # B09 support-plane separation rule: separate a storey's real floor from table tops, steps and shelves.
+    floor_indices = [i for i in range(len(out)) if out[i].role == "floor"]
+    wall_planes = [op for op in out if op.role == "wall"]
+    if len(floor_indices) > 1 and len(wall_planes) >= 2:
+        from perception.geometry.support_planes import split_floor_candidates
+
+        wall_base_heights = []
+        for wp in wall_planes:
+            w_pts = [positions_by_id[t] for t in wp.plane.inlier_ids if t in positions_by_id]
+            if w_pts:
+                wall_base_heights.append(float(np.min(np.asarray(w_pts) @ u)))
+
+        cand_heights = []
+        cand_areas = []
+        cand_wall_bases = []
+        for idx in floor_indices:
+            h = height.get(idx, float(np.dot(out[idx].normal, u) * -out[idx].d))
+            cand_heights.append(h)
+            pts = [positions_by_id[t] for t in out[idx].plane.inlier_ids if t in positions_by_id]
+            if len(pts) >= 3:
+                pts_arr = np.asarray(pts, dtype=float)
+                hs_p = pts_arr @ u
+                lateral = pts_arr - np.outer(hs_p, u)
+                axes = _orthonormal_pair(u)
+                ptp0 = float(np.ptp(lateral @ axes[0]))
+                ptp1 = float(np.ptp(lateral @ axes[1]))
+                area = max(ptp0 * ptp1, 0.01)
+            else:
+                area = 0.01
+            cand_areas.append(area)
+            if wall_base_heights:
+                wb_count = sum(1 for wbh in wall_base_heights if abs(wbh - h) <= 0.15)
+                cand_wall_bases.append(wb_count)
+            else:
+                cand_wall_bases.append(0)
+
+        sorted_pairs = sorted(enumerate(cand_heights), key=lambda x: x[1])
+        storeys: List[List[int]] = []
+        for orig_pos, h in sorted_pairs:
+            if not storeys or h - cand_heights[storeys[-1][-1]] > 1.8:
+                storeys.append([orig_pos])
+            else:
+                storeys.append(storeys.pop() + [orig_pos])
+
+        for storey_positions in storeys:
+            st_heights = [cand_heights[p] for p in storey_positions]
+            st_areas = [cand_areas[p] for p in storey_positions]
+            st_bases = [cand_wall_bases[p] for p in storey_positions]
+            st_footprint = max(max(st_areas), 1e-6)
+            st_roles = split_floor_candidates(
+                st_heights,
+                st_areas,
+                st_footprint,
+                st_bases,
+            )
+            for p, r in zip(storey_positions, st_roles):
+                if r == "support_surface":
+                    target_idx = floor_indices[p]
+                    out[target_idx] = dataclasses.replace(
+                        out[target_idx],
+                        role="support_surface",
+                        uncertainty=Uncertainty(
+                            confidence=0.7,
+                            note="horizontal support surface (table top, shelf, step), not storey floor slab",
+                        ),
+                    )
     return out, stats
 
 

@@ -56,7 +56,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GEO-000005 | DN | Room footprint ragged → direction snapping within 5°, honest polygonization | [V] tests/test_footprint_cleanup.py | done |
 | RE-GEO-000006 | DN | Missing wall gets closed by invention → report partial with gap length | [V] tests/test_footprint_cleanup.py | done |
 | RE-GEO-000007 | MP | DPT per-view depth residual 0.199 vs 0.117 for metric model → switch only if licence clears and A/B improves structure | [M] one scene | open |
-| RE-GEO-000008 | OF | Metric depth did not fix floor/ceiling → not a depth problem; see RE-GEO-000004 | [M] | B09 |
+| RE-GEO-000008 | OF | Metric depth did not fix floor/ceiling → not a depth problem; see RE-GEO-000004 | [V] tests/test_support_planes.py | done |
 | RE-GEO-000009 | DN | Points averaged ad hoc → inverse-variance VoxelCloud fusion with source tracking | [V] tests/test_voxel_cloud.py | done |
 | RE-GEO-000010 | DN | Empty space and unseen space look the same → voxel absent = not observed | [V] tests/test_voxel_cloud.py | done |
 | RE-GEO-000011 | DN | Dimensions lack provenance → robust fused measurements with used/rejected IDs | [V] tests/test_measurement_fusion.py | done |
@@ -70,8 +70,8 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GEO-000019 | DN | Mesh quality unknown → watertight / manifold / components verdict | [V] tests/test_quality_report_stage.py | done |
 | RE-GEO-000020 | VN | Openings cut by ad hoc geometry → robust booleans | [H] | later |
 | RE-GEO-000021 | RO | Domes, arches, vaults unrepresentable → surface-of-revolution and arch primitives | [H] | later |
-| RE-GEO-000022 | VN | Steps are not parts of stairs → stair ontology with step/riser components | [M] | B03, B09 |
-| RE-GEO-000023 | VN | Second storey can be read as a table → storey = floor with its own walls | [H] | B09 |
+| RE-GEO-000022 | VN | Steps are not parts of stairs → stair ontology with step/riser components | [V] config/ontology.yaml, tests/test_support_planes.py | done |
+| RE-GEO-000023 | VN | Second storey can be read as a table → storey = floor with its own walls | [V] perception/geometry/orientation.py, tests/test_support_planes.py | done |
 | RE-GEO-000024 | RO | Scale from known objects (door heights) → scale hypothesis marked `INFERRED` | [H] | later |
 | RE-GEO-000025 | VN | Collinear wall fragments (25 → 8 by consolidation) → merge by sweep along direction | [M] | B10 |
 | RE-PERF-000001 | MP | 10-photo run ~13 min, not re-timed after detector speed-up → time it, record per stage | [M] | B20 |

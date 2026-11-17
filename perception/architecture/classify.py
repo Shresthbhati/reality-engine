@@ -178,9 +178,9 @@ def classify_planes(
             elif plane.plane_id == highest[0].plane_id and h > lowest[1]:
                 label, reason = "ceiling", "highest horizontal plane in the room"
             else:
-                label, reason = "unknown", (
-                    "horizontal plane at a mid-height with other horizontal "
-                    "planes present -- floor/ceiling role not resolvable"
+                label, reason = "support_surface", (
+                    "horizontal support surface at mid-height (table top, shelf, step) "
+                    "between floor and ceiling"
                 )
             results.append(ArchitecturalElement(
                 element_id=f"{label}-{plane.plane_id}",

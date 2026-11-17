@@ -163,3 +163,56 @@ def test_validate_training_dataset_rejects_unreviewed_prelabels():
     reviewed = [{"entity_id": "gt-001", "review_status": "reviewed", "category": "furniture"}]
     assert ar.validate_training_dataset(reviewed) == reviewed
 
+
+def test_small_object_review_queue_quarantines_drafts_and_prevents_unreviewed_use():
+    """RE-PERC-000003: Review queue isolates unreviewed drafts from production and training."""
+    raw_drafts = [
+        {"entity_id": f"draft-{i:03d}", "category": "electrical", "subtype": "wall socket",
+         "bbox": [10.0 * i, 10.0 * i, 10.0 * i + 30.0, 10.0 * i + 30.0],
+         "review_status": "unreviewed", "image_id": "e1"}
+        for i in range(10)
+    ]
+    queue = ar.SmallObjectReviewQueue(raw_drafts)
+    assert queue.pending_count == 10
+    assert queue.reviewed_count == 0
+    assert queue.rejected_count == 0
+
+    # Ground truth export is empty when nothing reviewed
+    assert queue.get_ground_truth() == []
+
+    # Attempting to validate raw unreviewed drafts raises UnreviewedTrainingDataError
+    with pytest.raises(ar.UnreviewedTrainingDataError):
+        ar.validate_training_dataset(queue.get_pending())
+
+    # Approve one
+    app = queue.approve("draft-000", instance_id="socket-inst-01")
+    assert app["review_status"] == "reviewed"
+    assert app["instance_id"] == "socket-inst-01"
+    assert queue.pending_count == 9
+    assert queue.reviewed_count == 1
+
+    # Edit another
+    ed = queue.edit("draft-001", corrected_bbox=[15.0, 15.0, 45.0, 45.0], corrected_label="switch")
+    assert ed["review_status"] == "reviewed"
+    assert ed["subtype"] == "switch"
+    assert ed["bbox"] == [15.0, 15.0, 45.0, 45.0]
+    assert queue.pending_count == 8
+    assert queue.reviewed_count == 2
+
+    # Reject a false positive (e.g. railing as wiring)
+    rej = queue.reject("draft-002", reason="railing false positive")
+    assert rej["review_status"] == "rejected"
+    assert queue.pending_count == 7
+    assert queue.rejected_count == 1
+
+    # Verified ground truth now contains exactly the 2 approved/edited items
+    gt = queue.get_ground_truth()
+    assert len(gt) == 2
+    assert ar.validate_training_dataset(gt) == gt
+
+    # Export remaining pending to COCO for human review
+    coco = queue.export_coco(IMAGES, SIZES)
+    assert len(coco["annotations"]) == 7
+    assert coco["info"]["review_queue"] == "small_objects"
+
+

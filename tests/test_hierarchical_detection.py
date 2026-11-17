@@ -71,3 +71,30 @@ def test_blurry_region_sharpness_gating():
     t_gated = detect_hierarchy(IMG, "im1", d, _onto(), ["furniture/almirah"], min_crop_sharpness=10.0, low_score_threshold=0.45)
     assert "furniture/almirah/lock" not in list(t_gated.class_path)
 
+
+def test_hierarchical_calls_small_objects_when_min_pixels_exceeds_crop(monkeypatch):
+    """RE-PERC-000004: small_objects.py is reachable from the hierarchical detector."""
+    called = []
+
+    def fake_inspect(sub, detector, **kwargs):
+        called.append(kwargs)
+        from perception.entities.small_objects import InspectionResult, SmallDetection
+        return InspectionResult([
+            SmallDetection("furniture/almirah/handle", (50, 50, 90, 90), 0.85, "fine", "door handle")
+        ])
+
+    monkeypatch.setattr("perception.entities.small_objects.inspect_small_objects", fake_inspect)
+
+    nodes = [
+        OntologyNode("furniture/almirah", "almirah", prompts=("almirah",), components=("handle",)),
+        OntologyNode("furniture/almirah/handle", "handle", prompts=("door handle",), min_pixels=600),
+    ]
+    onto = Ontology(version="t", nodes={n.path: n for n in nodes})
+    t = detect_hierarchy(IMG, "im1", _Det(), onto, ["furniture/almirah"])
+
+    assert len(called) == 1
+    assert "door handle" in called[0]["prompts"]
+    paths = list(t.class_path)
+    assert "furniture/almirah/handle" in paths
+
+

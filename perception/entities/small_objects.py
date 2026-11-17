@@ -80,21 +80,112 @@ def _resize(img: np.ndarray, s: float) -> np.ndarray:
     return cv2.resize(img, (max(1, int(img.shape[1] * s)), max(1, int(img.shape[0] * s))), interpolation=cv2.INTER_AREA)
 
 
-def inspect_small_objects(image_rgb: np.ndarray, detector, *, regions: Optional[Sequence[Box]] = None, tile: int = 640,
-                          overlap: float = 0.25, coarse_max: int = 1024, min_score: float = 0.25) -> InspectionResult:
-    """``regions``: pixel boxes (e.g. wall segments) the fine pass is limited to; None = the whole image."""
+_SMALL_FITTING_WORDS = (
+    "handle", "hinge", "lock", "latch", "socket", "switch", "dimmer", "plug",
+    "port", "plate", "tap", "faucet", "drain", "thermostat", "junction",
+    "breaker", "bulb", "fitting", "wiring", "conduit",
+)
+SMALL_FITTING_MAX_SHARE = 0.05
+
+
+def plausible_small_fitting(
+    cls: taxonomy.EntityClass,
+    box: Box,
+    frame_size: Tuple[int, int],
+    tile_size: Optional[Tuple[int, int]] = None,
+    parent_box: Optional[Box] = None,
+    max_share: float = SMALL_FITTING_MAX_SHARE,
+) -> bool:
+    """Validate small fitting plausibility against parent box and physical size limits (RE-PERC-000002).
+
+    Suppresses false positives from tiled passes such as railings mislabeled as wiring
+    or expansive surface textures mislabeled as drains.
+    """
+    bx0, by0, bx1, by1 = box
+    bw = max(0.0, bx1 - bx0)
+    bh = max(0.0, by1 - by0)
+    fw, fh = frame_size
+
+    # Parent box containment check: center must lie strictly inside parent
+    if parent_box is not None:
+        cx = (bx0 + bx1) * 0.5
+        cy = (by0 + by1) * 0.5
+        px0, py0, px1, py1 = parent_box
+        if not (px0 <= cx <= px1 and py0 <= cy <= py1):
+            return False
+
+    label = cls.label.lower()
+    is_small = cls.small or (
+        cls.category in ("electrical", "plumbing", "opening")
+        and any(w in label for w in _SMALL_FITTING_WORDS)
+    )
+    if not is_small:
+        return True
+
+    # 1. Full-frame area ratio check
+    frame_area = max(1.0, float(fw * fh))
+    if (bw * bh) / frame_area > max_share:
+        return False
+
+    # 2. Tile-level plausibility checks
+    if tile_size is not None:
+        tw, th = tile_size
+        tile_area = max(1.0, float(tw * th))
+        tile_share = (bw * bh) / tile_area
+
+        # Compact fittings (drain, socket, switch, lock, handle, tap, thermostat)
+        if any(w in label for w in ("drain", "socket", "switch", "lock", "handle", "tap", "thermostat")):
+            # A drain or socket occupying > 25% of a tile is texture/wall false positive
+            if tile_share > 0.25:
+                return False
+            # Floor/wall texture mislabeled as drain: check excessive aspect ratio or width/height
+            if "drain" in label:
+                if bw > 0.40 * tw and bh > 0.40 * th:
+                    return False
+                aspect = max(bw, bh) / max(min(bw, bh), 1.0)
+                if aspect > 4.0:  # Linear streaks or railing edges are not drains
+                    return False
+
+        # Linear fittings (wiring, conduit): railing mislabeled as wiring
+        if any(w in label for w in ("wiring", "conduit")):
+            # A railing spanning across most of the tile horizontally AND vertically
+            if bw > 0.70 * tw and bh > 0.70 * th:
+                return False
+            if tile_share > 0.35:
+                return False
+
+    return True
+
+
+def inspect_small_objects(
+    image_rgb: np.ndarray,
+    detector,
+    *,
+    regions: Optional[Sequence[Box]] = None,
+    tile: int = 640,
+    overlap: float = 0.25,
+    coarse_max: int = 1024,
+    min_score: float = 0.25,
+    parent_box: Optional[Box] = None,
+    prompts: Optional[Sequence[str]] = None,
+    max_small_share: float = SMALL_FITTING_MAX_SHARE,
+) -> InspectionResult:
+    """``regions``: pixel boxes (e.g. wall segments) the fine pass is limited to; None = the whole image.
+
+    Includes parent-box containment and size verification to suppress tiled pass mislabels (RE-PERC-000002).
+    """
     if detector is None:
         return InspectionResult([], status="unavailable", note="no detector backend installed; nothing was inspected")
     ok, why = detector.available() if hasattr(detector, "available") else (True, "")
     if not ok:
         return InspectionResult([], status="unavailable", note=str(why))
     h, w = image_rgb.shape[:2]
-    small_prompts = sorted({p for c in taxonomy.small_classes() for p in c.prompts})
+    small_prompts = sorted(set(prompts)) if prompts else sorted({p for c in taxonomy.small_classes() for p in c.prompts})
     all_prompts = sorted({p for c in taxonomy.all_classes() for p in c.prompts})
     unmapped: List[str] = []
     dets: List[SmallDetection] = []
 
-    def collect(raw, dx: float, dy: float, scale: float, stage: str) -> None:
+    def collect(raw, dx: float, dy: float, scale: float, stage: str, tile_wh: Optional[Tuple[int, int]] = None) -> None:
         for r in raw:
             if r.score < min_score:
                 continue
@@ -103,8 +194,27 @@ def inspect_small_objects(image_rgb: np.ndarray, detector, *, regions: Optional[
                 unmapped.append(r.label)
                 continue
             b = r.box_xyxy
-            dets.append(SmallDetection(cls.id, (b[0] / scale + dx, b[1] / scale + dy, b[2] / scale + dx, b[3] / scale + dy),
-                                       float(r.score), stage, r.label))
+            full_box = (b[0] / scale + dx, b[1] / scale + dy, b[2] / scale + dx, b[3] / scale + dy)
+
+            # Plausibility check (parent box & size constraints)
+            if not plausible_small_fitting(
+                cls,
+                full_box,
+                (w, h),
+                tile_size=tile_wh,
+                parent_box=parent_box,
+                max_share=max_small_share,
+            ):
+                continue
+
+            # Region filter if regions provided: center must land in at least one region
+            if regions is not None:
+                cx = (full_box[0] + full_box[2]) * 0.5
+                cy = (full_box[1] + full_box[3]) * 0.5
+                if not any(rx0 <= cx <= rx1 and ry0 <= cy <= ry1 for rx0, ry0, rx1, ry1 in regions):
+                    continue
+
+            dets.append(SmallDetection(cls.id, full_box, float(r.score), stage, r.label))
 
     s = min(1.0, coarse_max / max(h, w))
     coarse = image_rgb if s >= 1.0 else _resize(image_rgb, s)
@@ -113,5 +223,6 @@ def inspect_small_objects(image_rgb: np.ndarray, detector, *, regions: Optional[
     tiles = tile_boxes(w, h, tile, overlap)
     run = [t for t in tiles if regions is None or _intersects(t, regions)]
     for (x0, y0, x1, y1) in run:
-        collect(detector.detect(image_rgb[y0:y1, x0:x1], small_prompts), float(x0), float(y0), 1.0, "fine")
+        tw, th = x1 - x0, y1 - y0
+        collect(detector.detect(image_rgb[y0:y1, x0:x1], small_prompts), float(x0), float(y0), 1.0, "fine", tile_wh=(tw, th))
     return InspectionResult(nms(dets), tiles_run=len(run), tiles_total=len(tiles), unmapped_labels=sorted(set(unmapped)))

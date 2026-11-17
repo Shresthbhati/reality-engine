@@ -99,11 +99,45 @@ def detect_hierarchy(image_rgb: np.ndarray, image_id: str, detector, ontology: O
         phrases = list(queries)
         sub = image_rgb[y0:y1, x0:x1]
         found = []
-        for k in range(0, len(phrases), PROMPTS_PER_PASS):
-            if calls >= budget_calls:
-                break
+
+        # BUILD_SPEC B04 / RE-PERC-000004: If min_pixels exceeds crop size or node is small,
+        # call perception.entities.small_objects.inspect_small_objects
+        use_small_tiling = False
+        node = ontology.get(path)
+        crop_min_dim = min(x1 - x0, y1 - y0)
+        if node and node.min_pixels > 0 and crop_min_dim < node.min_pixels:
+            use_small_tiling = True
+        elif kind != "root":
+            for ph, (cpath, comp) in queries.items():
+                cnode = ontology.get(cpath)
+                if cnode and (
+                    (cnode.min_pixels > 0 and crop_min_dim < cnode.min_pixels)
+                    or getattr(cnode, "geometry", None) == "small_fitting"
+                ):
+                    use_small_tiling = True
+                    break
+
+        if use_small_tiling and calls < budget_calls:
+            from types import SimpleNamespace
+            from perception.entities.small_objects import inspect_small_objects
+
             calls += 1
-            found += list(detector.detect(sub, phrases[k:k + PROMPTS_PER_PASS]))
+            insp = inspect_small_objects(
+                sub,
+                detector,
+                tile=min(640, max(crop_min_dim, 64)),
+                overlap=0.25,
+                parent_box=(0, 0, x1 - x0, y1 - y0),
+                prompts=phrases,
+            )
+            for sd in insp.detections:
+                found.append(SimpleNamespace(label=sd.raw_label, score=sd.score, box=sd.box))
+        else:
+            for k in range(0, len(phrases), PROMPTS_PER_PASS):
+                if calls >= budget_calls:
+                    break
+                calls += 1
+                found += list(detector.detect(sub, phrases[k:k + PROMPTS_PER_PASS]))
         by_class: dict[str, list] = {}
         for d in found:
             if d.label in queries:

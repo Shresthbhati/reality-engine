@@ -25,12 +25,12 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-ARCH-000013 | DN | Containment has two sources → unified via `world_ir/relations.py` and `/api/worlds/{id}/find` | [V] tests/test_relations.py, tests/test_query_find.py | done |
 | RE-ARCH-000014 | VN | Artifact lineage not queryable → DAG of artifact → producing stage, invalidate by reverse BFS | [H] | B01 |
 | RE-PERC-000001 | DN | 19 flat prompts for everything → hierarchical whole → part detection | [V] tests/test_hierarchical_detection.py | done |
-| RE-PERC-000002 | OF | Tiled small-object pass mislabels (railing as wiring, texture as drain) → parent-box and size checks | [M] 10 images | B04 |
-| RE-PERC-000003 | OF | 678 unreviewed small-object drafts, no ground truth → review queue before any use | [M] | open |
-| RE-PERC-000004 | OF | `small_objects.py` not reachable from the API → called from hierarchical detector | [M] | B04 |
+| RE-PERC-000002 | DN | Tiled small-object pass mislabels (railing as wiring, texture as drain) → parent-box and size checks | [V] tests/test_entity_perception.py | done |
+| RE-PERC-000003 | DN | 678 unreviewed small-object drafts, no ground truth → review queue before any use | [V] tests/test_annotation_review.py | done |
+| RE-PERC-000004 | DN | `small_objects.py` not reachable from the API → called from hierarchical detector | [V] tests/test_hierarchical_detection.py | done |
 | RE-PERC-000005 | OF | SAM 2 backend exists, package and weights absent, 0/3 reachable → install, wire, RLE store | [M] | B06 |
 | RE-PERC-000006 | VN | 3D lifting uses boxes, includes background → lift from mask pixels | [M] | B06 |
-| RE-PERC-000007 | OF | DINOv2 re-id code not wired into association → embeddings passed to `associate(appearance=…)` | [M], [V] param exists | B07 |
+| RE-PERC-000007 | DN | DINOv2 re-id code not wired into association → embeddings passed to `associate(appearance=…)` | [V] tests/test_appearance_embeddings.py | done |
 | RE-PERC-000008 | DN | Identity joining order-dependent → global min-cost flow LP association | [V] tests/test_global_association.py | done |
 | RE-PERC-000009 | DN | Two detections in one photo can merge → same-image cannot-link constraints | [V] tests/test_global_association.py | done |
 | RE-PERC-000010 | DN | No attributes → margin-gated attribute classifier with multi-view fusion | [V] tests/test_attribute_classification.py | done |

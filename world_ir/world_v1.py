@@ -256,7 +256,7 @@ class WorldIR:
         return d
 
     def _to_dict_v1(self) -> dict:
-        return {
+        d = {
             "schema_version": 1,
             "id": self.id,
             "name": self.name,
@@ -390,11 +390,6 @@ class WorldIR:
     def coordinate_system(self) -> Frame:
         """Backward-compatible alias for coordinate_frame (old world.py name)."""
         return self.coordinate_frame
-
-    def topology(self) -> TopologyGraph:
-        """Containment + connectivity DERIVED from the current entity
-        relationships -- computed on demand, never stale, never stored."""
-        return TopologyGraph.from_registry(list(self.entities.values()))
 
 
     def compute_bounds(self) -> tuple[Optional[tuple[float, float, float]], Optional[tuple[float, float, float]]]:

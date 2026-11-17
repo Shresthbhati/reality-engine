@@ -328,7 +328,8 @@ def consolidate_horizontal_roles(
                 area = 0.01
             cand_areas.append(area)
             if wall_base_heights:
-                wb_count = sum(1 for wbh in wall_base_heights if abs(wbh - h) <= 0.15)
+                # 0.25m tolerance accounts for grid quantization, baseboards, and wall-base separation
+                wb_count = sum(1 for wbh in wall_base_heights if abs(wbh - h) <= 0.25)
                 cand_wall_bases.append(wb_count)
             else:
                 cand_wall_bases.append(0)

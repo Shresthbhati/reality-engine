@@ -64,3 +64,73 @@ def test_find_floor_elevation_ignores_support_surfaces():
     # Fixture at z=1.2 (e.g. wall switch)
     elev = find_floor_elevation((1.0, 0.0, 1.2), [true_floor, table_surface])
     assert elev == 0.0
+
+
+def test_support_surfaces_in_full_reconstruction_workflow():
+    from engine.compiler import CompileOptions, compile_reconstruction_to_world
+    from provenance import Uncertainty
+    from reconstruction.backend.interface import (
+        ReconstructedCameraPose,
+        ReconstructedPoint,
+        ReconstructionResult,
+    )
+    from world_ir.schema_v1 import EntityType
+    from world_ir.validation import validate_world_ir
+
+    def _pt(x, y, z, c=[0]):
+        c[0] += 1
+        return ReconstructedPoint(
+            position=(x, y, z),
+            track_id=f"pt-{c[0]:05d}",
+            source_evidence_ids=["ev-1"],
+            uncertainty=Uncertainty(1.0, "synthetic"),
+        )
+
+    pts = []
+    # Floor at y=0.0 (3x3m)
+    for xi in range(31):
+        for zi in range(31):
+            pts.append(_pt(xi * 0.1, 0.0, zi * 0.1))
+    # Ceiling at y=2.5
+    for xi in range(31):
+        for zi in range(31):
+            pts.append(_pt(xi * 0.1, 2.5, zi * 0.1))
+    # 4 walls bounding the room
+    for yi in range(13):
+        for zi in range(31):
+            pts.append(_pt(0.0, yi * 0.2, zi * 0.1))
+            pts.append(_pt(3.0, yi * 0.2, zi * 0.1))
+        for xi in range(31):
+            pts.append(_pt(xi * 0.1, yi * 0.2, 0.0))
+            pts.append(_pt(xi * 0.1, yi * 0.2, 3.0))
+
+    # Tabletop at y=0.75 (1x1m interior surface)
+    for xi in range(11):
+        for zi in range(11):
+            pts.append(_pt(1.0 + xi * 0.1, 0.75, 1.0 + zi * 0.1))
+
+    # Shelf at y=1.5 (1.3x0.6m interior surface)
+    for xi in range(14):
+        for zi in range(7):
+            pts.append(_pt(0.2 + xi * 0.1, 1.5, 0.2 + zi * 0.1))
+
+    cams = [
+        ReconstructedCameraPose("ev-0", (1.5, 1.8, 1.5), (1.0, 0.0, 0.0, 0.0)),
+        ReconstructedCameraPose("ev-1", (1.0, 1.8, 2.0), (1.0, 0.0, 0.0, 0.0)),
+        ReconstructedCameraPose("ev-2", (2.0, 1.8, 1.0), (1.0, 0.0, 0.0, 0.0)),
+    ]
+    res = ReconstructionResult(points=pts, camera_poses=cams, registration_status="success")
+    world, diag = compile_reconstruction_to_world(res, CompileOptions(seed=42))
+
+    assert diag.planes_by_role["floor"] == 1
+    assert diag.planes_by_role["ceiling"] == 1
+    assert diag.planes_by_role["wall"] == 4
+    assert diag.planes_by_role["support_surface"] == 2
+    assert diag.rooms_detected == 1
+
+    support_ents = [e for e in world.entities.values() if e.type is EntityType.SUPPORT_SURFACE]
+    assert len(support_ents) == 2
+
+    report = validate_world_ir(world)
+    assert report.is_valid(), report.messages()
+

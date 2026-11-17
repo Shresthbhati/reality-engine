@@ -23,6 +23,7 @@ from apps.api.auth import (
     Role,
     enforce_project_isolation,
     get_auth_context,
+    is_global_admin,
     issue_share_token,
     revoke_share_token_in_memory,
     verify_share_token,
@@ -83,7 +84,7 @@ async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db), auth: 
         longitude=require_longitude(body.longitude) if body.longitude is not None else None,
         coverage=require_json_size(body.coverage, "coverage"),
         owner_id=auth.user_id,
-        team_id=auth.tenant_id if auth.tenant_id != "default" else None,
+        team_id=auth.tenant_id or "default",
     )
     db.add(w)
     db.add(
@@ -136,7 +137,7 @@ async def import_world_package(
         name=imported_world.name or f"Imported World {target_id[:8]}",
         description=f"Imported from package archive {file.filename or ''}",
         owner_id=auth.user_id,
-        team_id=auth.tenant_id if auth.tenant_id != "default" else None,
+        team_id=auth.tenant_id or "default",
     )
     db.add(w)
     await db.commit()
@@ -193,11 +194,8 @@ async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)
     if status not in WORLD_STATUSES:
         raise HTTPException(422, f"status must be one of {', '.join(WORLD_STATUSES)}")
     stmt = select(World).where(World.status == status)
-    if auth.role != Role.SYSTEM_ADMIN:
-        if auth.tenant_id == "default":
-            stmt = stmt.where(or_(World.team_id.is_(None), World.team_id == "default"))
-        else:
-            stmt = stmt.where(World.team_id == auth.tenant_id)
+    if not is_global_admin(auth):
+        stmt = stmt.where(World.team_id == auth.tenant_id)
     res = await db.execute(stmt.order_by(World.updated_at.desc()).limit(200))
     ses_counts = dict(
         (await db.execute(

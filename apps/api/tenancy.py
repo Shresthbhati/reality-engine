@@ -24,8 +24,8 @@ ENTITY_MODELS = {"world": World, "session": Session, "evidence": Evidence, "uplo
 
 
 def team_stamp(auth: AuthContext) -> str | None:
-    """The team_id a row created by this caller carries (same rule as create_world: the default tenant is unowned)."""
-    return auth.tenant_id if auth.tenant_id != "default" else None
+    """The team_id a row created by this caller carries (stamped with creator tenant)."""
+    return auth.tenant_id or "default"
 
 
 async def team_for_session(db: AsyncSession, session_id: str | None, auth: AuthContext) -> str | None:
@@ -52,11 +52,13 @@ async def assert_visible(db: AsyncSession, model, row_id: str | None, auth: Auth
 
 
 def visible(model, auth: AuthContext):
-    """SQL predicate for 'this caller may see the row'; None = no restriction (SYSTEM_ADMIN)."""
-    if auth.role == Role.SYSTEM_ADMIN:
+    """SQL predicate for 'this caller may see the row'; None = no restriction (SYSTEM_ADMIN).
+
+    Cross-tenant visibility of NULL ownership records eliminated (Phase 1).
+    Only SYSTEM_ADMIN may see unowned legacy records.
+    """
+    if auth.role == Role.SYSTEM_ADMIN or (auth.role >= Role.ADMIN and auth.tenant_id in ("root", "system")):
         return None
-    if auth.tenant_id == "default":
-        return or_(model.team_id.is_(None), model.team_id == "default")
     return model.team_id == auth.tenant_id
 
 

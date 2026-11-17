@@ -369,7 +369,7 @@ VALID_EVIDENCE_STATES = (
     {p.value for p in Provenance}
     | {"OBSERVED", "PARTIALLY_OBSERVED", "OCCLUDED", "UNOBSERVED", "INFERRED", "PRIOR_GENERATED", "CONFLICTED", "UNKNOWN"}
 )
-_SURFACE_TYPES = {EntityType.WALL, EntityType.FLOOR, EntityType.CEILING}
+_SURFACE_TYPES = {EntityType.WALL, EntityType.FLOOR, EntityType.CEILING, EntityType.SUPPORT_SURFACE}
 _OPENING_TYPES = {EntityType.DOOR, EntityType.WINDOW, EntityType.OPENING}
 _SPACE_TYPES = {EntityType.ROOM, EntityType.CORRIDOR}
 _METRIC_UNITS = {"m", "m2", "m3", "mm", "cm", "km", "meter", "meters", "metre", "metres"}

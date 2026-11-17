@@ -107,6 +107,13 @@ jobs:
             tests/test_clash_detection_bcf.py \
             tests/test_collab_telepresence.py \
             tests/test_section_elevation_drawings.py \
+            tests/test_adversarial_security.py \
+            tests/test_b03_unified_ontology.py \
+            tests/test_support_planes.py \
+            tests/test_world_compiler.py \
+            tests/test_stage_artifacts.py \
+            tests/test_stage_resume.py \
+            tests/test_stage_checkpoints.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────
@@ -183,10 +190,8 @@ jobs:
           cache: "pip"
       - name: Install lint tools
         run: pip install ruff mypy
-      - name: ruff check
-        run: ruff check apps/ engine/ world_ir/ evidence/ reconstruction/ exporters/ sdk/ worldstore/ registration/ trajectories/ uncertainty/ provenance/ events/ perception/ --exit-zero
-      - name: mypy (core packages, best-effort)
-        run: mypy apps/cli/main.py --ignore-missing-imports --no-error-summary || true
+      - name: Static analysis gate (controlled baseline, zero-exit removed)
+        run: python scripts/ci_static_analysis_gate.py --fail-on-regression
 
   security:
     name: Security & Secret Scan (RE-SEC-000009)

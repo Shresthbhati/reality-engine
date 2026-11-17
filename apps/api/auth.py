@@ -115,8 +115,14 @@ class AuthContext:
 
 
 # -------------------------------------------------------------------------------------------------
-# Scoped Token Signing & Verification
+# Scoped Token Signing & Verification (Phase 1 Security Hardening)
 # -------------------------------------------------------------------------------------------------
+
+_DEV_FALLBACK_SECRET: str | None = None
+DEFAULT_TOKEN_ISSUER = "reality-engine"
+DEFAULT_TOKEN_AUDIENCE = "reality-engine-api"
+DEFAULT_TOKEN_TTL_S = 86400
+
 
 def _get_signing_secret() -> str:
     key = os.environ.get("REALITY_SIGNING_KEY") or os.environ.get("REALITY_API_TOKEN")
@@ -125,7 +131,13 @@ def _get_signing_secret() -> str:
     env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or "").lower()
     if env in ("production", "prod", "staging"):
         raise RuntimeError("FATAL SEC-002: REALITY_SIGNING_KEY or REALITY_API_TOKEN must be configured in production mode")
-    return "reality-default-dev-secret-key"
+    # In development/test mode: generate a secure ephemeral secret per process run
+    # instead of a static hardcoded string ("reality-default-dev-secret-key") that anyone can forge tokens with.
+    global _DEV_FALLBACK_SECRET
+    if _DEV_FALLBACK_SECRET is None:
+        import secrets
+        _DEV_FALLBACK_SECRET = secrets.token_hex(32)
+    return _DEV_FALLBACK_SECRET
 
 
 def issue_scoped_token(
@@ -134,45 +146,112 @@ def issue_scoped_token(
     role: Role | str,
     secret: str | None = None,
     timestamp: int | None = None,
+    expires_in_s: int = DEFAULT_TOKEN_TTL_S,
+    issuer: str = DEFAULT_TOKEN_ISSUER,
+    audience: str = DEFAULT_TOKEN_AUDIENCE,
 ) -> str:
-    """Issue a cryptographically signed scoped bearer token."""
+    """Issue a cryptographically signed scoped bearer token with expiry, issuer, and audience (Phase 1)."""
     role_str = role.value if isinstance(role, Role) else str(role).lower()
     ts = timestamp if timestamp is not None else int(time.time())
+    exp = ts + expires_in_s
     sec = secret or _get_signing_secret()
-    payload = f"{tenant_id}:{user_id}:{role_str}:{ts}"
+    payload = f"{tenant_id}:{user_id}:{role_str}:{ts}:{exp}:{issuer}:{audience}"
     sig = hmac.new(sec.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
-    return f"v1:{payload}:{sig}"
+    return f"v2:{payload}:{sig}"
 
 
-def verify_scoped_token(token: str, secret: str | None = None) -> AuthContext | None:
-    """Verify and parse a scoped bearer token in constant time."""
-    parts = token.strip().split(":")
-    if len(parts) != 6 or parts[0] != "v1":
+def verify_scoped_token(
+    token: str,
+    secret: str | None = None,
+    expected_issuer: str | None = None,
+    expected_audience: str | None = None,
+) -> AuthContext | None:
+    """Verify and parse a scoped bearer token in constant time.
+
+    Enforces HMAC signature, expiration timestamp, clock skew (<= 60s),
+    issuer validation, and audience validation (Phase 1).
+    """
+    token_str = token.strip()
+    parts = token_str.split(":")
+    if len(parts) < 6:
         return None
-    _, tenant_id, user_id, role_str, ts_str, sig = parts
+    version = parts[0]
     sec = secret or _get_signing_secret()
-    payload = f"{tenant_id}:{user_id}:{role_str}:{ts_str}"
-    expected_sig = hmac.new(sec.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
-    if not hmac.compare_digest(sig.encode("utf-8"), expected_sig.encode("utf-8")):
-        return None
-    try:
-        ts = int(ts_str)
-    except ValueError:
-        return None
     now = int(time.time())
-    max_age_s = int(os.environ.get("REALITY_TOKEN_MAX_AGE_S", 86400))
-    if max_age_s > 0 and (ts < (now - max_age_s) or ts > (now + 300)):
-        return None
-    try:
-        role = Role(role_str)
-    except ValueError:
-        return None
-    return AuthContext(
-        user_id=user_id,
-        tenant_id=tenant_id,
-        role=role,
-        is_authenticated=True,
-    )
+    clock_skew_s = 60
+
+    if version == "v2":
+        # v2:{tenant_id}:{user_id}:{role_str}:{ts}:{exp}:{iss}:{aud}:{sig}
+        if len(parts) != 9:
+            return None
+        _, tenant_id, user_id, role_str, ts_str, exp_str, iss, aud, sig = parts
+        payload = f"{tenant_id}:{user_id}:{role_str}:{ts_str}:{exp_str}:{iss}:{aud}"
+        expected_sig = hmac.new(sec.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+        if not hmac.compare_digest(sig.encode("utf-8"), expected_sig.encode("utf-8")):
+            return None
+        try:
+            ts = int(ts_str)
+            exp = int(exp_str)
+        except ValueError:
+            return None
+
+        # Expiry check: reject expired tokens
+        if now > exp + clock_skew_s:
+            return None
+        # Future token check (clock skew)
+        if ts > now + clock_skew_s:
+            return None
+
+        # Issuer check
+        req_iss = expected_issuer or os.environ.get("REALITY_TOKEN_ISSUER", DEFAULT_TOKEN_ISSUER)
+        if iss != req_iss:
+            return None
+
+        # Audience check
+        req_aud = expected_audience or os.environ.get("REALITY_TOKEN_AUDIENCE", DEFAULT_TOKEN_AUDIENCE)
+        if aud != req_aud:
+            return None
+
+        try:
+            role = Role(role_str)
+        except ValueError:
+            return None
+
+        return AuthContext(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            role=role,
+            is_authenticated=True,
+        )
+
+    elif version == "v1":
+        # v1:{tenant_id}:{user_id}:{role_str}:{ts}:{sig} (backward compatibility)
+        if len(parts) != 6:
+            return None
+        _, tenant_id, user_id, role_str, ts_str, sig = parts
+        payload = f"{tenant_id}:{user_id}:{role_str}:{ts_str}"
+        expected_sig = hmac.new(sec.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+        if not hmac.compare_digest(sig.encode("utf-8"), expected_sig.encode("utf-8")):
+            return None
+        try:
+            ts = int(ts_str)
+        except ValueError:
+            return None
+        max_age_s = int(os.environ.get("REALITY_TOKEN_MAX_AGE_S", 86400))
+        if max_age_s > 0 and (ts < (now - max_age_s) or ts > (now + clock_skew_s)):
+            return None
+        try:
+            role = Role(role_str)
+        except ValueError:
+            return None
+        return AuthContext(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            role=role,
+            is_authenticated=True,
+        )
+
+    return None
 
 
 # -------------------------------------------------------------------------------------------------
@@ -188,9 +267,10 @@ async def check_share_token_not_revoked(token: str) -> bool:
     if token in _REVOKED_SHARE_TOKENS:
         return False
     try:
+        from sqlalchemy import select
+
         from apps.api.db import get_sessionmaker
         from apps.api.models import WorldShareLink
-        from sqlalchemy import select
         maker = get_sessionmaker()
         async with maker() as db:
             res = await db.execute(select(WorldShareLink).where(WorldShareLink.token == token))
@@ -383,10 +463,12 @@ async def auth_middleware(request: Request, call_next):
                 return _unauthorized("Missing, expired, or invalid share token")
         # Next check global master API token if configured
         elif global_token and hmac.compare_digest(supplied.encode("utf-8"), global_token.encode("utf-8")):
+            req_tenant = request.headers.get("x-tenant-id", "default")
+            effective_role = Role.SYSTEM_ADMIN if (requested_role == Role.SYSTEM_ADMIN or req_tenant in ("root", "system")) else requested_role
             auth_ctx = AuthContext(
                 user_id=request.headers.get("x-user-id", "root"),
-                tenant_id=request.headers.get("x-tenant-id", "default"),
-                role=Role.SYSTEM_ADMIN if requested_role in (Role.ADMIN, Role.SYSTEM_ADMIN) else requested_role,
+                tenant_id=req_tenant,
+                role=effective_role,
                 is_authenticated=True,
             )
         else:
@@ -401,7 +483,7 @@ async def auth_middleware(request: Request, call_next):
         share_param = request.query_params.get("share_token")
         if share_param and share_param.startswith("sh1:"):
             share_ctx = verify_share_token(share_param)
-            if share_ctx is not None:
+            if share_ctx is not None and await check_share_token_not_revoked(share_param):
                 auth_ctx = share_ctx
             else:
                 return _unauthorized("Missing, expired, or invalid share token")
@@ -415,10 +497,12 @@ async def auth_middleware(request: Request, call_next):
                 _warned = True
                 log.warning("REALITY_API_TOKEN is not set: API is unauthenticated (loopback clients only). "
                             "Set it before exposing the API beyond this machine.")
+            req_tenant = request.headers.get("x-tenant-id", "default")
+            effective_role = Role.SYSTEM_ADMIN if (requested_role == Role.SYSTEM_ADMIN or req_tenant in ("root", "system")) else requested_role
             auth_ctx = AuthContext(
                 user_id=request.headers.get("x-user-id", "local"),
-                tenant_id=request.headers.get("x-tenant-id", "default"),
-                role=Role.SYSTEM_ADMIN if requested_role in (Role.ADMIN, Role.SYSTEM_ADMIN) else requested_role,
+                tenant_id=req_tenant,
+                role=effective_role,
                 is_authenticated=True,
                 is_loopback=True,
             )
@@ -450,8 +534,13 @@ def get_auth_context(request: Request) -> AuthContext:
 
 
 def is_global_admin(auth: AuthContext) -> bool:
-    """Check if the context has cross-tenant / global administrator authority."""
-    return auth.role == Role.SYSTEM_ADMIN or (auth.role >= Role.ADMIN and auth.tenant_id in ("root", "system", "admin"))
+    """Check if the context has cross-tenant / global administrator authority.
+
+    Only SYSTEM_ADMIN (or root/system tenant admins) has cross-tenant authority.
+    A tenant administrator on tenant-b or tenant-a has Role.ADMIN and is strictly
+    isolated to their own tenant.
+    """
+    return auth.role == Role.SYSTEM_ADMIN or (auth.role >= Role.ADMIN and auth.tenant_id in ("root", "system"))
 
 
 def enforce_project_isolation(resource: Any, auth: AuthContext) -> None:
@@ -465,9 +554,10 @@ def enforce_project_isolation(resource: Any, auth: AuthContext) -> None:
     if auth.tenant_id == "shared" and auth.project_id:
         return
     team_id = getattr(resource, "team_id", None) or getattr(resource, "tenant_id", None)
-    if team_id and team_id != auth.tenant_id:
-        # Fail closed with 404 to prevent resource existence enumeration across tenants
+    if team_id is None:
+        # Cross-tenant visibility of records with NULL ownership eliminated (Phase 1):
+        # Unowned / legacy records are strictly hidden from non-global-admin tenants.
         raise HTTPException(status_code=404, detail="Resource not found")
-    if team_id is None and auth.tenant_id != "default":
-        # SEC-003: Unowned legacy records (team_id is None) are only visible to the default tenant or SYSTEM_ADMIN
+    if team_id != auth.tenant_id:
+        # Fail closed with 404 to prevent resource existence enumeration across tenants
         raise HTTPException(status_code=404, detail="Resource not found")

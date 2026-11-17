@@ -77,6 +77,7 @@ _ROLE_TO_ENTITY_TYPE: Dict[str, EntityType] = {
     "wall": EntityType.WALL,
     "floor": EntityType.FLOOR,
     "ceiling": EntityType.CEILING,
+    "support_surface": EntityType.SUPPORT_SURFACE,
 }
 
 
@@ -244,7 +245,7 @@ def promote_plane_to_entity(
     if entity_type is None:
         raise PlanePromotionError(
             f"plane {oriented.plane.plane_id} has role '{oriented.role}' -- only "
-            "wall/floor/ceiling planes can be promoted as structure; unknown-role "
+            "wall/floor/ceiling/support_surface planes can be promoted as structure; unknown-role "
             "planes stay unpromoted rather than typed by guesswork"
         )
 

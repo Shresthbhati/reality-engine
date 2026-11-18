@@ -40,10 +40,21 @@ LICENSES.yaml convention (see the ledger sync in this change).
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from world_ir.schema_v1 import Entity, EntityType, Geometry, GeometryType, RelationshipKind
+from provenance import Provenance
+from world_ir.schema_v1 import (
+    Entity,
+    EntityType,
+    Geometry,
+    GeometryType,
+    Relationship,
+    RelationshipKind,
+    Vector3,
+)
+from world_ir.world_v1 import WorldIR
 
 #: WorldIR EntityType -> IFC4 element class. Everything not listed
 #: exports as IfcBuildingElementProxy (the honest IFC answer for "a
@@ -62,6 +73,9 @@ _ENTITY_IFC_CLASS = {
     EntityType.BUILDING.value: "IfcBuilding",
     EntityType.ROOM.value: "IfcSpace",
     EntityType.FURNITURE.value: "IfcFurnishingElement",
+    EntityType.STOREY.value: "IfcBuildingStorey",
+    EntityType.LEVEL.value: "IfcBuildingStorey",
+    EntityType.CORRIDOR.value: "IfcSpace",
 }
 
 _IMPORT_ERROR_MESSAGE = (
@@ -247,6 +261,81 @@ def _find_host_wall_id(world, entity: Entity, wall_ids: Sequence[str]) -> Option
     return None
 
 
+def _get_storey_elevation(world: WorldIR, entity: Entity) -> float:
+    """Extract measured elevation for a storey entity."""
+    cp = getattr(entity, "custom_properties", None) or {}
+    for key in ("elevation_m", "floor_height_m", "elevation", "height_m"):
+        val = cp.get(key)
+        if val is not None:
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                pass
+    geom = _get_primary_geom(world, entity)
+    if geom and geom.bounds_min is not None:
+        return float(geom.bounds_min.z)
+    return 0.0
+
+
+def _resolve_target_storey(
+    world: WorldIR,
+    entity: Entity,
+    storeys_by_id: dict[str, tuple[Any, float]],
+    default_storey: Any,
+) -> Any:
+    """Find the matching IfcBuildingStorey for an entity."""
+    # 1. Direct relationship to storey
+    for rel in getattr(entity, "relationships", ()):
+        if rel.target_id in storeys_by_id and rel.kind in (
+            RelationshipKind.PART_OF,
+            RelationshipKind.INSIDE,
+            RelationshipKind.ATTACHED_TO,
+            "part_of",
+            "inside",
+        ):
+            return storeys_by_id[rel.target_id][0]
+
+    # 2. Parent ID is a storey
+    parent_id = getattr(entity, "parent_id", None)
+    if parent_id and parent_id in storeys_by_id:
+        return storeys_by_id[parent_id][0]
+
+    # 3. custom_properties["storey_id"]
+    cp = getattr(entity, "custom_properties", None) or {}
+    s_id = cp.get("storey_id")
+    if s_id and s_id in storeys_by_id:
+        return storeys_by_id[s_id][0]
+
+    # 4. Indirect through a parent room
+    for rel in getattr(entity, "relationships", ()):
+        if rel.kind in (RelationshipKind.INSIDE, RelationshipKind.PART_OF, "inside", "part_of"):
+            target_ent = world.entities.get(rel.target_id)
+            if target_ent and target_ent.type == EntityType.ROOM:
+                for r_rel in getattr(target_ent, "relationships", ()):
+                    if r_rel.target_id in storeys_by_id:
+                        return storeys_by_id[r_rel.target_id][0]
+                room_s_id = (getattr(target_ent, "custom_properties", None) or {}).get("storey_id")
+                if room_s_id and room_s_id in storeys_by_id:
+                    return storeys_by_id[room_s_id][0]
+
+    # 5. By elevation matching if multiple storeys exist
+    real_storeys = {k: v for k, v in storeys_by_id.items() if k != "_default"}
+    if len(real_storeys) > 1:
+        geom = _get_primary_geom(world, entity)
+        if geom and geom.bounds_min is not None:
+            z = geom.bounds_min.z
+            candidate = None
+            cand_elev = -float("inf")
+            for _sid, (s_elem, elev) in real_storeys.items():
+                if elev <= z + 0.15 and elev >= cand_elev:
+                    cand_elev = elev
+                    candidate = s_elem
+            if candidate is not None:
+                return candidate
+
+    return default_storey
+
+
 def _make_opening_solid(builder, wall_geom: Geometry, opening_geom: Geometry):
     """Construct an extruded solid for an opening cutting completely through wall thickness."""
     wbmin, wbmax = wall_geom.bounds_min, wall_geom.bounds_max
@@ -263,9 +352,9 @@ def _make_opening_solid(builder, wall_geom: Geometry, opening_geom: Geometry):
         y_min = wbmin.y - 0.02
         y_max = wbmax.y + 0.02
         cut_dy = max(y_max - y_min, ody + 0.04)
-        cut_pos_y = (wbmin.y + wbmax.y) / 2.0
+        cut_pos_y = y_min
         cut_dx = min(odx, wdx)
-        cut_pos_x = (obmin.x + obmax.x) / 2.0
+        cut_pos_x = obmin.x
         cut_dz = min(odz, wdz)
         cut_pos_z = max(wbmin.z, obmin.z)
     else:
@@ -273,9 +362,9 @@ def _make_opening_solid(builder, wall_geom: Geometry, opening_geom: Geometry):
         x_min = wbmin.x - 0.02
         x_max = wbmax.x + 0.02
         cut_dx = max(x_max - x_min, odx + 0.04)
-        cut_pos_x = (wbmin.x + wbmax.x) / 2.0
+        cut_pos_x = x_min
         cut_dy = min(ody, wdy)
-        cut_pos_y = (obmin.y + obmax.y) / 2.0
+        cut_pos_y = obmin.y
         cut_dz = min(odz, wdz)
         cut_pos_z = max(wbmin.z, obmin.z)
 
@@ -571,14 +660,35 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
                        name="Reality Engine Site")
     building = ifc_api.run("root.create_entity", model,
                            ifc_class="IfcBuilding", name="Reality Engine Building")
-    storey = ifc_api.run("root.create_entity", model,
-                         ifc_class="IfcBuildingStorey", name="L0")
     # Determinism: replace every random GlobalId the API minted with a
     # uuid5-derived one seeded by the world id + the element's role.
     project.GlobalId = _deterministic_guid(f"{world.id}/project")
     site.GlobalId = _deterministic_guid(f"{world.id}/site")
     building.GlobalId = _deterministic_guid(f"{world.id}/building")
-    storey.GlobalId = _deterministic_guid(f"{world.id}/storey")
+
+    # Discover storey entities (EntityType.STOREY, EntityType.LEVEL, or is_storey)
+    storey_entities = [
+        e for e in world.entities.values()
+        if e.type in (EntityType.STOREY, EntityType.LEVEL)
+        or (isinstance(getattr(e, "custom_properties", None), dict) and e.custom_properties.get("is_storey"))
+    ]
+    created_storeys: Dict[str, Tuple[Any, float]] = {}
+    if storey_entities:
+        for idx, s_ent in enumerate(sorted(storey_entities, key=lambda s: (_get_storey_elevation(world, s), s.id))):
+            s_name = s_ent.name or f"Storey {idx}"
+            s_elem = ifc_api.run("root.create_entity", model,
+                                 ifc_class="IfcBuildingStorey", name=s_name)
+            s_elem.GlobalId = _deterministic_guid(f"{world.id}/storey/{s_ent.id}")
+            elev = _get_storey_elevation(world, s_ent)
+            s_elem.Elevation = float(elev)
+            created_storeys[s_ent.id] = (s_elem, elev)
+        default_storey = list(created_storeys.values())[0][0]
+    else:
+        storey = ifc_api.run("root.create_entity", model,
+                             ifc_class="IfcBuildingStorey", name="L0")
+        storey.GlobalId = _deterministic_guid(f"{world.id}/storey")
+        default_storey = storey
+        created_storeys["_default"] = (storey, 0.0)
 
     builder = shape_builder.ShapeBuilder(model)
     written: list = []
@@ -591,10 +701,10 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
     for entity_id in sorted(world.entities):
         entity = world.entities[entity_id]
         ifc_class = _resolve_ifc_class(entity)
-        if ifc_class == "IfcBuilding":
+        if ifc_class in ("IfcBuilding", "IfcBuildingStorey"):
             skipped[entity_id] = (
-                f"semantic container class {ifc_class} (building root "
-                "already represents spatial container)")
+                f"semantic container class {ifc_class} (spatial hierarchy container)"
+            )
             continue
         geometry = _get_primary_geom(world, entity)
         if geometry is None:
@@ -614,9 +724,11 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
                               ifc_class=ifc_class, name=name)
         element.GlobalId = _deterministic_guid(f"{world.id}/entity/{entity.id}")
 
+        target_storey = _resolve_target_storey(world, entity, created_storeys, default_storey)
+
         if ifc_class == "IfcSpace":
             ifc_api.run("aggregate.assign_object", model,
-                        products=[element], relating_object=storey)
+                        products=[element], relating_object=target_storey)
         elif ifc_class == "IfcOpeningElement":
             # Opening elements are hosted by IfcWall via IfcRelVoidsElement,
             # not directly contained in IfcBuildingStorey
@@ -633,16 +745,47 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
 
             if not is_part:
                 ifc_api.run("spatial.assign_container", model,
-                            products=[element], relating_structure=storey)
+                            products=[element], relating_structure=target_storey)
 
         dx, dy, dz = extent
         bmin = geometry.bounds_min
-        profile = builder.rectangle(
-            size=(dx, dy),
-            position=(bmin.x + dx / 2.0, bmin.y + dy / 2.0),
-        )
-        solid = builder.extrude(profile, magnitude=dz,
-                                position=(0.0, 0.0, bmin.z))
+
+        # Non-convex polygon support (P6-01 / P8-03): If the entity or geometry defines
+        # boundary_polygon_2d or floor_polygon_2d, extrude that exact 2D closed polygon
+        # instead of a bounding box.
+        polygon_2d = None
+        if isinstance(getattr(entity, "custom_properties", None), dict):
+            polygon_2d = (
+                entity.custom_properties.get("floor_polygon_2d")
+                or entity.custom_properties.get("boundary_polygon_2d")
+                or entity.custom_properties.get("footprint")
+            )
+        if polygon_2d is None and isinstance(getattr(geometry, "custom_properties", None), dict):
+            polygon_2d = (
+                geometry.custom_properties.get("floor_polygon_2d")
+                or geometry.custom_properties.get("boundary_polygon_2d")
+                or geometry.custom_properties.get("footprint")
+            )
+
+        if polygon_2d and len(polygon_2d) >= 3:
+            pts_2d = [(float(p[0]), float(p[1])) for p in polygon_2d]
+            if (
+                len(pts_2d) > 2
+                and math.isclose(pts_2d[0][0], pts_2d[-1][0], abs_tol=1e-5)
+                and math.isclose(pts_2d[0][1], pts_2d[-1][1], abs_tol=1e-5)
+            ):
+                pts_2d = pts_2d[:-1]
+            curve = builder.polyline(pts_2d, closed=True)
+            profile = builder.profile(curve)
+            solid = builder.extrude(profile, magnitude=dz,
+                                    position=(0.0, 0.0, bmin.z))
+        else:
+            profile = builder.rectangle(
+                size=(dx, dy),
+                position=(bmin.x, bmin.y),
+            )
+            solid = builder.extrude(profile, magnitude=dz,
+                                    position=(0.0, 0.0, bmin.z))
         representation = builder.get_representation(context=body_ctx,
                                                     items=solid)
         ifc_api.run("geometry.assign_representation", model,
@@ -752,7 +895,8 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
         elif parent_id and parent_id not in created_products and entity_id in created_products:
             # Fallback if parent wasn't exportable (e.g. lacked bounds)
             elem = created_products[entity_id]
-            ifc_api.run("spatial.assign_container", model, products=[elem], relating_structure=storey)
+            target_s = _resolve_target_storey(world, entity, created_storeys, default_storey)
+            ifc_api.run("spatial.assign_container", model, products=[elem], relating_structure=target_s)
 
     if not written:
         raise IFCBridgeError(
@@ -767,3 +911,246 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     model.write(str(path))
     return {"skipped": skipped, "written": written}
+
+
+def _extract_ifc_geometry(elem, geom_id: str) -> tuple[Optional[Geometry], dict[str, Any]]:
+    rep = getattr(elem, "Representation", None)
+    if not rep:
+        return None, {}
+
+    for r in getattr(rep, "Representations", ()):
+        for item in getattr(r, "Items", ()):
+            if item.is_a("IfcExtrudedAreaSolid"):
+                depth = float(item.Depth)
+                pos = getattr(item, "Position", None)
+                pos_coord = pos.Location.Coordinates if pos and hasattr(pos, "Location") else (0.0, 0.0, 0.0)
+                z_min = float(pos_coord[2])
+                z_max = z_min + depth
+
+                swept = getattr(item, "SweptArea", None)
+                if not swept:
+                    continue
+
+                pts_2d: list[tuple[float, float]] = []
+                if swept.is_a("IfcArbitraryClosedProfileDef"):
+                    curve = getattr(swept, "OuterCurve", None)
+                    if curve and hasattr(curve, "Points") and hasattr(curve.Points, "CoordList"):
+                        pts_2d = [tuple(float(c) for c in pt) for pt in curve.Points.CoordList]
+                    elif curve and hasattr(curve, "Points"):
+                        pts_2d = [tuple(float(c) for c in pt.Coordinates) for pt in curve.Points]
+                elif swept.is_a("IfcRectangleProfileDef"):
+                    dx = float(swept.XDim)
+                    dy = float(swept.YDim)
+                    spos = swept.Position.Location.Coordinates if hasattr(swept, "Position") and hasattr(swept.Position, "Location") else (0.0, 0.0)
+                    cx, cy = float(spos[0]), float(spos[1])
+                    pts_2d = [
+                        (cx - dx / 2.0, cy - dy / 2.0),
+                        (cx + dx / 2.0, cy - dy / 2.0),
+                        (cx + dx / 2.0, cy + dy / 2.0),
+                        (cx - dx / 2.0, cy + dy / 2.0),
+                    ]
+
+                if pts_2d:
+                    xs = [p[0] for p in pts_2d]
+                    ys = [p[1] for p in pts_2d]
+                    geom = Geometry(
+                        id=geom_id,
+                        type=GeometryType.BOX if len(pts_2d) == 4 else GeometryType.PLANE,
+                        bounds_min=Vector3(min(xs), min(ys), z_min),
+                        bounds_max=Vector3(max(xs), max(ys), z_max),
+                    )
+                    return geom, {"boundary_polygon_2d": pts_2d}
+
+            elif item.is_a("IfcTriangulatedFaceSet"):
+                coords = [tuple(float(c) for c in pt) for pt in item.Coordinates.CoordList]
+                faces = [tuple(int(idx) - 1 for idx in face) for face in item.CoordIndex]
+                xs = [c[0] for c in coords]
+                ys = [c[1] for c in coords]
+                zs = [c[2] for c in coords]
+                geom = Geometry(
+                    id=geom_id,
+                    type=GeometryType.MESH,
+                    vertex_count=len(coords),
+                    triangle_count=len(faces),
+                    bounds_min=Vector3(min(xs), min(ys), min(zs)),
+                    bounds_max=Vector3(max(xs), max(ys), max(zs)),
+                )
+                return geom, {"vertices": coords, "faces": faces}
+
+    return None, {}
+
+
+def import_ifc_to_world(path: str | Path) -> WorldIR:
+    """Import an IFC4 or IFC2X3 file into a WorldIR model with zero geometric drift.
+
+    Restores:
+      - World identifier from IfcProject.
+      - Spatial hierarchy (IfcBuildingStorey -> EntityType.STOREY).
+      - Semantic architectural entities (IfcWall, IfcSlab, IfcColumn, IfcBeam,
+        IfcDoor, IfcWindow, IfcOpeningElement, IfcStair, IfcSpace,
+        IfcFurnishingElement, IfcBuildingElementProxy).
+      - Geometry bounds and 2D polygonal footprints / 3D meshes without drift.
+      - Relationships and containment structures.
+      - Property sets (Pset_RealityEngine, RealityEngine_Metadata).
+    """
+    try:
+        import ifcopenshell
+    except ImportError as exc:
+        raise ImportError(_IMPORT_ERROR_MESSAGE) from exc
+
+    f = ifcopenshell.open(str(path))
+    projects = f.by_type("IfcProject")
+    world_id = "imported-ifc"
+    if projects:
+        proj_name = projects[0].Name or ""
+        if proj_name.startswith("Reality Engine "):
+            world_id = proj_name.removeprefix("Reality Engine ").strip()
+        elif proj_name:
+            world_id = proj_name
+
+    world = WorldIR(id=world_id)
+
+    # 1. Discover IfcBuildingStorey entities
+    storey_map: dict[int, str] = {}  # ifc entity id -> worldir entity id
+    for s_elem in f.by_type("IfcBuildingStorey"):
+        s_name = s_elem.Name or f"Storey_{s_elem.id()}"
+        s_id = s_elem.GlobalId or f"storey-{s_elem.id()}"
+        if " " in s_name:
+            parts = s_name.split(" ", 1)
+            if parts[0].startswith("storey-") or parts[0].startswith("level-"):
+                s_id = parts[0]
+                s_name = parts[1]
+
+        elev = float(getattr(s_elem, "Elevation", 0.0) or 0.0)
+        s_ent = Entity(
+            id=s_id,
+            name=s_name,
+            type=EntityType.STOREY,
+            custom_properties={"elevation_m": elev, "is_storey": True},
+        )
+        world.entities[s_id] = s_ent
+        storey_map[s_elem.id()] = s_id
+
+    # 2. Invert _ENTITY_IFC_CLASS mapping
+    class_to_type = {
+        "IfcWall": EntityType.WALL,
+        "IfcColumn": EntityType.COLUMN,
+        "IfcBeam": EntityType.BEAM,
+        "IfcDoor": EntityType.DOOR,
+        "IfcWindow": EntityType.WINDOW,
+        "IfcOpeningElement": EntityType.OPENING,
+        "IfcStair": EntityType.STAIRS,
+        "IfcStairFlight": EntityType.STAIRS,
+        "IfcSpace": EntityType.ROOM,
+        "IfcRoof": EntityType.ROOF,
+        "IfcFurnishingElement": EntityType.FURNITURE,
+    }
+
+    # 3. Process products
+    for elem in f.by_type("IfcProduct"):
+        if elem.is_a("IfcProject") or elem.is_a("IfcSite") or elem.is_a("IfcBuilding") or elem.is_a("IfcBuildingStorey"):
+            continue
+
+        raw_name = elem.Name or f"element-{elem.id()}"
+        ent_id = f"ent-{elem.id()}"
+        ent_name = raw_name
+
+        if " " in raw_name:
+            cand_id, cand_name = raw_name.split(" ", 1)
+            if cand_id and not cand_id.startswith("Reality"):
+                ent_id = cand_id
+                ent_name = cand_name
+
+        custom_props: dict[str, Any] = {}
+        provenance = Provenance.OBSERVED
+        confidence = 1.0
+        override_type = None
+
+        for rel in getattr(elem, "IsDefinedBy", ()):
+            pset = getattr(rel, "RelatingPropertyDefinition", None)
+            if not pset or not pset.is_a("IfcPropertySet"):
+                continue
+            pset_name = pset.Name or ""
+            props = {
+                p.Name: getattr(p.NominalValue, "wrappedValue", None)
+                for p in getattr(pset, "HasProperties", ())
+            }
+
+            if pset_name in ("RealityEngine_Metadata", "Pset_RealityEngine"):
+                if "EntityId" in props and props["EntityId"]:
+                    ent_id = str(props["EntityId"])
+                if "EntityType" in props and props["EntityType"]:
+                    try:
+                        override_type = EntityType(props["EntityType"])
+                    except ValueError:
+                        pass
+                if "Provenance" in props and props["Provenance"]:
+                    try:
+                        provenance = Provenance(props["Provenance"])
+                    except ValueError:
+                        pass
+                elif "Basis" in props and props["Basis"]:
+                    try:
+                        provenance = Provenance(props["Basis"])
+                    except ValueError:
+                        pass
+                if "Confidence" in props and props["Confidence"] is not None:
+                    try:
+                        confidence = float(props["Confidence"])
+                    except (ValueError, TypeError):
+                        pass
+            else:
+                custom_props[pset_name] = props
+
+        if override_type:
+            ent_type = override_type
+        elif elem.is_a("IfcSlab"):
+            ptype = str(getattr(elem, "PredefinedType", "")).upper()
+            if "ROOF" in ptype or "ROOF" in ent_name.upper():
+                ent_type = EntityType.ROOF
+            elif "CEILING" in ptype or "CEILING" in ent_name.upper():
+                ent_type = EntityType.CEILING
+            else:
+                ent_type = EntityType.FLOOR
+        elif elem.is_a() in class_to_type:
+            ent_type = class_to_type[elem.is_a()]
+        else:
+            ent_type = EntityType.STRUCTURE
+
+        geom, extra_props = _extract_ifc_geometry(elem, f"geom-{ent_id}")
+        geometry_ids = []
+        if geom is not None:
+            world.geometries[geom.id] = geom
+            geometry_ids.append(geom.id)
+            custom_props.update(extra_props)
+
+        relationships = []
+        for rel in getattr(elem, "ContainedInStructure", ()):
+            struct = getattr(rel, "RelatingStructure", None)
+            if struct and struct.id() in storey_map:
+                relationships.append(Relationship(
+                    target_id=storey_map[struct.id()],
+                    kind=RelationshipKind.INSIDE,
+                ))
+
+        for rel in getattr(elem, "Decomposes", ()):
+            parent = getattr(rel, "RelatingObject", None)
+            if parent and parent.id() in storey_map:
+                relationships.append(Relationship(
+                    target_id=storey_map[parent.id()],
+                    kind=RelationshipKind.INSIDE,
+                ))
+
+        entity = Entity(
+            id=ent_id,
+            name=ent_name,
+            type=ent_type,
+            geometry_ids=geometry_ids,
+            relationships=relationships,
+            provenance=provenance,
+            confidence=confidence,
+            custom_properties=custom_props,
+        )
+        world.entities[ent_id] = entity
+
+    return world

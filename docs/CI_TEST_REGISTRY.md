@@ -113,7 +113,7 @@ Total: 1
 
 ## unlisted
 
-Total: 519
+Total: 525
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -321,6 +321,7 @@ Total: 519
 - `tests/test_horizontal_consolidation.py`
 - `tests/test_identity_carry.py`
 - `tests/test_ifc_bridge.py`
+- `tests/test_ifc_roundtrip.py`
 - `tests/test_image_orientation_cap.py`
 - `tests/test_import_boundaries.py`
 - `tests/test_incremental.py`
@@ -390,6 +391,7 @@ Total: 519
 - `tests/test_model_scheduler_task4_2.py`
 - `tests/test_multi_session_alignment.py`
 - `tests/test_multi_source_session.py`
+- `tests/test_multi_storey_validator.py`
 - `tests/test_multistorey_matrix.py`
 - `tests/test_multistorey_plane_support.py`
 - `tests/test_multiview_identity_appearance.py`
@@ -468,6 +470,7 @@ Total: 519
 - `tests/test_query_after_incremental_update.py`
 - `tests/test_raycast_coverage_task5_3.py`
 - `tests/test_real_model_availability.py`
+- `tests/test_real_specialist_executors.py`
 - `tests/test_reality_benchmark.py`
 - `tests/test_reality_inventory.py`
 - `tests/test_reality_studio_primary_journey.py`
@@ -492,10 +495,12 @@ Total: 519
 - `tests/test_resumable_upload.py`
 - `tests/test_review_coco_api.py`
 - `tests/test_rng.py`
+- `tests/test_robust_depth_fusion.py`
 - `tests/test_robustness_admission.py`
 - `tests/test_room_building_graph.py`
 - `tests/test_room_inference.py`
 - `tests/test_room_join.py`
+- `tests/test_room_mesh.py`
 - `tests/test_room_refine.py`
 - `tests/test_room_ring_tracing.py`
 - `tests/test_room_schedule_csv.py`
@@ -577,6 +582,7 @@ Total: 519
 - `tests/test_tracking_2d.py`
 - `tests/test_trajectory_backend.py`
 - `tests/test_trajectory_diagnostics.py`
+- `tests/test_trajectory_interpolation.py`
 - `tests/test_trim_dense_to_scene.py`
 - `tests/test_true_localized_incremental_acceptance.py`
 - `tests/test_uncertainty_propagation.py`

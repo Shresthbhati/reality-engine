@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-19T00:18:39+0530",
+ "generated_at": "2026-11-19T02:16:55+0530",
  "live_roots": [
   "apps.api.main",
   "apps.api.jobs"
@@ -437,7 +437,8 @@
     "tests/test_fusion_pipeline.py",
     "tests/test_fusion_stage.py",
     "tests/test_dense_cloud_fusion.py",
-    "tests/test_robust_depth_fusion.py"
+    "tests/test_robust_depth_fusion.py",
+    "tests/test_robust_fusion_cycle3.py"
    ],
    "tests_missing": [],
    "test_counts": {
@@ -570,20 +571,24 @@
     "perception/architecture/space_graph.py",
     "perception/architecture/openings.py",
     "perception/architecture/stairs.py",
+    "perception/architecture/roofs.py",
+    "perception/architecture/split_level.py",
     "perception/architecture/multi_storey_validator.py"
    ],
    "modules_missing": [],
-   "modules_total": 5,
-   "reachable_from_api": 4,
+   "modules_total": 7,
+   "reachable_from_api": 5,
    "shortest_live_import_chain": [
     "apps.api.jobs",
     "engine.pipeline.facade",
     "perception.architecture.space_graph"
    ],
    "not_reachable_from_api": [
+    "perception.architecture.split_level",
     "perception.architecture.multi_storey_validator"
    ],
    "entries_not_reachable_from_api": [
+    "perception/architecture/split_level.py",
     "perception/architecture/multi_storey_validator.py"
    ],
    "offline_tool": false,
@@ -591,7 +596,8 @@
    "tests": [
     "tests/test_topology_coherence.py",
     "tests/test_vertical_topology_graph.py",
-    "tests/test_multi_storey_validator.py"
+    "tests/test_multi_storey_validator.py",
+    "tests/test_architectural_geometry_cycle3.py"
    ],
    "tests_missing": [],
    "test_counts": {
@@ -836,7 +842,8 @@
     "tests/test_worldstore_concurrency.py",
     "tests/test_worldstore_retention.py",
     "tests/test_ifc_bridge.py",
-    "tests/test_ifc_roundtrip.py"
+    "tests/test_ifc_roundtrip.py",
+    "tests/test_ifc_interoperability_cycle3.py"
    ],
    "tests_missing": [],
    "test_counts": {

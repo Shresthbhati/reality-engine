@@ -127,13 +127,18 @@ jobs:
             tests/test_stage_artifacts.py \
             tests/test_stage_resume.py \
             tests/test_stage_checkpoints.py \
-            tests/test_stage_artifacts.py \
-            tests/test_stage_resume.py \
-            tests/test_stage_checkpoints.py \
             tests/test_measured_room_dataset.py \
             tests/test_multiview_room_association.py \
             tests/test_multiview_finegrained_identity.py \
             tests/test_measurement_fusion.py \
+            tests/test_robust_fusion_cycle3.py \
+            tests/test_robust_depth_fusion.py \
+            tests/test_specialist_refinement_engines.py \
+            tests/test_real_specialist_executors.py \
+            tests/test_architectural_geometry_cycle3.py \
+            tests/test_ifc_roundtrip.py \
+            tests/test_ifc_interoperability_cycle3.py \
+            tests/test_vram_rtx4050_profile.py \
             tests/test_relations.py \
             tests/test_query_find.py \
             -v --tb=short

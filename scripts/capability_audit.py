@@ -68,7 +68,7 @@ ROWS: Dict[str, dict] = {
         tests=["tests/test_dense_mvs_stage.py", "tests/test_mvs_point_cloud_ops.py", "tests/test_colmap_backend_dense.py"]),
     "Point-cloud fusion": dict(
         modules=["reconstruction/fusion/fusion.py", "reconstruction/fusion/multi_source.py", "reconstruction/fusion/robust_fusion.py"],
-        tests=["tests/test_fusion_pipeline.py", "tests/test_fusion_stage.py", "tests/test_dense_cloud_fusion.py", "tests/test_robust_depth_fusion.py"]),
+        tests=["tests/test_fusion_pipeline.py", "tests/test_fusion_stage.py", "tests/test_dense_cloud_fusion.py", "tests/test_robust_depth_fusion.py", "tests/test_robust_fusion_cycle3.py"]),
     "Mesh reconstruction": dict(
         modules=["reconstruction/meshing/mesh.py", "reconstruction/meshing/surface.py", "reconstruction/meshing/room_mesh.py"],
         tests=["tests/test_meshing_pipeline.py", "tests/test_mesh_validation.py", "tests/test_mesh_repair_and_completeness.py", "tests/test_room_mesh.py"]),
@@ -80,8 +80,8 @@ ROWS: Dict[str, dict] = {
         tests=["tests/test_room_building_graph.py", "tests/test_non_rectangular_rooms.py", "tests/test_room_fidelity_fixture.py",
                "tests/test_horizontal_consolidation.py", "tests/test_vertical_consolidation.py"]),
     "Architectural topology": dict(
-        modules=["perception/architecture/topology.py", "perception/architecture/space_graph.py", "perception/architecture/openings.py", "perception/architecture/stairs.py", "perception/architecture/multi_storey_validator.py"],
-        tests=["tests/test_topology_coherence.py", "tests/test_vertical_topology_graph.py", "tests/test_multi_storey_validator.py"]),
+        modules=["perception/architecture/topology.py", "perception/architecture/space_graph.py", "perception/architecture/openings.py", "perception/architecture/stairs.py", "perception/architecture/roofs.py", "perception/architecture/split_level.py", "perception/architecture/multi_storey_validator.py"],
+        tests=["tests/test_topology_coherence.py", "tests/test_vertical_topology_graph.py", "tests/test_multi_storey_validator.py", "tests/test_architectural_geometry_cycle3.py"]),
     "Material recognition": dict(
         modules=["perception/materials/classifier.py", "perception/materials/material_hypotheses.py", "perception/materials/room_surfaces.py"],
         tests=["tests/test_material_classification.py", "tests/test_material_hypotheses.py", "tests/test_pbr_material_classification.py"]),
@@ -102,7 +102,7 @@ ROWS: Dict[str, dict] = {
     "Export and persistence": dict(
         modules=["exporters/gltf", "exporters/ifc_bridge.py", "worldstore/store.py"],
         tests=["tests/test_gltf_exporter.py", "tests/test_export_pipeline_e2e.py", "tests/test_worldstore_concurrency.py",
-               "tests/test_worldstore_retention.py", "tests/test_ifc_bridge.py", "tests/test_ifc_roundtrip.py"]),
+               "tests/test_worldstore_retention.py", "tests/test_ifc_bridge.py", "tests/test_ifc_roundtrip.py", "tests/test_ifc_interoperability_cycle3.py"]),
 }
 
 #: what was actually observed on real photographs (the 10-photo living room, this project); empty when nothing was

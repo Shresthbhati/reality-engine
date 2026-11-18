@@ -108,7 +108,7 @@ Total: 1
 
 ## unlisted
 
-Total: 516
+Total: 519
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -278,6 +278,7 @@ Total: 516
 - `tests/test_failure_modes_colmap.py`
 - `tests/test_failure_modes_worldstore.py`
 - `tests/test_fine_grained_entity_attributes.py`
+- `tests/test_fine_grained_estimators.py`
 - `tests/test_fine_grained_perception_rule5.py`
 - `tests/test_fire_system.py`
 - `tests/test_florence2_second_opinion.py`
@@ -494,6 +495,7 @@ Total: 516
 - `tests/test_room_ring_tracing.py`
 - `tests/test_room_schedule_csv.py`
 - `tests/test_room_semantics.py`
+- `tests/test_run_accuracy_benchmark.py`
 - `tests/test_run_record.py`
 - `tests/test_runtime_foundation.py`
 - `tests/test_sam2_backend.py`
@@ -529,6 +531,7 @@ Total: 516
 - `tests/test_spatial_tiles.py`
 - `tests/test_spatial_tiles_boundary.py`
 - `tests/test_spatial_tiling.py`
+- `tests/test_specialist_refinement_engines.py`
 - `tests/test_specialist_truth_labels.py`
 - `tests/test_stacked_storey_reconstruction.py`
 - `tests/test_stage_dense.py`

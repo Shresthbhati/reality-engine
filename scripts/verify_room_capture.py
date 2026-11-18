@@ -103,14 +103,98 @@ def verify_room_capture(room_dir: Path) -> dict[str, Any]:
     }
 
 
+def verify_all_rooms(root_dir: Path | None = None) -> dict[str, Any]:
+    """Verify all 6 measured rooms under benchmarks/measured_rooms/."""
+    rooms_dir = root_dir or MEASURED_ROOMS_DIR
+    room_dirs = sorted(d for d in rooms_dir.iterdir() if d.is_dir() and d.name.startswith("room_"))
+
+    results: list[dict[str, Any]] = []
+    total_blocked = 0
+    total_verified = 0
+
+    for r_dir in room_dirs:
+        res = verify_room_capture(r_dir)
+        results.append(res)
+        if res.get("status") == "BLOCKED":
+            total_blocked += 1
+        elif res.get("status") == "VERIFIED":
+            total_verified += 1
+
+    # Check Room 05 / 06 holdout issue: Room 05 ground truth committed publicly
+    room_05_gt = rooms_dir / "room_05_holdout_reception" / "ground_truth.json"
+    room_05_exposed = room_05_gt.is_file()
+
+    summary = {
+        "timestamp": "2026-11-18T22:42:00Z",
+        "total_rooms_configured": len(room_dirs),
+        "total_verified": total_verified,
+        "total_blocked": total_blocked,
+        "overall_status": "BLOCKED" if total_blocked > 0 else ("VERIFIED" if total_verified == len(room_dirs) else "PARTIAL"),
+        "blind_holdout_status": {
+            "room_05_publicly_exposed": room_05_exposed,
+            "recommendation": "Demote Room 05 to dev set; designate Room 06 and an uncommitted capture as strict blind holdouts.",
+        },
+        "rooms": results,
+    }
+    return summary
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify photographic dataset for a measured room.")
-    parser.add_argument("--room-dir", type=Path, required=True, help="Path to room directory")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--room-dir", type=Path, help="Path to room directory")
+    group.add_argument("--all", action="store_true", help="Audit all measured rooms in benchmarks/measured_rooms")
+    parser.add_argument("--out", type=Path, help="Optional output JSON file path")
+    parser.add_argument("--markdown-out", type=Path, help="Optional output Markdown report path")
     args = parser.parse_args(argv)
 
-    res = verify_room_capture(args.room_dir)
-    print(json.dumps(res, indent=2))
-    return 0 if res["status"] in ("VERIFIED", "BLOCKED") else 1
+    if args.all:
+        report = verify_all_rooms()
+    else:
+        report = verify_room_capture(args.room_dir)
+
+    output_str = json.dumps(report, indent=2)
+    print(output_str)
+
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(output_str, encoding="utf-8")
+        print(f"Wrote JSON report to {args.out}")
+
+    if args.markdown_out:
+        args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
+        md_lines = [
+            "# Measured Rooms Dataset Verification Report",
+            "",
+            f"**Overall Status**: `{report.get('overall_status', report.get('status'))}`",
+            f"**Rooms Configured**: {report.get('total_rooms_configured', 1)}",
+            f"**Physical Images Available**: {report.get('total_verified', 0)} / {report.get('total_rooms_configured', 1)}",
+            f"**Blocked Captures**: {report.get('total_blocked', 0)}",
+            "",
+            "## Room-by-Room Integrity",
+            "",
+        ]
+        rooms_list = report.get("rooms", [report])
+        for r in rooms_list:
+            rid = r.get("room_id", "unknown")
+            st = r.get("status", "unknown")
+            dev = r.get("device_model", "unspecified")
+            tgt = r.get("target_photo_count", 0)
+            fnd = r.get("photos_found", 0)
+            md_lines.append(f"### `{rid}` — Status: `{st}`")
+            md_lines.append(f"- **Target Photos**: {tgt}")
+            md_lines.append(f"- **Found Photos**: {fnd}")
+            md_lines.append(f"- **Device**: {dev}")
+            if st == "BLOCKED":
+                md_lines.append(f"- **Blocker Reason**: {r.get('reason')}")
+                md_lines.append(f"- **Consent Reference**: `{r.get('consent_reference')}`")
+            md_lines.append("")
+
+        args.markdown_out.write_text("\n".join(md_lines), encoding="utf-8")
+        print(f"Wrote Markdown report to {args.markdown_out}")
+
+    st = report.get("overall_status", report.get("status"))
+    return 0 if st in ("VERIFIED", "BLOCKED") else 1
 
 
 if __name__ == "__main__":

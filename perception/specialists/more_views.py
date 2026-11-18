@@ -1,18 +1,119 @@
-"""Specialist Active Capture Guidance Engine (Universal Spatial Intelligence Directive Phase 7).
+"""Specialist Active Capture Guidance Engine (Universal Spatial Intelligence Directive Phase 7 / Cycle 2).
 
 Computes unobserved viewpoints and generates active capture guidance:
 - Analyzes entity spatial location and existing camera observation angles.
-- Computes unobserved hemisphere sectors (azimuth and elevation).
-- Formulates exact recommended camera poses (position, look-at vector, distance) for targeted follow-up capture.
+- Computes unobserved azimuth sectors based on existing camera rays and expected information gain.
+- Constrains recommended camera poses to remain strictly within room floor boundaries (clamping poses >= 0.3m away from walls).
+- Formulates exact recommended camera poses (position, look-at vector, standoff distance, information gain) for targeted follow-up capture.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional
+from collections.abc import Sequence
+from typing import Any, Optional
 
 from engine.quality.autonomous_correction_loop import RefinementKind, RefinementTask
-from world_ir import WorldIR
+from world_ir import EntityType, WorldIR
+from world_ir.camera import PinholeCamera
+
+
+def compute_viewpoint_guidance(
+    entity_pos: Sequence[float],
+    existing_cameras: Optional[Sequence[Any]] = None,
+    room_bounds: Optional[tuple[float, float, float, float]] = None,
+    standoff_dist: float = 1.5,
+    wall_margin: float = 0.3,
+    num_sectors: int = 4,
+) -> list[dict[str, Any]]:
+    """Compute recommended viewpoints targeting unobserved azimuth sectors, constrained to room boundaries.
+
+    Args:
+        entity_pos: 3D coordinates [x, y, z] of the target entity.
+        existing_cameras: Collection of existing cameras (PinholeCamera, position tuples/lists, or dicts).
+        room_bounds: Optional (x_min, y_min, x_max, y_max) bounding box of the room.
+        standoff_dist: Desired camera standoff distance from the entity in meters.
+        wall_margin: Minimum clearance required from room boundary walls in meters (>= 0.3m).
+        num_sectors: Number of radial azimuth sectors to partition (default 8: 45-degree bins).
+
+    Returns:
+        List of recommended viewpoints sorted by descending expected information gain.
+    """
+    x_e, y_e = float(entity_pos[0]), float(entity_pos[1])
+    z_e = float(entity_pos[2]) if len(entity_pos) >= 3 else 0.0
+
+    sector_width = 360.0 / num_sectors
+    sector_obs_counts = [0] * num_sectors
+
+    # Analyze existing camera observation angles relative to entity
+    if existing_cameras:
+        for cam in existing_cameras:
+            cam_pos: Optional[list[float]] = None
+            if isinstance(cam, PinholeCamera):
+                p = cam.extrinsics.position
+                cam_pos = [p.x, p.y, p.z]
+            elif isinstance(cam, (list, tuple)) and len(cam) >= 2:
+                cam_pos = [float(cam[0]), float(cam[1]), float(cam[2]) if len(cam) >= 3 else 0.0]
+            elif isinstance(cam, dict):
+                p_raw = cam.get("position") or cam.get("pos")
+                if isinstance(p_raw, (list, tuple)) and len(p_raw) >= 2:
+                    cam_pos = [float(p_raw[0]), float(p_raw[1]), float(p_raw[2]) if len(p_raw) >= 3 else 0.0]
+
+            if cam_pos is not None:
+                dx = cam_pos[0] - x_e
+                dy = cam_pos[1] - y_e
+                if math.hypot(dx, dy) > 1e-3:
+                    angle_deg = math.degrees(math.atan2(dy, dx)) % 360.0
+                    bin_idx = int(math.floor(angle_deg / sector_width)) % num_sectors
+                    sector_obs_counts[bin_idx] += 1
+
+    recommendations: list[dict[str, Any]] = []
+
+    for b in range(num_sectors):
+        angle_deg = b * sector_width
+        obs_count = sector_obs_counts[b]
+        # Information gain inversely proportional to existing observations
+        expected_gain = 1.0 if obs_count == 0 else 1.0 / (1.0 + float(obs_count))
+
+        rad = math.radians(angle_deg)
+        cand_x = x_e + standoff_dist * math.cos(rad)
+        cand_y = y_e + standoff_dist * math.sin(rad)
+        cand_z = z_e + 0.35  # Slightly elevated camera perspective
+
+        was_clamped = False
+        if room_bounds is not None and len(room_bounds) >= 4:
+            x_min, y_min, x_max, y_max = room_bounds
+            safe_x_min = x_min + wall_margin
+            safe_x_max = x_max - wall_margin
+            safe_y_min = y_min + wall_margin
+            safe_y_max = y_max - wall_margin
+
+            if safe_x_max > safe_x_min:
+                clamped_x = max(safe_x_min, min(safe_x_max, cand_x))
+                if clamped_x != cand_x:
+                    cand_x = clamped_x
+                    was_clamped = True
+
+            if safe_y_max > safe_y_min:
+                clamped_y = max(safe_y_min, min(safe_y_max, cand_y))
+                if clamped_y != cand_y:
+                    cand_y = clamped_y
+                    was_clamped = True
+
+        recommendations.append({
+            "azimuth_deg": round(angle_deg, 1),
+            "position": [round(cand_x, 3), round(cand_y, 3), round(cand_z, 3)],
+            "look_at": [round(x_e, 3), round(y_e, 3), round(z_e, 3)],
+            "standoff_m": round(math.hypot(cand_x - x_e, cand_y - y_e), 3),
+            "expected_gain": round(expected_gain, 3),
+            "clamped_to_room": was_clamped,
+            "observations_in_sector": obs_count,
+            "recommended_lens_fov_deg": 65.0,
+        })
+
+    # Sort viewpoints descending by expected gain
+    recommendations.sort(key=lambda r: -r["expected_gain"])
+    return recommendations
 
 
 def more_views_specialist(
@@ -52,23 +153,41 @@ def more_views_specialist(
             elif isinstance(p, (list, tuple)) and len(p) >= 3:
                 pos = [float(p[0]), float(p[1]), float(p[2])]
 
-    # Compute 4 canonical surrounding observation angles (0, 90, 180, 270 deg)
-    # Stand-off distance 1.5m, camera height at eye-level relative to entity
-    standoff_dist = 1.5
-    recommended_poses: List[Dict[str, Any]] = []
-    cardinal_angles = [0.0, 90.0, 180.0, 270.0]
+    # Extract existing cameras from task metadata or world metadata
+    existing_cams = task.metadata.get("cameras") or task.metadata.get("existing_cameras")
+    if existing_cams is None and world.metadata:
+        existing_cams = world.metadata.get("cameras")
 
-    for angle_deg in cardinal_angles:
-        rad = math.radians(angle_deg)
-        cam_x = round(pos[0] + standoff_dist * math.cos(rad), 3)
-        cam_y = round(pos[1] + standoff_dist * math.sin(rad), 3)
-        cam_z = round(pos[2] + 0.4, 3)  # Slightly elevated
-        recommended_poses.append({
-            "azimuth_deg": angle_deg,
-            "position": [cam_x, cam_y, cam_z],
-            "look_at": [round(x, 3) for x in pos],
-            "recommended_lens_fov_deg": 65.0,
-        })
+    # Extract room boundaries from metadata or room entity
+    room_bounds = task.metadata.get("room_bounds")
+    if room_bounds is None and world.entities:
+        for ent in world.entities.values():
+            if ent.type == EntityType.ROOM:
+                props = getattr(ent, "custom_properties", None) or getattr(ent, "extra_fields", None) or {}
+                if "bounds" in props and len(props["bounds"]) >= 4:
+                    room_bounds = tuple(props["bounds"][:4])
+                    break
+                if "boundary_polygon_2d" in props:
+                    poly = props["boundary_polygon_2d"]
+                    xs = [pt[0] for pt in poly]
+                    ys = [pt[1] for pt in poly]
+                    room_bounds = (min(xs), min(ys), max(xs), max(ys))
+                    break
+
+    standoff_dist = float(task.metadata.get("standoff_dist", 1.5))
+    wall_margin = float(task.metadata.get("wall_margin", 0.3))
+    num_sectors = int(task.metadata.get("num_sectors", 4))
+
+    recommended_poses = compute_viewpoint_guidance(
+        entity_pos=pos,
+        existing_cameras=existing_cams,
+        room_bounds=room_bounds,
+        standoff_dist=standoff_dist,
+        wall_margin=wall_margin,
+        num_sectors=num_sectors,
+    )
+
+    unobserved_sectors = [p for p in recommended_poses if p["observations_in_sector"] == 0]
 
     capture_request = {
         "entity_id": entity.id,
@@ -76,7 +195,7 @@ def more_views_specialist(
         "reason": "unobserved_hemisphere_coverage",
         "recommended_standoff_m": standoff_dist,
         "recommended_poses": recommended_poses,
-        "unobserved_sectors_count": len(cardinal_angles),
+        "unobserved_sectors_count": len(unobserved_sectors),
     }
 
     world.metadata.setdefault("capture_requests", []).append(capture_request)

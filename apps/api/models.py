@@ -50,7 +50,7 @@ class World(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active")
     owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    team_id: Mapped[str | None] = mapped_column(String(32), default="default", nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     coverage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -155,7 +155,7 @@ class Session(Base):
     name: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(32), default="created", index=True)
     owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    team_id: Mapped[str | None] = mapped_column(String(32), default="default", nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     world_id: Mapped[str | None] = mapped_column(
         ForeignKey("worlds.id"), nullable=True, index=True
     )
@@ -199,7 +199,7 @@ class Upload(Base):
     )
     status: Mapped[str] = mapped_column(String(32), default="pending")
     #: tenant that owns the upload (inherited from its session); NULL = unowned, as for worlds and sessions.
-    team_id: Mapped[str | None] = mapped_column(String(32), default="default", nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     filename: Mapped[str] = mapped_column(String(500))
     mime_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
     size: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -218,7 +218,7 @@ class Evidence(Base):
     name: Mapped[str] = mapped_column(String(300))
     type: Mapped[str] = mapped_column(String(32))  # photo|video|point_cloud|gnss|imu|sensor_log|dataset
     #: tenant that owns the evidence (inherited from its session); NULL = unowned.
-    team_id: Mapped[str | None] = mapped_column(String(32), default="default", nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     session_id: Mapped[str | None] = mapped_column(
         ForeignKey("sessions.id"), nullable=True, index=True
     )
@@ -264,7 +264,7 @@ class Job(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    team_id: Mapped[str | None] = mapped_column(String(32), default="default", nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     type: Mapped[str] = mapped_column(String(64), index=True)
     entity_type: Mapped[str] = mapped_column(String(32))
     entity_id: Mapped[str] = mapped_column(String(32))
@@ -344,6 +344,9 @@ class ActivityEvent(Base):
     actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     summary: Mapped[str] = mapped_column(String(500))
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: Owning tenant, stamped from the subject when the event is written (apps/api/ownership.py), so an event about a
+    #: deleted or purged entity stays visible to its team. NULL = unowned legacy row (hidden from tenants).
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -378,7 +381,7 @@ class Site(Base):
     name: Mapped[str] = mapped_column(String(120))
     grid_cell_m: Mapped[float] = mapped_column(Float, default=50.0)
     #: tenant that owns the site; NULL = unowned.
-    team_id: Mapped[str | None] = mapped_column(String(32), default="default", nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -444,7 +447,7 @@ class Asset(Base):
     artifact_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
     owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    team_id: Mapped[str | None] = mapped_column(String(32), default="default", nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -598,3 +601,6 @@ class JobStageRun(Base):
     peak_rss_mb: Mapped[float | None] = mapped_column(Float, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+from apps.api import ownership  # noqa: E402,F401  -- registers the ActivityEvent owner hook

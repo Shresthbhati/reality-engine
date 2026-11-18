@@ -78,6 +78,16 @@ def entity_clause(type_col, id_col, auth: AuthContext):
     )
 
 
+def activity_clause(model, auth: AuthContext):
+    """SQL predicate for activity events the caller may see: events owned by its tenant (the owner is stamped from the
+    subject when the event is written, so this holds after the subject is deleted), plus legacy unowned events whose
+    subject is still visible to it. None = no restriction (global administrators)."""
+    owned = visible(model, auth)
+    if owned is None:
+        return None
+    return or_(owned, and_(model.team_id.is_(None), entity_clause(model.entity_type, model.entity_id, auth)))
+
+
 async def assert_entity_visible(db: AsyncSession, entity_type: str | None, entity_id: str | None, auth: AuthContext) -> None:
     """Strict form of the above for one job's subject: an unresolvable or vanished entity is a 404 for non-system-admins."""
     if auth.role == Role.SYSTEM_ADMIN:

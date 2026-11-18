@@ -104,6 +104,9 @@ jobs:
             tests/test_backup_restore.py \
             tests/test_backup_durability.py \
             tests/test_backup_lifecycle.py \
+            tests/test_activity_ownership.py \
+            tests/test_token_hardening.py \
+            tests/test_tenant_adversarial.py \
             tests/test_adoption_transaction.py \
             tests/test_stage_runner.py \
             tests/test_auth_hardening.py \

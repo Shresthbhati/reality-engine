@@ -305,7 +305,7 @@ def metricize_relative_depth(
         evidence_id=depth.evidence_id,
         width=depth.width,
         height=depth.height,
-        values=metric_values.tolist(),
+        values=np.ascontiguousarray(metric_values, dtype=np.float32),
         unit="meters",
         uncertainty=depth.uncertainty,
     )

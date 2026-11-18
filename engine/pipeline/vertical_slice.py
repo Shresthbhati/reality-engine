@@ -2448,13 +2448,10 @@ def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
                 f"do not match image_size {width}x{height} -- skipped"
             )
             continue
-        values = [
-            [
-                (float(v) * frame.depth_scale) if v != frame.invalid_value else 0.0
-                for v in row
-            ]
-            for row in frame.raw
-        ]
+        import numpy as np
+
+        raw = np.asarray(frame.raw)
+        values = np.where(raw != frame.invalid_value, raw.astype(np.float64) * frame.depth_scale, 0.0).astype(np.float32)
         metric_maps.append(
             DepthMap(
                 evidence_id=fid,

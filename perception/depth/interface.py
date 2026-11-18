@@ -35,14 +35,20 @@ class DepthMap:
     evidence_id: str
     width: int
     height: int
-    values: List[List[float]]  # values[row][col]
+    #: values[row][col]. A list of lists OR a 2-D float32 numpy array: producers pass arrays (about 8x smaller than nested
+    #: Python floats, RE-PERF-000010) and consumers read both the same way (len, indexing, ``np.asarray``). float32, not
+    #: float16: a float16 scalar times a Python float stays float16 and would silently coarsen un-projection.
+    values: List[List[float]]
     unit: str = "relative"  # "relative" (unscaled, e.g. monocular) or "meters" (metric/scaled)
     uncertainty: Uncertainty = field(default_factory=Uncertainty)
 
     def __post_init__(self):
+        flags = getattr(self.values, "flags", None)     # an array is shared between stages: freeze it (no numpy import here)
+        if flags is not None:
+            flags.writeable = False
         if len(self.values) != self.height:
             raise ValueError(f"values has {len(self.values)} rows, expected height={self.height}")
-        if self.values and len(self.values[0]) != self.width:
+        if len(self.values) > 0 and len(self.values[0]) != self.width:
             raise ValueError(f"values row length {len(self.values[0])}, expected width={self.width}")
 
 

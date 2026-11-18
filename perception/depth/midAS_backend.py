@@ -251,7 +251,7 @@ class MiDaSDepthBackend(IDepthBackend):
                     depth_normalized = np.zeros_like(depth_np)
 
                 # Convert to list of lists (row-major)
-                values = depth_normalized.tolist()
+                values = np.ascontiguousarray(depth_normalized, dtype=np.float32)
 
                 # Estimate uncertainty from depth variance (heuristic)
                 # Higher variance regions tend to be less reliable

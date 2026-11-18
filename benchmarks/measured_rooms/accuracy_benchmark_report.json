@@ -1,0 +1,432 @@
+{
+  "total_rooms": 6,
+  "evaluated_rooms": 6,
+  "blocked_rooms": 0,
+  "physical_count": 0,
+  "synthetic_count": 6,
+  "mean_wall_error_m": 0.0035,
+  "max_wall_error_m": 0.0077,
+  "walls_within_2cm_pct": 100.0,
+  "ceiling_height_error_m": 0.0006,
+  "room_area_error_pct": 0.01,
+  "mean_opening_error_m": 0.0019,
+  "mean_opening_pos_error_m": 0.0,
+  "mean_electrical_f1": 1.0,
+  "mean_entity_f1": 0.958,
+  "idf1": 1.0,
+  "duplicate_rate": 0.0,
+  "false_merge_rate": 0.0,
+  "same_camera_violations": 0,
+  "uncertainty_calibration_error": 0.05,
+  "overall_meets_tolerances": true,
+  "room_results": [
+    {
+      "room_dir": "room_01_living_studio",
+      "room_name": "Living Studio (Dev Room 1)",
+      "data_type": "synthetic",
+      "status": "EVALUATED",
+      "is_holdout": false,
+      "metrics": {
+        "room_id": "room-01",
+        "room_name": "Living Studio (Dev Room 1)",
+        "is_holdout": false,
+        "meets_tolerances": true,
+        "mean_wall_error_m": 0.0034,
+        "max_wall_error_m": 0.0077,
+        "wall_error_pct": 0.08,
+        "ceiling_height_error_m": 0.0006,
+        "room_area_error_pct": 0.01,
+        "mean_opening_error_m": 0.0016,
+        "mean_opening_pos_error_m": 0.0,
+        "topology_precision": 1.0,
+        "topology_recall": 1.0,
+        "per_class_scores": {
+          "wall": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 4,
+            "n_detected": 4,
+            "n_matched": 4
+          },
+          "door": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "window": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "fixture": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 5,
+            "n_detected": 5,
+            "n_matched": 5
+          }
+        },
+        "mean_f1": 1.0,
+        "idf1": 1.0,
+        "duplicate_rate": 0.0,
+        "false_merge_rate": 0.0,
+        "same_camera_exclusion_adherence": 1.0,
+        "uncertainty_coverage_pct": 100.0,
+        "calibration_score": 0.95,
+        "total_checks": 17,
+        "passed_checks": 17,
+        "failed_checks": 0,
+        "missing_elements": [],
+        "extra_elements": []
+      }
+    },
+    {
+      "room_dir": "room_02_bed_wardrobe",
+      "room_name": "Bedroom with Wardrobe (Dev Room 2)",
+      "data_type": "synthetic",
+      "status": "EVALUATED",
+      "is_holdout": false,
+      "metrics": {
+        "room_id": "room-02",
+        "room_name": "Bedroom with Wardrobe (Dev Room 2)",
+        "is_holdout": false,
+        "meets_tolerances": true,
+        "mean_wall_error_m": 0.0034,
+        "max_wall_error_m": 0.0077,
+        "wall_error_pct": 0.09,
+        "ceiling_height_error_m": 0.0006,
+        "room_area_error_pct": 0.01,
+        "mean_opening_error_m": 0.0016,
+        "mean_opening_pos_error_m": 0.0,
+        "topology_precision": 1.0,
+        "topology_recall": 1.0,
+        "per_class_scores": {
+          "wall": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 4,
+            "n_detected": 4,
+            "n_matched": 4
+          },
+          "door": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "window": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "fixture": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 4,
+            "n_detected": 4,
+            "n_matched": 4
+          }
+        },
+        "mean_f1": 1.0,
+        "idf1": 1.0,
+        "duplicate_rate": 0.0,
+        "false_merge_rate": 0.0,
+        "same_camera_exclusion_adherence": 1.0,
+        "uncertainty_coverage_pct": 100.0,
+        "calibration_score": 0.95,
+        "total_checks": 16,
+        "passed_checks": 16,
+        "failed_checks": 0,
+        "missing_elements": [],
+        "extra_elements": []
+      }
+    },
+    {
+      "room_dir": "room_03_corridor_office",
+      "room_name": "Corridor Office (Dev Room 3)",
+      "data_type": "synthetic",
+      "status": "EVALUATED",
+      "is_holdout": false,
+      "metrics": {
+        "room_id": "room-03",
+        "room_name": "Corridor Office (Dev Room 3)",
+        "is_holdout": false,
+        "meets_tolerances": true,
+        "mean_wall_error_m": 0.0039,
+        "max_wall_error_m": 0.0077,
+        "wall_error_pct": 0.16,
+        "ceiling_height_error_m": 0.0006,
+        "room_area_error_pct": 0.01,
+        "mean_opening_error_m": 0.0025,
+        "mean_opening_pos_error_m": 0.0,
+        "topology_precision": 1.0,
+        "topology_recall": 1.0,
+        "per_class_scores": {
+          "wall": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 6,
+            "n_detected": 6,
+            "n_matched": 6
+          },
+          "door": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "window": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "fixture": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 3,
+            "n_detected": 3,
+            "n_matched": 3
+          }
+        },
+        "mean_f1": 1.0,
+        "idf1": 1.0,
+        "duplicate_rate": 0.0,
+        "false_merge_rate": 0.0,
+        "same_camera_exclusion_adherence": 1.0,
+        "uncertainty_coverage_pct": 100.0,
+        "calibration_score": 0.95,
+        "total_checks": 17,
+        "passed_checks": 17,
+        "failed_checks": 0,
+        "missing_elements": [],
+        "extra_elements": []
+      }
+    },
+    {
+      "room_dir": "room_04_kitchenette",
+      "room_name": "Kitchenette (Dev Room 4)",
+      "data_type": "synthetic",
+      "status": "EVALUATED",
+      "is_holdout": false,
+      "metrics": {
+        "room_id": "room-04",
+        "room_name": "Kitchenette (Dev Room 4)",
+        "is_holdout": false,
+        "meets_tolerances": true,
+        "mean_wall_error_m": 0.0034,
+        "max_wall_error_m": 0.0077,
+        "wall_error_pct": 0.11,
+        "ceiling_height_error_m": 0.0006,
+        "room_area_error_pct": 0.01,
+        "mean_opening_error_m": 0.0016,
+        "mean_opening_pos_error_m": 0.0,
+        "topology_precision": 1.0,
+        "topology_recall": 1.0,
+        "per_class_scores": {
+          "wall": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 4,
+            "n_detected": 4,
+            "n_matched": 4
+          },
+          "door": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "window": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "fixture": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 4,
+            "n_detected": 4,
+            "n_matched": 4
+          }
+        },
+        "mean_f1": 1.0,
+        "idf1": 1.0,
+        "duplicate_rate": 0.0,
+        "false_merge_rate": 0.0,
+        "same_camera_exclusion_adherence": 1.0,
+        "uncertainty_coverage_pct": 100.0,
+        "calibration_score": 0.95,
+        "total_checks": 16,
+        "passed_checks": 16,
+        "failed_checks": 0,
+        "missing_elements": [],
+        "extra_elements": []
+      }
+    },
+    {
+      "room_dir": "room_05_holdout_reception",
+      "room_name": "Reception Lobby (Blind Holdout 1)",
+      "data_type": "synthetic",
+      "status": "EVALUATED",
+      "is_holdout": true,
+      "metrics": {
+        "room_id": "room-05",
+        "room_name": "Reception Lobby (Blind Holdout 1)",
+        "is_holdout": true,
+        "meets_tolerances": true,
+        "mean_wall_error_m": 0.0034,
+        "max_wall_error_m": 0.0077,
+        "wall_error_pct": 0.07,
+        "ceiling_height_error_m": 0.0006,
+        "room_area_error_pct": 0.01,
+        "mean_opening_error_m": 0.0027,
+        "mean_opening_pos_error_m": 0.0,
+        "topology_precision": 1.0,
+        "topology_recall": 1.0,
+        "per_class_scores": {
+          "wall": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 4,
+            "n_detected": 4,
+            "n_matched": 4
+          },
+          "door": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "window": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "n_ground_truth": 0,
+            "n_detected": 0,
+            "n_matched": 0
+          },
+          "fixture": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 4,
+            "n_detected": 4,
+            "n_matched": 4
+          }
+        },
+        "mean_f1": 0.75,
+        "idf1": 1.0,
+        "duplicate_rate": 0.0,
+        "false_merge_rate": 0.0,
+        "same_camera_exclusion_adherence": 1.0,
+        "uncertainty_coverage_pct": 100.0,
+        "calibration_score": 0.95,
+        "total_checks": 14,
+        "passed_checks": 14,
+        "failed_checks": 0,
+        "missing_elements": [],
+        "extra_elements": []
+      }
+    },
+    {
+      "room_dir": "room_06_holdout_conference",
+      "room_name": "Conference Room (Blind Holdout 2)",
+      "data_type": "synthetic",
+      "status": "EVALUATED",
+      "is_holdout": true,
+      "metrics": {
+        "room_id": "room-06",
+        "room_name": "Conference Room (Blind Holdout 2)",
+        "is_holdout": true,
+        "meets_tolerances": true,
+        "mean_wall_error_m": 0.0034,
+        "max_wall_error_m": 0.0077,
+        "wall_error_pct": 0.07,
+        "ceiling_height_error_m": 0.0006,
+        "room_area_error_pct": 0.01,
+        "mean_opening_error_m": 0.0016,
+        "mean_opening_pos_error_m": 0.0,
+        "topology_precision": 1.0,
+        "topology_recall": 1.0,
+        "per_class_scores": {
+          "wall": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 4,
+            "n_detected": 4,
+            "n_matched": 4
+          },
+          "door": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "window": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 1,
+            "n_detected": 1,
+            "n_matched": 1
+          },
+          "fixture": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "n_ground_truth": 3,
+            "n_detected": 3,
+            "n_matched": 3
+          }
+        },
+        "mean_f1": 1.0,
+        "idf1": 1.0,
+        "duplicate_rate": 0.0,
+        "false_merge_rate": 0.0,
+        "same_camera_exclusion_adherence": 1.0,
+        "uncertainty_coverage_pct": 100.0,
+        "calibration_score": 0.95,
+        "total_checks": 15,
+        "passed_checks": 15,
+        "failed_checks": 0,
+        "missing_elements": [],
+        "extra_elements": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "timestamp": "2026-11-18T22:42:00Z",
+  "total_rooms_configured": 6,
+  "total_verified": 0,
+  "total_blocked": 6,
+  "overall_status": "BLOCKED",
+  "blind_holdout_status": {
+    "room_05_publicly_exposed": true,
+    "recommendation": "Demote Room 05 to dev set; designate Room 06 and an uncommitted capture as strict blind holdouts."
+  },
+  "rooms": [
+    {
+      "room_id": "room-01",
+      "status": "BLOCKED",
+      "reason": "Missing physical camera photography -- awaiting on-site capture with physical smartphone and laser distance meter",
+      "target_photo_count": 64,
+      "consent_reference": "consent-0001-dev-studio",
+      "device_model": "Samsung Galaxy S23",
+      "capture_checklist": [
+        "1. Ensure written occupier consent is on file (consent_reference).",
+        "2. Clear screens, sensitive documents, and persons from the room.",
+        "3. Use smartphone default camera app at full native resolution (>= 12 MP).",
+        "4. Capture 40-80 photographs walking the perimeter facing inward.",
+        "5. Capture 8-12 photographs from room center facing each wall and corner.",
+        "6. Capture detail photos of every electrical socket, switch, and opening frame.",
+        "7. Record double laser distance measurements for all walls, heights, openings, and fixtures.",
+        "8. Place photos under benchmarks/measured_rooms/<room_id>/photos/ and run this tool."
+      ]
+    },
+    {
+      "room_id": "room-02",
+      "status": "BLOCKED",
+      "reason": "Missing physical camera photography -- awaiting on-site capture with physical smartphone and laser distance meter",
+      "target_photo_count": 72,
+      "consent_reference": "consent-0002-dev-bed",
+      "device_model": "iPhone 15 Pro",
+      "capture_checklist": [
+        "1. Ensure written occupier consent is on file (consent_reference).",
+        "2. Clear screens, sensitive documents, and persons from the room.",
+        "3. Use smartphone default camera app at full native resolution (>= 12 MP).",
+        "4. Capture 40-80 photographs walking the perimeter facing inward.",
+        "5. Capture 8-12 photographs from room center facing each wall and corner.",
+        "6. Capture detail photos of every electrical socket, switch, and opening frame.",
+        "7. Record double laser distance measurements for all walls, heights, openings, and fixtures.",
+        "8. Place photos under benchmarks/measured_rooms/<room_id>/photos/ and run this tool."
+      ]
+    },
+    {
+      "room_id": "room-03",
+      "status": "BLOCKED",
+      "reason": "Missing physical camera photography -- awaiting on-site capture with physical smartphone and laser distance meter",
+      "target_photo_count": 78,
+      "consent_reference": "consent-0003-dev-office",
+      "device_model": "Google Pixel 8 Pro",
+      "capture_checklist": [
+        "1. Ensure written occupier consent is on file (consent_reference).",
+        "2. Clear screens, sensitive documents, and persons from the room.",
+        "3. Use smartphone default camera app at full native resolution (>= 12 MP).",
+        "4. Capture 40-80 photographs walking the perimeter facing inward.",
+        "5. Capture 8-12 photographs from room center facing each wall and corner.",
+        "6. Capture detail photos of every electrical socket, switch, and opening frame.",
+        "7. Record double laser distance measurements for all walls, heights, openings, and fixtures.",
+        "8. Place photos under benchmarks/measured_rooms/<room_id>/photos/ and run this tool."
+      ]
+    },
+    {
+      "room_id": "room-04",
+      "status": "BLOCKED",
+      "reason": "Missing physical camera photography -- awaiting on-site capture with physical smartphone and laser distance meter",
+      "target_photo_count": 56,
+      "consent_reference": "consent-0004-dev-kitchen",
+      "device_model": "Samsung Galaxy S23",
+      "capture_checklist": [
+        "1. Ensure written occupier consent is on file (consent_reference).",
+        "2. Clear screens, sensitive documents, and persons from the room.",
+        "3. Use smartphone default camera app at full native resolution (>= 12 MP).",
+        "4. Capture 40-80 photographs walking the perimeter facing inward.",
+        "5. Capture 8-12 photographs from room center facing each wall and corner.",
+        "6. Capture detail photos of every electrical socket, switch, and opening frame.",
+        "7. Record double laser distance measurements for all walls, heights, openings, and fixtures.",
+        "8. Place photos under benchmarks/measured_rooms/<room_id>/photos/ and run this tool."
+      ]
+    },
+    {
+      "room_id": "room-05",
+      "status": "BLOCKED",
+      "reason": "Missing physical camera photography -- awaiting on-site capture with physical smartphone and laser distance meter",
+      "target_photo_count": 80,
+      "consent_reference": "consent-0005-holdout-reception",
+      "device_model": "iPhone 15 Pro Max",
+      "capture_checklist": [
+        "1. Ensure written occupier consent is on file (consent_reference).",
+        "2. Clear screens, sensitive documents, and persons from the room.",
+        "3. Use smartphone default camera app at full native resolution (>= 12 MP).",
+        "4. Capture 40-80 photographs walking the perimeter facing inward.",
+        "5. Capture 8-12 photographs from room center facing each wall and corner.",
+        "6. Capture detail photos of every electrical socket, switch, and opening frame.",
+        "7. Record double laser distance measurements for all walls, heights, openings, and fixtures.",
+        "8. Place photos under benchmarks/measured_rooms/<room_id>/photos/ and run this tool."
+      ]
+    },
+    {
+      "room_id": "room-06",
+      "status": "BLOCKED",
+      "reason": "Missing physical camera photography -- awaiting on-site capture with physical smartphone and laser distance meter",
+      "target_photo_count": 75,
+      "consent_reference": "consent-0006-holdout-conf",
+      "device_model": "Samsung Galaxy S24 Ultra",
+      "capture_checklist": [
+        "1. Ensure written occupier consent is on file (consent_reference).",
+        "2. Clear screens, sensitive documents, and persons from the room.",
+        "3. Use smartphone default camera app at full native resolution (>= 12 MP).",
+        "4. Capture 40-80 photographs walking the perimeter facing inward.",
+        "5. Capture 8-12 photographs from room center facing each wall and corner.",
+        "6. Capture detail photos of every electrical socket, switch, and opening frame.",
+        "7. Record double laser distance measurements for all walls, heights, openings, and fixtures.",
+        "8. Place photos under benchmarks/measured_rooms/<room_id>/photos/ and run this tool."
+      ]
+    }
+  ]
+}

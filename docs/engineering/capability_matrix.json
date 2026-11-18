@@ -1,16 +1,16 @@
 {
- "generated_at": "2026-11-15T11:25:49+0530",
+ "generated_at": "2026-11-18T21:37:58+0530",
  "live_roots": [
   "apps.api.main",
   "apps.api.jobs"
  ],
- "ran_tests": true,
+ "ran_tests": false,
  "note": "Verified = the row's unit tests passed in this run; it is not accuracy on real photographs.",
  "rows": [
   {
    "capability": "Image ingestion",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "evidence/importers.py",
     "evidence/session.py",
@@ -35,7 +35,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 37,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -45,7 +45,7 @@
   {
    "capability": "Video ingestion",
    "status": "Partial",
-   "verified": "yes (unit tests)",
+   "verified": "not run",
    "modules": [
     "reconstruction/video_frames.py",
     "evidence/video.py"
@@ -71,7 +71,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 16,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -81,7 +81,7 @@
   {
    "capability": "Image quality analysis",
    "status": "Partial",
-   "verified": "FAILING",
+   "verified": "not run",
    "modules": [
     "reconstruction/capture_quality.py",
     "evidence/quality_checks.py"
@@ -97,17 +97,15 @@
    "not_reachable_from_api": [],
    "entries_not_reachable_from_api": [],
    "offline_tool": false,
-   "failing_tests": [
-    "tests/test_capture_quality.py::test_api_frame_picker_keeps_contract_and_falls_back"
-   ],
+   "failing_tests": [],
    "tests": [
     "tests/test_capture_quality.py",
     "tests/test_evidence_quality.py"
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 36,
-    "failed": 1,
+    "passed": 0,
+    "failed": 0,
     "skipped": 0,
     "errors": 0
    },
@@ -115,8 +113,8 @@
   },
   {
    "capability": "Camera calibration",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "reconstruction/calibration/camera.py",
     "reconstruction/colmap_intrinsics.py"
@@ -126,7 +124,8 @@
    "reachable_from_api": 2,
    "shortest_live_import_chain": [
     "apps.api.jobs",
-    "reconstruction.colmap_intrinsics"
+    "engine.pipeline.vertical_slice",
+    "reconstruction.calibration.camera"
    ],
    "not_reachable_from_api": [],
    "entries_not_reachable_from_api": [],
@@ -139,7 +138,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 73,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -148,8 +147,8 @@
   },
   {
    "capability": "Object detection",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "perception/detection/grounded_scene.py",
     "engine/pipeline/open_vocab_furniture.py",
@@ -173,7 +172,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 25,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -183,7 +182,7 @@
   {
    "capability": "Instance segmentation",
    "status": "Partial",
-   "verified": "yes (unit tests)",
+   "verified": "not run",
    "modules": [
     "perception/segmentation/sam2_backend.py",
     "perception/segmentation/sam_backend.py",
@@ -210,7 +209,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 7,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -220,7 +219,7 @@
   {
    "capability": "Small-object detection",
    "status": "Partial",
-   "verified": "yes (unit tests)",
+   "verified": "not run",
    "modules": [
     "perception/entities/small_objects.py",
     "perception/detail/crop_pass.py",
@@ -228,20 +227,14 @@
    ],
    "modules_missing": [],
    "modules_total": 3,
-   "reachable_from_api": 2,
+   "reachable_from_api": 3,
    "shortest_live_import_chain": [
     "apps.api.jobs",
-    "engine.pipeline.progressive",
-    "engine.pipeline.single_image",
-    "engine.pipeline.single_image_fixtures",
-    "perception.detail.crop_pass"
-   ],
-   "not_reachable_from_api": [
+    "engine.pipeline.vertical_slice",
     "perception.entities.small_objects"
    ],
-   "entries_not_reachable_from_api": [
-    "perception/entities/small_objects.py"
-   ],
+   "not_reachable_from_api": [],
+   "entries_not_reachable_from_api": [],
    "offline_tool": false,
    "failing_tests": [],
    "tests": [
@@ -251,7 +244,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 12,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -261,7 +254,7 @@
   {
    "capability": "Object tracking",
    "status": "Partial",
-   "verified": "yes (unit tests)",
+   "verified": "not run",
    "modules": [
     "perception/instances/track_backend.py",
     "perception/tracking/temporal.py",
@@ -289,17 +282,17 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 29,
+    "passed": 0,
     "failed": 0,
-    "skipped": 1,
+    "skipped": 0,
     "errors": 0
    },
    "real_data_notes": ""
   },
   {
    "capability": "Depth estimation",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "perception/depth/depth_anything_backend.py",
     "perception/depth/midAS_backend.py",
@@ -325,7 +318,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 25,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -335,7 +328,7 @@
   {
    "capability": "SfM",
    "status": "Partial",
-   "verified": "FAILING",
+   "verified": "not run",
    "modules": [
     "reconstruction/backend/colmap_backend.py",
     "reconstruction/colmap_session.py",
@@ -343,21 +336,15 @@
    ],
    "modules_missing": [],
    "modules_total": 3,
-   "reachable_from_api": 2,
+   "reachable_from_api": 3,
    "shortest_live_import_chain": [
     "apps.api.jobs",
     "reconstruction.colmap_session"
    ],
-   "not_reachable_from_api": [
-    "reconstruction.sfm.core_pipeline"
-   ],
-   "entries_not_reachable_from_api": [
-    "reconstruction/sfm/core_pipeline.py"
-   ],
+   "not_reachable_from_api": [],
+   "entries_not_reachable_from_api": [],
    "offline_tool": false,
-   "failing_tests": [
-    "tests/test_colmap_session.py::test_a_workspace_path_too_long_for_native_colmap_fails_early_with_the_real_cause"
-   ],
+   "failing_tests": [],
    "tests": [
     "tests/test_colmap_backend.py",
     "tests/test_colmap_session.py",
@@ -366,8 +353,8 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 21,
-    "failed": 1,
+    "passed": 0,
+    "failed": 0,
     "skipped": 0,
     "errors": 0
    },
@@ -376,7 +363,7 @@
   {
    "capability": "MVS",
    "status": "Partial",
-   "verified": "FAILING",
+   "verified": "not run",
    "modules": [
     "reconstruction/mvs/dense_cloud.py",
     "reconstruction/dense_pipeline.py",
@@ -384,25 +371,16 @@
    ],
    "modules_missing": [],
    "modules_total": 3,
-   "reachable_from_api": 2,
+   "reachable_from_api": 3,
    "shortest_live_import_chain": [
     "apps.api.jobs",
     "engine.pipeline.vertical_slice",
     "reconstruction.dense_pipeline"
    ],
-   "not_reachable_from_api": [
-    "reconstruction.mvs.dense_cloud"
-   ],
-   "entries_not_reachable_from_api": [
-    "reconstruction/mvs/dense_cloud.py"
-   ],
+   "not_reachable_from_api": [],
+   "entries_not_reachable_from_api": [],
    "offline_tool": false,
-   "failing_tests": [
-    "tests/test_colmap_backend_dense.py::test_dense_mvs_attaches_fused_points_and_report",
-    "tests/test_colmap_backend_dense.py::test_dense_without_store_records_honest_no_artifact",
-    "tests/test_colmap_backend_dense.py::test_dense_stage_failure_raises_never_sparse_success",
-    "tests/test_colmap_backend_dense.py::test_dense_refused_when_binary_not_dense_capable"
-   ],
+   "failing_tests": [],
    "tests": [
     "tests/test_dense_mvs_stage.py",
     "tests/test_mvs_point_cloud_ops.py",
@@ -410,8 +388,8 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 27,
-    "failed": 4,
+    "passed": 0,
+    "failed": 0,
     "skipped": 0,
     "errors": 0
    },
@@ -419,8 +397,8 @@
   },
   {
    "capability": "Point-cloud fusion",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "reconstruction/fusion/fusion.py",
     "reconstruction/fusion/multi_source.py"
@@ -445,7 +423,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 16,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -454,8 +432,8 @@
   },
   {
    "capability": "Mesh reconstruction",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "reconstruction/meshing/mesh.py",
     "reconstruction/meshing/surface.py"
@@ -479,7 +457,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 51,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -488,8 +466,8 @@
   },
   {
    "capability": "Multi-view identity",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "perception/instances/association.py",
     "perception/instances/object_resolution.py",
@@ -514,7 +492,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 59,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -523,8 +501,8 @@
   },
   {
    "capability": "Room segmentation",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "perception/architecture/room_semantics.py",
     "perception/architecture/room_graph.py",
@@ -552,7 +530,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 32,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -561,8 +539,8 @@
   },
   {
    "capability": "Architectural topology",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "perception/architecture/topology.py",
     "perception/architecture/space_graph.py",
@@ -588,7 +566,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 18,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -597,8 +575,8 @@
   },
   {
    "capability": "Material recognition",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "perception/materials/classifier.py",
     "perception/materials/material_hypotheses.py",
@@ -622,7 +600,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 17,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -632,7 +610,7 @@
   {
    "capability": "Uncertainty estimation",
    "status": "Partial",
-   "verified": "yes (unit tests)",
+   "verified": "not run",
    "modules": [
     "engine/quality/report.py",
     "reconstruction/consistency.py",
@@ -642,18 +620,15 @@
    ],
    "modules_missing": [],
    "modules_total": 5,
-   "reachable_from_api": 3,
+   "reachable_from_api": 4,
    "shortest_live_import_chain": [
     "apps.api.jobs",
     "provenance.provenance"
    ],
    "not_reachable_from_api": [
-    "engine.quality.report",
     "provenance.graph"
    ],
-   "entries_not_reachable_from_api": [
-    "engine/quality/report.py"
-   ],
+   "entries_not_reachable_from_api": [],
    "offline_tool": false,
    "failing_tests": [],
    "tests": [
@@ -663,7 +638,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 58,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -672,8 +647,8 @@
   },
   {
    "capability": "WorldIR",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "world_ir/artifact_store.py",
     "world_ir/camera.py",
@@ -683,14 +658,14 @@
     "world_ir/coordinates.py",
     "world_ir/corrections.py",
     "world_ir/diff.py",
+    "world_ir/embedding_store.py",
     "world_ir/entity.py",
     "world_ir/entity_reid.py",
-    "world_ir/frame_graph.py",
-    "world_ir/geo.py"
+    "world_ir/frame_graph.py"
    ],
    "modules_missing": [],
-   "modules_total": 27,
-   "reachable_from_api": 24,
+   "modules_total": 31,
+   "reachable_from_api": 26,
    "shortest_live_import_chain": [
     "apps.api.jobs",
     "world_ir.artifact_store"
@@ -698,7 +673,9 @@
    "not_reachable_from_api": [
     "world_ir.frame_graph",
     "world_ir.hypotheses",
-    "world_ir.quality_state"
+    "world_ir.mask_store",
+    "world_ir.quality_state",
+    "world_ir.relations"
    ],
    "entries_not_reachable_from_api": [],
    "offline_tool": false,
@@ -710,7 +687,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 27,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -719,8 +696,8 @@
   },
   {
    "capability": "Accuracy validation",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "reconstruction/evaluation.py",
     "reconstruction/validation.py",
@@ -757,7 +734,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 62,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -767,26 +744,21 @@
   {
    "capability": "Active capture guidance",
    "status": "Partial",
-   "verified": "yes (unit tests)",
+   "verified": "not run",
    "modules": [
     "reconstruction/capture_quality.py",
     "reconstruction/completeness.py"
    ],
    "modules_missing": [],
    "modules_total": 2,
-   "reachable_from_api": 1,
+   "reachable_from_api": 2,
    "shortest_live_import_chain": [
-    "apps.api.main",
-    "apps.api.routes_reconstructions",
-    "engine.pipeline.facade",
-    "reconstruction.capture_quality"
-   ],
-   "not_reachable_from_api": [
+    "apps.api.jobs",
+    "engine.pipeline.vertical_slice",
     "reconstruction.completeness"
    ],
-   "entries_not_reachable_from_api": [
-    "reconstruction/completeness.py"
-   ],
+   "not_reachable_from_api": [],
+   "entries_not_reachable_from_api": [],
    "offline_tool": false,
    "failing_tests": [],
    "tests": [
@@ -796,7 +768,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 7,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0
@@ -805,8 +777,8 @@
   },
   {
    "capability": "Export and persistence",
-   "status": "Existing",
-   "verified": "yes (unit tests)",
+   "status": "Partial",
+   "verified": "not run",
    "modules": [
     "exporters/gltf/exporter.py",
     "exporters/gltf/__init__.py",
@@ -834,7 +806,7 @@
    ],
    "tests_missing": [],
    "test_counts": {
-    "passed": 40,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "errors": 0

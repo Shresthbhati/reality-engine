@@ -170,6 +170,8 @@ class VerticalSliceOptions:
     #: Reconstruction backend override (tests inject a deterministic
     #: backend; production leaves None for the real COLMAP backend).
     reconstruction_backend: Optional[object] = None
+    #: Backend type when reconstruction_backend is not explicitly passed ("colmap" | "python").
+    reconstruction_backend_type: str = "colmap"
     #: Persistent per-world COLMAP workspace (reconstruction.colmap_session.ColmapSession).
     #: When set, the real COLMAP backend registers new photographs into the previous sparse
     #: model with image_registrator instead of re-solving the whole scene. The CALLER owns
@@ -202,6 +204,19 @@ class VerticalSliceOptions:
     plane_sweep_max_views: int = 4
     plane_sweep_stride: int = 2
     plane_sweep_planes: int = 48
+
+    #: Autonomous quality audit & correction loop (engine.quality.AutonomousCorrectionLoop).
+    #: When True, audits compiled WorldIR, formulates hypotheses for scale drift, fragmented
+    #: duplicate entities, and floating objects, tests in isolated candidate branches, and
+    #: selectively applies improvements with complete audit logging.
+    autonomous_correction_enabled: bool = False
+    autonomous_correction_max_iterations: int = 3
+    autonomous_correction_min_quality_gain: float = 0.01
+
+    #: Reconstruction-level bounded correction loop (reconstruction.correction.correct).
+    #: When True, drops unverified bridged camera groups or weakly supported cameras if
+    #: an accepted candidate improves reconstruction diagnostics without regressions.
+    reconstruction_auto_correct: bool = False
 
 
 def _refine_unit(result, unit_k: float, unit_facts):
@@ -252,7 +267,7 @@ def _candidate_snapshot(result, evidence_items, options) -> dict:
         result, _uf = working_unit(unscaled(result).result, options.head_unit_k)
         result, _ = _canonicalize(result, options)
         result, _, _ = _refine_unit(result, _uf["unit_k"] if _uf else 1.0, _uf)
-        scaled = True
+        scaled = True  # type: ignore[assignment]
     if scaled is not True:
         result, _ = _canonicalize(result, options)
     world, _ = compile_reconstruction_to_world(
@@ -352,17 +367,22 @@ def run_pose(evidence_items, options, lap=lambda name: None, lap_validation=lamb
 
     if options.reconstruction_backend is not None:
         backend = options.reconstruction_backend
+    elif getattr(options, "reconstruction_backend_type", "colmap") == "python":
+        from reconstruction.backend.python_backend import PythonSfMReconstructionBackend
+
+        backend = PythonSfMReconstructionBackend()
     else:
         from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
 
-        backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary,
-                                              session=options.colmap_session)
+        colmap_b = ColmapReconstructionBackend(colmap_binary=options.colmap_binary,
+                                               session=options.colmap_session)
         if options.colmap_session is not None and options.head_snapshot is not None:
             from engine.pipeline.candidate_selection import WorldArbiter
 
-            backend.candidate_arbiter = WorldArbiter(
+            colmap_b.candidate_arbiter = WorldArbiter(
                 options.head_snapshot, options.head_conflicts,
                 lambda res: _candidate_snapshot(res, evidence_items, options))
+        backend = colmap_b
     orchestrator = ReconstructionOrchestrator(backends=[backend])
     try:
         run = orchestrator.run(list(evidence_items))
@@ -371,6 +391,22 @@ def run_pose(evidence_items, options, lap=lambda name: None, lap_validation=lamb
 
     lap("sparse_reconstruction")
     result = run.result
+    if getattr(options, "reconstruction_auto_correct", False):
+        try:
+            from dataclasses import replace as _dc_replace
+
+            from reconstruction.correction import correct as _correct
+
+            corr_res, corr_rec = _correct(result, [item.id for item in evidence_items])
+            if (
+                corr_rec.get("selected") != "baseline"
+                and len(corr_res.points) > 0
+                and len(corr_res.camera_poses) >= 2
+            ):
+                result = corr_res
+                run = _dc_replace(run, result=result)
+        except Exception:
+            pass
     if result.registration_status == "failed" or not result.points:
         raise VerticalSliceError(
             f"reconstruction produced nothing usable "
@@ -660,12 +696,15 @@ def run_detail(result, world, options, scale_state: str) -> DetailOutcome:
     return DetailOutcome(facts=_detail_stage(result, world, options, scale_state))
 
 
-def run_finalize(evidence_items, backend, run, result, sc: "ScaleOutcome", fr: "FrameOutcome", layout_facts, dp: "DepthOutcome",
-                 perception_facts, mesh_facts, dn: "DenseOutcome", detail_facts, *, clock, lap) -> VerticalSliceResult:
+def run_finalize(evidence_items, backend, run, result, sc: ScaleOutcome, fr: FrameOutcome, layout_facts, dp: DepthOutcome,
+                 perception_facts, mesh_facts, dn: DenseOutcome, detail_facts, *, clock, lap,
+                 options: VerticalSliceOptions | None = None) -> VerticalSliceResult:
     """Record the scale state and the stage facts in the world's canonical metadata, run the (never-failing) reconstruction
     diagnostics and correction plan, and assemble the ``VerticalSliceResult``; extracted verbatim from ``vertical_slice``.
     ``result`` is the scaled, frame-canonical reconstruction; ``dn.world`` is the fused world. ``clock`` is the per-stage
     seconds dict written to the report; ``lap`` the caller's timing hook."""
+    if options is None:
+        options = VerticalSliceOptions()
     _lap = lap
     stage_timings = clock
     world, diagnostics = dn.world, dn.diagnostics
@@ -729,15 +768,57 @@ def run_finalize(evidence_items, backend, run, result, sc: "ScaleOutcome", fr: "
     except Exception as exc:  # noqa: BLE001 -- recorded, never raised
         reconstruction_diagnostics = {"error": f"{type(exc).__name__}: {exc}"}
 
-    # What the bounded correction loop WOULD do with this model. Recommendation only: the build keeps the uncorrected
-    # result until a correction has been shown to help on real data and is wired in deliberately.
+    # Active capture guidance: quantitative completeness & scale reliability
+    try:
+        from reconstruction.completeness import measure_reconstruction_completeness
+
+        comp_report = measure_reconstruction_completeness(result, len(evidence_items))
+        if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+            world.metadata["completeness"] = comp_report.to_dict()
+    except Exception as exc:  # noqa: BLE001 -- analysis pass
+        if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+            world.metadata["completeness"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # World quality report: aggregate confidence and completeness metrics
+    try:
+        from engine.quality.report import compute_quality_report
+
+        if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+            w_quality = compute_quality_report(world)  # type: ignore[arg-type]
+            world.metadata["world_quality_report"] = w_quality.to_dict()
+    except Exception as exc:  # noqa: BLE001 -- analysis pass
+        if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+            world.metadata["world_quality_report"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # Autonomous Quality Audit & Correction Loop (engine.quality.AutonomousCorrectionLoop)
+    if getattr(options, "autonomous_correction_enabled", False):
+        try:
+            from engine.quality.autonomous_correction_loop import AutonomousCorrectionLoop
+
+            max_iter = getattr(options, "autonomous_correction_max_iterations", 3)
+            min_gain = getattr(options, "autonomous_correction_min_quality_gain", 0.01)
+            corr_report = AutonomousCorrectionLoop.run_autonomous_loop(
+                world, max_iterations=max_iter, min_quality_gain=min_gain
+            )
+            world.metadata["autonomous_quality_report"] = corr_report.to_dict()
+        except Exception as exc:  # noqa: BLE001 -- resilient analysis pass
+            world.metadata["autonomous_quality_report"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # What the bounded correction loop WOULD do with this model (or DID do if reconstruction_auto_correct was set).
     try:
         from reconstruction.correction import correct as _correct
 
         _, _record = _correct(result, [item.id for item in evidence_items])
-        correction_plan = {"applied": False, "selected": _record["selected"], "attempts": [
-            {k: a.get(k) for k in ("diagnostic", "action", "status", "reasons", "removed")} for a in _record["attempts"]],
-            "evidence_requests": _record["evidence_requests"]}
+        applied = bool(getattr(options, "reconstruction_auto_correct", False) and _record.get("selected") != "baseline")
+        correction_plan = {
+            "applied": applied,
+            "selected": _record["selected"],
+            "attempts": [
+                {k: a.get(k) for k in ("diagnostic", "action", "status", "reasons", "removed")}
+                for a in _record["attempts"]
+            ],
+            "evidence_requests": _record["evidence_requests"],
+        }
     except Exception as exc:  # noqa: BLE001 -- recorded, never raised
         correction_plan = {"applied": False, "error": f"{type(exc).__name__}: {exc}"}
 
@@ -1172,8 +1253,8 @@ def _second_opinion_facts(enabled, evidence_items, detections_2d):
         return {"status": "failed", "note": f"{type(exc).__name__}: {exc}"}
 
 
-def _small_fittings_facts(enabled, evidence_items, depth_by_id):
-    """Tiled small-fittings detections per registered photograph as RECORDED 2D FACTS (``promoted_to_entities`` is always False).
+def _small_fittings_facts(enabled, evidence_items, depth_by_id, cameras=None, world=None):
+    """Tiled small-fittings detections lifted into 3D observations and associated across views into persistent entities.
     None when not requested. Never raises: unavailable or failing is a recorded status."""
     if not enabled:
         return None
@@ -1186,8 +1267,11 @@ def _small_fittings_facts(enabled, evidence_items, depth_by_id):
         from engine.pipeline.open_vocab_furniture import item_path
         from perception.detection.grounded_small import GroundedSmallDetector
         from perception.entities.small_objects import inspect_small_objects
+        from perception.fine_grained.multiview_associator import VisualObservation3D
 
         detector, totals, per_view, kept, tiles = GroundedSmallDetector(), Counter(), {}, [], 0
+        raw_observations: list[VisualObservation3D] = []
+
         for item in evidence_items:
             eid = getattr(item, "id", None) or item.evidence_id
             if eid not in depth_by_id:
@@ -1201,9 +1285,60 @@ def _small_fittings_facts(enabled, evidence_items, depth_by_id):
             totals.update(counts)
             kept += [{"view": eid, "class": d.class_id, "box_px": [round(v, 1) for v in d.box], "score": round(d.score, 3),
                       "stage": d.stage} for d in res.detections]
-        return {"status": "ran", "promoted_to_entities": False, "tiles_run": tiles, "detections_by_class": dict(totals),
-                "per_view": per_view, "detections": kept[:300],
-                "note": "unverified 2D detections (Grounding DINO tiles); not entities, no accuracy claim"}
+
+            if cameras and eid in cameras and eid in depth_by_id:
+                cam = cameras[eid]
+                dm = depth_by_id[eid]
+                vals = getattr(dm, "values", None)
+                if vals is not None:
+                    h, w = len(vals), len(vals[0]) if vals else 0
+                    for idx, d in enumerate(res.detections):
+                        bx = d.box  # [x1, y1, x2, y2]
+                        cx_px = int(np.clip((bx[0] + bx[2]) / 2.0, 0, w - 1))
+                        cy_px = int(np.clip((bx[1] + bx[3]) / 2.0, 0, h - 1))
+                        patch = []
+                        for dy in (-1, 0, 1):
+                            for dx in (-1, 0, 1):
+                                py, px = cy_px + dy, cx_px + dx
+                                if 0 <= py < h and 0 <= px < w:
+                                    v = vals[py][px]
+                                    if np.isfinite(v) and 0.2 <= v <= 12.0:
+                                        patch.append(v)
+                        if patch:
+                            med_depth = float(np.median(patch))
+                            unproj = cam.unproject(cx_px, cy_px, med_depth)
+                            dim = (0.08, 0.08, 0.03) if ("socket" in d.class_id or "switch" in d.class_id) else (0.15, 0.15, 0.05)
+                            raw_observations.append(VisualObservation3D(
+                                observation_id=f"obs-{eid}-{d.class_id}-{idx}",
+                                class_id=d.class_id,
+                                camera_id=eid,
+                                center_world=(unproj.x, unproj.y, unproj.z),
+                                normal_world=(0.0, 0.0, 1.0),
+                                dimensions_m=dim,
+                                confidence=float(d.score),
+                            ))
+
+        promoted_clusters = 0
+        if raw_observations and world is not None:
+            from perception.fine_grained.pipeline import FineGrainedPerceptionEngine
+            cam_positions = {eid: (c.extrinsics.position.x, c.extrinsics.position.y, c.extrinsics.position.z)
+                             for eid, c in cameras.items()} if cameras else {}
+            engine = FineGrainedPerceptionEngine()
+            _, summary = engine.process_observations_and_promote(raw_observations, world, camera_positions=cam_positions)
+            promoted_clusters = summary.total_entities_detected
+
+        return {
+            "status": "ran",
+            "promoted_to_entities": promoted_clusters > 0,
+            "entities_promoted": promoted_clusters,
+            "raw_observations_lifted": len(raw_observations),
+            "tiles_run": tiles,
+            "detections_by_class": dict(totals),
+            "per_view": per_view,
+            "detections": kept[:300],
+            "note": "fine-grained fittings detected, lifted via metric depth and multi-view associated into persistent entities"
+                    if promoted_clusters > 0 else "unverified 2D detections (Grounding DINO tiles); not entities, no accuracy claim",
+        }
     except Exception as exc:  # noqa: BLE001 -- an enhancement; its failure must not lose the objects
         log.warning("small-fittings pass failed", exc_info=True)
         return {"status": "failed", "note": str(exc), "promoted_to_entities": False}
@@ -1473,7 +1608,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             "note": f"object entities rejected by world validation; world left as it was: {[str(i) for i in report.errors[:3]]}",
         }
 
-    small_fittings = _small_fittings_facts(options.perception_small_fittings, evidence_items, depth_by_id)
+    small_fittings = _small_fittings_facts(options.perception_small_fittings, evidence_items, depth_by_id, cameras=cameras, world=world)
     detections_2d = _detections_2d(seg_results, options.image_size)
     second_opinion = _second_opinion_facts(options.perception_second_opinion, evidence_items, detections_2d)
     return {

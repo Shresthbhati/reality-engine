@@ -26,10 +26,12 @@ export function WorldFindSearchBar({
 
   useEffect(() => {
     if (!query.trim()) {
-      setResults([]);
-      setLoading(false);
-      setError(null);
-      return;
+      const timer = setTimeout(() => {
+        setResults([]);
+        setLoading(false);
+        setError(null);
+      }, 0);
+      return () => clearTimeout(timer);
     }
 
     const timer = setTimeout(async () => {

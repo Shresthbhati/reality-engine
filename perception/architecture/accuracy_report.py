@@ -359,6 +359,10 @@ def evaluate_measured_room_accuracy(
         pos = cp.get("position")
         if pos:
             return (float(pos[0]), float(pos[1]), 0.0)
+        if hasattr(w_ent, "geometry_ids") and w_ent.geometry_ids:
+            geom = world.geometries.get(w_ent.geometry_ids[0])
+            if geom and geom.bounds_min and geom.bounds_max:
+                return ((geom.bounds_min.x + geom.bounds_max.x) / 2.0, (geom.bounds_min.y + geom.bounds_max.y) / 2.0, 0.0)
         return (0.0, 0.0, 0.0)
 
     def _gt_wall_midpoint_2d(gw: dict[str, Any]) -> tuple[float, float, float]:
@@ -395,9 +399,17 @@ def evaluate_measured_room_accuracy(
     gt_openings = ground_truth.get("openings", [])
 
     def _opening_pos(o_ent: Any) -> tuple[float, float, float]:
-        pos = (o_ent.custom_properties or {}).get("position")
+        cp = o_ent.custom_properties or {}
+        pos = cp.get("position") or cp.get("position_m")
         if pos:
             return (float(pos[0]), float(pos[1]), float(pos[2]))
+        tf = getattr(o_ent, "transform", None)
+        if isinstance(tf, dict) and "position" in tf:
+            p = tf["position"]
+            if isinstance(p, dict):
+                return (float(p.get("x", 0)), float(p.get("y", 0)), float(p.get("z", 0)))
+            elif isinstance(p, (list, tuple)):
+                return (float(p[0]), float(p[1]), float(p[2]))
         return (0.0, 0.0, 0.0)
 
     for kind in ("door", "window"):

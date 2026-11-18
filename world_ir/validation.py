@@ -605,6 +605,44 @@ def _check_cross_entity_consistency(world: WorldIR, issues: List[ValidationIssue
                             f"entity {eid} claims ATTACHED_TO {rel.target_id} but they are {dist:.2f}m apart",
                         ))
 
+    # 6. Check Support Surface elevation relative to host space / floor
+    cf = world.metadata.get("compiled_from")
+    raw_up = cf.get("up") if isinstance(cf, dict) else None
+    up_y = float(raw_up[1]) if isinstance(raw_up, (list, tuple)) and len(raw_up) > 1 else 1.0
+    up_z = float(raw_up[2]) if isinstance(raw_up, (list, tuple)) and len(raw_up) > 2 else 0.0
+    up_x = float(raw_up[0]) if isinstance(raw_up, (list, tuple)) and len(raw_up) > 0 else 0.0
+    v_axis = 1 if abs(up_y) > abs(up_z) and abs(up_y) > abs(up_x) else (0 if abs(up_x) > abs(up_y) and abs(up_x) > abs(up_z) else 2)
+    for eid in ids:
+        e = world.entities[eid]
+        if e.type == EntityType.SUPPORT_SURFACE:
+            box_ss = _entity_aabb(world, e)
+            if box_ss is None:
+                continue
+            lo_ss, hi_ss = box_ss
+            space_id = _props(e).get("space_id") or _props(e).get("room_id")
+            if not space_id:
+                for rel in e.relationships:
+                    if rel.kind == RelationshipKind.PART_OF and rel.target_id in world.entities:
+                        if world.entities[rel.target_id].type in _SPACE_TYPES:
+                            space_id = rel.target_id
+                            break
+            if space_id and space_id in world.entities:
+                space_box = _entity_aabb(world, world.entities[space_id])
+                if space_box is not None:
+                    lo_sp, hi_sp = space_box
+                    if lo_ss[v_axis] < lo_sp[v_axis] - 0.20:
+                        issues.append(ValidationIssue(
+                            ValidationSeverity.ERROR,
+                            "cross_entity_support_surface_below_floor",
+                            f"support surface {eid} bottom ({lo_ss[v_axis]:.2f}m) sits below room floor ({lo_sp[v_axis]:.2f}m)",
+                        ))
+                    elif hi_ss[v_axis] > hi_sp[v_axis] + 0.20:
+                        issues.append(ValidationIssue(
+                            ValidationSeverity.WARNING,
+                            "cross_entity_support_surface_above_ceiling",
+                            f"support surface {eid} top ({hi_ss[v_axis]:.2f}m) exceeds room ceiling ({hi_sp[v_axis]:.2f}m)",
+                        ))
+
 
 def _check_invariants(world: WorldIR, issues: List[ValidationIssue]) -> None:
     ids = sorted(world.entities)

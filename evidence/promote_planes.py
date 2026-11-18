@@ -121,9 +121,9 @@ def positions_by_plane(
 
 
 def _bounds(positions: List[Tuple[float, float, float]]) -> Tuple[Vector3, Vector3]:
-    xs = [p[0] for p in positions]
-    ys = [p[1] for p in positions]
-    zs = [p[2] for p in positions]
+    xs = [float(p[0]) for p in positions]
+    ys = [float(p[1]) for p in positions]
+    zs = [float(p[2]) for p in positions]
     return Vector3(min(xs), min(ys), min(zs)), Vector3(max(xs), max(ys), max(zs))
 
 
@@ -310,16 +310,16 @@ def promote_plane_to_entity(
     # exporters/usd, exporters/blender) have no `transform.position` to
     # place an object at and silently skip every promoted plane entity.
     centroid = Vector3(
-        (bounds_min.x + bounds_max.x) / 2.0,
-        (bounds_min.y + bounds_max.y) / 2.0,
-        (bounds_min.z + bounds_max.z) / 2.0,
+        float((bounds_min.x + bounds_max.x) / 2.0),
+        float((bounds_min.y + bounds_max.y) / 2.0),
+        float((bounds_min.z + bounds_max.z) / 2.0),
     )
 
     entity = Entity(
         id=entity_id,
         name=entity_name or entity_id,
         type=entity_type,
-        transform={"position": {"x": centroid.x, "y": centroid.y, "z": centroid.z}},
+        transform={"position": {"x": float(centroid.x), "y": float(centroid.y), "z": float(centroid.z)}},
         geometry_ids=[geometry.id],
         provenance=Provenance.INFERRED,
         confidence=oriented.uncertainty.confidence,

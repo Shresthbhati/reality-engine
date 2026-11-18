@@ -150,8 +150,13 @@ class Vector3:
     y: float
     z: float
 
+    def __post_init__(self) -> None:
+        self.x = float(self.x)
+        self.y = float(self.y)
+        self.z = float(self.z)
+
     def to_dict(self) -> dict:
-        return {"x": self.x, "y": self.y, "z": self.z}
+        return {"x": float(self.x), "y": float(self.y), "z": float(self.z)}
 
     @staticmethod
     def from_dict(data: dict) -> "Vector3":

@@ -122,3 +122,69 @@ def test_multiview_room_association_enclosure_and_visibility():
     pair_1_3 = ("photo_01", "photo_03")
     assert pair_1_3 in covis
     assert covis[pair_1_3] < covis[pair_1_2]
+
+
+def test_compiler_multiview_room_association_integration():
+    """Verify that compile_reconstruction_to_world runs the MultiViewRoomAssociator pass."""
+    from engine.compiler import CompileOptions, compile_reconstruction_to_world
+    from provenance import Uncertainty
+    from reconstruction.backend.interface import (
+        ReconstructedCameraPose,
+        ReconstructedPoint,
+        ReconstructionResult,
+    )
+    from world_ir.schema_v1 import EntityType
+
+    def _pt(x, y, z, c=[0]):
+        c[0] += 1
+        return ReconstructedPoint(
+            position=(x, y, z),
+            track_id=f"pt-{c[0]:05d}",
+            source_evidence_ids=["ev-1"],
+            uncertainty=Uncertainty(1.0, "synthetic"),
+        )
+
+    pts = []
+    # Floor at y=0.0 (3x3m)
+    for xi in range(31):
+        for zi in range(31):
+            pts.append(_pt(xi * 0.1, 0.0, zi * 0.1))
+    # Ceiling at y=2.5
+    for xi in range(31):
+        for zi in range(31):
+            pts.append(_pt(xi * 0.1, 2.5, zi * 0.1))
+    # 4 walls bounding the room
+    for yi in range(13):
+        for zi in range(31):
+            pts.append(_pt(0.0, yi * 0.2, zi * 0.1))
+            pts.append(_pt(3.0, yi * 0.2, zi * 0.1))
+        for xi in range(31):
+            pts.append(_pt(xi * 0.1, yi * 0.2, 0.0))
+            pts.append(_pt(xi * 0.1, yi * 0.2, 3.0))
+
+    cams = [
+        ReconstructedCameraPose("ev-0", (1.5, 1.8, 1.5), (1.0, 0.0, 0.0, 0.0)),
+        ReconstructedCameraPose("ev-1", (1.0, 1.8, 2.0), (1.0, 0.0, 0.0, 0.0)),
+        ReconstructedCameraPose("ev-2", (2.0, 1.8, 1.0), (1.0, 0.0, 0.0, 0.0)),
+    ]
+    res = ReconstructionResult(points=pts, camera_poses=cams, registration_status="success")
+    world, diag = compile_reconstruction_to_world(res, CompileOptions(seed=42))
+
+    assert diag.rooms_detected == 1
+    # Check multiview_rooms in world metadata
+    assert "multiview_rooms" in world.metadata
+    mv = world.metadata["multiview_rooms"]
+    assert mv["rooms_count"] == 1
+    assert mv["cameras_count"] == 3
+    assert len(mv["associations"]) == 3
+
+    # Every camera was inside the 3x3 room
+    room_ent = next(e for e in world.entities.values() if e.type == EntityType.ROOM)
+    for assoc in mv["associations"]:
+        assert assoc["inside_room_id"] == room_ent.id
+
+    # The room entity recorded its camera stations
+    props = getattr(room_ent, "custom_properties", {}) or getattr(room_ent, "metadata", {})
+    assert sorted(props.get("camera_stations", [])) == ["ev-0", "ev-1", "ev-2"]
+    # Co-visibility exists between the internal stations
+    assert len(mv["covisibility"]) > 0

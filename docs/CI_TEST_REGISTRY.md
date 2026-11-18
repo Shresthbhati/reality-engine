@@ -113,7 +113,7 @@ Total: 1
 
 ## unlisted
 
-Total: 522
+Total: 524
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -321,6 +321,7 @@ Total: 522
 - `tests/test_horizontal_consolidation.py`
 - `tests/test_identity_carry.py`
 - `tests/test_ifc_bridge.py`
+- `tests/test_ifc_roundtrip.py`
 - `tests/test_image_orientation_cap.py`
 - `tests/test_import_boundaries.py`
 - `tests/test_incremental.py`
@@ -493,6 +494,7 @@ Total: 522
 - `tests/test_resumable_upload.py`
 - `tests/test_review_coco_api.py`
 - `tests/test_rng.py`
+- `tests/test_robust_depth_fusion.py`
 - `tests/test_robustness_admission.py`
 - `tests/test_room_building_graph.py`
 - `tests/test_room_inference.py`

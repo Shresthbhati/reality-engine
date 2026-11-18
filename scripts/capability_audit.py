@@ -67,8 +67,8 @@ ROWS: Dict[str, dict] = {
         modules=["reconstruction/mvs/dense_cloud.py", "reconstruction/dense_pipeline.py", "reconstruction/backend/plane_sweep.py"],
         tests=["tests/test_dense_mvs_stage.py", "tests/test_mvs_point_cloud_ops.py", "tests/test_colmap_backend_dense.py"]),
     "Point-cloud fusion": dict(
-        modules=["reconstruction/fusion/fusion.py", "reconstruction/fusion/multi_source.py"],
-        tests=["tests/test_fusion_pipeline.py", "tests/test_fusion_stage.py", "tests/test_dense_cloud_fusion.py"]),
+        modules=["reconstruction/fusion/fusion.py", "reconstruction/fusion/multi_source.py", "reconstruction/fusion/robust_fusion.py"],
+        tests=["tests/test_fusion_pipeline.py", "tests/test_fusion_stage.py", "tests/test_dense_cloud_fusion.py", "tests/test_robust_depth_fusion.py"]),
     "Mesh reconstruction": dict(
         modules=["reconstruction/meshing/mesh.py", "reconstruction/meshing/surface.py", "reconstruction/meshing/room_mesh.py"],
         tests=["tests/test_meshing_pipeline.py", "tests/test_mesh_validation.py", "tests/test_mesh_repair_and_completeness.py", "tests/test_room_mesh.py"]),
@@ -102,7 +102,7 @@ ROWS: Dict[str, dict] = {
     "Export and persistence": dict(
         modules=["exporters/gltf", "exporters/ifc_bridge.py", "worldstore/store.py"],
         tests=["tests/test_gltf_exporter.py", "tests/test_export_pipeline_e2e.py", "tests/test_worldstore_concurrency.py",
-               "tests/test_worldstore_retention.py", "tests/test_ifc_bridge.py"]),
+               "tests/test_worldstore_retention.py", "tests/test_ifc_bridge.py", "tests/test_ifc_roundtrip.py"]),
 }
 
 #: what was actually observed on real photographs (the 10-photo living room, this project); empty when nothing was

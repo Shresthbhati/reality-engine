@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-18T23:54:02+0530",
+ "generated_at": "2026-11-19T00:18:39+0530",
  "live_roots": [
   "apps.api.main",
   "apps.api.jobs"
@@ -413,10 +413,11 @@
    "verified": "not run",
    "modules": [
     "reconstruction/fusion/fusion.py",
-    "reconstruction/fusion/multi_source.py"
+    "reconstruction/fusion/multi_source.py",
+    "reconstruction/fusion/robust_fusion.py"
    ],
    "modules_missing": [],
-   "modules_total": 2,
+   "modules_total": 3,
    "reachable_from_api": 2,
    "shortest_live_import_chain": [
     "apps.api.jobs",
@@ -424,14 +425,19 @@
     "reconstruction.fusion.consumer",
     "reconstruction.fusion.fusion"
    ],
-   "not_reachable_from_api": [],
-   "entries_not_reachable_from_api": [],
+   "not_reachable_from_api": [
+    "reconstruction.fusion.robust_fusion"
+   ],
+   "entries_not_reachable_from_api": [
+    "reconstruction/fusion/robust_fusion.py"
+   ],
    "offline_tool": false,
    "failing_tests": [],
    "tests": [
     "tests/test_fusion_pipeline.py",
     "tests/test_fusion_stage.py",
-    "tests/test_dense_cloud_fusion.py"
+    "tests/test_dense_cloud_fusion.py",
+    "tests/test_robust_depth_fusion.py"
    ],
    "tests_missing": [],
    "test_counts": {
@@ -829,7 +835,8 @@
     "tests/test_export_pipeline_e2e.py",
     "tests/test_worldstore_concurrency.py",
     "tests/test_worldstore_retention.py",
-    "tests/test_ifc_bridge.py"
+    "tests/test_ifc_bridge.py",
+    "tests/test_ifc_roundtrip.py"
    ],
    "tests_missing": [],
    "test_counts": {

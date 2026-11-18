@@ -82,7 +82,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERF-000006 | VN | SAM 2 image encoder would run per box → once per image | [H] | B06 |
 | RE-PERF-000007 | VN | DINOv2 would run per crop → one forward per image, pool tokens by mask | [H] | B07 |
 | RE-PERF-000008 | DN | Masks as images → RLE byte-packed MaskStore | [V] tests/test_mask_store.py | done |
-| RE-PERF-000009 | VN | Embeddings as Python lists → float16 memory-mapped matrix | [H] | B07 |
+| RE-PERF-000009 | DN | Embeddings as Python lists → `world_ir/embedding_store.py`: float16 unit-vector matrix, `.npy` saved and memory-mapped on load, refuses zero/non-finite/wrong-size vectors, `"<sha>#<row>"` refs. Store only: the live appearance path (`_region_appearance` in vertical_slice) still passes lists to `associate(appearance=…)` | [V] tests/test_embedding_store.py | done (store; live path open) |
 | RE-PERF-000010 | VN | Depth maps float32 in RAM → float16 memory-mapped | [H] | B01 |
 | RE-PERF-000011 | DN | Identity candidates N² → `associate` scans only entities in a KD-tree ball of radius √(χ²·(σo²+σe_max²)) (a proven superset of the distance gate; the unchanged `_candidate` still decides); tree used from 16 entities up. Speed-up not measured | [V] tests/test_association_kdtree.py: identical results with and without the tree on 3 random scenes; superset check | done |
 | RE-PERF-000012 | VN | Unchanged stages rerun → skip on matching inputs hash | [V] | B01 |

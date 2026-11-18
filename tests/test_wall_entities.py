@@ -122,7 +122,10 @@ def test_gltf_export_contains_real_wall_meshes(built):
         assert acc["count"] == len(m.vertices) and prim["mode"] == 4
         bv = g["bufferViews"][acc["bufferView"]]
         xyz = np.array(struct.unpack_from(f"<{acc['count'] * 3}f", buf, bv["byteOffset"])).reshape(-1, 3)
-        assert np.allclose(xyz + np.array(node["translation"]), np.array(m.vertices), atol=1e-3)
+        from tests.gltf_validation import node_world_trs
+
+        t, s = node_world_trs(g, g["nodes"].index(node))  # a nested node's TRS is parent-relative
+        assert np.allclose(xyz * np.array(s) + np.array(t), np.array(m.vertices), atol=1e-3)
     assert "floor-slab-room-001" in by_name
 
 

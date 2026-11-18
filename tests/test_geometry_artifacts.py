@@ -412,8 +412,11 @@ class TestGltfExportsRealGeometry:
                 continue
             sized += 1
             lo, hi = geom.bounds_min, geom.bounds_max
-            assert node["scale"][0] >= max(0.02, hi.x - lo.x) - 1e-6
-            assert abs(node["translation"][1] - (lo.y + hi.y) / 2.0) < 1e-6
+            from tests.gltf_validation import node_world_trs
+
+            t, s = node_world_trs(gltf, gltf["nodes"].index(node))  # a nested node's TRS is parent-relative
+            assert s[0] >= max(0.02, hi.x - lo.x) - 1e-6
+            assert abs(t[1] - (lo.y + hi.y) / 2.0) < 1e-6
         assert sized, "no node was sized from its bounds"
 
     def test_sdk_export_threads_artifact_store_through_for_gltf(self):

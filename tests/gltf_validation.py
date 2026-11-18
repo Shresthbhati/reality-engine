@@ -24,6 +24,21 @@ def _need(cond: bool, msg: str) -> None:
         raise GlbError(msg)
 
 
+def node_world_trs(gltf: dict, index: int) -> tuple[list, list]:
+    """World ``(translation, scale)`` of a node: its own TRS composed up the ``children`` chain, as glTF defines it
+    (a child's TRS is relative to its parent). Rotation is not composed: the exporter only nests axis-aligned frames."""
+    parent = {c: i for i, n in enumerate(gltf["nodes"]) for c in n.get("children", [])}
+    node = gltf["nodes"][index]
+    t, s = list(node.get("translation", (0.0, 0.0, 0.0))), list(node.get("scale", (1.0, 1.0, 1.0)))
+    while index in parent:
+        index = parent[index]
+        pn = gltf["nodes"][index]
+        pt, ps = pn.get("translation", (0.0, 0.0, 0.0)), pn.get("scale", (1.0, 1.0, 1.0))
+        t = [pt[i] + ps[i] * t[i] for i in range(3)]
+        s = [ps[i] * s[i] for i in range(3)]
+    return t, s
+
+
 def parse_glb(data: bytes) -> tuple[dict, bytes]:
     """Container check -> (json, bin chunk). Raises GlbError on any structural problem."""
     _need(len(data) >= 20, "file shorter than a GLB header")

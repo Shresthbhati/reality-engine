@@ -111,6 +111,11 @@ class ObservationTable:
     def to_inventory(self) -> list[dict]:
         """Benchmark contract rows; anything not measured is None with an ``unavailable`` reason."""
         recs = []
+        # RE-PERC-000022: a count is DISTINCT ENTITIES of the class in the photo after association, never detections
+        entities_of: dict = {}
+        for i in range(len(self)):
+            if self.entity_row[i] >= 0:
+                entities_of.setdefault((str(self.image_id[i]), str(self.class_path[i])), set()).add(int(self.entity_row[i]))
         for i in range(len(self)):
             path = str(self.class_path[i]).split("/")
             lifted = bool(np.all(np.isfinite(self.world_pos[i])))
@@ -122,11 +127,15 @@ class ObservationTable:
                 "confidence": float(min(max(self.score[i], 0.0), 1.0)),
                 "position_3d": [float(x) for x in self.world_pos[i]] if lifted else None,
                 "visibility": None if vis_val == "not_observed" else vis_val,
-                "instance_count": None, "mask": int(self.mask_ref[i]) if self.mask_ref[i] >= 0 else None,
+                "instance_count": (len(entities_of[(str(self.image_id[i]), str(self.class_path[i]))])
+                                   if self.entity_row[i] >= 0 else None),
+                "mask": int(self.mask_ref[i]) if self.mask_ref[i] >= 0 else None,
                 "dimensions": None, "orientation": None, "material": None,
                 "evidence": [str(self.obs_id[i])],
             }
-            why = {k: "not measured by this pipeline" for k in ("instance_count", "dimensions", "orientation", "material")}
+            why = {k: "not measured by this pipeline" for k in ("dimensions", "orientation", "material")}
+            if r["instance_count"] is None:
+                why["instance_count"] = "not associated to an entity yet (raw detections are never counted)"
             if r["mask"] is None:
                 why["mask"] = "no mask produced"
             if r["position_3d"] is None:

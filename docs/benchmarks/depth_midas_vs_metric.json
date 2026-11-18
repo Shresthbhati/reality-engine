@@ -6,8 +6,8 @@
     "unit": "relative",
     "scale_state": "relative",
     "depth_range": [
-      0.21739130885479366,
-      0.4482748227818257
+      0.21739131212234497,
+      0.4482748210430145
     ],
     "requires_scale_anchor": true
   },
@@ -19,7 +19,7 @@
       2.230774402618408,
       4.599999904632568
     ],
-    "mean_depth_meters": 3.425104477549127,
+    "mean_depth_meters": 3.4251046180725098,
     "requires_scale_anchor": false,
     "confidence": 0.5,
     "note": "scene-statistics prior, not learned model inference"

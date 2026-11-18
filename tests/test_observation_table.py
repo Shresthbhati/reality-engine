@@ -121,3 +121,16 @@ def test_observations_api_endpoint(tmp_path, monkeypatch):
         # Cross-tenant query blocked with 404
         r_for = c.get("/api/worlds/wld_obs_test/versions/ver_obs_1/observations", headers={"Authorization": f"Bearer {foreign_token}"})
         assert r_for.status_code == 404
+
+
+def test_instance_count_is_distinct_entities_after_association_never_raw_detections():
+    t = ObservationTable.empty(5)
+    rows = [("imgA", "fix/socket", 0), ("imgA", "fix/socket", 0),        # one socket seen twice (duplicate detection)
+            ("imgA", "fix/socket", 1),                                   # a second, different socket
+            ("imgA", "fix/socket", -1),                                  # not associated yet
+            ("imgB", "fix/socket", 0)]                                   # same entity in another photo: counted per photo
+    for i, (img, cls, ent) in enumerate(rows):
+        t.obs_id[i], t.image_id[i], t.class_path[i], t.entity_row[i] = f"o{i}", img, cls, ent
+    inv = t.to_inventory()
+    assert [r["instance_count"] for r in inv] == [2, 2, 2, None, 1]
+    assert "never counted" in inv[3]["unavailable"]["instance_count"] and "instance_count" not in inv[0]["unavailable"]

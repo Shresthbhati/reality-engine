@@ -47,6 +47,7 @@ def test_unknown_attribute_never_matches():
 def test_api_route_find_registered():
     from apps.api.main import app
 
-    openapi_paths = set(app.openapi().get("paths", {}).keys())
-    assert "/api/worlds/{world_id}/find" in openapi_paths
-    assert "/api/worlds/{world_id}/query/find" in openapi_paths
+    # app.routes may hold wrapped routers without .path on newer FastAPI; the schema is stable
+    paths = list(app.openapi()["paths"])
+    assert "/api/worlds/{world_id}/find" in paths
+    assert "/api/worlds/{world_id}/query/find" in paths

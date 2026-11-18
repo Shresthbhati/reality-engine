@@ -67,6 +67,7 @@ def run_stages(
                 )
             checkpoints.record(ctx.job_id, result)
         manifest.stages.append(result)
+        manifest.lineage.add(spec.name, spec.inputs if spec.inputs is not None else tuple(ctx.artifacts), result.outputs)
         ctx.artifacts.update(result.outputs)
         if on_end:
             on_end(result)

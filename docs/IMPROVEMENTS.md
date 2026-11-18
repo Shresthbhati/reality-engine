@@ -23,7 +23,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-ARCH-000011 | OF | `UniversalSpatialPipeline` unwired second pipeline → fold or delete | [V] deleted in P113 (3ceb60b5dd) | done |
 | RE-ARCH-000012 | DN | Unknown objects have no home → every ontology family gets an `unknown` child, kept not dropped | [V] tests/test_b03_unified_ontology.py | done |
 | RE-ARCH-000013 | DN | Containment has two sources → unified via `world_ir/relations.py` and `/api/worlds/{id}/find` | [V] tests/test_relations.py, tests/test_query_find.py | done |
-| RE-ARCH-000014 | VN | Artifact lineage not queryable → DAG of artifact → producing stage, invalidate by reverse BFS | [H] | B01 |
+| RE-ARCH-000014 | DN | Artifact lineage not queryable → `LineageGraph` (artifact → producer, `invalidated_by` BFS), recorded by `run_stages`; stages without declared `inputs` are assumed to read all earlier artifacts | [V] tests/test_stage_lineage.py | done |
 | RE-PERC-000001 | DN | 19 flat prompts for everything → hierarchical whole → part detection | [V] tests/test_hierarchical_detection.py | done |
 | RE-PERC-000002 | DN | Tiled small-object pass mislabels (railing as wiring, texture as drain) → parent-box and size checks | [V] tests/test_entity_perception.py | done |
 | RE-PERC-000003 | DN | 678 unreviewed small-object drafts, no ground truth → review queue before any use | [V] tests/test_annotation_review.py | done |
@@ -31,26 +31,26 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERC-000005 | OF | SAM 2 backend exists, package and weights absent, 0/3 reachable → install, wire, RLE store | [M] | B06 |
 | RE-PERC-000006 | VN | 3D lifting uses boxes, includes background → lift from mask pixels | [M] | B06 |
 | RE-PERC-000007 | DN | DINOv2 re-id code not wired into association → embeddings passed to `associate(appearance=…)` | [V] tests/test_appearance_embeddings.py | done |
-| RE-PERC-000008 | DN | Identity joining order-dependent → global min-cost flow LP association | [V] tests/test_global_association.py | done |
-| RE-PERC-000009 | DN | Two detections in one photo can merge → same-image cannot-link constraints | [V] tests/test_global_association.py | done |
+| RE-PERC-000008 | OF | Identity joining order-dependent → `perception/instances/global_association.cluster_observations` (strongest evidence first, order-independent, tested) EXISTS but is NOT called from the live path (checked 2026-11-18: only tests import it); the live path still uses `associate` (per-image Hungarian over entities as they were before the image, sorted ids, so also order-independent: tests/test_association.py:146). Wiring means producing (row, row, llr) pairs from `_candidate` and replacing the join step; a behaviour change that needs real captures to judge | [V] tests/test_global_association.py (unit only) | open (not wired) |
+| RE-PERC-000009 | DN | Two detections in one photo can merge → same-image cannot-link constraints: enforced in `cluster_observations` (unit-tested; not live) and, in the live `associate`, by matching against entities as they were BEFORE the image so nothing in one photo can chain | [V] tests/test_global_association.py; tests/test_association.py | done (live via associate) |
 | RE-PERC-000010 | DN | No attributes → margin-gated attribute classifier with multi-view fusion | [V] tests/test_attribute_classification.py | done |
 | RE-PERC-000011 | DN | Attribute votes across views independent → capped correlated evidence at 3 views | [V] tests/test_attribute_classification.py | done |
 | RE-PERC-000012 | DN | Materials only for room surfaces → material attribute on every family | [V] tests/test_b03_unified_ontology.py, tests/test_attribute_classification.py | done |
 | RE-PERC-000013 | OF | Switchboard decomposition unreachable → becomes ontology components of `switchboard` | [M] | B03, B04 |
 | RE-PERC-000014 | OF | Fine-grained pipeline only on SDK path → retired in favour of B04 | [M] | B04 |
 | RE-PERC-000015 | OF | Tracking modules 0/3 reachable → used for video only, after photo identity works | [M] | later |
-| RE-PERC-000016 | VN | No text reading (nameplates, labels) → OCR as attribute basis | [H] | later |
+| RE-PERC-000016 | DN | No text reading (nameplates, labels) → `perception/detection/ocr.py`: Florence-2 `<OCR>` on a crop (`read_text`) and `match_attribute` onto an attribute's allowed values with basis `ocr`, `p=None` (the task has no confidence), ambiguity stays unknown. `attributes.merge_ocr` combines text with the visual decision (agree → `visual+ocr`; text fills an unknown → `ocr`; contradiction → unknown + recorded conflict) and `classify_attribute_from_crop` takes an optional `ocr_reader`. Live path: opt-in `perception_attributes` (default off) runs `attribute_pass.run_attribute_pass` over the observation table in the perception stage (budgeted Grounding DINO calls per allowed value, OCR when Florence-2 is cached, failures recorded as a fact). Detector phrases come from a vetted table (`attribute_phrases.py`: handle/lock/socket/switch kinds only); attributes without ≥2 vetted phrases (counts, swing, openable, grill, material, "none") are written unknown with a reason and cost no detector call; the phrases themselves are unverified on labelled crops; never run on real photos | [V] tests/test_ocr_attributes.py incl. a real model read of rendered text; tests/test_attribute_classification.py; tests/test_attribute_pass.py (fake detector) | done (opt-in; unmeasured) |
 | RE-PERC-000017 | OF | Closed windows found by gaps only → visual evidence path | [A] | later |
-| RE-PERC-000018 | VN | Mirrors and glass create phantom objects → reflective-surface flag suppresses lifting behind planes | [H] | later |
+| RE-PERC-000018 | DN | Mirrors and glass create phantom objects → a flat mirror/glass candidate defines a plane; objects lifted behind it (45° cone, 15 cm margin) are dropped as `behind_reflective_surface`. Axis-aligned panes only; unmeasured on real photos | [V] tests/test_reflective_surface_filter.py (synthetic) | done (synthetic) |
 | RE-PERC-000019 | VN | Detector scores used as confidence → calibrate once annotations exist | [M] no annotations | open |
 | RE-PERC-000020 | DN | Blurry regions still produce detections → per-region sharpness gates low-score detections | [V] tests/test_hierarchical_detection.py | done |
 | RE-PERC-000021 | VN | Occlusion state not recorded → visibility per observation from mask vs box area and depth order | [M] | B06 |
-| RE-PERC-000022 | VN | Instance counts unreliable → count = entities after B08, never detections | [M] | B08 |
+| RE-PERC-000022 | DN | Instance counts unreliable → `ObservationTable.to_inventory` fills `instance_count` = distinct entities of that class in that photo after association; an unassociated row stays None with "raw detections are never counted". Counts are only as good as the association | [V] tests/test_observation_table.py; inventory validator passes | done |
 | RE-PERC-000023 | DN | Part outside its parent accepted → rejected by parent box containment | [V] tests/test_hierarchical_detection.py | done |
-| RE-PERC-000024 | VN | Sizes not checked against class → `typical_dims_m` plausibility after lifting | [V] field exists | B04 |
-| RE-PERC-000025 | VN | Same detector call repeated per crop per attribute → batch attribute phrases 2 per pass | [M] measured batch setting | B05 |
+| RE-PERC-000024 | DN | Sizes not checked against class → `filter_implausible` drops a lifted object whose longest side exceeds 2.5× its class's largest `typical_dims_m` (`implausible_size`); classes without declared dims are never rejected on size. Only the too-big side: partial lifts make too-small unreliable. Factor not tuned on real data | [V] tests/test_reflective_surface_filter.py | done (too-big only) |
+| RE-PERC-000025 | DN | Same detector call repeated per crop per attribute → `classify_attribute_from_crop(detector_many=…)`: all of an attribute's phrases go through ONE crop write and one `_grounded_raw` call (batched 2 prompts per forward, the measured setting); `grounded_scorer().many` is the real one, plain scorers still work. Speed-up not timed | [V] tests/test_attribute_pass.py incl. a real Grounding DINO call | done |
 | RE-GEO-000001 | OF | Same photos give 995 vs 1,423 sparse points → deterministic SfM | [M] | B12 |
-| RE-GEO-000002 | OF | 9 of 10 photos register → report the unregistered photo and why | [M] | B12 |
+| RE-GEO-000002 | DN | 9 of 10 photos register → `capture_quality.unregistered` lists each left-out photo's evidence id with a cause only when one was measured, else "no per-photo cause was reported". The cause comes from contribution analysis (`ContributionReport.reasons_by_id`: disconnected / redundant / not measurable, with verified-match counts); a photo with no measured cause says so | [V] tests/test_capture_quality.py | done |
 | RE-GEO-000003 | DN | Dense reconstruction silently ran sparse-only → explicit arguments win | [V] commit `04362f72` | done |
 | RE-GEO-000004 | DN | Furniture tops and steps classed as floor → support-plane separation rule | [V] tests/test_support_planes.py | done |
 | RE-GEO-000005 | DN | Room footprint ragged → direction snapping within 5°, honest polygonization | [V] tests/test_footprint_cleanup.py | done |
@@ -66,33 +66,33 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GEO-000015 | OF | `reconstruction/mvs/dense_cloud.py` unreachable → wire or delete | [V] reconstruction/dense_pipeline.py, tests/test_unreachable_sfm_mvs_wiring.py | done |
 | RE-GEO-000016 | VN | SfM fails on blank walls → feed-forward backend as second candidate | [M] | later |
 | RE-GEO-000017 | VN | No device poses → ARKit/ARCore priors | [A] | later |
-| RE-GEO-000018 | VN | Wall thickness is a default → measured from both faces when both seen, else `INFERRED` | [A] | later |
+| RE-GEO-000018 | DN | Wall thickness is a default → shared partitions now take the measured gap between both rooms' inner faces (`thickness_basis=measured_both_faces`; faces < 3 cm apart keep the labelled default). Fixed a double-count that added the default on top. Exterior walls and walls seen from one side stay `default_unmeasured` | [V] tests/test_shared_walls.py | done (shared partitions only) |
 | RE-GEO-000019 | DN | Mesh quality unknown → watertight / manifold / components verdict | [V] tests/test_quality_report_stage.py | done |
 | RE-GEO-000020 | VN | Openings cut by ad hoc geometry → robust booleans | [H] | later |
 | RE-GEO-000021 | RO | Domes, arches, vaults unrepresentable → surface-of-revolution and arch primitives | [H] | later |
 | RE-GEO-000022 | VN | Steps are not parts of stairs → stair ontology with step/riser components | [V] config/ontology.yaml, tests/test_support_planes.py | done |
 | RE-GEO-000023 | VN | Second storey can be read as a table → storey = floor with its own walls | [V] perception/geometry/orientation.py, tests/test_support_planes.py | done |
-| RE-GEO-000024 | RO | Scale from known objects (door heights) → scale hypothesis marked `INFERRED` | [H] | later |
+| RE-GEO-000024 | DN | Scale from known objects (door heights) → `suggest_scale_from_world` already reads measured door heights, refuses on disagreement or an already-metric world, applies nothing, and is `ESTIMATED` if accepted | [V] reconstruction/scale/base.py:454 | done |
 | RE-GEO-000025 | VN | Collinear wall fragments (25 → 8 by consolidation) → merge by sweep along direction | [M] | B10 |
-| RE-PERF-000001 | MP | 10-photo run ~13 min, not re-timed after detector speed-up → time it, record per stage | [M] | B20 |
+| RE-PERF-000001 | MP | 10-photo run ~13 min, not re-timed after detector speed-up → time it, record per stage | [V] 2026-11-18: first 10 South Building photos through the API job path took 288 s wall (upload 11 s); partial, 4/10 registered, 697 points; reconstruction rung 205 s. Per-stage split and GPU use not recorded; not a room scene | B20 |
 | RE-PERF-000002 | DN | Grounding DINO 3.4 s → 0.2 s per prompt | [M] | done |
 | RE-PERF-000003 | DN | Models reload between stages → `ModelPool` LRU cache | [V] tests/test_model_pool.py | done |
 | RE-PERF-000004 | DN | Out-of-memory can kill job → admission check, CPU fallback or ResourceUnavailable | [V] tests/test_model_pool.py | done |
 | RE-PERF-000005 | DN | VRAM per model guessed → measured table persisted with strict rejection | [V] tests/test_model_pool.py | done |
 | RE-PERF-000006 | VN | SAM 2 image encoder would run per box → once per image | [H] | B06 |
-| RE-PERF-000007 | VN | DINOv2 would run per crop → one forward per image, pool tokens by mask | [H] | B07 |
+| RE-PERF-000007 | DN | DINOv2 would run per crop → `Dinov2Embedder.embed_pooled`: one forward per photo, patch tokens pooled under each mask (coverage-weighted). Opt-in `perception_appearance="dinov2_pooled"`; the default stays the batched masked-crop CLS descriptor because the pooled one is a DIFFERENT descriptor, not measured better, and the two are not comparable with each other | [V] tests/test_dinov2_hf.py: pure pooling; real model separates two views of a texture from noise | done (opt-in) |
 | RE-PERF-000008 | DN | Masks as images → RLE byte-packed MaskStore | [V] tests/test_mask_store.py | done |
-| RE-PERF-000009 | VN | Embeddings as Python lists → float16 memory-mapped matrix | [H] | B07 |
-| RE-PERF-000010 | VN | Depth maps float32 in RAM → float16 memory-mapped | [H] | B01 |
-| RE-PERF-000011 | VN | Identity candidates N² → KD-tree pairs within 3σ | [H] | B08 |
+| RE-PERF-000009 | DN | Embeddings as Python lists → `world_ir/embedding_store.py`: float16 unit-vector matrix, `.npy` saved and memory-mapped on load, refuses zero/non-finite/wrong-size vectors, `"<sha>#<row>"` refs. Live: `_region_appearance` stores every region vector in the store and hands association float32 views of its rows (float16-rounded unit vectors; facts record backend, dtype and matrix bytes). Memory-mapped loading is for persisted matrices; nothing persists this one yet | [V] tests/test_embedding_store.py; tests/test_dinov2_hf.py pipeline-wiring tests pass | done |
+| RE-PERF-000010 | DN | Depth maps were nested Python lists (not float32 arrays) → `DepthMap.values` takes a read-only float32 array; all five producers (MiDaS, Depth Anything, metric prior, shift-aligned metric, device RGB-D) hand over arrays. Measured 480×640: 9.9 MB list → 1.23 MB array (8.0×). NOT float16 (float16 × Python float stays float16 and would coarsen un-projection) and NOT memory-mapped (that belongs with persisting depth as a stage artifact, B01) | [V] 141 depth/pipeline/golden-path tests pass; tests/test_perception_interfaces.py | done (float32 in memory; mmap open) |
+| RE-PERF-000011 | DN | Identity candidates N² → `associate` scans only entities in a KD-tree ball of radius √(χ²·(σo²+σe_max²)) (a proven superset of the distance gate; the unchanged `_candidate` still decides); tree used from 16 entities up. Speed-up not measured | [V] tests/test_association_kdtree.py: identical results with and without the tree on 3 random scenes; superset check | done |
 | RE-PERF-000012 | VN | Unchanged stages rerun → skip on matching inputs hash | [V] | B01 |
 | RE-PERF-000013 | VN | New photo rebuilds everything → only stages whose inputs changed | [H] | B01 |
 | RE-PERF-000014 | DN | Video duplicates processed → counted and dropped (keeps 6 of 18) | [V] test_progressive_product_journey.py::test_H_video | done |
 | RE-PERF-000015 | DN | `pytest -k "colmap or dense"` takes 57 min → marked slow across integration and backend suites; deselected with `-m 'not slow'` | [V] pyproject.toml, tests/ | done |
-| RE-PERF-000016 | VN | Nine specialist tools in the Studio bundle → lazy-load | [V at 199ca3bb] | later |
+| RE-PERF-000016 | DN | Specialist tools in the Studio bundle → `next/dynamic` (client-only) for clash, section drawing, takeoff, life safety, thermal, MEP and construction progress. Bundle size not measured | [V] `tsc --noEmit` 0, ESLint 0 errors | done |
 | RE-PERF-000017 | VN | Refinement can loop without gain → heap by gain/cost, stop on no change | [H] | B16 |
 | RE-PERF-000018 | VN | Detector calls unbounded per image → `budget_calls` | [H] | B04 |
-| RE-DB-000001 | VN | Stage lookup by (job, name, inputs hash) needs an index → confirm unique index exists | [M] | B01 |
+| RE-DB-000001 | DN | Stage lookup by (job, name, inputs hash) needs an index → confirmed: unique constraint on (job_id, name, inputs_hash, attempt), leading columns match the lookup | [V] apps/api/models.py:583, migration 0005 | done |
 | RE-DB-000002 | VN | Dev on SQLite, production on Postgres → run core tests on both | [V] `apps/api/db.py` | open |
 | RE-DB-000003 | VN | Job claim locking on Postgres unverified → two-claimer test | [V] apps/api/jobs.py, tests/test_durable_job_queue.py | done |
 | RE-DB-000004 | VN | Observations as DB rows would be millions → artifact files, DB holds the hash | [H] | B02 |
@@ -100,7 +100,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-DB-000006 | VN | WorldStore and DB can disagree after a crash → test crash between the two writes | [V] D01 tests cover this area | D01 |
 | RE-SEC-000001 | DN | Non-commercial model can run → licence gate called at job start | [V] apps/api/jobs.py, tests/test_model_licence_gate.py | done |
 | RE-SEC-000002 | VN | Metric-Indoor depth checkpoint has no declared licence → keep out of default path | [V] default REALITY_LAYOUT_MODELS=0; model_registry gated | done |
-| RE-SEC-000003 | VN | Checkpoint hashes not enforced on load → `verify_checkpoint` before every load | [V] function exists | B13 |
+| RE-SEC-000003 | DN | Checkpoint hashes not enforced on load → `require_verified` before the torch.load sites; mismatch raises | [V] tests/test_require_verified.py | done |
 | RE-SEC-000004 | DN | Weights loaded with pickle → `weights_only=True` or safetensors | [V] midAS_backend.py, dinov2_embeddings.py | done |
 | RE-SEC-000005 | DN | Test backend reachable in production path → refuse outside test env | [V] apps/api/jobs.py | done |
 | RE-SEC-000006 | DN | Tenant scoping per route unproven → verified via SEC-001..SEC-005 security test suite | [V] tests/test_audit_security_gates.py | done |
@@ -116,12 +116,12 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-TEST-000004 | DN | CI registry stale on main | [V] commit `f0df2663` | done |
 | RE-TEST-000005 | DN | Nightly job missing `trimesh`, `pytest-asyncio` | [V] | done, unverified on GitHub |
 | RE-TEST-000006 | VN | Local Python 3.14, CI 3.10–3.12 → run 3.11 locally before release | [V] | B20 |
-| RE-TEST-000007 | OF | Lint and type checks cannot fail CI | [V at 199ca3bb], recheck | open |
+| RE-TEST-000007 | OF | Lint and type checks cannot fail CI → they can: `scripts/ci_static_analysis_gate.py --fail-on-regression` runs in the `lint` job against `docs/static_analysis_baseline.json`. Rechecked 2026-11-18: gate fires locally, Ruff 4026 vs baseline 4024 (+2, not from this session's files) — find the 2 or reset the baseline deliberately | [V] ran the gate | open (+2 drift) |
 | RE-TEST-000008 | OF | 118 benchmark metrics, none measured | [M] | open |
 | RE-TEST-000009 | OF | Inventory scorer verified on synthetic data only | [M] | open |
 | RE-TEST-000010 | VN | No real-photo run in CI → nightly golden loop on a fixed photo set | [M] | B20 |
 | RE-TEST-000011 | VN | RLE and voxel packing are easy to get subtly wrong → round-trip property tests | [H] | B06, B11 |
-| RE-TEST-000012 | VN | Identity result may depend on input order → shuffle test | [H] | B08 |
+| RE-TEST-000012 | DN | Identity result may depend on input order → shuffle tests exist for both `associate` and `cluster_observations` | [V] tests/test_association.py:146, tests/test_global_association.py | done |
 | RE-DATA-000001 | OF | 15 test images unannotated | [M] | owner |
 | RE-DATA-000002 | OF | No measured rooms | [M] | owner |
 | RE-DATA-000003 | VN | No blind hold-out → rooms 5–6 never opened during development | [M] protocol | owner |
@@ -132,7 +132,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-UX-000003 | DN | Unknown shown as blank → "Unknown — not visible in any photo" | [V] InspectorAttributes.tsx | done |
 | RE-UX-000004 | DN | Closed container contents implied empty → "interior not observed", user may state contents | [V] tests/test_relations.py | done |
 | RE-UX-000005 | VN | 40 routes → 12 | [V at 199ca3bb] | later |
-| RE-UX-000006 | VN | Specialist tools read as certification → "Preliminary" badge | [A] | later |
+| RE-UX-000006 | DN | Specialist tools read as certification → `PreliminaryBadge` (tooltip: screening aid, not a certification) in the MEP, life-safety/ADA, takeoff, thermal, construction-progress and clash panels; clash toolbar label marked | [V] frontend `tsc --noEmit` exit 0; not seen in a browser | done |
 | RE-UX-000007 | PO | No "what to photograph next" → capture requests from unresolved attributes and unseen regions | [M] | B16 |
 | RE-ASSET-000001 | DN | Exports flatten parts → IFC aggregates, glTF child nodes | [V] exporters/ifc_bridge.py, exporters/gltf | done |
 | RE-ASSET-000002 | DN | Attributes lost on export → property set with basis and confidence | [V] exporters/ifc_bridge.py (Pset_RealityEngine) | done |
@@ -142,7 +142,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GIS-000001 | RO | Worlds have no geographic frame by default → site anchor and CRS on import | [A] | later |
 | RE-GIS-000002 | RO | Whole world loads into the viewer → tile streaming | [A] | later |
 | RE-GIS-000003 | RO | No aerial capture path → drone ingestion with GNSS | [A] | later |
-| RE-MLOPS-000001 | VN | Runs not reproducible from records → store seed, commit, model hashes, artifact hashes per job | [H] | B01 |
+| RE-MLOPS-000001 | DN | Runs not reproducible from records → `job.payload["run_record"]`: code commit, python/platform, pipeline seed, per-stage status/inputs hash/output hashes, lineage, sha256 of every active model checkpoint on disk ("available", not "used": the registry does not yet say which model each stage loaded). `colmap` = binary version string + the backend's first-attempt seed (`COLMAP_SEED`; retry attempts use seeds 1 and 2, see the job's attempts) | [V] tests/test_run_record.py; golden path + job queue tests pass | done |
 | RE-MLOPS-000002 | VN | Technology catalogue (50 entries) omits models in use → reconcile with `model_registry.py` | [V] reconciled 61 entries in open_source_registry.json & model_registry.py | done |
 | RE-MLOPS-000003 | RO | No trained specialists → blocked on reviewed labels | [M] | later |
 | RE-AGENT-000001 | OF | A subagent stalled for 600 s without reporting → main session checks the diff itself, never assumes | [V] this session | process |

@@ -73,8 +73,10 @@ def test_solid_shared_wall_consolidation():
     slab = shared_ent.custom_properties["wall_slab"]
     assert slab["start_xyz_m"][0] == pytest.approx(4.0, abs=0.01)
     assert slab["end_xyz_m"][0] == pytest.approx(4.0, abs=0.01)
-    # Thickness = 0.10 (separation) + 0.10 (half thicknesses) = 0.20m
-    assert slab["thickness_m"] == pytest.approx(0.20, abs=0.01)
+    # Both inner faces were observed, so the gap between them IS the thickness (no default added on top)
+    assert slab["thickness_m"] == pytest.approx(0.10, abs=0.01)
+    assert slab["thickness_basis"] == "measured_both_faces"
+    assert shared_ent.custom_properties["measurements"]["thickness_m"]["basis"] == "measured_both_faces"
 
     # Both rooms connected to shared wall
     part_of_targets = [r.target_id for r in shared_ent.relationships if r.kind == RelationshipKind.PART_OF]
@@ -84,6 +86,22 @@ def test_solid_shared_wall_consolidation():
     r_a = world.entities["room-a"]
     assert any(r.kind == RelationshipKind.ADJACENT_TO and r.target_id == "room-b" for r in r_a.relationships)
     assert "room-b" in r_a.custom_properties.get("adjacent_room_ids", [])
+
+
+def test_coincident_faces_measure_nothing_and_keep_the_default():
+    world = WorldIR()
+    world.entities["room-a"] = Entity(id="room-a", type=EntityType.ROOM, name="Room A")
+    world.entities["room-b"] = Entity(id="room-b", type=EntityType.ROOM, name="Room B")
+    w_a = _create_wall_entity("wall-a", "room-a", (4.0, 0.0, 0.0), (4.0, 4.0, 0.0), thickness=0.12)
+    w_b = _create_wall_entity("wall-b", "room-b", (4.0, 4.0, 0.0), (4.0, 0.0, 0.0), thickness=0.12)
+    world.entities[w_a.id] = w_a
+    world.entities[w_b.id] = w_b
+
+    report = deduplicate_shared_walls(world)
+
+    slab = world.entities[report.consolidations[0].shared_wall_id].custom_properties["wall_slab"]
+    assert slab["thickness_m"] == pytest.approx(0.12)
+    assert slab["thickness_basis"] == "default_unmeasured"
 
 
 def test_permeable_shared_wall_with_door():

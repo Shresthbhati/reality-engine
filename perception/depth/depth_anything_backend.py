@@ -159,7 +159,7 @@ class DepthAnythingV2Backend(IDepthBackend):
                 else:
                     normalized = np.zeros_like(depth_np)
 
-                depth_list = [[float(v) for v in row] for row in normalized]
+                depth_list = np.ascontiguousarray(normalized, dtype=np.float32)
 
                 results.append(
                     DepthMap(

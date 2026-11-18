@@ -17,6 +17,23 @@ import numpy as np
 MODEL_ID = "facebook/dinov2-small"
 INPUT_SIZE = 224
 _MIN_MASK_PIXELS = 64   # below this the crop is mostly background fill and says nothing about the object
+PATCH = 14              # DINOv2 ViT-S/14 patch size
+POOLED_GRID = 32        # embed_pooled resizes the photo to 32x32 patches (448 px)
+MIN_POOLED_WEIGHT = 1.0  # total patch coverage (in patches) a mask needs; less is a speck, not an object
+
+
+def pool_tokens(tokens: np.ndarray, weights: Sequence[Optional[np.ndarray]]) -> List[Optional[np.ndarray]]:
+    """Unit-norm weighted mean of ``tokens`` (P, D) per weight vector (P,): the mask's coverage of each patch.
+    None for a missing/mis-sized weight vector, total coverage under ``MIN_POOLED_WEIGHT`` patches, or a zero mean."""
+    out: List[Optional[np.ndarray]] = []
+    for w in weights:
+        if w is None or len(w) != len(tokens) or float(np.sum(w)) < MIN_POOLED_WEIGHT:
+            out.append(None)
+            continue
+        v = (np.asarray(w, dtype=np.float32)[:, None] * tokens).sum(axis=0) / float(np.sum(w))
+        n = float(np.linalg.norm(v))
+        out.append(v / n if n > 1e-12 else None)
+    return out
 
 
 class Dinov2Unavailable(RuntimeError):
@@ -61,6 +78,28 @@ class Dinov2Embedder:
         crop = image[y0:y1, x0:x1].copy()
         crop[~mask[y0:y1, x0:x1]] = 128
         return cv2.resize(crop, (INPUT_SIZE, INPUT_SIZE), interpolation=cv2.INTER_AREA)
+
+    def embed_pooled(self, image: np.ndarray, masks: Sequence[np.ndarray]) -> List[Optional[np.ndarray]]:
+        """One forward pass for the WHOLE image; each mask's vector is the mean of the patch tokens under it, weighted by how much
+        of each patch the mask covers (RE-PERF-000007). Cost is one forward per image however many objects it holds, and an
+        object is described in the context it was seen in. NOT the same descriptor as ``embed_masked_crops`` (CLS of an
+        isolated, grey-padded crop): the two are not comparable with each other. None for a mask smaller than ~one patch."""
+        import cv2
+        import torch
+
+        h, w = image.shape[:2]
+        side = PATCH * POOLED_GRID
+        small = cv2.resize(image, (side, side), interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
+        model = self._load()
+        tensor = torch.from_numpy((small - self._mean) / self._std).permute(2, 0, 1)[None].to(self._device)
+        with torch.no_grad():
+            tokens = model(pixel_values=tensor).last_hidden_state[0, 1:1 + POOLED_GRID * POOLED_GRID].cpu().numpy().astype(np.float32)
+        weights = []
+        for m in masks:
+            m = np.asarray(m, dtype=np.float32)
+            weights.append(cv2.resize(m, (POOLED_GRID, POOLED_GRID), interpolation=cv2.INTER_AREA).ravel()
+                           if m.shape[:2] == (h, w) else None)
+        return pool_tokens(tokens, weights)
 
     def embed_masked_crops(self, image: np.ndarray, masks: Sequence[np.ndarray]) -> List[Optional[np.ndarray]]:
         """One unit-norm vector per mask (the CLS token), or None for a mask too small to describe an object."""

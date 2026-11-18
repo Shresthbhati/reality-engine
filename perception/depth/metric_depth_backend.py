@@ -159,7 +159,7 @@ class HeuristicDepthPriorBackend(IDepthBackend):
                 evidence_id=item.id,
                 width=w,
                 height=h,
-                values=depth_arr.tolist(),
+                values=np.ascontiguousarray(depth_arr, dtype=np.float32),
                 unit="meters",
                 uncertainty=Uncertainty(
                     confidence=0.50,

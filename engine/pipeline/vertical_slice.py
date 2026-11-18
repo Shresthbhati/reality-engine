@@ -123,6 +123,10 @@ class VerticalSliceOptions:
     #: per job and its detections are UNVERIFIED (~55 boxes per photograph on the 10-photo room, implausibly many), so when on
     #: they are recorded as 2D facts under perception.small_fittings and never promoted to entities.
     perception_small_fittings: bool = False
+    #: attribute pass (B05) over the observation table: which kind of lock/socket/handle, one Grounding DINO call per allowed value
+    #: per observation (budgeted), OCR on the crop when available. Off by default (GPU minutes, unmeasured on real rooms); the result
+    #: lands in the observation table's attrs_json and a count under perception facts["attributes"]; a failure is recorded, not hidden.
+    perception_attributes: bool = False
     #: a second detector family (Florence-2) run on every photograph; where it and the pipeline's detector disagree is recorded under
     #: perception.second_opinion for a human. Off by default (another model load); agreement between two detectors is not accuracy.
     perception_second_opinion: bool = False
@@ -1213,8 +1217,8 @@ def _region_appearance(kind, evidence_items, seg_results, hypotheses):
     facts = {"requested": kind, "embedded": 0, "skipped": 0, "fallback_reason": None}
     if kind is None:
         return {}, facts
-    if kind != "dinov2":
-        raise VerticalSliceError(f"unknown perception_appearance {kind!r}: expected 'dinov2' or None")
+    if kind not in ("dinov2", "dinov2_pooled"):
+        raise VerticalSliceError(f"unknown perception_appearance {kind!r}: expected 'dinov2', 'dinov2_pooled' or None")
     try:
         import cv2
         import numpy as np
@@ -1225,7 +1229,11 @@ def _region_appearance(kind, evidence_items, seg_results, hypotheses):
 
         wanted = {(h.evidence_id, h.region_id) for h in hypotheses}
         items = {(getattr(i, "id", None) or i.evidence_id): i for i in evidence_items}
+        from world_ir.embedding_store import EmbeddingStore
+
         embedder, vectors, embedded, skipped = Dinov2Embedder(), {}, 0, 0
+        store = EmbeddingStore()          # float16 unit vectors in one matrix; association reads float32 views of its rows
+        embed = embedder.embed_pooled if kind == "dinov2_pooled" else embedder.embed_masked_crops
         for seg in seg_results:
             regions = [r for r in seg.regions if (seg.evidence_id, r.region_id) in wanted]
             if not regions or seg.evidence_id not in items:
@@ -1234,14 +1242,14 @@ def _region_appearance(kind, evidence_items, seg_results, hypotheses):
             h, w = image.shape[:2]
             # region masks are at the depth grid's resolution; the crop needs them at the photo's
             masks = [cv2.resize(np.asarray(r.mask, dtype=np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool) for r in regions]
-            for region, vec in zip(regions, embedder.embed_masked_crops(image, masks)):
+            for region, vec in zip(regions, embed(image, masks)):
                 if vec is None:
                     skipped += 1
                 else:
-                    vectors[f"{seg.evidence_id}|{region.region_id}"] = vec.tolist()
+                    vectors[f"{seg.evidence_id}|{region.region_id}"] = store.get(store.add(vec))
                     embedded += 1
         embedder.unload()
-        facts.update(embedded=embedded, skipped=skipped)
+        facts.update(embedded=embedded, skipped=skipped, backend=kind, matrix_dtype="float16", matrix_bytes=int(store.matrix().nbytes))
         return vectors, facts
     except Exception as exc:  # noqa: BLE001 -- appearance is an enhancement; its failure must not lose the objects
         log.warning("appearance embedding failed (association stays geometry-only)", exc_info=True)
@@ -2440,13 +2448,10 @@ def _sidecar_depth_stage(result, evidence_items, options, scale_state: str):
                 f"do not match image_size {width}x{height} -- skipped"
             )
             continue
-        values = [
-            [
-                (float(v) * frame.depth_scale) if v != frame.invalid_value else 0.0
-                for v in row
-            ]
-            for row in frame.raw
-        ]
+        import numpy as np
+
+        raw = np.asarray(frame.raw)
+        values = np.where(raw != frame.invalid_value, raw.astype(np.float64) * frame.depth_scale, 0.0).astype(np.float32)
         metric_maps.append(
             DepthMap(
                 evidence_id=fid,

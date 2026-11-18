@@ -238,8 +238,9 @@ DEFAULT_GUIDED_MATCHING = False
 #: Mapper attempts, in order. COLMAP's own default seed is -1 (random every run); a fixed first seed makes a run
 #: reproducible, and the later attempts only run when registration is weak: another seed, then relaxed initialisation
 #: and absolute-pose thresholds (weak-texture or low-parallax captures).
+COLMAP_SEED = 0   # the first attempt's seed; the one a run record and the stage metrics report
 MAPPER_ATTEMPTS: Tuple[Tuple[str, ...], ...] = (
-    ("--Mapper.random_seed", "0"),
+    ("--Mapper.random_seed", str(COLMAP_SEED)),
     ("--Mapper.random_seed", "1"),
     ("--Mapper.random_seed", "2", "--Mapper.init_min_tri_angle", "8", "--Mapper.abs_pose_min_num_inliers", "20",
      "--Mapper.abs_pose_min_inlier_ratio", "0.15"),
@@ -407,13 +408,6 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             pass
         return "COLMAP (unknown version)"
 
-    def _matcher_threads_args(self, is_det: bool) -> List[str]:
-        if not is_det:
-            return []
-        v = self._get_colmap_version()
-        if "COLMAP 4." in v:
-            return ["--FeatureMatching.num_threads", "1"]
-        return ["--SiftMatching.num_threads", "1"]
     def is_deterministic(self, n_images: int) -> bool:
         """Deterministic policy: True for <= 60 images by default or when configured."""
         if self.deterministic is not None:
@@ -523,7 +517,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             _run("feature_extractor",
                  ["--database_path", str(db_path), "--image_path", str(image_dir),
                   *extractor_args, "--FeatureExtraction.use_gpu", extraction_gpu])
-            matcher_extra = self._matcher_threads_args(is_det)
+            matcher_extra = ["--FeatureMatching.num_threads", "1"] if is_det else []
             _run("exhaustive_matcher",
                  ["--database_path", str(db_path),
                   "--FeatureMatching.use_gpu", matching_gpu,
@@ -558,7 +552,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
 
             self.last_run_info = {
                 "colmap_version": self._get_colmap_version(),
-                "seed": 0,
+                "seed": COLMAP_SEED,
                 "deterministic": is_det,
             }
 
@@ -780,7 +774,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 lst.write_text("\n".join(new_names) + "\n")
                 args += ["--image_list_path", str(lst)]
             run("feature_extractor", args)
-            matcher_extra = self._matcher_threads_args(is_det)
+            matcher_extra = ["--FeatureMatching.num_threads", "1"] if is_det else []
             run("exhaustive_matcher", ["--database_path", str(db_path), "--FeatureMatching.use_gpu", cpu_or_gpu,
                                        *_sift_matching_args(guided=self.guided_matching), *matcher_extra])
 
@@ -818,7 +812,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             "new_images": [evidence_id_by_name[n] for n in new_names],
             "prior_registered": len(prior["registered"]) if prior else 0,
             "colmap_version": self._get_colmap_version(),
-            "seed": 0,
+            "seed": COLMAP_SEED,
             "deterministic": is_det,
         }
         chosen_dir: Path
@@ -945,7 +939,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
         self.session.write_manifest({
             "signature": signature, "images": evidence_id_by_name, "registered": registered_names,
             "model_dir": "sparse/0", "incremental_ok": incremental_ok, "info": info,
-            "deterministic": is_det, "seed": 0, "colmap_version": info["colmap_version"],
+            "deterministic": is_det, "seed": COLMAP_SEED, "colmap_version": info["colmap_version"],
         })
         self.last_run_info = info
         self.session.last_run_info = info

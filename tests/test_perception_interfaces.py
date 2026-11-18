@@ -108,3 +108,18 @@ def test_fake_segmentation_backend_skips_unsupported_evidence_kind():
     lidar = EvidenceItem(id="l1", kind=EvidenceKind.LIDAR, source_uri="file://l1.las")
     results = backend.segment([lidar])
     assert results == []
+
+
+def test_depth_map_accepts_a_frozen_float32_array_and_still_validates():
+    import numpy as np
+    import pytest
+
+    from perception.depth.interface import DepthMap
+
+    arr = np.arange(12, dtype=np.float32).reshape(3, 4)
+    dm = DepthMap("e", width=4, height=3, values=arr, unit="meters")
+    assert dm.values[1][2] == 6.0 and len(dm.values) == 3 and len(dm.values[0]) == 4
+    with pytest.raises(ValueError):
+        dm.values[0, 0] = 1.0                                   # shared between stages: read-only
+    with pytest.raises(ValueError):
+        DepthMap("e", width=5, height=3, values=np.zeros((3, 4), np.float32))      # width mismatch is still caught

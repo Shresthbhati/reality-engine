@@ -113,7 +113,7 @@ Total: 1
 
 ## unlisted
 
-Total: 524
+Total: 525
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -470,6 +470,7 @@ Total: 524
 - `tests/test_query_after_incremental_update.py`
 - `tests/test_raycast_coverage_task5_3.py`
 - `tests/test_real_model_availability.py`
+- `tests/test_real_specialist_executors.py`
 - `tests/test_reality_benchmark.py`
 - `tests/test_reality_inventory.py`
 - `tests/test_reality_studio_primary_journey.py`

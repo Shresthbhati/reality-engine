@@ -1644,6 +1644,8 @@ async def _finalize_fenced(db: AsyncSession, job: Job, lease: tuple[str | None, 
     res = await db.execute(update(Job).where(*_owned(job.id, lease)).values(**values).execution_options(synchronize_session=False))
     if res.rowcount == 0:
         await db.rollback()
+        now = (await db.execute(select(Job.status, Job.worker_id, Job.attempts).where(Job.id == job.id))).first()
+        log.warning("job %s: final write refused: lease %s, row now %s", job.id, lease, tuple(now) if now else None)
         return False
     await db.commit()
     return True
@@ -1825,29 +1827,33 @@ async def process_next_job(db: AsyncSession, worker_id: str | None = None) -> Jo
                 f"job handler timed out after {_job_timeout_seconds():.0f}s"
             ) from exc
         outcome = await _verify_outcome(db, job, outcome)  # success is checked against persisted state, never assumed
-        if outcome == "partial":
-            job.status = JOB_PARTIAL
-        elif outcome == "cancelled":
-            job.status = JOB_CANCELLED
-            job.error = (
-                f"cancelled by operator after version "
-                f"{(job.payload or {}).get('version_id')} was adopted; "
-                "version stands, see payload"
+        # From here to the fenced write the job row must not be flushed by autoflush: the queries below (the completion
+        # notification loads the evidence) would otherwise write the new status UNCONDITIONALLY inside the transaction,
+        # and the compare-and-swap (WHERE status = 'running') would then find nothing to swap.
+        with db.no_autoflush:
+            if outcome == "partial":
+                job.status = JOB_PARTIAL
+            elif outcome == "cancelled":
+                job.status = JOB_CANCELLED
+                job.error = (
+                    f"cancelled by operator after version "
+                    f"{(job.payload or {}).get('version_id')} was adopted; "
+                    "version stands, see payload"
+                )
+            else:
+                job.status = JOB_SUCCEEDED
+            job.completed_at = utcnow()
+            db.add(
+                JobLog(
+                    id=new_id("log"),
+                    job_id=job.id,
+                    stage=job.stage or "completed",
+                    level="INFO",
+                    message=f"Job finished with status {job.status}",
+                    context_json={"progress": job.progress, "status": job.status},
+                )
             )
-        else:
-            job.status = JOB_SUCCEEDED
-        job.completed_at = utcnow()
-        db.add(
-            JobLog(
-                id=new_id("log"),
-                job_id=job.id,
-                stage=job.stage or "completed",
-                level="INFO",
-                message=f"Job finished with status {job.status}",
-                context_json={"progress": job.progress, "status": job.status},
-            )
-        )
-        await _emit_completion(db, job)
+            await _emit_completion(db, job)
     except LeaseLost as exc:
         # Superseded: the job was requeued (and maybe re-claimed). Its state now belongs to the current lease holder, so
         # this worker writes nothing -- not a status, not a log -- and only cleans up what it owns locally.

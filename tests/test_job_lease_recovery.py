@@ -230,6 +230,23 @@ async def test_a_reconstruction_cannot_succeed_without_a_verifiable_world_versio
     assert r4.status == "failed" and "verification" in r4.error
 
 
+async def test_a_query_between_grading_and_the_fenced_write_does_not_defeat_it(env, monkeypatch):
+    """Regression: the completion step queries the database after the status is set. If that autoflushed the dirty job
+    row, the status would be written unconditionally and the compare-and-swap (WHERE status = 'running') would then find
+    nothing to swap, reporting a normal completion as a lost lease (found by CI on the durable-queue test)."""
+    async def ok(db, job):
+        return "succeeded"
+
+    async def completion_that_queries(db, job):
+        await db.execute(select(Job.id).where(Job.id == job.id))   # any query autoflushes pending changes
+
+    monkeypatch.setitem(jobs._HANDLERS, FAKE, ok)
+    monkeypatch.setattr(jobs, "_emit_completion", completion_that_queries)
+    await _add_job(env)
+    job = await _run(env)
+    assert job.status == "succeeded" and job.worker_id == "w1" and job.attempts == 1
+
+
 # ---- retries, timeout, cancellation -------------------------------------------------------------------------------
 
 async def test_retryable_failures_stop_at_the_attempt_limit(env, monkeypatch):

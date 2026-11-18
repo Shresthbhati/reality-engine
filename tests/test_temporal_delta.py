@@ -215,6 +215,7 @@ async def test_temporal_api_endpoints():
     async with maker() as session:
         world_row = World(
             id=w1.id,
+            team_id="default",  # the unauthenticated loopback client is tenant "default"; unowned worlds are hidden (404)
             name="Construction Site 4D Test",
             current_version_id=sv2.version_id,
             status="active",

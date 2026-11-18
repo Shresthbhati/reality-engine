@@ -236,6 +236,7 @@ async def test_life_safety_api_endpoints():
     async with maker() as session:
         world_row = World(
             id=w.id,
+            team_id="default",  # the unauthenticated loopback client is tenant "default"; unowned worlds are hidden (404)
             name="Commercial Innovation Centre",
             current_version_id=sv.version_id,
             status="active",

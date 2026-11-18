@@ -25,14 +25,16 @@ export function WorldFindSearchBar({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!query.trim()) {
-      setResults([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
+    const empty = !query.trim();
+    // State is only ever set from inside the timer (never synchronously in the effect body): an empty query clears at once
+    // (0 ms), a real one is debounced
     const timer = setTimeout(async () => {
+      if (empty) {
+        setResults([]);
+        setLoading(false);
+        setError(null);
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -45,7 +47,7 @@ export function WorldFindSearchBar({
       } finally {
         setLoading(false);
       }
-    }, 300);
+    }, empty ? 0 : 300);
 
     return () => clearTimeout(timer);
   }, [query, worldId, version]);

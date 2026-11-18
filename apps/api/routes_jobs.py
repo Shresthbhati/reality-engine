@@ -18,7 +18,7 @@ from apps.api.observability_service import (
     get_job_logs,
     get_job_stage_timings,
 )
-from apps.api.tenancy import entity_clause, job_scope
+from apps.api.tenancy import activity_clause, entity_clause, job_scope
 
 jobs = APIRouter(prefix="/api/jobs", tags=["jobs"], dependencies=[Depends(job_scope)])
 
@@ -293,7 +293,7 @@ async def list_activity(
     db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)
 ) -> dict:
     q = select(ActivityEvent).order_by(ActivityEvent.created_at.desc()).limit(100)
-    if (scope := entity_clause(ActivityEvent.entity_type, ActivityEvent.entity_id, auth)) is not None:
+    if (scope := activity_clause(ActivityEvent, auth)) is not None:
         q = q.where(scope)
     res = await db.execute(q)
     return {

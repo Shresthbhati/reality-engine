@@ -14,9 +14,9 @@ import numpy as np
 
 from world_ir.observations import DepthSource, Observation, Visibility
 
-_VIS = {Visibility.FULL: 0, Visibility.PARTIAL: 1, Visibility.OCCLUDED: 2}
+_VIS = {Visibility.FULL: 0, Visibility.PARTIAL: 1, Visibility.OCCLUDED: 2, Visibility.NOT_OBSERVED: 3}
 _VIS_INV = {v: k for k, v in _VIS.items()}
-_VIS_NAME = {0: "visible", 1: "partial", 2: "occluded"}
+_VIS_NAME = {0: "visible", 1: "partial", 2: "occluded", 3: "not_observed"}
 _SCHEMA = {  # name -> (dtype, trailing shape)
     "obs_id": ("<U32", ()), "image_id": ("<U32", ()), "class_path": ("<U96", ()), "parent_obs": ("int32", ()),
     "bbox_px": ("float32", (4,)), "score": ("float32", ()), "mask_ref": ("int32", ()), "emb_row": ("int32", ()),
@@ -114,13 +114,14 @@ class ObservationTable:
         for i in range(len(self)):
             path = str(self.class_path[i]).split("/")
             lifted = bool(np.all(np.isfinite(self.world_pos[i])))
+            vis_val = _VIS_NAME.get(int(self.visibility[i]))
             r = {
                 "image_id": str(self.image_id[i]),
                 "entity_id": f"ent-{int(self.entity_row[i])}" if self.entity_row[i] >= 0 else f"obs-{self.obs_id[i]}",
                 "category": path[0], "subtype": path[-1], "bbox": [float(x) for x in self.bbox_px[i]],
                 "confidence": float(min(max(self.score[i], 0.0), 1.0)),
                 "position_3d": [float(x) for x in self.world_pos[i]] if lifted else None,
-                "visibility": _VIS_NAME.get(int(self.visibility[i])),
+                "visibility": None if vis_val == "not_observed" else vis_val,
                 "instance_count": None, "mask": int(self.mask_ref[i]) if self.mask_ref[i] >= 0 else None,
                 "dimensions": None, "orientation": None, "material": None,
                 "evidence": [str(self.obs_id[i])],
@@ -131,7 +132,29 @@ class ObservationTable:
             if r["position_3d"] is None:
                 why["position_3d"] = "not lifted to 3D"
             if r["visibility"] is None:
-                why["visibility"] = "not assessed"
+                why["visibility"] = "not observed" if vis_val == "not_observed" else "not assessed"
             r["unavailable"] = why
             recs.append(r)
         return recs
+
+    def to_rows(self) -> list[dict]:
+        rows = []
+        for i in range(len(self)):
+            pos = [float(x) for x in self.world_pos[i]] if np.all(np.isfinite(self.world_pos[i])) else None
+            rows.append({
+                "obs_id": str(self.obs_id[i]),
+                "image_id": str(self.image_id[i]),
+                "class_path": str(self.class_path[i]),
+                "parent_obs": int(self.parent_obs[i]),
+                "bbox_px": [float(x) for x in self.bbox_px[i]],
+                "score": float(self.score[i]),
+                "mask_ref": int(self.mask_ref[i]),
+                "emb_row": int(self.emb_row[i]),
+                "world_pos": pos,
+                "sigma_m": float(self.sigma_m[i]) if np.isfinite(self.sigma_m[i]) else None,
+                "visibility": _VIS_NAME.get(int(self.visibility[i])),
+                "entity_row": int(self.entity_row[i]),
+                "model": str(self.model[i]),
+                "attrs_json": str(self.attrs_json[i]),
+            })
+        return rows

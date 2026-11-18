@@ -50,9 +50,33 @@ def _child_queries(ontology: Ontology, path: str) -> dict[str, tuple[str, str]]:
     return out
 
 
+def crop_sharpness(crop_rgb: np.ndarray) -> float:
+    """Laplacian variance of grayscale crop as a sharpness metric (RE-PERC-000020).
+
+    Higher = sharper. Flat or heavily blurred patches evaluate to near 0.0.
+    """
+    if crop_rgb.size < 16 or min(crop_rgb.shape[:2]) < 4:
+        return 0.0
+    gray = (
+        crop_rgb[..., 0] * 0.299 +
+        crop_rgb[..., 1] * 0.587 +
+        crop_rgb[..., 2] * 0.114
+    ).astype(np.float32)
+    lap = (
+        -4.0 * gray[1:-1, 1:-1]
+        + gray[:-2, 1:-1]
+        + gray[2:, 1:-1]
+        + gray[1:-1, :-2]
+        + gray[1:-1, 2:]
+    )
+    return float(np.var(lap)) if lap.size > 0 else 0.0
+
+
 def detect_hierarchy(image_rgb: np.ndarray, image_id: str, detector, ontology: Ontology, roots: Sequence[str],
                      max_depth: int = 3, min_crop_px: int = 96, budget_calls: int = 40,
-                     model: str = "detector@unknown") -> ObservationTable:
+                     model: str = "detector@unknown",
+                     min_crop_sharpness: float = 0.0,
+                     low_score_threshold: float = 0.45) -> ObservationTable:
     h, w = image_rgb.shape[:2]
     rows: list[dict] = []
     calls = 0
@@ -75,11 +99,45 @@ def detect_hierarchy(image_rgb: np.ndarray, image_id: str, detector, ontology: O
         phrases = list(queries)
         sub = image_rgb[y0:y1, x0:x1]
         found = []
-        for k in range(0, len(phrases), PROMPTS_PER_PASS):
-            if calls >= budget_calls:
-                break
+
+        # BUILD_SPEC B04 / RE-PERC-000004: If min_pixels exceeds crop size or node is small,
+        # call perception.entities.small_objects.inspect_small_objects
+        use_small_tiling = False
+        node = ontology.get(path)
+        crop_min_dim = min(x1 - x0, y1 - y0)
+        if node and node.min_pixels > 0 and crop_min_dim < node.min_pixels:
+            use_small_tiling = True
+        elif kind != "root":
+            for ph, (cpath, comp) in queries.items():
+                cnode = ontology.get(cpath)
+                if cnode and (
+                    (cnode.min_pixels > 0 and crop_min_dim < cnode.min_pixels)
+                    or getattr(cnode, "geometry", None) == "small_fitting"
+                ):
+                    use_small_tiling = True
+                    break
+
+        if use_small_tiling and calls < budget_calls:
+            from types import SimpleNamespace
+            from perception.entities.small_objects import inspect_small_objects
+
             calls += 1
-            found += list(detector.detect(sub, phrases[k:k + PROMPTS_PER_PASS]))
+            insp = inspect_small_objects(
+                sub,
+                detector,
+                tile=min(640, max(crop_min_dim, 64)),
+                overlap=0.25,
+                parent_box=(0, 0, x1 - x0, y1 - y0),
+                prompts=phrases,
+            )
+            for sd in insp.detections:
+                found.append(SimpleNamespace(label=sd.raw_label, score=sd.score, box=sd.box))
+        else:
+            for k in range(0, len(phrases), PROMPTS_PER_PASS):
+                if calls >= budget_calls:
+                    break
+                calls += 1
+                found += list(detector.detect(sub, phrases[k:k + PROMPTS_PER_PASS]))
         by_class: dict[str, list] = {}
         for d in found:
             if d.label in queries:
@@ -88,6 +146,13 @@ def detect_hierarchy(image_rgb: np.ndarray, image_id: str, detector, ontology: O
             b = np.array([d.box for d in dets], dtype=float) + np.array([x0, y0, x0, y0])   # crop -> full image
             s = np.array([d.score for d in dets], dtype=float)
             for i in _nms(b, s):
+                score_val = float(s[i])
+                # Blurry region gating for low-score detections (RE-PERC-000020)
+                if min_crop_sharpness > 0.0 and score_val < low_score_threshold:
+                    bx_crop = (int(max(b[i, 0], 0)), int(max(b[i, 1], 0)), int(min(b[i, 2], w)), int(min(b[i, 3], h)))
+                    patch = image_rgb[bx_crop[1]:bx_crop[3], bx_crop[0]:bx_crop[2]]
+                    if crop_sharpness(patch) < min_crop_sharpness:
+                        continue
                 if parent_row >= 0:                                     # a part must sit inside its parent
                     pb = rows[parent_row]["box"]
                     cx, cy = (b[i, 0] + b[i, 2]) / 2, (b[i, 1] + b[i, 3]) / 2

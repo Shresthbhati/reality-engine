@@ -262,7 +262,8 @@ def _carry_entity_identity(world_ir, prog, cand_snap, delta, conflicts, head_rep
         return world_ir, cand_snap, None
     try:
         trial = copy.deepcopy(world_ir)
-        out = carry_identity({e["id"] for e in prev_entities}, rels, trial)
+        prev_map = {e["id"]: e.get("name") for e in prev_entities if isinstance(e, dict) and "id" in e}
+        out = carry_identity(prev_map or {e["id"] for e in prev_entities}, rels, trial)
         if not (out["carried"] or out["lineage"]) or not validate_world_ir(trial).is_valid():
             return world_ir, cand_snap, {"carried": 0, "lineage": [], "note": "no identity carried"}
     except Exception as exc:  # noqa: BLE001 -- identity is an enhancement; the candidate stands as it is
@@ -534,24 +535,39 @@ def _commit_scene_result(world_id: str, scene_info: dict, n_input: int, register
         world_id, scene_info["primary_group_id"], diag, version_id, list(registered_ids))
 
 
-class _RecordOnlyStore:
-    """Persist stage rows (``job_stage_runs``) but never reuse one: the five coarse stages hand each other live
-    in-memory objects through ``ctx.state``, which a stored row cannot restore. Resume arrives with P107+, once
-    stages exchange content-addressed artifacts. A recording fault is telemetry, so it is logged, never a job failure."""
+class DurableJobCheckpointStore:
+    """Persist stage rows (``job_stage_runs``) and resume succeeded stages from durable checkpoints."""
 
     def __init__(self, store, abandoned: threading.Event) -> None:
         self._store, self._abandoned = store, abandoned
 
-    def lookup(self, job_id, name, inputs_hash):
-        return None
+    def lookup(self, job_id: str, name: str, inputs_hash: str):
+        if self._abandoned.is_set():
+            return None
+        # Coarse in-memory host segments communicate through closure state (resolved, eval_inputs, items, world_ir);
+        # they must not be skipped without serialized artifact restoration.
+        if name in {"evidence_resolve", "evidence_quality", "reconstruct", "compile_validate", "changeset_commit"}:
+            return None
+        try:
+            hit = self._store.lookup(job_id, name, inputs_hash)
+            if hit is not None and hit.status == "succeeded":
+                return hit
+            return None
+        except Exception:
+            log.warning("job %s: could not lookup stage %s", job_id, name, exc_info=True)
+            return None
 
-    def record(self, job_id, result) -> None:
+    def record(self, job_id: str, result) -> None:
         if self._abandoned.is_set():
             return
         try:
             self._store.record(job_id, result)
         except Exception:  # noqa: BLE001 - logged below; stage telemetry must not change the job outcome
             log.warning("job %s: could not record stage %s", job_id, result.name, exc_info=True)
+
+
+# Backwards compatibility alias for _RecordOnlyStore
+_RecordOnlyStore = DurableJobCheckpointStore
 
 
 async def _run_reconstruct_session(db: AsyncSession, job: Job) -> str:
@@ -654,6 +670,23 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         job.stage = "checking_reconstruction_backend"
         job.heartbeat_at = utcnow()
         aw(db.commit())
+
+        # Licence Gate (BUILD_SPEC rule 3 & RE-SEC-000001):
+        # Refuse to run any model with a non-commercial or undeclared licence in the pipeline path.
+        models_to_check = []
+        params = getattr(job, "payload", None) or getattr(job, "parameters", None)
+        if isinstance(params, dict):
+            raw_models = params.get("models")
+            if isinstance(raw_models, (list, tuple)):
+                models_to_check.extend(raw_models)
+            elif isinstance(raw_models, str):
+                models_to_check.append(raw_models)
+            model_override = params.get("model") or params.get("depth_model") or params.get("detector_model")
+            if model_override and isinstance(model_override, str):
+                models_to_check.append(model_override)
+        if models_to_check:
+            from perception.model_registry import assert_production_licences
+            assert_production_licences(models_to_check)
         try:
             from engine.pipeline.vertical_slice import (
                 VerticalSliceError,
@@ -1285,7 +1318,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
     def drive():
         return run_stages(
             stages, ctx,
-            checkpoints=_RecordOnlyStore(
+            checkpoints=DurableJobCheckpointStore(
                 DbCheckpointStore(get_sessionmaker(), job.team_id, loop=loop,
                                   versions={s.name: s.version for s in specs}),
                 abandoned),
@@ -1591,12 +1624,15 @@ async def claim_next_job(db: AsyncSession, worker_id: str | None = None) -> Job 
     a race was lost to another worker.
     """
     effective_worker_id = worker_id or WORKER_ID
-    result = await db.execute(
+    stmt = (
         select(Job.id)
         .where(Job.status == JOB_QUEUED)
         .order_by(Job.priority.desc(), Job.created_at.asc())
         .limit(1)
     )
+    if db.bind and getattr(db.bind.dialect, "name", "") == "postgresql":
+        stmt = stmt.with_for_update(skip_locked=True)
+    result = await db.execute(stmt)
     cand_id = result.scalar_one_or_none()
     if cand_id is None:
         return None

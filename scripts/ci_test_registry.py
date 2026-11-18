@@ -36,7 +36,7 @@ def build_registry(ci_yaml: Path, tests_dir: Path) -> dict[str, list[str]]:
         "fidelity_gate": fidelity,
         "collect_only": ["tests/ (collection only, nothing executed)"],
         "unlisted": unlisted,
-        "advisory": ["ruff --exit-zero", "mypy || true"],
+        "controlled_baseline": ["scripts/ci_static_analysis_gate.py --fail-on-regression"],
     }
 
 

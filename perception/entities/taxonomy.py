@@ -1,14 +1,8 @@
-"""Universal entity taxonomy (a shim over ``config/ontology.yaml``; the data lives there since B03): stable semantic ids, parents, geometry strategy, size priors, detection prompts.
+"""Universal entity taxonomy (Blueprint 17 / BUILD_SPEC B03).
 
-An id is a dotted path (``electrical.switchboard.module.socket``) and NEVER changes once released; labels may.
-``parent`` is the primary classification only: other relations (hosted_by, part_of, adjacent_to) are WorldIR
-relationships, so nothing is forced into one rigid tree. ``world_type`` maps onto the EXISTING WorldIR ``EntityType``
-(no enum change): fixtures and furniture are ``structure`` and identified by ``custom_properties["entity_class"]``.
-
-A class listed here is *registered*, not *supported*: support means detection, localisation, reconstruction,
-persistence and verification all work, and is tracked in ``SUPPORT`` below (default ``registered``).
-Size ranges are plausibility priors in metres (min, max of the largest dimension), used to reject absurd detections;
-they are never written to a world as measurements.
+Thin shim that delegates to the canonical ontology (`config/ontology.yaml` via `perception.ontology`).
+Preserves backward-compatible interfaces for `get()`, `all_classes()`, `children()`,
+`ancestors()`, `class_for_label()`, and `size_plausible()`.
 """
 
 from __future__ import annotations
@@ -16,18 +10,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from perception.ontology import load_ontology
+from perception.ontology import FALLBACK_PATH, OntologyNode, get_default_ontology
 
 CATEGORIES: Dict[str, str] = {
-    "building": "Buildings and structural architecture", "room": "Rooms and interior spaces",
-    "envelope": "Walls, floors and ceilings", "opening": "Doors, windows and openings",
-    "structural": "Columns, beams and structural components", "circulation": "Staircases, railings and landings",
-    "electrical": "Electrical infrastructure", "plumbing": "Plumbing and sanitary fixtures",
-    "hvac": "HVAC and mechanical systems", "furniture": "Furniture and appliances",
-    "finish": "Interior finishes and decorative details", "exterior": "Exterior building components",
-    "road": "Roads, footpaths and kerbs", "vegetation": "Trees, plants and landscape features",
-    "street": "Lampposts and street furniture", "utility": "Utility infrastructure",
-    "signage": "Signs, poles and public infrastructure", "misc": "Miscellaneous objects and unknown entities",
+    "building": "Buildings and structural architecture",
+    "room": "Rooms and interior spaces",
+    "envelope": "Walls, floors and ceilings",
+    "opening": "Doors, windows and openings",
+    "structural": "Columns, beams and structural components",
+    "circulation": "Staircases, railings and landings",
+    "electrical": "Electrical infrastructure",
+    "plumbing": "Plumbing and sanitary fixtures",
+    "hvac": "HVAC and mechanical systems",
+    "furniture": "Furniture and appliances",
+    "finish": "Interior finishes and decorative details",
+    "exterior": "Exterior building components",
+    "road": "Roads, footpaths and kerbs",
+    "vegetation": "Trees, plants and landscape features",
+    "street": "Lampposts and street furniture",
+    "utility": "Utility infrastructure",
+    "signage": "Signs, poles and public infrastructure",
+    "misc": "Miscellaneous objects and unknown entities",
 }
 
 GEOMETRY = ("parametric", "procedural", "mesh", "pointcloud", "volumetric", "hybrid")
@@ -47,32 +50,7 @@ class EntityClass:
     hosts: Tuple[str, ...] = ()          # class ids it is normally mounted on / inside
 
 
-_cache: Tuple[object, Dict[str, EntityClass]] = (None, {})
-
-
-def _R() -> Dict[str, EntityClass]:
-    """Registered classes, read from the ontology (config/ontology.yaml): the nodes that carry a ``world_type``.
-
-    Id = ontology path with "/" -> "."; hosts = the node's ``hosted_by`` attach targets.
-    """
-    global _cache
-    onto = load_ontology()
-    if _cache[0] is not onto:
-        reg: Dict[str, EntityClass] = {}
-        for n in onto.nodes.values():
-            if n.world_type is None:
-                continue
-            cid = n.path.replace("/", ".")
-            reg[cid] = EntityClass(
-                cid, n.label, n.group, n.parent.replace("/", ".") if n.parent else None, n.world_type, n.geometry,
-                n.size_m, n.small, n.prompts,
-                tuple(t.replace("/", ".") for a in n.attach for k, t in a.items() if k == "hosted_by"))
-        _cache = (onto, reg)
-    return _cache[1]
-
-
-#: class id -> support level. NOTHING is "supported" until detection, localisation, reconstruction, persistence and
-#: verification all work for it (see docs/entities/ENTITY_PERCEPTION_PLAN.md). Updated only with test evidence.
+#: class id -> support level.
 SUPPORT: Dict[str, str] = {
     "electrical.switchboard": "reconstruction+persistence (synthetic only; no learned detector installed)",
     "electrical.switchboard.module.socket": "reconstruction+persistence (synthetic only)",
@@ -80,29 +58,72 @@ SUPPORT: Dict[str, str] = {
 }
 
 
+def _node_to_entity_class(node: OntologyNode) -> EntityClass:
+    cat = node.category
+    if not cat:
+        first = node.path.split(".")[0] if "." in node.path else node.path.split("/")[0]
+        cat = first if first in CATEGORIES else "misc"
+    geom = node.geometry if node.geometry in GEOMETRY else "hybrid"
+    wt = node.world_type if node.world_type != "unknown" else "structure"
+    return EntityClass(
+        id=node.path,
+        label=node.label,
+        category=cat,
+        parent=node.parent,
+        world_type=wt,
+        geometry=geom,
+        size_m=node.size_m,
+        small=node.small,
+        prompts=node.prompts,
+        hosts=node.hosts,
+    )
+
+
 def get(class_id: str) -> EntityClass:
-    return _R()[class_id]
+    onto = get_default_ontology()
+    node = onto.get(class_id)
+    if node is None:
+        raise KeyError(class_id)
+    return _node_to_entity_class(node)
 
 
 def all_classes() -> List[EntityClass]:
-    return list(_R().values())
+    onto = get_default_ontology()
+    res = []
+    seen = set()
+    for node in onto.nodes.values():
+        if node.category in CATEGORIES or any(node.path.startswith(c + ".") or node.path == c for c in CATEGORIES):
+            ec = _node_to_entity_class(node)
+            if ec.id not in seen:
+                seen.add(ec.id)
+                res.append(ec)
+    return res
 
 
 def small_classes() -> List[EntityClass]:
-    return [c for c in _R().values() if c.small]
+    return [c for c in all_classes() if c.small]
 
 
 def children(class_id: str) -> List[EntityClass]:
-    return [c for c in _R().values() if c.parent == class_id]
+    onto = get_default_ontology()
+    node = onto.get(class_id)
+    if not node:
+        return []
+    out = []
+    seen = set()
+    for n in onto.nodes.values():
+        if (n.parent == node.path or n.parent == class_id) and n.path not in seen:
+            seen.add(n.path)
+            out.append(_node_to_entity_class(n))
+    return out
 
 
 def ancestors(class_id: str) -> List[str]:
-    reg = _R()
-    out, cur = [], reg[class_id].parent
-    while cur:
-        out.append(cur)
-        cur = reg[cur].parent
-    return out
+    onto = get_default_ontology()
+    node = onto.get(class_id)
+    if not node:
+        return []
+    return onto.ancestors(node.path)
 
 
 def support_level(class_id: str) -> str:
@@ -110,14 +131,21 @@ def support_level(class_id: str) -> str:
 
 
 def class_for_label(label: str) -> Optional[EntityClass]:
-    """Map a raw detector label to a class by its prompts (exact, case-insensitive); None when it is not in the registry."""
+    """Map a raw detector label to a class by its prompts (exact, case-insensitive)."""
     key = label.strip().lower()
-    for c in _R().values():
-        if key == c.label.lower() or key in c.prompts:
+    # 1. Search all registered classes first
+    for c in all_classes():
+        if key == c.label.lower() or key in [p.lower() for p in c.prompts]:
             return c
+    # 2. Try ontology resolution
+    onto = get_default_ontology()
+    node = onto.resolve_or_unknown(label)
+    if node.path != FALLBACK_PATH:
+        return _node_to_entity_class(node)
     return None
 
 
 def size_plausible(class_id: str, largest_dimension_m: float) -> bool:
-    lo, hi = _R()[class_id].size_m
+    ec = get(class_id)
+    lo, hi = ec.size_m
     return lo * 0.5 <= largest_dimension_m <= hi * 1.5

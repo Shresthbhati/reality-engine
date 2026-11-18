@@ -50,3 +50,24 @@ export async function queryContainer(worldId: string, entityId: string): Promise
   );
   return res.container;
 }
+
+export interface FindResult {
+  id: string;
+  type: string;
+  chain: Array<{ id: string; type: string; via: string }>;
+  position: [number, number, number] | null;
+  basis: "visual" | "user_stated";
+  interior?: string;
+}
+
+export async function queryFind(
+  worldId: string,
+  q: string,
+  version?: string,
+): Promise<{ version_id: string; q: string; results: FindResult[] }> {
+  const params = new URLSearchParams({ q });
+  if (version) params.set("version", version);
+  return apiGet<{ version_id: string; q: string; results: FindResult[] }>(
+    `/api/worlds/${encodeURIComponent(worldId)}/query/find?${params.toString()}`,
+  );
+}

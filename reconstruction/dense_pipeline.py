@@ -31,7 +31,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from reconstruction.backend.colmap_backend import _subprocess_env
 
@@ -289,4 +289,32 @@ def run_dense_mvs(
         use_gpu=use_gpu,
         gpu_flag_applied=gpu_flag_applied,
     )
+
+
+def run_multiview_dense_cloud(
+    cameras: Any,
+    depth_maps: Any,
+    stride: int = 4,
+    min_consistent_views: int = 2,
+    voxel_size_m: float = 0.02,
+):
+    """Run pure-Python multi-view depth consistency verification and fusion (RE-GEO-000015)."""
+    from reconstruction.mvs.dense_cloud import MultiViewDenseCloudBuilder
+
+    if isinstance(cameras, (list, tuple)):
+        cameras_dict = {f"cam_{i}": c for i, c in enumerate(cameras)}
+    else:
+        cameras_dict = dict(cameras)
+
+    if isinstance(depth_maps, (list, tuple)):
+        depth_dict = {f"cam_{i}": d for i, d in enumerate(depth_maps)}
+    else:
+        depth_dict = dict(depth_maps)
+
+    builder = MultiViewDenseCloudBuilder(
+        stride=stride,
+        min_consistent_views=min_consistent_views,
+        voxel_size_m=voxel_size_m,
+    )
+    return builder.fuse(cameras_dict, depth_dict)
 

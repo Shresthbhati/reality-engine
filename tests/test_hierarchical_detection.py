@@ -18,7 +18,11 @@ def _onto():
 
 class _Det:
     """Scripted: whole image sees an almirah at (100,100,500,700); inside its crop a handle and a lock (crop coords)."""
-    def __init__(self, extra=None): self.calls = []; self.extra = extra or []
+    def __init__(self, extra=None, lock_score=0.7):
+        self.calls = []
+        self.extra = extra or []
+        self.lock_score = lock_score
+
     def detect(self, img, queries):
         self.calls.append((img.shape[:2], tuple(queries)))
         out = []
@@ -27,7 +31,7 @@ class _Det:
         if "door handle" in queries:
             out.append(D(label="door handle", score=0.8, box=(300, 250, 340, 300)))     # crop coords
         if "door lock" in queries:
-            out.append(D(label="door lock", score=0.7, box=(310, 310, 330, 330)))
+            out.append(D(label="door lock", score=self.lock_score, box=(310, 310, 330, 330)))
         return out + [d for d in self.extra if d.label in queries]
 
 
@@ -53,3 +57,44 @@ def test_budget_of_one_call_stops_after_the_root_pass():
     d = _Det()
     t = detect_hierarchy(IMG, "im1", d, _onto(), ["furniture/almirah"], budget_calls=1)
     assert len(d.calls) == 1 and list(t.class_path) == ["furniture/almirah"]
+
+
+def test_blurry_region_sharpness_gating():
+    # A low-score candidate (score 0.3) on a completely flat/blurry image (IMG has 0 variance)
+    d = _Det(lock_score=0.30)
+
+    # Without sharpness gating: low-score item passes through
+    t_ungated = detect_hierarchy(IMG, "im1", d, _onto(), ["furniture/almirah"], min_crop_sharpness=0.0)
+    assert "furniture/almirah/lock" in list(t_ungated.class_path)
+
+    # With sharpness gating: low-score item on flat/blurry crop is gated out (RE-PERC-000020)
+    t_gated = detect_hierarchy(IMG, "im1", d, _onto(), ["furniture/almirah"], min_crop_sharpness=10.0, low_score_threshold=0.45)
+    assert "furniture/almirah/lock" not in list(t_gated.class_path)
+
+
+def test_hierarchical_calls_small_objects_when_min_pixels_exceeds_crop(monkeypatch):
+    """RE-PERC-000004: small_objects.py is reachable from the hierarchical detector."""
+    called = []
+
+    def fake_inspect(sub, detector, **kwargs):
+        called.append(kwargs)
+        from perception.entities.small_objects import InspectionResult, SmallDetection
+        return InspectionResult([
+            SmallDetection("furniture/almirah/handle", (50, 50, 90, 90), 0.85, "fine", "door handle")
+        ])
+
+    monkeypatch.setattr("perception.entities.small_objects.inspect_small_objects", fake_inspect)
+
+    nodes = [
+        OntologyNode("furniture/almirah", "almirah", prompts=("almirah",), components=("handle",)),
+        OntologyNode("furniture/almirah/handle", "handle", prompts=("door handle",), min_pixels=600),
+    ]
+    onto = Ontology(version="t", nodes={n.path: n for n in nodes})
+    t = detect_hierarchy(IMG, "im1", _Det(), onto, ["furniture/almirah"])
+
+    assert len(called) == 1
+    assert "door handle" in called[0]["prompts"]
+    paths = list(t.class_path)
+    assert "furniture/almirah/handle" in paths
+
+

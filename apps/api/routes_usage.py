@@ -12,7 +12,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.auth import AuthContext, Role, get_auth_context
+from apps.api.auth import AuthContext, Role, get_auth_context, is_global_admin
 from apps.api.db import get_db
 from apps.api.usage_service import get_tenant_usage
 
@@ -29,7 +29,7 @@ async def get_current_tenant_usage(
 ) -> dict:
     """Retrieve usage metrics for the caller's tenant, or for a specified tenant if caller is ADMIN."""
     target_tenant = tenant_id or auth.tenant_id
-    if target_tenant != auth.tenant_id and auth.role != Role.ADMIN:
+    if target_tenant != auth.tenant_id and not is_global_admin(auth):
         # Prevent tenant enumeration across tenants
         raise HTTPException(status_code=404, detail="Tenant not found")
 
@@ -49,7 +49,7 @@ async def get_specific_tenant_usage(
     Returns GPU-minutes, compute time, storage bytes, and export counts.
     Strict tenant boundary enforced: requests for other tenants fail with 404.
     """
-    if tenant_id != auth.tenant_id and auth.role != Role.ADMIN:
+    if tenant_id != auth.tenant_id and not is_global_admin(auth):
         # Prevent tenant enumeration across tenants
         raise HTTPException(status_code=404, detail="Tenant not found")
 

@@ -392,7 +392,7 @@ def bootstrap_single_image(
                               "heuristic, not recognition"),
                     ),
                     observations=[obs],
-                    custom_properties={"bootstrap": {
+                    custom_properties={"host_wall_id": host_eid, "bootstrap": {
                         "role": "opening_candidate", "source": "single_image", "host_entity_id": host_eid,
                         "kind_basis": cand.kind_basis, "contrast": cand.contrast,
                         "evidence_id": item.id, "resolved_kind": cand.kind != "opening",
@@ -605,7 +605,17 @@ def fuse_single_views(results: List[Tuple[EvidenceItem, BootstrapResult]], *, ga
         sources.append(item.id)
         w = res.world
         world.observations.update(w.observations)
-        world.geometries.update(w.geometries)
+        for gid, geom in w.geometries.items():
+            bmin = Vector3(geom.bounds_min.x + dx, geom.bounds_min.y, geom.bounds_min.z) if geom.bounds_min else None
+            bmax = Vector3(geom.bounds_max.x + dx, geom.bounds_max.y, geom.bounds_max.z) if geom.bounds_max else None
+            world.geometries[gid] = Geometry(
+                id=geom.id, type=geom.type, lod_level=geom.lod_level,
+                vertex_count=geom.vertex_count, triangle_count=geom.triangle_count,
+                data_uri=geom.data_uri, data_hash=geom.data_hash,
+                bounds_min=bmin, bounds_max=bmax,
+                provenance=geom.provenance, confidence=geom.confidence,
+                observations=list(geom.observations), quality_metrics=geom.quality_metrics,
+            )
         for eid, ent in w.entities.items():
             pos = (ent.transform or {}).get("position")
             if pos is not None:

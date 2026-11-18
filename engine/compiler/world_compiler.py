@@ -384,7 +384,7 @@ def compile_reconstruction_to_world(
     from perception.architecture.room_graph import structural_plane_undersized
     undersized_ids: set = set()
     for plane in oriented:
-        if plane.role == "unknown":
+        if plane.role in ("unknown", "support_surface"):
             continue
         pin = positions.get(plane.plane.plane_id) or []
         if not pin:
@@ -439,7 +439,7 @@ def compile_reconstruction_to_world(
     # (frozen dataclass -> object.__setattr__, same as the tests) ----
     summaries = []
     for plane in oriented:
-        if plane.role == "unknown":
+        if plane.role in ("unknown", "support_surface"):
             continue
         entity_id = f"{options.structure_prefix}-{plane.plane.plane_id}"
         if entity_id not in world.entities:

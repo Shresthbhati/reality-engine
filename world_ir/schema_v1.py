@@ -80,6 +80,7 @@ class EntityType(str, Enum):
     STOREY = "storey"  # One building level; CONTAINS the rooms at its measured floor height
     CORRIDOR = "corridor"  # Elongated circulation space connecting rooms on its sides
     OPENING = "opening"  # Measured wall void not classifiable as door or window (generic opening)
+    SUPPORT_SURFACE = "support_surface"  # Horizontal support surface: tabletop, shelf, stair tread (B09)
     # Architectural perception expansion (P7-03; additive -- v1 worlds
     # without these values are unaffected, and enum serialization is
     # by value so old data loads unchanged):
@@ -668,6 +669,14 @@ class Entity:
     # WorldIR 2.0 (P9-01, additive): typed links to resources the world does not own (images, COLMAP models,
     # reports). Empty = v1 behavior; serialized only when non-empty so v1 dicts stay byte-identical.
     external_references: tuple = ()
+
+    @property
+    def extra_fields(self) -> dict:
+        return self.custom_properties
+
+    @extra_fields.setter
+    def extra_fields(self, val: dict) -> None:
+        self.custom_properties = val or {}
 
     @property
     def material(self) -> Optional[str]:

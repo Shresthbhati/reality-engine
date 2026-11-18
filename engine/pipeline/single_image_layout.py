@@ -349,7 +349,8 @@ def make_layout_analyzer():
     from urllib.parse import unquote, urlparse
     from urllib.request import url2pathname
 
-    if os.environ.get("REALITY_LAYOUT_MODELS", "1") == "0":
+    # Metric-Indoor depth checkpoint has no declared licence: keep out of default path (RE-SEC-000002)
+    if os.environ.get("REALITY_LAYOUT_MODELS", "0") != "1":
         return None, (lambda: None)
     from perception.layout.learned_models import LayoutModels, analyze_path
 

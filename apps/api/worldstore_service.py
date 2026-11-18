@@ -92,6 +92,17 @@ def get_store() -> WorldStore:
     return store
 
 
+def load_worldir_from_store(world: World, version_id: str | None = None) -> WorldIR | None:
+    """Load WorldIR from WorldStore for a World (current or specified version)."""
+    vid = version_id or world.current_version_id
+    if not vid:
+        return None
+    try:
+        return get_store().load_version(vid)
+    except Exception:
+        return None
+
+
 def _mirror_row(stored, *, report: dict | None = None,
                  points_artifact_uri: str | None = None,
                  cameras_artifact_uri: str | None = None,

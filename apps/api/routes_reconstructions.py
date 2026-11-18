@@ -384,12 +384,18 @@ async def create_reconstruction(
         session.status = "completed"
         session.processing_finished_at = utcnow()
     await db.commit()
-    return {
+    res = {
         "world_id": world.id, "session_id": session.id, "job_id": job_id,
         "evidence": ev_out, "rejected": rejected, "coalesced": coalesced,
         "created_world": world_id is None,
         "capture_quality": capture_quality,
     }
+    video_metas = [a[6] for a in accepted if a[3] == "video"]
+    if video_metas:
+        res["frames_seen"] = sum(int(m.get("frames_seen", 0)) for m in video_metas)
+        res["frames_kept"] = sum(int(m.get("frames_kept", 0)) for m in video_metas)
+        res["duplicates_dropped"] = sum(int(m.get("duplicates_dropped", 0)) for m in video_metas)
+    return res
 
 
 def _dense_state(attempts: list) -> dict:

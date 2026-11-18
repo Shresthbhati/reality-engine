@@ -1,7 +1,7 @@
-"""Reality Engine — Entity Ontology & Dynamic Schema Loader (Blueprint 17).
+"""Reality Engine — Entity Ontology & Dynamic Schema Loader (Blueprint 17 / BUILD_SPEC B03).
 
 Provides the versioned, hierarchical ontology loader for physical entities,
-furnishings, architectural components, fixtures, and open-vocabulary detector prompts.
+furnishings, architectural components, fixtures, parts, attributes, and open-vocabulary detector prompts.
 Reads `config/ontology.yaml` as the canonical source of truth.
 Unknown or unmapped entities are strictly resolved to `fallback/unknown_object`.
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import yaml
 
 
@@ -29,30 +29,33 @@ class OntologyNode:
     min_pixels: int = 0
     typical_dims_m: Optional[Dict[str, Tuple[float, float]]] = None
     attach: Tuple[Dict[str, str], ...] = ()
-    #: attribute name -> allowed values; every list ends with "unknown" (an unseen attribute is never guessed).
     attributes: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
     aliases: Tuple[str, ...] = ()
-    #: Registered entity-class data (formerly perception.entities.taxonomy). None on nodes that are not registered
-    #: classes: the source never stated it, so there is no default.
-    world_type: Optional[str] = None            # an existing world_ir EntityType value
-    size_m: Optional[Tuple[float, float]] = None  # plausible largest dimension (min, max), metres
-    small: bool = False                          # needs the high-detail inspection pass
+    category: str = ""
+    world_type: str = "unknown"
+    size_m: Tuple[float, float] = (0.01, 500.0)
+    small: bool = False
+    hosts: Tuple[str, ...] = ()
 
     @property
     def group(self) -> str:
         """Top-level domain grouping (e.g. 'architecture', 'furniture', 'decor')."""
-        return self.path.split("/")[0] if "/" in self.path else self.path
+        return self.path.split("/")[0] if "/" in self.path else self.path.split(".")[0]
 
     @property
     def name(self) -> str:
         """Leaf name of the ontology node."""
-        return self.path.split("/")[-1]
+        if "/" in self.path:
+            return self.path.split("/")[-1]
+        return self.path.split(".")[-1]
 
     def is_child_of(self, parent_path: str) -> bool:
         """Check if this node is an immediate or ancestor descendant of parent_path."""
         if self.path == parent_path:
             return True
         if self.path.startswith(parent_path.rstrip("/") + "/"):
+            return True
+        if self.path.startswith(parent_path.rstrip(".") + "."):
             return True
         return self.parent == parent_path
 
@@ -61,47 +64,75 @@ class OntologyNode:
 class Ontology:
     version: str
     nodes: Dict[str, OntologyNode] = field(default_factory=dict)
-    children: Dict[str, List[str]] = field(default_factory=dict, init=False, repr=False)
-    alias_to_path: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    children: Dict[str, List[str]] = field(default_factory=dict, init=False)
+    alias_to_path: Dict[str, str] = field(default_factory=dict, init=False)
     _prompt_lookup: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _name_lookup: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self.children = {}
+        self.children = {p: [] for p in self.nodes}
         self.alias_to_path = {}
         self._prompt_lookup = {}
+        self._name_lookup = {}
+
         for path, node in self.nodes.items():
-            if node.parent:
-                self.children.setdefault(node.parent, []).append(path)
-            # First node wins a name, so adding classes never re-points an existing lookup: an implicit name
-            # (label/leaf/path) does not take a string an earlier node already uses as a detector prompt.
-            for name in node.aliases:
-                self.alias_to_path.setdefault(_norm(name), path)
-            for name in (node.label, node.name, path, path.replace("/", ".")):
-                if _norm(name) not in self._prompt_lookup:
-                    self.alias_to_path.setdefault(_norm(name), path)
+            if node.parent and node.parent in self.children:
+                self.children[node.parent].append(path)
+
+            # Register aliases: lower-cased and spaces collapsed
+            for alias in node.aliases:
+                a_norm = " ".join(alias.strip().lower().split())
+                if a_norm and a_norm not in self.alias_to_path:
+                    self.alias_to_path[a_norm] = path
+
+            # Automatically map dotted and slashed variants
+            dotted = path.replace("/", ".").lower()
+            slashed = path.replace(".", "/").lower()
+            self.alias_to_path.setdefault(dotted, path)
+            self.alias_to_path.setdefault(slashed, path)
+
+            self._name_lookup[node.name.lower()] = path
+            self._name_lookup[node.label.lower()] = path
+            self._name_lookup[path.lower()] = path
+
             for prompt in node.prompts:
                 p_clean = prompt.lower().strip()
                 if p_clean not in self._prompt_lookup:
                     self._prompt_lookup[p_clean] = path
 
     def ancestors(self, path: str) -> List[str]:
-        """Parent chain, nearest first (cycle-safe: validate() reports cycles)."""
+        """Walk parent pointers upwards from the specified path."""
         out: List[str] = []
-        seen = {path}
-        cur = self.nodes[path].parent if path in self.nodes else None
-        while cur and cur not in seen:
-            out.append(cur)
-            seen.add(cur)
-            node = self.nodes.get(cur)
-            cur = node.parent if node else None
+        curr = path
+        visited: Set[str] = set()
+        while curr:
+            node = self.nodes.get(curr) or self.get(curr)
+            if not node or not node.parent:
+                break
+            curr = node.parent
+            if curr in visited:
+                break
+            visited.add(curr)
+            out.append(curr)
         return out
 
     def get(self, path: str) -> Optional[OntologyNode]:
-        """Lookup node by exact slash-separated path."""
-        return self.nodes.get(path)
+        """Lookup node by exact slash-separated or dotted path or alias."""
+        if path in self.nodes:
+            return self.nodes[path]
+        norm = " ".join(path.strip().lower().split())
+        if norm in self.alias_to_path and self.alias_to_path[norm] in self.nodes:
+            return self.nodes[self.alias_to_path[norm]]
+        dotted = path.replace("/", ".").lower()
+        if dotted in self.alias_to_path and self.alias_to_path[dotted] in self.nodes:
+            return self.nodes[self.alias_to_path[dotted]]
+        slashed = path.replace(".", "/").lower()
+        if slashed in self.alias_to_path and self.alias_to_path[slashed] in self.nodes:
+            return self.nodes[self.alias_to_path[slashed]]
+        return None
 
     def resolve_or_unknown(self, query: str) -> OntologyNode:
-        """Resolve query (path, label, name, or prompt) to an OntologyNode.
+        """Resolve query (path, alias, label, name, or prompt) to an OntologyNode.
         
         If no matching node is found, returns the fallback node (`fallback/unknown_object`).
         """
@@ -109,31 +140,35 @@ class Ontology:
             return self._fallback_node()
 
         q_clean = query.strip().lower()
+        q_norm = " ".join(q_clean.split())
 
         # 1. Exact path match
         if query in self.nodes:
             return self.nodes[query]
 
-        # 2. Alias, label, name, path or dotted-path match (case-insensitive, spaces collapsed)
-        hit = self.alias_to_path.get(_norm(query))
-        if hit is not None:
-            return self.nodes[hit]
+        # 2. Alias lookup
+        if q_norm in self.alias_to_path and self.alias_to_path[q_norm] in self.nodes:
+            return self.nodes[self.alias_to_path[q_norm]]
 
-        # 3. Prompt lookup match
-        if q_clean in self._prompt_lookup:
+        # 3. Case-insensitive name, label or path match
+        if q_clean in self._name_lookup and self._name_lookup[q_clean] in self.nodes:
+            return self.nodes[self._name_lookup[q_clean]]
+
+        # 4. Prompt lookup match
+        if q_clean in self._prompt_lookup and self._prompt_lookup[q_clean] in self.nodes:
             return self.nodes[self._prompt_lookup[q_clean]]
 
-        # 4. Substring or prompt match
+        # 5. Substring or prompt match
         for prompt, path in self._prompt_lookup.items():
             if q_clean == prompt or q_clean in prompt or prompt in q_clean:
-                return self.nodes[path]
+                if path in self.nodes:
+                    return self.nodes[path]
 
         return self._fallback_node()
 
     def _fallback_node(self) -> OntologyNode:
         if FALLBACK_PATH in self.nodes:
             return self.nodes[FALLBACK_PATH]
-        # Synthetic fallback if YAML lacks one
         return OntologyNode(
             path=FALLBACK_PATH,
             label="Unknown object",
@@ -168,46 +203,57 @@ class Ontology:
         if FALLBACK_PATH not in self.nodes:
             issues.append(f"Missing mandatory fallback node: {FALLBACK_PATH}")
 
+        # Cycle detection using DFS with visiting set
+        VISITING, VISITED = 1, 2
+        visit_state: Dict[str, int] = {}
+
+        def dfs(p: str, stack: List[str]) -> bool:
+            visit_state[p] = VISITING
+            stack.append(p)
+            node = self.nodes.get(p)
+            if node and node.parent:
+                parent_p = node.parent
+                if parent_p in self.nodes:
+                    if visit_state.get(parent_p) == VISITING:
+                        cycle_path = " -> ".join(stack + [parent_p])
+                        issues.append(f"Cycle detected in parent hierarchy: {cycle_path}")
+                        return True
+                    elif visit_state.get(parent_p) != VISITED:
+                        if dfs(parent_p, stack):
+                            return True
+            stack.pop()
+            visit_state[p] = VISITED
+            return False
+
+        for p in self.nodes:
+            if p not in visit_state:
+                dfs(p, [])
+
         for path, node in self.nodes.items():
-            if node.parent and node.parent not in self.nodes:
+            if node.parent and node.parent not in self.nodes and self.get(node.parent) is None:
                 issues.append(f"Node {path} references non-existent parent: {node.parent}")
             if not node.prompts:
                 issues.append(f"Node {path} has no detector prompts defined")
             if node.min_pixels < 0:
                 issues.append(f"Node {path} has negative min_pixels: {node.min_pixels}")
+
+            # Every component path exists
             for comp in node.components:
-                # a short part name is a child node; a full path may point at any node
-                if comp not in self.nodes and f"{path}/{comp}" not in self.nodes:
-                    issues.append(f"Node {path} lists component that does not exist: {comp}")
-            for rel in node.attach:
-                for kind, target in rel.items():
-                    if target not in self.nodes:
-                        issues.append(f"Node {path} attach {kind} targets non-existent node: {target}")
-            for attr, values in node.attributes.items():
-                if "unknown" not in values:
-                    issues.append(f"Node {path} attribute {attr} has no 'unknown' value")
-        owner: Dict[str, str] = {}
-        for path, node in self.nodes.items():
-            for alias in node.aliases:
-                key = _norm(alias)
-                if owner.setdefault(key, path) != path:
-                    issues.append(f"Alias '{alias}' claimed by both {owner[key]} and {path}")
-        done: set = set()
-        for start in self.nodes:
-            visiting: set = set()
-            cur: Optional[str] = start
-            while cur and cur in self.nodes and cur not in done:
-                if cur in visiting:
-                    issues.append(f"Parent cycle through {cur}")
-                    break
-                visiting.add(cur)
-                cur = self.nodes[cur].parent
-            done |= visiting
+                if comp not in self.nodes and self.get(comp) is None:
+                    issues.append(f"Node {path} references non-existent component: {comp}")
+
+            # Every attach path exists
+            for att in node.attach:
+                for k, target_path in att.items():
+                    if target_path not in self.nodes and self.get(target_path) is None:
+                        issues.append(f"Node {path} attach {k} references non-existent target: {target_path}")
+
+            # Every attribute list contains 'unknown'
+            for attr_name, allowed_vals in node.attributes.items():
+                if "unknown" not in allowed_vals:
+                    issues.append(f"Node {path} attribute '{attr_name}' missing 'unknown' in allowed values: {allowed_vals}")
+
         return issues
-
-
-def _norm(text: str) -> str:
-    return " ".join(text.lower().split())
 
 
 _GLOBAL_ONTOLOGY: Optional[Ontology] = None
@@ -250,6 +296,11 @@ def load_ontology(
                 if isinstance(dim_v, (list, tuple)) and len(dim_v) == 2:
                     dims[dim_k] = (float(dim_v[0]), float(dim_v[1]))
 
+        raw_size = item.get("size_m")
+        size_m: Tuple[float, float] = (0.01, 500.0)
+        if isinstance(raw_size, (list, tuple)) and len(raw_size) == 2:
+            size_m = (float(raw_size[0]), float(raw_size[1]))
+
         raw_attach = item.get("attach") or []
         attach_list: List[Dict[str, str]] = []
         if isinstance(raw_attach, list):
@@ -258,7 +309,14 @@ def load_ontology(
                     attach_list.append({str(k): str(v) for k, v in a.items()})
 
         raw_attrs = item.get("attributes") or {}
-        raw_size = item.get("size_m")
+        parsed_attrs: Dict[str, Tuple[str, ...]] = {}
+        if isinstance(raw_attrs, dict):
+            for ak, av in raw_attrs.items():
+                if isinstance(av, (list, tuple)):
+                    parsed_attrs[str(ak)] = tuple(str(x) for x in av)
+
+        aliases = tuple(str(a) for a in item.get("aliases", []))
+
         node = OntologyNode(
             path=p,
             label=str(item.get("label", p)),
@@ -270,11 +328,13 @@ def load_ontology(
             min_pixels=int(item.get("min_pixels", 0)),
             typical_dims_m=dims,
             attach=tuple(attach_list),
-            attributes={str(k): tuple(str(x) for x in v) for k, v in raw_attrs.items()},
-            aliases=tuple(str(a) for a in item.get("aliases") or ()),
-            world_type=item.get("world_type"),
-            size_m=(float(raw_size[0]), float(raw_size[1])) if raw_size else None,
+            attributes=parsed_attrs,
+            aliases=aliases,
+            category=str(item.get("category", "")),
+            world_type=str(item.get("world_type", "unknown")),
+            size_m=size_m,
             small=bool(item.get("small", False)),
+            hosts=tuple(item.get("hosts", [])),
         )
         nodes[p] = node
 

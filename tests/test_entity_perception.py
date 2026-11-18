@@ -92,6 +92,55 @@ def test_unknown_labels_are_reported_not_invented_into_classes():
     assert r.detections == [] and "spaceship" in r.unmapped_labels
 
 
+def test_railing_as_wiring_and_texture_as_drain_are_rejected():
+    """RE-PERC-000002: Tiled pass rejects railings mislabeled as wiring and textures mislabeled as drains."""
+    from perception.entities.small_objects import plausible_small_fitting
+    from perception.entities import taxonomy
+
+    drain_cls = taxonomy.class_for_label("drain")
+    wiring_cls = taxonomy.class_for_label("wiring") or taxonomy.get("electrical.conduit")
+    frame = (1920, 1080)
+    tile = (640, 640)
+
+    # 1. Texture mislabeled as drain: large box spanning 350x300 in tile
+    texture_box = (100.0, 100.0, 450.0, 400.0)
+    assert not plausible_small_fitting(drain_cls, texture_box, frame, tile_size=tile)
+
+    # Long linear streak with aspect ratio 6:1 mislabeled as drain
+    streak_box = (100.0, 100.0, 400.0, 140.0)
+    assert not plausible_small_fitting(drain_cls, streak_box, frame, tile_size=tile)
+
+    # Real compact drain
+    real_drain = (200.0, 200.0, 250.0, 250.0)
+    assert plausible_small_fitting(drain_cls, real_drain, frame, tile_size=tile)
+
+    # 2. Railing mislabeled as wiring: diagonal/spanning most of tile (500x500 in 640x640)
+    railing_box = (50.0, 50.0, 560.0, 560.0)
+    assert not plausible_small_fitting(wiring_cls, railing_box, frame, tile_size=tile)
+
+    # Real wiring/conduit: compact or localized
+    real_wire = (100.0, 100.0, 180.0, 140.0)
+    assert plausible_small_fitting(wiring_cls, real_wire, frame, tile_size=tile)
+
+
+def test_small_object_outside_parent_box_is_rejected():
+    """RE-PERC-000002: Parent-box containment check."""
+    from perception.entities.small_objects import plausible_small_fitting
+    from perception.entities import taxonomy
+
+    socket_cls = taxonomy.class_for_label("wall socket")
+    parent = (100.0, 100.0, 500.0, 500.0)
+
+    # Inside parent box
+    inside_box = (200.0, 200.0, 240.0, 240.0)
+    assert plausible_small_fitting(socket_cls, inside_box, (1920, 1080), parent_box=parent)
+
+    # Outside parent box (center at 620, 200)
+    outside_box = (600.0, 180.0, 640.0, 220.0)
+    assert not plausible_small_fitting(socket_cls, outside_box, (1920, 1080), parent_box=parent)
+
+
+
 # ------------------------------------------------------------------ multi-view association
 def _o(oid, ev, cls, x, y=1.0, z=0.0, sigma=0.004):
     return EntityObservation(oid, ev, cls, (x, y, z), sigma_m=sigma)

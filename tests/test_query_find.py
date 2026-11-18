@@ -42,3 +42,11 @@ def test_closed_interior_is_reported_not_observed():
 
 def test_unknown_attribute_never_matches():
     assert find_entities(_world(), "keypad") == []
+
+
+def test_api_route_find_registered():
+    from apps.api.main import app
+
+    paths = [route.path for route in app.routes]
+    assert "/api/worlds/{world_id}/find" in paths
+    assert "/api/worlds/{world_id}/query/find" in paths

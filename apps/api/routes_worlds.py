@@ -12,7 +12,7 @@ from uuid import uuid4
 
 log = logging.getLogger("reality.api.worlds")
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from apps.api.auth import (
     Role,
     enforce_project_isolation,
     get_auth_context,
+    is_global_admin,
     issue_share_token,
     revoke_share_token_in_memory,
     verify_share_token,
@@ -83,7 +84,7 @@ async def create_world(body: WorldIn, db: AsyncSession = Depends(get_db), auth: 
         longitude=require_longitude(body.longitude) if body.longitude is not None else None,
         coverage=require_json_size(body.coverage, "coverage"),
         owner_id=auth.user_id,
-        team_id=auth.tenant_id if auth.tenant_id != "default" else None,
+        team_id=auth.tenant_id or "default",
     )
     db.add(w)
     db.add(
@@ -136,7 +137,7 @@ async def import_world_package(
         name=imported_world.name or f"Imported World {target_id[:8]}",
         description=f"Imported from package archive {file.filename or ''}",
         owner_id=auth.user_id,
-        team_id=auth.tenant_id if auth.tenant_id != "default" else None,
+        team_id=auth.tenant_id or "default",
     )
     db.add(w)
     await db.commit()
@@ -193,7 +194,7 @@ async def list_worlds(status: str = "active", db: AsyncSession = Depends(get_db)
     if status not in WORLD_STATUSES:
         raise HTTPException(422, f"status must be one of {', '.join(WORLD_STATUSES)}")
     stmt = select(World).where(World.status == status)
-    if auth.role != Role.ADMIN and auth.tenant_id != "default":
+    if not is_global_admin(auth):
         stmt = stmt.where(World.team_id == auth.tenant_id)
     res = await db.execute(stmt.order_by(World.updated_at.desc()).limit(200))
     ses_counts = dict(
@@ -240,12 +241,12 @@ async def _world_or_404(db: AsyncSession, world_id: str, auth: AuthContext | Non
 
 
 @worlds.patch("/{world_id}")
-async def patch_world(world_id: str, body: WorldPatch, db: AsyncSession = Depends(get_db)) -> dict:
+async def patch_world(world_id: str, body: WorldPatch, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """Rename / edit the description. Identity (id, versions, sessions) is untouched. A trashed world must be restored first."""
     from apps.api.validation import require_json_size, require_name
     from apps.api.world_lifecycle import record_event
 
-    w = await _world_or_404(db, world_id)
+    w = await _world_or_404(db, world_id, auth)
     if w.status == "trashed":
         raise HTTPException(409, "World is in the trash; restore it before editing")
     changed = {}
@@ -267,7 +268,7 @@ async def patch_world(world_id: str, body: WorldPatch, db: AsyncSession = Depend
 
 
 @worlds.post("/{world_id}/duplicate", status_code=201)
-async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     """Copy-on-write duplicate: a new world carrying the source's metadata and its CURRENT version's content. The
     WorldIR JSON is re-saved under the new world id (version rows are keyed by world), but geometry, points and
     cameras are content-addressed blobs that both worlds reference -- no file copies. Sessions/evidence are not
@@ -277,7 +278,7 @@ async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db)) -> 
     from apps.api import worldstore_service
     from apps.api.world_lifecycle import record_event
 
-    src = await _world_or_404(db, world_id)
+    src = await _world_or_404(db, world_id, auth)
     if src.status == "trashed":
         raise HTTPException(409, "World is in the trash; restore it before duplicating")
     src_row = None
@@ -311,10 +312,10 @@ async def duplicate_world(world_id: str, db: AsyncSession = Depends(get_db)) -> 
 
 
 @worlds.post("/{world_id}/archive")
-async def archive_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def archive_world(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     from apps.api.world_lifecycle import record_event
 
-    w = await _world_or_404(db, world_id)
+    w = await _world_or_404(db, world_id, auth)
     if w.status == "trashed":
         raise HTTPException(409, "World is in the trash; restore it first")
     if w.status == "archived":
@@ -326,10 +327,10 @@ async def archive_world(world_id: str, db: AsyncSession = Depends(get_db)) -> di
 
 
 @worlds.post("/{world_id}/restore")
-async def restore_world(world_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def restore_world(world_id: str, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)) -> dict:
     from apps.api.world_lifecycle import record_event
 
-    w = await _world_or_404(db, world_id)
+    w = await _world_or_404(db, world_id, auth)
     if w.status == "active":
         raise HTTPException(409, "World is already active")
     was = w.status
@@ -340,13 +341,13 @@ async def restore_world(world_id: str, db: AsyncSession = Depends(get_db)) -> di
 
 
 @worlds.delete("/{world_id}")
-async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession = Depends(get_db)):
+async def delete_world(world_id: str, permanent: bool = False, db: AsyncSession = Depends(get_db), auth: AuthContext = Depends(get_auth_context)):
     """Soft delete (default): cancel the world's queued/running jobs FIRST, then status=trashed, deleted_at=now; the
     trash sweep purges it after 30 days. ``?permanent=true`` purges now: rows, WorldStore versions and only the blobs
     nothing else references (409 while a job is still stopping)."""
     from apps.api.world_lifecycle import JobsStillRunning, cancel_world_jobs, purge_world, record_event
 
-    w = await _world_or_404(db, world_id)
+    w = await _world_or_404(db, world_id, auth)
     if permanent:
         try:
             return {"permanently_deleted": True, **await purge_world(db, w)}
@@ -407,6 +408,21 @@ async def list_world_versions(
             for v in res.scalars().all()
         ]
     }
+
+
+@worlds.get("/{world_id}/find")
+async def find_in_world(
+    world_id: str,
+    q: str = Query(..., min_length=1),
+    version: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    auth: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """\"Where is X\": entities matching query q with containment chain and position (BUILD_SPEC B15)."""
+    from apps.api.routes_query import find_entities
+    row = await _version_row(db, world_id, version, auth)
+    world = _load_world_or_409(row)
+    return {"version_id": row.id, "q": q, "results": find_entities(world, q)}
 
 
 @worlds.post("/{world_id}/attach/{session_id}")
@@ -2382,1209 +2398,67 @@ async def get_world_spatial_intelligence(
     }
 
 
-class CreateShareIn(BaseModel):
-    label: str | None = None
-    expires_in_hours: int | None = None
+# Modular routers for shares, design options, views, and commands (RE-ARCH-000009)
+from apps.api.routes_worlds_shares import (
+    shares_router,
+    CreateShareIn,
+    _is_share_link_active,
+)
+from apps.api.routes_worlds_options import (
+    options_router,
+    DesignOptionIn,
+    VersionLabelIn,
+    CameraViewIn,
+)
+from apps.api.routes_worlds_commands import (
+    commands_router,
+    WorldCommandIn,
+)
+
+worlds.include_router(shares_router)
+worlds.include_router(options_router)
+worlds.include_router(commands_router)
 
 
-@worlds.post("/{world_id}/shares")
-async def create_world_share_link(
-    world_id: str,
-    body: CreateShareIn = CreateShareIn(),
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Create a token-scoped, read-only client share link for this world (T-4b.4)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-    if auth.role < Role.EDITOR and not auth.is_loopback:
-        raise HTTPException(403, "Insufficient permissions to create share links")
-
-    share_id = new_id("sh")
-    expires_at = None
-    exp_ts = None
-    if body.expires_in_hours and body.expires_in_hours > 0:
-        from datetime import timedelta
-        expires_at = utcnow() + timedelta(hours=body.expires_in_hours)
-        exp_ts = int(expires_at.timestamp())
-
-    token = issue_share_token(world_id=w.id, share_id=share_id, expires_at=exp_ts)
-    link = WorldShareLink(
-        id=share_id,
-        world_id=w.id,
-        token=token,
-        label=body.label,
-        created_by=auth.user_id,
-        expires_at=expires_at,
-    )
-    db.add(link)
-    await db.commit()
-
-    return {
-        "id": link.id,
-        "world_id": w.id,
-        "token": link.token,
-        "share_url": f"/shared/{link.token}",
-        "label": link.label,
-        "expires_at": link.expires_at.isoformat() if link.expires_at else None,
-        "created_at": link.created_at.isoformat() if link.created_at else None,
-        "revoked": False,
-    }
-
-
-def _is_share_link_active(link: WorldShareLink) -> bool:
-    if link.revoked_at is not None:
-        return False
-    if link.expires_at is None:
-        return True
-    exp = link.expires_at
-    if exp.tzinfo is None:
-        from datetime import timezone
-        exp = exp.replace(tzinfo=timezone.utc)
-    return exp > utcnow()
-
-
-@worlds.get("/{world_id}/shares")
-async def list_world_share_links(
-    world_id: str,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """List all client share links for this world (T-4b.4)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    res = await db.execute(
-        select(WorldShareLink).where(WorldShareLink.world_id == world_id).order_by(WorldShareLink.created_at.desc())
-    )
-    links = res.scalars().all()
-    return {
-        "world_id": world_id,
-        "items": [
-            {
-                "id": link.id,
-                "world_id": link.world_id,
-                "token": link.token,
-                "share_url": f"/shared/{link.token}",
-                "label": link.label,
-                "created_at": link.created_at.isoformat() if link.created_at else None,
-                "expires_at": link.expires_at.isoformat() if link.expires_at else None,
-                "revoked_at": link.revoked_at.isoformat() if link.revoked_at else None,
-                "is_active": _is_share_link_active(link),
-            }
-            for link in links
-        ],
-    }
-
-
-@worlds.post("/{world_id}/shares/{share_id}/revoke")
-async def revoke_world_share_link(
-    world_id: str,
-    share_id: str,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Revoke an active client share link (T-4b.4)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-    if auth.role < Role.EDITOR and not auth.is_loopback:
-        raise HTTPException(403, "Insufficient permissions to revoke share links")
-
-    res = await db.execute(
-        select(WorldShareLink).where(WorldShareLink.id == share_id, WorldShareLink.world_id == world_id)
-    )
-    link = res.scalars().first()
-    if link is None:
-        raise HTTPException(404, "Share link not found")
-
-    link.revoked_at = utcnow()
-    revoke_share_token_in_memory(link.token)
-    await db.commit()
-
-    return {"status": "revoked", "id": share_id, "world_id": world_id}
-
-
-@worlds.get("/shared/access/{token}")
-async def access_shared_world(
-    token: str,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Access a shared world using a read-only token without needing an account (T-4b.4)."""
-    auth_ctx = verify_share_token(token)
-    if auth_ctx is None:
-        raise HTTPException(401, "Invalid or expired share token")
-
-    res = await db.execute(select(WorldShareLink).where(WorldShareLink.token == token.strip()))
-    link = res.scalars().first()
-    if link is None or link.revoked_at is not None:
-        raise HTTPException(403, "Share link has been revoked or does not exist")
-    if link.expires_at is not None:
-        exp = link.expires_at
-        if exp.tzinfo is None:
-            from datetime import timezone
-            exp = exp.replace(tzinfo=timezone.utc)
-        if exp < utcnow():
-            raise HTTPException(401, "Share link has expired")
-
-    w = await db.get(World, link.world_id)
-    if w is None or w.status != "active":
-        raise HTTPException(404, "Shared world not found")
-
-    from apps.api.worldstore_service import get_current_worldir
-    worldir = await get_current_worldir(db, w.id)
-
-    return {
-        "world_id": w.id,
-        "name": w.name,
-        "description": w.description,
-        "read_only": True,
-        "share_id": link.id,
-        "label": link.label,
-        "current_version_id": w.current_version_id,
-        "worldir": worldir.to_dict() if worldir else None,
-    }
-
-
-
-# -------------------------------------------------------------------------------------------------
-# Named Design Options & Surface Finish Layers (T-4b.2 & T-4b.3)
-# -------------------------------------------------------------------------------------------------
-
-class DesignOptionIn(BaseModel):
-    label: str
-    base_version: str | None = None
-    description: str | None = None
-    surface_finishes: list[dict] | None = None
-
-
-class VersionLabelIn(BaseModel):
-    label: str
-
-
-@worlds.get("/{world_id}/options")
-async def list_design_options(
-    world_id: str,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """List all saved design options and as-built survey versions for a world (T-4b.3)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    res = await db.execute(
-        select(WorldVersion).where(WorldVersion.world_id == world_id).order_by(WorldVersion.created_at.asc())
-    )
-    versions = res.scalars().all()
-    options = []
-    for i, v in enumerate(versions):
-        is_as_built = (v.label == "as-built") or (v.parent_version_id is None and (v.label is None or v.label == "as-built"))
-        lbl = v.label or ("as-built" if is_as_built else f"Option {chr(65 + max(0, i - 1))}")
-        options.append({
-            "version_id": v.id,
-            "label": lbl,
-            "parent_version_id": v.parent_version_id,
-            "is_as_built": is_as_built,
-            "is_current": v.id == w.current_version_id,
-            "created_at": v.created_at.isoformat() if v.created_at else None,
-            "changed_entities_count": len(v.changed_entity_ids or []),
-        })
-    return {"world_id": world_id, "options": options}
-
-
-@worlds.post("/{world_id}/options")
-async def create_design_option(
-    world_id: str,
-    body: DesignOptionIn,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Create a new named design option with a plain-language label derived from a base version (T-4b.3)."""
-    if auth.role == Role.VIEWER:
-        raise HTTPException(403, "Read-only access cannot create design options")
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    base_row = await _version_row(db, world_id, body.base_version, auth=auth)
-    worldir = _load_world_or_409(base_row)
-
-    from world_ir.schema_v1 import Material, SurfaceFinish
-    changed_entity_ids = []
-    if body.surface_finishes:
-        for sf in body.surface_finishes:
-            ent_id = sf.get("entity_id")
-            if not ent_id or ent_id not in worldir.entities:
-                raise HTTPException(422, f"entity '{ent_id}' not found in world")
-            ent = worldir.entities[ent_id]
-            changed_entity_ids.append(ent_id)
-
-            finish_str = sf.get("surface_finish", "smooth")
-            try:
-                finish_val = SurfaceFinish(finish_str)
-            except ValueError:
-                finish_val = SurfaceFinish.SMOOTH
-
-            color_rgb = tuple(float(c) for c in sf.get("color_rgb", [0.8, 0.8, 0.8]))
-            mat_name = str(sf.get("name") or sf.get("material_name") or "Option Finish")
-            mat_class = str(sf.get("class_name") or sf.get("material") or "finish")
-
-            mat_id = f"mat-{ent.id}-{uuid4().hex[:6]}"
-            new_mat = Material(
-                id=mat_id,
-                name=mat_name,
-                class_name=mat_class,
-                surface_finish=finish_val,
-                color_rgb=color_rgb,
-                provenance=Provenance.GENERATED,
-                confidence=1.0,
-            )
-            worldir.materials[mat_id] = new_mat
-            ent.material_ids = [mat_id]
-            ent.custom_properties = dict(ent.custom_properties or {})
-            ent.custom_properties["surface_finish"] = finish_val.value
-            ent.custom_properties["material"] = mat_class
-            ent.custom_properties["material_label"] = mat_name
-            ent.custom_properties["design_layer"] = "finish"
-
-    from world_ir.world_v1 import Scenario
-    scn_id = f"scn-{uuid4().hex[:8]}"
-    worldir.scenarios[scn_id] = Scenario(
-        id=scn_id,
-        name=body.label.strip(),
-        description=body.description or "",
-    )
-
-    from apps.api import worldstore_service
-    version_row = await worldstore_service.commit_version(
-        db,
-        world_id=w.id,
-        world=worldir,
-        parent=base_row.id,
-        label=body.label.strip(),
-        allow_branch=True,
-    )
-
-    return {
-        "world_id": w.id,
-        "version_id": version_row.id,
-        "label": version_row.label,
-        "parent_version_id": version_row.parent_version_id,
-        "created_at": version_row.created_at.isoformat() if version_row.created_at else None,
-        "changed_entity_ids": changed_entity_ids,
-    }
-
-
-@worlds.patch("/{world_id}/versions/{version_id}/label")
-async def set_version_label(
+@worlds.get("/{world_id}/versions/{version_id}/observations")
+async def get_version_observations(
     world_id: str,
     version_id: str,
-    body: VersionLabelIn,
+    image_id: str | None = None,
+    entity_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     auth: AuthContext = Depends(get_auth_context),
 ) -> dict:
-    """Assign or rename a plain-language label on a world version (T-4b.3)."""
-    if auth.role == Role.VIEWER:
-        raise HTTPException(403, "Read-only access cannot rename versions")
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
+    """Retrieve observations recorded for a world version (BUILD_SPEC B02)."""
+    w = await _world_or_404(db, world_id, auth)
     enforce_project_isolation(w, auth)
 
-    row = await _version_row(db, world_id, version_id, auth=auth)
-    row.label = body.label.strip()
-    await db.commit()
-    await db.refresh(row)
-    return {"version_id": row.id, "label": row.label}
-
-
-@worlds.get("/{world_id}/options/compare")
-async def compare_design_options(
-    world_id: str,
-    base: str = "as-built",
-    target: str = "as-built",
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Compare as-built survey vs named design option, or two options (T-4b.3)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    row_base = await _version_row(db, world_id, base, auth=auth)
-    row_target = await _version_row(db, world_id, target, auth=auth)
-
-    world_base = _load_world_or_409(row_base)
-    world_target = _load_world_or_409(row_target)
-
-    finish_diffs = []
-    for eid, ent_target in world_target.entities.items():
-        ent_base = world_base.entities.get(eid)
-        base_props = ent_base.custom_properties if ent_base else {}
-        target_props = ent_target.custom_properties or {}
-
-        base_finish = base_props.get("surface_finish")
-        target_finish = target_props.get("surface_finish")
-        base_mat = base_props.get("material") or base_props.get("material_label")
-        target_mat = target_props.get("material") or target_props.get("material_label")
-
-        if base_finish != target_finish or base_mat != target_mat:
-            finish_diffs.append({
-                "entity_id": eid,
-                "name": ent_target.name,
-                "type": ent_target.type.value,
-                "base": {"surface_finish": base_finish, "material": base_mat},
-                "target": {"surface_finish": target_finish, "material": target_mat},
-            })
-
-    added_ids = [eid for eid in world_target.entities if eid not in world_base.entities]
-    removed_ids = [eid for eid in world_base.entities if eid not in world_target.entities]
-
-    return {
-        "world_id": world_id,
-        "base": {
-            "version_id": row_base.id,
-            "label": row_base.label or "as-built",
-            "created_at": row_base.created_at.isoformat() if row_base.created_at else None,
-            "entity_count": len(world_base.entities),
-        },
-        "target": {
-            "version_id": row_target.id,
-            "label": row_target.label or target,
-            "created_at": row_target.created_at.isoformat() if row_target.created_at else None,
-            "entity_count": len(world_target.entities),
-        },
-        "summary": {
-            "finishes_changed_count": len(finish_diffs),
-            "added_entities_count": len(added_ids),
-            "removed_entities_count": len(removed_ids),
-        },
-        "finish_differences": finish_diffs,
-        "added_entity_ids": added_ids,
-        "removed_entity_ids": removed_ids,
-    }
-
-
-
-# -------------------------------------------------------------------------------------------------
-# Saved Camera Views & Still Renders (T-4b.6)
-# -------------------------------------------------------------------------------------------------
-
-class CameraViewIn(BaseModel):
-    name: str
-    position: dict
-    target: dict
-    fov_deg: float = 60.0
-
-
-@worlds.post("/{world_id}/views")
-async def create_camera_view(
-    world_id: str,
-    body: CameraViewIn,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Save a camera view pose for client deck still renders and presentations (T-4b.6)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-    if auth.role == Role.VIEWER:
-        raise HTTPException(403, "Read-only access cannot save camera views")
-
-    if not body.name or len(body.name) > 120:
-        raise HTTPException(422, "name must be a non-empty string <= 120 chars")
-
-    for k, val in (("position", body.position), ("target", body.target)):
-        if not isinstance(val, dict) or not all(axis in val for axis in ("x", "y", "z")):
-            raise HTTPException(422, f"{k} must be an object with numeric x, y, z")
-        for axis in ("x", "y", "z"):
-            v = val[axis]
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-                raise HTTPException(422, f"{k}.{axis} must be a finite number")
-
-    if not (10.0 <= body.fov_deg <= 150.0):
-        raise HTTPException(422, "fov_deg must be within [10, 150]")
-
-    view = WorldCameraView(
-        id=new_id("view"),
-        world_id=w.id,
-        name=body.name.strip(),
-        position={axis: float(body.position[axis]) for axis in ("x", "y", "z")},
-        target={axis: float(body.target[axis]) for axis in ("x", "y", "z")},
-        fov_deg=float(body.fov_deg),
-    )
-    db.add(view)
-    await db.commit()
-    await db.refresh(view)
-    return {
-        "id": view.id,
-        "world_id": view.world_id,
-        "name": view.name,
-        "position": view.position,
-        "target": view.target,
-        "fov_deg": view.fov_deg,
-        "created_at": view.created_at.isoformat() if view.created_at else None,
-    }
-
-
-@worlds.get("/{world_id}/views")
-async def list_camera_views(
-    world_id: str,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """List all saved camera views for a world (T-4b.6)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    res = await db.execute(
-        select(WorldCameraView).where(WorldCameraView.world_id == world_id).order_by(WorldCameraView.created_at.asc())
-    )
-    views = res.scalars().all()
-    return {
-        "world_id": world_id,
-        "items": [
-            {
-                "id": v.id,
-                "name": v.name,
-                "position": v.position,
-                "target": v.target,
-                "fov_deg": v.fov_deg,
-                "created_at": v.created_at.isoformat() if v.created_at else None,
-            }
-            for v in views
-        ],
-    }
-
-
-@worlds.delete("/{world_id}/views/{view_id}")
-async def delete_camera_view(
-    world_id: str,
-    view_id: str,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Delete a saved camera view (T-4b.6)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-    if auth.role == Role.VIEWER:
-        raise HTTPException(403, "Read-only access cannot delete camera views")
-
-    view = await db.get(WorldCameraView, view_id)
-    if view is None or view.world_id != world_id:
-        raise HTTPException(404, "Camera view not found")
-
-    await db.delete(view)
-    await db.commit()
-    return {"status": "deleted", "id": view_id}
-
-
-@worlds.get("/{world_id}/render")
-async def render_world_view(
-    world_id: str,
-    view_id: str | None = None,
-    version: str | None = None,
-    width: int = 1280,
-    height: int = 720,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> Response:
-    """Render still PNG from saved camera view for client decks (T-4b.6)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    row = await _version_row(db, world_id, version, auth=auth)
-    worldir = _load_world_or_409(row)
-
-    view_name = "Default Perspective"
-    pos = {"x": 0.0, "y": 1.6, "z": -4.0}
-    tgt = {"x": 0.0, "y": 1.2, "z": 0.0}
-    fov = 60.0
-
-    if view_id is not None:
-        res = await db.execute(
-            select(WorldCameraView).where(WorldCameraView.world_id == world_id, WorldCameraView.id == view_id)
-        )
-        view = res.scalars().first()
-        if view is None:
-            res = await db.execute(
-                select(WorldCameraView).where(WorldCameraView.world_id == world_id, WorldCameraView.name == view_id)
-            )
-            view = res.scalars().first()
-        if view is None:
-            raise HTTPException(404, f"Saved camera view '{view_id}' not found")
-        view_name = view.name
-        pos = view.position
-        tgt = view.target
-        fov = view.fov_deg
-
-    from apps.api.render_service import render_still_png
-    png_bytes = render_still_png(
-        world=worldir,
-        view_name=view_name,
-        position=pos,
-        target=tgt,
-        fov_deg=fov,
-        width=max(320, min(3840, width)),
-        height=max(240, min(2160, height)),
-        world_name=w.name,
-        version_label=row.label or "as-built",
-    )
-
-    safe_view = "".join(c for c in view_name if c.isalnum() or c in ("-", "_")).strip() or "view"
-    return Response(
-        content=png_bytes,
-        media_type="image/png",
-        headers={
-            "Content-Disposition": f'inline; filename="{w.id}_{safe_view}.png"',
-            "Cache-Control": "private, max-age=3600",
-        },
-    )
-
-
-class WorldCommandIn(BaseModel):
-    command_type: str  # move, rotate, delete, replace, surface_finish, transform
-    entity_id: str
-    params: dict = {}
-    description: str | None = None
-
-
-@worlds.post("/{world_id}/commands", status_code=201)
-async def execute_world_command(
-    world_id: str,
-    body: WorldCommandIn,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Execute an edit command on a world entity (T-4b.1 and T-6.7).
-
-    Mutations advance HEAD with provenance GENERATED and persist in WorldEditCommand
-    for lossless, reloadable undo/redo with complete world isolation.
-    """
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    from apps.api import worldstore_service as wss
-
-    worldir = await _load_worldir_from_store(w)
-    if worldir is None:
-        raise HTTPException(404, "WorldIR not available for current version")
-    worldir.id = w.id
-
-    cmd_type = body.command_type.lower()
-    entity_id = body.entity_id
-
-    if cmd_type != "create" and entity_id not in worldir.entities:
-        raise HTTPException(404, f"Entity '{entity_id}' not found in world")
-
-    ent = worldir.entities.get(entity_id)
-    inverse_params: dict = {}
-
-    if cmd_type == "move":
-        cur_pos = dict((ent.transform or {}).get("position") or {"x": 0.0, "y": 0.0, "z": 0.0})
-        inverse_params = {"position": cur_pos}
-        p = body.params.get("position")
-        if p is not None:
-            if isinstance(p, (list, tuple)) and len(p) >= 3:
-                new_pos = {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])}
-            elif isinstance(p, dict):
-                new_pos = {"x": float(p.get("x", 0.0)), "y": float(p.get("y", 0.0)), "z": float(p.get("z", 0.0))}
-            else:
-                raise HTTPException(422, "position must be [x, y, z] or {x, y, z}")
-        elif any(k in body.params for k in ("dx", "dy", "dz")):
-            new_pos = {
-                "x": cur_pos["x"] + float(body.params.get("dx", 0.0)),
-                "y": cur_pos["y"] + float(body.params.get("dy", 0.0)),
-                "z": cur_pos["z"] + float(body.params.get("dz", 0.0)),
-            }
-        else:
-            raise HTTPException(422, "move requires 'position' or delta 'dx'/'dy'/'dz'")
-
-        if not ent.transform:
-            ent.transform = {}
-        ent.transform["position"] = new_pos
-        ent.provenance = Provenance.GENERATED
-
-    elif cmd_type == "rotate":
-        cur_rot = list((ent.transform or {}).get("rotation") or [0.0, 0.0, 0.0])
-        cur_yaw = float((ent.custom_properties or {}).get("yaw_rad", 0.0))
-        inverse_params = {"rotation": cur_rot, "yaw_rad": cur_yaw}
-        if "yaw_deg" in body.params:
-            yaw_rad = math.radians(float(body.params["yaw_deg"]))
-        elif "yaw_rad" in body.params:
-            yaw_rad = float(body.params["yaw_rad"])
-        elif "rotation" in body.params:
-            r = body.params["rotation"]
-            yaw_rad = float(r[1]) if isinstance(r, (list, tuple)) and len(r) > 1 else 0.0
-        else:
-            raise HTTPException(422, "rotate requires 'yaw_deg', 'yaw_rad', or 'rotation'")
-
-        if not ent.transform:
-            ent.transform = {}
-        ent.transform["rotation"] = [0.0, yaw_rad, 0.0]
-        ent.custom_properties = dict(ent.custom_properties or {})
-        ent.custom_properties["yaw_rad"] = yaw_rad
-        ent.provenance = Provenance.GENERATED
-
-    elif cmd_type == "transform":
-        cur_pos = dict((ent.transform or {}).get("position") or {"x": 0.0, "y": 0.0, "z": 0.0})
-        cur_rot = list((ent.transform or {}).get("rotation") or [0.0, 0.0, 0.0])
-        cur_yaw = float((ent.custom_properties or {}).get("yaw_rad", 0.0))
-        inverse_params = {"position": cur_pos, "rotation": cur_rot, "yaw_rad": cur_yaw}
-        if "position" in body.params:
-            p = body.params["position"]
-            if isinstance(p, (list, tuple)) and len(p) >= 3:
-                new_pos = {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])}
-            elif isinstance(p, dict):
-                new_pos = {"x": float(p.get("x", 0.0)), "y": float(p.get("y", 0.0)), "z": float(p.get("z", 0.0))}
-            else:
-                raise HTTPException(422, "position must be [x, y, z] or {x, y, z}")
-            if not ent.transform:
-                ent.transform = {}
-            ent.transform["position"] = new_pos
-        if "rotation" in body.params or "yaw_rad" in body.params or "yaw_deg" in body.params:
-            if "yaw_deg" in body.params:
-                yaw_rad = math.radians(float(body.params["yaw_deg"]))
-            elif "yaw_rad" in body.params:
-                yaw_rad = float(body.params["yaw_rad"])
-            else:
-                r = body.params["rotation"]
-                yaw_rad = float(r[1]) if isinstance(r, (list, tuple)) and len(r) > 1 else 0.0
-            if not ent.transform:
-                ent.transform = {}
-            ent.transform["rotation"] = [0.0, yaw_rad, 0.0]
-            ent.custom_properties = dict(ent.custom_properties or {})
-            ent.custom_properties["yaw_rad"] = yaw_rad
-        ent.provenance = Provenance.GENERATED
-
-    elif cmd_type == "delete":
-        inverse_params = {"entity": ent.to_dict()}
-        del worldir.entities[entity_id]
-
-    elif cmd_type == "replace":
-        from engine.furniture.catalog import get_catalog_item
-
-        catalog_id = body.params.get("catalog_id")
-        if not catalog_id:
-            raise HTTPException(422, "replace requires 'catalog_id'")
-        cat_item = get_catalog_item(catalog_id)
-        if not cat_item:
-            raise HTTPException(422, f"Catalog item '{catalog_id}' not found")
-
-        inverse_params = {"entity": ent.to_dict()}
-        w_dims = cat_item.dimensions
-        w_val = float(w_dims.get("width", 1.0))
-        d_val = float(w_dims.get("depth", 1.0))
-        h_val = float(w_dims.get("height", 1.0))
-
-        geom_id = f"geom-cat-{cat_item.id}-{uuid4().hex[:6]}"
-        mat_id = f"mat-cat-{cat_item.id}-{uuid4().hex[:6]}"
-
-        new_geom = Geometry(
-            id=geom_id,
-            type=GeometryType.BOX,
-            bounds_min=Vector3(x=-w_val / 2, y=0.0, z=-d_val / 2),
-            bounds_max=Vector3(x=w_val / 2, y=h_val, z=d_val / 2),
-        )
-        new_mat = Material(
-            id=mat_id,
-            name=f"{cat_item.name} Material",
-            class_name=cat_item.category,
-            surface_finish=SurfaceFinish.SMOOTH,
-            color_rgb=cat_item.color_rgb,
-            provenance=Provenance.GENERATED,
-            confidence=1.0,
-        )
-        worldir.geometries[geom_id] = new_geom
-        worldir.materials[mat_id] = new_mat
-
-        ent.name = cat_item.name
-        ent.type = EntityType.FURNITURE
-        ent.geometry_ids = [geom_id]
-        ent.material_ids = [mat_id]
-        ent.semantic_labels = ["furniture", cat_item.category, "cc0_catalog"]
-        ent.provenance = Provenance.GENERATED
-        ent.confidence = 1.0
-        ent.custom_properties = dict(ent.custom_properties or {})
-        ent.custom_properties.update({
-            "catalog_id": cat_item.id,
-            "catalog_name": cat_item.name,
-            "category": cat_item.category,
-            "license": cat_item.license,
-            "license_url": cat_item.license_url,
-            "author": cat_item.author,
-            "dimensions": cat_item.dimensions,
-        })
-
-    elif cmd_type == "surface_finish":
-        finish_val = SurfaceFinish.SMOOTH
-        color_rgb = (0.8, 0.8, 0.8)
-        mat_name = "Custom Finish"
-        mat_class = "finish"
-
-        val = body.params
-        if "surface_finish" in val:
-            try:
-                finish_val = SurfaceFinish(val["surface_finish"])
-            except ValueError:
-                finish_val = SurfaceFinish.SMOOTH
-        if "color_rgb" in val and isinstance(val["color_rgb"], (list, tuple)) and len(val["color_rgb"]) == 3:
-            color_rgb = tuple(float(c) for c in val["color_rgb"])
-        if "name" in val:
-            mat_name = str(val["name"])
-        if "class_name" in val:
-            mat_class = str(val["class_name"])
-
-        mat_id = f"mat-{ent.id}-{uuid4().hex[:6]}"
-        new_mat = Material(
-            id=mat_id,
-            name=mat_name,
-            class_name=mat_class,
-            surface_finish=finish_val,
-            color_rgb=color_rgb,
-            provenance=Provenance.GENERATED,
-            confidence=1.0,
-        )
-        worldir.materials[mat_id] = new_mat
-        inverse_params = {
-            "material_ids": list(ent.material_ids),
-            "custom_properties": dict(ent.custom_properties or {}),
-        }
-        ent.material_ids = [mat_id]
-        ent.custom_properties = dict(ent.custom_properties or {})
-        ent.custom_properties["surface_finish"] = finish_val.value
-        ent.custom_properties["material"] = mat_class
-        ent.custom_properties["material_label"] = mat_name
-        ent.custom_properties["design_layer"] = val.get("design_layer", "finish")
-        ent.provenance = Provenance.GENERATED
-
-    else:
-        raise HTTPException(422, f"Unsupported command_type '{body.command_type}'")
-
-    desc = body.description or f"{cmd_type.capitalize()} entity {entity_id}"
-    vrow = await wss.commit_version(
-        db,
-        world_id=w.id,
-        world=worldir,
-        parent=w.current_version_id,
-        label=desc,
-    )
-
-    # Invalidate future redo stack for this world
-    await db.execute(
-        delete(WorldEditCommand).where(
-            WorldEditCommand.world_id == world_id,
-            WorldEditCommand.undone.is_(True),
-        )
-    )
-
-    res_seq = await db.execute(
-        select(func.max(WorldEditCommand.sequence)).where(WorldEditCommand.world_id == world_id)
-    )
-    next_seq = (res_seq.scalar() or 0) + 1
-
-    cmd_record = WorldEditCommand(
-        id=new_id("cmd"),
-        world_id=world_id,
-        team_id=w.team_id,
-        command_type=cmd_type,
-        entity_id=entity_id,
-        description=desc,
-        params=body.params,
-        inverse_params=inverse_params,
-        version_id_before=w.current_version_id,
-        version_id_after=vrow.id,
-        undone=False,
-        sequence=next_seq,
-        created_at=utcnow(),
-    )
-    db.add(cmd_record)
-    await db.commit()
-
-    return {
-        "command_id": cmd_record.id,
-        "world_id": world_id,
-        "version_id": vrow.id,
-        "command_type": cmd_type,
-        "entity_id": entity_id,
-        "sequence": next_seq,
-        "provenance": "generated",
-        "description": desc,
-    }
-
-
-@worlds.post("/{world_id}/undo")
-async def undo_world_command(
-    world_id: str,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Revert the most recent active edit command for this world (T-6.7)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    from apps.api import worldstore_service as wss
-
-    res = await db.execute(
-        select(WorldEditCommand)
-        .where(WorldEditCommand.world_id == world_id, WorldEditCommand.undone.is_(False))
-        .order_by(WorldEditCommand.sequence.desc())
-        .limit(1)
-    )
-    cmd = res.scalars().first()
-    if cmd is None:
-        raise HTTPException(400, "Nothing to undo")
-
-    worldir = await _load_worldir_from_store(w)
-    if worldir is None:
-        raise HTTPException(404, "WorldIR not available for current version")
-    worldir.id = w.id
-
-    inv = cmd.inverse_params or {}
-    cmd_type = cmd.command_type.lower()
-
-    if cmd_type in ("move", "rotate", "transform"):
-        ent = worldir.entities.get(cmd.entity_id)
-        if ent:
-            if "position" in inv:
-                if not ent.transform:
-                    ent.transform = {}
-                ent.transform["position"] = inv["position"]
-            if "rotation" in inv:
-                if not ent.transform:
-                    ent.transform = {}
-                ent.transform["rotation"] = inv["rotation"]
-            if "yaw_rad" in inv:
-                ent.custom_properties = dict(ent.custom_properties or {})
-                ent.custom_properties["yaw_rad"] = inv["yaw_rad"]
-    elif cmd_type in ("delete", "replace"):
-        ent_dict = inv.get("entity")
-        if ent_dict:
-            worldir.entities[cmd.entity_id] = Entity.from_dict(ent_dict)
-    elif cmd_type == "surface_finish":
-        ent = worldir.entities.get(cmd.entity_id)
-        if ent:
-            if "material_ids" in inv:
-                ent.material_ids = inv["material_ids"]
-            if "custom_properties" in inv:
-                ent.custom_properties = inv["custom_properties"]
-
-    vrow = await wss.commit_version(
-        db,
-        world_id=w.id,
-        world=worldir,
-        parent=w.current_version_id,
-        label=f"Undo: {cmd.description}",
-    )
-
-    cmd.undone = True
-    cmd.undone_at = utcnow()
-    await db.commit()
-
-    return {
-        "undone": True,
-        "command_id": cmd.id,
-        "command_type": cmd.command_type,
-        "entity_id": cmd.entity_id,
-        "sequence": cmd.sequence,
-        "current_version_id": vrow.id,
-        "description": f"Undo: {cmd.description}",
-    }
-
-
-@worlds.post("/{world_id}/redo")
-async def redo_world_command(
-    world_id: str,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Re-apply the most recently undone command for this world (T-6.7)."""
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    from apps.api import worldstore_service as wss
-
-    res_active = await db.execute(
-        select(func.max(WorldEditCommand.sequence))
-        .where(WorldEditCommand.world_id == world_id, WorldEditCommand.undone.is_(False))
-    )
-    active_seq = res_active.scalar() or 0
-
-    res = await db.execute(
-        select(WorldEditCommand)
-        .where(
-            WorldEditCommand.world_id == world_id,
-            WorldEditCommand.undone.is_(True),
-            WorldEditCommand.sequence == active_seq + 1,
-        )
-        .limit(1)
-    )
-    cmd = res.scalars().first()
-    if cmd is None:
-        res = await db.execute(
-            select(WorldEditCommand)
-            .where(WorldEditCommand.world_id == world_id, WorldEditCommand.undone.is_(True))
-            .order_by(WorldEditCommand.sequence.asc())
-            .limit(1)
-        )
-        cmd = res.scalars().first()
-
-    if cmd is None:
-        raise HTTPException(400, "Nothing to redo")
-
-    worldir = await _load_worldir_from_store(w)
-    if worldir is None:
-        raise HTTPException(404, "WorldIR not available for current version")
-    worldir.id = w.id
-
-    cmd_type = cmd.command_type.lower()
-    params = cmd.params or {}
-
-    if cmd_type == "move":
-        ent = worldir.entities.get(cmd.entity_id)
-        if ent:
-            p = params.get("position")
-            if p is not None:
-                if isinstance(p, (list, tuple)) and len(p) >= 3:
-                    new_pos = {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])}
-                elif isinstance(p, dict):
-                    new_pos = {"x": float(p.get("x", 0.0)), "y": float(p.get("y", 0.0)), "z": float(p.get("z", 0.0))}
-                else:
-                    new_pos = ent.transform.get("position", {"x": 0.0, "y": 0.0, "z": 0.0})
-                if not ent.transform:
-                    ent.transform = {}
-                ent.transform["position"] = new_pos
-                ent.provenance = Provenance.GENERATED
-
-    elif cmd_type == "rotate":
-        ent = worldir.entities.get(cmd.entity_id)
-        if ent:
-            if "yaw_deg" in params:
-                yaw_rad = math.radians(float(params["yaw_deg"]))
-            elif "yaw_rad" in params:
-                yaw_rad = float(params["yaw_rad"])
-            elif "rotation" in params:
-                r = params["rotation"]
-                yaw_rad = float(r[1]) if isinstance(r, (list, tuple)) and len(r) > 1 else 0.0
-            else:
-                yaw_rad = 0.0
-            if not ent.transform:
-                ent.transform = {}
-            ent.transform["rotation"] = [0.0, yaw_rad, 0.0]
-            ent.custom_properties = dict(ent.custom_properties or {})
-            ent.custom_properties["yaw_rad"] = yaw_rad
-            ent.provenance = Provenance.GENERATED
-
-    elif cmd_type == "transform":
-        ent = worldir.entities.get(cmd.entity_id)
-        if ent:
-            if "position" in params:
-                p = params["position"]
-                if isinstance(p, (list, tuple)) and len(p) >= 3:
-                    new_pos = {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])}
-                elif isinstance(p, dict):
-                    new_pos = {"x": float(p.get("x", 0.0)), "y": float(p.get("y", 0.0)), "z": float(p.get("z", 0.0))}
-                else:
-                    new_pos = ent.transform.get("position", {"x": 0.0, "y": 0.0, "z": 0.0})
-                if not ent.transform:
-                    ent.transform = {}
-                ent.transform["position"] = new_pos
-            if "rotation" in params or "yaw_rad" in params or "yaw_deg" in params:
-                if "yaw_deg" in params:
-                    yaw_rad = math.radians(float(params["yaw_deg"]))
-                elif "yaw_rad" in params:
-                    yaw_rad = float(params["yaw_rad"])
-                else:
-                    r = params["rotation"]
-                    yaw_rad = float(r[1]) if isinstance(r, (list, tuple)) and len(r) > 1 else 0.0
-                if not ent.transform:
-                    ent.transform = {}
-                ent.transform["rotation"] = [0.0, yaw_rad, 0.0]
-                ent.custom_properties = dict(ent.custom_properties or {})
-                ent.custom_properties["yaw_rad"] = yaw_rad
-            ent.provenance = Provenance.GENERATED
-
-    elif cmd_type == "delete":
-        if cmd.entity_id in worldir.entities:
-            del worldir.entities[cmd.entity_id]
-
-    elif cmd_type == "replace":
-        from engine.furniture.catalog import get_catalog_item
-
-        catalog_id = params.get("catalog_id")
-        cat_item = get_catalog_item(catalog_id) if catalog_id else None
-        ent = worldir.entities.get(cmd.entity_id)
-        if cat_item and ent:
-            w_dims = cat_item.dimensions
-            w_val = float(w_dims.get("width", 1.0))
-            d_val = float(w_dims.get("depth", 1.0))
-            h_val = float(w_dims.get("height", 1.0))
-
-            geom_id = f"geom-cat-{cat_item.id}-{uuid4().hex[:6]}"
-            mat_id = f"mat-cat-{cat_item.id}-{uuid4().hex[:6]}"
-
-            new_geom = Geometry(
-                id=geom_id,
-                type=GeometryType.BOX,
-                bounds_min=Vector3(x=-w_val / 2, y=0.0, z=-d_val / 2),
-                bounds_max=Vector3(x=w_val / 2, y=h_val, z=d_val / 2),
-            )
-            new_mat = Material(
-                id=mat_id,
-                name=f"{cat_item.name} Material",
-                class_name=cat_item.category,
-                surface_finish=SurfaceFinish.SMOOTH,
-                color_rgb=cat_item.color_rgb,
-                provenance=Provenance.GENERATED,
-                confidence=1.0,
-            )
-            worldir.geometries[geom_id] = new_geom
-            worldir.materials[mat_id] = new_mat
-
-            ent.name = cat_item.name
-            ent.type = EntityType.FURNITURE
-            ent.geometry_ids = [geom_id]
-            ent.material_ids = [mat_id]
-            ent.semantic_labels = ["furniture", cat_item.category, "cc0_catalog"]
-            ent.provenance = Provenance.GENERATED
-            ent.confidence = 1.0
-            ent.custom_properties = dict(ent.custom_properties or {})
-            ent.custom_properties.update({
-                "catalog_id": cat_item.id,
-                "catalog_name": cat_item.name,
-                "category": cat_item.category,
-                "license": cat_item.license,
-                "license_url": cat_item.license_url,
-                "author": cat_item.author,
-                "dimensions": cat_item.dimensions,
-            })
-
-    elif cmd_type == "surface_finish":
-        ent = worldir.entities.get(cmd.entity_id)
-        if ent:
-            finish_val = SurfaceFinish.SMOOTH
-            color_rgb = (0.8, 0.8, 0.8)
-            mat_name = "Custom Finish"
-            mat_class = "finish"
-
-            val = params
-            if "surface_finish" in val:
-                try:
-                    finish_val = SurfaceFinish(val["surface_finish"])
-                except ValueError:
-                    finish_val = SurfaceFinish.SMOOTH
-            if "color_rgb" in val and isinstance(val["color_rgb"], (list, tuple)) and len(val["color_rgb"]) == 3:
-                color_rgb = tuple(float(c) for c in val["color_rgb"])
-            if "name" in val:
-                mat_name = str(val["name"])
-            if "class_name" in val:
-                mat_class = str(val["class_name"])
-
-            mat_id = f"mat-{ent.id}-{uuid4().hex[:6]}"
-            new_mat = Material(
-                id=mat_id,
-                name=mat_name,
-                class_name=mat_class,
-                surface_finish=finish_val,
-                color_rgb=color_rgb,
-                provenance=Provenance.GENERATED,
-                confidence=1.0,
-            )
-            worldir.materials[mat_id] = new_mat
-            ent.material_ids = [mat_id]
-            ent.custom_properties = dict(ent.custom_properties or {})
-            ent.custom_properties["surface_finish"] = finish_val.value
-            ent.custom_properties["material"] = mat_class
-            ent.custom_properties["material_label"] = mat_name
-            ent.custom_properties["design_layer"] = val.get("design_layer", "finish")
-            ent.provenance = Provenance.GENERATED
-
-    vrow = await wss.commit_version(
-        db,
-        world_id=w.id,
-        world=worldir,
-        parent=w.current_version_id,
-        label=f"Redo: {cmd.description}",
-    )
-
-    cmd.undone = False
-    cmd.undone_at = None
-    await db.commit()
-
-    return {
-        "redone": True,
-        "command_id": cmd.id,
-        "command_type": cmd.command_type,
-        "entity_id": cmd.entity_id,
-        "sequence": cmd.sequence,
-        "current_version_id": vrow.id,
-        "description": f"Redo: {cmd.description}",
-    }
-
-
-@worlds.get("/{world_id}/commands")
-async def get_world_commands(
-    world_id: str,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_auth_context),
-) -> dict:
-    """Retrieve persistent edit command history for this world (T-6.7).
-
-    Guarantees strict per-world isolation: only commands recorded for world_id
-    are returned, and reload preserves undo/redo status.
-    """
-    w = await db.get(World, world_id)
-    if w is None:
-        raise HTTPException(404, "World not found")
-    enforce_project_isolation(w, auth)
-
-    res = await db.execute(
-        select(WorldEditCommand)
-        .where(WorldEditCommand.world_id == world_id)
-        .order_by(WorldEditCommand.sequence.asc())
-    )
-    cmds = res.scalars().all()
-
-    can_undo = any(not c.undone for c in cmds)
-    can_redo = any(c.undone for c in cmds)
-
-    return {
-        "world_id": world_id,
-        "can_undo": can_undo,
-        "can_redo": can_redo,
-        "commands": [
-            {
-                "id": c.id,
-                "command_type": c.command_type,
-                "entity_id": c.entity_id,
-                "description": c.description,
-                "undone": c.undone,
-                "sequence": c.sequence,
-                "created_at": c.created_at.isoformat() if c.created_at else None,
-                "undone_at": c.undone_at.isoformat() if c.undone_at else None,
-            }
-            for c in cmds
-        ],
-    }
+    from apps.api.models import WorldVersion
+    res = await db.execute(select(WorldVersion).where(WorldVersion.id == version_id, WorldVersion.world_id == world_id))
+    v = res.scalars().first()
+    if v is None:
+        raise HTTPException(404, "Version not found")
+
+    from world_ir.observation_table import ObservationTable
+    from apps.api.storage import resolve_artifact
+    table = None
+    obs_uri = (v.report or {}).get("observations_artifact_uri")
+    if obs_uri:
+        p = resolve_artifact(obs_uri) if str(obs_uri).startswith("sha256://") else Path(str(obs_uri))
+        if p and p.is_file():
+            table = ObservationTable.load(p)
+
+    if table is None:
+        return {"items": [], "count": 0, "world_id": world_id, "version_id": version_id}
+
+    rows = table.to_rows()
+    if image_id is not None:
+        rows = [r for r in rows if r.get("image_id") == image_id]
+    if entity_id is not None:
+        try:
+            erow = int(entity_id)
+            rows = [r for r in rows if r.get("entity_row") == erow]
+        except ValueError:
+            pass
+
+    return {"items": rows, "count": len(rows), "world_id": world_id, "version_id": version_id}

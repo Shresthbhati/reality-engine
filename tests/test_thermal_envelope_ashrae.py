@@ -203,3 +203,19 @@ async def test_thermal_envelope_api_endpoints():
     assert res_cert.status_code == 200, res_cert.text
     assert res_cert.content.startswith(b"%PDF-1.4\n")
     assert b"%%EOF" in res_cert.content
+    assert b"PRELIMINARY ENERGY SCREENING STATEMENT" in res_cert.content
+    assert b"Preliminary automated screening" in res_cert.content
+    assert b"Certified Energy Auditor" not in res_cert.content
+
+
+def test_default_thermal_author_is_not_certified():
+    """Default auditor name must not claim certification (RE-SEC-000008)."""
+    import inspect
+    from apps.api.routes_thermal_envelope import download_thermal_certificate
+
+    engine_default = inspect.signature(export_thermal_envelope_certificate_pdf).parameters["auditor_name"].default
+    route_default = inspect.signature(download_thermal_certificate).parameters["auditor_name"].default.default
+    for default in (engine_default, route_default):
+        assert "Certified" not in default
+        assert default == "Automated preliminary screening (not professionally reviewed)"
+

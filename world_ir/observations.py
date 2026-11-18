@@ -34,6 +34,7 @@ class Visibility(str, Enum):
     FULL = "full"
     PARTIAL = "partial"
     OCCLUDED = "occluded"
+    NOT_OBSERVED = "not_observed"
 
 
 class AssociationState(str, Enum):

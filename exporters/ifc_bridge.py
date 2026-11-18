@@ -351,7 +351,39 @@ def _resolve_ifc_class(entity: Entity) -> str:
         if ec.startswith("furniture"):
             return "IfcFurnishingElement"
     t_val = entity.type.value if hasattr(entity.type, "value") else str(entity.type)
-    return _ENTITY_IFC_CLASS.get(t_val, "IfcBuildingElementProxy")
+    if t_val in _ENTITY_IFC_CLASS:
+        return _ENTITY_IFC_CLASS[t_val]
+
+    # Map ontology paths (e.g. storage/almirah, doors/hinged_door, electrical/socket_outlet)
+    path = t_val.lower().replace(".", "/")
+    if path.startswith("storage") or path.startswith("furniture") or path.startswith("seating"):
+        return "IfcFurnishingElement"
+    if path.startswith("doors") or "/door" in path:
+        return "IfcDoor"
+    if path.startswith("windows") or "/window" in path:
+        return "IfcWindow"
+    if path.startswith("structure/wall") or "/wall" in path:
+        return "IfcWall"
+    if path.startswith("structure/floor") or "/floor" in path or path.startswith("structure/ceiling") or "/ceiling" in path:
+        return "IfcSlab"
+    if path.startswith("structure/column") or "/column" in path:
+        return "IfcColumn"
+    if path.startswith("structure/beam") or "/beam" in path:
+        return "IfcBeam"
+    if path.startswith("structure/stair") or "/stair" in path:
+        return "IfcStair"
+    if "socket" in path or "plug" in path:
+        return "IfcOutlet"
+    if "switchboard" in path or "distribution_board" in path:
+        return "IfcDistributionBoard"
+    if "switch" in path:
+        return "IfcSwitchingDevice"
+    if "light" in path:
+        return "IfcLightFixture"
+    if any(k in path for k in ("tap", "basin", "wc", "sink", "toilet")):
+        return "IfcSanitaryTerminal"
+
+    return "IfcBuildingElementProxy"
 
 
 def _enrich_element_property_sets(ifc_api, model, element, entity: Entity, extent: Tuple[float, float, float]) -> None:
@@ -475,6 +507,41 @@ def _enrich_element_property_sets(ifc_api, model, element, entity: Entity, exten
         "Confidence": float(round(entity.confidence, 3)),
     })
 
+    # 12. Pset_RealityEngine (BUILD_SPEC B19 / RE-ASSET-000002)
+    # Carries attributes with Basis and Confidence.
+    # Unknown attributes export as absent with Basis = "unknown", never a default.
+    pset_re = ifc_api.run("pset.add_pset", model, product=element, name="Pset_RealityEngine")
+    props_re: dict[str, Any] = {
+        "EntityId": str(entity.id),
+        "EntityType": str(getattr(entity.type, "value", str(entity.type))),
+        "Basis": str(getattr(entity.provenance, "value", str(entity.provenance))),
+        "Confidence": float(round(entity.confidence, 3)),
+    }
+    attrs = (getattr(entity, "extra_fields", None) or {}).get("attributes")
+    if not attrs and isinstance(getattr(entity, "custom_properties", None), dict):
+        attrs = entity.custom_properties.get("attributes")
+
+    if isinstance(attrs, dict):
+        for attr_name, attr_data in attrs.items():
+            safe_name = "".join(c for c in str(attr_name) if c.isalnum() or c in ("_", "-")) or "Attribute"
+            if isinstance(attr_data, dict):
+                val = attr_data.get("value")
+                basis = str(attr_data.get("basis") or ("visual" if val is not None else "unknown"))
+                conf = float(attr_data.get("p") if attr_data.get("p") is not None else attr_data.get("confidence", 1.0 if val is not None else 0.0))
+                if val is not None and basis != "unknown":
+                    props_re[safe_name] = str(val)
+                props_re[f"{safe_name}_Basis"] = basis
+                props_re[f"{safe_name}_Confidence"] = float(round(conf, 3))
+            elif attr_data is not None:
+                props_re[safe_name] = str(attr_data)
+                props_re[f"{safe_name}_Basis"] = "user_stated"
+                props_re[f"{safe_name}_Confidence"] = 1.0
+            else:
+                props_re[f"{safe_name}_Basis"] = "unknown"
+                props_re[f"{safe_name}_Confidence"] = 0.0
+
+    ifc_api.run("pset.edit_pset", model, pset=pset_re, properties=props_re)
+
 
 def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
     """Write `world`'s architectural entities to a real IFC4 file.
@@ -555,8 +622,18 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
             # not directly contained in IfcBuildingStorey
             pass
         else:
-            ifc_api.run("spatial.assign_container", model,
-                        products=[element], relating_structure=storey)
+            is_part = False
+            for rel in getattr(entity, "relationships", ()):
+                kind = getattr(rel, "kind", None)
+                if (kind in (RelationshipKind.PART_OF, "part_of") or str(kind).endswith("PART_OF")) and rel.target_id in world.entities:
+                    is_part = True
+                    break
+            if not is_part and getattr(entity, "parent_id", None) and entity.parent_id in world.entities:
+                is_part = True
+
+            if not is_part:
+                ifc_api.run("spatial.assign_container", model,
+                            products=[element], relating_structure=storey)
 
         dx, dy, dz = extent
         bmin = geometry.bounds_min
@@ -655,6 +732,27 @@ def export_world_to_ifc(world, path: str | Path) -> Dict[str, Any]:
                         feature=opening_elem, element=host_wall_elem)
             voided_openings.add(op_key)
             written.append(f"opening-{wall_id}-{idx + 1:02d}")
+
+    # Aggregate parts into whole entities via IfcRelAggregates (BUILD_SPEC B19)
+    for entity_id in written:
+        entity = world.entities.get(entity_id)
+        if not entity:
+            continue
+        parent_id = getattr(entity, "parent_id", None)
+        if not parent_id:
+            for rel in getattr(entity, "relationships", ()):
+                kind = getattr(rel, "kind", None)
+                if (kind in (RelationshipKind.PART_OF, "part_of") or str(kind).endswith("PART_OF")) and rel.target_id in created_products:
+                    parent_id = rel.target_id
+                    break
+        if parent_id and parent_id in created_products and entity_id in created_products:
+            parent_elem = created_products[parent_id]
+            elem = created_products[entity_id]
+            ifc_api.run("aggregate.assign_object", model, products=[elem], relating_object=parent_elem)
+        elif parent_id and parent_id not in created_products and entity_id in created_products:
+            # Fallback if parent wasn't exportable (e.g. lacked bounds)
+            elem = created_products[entity_id]
+            ifc_api.run("spatial.assign_container", model, products=[elem], relating_structure=storey)
 
     if not written:
         raise IFCBridgeError(

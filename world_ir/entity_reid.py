@@ -257,11 +257,20 @@ def carry_identity(prev_entity_ids, relations: list, cand_world: WorldIR) -> dic
     ``custom_properties["identity"]`` stating it was matched by spatial continuity (kind + previous id); each
     related-but-distinct entity gets ``custom_properties["continuity"]`` naming the relation and the previous
     entities it relates to."""
-    mapping, lineage = identity_plan(relations, cand_world, set(prev_entity_ids))
+    prev_ids = set(prev_entity_ids.keys()) if isinstance(prev_entity_ids, dict) else set(prev_entity_ids)
+    prev_names = prev_entity_ids if isinstance(prev_entity_ids, dict) else {}
+    mapping, lineage = identity_plan(relations, cand_world, prev_ids)
     kind_of = {r["cand"][0]: r["kind"] for r in relations if len(r.get("cand", [])) == 1 and r["kind"] in _SAME_ENTITY}
     for c, p in mapping.items():
-        cand_world.entities[c].custom_properties["identity"] = {
+        ent = cand_world.entities[c]
+        ent.custom_properties["identity"] = {
             "carried_from": p, "by": "spatial_continuity", "relation": kind_of.get(c)}
+        if prev_names.get(p):
+            ent.name = prev_names[p]
+        elif ent.name == c:
+            ent.name = p
+        elif ent.name.startswith("Detail refinement ") and p.startswith("entity-detail-"):
+            ent.name = f"Detail refinement {p.removeprefix('entity-detail-')}"
     for item in lineage:
         for c in item["candidate"]:
             ent = cand_world.entities.get(c)

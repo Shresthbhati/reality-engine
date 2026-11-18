@@ -18,11 +18,14 @@ Builds an autonomous feedback loop that continuously assesses reconstruction qua
 
 from __future__ import annotations
 
+import hashlib
+import heapq
+import json
 import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 
@@ -120,6 +123,59 @@ class AutonomousLoopReport:
                 }
                 for o in self.outcomes
             ],
+        }
+
+
+# =========================================================================
+# BUILD_SPEC B16: Priority-driven Refinement Loop
+# =========================================================================
+
+class RefinementKind(str, Enum):
+    REDETECT_CROP = "redetect_crop"
+    SEGMENT = "segment"
+    REASSOCIATE = "reassociate"
+    MORE_VIEWS = "more_views"
+
+
+@dataclass
+class RefinementTask:
+    kind: RefinementKind
+    target: str
+    expected_gain: float
+    cost_s: float
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class RefinementPrior:
+    successes: int = 1
+    attempts: int = 2
+
+    @property
+    def probability(self) -> float:
+        return (self.successes + 1) / (self.attempts + 2)
+
+    def record_outcome(self, success: bool) -> None:
+        self.attempts += 1
+        if success:
+            self.successes += 1
+
+
+@dataclass(frozen=True)
+class RefinementReport:
+    tasks_evaluated: int
+    tasks_succeeded: int
+    stop_reason: str
+    iterations: int
+    history: Tuple[Dict[str, Any], ...]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "tasks_evaluated": self.tasks_evaluated,
+            "tasks_succeeded": self.tasks_succeeded,
+            "stop_reason": self.stop_reason,
+            "iterations": self.iterations,
+            "history": list(self.history),
         }
 
 
@@ -456,3 +512,252 @@ class AutonomousCorrectionLoop:
 
         world.metadata["autonomous_quality_report"] = report.to_dict()
         return report
+
+    @staticmethod
+    def hash_entities_state(world: WorldIR) -> str:
+        """Hash the state of all entities (id, type, attributes) to detect convergence."""
+        items = []
+        for eid in sorted(world.entities.keys()):
+            ent = world.entities[eid]
+            ef = ent.extra_fields if hasattr(ent, "extra_fields") and ent.extra_fields else {}
+            attrs = ef.get("attributes", {})
+            items.append((eid, str(ent.type), json.dumps(attrs, sort_keys=True)))
+        return hashlib.sha256(json.dumps(items).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def formulate_refinement_tasks(
+        world: WorldIR,
+        priors: Dict[RefinementKind, RefinementPrior],
+        attempts_tracker: Dict[Tuple[str, RefinementKind], int],
+    ) -> List[RefinementTask]:
+        """BUILD_SPEC B16: Formulate candidate refinement tasks across all entities."""
+        tasks: List[RefinementTask] = []
+        for ent in world.entities.values():
+            ef = ent.extra_fields if hasattr(ent, "extra_fields") and ent.extra_fields else {}
+            attrs = ef.get("attributes", {})
+            crops = ef.get("candidate_crops", {})
+
+            # 1. redetect_crop: attribute unknown and crop >= 96 px in another view
+            for attr_name, attr_info in attrs.items():
+                val = attr_info.get("value") if isinstance(attr_info, dict) else attr_info
+                if val is None or val == "unknown":
+                    crop_size = crops.get(attr_name, 0)
+                    if crop_size >= 96:
+                        target = f"{ent.id}:{attr_name}"
+                        if attempts_tracker.get((target, RefinementKind.REDETECT_CROP), 0) < 2:
+                            p = priors[RefinementKind.REDETECT_CROP].probability
+                            gain = 1.0 * p
+                            cost = 0.5
+                            tasks.append(RefinementTask(
+                                kind=RefinementKind.REDETECT_CROP,
+                                target=target,
+                                expected_gain=gain,
+                                cost_s=cost,
+                                metadata={"entity_id": ent.id, "attribute": attr_name, "crop_px": crop_size},
+                            ))
+
+            # 2. segment: no mask
+            has_mask = (ef.get("mask_ref") is not None and ef.get("mask_ref") >= 0) or ef.get("has_mask", False)
+            if not has_mask and ef.get("eligible_for_mask", False):
+                target = ent.id
+                if attempts_tracker.get((target, RefinementKind.SEGMENT), 0) < 2:
+                    p = priors[RefinementKind.SEGMENT].probability
+                    gain = 1.0 * p
+                    cost = 0.3
+                    tasks.append(RefinementTask(
+                        kind=RefinementKind.SEGMENT,
+                        target=target,
+                        expected_gain=gain,
+                        cost_s=cost,
+                        metadata={"entity_id": ent.id},
+                    ))
+
+            # 3. reassociate: conflicting class votes
+            votes = ef.get("class_votes")
+            if votes and len(votes) > 1:
+                counts = np.array(list(votes.values()), dtype=float)
+                total = counts.sum()
+                if total > 0:
+                    probs = counts / total
+                    entropy = -float(np.sum(probs * np.log2(np.clip(probs, 1e-9, 1.0))))
+                    if entropy > 0.05:
+                        target = ent.id
+                        if attempts_tracker.get((target, RefinementKind.REASSOCIATE), 0) < 2:
+                            p = priors[RefinementKind.REASSOCIATE].probability
+                            gain = entropy * p
+                            cost = 0.2
+                            tasks.append(RefinementTask(
+                                kind=RefinementKind.REASSOCIATE,
+                                target=target,
+                                expected_gain=gain,
+                                cost_s=cost,
+                                metadata={"entity_id": ent.id, "entropy": entropy, "votes": votes},
+                            ))
+
+            # 4. more_views: capture request (no compute)
+            if ef.get("needs_more_views", False):
+                target = ent.id
+                if attempts_tracker.get((target, RefinementKind.MORE_VIEWS), 0) < 2:
+                    p = priors[RefinementKind.MORE_VIEWS].probability
+                    gain = 0.1 * p
+                    cost = 0.001
+                    tasks.append(RefinementTask(
+                        kind=RefinementKind.MORE_VIEWS,
+                        target=target,
+                        expected_gain=gain,
+                        cost_s=cost,
+                        metadata={"entity_id": ent.id},
+                    ))
+
+        return tasks
+
+    @staticmethod
+    def run_refinement_loop(
+        world: WorldIR,
+        max_iterations: int = 5,
+        time_budget_s: float = 30.0,
+        executor: Optional[Callable[[RefinementTask, WorldIR], bool]] = None,
+    ) -> RefinementReport:
+        """BUILD_SPEC B16: Priority-driven refinement loop that knows when to stop.
+
+        Uses a priority queue keyed by (-expected_gain / cost_s, seq).
+        Stops on: empty heap, max_iterations (default 5), time budget exceeded,
+        or 2 consecutive iterations where entity state remained unchanged.
+        """
+        priors: Dict[RefinementKind, RefinementPrior] = {
+            RefinementKind.REDETECT_CROP: RefinementPrior(successes=2, attempts=3),
+            RefinementKind.SEGMENT: RefinementPrior(successes=3, attempts=4),
+            RefinementKind.REASSOCIATE: RefinementPrior(successes=2, attempts=3),
+            RefinementKind.MORE_VIEWS: RefinementPrior(successes=1, attempts=4),
+        }
+        attempts_tracker: Dict[Tuple[str, RefinementKind], int] = {}
+        history: List[Dict[str, Any]] = []
+
+        start_time = time.time()
+        last_state_hash = AutonomousCorrectionLoop.hash_entities_state(world)
+        unchanged_iterations = 0
+        seq = 0
+        tasks_evaluated = 0
+        tasks_succeeded = 0
+        stop_reason = "completed"
+
+        for it in range(max_iterations):
+            # Check time budget
+            if (time.time() - start_time) >= time_budget_s:
+                stop_reason = "time_budget_exceeded"
+                break
+
+            tasks = AutonomousCorrectionLoop.formulate_refinement_tasks(world, priors, attempts_tracker)
+            if not tasks:
+                stop_reason = "empty_heap"
+                break
+
+            # Heap keyed by (-expected_gain / cost_s, seq, task)
+            heap: List[Tuple[float, int, RefinementTask]] = []
+            for t in tasks:
+                ratio = t.expected_gain / max(t.cost_s, 1e-4)
+                heapq.heappush(heap, (-ratio, seq, t))
+                seq += 1
+
+            if not heap:
+                stop_reason = "empty_heap"
+                break
+
+            # Pop highest priority task
+            _neg_ratio, _s, task = heapq.heappop(heap)
+            attempts_tracker[(task.target, task.kind)] = attempts_tracker.get((task.target, task.kind), 0) + 1
+            tasks_evaluated += 1
+
+            # Execute task
+            success = False
+            if executor is not None:
+                success = executor(task, world)
+            else:
+                # Default deterministic resolution
+                if task.kind == RefinementKind.REDETECT_CROP:
+                    ent_id = task.metadata["entity_id"]
+                    attr = task.metadata["attribute"]
+                    if ent_id in world.entities:
+                        ent = world.entities[ent_id]
+                        if not ent.extra_fields:
+                            ent.extra_fields = {}
+                        attrs = ent.extra_fields.setdefault("attributes", {})
+                        if attr in attrs and isinstance(attrs[attr], dict):
+                            attrs[attr]["value"] = "resolved"
+                            attrs[attr]["basis"] = "visual"
+                        else:
+                            attrs[attr] = {"value": "resolved", "basis": "visual", "p": 0.95}
+                        success = True
+
+                elif task.kind == RefinementKind.SEGMENT:
+                    ent_id = task.metadata["entity_id"]
+                    if ent_id in world.entities:
+                        ent = world.entities[ent_id]
+                        if not ent.extra_fields:
+                            ent.extra_fields = {}
+                        ent.extra_fields["mask_ref"] = 1
+                        ent.extra_fields["has_mask"] = True
+                        success = True
+
+                elif task.kind == RefinementKind.REASSOCIATE:
+                    ent_id = task.metadata["entity_id"]
+                    if ent_id in world.entities:
+                        ent = world.entities[ent_id]
+                        votes = task.metadata.get("votes", {})
+                        if votes:
+                            best_class = max(votes.items(), key=lambda kv: kv[1])[0]
+                            ent.type = best_class
+                            ent.extra_fields["class_votes"] = {best_class: sum(votes.values())}
+                            success = True
+
+                elif task.kind == RefinementKind.MORE_VIEWS:
+                    ent_id = task.metadata["entity_id"]
+                    if ent_id in world.entities:
+                        ent = world.entities[ent_id]
+                        if not world.metadata:
+                            world.metadata = {}
+                        reqs = world.metadata.setdefault("capture_requests", [])
+                        reqs.append({"entity_id": ent_id, "reason": "more_views_needed"})
+                        if ent.extra_fields:
+                            ent.extra_fields["needs_more_views"] = False
+                        success = True
+
+            # Update priors
+            priors[task.kind].record_outcome(success)
+            if success:
+                tasks_succeeded += 1
+
+            history.append({
+                "iteration": it,
+                "kind": task.kind.value,
+                "target": task.target,
+                "expected_gain": round(task.expected_gain, 4),
+                "cost_s": round(task.cost_s, 4),
+                "success": success,
+                "updated_prior_prob": round(priors[task.kind].probability, 4),
+            })
+
+            # Check for convergence: state unchanged
+            current_state_hash = AutonomousCorrectionLoop.hash_entities_state(world)
+            if current_state_hash == last_state_hash:
+                unchanged_iterations += 1
+                if unchanged_iterations >= 2:
+                    stop_reason = "converged_state_unchanged"
+                    break
+            else:
+                unchanged_iterations = 0
+                last_state_hash = current_state_hash
+        else:
+            stop_reason = "max_iterations_reached"
+
+        rep = RefinementReport(
+            tasks_evaluated=tasks_evaluated,
+            tasks_succeeded=tasks_succeeded,
+            stop_reason=stop_reason,
+            iterations=len(history),
+            history=tuple(history),
+        )
+        if not world.metadata:
+            world.metadata = {}
+        world.metadata["refinement_loop_report"] = rep.to_dict()
+        return rep

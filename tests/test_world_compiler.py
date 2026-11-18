@@ -55,19 +55,21 @@ def _compiled_world(seed: int = 42):
 class TestCompilerEndToEnd:
     def test_compiles_the_room_scene_into_structure_plus_room(self):
         world, diag = _compiled_world()
-        # 7 planes: ceiling, floor, slab(as floor), 4 walls.
+        # 7 planes: ceiling, floor, slab (as support_surface via B09), 4 walls.
         assert diag.planes_total == 7
-        assert diag.planes_by_role == {"ceiling": 1, "floor": 2, "wall": 4}
+        assert diag.planes_by_role == {"ceiling": 1, "floor": 1, "support_surface": 1, "wall": 4}
         # 7 structure plane entities + 1 room + solid room layout (4 wall slabs, 1 floor slab, 1 ceiling slab).
         assert len(diag.entities_created) == 14
         assert diag.rooms_detected == 1
         room_entities = [e for e in world.entities.values() if e.type is EntityType.ROOM]
         assert len(room_entities) == 1
         assert room_entities[0].custom_properties["floor_area_m2"] == pytest.approx(5.625)
+        support_surfaces = [e for e in world.entities.values() if e.type is EntityType.SUPPORT_SURFACE]
+        assert len(support_surfaces) == 1
 
     def test_every_input_plane_is_accounted_for(self):
         world, diag = _compiled_world()
-        # planes_total == promoted (as a WALL/FLOOR/CEILING entity) +
+        # planes_total == promoted (as a WALL/FLOOR/CEILING/SUPPORT_SURFACE entity) +
         # unpromoted (nothing silently dropped). Counting plane-role types
         # directly, rather than deriving it from len(entities_created), is
         # what makes this robust to additional non-plane entities the
@@ -80,14 +82,14 @@ class TestCompilerEndToEnd:
         promoted_plane_entities = sum(
             1 for eid in diag.entities_created
             if eid.startswith("struct-plane-")
-            and world.entities[eid].type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING)
+            and world.entities[eid].type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING, EntityType.SUPPORT_SURFACE)
         )
         assert diag.planes_total == promoted_plane_entities + len(diag.planes_unpromoted)
 
     def test_provenance_semantics_are_preserved(self):
         world, diag = _compiled_world()
         for entity in world.entities.values():
-            if entity.type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING):
+            if entity.type in (EntityType.WALL, EntityType.FLOOR, EntityType.CEILING, EntityType.SUPPORT_SURFACE):
                 # planes promoted from the reconstruction are INFERRED; the solid slabs solved from the measured
                 # footprint are RECONSTRUCTED geometry (a real slab, not a plane hypothesis)
                 expected = (Provenance.RECONSTRUCTED
@@ -116,10 +118,32 @@ class TestCompilerEndToEnd:
         assert roles_a == roles_b
 
     def test_diagnostics_report_the_unassigned_floor(self):
-        _, diag = _compiled_world()
+        from reconstruction.backend.interface import ReconstructedCameraPose, ReconstructionResult
+        from tests.test_room_inference import _point, _CAMS
+
+        # Scene with 1 floor and only 2 walls (cannot form a closed room ring)
+        points = []
+        counter = [0]
+        for x_i in range(30):
+            for z_i in range(30):
+                points.append(_point(x_i * 0.1, 0.0, z_i * 0.1, counter))
+        for y_i in range(11):
+            for z_i in range(30):
+                points.append(_point(0.0, y_i * 0.2, z_i * 0.1, counter))
+                points.append(_point(3.0, y_i * 0.2, z_i * 0.1, counter))
+
+        res = ReconstructionResult(
+            points=points,
+            camera_poses=[
+                ReconstructedCameraPose(evidence_id=f"ev-{i}", position=p, rotation=(1.0, 0.0, 0.0, 0.0))
+                for i, p in enumerate(_CAMS)
+            ],
+            registration_status="success",
+        )
+        _, diag = compile_reconstruction_to_world(res, CompileOptions(seed=42))
         assert diag.points_unassigned == 0
         assert diag.unknown_point_fraction == 0.0
-        # Failed room candidate (the slab floor) is visible, not hidden.
+        # Failed room candidate is visible, not hidden.
         assert any(
             c["status"] == "NO_CLOSED_RING" for c in diag.room_candidates
         )

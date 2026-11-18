@@ -132,7 +132,7 @@ class TestRBACAndMultiTenantIsolation:
             role=Role.EDITOR,
             secret=secret,
         )
-        assert token.startswith("v1:tenant-alpha:user-42:editor:")
+        assert token.startswith("v2:tenant-alpha:user-42:editor:")
 
         ctx = verify_scoped_token(token, secret=secret)
         assert ctx is not None
@@ -215,8 +215,10 @@ class TestRBACAndMultiTenantIsolation:
         ids = [item["id"] for item in resp_list_b.json().get("items", [])]
         assert world_id not in ids
 
-        # 5. Global Admin can access Tenant A's world
-        admin_token = issue_scoped_token("default", "admin-user", Role.ADMIN, secret=secret)
+        # 5. Only a global admin (root/system tenant) crosses tenants; a tenant admin does not
+        admin_token = issue_scoped_token("root", "admin-user", Role.ADMIN, secret=secret)
+        tenant_admin = issue_scoped_token("tenant-b", "admin-b", Role.ADMIN, secret=secret)
+        assert test_client.get(f"/api/worlds/{world_id}", headers={"Authorization": f"Bearer {tenant_admin}"}).status_code == 404
         resp_get_admin = test_client.get(
             f"/api/worlds/{world_id}",
             headers={"Authorization": f"Bearer {admin_token}"},

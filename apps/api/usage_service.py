@@ -6,7 +6,7 @@ Computes GPU-minutes, storage bytes, and export metrics per tenant.
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -23,6 +23,11 @@ from apps.api.models import (
     WorldVersion,
     utcnow,
 )
+
+
+def _aware(dt: datetime) -> datetime:
+    """A naive datetime from the database is UTC (everything is stored as UTC)."""
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def _tenant_filter(col, tenant_id: str):
@@ -68,12 +73,13 @@ async def get_tenant_usage(
         jobs_by_status[job.status] = jobs_by_status.get(job.status, 0) + 1
         jobs_by_type[job.type] = jobs_by_type.get(job.type, 0) + 1
 
+        # SQLite returns naive datetimes for rows reloaded from disk and aware ones for fresh objects: compare as UTC.
         if job.started_at and job.completed_at:
-            duration = max(0.0, (job.completed_at - job.started_at).total_seconds())
+            duration = max(0.0, (_aware(job.completed_at) - _aware(job.started_at)).total_seconds())
         elif job.started_at and job.status == "running":
-            duration = max(0.0, (utcnow() - job.started_at).total_seconds())
+            duration = max(0.0, (utcnow() - _aware(job.started_at)).total_seconds())
         elif job.completed_at and job.created_at:
-            duration = max(0.0, (job.completed_at - job.created_at).total_seconds())
+            duration = max(0.0, (_aware(job.completed_at) - _aware(job.created_at)).total_seconds())
         else:
             duration = 0.0
 

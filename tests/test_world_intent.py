@@ -90,7 +90,12 @@ def test_estimate_fields_are_labelled(client):
     assert prof["storage"]["value"] == 10_000_000 and prof["storage"]["kind"] == "derived"
 
 
-def test_estimate_warns_city_scale_with_little_evidence(client):
+def test_estimate_warns_city_scale_with_little_evidence(client, monkeypatch):
+    import shutil
+
+    real_which = shutil.which
+    # "No warnings" must not depend on whether this machine has COLMAP; pin it present for this test only.
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/usr/bin/colmap" if name == "colmap" else real_which(name, *a, **k))
     w = _est(client, scale="city", file_count=20).json()["warnings"]
     assert any("city is not a bigger photograph" in x for x in w)
     assert not _est(client, scale="interior_space", file_count=20).json()["warnings"]

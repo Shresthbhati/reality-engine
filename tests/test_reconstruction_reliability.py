@@ -350,7 +350,9 @@ def test_colmap_step_timeout_is_honest_error(tmp_path):
 
     # The backend launches every COLMAP step through reconstruction.proc.run_owned
     # (imported at call time), not subprocess.run -- patch the seam it really uses.
-    with _mock.patch.object(_proc, "run_owned", _hang):
+    # The step only runs when the binary resolves, so pin that (this test is about the timeout, not the install).
+    with _mock.patch.object(_proc, "run_owned", _hang), \
+            _mock.patch.object(_backend.shutil, "which", lambda *a, **k: "/usr/bin/colmap"):
         with pytest.raises(Exception, match="(?i)timeout|TIMEOUT"):
             ColmapReconstructionBackend().reconstruct(items)
     del _backend

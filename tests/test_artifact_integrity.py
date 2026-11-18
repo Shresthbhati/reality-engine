@@ -39,6 +39,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         yield c
 
 
+@pytest.fixture()
+def no_worker(monkeypatch: pytest.MonkeyPatch):
+    """A test that drives ``process_next_job`` directly must be the only claimer: the in-process worker can claim the queued
+    row first and the test's own call then returns None. Request this BEFORE ``client``."""
+    monkeypatch.setenv("ENABLE_WORKER", "false")
+
+
 def _seed_world_with_geometry(client, tmp_path, monkeypatch, geometries):
     """World with one WorldStore version + mirror row; geometries control
     the artifact scenarios below. Returns (world_id, version_id)."""
@@ -258,7 +265,7 @@ def test_oversized_upload_rejected(client, monkeypatch):
     assert r.status_code == 413, r.text
 
 
-def test_tampered_evidence_fails_checksum_explicitly(client, tmp_path, monkeypatch):
+def test_tampered_evidence_fails_checksum_explicitly(no_worker, client, tmp_path, monkeypatch):
     """Bytes swapped under a recorded checksum: processing fails with a
     checksum mismatch -- never registers tampered evidence as verified."""
     import asyncio

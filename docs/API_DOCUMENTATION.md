@@ -236,6 +236,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 
 - **`GET /api/worlds/{world_id}/query/container/{entity_id}`**: Query Container
 - **`GET /api/worlds/{world_id}/query/contents/{entity_id}`**: Query Contents
+- **`GET /api/worlds/{world_id}/query/find`**: Query Find
 - **`GET /api/worlds/{world_id}/query/nearest`**: Query Nearest
 - **`GET /api/worlds/{world_id}/query/within_radius`**: Query Within Radius
 
@@ -358,6 +359,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/worlds/{world_id}/duplicate`**: Duplicate World
 - **`GET /api/worlds/{world_id}/entities/{entity_id}/confidence`**: Entity Confidence
 - **`GET /api/worlds/{world_id}/entities/{entity_id}/provenance`**: Entity Provenance
+- **`GET /api/worlds/{world_id}/find`**: Find In World
 - **`GET /api/worlds/{world_id}/options`**: List Design Options
 - **`POST /api/worlds/{world_id}/options`**: Create Design Option
 - **`GET /api/worlds/{world_id}/options/compare`**: Compare Design Options
@@ -365,6 +367,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`GET /api/worlds/{world_id}/quality`**: World Quality
 - **`GET /api/worlds/{world_id}/query/spaces`**: Query World Spaces
 - **`POST /api/worlds/{world_id}/redo`**: Redo World Command
+- **`POST /api/worlds/{world_id}/refine`**: Refine World
 - **`GET /api/worlds/{world_id}/render`**: Render World View
 - **`GET /api/worlds/{world_id}/report`**: World Report
 - **`POST /api/worlds/{world_id}/restore`**: Restore World
@@ -382,6 +385,7 @@ The Reality Engine API is an asynchronous HTTP/REST service for spatial reconstr
 - **`POST /api/worlds/{world_id}/undo`**: Undo World Command
 - **`GET /api/worlds/{world_id}/versions`**: List World Versions
 - **`PATCH /api/worlds/{world_id}/versions/{version_id}/label`**: Set Version Label
+- **`GET /api/worlds/{world_id}/versions/{version_id}/observations`**: Get Version Observations
 - **`GET /api/worlds/{world_id}/views`**: List Camera Views
 - **`POST /api/worlds/{world_id}/views`**: Create Camera View
 - **`DELETE /api/worlds/{world_id}/views/{view_id}`**: Delete Camera View

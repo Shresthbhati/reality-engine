@@ -26,7 +26,7 @@ def test_refinement_loop_nothing_to_gain_zero_tasks():
     assert report.stop_reason == "empty_heap"
 
 
-def test_refinement_loop_unknown_attribute_resolved():
+def _almirah():
     world = WorldIR(id="w1", name="Test World")
     ent = Entity(
         id="ent-almirah",
@@ -38,13 +38,54 @@ def test_refinement_loop_unknown_attribute_resolved():
         },
     )
     world.entities[ent.id] = ent
+    return world, ent
+
+
+def test_without_a_detector_the_unknown_attribute_stays_unknown_and_nothing_is_invented():
+    world, ent = _almirah()
 
     report = AutonomousCorrectionLoop.run_refinement_loop(world)
-    assert report.tasks_evaluated == 1
-    assert report.tasks_succeeded == 1
-    assert report.history[0]["kind"] == "redetect_crop"
+
+    assert report.tasks_evaluated == 0 and report.tasks_succeeded == 0 and report.tasks_unavailable == 1
+    assert report.stop_reason == "no_executor_available"
+    assert report.history[0]["status"] == "unavailable" and report.history[0]["kind"] == "redetect_crop"
+    assert ent.extra_fields["attributes"]["lock_type"]["value"] is None            # not "resolved", not anything
+
+
+def test_an_injected_engine_resolves_the_attribute_and_the_loop_records_it():
+    world, ent = _almirah()
+
+    def detector(task: RefinementTask, w: WorldIR):
+        w.entities[task.metadata["entity_id"]].extra_fields["attributes"][task.metadata["attribute"]] = {
+            "value": "numpad", "basis": "visual", "p": 0.8}
+        return True
+
+    report = AutonomousCorrectionLoop.run_refinement_loop(world, executor=detector)
+    assert report.tasks_evaluated == 1 and report.tasks_succeeded == 1 and report.tasks_unavailable == 0
     assert report.history[0]["target"] == "ent-almirah:lock_type"
-    assert ent.extra_fields["attributes"]["lock_type"]["value"] == "resolved"
+    assert ent.extra_fields["attributes"]["lock_type"]["value"] == "numpad"
+
+
+def test_more_views_is_a_real_capture_request_and_a_vote_tie_changes_nothing():
+    world = WorldIR(id="w1", name="T")
+    sofa = Entity(id="s", name="Sofa", type=EntityType.FURNITURE,
+                  custom_properties={"needs_more_views": True, "class_votes": {"sofa": 3, "bed": 3}})
+    world.entities["s"] = sofa
+
+    report = AutonomousCorrectionLoop.run_refinement_loop(world)
+
+    assert world.metadata["capture_requests"] == [{"entity_id": "s", "reason": "more_views_needed"}]
+    assert sofa.extra_fields["class_votes"] == {"sofa": 3, "bed": 3}             # 3-3 tie: the vote decided nothing
+    assert report.tasks_unavailable == 0 and "reassociated_by" not in sofa.extra_fields
+
+
+def test_a_clear_majority_vote_reassociates_and_says_how():
+    world = WorldIR(id="w1", name="T")
+    ent = Entity(id="e", name="X", type=EntityType.FURNITURE, custom_properties={"class_votes": {"chair": 5, "stool": 1}})
+    world.entities["e"] = ent
+    AutonomousCorrectionLoop.run_refinement_loop(world)
+    assert ent.extra_fields["reassociated_by"] == "majority_vote" and ent.extra_fields["resolved_class"] == "chair"
+    assert ent.type == EntityType.FURNITURE                    # "chair" is an ontology class, not an EntityType member: type untouched
 
 
 def test_refinement_loop_task_that_fails_not_retried_more_than_twice():

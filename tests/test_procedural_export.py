@@ -31,6 +31,8 @@ ROOM_BASED = {"floorplan_dxf", "floorplan_pdf", "floorplan_svg", "multisheet_flo
 
 @pytest.mark.parametrize("fmt", FORMATS)
 def test_every_boxed_entity_of_a_procedural_building_is_exported(fmt):
+    if fmt == "usdc":
+        pytest.importorskip("pxr.Usd")  # usd-core is a declared dependency but ships no wheel for every Python
     world = building()
     _, report = reality.export(world, fmt)
     if fmt in ROOM_BASED:

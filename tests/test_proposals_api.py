@@ -36,7 +36,7 @@ def env(tmp_path, monkeypatch):
 
         await db_mod.init_db()
         async with db_mod.get_sessionmaker()() as db:
-            db.add(World(id=WID, name="proposals"))
+            db.add(World(id=WID, name="proposals", team_id="default"))
             await db.commit()
             w = base_world()
             row = await ws.commit_version(db, world_id=WID, world=w, parent=None)

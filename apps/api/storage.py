@@ -11,28 +11,9 @@ import hashlib
 import os
 from pathlib import Path
 
-
-def storage_root() -> Path:
-    # Always absolute: store_bytes() and resolve_artifact() must agree on
-    # the layout, and a relative root made them disagree (stored path
-    # relative vs resolved absolute), breaking round-trip equality.
-    root = os.environ.get("STORAGE_ROOT")
-    base = Path(root) if root else Path("./data/artifacts")
-    return base.resolve()
-
-
-def store_bytes(data: bytes) -> tuple[str, Path]:
-    """Store bytes content-addressed. Returns (hash, absolute path)."""
-    digest = hashlib.sha256(data).hexdigest()
-    root = storage_root()
-    obj_dir = root / digest[:2] / digest[2:4]
-    obj_dir.mkdir(parents=True, exist_ok=True)
-    path = obj_dir / digest
-    if not path.exists():
-        tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(path)
-    return digest, path
+# The blob store lives in the engine layer (stages persist artifacts without importing apps.api); re-exported here so every API
+# module keeps importing it from apps.api.storage.
+from engine.pipeline.stages.content_store import resolve_artifact, storage_root, store_bytes  # noqa: F401
 
 
 def staging_root() -> Path:
@@ -81,32 +62,6 @@ def clear_staging(upload_id: str) -> None:
     """Remove staged bytes for ``upload_id`` (no-op if none)."""
     stage = staging_root() / f"{upload_id}.partial"
     stage.unlink(missing_ok=True)
-
-
-def resolve_artifact(uri: str) -> Path | None:
-    """Resolve a sha256:// URI to a file path, validating the layout.
-    Returns None for unknown/unresolvable artifacts.
-
-    Path traversal protection: ensures the resolved path is within STORAGE_ROOT
-    by using Path.resolve() and checking is_relative_to()."""
-    if not uri.startswith("sha256://"):
-        return None
-    digest = uri.removeprefix("sha256://")
-    if not digest or any(c not in "0123456789abcdef" for c in digest):
-        return None
-    root = storage_root().resolve()
-    path = (root / digest[:2] / digest[2:4] / digest).resolve()
-    # Ensure the resolved path is within the storage root (prevents path traversal)
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return None
-    if not path.exists():
-        return None
-    return path
-
-
-# --------------------------------------------------------------------------- reference-checked blob GC
 
 
 def blob_digest(uri: str | None) -> str | None:

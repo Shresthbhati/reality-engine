@@ -118,7 +118,7 @@ async def test_capture_requests_api_flow(tmp_path, monkeypatch):
 
     # Insert test world and capture request in DB
     async with session_maker() as db:
-        w = World(id=world_id, name="Living Room")
+        w = World(id=world_id, name="Living Room", team_id="default")  # unowned rows are hidden (404) by tenant isolation
         db.add(w)
 
         cr = CaptureRequest(

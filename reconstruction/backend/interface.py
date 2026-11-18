@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from evidence.session import EvidenceItem
+from evidence.session import EvidenceItem, EvidenceKind  # noqa: F401 -- EvidenceKind is re-exported to the backends
 from provenance import Uncertainty
 
 

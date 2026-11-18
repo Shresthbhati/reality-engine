@@ -24,6 +24,9 @@ def test_model_registry_spec_fields():
         assert isinstance(spec.commercial_ok, bool), f"Model {name} invalid commercial_ok"
         if "NC" in spec.license or "Non-Commercial" in spec.license:
             assert spec.commercial_ok is False, f"Non-commercial model {name} must have commercial_ok=False"
+        elif spec.license == "undeclared":
+            # no declared licence = no grant: never commercial_ok (the job-start licence gate refuses it)
+            assert spec.commercial_ok is False, f"Model {name} has no declared licence and must have commercial_ok=False"
         else:
             assert spec.commercial_ok is True, f"Model {name} not marked commercial_ok"
         assert 0.0 <= spec.measured_vram_mb <= 5200.0, (

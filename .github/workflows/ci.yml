@@ -100,6 +100,14 @@ jobs:
             tests/test_multisheet_floorplan_pdf.py \
             tests/test_temporal_delta.py \
             tests/test_mep_topology.py \
+            tests/test_refine_world_api.py \
+            tests/test_backup_restore.py \
+            tests/test_adoption_transaction.py \
+            tests/test_stage_runner.py \
+            tests/test_auth_hardening.py \
+            tests/test_audit_security_gates.py \
+            tests/test_model_licence_gate.py \
+            tests/test_refinement_loop_b16.py \
             tests/test_material_takeoff_boq.py \
             tests/test_life_safety_compliance.py \
             tests/test_thermal_envelope_ashrae.py \

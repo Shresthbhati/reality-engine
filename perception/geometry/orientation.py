@@ -297,80 +297,51 @@ def consolidate_horizontal_roles(
                                              f"{out[lead].plane.plane_id}"))
                     stats["merged"] += 1
 
-    # B09 support-plane separation rule: separate a storey's real floor from table tops, steps and shelves.
+    # B09 support-plane separation rule: a floor is a horizontal plane that reaches walls and spans the footprint those
+    # walls enclose; every other floor-role plane (table top, step, shelf, slab) is a support surface. Each plane is
+    # judged against the walls that reach IT (a room per level or per room), never against the largest plane in the scene.
     floor_indices = [i for i in range(len(out)) if out[i].role == "floor"]
     wall_planes = [op for op in out if op.role == "wall"]
     if len(floor_indices) > 1 and len(wall_planes) >= 2:
+        from scipy.spatial import cKDTree
+
         from perception.geometry.support_planes import split_floor_candidates
 
-        wall_base_heights = []
+        axes = _orthonormal_pair(u)
+        wall_bases = []                                  # per wall: (base height, lateral (n, 2) points of its lowest 0.1 m)
         for wp in wall_planes:
-            w_pts = [positions_by_id[t] for t in wp.plane.inlier_ids if t in positions_by_id]
-            if w_pts:
-                wall_base_heights.append(float(np.min(np.asarray(w_pts) @ u)))
+            w_pts = np.array([positions_by_id[t] for t in wp.plane.inlier_ids if t in positions_by_id], dtype=float)
+            if len(w_pts):
+                w_h = w_pts @ u
+                low = w_pts[w_h <= w_h.min() + 0.1]
+                wall_bases.append((float(w_h.min()), np.stack([low @ a for a in axes], axis=1)))
 
-        cand_heights = []
-        cand_areas = []
-        cand_wall_bases = []
-        for f_idx in floor_indices:
-            h = height.get(f_idx, float(np.dot(out[f_idx].normal, u) * -out[f_idx].d))
+        def bbox_area(lat) -> float:
+            return float(np.ptp(lat[:, 0]) * np.ptp(lat[:, 1]))
+
+        cand_heights, cand_areas, cand_wall_bases, cand_footprints = [], [], [], []
+        for fi in floor_indices:
+            h = height.get(fi, float(np.dot(out[fi].normal, u) * -out[fi].d))
             cand_heights.append(h)
-            cand_pts = [positions_by_id[t] for t in out[f_idx].plane.inlier_ids if t in positions_by_id]
-            if len(cand_pts) >= 3:
-                pts_arr = np.asarray(cand_pts, dtype=float)
-                hs_p = pts_arr @ u
-                lateral = pts_arr - np.outer(hs_p, u)
-                axes = _orthonormal_pair(u)
-                ptp0 = float(np.ptp(lateral @ axes[0]))
-                ptp1 = float(np.ptp(lateral @ axes[1]))
-                area = max(ptp0 * ptp1, 0.01)
-            else:
-                area = 0.01
+            pts = np.array([positions_by_id[t] for t in out[fi].plane.inlier_ids if t in positions_by_id], dtype=float)
+            if len(pts) < 3:
+                cand_areas.append(0.01), cand_wall_bases.append(0), cand_footprints.append(0.01)
+                continue
+            lat = np.stack([pts @ a for a in axes], axis=1)
+            area = max(bbox_area(lat), 0.01)
+            tree = cKDTree(lat)
+            # 0.25 m: grid quantisation, baseboards and the gap between a floor's edge and its wall (room_graph's tolerance)
+            reached = [b for b in wall_bases if abs(b[0] - h) <= 0.25 and tree.query(b[1])[0].min() <= 0.25]
             cand_areas.append(area)
-            if wall_base_heights:
-                # 0.25m tolerance accounts for grid quantization, baseboards, and wall-base separation
-                wb_count = sum(1 for wbh in wall_base_heights if abs(wbh - h) <= 0.25)
-                cand_wall_bases.append(wb_count)
-            else:
-                cand_wall_bases.append(0)
+            cand_wall_bases.append(len(reached))
+            cand_footprints.append(max(bbox_area(np.vstack([b[1] for b in reached])), area) if reached else area)
 
-        sorted_pairs = sorted(enumerate(cand_heights), key=lambda x: x[1])
-        storeys: List[List[int]] = []
-        for orig_pos, h in sorted_pairs:
-            prev_idx = storeys[-1][-1] if storeys else None
-            h_diff = (h - cand_heights[prev_idx]) if prev_idx is not None else 0.0
-            is_new_storey = (
-                not storeys
-                or h_diff >= 1.3
-                or (h_diff > 0.5 and cand_wall_bases[orig_pos] >= 2)
-            )
-            if is_new_storey:
-                storeys.append([orig_pos])
-            else:
-                storeys.append(storeys.pop() + [orig_pos])
-
-        for storey_positions in storeys:
-            st_heights = [cand_heights[p] for p in storey_positions]
-            st_areas = [cand_areas[p] for p in storey_positions]
-            st_bases = [cand_wall_bases[p] for p in storey_positions]
-            st_footprint = max(max(st_areas), 1e-6)
-            st_roles = split_floor_candidates(
-                st_heights,
-                st_areas,
-                st_footprint,
-                st_bases,
-            )
-            for p, r in zip(storey_positions, st_roles):
-                if r == "support_surface":
-                    target_idx = floor_indices[p]
-                    out[target_idx] = dataclasses.replace(
-                        out[target_idx],
-                        role="support_surface",
-                        uncertainty=Uncertainty(
-                            confidence=0.7,
-                            note="horizontal support surface (table top, shelf, step), not storey floor slab",
-                        ),
-                    )
+        for fi, role in zip(floor_indices, split_floor_candidates(cand_heights, cand_areas, cand_footprints, cand_wall_bases)):
+            if role == "support_surface":
+                out[fi] = dataclasses.replace(
+                    out[fi], role="support_surface",
+                    uncertainty=Uncertainty(confidence=0.7, note="horizontal support surface (table top, shelf, step), "
+                                                                 "not a storey floor slab"))
     return out, stats
 
 

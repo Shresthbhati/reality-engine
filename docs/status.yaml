@@ -170,3 +170,11 @@
   tests: ["tests/test_status_ledger.py"]
   updated: "2026-11-10"
   next: "T011 (banner superseded docs). Master plan status word was DOCUMENTATION-DEBT."
+- id: S5-22
+  capability: "RERES: bounded evidence-driven refinement (platform side)"
+  status: PARTIAL
+  gate: G3
+  evidence: "POST /api/worlds/{id}/refine runs the B16 priority loop under a hard iteration/time budget, commits a new version only if the world changed, tenant-scoped; engines plug in via engine/quality/refinement_engines.py. The loop no longer fabricates results: kinds with no engine are reported unavailable. Verified SYNTHETIC only. No specialist engine (detector re-run, SAM) is registered, so redetect_crop and segment are unavailable; GPU-aware scheduling, cost-calibrated priors and human review are not built."
+  tests: ["tests/test_refine_world_api.py", "tests/test_refinement_loop_b16.py"]
+  updated: "2026-11-18"
+  next: "Register real engines (Gemini-owned: detector re-run, SAM 2); calibrate priors on measured outcomes; GPU memory awareness via ModelPool."

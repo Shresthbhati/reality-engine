@@ -531,7 +531,12 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
                 "translation": [float(pos["x"]), float(pos["y"]), float(pos["z"])],
             })
 
-    # Build hierarchy: parent-child links (Task 9.1)
+    # Build hierarchy: parent-child links (Task 9.1). Every node TRS above is WORLD-space (AABB-sized, axis-aligned) but
+    # glTF reads a child's TRS relative to its parent, so a nested child is re-expressed in its parent's frame (otherwise a
+    # 4.9 x 4 x 2.6 room node multiplied every wall's position by its scale). A child that frame cannot express exactly
+    # stays at the root and names its parent in extras: nesting never changes where anything is.
+    world_trs = [(list(n.get("translation", (0.0, 0.0, 0.0))), n.get("rotation"), list(n.get("scale", (1.0, 1.0, 1.0))))
+                 for n in gltf["nodes"]]
     child_node_indices: set[int] = set()
     for eid, n_idx in entity_id_to_node_idx.items():
         e = world.entities[eid]
@@ -545,8 +550,16 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
         if pid and pid in entity_id_to_node_idx:
             parent_idx = entity_id_to_node_idx[pid]
             if parent_idx != n_idx:
-                parent_node = gltf["nodes"][parent_idx]
-                parent_node.setdefault("children", []).append(n_idx)
+                local = _local_in_parent(world_trs[n_idx], world_trs[parent_idx])
+                if local is None:
+                    gltf["nodes"][n_idx].setdefault("extras", {})["parent_entity_id"] = pid
+                    continue
+                node = gltf["nodes"][n_idx]
+                if "translation" in node or any(local[0]):
+                    node["translation"] = local[0]
+                if "scale" in node or any(abs(x - 1.0) > 1e-12 for x in local[1]):
+                    node["scale"] = local[1]
+                gltf["nodes"][parent_idx].setdefault("children", []).append(n_idx)
                 child_node_indices.add(n_idx)
 
     # Top-level root nodes
@@ -561,6 +574,22 @@ def export_to_gltf(world: "WorldIR", artifact_store: Optional[ArtifactStore] = N
         }
 
     return gltf
+
+
+def _identity_rotation(q) -> bool:
+    return q is None or (abs(q[0]) < 1e-9 and abs(q[1]) < 1e-9 and abs(q[2]) < 1e-9 and abs(abs(q[3]) - 1.0) < 1e-9)
+
+
+def _local_in_parent(child: tuple, parent: tuple) -> "tuple[list, list] | None":
+    """``(translation, scale)`` of a child, given as world-space ``(translation, rotation, scale)``, in its parent's frame;
+    None when that frame cannot express it exactly: a rotated parent, a zero scale, or a rotated child under a
+    non-uniformly scaled parent (the result would be sheared, which glTF cannot represent)."""
+    (tc, rc, sc), (tp, rp, sp) = child, parent
+    if not _identity_rotation(rp) or min(abs(x) for x in sp) < 1e-9:
+        return None
+    if not _identity_rotation(rc) and max(sp) - min(sp) > 1e-9 * max(sp):
+        return None
+    return [(tc[i] - tp[i]) / sp[i] for i in range(3)], [sc[i] / sp[i] for i in range(3)]
 
 
 def _resolve_real_points(artifact_store: Optional[ArtifactStore], geometry) -> Optional[list]:

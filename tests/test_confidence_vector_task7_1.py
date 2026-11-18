@@ -175,7 +175,7 @@ async def test_api_entity_confidence_endpoint():
 
     session_maker = get_sessionmaker()
     async with session_maker() as db:
-        w_row = World(id=world_id, name="API CV Test", status="active", current_version_id=version_id)
+        w_row = World(id=world_id, name="API CV Test", status="active", current_version_id=version_id, team_id="default")
         v_row = WorldVersion(id=version_id, world_id=world_id)
         db.add(w_row)
         db.add(v_row)

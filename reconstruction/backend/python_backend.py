@@ -9,9 +9,10 @@ import math
 from typing import List, Optional, Tuple
 import numpy as np
 
-from evidence.session import EvidenceItem, EvidenceKind
 from provenance import Provenance, Uncertainty
 from reconstruction.backend.interface import (
+    EvidenceItem,
+    EvidenceKind,
     IReconstructionBackend,
     ReconstructedCameraPose,
     ReconstructedPoint,

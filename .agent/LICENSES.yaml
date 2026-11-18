@@ -271,6 +271,15 @@ models:
     checksum: unpinned
     verify: record sha256 in model registry
 
+  - model: depth_anything_v2_metric_indoor
+    license: undeclared
+    commercial_ok: false
+    measured_vram_mb: 240.0
+    status: candidate
+    acquisition: huggingface download depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf
+    checksum: unpinned
+    verify: model card declares no licence; refused for production until reviewed (LICENCE_REVIEW_REQUIRED)
+
   - model: owlvit_base_patch32
     license: Apache-2.0
     commercial_ok: true

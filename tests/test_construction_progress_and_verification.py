@@ -293,12 +293,14 @@ async def test_construction_api_endpoints():
     async with maker() as session:
         w_design = World(
             id=design_wir.id,
+            team_id="default",  # unauthenticated loopback client = tenant default; unowned worlds are hidden (404)
             name="Design Model A",
             current_version_id=sv_design.version_id,
             status="active",
         )
         w_site = World(
             id=site_wir.id,
+            team_id="default",  # unauthenticated loopback client = tenant default; unowned worlds are hidden (404)
             name="Site Scan Epoch 1",
             current_version_id=sv_site.version_id,
             status="active",

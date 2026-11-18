@@ -168,15 +168,55 @@ class RefinementReport:
     stop_reason: str
     iterations: int
     history: Tuple[Dict[str, Any], ...]
+    #: tasks that were wanted but could not run because no engine for their kind was available (never counted as tried)
+    tasks_unavailable: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "tasks_evaluated": self.tasks_evaluated,
             "tasks_succeeded": self.tasks_succeeded,
+            "tasks_unavailable": self.tasks_unavailable,
             "stop_reason": self.stop_reason,
             "iterations": self.iterations,
             "history": list(self.history),
         }
+
+
+def builtin_refinement_executor(task: RefinementTask, world: WorldIR) -> Optional[bool]:
+    """The refinement work that needs no model. Everything else answers None (unavailable) until a real specialist engine
+    for that kind is injected as ``executor``.
+
+    * ``more_views``: records a capture request on ``world.metadata`` (a request for evidence, no compute).
+    * ``reassociate``: takes the strictly most-voted class. A tie or no votes changes nothing (False).
+    * ``redetect_crop`` / ``segment``: need a detector / SAM engine -> None.
+    """
+    ent = world.entities.get(task.metadata.get("entity_id", ""))
+    if ent is None:
+        return False
+    if task.kind == RefinementKind.MORE_VIEWS:
+        if not world.metadata:
+            world.metadata = {}
+        world.metadata.setdefault("capture_requests", []).append({"entity_id": ent.id, "reason": "more_views_needed"})
+        if ent.extra_fields:
+            ent.extra_fields["needs_more_views"] = False
+        return True
+    if task.kind == RefinementKind.REASSOCIATE:
+        votes = task.metadata.get("votes") or {}
+        ranked = sorted(votes.items(), key=lambda kv: -kv[1])
+        if not ranked or (len(ranked) > 1 and ranked[0][1] == ranked[1][1]):
+            return False
+        winner = ranked[0][0]
+        if not ent.extra_fields:
+            ent.extra_fields = {}
+        ent.extra_fields["class_votes"] = {winner: sum(votes.values())}
+        ent.extra_fields["resolved_class"] = winner            # the ontology class the votes settled on
+        ent.extra_fields["reassociated_by"] = "majority_vote"
+        try:
+            ent.type = type(ent.type)(winner)                  # the typed field moves only if the class is a real member
+        except (ValueError, TypeError):
+            pass
+        return True
+    return None
 
 
 class QualityAuditor:
@@ -616,7 +656,7 @@ class AutonomousCorrectionLoop:
         world: WorldIR,
         max_iterations: int = 5,
         time_budget_s: float = 30.0,
-        executor: Optional[Callable[[RefinementTask, WorldIR], bool]] = None,
+        executor: Optional[Callable[[RefinementTask, WorldIR], Optional[bool]]] = None,
     ) -> RefinementReport:
         """BUILD_SPEC B16: Priority-driven refinement loop that knows when to stop.
 
@@ -639,6 +679,8 @@ class AutonomousCorrectionLoop:
         seq = 0
         tasks_evaluated = 0
         tasks_succeeded = 0
+        tasks_unavailable = 0
+        unavailable_kinds: set = set()
         stop_reason = "completed"
 
         for it in range(max_iterations):
@@ -648,8 +690,9 @@ class AutonomousCorrectionLoop:
                 break
 
             tasks = AutonomousCorrectionLoop.formulate_refinement_tasks(world, priors, attempts_tracker)
+            tasks = [t for t in tasks if t.kind not in unavailable_kinds]
             if not tasks:
-                stop_reason = "empty_heap"
+                stop_reason = "no_executor_available" if unavailable_kinds else "empty_heap"
                 break
 
             # Heap keyed by (-expected_gain / cost_s, seq, task)
@@ -668,59 +711,18 @@ class AutonomousCorrectionLoop:
             attempts_tracker[(task.target, task.kind)] = attempts_tracker.get((task.target, task.kind), 0) + 1
             tasks_evaluated += 1
 
-            # Execute task
-            success = False
-            if executor is not None:
-                success = executor(task, world)
-            else:
-                # Default deterministic resolution
-                if task.kind == RefinementKind.REDETECT_CROP:
-                    ent_id = task.metadata["entity_id"]
-                    attr = task.metadata["attribute"]
-                    if ent_id in world.entities:
-                        ent = world.entities[ent_id]
-                        if not ent.extra_fields:
-                            ent.extra_fields = {}
-                        attrs = ent.extra_fields.setdefault("attributes", {})
-                        if attr in attrs and isinstance(attrs[attr], dict):
-                            attrs[attr]["value"] = "resolved"
-                            attrs[attr]["basis"] = "visual"
-                        else:
-                            attrs[attr] = {"value": "resolved", "basis": "visual", "p": 0.95}
-                        success = True
-
-                elif task.kind == RefinementKind.SEGMENT:
-                    ent_id = task.metadata["entity_id"]
-                    if ent_id in world.entities:
-                        ent = world.entities[ent_id]
-                        if not ent.extra_fields:
-                            ent.extra_fields = {}
-                        ent.extra_fields["mask_ref"] = 1
-                        ent.extra_fields["has_mask"] = True
-                        success = True
-
-                elif task.kind == RefinementKind.REASSOCIATE:
-                    ent_id = task.metadata["entity_id"]
-                    if ent_id in world.entities:
-                        ent = world.entities[ent_id]
-                        votes = task.metadata.get("votes", {})
-                        if votes:
-                            best_class = max(votes.items(), key=lambda kv: kv[1])[0]
-                            ent.type = best_class
-                            ent.extra_fields["class_votes"] = {best_class: sum(votes.values())}
-                            success = True
-
-                elif task.kind == RefinementKind.MORE_VIEWS:
-                    ent_id = task.metadata["entity_id"]
-                    if ent_id in world.entities:
-                        ent = world.entities[ent_id]
-                        if not world.metadata:
-                            world.metadata = {}
-                        reqs = world.metadata.setdefault("capture_requests", [])
-                        reqs.append({"entity_id": ent_id, "reason": "more_views_needed"})
-                        if ent.extra_fields:
-                            ent.extra_fields["needs_more_views"] = False
-                        success = True
+            # Execute task. The executor answers True (changed something), False (tried, changed nothing) or None (no
+            # engine exists for this kind). None is recorded as unavailable: never as a success, never as an attempt, and
+            # the kind is not asked for again this run. Nothing is fabricated to make a task look resolved.
+            outcome = (executor or builtin_refinement_executor)(task, world)
+            if outcome is None:
+                unavailable_kinds.add(task.kind)
+                tasks_evaluated -= 1
+                tasks_unavailable += 1
+                history.append({"iteration": it, "kind": task.kind.value, "target": task.target, "status": "unavailable",
+                                "reason": f"no executor available for {task.kind.value}"})
+                continue
+            success = bool(outcome)
 
             # Update priors
             priors[task.kind].record_outcome(success)
@@ -756,6 +758,7 @@ class AutonomousCorrectionLoop:
             stop_reason=stop_reason,
             iterations=len(history),
             history=tuple(history),
+            tasks_unavailable=tasks_unavailable,
         )
         if not world.metadata:
             world.metadata = {}

@@ -2415,9 +2415,12 @@ from apps.api.routes_worlds_commands import (
     WorldCommandIn,
 )
 
+from apps.api.routes_worlds_refine import refine_router
+
 worlds.include_router(shares_router)
 worlds.include_router(options_router)
 worlds.include_router(commands_router)
+worlds.include_router(refine_router)
 
 
 @worlds.get("/{world_id}/versions/{version_id}/observations")

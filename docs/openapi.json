@@ -1679,6 +1679,77 @@
         }
       }
     },
+    "/api/worlds/{world_id}/find": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Find In World",
+        "description": "\"Where is X\": entities matching query q with containment chain and position (BUILD_SPEC B15).",
+        "operationId": "find_in_world_api_worlds__world_id__find_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Q"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Find In World Api Worlds  World Id  Find Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worlds/{world_id}/attach/{session_id}": {
       "post": {
         "tags": [
@@ -4028,7 +4099,8 @@
     "/api/worlds/{world_id}/commands": {
       "post": {
         "tags": [
-          "worlds"
+          "worlds",
+          "commands"
         ],
         "summary": "Execute World Command",
         "description": "Execute an edit command on a world entity (T-4b.1 and T-6.7).\n\nMutations advance HEAD with provenance GENERATED and persist in WorldEditCommand\nfor lossless, reloadable undo/redo with complete world isolation.",
@@ -4081,7 +4153,8 @@
       },
       "get": {
         "tags": [
-          "worlds"
+          "worlds",
+          "commands"
         ],
         "summary": "Get World Commands",
         "description": "Retrieve persistent edit command history for this world (T-6.7).\n\nGuarantees strict per-world isolation: only commands recorded for world_id\nare returned, and reload preserves undo/redo status.",
@@ -4126,7 +4199,8 @@
     "/api/worlds/{world_id}/undo": {
       "post": {
         "tags": [
-          "worlds"
+          "worlds",
+          "commands"
         ],
         "summary": "Undo World Command",
         "description": "Revert the most recent active edit command for this world (T-6.7).",
@@ -4171,7 +4245,8 @@
     "/api/worlds/{world_id}/redo": {
       "post": {
         "tags": [
-          "worlds"
+          "worlds",
+          "commands"
         ],
         "summary": "Redo World Command",
         "description": "Re-apply the most recently undone command for this world (T-6.7).",
@@ -4196,6 +4271,154 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Redo World Command Api Worlds  World Id  Redo Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/refine": {
+      "post": {
+        "tags": [
+          "worlds",
+          "refine"
+        ],
+        "summary": "Refine World",
+        "operationId": "refine_world_api_worlds__world_id__refine_post",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefineIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Refine World Api Worlds  World Id  Refine Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/versions/{version_id}/observations": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Get Version Observations",
+        "description": "Retrieve observations recorded for a world version (BUILD_SPEC B02).",
+        "operationId": "get_version_observations_api_worlds__world_id__versions__version_id__observations_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "image_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Image Id"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Version Observations Api Worlds  World Id  Versions  Version Id  Observations Get"
                 }
               }
             }
@@ -7129,6 +7352,77 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Query Contents Api Worlds  World Id  Query Contents  Entity Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worlds/{world_id}/query/find": {
+      "get": {
+        "tags": [
+          "query"
+        ],
+        "summary": "Query Find",
+        "description": "\"Where is X\": entities matching ``q`` with their room -> furniture -> part chain and position.",
+        "operationId": "query_find_api_worlds__world_id__query_find_get",
+        "parameters": [
+          {
+            "name": "world_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "World Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Q"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Query Find Api Worlds  World Id  Query Find Get"
                 }
               }
             }
@@ -12523,7 +12817,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "default": "Reality Engine Certified Energy Auditor",
+              "default": "Automated preliminary screening (not professionally reviewed)",
               "title": "Auditor Name"
             }
           }
@@ -13897,7 +14191,7 @@
           "files": {
             "items": {
               "type": "string",
-              "format": "binary"
+              "contentMediaType": "application/octet-stream"
             },
             "type": "array",
             "title": "Files"
@@ -13914,7 +14208,7 @@
           "files": {
             "items": {
               "type": "string",
-              "format": "binary"
+              "contentMediaType": "application/octet-stream"
             },
             "type": "array",
             "title": "Files"
@@ -14089,7 +14383,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14103,7 +14397,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14117,7 +14411,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14143,7 +14437,7 @@
           },
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14200,7 +14494,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -17444,6 +17738,26 @@
         ],
         "title": "ReclassifyCorrectionIn"
       },
+      "RefineIn": {
+        "properties": {
+          "max_iterations": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Max Iterations",
+            "default": 5
+          },
+          "time_budget_s": {
+            "type": "number",
+            "maximum": 120.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Time Budget S",
+            "default": 30.0
+          }
+        },
+        "type": "object",
+        "title": "RefineIn"
+      },
       "ReportPdfRequest": {
         "properties": {
           "design_world_id": {
@@ -18262,6 +18576,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",

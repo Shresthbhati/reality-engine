@@ -240,6 +240,44 @@ def test_gltf_hierarchy_preservation():
     assert chair_idx in gltf["nodes"][room_idx]["children"]
 
 
+def _parent_child_world(parent_transform: dict) -> WorldIR:
+    world = WorldIR()
+    for gid in ("g_parent", "g_child"):
+        world.geometries[gid] = Geometry(id=gid, type=GeometryType.BOX)
+    world.entities["p"] = Entity(id="p", name="Parent", type=EntityType.ROOM, transform=parent_transform,
+                                 geometry_ids=["g_parent"])
+    world.entities["c"] = Entity(
+        id="c", name="Child", type=EntityType.STRUCTURE, transform={"position": {"x": 12.0, "y": 2.0, "z": 1.0}},
+        geometry_ids=["g_child"], relationships=[Relationship(kind=RelationshipKind.PART_OF, target_id="p")])
+    return world
+
+
+def test_gltf_nesting_under_a_moved_scaled_parent_does_not_move_the_child():
+    """glTF reads a child's TRS relative to its parent, the exporter writes world TRS: the child is re-expressed in the
+    parent's frame, so its composed world placement is still (12, 2, 1) at unit scale."""
+    from tests.gltf_validation import node_world_trs
+
+    gltf = export_to_gltf(_parent_child_world(
+        {"position": {"x": 10.0, "y": 0.0, "z": 0.0}, "scale": {"x": 2.0, "y": 2.0, "z": 2.0}}))
+    child_idx = [i for i, n in enumerate(gltf["nodes"]) if n["name"] == "Child"][0]
+    parent_idx = [i for i, n in enumerate(gltf["nodes"]) if n["name"] == "Parent"][0]
+    assert child_idx in gltf["nodes"][parent_idx]["children"]
+    t, s = node_world_trs(gltf, child_idx)
+    assert all(abs(a - b) < 1e-9 for a, b in zip(t, [12.0, 2.0, 1.0]))
+    assert all(abs(a - 1.0) < 1e-9 for a in s)
+
+
+def test_gltf_child_of_a_rotated_parent_stays_at_the_root_and_names_its_parent():
+    """A parent frame that cannot express the child exactly (rotated) never silently moves it."""
+    gltf = export_to_gltf(_parent_child_world(
+        {"position": {"x": 10.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.70710678, "w": 0.70710678}}))
+    child_idx = [i for i, n in enumerate(gltf["nodes"]) if n["name"] == "Child"][0]
+    assert child_idx in gltf["scenes"][0]["nodes"]
+    assert not any("children" in n for n in gltf["nodes"])
+    assert gltf["nodes"][child_idx]["translation"] == [12.0, 2.0, 1.0]
+    assert gltf["nodes"][child_idx]["extras"]["parent_entity_id"] == "p"
+
+
 def test_gltf_material_preservation():
     """Entities with assigned materials export PBR metallic roughness materials."""
     world = WorldIR()

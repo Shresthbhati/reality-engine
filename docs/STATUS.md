@@ -2,7 +2,7 @@
 
 Generated from `docs/status.yaml` by `scripts/render_status.py`. Do not edit by hand.
 
-Baseline: 4d2ee016
+Baseline: 662d82e6
 
 | ID | Capability | Status | Gate | Evidence | Tests | Updated | Next |
 |---|---|---|---|---|---|---|---|
@@ -27,3 +27,4 @@ Baseline: 4d2ee016
 | S5-19 | Billing | IMPL-UNVERIFIED | G4 | billing_service.py simulated without keys |  | 2026-11-10 | S710 [H] |
 | S5-20 | Distributed presence | FOUNDATION | G4 | F14 |  | 2026-11-10 | S711 (document limit; build when multi-worker) |
 | S5-21 | One status source | PARTIAL | G0 | F15; docs/status.yaml and docs/STATUS.md added by T010 | tests/test_status_ledger.py | 2026-11-10 | T011 (banner superseded docs). Master plan status word was DOCUMENTATION-DEBT. |
+| S5-22 | RERES: bounded evidence-driven refinement (platform side) | PARTIAL | G3 | POST /api/worlds/{id}/refine runs the B16 priority loop under a hard iteration/time budget, commits a new version only if the world changed, tenant-scoped; engines plug in via engine/quality/refinement_engines.py. The loop no longer fabricates results: kinds with no engine are reported unavailable. Verified SYNTHETIC only. No specialist engine (detector re-run, SAM) is registered, so redetect_crop and segment are unavailable; GPU-aware scheduling, cost-calibrated priors and human review are not built. | tests/test_refine_world_api.py, tests/test_refinement_loop_b16.py | 2026-11-18 | Register real engines (Gemini-owned: detector re-run, SAM 2); calibrate priors on measured outcomes; GPU memory awareness via ModelPool. |

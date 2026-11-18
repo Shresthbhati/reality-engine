@@ -91,8 +91,11 @@ class Ontology:
             self.alias_to_path.setdefault(dotted, path)
             self.alias_to_path.setdefault(slashed, path)
 
-            self._name_lookup[node.name.lower()] = path
-            self._name_lookup[node.label.lower()] = path
+            # First definition wins, like aliases and prompts: nodes that share a label (the hand-authored
+            # ``furniture/seating/sofa`` and the taxonomy-derived ``furniture.sofa``) must not let a later duplicate
+            # take the label over, or the richer node's min_pixels, prompts and dimensions silently stop applying.
+            self._name_lookup.setdefault(node.name.lower(), path)
+            self._name_lookup.setdefault(node.label.lower(), path)
             self._name_lookup[path.lower()] = path
 
             for prompt in node.prompts:

@@ -199,6 +199,27 @@ def test_tenant_usage_compute_storage_and_export_metering(api):
     assert usage_b["exports"]["total_count"] == 0
 
 
+def test_tenant_usage_tolerates_naive_database_datetimes(api):
+    """A running job whose started_at comes back naive (SQLite reload) must not crash the metering arithmetic."""
+    import asyncio
+
+    import apps.api.db as db_mod
+
+    async def _add_running_job():
+        async with db_mod.get_sessionmaker()() as db:
+            db.add(Job(
+                id="job_naive_running", team_id="tenant-a", type="RECONSTRUCT_SESSION", entity_type="session",
+                entity_id="ses_none", status="running",
+                started_at=(utcnow() - timedelta(seconds=30)).replace(tzinfo=None),
+            ))
+            await db.commit()
+
+    asyncio.run(_add_running_job())
+    res = api.call("tenant-a", "GET", "/api/tenants/tenant-a/usage")
+    assert res.status_code == 200, res.text
+    assert res.json()["compute"]["total_compute_seconds"] >= 29.0
+
+
 def test_tenant_usage_time_window_filtering(api):
     """Usage correctly applies `since` and `until` filters."""
     import asyncio

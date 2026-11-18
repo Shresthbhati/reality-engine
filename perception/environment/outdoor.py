@@ -744,10 +744,10 @@ def fit_street_furniture(
     max_dim = max(dx, dy, dz)
 
     target_class = f"street.{kind}"
-    if target_class not in taxonomy._R:
-        raise StreetFurnitureRefused(f"Unknown street furniture class: {target_class}")
-
-    class_meta = taxonomy.get(target_class)
+    try:
+        class_meta = taxonomy.get(target_class)
+    except KeyError:
+        raise StreetFurnitureRefused(f"Unknown street furniture class: {target_class}") from None
     lo, hi = class_meta.size_m
     if not (lo * 0.5 <= max_dim <= hi * 1.5):
         raise StreetFurnitureRefused(

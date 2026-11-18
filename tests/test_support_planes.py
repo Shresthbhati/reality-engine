@@ -21,6 +21,22 @@ def test_no_candidate_covers_enough_means_no_floor_invented():
     assert split_floor_candidates([0.0, 0.5], [2.0, 2.0], 25.0, [4, 4]) == ["support_surface", "support_surface"]
 
 
+def test_every_level_that_reaches_walls_is_a_floor_not_just_the_lowest():
+    # two levels of equal size, each reached by 4 wall bases (a multi-storey / split-level capture)
+    assert split_floor_candidates([0.0, 1.5], [5.76, 5.76], 5.76, [4, 4]) == ["floor", "floor"]
+
+
+def test_a_small_room_is_judged_against_its_own_walls_not_the_largest_floor():
+    # 25 m2 hall + 4 m2 closet on another level: against the hall's footprint the closet would be a "table top"
+    assert split_floor_candidates([0.0, 3.0], [25.0, 4.0], 25.0, [4, 3]) == ["floor", "support_surface"]
+    assert split_floor_candidates([0.0, 3.0], [25.0, 4.0], [25.0, 4.5], [4, 3]) == ["floor", "floor"]
+
+
+def test_a_slab_just_above_a_floor_is_not_a_second_floor():
+    # both clusters reach walls and span the footprint, but 0.1 m apart: a raised slab, not another floor
+    assert split_floor_candidates([0.0, 0.1], [20.0, 20.0], 20.0, [4, 4]) == ["floor", "support_surface"]
+
+
 def test_classify_planes_labels_intermediate_plane_as_support_surface():
     from perception.architecture.classify import PlaneInput, classify_planes
 

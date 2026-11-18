@@ -109,3 +109,17 @@ def wall_coverage_for_world(polygon_xyz: Any, cameras: Any, basis: Any = None) -
 def camera_from_pose_for_world(intrinsics: Any, pose: Any) -> PinholeCamera:
     """Build a PinholeCamera from a backend camera pose."""
     return camera_from_pose(intrinsics, pose)
+
+
+def assert_production_licences_for(model_names: Sequence[str]) -> None:
+    """Refuse (raises) when any named model has a non-commercial or undeclared licence: the job-start licence gate."""
+    from perception.model_registry import assert_production_licences
+
+    assert_production_licences(model_names)
+
+
+def ontology_path_for(query: str) -> str:
+    """The ontology path a free-text label or alias resolves to (``fallback/...`` when it matches nothing)."""
+    from perception.ontology import get_default_ontology
+
+    return get_default_ontology().resolve_or_unknown(query).path

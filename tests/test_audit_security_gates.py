@@ -104,9 +104,13 @@ def test_sec_t03_null_owned_legacy_records_not_exposed(auth_api):
     res = auth_api.get("/api/worlds/wld_legacy_null_team", headers={"Authorization": f"Bearer {token_tenant}"})
     assert res.status_code == 404, "Legacy null-owned record was exposed to non-default tenant"
 
-    # Default tenant or system admin can see it
+    # Fail closed: not even the "default" tenant sees an unowned row (enforce_project_isolation: unowned/legacy records are
+    # hidden from every non-global-admin tenant); only a global admin (root/system tenant) can see and re-assign it.
     res_def = auth_api.get("/api/worlds/wld_legacy_null_team", headers={"Authorization": f"Bearer {token_default}"})
-    assert res_def.status_code == 200
+    assert res_def.status_code == 404, "Legacy null-owned record was exposed to the default tenant"
+    token_root = issue_scoped_token("root", "root-admin", Role.ADMIN, secret=TEST_SECRET)
+    res_root = auth_api.get("/api/worlds/wld_legacy_null_team", headers={"Authorization": f"Bearer {token_root}"})
+    assert res_root.status_code == 200
 
 
 def test_sec_t04_production_forged_dev_token_rejected(monkeypatch):

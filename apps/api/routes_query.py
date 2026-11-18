@@ -109,12 +109,12 @@ def _norm(s: str) -> str:
 def find_entities(world, q: str) -> list[dict]:
     """Entities whose type, label, ontology alias or attribute value matches ``q``, each with its containment chain
     (via part_of / inside / on / attached_to), 3D position and basis. Unknown attributes (value None) never match."""
-    from perception.ontology import get_default_ontology
+    from engine.pipeline.facade import ontology_path_for
 
     needle = _norm(q)
     if not needle:
         return []
-    path = get_default_ontology().resolve_or_unknown(q).path
+    path = ontology_path_for(q)
     wanted_path = None if path.startswith("fallback/") else path
     out = []
     for e in world.entities.values():

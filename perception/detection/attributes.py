@@ -63,7 +63,8 @@ def merge_ocr(visual: dict, ocr: Optional[dict]) -> dict:
 def classify_attribute_from_crop(image_rgb, box_xyxy, values: Sequence[str], phrases: Mapping[str, str],
                                  detector: Callable[[object, str], float], box_threshold: float, obs_id: str = "",
                                  pad: float = 0.15, ocr_reader: Optional[Callable[[object], str]] = None,
-                                 synonyms: Optional[Mapping[str, Sequence[str]]] = None) -> dict:
+                                 synonyms: Optional[Mapping[str, Sequence[str]]] = None,
+                                 detector_many: Optional[Callable[[object, Sequence[str]], Sequence[float]]] = None) -> dict:
     """Crop (padded 15 %), ask ``detector(crop, phrase) -> best score`` once per value, then decide. With ``ocr_reader``
     (``crop -> text``, e.g. ``lambda c: ocr.read_text(c)``) the crop's text is matched to the values (plus ``synonyms``)
     and merged by ``merge_ocr``."""
@@ -71,7 +72,11 @@ def classify_attribute_from_crop(image_rgb, box_xyxy, values: Sequence[str], phr
     x0, y0, x1, y1 = box_xyxy
     px, py = (x1 - x0) * pad, (y1 - y0) * pad
     crop = image_rgb[max(int(y0 - py), 0):min(int(y1 + py), h), max(int(x0 - px), 0):min(int(x1 + px), w)]
-    visual = classify_attribute(values, [detector(crop, phrases[v]) for v in values], box_threshold, obs_id)
+    if detector_many is not None:       # one batched detector call for all of this attribute's phrases (RE-PERC-000025)
+        scores = [float(s) for s in detector_many(crop, [phrases[v] for v in values])]
+    else:
+        scores = [detector(crop, phrases[v]) for v in values]
+    visual = classify_attribute(values, scores, box_threshold, obs_id)
     if ocr_reader is None:
         return visual
     from perception.detection.ocr import match_attribute

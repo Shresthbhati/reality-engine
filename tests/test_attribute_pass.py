@@ -66,3 +66,29 @@ def test_one_vetted_phrase_cannot_discriminate_so_the_attribute_is_not_attempted
     t = table([("x", BOX, -1)])
     out = run_attribute_pass(t, IMG, numpad_wins, ontology=NS(get=lambda path: odd))
     assert out["no_vetted_phrase"] == 1 and out["detector_calls"] == 0
+
+
+def test_a_scorer_with_many_is_called_once_per_attribute_not_once_per_value():
+    batches, singles = [], []
+
+    def one(crop, phrase):
+        singles.append(phrase)
+        return 0.1
+
+    one.many = lambda crop, phrases: batches.append(list(phrases)) or [0.9 if p == attribute_phrase("lock_type", "numpad") else 0.1 for p in phrases]
+    t = table([("fix/lock", BOX, -1)])
+    out = run_attribute_pass(t, IMG, one, ontology=ONT)
+    assert singles == [] and len(batches) == 1 and len(batches[0]) == 2
+    assert json.loads(str(t.attrs_json[0]))["lock_type"]["value"] == "numpad" and out["detector_calls"] == 2
+
+
+def test_real_grounded_scorer_many_returns_one_score_per_phrase():
+    import pytest
+
+    from perception.detection.attribute_pass import grounded_scorer
+
+    try:
+        got = grounded_scorer().many(np.full((120, 120, 3), 200, np.uint8), ["keyhole lock", "padlock", "rocker light switch"])
+    except Exception as exc:  # noqa: BLE001 -- model not cached / no GPU
+        pytest.skip(f"Grounding DINO unavailable: {exc}")
+    assert len(got) == 3 and all(isinstance(s, float) and 0.0 <= s <= 1.0 for s in got)

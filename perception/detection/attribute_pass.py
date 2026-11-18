@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -79,7 +79,8 @@ def run_attribute_pass(table, load_image: Callable[[str], np.ndarray], scorer: C
         for name, phrases in plan.items():
             values = list(phrases)
             r = classify_attribute_from_crop(images[str(table.image_id[i])], (x0, y0, x1, y1), values, phrases, scorer,
-                                             box_threshold, obs_id=str(table.obs_id[i]), ocr_reader=ocr_reader)
+                                             box_threshold, obs_id=str(table.obs_id[i]), ocr_reader=ocr_reader,
+                                             detector_many=getattr(scorer, "many", None))
             calls += len(values)
             rec[name] = r
             values_of[name] = values
@@ -103,11 +104,20 @@ def grounded_scorer() -> Callable[[object, str], float]:
 
     from engine.pipeline.open_vocab_furniture import _grounded_raw
 
-    def score(crop, phrase: str) -> float:
+    def many(crop, phrases: Sequence[str]) -> List[float]:
+        """Best score per phrase from ONE image write and one detector pass (the detector batches 2 prompts per forward);
+        0.0 for a phrase it finds nothing for above its box threshold."""
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "crop.png"
             Image.fromarray(np.ascontiguousarray(crop)).save(p)
-            raw, _ = _grounded_raw(p, [phrase])
-        return max((float(s) for _, s, _ in raw), default=0.0)
+            raw, _ = _grounded_raw(p, list(phrases))
+        best: Dict[str, float] = {}
+        for prompt, s, _ in raw:
+            best[prompt] = max(best.get(prompt, 0.0), float(s))
+        return [best.get(ph, 0.0) for ph in phrases]
 
+    def score(crop, phrase: str) -> float:
+        return many(crop, [phrase])[0]
+
+    score.many = many
     return score

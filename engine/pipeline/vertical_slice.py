@@ -1172,8 +1172,8 @@ def _second_opinion_facts(enabled, evidence_items, detections_2d):
         return {"status": "failed", "note": f"{type(exc).__name__}: {exc}"}
 
 
-def _small_fittings_facts(enabled, evidence_items, depth_by_id):
-    """Tiled small-fittings detections per registered photograph as RECORDED 2D FACTS (``promoted_to_entities`` is always False).
+def _small_fittings_facts(enabled, evidence_items, depth_by_id, cameras=None, world=None):
+    """Tiled small-fittings detections lifted into 3D observations and associated across views into persistent entities.
     None when not requested. Never raises: unavailable or failing is a recorded status."""
     if not enabled:
         return None
@@ -1186,8 +1186,11 @@ def _small_fittings_facts(enabled, evidence_items, depth_by_id):
         from engine.pipeline.open_vocab_furniture import item_path
         from perception.detection.grounded_small import GroundedSmallDetector
         from perception.entities.small_objects import inspect_small_objects
+        from perception.fine_grained.multiview_associator import VisualObservation3D
 
         detector, totals, per_view, kept, tiles = GroundedSmallDetector(), Counter(), {}, [], 0
+        raw_observations: list[VisualObservation3D] = []
+
         for item in evidence_items:
             eid = getattr(item, "id", None) or item.evidence_id
             if eid not in depth_by_id:
@@ -1201,9 +1204,60 @@ def _small_fittings_facts(enabled, evidence_items, depth_by_id):
             totals.update(counts)
             kept += [{"view": eid, "class": d.class_id, "box_px": [round(v, 1) for v in d.box], "score": round(d.score, 3),
                       "stage": d.stage} for d in res.detections]
-        return {"status": "ran", "promoted_to_entities": False, "tiles_run": tiles, "detections_by_class": dict(totals),
-                "per_view": per_view, "detections": kept[:300],
-                "note": "unverified 2D detections (Grounding DINO tiles); not entities, no accuracy claim"}
+
+            if cameras and eid in cameras and eid in depth_by_id:
+                cam = cameras[eid]
+                dm = depth_by_id[eid]
+                vals = getattr(dm, "values", None)
+                if vals is not None:
+                    h, w = len(vals), len(vals[0]) if vals else 0
+                    for idx, d in enumerate(res.detections):
+                        bx = d.box  # [x1, y1, x2, y2]
+                        cx_px = int(np.clip((bx[0] + bx[2]) / 2.0, 0, w - 1))
+                        cy_px = int(np.clip((bx[1] + bx[3]) / 2.0, 0, h - 1))
+                        patch = []
+                        for dy in (-1, 0, 1):
+                            for dx in (-1, 0, 1):
+                                py, px = cy_px + dy, cx_px + dx
+                                if 0 <= py < h and 0 <= px < w:
+                                    v = vals[py][px]
+                                    if np.isfinite(v) and 0.2 <= v <= 12.0:
+                                        patch.append(v)
+                        if patch:
+                            med_depth = float(np.median(patch))
+                            unproj = cam.unproject(cx_px, cy_px, med_depth)
+                            dim = (0.08, 0.08, 0.03) if ("socket" in d.class_id or "switch" in d.class_id) else (0.15, 0.15, 0.05)
+                            raw_observations.append(VisualObservation3D(
+                                observation_id=f"obs-{eid}-{d.class_id}-{idx}",
+                                class_id=d.class_id,
+                                camera_id=eid,
+                                center_world=(unproj.x, unproj.y, unproj.z),
+                                normal_world=(0.0, 0.0, 1.0),
+                                dimensions_m=dim,
+                                confidence=float(d.score),
+                            ))
+
+        promoted_clusters = 0
+        if raw_observations and world is not None:
+            from perception.fine_grained.pipeline import FineGrainedPerceptionEngine
+            cam_positions = {eid: (c.extrinsics.position.x, c.extrinsics.position.y, c.extrinsics.position.z)
+                             for eid, c in cameras.items()} if cameras else {}
+            engine = FineGrainedPerceptionEngine()
+            _, summary = engine.process_observations_and_promote(raw_observations, world, camera_positions=cam_positions)
+            promoted_clusters = summary.total_entities_detected
+
+        return {
+            "status": "ran",
+            "promoted_to_entities": promoted_clusters > 0,
+            "entities_promoted": promoted_clusters,
+            "raw_observations_lifted": len(raw_observations),
+            "tiles_run": tiles,
+            "detections_by_class": dict(totals),
+            "per_view": per_view,
+            "detections": kept[:300],
+            "note": "fine-grained fittings detected, lifted via metric depth and multi-view associated into persistent entities"
+                    if promoted_clusters > 0 else "unverified 2D detections (Grounding DINO tiles); not entities, no accuracy claim",
+        }
     except Exception as exc:  # noqa: BLE001 -- an enhancement; its failure must not lose the objects
         log.warning("small-fittings pass failed", exc_info=True)
         return {"status": "failed", "note": str(exc), "promoted_to_entities": False}
@@ -1473,7 +1527,7 @@ def _perception_stage(result, world, evidence_items, metric_depth_maps, options)
             "note": f"object entities rejected by world validation; world left as it was: {[str(i) for i in report.errors[:3]]}",
         }
 
-    small_fittings = _small_fittings_facts(options.perception_small_fittings, evidence_items, depth_by_id)
+    small_fittings = _small_fittings_facts(options.perception_small_fittings, evidence_items, depth_by_id, cameras=cameras, world=world)
     detections_2d = _detections_2d(seg_results, options.image_size)
     second_opinion = _second_opinion_facts(options.perception_second_opinion, evidence_items, detections_2d)
     return {

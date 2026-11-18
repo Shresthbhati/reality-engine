@@ -100,7 +100,7 @@ Total: 1
 
 ## unlisted
 
-Total: 520
+Total: 521
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -359,6 +359,7 @@ Total: 520
 - `tests/test_material_attributes_task10_2.py`
 - `tests/test_material_classification.py`
 - `tests/test_material_hypotheses.py`
+- `tests/test_measured_room_evaluator.py`
 - `tests/test_measurements.py`
 - `tests/test_media_preprocessing.py`
 - `tests/test_mesh_boolean.py`

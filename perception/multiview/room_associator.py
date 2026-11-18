@@ -99,19 +99,31 @@ def point_in_polygon_2d(point: tuple[float, float], polygon: Sequence[tuple[floa
 class MultiViewRoomAssociator:
     """Associates multi-view photographs and camera poses to physical rooms."""
 
-    def __init__(self, elevation_margin_m: float = 0.25) -> None:
+    def __init__(
+        self,
+        elevation_margin_m: float = 0.25,
+        up: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    ) -> None:
         self.elevation_margin = elevation_margin_m
+        self.up = tuple(float(x) for x in up)
+        self.is_y_up = abs(self.up[1]) > 0.5
 
     def is_camera_inside_room(self, camera: CameraPose3D, room: RoomBoundary) -> bool:
         """Verify whether camera 3D coordinate is physically enclosed within the room volume."""
         cx, cy, cz = camera.position
+        if self.is_y_up:
+            elev = cy
+            plan_pt = (cx, cz)
+        else:
+            elev = cz
+            plan_pt = (cx, cy)
 
         # 1. Height check with margin (accommodating tripods or hands slightly elevated)
-        if cz < (room.floor_z - self.elevation_margin) or cz > (room.ceiling_z + self.elevation_margin):
+        if elev < (room.floor_z - self.elevation_margin) or elev > (room.ceiling_z + self.elevation_margin):
             return False
 
         # 2. Plan boundary test
-        return point_in_polygon_2d((cx, cy), room.polygon_xy)
+        return point_in_polygon_2d(plan_pt, room.polygon_xy)
 
     def associate_camera(
         self,

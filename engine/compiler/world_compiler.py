@@ -881,6 +881,107 @@ def compile_reconstruction_to_world(
     except Exception as exc:  # noqa: BLE001 -- the structural world stands; the failure is visible
         interior_warnings.append(f"dimension consistency: {type(exc).__name__}: {exc}")
 
+    # ---- Multi-View Room Association (Programme 1: Multi-View Intelligence) ----
+    try:
+        from engine.math import Quat
+        from perception.multiview.room_associator import (
+            CameraPose3D,
+            MultiViewRoomAssociator,
+            RoomBoundary,
+        )
+        from world_ir.camera import quat_to_matrix
+
+        is_y_up = abs(options.up[1]) > 0.5
+        room_boundaries: list[RoomBoundary] = []
+        for rent in world.entities.values():
+            if rent.type == EntityType.ROOM:
+                floor_z = 0.0
+                ceiling_z = 2.8
+                poly_xy: list[tuple[float, float]] = []
+
+                # 1. Prefer refined footprint polygon from multi_room metadata if present
+                mr = world.metadata.get("multi_room", {})
+                for mr_room in mr.get("rooms", []):
+                    if mr_room.get("room_id") == rent.id and mr_room.get("footprint_polygon"):
+                        poly_xy = [(float(pt[0]), float(pt[1])) for pt in mr_room["footprint_polygon"]]
+                        break
+
+                # 2. Fall back to bounding box from room geometry
+                geom = world.geometries.get(rent.geometry_ids[0]) if rent.geometry_ids else None
+                if geom and geom.bounds_min and geom.bounds_max:
+                    floor_z = float(geom.bounds_min.y if is_y_up else geom.bounds_min.z)
+                    ceiling_z = float(geom.bounds_max.y if is_y_up else geom.bounds_max.z)
+                    if not poly_xy:
+                        x0, x1 = float(geom.bounds_min.x), float(geom.bounds_max.x)
+                        d0 = float(geom.bounds_min.z if is_y_up else geom.bounds_min.y)
+                        d1 = float(geom.bounds_max.z if is_y_up else geom.bounds_max.y)
+                        poly_xy = [(x0, d0), (x1, d0), (x1, d1), (x0, d1)]
+
+                if poly_xy:
+                    b_walls: list[dict] = []
+                    for rel in rent.relationships:
+                        if rel.kind == RelationshipKind.CONTAINS:
+                            w_ent = world.entities.get(rel.target_id)
+                            if w_ent and getattr(w_ent, "type", None) == EntityType.WALL and w_ent.geometry_ids:
+                                w_geom = world.geometries.get(w_ent.geometry_ids[0])
+                                if w_geom and w_geom.bounds_min and w_geom.bounds_max:
+                                    s0 = float(w_geom.bounds_min.x)
+                                    s1 = float(w_geom.bounds_min.z if is_y_up else w_geom.bounds_min.y)
+                                    e0 = float(w_geom.bounds_max.x)
+                                    e1 = float(w_geom.bounds_max.z if is_y_up else w_geom.bounds_max.y)
+                                    b_walls.append({
+                                        "id": w_ent.id,
+                                        "start": [s0, s1],
+                                        "end": [e0, e1],
+                                    })
+                    room_boundaries.append(RoomBoundary(
+                        room_id=rent.id,
+                        name=rent.name or rent.id,
+                        polygon_xy=poly_xy,
+                        floor_z=floor_z,
+                        ceiling_z=ceiling_z,
+                        boundary_walls=b_walls,
+                    ))
+
+        if room_boundaries and result.camera_poses:
+            cam_objs: list[CameraPose3D] = []
+            for p in result.camera_poses:
+                pos = tuple(float(v) for v in p.position)
+                look = (0.0, 1.0, 0.0) if not is_y_up else (0.0, 0.0, 1.0)
+                if hasattr(p, "rotation") and p.rotation is not None:
+                    try:
+                        w, x, y, z = (float(c) for c in p.rotation)
+                        quat = Quat(w=w, x=x, y=y, z=z).normalized()
+                        R = quat_to_matrix(quat)
+                        look = (float(R[0][2]), float(R[1][2]), float(R[2][2]))
+                    except Exception:
+                        pass
+                cam_objs.append(CameraPose3D(
+                    evidence_id=str(p.evidence_id),
+                    position=pos,
+                    look_dir=look,
+                ))
+
+            associator = MultiViewRoomAssociator(up=options.up)
+            associations = associator.associate_photographs(cam_objs, room_boundaries)
+            covis = associator.build_cross_view_covisibility(associations)
+
+            world.metadata["multiview_rooms"] = {
+                "associations": [a.to_dict() for a in associations],
+                "covisibility": {f"{k[0]}:{k[1]}": v for k, v in covis.items()},
+                "rooms_count": len(room_boundaries),
+                "cameras_count": len(cam_objs),
+            }
+
+            for assoc in associations:
+                if assoc.inside_room_id and assoc.inside_room_id in world.entities:
+                    rent = world.entities[assoc.inside_room_id]
+                    if not hasattr(rent, "custom_properties") or rent.custom_properties is None:
+                        rent.custom_properties = {}
+                    rent.custom_properties.setdefault("camera_stations", []).append(assoc.evidence_id)
+    except Exception as exc:  # noqa: BLE001
+        interior_warnings.append(f"multiview room association: {type(exc).__name__}: {exc}")
+
     # ---- provenance stamping on the world itself ----
     # The world as a whole is derived from reconstruction; its
     # global_provenance records that without upgrading any entity's own

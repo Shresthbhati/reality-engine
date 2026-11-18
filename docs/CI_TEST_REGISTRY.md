@@ -108,7 +108,7 @@ Total: 1
 
 ## unlisted
 
-Total: 516
+Total: 517
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -529,6 +529,7 @@ Total: 516
 - `tests/test_spatial_tiles.py`
 - `tests/test_spatial_tiles_boundary.py`
 - `tests/test_spatial_tiling.py`
+- `tests/test_specialist_refinement_engines.py`
 - `tests/test_specialist_truth_labels.py`
 - `tests/test_stacked_storey_reconstruction.py`
 - `tests/test_stage_dense.py`

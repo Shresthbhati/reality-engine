@@ -7,7 +7,7 @@ come from one model and are correlated).
 """
 from __future__ import annotations
 
-from typing import Callable, Mapping, Optional, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import numpy as np
 
@@ -22,7 +22,7 @@ def _softmax(scores: np.ndarray, temperature: float = TEMPERATURE) -> np.ndarray
     return e / e.sum()
 
 
-def _decide(values: Sequence[str], p: np.ndarray, top_raw: float, box_threshold: float) -> Optional[str]:
+def _decide(values: Sequence[str], p: np.ndarray, top_raw: float, box_threshold: float) -> str | None:
     if len(values) == 0:
         return None
     order = np.argsort(-p)
@@ -43,7 +43,7 @@ def classify_attribute(values: Sequence[str], scores: Sequence[float], box_thres
             "candidates": {v: float(x) for v, x in zip(values, p)}}
 
 
-def merge_ocr(visual: dict, ocr: Optional[dict]) -> dict:
+def merge_ocr(visual: dict, ocr: dict | None) -> dict:
     """Combine a visual decision with an OCR reading of the same crop (``ocr`` from ``ocr.match_attribute``).
 
     Text naming the value the picture also shows -> that value, basis ``visual+ocr``. Vision unsure, text names one value
@@ -62,9 +62,9 @@ def merge_ocr(visual: dict, ocr: Optional[dict]) -> dict:
 
 def classify_attribute_from_crop(image_rgb, box_xyxy, values: Sequence[str], phrases: Mapping[str, str],
                                  detector: Callable[[object, str], float], box_threshold: float, obs_id: str = "",
-                                 pad: float = 0.15, ocr_reader: Optional[Callable[[object], str]] = None,
-                                 synonyms: Optional[Mapping[str, Sequence[str]]] = None,
-                                 detector_many: Optional[Callable[[object, Sequence[str]], Sequence[float]]] = None) -> dict:
+                                 pad: float = 0.15, ocr_reader: Callable[[object], str] | None = None,
+                                 synonyms: Mapping[str, Sequence[str]] | None = None,
+                                 detector_many: Callable[[object, Sequence[str]], Sequence[float]] | None = None) -> dict:
     """Crop (padded 15 %), ask ``detector(crop, phrase) -> best score`` once per value, then decide. With ``ocr_reader``
     (``crop -> text``, e.g. ``lambda c: ocr.read_text(c)``) the crop's text is matched to the values (plus ``synonyms``)
     and merged by ``merge_ocr``."""

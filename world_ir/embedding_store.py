@@ -6,17 +6,17 @@ product is done in float32.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
 
 class EmbeddingStore:
-    def __init__(self, dim: Optional[int] = None) -> None:
+    def __init__(self, dim: int | None = None) -> None:
         self.dim = dim
         self._rows: list[np.ndarray] = []          # float16 unit vectors while building
-        self._mm: Optional[np.ndarray] = None      # read-only (N, D) float16, possibly memory-mapped, once loaded
+        self._mm: np.ndarray | None = None      # read-only (N, D) float16, possibly memory-mapped, once loaded
 
     def __len__(self) -> int:
         return len(self._mm) if self._mm is not None else len(self._rows)
@@ -58,7 +58,7 @@ class EmbeddingStore:
         np.save(path, self.matrix(), allow_pickle=False)
 
     @classmethod
-    def load(cls, path: str | Path, mmap: bool = True) -> "EmbeddingStore":
+    def load(cls, path: str | Path, mmap: bool = True) -> EmbeddingStore:
         m = np.load(path, mmap_mode="r" if mmap else None, allow_pickle=False)
         if m.ndim != 2 or m.dtype != np.float16:
             raise ValueError(f"expected a 2-D float16 matrix, got {m.dtype} {m.shape}")
@@ -71,7 +71,7 @@ def embedding_ref(artifact_sha: str, row: int) -> str:
     return f"{artifact_sha}#{int(row)}"
 
 
-def parse_embedding_ref(ref: str) -> Tuple[str, int]:
+def parse_embedding_ref(ref: str) -> tuple[str, int]:
     sha, sep, row = ref.rpartition("#")
     if not sep or not sha or not row.isdigit():
         raise ValueError(f"not an embedding reference: {ref!r}")

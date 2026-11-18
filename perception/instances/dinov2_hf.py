@@ -10,7 +10,8 @@ the caller records the skip. It never substitutes anything.
 """
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
+from typing import List
 
 import numpy as np
 
@@ -22,10 +23,10 @@ POOLED_GRID = 32        # embed_pooled resizes the photo to 32x32 patches (448 p
 MIN_POOLED_WEIGHT = 1.0  # total patch coverage (in patches) a mask needs; less is a speck, not an object
 
 
-def pool_tokens(tokens: np.ndarray, weights: Sequence[Optional[np.ndarray]]) -> List[Optional[np.ndarray]]:
+def pool_tokens(tokens: np.ndarray, weights: Sequence[np.ndarray | None]) -> List[np.ndarray | None]:
     """Unit-norm weighted mean of ``tokens`` (P, D) per weight vector (P,): the mask's coverage of each patch.
     None for a missing/mis-sized weight vector, total coverage under ``MIN_POOLED_WEIGHT`` patches, or a zero mean."""
-    out: List[Optional[np.ndarray]] = []
+    out: List[np.ndarray | None] = []
     for w in weights:
         if w is None or len(w) != len(tokens) or float(np.sum(w)) < MIN_POOLED_WEIGHT:
             out.append(None)
@@ -41,7 +42,7 @@ class Dinov2Unavailable(RuntimeError):
 
 
 class Dinov2Embedder:
-    def __init__(self, model_id: str = MODEL_ID, device: Optional[str] = None) -> None:
+    def __init__(self, model_id: str = MODEL_ID, device: str | None = None) -> None:
         self.model_id = model_id
         self._device = device
         self._model = None
@@ -67,7 +68,7 @@ class Dinov2Embedder:
     def unload(self) -> None:
         self._model = None
 
-    def _crop(self, image: np.ndarray, mask: np.ndarray) -> Optional[np.ndarray]:
+    def _crop(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray | None:
         """The mask's bounding box with everything outside the mask painted neutral grey, resized to the model input."""
         import cv2
 
@@ -79,7 +80,7 @@ class Dinov2Embedder:
         crop[~mask[y0:y1, x0:x1]] = 128
         return cv2.resize(crop, (INPUT_SIZE, INPUT_SIZE), interpolation=cv2.INTER_AREA)
 
-    def embed_pooled(self, image: np.ndarray, masks: Sequence[np.ndarray]) -> List[Optional[np.ndarray]]:
+    def embed_pooled(self, image: np.ndarray, masks: Sequence[np.ndarray]) -> List[np.ndarray | None]:
         """One forward pass for the WHOLE image; each mask's vector is the mean of the patch tokens under it, weighted by how much
         of each patch the mask covers (RE-PERF-000007). Cost is one forward per image however many objects it holds, and an
         object is described in the context it was seen in. NOT the same descriptor as ``embed_masked_crops`` (CLS of an
@@ -101,13 +102,13 @@ class Dinov2Embedder:
                            if m.shape[:2] == (h, w) else None)
         return pool_tokens(tokens, weights)
 
-    def embed_masked_crops(self, image: np.ndarray, masks: Sequence[np.ndarray]) -> List[Optional[np.ndarray]]:
+    def embed_masked_crops(self, image: np.ndarray, masks: Sequence[np.ndarray]) -> List[np.ndarray | None]:
         """One unit-norm vector per mask (the CLS token), or None for a mask too small to describe an object."""
         import torch
 
         crops = [self._crop(image, np.asarray(m, dtype=bool)) for m in masks]
         keep = [i for i, c in enumerate(crops) if c is not None]
-        out: List[Optional[np.ndarray]] = [None] * len(crops)
+        out: List[np.ndarray | None] = [None] * len(crops)
         if not keep:
             return out
         model = self._load()

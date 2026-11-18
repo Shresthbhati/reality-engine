@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from typing import Callable, Dict, List, Optional, Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 
@@ -27,7 +27,7 @@ def attribute_phrase(name: str, value: str):
     return phrase_for(name, value)
 
 
-def _pack(rec: Dict[str, dict]) -> str:
+def _pack(rec: dict[str, dict]) -> str:
     slim = {n: {k: r[k] for k in ("value", "p", "basis", "obs", "conflict", "ocr_text", "reason") if k in r} for n, r in rec.items()}
     s = json.dumps(slim, separators=(",", ":"))
     if len(s) > MAX_ATTRS_JSON:  # drop the optional fields before ever truncating a value
@@ -37,16 +37,16 @@ def _pack(rec: Dict[str, dict]) -> str:
 
 
 def run_attribute_pass(table, load_image: Callable[[str], np.ndarray], scorer: Callable[[object, str], float], *,
-                       ontology=None, ocr_reader: Optional[Callable[[object], str]] = None, box_threshold: float = 0.35,
+                       ontology=None, ocr_reader: Callable[[object], str] | None = None, box_threshold: float = 0.35,
                        min_crop_px: int = 48, budget_calls: int = DEFAULT_BUDGET_CALLS) -> dict:
     """Fill ``table.attrs_json`` in place; returns counters plus ``entity_attributes`` (entity_row -> {name: combined})."""
     if ontology is None:
         from perception.ontology import get_default_ontology
         ontology = get_default_ontology()
     stats: Counter = Counter()
-    images: Dict[str, np.ndarray] = {}
-    per_entity: Dict[int, Dict[str, List[dict]]] = {}
-    values_of: Dict[str, List[str]] = {}
+    images: dict[str, np.ndarray] = {}
+    per_entity: dict[int, dict[str, list[dict]]] = {}
+    values_of: dict[str, list[str]] = {}
     calls = 0
     for i in range(len(table)):
         node = ontology.get(str(table.class_path[i]))
@@ -58,8 +58,8 @@ def run_attribute_pass(table, load_image: Callable[[str], np.ndarray], scorer: C
             stats["crop_too_small"] += 1
             continue
         # an attribute is attempted only when at least two of its values have a vetted phrase (one phrase cannot discriminate)
-        plan: Dict[str, Dict[str, str]] = {}
-        rec: Dict[str, dict] = {}
+        plan: dict[str, dict[str, str]] = {}
+        rec: dict[str, dict] = {}
         for name, vals in node.attributes.items():
             phrases = {v: attribute_phrase(name, v) for v in vals if v != "unknown"}
             phrases = {v: p for v, p in phrases.items() if p}
@@ -104,14 +104,14 @@ def grounded_scorer() -> Callable[[object, str], float]:
 
     from engine.pipeline.open_vocab_furniture import _grounded_raw
 
-    def many(crop, phrases: Sequence[str]) -> List[float]:
+    def many(crop, phrases: Sequence[str]) -> list[float]:
         """Best score per phrase from ONE image write and one detector pass (the detector batches 2 prompts per forward);
         0.0 for a phrase it finds nothing for above its box threshold."""
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "crop.png"
             Image.fromarray(np.ascontiguousarray(crop)).save(p)
             raw, _ = _grounded_raw(p, list(phrases))
-        best: Dict[str, float] = {}
+        best: dict[str, float] = {}
         for prompt, s, _ in raw:
             best[prompt] = max(best.get(prompt, 0.0), float(s))
         return [best.get(ph, 0.0) for ph in phrases]

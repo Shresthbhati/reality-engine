@@ -10,15 +10,15 @@ import hashlib
 import platform
 import subprocess
 import sys
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Callable, Mapping, Optional
 
 from engine.pipeline.stages.base import RunManifest
 
 _HASH_CACHE: dict[tuple[str, int, int], str] = {}   # (path, mtime_ns, size) -> sha256; weights do not change between jobs
 
 
-def git_commit(repo: Optional[Path] = None) -> Optional[str]:
+def git_commit(repo: Path | None = None) -> str | None:
     """HEAD of the code that ran, or None when git or the checkout is not there (an installed package)."""
     try:
         out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo or Path(__file__).resolve().parents[3]),
@@ -40,7 +40,7 @@ def file_sha256(path: Path) -> str:
     return _HASH_CACHE[key]
 
 
-def models_available(specs: Optional[Mapping[str, object]] = None, hasher: Callable[[Path], str] = file_sha256) -> list[dict]:
+def models_available(specs: Mapping[str, object] | None = None, hasher: Callable[[Path], str] = file_sha256) -> list[dict]:
     """Active registered models whose checkpoint file exists, with the sha256 of the bytes on disk and, where the registry
     declares one, whether it matches."""
     if specs is None:
@@ -79,8 +79,8 @@ def colmap_info(binary: str = "colmap") -> dict:
     return {"version": _COLMAP_CACHE[binary], "seed": COLMAP_SEED}
 
 
-def build_run_record(manifest: RunManifest, *, seeds: Optional[Mapping[str, int]] = None, commit: Optional[str] = None,
-                     models: Optional[list[dict]] = None, colmap: Optional[dict] = None) -> dict:
+def build_run_record(manifest: RunManifest, *, seeds: Mapping[str, int] | None = None, commit: str | None = None,
+                     models: list[dict] | None = None, colmap: dict | None = None) -> dict:
     return {
         "code_commit": commit if commit is not None else git_commit(),
         "python": sys.version.split()[0], "platform": platform.platform(),

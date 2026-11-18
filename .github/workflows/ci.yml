@@ -114,6 +114,15 @@ jobs:
             tests/test_stage_artifacts.py \
             tests/test_stage_resume.py \
             tests/test_stage_checkpoints.py \
+            tests/test_stage_artifacts.py \
+            tests/test_stage_resume.py \
+            tests/test_stage_checkpoints.py \
+            tests/test_measured_room_dataset.py \
+            tests/test_multiview_room_association.py \
+            tests/test_multiview_finegrained_identity.py \
+            tests/test_measurement_fusion.py \
+            tests/test_relations.py \
+            tests/test_query_find.py \
             -v --tb=short
 
       # ── Broad test collection (no physics) ────────────────────────────────

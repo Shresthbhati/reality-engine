@@ -1,0 +1,90 @@
+{
+  "room": {
+    "id": "room-02",
+    "name": "Bedroom with Wardrobe (Dev Room 2)",
+    "area_m2": 17.1,
+    "height_m": 2.55,
+    "length_m": 4.5,
+    "width_m": 3.8
+  },
+  "walls": [
+    {
+      "id": "wall-south",
+      "start": [0.0, 0.0],
+      "end": [4.5, 0.0],
+      "length_m": 4.5
+    },
+    {
+      "id": "wall-east",
+      "start": [4.5, 0.0],
+      "end": [4.5, 3.8],
+      "length_m": 3.8
+    },
+    {
+      "id": "wall-north",
+      "start": [4.5, 3.8],
+      "end": [0.0, 3.8],
+      "length_m": 4.5
+    },
+    {
+      "id": "wall-west",
+      "start": [0.0, 3.8],
+      "end": [0.0, 0.0],
+      "length_m": 3.8
+    }
+  ],
+  "openings": [
+    {
+      "id": "opening-door-west",
+      "kind": "door",
+      "center": [0.0, 0.9, 1.05],
+      "width_m": 0.85,
+      "height_m": 2.1,
+      "sill_m": 0.0,
+      "wall": "wall-west"
+    },
+    {
+      "id": "opening-win-east",
+      "kind": "window",
+      "center": [4.5, 2.0, 1.45],
+      "width_m": 1.2,
+      "height_m": 1.1,
+      "sill_m": 0.9,
+      "wall": "wall-east"
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "fix-switch-west",
+      "fixture_type": "switch",
+      "position_m": [0.0, 0.2, 1.15]
+    },
+    {
+      "id": "fix-socket-bed-l",
+      "fixture_type": "socket",
+      "position_m": [1.2, 3.8, 0.45]
+    },
+    {
+      "id": "fix-socket-bed-r",
+      "fixture_type": "socket",
+      "position_m": [3.3, 3.8, 0.45]
+    },
+    {
+      "id": "fix-socket-desk",
+      "fixture_type": "socket",
+      "position_m": [4.5, 3.2, 0.3]
+    }
+  ],
+  "source": "measured",
+  "capture": {
+    "room_id": "room-02",
+    "date": "2026-11-18",
+    "device_model": "Bosch GLM 50-27 C",
+    "measured_by": "reality-engine-survey-team",
+    "method": "laser",
+    "tolerance_m": 0.002,
+    "consent_reference": "consent-0002-dev-bed",
+    "lighting": "indoor warm LED + window daylight",
+    "notes": "Dev room 2: heavy furniture occlusion (queen bed, full-height wardrobe, study desk), bedside sockets."
+  }
+}

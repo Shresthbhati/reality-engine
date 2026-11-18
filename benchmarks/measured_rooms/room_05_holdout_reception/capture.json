@@ -1,0 +1,20 @@
+{
+  "room_id": "room-05",
+  "name": "Reception Lobby",
+  "category": "holdout",
+  "split": "blind_holdout",
+  "photo_count": 80,
+  "camera": {
+    "device": "iPhone 15 Pro Max",
+    "sensor": "48MP Main (f/1.78)",
+    "resolution": "4032x3024",
+    "exif_complete": true
+  },
+  "survey": {
+    "instrument": "Bosch GLM 50-27 C Laser Measure",
+    "precision_m": 0.002,
+    "measurements_count": 34,
+    "cross_verified": true
+  },
+  "consent_reference": "consent-0005-holdout-reception"
+}

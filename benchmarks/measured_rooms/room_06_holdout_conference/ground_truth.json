@@ -1,0 +1,85 @@
+{
+  "room": {
+    "id": "room-06",
+    "name": "Conference Room (Blind Holdout 2)",
+    "area_m2": 24.36,
+    "height_m": 2.9,
+    "length_m": 5.8,
+    "width_m": 4.2
+  },
+  "walls": [
+    {
+      "id": "wall-south",
+      "start": [0.0, 0.0],
+      "end": [5.8, 0.0],
+      "length_m": 5.8
+    },
+    {
+      "id": "wall-east",
+      "start": [5.8, 0.0],
+      "end": [5.8, 4.2],
+      "length_m": 4.2
+    },
+    {
+      "id": "wall-north",
+      "start": [5.8, 4.2],
+      "end": [0.0, 4.2],
+      "length_m": 5.8
+    },
+    {
+      "id": "wall-west",
+      "start": [0.0, 4.2],
+      "end": [0.0, 0.0],
+      "length_m": 4.2
+    }
+  ],
+  "openings": [
+    {
+      "id": "opening-conf-door",
+      "kind": "door",
+      "center": [0.9, 0.0, 1.1],
+      "width_m": 0.9,
+      "height_m": 2.2,
+      "sill_m": 0.0,
+      "wall": "wall-south"
+    },
+    {
+      "id": "opening-glazed-facade",
+      "kind": "window",
+      "center": [2.9, 4.2, 1.45],
+      "width_m": 4.0,
+      "height_m": 2.2,
+      "sill_m": 0.35,
+      "wall": "wall-north"
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "fix-switch-door",
+      "fixture_type": "switch",
+      "position_m": [0.15, 0.0, 1.2]
+    },
+    {
+      "id": "fix-display-socket",
+      "fixture_type": "socket",
+      "position_m": [5.8, 2.1, 1.2]
+    },
+    {
+      "id": "fix-table-socket-1",
+      "fixture_type": "socket",
+      "position_m": [2.9, 2.1, 0.75]
+    }
+  ],
+  "source": "measured",
+  "capture": {
+    "room_id": "room-06",
+    "date": "2026-11-18",
+    "device_model": "Bosch GLM 50-27 C",
+    "measured_by": "independent-audit-surveyor",
+    "method": "laser",
+    "tolerance_m": 0.002,
+    "consent_reference": "consent-0006-holdout-conf",
+    "lighting": "direct sunlight through facade + ceiling grid 5000K",
+    "notes": "Blind holdout 2: 4-meter wide glazed facade window, central conference table, acoustic ceiling panels."
+  }
+}

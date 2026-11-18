@@ -1,0 +1,20 @@
+{
+  "room_id": "room-02",
+  "name": "Bedroom with Wardrobe",
+  "category": "development",
+  "split": "dev",
+  "photo_count": 72,
+  "camera": {
+    "device": "iPhone 15 Pro",
+    "sensor": "48MP Main (f/1.78)",
+    "resolution": "4032x3024",
+    "exif_complete": true
+  },
+  "survey": {
+    "instrument": "Bosch GLM 50-27 C Laser Measure",
+    "precision_m": 0.002,
+    "measurements_count": 32,
+    "cross_verified": true
+  },
+  "consent_reference": "consent-0002-dev-bed"
+}

@@ -11,8 +11,9 @@ Guarantees persistent entity identities across viewpoints:
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -24,13 +25,13 @@ class VisualObservation3D:
     observation_id: str
     class_id: str
     camera_id: str
-    center_world: Tuple[float, float, float]
-    normal_world: Tuple[float, float, float]
-    dimensions_m: Tuple[float, float, float]  # (width, height, depth)
+    center_world: tuple[float, float, float]
+    normal_world: tuple[float, float, float]
+    dimensions_m: tuple[float, float, float]  # (width, height, depth)
     confidence: float
-    host_surface_id: Optional[str] = None
-    feature_embedding: Optional[np.ndarray] = None
-    custom_attributes: Dict[str, Any] = field(default_factory=dict)
+    host_surface_id: str | None = None
+    feature_embedding: np.ndarray | None = None
+    custom_attributes: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -39,17 +40,17 @@ class AssociatedEntityCluster:
 
     persistent_id: str
     class_id: str
-    fused_center: Tuple[float, float, float]
-    fused_normal: Tuple[float, float, float]
-    fused_dimensions_m: Tuple[float, float, float]
+    fused_center: tuple[float, float, float]
+    fused_normal: tuple[float, float, float]
+    fused_dimensions_m: tuple[float, float, float]
     fused_confidence: float
     observation_count: int
-    source_camera_ids: List[str]
-    host_surface_id: Optional[str] = None
+    source_camera_ids: list[str]
+    host_surface_id: str | None = None
     spatial_variance_m: float = 0.0
-    member_observations: List[VisualObservation3D] = field(default_factory=list)
+    member_observations: list[VisualObservation3D] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "persistent_id": self.persistent_id,
             "class_id": self.class_id,
@@ -72,26 +73,29 @@ class MultiViewIdentityAssociator:
         small_object_dist_thresh_m: float = 0.15,
         large_object_dist_thresh_m: float = 0.40,
         normal_angle_thresh_deg: float = 40.0,
+        min_appearance_sim: float = 0.20,
     ) -> None:
         self.small_object_dist_thresh = small_object_dist_thresh_m
         self.large_object_dist_thresh = large_object_dist_thresh_m
         self.normal_angle_thresh_deg = normal_angle_thresh_deg
+        self.min_appearance_sim = min_appearance_sim
 
     def associate_observations(
         self,
         observations: Sequence[VisualObservation3D],
-        existing_clusters: Optional[Sequence[AssociatedEntityCluster]] = None,
-    ) -> List[AssociatedEntityCluster]:
+        existing_clusters: Sequence[AssociatedEntityCluster] | None = None,
+    ) -> list[AssociatedEntityCluster]:
         """Associate a set of 3D observations, optionally merging with an existing persistent state."""
         if not observations:
             return list(existing_clusters or [])
 
-        clusters: List[AssociatedEntityCluster] = list(existing_clusters or [])
-        used_obs: Set[str] = set()
+        clusters: list[AssociatedEntityCluster] = list(existing_clusters or [])
+        used_obs: set[str] = set()
 
         # 1. First pass: associate against existing persistent clusters (temporal / incremental continuity)
         for cluster in clusters:
             matching_obs = []
+            cluster_cams = set(cluster.source_camera_ids)
             c_center = np.asarray(cluster.fused_center, dtype=np.float64)
             c_norm = np.asarray(cluster.fused_normal, dtype=np.float64)
 
@@ -103,6 +107,9 @@ class MultiViewIdentityAssociator:
                 if obs.observation_id in used_obs:
                     continue
                 if obs.class_id != cluster.class_id:
+                    continue
+                # Same-camera mutual exclusion: one physical entity cannot appear twice in the same photo
+                if obs.camera_id in cluster_cams:
                     continue
                 if cluster.host_surface_id and obs.host_surface_id and cluster.host_surface_id != obs.host_surface_id:
                     continue
@@ -117,6 +124,7 @@ class MultiViewIdentityAssociator:
 
                 if dist <= dist_thresh and ang_deg <= self.normal_angle_thresh_deg:
                     matching_obs.append(obs)
+                    cluster_cams.add(obs.camera_id)
                     used_obs.add(obs.observation_id)
 
             if matching_obs:
@@ -124,13 +132,16 @@ class MultiViewIdentityAssociator:
 
         # 2. Second pass: cluster remaining unassigned observations amongst themselves
         unassigned = [obs for obs in observations if obs.observation_id not in used_obs]
-        visited: Set[int] = set()
+        # Sort unassigned deterministically by (class_id, observation_id) to avoid order dependence
+        unassigned.sort(key=lambda o: (o.class_id, o.observation_id))
+        visited: set[int] = set()
 
         for i, base_obs in enumerate(unassigned):
             if i in visited:
                 continue
 
             current_group = [base_obs]
+            group_cameras = {base_obs.camera_id}
             visited.add(i)
 
             is_small = any(k in base_obs.class_id for k in ("socket", "switch", "dimmer", "valve", "handle", "fitting", "tap"))
@@ -146,6 +157,9 @@ class MultiViewIdentityAssociator:
 
                 if cand.class_id != base_obs.class_id:
                     continue
+                # Same-camera mutual exclusion: an object cannot appear twice in one photo
+                if cand.camera_id in group_cameras:
+                    continue
                 if base_obs.host_surface_id and cand.host_surface_id and base_obs.host_surface_id != cand.host_surface_id:
                     continue
 
@@ -156,8 +170,18 @@ class MultiViewIdentityAssociator:
                 cos_ang = float(np.dot(b_norm, c_norm))
                 ang_deg = math.degrees(math.acos(max(-1.0, min(1.0, cos_ang))))
 
+                # Feature embedding check if available
+                if base_obs.feature_embedding is not None and cand.feature_embedding is not None:
+                    norm_b = np.linalg.norm(base_obs.feature_embedding)
+                    norm_c = np.linalg.norm(cand.feature_embedding)
+                    if norm_b > 1e-12 and norm_c > 1e-12:
+                        sim = float(np.dot(base_obs.feature_embedding, cand.feature_embedding) / (norm_b * norm_c))
+                        if sim < self.min_appearance_sim:
+                            continue
+
                 if dist <= dist_thresh and ang_deg <= self.normal_angle_thresh_deg:
                     current_group.append(cand)
+                    group_cameras.add(cand.camera_id)
                     visited.add(j)
 
             # Build new persistent entity cluster

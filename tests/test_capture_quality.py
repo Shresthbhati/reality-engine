@@ -192,3 +192,35 @@ def test_a_fused_room_says_how_many_photos_it_used_and_which_could_not_be_regist
                         layout_shell={"chosen": "a.jpg", "photos_used": 4, "refused": {"b.jpg": "no consistent feature matches"}})
     assert q["state"] == "partial" and q["registered"] == 4
     assert "4 of 10" in q["message"] and "b.jpg" in q["message"]
+
+
+def test_unregistered_photos_are_named_with_a_cause_only_when_one_was_measured():
+    from reconstruction.scene_identity import capture_quality
+
+    q = capture_quality(4, ["a", "b"], 900, input_ids=["a", "b", "c", "d"], reasons_by_id={"d": "disconnected: shares no verified matches"})
+    assert q["unregistered"] == [
+        {"evidence_id": "c", "reason": "not registered; no per-photo cause was reported"},
+        {"evidence_id": "d", "reason": "disconnected: shares no verified matches"}]
+    assert "unregistered" not in capture_quality(4, ["a", "b"], 900)           # callers that pass no ids are unchanged
+
+
+def test_contribution_report_gives_a_measured_cause_only_for_photos_that_will_not_join():
+    from evidence.contribution import ContributionReport, ImageContribution
+
+    rep = ContributionReport(True, "ok", [
+        ImageContribution("a", "first"), ImageContribution("b", "new_view", "a", 80),
+        ImageContribution("c", "disconnected", "a", 3, status="INSUFFICIENT_MATCHES"),
+        ImageContribution("d", "redundant", "b", 400)])
+    r = rep.reasons_by_id()
+    assert set(r) == {"c", "d"}
+    assert "only 3 verified feature matches with a" in r["c"] and "INSUFFICIENT_MATCHES" in r["c"]
+    assert "nearly the same view as b" in r["d"]
+
+
+def test_capture_quality_carries_that_cause_into_the_unregistered_list():
+    from evidence.contribution import ContributionReport, ImageContribution
+    from reconstruction.scene_identity import capture_quality
+
+    rep = ContributionReport(True, "ok", [ImageContribution("c", "disconnected", "a", 3, status="INSUFFICIENT_MATCHES")])
+    q = capture_quality(3, ["a", "b"], 900, input_ids=["a", "b", "c"], reasons_by_id=rep.reasons_by_id())
+    assert q["unregistered"][0]["evidence_id"] == "c" and q["unregistered"][0]["reason"].startswith("disconnected")

@@ -398,7 +398,8 @@ def _workspace_path_failure(attempts: Optional[Sequence[dict]]) -> Optional[Tupl
 
 def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, *,
                     n_duplicates_dropped: int = 0, structure: Optional[Dict[str, int]] = None,
-                    attempts: Optional[Sequence[dict]] = None, layout_shell: Optional[dict] = None) -> dict:
+                    attempts: Optional[Sequence[dict]] = None, layout_shell: Optional[dict] = None,
+                    input_ids: Optional[Sequence[str]] = None, reasons_by_id: Optional[Dict[str, str]] = None) -> dict:
     """Plain-language verdict on whether the photos could be placed in one shared 3D space.
 
     Pairwise 2D matching cannot tell a consistent set from an inconsistent one (measured: an inconsistent set
@@ -409,6 +410,13 @@ def capture_quality(n_input: int, registered_ids: Sequence[str], n_points: int, 
     state = {ReconOutcome.SUCCESS: "sufficient", ReconOutcome.PARTIAL: "partial"}.get(d.outcome, "insufficient")
     out = {"state": state, "n_input": n_input, "registered": d.registered_images, "points": n_points,
            "duplicates_dropped": n_duplicates_dropped, "reasons": list(d.reasons), "advice": []}
+    if input_ids is not None:
+        # RE-GEO-000002: name the photos left out. A cause is stated only when the caller measured one
+        # (e.g. contribution analysis: "disconnected"); otherwise the record says no per-photo cause was reported.
+        placed = set(registered_ids)
+        out["unregistered"] = [
+            {"evidence_id": i, "reason": (reasons_by_id or {}).get(i, "not registered; no per-photo cause was reported")}
+            for i in input_ids if i not in placed]
     if layout_shell and state != "sufficient":
         # multi-view could not carry the room, but one photograph's learned layout did: that is a partial model built from
         # ONE photo (the others are not fused into it yet), not "the photos could not be placed in 3D"

@@ -315,6 +315,27 @@ def _check_epipolar(
     return None
 
 
+#: below this many existing entities a plain scan is as fast and there is nothing to prune (RE-PERF-000011)
+KD_MIN_ENTITIES = 16
+
+
+def _near_entities(existing: Sequence[EntityTrack]):
+    """``near(o) -> sorted entity indices`` that could pass ``_candidate``'s distance gate for observation ``o``.
+
+    The gate is d^2 / (so^2 + se^2) <= GATE_CHI2_3DOF_99, so every passing entity lies within sqrt(GATE * (so^2 + se_max^2)) of
+    ``o``: a KD-tree ball query returns a superset, and the unchanged ``_candidate`` decides. Same candidates in the same
+    order as scanning all of them, in O(log E + k) instead of O(E)."""
+    n = len(existing)
+    if n == 0 or n < KD_MIN_ENTITIES:
+        return lambda o: range(n)
+    from scipy.spatial import cKDTree
+
+    tree = cKDTree(np.array([e.position for e in existing], dtype=float))
+    se2_max = max(e.sigma_m ** 2 for e in existing)
+    return lambda o: sorted(tree.query_ball_point(np.asarray(o.world_pos, dtype=float),
+                                                  math.sqrt(GATE_CHI2_3DOF_99 * (o.sigma_m ** 2 + se2_max)) * (1.0 + 1e-9)))
+
+
 def associate(
     observations: Sequence[Observation],
     appearance: Optional[Dict[str, Sequence[float]]] = None,
@@ -350,10 +371,12 @@ def associate(
         cands: List[List[Tuple[int, float, float, float, Optional[float], Optional[bool]]]] = []
         app_sims_per_row: List[Dict[int, float]] = []
 
+        near = _near_entities(existing)
         for o in obs:
             row = []
             sim_dict: Dict[int, float] = {}
-            for j, e in enumerate(existing):
+            for j in near(o):
+                e = existing[j]
                 sim = _compute_appearance_sim(o, e, appearance)
                 if sim is not None:
                     sim_dict[j] = sim

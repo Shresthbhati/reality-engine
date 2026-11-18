@@ -23,6 +23,7 @@ import {
   downloadTakeoffCsv,
   downloadTakeoffPdf,
 } from "@/lib/api/takeoff";
+import PreliminaryBadge from "@/components/ui/PreliminaryBadge";
 
 export interface TakeoffScheduleModalProps {
   worldId: string;
@@ -154,6 +155,7 @@ export function TakeoffScheduleModal({
             <div>
               <h2 className="text-base font-bold text-fg tracking-tight">
                 Bill of Quantities & Material Takeoff
+                <PreliminaryBadge />
               </h2>
               <p className="text-xs text-muted-fg">
                 Conforming to CSI MasterFormat 2020 · Net surface deductions & waste analysis

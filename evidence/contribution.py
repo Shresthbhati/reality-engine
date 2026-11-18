@@ -67,6 +67,21 @@ class ContributionReport:
     largest_component: Optional[int] = None
     pair_matches: Dict[str, int] = field(default_factory=dict)  # "a|b" -> verified matches
 
+    def reasons_by_id(self) -> Dict[str, str]:
+        """Plain-language cause per photo, for photos whose measurement says why they would not join the model
+        (``disconnected``, ``redundant``, ``unknown``). Photos that look fine get no entry: a missing cause stays missing."""
+        out: Dict[str, str] = {}
+        for c in self.per_image:
+            if c.label == "disconnected":
+                with_whom = f" with {c.best_partner}" if c.best_partner else ""
+                out[c.evidence_id] = (f"disconnected: only {c.verified_matches} verified feature matches{with_whom} "
+                                      f"({c.status or 'no status'}): it shares too little visible content with the other photos")
+            elif c.label == "redundant":
+                out[c.evidence_id] = f"redundant: nearly the same view as {c.best_partner or 'another photo'}"
+            elif c.label == "unknown":
+                out[c.evidence_id] = f"not measurable ({c.status or 'no status'}): its content could not be compared"
+        return out
+
     def summary(self) -> dict:
         new = [c for c in self.per_image if c.is_new]
         return {

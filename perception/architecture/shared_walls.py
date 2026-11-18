@@ -37,6 +37,8 @@ MAX_PARTITION_SEPARATION_M = 0.45
 MIN_LONGITUDINAL_OVERLAP_M = 0.40
 #: Parallel direction dot product threshold (|dot| >= 0.95)
 PARALLEL_DOT_THRESHOLD = 0.95
+#: Below this the two rooms' inner faces are indistinguishable from noise: no thickness is measured, the default stays.
+MIN_MEASURED_THICKNESS_M = 0.03
 
 
 @dataclass(frozen=True)
@@ -239,7 +241,15 @@ def deduplicate_shared_walls(
             separation, overlap_len, (shared_start, shared_end) = match
 
             # Calculate consolidated partition properties
-            consolidated_thickness = separation + 0.5 * (w1["thickness"] + w2["thickness"])
+            # Each room's wall line is the face its cameras saw and its slab extends outward, so the gap between
+            # the two faces IS the partition thickness (both faces observed). Adding the default slab thicknesses
+            # on top, as this once did, double-counted. Faces that coincide measure nothing: keep the default.
+            if separation >= MIN_MEASURED_THICKNESS_M:
+                consolidated_thickness, thickness_basis = separation, "measured_both_faces"
+            else:
+                consolidated_thickness, thickness_basis = max(w1["thickness"], w2["thickness"]), "default_unmeasured"
+            thickness_prov = Provenance.RECONSTRUCTED if thickness_basis == "measured_both_faces" else Provenance.INFERRED
+            thickness_conf = 0.95 if thickness_basis == "measured_both_faces" else 0.3
             consolidated_height = max(w1["height"], w2["height"])
 
             # Merge openings
@@ -269,6 +279,7 @@ def deduplicate_shared_walls(
                 "up": list(w1["up"]),
                 "height_m": consolidated_height,
                 "thickness_m": consolidated_thickness,
+                "thickness_basis": thickness_basis,
                 "openings": merged_openings,
             }
 
@@ -284,8 +295,9 @@ def deduplicate_shared_walls(
                     "value": consolidated_thickness,
                     "unit": "m",
                     "precision": 0.01,
-                    "provenance": Provenance.RECONSTRUCTED.value,
-                    "confidence": 0.95,
+                    "provenance": thickness_prov.value,
+                    "confidence": thickness_conf,
+                    "basis": thickness_basis,
                 },
                 "height_m": {
                     "value": consolidated_height,
@@ -318,6 +330,8 @@ def deduplicate_shared_walls(
                 ],
                 custom_properties={
                     "is_shared_partition": True,
+                    "thickness_m": consolidated_thickness,
+                    "thickness_basis": thickness_basis,
                     "bounded_room_ids": [w1["room_id"], w2["room_id"]],
                     "wall_slab": slab_data,
                     "measurements": measurements_dict,

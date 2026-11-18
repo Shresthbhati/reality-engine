@@ -1,7 +1,7 @@
 """B05: attributes are asserted only with a clear margin; ties stay unknown; correlated views are capped."""
 import numpy as np
 
-from perception.detection.attributes import classify_attribute, classify_attribute_from_crop, combine_views
+from perception.detection.attributes import classify_attribute, classify_attribute_from_crop, combine_views, merge_ocr
 
 VALUES = ["key", "numpad", "padlock"]
 
@@ -41,3 +41,35 @@ def test_crop_is_padded_and_every_value_gets_a_phrase_call():
     def det(crop, phrase): seen.append((crop.shape, phrase)); return 0.9 if phrase == "p2" else 0.1
     r = classify_attribute_from_crop(img, (40, 40, 60, 60), VALUES, {"key": "p1", "numpad": "p2", "padlock": "p3"}, det, 0.35)
     assert r["value"] == "numpad" and len(seen) == 3 and seen[0][0][:2] == (26, 26)
+
+
+def _vis(value):
+    return {"value": value, "p": 0.9, "basis": "visual", "obs": ["o1"], "candidates": {"key": 0.1, "numpad": 0.9}}
+
+
+def test_ocr_agreeing_with_vision_strengthens_the_basis():
+    r = merge_ocr(_vis("numpad"), {"value": "numpad", "text": "NUMPAD"})
+    assert r["value"] == "numpad" and r["basis"] == "visual+ocr"
+
+
+def test_ocr_fills_in_when_vision_is_unsure_and_has_no_confidence():
+    r = merge_ocr(_vis(None), {"value": "key", "p": None, "text": "KEY LOCK"})
+    assert r["value"] == "key" and r["basis"] == "ocr" and r["candidates"]      # visual candidates kept
+
+
+def test_ocr_contradicting_vision_is_a_recorded_conflict_not_a_guess():
+    r = merge_ocr(_vis("numpad"), {"value": "key", "text": "KEY"})
+    assert r["value"] is None and r["basis"] == "conflict" and r["conflict"] == {"visual": "numpad", "ocr": "key"}
+
+
+def test_no_usable_text_leaves_vision_unchanged():
+    v = _vis("numpad")
+    assert merge_ocr(v, None) is v and merge_ocr(v, {"value": None, "text": "EXIT"}) is v
+
+
+def test_crop_with_ocr_reader_merges_the_text():
+    img = np.zeros((100, 100, 3), np.uint8)
+    det = lambda crop, phrase: 0.5                                          # vision sees nothing decisive
+    r = classify_attribute_from_crop(img, (40, 40, 60, 60), VALUES, {"key": "p1", "numpad": "p2", "padlock": "p3"}, det, 0.35,
+                                     ocr_reader=lambda crop: "num pad entry", synonyms={"numpad": ["num pad"]})
+    assert r["value"] == "numpad" and r["basis"] == "ocr"

@@ -21,8 +21,37 @@ from engine.pipeline.stages.base import StageContext, StageResult, StageSpec
 from engine.pipeline.stages.facts import facts_status
 
 
+def _attribute_pass(table, evidence_items) -> dict:
+    """Opt-in B05 pass (``perception_attributes``): fills ``table.attrs_json``. Any failure is returned as a fact, never raised
+    into the stage and never reported as 'no attributes found'. OCR joins when Florence-2 is cached, else it is noted as off."""
+    try:
+        import numpy as np
+
+        from engine.core.image_io import open_oriented
+        from engine.pipeline.open_vocab_furniture import item_path
+        from perception.detection.attribute_pass import grounded_scorer, run_attribute_pass
+
+        paths = {getattr(i, "id", None) or i.evidence_id: item_path(i) for i in evidence_items}
+        ocr_reader, ocr_state = None, "unavailable"
+        try:
+            from perception.detection.florence2_detector import Florence2Detector
+            from perception.detection.ocr import read_text
+
+            det = Florence2Detector()
+            det._load()
+            ocr_reader, ocr_state = (lambda crop: read_text(crop, detector=det)), "on"
+        except Exception:  # noqa: BLE001 -- OCR is optional evidence; the visual pass still runs
+            pass
+        stats = run_attribute_pass(table, lambda iid: np.asarray(open_oriented(paths[iid]).convert("RGB")), grounded_scorer(),
+                                   ocr_reader=ocr_reader)
+        n_entities = len(stats.pop("entity_attributes"))
+        return {**stats, "entities_with_attributes": n_entities, "ocr": ocr_state}
+    except Exception as exc:  # noqa: BLE001
+        return {"state": "failed", "reason": repr(exc)}
+
+
 class Perception:
-    spec = StageSpec(name="perception", version="1", resource_class="gpu", required=False)
+    spec =StageSpec(name="perception", version="1", resource_class="gpu", required=False)
 
     def run(self, ctx: StageContext) -> StageResult:
         from engine.pipeline.vertical_slice import run_perception
@@ -42,6 +71,8 @@ class Perception:
         table = getattr(outcome, "table", None)
         if table is None and hasattr(outcome, "observations") and outcome.observations:
             table = ObservationTable.from_observations(outcome.observations)
+        if table is not None and getattr(ctx.state["vertical_slice_options"], "perception_attributes", False):
+            outcome.facts["attributes"] = _attribute_pass(table, pose.evidence_items)
         if table is not None:
             import tempfile
             from pathlib import Path

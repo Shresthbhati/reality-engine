@@ -139,6 +139,21 @@ def verify_checkpoint(path: Path, expected_sha256: str) -> bool:
     return h.hexdigest() == expected_sha256.lower()
 
 
+class CheckpointMismatch(RuntimeError):
+    """A checkpoint's bytes do not match the sha256 declared for it in the registry."""
+
+
+def require_verified(path: Path) -> None:
+    """Call before loading weights from `path`. Raises `CheckpointMismatch` when a registry entry
+    for this exact file declares a sha256 that the bytes do not match. Files with no declared
+    hash pass (nothing to compare to); the registry report shows which those are."""
+    p = Path(path)
+    for spec in _REGISTRY.values():
+        if spec.sha256 and spec.checkpoint is not None and Path(spec.checkpoint) == p:
+            if not verify_checkpoint(p, spec.sha256):
+                raise CheckpointMismatch(f"{p} does not match declared sha256 for {spec.name}")
+
+
 # Default declared models across perception, depth, and matching
 _DEFAULT_MODELS = [
     ModelSpec(

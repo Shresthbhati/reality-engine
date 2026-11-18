@@ -102,6 +102,8 @@ jobs:
             tests/test_mep_topology.py \
             tests/test_refine_world_api.py \
             tests/test_backup_restore.py \
+            tests/test_backup_durability.py \
+            tests/test_backup_lifecycle.py \
             tests/test_activity_ownership.py \
             tests/test_token_hardening.py \
             tests/test_tenant_adversarial.py \

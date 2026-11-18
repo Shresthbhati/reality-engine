@@ -198,18 +198,39 @@ def behind_reflective_surface(c, mirror, interior) -> bool:
     return bool(np.all(off <= half_lat + behind))
 
 
-def filter_implausible(candidates, box, n_views: int, min_confidence: float = MIN_SINGLE_VIEW_CONFIDENCE, detail=None):
+#: a lifted object longer than this many times its class's largest typical dimension is a depth blow-up, not that object
+#: (generous: per-view depth scale drift scatters positions by up to ~2.5 m, so this only catches the gross cases)
+SIZE_OVER_FACTOR = 2.5
+
+
+def _too_big_for_class(c, ontology) -> bool:
+    """True when the candidate's longest side is more than SIZE_OVER_FACTOR x the largest typical dimension of its class
+    (RE-PERC-000024). Classes with no declared typical dimensions are never rejected on size."""
+    dims = getattr(ontology.resolve_or_unknown(str(c.label)), "typical_dims_m", None)
+    if not dims:
+        return False
+    biggest_typical = max(hi for _, hi in dims.values())
+    side = max(c.bounds_max.x - c.bounds_min.x, c.bounds_max.y - c.bounds_min.y, c.bounds_max.z - c.bounds_min.z)
+    return bool(side > SIZE_OVER_FACTOR * biggest_typical)
+
+
+def filter_implausible(candidates, box, n_views: int, min_confidence: float = MIN_SINGLE_VIEW_CONFIDENCE, detail=None,
+                       ontology=None):
     """Drop candidates that cannot be real objects of this scene; returns (kept, {reason: count}). When ``detail`` is a list, each
     dropped candidate is appended to it as ``{label, reason, views, confidence, position_m}`` so a human can see WHAT was dropped.
 
     Reasons, in order: ``outside_scene`` (centre beyond the sparse points' box grown by SCENE_MARGIN), ``scene_sized``
-    (longest side > MAX_SIDE_SHARE of the scene's longest axis extent), ``behind_reflective_surface`` (lifted behind a flat
+    (longest side > MAX_SIDE_SHARE of the scene's longest axis extent), ``implausible_size`` (longest side > SIZE_OVER_FACTOR x
+    the class's largest typical dimension in the ontology), ``behind_reflective_surface`` (lifted behind a flat
     mirror/glass candidate: a reflection, not an object), ``single_view`` (one photograph, though the capture has
     >= MANY_VIEWS), ``weak_single_view`` (one photograph in a small capture and confidence < ``min_confidence``)."""
     from collections import Counter
 
     dropped: Counter = Counter()
     kept = []
+    if ontology is None:
+        from perception.ontology import get_default_ontology
+        ontology = get_default_ontology()
 
     def drop(c, reason: str) -> None:
         dropped[reason] += 1
@@ -235,6 +256,9 @@ def filter_implausible(candidates, box, n_views: int, min_confidence: float = MI
                 continue
             if side > MAX_SIDE_SHARE * longest:
                 drop(c, "scene_sized")
+                continue
+            if _too_big_for_class(c, ontology):
+                drop(c, "implausible_size")
                 continue
             if any(m is not c and behind_reflective_surface(c, m, interior) for m in mirrors):
                 drop(c, "behind_reflective_surface")

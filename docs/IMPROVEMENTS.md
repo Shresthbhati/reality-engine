@@ -47,7 +47,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERC-000021 | VN | Occlusion state not recorded → visibility per observation from mask vs box area and depth order | [M] | B06 |
 | RE-PERC-000022 | VN | Instance counts unreliable → count = entities after B08, never detections | [M] | B08 |
 | RE-PERC-000023 | DN | Part outside its parent accepted → rejected by parent box containment | [V] tests/test_hierarchical_detection.py | done |
-| RE-PERC-000024 | VN | Sizes not checked against class → `typical_dims_m` plausibility after lifting | [V] field exists | B04 |
+| RE-PERC-000024 | DN | Sizes not checked against class → `filter_implausible` drops a lifted object whose longest side exceeds 2.5× its class's largest `typical_dims_m` (`implausible_size`); classes without declared dims are never rejected on size. Only the too-big side: partial lifts make too-small unreliable. Factor not tuned on real data | [V] tests/test_reflective_surface_filter.py | done (too-big only) |
 | RE-PERC-000025 | VN | Same detector call repeated per crop per attribute → batch attribute phrases 2 per pass | [M] measured batch setting | B05 |
 | RE-GEO-000001 | OF | Same photos give 995 vs 1,423 sparse points → deterministic SfM | [M] | B12 |
 | RE-GEO-000002 | DN | 9 of 10 photos register → `capture_quality.unregistered` lists each left-out photo's evidence id with a cause only when one was measured, else "no per-photo cause was reported". Not yet fed a measured cause (contribution analysis "disconnected" is the candidate source) | [V] tests/test_capture_quality.py | done (names the photos; cause open) |
@@ -84,7 +84,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERF-000008 | DN | Masks as images → RLE byte-packed MaskStore | [V] tests/test_mask_store.py | done |
 | RE-PERF-000009 | VN | Embeddings as Python lists → float16 memory-mapped matrix | [H] | B07 |
 | RE-PERF-000010 | VN | Depth maps float32 in RAM → float16 memory-mapped | [H] | B01 |
-| RE-PERF-000011 | VN | Identity candidates N² → KD-tree pairs within 3σ | [H] | B08 |
+| RE-PERF-000011 | DN | Identity candidates N² → `associate` scans only entities in a KD-tree ball of radius √(χ²·(σo²+σe_max²)) (a proven superset of the distance gate; the unchanged `_candidate` still decides); tree used from 16 entities up. Speed-up not measured | [V] tests/test_association_kdtree.py: identical results with and without the tree on 3 random scenes; superset check | done |
 | RE-PERF-000012 | VN | Unchanged stages rerun → skip on matching inputs hash | [V] | B01 |
 | RE-PERF-000013 | VN | New photo rebuilds everything → only stages whose inputs changed | [H] | B01 |
 | RE-PERF-000014 | DN | Video duplicates processed → counted and dropped (keeps 6 of 18) | [V] test_progressive_product_journey.py::test_H_video | done |

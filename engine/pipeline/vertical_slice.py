@@ -1217,8 +1217,8 @@ def _region_appearance(kind, evidence_items, seg_results, hypotheses):
     facts = {"requested": kind, "embedded": 0, "skipped": 0, "fallback_reason": None}
     if kind is None:
         return {}, facts
-    if kind != "dinov2":
-        raise VerticalSliceError(f"unknown perception_appearance {kind!r}: expected 'dinov2' or None")
+    if kind not in ("dinov2", "dinov2_pooled"):
+        raise VerticalSliceError(f"unknown perception_appearance {kind!r}: expected 'dinov2', 'dinov2_pooled' or None")
     try:
         import cv2
         import numpy as np
@@ -1229,7 +1229,11 @@ def _region_appearance(kind, evidence_items, seg_results, hypotheses):
 
         wanted = {(h.evidence_id, h.region_id) for h in hypotheses}
         items = {(getattr(i, "id", None) or i.evidence_id): i for i in evidence_items}
+        from world_ir.embedding_store import EmbeddingStore
+
         embedder, vectors, embedded, skipped = Dinov2Embedder(), {}, 0, 0
+        store = EmbeddingStore()          # float16 unit vectors in one matrix; association reads float32 views of its rows
+        embed = embedder.embed_pooled if kind == "dinov2_pooled" else embedder.embed_masked_crops
         for seg in seg_results:
             regions = [r for r in seg.regions if (seg.evidence_id, r.region_id) in wanted]
             if not regions or seg.evidence_id not in items:
@@ -1238,14 +1242,14 @@ def _region_appearance(kind, evidence_items, seg_results, hypotheses):
             h, w = image.shape[:2]
             # region masks are at the depth grid's resolution; the crop needs them at the photo's
             masks = [cv2.resize(np.asarray(r.mask, dtype=np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool) for r in regions]
-            for region, vec in zip(regions, embedder.embed_masked_crops(image, masks)):
+            for region, vec in zip(regions, embed(image, masks)):
                 if vec is None:
                     skipped += 1
                 else:
-                    vectors[f"{seg.evidence_id}|{region.region_id}"] = vec.tolist()
+                    vectors[f"{seg.evidence_id}|{region.region_id}"] = store.get(store.add(vec))
                     embedded += 1
         embedder.unload()
-        facts.update(embedded=embedded, skipped=skipped)
+        facts.update(embedded=embedded, skipped=skipped, backend=kind, matrix_dtype="float16", matrix_bytes=int(store.matrix().nbytes))
         return vectors, facts
     except Exception as exc:  # noqa: BLE001 -- appearance is an enhancement; its failure must not lose the objects
         log.warning("appearance embedding failed (association stays geometry-only)", exc_info=True)

@@ -231,6 +231,7 @@ async def test_clash_and_bcf_api_endpoints():
     async with maker() as session:
         world_row = World(
             id=w.id,
+            team_id="default",  # the unauthenticated loopback client is tenant "default"; unowned worlds are hidden (404)
             name="Clash Test Facility",
             current_version_id=sv.version_id,
             status="active",

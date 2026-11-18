@@ -566,3 +566,67 @@ class TestInteriorCompilerPipeline:
         assert reloaded_v2.entities[corr_id].name == "Main North-South Gallery"
         assert reloaded_v1.entities[corr_id].name == "Uncorrected Corridor"
         assert reloaded_v2.entities[corr_id].custom_properties["corrected_by_user"] is True
+
+    def test_support_surfaces_tabletops_and_shelves_in_interior_pipeline(self, tmp_path: Path):
+        """Test B09 Support-Surface Intelligence: tabletops & shelves promoted as SUPPORT_SURFACE and linked to rooms."""
+        from provenance import Uncertainty
+        points = []
+        counter = [0]
+
+        def _p(x, y, z):
+            counter[0] += 1
+            return ReconstructedPoint((x, y, z), f"pt-{counter[0]:05d}", ["ev-1"], Uncertainty(1.0, "synthetic"))
+
+        # 3x3m Room with floor at y=0.0, ceiling at y=2.5, 4 walls
+        for xi in range(31):
+            for zi in range(31):
+                points.append(_p(xi * 0.1, 0.0, zi * 0.1))
+                points.append(_p(xi * 0.1, 2.5, zi * 0.1))
+        for yi in range(13):
+            for zi in range(31):
+                points.append(_p(0.0, yi * 0.2, zi * 0.1))
+                points.append(_p(3.0, yi * 0.2, zi * 0.1))
+            for xi in range(31):
+                points.append(_p(xi * 0.1, yi * 0.2, 0.0))
+                points.append(_p(xi * 0.1, yi * 0.2, 3.0))
+
+        # Table surface at y=0.75 (1x1m interior surface)
+        for xi in range(11):
+            for zi in range(11):
+                points.append(_p(1.0 + xi * 0.1, 0.75, 1.0 + zi * 0.1))
+
+        # Shelf surface at y=1.4 (1.2x0.6m interior surface)
+        for xi in range(13):
+            for zi in range(7):
+                points.append(_p(0.3 + xi * 0.1, 1.4, 0.3 + zi * 0.1))
+
+        cams = [
+            ReconstructedCameraPose("ev-0", (1.5, 1.8, 1.5), (1.0, 0.0, 0.0, 0.0)),
+            ReconstructedCameraPose("ev-1", (1.0, 1.8, 2.0), (1.0, 0.0, 0.0, 0.0)),
+        ]
+        res = ReconstructionResult(points=points, camera_poses=cams, registration_status="success")
+        options = CompileOptions(seed=42, up=UP)
+        world, diag = compile_reconstruction_to_world(res, options)
+
+        assert diag.planes_by_role["floor"] == 1
+        assert diag.planes_by_role["ceiling"] == 1
+        assert diag.planes_by_role["support_surface"] == 2
+
+        support_surfaces = [e for e in world.entities.values() if e.type == EntityType.SUPPORT_SURFACE]
+        assert len(support_surfaces) == 2
+
+        # Verify containment in room
+        rooms = [e for e in world.entities.values() if e.type == EntityType.ROOM]
+        assert len(rooms) == 1
+        room = rooms[0]
+        room_contains = {r.target_id for r in room.relationships if r.kind is RelationshipKind.CONTAINS}
+        for ss in support_surfaces:
+            assert ss.id in room_contains
+            part_of_ids = {r.target_id for r in ss.relationships if r.kind is RelationshipKind.PART_OF}
+            assert room.id in part_of_ids
+            assert ss.custom_properties.get("room_id") == room.id
+            assert ss.custom_properties.get("space_id") == room.id
+
+        from world_ir.validation import validate_world_ir
+        rep = validate_world_ir(world)
+        assert rep.is_valid(), rep.messages()

@@ -170,6 +170,8 @@ class VerticalSliceOptions:
     #: Reconstruction backend override (tests inject a deterministic
     #: backend; production leaves None for the real COLMAP backend).
     reconstruction_backend: Optional[object] = None
+    #: Backend type when reconstruction_backend is not explicitly passed ("colmap" | "python").
+    reconstruction_backend_type: str = "colmap"
     #: Persistent per-world COLMAP workspace (reconstruction.colmap_session.ColmapSession).
     #: When set, the real COLMAP backend registers new photographs into the previous sparse
     #: model with image_registrator instead of re-solving the whole scene. The CALLER owns
@@ -265,7 +267,7 @@ def _candidate_snapshot(result, evidence_items, options) -> dict:
         result, _uf = working_unit(unscaled(result).result, options.head_unit_k)
         result, _ = _canonicalize(result, options)
         result, _, _ = _refine_unit(result, _uf["unit_k"] if _uf else 1.0, _uf)
-        scaled = True
+        scaled = True  # type: ignore[assignment]
     if scaled is not True:
         result, _ = _canonicalize(result, options)
     world, _ = compile_reconstruction_to_world(
@@ -365,17 +367,22 @@ def run_pose(evidence_items, options, lap=lambda name: None, lap_validation=lamb
 
     if options.reconstruction_backend is not None:
         backend = options.reconstruction_backend
+    elif getattr(options, "reconstruction_backend_type", "colmap") == "python":
+        from reconstruction.backend.python_backend import PythonSfMReconstructionBackend
+
+        backend = PythonSfMReconstructionBackend()
     else:
         from reconstruction.backend.colmap_backend import ColmapReconstructionBackend
 
-        backend = ColmapReconstructionBackend(colmap_binary=options.colmap_binary,
-                                              session=options.colmap_session)
+        colmap_b = ColmapReconstructionBackend(colmap_binary=options.colmap_binary,
+                                               session=options.colmap_session)
         if options.colmap_session is not None and options.head_snapshot is not None:
             from engine.pipeline.candidate_selection import WorldArbiter
 
-            backend.candidate_arbiter = WorldArbiter(
+            colmap_b.candidate_arbiter = WorldArbiter(
                 options.head_snapshot, options.head_conflicts,
                 lambda res: _candidate_snapshot(res, evidence_items, options))
+        backend = colmap_b
     orchestrator = ReconstructionOrchestrator(backends=[backend])
     try:
         run = orchestrator.run(list(evidence_items))
@@ -760,6 +767,28 @@ def run_finalize(evidence_items, backend, run, result, sc: ScaleOutcome, fr: Fra
             result.points, result.camera_poses, [item.id for item in evidence_items])
     except Exception as exc:  # noqa: BLE001 -- recorded, never raised
         reconstruction_diagnostics = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # Active capture guidance: quantitative completeness & scale reliability
+    try:
+        from reconstruction.completeness import measure_reconstruction_completeness
+
+        comp_report = measure_reconstruction_completeness(result, len(evidence_items))
+        if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+            world.metadata["completeness"] = comp_report.to_dict()
+    except Exception as exc:  # noqa: BLE001 -- analysis pass
+        if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+            world.metadata["completeness"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # World quality report: aggregate confidence and completeness metrics
+    try:
+        from engine.quality.report import compute_quality_report
+
+        if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+            w_quality = compute_quality_report(world)  # type: ignore[arg-type]
+            world.metadata["world_quality_report"] = w_quality.to_dict()
+    except Exception as exc:  # noqa: BLE001 -- analysis pass
+        if hasattr(world, "metadata") and isinstance(world.metadata, dict):
+            world.metadata["world_quality_report"] = {"error": f"{type(exc).__name__}: {exc}"}
 
     # Autonomous Quality Audit & Correction Loop (engine.quality.AutonomousCorrectionLoop)
     if getattr(options, "autonomous_correction_enabled", False):

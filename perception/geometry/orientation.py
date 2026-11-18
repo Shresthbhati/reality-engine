@@ -312,12 +312,12 @@ def consolidate_horizontal_roles(
         cand_heights = []
         cand_areas = []
         cand_wall_bases = []
-        for idx in floor_indices:
-            h = height.get(idx, float(np.dot(out[idx].normal, u) * -out[idx].d))
+        for f_idx in floor_indices:
+            h = height.get(f_idx, float(np.dot(out[f_idx].normal, u) * -out[f_idx].d))
             cand_heights.append(h)
-            pts = [positions_by_id[t] for t in out[idx].plane.inlier_ids if t in positions_by_id]
-            if len(pts) >= 3:
-                pts_arr = np.asarray(pts, dtype=float)
+            cand_pts = [positions_by_id[t] for t in out[f_idx].plane.inlier_ids if t in positions_by_id]
+            if len(cand_pts) >= 3:
+                pts_arr = np.asarray(cand_pts, dtype=float)
                 hs_p = pts_arr @ u
                 lateral = pts_arr - np.outer(hs_p, u)
                 axes = _orthonormal_pair(u)
@@ -337,7 +337,14 @@ def consolidate_horizontal_roles(
         sorted_pairs = sorted(enumerate(cand_heights), key=lambda x: x[1])
         storeys: List[List[int]] = []
         for orig_pos, h in sorted_pairs:
-            if not storeys or h - cand_heights[storeys[-1][-1]] > 1.8:
+            prev_idx = storeys[-1][-1] if storeys else None
+            h_diff = (h - cand_heights[prev_idx]) if prev_idx is not None else 0.0
+            is_new_storey = (
+                not storeys
+                or h_diff >= 1.3
+                or (h_diff > 0.5 and cand_wall_bases[orig_pos] >= 2)
+            )
+            if is_new_storey:
                 storeys.append([orig_pos])
             else:
                 storeys.append(storeys.pop() + [orig_pos])

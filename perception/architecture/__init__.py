@@ -8,6 +8,11 @@ from perception.architecture.adapters import (
     classify_glazing_opening,
     evaluate_wall_continuity_under_occlusion,
 )
+from perception.architecture.multi_storey_validator import (
+    MultiStoreyValidationReport,
+    MultiStoreyValidator,
+    StoreyElevationCheck,
+)
 from perception.architecture.shared_walls import (
     SharedWallConsolidation,
     SharedWallDeduplicationReport,
@@ -27,8 +32,11 @@ from perception.architecture.topology import (
 
 __all__ = [
     "ContractAdaptationResult",
+    "MultiStoreyValidationReport",
+    "MultiStoreyValidator",
     "SharedWallConsolidation",
     "SharedWallDeduplicationReport",
+    "StoreyElevationCheck",
     "StructuralAnalysisReport",
     "StructuralBay",
     "StructuralRole",

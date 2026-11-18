@@ -31,8 +31,8 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERC-000005 | OF | SAM 2 backend exists, package and weights absent, 0/3 reachable → install, wire, RLE store | [M] | B06 |
 | RE-PERC-000006 | VN | 3D lifting uses boxes, includes background → lift from mask pixels | [M] | B06 |
 | RE-PERC-000007 | DN | DINOv2 re-id code not wired into association → embeddings passed to `associate(appearance=…)` | [V] tests/test_appearance_embeddings.py | done |
-| RE-PERC-000008 | DN | Identity joining order-dependent → global min-cost flow LP association | [V] tests/test_global_association.py | done |
-| RE-PERC-000009 | DN | Two detections in one photo can merge → same-image cannot-link constraints | [V] tests/test_global_association.py | done |
+| RE-PERC-000008 | OF | Identity joining order-dependent → `perception/instances/global_association.cluster_observations` (strongest evidence first, order-independent, tested) EXISTS but is NOT called from the live path (checked 2026-11-18: only tests import it); the live path still uses `associate` (per-image Hungarian over entities as they were before the image, sorted ids, so also order-independent: tests/test_association.py:146). Wiring means producing (row, row, llr) pairs from `_candidate` and replacing the join step; a behaviour change that needs real captures to judge | [V] tests/test_global_association.py (unit only) | open (not wired) |
+| RE-PERC-000009 | DN | Two detections in one photo can merge → same-image cannot-link constraints: enforced in `cluster_observations` (unit-tested; not live) and, in the live `associate`, by matching against entities as they were BEFORE the image so nothing in one photo can chain | [V] tests/test_global_association.py; tests/test_association.py | done (live via associate) |
 | RE-PERC-000010 | DN | No attributes → margin-gated attribute classifier with multi-view fusion | [V] tests/test_attribute_classification.py | done |
 | RE-PERC-000011 | DN | Attribute votes across views independent → capped correlated evidence at 3 views | [V] tests/test_attribute_classification.py | done |
 | RE-PERC-000012 | DN | Materials only for room surfaces → material attribute on every family | [V] tests/test_b03_unified_ontology.py, tests/test_attribute_classification.py | done |
@@ -121,7 +121,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-TEST-000009 | OF | Inventory scorer verified on synthetic data only | [M] | open |
 | RE-TEST-000010 | VN | No real-photo run in CI → nightly golden loop on a fixed photo set | [M] | B20 |
 | RE-TEST-000011 | VN | RLE and voxel packing are easy to get subtly wrong → round-trip property tests | [H] | B06, B11 |
-| RE-TEST-000012 | VN | Identity result may depend on input order → shuffle test | [H] | B08 |
+| RE-TEST-000012 | DN | Identity result may depend on input order → shuffle tests exist for both `associate` and `cluster_observations` | [V] tests/test_association.py:146, tests/test_global_association.py | done |
 | RE-DATA-000001 | OF | 15 test images unannotated | [M] | owner |
 | RE-DATA-000002 | OF | No measured rooms | [M] | owner |
 | RE-DATA-000003 | VN | No blind hold-out → rooms 5–6 never opened during development | [M] protocol | owner |

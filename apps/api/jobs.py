@@ -1144,7 +1144,7 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
                 len(items), prog.registered_ids, len(prog.points),
                 n_duplicates_dropped=sum(1 for s in skipped_evidence if "duplicate" in s.get("reason", "")),
                 structure=cand_snap["entity_types"], attempts=prog.attempts,
-                layout_shell=_layout_shell(prog)),
+                layout_shell=_layout_shell(prog), input_ids=[it.id for it in items]),
             "structure_points": _structure_points(world_ir),
             "level": prog.level,
             "level_name": prog.level_name,
@@ -1381,9 +1381,19 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
         for other in others.scalars().all():
             other.status = "complete"
             other.processing_completed_at = utcnow()
+    # RE-MLOPS-000001: what produced this result (commit, seeds, stage + artifact hashes, model checkpoint hashes). Hashing a
+    # first-seen checkpoint can take seconds, so it runs off the loop; a failure here is recorded, never allowed to sink the job.
+    try:
+        from engine.pipeline.stages.run_record import build_run_record
+        from engine.pipeline.vertical_slice import VerticalSliceOptions
+
+        run_record = await asyncio.to_thread(build_run_record, manifest, seeds={"pipeline": VerticalSliceOptions().seed})
+    except Exception as exc:  # noqa: BLE001
+        run_record = {"error": repr(exc)}
     job.payload = {
         "world_id": world.id,
         "version_id": version_row.id,
+        "run_record": run_record,
         "registration_status": prog.registration_status,
         "level": prog.level,
         "level_name": prog.level_name,

@@ -50,7 +50,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERC-000024 | VN | Sizes not checked against class → `typical_dims_m` plausibility after lifting | [V] field exists | B04 |
 | RE-PERC-000025 | VN | Same detector call repeated per crop per attribute → batch attribute phrases 2 per pass | [M] measured batch setting | B05 |
 | RE-GEO-000001 | OF | Same photos give 995 vs 1,423 sparse points → deterministic SfM | [M] | B12 |
-| RE-GEO-000002 | OF | 9 of 10 photos register → report the unregistered photo and why | [M] | B12 |
+| RE-GEO-000002 | DN | 9 of 10 photos register → `capture_quality.unregistered` lists each left-out photo's evidence id with a cause only when one was measured, else "no per-photo cause was reported". Not yet fed a measured cause (contribution analysis "disconnected" is the candidate source) | [V] tests/test_capture_quality.py | done (names the photos; cause open) |
 | RE-GEO-000003 | DN | Dense reconstruction silently ran sparse-only → explicit arguments win | [V] commit `04362f72` | done |
 | RE-GEO-000004 | DN | Furniture tops and steps classed as floor → support-plane separation rule | [V] tests/test_support_planes.py | done |
 | RE-GEO-000005 | DN | Room footprint ragged → direction snapping within 5°, honest polygonization | [V] tests/test_footprint_cleanup.py | done |
@@ -142,7 +142,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GIS-000001 | RO | Worlds have no geographic frame by default → site anchor and CRS on import | [A] | later |
 | RE-GIS-000002 | RO | Whole world loads into the viewer → tile streaming | [A] | later |
 | RE-GIS-000003 | RO | No aerial capture path → drone ingestion with GNSS | [A] | later |
-| RE-MLOPS-000001 | VN | Runs not reproducible from records → store seed, commit, model hashes, artifact hashes per job | [H] | B01 |
+| RE-MLOPS-000001 | DN | Runs not reproducible from records → `job.payload["run_record"]`: code commit, python/platform, pipeline seed, per-stage status/inputs hash/output hashes, lineage, sha256 of every active model checkpoint on disk ("available", not "used": the registry does not yet say which model each stage loaded). Colmap seed/version not in the record yet | [V] tests/test_run_record.py; golden path + job queue tests pass | done (partial) |
 | RE-MLOPS-000002 | VN | Technology catalogue (50 entries) omits models in use → reconcile with `model_registry.py` | [V] reconciled 61 entries in open_source_registry.json & model_registry.py | done |
 | RE-MLOPS-000003 | RO | No trained specialists → blocked on reviewed labels | [M] | later |
 | RE-AGENT-000001 | OF | A subagent stalled for 600 s without reporting → main session checks the diff itself, never assumes | [V] this session | process |

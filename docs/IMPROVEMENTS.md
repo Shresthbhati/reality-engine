@@ -23,7 +23,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-ARCH-000011 | OF | `UniversalSpatialPipeline` unwired second pipeline → fold or delete | [V] deleted in P113 (3ceb60b5dd) | done |
 | RE-ARCH-000012 | DN | Unknown objects have no home → every ontology family gets an `unknown` child, kept not dropped | [V] tests/test_b03_unified_ontology.py | done |
 | RE-ARCH-000013 | DN | Containment has two sources → unified via `world_ir/relations.py` and `/api/worlds/{id}/find` | [V] tests/test_relations.py, tests/test_query_find.py | done |
-| RE-ARCH-000014 | VN | Artifact lineage not queryable → DAG of artifact → producing stage, invalidate by reverse BFS | [H] | B01 |
+| RE-ARCH-000014 | DN | Artifact lineage not queryable → `LineageGraph` (artifact → producer, `invalidated_by` BFS), recorded by `run_stages`; stages without declared `inputs` are assumed to read all earlier artifacts | [V] tests/test_stage_lineage.py | done |
 | RE-PERC-000001 | DN | 19 flat prompts for everything → hierarchical whole → part detection | [V] tests/test_hierarchical_detection.py | done |
 | RE-PERC-000002 | DN | Tiled small-object pass mislabels (railing as wiring, texture as drain) → parent-box and size checks | [V] tests/test_entity_perception.py | done |
 | RE-PERC-000003 | DN | 678 unreviewed small-object drafts, no ground truth → review queue before any use | [V] tests/test_annotation_review.py | done |
@@ -39,9 +39,9 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERC-000013 | OF | Switchboard decomposition unreachable → becomes ontology components of `switchboard` | [M] | B03, B04 |
 | RE-PERC-000014 | OF | Fine-grained pipeline only on SDK path → retired in favour of B04 | [M] | B04 |
 | RE-PERC-000015 | OF | Tracking modules 0/3 reachable → used for video only, after photo identity works | [M] | later |
-| RE-PERC-000016 | VN | No text reading (nameplates, labels) → OCR as attribute basis | [H] | later |
+| RE-PERC-000016 | DN | No text reading (nameplates, labels) → `perception/detection/ocr.py`: Florence-2 `<OCR>` on a crop (`read_text`) and `match_attribute` onto an attribute's allowed values with basis `ocr`, `p=None` (the task has no confidence), ambiguity stays unknown. `attributes.merge_ocr` combines text with the visual decision (agree → `visual+ocr`; text fills an unknown → `ocr`; contradiction → unknown + recorded conflict) and `classify_attribute_from_crop` takes an optional `ocr_reader`. Live path: opt-in `perception_attributes` (default off) runs `attribute_pass.run_attribute_pass` over the observation table in the perception stage (budgeted Grounding DINO calls per allowed value, OCR when Florence-2 is cached, failures recorded as a fact). Detector phrases are auto-generated ("<value> <label>"); never run on real photos | [V] tests/test_ocr_attributes.py incl. a real model read of rendered text; tests/test_attribute_classification.py; tests/test_attribute_pass.py (fake detector) | done (opt-in; unmeasured) |
 | RE-PERC-000017 | OF | Closed windows found by gaps only → visual evidence path | [A] | later |
-| RE-PERC-000018 | VN | Mirrors and glass create phantom objects → reflective-surface flag suppresses lifting behind planes | [H] | later |
+| RE-PERC-000018 | DN | Mirrors and glass create phantom objects → a flat mirror/glass candidate defines a plane; objects lifted behind it (45° cone, 15 cm margin) are dropped as `behind_reflective_surface`. Axis-aligned panes only; unmeasured on real photos | [V] tests/test_reflective_surface_filter.py (synthetic) | done (synthetic) |
 | RE-PERC-000019 | VN | Detector scores used as confidence → calibrate once annotations exist | [M] no annotations | open |
 | RE-PERC-000020 | DN | Blurry regions still produce detections → per-region sharpness gates low-score detections | [V] tests/test_hierarchical_detection.py | done |
 | RE-PERC-000021 | VN | Occlusion state not recorded → visibility per observation from mask vs box area and depth order | [M] | B06 |
@@ -66,15 +66,15 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-GEO-000015 | OF | `reconstruction/mvs/dense_cloud.py` unreachable → wire or delete | [V] reconstruction/dense_pipeline.py, tests/test_unreachable_sfm_mvs_wiring.py | done |
 | RE-GEO-000016 | VN | SfM fails on blank walls → feed-forward backend as second candidate | [M] | later |
 | RE-GEO-000017 | VN | No device poses → ARKit/ARCore priors | [A] | later |
-| RE-GEO-000018 | VN | Wall thickness is a default → measured from both faces when both seen, else `INFERRED` | [A] | later |
+| RE-GEO-000018 | DN | Wall thickness is a default → shared partitions now take the measured gap between both rooms' inner faces (`thickness_basis=measured_both_faces`; faces < 3 cm apart keep the labelled default). Fixed a double-count that added the default on top. Exterior walls and walls seen from one side stay `default_unmeasured` | [V] tests/test_shared_walls.py | done (shared partitions only) |
 | RE-GEO-000019 | DN | Mesh quality unknown → watertight / manifold / components verdict | [V] tests/test_quality_report_stage.py | done |
 | RE-GEO-000020 | VN | Openings cut by ad hoc geometry → robust booleans | [H] | later |
 | RE-GEO-000021 | RO | Domes, arches, vaults unrepresentable → surface-of-revolution and arch primitives | [H] | later |
 | RE-GEO-000022 | VN | Steps are not parts of stairs → stair ontology with step/riser components | [V] config/ontology.yaml, tests/test_support_planes.py | done |
 | RE-GEO-000023 | VN | Second storey can be read as a table → storey = floor with its own walls | [V] perception/geometry/orientation.py, tests/test_support_planes.py | done |
-| RE-GEO-000024 | RO | Scale from known objects (door heights) → scale hypothesis marked `INFERRED` | [H] | later |
+| RE-GEO-000024 | DN | Scale from known objects (door heights) → `suggest_scale_from_world` already reads measured door heights, refuses on disagreement or an already-metric world, applies nothing, and is `ESTIMATED` if accepted | [V] reconstruction/scale/base.py:454 | done |
 | RE-GEO-000025 | VN | Collinear wall fragments (25 → 8 by consolidation) → merge by sweep along direction | [M] | B10 |
-| RE-PERF-000001 | MP | 10-photo run ~13 min, not re-timed after detector speed-up → time it, record per stage | [M] | B20 |
+| RE-PERF-000001 | MP | 10-photo run ~13 min, not re-timed after detector speed-up → time it, record per stage | [V] 2026-11-18: first 10 South Building photos through the API job path took 288 s wall (upload 11 s); partial, 4/10 registered, 697 points; reconstruction rung 205 s. Per-stage split and GPU use not recorded; not a room scene | B20 |
 | RE-PERF-000002 | DN | Grounding DINO 3.4 s → 0.2 s per prompt | [M] | done |
 | RE-PERF-000003 | DN | Models reload between stages → `ModelPool` LRU cache | [V] tests/test_model_pool.py | done |
 | RE-PERF-000004 | DN | Out-of-memory can kill job → admission check, CPU fallback or ResourceUnavailable | [V] tests/test_model_pool.py | done |
@@ -89,10 +89,10 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-PERF-000013 | VN | New photo rebuilds everything → only stages whose inputs changed | [H] | B01 |
 | RE-PERF-000014 | DN | Video duplicates processed → counted and dropped (keeps 6 of 18) | [V] test_progressive_product_journey.py::test_H_video | done |
 | RE-PERF-000015 | DN | `pytest -k "colmap or dense"` takes 57 min → marked slow across integration and backend suites; deselected with `-m 'not slow'` | [V] pyproject.toml, tests/ | done |
-| RE-PERF-000016 | VN | Nine specialist tools in the Studio bundle → lazy-load | [V at 199ca3bb] | later |
+| RE-PERF-000016 | DN | Specialist tools in the Studio bundle → `next/dynamic` (client-only) for clash, section drawing, takeoff, life safety, thermal, MEP and construction progress. Bundle size not measured | [V] `tsc --noEmit` 0, ESLint 0 errors | done |
 | RE-PERF-000017 | VN | Refinement can loop without gain → heap by gain/cost, stop on no change | [H] | B16 |
 | RE-PERF-000018 | VN | Detector calls unbounded per image → `budget_calls` | [H] | B04 |
-| RE-DB-000001 | VN | Stage lookup by (job, name, inputs hash) needs an index → confirm unique index exists | [M] | B01 |
+| RE-DB-000001 | DN | Stage lookup by (job, name, inputs hash) needs an index → confirmed: unique constraint on (job_id, name, inputs_hash, attempt), leading columns match the lookup | [V] apps/api/models.py:583, migration 0005 | done |
 | RE-DB-000002 | VN | Dev on SQLite, production on Postgres → run core tests on both | [V] `apps/api/db.py` | open |
 | RE-DB-000003 | VN | Job claim locking on Postgres unverified → two-claimer test | [V] apps/api/jobs.py, tests/test_durable_job_queue.py | done |
 | RE-DB-000004 | VN | Observations as DB rows would be millions → artifact files, DB holds the hash | [H] | B02 |
@@ -100,7 +100,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-DB-000006 | VN | WorldStore and DB can disagree after a crash → test crash between the two writes | [V] D01 tests cover this area | D01 |
 | RE-SEC-000001 | DN | Non-commercial model can run → licence gate called at job start | [V] apps/api/jobs.py, tests/test_model_licence_gate.py | done |
 | RE-SEC-000002 | VN | Metric-Indoor depth checkpoint has no declared licence → keep out of default path | [V] default REALITY_LAYOUT_MODELS=0; model_registry gated | done |
-| RE-SEC-000003 | VN | Checkpoint hashes not enforced on load → `verify_checkpoint` before every load | [V] function exists | B13 |
+| RE-SEC-000003 | DN | Checkpoint hashes not enforced on load → `require_verified` before the torch.load sites; mismatch raises | [V] tests/test_require_verified.py | done |
 | RE-SEC-000004 | DN | Weights loaded with pickle → `weights_only=True` or safetensors | [V] midAS_backend.py, dinov2_embeddings.py | done |
 | RE-SEC-000005 | DN | Test backend reachable in production path → refuse outside test env | [V] apps/api/jobs.py | done |
 | RE-SEC-000006 | DN | Tenant scoping per route unproven → verified via SEC-001..SEC-005 security test suite | [V] tests/test_audit_security_gates.py | done |
@@ -116,7 +116,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-TEST-000004 | DN | CI registry stale on main | [V] commit `f0df2663` | done |
 | RE-TEST-000005 | DN | Nightly job missing `trimesh`, `pytest-asyncio` | [V] | done, unverified on GitHub |
 | RE-TEST-000006 | VN | Local Python 3.14, CI 3.10–3.12 → run 3.11 locally before release | [V] | B20 |
-| RE-TEST-000007 | OF | Lint and type checks cannot fail CI | [V at 199ca3bb], recheck | open |
+| RE-TEST-000007 | OF | Lint and type checks cannot fail CI → they can: `scripts/ci_static_analysis_gate.py --fail-on-regression` runs in the `lint` job against `docs/static_analysis_baseline.json`. Rechecked 2026-11-18: gate fires locally, Ruff 4026 vs baseline 4024 (+2, not from this session's files) — find the 2 or reset the baseline deliberately | [V] ran the gate | open (+2 drift) |
 | RE-TEST-000008 | OF | 118 benchmark metrics, none measured | [M] | open |
 | RE-TEST-000009 | OF | Inventory scorer verified on synthetic data only | [M] | open |
 | RE-TEST-000010 | VN | No real-photo run in CI → nightly golden loop on a fixed photo set | [M] | B20 |
@@ -132,7 +132,7 @@ How this grows honestly: every ontology class × every benchmark metric becomes 
 | RE-UX-000003 | DN | Unknown shown as blank → "Unknown — not visible in any photo" | [V] InspectorAttributes.tsx | done |
 | RE-UX-000004 | DN | Closed container contents implied empty → "interior not observed", user may state contents | [V] tests/test_relations.py | done |
 | RE-UX-000005 | VN | 40 routes → 12 | [V at 199ca3bb] | later |
-| RE-UX-000006 | VN | Specialist tools read as certification → "Preliminary" badge | [A] | later |
+| RE-UX-000006 | DN | Specialist tools read as certification → `PreliminaryBadge` (tooltip: screening aid, not a certification) in the MEP, life-safety/ADA, takeoff, thermal, construction-progress and clash panels; clash toolbar label marked | [V] frontend `tsc --noEmit` exit 0; not seen in a browser | done |
 | RE-UX-000007 | PO | No "what to photograph next" → capture requests from unresolved attributes and unseen regions | [M] | B16 |
 | RE-ASSET-000001 | DN | Exports flatten parts → IFC aggregates, glTF child nodes | [V] exporters/ifc_bridge.py, exporters/gltf | done |
 | RE-ASSET-000002 | DN | Attributes lost on export → property set with basis and confidence | [V] exporters/ifc_bridge.py (Pset_RealityEngine) | done |

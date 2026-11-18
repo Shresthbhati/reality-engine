@@ -8,7 +8,9 @@ import AdaptiveInspector from "@/components/inspector/AdaptiveInspector";
 import BottomContextBar from "@/components/context/BottomContextBar";
 import VersionDiffModal from "@/components/versions/VersionDiffModal";
 import RoomConstructionModal from "@/components/workspace/RoomConstructionModal";
-import ConstructionProgressModal from "@/components/workspace/ConstructionProgressModal";
+import dynamic from "next/dynamic";
+// Loads when first opened, not with the workstation (RE-PERF-000016).
+const ConstructionProgressModal = dynamic(() => import("@/components/workspace/ConstructionProgressModal"), { ssr: false });
 import BuildModal from "@/components/workspace/BuildModal";
 import GeneratedPanel from "@/components/workspace/GeneratedPanel";
 import CompleteInteriorPanel from "@/components/workspace/CompleteInteriorPanel";

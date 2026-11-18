@@ -114,14 +114,16 @@ import {
   fetchTemporalCompare,
 } from "@/lib/api/temporal";
 
-import { ClashDetectionPanel } from "@/components/studio/ClashDetectionPanel";
+import dynamic from "next/dynamic";
+// Specialist tools load when first opened, not with the Studio (RE-PERF-000016).
+const ClashDetectionPanel = dynamic(() => import("@/components/studio/ClashDetectionPanel").then((m) => m.ClashDetectionPanel), { ssr: false });
 import type { ClashItem, ClashReportSummary } from "@/lib/studio/clash-bcf-model";
 import { fetchWorldClashes, downloadBcfZip } from "@/lib/api/bcf";
 import { SurfaceQualityPanel } from "@/components/studio/SurfaceQualityPanel";
-import { SectionDrawingModal } from "@/components/studio/SectionDrawingModal";
-import { TakeoffScheduleModal } from "@/components/studio/TakeoffScheduleModal";
-import { LifeSafetyAccessibilityModal } from "@/components/studio/LifeSafetyAccessibilityModal";
-import { ThermalEnvelopeModal } from "@/components/studio/ThermalEnvelopeModal";
+const SectionDrawingModal = dynamic(() => import("@/components/studio/SectionDrawingModal").then((m) => m.SectionDrawingModal), { ssr: false });
+const TakeoffScheduleModal = dynamic(() => import("@/components/studio/TakeoffScheduleModal").then((m) => m.TakeoffScheduleModal), { ssr: false });
+const LifeSafetyAccessibilityModal = dynamic(() => import("@/components/studio/LifeSafetyAccessibilityModal").then((m) => m.LifeSafetyAccessibilityModal), { ssr: false });
+const ThermalEnvelopeModal = dynamic(() => import("@/components/studio/ThermalEnvelopeModal").then((m) => m.ThermalEnvelopeModal), { ssr: false });
 import { CollabPresenceBar } from "@/components/studio/CollabPresenceBar";
 import { SpatialMarkupModal } from "@/components/studio/SpatialMarkupModal";
 import type { PeerPresence, SpatialMarkup, MarkupTrade, MarkupStatus } from "@/lib/studio/collab-presence-model";
@@ -131,7 +133,7 @@ import {
   createSpatialMarkup,
   deleteSpatialMarkup,
 } from "@/lib/api/collab";
-import { MepTopologyPanel } from "@/components/studio/MepTopologyPanel";
+const MepTopologyPanel = dynamic(() => import("@/components/studio/MepTopologyPanel").then((m) => m.MepTopologyPanel), { ssr: false });
 import type { MepFacilityTopology, MepSegment } from "@/lib/studio/mep-topology-model";
 import {
   fetchMepTopology,
@@ -1895,7 +1897,7 @@ export default function World3DViewport({
             <>
               <div className="my-0.5 h-px w-5" style={{ background: "var(--border)" }} />
               <IconButton
-                label="Automated Issue & Clash Detection (BCF 2.1)"
+                label="Automated Issue & Clash Detection (BCF 2.1) — Preliminary"
                 active={showClashes}
                 onClick={handleToggleClashes}
               >

@@ -516,7 +516,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
             _run("feature_extractor",
                  ["--database_path", str(db_path), "--image_path", str(image_dir),
                   *extractor_args, "--FeatureExtraction.use_gpu", extraction_gpu])
-            matcher_extra = ["--SiftMatching.num_threads", "1"] if is_det else []
+            matcher_extra = ["--FeatureMatching.num_threads", "1"] if is_det else []
             _run("exhaustive_matcher",
                  ["--database_path", str(db_path),
                   "--FeatureMatching.use_gpu", matching_gpu,
@@ -773,7 +773,7 @@ class ColmapReconstructionBackend(IReconstructionBackend):
                 lst.write_text("\n".join(new_names) + "\n")
                 args += ["--image_list_path", str(lst)]
             run("feature_extractor", args)
-            matcher_extra = ["--SiftMatching.num_threads", "1"] if is_det else []
+            matcher_extra = ["--FeatureMatching.num_threads", "1"] if is_det else []
             run("exhaustive_matcher", ["--database_path", str(db_path), "--FeatureMatching.use_gpu", cpu_or_gpu,
                                        *_sift_matching_args(guided=self.guided_matching), *matcher_extra])
 

@@ -20,6 +20,7 @@ import {
   runCustomLifeSafetyAudit,
   downloadLifeSafetyCertificate,
 } from "@/lib/api/life-safety";
+import PreliminaryBadge from "@/components/ui/PreliminaryBadge";
 
 export interface LifeSafetyAccessibilityModalProps {
   worldId: string;
@@ -131,6 +132,7 @@ export function LifeSafetyAccessibilityModal({
             <div>
               <h2 className="text-base font-bold text-fg tracking-tight">
                 Life Safety & ADA Accessibility Compliance
+                <PreliminaryBadge />
               </h2>
               <p className="text-xs text-muted-fg">
                 ADA 2010 Standards (§404, §403, §304) & IBC Chapter 10 Means of Egress

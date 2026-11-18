@@ -149,6 +149,8 @@ class MiDaSDepthBackend(IDepthBackend):
                 source="local" if Path(self._checkpoint_path).parent.name == "MiDaS" else "github",
                 pretrained=False,
             )
+            from perception.model_registry import require_verified
+            require_verified(Path(self._checkpoint_path))
             state_dict = torch.load(self._checkpoint_path, map_location=self._device, weights_only=True)
             self._model.load_state_dict(state_dict)
         else:

@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Literal, Mapping, Protocol
 
+from engine.pipeline.stages.lineage import LineageGraph
+
 ResourceClass = Literal["cpu", "gpu", "highmem", "export"]
 StageStatus = Literal["succeeded", "degraded", "skipped", "failed"]
 
@@ -18,6 +20,7 @@ class StageSpec:
     version: str  # bump on behaviour change; part of the cache key
     resource_class: ResourceClass
     required: bool  # required + failed -> job FAILED; optional + failed -> PARTIAL
+    inputs: tuple[str, ...] | None = None  # artifact names this stage reads; None = assume all earlier ones (lineage)
 
 
 @dataclass
@@ -55,6 +58,7 @@ class RunManifest:
     pipeline_profile: str
     pipeline_version: str
     stages: list[StageResult]
+    lineage: LineageGraph = field(default_factory=LineageGraph)
 
     def grade(self, specs: list[StageSpec]) -> Literal["succeeded", "partial", "failed"]:
         """Any required stage failed -> failed; else any failed/degraded -> partial; else succeeded.

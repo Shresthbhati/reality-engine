@@ -159,12 +159,52 @@ def scene_box(points) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     return np.percentile(pts, 2, axis=0), np.percentile(pts, 98, axis=0)
 
 
+#: labels whose surface shows a reflection: anything "behind" one is a virtual image, not an object (RE-PERC-000018)
+REFLECTIVE_WORDS = ("mirror", "glass")
+REFLECT_MARGIN_M = 0.15          # how far past the surface counts as "behind" (depth noise)
+REFLECT_MAX_THICKNESS_M = 0.25   # a mirror/glass pane is flat; a fatter box does not define a plane
+
+
+def _mirror_plane(c, interior):
+    """(centre, unit normal toward `interior`, half thickness, lateral half extents, normal axis) of a flat reflective
+    candidate, or None when its box is not clearly flat. ponytail: axis-aligned boxes only; a mirror on a diagonal wall
+    gets a fat box and is skipped (no plane claimed), upgrade to a fitted plane when the mask's points are kept."""
+    lo = np.array([c.bounds_min.x, c.bounds_min.y, c.bounds_min.z], float)
+    hi = np.array([c.bounds_max.x, c.bounds_max.y, c.bounds_max.z], float)
+    ext = hi - lo
+    axis = int(np.argmin(ext))
+    order = np.sort(ext)
+    if order[0] > REFLECT_MAX_THICKNESS_M or order[1] < 2.0 * max(order[0], 1e-3):
+        return None
+    centre = (lo + hi) / 2.0
+    n = np.zeros(3)
+    n[axis] = 1.0 if interior[axis] >= centre[axis] else -1.0
+    lateral = np.delete(np.arange(3), axis)
+    return centre, n, ext[axis] / 2.0, ext[lateral] / 2.0, lateral
+
+
+def behind_reflective_surface(c, mirror, interior) -> bool:
+    """True when candidate `c` sits behind the reflective candidate `mirror` (seen from `interior`): a reflection."""
+    plane = _mirror_plane(mirror, interior)
+    if plane is None:
+        return False
+    centre, n, half_t, half_lat, lateral = plane
+    p = np.array([c.position.x, c.position.y, c.position.z], float)
+    d = float(np.dot(p - centre, n))
+    if d >= -(half_t + REFLECT_MARGIN_M):
+        return False
+    behind = -d                                       # the image shows within a 45 degree cone of the pane's extent
+    off = np.abs((p - centre)[lateral])
+    return bool(np.all(off <= half_lat + behind))
+
+
 def filter_implausible(candidates, box, n_views: int, min_confidence: float = MIN_SINGLE_VIEW_CONFIDENCE, detail=None):
     """Drop candidates that cannot be real objects of this scene; returns (kept, {reason: count}). When ``detail`` is a list, each
     dropped candidate is appended to it as ``{label, reason, views, confidence, position_m}`` so a human can see WHAT was dropped.
 
     Reasons, in order: ``outside_scene`` (centre beyond the sparse points' box grown by SCENE_MARGIN), ``scene_sized``
-    (longest side > MAX_SIDE_SHARE of the scene's longest axis extent), ``single_view`` (one photograph, though the capture has
+    (longest side > MAX_SIDE_SHARE of the scene's longest axis extent), ``behind_reflective_surface`` (lifted behind a flat
+    mirror/glass candidate: a reflection, not an object), ``single_view`` (one photograph, though the capture has
     >= MANY_VIEWS), ``weak_single_view`` (one photograph in a small capture and confidence < ``min_confidence``)."""
     from collections import Counter
 
@@ -182,6 +222,10 @@ def filter_implausible(candidates, box, n_views: int, min_confidence: float = MI
         diag = float(np.linalg.norm(hi - lo))
         longest = float(np.max(hi - lo))
         lo_m, hi_m = lo - SCENE_MARGIN * diag, hi + SCENE_MARGIN * diag
+        interior = (lo + hi) / 2.0        # the room's inside is toward the middle of the sparse points
+        mirrors = [m for m in candidates if any(w in str(m.label).lower() for w in REFLECTIVE_WORDS)]
+    else:
+        mirrors = []
     for c in candidates:
         if box is not None:
             centre = np.array([c.position.x, c.position.y, c.position.z])
@@ -191,6 +235,9 @@ def filter_implausible(candidates, box, n_views: int, min_confidence: float = MI
                 continue
             if side > MAX_SIDE_SHARE * longest:
                 drop(c, "scene_sized")
+                continue
+            if any(m is not c and behind_reflective_surface(c, m, interior) for m in mirrors):
+                drop(c, "behind_reflective_surface")
                 continue
         if len(c.evidence_ids) < 2:
             if n_views >= MANY_VIEWS:

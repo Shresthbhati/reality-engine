@@ -24,6 +24,7 @@ import {
   evaluateCustomThermalScenario,
   downloadThermalCertificate,
 } from "@/lib/api/thermal-envelope";
+import PreliminaryBadge from "@/components/ui/PreliminaryBadge";
 
 export interface ThermalEnvelopeModalProps {
   worldId: string;
@@ -133,6 +134,7 @@ export function ThermalEnvelopeModal({
             <div>
               <h2 className="text-base font-bold text-fg tracking-tight">
                 Building Envelope Thermal Performance
+                <PreliminaryBadge />
               </h2>
               <p className="text-xs text-muted-fg">
                 ANSI/ASHRAE/IES Standard 90.1-2022 & IECC Prescriptive + UA Tradeoff Verification

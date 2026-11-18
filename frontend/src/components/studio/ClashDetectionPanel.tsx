@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import PreliminaryBadge from "@/components/ui/PreliminaryBadge";
 import {
   Download,
   Eye,
@@ -70,6 +71,7 @@ export function ClashDetectionPanel({
         <div className="flex items-center gap-1.5 font-semibold text-fg">
           <ShieldAlert className="w-4 h-4 text-error" />
           <span>Automated Issue & Clash Detection</span>
+          <PreliminaryBadge />
         </div>
         <div className="flex items-center gap-1.5">
           {report && (

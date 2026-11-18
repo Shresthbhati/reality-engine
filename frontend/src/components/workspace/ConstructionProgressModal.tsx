@@ -20,6 +20,7 @@ import {
   type Trade,
   type ComplianceStatus,
 } from "@/lib/api/construction";
+import PreliminaryBadge from "@/components/ui/PreliminaryBadge";
 import { useWorlds } from "@/lib/api";
 import type { WorldRow } from "@/lib/types";
 
@@ -155,6 +156,7 @@ export default function ConstructionProgressModal({
             <div>
               <h2 className="text-base font-semibold text-[var(--text-primary)]">
                 BIM-vs-Reality Compliance & Progress
+                <PreliminaryBadge />
               </h2>
               <p className="text-xs text-[var(--text-secondary)]">
                 Compare as-built site capture against design baseline with tolerance deviation gating

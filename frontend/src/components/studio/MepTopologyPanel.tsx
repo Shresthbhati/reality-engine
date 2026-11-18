@@ -21,6 +21,7 @@ import {
   getMepSystemHex,
 } from "@/lib/studio/mep-topology-model";
 import { downloadMepGeoJson, downloadMepIfc } from "@/lib/api/mep";
+import PreliminaryBadge from "@/components/ui/PreliminaryBadge";
 
 export interface MepTopologyPanelProps {
   worldId: string;
@@ -94,6 +95,7 @@ export function MepTopologyPanel({
           <div>
             <h2 className="text-sm font-semibold tracking-wide text-fg">
               MEP Facility Topology
+              <PreliminaryBadge />
             </h2>
             <p className="text-xs text-fg-muted">
               IFC4x3 Building Services & Routing

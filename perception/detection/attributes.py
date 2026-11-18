@@ -43,15 +43,41 @@ def classify_attribute(values: Sequence[str], scores: Sequence[float], box_thres
             "candidates": {v: float(x) for v, x in zip(values, p)}}
 
 
+def merge_ocr(visual: dict, ocr: Optional[dict]) -> dict:
+    """Combine a visual decision with an OCR reading of the same crop (``ocr`` from ``ocr.match_attribute``).
+
+    Text naming the value the picture also shows -> that value, basis ``visual+ocr``. Vision unsure, text names one value
+    -> the text's value, basis ``ocr`` (``p`` None: OCR has no confidence). Vision and text name DIFFERENT values -> unknown
+    with both kept: one of them is wrong and nothing here can say which. No usable text -> ``visual`` unchanged."""
+    if ocr is None or ocr.get("value") is None:
+        return visual
+    seen, read = visual.get("value"), ocr["value"]
+    if seen is None:
+        return {**visual, "value": read, "basis": "ocr", "ocr_text": ocr.get("text", "")}
+    if seen == read:
+        return {**visual, "basis": "visual+ocr", "ocr_text": ocr.get("text", "")}
+    return {**visual, "value": None, "basis": "conflict", "conflict": {"visual": seen, "ocr": read},
+            "ocr_text": ocr.get("text", "")}
+
+
 def classify_attribute_from_crop(image_rgb, box_xyxy, values: Sequence[str], phrases: Mapping[str, str],
                                  detector: Callable[[object, str], float], box_threshold: float, obs_id: str = "",
-                                 pad: float = 0.15) -> dict:
-    """Crop (padded 15 %), ask ``detector(crop, phrase) -> best score`` once per value, then decide."""
+                                 pad: float = 0.15, ocr_reader: Optional[Callable[[object], str]] = None,
+                                 synonyms: Optional[Mapping[str, Sequence[str]]] = None) -> dict:
+    """Crop (padded 15 %), ask ``detector(crop, phrase) -> best score`` once per value, then decide. With ``ocr_reader``
+    (``crop -> text``, e.g. ``lambda c: ocr.read_text(c)``) the crop's text is matched to the values (plus ``synonyms``)
+    and merged by ``merge_ocr``."""
     h, w = image_rgb.shape[:2]
     x0, y0, x1, y1 = box_xyxy
     px, py = (x1 - x0) * pad, (y1 - y0) * pad
     crop = image_rgb[max(int(y0 - py), 0):min(int(y1 + py), h), max(int(x0 - px), 0):min(int(x1 + px), w)]
-    return classify_attribute(values, [detector(crop, phrases[v]) for v in values], box_threshold, obs_id)
+    visual = classify_attribute(values, [detector(crop, phrases[v]) for v in values], box_threshold, obs_id)
+    if ocr_reader is None:
+        return visual
+    from perception.detection.ocr import match_attribute
+
+    syn = synonyms or {}
+    return merge_ocr(visual, match_attribute(ocr_reader(crop), {v: syn.get(v, ()) for v in values}))
 
 
 def combine_views(values: Sequence[str], per_view: Sequence[dict], box_threshold: float = 0.0) -> dict:

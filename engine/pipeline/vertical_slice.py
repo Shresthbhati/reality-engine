@@ -123,6 +123,10 @@ class VerticalSliceOptions:
     #: per job and its detections are UNVERIFIED (~55 boxes per photograph on the 10-photo room, implausibly many), so when on
     #: they are recorded as 2D facts under perception.small_fittings and never promoted to entities.
     perception_small_fittings: bool = False
+    #: attribute pass (B05) over the observation table: which kind of lock/socket/handle, one Grounding DINO call per allowed value
+    #: per observation (budgeted), OCR on the crop when available. Off by default (GPU minutes, unmeasured on real rooms); the result
+    #: lands in the observation table's attrs_json and a count under perception facts["attributes"]; a failure is recorded, not hidden.
+    perception_attributes: bool = False
     #: a second detector family (Florence-2) run on every photograph; where it and the pipeline's detector disagree is recorded under
     #: perception.second_opinion for a human. Off by default (another model load); agreement between two detectors is not accuracy.
     perception_second_opinion: bool = False

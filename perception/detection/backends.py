@@ -115,6 +115,8 @@ class TorchvisionCocoDetector:
         import torch
         from torchvision.models.detection import fasterrcnn_mobilenet_v3_large_320_fpn
         if self._model is None:
+            from perception.model_registry import require_verified
+            require_verified(self._ckpt())
             m = fasterrcnn_mobilenet_v3_large_320_fpn(weights=None, weights_backbone=None)
             m.load_state_dict(torch.load(self._ckpt(), map_location="cpu", weights_only=True))
             self._model, self._cats = m.eval(), self._weights().meta["categories"]

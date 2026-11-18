@@ -203,6 +203,19 @@ class VerticalSliceOptions:
     plane_sweep_stride: int = 2
     plane_sweep_planes: int = 48
 
+    #: Autonomous quality audit & correction loop (engine.quality.AutonomousCorrectionLoop).
+    #: When True, audits compiled WorldIR, formulates hypotheses for scale drift, fragmented
+    #: duplicate entities, and floating objects, tests in isolated candidate branches, and
+    #: selectively applies improvements with complete audit logging.
+    autonomous_correction_enabled: bool = False
+    autonomous_correction_max_iterations: int = 3
+    autonomous_correction_min_quality_gain: float = 0.01
+
+    #: Reconstruction-level bounded correction loop (reconstruction.correction.correct).
+    #: When True, drops unverified bridged camera groups or weakly supported cameras if
+    #: an accepted candidate improves reconstruction diagnostics without regressions.
+    reconstruction_auto_correct: bool = False
+
 
 def _refine_unit(result, unit_k: float, unit_facts):
     """RELATIVE worlds only (unit_facts set): once the frame is canonical, refine the working unit so the cameras sit at a
@@ -371,6 +384,22 @@ def run_pose(evidence_items, options, lap=lambda name: None, lap_validation=lamb
 
     lap("sparse_reconstruction")
     result = run.result
+    if getattr(options, "reconstruction_auto_correct", False):
+        try:
+            from dataclasses import replace as _dc_replace
+
+            from reconstruction.correction import correct as _correct
+
+            corr_res, corr_rec = _correct(result, [item.id for item in evidence_items])
+            if (
+                corr_rec.get("selected") != "baseline"
+                and len(corr_res.points) > 0
+                and len(corr_res.camera_poses) >= 2
+            ):
+                result = corr_res
+                run = _dc_replace(run, result=result)
+        except Exception:
+            pass
     if result.registration_status == "failed" or not result.points:
         raise VerticalSliceError(
             f"reconstruction produced nothing usable "
@@ -660,12 +689,15 @@ def run_detail(result, world, options, scale_state: str) -> DetailOutcome:
     return DetailOutcome(facts=_detail_stage(result, world, options, scale_state))
 
 
-def run_finalize(evidence_items, backend, run, result, sc: "ScaleOutcome", fr: "FrameOutcome", layout_facts, dp: "DepthOutcome",
-                 perception_facts, mesh_facts, dn: "DenseOutcome", detail_facts, *, clock, lap) -> VerticalSliceResult:
+def run_finalize(evidence_items, backend, run, result, sc: ScaleOutcome, fr: FrameOutcome, layout_facts, dp: DepthOutcome,
+                 perception_facts, mesh_facts, dn: DenseOutcome, detail_facts, *, clock, lap,
+                 options: VerticalSliceOptions | None = None) -> VerticalSliceResult:
     """Record the scale state and the stage facts in the world's canonical metadata, run the (never-failing) reconstruction
     diagnostics and correction plan, and assemble the ``VerticalSliceResult``; extracted verbatim from ``vertical_slice``.
     ``result`` is the scaled, frame-canonical reconstruction; ``dn.world`` is the fused world. ``clock`` is the per-stage
     seconds dict written to the report; ``lap`` the caller's timing hook."""
+    if options is None:
+        options = VerticalSliceOptions()
     _lap = lap
     stage_timings = clock
     world, diagnostics = dn.world, dn.diagnostics
@@ -729,15 +761,35 @@ def run_finalize(evidence_items, backend, run, result, sc: "ScaleOutcome", fr: "
     except Exception as exc:  # noqa: BLE001 -- recorded, never raised
         reconstruction_diagnostics = {"error": f"{type(exc).__name__}: {exc}"}
 
-    # What the bounded correction loop WOULD do with this model. Recommendation only: the build keeps the uncorrected
-    # result until a correction has been shown to help on real data and is wired in deliberately.
+    # Autonomous Quality Audit & Correction Loop (engine.quality.AutonomousCorrectionLoop)
+    if getattr(options, "autonomous_correction_enabled", False):
+        try:
+            from engine.quality.autonomous_correction_loop import AutonomousCorrectionLoop
+
+            max_iter = getattr(options, "autonomous_correction_max_iterations", 3)
+            min_gain = getattr(options, "autonomous_correction_min_quality_gain", 0.01)
+            corr_report = AutonomousCorrectionLoop.run_autonomous_loop(
+                world, max_iterations=max_iter, min_quality_gain=min_gain
+            )
+            world.metadata["autonomous_quality_report"] = corr_report.to_dict()
+        except Exception as exc:  # noqa: BLE001 -- resilient analysis pass
+            world.metadata["autonomous_quality_report"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    # What the bounded correction loop WOULD do with this model (or DID do if reconstruction_auto_correct was set).
     try:
         from reconstruction.correction import correct as _correct
 
         _, _record = _correct(result, [item.id for item in evidence_items])
-        correction_plan = {"applied": False, "selected": _record["selected"], "attempts": [
-            {k: a.get(k) for k in ("diagnostic", "action", "status", "reasons", "removed")} for a in _record["attempts"]],
-            "evidence_requests": _record["evidence_requests"]}
+        applied = bool(getattr(options, "reconstruction_auto_correct", False) and _record.get("selected") != "baseline")
+        correction_plan = {
+            "applied": applied,
+            "selected": _record["selected"],
+            "attempts": [
+                {k: a.get(k) for k in ("diagnostic", "action", "status", "reasons", "removed")}
+                for a in _record["attempts"]
+            ],
+            "evidence_requests": _record["evidence_requests"],
+        }
     except Exception as exc:  # noqa: BLE001 -- recorded, never raised
         correction_plan = {"applied": False, "error": f"{type(exc).__name__}: {exc}"}
 

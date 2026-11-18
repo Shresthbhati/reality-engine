@@ -25,6 +25,7 @@ class Finalize:
             pose.evidence_items, pose.backend, pose.run, pose.result, s["scale"], s["frame"], s["layout"].layout_facts,
             s["depth"], s["perception"].facts, s["mesh"].facts, s["dense"], s["detail"].facts,
             clock=s.get("clock", {}), lap=s.get("lap", lambda name: None),
+            options=getattr(ctx, "options", None),
         )
         s["slice_result"] = out
         return StageResult(

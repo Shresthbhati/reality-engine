@@ -100,7 +100,7 @@ Total: 1
 
 ## unlisted
 
-Total: 521
+Total: 522
 
 - `tests/integration/test_acceptance_p018.py`
 - `tests/integration/test_colmap_failure_injection.py`
@@ -594,6 +594,7 @@ Total: 521
 - `tests/test_viewport.py`
 - `tests/test_voxel_cloud.py`
 - `tests/test_vram_release.py`
+- `tests/test_vram_rtx4050_profile.py`
 - `tests/test_walkthrough_and_navigation.py`
 - `tests/test_wall_entities.py`
 - `tests/test_wall_opening_carving.py`

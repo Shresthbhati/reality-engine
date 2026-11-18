@@ -219,3 +219,109 @@ def test_non_rectangular_tolerance_evaluator_catches_violations():
     rep_area = evaluate_non_rectangular_tolerances(meas_bad_area, gt)
     assert rep_area["meets_tolerances"] is False
     assert any("Floor area" in s or "floor area" in s for s in rep_area["summary"])
+
+
+def test_non_convex_room_polygon_extrusion_and_manifold_validation():
+    """Verify that non-convex room footprints extruded into 3D meshes form valid 2-manifolds.
+
+    Tests L-shaped, T-shaped, U-shaped, Bay-window, and Chamfered room footprints:
+    - Vertices and faces are generated without degeneracy
+    - Every undirected edge is shared by exactly 2 faces (edge degree = 2)
+    - Face normals / half-edge orientations are globally consistent
+    - Euler characteristic Chi = V - E + F == 2 (homeomorphic to a 2-sphere)
+    """
+    from collections import defaultdict
+
+    from perception.architecture.room_layout import ear_clip, polygon_slab_mesh
+
+    shapes = {
+        "l_shape": [(0.0, 0.0), (6.0, 0.0), (6.0, 3.0), (3.0, 3.0), (3.0, 5.0), (0.0, 5.0)],
+        "t_shape": [(0.0, 0.0), (5.0, 0.0), (5.0, 2.0), (4.0, 2.0), (4.0, 5.0), (1.0, 5.0), (1.0, 2.0), (0.0, 2.0)],
+        "u_shape": [(0.0, 0.0), (6.0, 0.0), (6.0, 5.0), (4.0, 5.0), (4.0, 2.0), (2.0, 2.0), (2.0, 5.0), (0.0, 5.0)],
+        "bay_window": [(0.0, 0.0), (2.0, 0.0), (2.7, -0.7), (3.7, -0.7), (4.4, 0.0), (6.0, 0.0), (6.0, 4.0), (0.0, 4.0)],
+        "chamfered": [(0.0, 0.0), (6.0, 0.0), (6.0, 2.5), (4.5, 4.0), (0.0, 4.0)],
+    }
+
+    for name, poly_ab in shapes.items():
+        n = len(poly_ab)
+        top_xyz = [(float(x), float(y), 2.8) for x, y in poly_ab]
+        up = (0.0, 0.0, 1.0)
+        thickness = 2.8
+        direction = -1  # Extrude downward from ceiling to floor (full room volume)
+
+        tris = ear_clip(poly_ab)
+        assert len(tris) == n - 2, f"{name}: expected {n - 2} ear-clip triangles, got {len(tris)}"
+
+        verts, faces = polygon_slab_mesh(top_xyz, up, thickness, direction, poly_ab)
+        assert len(verts) == 2 * n, f"{name}: expected {2 * n} vertices, got {len(verts)}"
+        assert len(faces) == 4 * n - 4, f"{name}: expected {4 * n - 4} faces, got {len(faces)}"
+
+        # 1. Edge manifoldness check: each undirected edge must be shared by exactly two faces
+        undir_edge_counts: dict[tuple[int, int], int] = defaultdict(int)
+        dir_edges: dict[tuple[int, int], int] = defaultdict(int)
+
+        for f in faces:
+            assert len(f) == 3
+            for i in range(3):
+                u_idx, v_idx = f[i], f[(i + 1) % 3]
+                assert u_idx != v_idx, f"{name}: degenerate edge ({u_idx}, {v_idx})"
+                e_undir = tuple(sorted((u_idx, v_idx)))
+                undir_edge_counts[e_undir] += 1
+                dir_edges[(u_idx, v_idx)] += 1
+
+        non_manifold = [e for e, count in undir_edge_counts.items() if count != 2]
+        assert not non_manifold, f"{name}: found non-manifold edges (count != 2): {non_manifold}"
+
+        # 2. Consistent orientation: directed edge (u, v) must have matching reverse (v, u) in adjacent face
+        for (u_idx, v_idx), count in dir_edges.items():
+            assert count == 1, f"{name}: duplicate directed edge ({u_idx}, {v_idx})"
+            assert dir_edges.get((v_idx, u_idx), 0) == 1, f"{name}: inconsistent orientation for edge ({u_idx}, {v_idx})"
+
+        # 3. Euler characteristic: V - E + F == 2 for a closed 2-manifold
+        num_v = len(verts)
+        num_e = len(undir_edge_counts)
+        num_f = len(faces)
+        chi = num_v - num_e + num_f
+        assert chi == 2, f"{name}: Euler characteristic Chi = {chi} != 2 (V={num_v}, E={num_e}, F={num_f})"
+
+
+def test_l_shaped_room_perimeter_wall_slabs_ordering_and_watertightness():
+    """Verify that perimeter wall slabs for an L-shaped room form a closed continuous loop.
+
+    Consecutive wall endpoints must meet within 1 mm and inward normals must point interior.
+    """
+    from perception.architecture.room_layout import solve_room_layout
+
+    l_poly = [(0.0, 0.0), (6.0, 0.0), (6.0, 3.0), (3.0, 3.0), (3.0, 5.0), (0.0, 5.0)]
+    heights = [2.7] * 6
+
+    layout = solve_room_layout(l_poly, heights)
+    assert layout.closed is True
+    assert len(layout.walls) == 6
+    assert layout.shape_type == "l_shaped"
+
+    # Verify closed loop continuity
+    for i in range(len(layout.walls)):
+        curr_w = layout.walls[i]
+        next_w = layout.walls[(i + 1) % len(layout.walls)]
+        gap = math.hypot(curr_w.b[0] - next_w.a[0], curr_w.b[1] - next_w.a[1])
+        assert gap < 1e-4, f"Wall {i} -> {i+1} loop gap {gap*1000:.2f} mm exceeds 0.1 mm"
+
+    # Verify inward normals point into room interior
+    # Interior test points for L-shape: (1.0, 1.0) is inside main body, (1.0, 4.0) inside upper arm
+    for w in layout.walls:
+        inward = layout.inward(w)
+        mid = ((w.a[0] + w.b[0]) / 2.0, (w.a[1] + w.b[1]) / 2.0)
+        # Probe 0.1m inside
+        probe = (mid[0] + 0.1 * inward[0], mid[1] + 0.1 * inward[1])
+        # Point-in-polygon check for probe point
+        inside = _point_in_l_shape(probe[0], probe[1])
+        assert inside is True, f"Wall {w.index} inward normal points outside the room"
+
+
+def _point_in_l_shape(x: float, y: float) -> bool:
+    """True if (x, y) is inside the standard synthetic L-shape [0,6]x[0,3] U [0,3]x[0,5]."""
+    in_main = (0.0 <= x <= 6.0) and (0.0 <= y <= 3.0)
+    in_upper = (0.0 <= x <= 3.0) and (0.0 <= y <= 5.0)
+    return in_main or in_upper
+

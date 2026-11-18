@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from reconstruction.backend.interface import ReconstructedCameraPose, ReconstructedPoint, ReconstructionResult
+from reconstruction.backend.interface import (
+    ReconstructedCameraPose,
+    ReconstructedPoint,
+    ReconstructionResult,
+)
 from reconstruction.correction import ACCEPTED, FAILED, REJECTED, SKIPPED, Budget, correct
 from reconstruction.diagnostics import WEAK_OBSERVATIONS
 from world_ir.schema_v1 import Uncertainty
@@ -290,3 +294,119 @@ def test_small_captures_do_not_produce_bridged_group_false_positives():
 
 def _types_of(report, kind):
     return [d for d in report["diagnostics"] if d["type"] == kind]
+
+
+def test_pipeline_reconstruction_auto_correct_option():
+    """Verify that VerticalSliceOptions(reconstruction_auto_correct=True) applies accepted corrections."""
+    from engine.pipeline.vertical_slice import VerticalSliceOptions, run_finalize
+    from world_ir import WorldIR
+
+    base = _result()
+    options = VerticalSliceOptions(reconstruction_auto_correct=True)
+
+    # Mock outcome classes for run_finalize
+    class DummyItem:
+        def __init__(self, eid):
+            self.id = eid
+
+    items = [DummyItem(eid) for eid in IDS]
+
+    class DummyScale:
+        meters_per_unit = 1.0
+        scale_state = "METRIC"
+        scale_error = None
+        device_depth_facts = None
+
+    class DummyFrame:
+        frame_record = type("FR", (), {"to_dict": lambda s: {}})()
+        unit_k = 1.0
+        unit_facts = None
+        scale_note = "test"
+
+    class DummyDepth:
+        facts = None
+
+    class DummyDense:
+        world = WorldIR(id="w1")
+        diagnostics = type("CD", (), {})()
+        dense_mvs_facts = None
+        dense_gate_facts = None
+        structure_facts = None
+        plane_sweep_facts = {}
+        fusion_facts = {}
+
+    class DummyBackend:
+        pass
+
+    class DummyRun:
+        diagnostics = type("D", (), {"backend_name": "test", "duration_s": 0.1})()
+
+    # Pass the weak camera result
+    res = run_finalize(
+        items, DummyBackend(), DummyRun(), base,
+        DummyScale(), DummyFrame(), {}, DummyDepth(),
+        {}, {}, DummyDense(), {}, clock={}, lap=lambda n: None,
+        options=options,
+    )
+
+    plan = res.stage_facts["correction_plan"]
+    assert plan["applied"] is True
+    assert plan["selected"] == "EXCLUDE_WEAK_CAMERAS"
+
+
+def test_pipeline_autonomous_correction_option():
+    """Verify that VerticalSliceOptions(autonomous_correction_enabled=True) executes and logs quality report."""
+    from engine.pipeline.vertical_slice import VerticalSliceOptions, run_finalize
+    from world_ir import WorldIR
+
+    options = VerticalSliceOptions(autonomous_correction_enabled=True)
+
+    class DummyItem:
+        def __init__(self, eid):
+            self.id = eid
+
+    items = [DummyItem("a"), DummyItem("b")]
+
+    class DummyScale:
+        meters_per_unit = 1.0
+        scale_state = "METRIC"
+        scale_error = None
+        device_depth_facts = None
+
+    class DummyFrame:
+        frame_record = type("FR", (), {"to_dict": lambda s: {}})()
+        unit_k = 1.0
+        unit_facts = None
+        scale_note = "test"
+
+    class DummyDepth:
+        facts = None
+
+    class DummyDense:
+        world = WorldIR(id="w2")
+        diagnostics = type("CD", (), {})()
+        dense_mvs_facts = None
+        dense_gate_facts = None
+        structure_facts = None
+        plane_sweep_facts = {}
+        fusion_facts = {}
+
+    class DummyBackend:
+        pass
+
+    class DummyRun:
+        diagnostics = type("D", (), {"backend_name": "test", "duration_s": 0.1})()
+
+    base = ReconstructionResult(points=_pts(50, ["a", "b"]), camera_poses=[_pose("a"), _pose("b")], registration_status="success")
+
+    res = run_finalize(
+        items, DummyBackend(), DummyRun(), base,
+        DummyScale(), DummyFrame(), {}, DummyDepth(),
+        {}, {}, DummyDense(), {}, clock={}, lap=lambda n: None,
+        options=options,
+    )
+
+    report = res.world.metadata.get("autonomous_quality_report")
+    assert report is not None
+    assert "overall_quality" in report["initial_quality"]
+

@@ -14,23 +14,24 @@ from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
+from perception.detection.attribute_phrases import phrase_for
 from perception.detection.attributes import classify_attribute_from_crop, combine_views
 
 MAX_ATTRS_JSON = 2000      # ObservationTable.attrs_json is a <U2000 column
 DEFAULT_BUDGET_CALLS = 200  # detector calls per run: one per allowed value per observation
 
 
-def attribute_phrase(node, value: str) -> str:
-    """The detector phrase for one allowed value: "numpad lock". Weak by design (the margin rule keeps ambiguous
-    results unknown); a node-specific phrase table can replace it without touching callers."""
-    return f"{value.replace('_', ' ')} {str(getattr(node, 'label', '') or node.name).lower()}"
+def attribute_phrase(name: str, value: str):
+    """The vetted detector phrase for ``name`` = ``value`` (see ``attribute_phrases``), or None. No generated fallback:
+    "left door" or "yes window" are not descriptions of appearance and would yield confident wrong answers."""
+    return phrase_for(name, value)
 
 
 def _pack(rec: Dict[str, dict]) -> str:
-    slim = {n: {k: r[k] for k in ("value", "p", "basis", "obs", "conflict", "ocr_text") if k in r} for n, r in rec.items()}
+    slim = {n: {k: r[k] for k in ("value", "p", "basis", "obs", "conflict", "ocr_text", "reason") if k in r} for n, r in rec.items()}
     s = json.dumps(slim, separators=(",", ":"))
     if len(s) > MAX_ATTRS_JSON:  # drop the optional fields before ever truncating a value
-        slim = {n: {k: r[k] for k in ("value", "p", "basis") if k in r} for n, r in rec.items()}
+        slim = {n: {k: r[k] for k in ("value", "p", "basis", "reason") if k in r} for n, r in rec.items()}
         s = json.dumps(slim, separators=(",", ":"))
     return s if len(s) <= MAX_ATTRS_JSON else ""   # never store half a JSON document
 
@@ -56,21 +57,29 @@ def run_attribute_pass(table, load_image: Callable[[str], np.ndarray], scorer: C
         if min(x1 - x0, y1 - y0) < min_crop_px:
             stats["crop_too_small"] += 1
             continue
-        need = sum(len([v for v in vals if v != "unknown"]) for vals in node.attributes.values())
-        if calls + need > budget_calls:
-            stats["budget_exhausted"] += 1
-            continue
-        image_id = str(table.image_id[i])
-        if image_id not in images:
-            images[image_id] = load_image(image_id)
+        # an attribute is attempted only when at least two of its values have a vetted phrase (one phrase cannot discriminate)
+        plan: Dict[str, Dict[str, str]] = {}
         rec: Dict[str, dict] = {}
         for name, vals in node.attributes.items():
-            values = [v for v in vals if v != "unknown"]
-            if not values:
-                continue
-            r = classify_attribute_from_crop(images[image_id], (x0, y0, x1, y1), values,
-                                             {v: attribute_phrase(node, v) for v in values}, scorer, box_threshold,
-                                             obs_id=str(table.obs_id[i]), ocr_reader=ocr_reader)
+            phrases = {v: attribute_phrase(name, v) for v in vals if v != "unknown"}
+            phrases = {v: p for v, p in phrases.items() if p}
+            if len(phrases) >= 2:
+                plan[name] = phrases
+            else:
+                rec[name] = {"value": None, "p": 0.0, "basis": "none", "obs": [], "reason": "no vetted detector phrase"}
+                stats["no_vetted_phrase"] += 1
+        need = sum(len(p) for p in plan.values())
+        if need and calls + need > budget_calls:
+            stats["budget_exhausted"] += 1
+            continue
+        if need:
+            image_id = str(table.image_id[i])
+            if image_id not in images:
+                images[image_id] = load_image(image_id)
+        for name, phrases in plan.items():
+            values = list(phrases)
+            r = classify_attribute_from_crop(images[str(table.image_id[i])], (x0, y0, x1, y1), values, phrases, scorer,
+                                             box_threshold, obs_id=str(table.obs_id[i]), ocr_reader=ocr_reader)
             calls += len(values)
             rec[name] = r
             values_of[name] = values

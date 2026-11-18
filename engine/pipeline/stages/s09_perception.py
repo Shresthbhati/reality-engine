@@ -21,6 +21,24 @@ from engine.pipeline.stages.base import StageContext, StageResult, StageSpec
 from engine.pipeline.stages.facts import facts_status
 
 
+def persist_observation_table(table) -> tuple[str, str]:
+    """Store the observation table as a content-addressed ``.npz`` artifact. Returns ``(sha256, "sha256://<sha256>")``."""
+    import tempfile
+    from pathlib import Path
+
+    from engine.pipeline.stages.content_store import store_bytes
+
+    with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as tmp:
+        tmp_p = Path(tmp.name)
+    try:
+        table.save(tmp_p)
+        sha, _path = store_bytes(tmp_p.read_bytes())
+    finally:
+        if tmp_p.exists():
+            tmp_p.unlink()
+    return sha, f"sha256://{sha}"
+
+
 def _attribute_pass(table, evidence_items) -> dict:
     """Opt-in B05 pass (``perception_attributes``): fills ``table.attrs_json``. Any failure is returned as a fact, never raised
     into the stage and never reported as 'no attributes found'. OCR joins when Florence-2 is cached, else it is noted as off."""
@@ -74,19 +92,9 @@ class Perception:
         if table is not None and getattr(ctx.state["vertical_slice_options"], "perception_attributes", False):
             outcome.facts["attributes"] = _attribute_pass(table, pose.evidence_items)
         if table is not None:
-            import tempfile
-            from pathlib import Path
-            from apps.api.storage import store_bytes
-            with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as tmp:
-                tmp_p = Path(tmp.name)
-            try:
-                table.save(tmp_p)
-                sha, uri = store_bytes(tmp_p.read_bytes(), content_type="application/octet-stream")
-                outputs["observations"] = sha
-                outcome.facts["observations_artifact_uri"] = uri
-            finally:
-                if tmp_p.exists():
-                    tmp_p.unlink()
+            sha, uri = persist_observation_table(table)
+            outputs["observations"] = sha
+            outcome.facts["observations_artifact_uri"] = uri
 
         return StageResult(
             name=self.spec.name, status=status, inputs_hash="", outputs=outputs, metrics=metrics, warnings=warnings,

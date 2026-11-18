@@ -67,3 +67,19 @@ def test_ran_is_succeeded_failed_is_degraded_and_invalid_world_fails(tmp_path: P
     _, _, ctx = _prepare(tmp_path / "c")
     failed = _perception(ctx)
     assert failed.status == "failed" and "invalid world" in failed.error
+
+
+def test_observation_table_is_persisted_as_a_content_addressed_artifact(tmp_path, monkeypatch):
+    """The stage used to call store_bytes(..., content_type=...) -- a TypeError the moment a table existed."""
+    from engine.pipeline.stages.content_store import resolve_artifact
+    from engine.pipeline.stages.s09_perception import persist_observation_table
+    from world_ir.observation_table import ObservationTable
+
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path))
+    t = ObservationTable.empty(2)
+    t.obs_id[0], t.obs_id[1] = "o0", "o1"
+    sha, uri = persist_observation_table(t)
+
+    assert uri == f"sha256://{sha}" and isinstance(uri, str)
+    path = resolve_artifact(uri)
+    assert path is not None and ObservationTable.load(path).obs_id.tolist() == ["o0", "o1"]

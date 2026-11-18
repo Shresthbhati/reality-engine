@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 import numpy as np
 
-from apps.api.storage import resolve_artifact, store_bytes
+from engine.pipeline.stages.content_store import resolve_artifact, store_bytes
 
 
 def _uri(sha: str) -> str:

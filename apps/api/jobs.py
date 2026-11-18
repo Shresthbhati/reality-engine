@@ -685,8 +685,8 @@ async def _run_reconstruct_session_inner(db: AsyncSession, job: Job, holder: dic
             if model_override and isinstance(model_override, str):
                 models_to_check.append(model_override)
         if models_to_check:
-            from perception.model_registry import assert_production_licences
-            assert_production_licences(models_to_check)
+            from engine.pipeline.facade import assert_production_licences_for
+            assert_production_licences_for(models_to_check)
         try:
             from engine.pipeline.vertical_slice import (
                 VerticalSliceError,
